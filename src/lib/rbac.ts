@@ -125,8 +125,10 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 /**
  * Fetch role permissions from database
  * Falls back to static mapping if DB query fails
+ * @param roleName - The role name to fetch permissions for 
+ * @param supabaseClient - Optional authenticated Supabase client (from AuthContext)
  */
-export async function fetchRolePermissions(roleName: string): Promise<RolePermissions> {
+export async function fetchRolePermissions(roleName: string, supabaseClient?: any): Promise<RolePermissions> {
     // Check cache first
     const cached = permissionsCache.get(roleName);
     if (cached && cached.expiry > Date.now()) {
@@ -134,14 +136,18 @@ export async function fetchRolePermissions(roleName: string): Promise<RolePermis
     }
 
     try {
-        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-        const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+        let supabase = supabaseClient;
 
-        if (!supabaseUrl || !supabaseKey) {
-            return getStaticPermissions(roleName);
+        if (!supabase) {
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+            const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+            if (!supabaseUrl || !supabaseKey) {
+                return getStaticPermissions(roleName);
+            }
+
+            supabase = createClient(supabaseUrl, supabaseKey);
         }
-
-        const supabase = createClient(supabaseUrl, supabaseKey);
 
         // Fetch role details + permissions in one go
         const { data: role, error: roleError } = await supabase

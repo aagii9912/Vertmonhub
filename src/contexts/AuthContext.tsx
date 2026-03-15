@@ -101,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Fetch dynamic permissions
       let permissions: RolePermissions;
       try {
-        permissions = await fetchRolePermissions(roleName);
+        permissions = await fetchRolePermissions(roleName, supabase);
       } catch {
         permissions = ROLE_PERMISSIONS[roleName] || ROLE_PERMISSIONS['viewer'];
       }
