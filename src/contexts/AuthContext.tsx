@@ -90,22 +90,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Fetch user role and permissions from DB
   const fetchUserRoleAndPermissions = useCallback(async (userId: string): Promise<{ role: UserRole; permissions: RolePermissions }> => {
     try {
+      // Step 1: Try user_roles table
       const { data, error } = await supabase
         .from('user_roles')
         .select('role')
         .eq('user_id', userId)
         .single();
 
-      console.log('[RBAC] user_roles query:', { userId, data, error: error?.message });
-      const roleName = (error || !data) ? 'viewer' : data.role as UserRole;
+      let roleName: string;
 
-      // Fetch dynamic permissions
+      if (error || !data) {
+        // Step 2: Check admins table as fallback
+        const { data: adminData } = await supabase
+          .from('admins')
+          .select('role')
+          .eq('user_id', userId)
+          .eq('is_active', true)
+          .single();
+
+        if (adminData) {
+          // User is admin but has no user_roles entry — use admin role
+          roleName = 'admin';
+          console.log('[RBAC] No user_roles entry, but found in admins table. Using admin role.');
+          
+          // Auto-create user_roles entry
+          await supabase.from('user_roles').upsert(
+            { user_id: userId, role: 'admin' },
+            { onConflict: 'user_id' }
+          );
+        } else {
+          roleName = 'viewer';
+          console.log('[RBAC] No user_roles entry and not admin. Defaulting to viewer.');
+        }
+      } else {
+        roleName = data.role as string;
+      }
+
+      console.log('[RBAC] Resolved role:', roleName, 'for user:', userId);
+
+      // Step 3: Fetch dynamic permissions
       let permissions: RolePermissions;
       try {
         permissions = await fetchRolePermissions(roleName, supabase);
-        console.log('[RBAC] fetchRolePermissions result:', { roleName, modules: permissions.modules });
+        console.log('[RBAC] Dynamic permissions loaded:', { roleName, moduleCount: permissions.modules.length });
       } catch (e) {
-        console.log('[RBAC] fetchRolePermissions error, using static:', e);
+        console.log('[RBAC] Dynamic permissions failed, using static:', e);
         permissions = ROLE_PERMISSIONS[roleName] || ROLE_PERMISSIONS['viewer'];
       }
 
@@ -217,7 +246,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
 
     return () => subscription.unsubscribe();
-  }, [supabase]);
+  }, [supabase, fetchUserRoleAndPermissions]);
 
   // Fetch shops when session changes
   useEffect(() => {
