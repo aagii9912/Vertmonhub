@@ -1,0 +1,193 @@
+{
+  "company_info": {
+    "name": "Вертмон / Vertmon",
+    "industry": "Үл хөдлөх хөрөнгө / Real Estate Development",
+    "projects": [
+      "ЗҮҮ Гарден (ZUU Garden) - МГ 1-р ээлж",
+      "ЗҮҮ Плас (ZUU Plus) - МГ 2-р ээлж",
+      "ВАТЕР Гарден (Water Garden) - МГ 3-р ээлж",
+      "360 МАНДАЛА (360 Mandala)",
+      "365 МАНДАЛА (365 Mandala)",
+      "ЭЛИЗИУМ (Elysium)"
+    ],
+    "product_types": [
+      "Орон сууц (residential)",
+      "Зогсоол (parking)",
+      "Агуулах (industry)",
+      "Үйлчилгээ (commercial)"
+    ]
+  },
+  "sales_overview": {
+    "total_contracts": 2405,
+    "total_sales_mnt": 653381231600,
+    "total_paid_mnt": 287993526244,
+    "total_balance_mnt": 354804806876,
+    "collection_rate_pct": 44.1
+  },
+  "sales_by_product_type": {
+    "commercial": {
+      "contracts": 69,
+      "total_mnt": 60783683136,
+      "paid_mnt": 12073706228,
+      "balance_mnt": 48709976908
+    },
+    "industry": {
+      "contracts": 279,
+      "total_mnt": 4322292750,
+      "paid_mnt": 2491944939,
+      "balance_mnt": 1830347810
+    },
+    "parking": {
+      "contracts": 858,
+      "total_mnt": 50431822650,
+      "paid_mnt": 27154678339,
+      "balance_mnt": 22654304311
+    },
+    "residential": {
+      "contracts": 1199,
+      "total_mnt": 537843433065,
+      "paid_mnt": 246273196738,
+      "balance_mnt": 281610177846
+    }
+  },
+  "sales_by_channel": {
+    "БАРТЕР": {
+      "contracts": 315,
+      "total_mnt": 107547515126
+    },
+    "БУСАД": {
+      "contracts": 78,
+      "total_mnt": 38238340546
+    },
+    "ЗЭЭЛИЙН БАРЬЦАА": {
+      "contracts": 100,
+      "total_mnt": 3154300000
+    },
+    "ПРОПЕРТИС": {
+      "contracts": 1794,
+      "total_mnt": 482294631545
+    },
+    "ТҮРЭЭС": {
+      "contracts": 54,
+      "total_mnt": 7927371600
+    },
+    "ХО-н НӨХЦӨЛ": {
+      "contracts": 62,
+      "total_mnt": 13036126784
+    },
+    "ХУДАЛДААНД": {
+      "contracts": 2,
+      "total_mnt": 1182946000
+    }
+  },
+  "top_managers": {
+    "Ариунбилэг.Нямхүү": {
+      "contracts": 164,
+      "total_mnt": 100705398733,
+      "paid_mnt": 43299084119
+    },
+    "Сайнжаргал.Буянхишиг": {
+      "contracts": 121,
+      "total_mnt": 89809630140,
+      "paid_mnt": 52930362341
+    },
+    "Бурмаа.Доржготов": {
+      "contracts": 115,
+      "total_mnt": 77718226110,
+      "paid_mnt": 2941272630
+    },
+    "Руслан.Ергазы": {
+      "contracts": 226,
+      "total_mnt": 55701398733,
+      "paid_mnt": 19137324613
+    },
+    "Бат-Эрдэнэ.Орхон": {
+      "contracts": 331,
+      "total_mnt": 50188622320,
+      "paid_mnt": 41778295643
+    },
+    "Хишигдэлгэр.Баатархүү": {
+      "contracts": 219,
+      "total_mnt": 35877603450,
+      "paid_mnt": 24630676587
+    },
+    "Чанцалдулам.Раднаа": {
+      "contracts": 117,
+      "total_mnt": 31281026285,
+      "paid_mnt": 9461722848
+    },
+    "Энхзул.Бямбацогт": {
+      "contracts": 128,
+      "total_mnt": 28223997045,
+      "paid_mnt": 14807789274
+    },
+    "Бархүү.Санждорж": {
+      "contracts": 181,
+      "total_mnt": 21635879520,
+      "paid_mnt": 10191553131
+    },
+    "Төгөлдөр.Баярсайхан": {
+      "contracts": 21,
+      "total_mnt": 18607939650,
+      "paid_mnt": 12522664450
+    }
+  },
+  "top_blocks": {
+    "816-106 Зогс-ЗҮҮ Гарден": 449,
+    "901-Н-365 МАНДАЛА": 242,
+    "835-305 Зогс-ВАТЕР Гарден": 204,
+    "817-107 Үйлч-ЗҮҮ Гарден": 181,
+    "900-Н-360 МАНДАЛА": 178,
+    "831-301-ВАТЕР Гарден": 127,
+    "832-302-ВАТЕР Гарден": 121,
+    "833-303-ВАТЕР Гарден": 120,
+    "824-204-ЗҮҮ Плас": 116,
+    "834-304-ВАТЕР Гарден": 114
+  },
+  "bank_lead_status": {
+    "Зээл судлагдаж байгаа": 1477,
+    "Тодорхойгүй": 817,
+    "Зээл олголт хийгдсэн": 60,
+    "Барьцааны гэрээ үл хөдлөхөд бүртгүүлж байгаа": 18,
+    "ҮХ-д гэрчилгээ гаргах хүсэлт өгсөн": 16,
+    "Батлан даалтын гэрээ банктай хийсэн": 10,
+    "Төв банк руу барьцаа чөлөөлөх хүсэлт илгээсэн": 4,
+    "Зээл олгох шийдвэр гарсан": 2,
+    "Гэрчилгээ гарсан, Банкны барьцааны гэрээ хүлээж байгаа": 1
+  },
+  "hubspot_crm": {
+    "total_contacts": 10590,
+    "contacts_with_contracts": 311,
+    "leads_without_contracts": 10279,
+    "conversion_rate_pct": 2.9,
+    "top_traffic_sources": {
+      "Organic Social": "28.5%",
+      "Other Campaigns": "28.1%",
+      "Direct Traffic": "23.0%",
+      "Paid Social (Facebook Ads)": "17.4%"
+    },
+    "top_platforms": {
+      "Facebook": "45.8%",
+      "Social Media (general)": "27.7%",
+      "Mandala Garden Brochure (Landing Page)": "11.5%"
+    },
+    "lead_lifecycle_stage": {
+      "Lead": 10200,
+      "Marketing Qualified Lead": 71,
+      "Sales Qualified Lead": 3,
+      "Customer": 1
+    },
+    "leads_unassigned_pct": 99.7,
+    "leads_no_status_pct": 99.9
+  },
+  "payment_conditions": {
+    "Тусгай (Special)": "83.8% of contracts",
+    "Энгийн (Standard)": "16.2% of contracts"
+  },
+  "remaining_payment_methods": {
+    "Банк 6% ипотек": 87,
+    "Бэлэн (ашиглалтанд ороход)": 44,
+    "Банк >80м.кв": 38,
+    "Банк Хаан-Ногоон зээл": 33
+  }
+}

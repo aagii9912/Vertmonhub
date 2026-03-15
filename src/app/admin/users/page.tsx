@@ -2,33 +2,55 @@
 
 import { useState, useEffect } from 'react';
 import { Shield, ChevronDown, Search, UserPlus, Check, X, Loader2 } from 'lucide-react';
-import { getRoleDisplayName, type UserRole } from '@/lib/rbac';
 
 interface UserWithRole {
     id: string;
     email: string;
     full_name: string | null;
-    role: UserRole;
+    role: string;
     created_at: string;
 }
 
-const ROLES: { value: UserRole; label: string; color: string }[] = [
-    { value: 'admin', label: 'Админ', color: 'bg-red-100 text-red-700' },
-    { value: 'sales_manager', label: 'Борлуулалтын менежер', color: 'bg-blue-100 text-blue-700' },
-    { value: 'marketing', label: 'Маркетинг', color: 'bg-purple-100 text-purple-700' },
-    { value: 'viewer', label: 'Зөвхөн харагч', color: 'bg-gray-100 text-gray-700' },
-];
+interface RoleOption {
+    value: string;
+    label: string;
+    color: string;
+}
+
+const ROLE_COLORS: Record<string, string> = {
+    admin: 'bg-red-100 text-red-700',
+    sales_manager: 'bg-blue-100 text-blue-700',
+    marketing: 'bg-purple-100 text-purple-700',
+    viewer: 'bg-gray-100 text-gray-700',
+};
 
 export default function AdminUsersPage() {
     const [users, setUsers] = useState<UserWithRole[]>([]);
+    const [roles, setRoles] = useState<RoleOption[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [editingId, setEditingId] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-        fetchUsers();
+        Promise.all([fetchUsers(), fetchRoles()]).finally(() => setLoading(false));
     }, []);
+
+    async function fetchRoles() {
+        try {
+            const res = await fetch('/api/admin/roles');
+            const data = await res.json();
+            if (data.roles) {
+                setRoles(data.roles.map((r: any) => ({
+                    value: r.name,
+                    label: r.display_name_mn,
+                    color: ROLE_COLORS[r.name] || 'bg-gray-100 text-gray-700',
+                })));
+            }
+        } catch (e) {
+            console.error('Failed to fetch roles:', e);
+        }
+    }
 
     async function fetchUsers() {
         try {
@@ -37,12 +59,10 @@ export default function AdminUsersPage() {
             setUsers(data.users || []);
         } catch (e) {
             console.error('Failed to fetch users:', e);
-        } finally {
-            setLoading(false);
         }
     }
 
-    async function updateRole(userId: string, role: UserRole) {
+    async function updateRole(userId: string, role: string) {
         setSaving(true);
         try {
             const res = await fetch('/api/admin/users', {
@@ -66,9 +86,9 @@ export default function AdminUsersPage() {
         (u.full_name || '').toLowerCase().includes(search.toLowerCase())
     );
 
-    const getRoleBadge = (role: UserRole) => {
-        const r = ROLES.find(r => r.value === role);
-        return r || ROLES[3];
+    const getRoleBadge = (role: string) => {
+        const r = roles.find(r => r.value === role);
+        return r || { value: role, label: role, color: 'bg-gray-100 text-gray-700' };
     };
 
     return (
@@ -94,7 +114,7 @@ export default function AdminUsersPage() {
 
             {/* Role Legend */}
             <div className="flex flex-wrap gap-2 mb-6">
-                {ROLES.map(r => (
+                {roles.map(r => (
                     <span key={r.value} className={`px-3 py-1 rounded-full text-xs font-medium ${r.color}`}>
                         {r.label}
                     </span>
@@ -149,11 +169,11 @@ export default function AdminUsersPage() {
                                                 <div className="flex items-center gap-2">
                                                     <select
                                                         defaultValue={user.role}
-                                                        onChange={e => updateRole(user.id, e.target.value as UserRole)}
+                                                        onChange={e => updateRole(user.id, e.target.value)}
                                                         disabled={saving}
                                                         className="px-3 py-1.5 text-sm border border-violet-300 rounded-lg bg-white focus:ring-2 focus:ring-violet-500"
                                                     >
-                                                        {ROLES.map(r => (
+                                                        {roles.map(r => (
                                                             <option key={r.value} value={r.value}>{r.label}</option>
                                                         ))}
                                                     </select>

@@ -27,7 +27,7 @@ import {
     TrendingUp,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { canAccessModule, getRoleDisplayName, type UserRole } from '@/lib/rbac';
+import { canAccessModule, canAccessModuleDynamic, getRoleDisplayName, type RolePermissions } from '@/lib/rbac';
 
 interface MenuItem {
     name: string;
@@ -60,8 +60,9 @@ const menuItems: MenuItem[] = [
             { name: 'Pipeline', href: '/dashboard/leads/pipeline' },
         ]
     },
-    { name: 'Үзлэг', href: '/dashboard/viewings', icon: Eye, module: 'leads' },
-    { name: 'Гэрээ', href: '/dashboard/contracts', icon: FileText, module: 'properties' },
+    { name: 'Үзлэг', href: '/dashboard/viewings', icon: Eye, module: 'viewings' },
+    { name: 'Гэрээ', href: '/dashboard/contracts', icon: FileText, module: 'contracts' },
+    { name: 'Харилцагч', href: '/dashboard/customers', icon: Users, module: 'customers' },
     { name: 'Мессеж', href: '/dashboard/inbox', icon: MessageSquare, module: 'inbox' },
     {
         name: 'Аналитик',
@@ -71,9 +72,9 @@ const menuItems: MenuItem[] = [
         children: [
             { name: 'Тойм', href: '/dashboard/reports' },
             { name: 'Лийд шинжилгээ', href: '/dashboard/reports/leads' },
-            { name: 'Маркетинг ROI', href: '/dashboard/marketing-roi' },
         ]
     },
+    { name: 'Маркетинг ROI', href: '/dashboard/marketing-roi', icon: TrendingUp, module: 'marketing-roi' },
     { name: 'Судалгаа', href: '/dashboard/surveys', icon: ClipboardList, badge: 'Шинэ', module: 'surveys' },
     { name: 'AI Туслах', href: '/dashboard/ai-assistant', icon: Sparkles, module: 'ai-assistant' },
     { name: 'AI Тохиргоо', href: '/dashboard/ai-settings', icon: Bot, module: 'ai-settings' },
@@ -90,12 +91,18 @@ export function Sidebar() {
     const [expandedMenus, setExpandedMenus] = useState<string[]>(['Аналитик']);
     const pathname = usePathname();
     const { shop, user, signOut } = useAuth();
-    const userRole: UserRole = user?.role || 'viewer';
+    const userRole = user?.role || 'viewer';
+    const userPermissions = user?.permissions;
 
-    // Filter menu items by role
-    const filteredMenuItems = menuItems.filter(item => canAccessModule(userRole, item.module));
+    // Filter menu items by role — use dynamic permissions when available, fallback to static
+    const checkModuleAccess = (module: string): boolean => {
+        if (userPermissions) return canAccessModuleDynamic(userPermissions, module);
+        return canAccessModule(userRole, module);
+    };
+
+    const filteredMenuItems = menuItems.filter(item => checkModuleAccess(item.module));
     const filteredBottomItems = bottomMenuItems.filter(item => {
-        if (item.href === '/dashboard/settings') return canAccessModule(userRole, 'settings');
+        if (item.href === '/dashboard/settings') return checkModuleAccess('settings');
         return true;
     });
 
@@ -222,8 +229,8 @@ export function Sidebar() {
                 {/* VERTMON: Operations section removed - full access mode */}
             </nav>
 
-            {/* Add Property Button — only for admin & sales_manager */}
-            {canAccessModule(userRole, 'properties') && (
+            {/* Add Property Button — only for roles with properties access */}
+            {checkModuleAccess('properties') && (
                 <div className="px-3 pb-3">
                     <Link href="/dashboard/properties/new">
                         <button className="w-full flex items-center justify-center gap-2 py-2.5 bg-emerald-600 text-white font-medium rounded-lg hover:bg-emerald-700 transition-colors text-sm">

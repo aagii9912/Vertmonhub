@@ -3,7 +3,8 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import type { User, Session } from '@supabase/supabase-js';
-import type { UserRole } from '@/lib/rbac';
+import type { UserRole, RolePermissions } from '@/lib/rbac';
+import { fetchRolePermissions, ROLE_PERMISSIONS } from '@/lib/rbac';
 
 const isDev = process.env.NODE_ENV === 'development';
 const ACTIVE_SHOP_KEY = 'vertmonhub_active_shop_id';
@@ -37,7 +38,7 @@ export interface Shop {
 }
 
 interface AuthContextType {
-  user: { id: string; email: string; fullName: string | null; role: UserRole } | null;
+  user: { id: string; email: string; fullName: string | null; role: UserRole; permissions: RolePermissions } | null;
   shop: Shop | null;
   shops: Shop[];
   loading: boolean;
@@ -65,7 +66,7 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [supabase] = useState(() => createClient());
   const [session, setSession] = useState<Session | null>(null);
-  const [user, setUser] = useState<{ id: string; email: string; fullName: string | null; role: UserRole } | null>(null);
+  const [user, setUser] = useState<{ id: string; email: string; fullName: string | null; role: UserRole; permissions: RolePermissions } | null>(null);
   const [shop, setShop] = useState<Shop | null>(null);
   const [shops, setShops] = useState<Shop[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,8 +87,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [session]);
 
-  // Fetch user role from user_roles table
-  const fetchUserRole = useCallback(async (userId: string): Promise<UserRole> => {
+  // Fetch user role and permissions from DB
+  const fetchUserRoleAndPermissions = useCallback(async (userId: string): Promise<{ role: UserRole; permissions: RolePermissions }> => {
     try {
       const { data, error } = await supabase
         .from('user_roles')
@@ -95,10 +96,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq('user_id', userId)
         .single();
 
-      if (error || !data) return 'viewer'; // default role
-      return data.role as UserRole;
+      const roleName = (error || !data) ? 'viewer' : data.role as UserRole;
+
+      // Fetch dynamic permissions
+      let permissions: RolePermissions;
+      try {
+        permissions = await fetchRolePermissions(roleName);
+      } catch {
+        permissions = ROLE_PERMISSIONS[roleName] || ROLE_PERMISSIONS['viewer'];
+      }
+
+      return { role: roleName, permissions };
     } catch {
-      return 'viewer';
+      return { role: 'viewer', permissions: ROLE_PERMISSIONS['viewer'] };
     }
   }, [supabase]);
 
@@ -170,12 +180,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       if (session?.user) {
-        const role = await fetchUserRole(session.user.id);
+        const { role, permissions } = await fetchUserRoleAndPermissions(session.user.id);
         setUser({
           id: session.user.id,
           email: session.user.email || '',
           fullName: session.user.user_metadata?.full_name || null,
           role,
+          permissions,
         });
       }
       setLoading(false);
@@ -186,12 +197,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       (_event, session) => {
         setSession(session);
         if (session?.user) {
-          fetchUserRole(session.user.id).then(role => {
+          fetchUserRoleAndPermissions(session.user.id).then(({ role, permissions }) => {
             setUser({
               id: session.user.id,
               email: session.user.email || '',
               fullName: session.user.user_metadata?.full_name || null,
               role,
+              permissions,
             });
           });
         } else {
