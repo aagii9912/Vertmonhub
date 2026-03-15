@@ -96,18 +96,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq('user_id', userId)
         .single();
 
+      console.log('[RBAC] user_roles query:', { userId, data, error: error?.message });
       const roleName = (error || !data) ? 'viewer' : data.role as UserRole;
 
       // Fetch dynamic permissions
       let permissions: RolePermissions;
       try {
         permissions = await fetchRolePermissions(roleName, supabase);
-      } catch {
+        console.log('[RBAC] fetchRolePermissions result:', { roleName, modules: permissions.modules });
+      } catch (e) {
+        console.log('[RBAC] fetchRolePermissions error, using static:', e);
         permissions = ROLE_PERMISSIONS[roleName] || ROLE_PERMISSIONS['viewer'];
       }
 
       return { role: roleName, permissions };
-    } catch {
+    } catch (e) {
+      console.log('[RBAC] fetchUserRoleAndPermissions error:', e);
       return { role: 'viewer', permissions: ROLE_PERMISSIONS['viewer'] };
     }
   }, [supabase]);
