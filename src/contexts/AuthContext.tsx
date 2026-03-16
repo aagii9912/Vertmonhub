@@ -109,13 +109,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           .single();
 
         if (adminData) {
-          // User is admin but has no user_roles entry — use admin role
-          roleName = 'admin';
-          console.log('[RBAC] No user_roles entry, but found in admins table. Using admin role.');
+          // User is admin but has no user_roles entry — use actual admin role
+          roleName = adminData.role || 'admin';
+          console.log('[RBAC] No user_roles entry, but found in admins table. Using role:', roleName);
           
-          // Auto-create user_roles entry
+          // Auto-create user_roles entry with correct role
           await supabase.from('user_roles').upsert(
-            { user_id: userId, role: 'admin' },
+            { user_id: userId, role: roleName },
             { onConflict: 'user_id' }
           );
         } else {

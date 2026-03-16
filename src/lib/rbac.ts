@@ -74,6 +74,14 @@ export const MODULE_LABELS: Record<string, { en: string; mn: string }> = {
 // ============================================
 
 export const ROLE_PERMISSIONS: Record<string, RolePermissions> = {
+    super_admin: {
+        modules: [...ALL_MODULES],
+        canWrite: true,
+        canDelete: true,
+        canAccessAdmin: true,
+        displayName: 'Super Admin',
+        displayNameMN: 'Супер Админ',
+    },
     admin: {
         modules: [...ALL_MODULES],
         canWrite: true,
@@ -209,6 +217,7 @@ export function clearPermissionsCache(roleName?: string) {
 
 /** Check if a role can access a specific module (static check) */
 export function canAccessModule(role: string, module: string): boolean {
+    if (role === 'super_admin') return true; // Super admin bypasses all checks
     const perms = ROLE_PERMISSIONS[role];
     if (!perms) return false;
     return perms.modules.includes(module);
