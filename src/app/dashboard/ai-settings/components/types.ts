@@ -1,5 +1,5 @@
 // Shared types for AI Settings components
-export type Tab = 'general' | 'faqs' | 'quick_replies' | 'slogans' | 'notifications' | 'knowledge' | 'policies' | 'stats';
+export type Tab = 'general' | 'faqs' | 'quick_replies' | 'slogans' | 'notifications' | 'knowledge' | 'policies' | 'stats' | 'import';
 export type AiEmotion = 'friendly' | 'professional' | 'enthusiastic' | 'calm' | 'playful';
 
 export interface FAQ {

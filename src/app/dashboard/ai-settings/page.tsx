@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Bot, HelpCircle, MessageCircle, Quote, BookOpen, Settings2, Bell, BarChart3, Sparkles, AlertCircle, X } from 'lucide-react';
+import { Bot, HelpCircle, MessageCircle, Quote, BookOpen, Settings2, Bell, BarChart3, Sparkles, AlertCircle, X, Upload } from 'lucide-react';
 import type { Tab, AiEmotion, FAQ, QuickReply, Slogan, AIStats } from './components/types';
 import GeneralTab from './components/GeneralTab';
 import FaqTab from './components/FaqTab';
@@ -11,8 +11,9 @@ import StatsTab from './components/StatsTab';
 import NotificationsTab from './components/NotificationsTab';
 import KnowledgeTab from './components/KnowledgeTab';
 import PoliciesTab from './components/PoliciesTab';
+import ImportTab from './components/ImportTab';
 
-const tabs = [
+const baseTabs = [
     { id: 'general' as Tab, label: 'Үндсэн', icon: Bot },
     { id: 'faqs' as Tab, label: 'FAQ', icon: HelpCircle },
     { id: 'quick_replies' as Tab, label: 'Хурдан хариулт', icon: MessageCircle },
@@ -23,11 +24,14 @@ const tabs = [
     { id: 'stats' as Tab, label: 'Статистик', icon: BarChart3 },
 ];
 
+const importTab = { id: 'import' as Tab, label: '📥 Өгөгдөл оруулах', icon: Upload };
+
 export default function AISettingsPage() {
     const [activeTab, setActiveTab] = useState<Tab>('general');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [success, setSuccess] = useState(false);
+    const [canImport, setCanImport] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     // General settings
@@ -88,6 +92,17 @@ export default function AISettingsPage() {
                 setSlogans(aiData.slogans || []);
                 setStats(aiData.stats || null);
             }
+            // Check if user can import (super_admin or has permission)
+            try {
+                const adminRes = await fetch('/api/admin/settings');
+                if (adminRes.ok) {
+                    const adminData = await adminRes.json();
+                    const currentAdmin = adminData.admins?.find((a: any) => a.is_current);
+                    if (currentAdmin?.role === 'super_admin' || currentAdmin?.permissions?.can_import_data) {
+                        setCanImport(true);
+                    }
+                }
+            } catch { /* Non-admin user, import stays hidden */ }
         } catch (err) { console.error('Failed to fetch data:', err); }
         finally { setLoading(false); }
     }
@@ -124,7 +139,7 @@ export default function AISettingsPage() {
             </div>
 
             <div className="flex gap-2 overflow-x-auto pb-2">
-                {tabs.map((tab) => (
+                {[...baseTabs, ...(canImport ? [importTab] : [])].map((tab) => (
                     <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                         className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors whitespace-nowrap ${activeTab === tab.id ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
                         <tab.icon className="w-4 h-4" />{tab.label}
@@ -143,6 +158,7 @@ export default function AISettingsPage() {
             {activeTab === 'notifications' && <NotificationsTab notifyOnOrder={notifyOnOrder} setNotifyOnOrder={setNotifyOnOrder} notifyOnContact={notifyOnContact} setNotifyOnContact={setNotifyOnContact} notifyOnSupport={notifyOnSupport} setNotifyOnSupport={setNotifyOnSupport} saving={saving} onSave={handleSaveGeneral} />}
             {activeTab === 'knowledge' && <KnowledgeTab customKnowledge={customKnowledge} setCustomKnowledge={setCustomKnowledge} saving={saving} setSaving={setSaving} setSuccess={setSuccess} setError={setError} />}
             {activeTab === 'policies' && <PoliciesTab policies={policies} setPolicies={setPolicies} saving={saving} setSaving={setSaving} setSuccess={setSuccess} setError={setError} />}
+            {activeTab === 'import' && canImport && <ImportTab />}
         </div>
     );
 }
