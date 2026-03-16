@@ -337,7 +337,7 @@ CREATE POLICY "shop_owners_manage_contracts"
         EXISTS (
             SELECT 1 FROM shops 
             WHERE shops.id = property_contracts.shop_id 
-            AND shops.user_id = auth.uid()::text
+            AND shops.user_id = auth.uid()
         )
     );
 
@@ -348,7 +348,7 @@ CREATE POLICY "shop_owners_manage_hubspot"
         EXISTS (
             SELECT 1 FROM shops 
             WHERE shops.id = hubspot_contacts.shop_id 
-            AND shops.user_id = auth.uid()::text
+            AND shops.user_id = auth.uid()
         )
     );
 
@@ -359,7 +359,7 @@ CREATE POLICY "shop_owners_manage_ai_docs"
         EXISTS (
             SELECT 1 FROM shops 
             WHERE shops.id = ai_documents.shop_id 
-            AND shops.user_id = auth.uid()::text
+            AND shops.user_id = auth.uid()
         )
     );
 
@@ -370,7 +370,7 @@ CREATE POLICY "shop_owners_manage_ai_kb"
         EXISTS (
             SELECT 1 FROM shops 
             WHERE shops.id = ai_knowledge_base.shop_id 
-            AND shops.user_id = auth.uid()::text
+            AND shops.user_id = auth.uid()
         )
     );
 
