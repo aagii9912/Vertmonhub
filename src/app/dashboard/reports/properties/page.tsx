@@ -17,7 +17,6 @@ import {
     Clock,
     Tag,
 } from 'lucide-react';
-import { useMockData } from '@/lib/mock-data';
 
 // Mock data for property reports
 const MOCK_PROPERTY_STATS = {
@@ -91,7 +90,6 @@ const MOCK_MONTHLY_DATA = [
 
 export default function PropertiesReportPage() {
     const [period, setPeriod] = useState<'week' | 'month' | 'quarter' | 'year'>('month');
-    const isMockMode = useMockData();
 
     const stats = MOCK_PROPERTY_STATS;
     const projectData = MOCK_PROPERTY_BY_PROJECT;

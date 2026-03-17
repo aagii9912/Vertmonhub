@@ -27,8 +27,6 @@ import { toast } from 'sonner';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { Property, PropertyType, PropertyStatus } from '@/types/property';
-// DEMO_MOCK_DATA - устгахдаа энэ мөрийг устгана
-import { MOCK_PROPERTIES, useMockData } from '@/lib/mock-data';
 
 // Property Type colors
 const typeColors: Record<PropertyType, string> = {
@@ -86,36 +84,8 @@ export default function PropertiesPage() {
         avgPrice: 0,
     });
 
-    // DEMO_MOCK_DATA - Demo toggle
-    const isMockMode = useMockData();
-
     // Fetch properties
     useEffect(() => {
-        // DEMO_MOCK_DATA - Mock data for demo
-        if (isMockMode) {
-            setLoading(true);
-            setTimeout(() => {
-                let filtered = MOCK_PROPERTIES as unknown as Property[];
-                if (typeFilter !== 'all') {
-                    filtered = filtered.filter(p => p.type === typeFilter);
-                }
-                if (statusFilter !== 'all') {
-                    filtered = filtered.filter(p => p.status === statusFilter);
-                }
-                setProperties(filtered);
-                const totalValue = filtered.reduce((sum, p) => sum + p.price, 0);
-                const totalViews = filtered.reduce((sum, p) => sum + ((p as any).views || (p as any).views_count || 0), 0);
-                setStats({
-                    totalProperties: filtered.length,
-                    totalValue,
-                    totalViews,
-                    avgPrice: filtered.length > 0 ? totalValue / filtered.length : 0,
-                });
-                setLoading(false);
-            }, 500);
-            return;
-        }
-
         if (!shop?.id) return;
 
         const fetchProperties = async () => {
@@ -159,7 +129,7 @@ export default function PropertiesPage() {
         };
 
         fetchProperties();
-    }, [shop?.id, typeFilter, statusFilter, isMockMode]);
+    }, [shop?.id, typeFilter, statusFilter]);
 
     // Filter by search
     const filteredProperties = properties.filter(p => {

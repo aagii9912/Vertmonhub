@@ -106,7 +106,8 @@ export async function GET(request: NextRequest) {
     // Let's check `src/app/api/shop/route.ts` which might be the real one.
 
     if (error) {
-        return NextResponse.json({ error: 'Shop Create Error: ' + error.message });
+        console.error('Shop Create Error:', error);
+        return NextResponse.json({ error: 'Shop үүсгэхэд алдаа гарлаа' }, { status: 500 });
     }
 
     // Add some dummy products
@@ -117,7 +118,8 @@ export async function GET(request: NextRequest) {
     ]);
 
     if (prodError) {
-        return NextResponse.json({ message: 'Shop created but products failed', error: prodError.message, shop: newShop });
+        console.error('Products insert error:', prodError);
+        return NextResponse.json({ message: 'Shop үүссэн, гэхдээ бүтээгдэхүүн нэмэх алдаатай', shop: newShop });
     }
 
     return NextResponse.json({ message: 'Shop and products created successfully', shop: newShop });

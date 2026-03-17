@@ -6,6 +6,7 @@
 import { NextResponse } from 'next/server';
 import { getAdminUser } from '@/lib/admin/auth';
 import { supabaseAdmin } from '@/lib/supabase';
+import { safeErrorResponse } from '@/lib/utils/safe-error';
 
 export async function GET() {
     try {
@@ -89,11 +90,7 @@ export async function GET() {
                 role: admin.role
             }
         });
-    } catch (error: any) {
-        console.error('Admin dashboard error:', error);
-        return NextResponse.json(
-            { error: error.message || 'Failed to fetch dashboard data' },
-            { status: 500 }
-        );
+    } catch (error) {
+        return safeErrorResponse(error, 'Dashboard мэдээлэл унших үед алдаа гарлаа');
     }
 }

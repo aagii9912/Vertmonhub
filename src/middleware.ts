@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createSupabaseMiddlewareClient } from '@/lib/auth/supabase-auth';
 import { checkMiddlewareRateLimit } from '@/lib/utils/rate-limiter';
+import { logApiRequest } from '@/lib/utils/request-logger';
 
 // Protected routes requiring authentication
 const protectedRoutes = ['/dashboard', '/setup', '/admin'];
@@ -21,7 +22,7 @@ const publicRoutes = [
 ];
 
 // AI routes with strict rate limits
-const aiRoutes = ['/api/chat', '/api/ai'];
+const aiRoutes = ['/api/chat', '/api/ai', '/api/ai-assistant', '/api/ai-settings'];
 
 // Webhook routes with relaxed limits
 const webhookRoutes = ['/api/webhook', '/api/payment/webhook'];
@@ -32,6 +33,11 @@ function matchesRoute(pathname: string, routes: string[]): boolean {
 
 export async function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl;
+
+    // Log API requests
+    if (pathname.startsWith('/api/')) {
+        logApiRequest(request);
+    }
 
     // Rate limiting for API routes
     if (pathname.startsWith('/api/')) {

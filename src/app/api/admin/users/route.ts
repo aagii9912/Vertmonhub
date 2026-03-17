@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, getClerkUser } from '@/lib/auth/supabase-auth';
+import { safeErrorResponse } from '@/lib/utils/safe-error';
 
 /**
  * GET /api/admin/users — List all users with roles
@@ -31,8 +32,8 @@ export async function GET() {
         }));
 
         return NextResponse.json({ users });
-    } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    } catch (error) {
+        return safeErrorResponse(error, 'Хэрэглэгчдийн жагсаалт унших үед алдаа гарлаа');
     }
 }
 
@@ -61,10 +62,10 @@ export async function PATCH(request: NextRequest) {
             .from('user_roles')
             .upsert({ user_id: targetUserId, role }, { onConflict: 'user_id' });
 
-        if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+        if (error) return safeErrorResponse(error, 'Хэрэглэгчийн эрх шинэчлэх үед алдаа гарлаа');
 
         return NextResponse.json({ success: true, message: `Role updated to ${role}` });
-    } catch (error: any) {
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    } catch (error) {
+        return safeErrorResponse(error, 'Хэрэглэгчийн эрх шинэчлэх үед алдаа гарлаа');
     }
 }

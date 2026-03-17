@@ -1,11 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/auth';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { supabaseAdmin } from '@/lib/supabase';
+import { safeErrorResponse } from '@/lib/utils/safe-error';
 
 /**
  * PATCH /api/admin/roles/[id]
@@ -26,6 +22,7 @@ export async function PATCH(
         const { display_name, display_name_mn, description, can_write, can_delete, can_access_admin, modules } = body;
 
         // Check role exists
+        const supabase = supabaseAdmin();
         const { data: existingRole, error: fetchError } = await supabase
             .from('roles')
             .select('*')
@@ -52,7 +49,7 @@ export async function PATCH(
                 .eq('id', id);
 
             if (updateError) {
-                return NextResponse.json({ error: updateError.message }, { status: 500 });
+                return safeErrorResponse(updateError, 'Role шинэчлэхэд алдаа гарлаа');
             }
         }
 
@@ -76,7 +73,7 @@ export async function PATCH(
                     .insert(permissionRows);
 
                 if (permError) {
-                    return NextResponse.json({ error: permError.message }, { status: 500 });
+                    return safeErrorResponse(permError, 'Permission шинэчлэхэд алдаа гарлаа');
                 }
             }
         }
@@ -89,8 +86,8 @@ export async function PATCH(
             .single();
 
         return NextResponse.json({ role: freshRole });
-    } catch (error: any) {
-        return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
+    } catch (error) {
+        return safeErrorResponse(error, 'Role шинэчлэхэд алдаа гарлаа');
     }
 }
 
@@ -111,6 +108,7 @@ export async function DELETE(
         const { id } = await params;
 
         // Check if system role
+        const supabase = supabaseAdmin();
         const { data: role, error: fetchError } = await supabase
             .from('roles')
             .select('name, is_system')
@@ -146,11 +144,11 @@ export async function DELETE(
             .eq('id', id);
 
         if (deleteError) {
-            return NextResponse.json({ error: deleteError.message }, { status: 500 });
+            return safeErrorResponse(deleteError, 'Role устгахад алдаа гарлаа');
         }
 
         return NextResponse.json({ success: true });
-    } catch (error: any) {
-        return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
+    } catch (error) {
+        return safeErrorResponse(error, 'Role устгахад алдаа гарлаа');
     }
 }

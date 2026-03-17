@@ -71,8 +71,7 @@ export async function POST(request: NextRequest) {
     } catch (error) {
         console.error('Reply API error:', error);
         return NextResponse.json({
-            error: 'Failed to send message',
-            details: error instanceof Error ? error.message : 'Unknown error'
+            error: 'Мессеж илгээхэд алдаа гарлаа'
         }, { status: 500 });
     }
 }

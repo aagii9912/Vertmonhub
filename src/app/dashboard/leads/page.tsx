@@ -36,8 +36,6 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import type { Lead, LeadStatus, LeadSource } from '@/types/property';
-// DEMO_MOCK_DATA - устгахдаа энэ мөрийг устгана
-import { MOCK_LEADS, useMockData } from '@/lib/mock-data';
 
 // Status colors and labels
 const statusConfig: Record<LeadStatus, { color: string; label: string; icon: React.ElementType }> = {
@@ -83,40 +81,8 @@ export default function LeadsPage() {
     });
     const [expandedLead, setExpandedLead] = useState<string | null>(null);
 
-    // DEMO_MOCK_DATA - Demo toggle
-    const isMockMode = useMockData();
-
     // Fetch leads
     useEffect(() => {
-        // DEMO_MOCK_DATA - Mock data for demo
-        if (isMockMode) {
-            setLoading(true);
-            setTimeout(() => {
-                let filtered = MOCK_LEADS as unknown as Lead[];
-                if (statusFilter !== 'all') {
-                    filtered = filtered.filter(l => l.status === statusFilter);
-                }
-                setLeads(filtered);
-
-                const newCount = filtered.filter(l => l.status === 'new').length;
-                const inProgressCount = filtered.filter(l =>
-                    ['contacted', 'viewing_scheduled', 'offered', 'negotiating'].includes(l.status)
-                ).length;
-                const wonCount = filtered.filter(l => l.status === 'closed_won').length;
-                const conversionRate = filtered.length > 0 ? (wonCount / filtered.length) * 100 : 0;
-
-                setStats({
-                    total: filtered.length,
-                    new: newCount,
-                    inProgress: inProgressCount,
-                    won: wonCount,
-                    conversionRate,
-                });
-                setLoading(false);
-            }, 500);
-            return;
-        }
-
         if (!shop?.id) return;
 
         const fetchLeads = async () => {
@@ -163,7 +129,7 @@ export default function LeadsPage() {
         };
 
         fetchLeads();
-    }, [shop?.id, statusFilter, isMockMode]);
+    }, [shop?.id, statusFilter]);
 
     // Filter by search
     const filteredLeads = leads.filter(l =>

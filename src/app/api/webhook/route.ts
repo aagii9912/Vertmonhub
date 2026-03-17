@@ -5,6 +5,7 @@ import { detectIntent } from '@/lib/ai/intent-detector';
 import { shouldReplyToComment } from '@/lib/ai/comment-detector';
 import { getCustomerMemory } from '@/lib/ai/tools/memory';
 import { logger } from '@/lib/utils/logger';
+import { verifyWebhookSignature } from '@/lib/utils/verify-webhook-signature';
 import {
     getShopByPageId,
     getShopByInstagramId,
@@ -23,7 +24,12 @@ import {
 } from '@/lib/webhook/WebhookService';
 import type { ChatMessage } from '@/types/ai';
 
-const VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN || 'vertmonhub_verify_token_2024';
+const VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN;
+if (!VERIFY_TOKEN) {
+    console.error('CRITICAL: FACEBOOK_VERIFY_TOKEN environment variable is required');
+}
+
+const APP_SECRET = process.env.FACEBOOK_APP_SECRET;
 
 /**
  * Facebook webhook entry type
@@ -60,6 +66,11 @@ export async function GET(request: NextRequest) {
     const token = searchParams.get('hub.verify_token');
     const challenge = searchParams.get('hub.challenge');
 
+    if (!VERIFY_TOKEN) {
+        logger.error('FACEBOOK_VERIFY_TOKEN not configured');
+        return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 });
+    }
+
     const result = verifyWebhook(mode, token, challenge, VERIFY_TOKEN);
 
     if (result) {
@@ -73,7 +84,18 @@ export async function GET(request: NextRequest) {
 // Handle incoming messages (POST request from Facebook/Instagram)
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json();
+        // Verify webhook signature (X-Hub-Signature-256)
+        const rawBody = await request.text();
+        const signature = request.headers.get('x-hub-signature-256');
+
+        if (APP_SECRET && process.env.NODE_ENV === 'production') {
+            if (!verifyWebhookSignature(rawBody, signature, APP_SECRET)) {
+                logger.warn('Webhook signature verification failed');
+                return NextResponse.json({ error: 'Invalid signature' }, { status: 403 });
+            }
+        }
+
+        const body = JSON.parse(rawBody);
 
         // Determine platform type: 'page' for Messenger, 'instagram' for Instagram
         const platform: 'messenger' | 'instagram' = body.object === 'instagram' ? 'instagram' : 'messenger';
@@ -384,7 +406,7 @@ export async function POST(request: NextRequest) {
     } catch (error) {
         logger.error('Webhook error:', { error });
         return NextResponse.json({
-            error: error instanceof Error ? error.message : 'Unknown error',
+            error: 'Internal server error',
         }, { status: 500 });
     }
 }

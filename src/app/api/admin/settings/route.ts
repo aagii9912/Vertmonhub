@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminUser } from '@/lib/admin/auth';
 import { supabaseAdmin } from '@/lib/supabase';
+import { safeErrorResponse } from '@/lib/utils/safe-error';
 
 // GET - Get all settings
 export async function GET() {
@@ -41,9 +42,8 @@ export async function GET() {
         };
 
         return NextResponse.json({ settings, admin: { email: admin.email, role: admin.role } });
-    } catch (error: any) {
-        console.error('Settings fetch error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    } catch (error) {
+        return safeErrorResponse(error, 'Тохиргоо унших үед алдаа гарлаа');
     }
 }
 
@@ -65,8 +65,7 @@ export async function PUT(request: NextRequest) {
             message: 'Settings updated',
             settings: body
         });
-    } catch (error: any) {
-        console.error('Settings update error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    } catch (error) {
+        return safeErrorResponse(error, 'Тохиргоо шинэчлэх үед алдаа гарлаа');
     }
 }

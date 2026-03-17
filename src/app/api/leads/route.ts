@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { CreateLeadSchema, validateBody } from '@/lib/validations/schemas';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -11,14 +13,10 @@ export async function POST(request: NextRequest) {
         const { supabase } = await import('@/lib/supabase');
         const body = await request.json();
 
-        const { name, phone, email, company, message } = body;
-
-        if (!name || !phone) {
-            return NextResponse.json(
-                { error: 'Нэр болон утасны дугаар шаардлагатай' },
-                { status: 400 }
-            );
-        }
+        // Validate input with Zod
+        const validation = validateBody(CreateLeadSchema, body);
+        if (!validation.success) return validation.response;
+        const { name, phone, email, company, message } = validation.data;
 
         // Generate AI response
         let aiResponse = '';
@@ -82,12 +80,8 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
             aiResponse
         });
 
-    } catch (error: any) {
-        console.error('API Error:', error);
-        return NextResponse.json(
-            { error: error.message || 'Алдаа гарлаа' },
-            { status: 500 }
-        );
+    } catch (error) {
+        return safeErrorResponse(error, 'Хүсэлт илгээхэд алдаа гарлаа');
     }
 }
 

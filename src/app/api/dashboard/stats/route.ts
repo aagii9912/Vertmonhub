@@ -2,26 +2,18 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getClerkUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { getStartOfPeriod } from '@/lib/utils/date';
-import { checkRateLimit, getRateLimitHeaders, RATE_LIMITS } from '@/lib/utils/rate-limit';
-import { apiError } from '@/lib/utils/api-response';
+import { checkRateLimit, createRateLimitResponse, getClientIdentifier, RATE_LIMIT_CONFIGS } from '@/lib/utils/rate-limiter';
+import { safeErrorResponse } from '@/lib/utils/safe-error';
 
 export async function GET(request: NextRequest) {
   try {
     const authShop = await getClerkUserShop();
 
-    const identifier = authShop?.id || request.headers.get('x-forwarded-for') || 'anonymous';
-    const rateLimitResult = checkRateLimit(`stats:${identifier}`, RATE_LIMITS.dashboard);
+    const identifier = authShop?.id || getClientIdentifier(request) || 'anonymous';
+    const rateLimitResult = checkRateLimit(`stats:${identifier}`, { windowMs: 60000, maxRequests: 30 });
 
     if (!rateLimitResult.allowed) {
-      const response = apiError('Too many requests. Please try again later.', null, {
-        status: 429,
-        code: 'RATE_LIMIT_EXCEEDED',
-      });
-      const headers = getRateLimitHeaders(rateLimitResult, RATE_LIMITS.dashboard.maxRequests);
-      Object.entries(headers).forEach(([key, value]) => {
-        response.headers.set(key, value);
-      });
-      return response;
+      return createRateLimitResponse(rateLimitResult.resetAt);
     }
 
     const { searchParams } = new URL(request.url);
@@ -161,7 +153,6 @@ export async function GET(request: NextRequest) {
       unansweredCount,
     });
   } catch (error) {
-    console.error('Stats API error:', error);
-    return NextResponse.json({ error: 'Failed to fetch stats' }, { status: 500 });
+    return safeErrorResponse(error, 'Dashboard stats унших алдаа');
   }
 }

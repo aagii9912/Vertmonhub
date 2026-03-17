@@ -8,6 +8,8 @@ import { getAdminUser } from '@/lib/admin/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { getUserId } from '@/lib/auth/supabase-auth';
 import { logger } from '@/lib/utils/logger';
+import { safeErrorResponse } from '@/lib/utils/safe-error';
+import { AdminUpdateShopSchema, validateBody } from '@/lib/validations/schemas';
 
 // GET - List all shops with subscription info
 export async function GET(request: NextRequest) {
@@ -90,12 +92,8 @@ export async function GET(request: NextRequest) {
                 pages: Math.ceil((count || 0) / limit)
             }
         });
-    } catch (error: any) {
-        console.error('Get shops error:', error);
-        return NextResponse.json(
-            { error: error.message || 'Failed to fetch shops' },
-            { status: 500 }
-        );
+    } catch (error) {
+        return safeErrorResponse(error, 'Shop жагсаалт унших үед алдаа гарлаа');
     }
 }
 
@@ -109,14 +107,11 @@ export async function PATCH(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { id, is_active, plan_id } = body;
 
-        if (!id) {
-            return NextResponse.json(
-                { error: 'Shop ID is required' },
-                { status: 400 }
-            );
-        }
+        // Validate input
+        const validation = validateBody(AdminUpdateShopSchema, body);
+        if (!validation.success) return validation.response;
+        const { id, is_active, plan_id } = validation.data;
 
         const supabase = supabaseAdmin();
 
@@ -170,11 +165,7 @@ export async function PATCH(request: NextRequest) {
         if (error) throw error;
 
         return NextResponse.json({ shop, message: 'Shop updated successfully' });
-    } catch (error: any) {
-        console.error('Update shop error:', error);
-        return NextResponse.json(
-            { error: error.message || 'Failed to update shop' },
-            { status: 500 }
-        );
+    } catch (error) {
+        return safeErrorResponse(error, 'Shop шинэчлэх үед алдаа гарлаа');
     }
 }

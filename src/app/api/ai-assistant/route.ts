@@ -3,6 +3,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { handleDataAssistantQuery } from '@/lib/ai/data-assistant';
 import { supabaseAdmin } from '@/lib/supabase';
+import { safeErrorResponse } from '@/lib/utils/safe-error';
 
 export const maxDuration = 60; // Set to 60 seconds max
 
@@ -83,11 +84,7 @@ export async function POST(req: Request) {
             chartConfig: response.chartConfig
         });
 
-    } catch (error: any) {
-        console.error('Error in AI Data Assistant API:', error);
-        return NextResponse.json(
-            { error: error.message || 'Internal server error' },
-            { status: 500 }
-        );
+    } catch (error) {
+        return safeErrorResponse(error, 'AI түгээх үед алдаа гарлаа');
     }
 }

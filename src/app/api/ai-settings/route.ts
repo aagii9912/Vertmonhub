@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getClerkUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
+import { safeErrorResponse } from '@/lib/utils/safe-error';
 
 // GET - Fetch all AI settings (FAQs, Quick Replies, Slogans, Stats)
 export async function GET(request: NextRequest) {
@@ -106,9 +107,8 @@ export async function GET(request: NextRequest) {
         }
 
         return NextResponse.json(result);
-    } catch (error: any) {
-        console.error('AI Settings GET error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    } catch (error) {
+        return safeErrorResponse(error, 'AI тохиргоо унших үед алдаа гарлаа');
     }
 }
 
@@ -176,9 +176,8 @@ export async function POST(request: NextRequest) {
         if (error) throw error;
 
         return NextResponse.json({ success: true, data: created });
-    } catch (error: any) {
-        console.error('AI Settings POST error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    } catch (error) {
+        return safeErrorResponse(error, 'AI тохиргоо нэмэх үед алдаа гарлаа');
     }
 }
 
@@ -230,9 +229,8 @@ export async function PATCH(request: NextRequest) {
         if (error) throw error;
 
         return NextResponse.json({ success: true, data: updated });
-    } catch (error: any) {
-        console.error('AI Settings PATCH error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    } catch (error) {
+        return safeErrorResponse(error, 'AI тохиргоо шинэчлэх үед алдаа гарлаа');
     }
 }
 
@@ -279,8 +277,7 @@ export async function DELETE(request: NextRequest) {
         if (error) throw error;
 
         return NextResponse.json({ success: true });
-    } catch (error: any) {
-        console.error('AI Settings DELETE error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    } catch (error) {
+        return safeErrorResponse(error, 'AI тохиргоо устгах үед алдаа гарлаа');
     }
 }

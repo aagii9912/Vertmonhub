@@ -1,13 +1,9 @@
 import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase';
+import { safeErrorResponse } from '@/lib/utils/safe-error';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-
-const supabaseAdmin = createClient<any>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
 
 export async function POST(req: Request) {
     try {
@@ -17,8 +13,10 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Shop ID is required' }, { status: 400 });
         }
 
+        const supabase = supabaseAdmin();
+
         // Fetch recent chat history
-        const { data: recentChats, error } = await supabaseAdmin
+        const { data: recentChats, error } = await supabase
             .from('chat_history')
             .select('role, content')
             .eq('shop_id', shopId)
@@ -78,7 +76,6 @@ ${userMessages}
         return NextResponse.json(analysisResult);
 
     } catch (error) {
-        console.error('API Error in analyze-messages:', error);
-        return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+        return safeErrorResponse(error, 'Message analyze алдаа');
     }
 }

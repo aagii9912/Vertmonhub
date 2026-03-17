@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, getClerkUser } from '@/lib/auth/supabase-auth';
+import { safeErrorResponse } from '@/lib/utils/safe-error';
 import * as XLSX from 'xlsx';
 
 // ============================================
@@ -104,9 +105,8 @@ export async function POST(request: NextRequest) {
         }
 
         return NextResponse.json(result, { status: result.success ? 200 : 400 });
-    } catch (error: any) {
-        console.error('Import error:', error);
-        return NextResponse.json({ error: error.message || 'Import алдаа' }, { status: 500 });
+    } catch (error) {
+        return safeErrorResponse(error, 'Import алдаа');
     }
 }
 
@@ -134,6 +134,63 @@ function getNum(row: Record<string, any>, ...keys: string[]): number | null {
     if (!val) return null;
     const num = parseFloat(val.replace(/[,₮%]/g, ''));
     return isNaN(num) ? null : num;
+}
+
+/**
+ * Batch upsert to ai_knowledge_base
+ * Replaces sequential select-then-insert/update with batch operations.
+ * Reduces DB calls from O(n*2) → O(3).
+ */
+async function batchUpsertKnowledge(
+    supabase: any,
+    entries: Array<{ shop_id: string; category: string; key: string; value: string; description?: string }>,
+    shopId: string,
+    category: string
+): Promise<{ imported: number; updated: number }> {
+    if (entries.length === 0) return { imported: 0, updated: 0 };
+
+    // 1. Fetch all existing records for this shop+category in ONE query
+    const { data: existingRecords } = await supabase
+        .from('ai_knowledge_base')
+        .select('id, key')
+        .eq('shop_id', shopId)
+        .eq('category', category);
+
+    const existingMap = new Map<string, string>();
+    if (existingRecords) {
+        for (const rec of existingRecords) {
+            existingMap.set(rec.key, rec.id);
+        }
+    }
+
+    // 2. Split into inserts vs updates
+    const toInsert: typeof entries = [];
+    const toUpdate: Array<{ id: string; value: string; description?: string }> = [];
+
+    for (const entry of entries) {
+        const existingId = existingMap.get(entry.key);
+        if (existingId) {
+            toUpdate.push({ id: existingId, value: entry.value, description: entry.description });
+        } else {
+            toInsert.push(entry);
+        }
+    }
+
+    // 3. Batch insert new records
+    if (toInsert.length > 0) {
+        await supabase.from('ai_knowledge_base').insert(toInsert);
+    }
+
+    // 4. Batch update existing records (in parallel)
+    if (toUpdate.length > 0) {
+        await Promise.all(toUpdate.map(u =>
+            supabase.from('ai_knowledge_base')
+                .update({ value: u.value, description: u.description })
+                .eq('id', u.id)
+        ));
+    }
+
+    return { imported: toInsert.length, updated: toUpdate.length };
 }
 
 function mapPropertyType(input: string): string {
@@ -311,26 +368,7 @@ async function importCompany(supabase: any, buffer: Buffer, shopId: string): Pro
 
     if (entries.length === 0) return { success: false, message: 'Компанийн мэдээлэл олдсонгүй' };
 
-    // Upsert: update if exists, insert if not
-    let imported = 0;
-    let updated = 0;
-    for (const entry of entries) {
-        const { data: existing } = await supabase
-            .from('ai_knowledge_base')
-            .select('id')
-            .eq('shop_id', shopId)
-            .eq('category', 'company')
-            .eq('key', entry.key)
-            .single();
-
-        if (existing) {
-            await supabase.from('ai_knowledge_base').update({ value: entry.value, description: entry.description }).eq('id', existing.id);
-            updated++;
-        } else {
-            await supabase.from('ai_knowledge_base').insert(entry);
-            imported++;
-        }
-    }
+    const { imported, updated } = await batchUpsertKnowledge(supabase, entries, shopId, 'company');
 
     return {
         success: true,
@@ -388,25 +426,7 @@ async function importProject(supabase: any, buffer: Buffer, shopId: string): Pro
 
     if (entries.length === 0) return { success: false, message: 'Төслийн мэдээлэл олдсонгүй', errors };
 
-    let imported = 0;
-    let updated = 0;
-    for (const entry of entries) {
-        const { data: existing } = await supabase
-            .from('ai_knowledge_base')
-            .select('id')
-            .eq('shop_id', shopId)
-            .eq('category', 'projects')
-            .eq('key', entry.key)
-            .single();
-
-        if (existing) {
-            await supabase.from('ai_knowledge_base').update({ value: entry.value }).eq('id', existing.id);
-            updated++;
-        } else {
-            await supabase.from('ai_knowledge_base').insert(entry);
-            imported++;
-        }
-    }
+    const { imported, updated } = await batchUpsertKnowledge(supabase, entries, shopId, 'projects');
 
     return {
         success: true,
@@ -454,25 +474,7 @@ async function importPaymentPolicy(supabase: any, buffer: Buffer, shopId: string
 
     if (entries.length === 0) return { success: false, message: 'Төлбөрийн мэдээлэл олдсонгүй' };
 
-    let imported = 0;
-    let updated = 0;
-    for (const entry of entries) {
-        const { data: existing } = await supabase
-            .from('ai_knowledge_base')
-            .select('id')
-            .eq('shop_id', shopId)
-            .eq('category', 'payment')
-            .eq('key', entry.key)
-            .single();
-
-        if (existing) {
-            await supabase.from('ai_knowledge_base').update({ value: entry.value }).eq('id', existing.id);
-            updated++;
-        } else {
-            await supabase.from('ai_knowledge_base').insert(entry);
-            imported++;
-        }
-    }
+    const { imported, updated } = await batchUpsertKnowledge(supabase, entries, shopId, 'payment');
 
     return {
         success: true,
@@ -555,33 +557,15 @@ async function importAmenities(supabase: any, buffer: Buffer, shopId: string): P
         }
     }
 
-    let imported = 0;
-    let updated = 0;
-    for (const [project, amenities] of Object.entries(amenitiesByProject)) {
-        const entry = {
-            shop_id: shopId,
-            category: 'projects',
-            key: `amenities_${project.toLowerCase().replace(/\s+/g, '_')}`,
-            value: JSON.stringify(amenities),
-            description: `${project} — Тохилог/Онцлог`,
-        };
+    const entries = Object.entries(amenitiesByProject).map(([project, amenities]) => ({
+        shop_id: shopId,
+        category: 'projects',
+        key: `amenities_${project.toLowerCase().replace(/\s+/g, '_')}`,
+        value: JSON.stringify(amenities),
+        description: `${project} — Тохилог/Онцлог`,
+    }));
 
-        const { data: existing } = await supabase
-            .from('ai_knowledge_base')
-            .select('id')
-            .eq('shop_id', shopId)
-            .eq('category', 'projects')
-            .eq('key', entry.key)
-            .single();
-
-        if (existing) {
-            await supabase.from('ai_knowledge_base').update({ value: entry.value }).eq('id', existing.id);
-            updated++;
-        } else {
-            await supabase.from('ai_knowledge_base').insert(entry);
-            imported++;
-        }
-    }
+    const { imported, updated } = await batchUpsertKnowledge(supabase, entries, shopId, 'projects');
 
     return {
         success: true,
@@ -623,25 +607,7 @@ async function importAIExtra(supabase: any, buffer: Buffer, shopId: string): Pro
 
     if (entries.length === 0) return { success: false, message: 'AI мэдээлэл олдсонгүй', errors };
 
-    let imported = 0;
-    let updated = 0;
-    for (const entry of entries) {
-        const { data: existing } = await supabase
-            .from('ai_knowledge_base')
-            .select('id')
-            .eq('shop_id', shopId)
-            .eq('category', 'ai_extra')
-            .eq('key', entry.key)
-            .single();
-
-        if (existing) {
-            await supabase.from('ai_knowledge_base').update({ value: entry.value }).eq('id', existing.id);
-            updated++;
-        } else {
-            await supabase.from('ai_knowledge_base').insert(entry);
-            imported++;
-        }
-    }
+    const { imported, updated } = await batchUpsertKnowledge(supabase, entries, shopId, 'ai_extra');
 
     return {
         success: true,

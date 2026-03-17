@@ -1,11 +1,8 @@
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/auth';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { supabaseAdmin } from '@/lib/supabase';
+import { safeErrorResponse } from '@/lib/utils/safe-error';
+import { CreateRoleSchema, validateBody } from '@/lib/validations/schemas';
 
 /**
  * GET /api/admin/roles
@@ -18,6 +15,7 @@ export async function GET() {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        const supabase = supabaseAdmin();
         const { data: roles, error } = await supabase
             .from('roles')
             .select('*, role_permissions(id, module)')
@@ -25,12 +23,12 @@ export async function GET() {
             .order('created_at', { ascending: true });
 
         if (error) {
-            return NextResponse.json({ error: error.message }, { status: 500 });
+            return safeErrorResponse(error, 'Role жагсаалт уншихад алдаа гарлаа');
         }
 
         return NextResponse.json({ roles: roles || [] });
-    } catch (error: any) {
-        return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
+    } catch (error) {
+        return safeErrorResponse(error, 'Role жагсаалт уншихад алдаа гарлаа');
     }
 }
 
@@ -46,18 +44,14 @@ export async function POST(request: Request) {
         }
 
         const body = await request.json();
-        const { name, display_name, display_name_mn, description, can_write, can_delete, can_access_admin, modules } = body;
 
-        if (!name || !display_name || !display_name_mn) {
-            return NextResponse.json({ error: 'name, display_name, display_name_mn required' }, { status: 400 });
-        }
-
-        // Validate name format (lowercase, underscores)
-        if (!/^[a-z][a-z0-9_]*$/.test(name)) {
-            return NextResponse.json({ error: 'Name must be lowercase with underscores only' }, { status: 400 });
-        }
+        // Validate input
+        const validation = validateBody(CreateRoleSchema, body);
+        if (!validation.success) return validation.response;
+        const { name, display_name, display_name_mn, description, can_write, can_delete, can_access_admin, modules } = validation.data;
 
         // Create role
+        const supabase = supabaseAdmin();
         const { data: role, error: roleError } = await supabase
             .from('roles')
             .insert({
@@ -77,7 +71,7 @@ export async function POST(request: Request) {
             if (roleError.code === '23505') {
                 return NextResponse.json({ error: 'Role name already exists' }, { status: 409 });
             }
-            return NextResponse.json({ error: roleError.message }, { status: 500 });
+            return safeErrorResponse(roleError, 'Role үүсгэхэд алдаа гарлаа');
         }
 
         // Add module permissions if provided
@@ -94,7 +88,7 @@ export async function POST(request: Request) {
             if (permError) {
                 // Rollback role creation
                 await supabase.from('roles').delete().eq('id', role.id);
-                return NextResponse.json({ error: permError.message }, { status: 500 });
+                return safeErrorResponse(permError, 'Permission нэмэхэд алдаа гарлаа');
             }
         }
 
@@ -106,7 +100,7 @@ export async function POST(request: Request) {
             .single();
 
         return NextResponse.json({ role: freshRole }, { status: 201 });
-    } catch (error: any) {
-        return NextResponse.json({ error: error.message || 'Server error' }, { status: 500 });
+    } catch (error) {
+        return safeErrorResponse(error, 'Role үүсгэхэд алдаа гарлаа');
     }
 }

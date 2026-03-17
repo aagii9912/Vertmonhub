@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getClerkUser, supabaseAdmin } from '@/lib/auth/supabase-auth';
+import { safeErrorResponse } from '@/lib/utils/safe-error';
+import { CreateShopSchema, UpdateShopSchema, validateBody } from '@/lib/validations/schemas';
 
 // GET - Get user's shop
 export async function GET() {
@@ -23,9 +25,8 @@ export async function GET() {
     }
 
     return NextResponse.json({ shop });
-  } catch (error: any) {
-    console.error('Get shop error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    return safeErrorResponse(error, 'Shop мэдээлэл унших үед алдаа гарлаа');
   }
 }
 
@@ -39,11 +40,11 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { name, owner_name, phone } = body;
 
-    if (!name) {
-      return NextResponse.json({ error: 'Shop name required' }, { status: 400 });
-    }
+    // Validate input
+    const validation = validateBody(CreateShopSchema, body);
+    if (!validation.success) return validation.response;
+    const { name, owner_name, phone } = validation.data;
 
     const supabase = supabaseAdmin();
 
@@ -86,9 +87,8 @@ export async function POST(request: NextRequest) {
     if (error) throw error;
 
     return NextResponse.json({ shop });
-  } catch (error: any) {
-    console.error('Create shop error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    return safeErrorResponse(error, 'Shop үүсгэх/шинэчлэх үед алдаа гарлаа');
   }
 }
 
@@ -129,8 +129,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     return NextResponse.json({ shop: updatedShop });
-  } catch (error: any) {
-    console.error('Update shop error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  } catch (error) {
+    return safeErrorResponse(error, 'Shop шинэчлэх үед алдаа гарлаа');
   }
 }

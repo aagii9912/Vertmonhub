@@ -6,6 +6,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAdminUser } from '@/lib/admin/auth';
 import { supabaseAdmin } from '@/lib/supabase';
+import { safeErrorResponse } from '@/lib/utils/safe-error';
+import { CreateInvoiceSchema, UpdateInvoiceSchema, validateBody } from '@/lib/validations/schemas';
 
 // GET - List all invoices
 export async function GET(request: NextRequest) {
@@ -65,9 +67,8 @@ export async function GET(request: NextRequest) {
             limit,
             totalPages: Math.ceil((count || 0) / limit)
         });
-    } catch (error: any) {
-        console.error('Invoices fetch error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    } catch (error) {
+        return safeErrorResponse(error, 'Нэхэмжлэл унших үед алдаа гарлаа');
     }
 }
 
@@ -80,11 +81,11 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { shop_id, subscription_id, amount, due_date, description } = body;
 
-        if (!shop_id || !amount) {
-            return NextResponse.json({ error: 'shop_id and amount are required' }, { status: 400 });
-        }
+        // Validate input
+        const validation = validateBody(CreateInvoiceSchema, body);
+        if (!validation.success) return validation.response;
+        const { shop_id, subscription_id, amount, due_date, description } = validation.data;
 
         const supabase = supabaseAdmin();
 
@@ -108,9 +109,8 @@ export async function POST(request: NextRequest) {
         if (error) throw error;
 
         return NextResponse.json({ invoice: data });
-    } catch (error: any) {
-        console.error('Invoice create error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    } catch (error) {
+        return safeErrorResponse(error, 'Нэхэмжлэл үүсгэх үед алдаа гарлаа');
     }
 }
 
@@ -123,11 +123,11 @@ export async function PUT(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { invoice_id, status, paid_at, notes } = body;
 
-        if (!invoice_id) {
-            return NextResponse.json({ error: 'invoice_id is required' }, { status: 400 });
-        }
+        // Validate input
+        const validation = validateBody(UpdateInvoiceSchema, body);
+        if (!validation.success) return validation.response;
+        const { invoice_id, status, paid_at, notes } = validation.data;
 
         const supabase = supabaseAdmin();
 
@@ -154,8 +154,7 @@ export async function PUT(request: NextRequest) {
         if (error) throw error;
 
         return NextResponse.json({ invoice: data });
-    } catch (error: any) {
-        console.error('Invoice update error:', error);
-        return NextResponse.json({ error: error.message }, { status: 500 });
+    } catch (error) {
+        return safeErrorResponse(error, 'Нэхэмжлэл шинэчлэх үед алдаа гарлаа');
     }
 }
