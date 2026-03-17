@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import {
     LayoutDashboard, Users, Upload, Shield,
-    FileText, Settings, LogOut, ChevronRight, Menu, X
+    Settings, LogOut, ChevronRight, Menu, X
 } from 'lucide-react';
 
 const isDev = process.env.NODE_ENV === 'development';
@@ -16,13 +16,11 @@ interface AdminLayoutProps {
 }
 
 const navItems = [
-    { href: '/admin', label: 'Dashboard', icon: LayoutDashboard },
-    { href: '/admin/shops', label: 'Shops', icon: Users },
-    { href: '/admin/users', label: 'Хэрэглэгчид', icon: Shield },
+    { href: '/admin', label: 'Хянах самбар', icon: LayoutDashboard },
+    { href: '/admin/users', label: 'Хэрэглэгчид', icon: Users },
     { href: '/admin/roles', label: 'Дүрүүд', icon: Shield },
-    { href: '/admin/import', label: 'Import Data', icon: Upload },
-    { href: '/admin/invoices', label: 'Invoices', icon: FileText },
-    { href: '/admin/settings', label: 'Settings', icon: Settings },
+    { href: '/admin/import', label: 'Дата импорт', icon: Upload },
+    { href: '/admin/settings', label: 'Тохиргоо', icon: Settings },
 ];
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
