@@ -11,7 +11,7 @@ const protectedRoutes = ['/dashboard', '/setup', '/admin'];
 const publicRoutes = [
     '/',
     '/auth/login',
-    '/auth/register',
+
     '/auth/callback',
     '/admin/login',
     '/api/webhook',
@@ -33,6 +33,11 @@ function matchesRoute(pathname: string, routes: string[]): boolean {
 
 export async function middleware(request: NextRequest) {
     const { pathname } = request.nextUrl;
+
+    // Redirect old register page to login
+    if (pathname === '/auth/register') {
+        return NextResponse.redirect(new URL('/auth/login', request.url));
+    }
 
     // Log API requests
     if (pathname.startsWith('/api/')) {

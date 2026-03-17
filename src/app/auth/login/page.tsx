@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
-import Link from 'next/link';
+
 
 export default function LoginPage() {
     const [email, setEmail] = useState('');
@@ -177,11 +177,8 @@ export default function LoginPage() {
                     </button>
                 </div>
 
-                <p className="text-center text-zinc-400 text-sm">
-                    Бүртгэл байхгүй юу?{' '}
-                    <Link href="/auth/register" className="text-amber-500 hover:text-amber-400 font-medium">
-                        Бүртгүүлэх
-                    </Link>
+                <p className="text-center text-zinc-500 text-xs">
+                    Нэвтрэх эрхгүй бол админтай холбогдоно уу
                 </p>
             </div>
         </div>
