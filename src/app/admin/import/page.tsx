@@ -328,23 +328,8 @@ export default function AdminImportPage() {
                     </div>
                 </div>
 
-                {/* Shop Selector */}
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Компани</label>
-                    {shopsLoading ? (
-                        <div className="h-10 bg-gray-100 rounded-lg animate-pulse" />
-                    ) : (
-                        <select
-                            value={shopId}
-                            onChange={(e) => setShopId(e.target.value)}
-                            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
-                        >
-                            {shops.map(shop => (
-                                <option key={shop.id} value={shop.id}>{shop.name}</option>
-                            ))}
-                        </select>
-                    )}
-                </div>
+
+
 
                 {/* Template Download */}
                 <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-100">
