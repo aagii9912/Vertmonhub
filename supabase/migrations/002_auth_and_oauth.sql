@@ -30,7 +30,7 @@ CREATE INDEX IF NOT EXISTS idx_shops_active ON shops(is_active) WHERE is_active 
 -- FACEBOOK OAUTH TOKENS
 -- ============================================
 CREATE TABLE IF NOT EXISTS facebook_tokens (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES user_profiles(id) ON DELETE CASCADE,
   facebook_user_id TEXT NOT NULL,
   access_token TEXT NOT NULL,
@@ -45,7 +45,7 @@ CREATE INDEX IF NOT EXISTS idx_fb_tokens_user ON facebook_tokens(user_id);
 -- USER PAGES (Facebook pages user has access to)
 -- ============================================
 CREATE TABLE IF NOT EXISTS user_facebook_pages (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES user_profiles(id) ON DELETE CASCADE,
   page_id TEXT NOT NULL,
   page_name TEXT NOT NULL,

@@ -2,7 +2,7 @@
 -- Run this in Supabase SQL Editor
 
 CREATE TABLE IF NOT EXISTS push_subscriptions (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   shop_id UUID REFERENCES shops(id) ON DELETE CASCADE,
   user_id UUID, -- Optional: for user-specific subscriptions
   endpoint TEXT NOT NULL UNIQUE,

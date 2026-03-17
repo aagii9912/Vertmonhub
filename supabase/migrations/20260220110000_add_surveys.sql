@@ -2,7 +2,7 @@
 -- Description: Adds surveys table to store survey metadata and questions
 
 CREATE TABLE IF NOT EXISTS public.surveys (
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     description TEXT,
     questions JSONB NOT NULL DEFAULT '[]', -- Array of question objects { id, type, text, options, required }
@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS public.surveys (
 
 -- Survey Responses table
 CREATE TABLE IF NOT EXISTS public.survey_responses (
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     survey_id UUID REFERENCES public.surveys(id) ON DELETE CASCADE,
     customer_id UUID REFERENCES public.customers(id) ON DELETE SET NULL, -- Optional if anonymous
     answers JSONB NOT NULL DEFAULT '{}', -- Key-value pairs of question_id: answer

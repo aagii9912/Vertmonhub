@@ -20,7 +20,7 @@ END $$;
 -- PAYMENTS TABLE
 -- ============================================
 CREATE TABLE IF NOT EXISTS payments (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_id UUID REFERENCES orders(id) ON DELETE CASCADE,
     shop_id UUID REFERENCES shops(id) ON DELETE CASCADE,
     

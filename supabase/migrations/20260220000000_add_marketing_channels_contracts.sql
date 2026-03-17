@@ -1,9 +1,18 @@
 -- Migration: Phase 8 - Marketing Channels & Contracts
 -- Creates tables to manage marketing sources (channels) and their associated contracts/budgets
 
+-- Ensure trigger function exists
+CREATE OR REPLACE FUNCTION public.update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 -- 1. Marketing Channels table
 CREATE TABLE public.marketing_channels (
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     name VARCHAR(255) NOT NULL, -- e.g., 'Facebook Ads', 'Google Ads', 'Influencer A'
     type VARCHAR(100) NOT NULL, -- e.g., 'social', 'search', 'affiliate', 'direct'
     status VARCHAR(50) DEFAULT 'active' CHECK (status IN ('active', 'paused', 'archived')),
@@ -14,7 +23,7 @@ CREATE TABLE public.marketing_channels (
 
 -- 2. Channel Contracts & Setup table
 CREATE TABLE public.channel_contracts (
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     channel_id UUID REFERENCES public.marketing_channels(id) ON DELETE CASCADE,
     start_date DATE NOT NULL,
     end_date DATE,
