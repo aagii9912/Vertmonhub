@@ -227,23 +227,31 @@ interface ImportResult {
 export default function AdminImportPage() {
     const [selected, setSelected] = useState<ImportCategory>(IMPORT_CATEGORIES[0]);
     const [file, setFile] = useState<File | null>(null);
-    const [shopId, setShopId] = useState('');
-    const [shops, setShops] = useState<{ id: string; name: string }[]>([]);
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<ImportResult | null>(null);
-    const [shopsLoading, setShopsLoading] = useState(true);
     const fileRef = useRef<HTMLInputElement>(null);
 
-    // Fetch shops on mount
+    // Project state
+    const [projects, setProjects] = useState<{ id: string; name: string; shop_id: string }[]>([]);
+    const [selectedProject, setSelectedProject] = useState<string>('');
+    const [projectsLoading, setProjectsLoading] = useState(true);
+    const [showNewProject, setShowNewProject] = useState(false);
+    const [newProjectName, setNewProjectName] = useState('');
+    const [newProjectLocation, setNewProjectLocation] = useState('');
+    const [creatingProject, setCreatingProject] = useState(false);
+
+    // Fetch projects on mount
     useState(() => {
-        fetch('/api/admin/dashboard')
+        fetch('/api/admin/projects')
             .then(res => res.json())
             .then(data => {
-                if (data.shops) setShops(data.shops);
-                if (data.shops?.length > 0) setShopId(data.shops[0].id);
-                setShopsLoading(false);
+                if (data.projects) {
+                    setProjects(data.projects);
+                    if (data.projects.length > 0) setSelectedProject(data.projects[0].id);
+                }
+                setProjectsLoading(false);
             })
-            .catch(() => setShopsLoading(false));
+            .catch(() => setProjectsLoading(false));
     });
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -252,14 +260,17 @@ export default function AdminImportPage() {
     };
 
     const handleImport = async () => {
-        if (!file || !shopId) return;
+        const proj = projects.find(p => p.id === selectedProject);
+        if (!file || !proj) return;
         setLoading(true);
         setResult(null);
 
         try {
             const formData = new FormData();
             formData.append('file', file);
-            formData.append('shopId', shopId);
+            formData.append('shopId', proj.shop_id);
+            formData.append('projectId', proj.id);
+            formData.append('projectName', proj.name);
             formData.append('type', selected.type);
 
             const res = await fetch('/api/admin/import', { method: 'POST', body: formData });
@@ -269,6 +280,33 @@ export default function AdminImportPage() {
             setResult({ success: false, imported: 0, message: error.message });
         } finally {
             setLoading(false);
+        }
+    };
+
+    const createProject = async () => {
+        if (!newProjectName.trim()) return;
+        setCreatingProject(true);
+        try {
+            const res = await fetch('/api/admin/projects', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: newProjectName.trim(),
+                    location: newProjectLocation.trim() || null,
+                }),
+            });
+            const data = await res.json();
+            if (res.ok && data.project) {
+                setProjects(prev => [data.project, ...prev]);
+                setSelectedProject(data.project.id);
+                setNewProjectName('');
+                setNewProjectLocation('');
+                setShowNewProject(false);
+            }
+        } catch (e) {
+            console.error('Create project error:', e);
+        } finally {
+            setCreatingProject(false);
         }
     };
 
@@ -328,8 +366,72 @@ export default function AdminImportPage() {
                     </div>
                 </div>
 
+                {/* Project Selector */}
+                <div>
+                    <div className="flex items-center justify-between mb-2">
+                        <label className="block text-sm font-medium text-gray-700">Төсөл сонгох</label>
+                        <button
+                            onClick={() => setShowNewProject(!showNewProject)}
+                            className="text-xs text-violet-600 hover:text-violet-700 font-medium"
+                        >
+                            {showNewProject ? '✕ Хаах' : '+ Шинэ төсөл нэмэх'}
+                        </button>
+                    </div>
 
+                    {showNewProject && (
+                        <div className="mb-3 p-4 bg-violet-50 border border-violet-200 rounded-lg space-y-3">
+                            <input
+                                type="text"
+                                placeholder="Төслийн нэр *"
+                                value={newProjectName}
+                                onChange={(e) => setNewProjectName(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-transparent text-sm"
+                            />
+                            <input
+                                type="text"
+                                placeholder="Байршил (заавал биш)"
+                                value={newProjectLocation}
+                                onChange={(e) => setNewProjectLocation(e.target.value)}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-transparent text-sm"
+                            />
+                            <button
+                                onClick={createProject}
+                                disabled={!newProjectName.trim() || creatingProject}
+                                className="w-full py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2"
+                            >
+                                {creatingProject ? (
+                                    <><Loader2 className="w-4 h-4 animate-spin" /> Үүсгэж байна...</>
+                                ) : (
+                                    '+ Төсөл үүсгэх'
+                                )}
+                            </button>
+                        </div>
+                    )}
 
+                    {projectsLoading ? (
+                        <div className="h-10 bg-gray-100 rounded-lg animate-pulse" />
+                    ) : projects.length === 0 ? (
+                        <div className="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                            <p className="text-sm text-gray-500">Төсөл байхгүй байна</p>
+                            <button
+                                onClick={() => setShowNewProject(true)}
+                                className="text-sm text-violet-600 font-medium mt-1 hover:underline"
+                            >
+                                + Эхний төсөл нэмэх
+                            </button>
+                        </div>
+                    ) : (
+                        <select
+                            value={selectedProject}
+                            onChange={(e) => setSelectedProject(e.target.value)}
+                            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
+                        >
+                            {projects.map(p => (
+                                <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                        </select>
+                    )}
+                </div>
 
                 {/* Template Download */}
                 <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-100">
@@ -396,7 +498,7 @@ export default function AdminImportPage() {
                 {/* Import Button */}
                 <button
                     onClick={handleImport}
-                    disabled={!file || !shopId || loading}
+                    disabled={!file || !selectedProject || loading}
                     className="w-full py-3 bg-violet-600 text-white font-semibold rounded-lg hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                 >
                     {loading ? (
