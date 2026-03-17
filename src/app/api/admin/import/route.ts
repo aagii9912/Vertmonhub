@@ -15,7 +15,9 @@ type ImportType =
     | 'payment_policy'
     | 'loan_info'
     | 'amenities'
-    | 'ai_extra';
+    | 'ai_extra'
+    | 'leads'
+    | 'contracts';
 
 interface ImportResult {
     success: boolean;
@@ -99,6 +101,12 @@ export async function POST(request: NextRequest) {
                 break;
             case 'ai_extra':
                 result = await importAIExtra(supabase, buffer, shopId);
+                break;
+            case 'leads':
+                result = await importLeads(supabase, buffer, shopId);
+                break;
+            case 'contracts':
+                result = await importContracts(supabase, buffer, shopId);
                 break;
             default:
                 return NextResponse.json({ error: 'Буруу import төрөл' }, { status: 400 });
@@ -615,5 +623,139 @@ async function importAIExtra(supabase: any, buffer: Buffer, shopId: string): Pro
         updated,
         errors: errors.length > 0 ? errors : undefined,
         message: `AI мэдээлэл: ${imported} шинэ, ${updated} шинэчлэгдсэн`,
+    };
+}
+
+// ============================================
+// 9. LEADS IMPORT
+// ============================================
+
+function mapLeadStatus(input: string): string {
+    const lower = String(input).toLowerCase().trim();
+    const map: Record<string, string> = {
+        'new': 'new', 'шинэ': 'new',
+        'contacted': 'contacted', 'холбогдсон': 'contacted',
+        'qualified': 'qualified', 'шалгарсан': 'qualified',
+        'negotiation': 'negotiation', 'хэлэлцэж буй': 'negotiation', 'хэлэлцээр': 'negotiation',
+        'won': 'won', 'амжилттай': 'won', 'гэрээ хийсэн': 'won',
+        'lost': 'lost', 'алдсан': 'lost', 'буцсан': 'lost',
+    };
+    return map[lower] || 'new';
+}
+
+async function importLeads(supabase: any, buffer: Buffer, shopId: string): Promise<ImportResult> {
+    const rows = parseExcel(buffer);
+    if (rows.length === 0) return { success: false, message: 'Файл хоосон байна' };
+
+    const leads = [];
+    const errors: string[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const rowNum = i + 2;
+
+        const name = getVal(row, 'Нэр', 'name', 'Name', 'Өчигдрийн нэр');
+        const phone = getVal(row, 'Утас', 'phone', 'Phone', 'Утасны дугаар');
+
+        if (!name) { errors.push(`Мөр ${rowNum}: Нэр хоосон`); continue; }
+        if (!phone) { errors.push(`Мөр ${rowNum}: Утас хоосон (${name})`); continue; }
+
+        const status = mapLeadStatus(getVal(row, 'Статус', 'status', 'Status') || 'new');
+
+        leads.push({
+            shop_id: shopId,
+            name,
+            phone,
+            email: getVal(row, 'Имэйл', 'email', 'Email') || null,
+            interested_in: getVal(row, 'Сонирхож буй', 'interested_in', 'Interested In', 'Сонирхол') || null,
+            budget: getNum(row, 'Төсөв', 'budget', 'Budget'),
+            source: getVal(row, 'Эх сурвалж', 'source', 'Source') || null,
+            notes: getVal(row, 'Тэмдэглэл', 'notes', 'Notes', 'Нэмэлт') || null,
+            status,
+        });
+    }
+
+    if (leads.length === 0) {
+        return { success: false, message: 'Lead олдсонгүй', errors };
+    }
+
+    const { data, error } = await supabase.from('leads').insert(leads).select('id');
+    if (error) return { success: false, message: error.message, errors };
+
+    return {
+        success: true,
+        imported: data.length,
+        errors: errors.length > 0 ? errors : undefined,
+        message: `${data.length} lead амжилттай оруулсан${errors.length > 0 ? `, ${errors.length} алдаа` : ''}`,
+    };
+}
+
+// ============================================
+// 10. CONTRACTS IMPORT
+// ============================================
+
+function mapContractStatus(input: string): string {
+    const lower = String(input).toLowerCase().trim();
+    const map: Record<string, string> = {
+        'active': 'active', 'идэвхтэй': 'active', 'хүчинтэй': 'active',
+        'completed': 'completed', 'дууссан': 'completed', 'биелүүлсэн': 'completed',
+        'cancelled': 'cancelled', 'цуцалсан': 'cancelled',
+        'pending': 'pending', 'хүлээгдэж буй': 'pending',
+    };
+    return map[lower] || 'active';
+}
+
+async function importContracts(supabase: any, buffer: Buffer, shopId: string): Promise<ImportResult> {
+    const rows = parseExcel(buffer);
+    if (rows.length === 0) return { success: false, message: 'Файл хоосон байна' };
+
+    const contracts = [];
+    const errors: string[] = [];
+
+    for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const rowNum = i + 2;
+
+        const contractNumber = getVal(row, 'Гэрээний дугаар', 'contract_number', 'Contract Number', 'Дугаар');
+        const buyerName = getVal(row, 'Худалдан авагч', 'buyer_name', 'Buyer', 'Авагч');
+        const propertyName = getVal(row, 'Байрны нэр', 'property_name', 'Property', 'Байр');
+        const totalPrice = getNum(row, 'Нийт үнэ', 'total_price', 'Price', 'Үнэ');
+
+        if (!contractNumber) { errors.push(`Мөр ${rowNum}: Гэрээний дугаар хоосон`); continue; }
+        if (!buyerName) { errors.push(`Мөр ${rowNum}: Худалдан авагч хоосон (${contractNumber})`); continue; }
+        if (!propertyName) { errors.push(`Мөр ${rowNum}: Байрны нэр хоосон (${contractNumber})`); continue; }
+        if (!totalPrice) { errors.push(`Мөр ${rowNum}: Нийт үнэ буруу (${contractNumber})`); continue; }
+
+        const status = mapContractStatus(getVal(row, 'Статус', 'status', 'Status') || 'active');
+        const downPayment = getNum(row, 'Урьдчилгаа', 'down_payment', 'Down Payment');
+
+        contracts.push({
+            shop_id: shopId,
+            contract_number: contractNumber,
+            buyer_name: buyerName,
+            buyer_phone: getVal(row, 'Худалдан авагч утас', 'buyer_phone', 'Phone') || null,
+            buyer_email: getVal(row, 'Худалдан авагч имэйл', 'buyer_email', 'Email') || null,
+            property_name: propertyName,
+            total_price: totalPrice,
+            down_payment: downPayment,
+            remaining_balance: downPayment ? totalPrice - downPayment : totalPrice,
+            contract_date: getVal(row, 'Гэрээний огноо', 'contract_date', 'Date') || null,
+            status,
+            notes: getVal(row, 'Тэмдэглэл', 'notes', 'Notes') || null,
+        });
+    }
+
+    if (contracts.length === 0) {
+        return { success: false, message: 'Гэрээ олдсонгүй', errors };
+    }
+
+    const { data, error } = await supabase.from('property_contracts').insert(contracts).select('id');
+    if (error) return { success: false, message: error.message, errors };
+
+    return {
+        success: true,
+        imported: data.length,
+        errors: errors.length > 0 ? errors : undefined,
+        message: `${data.length} гэрээ амжилттай оруулсан${errors.length > 0 ? `, ${errors.length} алдаа` : ''}`,
     };
 }
