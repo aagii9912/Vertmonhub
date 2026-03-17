@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS projects (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    shop_id TEXT NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+    shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     location TEXT,
     district TEXT,
