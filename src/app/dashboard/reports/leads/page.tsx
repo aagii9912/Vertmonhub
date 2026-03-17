@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import {
@@ -14,7 +14,6 @@ import {
     ArrowUpRight,
     ArrowDownRight,
     Download,
-    RefreshCw,
     Calendar,
     DollarSign,
     PieChart,
@@ -22,80 +21,169 @@ import {
     Building2,
     Percent
 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 
-const KPI_CARDS = [
-    {
-        label: 'Нийт сэжим',
-        value: '156',
-        trend: '+12%',
-        trendLabel: 'өмнөх сараас',
-        trendUp: true,
-        icon: Users,
-        color: 'text-blue-600',
-        bgColor: 'bg-blue-100',
-    },
-    {
-        label: 'Амжилттай',
-        value: '42',
-        trend: '+5%',
-        trendLabel: 'өмнөх сараас',
-        trendUp: true,
-        icon: CheckCircle2,
-        color: 'text-emerald-600',
-        bgColor: 'bg-emerald-100',
-    },
-    {
-        label: 'Хөрвүүлэлт',
-        value: '26.9%',
-        trend: '-2.1%',
-        trendLabel: 'өмнөх сараас',
-        trendUp: false,
-        icon: Target,
-        color: 'text-purple-600',
-        bgColor: 'bg-purple-100',
-    },
-    {
-        label: 'Боловсруулалтанд',
-        value: '89',
-        trend: '+18%',
-        trendLabel: 'өмнөх сараас',
-        trendUp: true,
-        icon: Clock,
-        color: 'text-amber-600',
-        bgColor: 'bg-amber-100',
-    },
-];
+interface LeadStats {
+    total: number;
+    won: number;
+    inProgress: number;
+    conversionRate: number;
+}
 
-const MOCK_SOURCE_DATA = [
-    { source: 'Facebook', count: 65, percentage: 42, color: 'bg-blue-500' },
-    { source: 'Instagram', count: 42, percentage: 27, color: 'bg-pink-500' },
-    { source: 'Вэбсайт', count: 24, percentage: 15, color: 'bg-indigo-500' },
-    { source: 'Зөвлөмж', count: 15, percentage: 10, color: 'bg-emerald-500' },
-    { source: 'Бусад', count: 10, percentage: 6, color: 'bg-gray-500' },
-];
+interface SourceData {
+    source: string;
+    count: number;
+    percentage: number;
+    color: string;
+}
 
-const MOCK_LEAD_BY_PROJECT = [
-    { project: 'Mandala Garden', leads: 65, won: 18, value: 4500000000 },
-    { project: 'Mandala Tower', leads: 42, won: 12, value: 3800000000 },
-    { project: 'Sunny Village', leads: 38, won: 9, value: 2100000000 },
-];
+interface ProjectData {
+    project: string;
+    leads: number;
+    won: number;
+    value: number;
+}
 
-const MOCK_TOP_PERFORMERS = [
-    { name: 'Батбаяр М.', leads: 45, won: 15, value: 3200000000 },
-    { name: 'Оюунаа С.', leads: 38, won: 12, value: 2800000000 },
-    { name: 'Ганзориг Д.', leads: 31, won: 9, value: 2100000000 },
-];
+const sourceColors: Record<string, string> = {
+    messenger: 'bg-blue-500',
+    instagram: 'bg-pink-500',
+    website: 'bg-indigo-500',
+    referral: 'bg-emerald-500',
+    phone: 'bg-amber-500',
+    other: 'bg-gray-500',
+};
 
-export function LeadsReport() {
+const sourceLabels: Record<string, string> = {
+    messenger: 'Facebook',
+    instagram: 'Instagram',
+    website: 'Вэбсайт',
+    referral: 'Зөвлөмж',
+    phone: 'Утас',
+    other: 'Бусад',
+};
+
+export default function LeadsReport() {
+    const { shop } = useAuth();
     type Period = 'today' | 'week' | 'month' | 'year';
     const [period, setPeriod] = useState<Period>('month');
+    const [loading, setLoading] = useState(true);
+    const [stats, setStats] = useState<LeadStats>({ total: 0, won: 0, inProgress: 0, conversionRate: 0 });
+    const [sourceData, setSourceData] = useState<SourceData[]>([]);
+    const [projectData, setProjectData] = useState<ProjectData[]>([]);
+
+    useEffect(() => {
+        if (!shop?.id) return;
+
+        const fetchData = async () => {
+            setLoading(true);
+            try {
+                const { data: leads, error } = await supabase
+                    .from('leads')
+                    .select('*')
+                    .eq('shop_id', shop.id);
+
+                if (error) throw error;
+
+                if (!leads || leads.length === 0) {
+                    setLoading(false);
+                    return;
+                }
+
+                // Stats
+                const won = leads.filter(l => l.status === 'closed_won').length;
+                const inProgress = leads.filter(l =>
+                    ['contacted', 'viewing_scheduled', 'offered', 'negotiating'].includes(l.status)
+                ).length;
+
+                setStats({
+                    total: leads.length,
+                    won,
+                    inProgress,
+                    conversionRate: leads.length > 0 ? (won / leads.length) * 100 : 0,
+                });
+
+                // Source breakdown
+                const sourceCounts = new Map<string, number>();
+                for (const lead of leads) {
+                    const src = lead.source || 'other';
+                    sourceCounts.set(src, (sourceCounts.get(src) || 0) + 1);
+                }
+                const srcData: SourceData[] = Array.from(sourceCounts.entries())
+                    .map(([source, count]) => ({
+                        source: sourceLabels[source] || source,
+                        count,
+                        percentage: Math.round((count / leads.length) * 100),
+                        color: sourceColors[source] || 'bg-gray-500',
+                    }))
+                    .sort((a, b) => b.count - a.count);
+                setSourceData(srcData);
+
+                // Project breakdown
+                const projectMap = new Map<string, { leads: number; won: number; value: number }>();
+                for (const lead of leads) {
+                    const project = lead.preferred_type || 'Бусад';
+                    if (!projectMap.has(project)) {
+                        projectMap.set(project, { leads: 0, won: 0, value: 0 });
+                    }
+                    const d = projectMap.get(project)!;
+                    d.leads++;
+                    if (lead.status === 'closed_won') {
+                        d.won++;
+                        d.value += lead.budget_max || lead.budget_min || 0;
+                    }
+                }
+                setProjectData(
+                    Array.from(projectMap.entries())
+                        .map(([project, data]) => ({ project, ...data }))
+                        .sort((a, b) => b.leads - a.leads)
+                        .slice(0, 5)
+                );
+            } catch (error) {
+                console.error('Error fetching leads report:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchData();
+    }, [shop?.id, period]);
 
     const formatCurrency = (value: number) => {
-        if (value >= 1000000000) {
-            return `${(value / 1000000000).toFixed(1)} тэрбум ₮`;
-        }
-        return `${(value / 1000000).toLocaleString()} сая ₮`;
+        if (value >= 1000000000) return `${(value / 1000000000).toFixed(1)} тэрбум ₮`;
+        if (value >= 1000000) return `${(value / 1000000).toLocaleString()} сая ₮`;
+        return value.toLocaleString() + '₮';
     };
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <div className="flex items-center gap-3">
+                    <div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-gray-500">Тайлан татаж байна...</span>
+                </div>
+            </div>
+        );
+    }
+
+    if (stats.total === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
+                <Users className="w-16 h-16 text-gray-300 mb-4" />
+                <h2 className="text-xl font-semibold text-gray-700 mb-2">Мэдээлэл байхгүй</h2>
+                <p className="text-gray-500 max-w-md">
+                    Сэжмийн тайлан харахын тулд лийд мэдээлэл оруулна уу.
+                </p>
+            </div>
+        );
+    }
+
+    const kpiCards = [
+        { label: 'Нийт сэжим', value: String(stats.total), icon: Users, color: 'text-blue-600', bgColor: 'bg-blue-100' },
+        { label: 'Амжилттай', value: String(stats.won), icon: CheckCircle2, color: 'text-emerald-600', bgColor: 'bg-emerald-100' },
+        { label: 'Хөрвүүлэлт', value: `${stats.conversionRate.toFixed(1)}%`, icon: Target, color: 'text-purple-600', bgColor: 'bg-purple-100' },
+        { label: 'Боловсруулалтанд', value: String(stats.inProgress), icon: Clock, color: 'text-amber-600', bgColor: 'bg-amber-100' },
+    ];
 
     return (
         <div className="space-y-6">
@@ -110,12 +198,10 @@ export function LeadsReport() {
                         Худалдан авах магадлалтай харилцагчдын анализ
                     </p>
                 </div>
-                <div className="flex items-center gap-2">
-                    <Button variant="outline" size="sm">
-                        <Download className="w-4 h-4 mr-2" />
-                        Экспорт
-                    </Button>
-                </div>
+                <Button variant="outline" size="sm">
+                    <Download className="w-4 h-4 mr-2" />
+                    Экспорт
+                </Button>
             </div>
 
             {/* Period Filter */}
@@ -141,7 +227,7 @@ export function LeadsReport() {
 
             {/* KPI Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {KPI_CARDS.map((stat, index) => (
+                {kpiCards.map((stat, index) => (
                     <Card key={index} className="transition-all hover:shadow-md">
                         <CardContent className="p-6">
                             <div className="flex items-center justify-between">
@@ -153,21 +239,14 @@ export function LeadsReport() {
                                     <stat.icon className={`w-6 h-6 ${stat.color}`} />
                                 </div>
                             </div>
-                            <div className="mt-4 flex items-center gap-2">
-                                <span className={`text-sm font-medium flex items-center ${stat.trendUp ? 'text-green-600' : 'text-red-600'
-                                    }`}>
-                                    {stat.trend}
-                                </span>
-                                <span className="text-xs text-gray-500">{stat.trendLabel}</span>
-                            </div>
                         </CardContent>
                     </Card>
                 ))}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Source Analysis */}
-                <Card className="lg:col-span-2">
+                <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <PieChart className="w-5 h-5 text-primary" />
@@ -175,135 +254,66 @@ export function LeadsReport() {
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="space-y-6">
-                            {MOCK_SOURCE_DATA.map((item, i) => (
-                                <div key={i}>
-                                    <div className="flex items-center justify-between mb-2">
-                                        <span className="font-medium text-gray-700">{item.source}</span>
-                                        <div className="text-right">
-                                            <span className="font-bold text-gray-900">{item.count}</span>
-                                            <span className="text-sm text-gray-500 ml-2">({item.percentage}%)</span>
+                        {sourceData.length === 0 ? (
+                            <p className="text-sm text-gray-500 text-center py-8">Мэдээлэл байхгүй</p>
+                        ) : (
+                            <div className="space-y-6">
+                                {sourceData.map((item, i) => (
+                                    <div key={i}>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="font-medium text-gray-700">{item.source}</span>
+                                            <div className="text-right">
+                                                <span className="font-bold text-gray-900">{item.count}</span>
+                                                <span className="text-sm text-gray-500 ml-2">({item.percentage}%)</span>
+                                            </div>
+                                        </div>
+                                        <div className="w-full bg-gray-100 rounded-full h-2">
+                                            <div
+                                                className={`${item.color} h-2 rounded-full transition-all`}
+                                                style={{ width: `${item.percentage}%` }}
+                                            />
                                         </div>
                                     </div>
-                                    <div className="w-full bg-gray-100 rounded-full h-2">
-                                        <div
-                                            className={`${item.color} h-2 rounded-full transition-all`}
-                                            style={{ width: `${item.percentage}%` }}
-                                        />
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                                ))}
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
 
-                {/* Conversion Funnel */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <Filter className="w-5 h-5 text-primary" />
-                            Борлуулалтын юүлүүр
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="space-y-4">
-                            {[
-                                { stage: 'Нийт сэжим', count: 156, color: 'bg-blue-500' },
-                                { stage: 'Холбогдсон', count: 89, color: 'bg-indigo-500' },
-                                { stage: 'Уулзалт товлосон', count: 34, color: 'bg-violet-500' },
-                                { stage: 'Гэрээ хийсэн', count: 12, color: 'bg-purple-500' },
-                            ].map((item, i, arr) => (
-                                <div key={i} className="relative">
-                                    {i > 0 && (
-                                        <div className="absolute -top-4 left-6 w-0.5 h-4 bg-gray-200" />
-                                    )}
-                                    <div className="flex items-center gap-4">
-                                        <div className={`w-12 h-12 rounded-xl ${item.color} bg-opacity-10 flex items-center justify-center flex-shrink-0`}>
-                                            <span className={`font-bold ${item.color.replace('bg-', 'text-')}`}>
-                                                {item.count}
-                                            </span>
-                                        </div>
-                                        <div className="flex-1">
-                                            <p className="font-medium text-gray-900">{item.stage}</p>
-                                            <p className="text-xs text-gray-500">
-                                                {i === 0 ? '100%' : `${Math.round((item.count / arr[0].count) * 100)}% хөрвөлт`}
-                                            </p>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Performance by Project */}
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
                             <Building2 className="w-5 h-5 text-primary" />
-                            Төслөөр (Top 3)
+                            Төслөөр
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="space-y-4">
-                            {MOCK_LEAD_BY_PROJECT.map((item, i) => (
-                                <div key={i} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
-                                    <div>
-                                        <p className="font-medium text-gray-900">{item.project}</p>
-                                        <div className="flex gap-4 mt-1">
-                                            <p className="text-xs text-gray-500">Сэжим: {item.leads}</p>
-                                            <p className="text-xs text-green-600">Амжилттай: {item.won}</p>
-                                        </div>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="font-bold text-primary">{formatCurrency(item.value)}</p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Top Performers */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <Percent className="w-5 h-5 text-primary" />
-                            Шилдэг ажилтнууд
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        <div className="space-y-4">
-                            {MOCK_TOP_PERFORMERS.map((item, i) => (
-                                <div key={i} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl relative overflow-hidden">
-                                    {i === 0 && (
-                                        <div className="absolute top-0 right-0 p-2 text-yellow-500 bg-yellow-50 rounded-bl-xl">
-                                            Шилдэг
-                                        </div>
-                                    )}
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
-                                            <span className="font-bold text-primary">{item.name.charAt(0)}</span>
-                                        </div>
+                        {projectData.length === 0 ? (
+                            <p className="text-sm text-gray-500 text-center py-8">Мэдээлэл байхгүй</p>
+                        ) : (
+                            <div className="space-y-4">
+                                {projectData.map((item, i) => (
+                                    <div key={i} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
                                         <div>
-                                            <p className="font-medium text-gray-900">{item.name}</p>
-                                            <p className="text-xs text-gray-500">Хөрвөлт: {Math.round((item.won / item.leads) * 100)}%</p>
+                                            <p className="font-medium text-gray-900">{item.project}</p>
+                                            <div className="flex gap-4 mt-1">
+                                                <p className="text-xs text-gray-500">Сэжим: {item.leads}</p>
+                                                <p className="text-xs text-green-600">Амжилттай: {item.won}</p>
+                                            </div>
                                         </div>
+                                        {item.value > 0 && (
+                                            <div className="text-right">
+                                                <p className="font-bold text-primary">{formatCurrency(item.value)}</p>
+                                            </div>
+                                        )}
                                     </div>
-                                    <div className="text-right pr-6 md:pr-0">
-                                        <p className="font-bold text-gray-900">{formatCurrency(item.value)}</p>
-                                        <p className="text-xs text-gray-500">{item.won} гэрээ</p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                                ))}
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             </div>
         </div>
     );
 }
-
-export default LeadsReport;
