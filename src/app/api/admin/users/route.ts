@@ -1,6 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, getClerkUser } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
+import { Pool } from 'pg';
+
+// Lazy-init pg pool for direct DB access (user creation)
+let pgPool: Pool | null = null;
+function getPool(): Pool {
+    if (!pgPool) {
+        pgPool = new Pool({
+            connectionString: process.env.DATABASE_URL,
+            ssl: { rejectUnauthorized: false },
+            max: 2,
+        });
+    }
+    return pgPool;
+}
 
 /**
  * GET /api/admin/users — List all users with roles
@@ -72,6 +86,7 @@ export async function PATCH(request: NextRequest) {
 
 /**
  * POST /api/admin/users — Create a new user (admin only)
+ * Uses direct PostgreSQL connection to bypass GoTrue API issues
  */
 export async function POST(request: NextRequest) {
     try {
@@ -96,43 +111,100 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Нууц үг хамгийн багадаа 8 тэмдэгт байх ёстой' }, { status: 400 });
         }
 
-        // Create user in Supabase Auth
-        const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
-            email,
-            password,
-            email_confirm: true,
-            user_metadata: { full_name: full_name || null },
-        });
+        const pool = getPool();
+        const client = await pool.connect();
 
-        if (createError) {
-            if (createError.message?.includes('already been registered')) {
+        try {
+            await client.query('BEGIN');
+            await client.query("SET search_path TO auth, public, extensions;");
+
+            // Check if email already exists
+            const existing = await client.query(
+                'SELECT id FROM auth.users WHERE email = $1::varchar',
+                [email]
+            );
+            if (existing.rows.length > 0) {
+                await client.query('ROLLBACK');
                 return NextResponse.json({ error: 'Энэ имэйл хаягаар бүртгэл үүссэн байна' }, { status: 409 });
             }
-            return safeErrorResponse(createError, 'Хэрэглэгч үүсгэх үед алдаа гарлаа');
-        }
 
-        // Assign role if provided
-        if (role && newUser?.user?.id) {
-            const { error: roleError } = await supabase
-                .from('user_roles')
-                .upsert({ user_id: newUser.user.id, role }, { onConflict: 'user_id' });
+            // Create auth user with hashed password
+            const createResult = await client.query(`
+                INSERT INTO auth.users (
+                    id, instance_id, aud, role, email, encrypted_password,
+                    email_confirmed_at, raw_app_meta_data, raw_user_meta_data,
+                    is_sso_user, is_anonymous, created_at, updated_at,
+                    confirmation_token, recovery_token, email_change_token_new, email_change_token_current
+                ) VALUES (
+                    gen_random_uuid(), '00000000-0000-0000-0000-000000000000'::uuid,
+                    'authenticated'::varchar, 'authenticated'::varchar, $1::varchar,
+                    extensions.crypt($2::text, extensions.gen_salt('bf')),
+                    NOW(),
+                    '{"provider":"email","providers":["email"]}'::jsonb,
+                    jsonb_build_object('full_name', $3::text, 'email', $1::text),
+                    false, false, NOW(), NOW(),
+                    ''::varchar, ''::varchar, ''::varchar, ''::varchar
+                ) RETURNING id
+            `, [email, password, full_name || email]);
 
-            if (roleError) {
-                console.error('Role assignment error:', roleError);
+            const newUserId = createResult.rows[0].id;
+
+            // Create identity record (required for Supabase login)
+            await client.query(`
+                INSERT INTO auth.identities (
+                    id, provider_id, user_id, identity_data, provider,
+                    last_sign_in_at, created_at, updated_at
+                ) VALUES (
+                    gen_random_uuid(), $1::text, $1::uuid,
+                    jsonb_build_object('sub', $1::text, 'email', $2::text, 'full_name', $3::text, 'email_verified', false),
+                    'email'::text, NOW(), NOW(), NOW()
+                )
+            `, [newUserId, email, full_name || email]);
+
+            // Create user_profiles entry
+            await client.query(`
+                INSERT INTO public.user_profiles (id, email, full_name, created_at, updated_at)
+                VALUES ($1::uuid, $2::text, $3::text, NOW(), NOW())
+                ON CONFLICT (id) DO UPDATE SET email = $2::text, full_name = $3::text, updated_at = NOW()
+            `, [newUserId, email, full_name || email]);
+
+            // Assign role if provided
+            let roleWarning: string | null = null;
+            if (role) {
+                try {
+                    await client.query(`
+                        INSERT INTO public.user_roles (id, user_id, role, created_at, updated_at)
+                        VALUES (gen_random_uuid(), $1::uuid, $2::text, NOW(), NOW())
+                        ON CONFLICT (user_id) DO UPDATE SET role = $2::text, updated_at = NOW()
+                    `, [newUserId, role]);
+                } catch (roleErr: any) {
+                    roleWarning = 'Дүр оноох үед алдаа: ' + roleErr.message;
+                    console.error('Role assignment warning:', roleErr.message);
+                }
             }
-        }
 
-        return NextResponse.json({
-            success: true,
-            user: {
-                id: newUser.user?.id,
-                email: newUser.user?.email,
-                full_name: full_name || null,
-                role: role || 'viewer',
-                created_at: newUser.user?.created_at,
-            },
-        }, { status: 201 });
+            await client.query('COMMIT');
+
+            return NextResponse.json({
+                success: true,
+                warning: roleWarning,
+                user: {
+                    id: newUserId,
+                    email,
+                    full_name: full_name || null,
+                    role: role || 'viewer',
+                    created_at: new Date().toISOString(),
+                },
+            }, { status: 201 });
+        } catch (dbError: any) {
+            await client.query('ROLLBACK');
+            console.error('DB transaction error:', dbError);
+            return NextResponse.json({ error: 'Хэрэглэгч үүсгэх үед DB алдаа: ' + dbError.message }, { status: 500 });
+        } finally {
+            client.release();
+        }
     } catch (error) {
+        console.error('POST /api/admin/users full error:', error);
         return safeErrorResponse(error, 'Хэрэглэгч үүсгэх үед алдаа гарлаа');
     }
 }
