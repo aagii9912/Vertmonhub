@@ -65,19 +65,35 @@ export async function middleware(request: NextRequest) {
         return NextResponse.next();
     }
 
+    // Allow API auth routes
+    if (pathname.startsWith('/api/auth/')) {
+        return NextResponse.next();
+    }
+
     // Check auth for protected routes
     if (matchesRoute(pathname, protectedRoutes)) {
-        const { supabase, response } = createSupabaseMiddlewareClient(request);
-
-        const { data: { user } } = await supabase.auth.getUser();
-
-        if (!user) {
-            const signInUrl = new URL('/auth/login', request.url);
-            signInUrl.searchParams.set('redirect_url', pathname);
-            return NextResponse.redirect(signInUrl);
+        // Check custom session cookie first (GoTrue bypass)
+        const sessionCookie = request.cookies.get('vertmon-session');
+        if (sessionCookie?.value) {
+            // Cookie exists — let the app validate it
+            return NextResponse.next();
         }
 
-        return response;
+        // Fallback: check Supabase session
+        try {
+            const { supabase, response } = createSupabaseMiddlewareClient(request);
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                return response;
+            }
+        } catch {
+            // Supabase auth check failed (GoTrue down)
+        }
+
+        // No valid session found — redirect to login
+        const signInUrl = new URL('/auth/login', request.url);
+        signInUrl.searchParams.set('redirect_url', pathname);
+        return NextResponse.redirect(signInUrl);
     }
 
     return NextResponse.next();

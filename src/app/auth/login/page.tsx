@@ -20,16 +20,24 @@ export default function LoginPage() {
         setLoading(true);
         setError(null);
 
-        const { error } = await supabase.auth.signInWithPassword({
-            email,
-            password,
-        });
+        try {
+            const res = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password }),
+            });
+            const data = await res.json();
 
-        if (error) {
-            setError(error.message);
+            if (res.ok && data.success) {
+                window.location.href = '/dashboard';
+                return;
+            }
+
+            setError(data.error || 'Нэвтрэх үед алдаа гарлаа');
+        } catch {
+            setError('Сүлжээний алдаа');
+        } finally {
             setLoading(false);
-        } else {
-            window.location.href = '/dashboard';
         }
     };
 
