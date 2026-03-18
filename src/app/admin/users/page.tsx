@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Shield, ChevronDown, Search, UserPlus, Check, X, Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { Shield, ChevronDown, Search, UserPlus, Check, X, Loader2, Eye, EyeOff, AlertCircle, Trash2 } from 'lucide-react';
 
 interface UserWithRole {
     id: string;
@@ -31,6 +31,8 @@ export default function AdminUsersPage() {
     const [search, setSearch] = useState('');
     const [editingId, setEditingId] = useState<string | null>(null);
     const [saving, setSaving] = useState(false);
+    const [deleteConfirm, setDeleteConfirm] = useState<UserWithRole | null>(null);
+    const [deleting, setDeleting] = useState(false);
 
     // Create user modal
     const [showCreate, setShowCreate] = useState(false);
@@ -127,6 +129,28 @@ export default function AdminUsersPage() {
             setCreateError('Сүлжээний алдаа');
         } finally {
             setCreating(false);
+        }
+    }
+
+    async function deleteUser(user: UserWithRole) {
+        setDeleting(true);
+        try {
+            const res = await fetch(`/api/admin/users?userId=${user.id}`, {
+                method: 'DELETE',
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setUsers(prev => prev.filter(u => u.id !== user.id));
+                setDeleteConfirm(null);
+                setCreateSuccess(data.message || 'Хэрэглэгч устгагдлаа');
+                setTimeout(() => setCreateSuccess(null), 4000);
+            } else {
+                alert(data.error || 'Устгах үед алдаа гарлаа');
+            }
+        } catch {
+            alert('Сүлжээний алдаа');
+        } finally {
+            setDeleting(false);
         }
     }
 
@@ -255,14 +279,23 @@ export default function AdminUsersPage() {
                                             {new Date(user.created_at).toLocaleDateString('mn-MN')}
                                         </td>
                                         <td className="px-6 py-4 text-right">
-                                            {!isEditing && (
+                                            <div className="flex items-center justify-end gap-2">
+                                                {!isEditing && (
+                                                    <button
+                                                        onClick={() => setEditingId(user.id)}
+                                                        className="px-3 py-1.5 text-xs font-medium text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
+                                                    >
+                                                        Дүр солих
+                                                    </button>
+                                                )}
                                                 <button
-                                                    onClick={() => setEditingId(user.id)}
-                                                    className="px-3 py-1.5 text-xs font-medium text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
+                                                    onClick={() => setDeleteConfirm(user)}
+                                                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                    title="Устгах"
                                                 >
-                                                    Дүр солих
+                                                    <Trash2 className="w-4 h-4" />
                                                 </button>
-                                            )}
+                                            </div>
                                         </td>
                                     </tr>
                                 );
@@ -383,6 +416,44 @@ export default function AdminUsersPage() {
                             >
                                 {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
                                 Үүсгэх
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Confirmation Modal */}
+            {deleteConfirm && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
+                        <div className="p-6 text-center">
+                            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                                <Trash2 className="w-6 h-6 text-red-600" />
+                            </div>
+                            <h3 className="text-lg font-bold text-gray-900 mb-2">Хэрэглэгч устгах</h3>
+                            <p className="text-sm text-gray-500 mb-1">
+                                <span className="font-medium text-gray-700">{deleteConfirm.full_name || deleteConfirm.email}</span>
+                            </p>
+                            <p className="text-sm text-gray-500">
+                                ({deleteConfirm.email}) хэрэглэгчийг устгахдаа итгэлтэй байна уу?
+                            </p>
+                            <p className="text-xs text-red-500 mt-2">Энэ үйлдлийг буцаах боломжгүй!</p>
+                        </div>
+                        <div className="flex gap-3 p-4 border-t border-gray-100">
+                            <button
+                                onClick={() => setDeleteConfirm(null)}
+                                disabled={deleting}
+                                className="flex-1 px-4 py-2.5 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+                            >
+                                Цуцлах
+                            </button>
+                            <button
+                                onClick={() => deleteUser(deleteConfirm)}
+                                disabled={deleting}
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-medium"
+                            >
+                                {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                Устгах
                             </button>
                         </div>
                     </div>

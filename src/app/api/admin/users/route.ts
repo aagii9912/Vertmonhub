@@ -222,3 +222,77 @@ export async function POST(request: NextRequest) {
         return safeErrorResponse(error, 'Хэрэглэгч үүсгэх үед алдаа гарлаа');
     }
 }
+
+/**
+ * DELETE /api/admin/users — Delete a user (super_admin only)
+ * Uses direct pg connection to remove from all tables
+ */
+export async function DELETE(request: NextRequest) {
+    try {
+        const userId = await getClerkUser();
+        if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        const supabase = supabaseAdmin();
+
+        // Check super_admin
+        const { data: admin } = await supabase.from('admins').select('role').eq('user_id', userId).single();
+        if (!admin || admin.role !== 'super_admin') {
+            return NextResponse.json({ error: 'Super admin эрх шаардлагатай' }, { status: 403 });
+        }
+
+        const { searchParams } = new URL(request.url);
+        const targetUserId = searchParams.get('userId');
+
+        if (!targetUserId) {
+            return NextResponse.json({ error: 'userId параметр шаардлагатай' }, { status: 400 });
+        }
+
+        // Prevent self-deletion
+        if (targetUserId === userId) {
+            return NextResponse.json({ error: 'Өөрийгөө устгах боломжгүй' }, { status: 400 });
+        }
+
+        const pool = getPool();
+        const client = await pool.connect();
+
+        try {
+            await client.query('BEGIN');
+
+            // Delete from user_roles
+            await client.query('DELETE FROM public.user_roles WHERE user_id = $1::uuid', [targetUserId]);
+
+            // Delete from user_profiles
+            await client.query('DELETE FROM public.user_profiles WHERE id = $1::uuid', [targetUserId]);
+
+            // Delete from auth.identities
+            await client.query('DELETE FROM auth.identities WHERE user_id = $1::uuid', [targetUserId]);
+
+            // Delete from auth.users
+            const result = await client.query('DELETE FROM auth.users WHERE id = $1::uuid RETURNING email', [targetUserId]);
+
+            if (result.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return NextResponse.json({ error: 'Хэрэглэгч олдсонгүй' }, { status: 404 });
+            }
+
+            // Also remove from admins table if present
+            await client.query('DELETE FROM public.admins WHERE user_id = $1::text', [targetUserId]);
+
+            await client.query('COMMIT');
+
+            return NextResponse.json({
+                success: true,
+                message: `${result.rows[0].email} амжилттай устгагдлаа`,
+            });
+        } catch (dbError: any) {
+            await client.query('ROLLBACK');
+            console.error('DELETE transaction error:', dbError);
+            return NextResponse.json({ error: 'Хэрэглэгч устгах үед DB алдаа: ' + dbError.message }, { status: 500 });
+        } finally {
+            client.release();
+        }
+    } catch (error) {
+        console.error('DELETE /api/admin/users error:', error);
+        return safeErrorResponse(error, 'Хэрэглэгч устгах үед алдаа гарлаа');
+    }
+}
