@@ -18,6 +18,7 @@ function getPool(): Pool {
 
 /**
  * GET /api/admin/users — List all users with roles
+ * Uses direct pg connection (GoTrue admin.listUsers fails)
  */
 export async function GET() {
     try {
@@ -30,23 +31,36 @@ export async function GET() {
         const { data: admin } = await supabase.from('admins').select('role').eq('user_id', userId).single();
         if (!admin) return NextResponse.json({ error: 'Admin required' }, { status: 403 });
 
-        // Get all users from auth + their roles
-        const { data: authUsers } = await supabase.auth.admin.listUsers({ perPage: 200 });
+        // Get all users via direct pg (GoTrue listUsers returns empty)
+        const pool = getPool();
+        const client = await pool.connect();
+        try {
+            const result = await client.query(`
+                SELECT 
+                    u.id,
+                    u.email::text,
+                    u.raw_user_meta_data->>'full_name' as full_name,
+                    COALESCE(r.role, 'viewer') as role,
+                    u.created_at
+                FROM auth.users u
+                LEFT JOIN public.user_roles r ON r.user_id = u.id
+                ORDER BY u.created_at DESC
+            `);
 
-        // Get all roles
-        const { data: roles } = await supabase.from('user_roles').select('user_id, role');
-        const roleMap = new Map((roles || []).map(r => [r.user_id, r.role]));
+            const users = result.rows.map(u => ({
+                id: u.id,
+                email: u.email || '',
+                full_name: u.full_name || null,
+                role: u.role || 'viewer',
+                created_at: u.created_at,
+            }));
 
-        const users = (authUsers?.users || []).map(u => ({
-            id: u.id,
-            email: u.email || '',
-            full_name: u.user_metadata?.full_name || null,
-            role: roleMap.get(u.id) || 'viewer',
-            created_at: u.created_at,
-        }));
-
-        return NextResponse.json({ users });
+            return NextResponse.json({ users });
+        } finally {
+            client.release();
+        }
     } catch (error) {
+        console.error('GET /api/admin/users error:', error);
         return safeErrorResponse(error, 'Хэрэглэгчдийн жагсаалт унших үед алдаа гарлаа');
     }
 }
