@@ -207,6 +207,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = '/auth/login';
   }, [supabase]);
 
+  // Fallback: check custom vertmon-session cookie via API
+  const fetchCustomSession = useCallback(async () => {
+    try {
+      const res = await fetch('/api/auth/login', { credentials: 'include' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.authenticated && data.user) {
+          return data.user; // { id, email, full_name, role }
+        }
+      }
+    } catch (err) {
+      if (isDev) console.error('Custom session check failed:', err);
+    }
+    return null;
+  }, []);
+
   // Listen for auth state changes
   useEffect(() => {
     // Get initial session
@@ -221,8 +237,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           role,
           permissions,
         });
+        setLoading(false);
+      } else {
+        // Fallback: check custom session (GoTrue bypass)
+        const customUser = await fetchCustomSession();
+        if (customUser) {
+          if (isDev) console.log('[Auth] Using custom session:', customUser.email, customUser.role);
+          // Create a fake session so shops can load
+          setSession({ user: { id: customUser.id } } as any);
+          // Use role from session directly (RLS blocks browser queries without Supabase auth)
+          const roleName = customUser.role || 'viewer';
+          let permissions: RolePermissions;
+          try {
+            permissions = await fetchRolePermissions(roleName, supabase);
+          } catch {
+            permissions = ROLE_PERMISSIONS[roleName] || ROLE_PERMISSIONS['viewer'];
+          }
+          setUser({
+            id: customUser.id,
+            email: customUser.email || '',
+            fullName: customUser.full_name || null,
+            role: roleName,
+            permissions,
+          });
+        }
+        setLoading(false);
       }
-      setLoading(false);
     });
 
     // Listen for auth changes
@@ -240,13 +280,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             });
           });
         } else {
-          setUser(null);
+          // Don't null the user if we have a custom session
+          fetchCustomSession().then(customUser => {
+            if (!customUser) setUser(null);
+          });
         }
       }
     );
 
     return () => subscription.unsubscribe();
-  }, [supabase, fetchUserRoleAndPermissions]);
+  }, [supabase, fetchUserRoleAndPermissions, fetchCustomSession]);
 
   // Fetch shops when session changes
   useEffect(() => {
