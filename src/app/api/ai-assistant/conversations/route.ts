@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
 import { supabaseAdmin } from '@/lib/supabase';
+import { resolveApiUser } from '@/lib/auth/resolve-user';
 
 /**
  * GET /api/ai-assistant/conversations
@@ -9,22 +8,8 @@ import { supabaseAdmin } from '@/lib/supabase';
  */
 export async function GET(req: Request) {
     try {
-        const cookieStore = await cookies();
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                cookies: {
-                    getAll() { return cookieStore.getAll(); },
-                    setAll(cookiesToSet) {
-                        try { cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options)); } catch {}
-                    },
-                },
-            }
-        );
-
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
+        const user = await resolveApiUser();
+        if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -38,7 +23,7 @@ export async function GET(req: Request) {
         const { data, error } = await db
             .from('ai_conversations')
             .select('id, title, mode, created_at, updated_at')
-            .eq('user_id', session.user.id)
+            .eq('user_id', user.id)
             .eq('shop_id', shopId)
             .order('updated_at', { ascending: false })
             .limit(50);
@@ -61,22 +46,8 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
     try {
-        const cookieStore = await cookies();
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                cookies: {
-                    getAll() { return cookieStore.getAll(); },
-                    setAll(cookiesToSet) {
-                        try { cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options)); } catch {}
-                    },
-                },
-            }
-        );
-
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
+        const user = await resolveApiUser();
+        if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -89,7 +60,7 @@ export async function POST(req: Request) {
         const { data, error } = await db
             .from('ai_conversations')
             .insert({
-                user_id: session.user.id,
+                user_id: user.id,
                 shop_id: shopId,
                 title: title || 'Шинэ харилцан яриа',
                 mode: mode || 'data',

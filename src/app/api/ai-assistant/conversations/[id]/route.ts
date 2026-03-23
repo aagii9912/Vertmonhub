@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
 import { supabaseAdmin } from '@/lib/supabase';
+import { resolveApiUser } from '@/lib/auth/resolve-user';
 
 interface RouteParams {
     params: Promise<{ id: string }>;
@@ -14,22 +13,8 @@ interface RouteParams {
 export async function GET(req: Request, { params }: RouteParams) {
     try {
         const { id } = await params;
-        const cookieStore = await cookies();
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                cookies: {
-                    getAll() { return cookieStore.getAll(); },
-                    setAll(cookiesToSet) {
-                        try { cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options)); } catch {}
-                    },
-                },
-            }
-        );
-
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
+        const user = await resolveApiUser();
+        if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -42,7 +27,7 @@ export async function GET(req: Request, { params }: RouteParams) {
             .eq('id', id)
             .single();
 
-        if (!conv || conv.user_id !== session.user.id) {
+        if (!conv || conv.user_id !== user.id) {
             return NextResponse.json({ error: 'Not found' }, { status: 404 });
         }
 
@@ -75,22 +60,8 @@ export async function GET(req: Request, { params }: RouteParams) {
 export async function PATCH(req: Request, { params }: RouteParams) {
     try {
         const { id } = await params;
-        const cookieStore = await cookies();
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                cookies: {
-                    getAll() { return cookieStore.getAll(); },
-                    setAll(cookiesToSet) {
-                        try { cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options)); } catch {}
-                    },
-                },
-            }
-        );
-
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
+        const user = await resolveApiUser();
+        if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -104,7 +75,7 @@ export async function PATCH(req: Request, { params }: RouteParams) {
             .from('ai_conversations')
             .update({ title: title.trim() })
             .eq('id', id)
-            .eq('user_id', session.user.id)
+            .eq('user_id', user.id)
             .select('id, title')
             .single();
 
@@ -126,22 +97,8 @@ export async function PATCH(req: Request, { params }: RouteParams) {
 export async function DELETE(req: Request, { params }: RouteParams) {
     try {
         const { id } = await params;
-        const cookieStore = await cookies();
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                cookies: {
-                    getAll() { return cookieStore.getAll(); },
-                    setAll(cookiesToSet) {
-                        try { cookiesToSet.forEach(({ name, value, options }) => cookieStore.set(name, value, options)); } catch {}
-                    },
-                },
-            }
-        );
-
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
+        const user = await resolveApiUser();
+        if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
@@ -150,7 +107,7 @@ export async function DELETE(req: Request, { params }: RouteParams) {
             .from('ai_conversations')
             .delete()
             .eq('id', id)
-            .eq('user_id', session.user.id);
+            .eq('user_id', user.id);
 
         if (error) {
             console.error('Failed to delete conversation:', error);

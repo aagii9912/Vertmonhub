@@ -1,6 +1,4 @@
 import { NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
 import { handleDataAssistantQuery } from '@/lib/ai/data-assistant';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
@@ -11,66 +9,11 @@ import {
     fetchSalesSummary, fetchSalesForecast, fetchOrders,
     fetchCustomerInsights, generateChartConfig,
 } from '@/lib/ai/data-assistant/functions';
-import crypto from 'crypto';
+import { resolveApiUser } from '@/lib/auth/resolve-user';
 
 export const maxDuration = 60;
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-
-// Decrypt custom session cookie
-const SESSION_SECRET = process.env.SUPABASE_SERVICE_ROLE_KEY || 'fallback-secret-key-32chars-min!!';
-function decryptSession(encryptedText: string): { userId: string; email: string; role: string; expiresAt: number } | null {
-    try {
-        const key = crypto.scryptSync(SESSION_SECRET, 'salt', 32);
-        const parts = encryptedText.split(':');
-        const iv = Buffer.from(parts[0], 'hex');
-        const authTag = Buffer.from(parts[1], 'hex');
-        const encrypted = parts[2];
-        const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
-        decipher.setAuthTag(authTag);
-        let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-        decrypted += decipher.final('utf8');
-        return JSON.parse(decrypted);
-    } catch {
-        return null;
-    }
-}
-
-/**
- * Resolve user from Supabase session or custom session cookie
- */
-async function resolveUser(cookieStore: any): Promise<{ id: string; email: string } | null> {
-    // Try Supabase session first
-    try {
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                cookies: {
-                    getAll() { return cookieStore.getAll(); },
-                    setAll(cookiesToSet: any[]) {
-                        try { cookiesToSet.forEach(({ name, value, options }: any) => cookieStore.set(name, value, options)); } catch {}
-                    },
-                },
-            }
-        );
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-            return { id: session.user.id, email: session.user.email || '' };
-        }
-    } catch {}
-
-    // Fallback: custom vertmon-session cookie
-    const sessionCookie = cookieStore.get('vertmon-session');
-    if (sessionCookie?.value) {
-        const session = decryptSession(sessionCookie.value);
-        if (session && session.expiresAt > Date.now()) {
-            return { id: session.userId, email: session.email };
-        }
-    }
-
-    return null;
-}
 
 /**
  * General mode system prompt — like gemini.com but with Vertmon context
@@ -166,10 +109,8 @@ async function handleGeneralQuery(
  */
 export async function POST(req: Request) {
     try {
-        const cookieStore = await cookies();
-
         // Resolve user from Supabase or custom session
-        const resolvedUser = await resolveUser(cookieStore);
+        const resolvedUser = await resolveApiUser();
         if (!resolvedUser) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
