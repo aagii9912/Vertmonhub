@@ -137,7 +137,7 @@ export async function POST(req: Request) {
             .eq('user_id', session.user.id).eq('is_active', true).single();
         if (adminData) userRole = adminData.role as 'super_admin' | 'admin';
 
-        const { message, shopId, history = [], mode = 'data' } = await req.json();
+        const { message, shopId, history = [], mode = 'data', conversationId } = await req.json();
         if (!message) return NextResponse.json({ error: 'Message is required' }, { status: 400 });
         if (!process.env.GEMINI_API_KEY) return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 });
 
@@ -148,10 +148,54 @@ export async function POST(req: Request) {
             response = await handleDataAssistantQuery(message, shopId, session.user.id, history, userRole);
         }
 
+        // Persist messages to database
+        let activeConversationId = conversationId;
+        try {
+            // Auto-create conversation if none provided
+            if (!activeConversationId && shopId) {
+                const autoTitle = message.length > 40 ? message.substring(0, 40) + '...' : message;
+                const { data: conv } = await adminDb
+                    .from('ai_conversations')
+                    .insert({
+                        user_id: session.user.id,
+                        shop_id: shopId,
+                        title: autoTitle,
+                        mode,
+                    })
+                    .select('id')
+                    .single();
+                if (conv) activeConversationId = conv.id;
+            }
+
+            if (activeConversationId) {
+                // Save user message + assistant response
+                await adminDb.from('ai_messages').insert([
+                    { conversation_id: activeConversationId, role: 'user', content: message },
+                    {
+                        conversation_id: activeConversationId,
+                        role: 'assistant',
+                        content: response.text,
+                        chart_config: response.chartConfig || null,
+                        data: response.data || null,
+                    },
+                ]);
+
+                // Touch conversation updated_at
+                await adminDb
+                    .from('ai_conversations')
+                    .update({ updated_at: new Date().toISOString() })
+                    .eq('id', activeConversationId);
+            }
+        } catch (dbError) {
+            console.error('Failed to persist chat messages:', dbError);
+            // Non-blocking: still return the AI response even if DB save fails
+        }
+
         return NextResponse.json({
             response: response.text,
             data: response.data,
             chartConfig: response.chartConfig,
+            conversationId: activeConversationId || null,
         });
     } catch (error) {
         return safeErrorResponse(error, 'AI түгээх үед алдаа гарлаа');

@@ -1,16 +1,67 @@
 /**
  * Admin Authentication & Authorization
  * Middleware for Super Admin access using Supabase Auth
+ * Supports both Supabase Auth and custom vertmon-session cookie
  */
 
 import { getAuthUser } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { cookies } from 'next/headers';
+import crypto from 'crypto';
 
 export interface AdminUser {
     id: string;
     email: string;
     role: 'super_admin' | 'admin' | 'support';
+    permissions?: { can_import_data?: boolean };
+}
+
+// Decrypt vertmon-session cookie (same logic as login route)
+const SESSION_SECRET = process.env.SUPABASE_SERVICE_ROLE_KEY || 'fallback-secret-key-32chars-min!!';
+function decryptSession(encryptedText: string): { userId: string; email: string; role: string; expiresAt: number } | null {
+    try {
+        const key = crypto.scryptSync(SESSION_SECRET, 'salt', 32);
+        const parts = encryptedText.split(':');
+        const iv = Buffer.from(parts[0], 'hex');
+        const authTag = Buffer.from(parts[1], 'hex');
+        const encrypted = parts[2];
+        const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+        decipher.setAuthTag(authTag);
+        let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+        decrypted += decipher.final('utf8');
+        return JSON.parse(decrypted);
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Get user ID from either Supabase auth or custom session cookie
+ */
+async function resolveUserId(): Promise<{ userId: string; email?: string } | null> {
+    // Try Supabase auth first
+    const supaUser = await getAuthUser();
+    if (supaUser) {
+        return { userId: supaUser.id, email: supaUser.email || undefined };
+    }
+
+    // Fallback: custom vertmon-session cookie
+    try {
+        const cookieStore = await cookies();
+        const sessionCookie = cookieStore.get('vertmon-session');
+        if (sessionCookie?.value) {
+            const session = decryptSession(sessionCookie.value);
+            if (session && session.expiresAt > Date.now()) {
+                logger.debug('Admin auth: Using custom session', { userId: session.userId });
+                return { userId: session.userId, email: session.email };
+            }
+        }
+    } catch {
+        // Cookie access failed
+    }
+
+    return null;
 }
 
 /**
@@ -19,21 +70,21 @@ export interface AdminUser {
  */
 export async function getAdminUser(): Promise<AdminUser | null> {
     try {
-        const user = await getAuthUser();
+        const resolved = await resolveUserId();
 
-        if (!user) {
-            logger.debug('Admin auth: No user found');
+        if (!resolved) {
+            logger.debug('Admin auth: No user found via Supabase or session cookie');
             return null;
         }
 
-        logger.debug('Admin auth: User found', { userId: user.id });
+        logger.debug('Admin auth: User found', { userId: resolved.userId });
 
-        // Check if user is in admins table
+        // Check if user is in admins table (using service role — bypasses RLS)
         const adminDb = supabaseAdmin();
         const { data: admin, error } = await adminDb
             .from('admins')
             .select('id, email, role')
-            .eq('user_id', user.id)
+            .eq('user_id', resolved.userId)
             .eq('is_active', true)
             .single();
 
