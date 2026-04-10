@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     // 'pages_read_engagement', // Removed due to invalid scope error
     'pages_manage_metadata',
     'public_profile',
-    // 'email' // Removed due to invalid scope error
+    'email'
   ].join(',');
 
   // Build Facebook OAuth URL
@@ -27,8 +27,8 @@ export async function GET(request: NextRequest) {
   fbAuthUrl.searchParams.set('client_id', appId);
   fbAuthUrl.searchParams.set('redirect_uri', redirectUri);
   fbAuthUrl.searchParams.set('scope', permissions);
+  fbAuthUrl.searchParams.set('config_id', '946025855026007'); // Facebook Login for Business configuration
   fbAuthUrl.searchParams.set('response_type', 'code');
-  // fbAuthUrl.searchParams.set('state', crypto.randomUUID()); // Түр зуур хасав
 
   return NextResponse.redirect(fbAuthUrl.toString());
 }
