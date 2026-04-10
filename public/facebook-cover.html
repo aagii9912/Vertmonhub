@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=820">
+<title>Syncly — Facebook Page Cover</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    width: 820px;
+    height: 312px;
+    overflow: hidden;
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: #06060f;
+    color: #fff;
+    -webkit-font-smoothing: antialiased;
+    position: relative;
+  }
+
+  /* ─── Background Effects (from page.tsx) ─── */
+  .bg-effects {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+  }
+  .bg-glow-1 {
+    position: absolute;
+    top: -70%;
+    left: 60%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 400px;
+    border-radius: 50%;
+    background: linear-gradient(to bottom, rgba(99,102,241,0.15), rgba(139,92,246,0.08), transparent);
+    filter: blur(60px);
+  }
+  .bg-glow-2 {
+    position: absolute;
+    top: 40%;
+    right: -10%;
+    width: 250px;
+    height: 250px;
+    border-radius: 50%;
+    background: rgba(6,182,212,0.04);
+    filter: blur(50px);
+  }
+  .bg-glow-3 {
+    position: absolute;
+    top: 20%;
+    right: 15%;
+    width: 250px;
+    height: 250px;
+    border-radius: 50%;
+    background: rgba(139,92,246,0.05);
+    filter: blur(50px);
+  }
+  .bg-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px);
+    background-size: 64px 64px;
+  }
+
+  /* ─── Layout: Everything right-aligned ─── */
+  .cover {
+    position: relative;
+    z-index: 10;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 24px 48px 40px 200px; /* big left padding for profile pic zone */
+  }
+
+  /* ─── Top: Logo + Badge ─── */
+  .top-bar {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 16px;
+    align-self: flex-end;
+  }
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .logo-icon {
+    width: 22px;
+    height: 22px;
+    border-radius: 6px;
+    background: linear-gradient(135deg, #6366F1, #8B5CF6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 800;
+    color: #fff;
+  }
+  .logo-name {
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    border: 1px solid rgba(99,102,241,0.2);
+    background: rgba(99,102,241,0.06);
+    padding: 3px 10px;
+    border-radius: 100px;
+    font-size: 9.5px;
+    font-weight: 500;
+    color: rgba(165,180,252,0.8);
+  }
+  .badge-icon {
+    width: 9px;
+    height: 9px;
+  }
+
+  /* ─── Main Content: Right-aligned ─── */
+  .content {
+    text-align: right;
+    align-self: flex-end;
+  }
+  .h1 {
+    font-size: 38px;
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -0.04em;
+    margin-bottom: 10px;
+  }
+  .h1-white { color: #fff; }
+  .h1-gradient {
+    background: linear-gradient(to right, #818CF8, #A78BFA, #67E8F9);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .sub {
+    font-size: 11.5px;
+    line-height: 1.55;
+    color: #94A3B8;
+    max-width: 420px;
+    margin-left: auto;
+  }
+
+  /* ─── Bottom Stats Bar ─── */
+  .stats {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    background: rgba(255,255,255,0.01);
+    display: flex;
+    padding: 8px 48px 8px 200px; /* match left padding for profile pic */
+    z-index: 20;
+  }
+  .stat {
+    flex: 1;
+    text-align: center;
+    position: relative;
+  }
+  .stat + .stat::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 15%;
+    height: 70%;
+    width: 1px;
+    background: rgba(255,255,255,0.06);
+  }
+  .sv {
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    background: linear-gradient(to bottom, #fff, #94A3B8);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .sl {
+    font-size: 8px;
+    color: #64748B;
+    margin-top: 1px;
+  }
+
+  /* syncly.mn watermark */
+  .wm {
+    position: absolute;
+    bottom: 42px;
+    right: 48px;
+    font-size: 10px;
+    font-weight: 500;
+    color: rgba(99,102,241,0.25);
+    z-index: 20;
+  }
+
+  /* ─── Profile pic safe zone indicator (dev only, invisible on export) ─── */
+  .safe-zone {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 185px;
+    /* Uncomment below to visualize the profile picture zone: */
+    /* background: rgba(255,0,0,0.05); border-right: 1px dashed rgba(255,0,0,0.15); */
+    z-index: 5;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+
+  <!-- BG Effects -->
+  <div class="bg-effects">
+    <div class="bg-glow-1"></div>
+    <div class="bg-glow-2"></div>
+    <div class="bg-glow-3"></div>
+    <div class="bg-grid"></div>
+  </div>
+
+  <!-- Profile pic safe zone -->
+  <div class="safe-zone"></div>
+
+  <!-- Cover content — right-aligned -->
+  <div class="cover">
+    <!-- Logo + Badge -->
+    <div class="top-bar">
+      <div class="logo">
+        <div class="logo-icon">S</div>
+        <span class="logo-name">Syncly</span>
+      </div>
+      <div class="badge">
+        <svg class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        Борлуулалтын шинэ стандарт
+      </div>
+    </div>
+
+    <!-- Headlines -->
+    <div class="content">
+      <div class="h1">
+        <span class="h1-white">0 ажилтан.</span><br>
+        <span class="h1-gradient">5х орлогын өсөлт.</span>
+      </div>
+      <p class="sub">Facebook, Instagram дээрх чат бүрд хариулж, захиалга, төлбөрийг автоматаар баталгаажуулна.</p>
+    </div>
+  </div>
+
+  <!-- Stats bar -->
+  <div class="stats">
+    <div class="stat"><div class="sv">32</div><div class="sl">Бизнес хэрэглэгч</div></div>
+    <div class="stat"><div class="sv">28+</div><div class="sl">Мессеж боловсруулсан</div></div>
+    <div class="stat"><div class="sv">3,5K+</div><div class="sl">Захиалга</div></div>
+    <div class="stat"><div class="sv">98%</div><div class="sl">Сэтгэл ханамж</div></div>
+  </div>
+
+  <div class="wm">syncly.mn</div>
+
+</body>
+</html>

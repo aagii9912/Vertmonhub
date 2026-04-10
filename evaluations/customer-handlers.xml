@@ -1,0 +1,42 @@
+<evaluation>
+   <qa_pair>
+      <question>Хэрэглэгч утасны дугаараа 88112233 гэж үлдээлээ. Үүнийг хадгалах хэрэгтэй.</question>
+      <answer>88112233</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>Миний хүргэлтийн хаяг бол СБД, 1-р хороо, 50-р байр, 12 тоот.</question>
+      <answer>СБД, 1-р хороо, 50-р байр, 12 тоот</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>Хэрэглэгч нь оператортой холбогдох хүсэлт өглөө. Шалтгаан нь 'Буруу бараа ирсэн'.</question>
+      <answer>Буруу бараа ирсэн</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>Би цаашид дандаа хар өнгийн хувцас авна шүү, санаарай.</question>
+      <answer>хар өнгө</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>Одоогийн байдлаар миний сагсанд юу байна вэ? Шалгаад өгөөч.</question>
+      <answer>сагсны мэдээлэл</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>Захиалгын төлбөрөө шилжүүлчихлээ, шалгаарай. Захиалгын дугаар ORD-0012</question>
+      <answer>ORD-0012</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>Миний захиалга хаана явна вэ? Захиалга: ORD-0013</question>
+      <answer>ORD-0013</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>Энэ хүргэлт үнэхээр удаан, би гомдолтой байна! 3 хоног хүлээлээ.</question>
+      <answer>delivery</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>Би энэ iPhone 15 Pro Max-г авах гэсэн юм, хамт авах ямар хэрэгсэл байна?</question>
+      <answer>iPhone 15 Pro Max</answer>
+   </qa_pair>
+   <qa_pair>
+      <question>Захиалгадаа 1 ширхгийг нэмээд нийт 2 ширхэг болгомоор байна.</question>
+      <answer>change_quantity</answer>
+   </qa_pair>
+</evaluation>
