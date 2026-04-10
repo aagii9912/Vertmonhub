@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import {
     Globe, Plus, Search, ExternalLink, DollarSign,
-    Calendar, BarChart3, TrendingUp, FileText, Settings
+    Calendar, BarChart3, TrendingUp, FileText, Settings, X, Loader2
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -52,6 +52,25 @@ export default function SourcesPage() {
     const [contracts, setContracts] = useState<ChannelContract[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [creating, setCreating] = useState(false);
+    const [newChannel, setNewChannel] = useState({ name: '', type: 'social', description: '' });
+
+    const handleCreate = async () => {
+        if (!newChannel.name.trim()) return;
+        setCreating(true);
+        try {
+            const { data, error } = await supabase.from('marketing_channels').insert([{
+                name: newChannel.name.trim(), type: newChannel.type,
+                status: 'active', description: newChannel.description || null,
+            }]).select().single();
+            if (error) throw error;
+            setChannels(prev => [data, ...prev]);
+            setShowCreateModal(false);
+            setNewChannel({ name: '', type: 'social', description: '' });
+        } catch (err) { console.error('Create error:', err); }
+        finally { setCreating(false); }
+    };
 
     useEffect(() => {
         const fetch = async () => {
@@ -105,7 +124,7 @@ export default function SourcesPage() {
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                         <Input type="text" placeholder="Хайх..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-10 w-64 bg-gray-50" />
                     </div>
-                    <Button className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="w-4 h-4 mr-2" />Шинэ суваг</Button>
+                    <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => setShowCreateModal(true)}><Plus className="w-4 h-4 mr-2" />Шинэ суваг</Button>
                 </div>
             </div>
 
@@ -154,6 +173,30 @@ export default function SourcesPage() {
                             </Card>
                         );
                     })}
+                </div>
+            )}
+            {showCreateModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+                        <div className="flex items-center justify-between px-6 py-4 border-b">
+                            <h3 className="font-semibold text-gray-900">Шинэ суваг</h3>
+                            <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5 text-gray-400" /></button>
+                        </div>
+                        <div className="px-6 py-4 space-y-4">
+                            <div><label className="text-sm font-medium text-gray-700 block mb-1">Нэр *</label><Input value={newChannel.name} onChange={e => setNewChannel(p => ({ ...p, name: e.target.value }))} placeholder="Сувгийн нэр" /></div>
+                            <div><label className="text-sm font-medium text-gray-700 block mb-1">Төрөл</label>
+                                <select value={newChannel.type} onChange={e => setNewChannel(p => ({ ...p, type: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                                    <option value="social">Сошиал</option><option value="search">Хайлт</option><option value="affiliate">Партнер</option><option value="direct">Шууд</option><option value="influencer">Инфлүүнсер</option><option value="traditional">Уламжлалт</option>
+                                </select></div>
+                            <div><label className="text-sm font-medium text-gray-700 block mb-1">Тайлбар</label><textarea value={newChannel.description} onChange={e => setNewChannel(p => ({ ...p, description: e.target.value }))} placeholder="Тайлбар (заавал биш)" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm resize-none h-20" /></div>
+                        </div>
+                        <div className="flex justify-end gap-3 px-6 py-4 border-t">
+                            <Button variant="outline" onClick={() => setShowCreateModal(false)}>Болих</Button>
+                            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleCreate} disabled={!newChannel.name.trim() || creating}>
+                                {creating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Үүсгэж байна...</> : <><Plus className="w-4 h-4 mr-2" />Үүсгэх</>}
+                            </Button>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

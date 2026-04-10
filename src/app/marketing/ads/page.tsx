@@ -3,9 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { BarChart3, Plus, DollarSign, MousePointer, Eye, Target, TrendingUp } from 'lucide-react';
+import { BarChart3, Plus, DollarSign, MousePointer, Eye, Target, TrendingUp, X, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { Input } from '@/components/ui/Input';
 
 interface AdCampaign {
     id: string;
@@ -25,6 +26,25 @@ export default function AdsPage() {
     const { shop } = useAuth();
     const [ads, setAds] = useState<AdCampaign[]>([]);
     const [loading, setLoading] = useState(true);
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [creating, setCreating] = useState(false);
+    const [newAd, setNewAd] = useState({ name: '', platform: 'facebook', budget: 0 });
+
+    const handleCreate = async () => {
+        if (!shop?.id || !newAd.name.trim()) return;
+        setCreating(true);
+        try {
+            const { data, error } = await supabase.from('ad_campaigns').insert([{
+                shop_id: shop.id, name: newAd.name.trim(), platform: newAd.platform,
+                status: 'draft', budget: newAd.budget, spend: 0, impressions: 0, clicks: 0, conversions: 0, ctr: 0, cpc: 0,
+            }]).select().single();
+            if (error) throw error;
+            setAds(prev => [data, ...prev]);
+            setShowCreateModal(false);
+            setNewAd({ name: '', platform: 'facebook', budget: 0 });
+        } catch (err) { console.error('Create error:', err); }
+        finally { setCreating(false); }
+    };
 
     useEffect(() => {
         if (!shop?.id) return;
@@ -70,7 +90,7 @@ export default function AdsPage() {
                     </h1>
                     <p className="text-sm text-gray-500 mt-1">Төлбөрт зарын кампанит ажлууд</p>
                 </div>
-                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="w-4 h-4 mr-2" />Шинэ зар</Button>
+                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => setShowCreateModal(true)}><Plus className="w-4 h-4 mr-2" />Шинэ зар</Button>
             </div>
 
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -116,6 +136,30 @@ export default function AdsPage() {
                     )}
                 </CardContent>
             </Card>
+            {showCreateModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+                        <div className="flex items-center justify-between px-6 py-4 border-b">
+                            <h3 className="font-semibold text-gray-900">Шинэ зар</h3>
+                            <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5 text-gray-400" /></button>
+                        </div>
+                        <div className="px-6 py-4 space-y-4">
+                            <div><label className="text-sm font-medium text-gray-700 block mb-1">Нэр *</label><Input value={newAd.name} onChange={e => setNewAd(p => ({ ...p, name: e.target.value }))} placeholder="Зарын нэр" /></div>
+                            <div><label className="text-sm font-medium text-gray-700 block mb-1">Платформ</label>
+                                <select value={newAd.platform} onChange={e => setNewAd(p => ({ ...p, platform: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                                    <option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="google">Google</option><option value="tiktok">TikTok</option>
+                                </select></div>
+                            <div><label className="text-sm font-medium text-gray-700 block mb-1">Төсөв (₮)</label><Input type="number" value={newAd.budget} onChange={e => setNewAd(p => ({ ...p, budget: Number(e.target.value) }))} /></div>
+                        </div>
+                        <div className="flex justify-end gap-3 px-6 py-4 border-t">
+                            <Button variant="outline" onClick={() => setShowCreateModal(false)}>Болих</Button>
+                            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleCreate} disabled={!newAd.name.trim() || creating}>
+                                {creating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Үүсгэж байна...</> : <><Plus className="w-4 h-4 mr-2" />Үүсгэх</>}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

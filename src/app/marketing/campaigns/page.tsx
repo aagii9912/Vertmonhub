@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button';
 import {
     Megaphone, Plus, Search, Play, Pause, CheckCircle2,
     Calendar, DollarSign, TrendingUp, ArrowUpRight, MoreVertical,
-    Target, BarChart3
+    Target, BarChart3, X, Loader2
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -45,6 +45,26 @@ export default function CampaignsPage() {
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [creating, setCreating] = useState(false);
+    const [newCampaign, setNewCampaign] = useState({ name: '', type: 'social', budget: 0, start_date: new Date().toISOString().split('T')[0], end_date: '' });
+
+    const handleCreate = async () => {
+        if (!shop?.id || !newCampaign.name.trim()) return;
+        setCreating(true);
+        try {
+            const { data, error } = await supabase.from('marketing_campaigns').insert([{
+                shop_id: shop.id, name: newCampaign.name.trim(), type: newCampaign.type,
+                status: 'draft', budget: newCampaign.budget, spend: 0,
+                start_date: newCampaign.start_date || null, end_date: newCampaign.end_date || null, metrics: {},
+            }]).select().single();
+            if (error) throw error;
+            setCampaigns(prev => [data, ...prev]);
+            setShowCreateModal(false);
+            setNewCampaign({ name: '', type: 'social', budget: 0, start_date: new Date().toISOString().split('T')[0], end_date: '' });
+        } catch (err) { console.error('Create error:', err); }
+        finally { setCreating(false); }
+    };
 
     useEffect(() => {
         if (!shop?.id) return;
@@ -117,7 +137,7 @@ export default function CampaignsPage() {
                             className="pl-10 w-64 bg-gray-50"
                         />
                     </div>
-                    <Button className="bg-emerald-600 hover:bg-emerald-700 text-white">
+                    <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => setShowCreateModal(true)}>
                         <Plus className="w-4 h-4 mr-2" />
                         Шинэ кампани
                     </Button>
@@ -214,6 +234,35 @@ export default function CampaignsPage() {
                     )}
                 </CardContent>
             </Card>
+            {/* Create Modal */}
+            {showCreateModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+                        <div className="flex items-center justify-between px-6 py-4 border-b">
+                            <h3 className="font-semibold text-gray-900">Шинэ кампани</h3>
+                            <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5 text-gray-400" /></button>
+                        </div>
+                        <div className="px-6 py-4 space-y-4">
+                            <div><label className="text-sm font-medium text-gray-700 block mb-1">Нэр *</label><Input value={newCampaign.name} onChange={e => setNewCampaign(p => ({ ...p, name: e.target.value }))} placeholder="Кампанийн нэр" /></div>
+                            <div><label className="text-sm font-medium text-gray-700 block mb-1">Төрөл</label>
+                                <select value={newCampaign.type} onChange={e => setNewCampaign(p => ({ ...p, type: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                                    <option value="social">Сошиал</option><option value="search">Хайлт</option><option value="display">Дэлгэц</option><option value="email">Имэйл</option><option value="event">Эвент</option>
+                                </select></div>
+                            <div><label className="text-sm font-medium text-gray-700 block mb-1">Төсөв (₮)</label><Input type="number" value={newCampaign.budget} onChange={e => setNewCampaign(p => ({ ...p, budget: Number(e.target.value) }))} /></div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div><label className="text-sm font-medium text-gray-700 block mb-1">Эхлэх</label><Input type="date" value={newCampaign.start_date} onChange={e => setNewCampaign(p => ({ ...p, start_date: e.target.value }))} /></div>
+                                <div><label className="text-sm font-medium text-gray-700 block mb-1">Дуусах</label><Input type="date" value={newCampaign.end_date} onChange={e => setNewCampaign(p => ({ ...p, end_date: e.target.value }))} /></div>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-3 px-6 py-4 border-t">
+                            <Button variant="outline" onClick={() => setShowCreateModal(false)}>Болих</Button>
+                            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleCreate} disabled={!newCampaign.name.trim() || creating}>
+                                {creating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Үүсгэж байна...</> : <><Plus className="w-4 h-4 mr-2" />Үүсгэх</>}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

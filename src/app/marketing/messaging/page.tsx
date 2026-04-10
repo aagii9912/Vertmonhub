@@ -3,9 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Mail, Plus, Send, Eye, MousePointer, UserMinus, MessageSquare } from 'lucide-react';
+import { Mail, Plus, Send, Eye, MousePointer, UserMinus, MessageSquare, X, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { Input } from '@/components/ui/Input';
 
 interface MessageCampaign {
     id: string;
@@ -25,6 +26,25 @@ export default function MessagingPage() {
     const [campaigns, setCampaigns] = useState<MessageCampaign[]>([]);
     const [loading, setLoading] = useState(true);
     const [tab, setTab] = useState<'email' | 'sms'>('email');
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [creating, setCreating] = useState(false);
+    const [newCamp, setNewCamp] = useState({ name: '', subject: '' });
+
+    const handleCreate = async () => {
+        if (!shop?.id || !newCamp.name.trim()) return;
+        setCreating(true);
+        try {
+            const { data, error } = await supabase.from('message_campaigns').insert([{
+                shop_id: shop.id, name: newCamp.name.trim(), subject: newCamp.subject || null,
+                type: tab, status: 'draft', recipients: 0, delivered: 0, opened: 0, clicked: 0,
+            }]).select().single();
+            if (error) throw error;
+            setCampaigns(prev => [data, ...prev]);
+            setShowCreateModal(false);
+            setNewCamp({ name: '', subject: '' });
+        } catch (err) { console.error('Create error:', err); }
+        finally { setCreating(false); }
+    };
 
     useEffect(() => {
         if (!shop?.id) return;
@@ -69,7 +89,7 @@ export default function MessagingPage() {
                     </h1>
                     <p className="text-sm text-gray-500 mt-1">Имэйл болон SMS кампанит ажлууд</p>
                 </div>
-                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="w-4 h-4 mr-2" />Шинэ кампани</Button>
+                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => setShowCreateModal(true)}><Plus className="w-4 h-4 mr-2" />Шинэ кампани</Button>
             </div>
 
             {/* Tab */}
@@ -127,6 +147,26 @@ export default function MessagingPage() {
                     )}
                 </CardContent>
             </Card>
+            {showCreateModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+                        <div className="flex items-center justify-between px-6 py-4 border-b">
+                            <h3 className="font-semibold text-gray-900">Шинэ {tab === 'email' ? 'имэйл' : 'SMS'} кампани</h3>
+                            <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5 text-gray-400" /></button>
+                        </div>
+                        <div className="px-6 py-4 space-y-4">
+                            <div><label className="text-sm font-medium text-gray-700 block mb-1">Нэр *</label><Input value={newCamp.name} onChange={e => setNewCamp(p => ({ ...p, name: e.target.value }))} placeholder="Кампанийн нэр" /></div>
+                            {tab === 'email' && <div><label className="text-sm font-medium text-gray-700 block mb-1">Гарчиг (subject)</label><Input value={newCamp.subject} onChange={e => setNewCamp(p => ({ ...p, subject: e.target.value }))} placeholder="Имэйлийн гарчиг" /></div>}
+                        </div>
+                        <div className="flex justify-end gap-3 px-6 py-4 border-t">
+                            <Button variant="outline" onClick={() => setShowCreateModal(false)}>Болих</Button>
+                            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleCreate} disabled={!newCamp.name.trim() || creating}>
+                                {creating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Үүсгэж байна...</> : <><Plus className="w-4 h-4 mr-2" />Үүсгэх</>}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

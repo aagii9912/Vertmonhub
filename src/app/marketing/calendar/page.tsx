@@ -3,9 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { CalendarDays, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarDays, Plus, ChevronLeft, ChevronRight, X, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { Input } from '@/components/ui/Input';
 
 interface CalendarItem {
     id: string;
@@ -32,6 +33,26 @@ export default function CalendarPage() {
     const [items, setItems] = useState<CalendarItem[]>([]);
     const [loading, setLoading] = useState(true);
     const [currentDate, setCurrentDate] = useState(new Date());
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [creating, setCreating] = useState(false);
+    const [newItem, setNewItem] = useState({ title: '', type: 'post', platform: 'facebook', scheduled_date: new Date().toISOString().split('T')[0], color: '#3B82F6' });
+
+    const handleCreate = async () => {
+        if (!shop?.id || !newItem.title.trim()) return;
+        setCreating(true);
+        try {
+            const { data, error } = await supabase.from('content_calendar').insert([{
+                shop_id: shop.id, title: newItem.title.trim(), type: newItem.type,
+                platform: newItem.platform, scheduled_date: newItem.scheduled_date,
+                status: 'planned', color: newItem.color,
+            }]).select().single();
+            if (error) throw error;
+            setItems(prev => [...prev, data].sort((a: CalendarItem, b: CalendarItem) => a.scheduled_date.localeCompare(b.scheduled_date)));
+            setShowCreateModal(false);
+            setNewItem({ title: '', type: 'post', platform: 'facebook', scheduled_date: new Date().toISOString().split('T')[0], color: '#3B82F6' });
+        } catch (err) { console.error('Create error:', err); }
+        finally { setCreating(false); }
+    };
 
     useEffect(() => {
         if (!shop?.id) return;
@@ -85,7 +106,7 @@ export default function CalendarPage() {
                     </h1>
                     <p className="text-sm text-gray-500 mt-1">Контент төлөвлөлт</p>
                 </div>
-                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="w-4 h-4 mr-2" />Шинэ контент</Button>
+                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => setShowCreateModal(true)}><Plus className="w-4 h-4 mr-2" />Шинэ контент</Button>
             </div>
 
             <Card>
@@ -133,6 +154,39 @@ export default function CalendarPage() {
                     )}
                 </CardContent>
             </Card>
+            {showCreateModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
+                        <div className="flex items-center justify-between px-6 py-4 border-b">
+                            <h3 className="font-semibold text-gray-900">Шинэ контент</h3>
+                            <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-gray-100 rounded-lg"><X className="w-5 h-5 text-gray-400" /></button>
+                        </div>
+                        <div className="px-6 py-4 space-y-4">
+                            <div><label className="text-sm font-medium text-gray-700 block mb-1">Гарчиг *</label><Input value={newItem.title} onChange={e => setNewItem(p => ({ ...p, title: e.target.value }))} placeholder="Контентын гарчиг" /></div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div><label className="text-sm font-medium text-gray-700 block mb-1">Төрөл</label>
+                                    <select value={newItem.type} onChange={e => setNewItem(p => ({ ...p, type: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                                        <option value="post">Пост</option><option value="story">Story</option><option value="reel">Reel</option><option value="blog">Блог</option><option value="ad">Зар</option><option value="event">Эвент</option>
+                                    </select></div>
+                                <div><label className="text-sm font-medium text-gray-700 block mb-1">Платформ</label>
+                                    <select value={newItem.platform} onChange={e => setNewItem(p => ({ ...p, platform: e.target.value }))} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                                        <option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="web">Вэб</option>
+                                    </select></div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div><label className="text-sm font-medium text-gray-700 block mb-1">Огноо</label><Input type="date" value={newItem.scheduled_date} onChange={e => setNewItem(p => ({ ...p, scheduled_date: e.target.value }))} /></div>
+                                <div><label className="text-sm font-medium text-gray-700 block mb-1">Өнгө</label><input type="color" value={newItem.color} onChange={e => setNewItem(p => ({ ...p, color: e.target.value }))} className="w-full h-9 rounded-lg cursor-pointer" /></div>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-3 px-6 py-4 border-t">
+                            <Button variant="outline" onClick={() => setShowCreateModal(false)}>Болих</Button>
+                            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleCreate} disabled={!newItem.title.trim() || creating}>
+                                {creating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Үүсгэж байна...</> : <><Plus className="w-4 h-4 mr-2" />Үүсгэх</>}
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
