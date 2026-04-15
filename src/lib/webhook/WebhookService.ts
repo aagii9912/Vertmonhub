@@ -7,7 +7,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { sendImage, sendImageGallery } from '@/lib/facebook/messenger';
 import { generateCommentReply } from '@/lib/ai/comment-detector';
-import type { AIProduct, AIFAQ, AIQuickReply, AISlogan, NotifySettings, ChatMessage as AIChatMessage } from '@/types/ai';
+import type { AIFAQ, AIQuickReply, AISlogan, NotifySettings, ChatMessage as AIChatMessage } from '@/types/ai';
 import { IntentResult } from '@/lib/ai/intent-detector';
 
 /**
@@ -28,14 +28,10 @@ export interface ShopWithProducts {
     instagram_username?: string | null;
     properties?: any[];
     notify_on_lead?: boolean | null;
+    notify_on_viewing?: boolean | null;
     notify_on_contact?: boolean | null;
     notify_on_support?: boolean | null;
-    notify_on_cancel?: boolean | null;
     is_ai_active?: boolean | null;
-    // Plan-based AI routing fields
-    subscription_plan?: string | null;
-    subscription_status?: string | null;
-    trial_ends_at?: string | null;
     custom_knowledge?: Record<string, unknown> | null;
 }
 
@@ -46,7 +42,6 @@ export interface CustomerData {
     id: string;
     name?: string | null;
     phone?: string | null;
-    total_orders?: number;
     ai_paused_until?: string | null;
     // Message counting fields
     message_count?: number;
@@ -99,14 +94,10 @@ export async function getShopByPageId(pageId: string): Promise<ShopWithProducts 
         facebook_page_access_token: data.facebook_page_access_token,
         properties: data.properties || [],
         notify_on_lead: data.notify_on_lead,
+        notify_on_viewing: data.notify_on_viewing,
         notify_on_contact: data.notify_on_contact,
         notify_on_support: data.notify_on_support,
-        notify_on_cancel: data.notify_on_cancel,
         is_ai_active: data.is_ai_active,
-        // Plan-based AI routing
-        subscription_plan: data.subscription_plan,
-        subscription_status: data.subscription_status,
-        trial_ends_at: data.trial_ends_at,
         custom_knowledge: data.custom_knowledge,
         // Instagram fields
         instagram_business_account_id: data.instagram_business_account_id,
@@ -144,13 +135,10 @@ export async function getShopByInstagramId(instagramId: string): Promise<ShopWit
         instagram_username: data.instagram_username,
         properties: data.properties || [],
         notify_on_lead: data.notify_on_lead,
+        notify_on_viewing: data.notify_on_viewing,
         notify_on_contact: data.notify_on_contact,
         notify_on_support: data.notify_on_support,
-        notify_on_cancel: data.notify_on_cancel,
         is_ai_active: data.is_ai_active,
-        subscription_plan: data.subscription_plan,
-        subscription_status: data.subscription_status,
-        trial_ends_at: data.trial_ends_at,
         custom_knowledge: data.custom_knowledge,
     };
 }
@@ -196,7 +184,6 @@ export async function getOrCreateCustomer(
             id: existingCustomer.id,
             name: existingCustomer.name,
             phone: existingCustomer.phone,
-            total_orders: existingCustomer.total_orders || 0,
             ai_paused_until: existingCustomer.ai_paused_until,
             message_count: existingCustomer.message_count || 0,
             message_count_reset_at: existingCustomer.message_count_reset_at,
@@ -220,7 +207,6 @@ export async function getOrCreateCustomer(
         id: newCustomer?.id || '',
         name: userName,
         phone: null,
-        total_orders: 0,
         message_count: 0,
         message_count_reset_at: null,
         platform: 'messenger',
@@ -250,7 +236,6 @@ export async function getOrCreateInstagramCustomer(
             id: existingCustomer.id,
             name: existingCustomer.name,
             phone: existingCustomer.phone,
-            total_orders: existingCustomer.total_orders || 0,
             ai_paused_until: existingCustomer.ai_paused_until,
             message_count: existingCustomer.message_count || 0,
             message_count_reset_at: existingCustomer.message_count_reset_at,
@@ -277,7 +262,6 @@ export async function getOrCreateInstagramCustomer(
         id: newCustomer?.id || '',
         name: userName,
         phone: null,
-        total_orders: 0,
         message_count: 0,
         message_count_reset_at: null,
         instagram_id: instagramId,
@@ -476,10 +460,10 @@ function getNextMonthFirstDay(): string {
  */
 export function buildNotifySettings(shop: ShopWithProducts): NotifySettings {
     return {
-        order: shop.notify_on_lead ?? true,
+        lead: shop.notify_on_lead ?? true,
+        viewing: shop.notify_on_viewing ?? true,
         contact: shop.notify_on_contact ?? true,
         support: shop.notify_on_support ?? true,
-        cancel: shop.notify_on_cancel ?? true,
     };
 }
 
@@ -522,7 +506,7 @@ export function generateFallbackResponse(
  * Process and send AI response with images
  */
 export async function processAIResponse(
-    response: { text: string; imageAction?: { type: 'single' | 'confirm' | 'attachment'; products?: Array<{ name: string; price: number; imageUrl: string; description?: string }>; imageUrls?: string[] } },
+    response: { text: string; imageAction?: { type: 'single' | 'confirm' | 'attachment'; properties?: Array<{ name: string; price: number; imageUrl: string; description?: string }>; imageUrls?: string[] } },
     senderId: string,
     pageAccessToken: string
 ): Promise<void> {
@@ -531,9 +515,8 @@ export async function processAIResponse(
     if (!imageAction) return;
 
     try {
-        // Handle new attachment type for property images
+        // Handle attachment type for property images
         if (imageAction.type === 'attachment' && imageAction.imageUrls && imageAction.imageUrls.length > 0) {
-            // Send property images
             for (const imageUrl of imageAction.imageUrls.slice(0, 5)) {
                 await sendImage({
                     recipientId: senderId,
@@ -545,23 +528,23 @@ export async function processAIResponse(
             return;
         }
 
-        // Handle traditional product images
-        if (imageAction.products && imageAction.products.length > 0) {
-            if (imageAction.products.length === 1 && imageAction.type === 'single') {
+        // Handle property gallery
+        if (imageAction.properties && imageAction.properties.length > 0) {
+            if (imageAction.properties.length === 1 && imageAction.type === 'single') {
                 await sendImage({
                     recipientId: senderId,
-                    imageUrl: imageAction.products[0].imageUrl,
+                    imageUrl: imageAction.properties[0].imageUrl,
                     pageAccessToken,
                 });
             } else {
                 await sendImageGallery({
                     recipientId: senderId,
-                    products: imageAction.products,
+                    products: imageAction.properties,
                     pageAccessToken,
                     confirmMode: imageAction.type === 'confirm',
                 });
             }
-            logger.success(`Sent ${imageAction.products.length} product image(s) in ${imageAction.type} mode`);
+            logger.success(`Sent ${imageAction.properties.length} property image(s) in ${imageAction.type} mode`);
         }
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';

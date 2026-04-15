@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyWebhook, sendTextMessage, sendSenderAction, sendMessageWithQuickReplies } from '@/lib/facebook/messenger';
-import { routeToAI, analyzeProductImageWithPlan, getPlanTypeFromSubscription } from '@/lib/ai/AIRouter';
+import { routeToAI, analyzeProductImageWithPlan } from '@/lib/ai/AIRouter';
 import { detectIntent } from '@/lib/ai/intent-detector';
 import { shouldReplyToComment } from '@/lib/ai/comment-detector';
 import { getCustomerMemory } from '@/lib/ai/tools/memory';
@@ -218,12 +218,6 @@ export async function POST(request: NextRequest) {
                         // Get chat history for context
                         const previousHistory: ChatMessage[] = await getChatHistory(shop.id, customer.id);
 
-                        // Map products to ensure null values are converted to undefined
-                        const mappedProducts = shop.properties?.map(p => ({
-                            ...p,
-                            discount_percent: p.discount_percent ?? undefined,
-                        }));
-
                         // Get customer memory (preferences saved by AI)
                         const customerMemory = customer.id
                             ? await getCustomerMemory(customer.id)
@@ -241,21 +235,13 @@ export async function POST(request: NextRequest) {
                                     aiInstructions: shop.ai_instructions || undefined,
                                     aiEmotion: shop.ai_emotion || 'friendly',
                                     customKnowledge: shop.custom_knowledge || undefined,
-                                    products: mappedProducts || [],
+                                    properties: shop.properties || [],
                                     customerName: customer.name || undefined,
-                                    orderHistory: customer.total_orders || 0,
                                     faqs: aiFeatures.faqs,
                                     quickReplies: aiFeatures.quickReplies,
                                     slogans: aiFeatures.slogans,
                                     notifySettings: buildNotifySettings(shop),
                                     customerMemory: customerMemory || undefined,
-                                    // Add subscription for plan-based AI routing
-                                    subscription: {
-                                        plan: shop.subscription_plan || 'starter',
-                                        status: shop.subscription_status || 'active',
-                                        trial_ends_at: shop.trial_ends_at || undefined,
-                                    },
-                                    messageCount: customer.message_count || 0,
                                 },
                                 previousHistory
                             ),
@@ -325,20 +311,13 @@ export async function POST(request: NextRequest) {
                             await sendSenderAction(senderId, 'typing_on', accessToken);
 
                             try {
-                                // Get subscription plan for image analysis
-                                const planType = getPlanTypeFromSubscription({
-                                    plan: shop.subscription_plan || 'starter',
-                                    status: shop.subscription_status || 'active',
-                                    trial_ends_at: shop.trial_ends_at || undefined,
-                                });
-
-                                // Analyze the image with shop products for matching
-                                const productsForAnalysis = shop.properties?.map(p => ({
+                                // Analyze the image with shop properties for matching
+                                const propertiesForAnalysis = shop.properties?.map(p => ({
                                     id: p.id,
                                     name: p.name,
                                     description: p.description || undefined,
                                 }));
-                                const imageAnalysis = await analyzeProductImageWithPlan(imageUrl, productsForAnalysis || [], planType);
+                                const imageAnalysis = await analyzeProductImageWithPlan(imageUrl, propertiesForAnalysis || [], 'ultimate');
 
                                 if (imageAnalysis.matchedProduct || imageAnalysis.description) {
                                     // Try to match with shop products

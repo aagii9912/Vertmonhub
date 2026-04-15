@@ -5,7 +5,7 @@ import { checkMiddlewareRateLimit } from '@/lib/utils/rate-limiter';
 import { logApiRequest } from '@/lib/utils/request-logger';
 
 // Protected routes requiring authentication
-const protectedRoutes = ['/dashboard', '/setup', '/admin'];
+const protectedRoutes = ['/dashboard', '/admin'];
 
 // Public routes that bypass auth
 const publicRoutes = [
@@ -15,7 +15,6 @@ const publicRoutes = [
     '/auth/callback',
     '/admin/login',
     '/api/webhook',
-    '/api/payment/webhook',
     '/privacy',
     '/terms',
     '/help',
@@ -25,7 +24,7 @@ const publicRoutes = [
 const aiRoutes = ['/api/chat', '/api/ai', '/api/ai-assistant', '/api/ai-settings'];
 
 // Webhook routes with relaxed limits
-const webhookRoutes = ['/api/webhook', '/api/payment/webhook'];
+const webhookRoutes = ['/api/webhook'];
 
 function matchesRoute(pathname: string, routes: string[]): boolean {
     return routes.some(route => pathname === route || pathname.startsWith(route + '/'));

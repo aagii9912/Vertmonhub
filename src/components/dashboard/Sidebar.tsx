@@ -25,6 +25,7 @@ import {
     TrendingUp,
     Share2,
     ChevronRight,
+    Headphones,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccessModule, canAccessModuleDynamic, getRoleDisplayName } from '@/lib/rbac';
@@ -72,6 +73,7 @@ const sections: MenuSection[] = [
             { name: 'Үзлэг', href: '/dashboard/viewings', icon: Eye, module: 'viewings' },
             { name: 'Гэрээ', href: '/dashboard/contracts', icon: FileText, module: 'contracts' },
             { name: 'Харилцагч', href: '/dashboard/customers', icon: Users, module: 'customers' },
+            { name: 'Үйлчилгээ', href: '/dashboard/customer-service', icon: Headphones, badge: 'Шинэ', module: 'contracts' },
         ],
     },
     {

@@ -28,20 +28,8 @@ CREATE POLICY "Authenticated users can view projects"
 
 CREATE POLICY "Admins can manage projects"
     ON projects FOR ALL TO authenticated
-    USING (
-        EXISTS (
-            SELECT 1 FROM admins
-            WHERE admins.user_id = auth.uid()::text
-            AND admins.is_active = true
-        )
-    )
-    WITH CHECK (
-        EXISTS (
-            SELECT 1 FROM admins
-            WHERE admins.user_id = auth.uid()::text
-            AND admins.is_active = true
-        )
-    );
+    USING (shop_id = get_user_shop_id())
+    WITH CHECK (shop_id = get_user_shop_id());
 
 -- Trigger for updated_at
 CREATE TRIGGER update_projects_updated_at

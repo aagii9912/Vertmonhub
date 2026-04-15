@@ -11,7 +11,7 @@ ALTER TABLE products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
 ALTER TABLE order_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
+
 ALTER TABLE chat_history ENABLE ROW LEVEL SECURITY;
 ALTER TABLE email_logs ENABLE ROW LEVEL SECURITY;
 
@@ -169,29 +169,7 @@ CREATE POLICY "order_items_delete_own_shop" ON order_items
         )
     );
 
--- ============================================
--- PAYMENTS TABLE POLICIES
--- ============================================
 
--- Users can view payments for their shop
-CREATE POLICY "payments_select_own_shop" ON payments
-    FOR SELECT
-    USING (shop_id = get_user_shop_id());
-
--- Users can insert payments for their shop
-CREATE POLICY "payments_insert_own_shop" ON payments
-    FOR INSERT
-    WITH CHECK (shop_id = get_user_shop_id());
-
--- Users can update payments for their shop
-CREATE POLICY "payments_update_own_shop" ON payments
-    FOR UPDATE
-    USING (shop_id = get_user_shop_id());
-
--- Users can delete payments for their shop
-CREATE POLICY "payments_delete_own_shop" ON payments
-    FOR DELETE
-    USING (shop_id = get_user_shop_id());
 
 -- ============================================
 -- CHAT_HISTORY TABLE POLICIES
@@ -287,58 +265,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Fix: create_payment
-CREATE OR REPLACE FUNCTION create_payment(
-    p_order_id UUID,
-    p_payment_method TEXT,
-    p_amount DECIMAL DEFAULT NULL
-)
-RETURNS UUID
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-DECLARE
-    v_payment_id UUID;
-    v_shop_id UUID;
-    v_order_amount DECIMAL;
-BEGIN
-    SELECT shop_id, total_amount INTO v_shop_id, v_order_amount
-    FROM orders WHERE id = p_order_id;
-    
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'Order not found: %', p_order_id;
-    END IF;
-    
-    v_order_amount := COALESCE(p_amount, v_order_amount);
-    
-    INSERT INTO payments (order_id, shop_id, payment_method, amount)
-    VALUES (p_order_id, v_shop_id, p_payment_method, v_order_amount)
-    RETURNING id INTO v_payment_id;
-    
-    RETURN v_payment_id;
-END;
-$$ LANGUAGE plpgsql;
 
--- Fix: mark_payment_paid
-CREATE OR REPLACE FUNCTION mark_payment_paid(
-    p_payment_id UUID,
-    p_transaction_id TEXT DEFAULT NULL
-)
-RETURNS BOOLEAN
-SECURITY DEFINER
-SET search_path = public, pg_temp
-AS $$
-BEGIN
-    UPDATE payments
-    SET 
-        status = 'paid'::payment_status,
-        paid_at = NOW(),
-        qpay_transaction_id = COALESCE(p_transaction_id, qpay_transaction_id)
-    WHERE id = p_payment_id AND status = 'pending'::payment_status;
-    
-    RETURN FOUND;
-END;
-$$ LANGUAGE plpgsql;
 
 -- Fix: update_order_on_payment (already has SECURITY DEFINER, just add search_path)
 CREATE OR REPLACE FUNCTION update_order_on_payment()

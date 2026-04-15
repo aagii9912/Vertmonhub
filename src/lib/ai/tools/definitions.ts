@@ -132,6 +132,43 @@ export const GEMINI_TOOLS: any[] = [
             },
             required: ['key', 'value']
         }
+    },
+    // ============================================
+    // CUSTOMER SERVICE TOOLS
+    // ============================================
+    {
+        name: 'check_payment_status',
+        description: 'Худалдан авагчийн гэрээний төлбөрийн байдлыг шалгах. Төлсөн дүн, үлдэгдэл, хоцрогдлыг мэдээлнэ.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                customer_phone: { type: SchemaType.STRING, description: 'Худалдан авагчийн утасны дугаар' },
+                customer_name: { type: SchemaType.STRING, description: 'Худалдан авагчийн нэр (утас байхгүй бол)' },
+                contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар (тодорхой бол)' }
+            }
+        }
+    },
+    {
+        name: 'log_service_request',
+        description: 'Худалдан авагчийн гомдол, хүсэлт, засварын хүсэлт бүртгэх.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                subject: { type: SchemaType.STRING, description: 'Хүсэлтийн товч тайлбар' },
+                type: {
+                    type: SchemaType.STRING,
+                    enum: ['inquiry', 'complaint', 'maintenance', 'payment', 'other'],
+                    description: 'Хүсэлтийн төрөл'
+                },
+                priority: {
+                    type: SchemaType.STRING,
+                    enum: ['low', 'medium', 'high', 'urgent'],
+                    description: 'Чухлал'
+                },
+                description: { type: SchemaType.STRING, description: 'Дэлгэрэнгүй тайлбар' }
+            },
+            required: ['subject']
+        }
     }
 ];
 
@@ -198,6 +235,19 @@ export interface RememberPreferenceArgs {
     value: string;
 }
 
+export interface CheckPaymentStatusArgs {
+    customer_phone?: string;
+    customer_name?: string;
+    contract_number?: string;
+}
+
+export interface LogServiceRequestArgs {
+    subject: string;
+    type?: 'inquiry' | 'complaint' | 'maintenance' | 'payment' | 'other';
+    priority?: 'low' | 'medium' | 'high' | 'urgent';
+    description?: string;
+}
+
 /**
  * Union type for all tool arguments
  */
@@ -209,7 +259,9 @@ export type ToolArgs =
     | CreateLeadArgs
     | CollectContactArgs
     | RequestHumanSupportArgs
-    | RememberPreferenceArgs;
+    | RememberPreferenceArgs
+    | CheckPaymentStatusArgs
+    | LogServiceRequestArgs;
 
 /**
  * Tool names type
@@ -222,4 +274,6 @@ export type ToolName =
     | 'create_lead'
     | 'collect_contact_info'
     | 'request_human_support'
-    | 'remember_preference';
+    | 'remember_preference'
+    | 'check_payment_status'
+    | 'log_service_request';

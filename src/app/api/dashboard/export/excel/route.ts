@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
             // Export Customers
             const { data: customers } = await supabase
                 .from('customers')
-                .select('id, name, phone, address, is_vip, created_at')
+                .select('id, name, phone, email, address, notes, created_at')
                 .eq('shop_id', shopId)
                 .order('created_at', { ascending: false })
                 .limit(500);
@@ -84,8 +84,9 @@ export async function GET(request: NextRequest) {
             const exportData = customers?.map(c => ({
                 'Нэр': c.name || '-',
                 'Утас': c.phone || '-',
+                'Имэйл': c.email || '-',
                 'Хаяг': c.address || '-',
-                'VIP': c.is_vip ? 'Тийм' : 'Үгүй',
+                'Тэмдэглэл': c.notes || '-',
                 'Бүртгэгдсэн': new Date(c.created_at).toLocaleDateString('mn-MN'),
             })) || [];
 

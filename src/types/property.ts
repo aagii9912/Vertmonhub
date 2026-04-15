@@ -184,3 +184,94 @@ export interface LoanCalculatorResult {
     total_interest: number;
     principal: number;
 }
+
+/**
+ * Property Contract — Excel-ээс импортолсон гэрээний бүх өгөгдөл
+ * (Mongolian sales-tracking workbook structure)
+ */
+export type ContractStatus = 'active' | 'closed' | 'cancelled';
+
+export interface PropertyContract {
+    id: string;
+    shop_id: string;
+
+    // Бүтээгдэхүүн / орон сууц
+    product_type: string;            // residential, parking, industry, commercial
+    block_name: string | null;
+    building_number: string | null;
+    floor: string | null;
+    unit_number: string | null;      // Шинэ тоот
+    legacy_unit_number: string | null; // Тоот (хуучин)
+    unit_label: string | null;       // Сууцны тэмдэглэгээ (4a)
+    unit_type: string | null;        // Айлын төрөл (G)
+    model: string | null;            // Загвар (4B)
+    rooms: number | null;
+    contracted_area: number | null;
+
+    // Үнэ
+    first_price: number | null;
+    price_per_sqm: number | null;
+    total_price: number | null;
+
+    // Урьдчилгаа
+    prepayment_condition: string | null;
+    prepayment_percent: number | null;
+    prepayment_due: number | null;
+    prepayment_paid: number | null;
+    prepayment_paid_cash: number | null;
+    prepayment_paid_barter: number | null;
+
+    // Төлбөрийн нийт байдал
+    paid_amount: number | null;
+    paid_percent: number | null;
+    balance: number | null;
+    penalty_amount: number | null;
+    overdue_days: number | null;
+
+    // Гэрээ
+    contract_number: string | null;
+    contract_date: string | null;
+    contract_status: ContractStatus;
+    payment_condition: string | null;
+    remaining_payment_condition: string | null;
+
+    // Борлуулалт
+    sales_channel: string | null;
+    sales_manager: string | null;
+    bank_status: string | null;
+    barter_status: string | null;
+    barter_type: string | null;
+    balance_payment_method: string | null;
+
+    // Худалдан авагч
+    customer_name: string | null;
+    customer_first_name: string | null;
+    customer_last_name: string | null;
+    customer_registration: string | null;
+    customer_phone: string | null;
+    customer_mobile: string | null;
+
+    // Огноо
+    order_date: string | null;
+    commissioning_date: string | null;
+
+    // CRM
+    hubspot_contact_id: string | null;
+
+    // Timestamps
+    created_at: string;
+    updated_at: string;
+}
+
+/**
+ * Гэрээний жагсаалтын статистик
+ */
+export interface ContractStats {
+    total: number;
+    closed: number;
+    active: number;
+    total_sales: number;
+    total_paid: number;
+    total_balance: number;
+    overdue_count: number;
+}

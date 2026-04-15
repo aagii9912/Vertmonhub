@@ -217,7 +217,7 @@ export default function InboxMessagesPage() {
                     {filtered.length === 0 ? (
                         <div className="flex flex-col items-center justify-center h-full text-white/30 gap-2">
                             <InboxIcon className="w-8 h-8" />
-                            <p className="text-sm">{t.inbox.noActiveCarts}</p>
+                            <p className="text-sm">{t.inbox.noConversations || 'Чат байхгүй'}</p>
                         </div>
                     ) : (
                         filtered.map(convo => (
