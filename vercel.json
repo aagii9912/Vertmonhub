@@ -10,5 +10,11 @@
     "deploymentEnabled": {
       "main": true
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/cron/overdue-check",
+      "schedule": "0 0 * * *"
+    }
+  ]
 }

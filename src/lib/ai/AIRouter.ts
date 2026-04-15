@@ -189,7 +189,7 @@ export async function routeToAI(
                     shopId: context.shopId,
                     customerId: context.customerId,
                     customerName: context.customerName,
-                    properties: context.products,
+                    properties: context.properties,
                     notifySettings: context.notifySettings,
                 };
 

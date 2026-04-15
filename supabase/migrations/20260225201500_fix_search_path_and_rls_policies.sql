@@ -35,24 +35,7 @@ BEGIN
 END;
 $$;
 
--- 3. update_product_total_stock
-CREATE OR REPLACE FUNCTION update_product_total_stock()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SET search_path = public
-AS $$
-BEGIN
-  UPDATE products
-  SET stock = (
-    SELECT COALESCE(SUM(stock), 0)
-    FROM product_variants
-    WHERE product_id = NEW.product_id AND is_active = true
-  )
-  WHERE id = NEW.product_id;
-
-  RETURN NEW;
-END;
-$$;
+-- 3. update_product_total_stock removed (legacy e-commerce)
 
 -- 4. update_webhook_jobs_updated_at
 CREATE OR REPLACE FUNCTION update_webhook_jobs_updated_at()
@@ -110,24 +93,7 @@ $$;
 -- Fix rls_policy_always_true warnings
 -- ============================================
 
--- 6. customer_complaints: Replace permissive "Allow all" with shop-scoped policy
-DROP POLICY IF EXISTS "Allow all for service role" ON public.customer_complaints;
-
-CREATE POLICY "complaints_select_own_shop" ON public.customer_complaints
-    FOR SELECT
-    USING (shop_id = get_user_shop_id());
-
-CREATE POLICY "complaints_insert_own_shop" ON public.customer_complaints
-    FOR INSERT
-    WITH CHECK (shop_id = get_user_shop_id());
-
-CREATE POLICY "complaints_update_own_shop" ON public.customer_complaints
-    FOR UPDATE
-    USING (shop_id = get_user_shop_id());
-
-CREATE POLICY "complaints_delete_own_shop" ON public.customer_complaints
-    FOR DELETE
-    USING (shop_id = get_user_shop_id());
+-- 6. customer_complaints removed (legacy e-commerce)
 
 -- 7. feedback: Replace permissive INSERT policy with shop-scoped check
 DROP POLICY IF EXISTS "Anyone can submit feedback" ON public.feedback;

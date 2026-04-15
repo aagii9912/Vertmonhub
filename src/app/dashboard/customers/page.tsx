@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import {
-    Search, User, Crown, Phone, Mail, 
-    Tag, X, Plus, MessageSquare, Clock, ChevronDown,
+    Search, User, Phone, Mail,
+    Tag, X, MessageSquare, Clock, ChevronDown,
     Edit2, Save, Loader2
 } from 'lucide-react';
 
@@ -13,24 +13,17 @@ interface Customer {
     id: string;
     name: string | null;
     phone: string | null;
+    email?: string | null;
     address: string | null;
-    total_orders: number;
-    total_spent: number;
-    is_vip: boolean;
+    notes?: string | null;
+    tags?: string[];
+    message_count?: number;
+    last_contact_at?: string | null;
     created_at: string;
     chat_history?: Array<{ message: string; response: string; created_at: string }>;
 }
 
-const PREDEFINED_TAGS = ['VIP', 'New', 'Lead', 'Inactive', 'Problem', 'Regular'];
-
-const TAG_COLORS: Record<string, string> = {
-    'VIP': 'bg-gradient-to-r from-amber-400 to-yellow-500 text-white',
-    'New': 'bg-green-100 text-green-700',
-    'Lead': 'bg-blue-100 text-blue-700',
-    'Inactive': 'bg-gray-100 text-gray-600',
-    'Problem': 'bg-red-100 text-red-700',
-    'Regular': 'bg-violet-100 text-violet-700',
-};
+const PREDEFINED_TAGS = ['New', 'Lead', 'Inactive', 'Hot', 'Regular'];
 
 export default function CustomersPage() {
     const [customers, setCustomers] = useState<Customer[]>([]);
@@ -122,38 +115,6 @@ export default function CustomersPage() {
         }
     }
 
-    async function addTag(customerId: string, tag: string) {
-        try {
-            await fetch(`/api/dashboard/customers/${customerId}/tags`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tag })
-            });
-            fetchCustomers();
-            if (selectedCustomer?.id === customerId) {
-                fetchCustomerDetail(customerId);
-            }
-        } catch (error) {
-            console.error('Failed to add tag:', error);
-        }
-    }
-
-    async function removeTag(customerId: string, tag: string) {
-        try {
-            await fetch(`/api/dashboard/customers/${customerId}/tags`, {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tag })
-            });
-            fetchCustomers();
-            if (selectedCustomer?.id === customerId) {
-                fetchCustomerDetail(customerId);
-            }
-        } catch (error) {
-            console.error('Failed to remove tag:', error);
-        }
-    }
-
     const filteredCustomers = customers.filter(c => {
         const matchesSearch = (c.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
             (c.phone || '').includes(searchQuery);
@@ -227,7 +188,7 @@ export default function CustomersPage() {
                                 className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
                             >
                                 <option value="created_at">Бүртгэсэн огноо</option>
-                                <option value="total_spent">Зарцуулсан дүн</option>
+                                <option value="last_contact_at">Сүүлд харьцсан</option>
                             </select>
                         </div>
                     </div>
@@ -248,8 +209,7 @@ export default function CustomersPage() {
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Харилцагч</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tags</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Сүүлд харьцсан</th>
-                                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Захиалга</th>
-                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Зарцуулсан</th>
+                                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Харилцсан</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-gray-100">
@@ -272,26 +232,21 @@ export default function CustomersPage() {
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="flex flex-wrap gap-1">
-                                                {customer.is_vip && (
-                                                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-gradient-to-r from-amber-400 to-yellow-500 text-white">
-                                                        VIP
+                                                {(customer.tags || []).map((tag) => (
+                                                    <span key={tag} className="px-2 py-0.5 rounded-full text-xs font-medium bg-violet-100 text-violet-700">
+                                                        {tag}
                                                     </span>
-                                                )}
+                                                ))}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-1 text-sm text-gray-600">
                                                 <Clock className="w-4 h-4 text-gray-400" />
-                                                {formatTime(customer.created_at)}
+                                                {formatTime(customer.last_contact_at || customer.created_at)}
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4">
-                                            <span className="text-sm text-gray-600">{customer.total_orders || 0} харилцсан</span>
-                                        </td>
                                         <td className="px-6 py-4 text-right">
-                                            <span className="font-semibold text-emerald-600">
-                                                {formatTime(customer.created_at)}
-                                            </span>
+                                            <span className="text-sm text-gray-600">{customer.message_count || 0} удаа</span>
                                         </td>
                                     </tr>
                                 ))}
@@ -393,46 +348,43 @@ export default function CustomersPage() {
                                     ) : (
                                         <p className="flex items-center gap-2 text-gray-900">
                                             <Mail className="w-4 h-4 text-gray-400" />
-                                            {selectedCustomer.address || '-'}
+                                            {selectedCustomer.email || '-'}
                                         </p>
                                     )}
                                 </div>
                             </div>
 
-                            {/* Tags - Coming Soon */}
+                            {/* Tags */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">Tags</label>
                                 <div className="flex flex-wrap gap-2">
-                                    {selectedCustomer.is_vip && (
-                                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium bg-gradient-to-r from-amber-400 to-yellow-500 text-white">
-                                            VIP
-                                        </span>
+                                    {(selectedCustomer.tags || []).length > 0 ? (
+                                        selectedCustomer.tags!.map((tag) => (
+                                            <span key={tag} className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium bg-violet-100 text-violet-700">
+                                                {tag}
+                                            </span>
+                                        ))
+                                    ) : (
+                                        <span className="text-sm text-gray-500">Tag байхгүй</span>
                                     )}
-                                    <span className="text-sm text-gray-500">Tag feature удахгүй...</span>
                                 </div>
                             </div>
 
-                            {/* Notes - Coming Soon */}
+                            {/* Notes */}
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-2">Тэмдэглэл</label>
-                                <p className="text-gray-600 bg-gray-50 p-3 rounded-xl">
-                                    Тэмдэглэл feature удахгүй...
+                                <p className="text-gray-600 bg-gray-50 p-3 rounded-xl whitespace-pre-wrap">
+                                    {selectedCustomer.notes || 'Тэмдэглэл байхгүй'}
                                 </p>
                             </div>
 
                             {/* Stats */}
-                            <div className="grid grid-cols-3 gap-4">
+                            <div className="grid grid-cols-2 gap-4">
                                 <div className="bg-emerald-50 p-4 rounded-xl text-center">
                                     <p className="text-2xl font-bold text-emerald-600">
-                                        {selectedCustomer.total_orders || 0}
+                                        {selectedCustomer.message_count || 0}
                                     </p>
                                     <p className="text-sm text-gray-600">Харилцсан</p>
-                                </div>
-                                <div className="bg-green-50 p-4 rounded-xl text-center">
-                                    <p className="text-2xl font-bold text-green-600">
-                                        {selectedCustomer.is_vip ? 'VIP' : 'Энгийн'}
-                                    </p>
-                                    <p className="text-sm text-gray-600">Төлөв</p>
                                 </div>
                                 <div className="bg-blue-50 p-4 rounded-xl text-center">
                                     <p className="text-2xl font-bold text-blue-600">

@@ -217,9 +217,7 @@ BEGIN
 
         EXECUTE format('
             CREATE POLICY "Users read own shop data" ON public.%I
-                FOR SELECT USING (
-                    shop_id IN (SELECT id FROM public.shops WHERE user_id = auth.uid()::text)
-                );
+                FOR SELECT USING (shop_id = get_user_shop_id());
         ', tbl);
     END LOOP;
 END $$;

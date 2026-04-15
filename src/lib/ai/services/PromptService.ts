@@ -34,7 +34,7 @@ Emoji-г зохистой ашигла. Хэрэглэгчийн сэтгэл х
 /**
  * Build properties information for prompt
  */
-export function buildPropertiesInfo(properties: ChatContext['products']): string {
+export function buildPropertiesInfo(properties: ChatContext['properties']): string {
     if (!properties || properties.length === 0) {
         return '- Одоогоор үл хөдлөх хөрөнгө бүртгэгдээгүй байна';
     }
@@ -81,7 +81,7 @@ export function buildDynamicKnowledge(customKnowledge?: Record<string, unknown>)
  */
 export function buildSystemPrompt(context: ChatContext): string {
     const emotionStyle = EMOTION_PROMPTS[context.aiEmotion || 'friendly'];
-    const propertiesInfo = buildPropertiesInfo(context.products);
+    const propertiesInfo = buildPropertiesInfo(context.properties);
     const customInstructions = buildCustomInstructions(context.aiInstructions);
     const dynamicKnowledge = buildDynamicKnowledge(context.customKnowledge);
 

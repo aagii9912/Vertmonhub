@@ -16,6 +16,8 @@ import type {
     CollectContactArgs,
     RequestHumanSupportArgs,
     RememberPreferenceArgs,
+    CheckPaymentStatusArgs,
+    LogServiceRequestArgs,
     ToolName,
 } from '../tools/definitions';
 import { saveCustomerPreference } from '../tools/memory';
@@ -39,7 +41,7 @@ export interface ToolExecutionContext {
     shopId: string;
     customerId?: string;
     customerName?: string;
-    properties?: ChatContext['products']; // Reuse products as properties for now
+    properties?: ChatContext['properties'];
     notifySettings?: ChatContext['notifySettings'];
 }
 
@@ -168,7 +170,7 @@ export async function executeShowPropertyImages(
         data: { property, images },
         imageAction: {
             type: 'attachment',
-            productIds: [property.id],
+            propertyIds: [property.id],
             imageUrls: images.slice(0, 5)
         }
     };
@@ -562,6 +564,110 @@ export async function executeRememberPreference(
 }
 
 // ============================================
+// CUSTOMER SERVICE TOOLS
+// ============================================
+
+/**
+ * Execute check_payment_status tool
+ */
+export async function executeCheckPaymentStatus(
+    args: CheckPaymentStatusArgs,
+    context: ToolExecutionContext
+): Promise<ToolExecutionResult> {
+    const supabase = supabaseAdmin();
+
+    let query = supabase
+        .from('property_contracts')
+        .select('contract_number, customer_name, customer_phone, total_price, paid_amount, balance, overdue_days, contract_status, paid_percent')
+        .eq('shop_id', context.shopId);
+
+    if (args.contract_number) {
+        query = query.ilike('contract_number', `%${args.contract_number}%`);
+    } else if (args.customer_phone) {
+        query = query.ilike('customer_phone', `%${args.customer_phone}%`);
+    } else if (args.customer_name) {
+        query = query.ilike('customer_name', `%${args.customer_name}%`);
+    } else {
+        return { success: false, error: 'Утас, нэр эсвэл гэрээний дугаар шаардлагатай.' };
+    }
+
+    const { data: contracts, error } = await query.limit(3);
+
+    if (error) {
+        logger.error('[AI] Payment status check error:', { error });
+        return { success: false, error: 'Төлбөрийн мэдээлэл шалгахад алдаа гарлаа.' };
+    }
+
+    if (!contracts || contracts.length === 0) {
+        return {
+            success: true,
+            message: 'Таны мэдээллээр гэрээ олдсонгүй. Гэрээний дугаар эсвэл утасны дугаараа дахин шалгана уу.'
+        };
+    }
+
+    const formatted = contracts.map(c => {
+        const pct = c.paid_percent || (c.total_price > 0 ? Math.round((c.paid_amount || 0) / c.total_price * 100) : 0);
+        return `📄 **Гэрээ: ${c.contract_number || '—'}**
+• Нэр: ${c.customer_name || '—'}
+• Нийт үнэ: ${(c.total_price || 0).toLocaleString()}₮
+• Төлсөн: ${(c.paid_amount || 0).toLocaleString()}₮ (${pct}%)
+• Үлдэгдэл: ${(c.balance || 0).toLocaleString()}₮
+${c.overdue_days && c.overdue_days > 0 ? `⚠️ Хоцрогдол: ${c.overdue_days} хоног` : '✅ Хоцрогдолгүй'}
+• Төлөв: ${c.contract_status === 'closed' ? 'Хаагдсан' : 'Идэвхтэй'}`;
+    }).join('\n\n');
+
+    return {
+        success: true,
+        message: `💳 **Төлбөрийн мэдээлэл:**\n\n${formatted}`,
+        data: { contracts }
+    };
+}
+
+/**
+ * Execute log_service_request tool
+ */
+export async function executeLogServiceRequest(
+    args: LogServiceRequestArgs,
+    context: ToolExecutionContext
+): Promise<ToolExecutionResult> {
+    const supabase = supabaseAdmin();
+
+    const { data, error } = await supabase
+        .from('service_logs')
+        .insert({
+            shop_id: context.shopId,
+            customer_name: context.customerName || null,
+            customer_phone: null,
+            subject: args.subject,
+            type: args.type || 'inquiry',
+            priority: args.priority || 'medium',
+            description: args.description || null,
+            status: 'open',
+        })
+        .select('id')
+        .single();
+
+    if (error) {
+        logger.error('[AI] Service log creation error:', { error });
+        return { success: false, error: 'Хүсэлт бүртгэхэд алдаа гарлаа.' };
+    }
+
+    // Notify manager
+    await sendPushNotification(context.shopId, {
+        title: args.type === 'complaint' ? '🔴 Шинэ гомдол' : '📩 Шинэ хүсэлт',
+        body: `${context.customerName || 'Хэрэглэгч'}: ${args.subject}`,
+        url: '/dashboard/customer-service',
+        tag: `service-${data.id}`
+    });
+
+    return {
+        success: true,
+        message: `✅ Таны хүсэлт бүртгэгдлээ. Манай ажилтан удахгүй холбогдоно.`,
+        data: { serviceLogId: data.id }
+    };
+}
+
+// ============================================
 // MAIN TOOL EXECUTOR
 // ============================================
 
@@ -600,6 +706,12 @@ export async function executeTool(
 
             case 'remember_preference':
                 return await executeRememberPreference(args as RememberPreferenceArgs, context);
+
+            case 'check_payment_status':
+                return await executeCheckPaymentStatus(args as CheckPaymentStatusArgs, context);
+
+            case 'log_service_request':
+                return await executeLogServiceRequest(args as LogServiceRequestArgs, context);
 
             default:
                 return { success: false, error: `Unknown tool: ${toolName}` };

@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -l \"cart\\\\|product\\\\|order\\\\|comment_automat\\\\|complaint\\\\|subscription\\\\|plan\" /Users/aagii/Vertmonhub/supabase/migrations/*.sql)",
+      "Bash(wc -l /Users/aagii/Vertmonhub/src/lib/services/*.ts)",
+      "Bash(grep -o \"CREATE TABLE.*;\" /Users/aagii/Vertmonhub/supabase/migrations/*.sql)",
+      "Bash(grep \"CREATE TABLE\" /Users/aagii/Vertmonhub/supabase/migrations/*.sql)",
+      "Bash(git checkout:*)",
+      "Bash(git rm:*)",
+      "Bash(git mv:*)",
+      "Bash(npm run:*)",
+      "Bash(python3 -c ':*)",
+      "Bash(ls -la /Users/aagii/Vertmonhub/.env*)",
+      "Bash(supabase --version)",
+      "Bash(npx -y supabase --version)",
+      "Bash(brew list:*)",
+      "Bash(npm install:*)",
+      "Bash(npx -y supabase@2.91.1 login --help)",
+      "Bash(./node_modules/.bin/supabase --version)",
+      "Bash(SUPABASE_DB_PASSWORD='Vertmon123!' ./node_modules/.bin/supabase link --project-ref gwwzfrffwiiniqwqkgnq)"
+    ]
+  }
+}

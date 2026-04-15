@@ -2,32 +2,10 @@
  * AI Types - Centralized type definitions for AI functionality
  */
 
+import type { Property } from './property';
+
 // AI Emotion/Personality types
 export type AIEmotion = 'friendly' | 'professional' | 'enthusiastic' | 'calm' | 'playful';
-
-// Product types used in AI context
-export interface AIProduct {
-    id: string;
-    name: string;
-    price: number;
-    stock: number;
-    reserved_stock?: number;
-    description?: string;
-    image_url?: string;
-    images?: string[];
-    discount_percent?: number | null;
-    type?: 'product' | 'service' | 'appointment';
-    unit?: string;
-    colors?: string[];
-    sizes?: string[];
-    variants?: AIProductVariant[];
-}
-
-export interface AIProductVariant {
-    color: string | null;
-    size: string | null;
-    stock: number;
-}
 
 // FAQ type for AI context
 export interface AIFAQ {
@@ -48,43 +26,12 @@ export interface AISlogan {
     usage_context: string;
 }
 
-// Notification settings
+// Notification settings (real estate)
 export interface NotifySettings {
-    order: boolean;
+    lead: boolean;
+    viewing: boolean;
     contact: boolean;
     support: boolean;
-    cancel: boolean;
-}
-
-// Shop policies
-export interface ShopPolicies {
-    shipping_threshold?: number;
-    payment_methods?: string[];
-    delivery_areas?: string[];
-    return_policy?: string;
-}
-
-// Cart types
-export interface CartItem {
-    id: string;
-    product_id: string;
-    name: string;
-    variant_specs: Record<string, string>;
-    quantity: number;
-    unit_price: number;
-}
-
-export interface Cart {
-    id: string;
-    items: CartItem[];
-    total_amount: number;
-}
-
-// Active cart with full item details
-export interface ActiveCart {
-    id: string;
-    items: CartItem[];
-    total_amount: number;
 }
 
 // Chat context for AI
@@ -95,26 +42,21 @@ export interface ChatContext {
     shopDescription?: string;
     aiInstructions?: string;
     aiEmotion?: AIEmotion;
-    products: AIProduct[];
+    properties: Property[];
     customerName?: string;
-    orderHistory?: number;
     faqs?: AIFAQ[];
     quickReplies?: AIQuickReply[];
     slogans?: AISlogan[];
     notifySettings?: NotifySettings;
-    cart?: Cart;
-    // Enhanced context for cart system
-    shopPolicies?: ShopPolicies;
     customKnowledge?: Record<string, unknown>;
-    activeCart?: ActiveCart;
-    // AI Memory: stored customer preferences (size, color, style, etc.)
+    // AI Memory: stored customer preferences (district, rooms, budget, etc.)
     customerMemory?: Record<string, string | string[] | number>;
     // Plan-based features for dynamic AI behavior
     planFeatures?: {
         ai_model?: 'gemini-3-nano' | 'gemini-3-flash' | 'gemini-3-pro';
         sales_intelligence?: boolean;
         ai_memory?: boolean;
-        max_tokens?: number;  // Dynamic token limit based on plan
+        max_tokens?: number;
     };
 }
 
@@ -124,15 +66,15 @@ export interface ChatMessage {
     content: string;
 }
 
-// Image action for product/property display
+// Image action for property display
 export interface ImageAction {
     type: 'single' | 'confirm' | 'attachment';
-    products?: ProductImageData[];
-    productIds?: string[];
+    properties?: PropertyImageData[];
+    propertyIds?: string[];
     imageUrls?: string[];
 }
 
-export interface ProductImageData {
+export interface PropertyImageData {
     name: string;
     price: number;
     imageUrl: string;
@@ -149,7 +91,7 @@ export interface QuickReplyOption {
 export interface ChatResponse {
     text: string;
     imageAction?: ImageAction;
-    quickReplies?: QuickReplyOption[];  // Optional quick reply buttons
+    quickReplies?: QuickReplyOption[];
 }
 
 // Tool execution result
@@ -157,23 +99,4 @@ export interface ToolResult {
     success: boolean;
     data?: unknown;
     error?: string;
-}
-
-// Order creation data
-export interface CreateOrderData {
-    shopId: string;
-    customerId: string;
-    customerName?: string;
-    customerPhone?: string;
-    deliveryAddress?: string;
-    items: OrderItemData[];
-    notes?: string;
-}
-
-export interface OrderItemData {
-    productId: string;
-    productName: string;
-    quantity: number;
-    unitPrice: number;
-    variantSpecs?: Record<string, string>;
 }

@@ -201,24 +201,6 @@ export class CustomerService {
         return data || [];
     }
 
-    /**
-     * Get VIP customers for a shop
-     */
-    async getVIPCustomers(shopId: string): Promise<Customer[]> {
-        const { data, error } = await this.supabase
-            .from('customers')
-            .select('*')
-            .eq('shop_id', shopId)
-            .eq('is_vip', true)
-            .order('total_spent', { ascending: false });
-
-        if (error) {
-            logger.error('Failed to get VIP customers', { shopId, error });
-            throw new DatabaseError('Failed to get VIP customers', { shopId });
-        }
-
-        return data || [];
-    }
 }
 
 // Export singleton instance

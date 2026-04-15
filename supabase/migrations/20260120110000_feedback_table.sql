@@ -28,19 +28,9 @@ CREATE POLICY "Anyone can submit feedback" ON feedback
 
 -- Only admins can read/update feedback
 CREATE POLICY "Admins can read feedback" ON feedback
-    FOR SELECT USING (
-        EXISTS (
-            SELECT 1 FROM admins 
-            WHERE admins.user_id = auth.uid()::text
-        )
-    );
+    FOR SELECT USING (false);
 
 CREATE POLICY "Admins can update feedback" ON feedback
-    FOR UPDATE USING (
-        EXISTS (
-            SELECT 1 FROM admins 
-            WHERE admins.user_id = auth.uid()::text
-        )
-    );
+    FOR UPDATE USING (false);
 
 SELECT 'Feedback table created successfully!' as result;

@@ -114,7 +114,7 @@ ALTER TABLE discount_schedules ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Shop owners can view their analytics" ON ai_analytics;
 CREATE POLICY "Shop owners can view their analytics"
     ON ai_analytics FOR SELECT
-    USING (shop_id IN (SELECT id FROM shops WHERE user_id = auth.uid()::text));
+    USING (shop_id = get_user_shop_id());
 
 DROP POLICY IF EXISTS "System can insert analytics" ON ai_analytics;
 CREATE POLICY "System can insert analytics"
@@ -125,7 +125,7 @@ CREATE POLICY "System can insert analytics"
 DROP POLICY IF EXISTS "Shop owners can view their funnel data" ON conversion_funnel;
 CREATE POLICY "Shop owners can view their funnel data"
     ON conversion_funnel FOR SELECT
-    USING (shop_id IN (SELECT id FROM shops WHERE user_id = auth.uid()::text));
+    USING (shop_id = get_user_shop_id());
 
 DROP POLICY IF EXISTS "System can insert funnel data" ON conversion_funnel;
 CREATE POLICY "System can insert funnel data"
@@ -142,7 +142,7 @@ CREATE POLICY "Admins can manage experiments"
 DROP POLICY IF EXISTS "Shop owners can view experiment results" ON ab_experiment_results;
 CREATE POLICY "Shop owners can view experiment results"
     ON ab_experiment_results FOR SELECT
-    USING (shop_id IN (SELECT id FROM shops WHERE user_id = auth.uid()::text));
+    USING (shop_id = get_user_shop_id());
 
 DROP POLICY IF EXISTS "System can insert experiment results" ON ab_experiment_results;
 CREATE POLICY "System can insert experiment results"
@@ -154,9 +154,8 @@ DROP POLICY IF EXISTS "Shop owners can manage discounts" ON discount_schedules;
 CREATE POLICY "Shop owners can manage discounts"
     ON discount_schedules FOR ALL
     USING (product_id IN (
-        SELECT p.id FROM products p
-        JOIN shops s ON p.shop_id = s.id
-        WHERE s.user_id = auth.uid()::text
+        SELECT id FROM products 
+        WHERE shop_id = get_user_shop_id()
     ));
 
 -- ===========================================

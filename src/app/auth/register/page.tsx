@@ -6,7 +6,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { LanguageSwitcherLight } from '@/components/LanguageSwitcher';
+import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 
 export default function RegisterPage() {
     const router = useRouter();
@@ -90,7 +90,7 @@ export default function RegisterPage() {
             <div className="w-full max-w-md">
                 {/* Language Switcher */}
                 <div className="flex justify-end mb-4">
-                    <LanguageSwitcherLight />
+                    <LanguageSwitcher />
                 </div>
 
                 <div className="text-center mb-8">

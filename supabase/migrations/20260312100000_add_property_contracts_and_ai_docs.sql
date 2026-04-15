@@ -333,46 +333,22 @@ ALTER TABLE ai_knowledge_base ENABLE ROW LEVEL SECURITY;
 -- Property Contracts: Shop owners only
 CREATE POLICY "shop_owners_manage_contracts"
     ON property_contracts FOR ALL
-    USING (
-        EXISTS (
-            SELECT 1 FROM shops 
-            WHERE shops.id = property_contracts.shop_id 
-            AND shops.user_id = auth.uid()::text
-        )
-    );
+    USING (shop_id = get_user_shop_id());
 
 -- HubSpot Contacts: Shop owners only
 CREATE POLICY "shop_owners_manage_hubspot"
     ON hubspot_contacts FOR ALL
-    USING (
-        EXISTS (
-            SELECT 1 FROM shops 
-            WHERE shops.id = hubspot_contacts.shop_id 
-            AND shops.user_id = auth.uid()::text
-        )
-    );
+    USING (shop_id = get_user_shop_id());
 
 -- AI Documents: Shop owners only
 CREATE POLICY "shop_owners_manage_ai_docs"
     ON ai_documents FOR ALL
-    USING (
-        EXISTS (
-            SELECT 1 FROM shops 
-            WHERE shops.id = ai_documents.shop_id 
-            AND shops.user_id = auth.uid()::text
-        )
-    );
+    USING (shop_id = get_user_shop_id());
 
 -- AI Knowledge Base: Shop owners only
 CREATE POLICY "shop_owners_manage_ai_kb"
     ON ai_knowledge_base FOR ALL
-    USING (
-        EXISTS (
-            SELECT 1 FROM shops 
-            WHERE shops.id = ai_knowledge_base.shop_id 
-            AND shops.user_id = auth.uid()::text
-        )
-    );
+    USING (shop_id = get_user_shop_id());
 
 -- Service role can access all (for API/seeding)
 CREATE POLICY "service_role_all_contracts"

@@ -39,6 +39,7 @@ export const ALL_MODULES = [
     'viewings',
     'contracts',
     'customers',
+    'customer-service',
     'inbox',
     'reports',
     'reports-leads',
@@ -59,7 +60,8 @@ export const MODULE_LABELS: Record<string, { en: string; mn: string }> = {
     'viewings': { en: 'Viewings', mn: 'Үзлэг' },
     'contracts': { en: 'Contracts', mn: 'Гэрээ' },
     'customers': { en: 'Customers', mn: 'Харилцагч' },
-    'inbox': { en: 'Inbox', mn: 'Мессеж' },
+    'customer-service': { en: 'Customer Service', mn: 'Үйлчилгээ' },
+    'inbox': { en: 'Inbox', mn: 'Мессэж' },
     'reports': { en: 'Reports', mn: 'Аналитик' },
     'reports-leads': { en: 'Leads Report', mn: 'Лийд тайлан' },
     'marketing-roi': { en: 'Marketing ROI', mn: 'Маркетинг ROI' },
@@ -93,7 +95,7 @@ export const ROLE_PERMISSIONS: Record<string, RolePermissions> = {
     sales_manager: {
         modules: [
             'dashboard', 'properties', 'leads', 'viewings', 'contracts',
-            'customers', 'inbox', 'reports', 'reports-leads', 'ai-assistant',
+            'customers', 'customer-service', 'inbox', 'reports', 'reports-leads', 'ai-assistant',
         ],
         canWrite: true,
         canDelete: false,

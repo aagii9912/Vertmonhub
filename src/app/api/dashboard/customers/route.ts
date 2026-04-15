@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
 
     let query = supabase
       .from('customers')
-      .select('id, name, facebook_id, phone, address, total_orders, total_spent, is_vip, created_at')
+      .select('id, name, facebook_id, phone, email, address, notes, tags, message_count, last_contact_at, created_at')
       .eq('shop_id', shopId);
 
     // Search by name or phone

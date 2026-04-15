@@ -247,34 +247,16 @@ CREATE POLICY "Authenticated users can view active properties"
 
 CREATE POLICY "Shop owners can manage their properties"
     ON properties FOR ALL
-    USING (
-        EXISTS (
-            SELECT 1 FROM shops 
-            WHERE shops.id = properties.shop_id 
-            AND shops.user_id = auth.uid()::text
-        )
-    );
+    USING (shop_id = get_user_shop_id());
 
 -- Leads policies
 CREATE POLICY "Shop owners can view their leads"
     ON leads FOR SELECT
-    USING (
-        EXISTS (
-            SELECT 1 FROM shops 
-            WHERE shops.id = leads.shop_id 
-            AND shops.user_id = auth.uid()::text
-        )
-    );
+    USING (shop_id = get_user_shop_id());
 
 CREATE POLICY "Shop owners can manage their leads"
     ON leads FOR ALL
-    USING (
-        EXISTS (
-            SELECT 1 FROM shops 
-            WHERE shops.id = leads.shop_id 
-            AND shops.user_id = auth.uid()::text
-        )
-    );
+    USING (shop_id = get_user_shop_id());
 
 -- Viewings policies
 CREATE POLICY "Shop owners can manage viewings"
@@ -282,8 +264,7 @@ CREATE POLICY "Shop owners can manage viewings"
     USING (
         EXISTS (
             SELECT 1 FROM leads
-            JOIN shops ON shops.id = leads.shop_id
             WHERE leads.id = property_viewings.lead_id
-            AND shops.user_id = auth.uid()::text
+            AND leads.shop_id = get_user_shop_id()
         )
     );
