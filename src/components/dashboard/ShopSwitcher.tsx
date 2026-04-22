@@ -45,7 +45,10 @@ export function ShopSwitcher({ onAddShop }: ShopSwitcherProps) {
         <div className="relative" ref={dropdownRef}>
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="flex items-center gap-2 px-3 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors"
+                aria-label="Дэлгүүр сонгох"
+                aria-expanded={isOpen}
+                aria-haspopup="listbox"
+                className="flex items-center gap-2 px-3 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
             >
                 <Store className="w-4 h-4 text-primary" />
                 <span className="font-medium text-sm text-foreground max-w-[120px] truncate">

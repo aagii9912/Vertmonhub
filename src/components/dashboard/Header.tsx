@@ -97,7 +97,10 @@ export function Header() {
                 <div className="relative">
                     <button
                         onClick={() => setShowDropdown(!showDropdown)}
-                        className="flex items-center gap-2 hover:bg-gray-100 rounded-xl transition-colors p-1.5 md:px-3 md:py-2"
+                        aria-label="Хэрэглэгчийн цэс"
+                        aria-expanded={showDropdown}
+                        aria-haspopup="menu"
+                        className="flex items-center gap-2 hover:bg-gray-100 rounded-xl transition-colors p-1.5 md:px-3 md:py-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
                     >
                         <div className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-gradient-to-br from-gold to-gold-dark flex items-center justify-center text-neutral-900 font-medium text-sm">
                             {firstName[0]?.toUpperCase()}

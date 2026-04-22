@@ -22,7 +22,10 @@ export function LanguageSwitcher() {
         <div className="relative">
             <button
                 onClick={() => setOpen(!open)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 text-sm transition-colors"
+                aria-label="Хэл сонгох"
+                aria-expanded={open}
+                aria-haspopup="listbox"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1"
             >
                 <Globe className="w-4 h-4 text-gray-500" />
                 <span>{current.flag}</span>

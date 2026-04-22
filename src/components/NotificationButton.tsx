@@ -24,7 +24,7 @@ export function NotificationButton() {
             disabled={isLoading || permission === 'denied'}
             className={`
         flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium
-        transition-all duration-200
+        transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1
         ${isSubscribed
                     ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
                     : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
