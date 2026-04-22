@@ -18,7 +18,17 @@ export interface AdminUser {
 }
 
 // Decrypt vertmon-session cookie (same logic as login route)
-const SESSION_SECRET = process.env.SUPABASE_SERVICE_ROLE_KEY || 'fallback-secret-key-32chars-min!!';
+const getSessionSecret = () => {
+    const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!secret) {
+        if (process.env.NODE_ENV === 'production') {
+            throw new Error('SUPABASE_SERVICE_ROLE_KEY is required in production');
+        }
+        return 'fallback-secret-key-32chars-min!!';
+    }
+    return secret;
+};
+const SESSION_SECRET = getSessionSecret();
 function decryptSession(encryptedText: string): { userId: string; email: string; role: string; expiresAt: number } | null {
     try {
         const key = crypto.scryptSync(SESSION_SECRET, 'salt', 32);

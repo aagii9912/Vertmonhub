@@ -17,7 +17,17 @@ function getPool(): Pool {
 }
 
 // Simple encryption for session cookie
-const SESSION_SECRET = process.env.SUPABASE_SERVICE_ROLE_KEY || 'fallback-secret-key-32chars-min!!';
+const getSessionSecret = () => {
+    const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!secret) {
+        if (process.env.NODE_ENV === 'production') {
+            throw new Error('SUPABASE_SERVICE_ROLE_KEY is required in production');
+        }
+        return 'fallback-secret-key-32chars-min!!';
+    }
+    return secret;
+};
+const SESSION_SECRET = getSessionSecret();
 const ALGORITHM = 'aes-256-gcm';
 
 function encrypt(text: string): string {

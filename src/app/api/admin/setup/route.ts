@@ -9,7 +9,16 @@ import { NextResponse } from 'next/server';
 import { getAuthUser, supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { logger } from '@/lib/utils/logger';
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 export async function GET() {
+    if (isProduction) {
+        return NextResponse.json({
+            error: 'Endpoint disabled in production',
+            hint: 'This setup endpoint is only available in development environment'
+        }, { status: 403 });
+    }
+
     try {
         const user = await getAuthUser();
 
