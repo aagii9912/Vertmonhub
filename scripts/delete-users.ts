@@ -62,18 +62,28 @@ async function deleteNonAdminUsers() {
     let deleted = 0;
     let failed = 0;
 
+    // First delete related data (shops, products, etc.) in bulk to optimize
+    const userIds = usersToDelete.map(u => u.id);
+    console.log(`🧹 Deleting shop data for ${userIds.length} users in bulk...`);
+
+    try {
+        const { error: shopError } = await supabase
+            .from('shops')
+            .delete()
+            .in('user_id', userIds);
+
+        if (shopError) {
+            console.error(`   ⚠️ Bulk shop data deletion error: ${shopError.message}`);
+        } else {
+            console.log(`   ✅ Bulk shop data deletion successful`);
+        }
+    } catch (err: any) {
+        console.error(`   ❌ Bulk shop data deletion failed: ${err.message}`);
+    }
+
+    // Now delete users from auth individually (as there is no bulk deleteUser API)
     for (const user of usersToDelete) {
         try {
-            // First delete related data (shops, products, etc.)
-            const { error: shopError } = await supabase
-                .from('shops')
-                .delete()
-                .eq('user_id', user.id);
-
-            if (shopError) {
-                console.log(`   ⚠️ Shop data error for ${user.email}: ${shopError.message}`);
-            }
-
             // Delete the user from auth
             const { error: deleteError } = await supabase.auth.admin.deleteUser(user.id);
 
