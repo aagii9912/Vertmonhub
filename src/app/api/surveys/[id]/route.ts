@@ -7,6 +7,10 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 const submitResponseSchema = z.object({
     answers: z.record(z.string(), z.any()),
     customer_id: z.string().uuid().optional(),
+    source: z.enum(['online', 'offline']).optional(),
+    respondent_name: z.string().max(255).optional(),
+    respondent_phone: z.string().max(50).optional(),
+    notes: z.string().max(2000).optional(),
 });
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -41,13 +45,30 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             return NextResponse.json({ error: 'Судалгаа хаагдсан байна' }, { status: 400 });
         }
 
-        // Insert response
+        const source = validatedData.source ?? 'online';
+
+        // Offline responses must be authenticated (sales manager entry).
+        // Online responses can be submitted anonymously by survey takers.
+        if (source === 'offline') {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                return NextResponse.json(
+                    { error: 'Биеэр оруулсан хариулт нэвтэрсэн ажилтан шаардана' },
+                    { status: 401 }
+                );
+            }
+        }
+
         const { data, error } = await supabase
             .from('survey_responses')
             .insert([{
                 survey_id: surveyId,
                 answers: validatedData.answers,
                 customer_id: validatedData.customer_id,
+                source,
+                respondent_name: validatedData.respondent_name ?? null,
+                respondent_phone: validatedData.respondent_phone ?? null,
+                notes: validatedData.notes ?? null,
             }])
             .select()
             .single();
@@ -150,10 +171,21 @@ ${JSON.stringify(responses.map(r => r.answers), null, 2)}
         const result = await model.generateContent(prompt);
         const aiSummary = result.response.text();
 
+        const onlineCount = responses.filter(r => (r.source ?? 'online') === 'online').length;
+        const offlineCount = responses.length - onlineCount;
+
         return NextResponse.json({
             summary: aiSummary,
             responseCount: responses.length,
-            responses: responses
+            onlineCount,
+            offlineCount,
+            survey: {
+                id: survey.id,
+                title: survey.title,
+                description: survey.description,
+                questions: survey.questions,
+            },
+            responses,
         }, { status: 200 });
 
     } catch (error) {
