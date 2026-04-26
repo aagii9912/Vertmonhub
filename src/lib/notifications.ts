@@ -117,50 +117,6 @@ export async function sendPushNotification(
 }
 
 /**
- * Send order notification to shop owner
- */
-export async function sendOrderNotification(
-    shopId: string,
-    orderType: 'new' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled',
-    orderDetails: {
-        orderId: string;
-        customerName?: string;
-        totalAmount?: number;
-    }
-): Promise<void> {
-    const messages: Record<string, { title: string; body: string }> = {
-        new: {
-            title: '🆕 Шинэ захиалга!',
-            body: `${orderDetails.customerName || 'Хэрэглэгч'} захиалга өглөө. ${orderDetails.totalAmount?.toLocaleString() || ''}₮`,
-        },
-        confirmed: {
-            title: '✅ Захиалга баталгаажлаа',
-            body: `Захиалга #${orderDetails.orderId.slice(-6)} баталгаажлаа`,
-        },
-        shipped: {
-            title: '🚚 Хүргэлтэнд гарлаа',
-            body: `Захиалга #${orderDetails.orderId.slice(-6)} хүргэлтэнд гарлаа`,
-        },
-        delivered: {
-            title: '📦 Хүргэгдлээ!',
-            body: `Захиалга #${orderDetails.orderId.slice(-6)} амжилттай хүргэгдлээ`,
-        },
-        cancelled: {
-            title: '❌ Захиалга цуцлагдлаа',
-            body: `Захиалга #${orderDetails.orderId.slice(-6)} цуцлагдлаа`,
-        },
-    };
-
-    const message = messages[orderType];
-
-    await sendPushNotification(shopId, {
-        ...message,
-        url: `/dashboard/orders`,
-        tag: `order-${orderDetails.orderId}`,
-    });
-}
-
-/**
  * Get VAPID public key for client
  */
 export function getVapidPublicKey(): string {

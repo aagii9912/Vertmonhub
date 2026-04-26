@@ -1,53 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Pool } from 'pg';
 import { cookies } from 'next/headers';
-import crypto from 'crypto';
-
-// Lazy-init pg pool
-let pgPool: Pool | null = null;
-function getPool(): Pool {
-    if (!pgPool) {
-        pgPool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: { rejectUnauthorized: false },
-            max: 2,
-        });
-    }
-    return pgPool;
-}
-
-// Simple encryption for session cookie
-const SESSION_SECRET = process.env.SUPABASE_SERVICE_ROLE_KEY || 'fallback-secret-key-32chars-min!!';
-const ALGORITHM = 'aes-256-gcm';
-
-function encrypt(text: string): string {
-    const key = crypto.scryptSync(SESSION_SECRET, 'salt', 32);
-    const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
-    let encrypted = cipher.update(text, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-    const authTag = cipher.getAuthTag().toString('hex');
-    return iv.toString('hex') + ':' + authTag + ':' + encrypted;
-}
-
-function decrypt(encryptedText: string): string {
-    const key = crypto.scryptSync(SESSION_SECRET, 'salt', 32);
-    const parts = encryptedText.split(':');
-    const iv = Buffer.from(parts[0], 'hex');
-    const authTag = Buffer.from(parts[1], 'hex');
-    const encrypted = parts[2];
-    const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
-    decipher.setAuthTag(authTag);
-    let decrypted = decipher.update(encrypted, 'hex', 'utf8');
-    decrypted += decipher.final('utf8');
-    return decrypted;
-}
+import { createClient } from '@supabase/supabase-js';
 
 /**
- * POST /api/auth/login — Custom login bypassing broken GoTrue
- * 1. Verify password via direct pg + pgcrypto
- * 2. Set encrypted session cookie
- * 3. Return user data
+ * POST /api/auth/login — Login via Supabase Auth
+ * Uses signInWithPassword instead of direct pg password check
  */
 export async function POST(request: NextRequest) {
     try {
@@ -60,75 +17,53 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Verify password via direct pg
-        const pool = getPool();
-        const client = await pool.connect();
-        let user: any = null;
+        // Use Supabase Auth to verify credentials
+        const supabase = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        );
 
-        try {
-            const result = await client.query(`
-                SELECT 
-                    u.id, 
-                    u.email::text,
-                    u.raw_user_meta_data->>'full_name' as full_name,
-                    u.raw_app_meta_data,
-                    COALESCE(r.role, 'viewer') as role
-                FROM auth.users u
-                LEFT JOIN public.user_roles r ON r.user_id = u.id
-                WHERE u.email = $1::varchar 
-                AND u.encrypted_password = extensions.crypt($2::text, u.encrypted_password)
-            `, [email, password]);
+        const { data, error } = await supabase.auth.signInWithPassword({
+            email,
+            password,
+        });
 
-            if (result.rows.length === 0) {
-                return NextResponse.json(
-                    { error: 'Имэйл эсвэл нууц үг буруу байна' },
-                    { status: 401 }
-                );
-            }
-
-            user = result.rows[0];
-
-            // Update last_sign_in_at
-            await client.query(
-                'UPDATE auth.users SET last_sign_in_at = NOW(), updated_at = NOW() WHERE id = $1::uuid',
-                [user.id]
+        if (error || !data.user) {
+            return NextResponse.json(
+                { error: 'Имэйл эсвэл нууц үг буруу байна' },
+                { status: 401 }
             );
-        } finally {
-            client.release();
         }
 
-        // Create session data
-        const sessionData = {
-            userId: user.id,
-            email: user.email,
-            fullName: user.full_name,
-            role: user.role,
-            loginAt: Date.now(),
-            expiresAt: Date.now() + (24 * 60 * 60 * 1000), // 24 hours
-        };
+        const user = data.user;
 
-        // Encrypt and set cookie
-        const encrypted = encrypt(JSON.stringify(sessionData));
+        // Get user role from user_roles table
+        const adminSupabase = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        );
 
-        const response = NextResponse.json({
+        const { data: roleData } = await adminSupabase
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', user.id)
+            .single();
+
+        const role = roleData?.role || 'viewer';
+
+        return NextResponse.json({
             success: true,
             user: {
                 id: user.id,
                 email: user.email,
-                full_name: user.full_name,
-                role: user.role,
+                full_name: user.user_metadata?.full_name || null,
+                role,
+            },
+            session: {
+                access_token: data.session?.access_token,
+                refresh_token: data.session?.refresh_token,
             },
         });
-
-        response.cookies.set('vertmon-session', encrypted, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
-            path: '/',
-            maxAge: 24 * 60 * 60, // 24 hours
-        });
-
-        return response;
 
     } catch (error: any) {
         console.error('Login error:', error);
@@ -145,32 +80,16 @@ export async function POST(request: NextRequest) {
 export async function GET() {
     try {
         const cookieStore = await cookies();
-        const sessionCookie = cookieStore.get('vertmon-session');
-
-        if (!sessionCookie) {
+        
+        // Check for Supabase session tokens in cookies
+        const accessToken = cookieStore.getAll()
+            .find(c => c.name.includes('auth-token') || c.name.includes('sb-'));
+        
+        if (!accessToken) {
             return NextResponse.json({ authenticated: false }, { status: 401 });
         }
 
-        try {
-            const sessionData = JSON.parse(decrypt(sessionCookie.value));
-
-            // Check expiry
-            if (sessionData.expiresAt < Date.now()) {
-                return NextResponse.json({ authenticated: false, error: 'Session expired' }, { status: 401 });
-            }
-
-            return NextResponse.json({
-                authenticated: true,
-                user: {
-                    id: sessionData.userId,
-                    email: sessionData.email,
-                    full_name: sessionData.fullName,
-                    role: sessionData.role,
-                },
-            });
-        } catch {
-            return NextResponse.json({ authenticated: false }, { status: 401 });
-        }
+        return NextResponse.json({ authenticated: true });
     } catch {
         return NextResponse.json({ authenticated: false }, { status: 401 });
     }
@@ -181,6 +100,8 @@ export async function GET() {
  */
 export async function DELETE() {
     const response = NextResponse.json({ success: true });
+    
+    // Clear legacy session cookie if it exists
     response.cookies.set('vertmon-session', '', {
         httpOnly: true,
         secure: process.env.NODE_ENV === 'production',
@@ -188,8 +109,6 @@ export async function DELETE() {
         path: '/',
         maxAge: 0,
     });
+    
     return response;
 }
-
-// Export decrypt for use in middleware
-export { decrypt };

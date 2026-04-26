@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { getClerkUserShop } from '@/lib/auth/supabase-auth';
+import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
@@ -12,7 +12,7 @@ export async function PATCH(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const authShop = await getClerkUserShop();
+        const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
@@ -63,7 +63,7 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const authShop = await getClerkUserShop();
+        const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }

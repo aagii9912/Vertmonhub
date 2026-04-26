@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getClerkUserShop } from '@/lib/auth/supabase-auth';
+import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { getStartOfPeriod } from '@/lib/utils/date';
 import { checkRateLimit, createRateLimitResponse, getClientIdentifier, RATE_LIMIT_CONFIGS } from '@/lib/utils/rate-limiter';
@@ -7,10 +7,10 @@ import { safeErrorResponse } from '@/lib/utils/safe-error';
 
 export async function GET(request: NextRequest) {
   try {
-    const authShop = await getClerkUserShop();
+    const authShop = await getUserShop();
 
     const identifier = authShop?.id || getClientIdentifier(request) || 'anonymous';
-    const rateLimitResult = checkRateLimit(`stats:${identifier}`, { windowMs: 60000, maxRequests: 30 });
+    const rateLimitResult = await checkRateLimit(`stats:${identifier}`, { windowMs: 60000, maxRequests: 30 });
 
     if (!rateLimitResult.allowed) {
       return createRateLimitResponse(rateLimitResult.resetAt);

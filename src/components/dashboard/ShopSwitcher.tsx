@@ -46,6 +46,9 @@ export function ShopSwitcher({ onAddShop }: ShopSwitcherProps) {
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 className="flex items-center gap-2 px-3 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors"
+                aria-label="Дэлгүүр сонгох"
+                aria-expanded={isOpen}
+                aria-haspopup="menu"
             >
                 <Store className="w-4 h-4 text-primary" />
                 <span className="font-medium text-sm text-foreground max-w-[120px] truncate">
@@ -55,7 +58,7 @@ export function ShopSwitcher({ onAddShop }: ShopSwitcherProps) {
             </button>
 
             {isOpen && (
-                <div className="absolute top-full right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-border z-50 overflow-hidden">
+                <div className="absolute top-full right-0 mt-2 w-64 bg-white rounded-xl shadow-xl border border-border z-50 overflow-hidden" role="menu" aria-label="Дэлгүүр сонгох">
                     <div className="p-2 border-b border-border">
                         <p className="text-xs text-muted-foreground px-2">Миний дэлгүүрүүд</p>
                     </div>
@@ -66,6 +69,8 @@ export function ShopSwitcher({ onAddShop }: ShopSwitcherProps) {
                                 key={shop.id}
                                 onClick={() => handleSwitchShop(shop.id)}
                                 disabled={switching}
+                                role="menuitem"
+                                aria-current={activeShop?.id === shop.id ? 'true' : undefined}
                                 className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-secondary/50 transition-colors text-left ${activeShop?.id === shop.id ? 'bg-primary/5' : ''
                                     }`}
                             >

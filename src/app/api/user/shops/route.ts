@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
-import { getClerkUser, supabaseAdmin } from '@/lib/auth/supabase-auth';
+import { getUserId, supabaseAdmin } from '@/lib/auth/supabase-auth';
 
 // GET /api/user/shops - Get all shops for the current user
 export async function GET() {
     try {
-        const userId = await getClerkUser();
+        const userId = await getUserId();
 
         if (!userId) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -30,7 +30,7 @@ export async function GET() {
 // POST /api/user/shops - Create a new shop for the current user
 export async function POST(request: Request) {
     try {
-        const userId = await getClerkUser();
+        const userId = await getUserId();
 
         if (!userId) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

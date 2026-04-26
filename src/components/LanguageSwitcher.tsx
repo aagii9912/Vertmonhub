@@ -23,6 +23,9 @@ export function LanguageSwitcher() {
             <button
                 onClick={() => setOpen(!open)}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 text-sm transition-colors"
+                aria-label="Хэл сонгох"
+                aria-expanded={open}
+                aria-haspopup="menu"
             >
                 <Globe className="w-4 h-4 text-gray-500" />
                 <span>{current.flag}</span>
@@ -32,11 +35,13 @@ export function LanguageSwitcher() {
             {open && (
                 <>
                     <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-                    <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[140px]">
+                    <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[140px]" role="menu" aria-label="Хэл сонгох">
                         {LOCALES.map(l => (
                             <button
                                 key={l.code}
                                 onClick={() => handleChange(l.code)}
+                                role="menuitem"
+                                aria-current={locale === l.code ? 'true' : undefined}
                                 className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition-colors ${locale === l.code ? 'bg-violet-50 text-violet-700' : 'text-gray-700'}`}
                             >
                                 <span>{l.flag}</span>

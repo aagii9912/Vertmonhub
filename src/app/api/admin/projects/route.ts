@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin, getClerkUser } from '@/lib/auth/supabase-auth';
+import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 
 /**
@@ -7,7 +7,7 @@ import { safeErrorResponse } from '@/lib/utils/safe-error';
  */
 export async function GET() {
     try {
-        const userId = await getClerkUser();
+        const userId = await getUserId();
         if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const supabase = supabaseAdmin();
@@ -33,7 +33,7 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
     try {
-        const userId = await getClerkUser();
+        const userId = await getUserId();
         if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const supabase = supabaseAdmin();

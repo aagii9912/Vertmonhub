@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { getClerkUserShop } from '@/lib/auth/supabase-auth';
+import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import * as XLSX from 'xlsx';
@@ -10,7 +10,7 @@ import * as XLSX from 'xlsx';
 // ============================================
 export async function GET(request: NextRequest) {
     try {
-        const authShop = await getClerkUserShop();
+        const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ contracts: [], stats: emptyStats() });
         }
@@ -73,7 +73,7 @@ export async function GET(request: NextRequest) {
 // ============================================
 export async function POST(request: NextRequest) {
     try {
-        const authShop = await getClerkUserShop();
+        const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }

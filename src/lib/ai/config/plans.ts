@@ -65,6 +65,8 @@ export const AI_CONFIG: AIConfig = {
         'collect_contact_info',
         'request_human_support',
         'remember_preference',
+        'check_payment_status',
+        'log_service_request',
     ],
 };
 

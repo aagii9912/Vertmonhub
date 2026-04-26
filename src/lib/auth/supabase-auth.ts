@@ -130,18 +130,9 @@ export function supabaseAdmin() {
 }
 
 /**
- * Get authenticated user ID (legacy name)
- * @deprecated Use getUserId instead
+ * Get shop for authenticated user
  */
-export async function getClerkUser(): Promise<string | null> {
-    return getUserId();
-}
-
-/**
- * Get shop for authenticated user (legacy function)
- * Used by many API routes
- */
-export async function getClerkUserShop() {
+export async function getUserShop() {
     const userId = await getUserId();
     if (!userId) {
         return null;
@@ -167,7 +158,7 @@ export async function getClerkUserShop() {
     const { data: shops, error } = await query.limit(1);
 
     if (error) {
-        logger.error('getClerkUserShop Error:', { error });
+        logger.error('getUserShop Error:', { error });
         return null;
     }
 
@@ -177,3 +168,10 @@ export async function getClerkUserShop() {
 
     return shops[0];
 }
+
+// Legacy aliases — re-export for backward compat during migration
+/** @deprecated Use getUserId instead */
+export const getClerkUser = getUserId;
+/** @deprecated Use getUserShop instead */
+export const getClerkUserShop = getUserShop;
+

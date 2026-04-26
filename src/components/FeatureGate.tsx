@@ -6,7 +6,6 @@
 
 import { ReactNode } from 'react';
 import { useFeatures, Features } from '@/hooks/useFeatures';
-import { UpgradePrompt } from './UpgradePrompt';
 
 interface FeatureGateProps {
     /** The feature key to check */
@@ -81,10 +80,9 @@ export function FeatureGate({
     }
 
     return (
-        <UpgradePrompt
-            feature={feature}
-            currentPlan={plan.name}
-        />
+        <div className="p-4 text-center text-gray-500 text-sm">
+            Энэ боломж идэвхгүй байна.
+        </div>
     );
 }
 
