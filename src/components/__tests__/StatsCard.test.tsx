@@ -21,46 +21,31 @@ describe('StatsCard', () => {
 
         it('renders numeric value correctly', () => {
             render(
-                <StatsCard
-                    title="Orders"
-                    value={1234}
-                    icon={ShoppingCart}
-                />
+                <StatsCard title="Orders" value={1234} icon={ShoppingCart} />
             );
-            // Value is animated via requestAnimationFrame, starts at 0
-            // Just verify the card renders without crashing
-            expect(screen.getByText('Orders')).toBeInTheDocument();
+            expect(screen.getByText('1234')).toBeInTheDocument();
         });
 
         it('renders string value correctly', () => {
             render(
-                <StatsCard
-                    title="Revenue"
-                    value="₮1,500,000"
-                    icon={DollarSign}
-                />
+                <StatsCard title="Revenue" value="₮1,500,000" icon={DollarSign} />
             );
-            // String value with currency prefix is animated
-            expect(screen.getByText('Revenue')).toBeInTheDocument();
+            expect(screen.getByText('₮1,500,000')).toBeInTheDocument();
         });
 
-        it('renders icon', () => {
+        it('renders the icon container', () => {
             const { container } = render(
-                <StatsCard
-                    title="Users"
-                    value={50}
-                    icon={Users}
-                />
+                <StatsCard title="Users" value={50} icon={Users} />
             );
-            // Icon should be rendered in the icon container
             const iconContainer = container.querySelector('.rounded-xl');
             expect(iconContainer).toBeInTheDocument();
+            expect(container.querySelector('svg')).toBeInTheDocument();
         });
     });
 
     describe('Change Indicator', () => {
-        it('renders positive change correctly', () => {
-            render(
+        it('renders positive change with TrendingUp icon and percent value', () => {
+            const { container } = render(
                 <StatsCard
                     title="Sales"
                     value={100}
@@ -68,12 +53,13 @@ describe('StatsCard', () => {
                     change={{ value: 15.5, isPositive: true }}
                 />
             );
-            expect(screen.getByText('↑')).toBeInTheDocument();
+            // Component renders TrendingUp/TrendingDown lucide icons (svg) instead of arrow text.
             expect(screen.getByText('15.5%')).toBeInTheDocument();
+            expect(container.querySelector('.lucide-trending-up')).toBeInTheDocument();
         });
 
-        it('renders negative change correctly', () => {
-            render(
+        it('renders negative change with TrendingDown icon and absolute percent', () => {
+            const { container } = render(
                 <StatsCard
                     title="Sales"
                     value={100}
@@ -81,11 +67,11 @@ describe('StatsCard', () => {
                     change={{ value: -10, isPositive: false }}
                 />
             );
-            expect(screen.getByText('↓')).toBeInTheDocument();
             expect(screen.getByText('10%')).toBeInTheDocument();
+            expect(container.querySelector('.lucide-trending-down')).toBeInTheDocument();
         });
 
-        it('applies green color for positive change', () => {
+        it('applies emerald colour token for positive change', () => {
             render(
                 <StatsCard
                     title="Sales"
@@ -94,11 +80,11 @@ describe('StatsCard', () => {
                     change={{ value: 20, isPositive: true }}
                 />
             );
-            const changeElement = screen.getByText('↑').closest('div');
-            expect(changeElement?.className).toContain('text-emerald-400');
+            const pill = screen.getByText('20%').closest('div');
+            expect(pill?.className).toContain('text-emerald-700');
         });
 
-        it('applies red color for negative change', () => {
+        it('applies red colour token for negative change', () => {
             render(
                 <StatsCard
                     title="Sales"
@@ -107,20 +93,16 @@ describe('StatsCard', () => {
                     change={{ value: 5, isPositive: false }}
                 />
             );
-            const changeElement = screen.getByText('↓').closest('div');
-            expect(changeElement?.className).toContain('text-red-400');
+            const pill = screen.getByText('5%').closest('div');
+            expect(pill?.className).toContain('text-red-600');
         });
 
         it('does not render change indicator when change is undefined', () => {
-            render(
-                <StatsCard
-                    title="Sales"
-                    value={100}
-                    icon={Package}
-                />
+            const { container } = render(
+                <StatsCard title="Sales" value={100} icon={Package} />
             );
-            expect(screen.queryByText('↑')).not.toBeInTheDocument();
-            expect(screen.queryByText('↓')).not.toBeInTheDocument();
+            expect(container.querySelector('.lucide-trending-up')).not.toBeInTheDocument();
+            expect(container.querySelector('.lucide-trending-down')).not.toBeInTheDocument();
         });
 
         it('renders change value text', () => {
@@ -137,54 +119,43 @@ describe('StatsCard', () => {
     });
 
     describe('Icon Color', () => {
-        it('applies default icon color', () => {
+        it('applies the default gold gradient', () => {
             const { container } = render(
-                <StatsCard
-                    title="Test"
-                    value={100}
-                    icon={Package}
-                />
+                <StatsCard title="Test" value={100} icon={Package} />
             );
-            const iconContainer = container.querySelector('.from-violet-500\\/10');
+            // Default iconColor is 'bg-gold' → amber/orange gradient.
+            const iconContainer = container.querySelector('.from-amber-400');
             expect(iconContainer).toBeInTheDocument();
         });
 
-        it('applies custom icon color', () => {
+        it('applies the requested gradient when iconColor is set', () => {
             const { container } = render(
                 <StatsCard
                     title="Test"
                     value={100}
                     icon={Package}
-                    iconColor="blue"
+                    iconColor="bg-blue"
                 />
             );
-            const iconContainer = container.querySelector('.from-blue-500\\/10');
+            const iconContainer = container.querySelector('.from-blue-400');
             expect(iconContainer).toBeInTheDocument();
         });
     });
 
     describe('Styling', () => {
-        it('has card styling', () => {
+        it('applies card styling tokens', () => {
             const { container } = render(
-                <StatsCard
-                    title="Test"
-                    value={100}
-                    icon={Package}
-                />
+                <StatsCard title="Test" value={100} icon={Package} />
             );
             const card = container.firstChild as HTMLElement;
-            expect(card.className).toContain('bg-[#0F0B2E]');
             expect(card.className).toContain('rounded-2xl');
             expect(card.className).toContain('border');
+            expect(card.className).toContain('bg-gradient-to-br');
         });
 
         it('has transition-all class', () => {
             const { container } = render(
-                <StatsCard
-                    title="Test"
-                    value={100}
-                    icon={Package}
-                />
+                <StatsCard title="Test" value={100} icon={Package} />
             );
             const card = container.firstChild as HTMLElement;
             expect(card.className).toContain('transition-all');
