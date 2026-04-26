@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
         const type = sp.get('type');
         const priority = sp.get('priority');
         const assignedTo = sp.get('assigned_to');
+        const customerId = sp.get('customer_id');
         const search = sp.get('search')?.trim() || '';
 
         let query = supabase
@@ -32,6 +33,7 @@ export async function GET(request: NextRequest) {
         if (type) query = query.eq('type', type);
         if (priority) query = query.eq('priority', priority);
         if (assignedTo) query = query.eq('assigned_to', assignedTo);
+        if (customerId) query = query.eq('customer_id', customerId);
 
         if (search) {
             query = query.or(
@@ -82,6 +84,7 @@ export async function POST(request: NextRequest) {
             .insert({
                 shop_id: authShop.id,
                 contract_id: body.contract_id || null,
+                customer_id: body.customer_id || null,
                 customer_name: body.customer_name || null,
                 customer_phone: body.customer_phone || null,
                 type: body.type || 'inquiry',
