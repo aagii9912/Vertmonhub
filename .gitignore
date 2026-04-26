@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local data imports (excel sources are not tracked)
+*.xlsx
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

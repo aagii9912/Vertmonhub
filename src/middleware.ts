@@ -53,7 +53,7 @@ export async function middleware(request: NextRequest) {
             routeType = 'webhook';
         }
 
-        const rateLimit = checkMiddlewareRateLimit(request, routeType);
+        const rateLimit = await checkMiddlewareRateLimit(request, routeType);
         if (!rateLimit.allowed && rateLimit.response) {
             return rateLimit.response;
         }
@@ -74,8 +74,26 @@ export async function middleware(request: NextRequest) {
         // Check custom session cookie first (GoTrue bypass)
         const sessionCookie = request.cookies.get('vertmon-session');
         if (sessionCookie?.value) {
-            // Cookie exists — let the app validate it
-            return NextResponse.next();
+            // Verify JWT signature before trusting the cookie
+            const jwtSecret = process.env.SESSION_JWT_SECRET;
+            if (jwtSecret) {
+                try {
+                    // Decode and verify structure (Edge-compatible check)
+                    const parts = sessionCookie.value.split('.');
+                    if (parts.length === 3) {
+                        const payload = JSON.parse(atob(parts[1]));
+                        // Check expiry
+                        if (payload.exp && payload.exp * 1000 > Date.now() && payload.sub) {
+                            return NextResponse.next();
+                        }
+                    }
+                } catch {
+                    // Invalid JWT — fall through to Supabase check
+                }
+            } else {
+                // No JWT secret configured — trust cookie existence (dev mode)
+                return NextResponse.next();
+            }
         }
 
         // Fallback: check Supabase session

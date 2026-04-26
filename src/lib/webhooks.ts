@@ -8,13 +8,8 @@
  * - Order completed → External CRM
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin as getSupabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
-
-const supabaseAdmin = createClient<any>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
 
 export type WebhookEvent =
     | 'property.status_changed'
@@ -22,7 +17,6 @@ export type WebhookEvent =
     | 'lead.status_changed'
     | 'contract.signed'
     | 'contract.paid'
-    | 'order.completed'
     | 'viewing.scheduled'
     | 'viewing.completed';
 
@@ -97,7 +91,7 @@ export async function triggerWebhooks(
     data: any
 ): Promise<{ sent: number; failed: number }> {
     // Fetch active webhook configs for this event
-    const { data: configs } = await supabaseAdmin
+    const { data: configs } = await getSupabaseAdmin()
         .from('webhook_configs')
         .select('*')
         .eq('shop_id', shopId)
@@ -125,7 +119,7 @@ export async function triggerWebhooks(
     );
 
     try {
-        await supabaseAdmin.from('webhook_logs').insert({
+        await getSupabaseAdmin().from('webhook_logs').insert({
             shop_id: shopId,
             event,
             payload: data,
@@ -148,7 +142,6 @@ function getEventTitle(event: WebhookEvent): string {
         'lead.status_changed': '📋 Лийдийн статус солигдлоо',
         'contract.signed': '✍️ Гэрээ байгуулагдлаа',
         'contract.paid': '💰 Төлбөр хийгдлээ',
-        'order.completed': '✅ Захиалга дууслаа',
         'viewing.scheduled': '📅 Үзлэг товлолоо',
         'viewing.completed': '👁️ Үзлэг дуусгалаа',
     };

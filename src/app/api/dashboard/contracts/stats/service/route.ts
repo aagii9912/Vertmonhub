@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getClerkUserShop } from '@/lib/auth/supabase-auth';
+import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
@@ -9,7 +9,7 @@ import { logger } from '@/lib/utils/logger';
 // ============================================
 export async function GET() {
     try {
-        const authShop = await getClerkUserShop();
+        const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ stats: emptyKPI() });
         }

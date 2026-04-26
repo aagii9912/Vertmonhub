@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin, getClerkUser } from '@/lib/auth/supabase-auth';
+import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import * as XLSX from 'xlsx';
 
@@ -34,7 +34,7 @@ interface ImportResult {
 // ============================================
 export async function POST(request: NextRequest) {
     try {
-        const userId = await getClerkUser();
+        const userId = await getUserId();
         if (!userId) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }

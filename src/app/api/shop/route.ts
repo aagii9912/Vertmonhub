@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getClerkUser, supabaseAdmin } from '@/lib/auth/supabase-auth';
+import { getUserId, supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { CreateShopSchema, UpdateShopSchema, validateBody } from '@/lib/validations/schemas';
 
 // GET - Get user's shop
 export async function GET() {
   try {
-    const userId = await getClerkUser();
+    const userId = await getUserId();
 
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -33,7 +33,7 @@ export async function GET() {
 // POST - Create or update shop (upsert)
 export async function POST(request: NextRequest) {
   try {
-    const userId = await getClerkUser();
+    const userId = await getUserId();
 
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
 // PATCH - Update shop
 export async function PATCH(request: NextRequest) {
   try {
-    const userId = await getClerkUser();
+    const userId = await getUserId();
 
     if (!userId) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -115,10 +115,27 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Shop not found' }, { status: 404 });
     }
 
+    // Whitelist allowed fields to prevent mass assignment
+    const ALLOWED_FIELDS = [
+      'name', 'owner_name', 'phone', 'description',
+      'ai_emotion', 'ai_instructions', 'custom_knowledge',
+      'bank_name', 'account_number', 'account_name',
+      'facebook_page_id', 'facebook_page_name', 'facebook_page_username', 'facebook_page_access_token',
+      'instagram_business_account_id', 'instagram_access_token', 'instagram_username',
+      'notify_on_lead', 'notify_on_viewing', 'notify_on_contact', 'notify_on_support',
+    ];
+    const safeBody = Object.fromEntries(
+      Object.entries(body).filter(([key]) => ALLOWED_FIELDS.includes(key))
+    );
+
+    if (Object.keys(safeBody).length === 0) {
+      return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
+    }
+
     // Update shop
     const { data: updatedShop, error } = await supabase
       .from('shops')
-      .update(body)
+      .update(safeBody)
       .eq('id', shop.id)
       .select()
       .single();

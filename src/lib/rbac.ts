@@ -259,7 +259,7 @@ export function getAllowedModules(role: string): string[] {
 
 /** Validate if a string is a known system role */
 export function isValidRole(role: string): boolean {
-    return ['admin', 'sales_manager', 'marketing', 'viewer'].includes(role);
+    return ['super_admin', 'admin', 'sales_manager', 'marketing', 'viewer'].includes(role);
 }
 
 /** Check if role exists in static mapping (for backwards compat) */

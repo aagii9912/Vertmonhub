@@ -1,11 +1,11 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { getClerkUserShop } from '@/lib/auth/supabase-auth';
+import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
 export async function GET(request: NextRequest) {
   try {
-    const authShop = await getClerkUserShop();
+    const authShop = await getUserShop();
 
     logger.debug('[Customers API] authShop:', { shop: authShop ? { id: authShop.id, name: authShop.name } : null });
 
@@ -59,7 +59,7 @@ export async function GET(request: NextRequest) {
 // Update customer info
 export async function PATCH(request: NextRequest) {
   try {
-    const authShop = await getClerkUserShop();
+    const authShop = await getUserShop();
 
     if (!authShop) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

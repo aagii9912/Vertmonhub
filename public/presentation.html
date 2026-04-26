@@ -1,395 +1,978 @@
 <!DOCTYPE html>
 <html lang="mn">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vertmon Hub — Platform Танилцуулга</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#0a0a0f;--surface:#12121a;--card:#1a1a2e;--border:#2a2a3e;--text:#e4e4ef;--muted:#8888a0;--gold:#f0c040;--blue:#4ea8de;--green:#4ade80;--purple:#a78bfa;--red:#f87171;--cyan:#22d3ee;--pink:#f472b6;--orange:#fb923c}
-html{scroll-behavior:smooth}
-body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--text);overflow-x:hidden}
-.slide{min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:60px 8%;position:relative;border-bottom:1px solid var(--border)}
-.slide::before{content:'';position:absolute;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse at 20% 50%,rgba(78,168,222,.06) 0%,transparent 60%);pointer-events:none}
-h1{font-size:clamp(2.5rem,5vw,4rem);font-weight:900;background:linear-gradient(135deg,var(--gold),var(--orange));-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:16px;letter-spacing:-1px}
-h2{font-size:clamp(1.8rem,3.5vw,2.8rem);font-weight:800;margin-bottom:24px;letter-spacing:-.5px}
-h3{font-size:1.3rem;font-weight:700;margin-bottom:16px;color:var(--blue)}
-p,.desc{font-size:1.05rem;color:var(--muted);line-height:1.7;max-width:800px}
-.badge{display:inline-block;padding:6px 14px;border-radius:20px;font-size:.75rem;font-weight:600;letter-spacing:.5px;text-transform:uppercase}
-.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:24px;margin-top:32px}
-.grid3{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;margin-top:32px}
-.grid4{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin-top:24px}
-.card{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:28px;transition:transform .3s,box-shadow .3s}
-.card:hover{transform:translateY(-4px);box-shadow:0 12px 40px rgba(0,0,0,.4)}
-.card .icon{width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:1.4rem;margin-bottom:16px}
-.card h4{font-size:1.1rem;font-weight:700;margin-bottom:8px}
-.card p{font-size:.9rem;color:var(--muted);line-height:1.6}
-.tag{display:inline-block;padding:3px 10px;border-radius:8px;font-size:.7rem;font-weight:600;margin:2px}
-table{width:100%;border-collapse:collapse;margin-top:20px;font-size:.92rem}
-th{text-align:left;padding:12px 16px;background:var(--card);color:var(--gold);font-weight:600;border-bottom:2px solid var(--border)}
-td{padding:12px 16px;border-bottom:1px solid var(--border);color:var(--muted)}
-tr:hover td{background:rgba(255,255,255,.02)}
-.code{background:#0d1117;border:1px solid var(--border);border-radius:12px;padding:20px 24px;font-family:'JetBrains Mono',monospace;font-size:.85rem;color:#c9d1d9;overflow-x:auto;margin:16px 0;line-height:1.6}
-.highlight{color:var(--gold);font-weight:600}
-.flow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:20px 0;font-size:.9rem}
-.flow span{padding:8px 16px;background:var(--card);border:1px solid var(--border);border-radius:10px}
-.flow .arrow{background:none;border:none;color:var(--gold);font-size:1.2rem}
-.nav{position:fixed;top:0;left:0;right:0;z-index:100;background:rgba(10,10,15,.9);backdrop-filter:blur(16px);border-bottom:1px solid var(--border);padding:0 4%}
-.nav-inner{display:flex;align-items:center;justify-content:space-between;max-width:1400px;margin:auto;height:60px}
-.nav-logo{font-weight:800;font-size:1.1rem;background:linear-gradient(135deg,var(--gold),var(--orange));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
-.nav-links{display:flex;gap:4px;overflow-x:auto}
-.nav-links a{color:var(--muted);text-decoration:none;font-size:.78rem;font-weight:500;padding:6px 12px;border-radius:8px;white-space:nowrap;transition:all .2s}
-.nav-links a:hover,.nav-links a.active{color:var(--text);background:var(--card)}
-.stat-big{font-size:clamp(2rem,4vw,3.5rem);font-weight:900;margin-bottom:4px}
-.cost-total{background:linear-gradient(135deg,rgba(240,192,64,.1),rgba(251,146,60,.1));border:1px solid rgba(240,192,64,.3);border-radius:16px;padding:32px;text-align:center;margin-top:32px}
-.step-num{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--blue),var(--purple));display:flex;align-items:center;justify-content:center;font-weight:800;font-size:.9rem;flex-shrink:0}
-.step{display:flex;gap:16px;align-items:flex-start;padding:20px 0;border-bottom:1px solid var(--border)}
-.step:last-child{border:none}
-.hero-sub{font-size:1.2rem;color:var(--muted);margin-bottom:32px;max-width:700px}
-.tech-badge{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;background:var(--card);border:1px solid var(--border);border-radius:10px;font-size:.82rem;font-weight:500;margin:4px}
-@media(max-width:768px){.slide{padding:40px 5%}.nav-links{display:none}.grid2,.grid3,.grid4{grid-template-columns:1fr}}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vertmon Hub — Platform Capabilities</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --bg: #09090b;
+            --surface: #111113;
+            --surface-2: #18181b;
+            --border: rgba(255,255,255,0.06);
+            --border-hover: rgba(255,255,255,0.12);
+            --text: #fafafa;
+            --text-muted: rgba(255,255,255,0.45);
+            --text-dim: rgba(255,255,255,0.25);
+            --violet: #8b5cf6;
+            --violet-glow: rgba(139,92,246,0.15);
+            --emerald: #10b981;
+            --emerald-glow: rgba(16,185,129,0.15);
+            --amber: #f59e0b;
+            --amber-glow: rgba(245,158,11,0.15);
+            --sky: #0ea5e9;
+            --sky-glow: rgba(14,165,233,0.15);
+            --rose: #f43f5e;
+            --rose-glow: rgba(244,63,94,0.15);
+            --gold: #d4af37;
+            --gold-glow: rgba(212,175,55,0.15);
+            --meta-blue: #1877f2;
+            --meta-glow: rgba(24,119,242,0.15);
+        }
+
+        html { scroll-behavior: smooth; }
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        .slide {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 60px 80px;
+            position: relative;
+            opacity: 0;
+            transform: translateY(40px);
+            transition: opacity 0.8s cubic-bezier(0.16,1,0.3,1), transform 0.8s cubic-bezier(0.16,1,0.3,1);
+        }
+        .slide.visible { opacity: 1; transform: translateY(0); }
+
+        .nav {
+            position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+            padding: 16px 40px;
+            display: flex; align-items: center; justify-content: space-between;
+            background: rgba(9,9,11,0.85);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+        }
+        .nav-brand {
+            display: flex; align-items: center; gap: 10px;
+            font-weight: 700; font-size: 16px;
+        }
+        .nav-brand .logo {
+            width: 32px; height: 32px; border-radius: 8px;
+            background: linear-gradient(135deg, var(--violet), #7c3aed);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px;
+        }
+        .nav-progress { display: flex; gap: 6px; align-items: center; }
+        .nav-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--border); transition: all 0.3s ease; cursor: pointer;
+        }
+        .nav-dot.active {
+            background: var(--violet);
+            box-shadow: 0 0 12px var(--violet-glow);
+            width: 24px; border-radius: 4px;
+        }
+        .nav-counter {
+            font-size: 12px; color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace; margin-left: 12px;
+        }
+
+        .hero-title {
+            font-size: clamp(48px, 6vw, 80px); font-weight: 900;
+            line-height: 1.05; letter-spacing: -0.03em;
+        }
+        .section-title {
+            font-size: clamp(36px, 4vw, 56px); font-weight: 800;
+            line-height: 1.1; letter-spacing: -0.02em;
+        }
+        .section-subtitle {
+            font-size: 18px; color: var(--text-muted);
+            max-width: 650px; margin-top: 16px;
+        }
+        .gradient-text {
+            background: linear-gradient(135deg, var(--violet), #a78bfa, var(--violet));
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        .gradient-emerald {
+            background: linear-gradient(135deg, var(--emerald), #34d399);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        .gradient-amber {
+            background: linear-gradient(135deg, var(--amber), #fbbf24);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        .gradient-sky {
+            background: linear-gradient(135deg, var(--sky), #38bdf8);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        .gradient-meta {
+            background: linear-gradient(135deg, var(--meta-blue), #42a5f5);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        .gradient-gold {
+            background: linear-gradient(135deg, var(--gold), #f4e4ba);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+        .gradient-rose {
+            background: linear-gradient(135deg, var(--rose), #fb7185);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+        }
+
+        .stats-row { display: flex; gap: 24px; margin-top: 48px; flex-wrap: wrap; }
+        .stat-card {
+            padding: 28px 32px; background: var(--surface);
+            border: 1px solid var(--border); border-radius: 16px;
+            min-width: 160px; flex: 1; transition: all 0.3s ease;
+        }
+        .stat-card:hover { border-color: var(--border-hover); transform: translateY(-2px); }
+        .stat-value {
+            font-size: 36px; font-weight: 800;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .stat-label {
+            font-size: 13px; color: var(--text-muted); margin-top: 4px;
+            text-transform: uppercase; letter-spacing: 0.05em;
+        }
+
+        .tools-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px; margin-top: 40px;
+        }
+        .tool-card {
+            padding: 24px; background: var(--surface);
+            border: 1px solid var(--border); border-radius: 14px;
+            transition: all 0.3s ease; position: relative; overflow: hidden;
+        }
+        .tool-card::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0;
+            height: 2px; background: var(--card-accent, var(--violet));
+            opacity: 0; transition: opacity 0.3s ease;
+        }
+        .tool-card:hover { border-color: var(--border-hover); transform: translateY(-2px); }
+        .tool-card:hover::before { opacity: 1; }
+        .tool-icon {
+            width: 40px; height: 40px; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px; margin-bottom: 14px;
+        }
+        .tool-name {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;
+        }
+        .tool-title { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+        .tool-desc { font-size: 13px; color: var(--text-muted); line-height: 1.5; }
+        .tool-tag {
+            display: inline-block; padding: 3px 8px; border-radius: 6px;
+            font-size: 11px; font-weight: 600; margin-top: 12px;
+        }
+
+        .flow-container {
+            display: flex; align-items: center; gap: 12px;
+            margin-top: 40px; flex-wrap: wrap; justify-content: center;
+        }
+        .flow-step {
+            padding: 16px 24px; background: var(--surface);
+            border: 1px solid var(--border); border-radius: 12px;
+            text-align: center; min-width: 140px; transition: all 0.3s ease;
+        }
+        .flow-step:hover { border-color: var(--border-hover); transform: scale(1.05); }
+        .flow-step .step-num { font-size: 11px; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; margin-bottom: 6px; }
+        .flow-step .step-icon { font-size: 28px; margin-bottom: 8px; }
+        .flow-step .step-text { font-size: 13px; font-weight: 600; }
+        .flow-arrow { font-size: 20px; color: var(--text-dim); }
+
+        .perm-table { width: 100%; margin-top: 32px; border-collapse: collapse; }
+        .perm-table th, .perm-table td { padding: 14px 20px; text-align: left; border-bottom: 1px solid var(--border); }
+        .perm-table th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted); font-weight: 600; }
+        .perm-table td { font-size: 14px; }
+        .perm-table tr:hover td { background: rgba(255,255,255,0.02); }
+        .perm-name { font-family: 'JetBrains Mono', monospace; font-size: 13px; font-weight: 500; }
+        .badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+        .badge-active { background: var(--emerald-glow); color: var(--emerald); }
+        .badge-review { background: var(--amber-glow); color: var(--amber); }
+        .badge-approved { background: var(--emerald-glow); color: var(--emerald); }
+
+        .glow { position: absolute; border-radius: 50%; pointer-events: none; filter: blur(100px); opacity: 0.4; }
+
+        .code-block {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 12px; padding: 24px 28px;
+            font-family: 'JetBrains Mono', monospace; font-size: 13px;
+            line-height: 1.8; overflow-x: auto; margin-top: 24px;
+        }
+        .code-comment { color: #6b7280; }
+        .code-keyword { color: var(--violet); }
+        .code-string { color: var(--emerald); }
+        .code-func { color: var(--sky); }
+
+        .feature-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; margin-top: 24px; }
+        .feature-item { display: flex; align-items: flex-start; gap: 12px; padding: 14px 18px; border-radius: 10px; transition: background 0.2s ease; }
+        .feature-item:hover { background: rgba(255,255,255,0.02); }
+        .feature-check { width: 20px; height: 20px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; margin-top: 2px; }
+        .feature-text { font-size: 14px; font-weight: 500; }
+        .feature-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+        .arch-stack { display: flex; flex-direction: column; gap: 8px; margin-top: 32px; max-width: 700px; }
+        .arch-layer {
+            padding: 20px 28px; border-radius: 12px; border: 1px solid var(--border);
+            display: flex; align-items: center; justify-content: space-between; transition: all 0.3s ease;
+        }
+        .arch-layer:hover { border-color: var(--border-hover); transform: translateX(8px); }
+        .arch-name { font-weight: 700; font-size: 15px; }
+        .arch-tech { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-muted); }
+
+        .kbd-hint {
+            position: fixed; bottom: 24px; right: 24px;
+            display: flex; align-items: center; gap: 8px;
+            padding: 10px 16px; background: var(--surface);
+            border: 1px solid var(--border); border-radius: 10px;
+            font-size: 12px; color: var(--text-muted); z-index: 100;
+        }
+        kbd {
+            padding: 2px 8px; background: var(--surface-2);
+            border: 1px solid var(--border); border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace; font-size: 11px;
+        }
+
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: start; }
+
+        .review-timeline { display: flex; flex-direction: column; gap: 16px; margin-top: 32px; }
+        .timeline-item { display: flex; gap: 16px; align-items: flex-start; }
+        .timeline-dot {
+            width: 12px; height: 12px; border-radius: 50%;
+            margin-top: 6px; flex-shrink: 0; position: relative;
+        }
+        .timeline-dot::after {
+            content: ''; position: absolute; top: 16px; left: 5px;
+            width: 2px; height: 40px; background: var(--border);
+        }
+        .timeline-item:last-child .timeline-dot::after { display: none; }
+        .timeline-content { flex: 1; }
+        .timeline-title { font-weight: 600; font-size: 14px; }
+        .timeline-desc { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+
+        .chat-mockup {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: 16px; overflow: hidden; max-width: 380px; margin-top: 24px;
+        }
+        .chat-header {
+            padding: 12px 16px; background: var(--surface-2);
+            border-bottom: 1px solid var(--border);
+            display: flex; align-items: center; gap: 10px;
+        }
+        .chat-avatar {
+            width: 32px; height: 32px; border-radius: 50%;
+            background: linear-gradient(135deg, var(--violet), #7c3aed);
+            display: flex; align-items: center; justify-content: center; font-size: 14px;
+        }
+        .chat-name { font-weight: 600; font-size: 14px; }
+        .chat-status { font-size: 11px; color: var(--emerald); }
+        .chat-body { padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+        .msg { padding: 10px 14px; border-radius: 14px; font-size: 13px; max-width: 85%; line-height: 1.4; }
+        .msg-user { background: var(--violet); color: white; align-self: flex-end; border-bottom-right-radius: 4px; }
+        .msg-ai { background: var(--surface-2); border: 1px solid var(--border); align-self: flex-start; border-bottom-left-radius: 4px; }
+
+        /* Module detail card */
+        .module-card {
+            padding: 20px 24px; background: var(--surface);
+            border: 1px solid var(--border); border-radius: 14px;
+            transition: all 0.3s ease; position: relative; overflow: hidden;
+        }
+        .module-card::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0;
+            height: 2px; background: var(--card-accent, var(--violet));
+            opacity: 0; transition: opacity 0.3s ease;
+        }
+        .module-card:hover { border-color: var(--border-hover); transform: translateY(-2px); }
+        .module-card:hover::before { opacity: 1; }
+        .module-header { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+        .module-icon { font-size: 24px; }
+        .module-name { font-size: 16px; font-weight: 700; }
+        .module-desc { font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 12px; }
+        .module-features { display: flex; flex-wrap: wrap; gap: 6px; }
+        .module-feat {
+            padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 600;
+            background: rgba(255,255,255,0.04); color: var(--text-muted); border: 1px solid var(--border);
+        }
+
+        @media (max-width: 768px) {
+            .slide { padding: 40px 24px; }
+            .two-col { grid-template-columns: 1fr; }
+            .tools-grid { grid-template-columns: 1fr; }
+            .feature-list { grid-template-columns: 1fr; }
+            .nav { padding: 12px 20px; }
+        }
+
+        @keyframes pulse-glow {
+            0%, 100% { opacity: 0.3; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.1); }
+        }
+        .animate-pulse-glow { animation: pulse-glow 4s ease-in-out infinite; }
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-8px); }
+        }
+        .animate-float { animation: float 6s ease-in-out infinite; }
+    </style>
 </head>
 <body>
 
-<!-- NAV -->
 <nav class="nav">
-<div class="nav-inner">
-<div class="nav-logo">🏢 Vertmon Hub</div>
-<div class="nav-links">
-<a href="#hero">Нүүр</a>
-<a href="#arch">Архитектур</a>
-<a href="#ai-engine">AI Engine</a>
-<a href="#tools">Tools</a>
-<a href="#data-asst">Data Assistant</a>
-<a href="#webhook">Webhook</a>
-<a href="#messenger">Messenger</a>
-<a href="#meta">Meta Setup</a>
-<a href="#cost">Зардал</a>
-<a href="#tech">Tech Stack</a>
-</div>
-</div>
+    <div class="nav-brand">
+        <div class="logo">🏢</div>
+        <span>Vertmon Hub</span>
+    </div>
+    <div style="display:flex; align-items:center;">
+        <div class="nav-progress" id="navDots"></div>
+        <span class="nav-counter" id="navCounter">1 / 10</span>
+    </div>
 </nav>
 
-<!-- SLIDE 1: HERO -->
-<section class="slide" id="hero" style="padding-top:100px">
-<span class="badge" style="background:rgba(240,192,64,.15);color:var(--gold)">Platform Overview 2026</span>
-<h1 style="margin-top:16px">Vertmon Hub</h1>
-<p class="hero-sub">Үл Хөдлөх Хөрөнгийн AI-тэй CRM платформ — Facebook Messenger + Instagram-ээр автомат харилцаа үүсгэж, борлуулалтыг удирдана.</p>
-<div style="display:flex;gap:12px;flex-wrap:wrap">
-<span class="tech-badge">🤖 Gemini 2.5 Flash</span>
-<span class="tech-badge">⚡ Next.js 16</span>
-<span class="tech-badge">🗄️ Supabase</span>
-<span class="tech-badge">☁️ Vercel</span>
-<span class="tech-badge">📱 Meta APIs</span>
-</div>
-<div class="grid4" style="margin-top:48px">
-<div class="card" style="text-align:center;border-color:rgba(240,192,64,.3)"><div class="stat-big" style="color:var(--gold)">40+</div><p>Functions</p></div>
-<div class="card" style="text-align:center;border-color:rgba(78,168,222,.3)"><div class="stat-big" style="color:var(--blue)">23</div><p>AI Tools</p></div>
-<div class="card" style="text-align:center;border-color:rgba(74,222,128,.3)"><div class="stat-big" style="color:var(--green)">12</div><p>Dashboard Pages</p></div>
-<div class="card" style="text-align:center;border-color:rgba(167,139,250,.3)"><div class="stat-big" style="color:var(--purple)">~$51</div><p>Monthly Cost</p></div>
-</div>
+<!-- ==================== SLIDE 1: Hero ==================== -->
+<section class="slide" id="slide-0">
+    <div class="glow animate-pulse-glow" style="width:500px;height:500px;background:var(--violet);top:10%;left:50%;transform:translateX(-50%)"></div>
+    <div style="position:relative; text-align:center; max-width:900px; margin:0 auto;">
+        <div style="display:inline-flex;align-items:center;gap:8px;padding:6px 16px;border-radius:20px;border:1px solid var(--border);background:var(--surface);font-size:13px;color:var(--text-muted);margin-bottom:24px;">
+            <span style="width:6px;height:6px;border-radius:50%;background:var(--emerald);"></span>
+            Production Ready · 2026
+        </div>
+        <h1 class="hero-title">
+            Үл Хөдлөхийн<br>
+            <span class="gradient-text">CRM & ERP Платформ</span>
+        </h1>
+        <p class="section-subtitle" style="margin:20px auto 0;text-align:center;max-width:700px;">
+            Гэрээний удирдлага, төлбөрийн хяналт, үйлчилгээний бүртгэл, лийд pipeline, AI зөвлөгөө chatbot — Vertmon-ий бүх үйл ажиллагааг нэг систем дотор хөнгөвчилнө.
+        </p>
+        <div class="stats-row" style="justify-content:center;">
+            <div class="stat-card">
+                <div class="stat-value" style="color:var(--violet)">15</div>
+                <div class="stat-label">CRM Модуль</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" style="color:var(--emerald)">10</div>
+                <div class="stat-label">AI Chatbot Tools</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" style="color:var(--amber)">5</div>
+                <div class="stat-label">RBAC Roles</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" style="color:var(--sky)">24/7</div>
+                <div class="stat-label">AI Зөвлөгөө</div>
+            </div>
+        </div>
+    </div>
 </section>
 
-<!-- SLIDE 2: ARCHITECTURE -->
-<section class="slide" id="arch">
-<span class="badge" style="background:rgba(78,168,222,.15);color:var(--blue)">Architecture</span>
-<h2 style="margin-top:12px">Системийн Архитектур</h2>
-<div class="grid3">
-<div class="card"><div class="icon" style="background:rgba(78,168,222,.15)">📱</div><h4>External</h4><p>Facebook Messenger, Instagram DM, Meta Graph API v18.0 — хэрэглэгчид мессеж бичнэ</p></div>
-<div class="card"><div class="icon" style="background:rgba(167,139,250,.15)">☁️</div><h4>Vercel (Hosting)</h4><p>Next.js 16 app, API routes, Webhook endpoint — serverless edge functions</p></div>
-<div class="card"><div class="icon" style="background:rgba(240,192,64,.15)">🤖</div><h4>AI Engine</h4><p>AIRouter → Gemini 2.5 Flash, Intent Detector, Comment Detector, 8 Function Calling Tools</p></div>
-<div class="card"><div class="icon" style="background:rgba(74,222,128,.15)">🗄️</div><h4>Supabase</h4><p>PostgreSQL + GoTrue Auth + RLS — shops, properties, customers, leads, chat_history</p></div>
-<div class="card"><div class="icon" style="background:rgba(248,113,113,.15)">📊</div><h4>Data Assistant</h4><p>15 read/write tools — дотоод ажилтнуудад бизнес дата шинжилгээ хийх</p></div>
-<div class="card"><div class="icon" style="background:rgba(244,114,182,.15)">🔔</div><h4>Notifications</h4><p>Push notifications, Sentry monitoring, Resend email — real-time alert</p></div>
-</div>
-<div class="flow" style="margin-top:32px">
-<span>👤 User мессеж</span><span class="arrow">→</span>
-<span>📱 Meta Webhook</span><span class="arrow">→</span>
-<span>🔗 /api/webhook</span><span class="arrow">→</span>
-<span>🎯 Intent detect</span><span class="arrow">→</span>
-<span>🤖 Gemini AI</span><span class="arrow">→</span>
-<span>🛠️ Tool execute</span><span class="arrow">→</span>
-<span>💬 Reply</span>
-</div>
+<!-- ==================== SLIDE 2: CRM Core — Contracts ==================== -->
+<section class="slide" id="slide-1">
+    <div class="glow animate-pulse-glow" style="width:400px;height:400px;background:var(--gold);top:15%;right:10%;"></div>
+    <div>
+        <div style="font-size:13px;color:var(--gold);font-weight:600;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:12px;">📄 CRM Core</div>
+        <h2 class="section-title">Гэрээний<br><span class="gradient-gold">Удирдлага</span></h2>
+        <p class="section-subtitle">Худалдах-худалдан авах гэрээ, төлбөрийн хуваарь, хоцрогдол хяналт, хүлээлгэн өгөх акт — бүгд нэг дэлгэц дээр.</p>
+    </div>
+    <div class="two-col" style="margin-top:40px;">
+        <div>
+            <div class="tools-grid" style="grid-template-columns:1fr;gap:12px;margin-top:0;">
+                <div class="module-card" style="--card-accent:var(--gold)">
+                    <div class="module-header">
+                        <div class="module-icon">📋</div>
+                        <div class="module-name">Гэрээний бүртгэл</div>
+                    </div>
+                    <div class="module-desc">Excel файлаас гэрээ импортлох, гэрээний дугаар / нэр / утас / регистрээр хайх, статус шүүлт (идэвхтэй / хаагдсан / цуцалсан), хоцролттой гэрээ тусад нь шүүх.</div>
+                    <div class="module-features">
+                        <span class="module-feat">Excel импорт</span>
+                        <span class="module-feat">Хайлт & шүүлт</span>
+                        <span class="module-feat">Статус удирдлага</span>
+                        <span class="module-feat">Устгах</span>
+                    </div>
+                </div>
+                <div class="module-card" style="--card-accent:var(--amber)">
+                    <div class="module-header">
+                        <div class="module-icon">💰</div>
+                        <div class="module-name">Төлбөрийн хяналт</div>
+                    </div>
+                    <div class="module-desc">Гэрээ бүрийн төлбөрийн хуваарь (installment), төлсөн %, үлдэгдэл, хоцрогдлын хоног тоолж харуулна. Нийт борлуулалт, цуглуулалт, хоцорсон дүнг KPI карт дээр real-time.</div>
+                    <div class="module-features">
+                        <span class="module-feat">Installment tracking</span>
+                        <span class="module-feat">Хоцрогдол тоолуур</span>
+                        <span class="module-feat">Progress bar</span>
+                        <span class="module-feat">KPI cards</span>
+                    </div>
+                </div>
+                <div class="module-card" style="--card-accent:var(--emerald)">
+                    <div class="module-header">
+                        <div class="module-icon">✅</div>
+                        <div class="module-name">Хүлээлгэн өгөх акт</div>
+                    </div>
+                    <div class="module-desc">Гэрээ бүрт хүлээлгэн өгсөн акт, шалгах хуудас (checklist), хүлээлгэн өгсөн / маргаантай / хүлээгдэж буй статус удирдлага.</div>
+                    <div class="module-features">
+                        <span class="module-feat">Checklist</span>
+                        <span class="module-feat">Статус</span>
+                        <span class="module-feat">Огноо</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div>
+            <div class="module-card" style="--card-accent:var(--violet);margin-bottom:16px;">
+                <div class="module-header">
+                    <div class="module-icon">📝</div>
+                    <div class="module-name">Гэрээ үүсгэгч</div>
+                </div>
+                <div class="module-desc">Худалдан авагчийн мэдээлэл, байрны мэдээлэл, төлбөрийн нөхцөл оруулж → стандарт гэрээ автомат үүсгэнэ. PDF / хэвлэх боломжтой. Бэлэн мөнгө, банкны зээл, хэсэгчлэн гэсэн 3 төлбөрийн хэлбэр дэмжинэ.</div>
+                <div class="module-features">
+                    <span class="module-feat">Auto-generate</span>
+                    <span class="module-feat">PDF / Print</span>
+                    <span class="module-feat">3 төлбөрийн хэлбэр</span>
+                </div>
+            </div>
+            <div style="margin-top:16px;">
+                <div style="font-size:14px;font-weight:700;margin-bottom:12px;">📊 Гэрээний KPI Dashboard</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                    <div style="padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+                        <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Нийт гэрээ</div>
+                        <div style="font-size:20px;font-weight:800;font-family:'JetBrains Mono',monospace;color:var(--sky)">∑ total</div>
+                        <div style="font-size:11px;color:var(--text-muted)">Идэвхтэй / Хаагдсан</div>
+                    </div>
+                    <div style="padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+                        <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Нийт борлуулалт</div>
+                        <div style="font-size:20px;font-weight:800;font-family:'JetBrains Mono',monospace;color:var(--emerald)">₮ total</div>
+                        <div style="font-size:11px;color:var(--text-muted)">Real-time дүн</div>
+                    </div>
+                    <div style="padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+                        <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Цуглуулсан</div>
+                        <div style="font-size:20px;font-weight:800;font-family:'JetBrains Mono',monospace;color:var(--amber)">%</div>
+                        <div style="font-size:11px;color:var(--text-muted)">Төлсөн / Нийт</div>
+                    </div>
+                    <div style="padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+                        <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">Хоцрогдол</div>
+                        <div style="font-size:20px;font-weight:800;font-family:'JetBrains Mono',monospace;color:var(--rose)">⚠️</div>
+                        <div style="font-size:11px;color:var(--text-muted)">Дүн + гэрээний тоо</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </section>
 
-<!-- SLIDE 3: AI ENGINE -->
-<section class="slide" id="ai-engine">
-<span class="badge" style="background:rgba(240,192,64,.15);color:var(--gold)">Core AI</span>
-<h2 style="margin-top:12px">AI Engine — Гол Модулиуд</h2>
-<div class="grid2">
-<div class="card" style="border-left:3px solid var(--gold)">
-<h4>🧠 AIRouter</h4>
-<p><strong>routeToAI()</strong> — Мессежийг Gemini 2.5 Flash-руу илгээж, tool calling + vision дэмжинэ</p>
-<p style="margin-top:8px"><strong>analyzeProductImageWithPlan()</strong> — Зураг илгээхэд байр таниулах, receipt таних</p>
-<p style="margin-top:8px"><strong>retryOperation()</strong> — Rate-limit дээр 3 удаа exponential backoff</p>
-</div>
-<div class="card" style="border-left:3px solid var(--blue)">
-<h4>🎯 Intent Detector</h4>
-<p><strong>11 intent төрөл:</strong></p>
-<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px">
-<span class="tag" style="background:rgba(74,222,128,.15);color:var(--green)">GREETING</span>
-<span class="tag" style="background:rgba(78,168,222,.15);color:var(--blue)">PRICE_CHECK</span>
-<span class="tag" style="background:rgba(167,139,250,.15);color:var(--purple)">ORDER_CREATE</span>
-<span class="tag" style="background:rgba(240,192,64,.15);color:var(--gold)">PURCHASE_SIGNAL 🔥</span>
-<span class="tag" style="background:rgba(248,113,113,.15);color:var(--red)">URGENT_COMPLAINT 🚨</span>
-<span class="tag" style="background:rgba(34,211,238,.15);color:var(--cyan)">STOCK_CHECK</span>
-<span class="tag" style="background:rgba(244,114,182,.15);color:var(--pink)">COMPLAINT</span>
-<span class="tag" style="background:rgba(251,146,60,.15);color:var(--orange)">PRODUCT_INQUIRY</span>
-</div>
-<p style="margin-top:12px">+ Entity extraction: тоо, өнгө (9), размер (XS→XXL)</p>
-</div>
-<div class="card" style="border-left:3px solid var(--green)">
-<h4>💬 Comment Detector</h4>
-<p><strong>shouldReplyToComment()</strong> — FB comment бүтээгдэхүүнтэй холбоотой юу?</p>
-<p style="margin-top:8px">30+ keyword шалгана: үнэ, захиал, байгаа, хүргэ, холбогд</p>
-<p style="margin-top:8px"><strong>generateCommentReply()</strong> — Автомат хариу: "m.me/page руу бичээрэй"</p>
-</div>
-<div class="card" style="border-left:3px solid var(--purple)">
-<h4>📝 PromptService</h4>
-<p>System prompt бэлдэнэ — 5 зан байдал:</p>
-<div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:4px">
-<span class="tag" style="background:rgba(74,222,128,.15);color:var(--green)">friendly</span>
-<span class="tag" style="background:rgba(78,168,222,.15);color:var(--blue)">professional</span>
-<span class="tag" style="background:rgba(240,192,64,.15);color:var(--gold)">enthusiastic</span>
-<span class="tag" style="background:rgba(167,139,250,.15);color:var(--purple)">calm</span>
-<span class="tag" style="background:rgba(244,114,182,.15);color:var(--pink)">luxury</span>
-</div>
-<p style="margin-top:8px">+ Бүтээгдэхүүн, FAQs, Memory, Custom instructions</p>
-</div>
-</div>
+<!-- ==================== SLIDE 3: Customer Service & Operations ==================== -->
+<section class="slide" id="slide-2">
+    <div class="glow animate-pulse-glow" style="width:400px;height:400px;background:var(--violet);top:20%;left:5%;"></div>
+    <div>
+        <div style="font-size:13px;color:var(--violet);font-weight:600;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:12px;">🛎️ Operations</div>
+        <h2 class="section-title">Үйлчилгээний<br><span class="gradient-text">Хяналт</span></h2>
+        <p class="section-subtitle">Гомдол, засвар хүсэлт, лавлагаа, хүлээлгэн өгөх — бүх үйлчилгээний түүх нэг дэлгэц дээр. NPS, CSAT, дундаж шийдвэрлэх хугацааг хянана.</p>
+    </div>
+    <div class="two-col" style="margin-top:40px;">
+        <div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px;">
+                <div style="padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;text-align:center;">
+                    <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Нээлттэй хүсэлт</div>
+                    <div style="font-size:24px;font-weight:800;color:var(--violet)">Open</div>
+                </div>
+                <div style="padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;text-align:center;">
+                    <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">Шийдвэрлэсэн</div>
+                    <div style="font-size:24px;font-weight:800;color:var(--emerald)">Resolved</div>
+                </div>
+                <div style="padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;text-align:center;">
+                    <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">NPS</div>
+                    <div style="font-size:24px;font-weight:800;color:var(--amber)">Score</div>
+                </div>
+                <div style="padding:16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;text-align:center;">
+                    <div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px;">CSAT</div>
+                    <div style="font-size:24px;font-weight:800;color:var(--sky)">/5</div>
+                </div>
+            </div>
+            <div class="module-card" style="--card-accent:var(--violet)">
+                <div class="module-header">
+                    <div class="module-icon">📩</div>
+                    <div class="module-name">Хүсэлт бүртгэх</div>
+                </div>
+                <div class="module-desc">Шинэ хүсэлт бүртгэх form: гарчиг, төрөл (лавлагаа / гомдол / засвар / төлбөр / хүлээлцэх), чухлал (бага → яаралтай), харилцагчийн нэр & утас, хариуцагч, дэлгэрэнгүй тайлбар.</div>
+                <div class="module-features">
+                    <span class="module-feat">6 төрөл</span>
+                    <span class="module-feat">4 чухлал</span>
+                    <span class="module-feat">Хариуцагч</span>
+                    <span class="module-feat">Үнэлгээ ★</span>
+                </div>
+            </div>
+        </div>
+        <div>
+            <div style="font-size:15px;font-weight:700;margin-bottom:16px;">Хүсэлтийн төрлүүд</div>
+            <div style="display:flex;flex-direction:column;gap:10px;">
+                <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+                    <span style="font-size:18px">💬</span>
+                    <div><div style="font-size:14px;font-weight:600;">Лавлагаа</div><div style="font-size:12px;color:var(--text-muted)">Ерөнхий асуулт, мэдээлэл хүсэлт</div></div>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+                    <span style="font-size:18px">⚠️</span>
+                    <div><div style="font-size:14px;font-weight:600;">Гомдол</div><div style="font-size:12px;color:var(--text-muted)">Худалдан авагчийн гомдол бүртгэх</div></div>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+                    <span style="font-size:18px">🔧</span>
+                    <div><div style="font-size:14px;font-weight:600;">Засвар</div><div style="font-size:12px;color:var(--text-muted)">Техникийн засвар үйлчилгээ хүсэлт</div></div>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+                    <span style="font-size:18px">💰</span>
+                    <div><div style="font-size:14px;font-weight:600;">Төлбөр</div><div style="font-size:12px;color:var(--text-muted)">Төлбөрийн асуудал, хоцрогдол</div></div>
+                </div>
+                <div style="display:flex;align-items:center;gap:12px;padding:12px 16px;background:var(--surface);border:1px solid var(--border);border-radius:10px;">
+                    <span style="font-size:18px">🔑</span>
+                    <div><div style="font-size:14px;font-weight:600;">Хүлээлцэх</div><div style="font-size:12px;color:var(--text-muted)">Байр хүлээлгэн өгөх процесс</div></div>
+                </div>
+            </div>
+            <div style="margin-top:16px;padding:14px 18px;background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.2);border-radius:10px;font-size:13px;color:var(--text-muted);">
+                <strong style="color:var(--violet)">Workflow:</strong> Нээлттэй → Ажиллаж буй → Шийдвэрлэсэн → Хаагдсан. Satisfaction rating ★ 1-5 →  CSAT тооцоолно.
+            </div>
+        </div>
+    </div>
 </section>
 
-<!-- SLIDE 4: TOOLS -->
-<section class="slide" id="tools">
-<span class="badge" style="background:rgba(74,222,128,.15);color:var(--green)">Gemini Function Calling</span>
-<h2 style="margin-top:12px">8 AI Tools — Автомат Гүйцэтгэл</h2>
-<p>Gemini AI хэрэглэгчийн хэрэгцээг ойлгоод автоматаар дуудна:</p>
-<table>
-<thead><tr><th>#</th><th>Tool</th><th>Юу хийдэг</th><th>DB</th></tr></thead>
-<tbody>
-<tr><td>1</td><td class="highlight">search_properties</td><td>Байр хайх — төрөл, үнэ, дүүрэг, өрөө, м²</td><td>properties</td></tr>
-<tr><td>2</td><td class="highlight">show_property_images</td><td>Байрны зураг Messenger-ээр илгээх (5 хүртэл)</td><td>properties.images</td></tr>
-<tr><td>3</td><td class="highlight">calculate_loan</td><td>Ипотекийн зээлийн тооцоо — сарын төлбөр, хүү</td><td>In-memory</td></tr>
-<tr><td>4</td><td class="highlight">schedule_viewing</td><td>Үзлэг товлох + lead үүсгэх + push notification</td><td>viewings, leads</td></tr>
-<tr><td>5</td><td class="highlight">create_lead</td><td>Шинэ сонирхогч бүртгэх + push notification</td><td>leads</td></tr>
-<tr><td>6</td><td class="highlight">collect_contact_info</td><td>Утас, имэйл, нэр хадгалах</td><td>customers</td></tr>
-<tr><td>7</td><td class="highlight">request_human_support</td><td>Менежертэй холбогдох хүсэлт + push</td><td>Push only</td></tr>
-<tr><td>8</td><td class="highlight">remember_preference</td><td>Хэрэглэгчийн сонголт санах (key-value)</td><td>preferences</td></tr>
-</tbody>
-</table>
+<!-- ==================== SLIDE 4: Properties + Leads + Viewings ==================== -->
+<section class="slide" id="slide-3">
+    <div>
+        <div style="font-size:13px;color:var(--emerald);font-weight:600;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:12px;">🏠 Sales Pipeline</div>
+        <h2 class="section-title">Борлуулалтын<br><span class="gradient-emerald">Шугам</span></h2>
+        <p class="section-subtitle">Үл хөдлөх бүртгэлээс эхлээд lead үүсгэх, үзлэг товлох, гэрээ хийх хүртэлх бүх процесс.</p>
+    </div>
+    <div class="tools-grid" style="grid-template-columns: repeat(3, 1fr);margin-top:32px;">
+        <!-- Properties -->
+        <div class="module-card" style="--card-accent:var(--emerald)">
+            <div class="module-header">
+                <div class="module-icon">🏠</div>
+                <div class="module-name">Үл хөдлөх бүртгэл</div>
+            </div>
+            <div class="module-desc">
+                Байр нэмэх/засах/устгах, төрөл (орон сууц, байшин, оффис, газар, худалдааны), статус (зарагдаж байна, захиалагдсан, зарагдсан, түрээслэгдсэн, бартер). Зураг upload, м² үнэ, дүүрэг, өрөө, давхар.
+            </div>
+            <div class="module-features">
+                <span class="module-feat">5 төрөл</span>
+                <span class="module-feat">5 статус</span>
+                <span class="module-feat">Зураг upload</span>
+                <span class="module-feat">Үзэлт тоолуур</span>
+                <span class="module-feat">м² үнэлгээ</span>
+            </div>
+            <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+                <div style="padding:8px;background:rgba(16,185,129,0.08);border-radius:6px;text-align:center;">
+                    <div style="font-size:10px;color:var(--text-dim)">Нийт үнэ</div>
+                    <div style="font-size:13px;font-weight:700;color:var(--emerald)">KPI</div>
+                </div>
+                <div style="padding:8px;background:rgba(16,185,129,0.08);border-radius:6px;text-align:center;">
+                    <div style="font-size:10px;color:var(--text-dim)">Дундаж үнэ</div>
+                    <div style="font-size:13px;font-weight:700;color:var(--emerald)">KPI</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Leads -->
+        <div class="module-card" style="--card-accent:var(--sky)">
+            <div class="module-header">
+                <div class="module-icon">👥</div>
+                <div class="module-name">Лийд Pipeline</div>
+            </div>
+            <div class="module-desc">
+                7 шатлалт pipeline: Шинэ → Холбогдсон → Үзлэг товлосон → Санал тавьсан → Хэлэлцэж байна → Амжилттай → Алдсан. AI тойм, яриа эхлэх санаа, сонирхол, яаралтай тэмдэглэгээ.
+            </div>
+            <div class="module-features">
+                <span class="module-feat">7 pipeline шат</span>
+                <span class="module-feat">AI тойм</span>
+                <span class="module-feat">Хөрвүүлэлт %</span>
+                <span class="module-feat">Эх үүсвэр</span>
+                <span class="module-feat">Talking points</span>
+                <span class="module-feat">Утас залгах</span>
+            </div>
+            <div style="margin-top:12px;padding:10px;background:rgba(14,165,233,0.08);border-radius:8px;font-size:12px;color:var(--text-muted);">
+                <strong style="color:var(--sky)">Эх үүсвэр:</strong> Messenger, Instagram, Вэбсайт, Зөвлөмж, Утас, Бусад
+            </div>
+        </div>
+
+        <!-- Viewings -->
+        <div class="module-card" style="--card-accent:var(--amber)">
+            <div class="module-header">
+                <div class="module-icon">👁️</div>
+                <div class="module-name">Үзлэг удирдлага</div>
+            </div>
+            <div class="module-desc">
+                Үзлэг товлох, статус хянах (Товлосон / Дуусгасан / Цуцалсан / Ирээгүй). Өнөөдрийн үзлэг онцлох, lead & property-тэй холбоотой. Менежер шууд статус шинэчлэх боломж.
+            </div>
+            <div class="module-features">
+                <span class="module-feat">4 статус</span>
+                <span class="module-feat">Lead холбоос</span>
+                <span class="module-feat">Property холбоос</span>
+                <span class="module-feat">Өнөөдөр тэмдэглэгээ</span>
+                <span class="module-feat">Менежер notes</span>
+            </div>
+            <div style="margin-top:12px;padding:10px;background:rgba(245,158,11,0.08);border-radius:8px;font-size:12px;color:var(--text-muted);">
+                <strong style="color:var(--amber)">AI холбоос:</strong> schedule_viewing tool → автомат lead + viewing үүсгэнэ
+            </div>
+        </div>
+    </div>
+
+    <!-- Pipeline flow visualization -->
+    <div class="flow-container" style="margin-top:32px;">
+        <div class="flow-step" style="border-color:rgba(16,185,129,0.3)"><div class="step-icon">🏠</div><div class="step-text" style="color:var(--emerald)">Байр бүртгэх</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step" style="border-color:rgba(14,165,233,0.3)"><div class="step-icon">👥</div><div class="step-text" style="color:var(--sky)">Lead үүсэх</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step" style="border-color:rgba(245,158,11,0.3)"><div class="step-icon">👁️</div><div class="step-text" style="color:var(--amber)">Үзлэг товлох</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step" style="border-color:rgba(212,175,55,0.3)"><div class="step-icon">📄</div><div class="step-text" style="color:var(--gold)">Гэрээ хийх</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step" style="border-color:rgba(139,92,246,0.3)"><div class="step-icon">💰</div><div class="step-text" style="color:var(--violet)">Төлбөр хянах</div></div>
+        <div class="flow-arrow">→</div>
+        <div class="flow-step" style="border-color:rgba(16,185,129,0.3)"><div class="step-icon">🔑</div><div class="step-text" style="color:var(--emerald)">Хүлээлгэн өгөх</div></div>
+    </div>
 </section>
 
-<!-- SLIDE 5: DATA ASSISTANT -->
-<section class="slide" id="data-asst">
-<span class="badge" style="background:rgba(167,139,250,.15);color:var(--purple)">Internal AI</span>
-<h2 style="margin-top:12px">Data Assistant — 15 Tool</h2>
-<p>Dashboard-ээс ажилтнууд ашиглана. Бүх бизнес дата-д хандана.</p>
-<div class="grid2">
-<div>
-<h3 style="color:var(--green)">📖 Read Tools (10) — Бүх Admin</h3>
-<table>
-<tbody>
-<tr><td class="highlight">get_dashboard_stats</td><td>Орлого, лийд, байр, захиалга</td></tr>
-<tr><td class="highlight">list_properties</td><td>Байрны жагсаалт (7 шүүлт)</td></tr>
-<tr><td class="highlight">list_leads</td><td>Лийд жагсаалт (статус, эх үүсвэр)</td></tr>
-<tr><td class="highlight">get_lead_details</td><td>Лийдийн дэлгэрэнгүй</td></tr>
-<tr><td class="highlight">get_customer_insights</td><td>Харилцагчийн profile</td></tr>
-<tr><td class="highlight">get_sales_summary</td><td>Борлуулалтын нэгтгэл</td></tr>
-<tr><td class="highlight">get_sales_forecast</td><td>AI прогноз</td></tr>
-<tr><td class="highlight">compare_properties</td><td>Байр харьцуулалт</td></tr>
-<tr><td class="highlight">list_orders</td><td>Захиалга жагсаалт</td></tr>
-<tr><td class="highlight">get_product_stats</td><td>Бүтээгдэхүүний stat</td></tr>
-</tbody>
-</table>
-</div>
-<div>
-<h3 style="color:var(--red)">✏️ Write Tools (5) — Super Admin Only</h3>
-<table>
-<tbody>
-<tr><td class="highlight">update_property_status</td><td>available → sold</td></tr>
-<tr><td class="highlight">update_property_price</td><td>Үнэ өөрчлөх</td></tr>
-<tr><td class="highlight">update_lead_status</td><td>Лийд статус (7 stage)</td></tr>
-<tr><td class="highlight">add_lead_note</td><td>Тэмдэглэл нэмэх</td></tr>
-<tr><td class="highlight">process_contract_action</td><td>sign/paid/cancel</td></tr>
-</tbody>
-</table>
-<div class="card" style="margin-top:16px;border-color:rgba(248,113,113,.3)">
-<h4>🔐 Role-based Access</h4>
-<p>Write tools нь user role шалгана. super_admin биш бол → "Эрхгүй" гэж blocked хийнэ.</p>
-</div>
-</div>
-</div>
+<!-- ==================== SLIDE 5: CRM + Customers + Inbox ==================== -->
+<section class="slide" id="slide-4">
+    <div>
+        <div style="font-size:13px;color:var(--rose);font-weight:600;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:12px;">👤 Харилцагч & Мессеж</div>
+        <h2 class="section-title">CRM & <span class="gradient-rose">Inbox</span></h2>
+        <p class="section-subtitle">Харилцагчийн бүртгэл, tag систем, чат түүх, Messenger/Instagram inbox — бүх харилцааг нэг цэгээс удирдана.</p>
+    </div>
+    <div class="two-col" style="margin-top:40px;">
+        <div>
+            <div class="module-card" style="--card-accent:var(--rose);margin-bottom:16px;">
+                <div class="module-header">
+                    <div class="module-icon">👤</div>
+                    <div class="module-name">Харилцагчийн CRM</div>
+                </div>
+                <div class="module-desc">
+                    Нэр, утас, имэйл, тэмдэглэл бүртгэх & засах. Tag систем (New, Lead, Hot, Regular, Inactive). Сүүлд харьцсан огноо, нийт мессежний тоо. Дэлгэрэнгүй modal дээр — сүүлийн 5 чат түүхийг харуулна.
+                </div>
+                <div class="module-features">
+                    <span class="module-feat">CRUD</span>
+                    <span class="module-feat">Tag систем</span>
+                    <span class="module-feat">Чат түүх</span>
+                    <span class="module-feat">Эрэмбэлэлт</span>
+                    <span class="module-feat">Хайлт</span>
+                </div>
+            </div>
+            <div class="module-card" style="--card-accent:var(--meta-blue);">
+                <div class="module-header">
+                    <div class="module-icon">💬</div>
+                    <div class="module-name">Live Inbox</div>
+                </div>
+                <div class="module-desc">
+                    Facebook Messenger + Instagram DM бүх мессежийг нэг inbox-т цуглуулна. Менежер шууд хариу бичих (AI pause хийж), AI чат түүхийг дэлгэрэнгүй харах, харилцагч тус бүрийн thread.
+                </div>
+                <div class="module-features">
+                    <span class="module-feat">Messenger</span>
+                    <span class="module-feat">Instagram DM</span>
+                    <span class="module-feat">AI Pause</span>
+                    <span class="module-feat">Admin reply</span>
+                    <span class="module-feat">Thread view</span>
+                </div>
+            </div>
+        </div>
+        <div>
+            <div style="font-size:15px;font-weight:700;margin-bottom:16px;">Нэмэлт модулиуд</div>
+            <div style="display:flex;flex-direction:column;gap:12px;">
+                <div class="module-card" style="--card-accent:var(--sky);">
+                    <div class="module-header">
+                        <div class="module-icon">📈</div>
+                        <div class="module-name">Тайлан & Аналитик</div>
+                    </div>
+                    <div class="module-desc">Лийд тайлан (эх үүсвэрийн задаргаа, хөрвүүлэлт), борлуулалтын тайлан, property аналитик. Шүүлт + шинэчлэх.</div>
+                    <div class="module-features">
+                        <span class="module-feat">Лийд тайлан</span>
+                        <span class="module-feat">Борлуулалт</span>
+                        <span class="module-feat">Property</span>
+                    </div>
+                </div>
+                <div class="module-card" style="--card-accent:var(--amber);">
+                    <div class="module-header">
+                        <div class="module-icon">💹</div>
+                        <div class="module-name">Маркетинг ROI</div>
+                    </div>
+                    <div class="module-desc">Маркетингийн суваг тус бүрийн зарцуулалт vs лийд, кампейн гүйцэтгэл, FB/IG insights.</div>
+                    <div class="module-features">
+                        <span class="module-feat">Campaign ROI</span>
+                        <span class="module-feat">FB Insights</span>
+                        <span class="module-feat">IG Insights</span>
+                    </div>
+                </div>
+                <div class="module-card" style="--card-accent:var(--emerald);">
+                    <div class="module-header">
+                        <div class="module-icon">📋</div>
+                        <div class="module-name">Судалгаа</div>
+                    </div>
+                    <div class="module-desc">Survey builder — хэрэглэгчийн сэтгэл ханамж, NPS, custom асуулт үүсгэх & хариу цуглуулах.</div>
+                    <div class="module-features">
+                        <span class="module-feat">Builder</span>
+                        <span class="module-feat">NPS</span>
+                        <span class="module-feat">Хариу</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </section>
 
-<!-- SLIDE 6: WEBHOOK -->
-<section class="slide" id="webhook">
-<span class="badge" style="background:rgba(248,113,113,.15);color:var(--red)">Pipeline</span>
-<h2 style="margin-top:12px">Webhook + WebhookService</h2>
-<p>Facebook/Instagram → AI → Хариу бүрэн pipeline:</p>
-<div class="grid3" style="margin-top:24px">
-<div class="card"><div class="icon" style="background:rgba(78,168,222,.15)">🔗</div><h4>Webhook Route</h4><p>GET: verify, POST: signature verify → entry loop → messaging/comment handle</p></div>
-<div class="card"><div class="icon" style="background:rgba(74,222,128,.15)">🔧</div><h4>WebhookService</h4><p>20+ function: getShop, getCustomer, getChatHistory, saveChatHistory, processAIResponse...</p></div>
-<div class="card"><div class="icon" style="background:rgba(167,139,250,.15)">🛡️</div><h4>Safety</h4><p>X-Hub-Signature-256 verify, AI global switch, Admin takeover (ai_paused_until)</p></div>
-</div>
-<h3 style="margin-top:32px">WebhookService Гол Functions</h3>
-<table>
-<thead><tr><th>Function</th><th>Тайлбар</th></tr></thead>
-<tbody>
-<tr><td class="highlight">getShopByPageId / getShopByInstagramId</td><td>Platform-аар shop олох</td></tr>
-<tr><td class="highlight">getOrCreateCustomer / getOrCreateInstagramCustomer</td><td>Хэрэглэгч бүртгэх/олох</td></tr>
-<tr><td class="highlight">updateCustomerInfo</td><td>Мессежнээс утас extract, FB-ээс нэр авах</td></tr>
-<tr><td class="highlight">getChatHistory / saveChatHistory</td><td>Сүүлийн 5 чат → Gemini context</td></tr>
-<tr><td class="highlight">processAIResponse</td><td>AI зураг → Messenger gallery/image</td></tr>
-<tr><td class="highlight">replyToComment</td><td>FB comment → auto-reply</td></tr>
-<tr><td class="highlight">incrementMessageCount</td><td>Atomic increment + сар бүр reset</td></tr>
-<tr><td class="highlight">generateFallbackResponse</td><td>AI алдаа → intent-д тулгуурлан хариу</td></tr>
-</tbody>
-</table>
+<!-- ==================== SLIDE 6: Dashboard Overview ==================== -->
+<section class="slide" id="slide-5">
+    <div>
+        <div style="font-size:13px;color:var(--sky);font-weight:600;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:12px;">📊 Dashboard</div>
+        <h2 class="section-title">Хянах <span class="gradient-sky">Самбар</span></h2>
+        <p class="section-subtitle">KPI overview, pull-to-refresh, өнөөдөр/7 хоног/сар шүүлт. Бүх модулийг sidebar-аас нэг дарж хандана.</p>
+    </div>
+    <div class="tools-grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));margin-top:32px;">
+        <div class="module-card" style="--card-accent:var(--violet);padding:16px;"><div style="font-size:20px;margin-bottom:8px;">📊</div><div style="font-size:14px;font-weight:700;">Хянах самбар</div><div style="font-size:12px;color:var(--text-muted);margin-top:4px;">KPI cards, Pull-to-refresh, Цаг шүүлт</div></div>
+        <div class="module-card" style="--card-accent:var(--emerald);padding:16px;"><div style="font-size:20px;margin-bottom:8px;">🏠</div><div style="font-size:14px;font-weight:700;">Үл хөдлөх</div><div style="font-size:12px;color:var(--text-muted);margin-top:4px;">CRUD, зураг, м² үнэ, 5 төрөл/статус</div></div>
+        <div class="module-card" style="--card-accent:var(--sky);padding:16px;"><div style="font-size:20px;margin-bottom:8px;">👥</div><div style="font-size:14px;font-weight:700;">Лийд</div><div style="font-size:12px;color:var(--text-muted);margin-top:4px;">7-шат pipeline, AI тойм, talking points</div></div>
+        <div class="module-card" style="--card-accent:var(--amber);padding:16px;"><div style="font-size:20px;margin-bottom:8px;">👁️</div><div style="font-size:14px;font-weight:700;">Үзлэг</div><div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Товлох, статус, өнөөдрийн тэмдэглэгээ</div></div>
+        <div class="module-card" style="--card-accent:var(--gold);padding:16px;"><div style="font-size:20px;margin-bottom:8px;">📄</div><div style="font-size:14px;font-weight:700;">Гэрээ</div><div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Excel импорт, төлбөр, хоцрогдол хяналт</div></div>
+        <div class="module-card" style="--card-accent:var(--rose);padding:16px;"><div style="font-size:20px;margin-bottom:8px;">📝</div><div style="font-size:14px;font-weight:700;">Гэрээ үүсгэгч</div><div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Auto-generate, PDF/Print</div></div>
+        <div class="module-card" style="--card-accent:var(--violet);padding:16px;"><div style="font-size:20px;margin-bottom:8px;">👤</div><div style="font-size:14px;font-weight:700;">Харилцагч CRM</div><div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Tag, чат түүх, засах, хайлт</div></div>
+        <div class="module-card" style="--card-accent:var(--emerald);padding:16px;"><div style="font-size:20px;margin-bottom:8px;">🛎️</div><div style="font-size:14px;font-weight:700;">Үйлчилгээ</div><div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Гомдол, засвар, NPS, CSAT хяналт</div></div>
+        <div class="module-card" style="--card-accent:var(--meta-blue);padding:16px;"><div style="font-size:20px;margin-bottom:8px;">💬</div><div style="font-size:14px;font-weight:700;">Inbox</div><div style="font-size:12px;color:var(--text-muted);margin-top:4px;">FB + IG мессеж, AI pause, admin reply</div></div>
+        <div class="module-card" style="--card-accent:var(--sky);padding:16px;"><div style="font-size:20px;margin-bottom:8px;">📈</div><div style="font-size:14px;font-weight:700;">Тайлан</div><div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Лийд, борлуулалт, property аналитик</div></div>
+        <div class="module-card" style="--card-accent:var(--amber);padding:16px;"><div style="font-size:20px;margin-bottom:8px;">💹</div><div style="font-size:14px;font-weight:700;">Маркетинг ROI</div><div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Суваг ROI, кампейн, FB/IG insights</div></div>
+        <div class="module-card" style="--card-accent:var(--gold);padding:16px;"><div style="font-size:20px;margin-bottom:8px;">📋</div><div style="font-size:14px;font-weight:700;">Судалгаа</div><div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Survey builder, NPS, хариу цуглуулах</div></div>
+        <div class="module-card" style="--card-accent:var(--violet);padding:16px;"><div style="font-size:20px;margin-bottom:8px;">🤖</div><div style="font-size:14px;font-weight:700;">AI Туслах</div><div style="font-size:12px;color:var(--text-muted);margin-top:4px;">AI assistant, agent удирдлага</div></div>
+        <div class="module-card" style="--card-accent:var(--emerald);padding:16px;"><div style="font-size:20px;margin-bottom:8px;">⚙️</div><div style="font-size:14px;font-weight:700;">AI Тохиргоо</div><div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Persona, prompt, зан төлөв тохируулах</div></div>
+        <div class="module-card" style="--card-accent:var(--sky);padding:16px;"><div style="font-size:20px;margin-bottom:8px;">🔧</div><div style="font-size:14px;font-weight:700;">Тохиргоо</div><div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Shop тохиргоо, хэрэглэгч удирдлага</div></div>
+    </div>
 </section>
 
-<!-- SLIDE 7: MESSENGER -->
-<section class="slide" id="messenger">
-<span class="badge" style="background:rgba(78,168,222,.15);color:var(--blue)">Facebook Graph API v18.0</span>
-<h2 style="margin-top:12px">Messenger API — 7 Function</h2>
-<div class="grid3">
-<div class="card"><h4>💬 sendTextMessage</h4><p>Энгийн текст мессеж → AI хариу</p></div>
-<div class="card"><h4>⚡ sendMessageWithQuickReplies</h4><p>Quick reply товч: "📷 Зураг үзэх", "📞 Утас өгөх"</p></div>
-<div class="card"><h4>🏠 sendProductCard</h4><p>Generic template — зураг + үнэ + "Захиалах 🛒"</p></div>
-<div class="card"><h4>🎠 sendImageGallery</h4><p>Carousel — 10 хүртэл байр + confirmMode</p></div>
-<div class="card"><h4>🖼️ sendImage</h4><p>Ганц зураг илгээх (байрны зураг)</p></div>
-<div class="card"><h4>✍️ sendSenderAction</h4><p>Typing indicator, Mark seen — UX</p></div>
-<div class="card"><h4>✅ verifyWebhook</h4><p>Meta webhook баталгаажуулалт</p></div>
-</div>
+<!-- ==================== SLIDE 7: AI Chatbot ==================== -->
+<section class="slide" id="slide-6">
+    <div class="glow animate-pulse-glow" style="width:400px;height:400px;background:var(--emerald);top:20%;right:10%;"></div>
+    <div>
+        <div style="font-size:13px;color:var(--emerald);font-weight:600;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:12px;">🤖 AI Integration</div>
+        <h2 class="section-title">Үл Хөдлөхийн<br><span class="gradient-emerald">Зөвлөгөө Chatbot</span></h2>
+        <p class="section-subtitle">Gemini 2.5 Flash дээр суурилсан, 10 function calling tool-тай. Харилцагчид мэргэжлийн зөвлөгөө өгч, CRM системд автомат бүртгэл хийнэ.</p>
+    </div>
+    <div class="two-col" style="margin-top:40px;">
+        <div>
+            <div class="code-block">
+                <span class="code-comment">// AI Зөвлөгөө Chatbot — CRM Integration</span><br>
+                <span class="code-keyword">const</span> response = <span class="code-keyword">await</span> <span class="code-func">routeToAI</span>(<br>
+                &nbsp;&nbsp;message,<br>
+                &nbsp;&nbsp;{ shopId, customerId, properties, <br>
+                &nbsp;&nbsp;&nbsp;&nbsp;aiEmotion: <span class="code-string">'friendly'</span>,<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;customerMemory, notifySettings },<br>
+                &nbsp;&nbsp;previousHistory<br>
+                );<br><br>
+                <span class="code-comment">// Chatbot → CRM-д автомат бүртгэнэ:</span><br>
+                <span class="code-comment">// Lead үүсгэх, үзлэг товлох,</span><br>
+                <span class="code-comment">// утас хадгалах, менежер дуудах</span>
+            </div>
+            <div style="margin-top:20px; display:flex; gap:10px; flex-wrap:wrap;">
+                <div class="badge badge-active">✓ Function Calling</div>
+                <div class="badge badge-active">✓ Vision</div>
+                <div class="badge badge-active">✓ Memory</div>
+                <div class="badge badge-active">✓ Retry Logic</div>
+                <div class="badge badge-active">✓ 5 Persona</div>
+            </div>
+            <div style="margin-top:20px;padding:14px 18px;background:rgba(16,185,129,0.08);border:1px solid rgba(16,185,129,0.2);border-radius:10px;font-size:13px;color:var(--text-muted);">
+                <strong style="color:var(--emerald)">CRM-д хэрхэн нөлөөлөх:</strong><br>
+                Chatbot нь лийд автомат үүсгэх, үзлэг товлох, хэрэглэгчийн мэдээлэл цуглуулах, менежерт мэдэгдэл илгээх зэрэг CRM үйлдлүүдийг автоматжуулна.
+            </div>
+        </div>
+        <div class="chat-mockup animate-float">
+            <div class="chat-header">
+                <div class="chat-avatar">🏢</div>
+                <div>
+                    <div class="chat-name">Vertmon Зөвлөгөө</div>
+                    <div class="chat-status">● Online</div>
+                </div>
+            </div>
+            <div class="chat-body">
+                <div class="msg msg-user">2 өрөө байр 150 сая хүртэл</div>
+                <div class="msg msg-ai">
+                    🏠 3 байр олдлоо:<br><br>
+                    1. <b>Mandala Garden B-202</b><br>
+                    📍 ХУД | 65м² | 2 өрөө<br>
+                    💰 128,000,000₮<br><br>
+                    2. <b>Elysium A-1501</b><br>
+                    📍 СХД | 72м² | 2 өрөө<br>
+                    💰 145,000,000₮
+                </div>
+                <div class="msg msg-user">Зээлийн тооцоо хийж өгөөч</div>
+                <div class="msg msg-ai">
+                    💰 <b>Зээлийн тооцоо</b><br><br>
+                    Дүн: 128,000,000₮<br>
+                    Хугацаа: 20 жил | Хүү: 12.5%<br>
+                    <b>Сарын: 1,453,200₮</b>
+                </div>
+            </div>
+        </div>
+    </div>
 </section>
 
-<!-- SLIDE 8: META SETUP -->
-<section class="slide" id="meta">
-<span class="badge" style="background:rgba(251,146,60,.15);color:var(--orange)">Developer Guide</span>
-<h2 style="margin-top:12px">Meta Developer App Setup</h2>
-<p>Live API call хийж page data авах бүрэн заавар:</p>
-<div style="margin-top:24px">
-<div class="step"><div class="step-num">1</div><div><h4>App үүсгэх</h4><p>developers.facebook.com → My Apps → Create App → "Business" → "Vertmon Hub"</p></div></div>
-<div class="step"><div class="step-num">2</div><div><h4>Products нэмэх</h4><p>Messenger + Webhooks + Facebook Login + Instagram API</p></div></div>
-<div class="step"><div class="step-num">3</div><div><h4>Page холбох + Token авах</h4><p>Messenger Settings → Add Pages → Generate Page Access Token → .env.local-д хадгалах</p></div></div>
-<div class="step"><div class="step-num">4</div><div><h4>Webhook тохируулах</h4><p>Callback URL: <code>https://vertmonhub.vercel.app/api/webhook</code><br>Subscribe: messages, messaging_postbacks, feed</p></div></div>
-<div class="step"><div class="step-num">5</div><div><h4>Live API test</h4>
-<div class="code">
-# Page info авах<br>
-curl "https://graph.facebook.com/v18.0/me?access_token=TOKEN"<br><br>
-# Мессеж илгээх<br>
-curl -X POST "https://graph.facebook.com/v18.0/me/messages?access_token=TOKEN" \<br>
-&nbsp;&nbsp;-H "Content-Type: application/json" \<br>
-&nbsp;&nbsp;-d '{"recipient":{"id":"PSID"},"message":{"text":"Hello!"}}'<br><br>
-# Page insights<br>
-curl "https://graph.facebook.com/v18.0/PAGE_ID/insights?metric=page_impressions&access_token=TOKEN"
-</div>
-</div></div>
-<div class="step"><div class="step-num">6</div><div><h4>App Review (Production)</h4><p>Permissions: pages_messaging, pages_read_engagement, pages_manage_metadata, instagram_manage_messages</p></div></div>
-</div>
-<div class="code" style="margin-top:24px">
-# .env.local тохиргоо<br>
-FACEBOOK_PAGE_ACCESS_TOKEN=EAAxxxxxxx...<br>
-FACEBOOK_APP_ID=1234567890<br>
-FACEBOOK_APP_SECRET=abc123def...<br>
-FACEBOOK_VERIFY_TOKEN=my_custom_verify_token<br>
-GEMINI_API_KEY=AIzaSy...<br>
-NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co<br>
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGci...
-</div>
+<!-- ==================== SLIDE 8: 10 AI Tools ==================== -->
+<section class="slide" id="slide-7">
+    <div>
+        <div style="font-size:13px;color:var(--violet);font-weight:600;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:12px;">⚡ Function Calling</div>
+        <h2 class="section-title">10 <span class="gradient-text">AI Tool</span></h2>
+        <p class="section-subtitle">Gemini автоматаар tool сонгож ажиллуулна. Tool бүр CRM/ERP системтэй шууд холбогдоно.</p>
+    </div>
+    <div class="tools-grid" style="grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));">
+        <div class="tool-card" style="--card-accent:var(--violet)"><div class="tool-icon" style="background:var(--violet-glow);color:var(--violet)">🔍</div><div class="tool-name">search_properties</div><div class="tool-title">Байр Хайх</div><div class="tool-desc">Төрөл, үнэ, дүүрэг, өрөө, м²-ээр шүүж хайна</div><div class="tool-tag" style="background:var(--violet-glow);color:var(--violet);">7 filter</div></div>
+        <div class="tool-card" style="--card-accent:var(--sky)"><div class="tool-icon" style="background:var(--sky-glow);color:var(--sky)">📷</div><div class="tool-name">show_property_images</div><div class="tool-title">Зураг Илгээх</div><div class="tool-desc">FB Generic Template-ээр зураг галерей</div><div class="tool-tag" style="background:var(--sky-glow);color:var(--sky);">Gallery</div></div>
+        <div class="tool-card" style="--card-accent:var(--amber)"><div class="tool-icon" style="background:var(--amber-glow);color:var(--amber)">💰</div><div class="tool-name">calculate_loan</div><div class="tool-title">Зээл Тооцох</div><div class="tool-desc">PMT formula. Сарын төлбөр, нийт хүү</div><div class="tool-tag" style="background:var(--amber-glow);color:var(--amber);">PMT</div></div>
+        <div class="tool-card" style="--card-accent:var(--emerald)"><div class="tool-icon" style="background:var(--emerald-glow);color:var(--emerald)">📅</div><div class="tool-name">schedule_viewing</div><div class="tool-title">Үзлэг Товлох</div><div class="tool-desc">Lead + Viewing → Push мэдэгдэл</div><div class="tool-tag" style="background:var(--emerald-glow);color:var(--emerald);">CRM</div></div>
+        <div class="tool-card" style="--card-accent:var(--rose)"><div class="tool-icon" style="background:var(--rose-glow);color:var(--rose)">🆕</div><div class="tool-name">create_lead</div><div class="tool-title">Lead Үүсгэх</div><div class="tool-desc">Автомат lead бүртгэл CRM-д</div><div class="tool-tag" style="background:var(--rose-glow);color:var(--rose);">Auto CRM</div></div>
+        <div class="tool-card" style="--card-accent:var(--sky)"><div class="tool-icon" style="background:var(--sky-glow);color:var(--sky)">📞</div><div class="tool-name">collect_contact_info</div><div class="tool-title">Холбоо Барих</div><div class="tool-desc">Утас, нэр → customer + lead table</div><div class="tool-tag" style="background:var(--sky-glow);color:var(--sky);">Extract</div></div>
+        <div class="tool-card" style="--card-accent:var(--amber)"><div class="tool-icon" style="background:var(--amber-glow);color:var(--amber)">🔔</div><div class="tool-name">request_human_support</div><div class="tool-title">Менежер Дуудах</div><div class="tool-desc">VAPID Push → real-time мэдэгдэл</div><div class="tool-tag" style="background:var(--amber-glow);color:var(--amber);">Push</div></div>
+        <div class="tool-card" style="--card-accent:var(--violet)"><div class="tool-icon" style="background:var(--violet-glow);color:var(--violet)">🧠</div><div class="tool-name">remember_preference</div><div class="tool-title">Сонголт Санах</div><div class="tool-desc">TTL memory — session хооронд санана</div><div class="tool-tag" style="background:var(--violet-glow);color:var(--violet);">Memory</div></div>
+        <div class="tool-card" style="--card-accent:var(--gold)"><div class="tool-icon" style="background:var(--gold-glow);color:var(--gold)">💳</div><div class="tool-name">check_payment_status</div><div class="tool-title">Төлбөр Шалгах</div><div class="tool-desc">Гэрээ/утас/нэрээр → үлдэгдэл, хоцрогдол</div><div class="tool-tag" style="background:var(--gold-glow);color:var(--gold);">Contract</div></div>
+        <div class="tool-card" style="--card-accent:var(--rose)"><div class="tool-icon" style="background:var(--rose-glow);color:var(--rose)">📩</div><div class="tool-name">log_service_request</div><div class="tool-title">Хүсэлт Бүртгэх</div><div class="tool-desc">Гомдол, засвар → service desk</div><div class="tool-tag" style="background:var(--rose-glow);color:var(--rose);">Service</div></div>
+    </div>
 </section>
 
-<!-- SLIDE 9: COST -->
-<section class="slide" id="cost">
-<span class="badge" style="background:rgba(240,192,64,.15);color:var(--gold)">Pricing</span>
-<h2 style="margin-top:12px">💰 Нэгдсэн Зардлын Шинжилгээ</h2>
-<table>
-<thead><tr><th>Сервис</th><th>Tier</th><th>Сарын зардал</th><th>Гол features</th></tr></thead>
-<tbody>
-<tr><td>☁️ Vercel</td><td>Pro</td><td style="color:var(--gold);font-weight:700">$20</td><td>1TB bandwidth, 1000 GB-hrs serverless, maxDuration=60s</td></tr>
-<tr><td>🗄️ Supabase</td><td>Pro</td><td style="color:var(--gold);font-weight:700">$25</td><td>8GB DB, 100GB storage, 100K auth MAU</td></tr>
-<tr><td>🤖 Gemini API</td><td>Pay-as-you-go</td><td style="color:var(--gold);font-weight:700">~$6</td><td>2.5 Flash: $0.15/1M input, $0.60/1M output</td></tr>
-<tr><td>📱 Meta APIs</td><td>Free</td><td style="color:var(--green);font-weight:700">$0</td><td>Messenger + Instagram + Webhooks</td></tr>
-<tr><td>🔍 Sentry</td><td>Free</td><td style="color:var(--green);font-weight:700">$0</td><td>Error tracking, performance monitoring</td></tr>
-<tr><td>📧 Resend</td><td>Free</td><td style="color:var(--green);font-weight:700">$0</td><td>100 emails/day</td></tr>
-</tbody>
-</table>
-
-<div class="grid3" style="margin-top:24px">
-<div class="card" style="text-align:center"><p style="font-size:.8rem;margin-bottom:8px">Gemini Messenger AI</p><div class="stat-big" style="color:var(--blue);font-size:1.8rem">~$3.75</div><p>10K мессеж × 500 tokens</p></div>
-<div class="card" style="text-align:center"><p style="font-size:.8rem;margin-bottom:8px">Gemini Data Assistant</p><div class="stat-big" style="color:var(--purple);font-size:1.8rem">~$1.50</div><p>2K query × 1000 tokens</p></div>
-<div class="card" style="text-align:center"><p style="font-size:.8rem;margin-bottom:8px">Gemini Vision</p><div class="stat-big" style="color:var(--green);font-size:1.8rem">~$0.56</div><p>500 зураг × 1500 tokens</p></div>
-</div>
-
-<div class="cost-total">
-<p style="color:var(--muted);font-size:.9rem">Нийт сарын зардал (~1,000 хэрэглэгч)</p>
-<div class="stat-big" style="color:var(--gold)">~$51/сар</div>
-<p style="margin-top:8px;font-size:.85rem;color:var(--muted)">Free tier ашиглавал: $0/сар (хязгаарлагдмал)</p>
-</div>
+<!-- ==================== SLIDE 9: Meta App Review ==================== -->
+<section class="slide" id="slide-8">
+    <div class="glow animate-pulse-glow" style="width:400px;height:400px;background:var(--meta-blue);top:15%;left:10%;"></div>
+    <div>
+        <div style="font-size:13px;color:var(--meta-blue);font-weight:600;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:12px;">🔵 developer.meta.com</div>
+        <h2 class="section-title">Meta <span class="gradient-meta">App Review</span></h2>
+        <p class="section-subtitle">Facebook + Instagram API — codebase audit хийж, зөвхөн хэрэгтэй 6 permission үлдээсэн.</p>
+    </div>
+    <div class="two-col" style="margin-top:40px;">
+        <div>
+            <h3 style="font-size:18px;font-weight:700;margin-bottom:16px;">Required Permissions</h3>
+            <table class="perm-table">
+                <thead><tr><th>Permission</th><th>Зорилго</th><th>Status</th></tr></thead>
+                <tbody>
+                    <tr><td><span class="perm-name">pages_messaging</span></td><td>Messenger DM</td><td><span class="badge badge-review">🔄 Review</span></td></tr>
+                    <tr><td><span class="perm-name">pages_show_list</span></td><td>Page холбох</td><td><span class="badge badge-review">🔄 Review</span></td></tr>
+                    <tr><td><span class="perm-name">pages_manage_metadata</span></td><td>Webhook</td><td><span class="badge badge-review">🔄 Review</span></td></tr>
+                    <tr><td><span class="perm-name">instagram_basic</span></td><td>IG metadata</td><td><span class="badge badge-review">🔄 Review</span></td></tr>
+                    <tr><td><span class="perm-name">instagram_manage_messages</span></td><td>IG DM</td><td><span class="badge badge-review">🔄 Review</span></td></tr>
+                    <tr><td><span class="perm-name">public_profile</span></td><td>Хэрэглэгч нэр</td><td><span class="badge badge-approved">✓ Approved</span></td></tr>
+                </tbody>
+            </table>
+            <div style="margin-top:20px;padding:14px 18px;background:var(--surface);border:1px solid var(--border);border-radius:12px;">
+                <div style="font-size:12px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:4px;">API Version</div>
+                <div style="font-size:20px;font-weight:800;font-family:'JetBrains Mono',monospace;">Graph API v21.0</div>
+            </div>
+        </div>
+        <div>
+            <h3 style="font-size:18px;font-weight:700;margin-bottom:16px;">Compliance Checklist</h3>
+            <div class="review-timeline">
+                <div class="timeline-item"><div class="timeline-dot" style="background:var(--emerald);"></div><div class="timeline-content"><div class="timeline-title">✅ Webhook Signature Verify</div><div class="timeline-desc">HMAC SHA-256</div></div></div>
+                <div class="timeline-item"><div class="timeline-dot" style="background:var(--emerald);"></div><div class="timeline-content"><div class="timeline-title">✅ Data Deletion Endpoint</div><div class="timeline-desc">/api/meta/data-deletion</div></div></div>
+                <div class="timeline-item"><div class="timeline-dot" style="background:var(--emerald);"></div><div class="timeline-content"><div class="timeline-title">✅ Privacy Policy & Terms</div><div class="timeline-desc">/privacy, /terms</div></div></div>
+                <div class="timeline-item"><div class="timeline-dot" style="background:var(--emerald);"></div><div class="timeline-content"><div class="timeline-title">✅ Human-in-the-Loop</div><div class="timeline-desc">Менежер дуудах боломж</div></div></div>
+                <div class="timeline-item"><div class="timeline-dot" style="background:var(--emerald);"></div><div class="timeline-content"><div class="timeline-title">✅ Business Verification</div><div class="timeline-desc">Moncon Construction Group</div></div></div>
+                <div class="timeline-item"><div class="timeline-dot" style="background:var(--amber);"></div><div class="timeline-content"><div class="timeline-title">🔄 Screencast Submission</div><div class="timeline-desc">User flow видео</div></div></div>
+            </div>
+            <div style="margin-top:20px;padding:14px 18px;background:rgba(24,119,242,0.08);border:1px solid rgba(24,119,242,0.2);border-radius:12px;font-size:13px;color:var(--text-muted);">
+                <strong style="color:var(--meta-blue)">11 unused permission устгагдсан</strong> — codebase audit-аар хасагдсан
+            </div>
+        </div>
+    </div>
 </section>
 
-<!-- SLIDE 10: TECH STACK -->
-<section class="slide" id="tech">
-<span class="badge" style="background:rgba(34,211,238,.15);color:var(--cyan)">Stack</span>
-<h2 style="margin-top:12px">🛠️ Tech Stack & DB Schema</h2>
-<div class="grid2">
-<div>
-<h3>Technology</h3>
-<table>
-<tbody>
-<tr><td>Framework</td><td class="highlight">Next.js 16.1.1</td></tr>
-<tr><td>Language</td><td class="highlight">TypeScript 5.x</td></tr>
-<tr><td>UI</td><td class="highlight">React 19 + TailwindCSS 4</td></tr>
-<tr><td>AI</td><td class="highlight">Google Gemini 2.5 Flash</td></tr>
-<tr><td>Database</td><td class="highlight">Supabase PostgreSQL</td></tr>
-<tr><td>Auth</td><td class="highlight">Supabase GoTrue SSR</td></tr>
-<tr><td>Hosting</td><td class="highlight">Vercel Pro</td></tr>
-<tr><td>Charts</td><td class="highlight">Recharts 3.x</td></tr>
-<tr><td>State</td><td class="highlight">TanStack Query 5</td></tr>
-<tr><td>Testing</td><td class="highlight">Vitest + Playwright</td></tr>
-</tbody>
-</table>
-</div>
-<div>
-<h3>Database Tables</h3>
-<table>
-<tbody>
-<tr><td class="highlight">shops</td><td>Компани, FB Page, AI тохиргоо</td></tr>
-<tr><td class="highlight">properties</td><td>Байр — нэр, үнэ, м², зураг</td></tr>
-<tr><td class="highlight">customers</td><td>FB/IG хэрэглэгч</td></tr>
-<tr><td class="highlight">leads</td><td>Сонирхогч — статус, төсөв</td></tr>
-<tr><td class="highlight">property_viewings</td><td>Үзлэг бүртгэл</td></tr>
-<tr><td class="highlight">chat_history</td><td>Чат түүх + intent</td></tr>
-<tr><td class="highlight">customer_preferences</td><td>AI memory (key-value)</td></tr>
-<tr><td class="highlight">shop_faqs</td><td>FAQ</td></tr>
-<tr><td class="highlight">admins</td><td>Admin users + roles</td></tr>
-</tbody>
-</table>
-</div>
-</div>
-<div style="text-align:center;margin-top:48px;padding:32px;border:1px solid var(--border);border-radius:16px">
-<p style="color:var(--muted);font-size:.9rem">Built with</p>
-<h2 style="margin-bottom:8px">Vertmon Hub © 2026</h2>
-<p style="color:var(--muted)">AI-Powered Real Estate CRM Platform</p>
-</div>
+<!-- ==================== SLIDE 10: Tech Stack & Summary ==================== -->
+<section class="slide" id="slide-9">
+    <div class="glow animate-pulse-glow" style="width:600px;height:400px;background:var(--violet);top:30%;left:50%;transform:translateX(-50%)"></div>
+    <div style="position:relative; text-align:center; max-width:900px; margin:0 auto;">
+        <div style="font-size:13px;color:var(--gold);font-weight:600;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:12px;">🏗️ Summary</div>
+        <h2 class="section-title" style="margin-bottom:16px;">
+            <span class="gradient-text">Бүрэн Бэлэн</span>
+        </h2>
+        <p class="section-subtitle" style="text-align:center; margin:0 auto 32px;">
+            Vertmon Hub — Үл хөдлөхийн бүрэн CRM/ERP платформ. Гэрээ, төлбөр, үйлчилгээ, лийд, маркетинг, AI зөвлөгөө chatbot — бүгдийг нэг системээр.
+        </p>
+
+        <!-- Tech Stack -->
+        <div class="arch-stack" style="max-width:600px;margin:0 auto 32px;">
+            <div class="arch-layer" style="background:linear-gradient(135deg,rgba(139,92,246,0.08),transparent);border-color:rgba(139,92,246,0.2);"><div class="arch-name" style="color:var(--violet)">Frontend</div><div class="arch-tech">Next.js 16 · React 19 · Tailwind v4</div></div>
+            <div class="arch-layer" style="background:linear-gradient(135deg,rgba(16,185,129,0.08),transparent);border-color:rgba(16,185,129,0.2);"><div class="arch-name" style="color:var(--emerald)">AI Engine</div><div class="arch-tech">Gemini 2.5 Flash · 10 Tools · Memory</div></div>
+            <div class="arch-layer" style="background:linear-gradient(135deg,rgba(14,165,233,0.08),transparent);border-color:rgba(14,165,233,0.2);"><div class="arch-name" style="color:var(--sky)">Database</div><div class="arch-tech">Supabase PostgreSQL · RLS · Auth</div></div>
+            <div class="arch-layer" style="background:linear-gradient(135deg,rgba(24,119,242,0.08),transparent);border-color:rgba(24,119,242,0.2);"><div class="arch-name" style="color:var(--meta-blue)">Integrations</div><div class="arch-tech">Meta Graph API · VAPID Push · Resend</div></div>
+            <div class="arch-layer" style="background:linear-gradient(135deg,rgba(212,175,55,0.08),transparent);border-color:rgba(212,175,55,0.2);"><div class="arch-name" style="color:var(--gold)">Deploy</div><div class="arch-tech">Vercel sin1 · GitHub CI · PWA</div></div>
+        </div>
+
+        <div class="stats-row" style="justify-content:center; gap:16px;">
+            <div class="stat-card" style="text-align:center;"><div class="stat-value" style="color:var(--violet);font-size:28px;">15</div><div class="stat-label">CRM Modules</div></div>
+            <div class="stat-card" style="text-align:center;"><div class="stat-value" style="color:var(--emerald);font-size:28px;">10</div><div class="stat-label">AI Tools</div></div>
+            <div class="stat-card" style="text-align:center;"><div class="stat-value" style="color:var(--meta-blue);font-size:28px;">6</div><div class="stat-label">Meta Perms</div></div>
+            <div class="stat-card" style="text-align:center;"><div class="stat-value" style="color:var(--amber);font-size:28px;">5</div><div class="stat-label">RBAC Roles</div></div>
+            <div class="stat-card" style="text-align:center;"><div class="stat-value" style="color:var(--gold);font-size:28px;">v21</div><div class="stat-label">Graph API</div></div>
+        </div>
+        <div style="margin-top:32px; display:flex; gap:16px; justify-content:center; flex-wrap:wrap;">
+            <div style="padding:12px 24px;background:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:13px;">🏢 <span style="font-weight:600;">Moncon Construction Group</span></div>
+            <div style="padding:12px 24px;background:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:13px;">🇲🇳 <span style="font-weight:600;">Made in Mongolia</span></div>
+            <div style="padding:12px 24px;background:var(--surface);border:1px solid var(--border);border-radius:10px;font-size:13px;">⚡ <span style="font-weight:600;">Vercel sin1</span></div>
+        </div>
+    </div>
 </section>
+
+<div class="kbd-hint">
+    <kbd>↑</kbd><kbd>↓</kbd> scroll &nbsp;·&nbsp; <kbd>←</kbd><kbd>→</kbd> slide
+</div>
 
 <script>
-// Active nav highlight on scroll
-const sections = document.querySelectorAll('.slide[id]');
-const navLinks = document.querySelectorAll('.nav-links a');
-window.addEventListener('scroll', () => {
-  let current = '';
-  sections.forEach(s => { if(window.scrollY >= s.offsetTop - 100) current = s.getAttribute('id'); });
-  navLinks.forEach(a => { a.classList.toggle('active', a.getAttribute('href') === '#' + current); });
-});
-// Animate cards on scroll
-const observer = new IntersectionObserver(entries => {
-  entries.forEach(e => { if(e.isIntersecting) { e.target.style.opacity='1'; e.target.style.transform='translateY(0)'; }});
-}, {threshold:.1});
-document.querySelectorAll('.card,.step').forEach(el => { el.style.opacity='0'; el.style.transform='translateY(20px)'; el.style.transition='all .6s ease'; observer.observe(el); });
+    const slides = document.querySelectorAll('.slide');
+    const totalSlides = slides.length;
+    let currentSlide = 0;
+
+    const navDots = document.getElementById('navDots');
+    const navCounter = document.getElementById('navCounter');
+    for (let i = 0; i < totalSlides; i++) {
+        const dot = document.createElement('div');
+        dot.className = 'nav-dot' + (i === 0 ? ' active' : '');
+        dot.onclick = () => scrollToSlide(i);
+        navDots.appendChild(dot);
+    }
+
+    function updateNav(index) {
+        document.querySelectorAll('.nav-dot').forEach((dot, i) => {
+            dot.classList.toggle('active', i === index);
+        });
+        navCounter.textContent = `${index + 1} / ${totalSlides}`;
+        currentSlide = index;
+    }
+
+    function scrollToSlide(index) {
+        if (index >= 0 && index < totalSlides) {
+            slides[index].scrollIntoView({ behavior: 'smooth' });
+        }
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('visible');
+                const index = Array.from(slides).indexOf(entry.target);
+                if (index >= 0) updateNav(index);
+            }
+        });
+    }, { threshold: 0.3 });
+
+    slides.forEach(slide => observer.observe(slide));
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            scrollToSlide(Math.min(currentSlide + 1, totalSlides - 1));
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            scrollToSlide(Math.max(currentSlide - 1, 0));
+        }
+    });
+
+    slides[0].classList.add('visible');
 </script>
+
 </body>
 </html>

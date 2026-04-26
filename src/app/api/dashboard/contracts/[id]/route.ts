@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { getClerkUserShop } from '@/lib/auth/supabase-auth';
+import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
@@ -10,7 +10,7 @@ interface RouteContext {
 export async function GET(_request: NextRequest, ctx: RouteContext) {
     try {
         const { id } = await ctx.params;
-        const authShop = await getClerkUserShop();
+        const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
@@ -37,7 +37,7 @@ export async function GET(_request: NextRequest, ctx: RouteContext) {
 export async function DELETE(_request: NextRequest, ctx: RouteContext) {
     try {
         const { id } = await ctx.params;
-        const authShop = await getClerkUserShop();
+        const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
@@ -60,7 +60,7 @@ export async function DELETE(_request: NextRequest, ctx: RouteContext) {
 export async function PATCH(request: NextRequest, ctx: RouteContext) {
     try {
         const { id } = await ctx.params;
-        const authShop = await getClerkUserShop();
+        const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }

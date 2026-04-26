@@ -98,6 +98,9 @@ export function Header() {
                     <button
                         onClick={() => setShowDropdown(!showDropdown)}
                         className="flex items-center gap-2 hover:bg-gray-100 rounded-xl transition-colors p-1.5 md:px-3 md:py-2"
+                        aria-label="Профайл цэс"
+                        aria-expanded={showDropdown}
+                        aria-haspopup="menu"
                     >
                         <div className="w-8 h-8 md:w-9 md:h-9 rounded-full bg-gradient-to-br from-gold to-gold-dark flex items-center justify-center text-neutral-900 font-medium text-sm">
                             {firstName[0]?.toUpperCase()}
@@ -112,7 +115,7 @@ export function Header() {
                                 className="fixed inset-0 z-40"
                                 onClick={() => setShowDropdown(false)}
                             />
-                            <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-200 z-50 overflow-hidden">
+                            <div className="absolute right-0 top-full mt-2 w-64 bg-white rounded-xl shadow-lg border border-gray-200 z-50 overflow-hidden" role="menu" aria-label="Профайл цэс">
                                 <div className="p-4 border-b border-gray-100 bg-gray-50">
                                     <p className="font-medium text-gray-900 truncate">{fullName}</p>
                                     <p className="text-sm text-gray-500 truncate">{displayEmail}</p>
@@ -124,6 +127,7 @@ export function Header() {
                                             router.push('/dashboard/settings');
                                         }}
                                         className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                                        role="menuitem"
                                     >
                                         <Settings className="w-4 h-4 text-gray-400" />
                                         Тохиргоо
@@ -132,6 +136,7 @@ export function Header() {
                                         onClick={handleLogout}
                                         disabled={loggingOut}
                                         className="w-full flex items-center gap-3 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                        role="menuitem"
                                     >
                                         <LogOut className="w-4 h-4" />
                                         {loggingOut ? 'Гарч байна...' : 'Гарах'}
