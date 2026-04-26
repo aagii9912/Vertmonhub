@@ -6,8 +6,22 @@ import { Badge } from '@/components/ui/Badge';
 import {
     Search, User, Phone, Mail,
     Tag, X, MessageSquare, Clock, ChevronDown,
-    Edit2, Save, Loader2
+    Edit2, Save, Loader2, FileText, Plus, AlertCircle
 } from 'lucide-react';
+
+type ServiceLogType = 'inquiry' | 'complaint' | 'maintenance' | 'handover' | 'payment' | 'other';
+type ServiceLogStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+
+interface ServiceLogEntry {
+    id: string;
+    type: ServiceLogType;
+    subject: string;
+    description: string | null;
+    status: ServiceLogStatus;
+    priority: 'low' | 'medium' | 'high' | 'urgent' | string;
+    created_at: string;
+    resolved_at: string | null;
+}
 
 interface Customer {
     id: string;
@@ -21,7 +35,33 @@ interface Customer {
     last_contact_at?: string | null;
     created_at: string;
     chat_history?: Array<{ message: string; response: string; created_at: string }>;
+    service_logs?: ServiceLogEntry[];
 }
+
+const SERVICE_LOG_TYPE_LABELS: Record<ServiceLogType, string> = {
+    inquiry: 'Хүсэлт',
+    complaint: 'Гомдол',
+    maintenance: 'Засвар',
+    handover: 'Хүлээлгэн өгөлт',
+    payment: 'Төлбөр',
+    other: 'Бичиг / Бусад',
+};
+
+const SERVICE_LOG_TYPE_STYLES: Record<ServiceLogType, string> = {
+    inquiry: 'bg-blue-100 text-blue-700',
+    complaint: 'bg-red-100 text-red-700',
+    maintenance: 'bg-amber-100 text-amber-700',
+    handover: 'bg-emerald-100 text-emerald-700',
+    payment: 'bg-violet-100 text-violet-700',
+    other: 'bg-gray-100 text-gray-700',
+};
+
+const SERVICE_LOG_STATUS_LABELS: Record<ServiceLogStatus, string> = {
+    open: 'Шинэ',
+    in_progress: 'Шийдэгдэж байгаа',
+    resolved: 'Шийдэгдсэн',
+    closed: 'Хаасан',
+};
 
 const PREDEFINED_TAGS = ['New', 'Lead', 'Inactive', 'Hot', 'Regular'];
 
@@ -43,6 +83,15 @@ export default function CustomersPage() {
         email: '',
         notes: ''
     });
+
+    // Service log entry form state (хүсэлт / гомдол / бичиг)
+    const [logForm, setLogForm] = useState<{ type: ServiceLogType; subject: string; description: string }>({
+        type: 'complaint',
+        subject: '',
+        description: '',
+    });
+    const [logSubmitting, setLogSubmitting] = useState(false);
+    const [logError, setLogError] = useState<string | null>(null);
 
     useEffect(() => {
         fetchCustomers();
@@ -87,6 +136,44 @@ export default function CustomersPage() {
             setIsDetailOpen(true);
         } catch (error) {
             console.error('Failed to fetch customer detail:', error);
+        }
+    }
+
+    async function submitServiceLog() {
+        if (!selectedCustomer) return;
+        if (!logForm.subject.trim()) {
+            setLogError('Гарчиг бичнэ үү');
+            return;
+        }
+        setLogSubmitting(true);
+        setLogError(null);
+        try {
+            const res = await fetch('/api/dashboard/service-logs', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
+                },
+                body: JSON.stringify({
+                    customer_id: selectedCustomer.id,
+                    customer_name: selectedCustomer.name,
+                    customer_phone: selectedCustomer.phone,
+                    type: logForm.type,
+                    subject: logForm.subject.trim(),
+                    description: logForm.description.trim() || null,
+                    priority: logForm.type === 'complaint' ? 'high' : 'medium',
+                }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err?.error || 'Бүртгэхэд алдаа гарлаа');
+            }
+            setLogForm({ type: 'complaint', subject: '', description: '' });
+            await fetchCustomerDetail(selectedCustomer.id);
+        } catch (err) {
+            setLogError(err instanceof Error ? err.message : 'Бүртгэхэд алдаа гарлаа');
+        } finally {
+            setLogSubmitting(false);
         }
     }
 
@@ -392,6 +479,95 @@ export default function CustomersPage() {
                                     </p>
                                     <p className="text-sm text-gray-600">Бүртгэсэн</p>
                                 </div>
+                            </div>
+
+                            {/* Service Logs — Хүсэлт / Гомдол / Бичиг */}
+                            <div>
+                                <label className="flex items-center gap-2 text-sm font-medium text-gray-700 mb-3">
+                                    <FileText className="w-4 h-4" />
+                                    Хүсэлт / Гомдол / Бичиг
+                                    {selectedCustomer.service_logs && selectedCustomer.service_logs.length > 0 && (
+                                        <span className="text-xs text-gray-500">({selectedCustomer.service_logs.length})</span>
+                                    )}
+                                </label>
+
+                                {/* New entry form */}
+                                <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 space-y-2 mb-3">
+                                    <div className="flex flex-wrap gap-2">
+                                        {(['complaint', 'inquiry', 'other'] as ServiceLogType[]).map(t => (
+                                            <button
+                                                key={t}
+                                                type="button"
+                                                onClick={() => setLogForm(f => ({ ...f, type: t }))}
+                                                className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                                                    logForm.type === t
+                                                        ? `${SERVICE_LOG_TYPE_STYLES[t]} ring-2 ring-offset-1 ring-violet-400`
+                                                        : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
+                                                }`}
+                                            >
+                                                {SERVICE_LOG_TYPE_LABELS[t]}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <input
+                                        type="text"
+                                        value={logForm.subject}
+                                        onChange={e => setLogForm(f => ({ ...f, subject: e.target.value }))}
+                                        placeholder="Гарчиг (заавал)"
+                                        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                                    />
+                                    <textarea
+                                        value={logForm.description}
+                                        onChange={e => setLogForm(f => ({ ...f, description: e.target.value }))}
+                                        placeholder="Дэлгэрэнгүй текст (хүсэлт / гомдол / бичгийн агуулга)"
+                                        rows={3}
+                                        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                                    />
+                                    {logError && (
+                                        <p className="flex items-center gap-1 text-xs text-red-600">
+                                            <AlertCircle className="w-3 h-3" /> {logError}
+                                        </p>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={submitServiceLog}
+                                        disabled={logSubmitting || !logForm.subject.trim()}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                    >
+                                        {logSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                                        Бүртгэх
+                                    </button>
+                                </div>
+
+                                {/* History */}
+                                {selectedCustomer.service_logs && selectedCustomer.service_logs.length > 0 ? (
+                                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                                        {selectedCustomer.service_logs.map(log => (
+                                            <div
+                                                key={log.id}
+                                                className="border border-gray-200 rounded-xl p-3 hover:border-violet-300 transition-colors"
+                                            >
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${SERVICE_LOG_TYPE_STYLES[log.type] || SERVICE_LOG_TYPE_STYLES.other}`}>
+                                                            {SERVICE_LOG_TYPE_LABELS[log.type] || log.type}
+                                                        </span>
+                                                        <span className="text-xs text-gray-500">
+                                                            {SERVICE_LOG_STATUS_LABELS[log.status] || log.status}
+                                                        </span>
+                                                    </div>
+                                                    <span className="text-xs text-gray-400">{formatDate(log.created_at)}</span>
+                                                </div>
+                                                <p className="text-sm font-medium text-gray-900">{log.subject}</p>
+                                                {log.description && (
+                                                    <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{log.description}</p>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="text-sm text-gray-500 text-center py-4">Бүртгэгдсэн хүсэлт / гомдол / бичиг байхгүй</p>
+                                )}
                             </div>
 
                             {/* Recent Chat */}
