@@ -2,13 +2,31 @@
  * Data Assistant Functions — Read, Write, and Chart generation
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '@/lib/utils/logger';
 
-const supabaseAdmin = createClient<any>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+// Lazy admin client — built on first property access so missing env at
+// module-evaluation time (e.g. Next.js page-data collection) does not
+// crash before any handler actually runs.
+let _adminClient: SupabaseClient | null = null;
+function getAdminClient(): SupabaseClient {
+    if (_adminClient) return _adminClient;
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !serviceKey) {
+        throw new Error('Supabase admin env vars are not configured');
+    }
+    _adminClient = createClient<any>(url, serviceKey);
+    return _adminClient;
+}
+
+const supabaseAdmin: SupabaseClient = new Proxy({} as SupabaseClient, {
+    get(_target, prop) {
+        const client = getAdminClient();
+        const value = Reflect.get(client, prop, client);
+        return typeof value === 'function' ? value.bind(client) : value;
+    },
+}) as SupabaseClient;
 
 // ============================================
 // HELPERS
