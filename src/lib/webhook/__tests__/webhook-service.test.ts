@@ -10,7 +10,6 @@ import {
 } from '@/lib/webhook/WebhookService';
 import type { IntentResult } from '@/lib/ai/intent-detector';
 
-// Mock Supabase
 vi.mock('@/lib/supabase', () => ({
     supabaseAdmin: vi.fn(() => ({
         from: vi.fn(() => ({
@@ -34,7 +33,6 @@ vi.mock('@/lib/supabase', () => ({
     })),
 }));
 
-// Mock logger
 vi.mock('@/lib/utils/logger', () => ({
     logger: {
         info: vi.fn(),
@@ -61,19 +59,19 @@ describe('WebhookService', () => {
                 name: 'Test Shop',
                 facebook_page_id: '123',
                 products: [],
-                notify_on_order: null,
+                notify_on_lead: null,
+                notify_on_viewing: null,
                 notify_on_contact: null,
                 notify_on_support: null,
-                notify_on_cancel: null,
             };
 
             const settings = buildNotifySettings(shop);
 
             expect(settings).toEqual({
-                order: true,
+                lead: true,
+                viewing: true,
                 contact: true,
                 support: true,
-                cancel: true,
             });
         });
 
@@ -83,29 +81,29 @@ describe('WebhookService', () => {
                 name: 'Test Shop',
                 facebook_page_id: '123',
                 products: [],
-                notify_on_order: false,
-                notify_on_contact: true,
-                notify_on_support: false,
-                notify_on_cancel: true,
+                notify_on_lead: false,
+                notify_on_viewing: true,
+                notify_on_contact: false,
+                notify_on_support: true,
             };
 
             const settings = buildNotifySettings(shop);
 
             expect(settings).toEqual({
-                order: false,
-                contact: true,
-                support: false,
-                cancel: true,
+                lead: false,
+                viewing: true,
+                contact: false,
+                support: true,
             });
         });
     });
 
     describe('generateFallbackResponse', () => {
         const shopName = 'Test Shop';
-        const products = [
-            { id: '1', name: 'Product A', price: 10000, stock: 5 },
-            { id: '2', name: 'Product B', price: 20000, stock: 10 },
-            { id: '3', name: 'Product C', price: 30000, stock: 0 },
+        const properties = [
+            { id: '1', name: 'Property A', price: 10000, stock: 5 },
+            { id: '2', name: 'Property B', price: 20000, stock: 10 },
+            { id: '3', name: 'Property C', price: 30000, stock: 0 },
         ];
 
         it('should generate greeting response', () => {
@@ -115,35 +113,35 @@ describe('WebhookService', () => {
                 entities: {},
             };
 
-            const response = generateFallbackResponse(intent, shopName, products);
+            const response = generateFallbackResponse(intent, shopName, properties);
 
             expect(response).toContain('Сайн байна уу');
             expect(response).toContain(shopName);
         });
 
-        it('should generate product inquiry response with product list', () => {
+        it('should list properties for product inquiry', () => {
             const intent: IntentResult = {
                 intent: 'PRODUCT_INQUIRY',
                 confidence: 0.85,
                 entities: {},
             };
 
-            const response = generateFallbackResponse(intent, shopName, products);
+            const response = generateFallbackResponse(intent, shopName, properties);
 
-            expect(response).toContain('Product A');
+            expect(response).toContain('Property A');
             expect(response).toContain('10,000₮');
         });
 
-        it('should generate stock check response', () => {
+        it('should list properties for stock check', () => {
             const intent: IntentResult = {
                 intent: 'STOCK_CHECK',
                 confidence: 0.8,
                 entities: {},
             };
 
-            const response = generateFallbackResponse(intent, shopName, products);
+            const response = generateFallbackResponse(intent, shopName, properties);
 
-            expect(response).toContain('бүтээгдэхүүн');
+            expect(response).toContain('байрууд');
         });
 
         it('should generate price check response', () => {
@@ -153,33 +151,33 @@ describe('WebhookService', () => {
                 entities: {},
             };
 
-            const response = generateFallbackResponse(intent, shopName, products);
+            const response = generateFallbackResponse(intent, shopName, properties);
 
             expect(response).toContain('үнийг');
         });
 
-        it('should generate order create response', () => {
+        it('should ask for contact info on viewing request', () => {
             const intent: IntentResult = {
                 intent: 'ORDER_CREATE',
                 confidence: 0.95,
                 entities: {},
             };
 
-            const response = generateFallbackResponse(intent, shopName, products);
+            const response = generateFallbackResponse(intent, shopName, properties);
 
-            expect(response).toContain('Захиалга');
+            expect(response).toContain('Байр үзэх');
         });
 
-        it('should generate order status response', () => {
+        it('should ask for phone on status check', () => {
             const intent: IntentResult = {
                 intent: 'ORDER_STATUS',
                 confidence: 0.88,
                 entities: {},
             };
 
-            const response = generateFallbackResponse(intent, shopName, products);
+            const response = generateFallbackResponse(intent, shopName, properties);
 
-            expect(response).toContain('Захиалгын дугаар');
+            expect(response).toContain('утас');
         });
 
         it('should generate thank you response', () => {
@@ -189,7 +187,7 @@ describe('WebhookService', () => {
                 entities: {},
             };
 
-            const response = generateFallbackResponse(intent, shopName, products);
+            const response = generateFallbackResponse(intent, shopName, properties);
 
             expect(response).toContain('Баярлалаа');
         });
@@ -201,7 +199,7 @@ describe('WebhookService', () => {
                 entities: {},
             };
 
-            const response = generateFallbackResponse(intent, shopName, products);
+            const response = generateFallbackResponse(intent, shopName, properties);
 
             expect(response).toContain('Уучлаарай');
         });
@@ -213,12 +211,12 @@ describe('WebhookService', () => {
                 entities: {},
             };
 
-            const response = generateFallbackResponse(intent, shopName, products);
+            const response = generateFallbackResponse(intent, shopName, properties);
 
             expect(response).toContain('алдаа');
         });
 
-        it('should handle empty product list', () => {
+        it('should handle empty property list', () => {
             const intent: IntentResult = {
                 intent: 'PRODUCT_INQUIRY',
                 confidence: 0.85,
