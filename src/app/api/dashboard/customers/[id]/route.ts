@@ -44,10 +44,20 @@ export async function GET(
             .order('created_at', { ascending: false })
             .limit(10);
 
+        // Get service logs (requests / complaints / letters) for this customer
+        const { data: serviceLogs } = await supabase
+            .from('service_logs')
+            .select('id, type, subject, description, status, priority, created_at, resolved_at')
+            .eq('customer_id', id)
+            .eq('shop_id', authShop.id)
+            .order('created_at', { ascending: false })
+            .limit(50);
+
         return NextResponse.json({
             customer: {
                 ...customer,
-                chat_history: chatHistory || []
+                chat_history: chatHistory || [],
+                service_logs: serviceLogs || [],
             }
         });
     } catch (error) {
