@@ -3,18 +3,14 @@
  */
 
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { supabaseAdmin } from '@/lib/supabase';
 import { getAuthUser } from '@/lib/auth/auth';
 import { headers } from 'next/headers';
 import { logger } from '@/lib/utils/logger';
 
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
 export async function GET() {
     try {
+        const supabase = supabaseAdmin();
         const userId = await getAuthUser();
 
         if (!userId) {
