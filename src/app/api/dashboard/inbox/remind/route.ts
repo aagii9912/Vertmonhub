@@ -1,15 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { getAuthUserShop } from '@/lib/auth/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { sendPushNotification } from '@/lib/notifications';
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { sendTextMessage } from '@/lib/facebook/messenger';
+
+const remindSchema = z.object({
+    customerId: z.string().uuid(),
+    message: z.string().min(1).max(1000).optional(),
+});
+
+const DEFAULT_MESSAGE = 'Сайн байна уу! Үзэхээр сонирхож байсан байрны талаар нэмэлт мэдээлэл хэрэгтэй юу? 😊';
 
 /**
  * POST /api/dashboard/inbox/remind
- * Send a reminder to a customer about their active cart
+ * Send a follow-up message to a customer over Facebook Messenger,
+ * using the shop's stored page access token. Falls back to a push
+ * notification to the sales manager if the customer can't be reached
+ * (no facebook_id, or no shop FB integration).
  */
 export async function POST(request: NextRequest) {
     try {
@@ -18,70 +27,82 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const body = await request.json();
-        const { customerId } = body;
-
-        if (!customerId) {
-            return NextResponse.json({ error: 'customerId is required' }, { status: 400 });
+        const parsed = remindSchema.safeParse(await request.json());
+        if (!parsed.success) {
+            return NextResponse.json(
+                { error: 'Invalid request', details: parsed.error.flatten() },
+                { status: 400 }
+            );
         }
+        const { customerId, message = DEFAULT_MESSAGE } = parsed.data;
 
         const supabase = supabaseAdmin();
 
-        // 1. Get Customer Details
         const { data: customer, error: customerError } = await supabase
             .from('customers')
             .select('id, name, facebook_id, phone')
             .eq('id', customerId)
+            .eq('shop_id', shop.id)
             .single();
 
         if (customerError || !customer) {
             return NextResponse.json({ error: 'Customer not found' }, { status: 404 });
         }
 
-        let sentMethod = 'none';
+        const { data: shopRow } = await supabase
+            .from('shops')
+            .select('facebook_page_access_token')
+            .eq('id', shop.id)
+            .single();
 
-        // 2. Try Facebook Message
-        if (customer.facebook_id) {
+        const pageAccessToken = shopRow?.facebook_page_access_token ?? process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
+        let sentMethod: 'facebook' | 'none' = 'none';
+
+        if (customer.facebook_id && pageAccessToken) {
             try {
-                // Determine page access token (TODO: Fetch from DB shop_settings)
-                // For now, we'll log it as a simulation if no token is available in env or DB logic
-                // In a real app, you'd fetch the page_access_token associated with this shop
+                await sendTextMessage({
+                    recipientId: customer.facebook_id,
+                    message,
+                    pageAccessToken,
+                });
+                sentMethod = 'facebook';
 
-                // const pageAccessToken = process.env.FB_PAGE_ACCESS_TOKEN; 
-                // if (pageAccessToken) {
-                //      await sendTextMessage(customer.facebook_id, "Таны сагсанд бараа үлдсэн байна. Та худалдан авалтаа дуусгах уу?", pageAccessToken);
-                //      sentMethod = 'facebook';
-                // } else {
-                //      logger.warn('No FB Page Token available for reminder');
-                // }
-
-                // NOTE: Since we might not have the token wired up perfectly for every shop yet,
-                // we will mark it as "attempted" and log it.
-                logger.info(`[SIMULATION] Sending FB reminder to ${customer.facebook_id}`);
-                sentMethod = 'facebook_simulated';
-
+                await supabase.from('chat_history').insert({
+                    shop_id: shop.id,
+                    customer_id: customer.id,
+                    message: '',
+                    response: message,
+                    intent: 'manager_reminder',
+                });
             } catch (fbError) {
-                logger.error('Failed to send FB reminder', { error: fbError });
-                // Continue to try other methods or fail gracefully
+                logger.error('Failed to send FB reminder', {
+                    customerId: customer.id,
+                    error: fbError instanceof Error ? fbError.message : String(fbError),
+                });
             }
         }
 
-        // 3. Fallback / Log
-        // We'll send a push notification to the Admin (Shop Owner) confirming the action was taken/attempted
         await sendPushNotification(shop.id, {
-            title: '🔔 Сануулга илгээлээ',
-            body: `${customer.name}-д сагсны сануулга илгээгдлээ (${sentMethod})`,
-            tag: `remind-${customerId}`
+            title: sentMethod === 'facebook' ? '🔔 Сануулга илгээгдлээ' : '⚠️ Сануулга илгээгдсэнгүй',
+            body:
+                sentMethod === 'facebook'
+                    ? `${customer.name}-д Facebook-аар сануулга илгээлээ`
+                    : `${customer.name}-руу Facebook-аар хүрч чадсангүй (${customer.phone ? 'утсаар холбогдоно уу' : 'холбоо барих утас алга'})`,
+            tag: `remind-${customerId}`,
         });
 
         return NextResponse.json({
             success: true,
             method: sentMethod,
-            message: `Сануулга амжилттай илгээгдлээ (${sentMethod === 'facebook_simulated' ? 'Facebook' : 'System'})`
+            sent: sentMethod === 'facebook',
         });
-
     } catch (error: unknown) {
-        logger.error('Reminder API error:', { error: error instanceof Error ? error.message : String(error) });
-        return NextResponse.json({ error: error instanceof Error ? error.message : 'Internal Error' }, { status: 500 });
+        logger.error('Reminder API error:', {
+            error: error instanceof Error ? error.message : String(error),
+        });
+        return NextResponse.json(
+            { error: error instanceof Error ? error.message : 'Internal Error' },
+            { status: 500 }
+        );
     }
 }
