@@ -10,18 +10,18 @@ export async function GET(request: NextRequest) {
   // Handle error from Facebook
   if (error) {
     const errorReason = searchParams.get('error_reason') || 'Unknown error';
-    return NextResponse.redirect(`${origin}/setup?fb_error=${encodeURIComponent(errorReason)}`);
+    return NextResponse.redirect(`${origin}/dashboard?fb_error=${encodeURIComponent(errorReason)}`);
   }
 
   if (!code) {
-    return NextResponse.redirect(`${origin}/setup?fb_error=no_code`);
+    return NextResponse.redirect(`${origin}/dashboard?fb_error=no_code`);
   }
 
   const appId = process.env.FACEBOOK_APP_ID?.trim();
   const appSecret = process.env.FACEBOOK_APP_SECRET?.trim();
 
   if (!appId || !appSecret || appSecret === 'your_facebook_app_secret') {
-    return NextResponse.redirect(`${origin}/setup?fb_error=config_missing`);
+    return NextResponse.redirect(`${origin}/dashboard?fb_error=config_missing`);
   }
 
   const redirectUri = `${origin}/api/auth/facebook/callback`;
@@ -39,7 +39,7 @@ export async function GET(request: NextRequest) {
 
     if (tokenData.error) {
       console.error('Facebook token error:', tokenData.error);
-      return NextResponse.redirect(`${origin}/setup?fb_error=token_error`);
+      return NextResponse.redirect(`${origin}/dashboard?fb_error=token_error`);
     }
 
     const userAccessToken = tokenData.access_token;
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
 
     if (pagesData.error) {
       console.error('Facebook pages error:', pagesData.error);
-      return NextResponse.redirect(`${origin}/setup?fb_error=pages_error`);
+      return NextResponse.redirect(`${origin}/dashboard?fb_error=pages_error`);
     }
 
     // Store pages data in a cookie
@@ -70,10 +70,10 @@ export async function GET(request: NextRequest) {
     });
 
     // Redirect back to setup with success
-    return NextResponse.redirect(`${origin}/setup?fb_success=true&page_count=${pages.length}`);
+    return NextResponse.redirect(`${origin}/dashboard?fb_success=true&page_count=${pages.length}`);
 
   } catch (err) {
     console.error('Facebook OAuth error:', err);
-    return NextResponse.redirect(`${origin}/setup?fb_error=exception`);
+    return NextResponse.redirect(`${origin}/dashboard?fb_error=exception`);
   }
 }
