@@ -53,17 +53,17 @@ export default function AITestPage() {
         <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 p-8">
             <div className="max-w-2xl mx-auto">
                 <h1 className="text-3xl font-bold text-white mb-2">🤖 AI Chat Test</h1>
-                <p className="text-gray-400 mb-8">Gemini AI integration test</p>
+                <p className="text-muted-foreground/70 mb-8">Gemini AI integration test</p>
 
                 {/* Example Questions */}
                 <div className="mb-6">
-                    <p className="text-sm text-gray-400 mb-2">Жишээ асуултууд:</p>
+                    <p className="text-sm text-muted-foreground/70 mb-2">Жишээ асуултууд:</p>
                     <div className="flex flex-wrap gap-2">
                         {exampleQuestions.map((q, i) => (
                             <button
                                 key={i}
                                 onClick={() => setMessage(q)}
-                                className="px-3 py-1 bg-purple-600/30 text-purple-300 rounded-full text-sm hover:bg-purple-600/50 transition"
+                                className="px-3 py-1 bg-brand/30 text-brand-strong rounded-full text-sm hover:bg-brand/50 transition"
                             >
                                 {q}
                             </button>
@@ -79,12 +79,12 @@ export default function AITestPage() {
                         onChange={(e) => setMessage(e.target.value)}
                         onKeyPress={(e) => e.key === 'Enter' && testAI()}
                         placeholder="Мессеж бичнэ үү..."
-                        className="flex-1 px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        className="flex-1 px-4 py-3 bg-surface/10 border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500"
                     />
                     <button
                         onClick={testAI}
                         disabled={loading || !message.trim()}
-                        className="px-6 py-3 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                        className="px-6 py-3 bg-brand text-white rounded-xl font-medium hover:bg-brand disabled:opacity-50 disabled:cursor-not-allowed transition"
                     >
                         {loading ? '...' : 'Илгээх'}
                     </button>
@@ -92,31 +92,31 @@ export default function AITestPage() {
 
                 {/* Response */}
                 {response && (
-                    <div className="p-6 bg-green-500/20 border border-green-500/30 rounded-xl">
-                        <p className="text-sm text-green-400 mb-2">✅ AI Хариулт:</p>
+                    <div className="p-6 bg-status-success/20 border border-green-500/30 rounded-xl">
+                        <p className="text-sm text-status-success mb-2">✅ AI Хариулт:</p>
                         <p className="text-white whitespace-pre-wrap">{response}</p>
                     </div>
                 )}
 
                 {/* Error */}
                 {error && (
-                    <div className="p-6 bg-red-500/20 border border-red-500/30 rounded-xl">
-                        <p className="text-sm text-red-400 mb-2">❌ Алдаа:</p>
-                        <p className="text-red-300">{error}</p>
+                    <div className="p-6 bg-status-danger/20 border border-status-danger/30 rounded-xl">
+                        <p className="text-sm text-status-danger mb-2">❌ Алдаа:</p>
+                        <p className="text-status-danger">{error}</p>
                     </div>
                 )}
 
                 {/* Status */}
-                <div className="mt-8 p-4 bg-white/5 rounded-xl">
+                <div className="mt-8 p-4 bg-surface/5 rounded-xl">
                     <h3 className="text-white font-medium mb-3">📊 API Status</h3>
                     <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
-                            <span className="text-gray-400">Gemini API</span>
-                            <span className="text-green-400">● Connected</span>
+                            <span className="text-muted-foreground/70">Gemini API</span>
+                            <span className="text-status-success">● Connected</span>
                         </div>
                         <div className="flex justify-between">
-                            <span className="text-gray-400">Model</span>
-                            <span className="text-gray-300">gemini-1.5-flash</span>
+                            <span className="text-muted-foreground/70">Model</span>
+                            <span className="text-muted-foreground/60">gemini-1.5-flash</span>
                         </div>
                     </div>
                 </div>

@@ -26,17 +26,17 @@ export default function NotificationsTab({ notifyOnOrder, setNotifyOnOrder, noti
         <div className="space-y-6">
             <Card>
                 <CardContent className="p-6">
-                    <h2 className="font-semibold text-gray-900 mb-2">Push Мэдэгдлийн тохиргоо</h2>
-                    <p className="text-sm text-gray-500 mb-6">AI ямар тохиолдолд танд мэдэгдэл илгээхийг сонгоно уу.</p>
+                    <h2 className="font-semibold text-foreground mb-2">Push Мэдэгдлийн тохиргоо</h2>
+                    <p className="text-sm text-muted-foreground mb-6">AI ямар тохиолдолд танд мэдэгдэл илгээхийг сонгоно уу.</p>
                     <div className="space-y-4">
                         {items.map((item) => (
-                            <div key={item.label} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                            <div key={item.label} className="flex items-center justify-between p-4 bg-surface-2/40 rounded-xl">
                                 <div>
-                                    <p className="font-medium text-gray-900">{item.label}</p>
-                                    <p className="text-xs text-gray-500">{item.desc}</p>
+                                    <p className="font-medium text-foreground">{item.label}</p>
+                                    <p className="text-xs text-muted-foreground">{item.desc}</p>
                                 </div>
-                                <button onClick={item.toggle} className={`w-12 h-6 rounded-full transition-colors relative ${item.value ? 'bg-violet-600' : 'bg-gray-300'}`}>
-                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${item.value ? 'left-7' : 'left-1'}`} />
+                                <button onClick={item.toggle} className={`w-12 h-6 rounded-full transition-colors relative ${item.value ? 'bg-brand' : 'bg-border-strong'}`}>
+                                    <div className={`absolute top-1 w-4 h-4 bg-surface rounded-full transition-all ${item.value ? 'left-7' : 'left-1'}`} />
                                 </button>
                             </div>
                         ))}

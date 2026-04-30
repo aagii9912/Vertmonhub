@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { StatsCard } from '@/components/dashboard/StatsCard';
-import { Bot, Zap, Target, Users } from 'lucide-react';
+import { Bot, Zap, Target } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 const dummyAiStats = [
@@ -17,25 +17,15 @@ export function AIMonitor() {
         <div className="space-y-4">
             {/* AI Highlight Stats */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <StatsCard
-                    title="AI Харилцаа"
-                    value="156"
-                    icon={Bot}
-                    iconColor="bg-violet-500"
-                />
-                <StatsCard
-                    title="Авт. шийдвэрлэлт"
-                    value="92%"
-                    icon={Zap}
-                    iconColor="bg-amber-500"
-                />
+                <StatsCard title="AI Харилцаа" value="156" icon={Bot} iconColor="brand" />
+                <StatsCard title="Авт. шийдвэрлэлт" value="92%" icon={Zap} iconColor="warning" />
             </div>
 
             {/* AI Performance Chart */}
             <Card>
                 <CardHeader>
-                    <CardTitle className="text-sm font-bold flex items-center gap-2">
-                        <Target className="w-4 h-4 text-violet-600" />
+                    <CardTitle className="text-sm flex items-center gap-2">
+                        <Target className="w-4 h-4 text-brand" />
                         AI Performance
                     </CardTitle>
                 </CardHeader>
@@ -43,22 +33,27 @@ export function AIMonitor() {
                     <div className="h-[200px] w-full">
                         <ResponsiveContainer width="100%" height="100%">
                             <LineChart data={dummyAiStats}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--border)" />
                                 <XAxis
                                     dataKey="name"
                                     axisLine={false}
                                     tickLine={false}
-                                    tick={{ fontSize: 10, fill: '#9ca3af' }}
+                                    tick={{ fontSize: 10, fill: 'var(--muted)' }}
                                 />
                                 <YAxis hide />
                                 <Tooltip
-                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}
-                                    itemStyle={{ fontSize: '11px', fontWeight: 'bold' }}
+                                    contentStyle={{
+                                        borderRadius: 'var(--r-md)',
+                                        border: '1px solid var(--border)',
+                                        background: 'var(--surface)',
+                                        boxShadow: 'var(--shadow-md)',
+                                    }}
+                                    itemStyle={{ fontSize: '11px', fontWeight: 500, color: 'var(--fg)' }}
                                 />
                                 <Line
                                     type="monotone"
                                     dataKey="automated"
-                                    stroke="#8b5cf6"
+                                    stroke="var(--brand)"
                                     strokeWidth={3}
                                     dot={false}
                                     name="AI Шийдсэн"
@@ -66,7 +61,7 @@ export function AIMonitor() {
                                 <Line
                                     type="monotone"
                                     dataKey="handoff"
-                                    stroke="#f59e0b"
+                                    stroke="var(--status-pending)"
                                     strokeWidth={2}
                                     strokeDasharray="5 5"
                                     dot={false}
@@ -77,12 +72,12 @@ export function AIMonitor() {
                     </div>
                     <div className="flex items-center gap-4 mt-4 justify-center">
                         <div className="flex items-center gap-1.5">
-                            <span className="w-2.5 h-2.5 rounded-full bg-violet-500" />
-                            <span className="text-[10px] font-medium text-gray-500 uppercase">AI Automated</span>
+                            <span className="w-2.5 h-2.5 rounded-full bg-brand" />
+                            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">AI Automated</span>
                         </div>
                         <div className="flex items-center gap-1.5">
-                            <span className="w-2.5 h-2.5 rounded-full bg-amber-500" />
-                            <span className="text-[10px] font-medium text-gray-500 uppercase">Human Handoff</span>
+                            <span className="w-2.5 h-2.5 rounded-full bg-status-pending" />
+                            <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Human Handoff</span>
                         </div>
                     </div>
                 </CardContent>

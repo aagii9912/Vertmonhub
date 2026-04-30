@@ -43,15 +43,15 @@ export default function NewPropertyPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 p-6">
+        <div className="min-h-screen bg-surface-2/40 p-6">
             {/* Header */}
             <div className="mb-6">
-                <Link href="/dashboard/properties" className="inline-flex items-center text-gray-600 hover:text-gray-900 mb-4">
+                <Link href="/dashboard/properties" className="inline-flex items-center text-muted-foreground hover:text-foreground mb-4">
                     <ArrowLeft className="w-4 h-4 mr-2" />
                     Буцах
                 </Link>
-                <h1 className="text-2xl font-bold text-gray-900">Шинэ үл хөдлөх нэмэх</h1>
-                <p className="text-gray-500 mt-1">Үл хөдлөх хөрөнгийн мэдээлэл оруулна уу</p>
+                <h1 className="text-2xl font-bold text-foreground">Шинэ үл хөдлөх нэмэх</h1>
+                <p className="text-muted-foreground mt-1">Үл хөдлөх хөрөнгийн мэдээлэл оруулна уу</p>
             </div>
 
             <form onSubmit={handleSubmit} className="max-w-3xl">
@@ -60,13 +60,13 @@ export default function NewPropertyPage() {
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                                <Building2 className="w-5 h-5 text-emerald-600" />
+                                <Building2 className="w-5 h-5 text-status-success" />
                                 Үндсэн мэдээлэл
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Нэр</label>
+                                <label className="block text-sm font-medium text-foreground mb-1">Нэр</label>
                                 <Input
                                     name="name"
                                     value={formData.name}
@@ -77,12 +77,12 @@ export default function NewPropertyPage() {
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Төрөл</label>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Төрөл</label>
                                     <select
                                         name="type"
                                         value={formData.type}
                                         onChange={handleChange}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                                        className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-emerald-500"
                                     >
                                         <option value="mandala_garden">Mandala Garden</option>
                                         <option value="mandala_tower">360/365 Mandala Tower</option>
@@ -90,7 +90,7 @@ export default function NewPropertyPage() {
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Үнэ (₮)</label>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Үнэ (₮)</label>
                                     <Input
                                         name="price"
                                         type="number"
@@ -102,13 +102,13 @@ export default function NewPropertyPage() {
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Тайлбар</label>
+                                <label className="block text-sm font-medium text-foreground mb-1">Тайлбар</label>
                                 <textarea
                                     name="description"
                                     value={formData.description}
                                     onChange={handleChange}
                                     rows={3}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                                    className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-emerald-500"
                                     placeholder="Үл хөдлөхийн дэлгэрэнгүй тайлбар..."
                                 />
                             </div>
@@ -119,14 +119,14 @@ export default function NewPropertyPage() {
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                                <Maximize className="w-5 h-5 text-emerald-600" />
+                                <Maximize className="w-5 h-5 text-status-success" />
                                 Дэлгэрэнгүй
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
                             <div className="grid grid-cols-3 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Хэмжээ (м²)</label>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Хэмжээ (м²)</label>
                                     <Input
                                         name="size"
                                         type="number"
@@ -136,7 +136,7 @@ export default function NewPropertyPage() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Унтлагын өрөө</label>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Унтлагын өрөө</label>
                                     <Input
                                         name="bedrooms"
                                         type="number"
@@ -146,7 +146,7 @@ export default function NewPropertyPage() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Угаалгын өрөө</label>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Угаалгын өрөө</label>
                                     <Input
                                         name="bathrooms"
                                         type="number"
@@ -163,18 +163,18 @@ export default function NewPropertyPage() {
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                                <MapPin className="w-5 h-5 text-emerald-600" />
+                                <MapPin className="w-5 h-5 text-status-success" />
                                 Байршил
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Дүүрэг</label>
+                                <label className="block text-sm font-medium text-foreground mb-1">Дүүрэг</label>
                                 <select
                                     name="district"
                                     value={formData.district}
                                     onChange={handleChange}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                                    className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-emerald-500"
                                 >
                                     <option value="">Сонгоно уу</option>
                                     <option value="sukhbaatar">Сүхбаатар</option>
@@ -186,7 +186,7 @@ export default function NewPropertyPage() {
                                 </select>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Хаяг</label>
+                                <label className="block text-sm font-medium text-foreground mb-1">Хаяг</label>
                                 <Input
                                     name="address"
                                     value={formData.address}
@@ -201,14 +201,14 @@ export default function NewPropertyPage() {
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                                <Upload className="w-5 h-5 text-emerald-600" />
+                                <Upload className="w-5 h-5 text-status-success" />
                                 Зураг
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center">
-                                <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                                <p className="text-gray-500">Зураг чирж оруулна уу эсвэл</p>
+                            <div className="border-2 border-dashed border-border-strong rounded-lg p-8 text-center">
+                                <Upload className="w-12 h-12 text-muted-foreground/70 mx-auto mb-4" />
+                                <p className="text-muted-foreground">Зураг чирж оруулна уу эсвэл</p>
                                 <Button variant="outline" className="mt-2">
                                     Файл сонгох
                                 </Button>
@@ -221,7 +221,7 @@ export default function NewPropertyPage() {
                         <Button
                             type="submit"
                             disabled={loading}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-8"
+                            className="bg-status-success hover:opacity-90 text-white px-8"
                         >
                             {loading ? 'Хадгалж байна...' : 'Хадгалах'}
                         </Button>

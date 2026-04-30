@@ -44,22 +44,22 @@ export function BottomSheet({ open, onClose, title, children }: BottomSheetProps
             <div
                 ref={sheetRef}
                 className="absolute bottom-0 left-0 right-0 
-                   bg-white rounded-t-[2.5rem] 
+                   bg-surface rounded-t-[2.5rem] 
                    max-h-[92vh] overflow-hidden
                    animate-in slide-in-from-bottom duration-500 shadow-2xl"
             >
                 {/* Handle bar */}
                 <div className="flex justify-center pt-4 pb-2">
-                    <div className="w-12 h-1.5 rounded-full bg-gray-200" />
+                    <div className="w-12 h-1.5 rounded-full bg-surface-3" />
                 </div>
 
                 {/* Header */}
                 {title && (
                     <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50">
-                        <h3 className="text-xl font-bold text-gray-900">{title}</h3>
+                        <h3 className="text-xl font-bold text-foreground">{title}</h3>
                         <button
                             onClick={onClose}
-                            className="p-2 -mr-2 bg-gray-50 rounded-full text-gray-400 hover:text-gray-900 transition-colors"
+                            className="p-2 -mr-2 bg-surface-2/40 rounded-full text-muted-foreground/70 hover:text-foreground transition-colors"
                         >
                             <X className="w-5 h-5" />
                         </button>

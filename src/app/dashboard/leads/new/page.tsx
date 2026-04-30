@@ -42,15 +42,15 @@ export default function NewLeadPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 p-6">
+        <div className="min-h-screen bg-surface-2/40 p-6">
             {/* Header */}
             <div className="mb-6">
-                <Link href="/dashboard/leads" className="inline-flex items-center text-gray-600 hover:text-gray-900 mb-4">
+                <Link href="/dashboard/leads" className="inline-flex items-center text-muted-foreground hover:text-foreground mb-4">
                     <ArrowLeft className="w-4 h-4 mr-2" />
                     Буцах
                 </Link>
-                <h1 className="text-2xl font-bold text-gray-900">Шинэ лийд нэмэх</h1>
-                <p className="text-gray-500 mt-1">Боломжит худалдан авагчийн мэдээлэл оруулна уу</p>
+                <h1 className="text-2xl font-bold text-foreground">Шинэ лийд нэмэх</h1>
+                <p className="text-muted-foreground mt-1">Боломжит худалдан авагчийн мэдээлэл оруулна уу</p>
             </div>
 
             <form onSubmit={handleSubmit} className="max-w-2xl">
@@ -59,13 +59,13 @@ export default function NewLeadPage() {
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                                <Users className="w-5 h-5 text-emerald-600" />
+                                <Users className="w-5 h-5 text-status-success" />
                                 Харилцагчийн мэдээлэл
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Нэр</label>
+                                <label className="block text-sm font-medium text-foreground mb-1">Нэр</label>
                                 <Input
                                     name="customer_name"
                                     value={formData.customer_name}
@@ -76,7 +76,7 @@ export default function NewLeadPage() {
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Утас</label>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Утас</label>
                                     <Input
                                         name="phone"
                                         value={formData.phone}
@@ -85,7 +85,7 @@ export default function NewLeadPage() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Имэйл</label>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Имэйл</label>
                                     <Input
                                         name="email"
                                         type="email"
@@ -96,12 +96,12 @@ export default function NewLeadPage() {
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Эх үүсвэр</label>
+                                <label className="block text-sm font-medium text-foreground mb-1">Эх үүсвэр</label>
                                 <select
                                     name="source"
                                     value={formData.source}
                                     onChange={handleChange}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                                    className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-emerald-500"
                                 >
                                     <option value="messenger">Messenger</option>
                                     <option value="instagram">Instagram</option>
@@ -118,18 +118,18 @@ export default function NewLeadPage() {
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                                <Building2 className="w-5 h-5 text-emerald-600" />
+                                <Building2 className="w-5 h-5 text-status-success" />
                                 Шаардлага
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Сонирхож буй төрөл</label>
+                                <label className="block text-sm font-medium text-foreground mb-1">Сонирхож буй төрөл</label>
                                 <select
                                     name="preferred_type"
                                     value={formData.preferred_type}
                                     onChange={handleChange}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                                    className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-emerald-500"
                                 >
                                     <option value="apartment">Орон сууц</option>
                                     <option value="house">Хувийн байшин</option>
@@ -140,7 +140,7 @@ export default function NewLeadPage() {
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Төсөв (доод)</label>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Төсөв (доод)</label>
                                     <Input
                                         name="budget_min"
                                         type="number"
@@ -150,7 +150,7 @@ export default function NewLeadPage() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Төсөв (дээд)</label>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Төсөв (дээд)</label>
                                     <Input
                                         name="budget_max"
                                         type="number"
@@ -167,7 +167,7 @@ export default function NewLeadPage() {
                     <Card>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
-                                <MessageSquare className="w-5 h-5 text-emerald-600" />
+                                <MessageSquare className="w-5 h-5 text-status-success" />
                                 Тэмдэглэл
                             </CardTitle>
                         </CardHeader>
@@ -177,7 +177,7 @@ export default function NewLeadPage() {
                                 value={formData.notes}
                                 onChange={handleChange}
                                 rows={4}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                                className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-emerald-500"
                                 placeholder="Нэмэлт мэдээлэл, тайлбар..."
                             />
                         </CardContent>
@@ -188,7 +188,7 @@ export default function NewLeadPage() {
                         <Button
                             type="submit"
                             disabled={loading}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-8"
+                            className="bg-status-success hover:opacity-90 text-white px-8"
                         >
                             {loading ? 'Хадгалж байна...' : 'Хадгалах'}
                         </Button>

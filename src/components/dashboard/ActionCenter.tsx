@@ -34,15 +34,15 @@ export function ActionCenter({
 
     const getUrgencyColor = (dateString: string) => {
         const minutes = (Date.now() - new Date(dateString).getTime()) / 60000;
-        if (minutes > 30) return 'text-red-500';
-        if (minutes > 10) return 'text-amber-500';
+        if (minutes > 30) return 'text-status-danger';
+        if (minutes > 10) return 'text-status-pending';
         return 'text-muted-foreground';
     };
 
     const getUrgencyBg = (dateString: string) => {
         const minutes = (Date.now() - new Date(dateString).getTime()) / 60000;
-        if (minutes > 30) return 'bg-red-50 border-red-200';
-        if (minutes > 10) return 'bg-amber-50 border-amber-200';
+        if (minutes > 30) return 'bg-status-danger-soft border-status-danger/30';
+        if (minutes > 10) return 'bg-status-pending-soft border-status-pending/30';
         return 'bg-secondary/50 border-border';
     };
 
@@ -50,7 +50,7 @@ export function ActionCenter({
         <Card>
             <CardHeader className="flex flex-row items-center justify-between py-3 md:py-4">
                 <CardTitle className="flex items-center gap-2 text-base md:text-lg">
-                    <AlertTriangle className={`w-4 h-4 md:w-5 md:h-5 ${hasIssues ? 'text-amber-500' : 'text-emerald-500'}`} />
+                    <AlertTriangle className={`w-4 h-4 md:w-5 md:h-5 ${hasIssues ? 'text-status-pending' : 'text-status-success'}`} />
                     Анхаарал хэрэгтэй
                 </CardTitle>
                 {hasIssues && (
@@ -64,7 +64,7 @@ export function ActionCenter({
                 {unansweredCount > 0 && (
                     <div className="p-4">
                         <div className="flex items-center gap-2 mb-3">
-                            <MessageSquare className="w-4 h-4 text-red-500" />
+                            <MessageSquare className="w-4 h-4 text-status-danger" />
                             <span className="text-sm font-medium text-foreground">
                                 Хариулаагүй ({unansweredCount})
                             </span>
@@ -82,7 +82,7 @@ export function ActionCenter({
                                         <div className="flex items-start justify-between gap-2">
                                             <div className="flex items-center gap-2 min-w-0">
                                                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center flex-shrink-0">
-                                                    <span className="text-xs font-medium text-emerald-600">
+                                                    <span className="text-xs font-medium text-status-success">
                                                         {conv.customerName.charAt(0).toUpperCase()}
                                                     </span>
                                                 </div>
@@ -104,7 +104,7 @@ export function ActionCenter({
                                                 <span className={`text-[10px] ${getUrgencyColor(conv.lastMessageAt)}`}>
                                                     {formatTimeAgo(conv.lastMessageAt)}
                                                 </span>
-                                                <XCircle className="w-4 h-4 text-red-500" />
+                                                <XCircle className="w-4 h-4 text-status-danger" />
                                             </div>
                                         </div>
                                     </Link>
@@ -116,7 +116,7 @@ export function ActionCenter({
                 {/* Empty State */}
                 {!hasIssues && (
                     <div className="p-8 text-center">
-                        <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-emerald-500" />
+                        <CheckCircle2 className="w-10 h-10 mx-auto mb-3 text-status-success" />
                         <p className="text-sm text-muted-foreground">
                             Бүгд хэвийн байна! 🎉
                         </p>
@@ -127,7 +127,7 @@ export function ActionCenter({
                 {conversations.filter(c => c.isAnswered).length > 0 && unansweredCount === 0 && (
                     <div className="p-4">
                         <div className="flex items-center gap-2 mb-3">
-                            <MessageSquare className="w-4 h-4 text-emerald-500" />
+                            <MessageSquare className="w-4 h-4 text-status-success" />
                             <span className="text-sm font-medium text-foreground">
                                 Сүүлийн харилцаанууд
                             </span>
@@ -143,8 +143,8 @@ export function ActionCenter({
                                         className="flex items-center justify-between p-2 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
                                     >
                                         <div className="flex items-center gap-2 min-w-0">
-                                            <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
-                                                <span className="text-xs font-medium text-emerald-600">
+                                            <div className="w-7 h-7 rounded-full bg-status-success-soft flex items-center justify-center flex-shrink-0">
+                                                <span className="text-xs font-medium text-status-success">
                                                     {conv.customerName.charAt(0).toUpperCase()}
                                                 </span>
                                             </div>
@@ -158,7 +158,7 @@ export function ActionCenter({
                                             <span className="text-[10px] text-muted-foreground">
                                                 {formatTimeAgo(conv.lastMessageAt)}
                                             </span>
-                                            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                                            <CheckCircle2 className="w-4 h-4 text-status-success" />
                                         </div>
                                     </Link>
                                 ))}

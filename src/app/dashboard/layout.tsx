@@ -15,11 +15,11 @@ export default function DashboardLayout({
 
     return (
 
-        <div className="min-h-screen bg-[#f8f9fa]">
+        <div className="min-h-screen bg-background text-foreground">
             <Sidebar />
             <div className="md:ml-64 transition-all duration-300 min-h-screen flex flex-col">
                 <Header />
-                <main className="flex-1 p-4 md:p-6 lg:p-8 pb-24 md:pb-8 dashboard-content">
+                <main className="flex-1 p-4 md:p-6 lg:p-8 pb-24 md:pb-8">
                     {children}
                 </main>
             </div>

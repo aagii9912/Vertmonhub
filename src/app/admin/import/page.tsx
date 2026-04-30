@@ -204,16 +204,16 @@ const IMPORT_CATEGORIES: ImportCategory[] = [
 ];
 
 const COLOR_MAP: Record<string, { bg: string; border: string; text: string; light: string }> = {
-    violet: { bg: 'bg-violet-50', border: 'border-violet-500', text: 'text-violet-700', light: 'bg-violet-100' },
-    blue: { bg: 'bg-blue-50', border: 'border-blue-500', text: 'text-blue-700', light: 'bg-blue-100' },
-    emerald: { bg: 'bg-emerald-50', border: 'border-emerald-500', text: 'text-emerald-700', light: 'bg-emerald-100' },
-    amber: { bg: 'bg-amber-50', border: 'border-amber-500', text: 'text-amber-700', light: 'bg-amber-100' },
-    pink: { bg: 'bg-pink-50', border: 'border-pink-500', text: 'text-pink-700', light: 'bg-pink-100' },
-    indigo: { bg: 'bg-indigo-50', border: 'border-indigo-500', text: 'text-indigo-700', light: 'bg-indigo-100' },
+    violet: { bg: 'bg-brand-soft', border: 'border-brand', text: 'text-brand-strong', light: 'bg-brand-soft' },
+    blue: { bg: 'bg-status-info-soft', border: 'border-status-info', text: 'text-status-info', light: 'bg-status-info-soft' },
+    emerald: { bg: 'bg-status-success-soft', border: 'border-status-success', text: 'text-status-success', light: 'bg-status-success-soft' },
+    amber: { bg: 'bg-status-pending-soft', border: 'border-status-pending', text: 'text-status-pending', light: 'bg-status-pending-soft' },
+    pink: { bg: 'bg-brand-soft', border: 'border-pink-500', text: 'text-brand-strong', light: 'bg-brand-soft' },
+    indigo: { bg: 'bg-status-info-soft', border: 'border-status-info', text: 'text-status-info', light: 'bg-status-info-soft' },
     cyan: { bg: 'bg-cyan-50', border: 'border-cyan-500', text: 'text-cyan-700', light: 'bg-cyan-100' },
     teal: { bg: 'bg-teal-50', border: 'border-teal-500', text: 'text-teal-700', light: 'bg-teal-100' },
-    orange: { bg: 'bg-orange-50', border: 'border-orange-500', text: 'text-orange-700', light: 'bg-orange-100' },
-    purple: { bg: 'bg-purple-50', border: 'border-purple-500', text: 'text-purple-700', light: 'bg-purple-100' },
+    orange: { bg: 'bg-status-pending-soft', border: 'border-orange-500', text: 'text-status-pending', light: 'bg-status-pending-soft' },
+    purple: { bg: 'bg-brand-soft', border: 'border-brand', text: 'text-brand-strong', light: 'bg-brand-soft' },
 };
 
 interface ImportResult {
@@ -326,8 +326,8 @@ export default function AdminImportPage() {
     return (
         <div className="max-w-5xl mx-auto">
             <div className="mb-8">
-                <h1 className="text-2xl font-bold text-gray-900">Дата Импорт</h1>
-                <p className="text-gray-500 mt-1">CSV/Excel файлаас мэдээлэл бөөнөөр оруулах</p>
+                <h1 className="text-2xl font-bold text-foreground">Дата Импорт</h1>
+                <p className="text-muted-foreground mt-1">CSV/Excel файлаас мэдээлэл бөөнөөр оруулах</p>
             </div>
 
             {/* Category Grid */}
@@ -342,7 +342,7 @@ export default function AdminImportPage() {
                             className={`relative flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all text-center ${
                                 isActive
                                     ? `${cc.border} ${cc.bg} ${cc.text}`
-                                    : 'border-gray-200 hover:border-gray-300 text-gray-500 hover:text-gray-700'
+                                    : 'border-border hover:border-border-strong text-muted-foreground hover:text-foreground'
                             }`}
                         >
                             <cat.icon className="w-6 h-6" />
@@ -354,7 +354,7 @@ export default function AdminImportPage() {
             </div>
 
             {/* Import Form */}
-            <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+            <div className="bg-surface rounded-xl border border-border p-6 space-y-5">
                 {/* Selected category header */}
                 <div className={`flex items-center gap-3 p-4 ${c.bg} rounded-lg`}>
                     <div className={`w-10 h-10 ${c.light} rounded-lg flex items-center justify-center`}>
@@ -362,42 +362,42 @@ export default function AdminImportPage() {
                     </div>
                     <div>
                         <p className={`font-semibold ${c.text}`}>{selected.label} импорт</p>
-                        <p className="text-xs text-gray-500">{selected.desc}</p>
+                        <p className="text-xs text-muted-foreground">{selected.desc}</p>
                     </div>
                 </div>
 
                 {/* Project Selector */}
                 <div>
                     <div className="flex items-center justify-between mb-2">
-                        <label className="block text-sm font-medium text-gray-700">Төсөл сонгох</label>
+                        <label className="block text-sm font-medium text-foreground">Төсөл сонгох</label>
                         <button
                             onClick={() => setShowNewProject(!showNewProject)}
-                            className="text-xs text-violet-600 hover:text-violet-700 font-medium"
+                            className="text-xs text-brand-strong hover:text-brand-strong font-medium"
                         >
                             {showNewProject ? '✕ Хаах' : '+ Шинэ төсөл нэмэх'}
                         </button>
                     </div>
 
                     {showNewProject && (
-                        <div className="mb-3 p-4 bg-violet-50 border border-violet-200 rounded-lg space-y-3">
+                        <div className="mb-3 p-4 bg-brand-soft border border-brand/30 rounded-lg space-y-3">
                             <input
                                 type="text"
                                 placeholder="Төслийн нэр *"
                                 value={newProjectName}
                                 onChange={(e) => setNewProjectName(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-transparent text-sm"
+                                className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand focus:border-transparent text-sm"
                             />
                             <input
                                 type="text"
                                 placeholder="Байршил (заавал биш)"
                                 value={newProjectLocation}
                                 onChange={(e) => setNewProjectLocation(e.target.value)}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-transparent text-sm"
+                                className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand focus:border-transparent text-sm"
                             />
                             <button
                                 onClick={createProject}
                                 disabled={!newProjectName.trim() || creatingProject}
-                                className="w-full py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2"
+                                className="w-full py-2 bg-brand text-white rounded-lg hover:bg-brand-strong disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2"
                             >
                                 {creatingProject ? (
                                     <><Loader2 className="w-4 h-4 animate-spin" /> Үүсгэж байна...</>
@@ -409,13 +409,13 @@ export default function AdminImportPage() {
                     )}
 
                     {projectsLoading ? (
-                        <div className="h-10 bg-gray-100 rounded-lg animate-pulse" />
+                        <div className="h-10 bg-surface-2 rounded-lg animate-pulse" />
                     ) : projects.length === 0 ? (
-                        <div className="text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
-                            <p className="text-sm text-gray-500">Төсөл байхгүй байна</p>
+                        <div className="text-center py-6 bg-surface-2/40 rounded-lg border border-dashed border-border-strong">
+                            <p className="text-sm text-muted-foreground">Төсөл байхгүй байна</p>
                             <button
                                 onClick={() => setShowNewProject(true)}
-                                className="text-sm text-violet-600 font-medium mt-1 hover:underline"
+                                className="text-sm text-brand-strong font-medium mt-1 hover:underline"
                             >
                                 + Эхний төсөл нэмэх
                             </button>
@@ -424,7 +424,7 @@ export default function AdminImportPage() {
                         <select
                             value={selectedProject}
                             onChange={(e) => setSelectedProject(e.target.value)}
-                            className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
+                            className="w-full px-3 py-2.5 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand focus:border-brand"
                         >
                             {projects.map(p => (
                                 <option key={p.id} value={p.id}>{p.name}</option>
@@ -434,14 +434,14 @@ export default function AdminImportPage() {
                 </div>
 
                 {/* Template Download */}
-                <div className="flex items-center justify-between p-4 bg-blue-50 rounded-lg border border-blue-100">
+                <div className="flex items-center justify-between p-4 bg-status-info-soft rounded-lg border border-status-info">
                     <div>
-                        <p className="text-sm font-medium text-blue-800">{selected.label} загвар</p>
-                        <p className="text-xs text-blue-600 mt-0.5">CSV загвар татаж, мэдээллээ бөглөнө үү</p>
+                        <p className="text-sm font-medium text-status-info">{selected.label} загвар</p>
+                        <p className="text-xs text-status-info mt-0.5">CSV загвар татаж, мэдээллээ бөглөнө үү</p>
                     </div>
                     <button
                         onClick={downloadTemplate}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
+                        className="flex items-center gap-2 px-4 py-2 bg-status-info text-white rounded-lg hover:bg-status-info transition-colors text-sm font-medium"
                     >
                         <Download className="w-4 h-4" />
                         Загвар татах
@@ -449,40 +449,40 @@ export default function AdminImportPage() {
                 </div>
 
                 {/* Column Guide */}
-                <div className="p-4 bg-gray-50 rounded-lg">
-                    <p className="text-sm font-medium text-gray-700 mb-2">Шаардлагатай баганууд:</p>
+                <div className="p-4 bg-surface-2/40 rounded-lg">
+                    <p className="text-sm font-medium text-foreground mb-2">Шаардлагатай баганууд:</p>
                     <div className="flex flex-wrap gap-1.5">
                         {selected.columns.map(col => (
                             <span
                                 key={col.name}
                                 className={`px-2 py-1 rounded text-xs font-medium ${
-                                    col.required ? 'bg-red-100 text-red-700' : 'bg-gray-200 text-gray-600'
+                                    col.required ? 'bg-status-danger-soft text-status-danger' : 'bg-surface-3 text-muted-foreground'
                                 }`}
                             >
                                 {col.name}{col.required ? '*' : ''}
                             </span>
                         ))}
                     </div>
-                    <p className="text-xs text-gray-500 mt-2">* заавал бөглөх</p>
+                    <p className="text-xs text-muted-foreground mt-2">* заавал бөглөх</p>
                 </div>
 
                 {/* File Upload */}
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Файл сонгох</label>
+                    <label className="block text-sm font-medium text-foreground mb-2">Файл сонгох</label>
                     <div
                         onClick={() => fileRef.current?.click()}
-                        className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-violet-400 hover:bg-violet-50/50 transition-all"
+                        className="border-2 border-dashed border-border-strong rounded-xl p-8 text-center cursor-pointer hover:border-brand hover:bg-brand-soft/50 transition-all"
                     >
-                        <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
+                        <Upload className="w-10 h-10 text-muted-foreground/70 mx-auto mb-3" />
                         {file ? (
                             <div>
-                                <p className="text-sm font-semibold text-gray-900">{file.name}</p>
-                                <p className="text-xs text-gray-500 mt-1">{(file.size / 1024).toFixed(1)} KB</p>
+                                <p className="text-sm font-semibold text-foreground">{file.name}</p>
+                                <p className="text-xs text-muted-foreground mt-1">{(file.size / 1024).toFixed(1)} KB</p>
                             </div>
                         ) : (
                             <div>
-                                <p className="text-sm text-gray-600">Файл чирж тавих эсвэл сонгох</p>
-                                <p className="text-xs text-gray-400 mt-1">.csv, .xlsx, .xls дэмжинэ</p>
+                                <p className="text-sm text-muted-foreground">Файл чирж тавих эсвэл сонгох</p>
+                                <p className="text-xs text-muted-foreground/70 mt-1">.csv, .xlsx, .xls дэмжинэ</p>
                             </div>
                         )}
                     </div>
@@ -499,7 +499,7 @@ export default function AdminImportPage() {
                 <button
                     onClick={handleImport}
                     disabled={!file || !selectedProject || loading}
-                    className="w-full py-3 bg-violet-600 text-white font-semibold rounded-lg hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                    className="w-full py-3 bg-brand text-white font-semibold rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                 >
                     {loading ? (
                         <><Loader2 className="w-5 h-5 animate-spin" /> Импорт хийж байна...</>
@@ -511,27 +511,27 @@ export default function AdminImportPage() {
 
             {/* Result */}
             {result && (
-                <div className={`mt-6 p-6 rounded-xl border ${result.success ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+                <div className={`mt-6 p-6 rounded-xl border ${result.success ? 'bg-status-success-soft border-green-200' : 'bg-status-danger-soft border-status-danger/30'}`}>
                     <div className="flex items-center gap-3 mb-3">
                         {result.success ? (
-                            <CheckCircle2 className="w-6 h-6 text-green-600" />
+                            <CheckCircle2 className="w-6 h-6 text-status-success" />
                         ) : (
-                            <AlertCircle className="w-6 h-6 text-red-600" />
+                            <AlertCircle className="w-6 h-6 text-status-danger" />
                         )}
-                        <p className={`font-semibold ${result.success ? 'text-green-800' : 'text-red-800'}`}>
+                        <p className={`font-semibold ${result.success ? 'text-status-success' : 'text-status-danger'}`}>
                             {result.message}
                         </p>
                     </div>
                     {result.success && (result.imported || 0) > 0 && (
-                        <p className="text-sm text-green-700">✅ {result.imported} мөр амжилттай оруулсан</p>
+                        <p className="text-sm text-status-success">✅ {result.imported} мөр амжилттай оруулсан</p>
                     )}
                     {result.success && (result.updated || 0) > 0 && (
-                        <p className="text-sm text-green-700">🔄 {result.updated} мөр шинэчлэгдсэн</p>
+                        <p className="text-sm text-status-success">🔄 {result.updated} мөр шинэчлэгдсэн</p>
                     )}
                     {result.errors && result.errors.length > 0 && (
-                        <div className="mt-3 p-3 bg-white rounded-lg border">
-                            <p className="text-sm font-medium text-red-700 mb-2">Алдаатай мөрүүд:</p>
-                            <ul className="text-xs text-red-600 space-y-1 max-h-40 overflow-y-auto">
+                        <div className="mt-3 p-3 bg-surface rounded-lg border">
+                            <p className="text-sm font-medium text-status-danger mb-2">Алдаатай мөрүүд:</p>
+                            <ul className="text-xs text-status-danger space-y-1 max-h-40 overflow-y-auto">
                                 {result.errors.map((err, i) => (
                                     <li key={i}>• {err}</li>
                                 ))}

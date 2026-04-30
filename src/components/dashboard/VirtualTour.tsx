@@ -30,11 +30,11 @@ export function VirtualTour({ tourUrl, propertyName, posterImage, aspectRatio = 
             <div className="fixed inset-0 z-50 bg-black">
                 <div className="absolute top-4 right-4 z-10 flex gap-2">
                     <a href={tourUrl} target="_blank" rel="noopener noreferrer"
-                        className="p-2 bg-white/20 backdrop-blur rounded-lg text-white hover:bg-white/30 transition-colors">
+                        className="p-2 bg-surface/20 backdrop-blur rounded-lg text-white hover:bg-surface/30 transition-colors">
                         <ExternalLink className="w-5 h-5" />
                     </a>
                     <button onClick={() => setIsFullscreen(false)}
-                        className="p-2 bg-white/20 backdrop-blur rounded-lg text-white hover:bg-white/30 transition-colors">
+                        className="p-2 bg-surface/20 backdrop-blur rounded-lg text-white hover:bg-surface/30 transition-colors">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -54,7 +54,7 @@ export function VirtualTour({ tourUrl, propertyName, posterImage, aspectRatio = 
     }
 
     return (
-        <div className="rounded-xl overflow-hidden border border-gray-200 bg-gray-900">
+        <div className="rounded-xl overflow-hidden border border-border bg-foreground">
             {!showTour ? (
                 <div
                     className={`relative ${aspectClass} cursor-pointer group`}
@@ -72,7 +72,7 @@ export function VirtualTour({ tourUrl, propertyName, posterImage, aspectRatio = 
                     )}
                     {/* Play overlay */}
                     <div className="absolute inset-0 bg-black/30 group-hover:bg-black/40 transition-colors flex items-center justify-center">
-                        <div className="w-16 h-16 rounded-full bg-white/90 flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg">
+                        <div className="w-16 h-16 rounded-full bg-surface/90 flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg">
                             <div className="text-2xl ml-1">▶</div>
                         </div>
                     </div>
@@ -85,7 +85,7 @@ export function VirtualTour({ tourUrl, propertyName, posterImage, aspectRatio = 
             ) : (
                 <div className={`relative ${aspectClass}`}>
                     {!isLoaded && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-gray-900">
+                        <div className="absolute inset-0 flex items-center justify-center bg-foreground">
                             <div className="text-center">
                                 <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin mx-auto mb-2" />
                                 <p className="text-white/60 text-xs">Тур ачааллаж байна...</p>

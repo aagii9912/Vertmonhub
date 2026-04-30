@@ -53,8 +53,8 @@ export function FeedbackWidget() {
     }
 
     const feedbackTypes = [
-        { id: 'bug' as FeedbackType, icon: Bug, label: 'Алдаа мэдэгдэх', color: 'text-red-500' },
-        { id: 'feature' as FeedbackType, icon: MessageCircle, label: 'Санал хүсэлт', color: 'text-blue-500' },
+        { id: 'bug' as FeedbackType, icon: Bug, label: 'Алдаа мэдэгдэх', color: 'text-status-danger' },
+        { id: 'feature' as FeedbackType, icon: MessageCircle, label: 'Санал хүсэлт', color: 'text-status-info' },
         { id: 'support' as FeedbackType, icon: HelpCircle, label: 'Тусламж', color: 'text-green-500' }
     ];
 
@@ -62,9 +62,9 @@ export function FeedbackWidget() {
         <div className="fixed bottom-6 right-6 z-50">
             {/* Expanded Form */}
             {isExpanded && (
-                <div className="absolute bottom-16 right-0 w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
+                <div className="absolute bottom-16 right-0 w-80 bg-surface rounded-2xl shadow-2xl border border-border/60 overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
                     {/* Header */}
-                    <div className="bg-gradient-to-r from-violet-500 to-purple-600 px-4 py-3 flex items-center justify-between">
+                    <div className="bg-gradient-to-r from-brand to-purple-600 px-4 py-3 flex items-center justify-between">
                         <span className="text-white font-medium">Санал хүсэлт</span>
                         <button
                             onClick={() => setIsExpanded(false)}
@@ -77,8 +77,8 @@ export function FeedbackWidget() {
                     {sent ? (
                         <div className="p-8 text-center">
                             <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
-                            <p className="font-medium text-gray-900">Баярлалаа!</p>
-                            <p className="text-sm text-gray-500">Таны санал хүсэлт илгээгдлээ</p>
+                            <p className="font-medium text-foreground">Баярлалаа!</p>
+                            <p className="text-sm text-muted-foreground">Таны санал хүсэлт илгээгдлээ</p>
                         </div>
                     ) : (
                         <form onSubmit={handleSubmit} className="p-4 space-y-4">
@@ -90,12 +90,12 @@ export function FeedbackWidget() {
                                         type="button"
                                         onClick={() => setFeedback(f => ({ ...f, type: type.id }))}
                                         className={`flex-1 flex flex-col items-center gap-1 p-2 rounded-lg border transition-all ${feedback.type === type.id
-                                                ? 'border-violet-500 bg-violet-50'
-                                                : 'border-gray-200 hover:border-gray-300'
+                                                ? 'border-brand bg-brand-soft'
+                                                : 'border-border hover:border-border-strong'
                                             }`}
                                     >
                                         <type.icon className={`w-5 h-5 ${type.color}`} />
-                                        <span className="text-xs text-gray-600">{type.label}</span>
+                                        <span className="text-xs text-muted-foreground">{type.label}</span>
                                     </button>
                                 ))}
                             </div>
@@ -111,7 +111,7 @@ export function FeedbackWidget() {
                                             ? 'Ямар функц нэмээсэй гэж хүсч байна вэ?'
                                             : 'Бид яаж туслах вэ?'
                                 }
-                                className="w-full h-24 px-3 py-2 text-sm border border-gray-200 rounded-lg resize-none focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                                className="w-full h-24 px-3 py-2 text-sm border border-border rounded-lg resize-none focus:ring-2 focus:ring-brand focus:border-transparent"
                                 required
                             />
 
@@ -121,7 +121,7 @@ export function FeedbackWidget() {
                                 value={feedback.email}
                                 onChange={e => setFeedback(f => ({ ...f, email: e.target.value }))}
                                 placeholder="Имэйл (заавал биш)"
-                                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-violet-500 focus:border-transparent"
+                                className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-transparent"
                             />
 
                             <Button type="submit" className="w-full" disabled={sending || !feedback.message}>
@@ -144,8 +144,8 @@ export function FeedbackWidget() {
                     if (!isOpen) setIsExpanded(false);
                 }}
                 className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all ${isOpen
-                        ? 'bg-gray-900 rotate-45'
-                        : 'bg-gradient-to-r from-violet-500 to-purple-600 hover:shadow-xl hover:scale-105'
+                        ? 'bg-foreground rotate-45'
+                        : 'bg-gradient-to-r from-brand to-purple-600 hover:shadow-xl hover:scale-105'
                     }`}
             >
                 {isOpen ? (
@@ -165,11 +165,11 @@ export function FeedbackWidget() {
                                 setFeedback(f => ({ ...f, type: type.id }));
                                 setIsExpanded(true);
                             }}
-                            className="flex items-center gap-3 px-4 py-2.5 bg-white rounded-full shadow-lg hover:shadow-xl transition-all hover:scale-105"
+                            className="flex items-center gap-3 px-4 py-2.5 bg-surface rounded-full shadow-lg hover:shadow-xl transition-all hover:scale-105"
                             style={{ animationDelay: `${i * 50}ms` }}
                         >
                             <type.icon className={`w-5 h-5 ${type.color}`} />
-                            <span className="text-sm font-medium text-gray-700">{type.label}</span>
+                            <span className="text-sm font-medium text-foreground">{type.label}</span>
                         </button>
                     ))}
                 </div>

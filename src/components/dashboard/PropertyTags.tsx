@@ -58,7 +58,7 @@ export function PropertyTags({ selected, onChange, readonly = false }: PropertyT
         <div className="space-y-4">
             {categories.map(cat => (
                 <div key={cat}>
-                    <p className="text-xs font-medium text-gray-500 uppercase mb-2">{cat}</p>
+                    <p className="text-xs font-medium text-muted-foreground uppercase mb-2">{cat}</p>
                     <div className="flex flex-wrap gap-2">
                         {AMENITIES.filter(a => a.category === cat).map(amenity => {
                             const active = selected.includes(amenity.key);
@@ -69,10 +69,10 @@ export function PropertyTags({ selected, onChange, readonly = false }: PropertyT
                                     onClick={() => toggle(amenity.key)}
                                     disabled={readonly}
                                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${active
-                                        ? 'bg-emerald-100 text-emerald-700 border border-emerald-300'
+                                        ? 'bg-status-success-soft text-status-success border border-status-success/40'
                                         : readonly
-                                            ? 'bg-gray-50 text-gray-400 border border-gray-100'
-                                            : 'bg-gray-50 text-gray-500 border border-gray-200 hover:border-gray-300 cursor-pointer'
+                                            ? 'bg-surface-2/40 text-muted-foreground/70 border border-border/60'
+                                            : 'bg-surface-2/40 text-muted-foreground border border-border hover:border-border-strong cursor-pointer'
                                         }`}
                                 >
                                     <Icon className="w-3.5 h-3.5" />
@@ -98,7 +98,7 @@ export function PropertyTagsBadges({ tags }: { tags: string[] }) {
                 if (!amenity) return null;
                 const Icon = amenity.icon;
                 return (
-                    <span key={key} className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs">
+                    <span key={key} className="inline-flex items-center gap-1 px-2 py-0.5 bg-surface-2 text-muted-foreground rounded-full text-xs">
                         <Icon className="w-3 h-3" />
                         {amenity.label}
                     </span>

@@ -134,8 +134,8 @@ export default function AISettingsPage() {
         return (
             <div className="flex items-center justify-center h-96">
                 <div className="text-center">
-                    <div className="w-10 h-10 border-4 border-violet-200 border-t-violet-600 rounded-full animate-spin mx-auto" />
-                    <p className="text-sm text-gray-500 mt-3">Ачааллаж байна...</p>
+                    <div className="w-10 h-10 border-4 border-brand/30 border-t-violet-600 rounded-full animate-spin mx-auto" />
+                    <p className="text-sm text-muted-foreground mt-3">Ачааллаж байна...</p>
                 </div>
             </div>
         );
@@ -145,13 +145,13 @@ export default function AISettingsPage() {
         <div className="space-y-6 max-w-5xl">
             {/* Header */}
             <div>
-                <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                    <div className="w-9 h-9 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl flex items-center justify-center">
+                <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+                    <div className="w-9 h-9 bg-gradient-to-br from-brand to-purple-600 rounded-xl flex items-center justify-center">
                         <Bot className="w-5 h-5 text-white" />
                     </div>
                     AI Тохируулга
                 </h1>
-                <p className="text-gray-500 mt-1">Chatbot-ийн мэдээлэл, зан байдал, FAQ-г удирдах</p>
+                <p className="text-muted-foreground mt-1">Chatbot-ийн мэдээлэл, зан байдал, FAQ-г удирдах</p>
             </div>
 
             {/* Tabs */}
@@ -160,8 +160,8 @@ export default function AISettingsPage() {
                     <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                         className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all whitespace-nowrap text-sm
                             ${activeTab === tab.id
-                                ? 'bg-violet-600 text-white shadow-lg shadow-violet-200'
-                                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                ? 'bg-brand text-white shadow-lg shadow-violet-200'
+                                : 'bg-surface-2 text-muted-foreground hover:bg-surface-3'
                             }`}>
                         <tab.icon className="w-4 h-4" />{tab.label}
                     </button>
@@ -170,12 +170,12 @@ export default function AISettingsPage() {
 
             {/* Success / Error */}
             {success && (
-                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 flex items-center gap-2">
+                <div className="p-4 bg-status-success-soft border border-status-success/30 rounded-xl text-status-success flex items-center gap-2">
                     <Sparkles className="w-5 h-5" /> Амжилттай хадгалагдлаа!
                 </div>
             )}
             {error && (
-                <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 flex items-center gap-2">
+                <div className="p-4 bg-status-danger-soft border border-status-danger/30 rounded-xl text-status-danger flex items-center gap-2">
                     <AlertCircle className="w-5 h-5" />{error}
                     <button onClick={() => setError(null)} className="ml-auto"><X className="w-4 h-4" /></button>
                 </div>
@@ -226,20 +226,20 @@ function GeneralSection({ isAiActive, setIsAiActive, aiEmotion, setAiEmotion, sh
     return (
         <div className="space-y-5">
             {/* AI Toggle */}
-            <div className={`rounded-2xl border-2 p-5 transition-all ${isAiActive ? 'bg-white border-emerald-200' : 'bg-red-50 border-red-200'}`}>
+            <div className={`rounded-2xl border-2 p-5 transition-all ${isAiActive ? 'bg-surface border-status-success/30' : 'bg-status-danger-soft border-status-danger/30'}`}>
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isAiActive ? 'bg-emerald-100' : 'bg-red-100'}`}>
-                            <Zap className={`w-5 h-5 ${isAiActive ? 'text-emerald-600' : 'text-red-500'}`} />
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isAiActive ? 'bg-status-success-soft' : 'bg-status-danger-soft'}`}>
+                            <Zap className={`w-5 h-5 ${isAiActive ? 'text-status-success' : 'text-status-danger'}`} />
                         </div>
                         <div>
-                            <h3 className="font-semibold text-gray-900">AI Chatbot {isAiActive ? 'Идэвхтэй' : 'Унтарсан'}</h3>
-                            <p className="text-sm text-gray-500">{isAiActive ? 'Messenger-ээр хэрэглэгчдэд автомат хариу өгч байна' : 'Зөвхөн админ хариу өгнө'}</p>
+                            <h3 className="font-semibold text-foreground">AI Chatbot {isAiActive ? 'Идэвхтэй' : 'Унтарсан'}</h3>
+                            <p className="text-sm text-muted-foreground">{isAiActive ? 'Messenger-ээр хэрэглэгчдэд автомат хариу өгч байна' : 'Зөвхөн админ хариу өгнө'}</p>
                         </div>
                     </div>
                     <button onClick={() => setIsAiActive(!isAiActive)}
-                        className={`w-14 h-8 rounded-full transition-colors relative ${isAiActive ? 'bg-emerald-500' : 'bg-gray-300'}`}>
-                        <div className={`absolute top-1 w-6 h-6 bg-white rounded-full transition-all shadow-sm ${isAiActive ? 'left-7' : 'left-1'}`} />
+                        className={`w-14 h-8 rounded-full transition-colors relative ${isAiActive ? 'bg-status-success' : 'bg-border-strong'}`}>
+                        <div className={`absolute top-1 w-6 h-6 bg-surface rounded-full transition-all shadow-sm ${isAiActive ? 'left-7' : 'left-1'}`} />
                     </button>
                 </div>
             </div>
@@ -247,25 +247,25 @@ function GeneralSection({ isAiActive, setIsAiActive, aiEmotion, setAiEmotion, sh
             {/* AI Emotion */}
             <Card>
                 <CardContent className="p-5">
-                    <h3 className="font-semibold text-gray-900 mb-3">🎭 AI Зан байдал</h3>
+                    <h3 className="font-semibold text-foreground mb-3">🎭 AI Зан байдал</h3>
                     <div className="grid grid-cols-5 gap-2 mb-4">
                         {emotionOptions.map((opt) => (
                             <button key={opt.value} onClick={() => setAiEmotion(opt.value)}
                                 className={`p-3 rounded-xl border-2 text-center transition-all
-                                    ${aiEmotion === opt.value ? 'border-violet-500 bg-violet-50 shadow-md' : 'border-gray-200 hover:border-gray-300'}`}>
+                                    ${aiEmotion === opt.value ? 'border-brand bg-brand-soft shadow-md' : 'border-border hover:border-border-strong'}`}>
                                 <div className="text-2xl mb-1">{opt.emoji}</div>
-                                <p className={`text-xs font-medium ${aiEmotion === opt.value ? 'text-violet-700' : 'text-gray-600'}`}>{opt.label}</p>
+                                <p className={`text-xs font-medium ${aiEmotion === opt.value ? 'text-brand-strong' : 'text-muted-foreground'}`}>{opt.label}</p>
                             </button>
                         ))}
                     </div>
-                    <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                    <div className="bg-surface-2/40 rounded-xl p-4 border border-border/60">
                         <div className="flex gap-3 items-start">
-                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center flex-shrink-0">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand to-purple-600 flex items-center justify-center flex-shrink-0">
                                 <Bot className="w-4 h-4 text-white" />
                             </div>
                             <div>
-                                <p className="text-xs font-medium text-gray-400 mb-1">Жишээ хариулт:</p>
-                                <p className="text-sm text-gray-700 italic">"{emotionOptions.find(e => e.value === aiEmotion)?.example}"</p>
+                                <p className="text-xs font-medium text-muted-foreground/70 mb-1">Жишээ хариулт:</p>
+                                <p className="text-sm text-foreground italic">"{emotionOptions.find(e => e.value === aiEmotion)?.example}"</p>
                             </div>
                         </div>
                     </div>
@@ -275,8 +275,8 @@ function GeneralSection({ isAiActive, setIsAiActive, aiEmotion, setAiEmotion, sh
             {/* Business Description */}
             <Card>
                 <CardContent className="p-5">
-                    <h3 className="font-semibold text-gray-900 mb-1">🏢 Компанийн тайлбар</h3>
-                    <p className="text-sm text-gray-500 mb-3">AI энэ мэдээллийг ашиглан компанийн талаар хариулна</p>
+                    <h3 className="font-semibold text-foreground mb-1">🏢 Компанийн тайлбар</h3>
+                    <p className="text-sm text-muted-foreground mb-3">AI энэ мэдээллийг ашиглан компанийн талаар хариулна</p>
                     <Textarea
                         value={shopDescription}
                         onChange={(e) => setShopDescription(e.target.value)}
@@ -290,8 +290,8 @@ function GeneralSection({ isAiActive, setIsAiActive, aiEmotion, setAiEmotion, sh
             {/* AI Instructions */}
             <Card>
                 <CardContent className="p-5">
-                    <h3 className="font-semibold text-gray-900 mb-1">📝 AI Заавар</h3>
-                    <p className="text-sm text-gray-500 mb-3">AI хэрхэн ярих, яаж хариулахыг заана</p>
+                    <h3 className="font-semibold text-foreground mb-1">📝 AI Заавар</h3>
+                    <p className="text-sm text-muted-foreground mb-3">AI хэрхэн ярих, яаж хариулахыг заана</p>
                     <Textarea
                         value={aiInstructions}
                         onChange={(e) => setAiInstructions(e.target.value)}
@@ -357,12 +357,12 @@ function KnowledgeSection({ customKnowledge, setCustomKnowledge, saving, setSavi
             {/* Info banner */}
             <div className="bg-gradient-to-r from-violet-50 to-purple-50 rounded-2xl border border-violet-100 p-5">
                 <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 bg-violet-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <Database className="w-5 h-5 text-violet-600" />
+                    <div className="w-10 h-10 bg-brand-soft rounded-xl flex items-center justify-center flex-shrink-0">
+                        <Database className="w-5 h-5 text-brand-strong" />
                     </div>
                     <div>
-                        <h3 className="font-semibold text-gray-900">AI Мэдээллийн Сан</h3>
-                        <p className="text-sm text-gray-600 mt-0.5">
+                        <h3 className="font-semibold text-foreground">AI Мэдээллийн Сан</h3>
+                        <p className="text-sm text-muted-foreground mt-0.5">
                             AI chatbot хэрэглэгчдэд хариулахдаа энд оруулсан мэдээллийг ашиглана.
                             Жишээ: утасны дугаар, ажлын цаг, урьдчилгаа гэх мэт.
                         </p>
@@ -373,14 +373,14 @@ function KnowledgeSection({ customKnowledge, setCustomKnowledge, saving, setSavi
             {/* Add new */}
             <Card>
                 <CardContent className="p-5">
-                    <h3 className="font-semibold text-gray-900 mb-3">➕ Мэдээлэл нэмэх</h3>
+                    <h3 className="font-semibold text-foreground mb-3">➕ Мэдээлэл нэмэх</h3>
                     <div className="flex gap-3 items-end">
                         <div className="flex-1">
-                            <label className="text-xs font-medium text-gray-500 mb-1 block">Гарчиг / Түлхүүр</label>
+                            <label className="text-xs font-medium text-muted-foreground mb-1 block">Гарчиг / Түлхүүр</label>
                             <Input placeholder="Жишээ: Борлуулалтын утас" value={newKey} onChange={(e) => setNewKey(e.target.value)} />
                         </div>
                         <div className="flex-[2]">
-                            <label className="text-xs font-medium text-gray-500 mb-1 block">Утга / Агуулга</label>
+                            <label className="text-xs font-medium text-muted-foreground mb-1 block">Утга / Агуулга</label>
                             <Input placeholder="Жишээ: 9911-2233, 8800-1122" value={newValue} onChange={(e) => setNewValue(e.target.value)} />
                         </div>
                         <Button onClick={() => {
@@ -396,11 +396,11 @@ function KnowledgeSection({ customKnowledge, setCustomKnowledge, saving, setSavi
                     {/* Quick suggestions */}
                     {customKnowledge.length === 0 && (
                         <div className="mt-4">
-                            <p className="text-xs text-gray-400 mb-2">💡 Түгээмэл мэдээлэл:</p>
+                            <p className="text-xs text-muted-foreground/70 mb-2">💡 Түгээмэл мэдээлэл:</p>
                             <div className="flex flex-wrap gap-2">
                                 {suggestions.map((s) => (
                                     <button key={s.key} onClick={() => setCustomKnowledge([...customKnowledge, s])}
-                                        className="px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-lg text-xs text-gray-600 hover:bg-violet-50 hover:border-violet-200 hover:text-violet-700 transition-colors">
+                                        className="px-3 py-1.5 bg-surface-2/40 border border-border rounded-lg text-xs text-muted-foreground hover:bg-brand-soft hover:border-brand/30 hover:text-brand-strong transition-colors">
                                         + {s.key}
                                     </button>
                                 ))}
@@ -414,24 +414,24 @@ function KnowledgeSection({ customKnowledge, setCustomKnowledge, saving, setSavi
             <div className="space-y-2">
                 {customKnowledge.length === 0 ? (
                     <Card>
-                        <CardContent className="p-8 text-center text-gray-500">
-                            <BookOpen className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                        <CardContent className="p-8 text-center text-muted-foreground">
+                            <BookOpen className="w-12 h-12 mx-auto mb-3 text-muted-foreground/60" />
                             <p className="font-medium">Мэдээлэл байхгүй</p>
                             <p className="text-sm mt-1">Дээрх хэсгээс мэдээлэл нэмнэ үү</p>
                         </CardContent>
                     </Card>
                 ) : (
                     customKnowledge.map((item, idx) => (
-                        <div key={idx} className="flex items-center gap-3 p-4 bg-white border border-gray-200 rounded-xl hover:border-violet-200 transition-colors group">
-                            <div className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center text-violet-600 font-bold text-xs flex-shrink-0">
+                        <div key={idx} className="flex items-center gap-3 p-4 bg-surface border border-border rounded-xl hover:border-brand/30 transition-colors group">
+                            <div className="w-8 h-8 rounded-lg bg-brand-soft flex items-center justify-center text-brand-strong font-bold text-xs flex-shrink-0">
                                 {idx + 1}
                             </div>
                             <div className="flex-1 min-w-0">
-                                <p className="font-medium text-gray-900 text-sm">{item.key}</p>
-                                <p className="text-sm text-gray-600 truncate">{item.value}</p>
+                                <p className="font-medium text-foreground text-sm">{item.key}</p>
+                                <p className="text-sm text-muted-foreground truncate">{item.value}</p>
                             </div>
                             <button onClick={() => setCustomKnowledge(customKnowledge.filter((_, i) => i !== idx))}
-                                className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all">
+                                className="p-2 text-muted-foreground/70 hover:text-status-danger hover:bg-status-danger-soft rounded-lg opacity-0 group-hover:opacity-100 transition-all">
                                 <Trash2 className="w-4 h-4" />
                             </button>
                         </div>
@@ -441,7 +441,7 @@ function KnowledgeSection({ customKnowledge, setCustomKnowledge, saving, setSavi
 
             {customKnowledge.length > 0 && (
                 <div className="flex justify-between items-center">
-                    <p className="text-sm text-gray-500">Нийт {customKnowledge.length} мэдээлэл</p>
+                    <p className="text-sm text-muted-foreground">Нийт {customKnowledge.length} мэдээлэл</p>
                     <Button onClick={handleSave} disabled={saving}>
                         <Save className="w-4 h-4 mr-2" /> {saving ? 'Хадгалж байна...' : 'Хадгалах'}
                     </Button>
@@ -489,8 +489,8 @@ function FAQSection({ faqs, setFaqs, editingFaq, setEditingFaq, setError }: {
         <div className="space-y-5">
             <div className="flex justify-between items-center">
                 <div>
-                    <h3 className="text-lg font-semibold text-gray-900">Түгээмэл асуултууд (FAQ)</h3>
-                    <p className="text-sm text-gray-500">AI chatbot эдгээр асуулт-хариултуудыг ашиглан хэрэглэгчдэд хариулна</p>
+                    <h3 className="text-lg font-semibold text-foreground">Түгээмэл асуултууд (FAQ)</h3>
+                    <p className="text-sm text-muted-foreground">AI chatbot эдгээр асуулт-хариултуудыг ашиглан хэрэглэгчдэд хариулна</p>
                 </div>
                 <Button onClick={() => setEditingFaq({ question: '', answer: '', category: 'general' })}>
                     <Plus className="w-4 h-4 mr-2" /> Нэмэх
@@ -498,7 +498,7 @@ function FAQSection({ faqs, setFaqs, editingFaq, setEditingFaq, setError }: {
             </div>
 
             {editingFaq && (
-                <Card className="border-violet-200 bg-violet-50/50">
+                <Card className="border-brand/30 bg-brand-soft/50">
                     <CardContent className="p-5 space-y-3">
                         <Input placeholder="Асуулт (жишээ: Урьдчилгаа хэд вэ?)" value={editingFaq.question || ''}
                             onChange={(e) => setEditingFaq({ ...editingFaq, question: e.target.value })} />
@@ -517,8 +517,8 @@ function FAQSection({ faqs, setFaqs, editingFaq, setEditingFaq, setError }: {
 
             {faqs.length === 0 && !editingFaq ? (
                 <Card>
-                    <CardContent className="py-12 text-center text-gray-500">
-                        <HelpCircle className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                    <CardContent className="py-12 text-center text-muted-foreground">
+                        <HelpCircle className="w-12 h-12 mx-auto mb-3 text-muted-foreground/60" />
                         <p className="font-medium">FAQ байхгүй</p>
                         <p className="text-sm mt-1">Хэрэглэгчдийн түгээмэл асуултуудыг нэмнэ үү</p>
                         <Button className="mt-4" variant="secondary" onClick={() => setEditingFaq({ question: '', answer: '', category: 'general' })}>
@@ -533,17 +533,17 @@ function FAQSection({ faqs, setFaqs, editingFaq, setEditingFaq, setError }: {
                             <CardContent className="p-4">
                                 <div className="flex justify-between items-start gap-4">
                                     <div className="flex-1 min-w-0">
-                                        <p className="font-medium text-gray-900">❓ {faq.question}</p>
-                                        <p className="text-sm text-gray-600 mt-1.5 whitespace-pre-wrap">{faq.answer}</p>
+                                        <p className="font-medium text-foreground">❓ {faq.question}</p>
+                                        <p className="text-sm text-muted-foreground mt-1.5 whitespace-pre-wrap">{faq.answer}</p>
                                         {faq.usage_count > 0 && (
-                                            <p className="text-xs text-gray-400 mt-2">Ашиглагдсан: {faq.usage_count}x</p>
+                                            <p className="text-xs text-muted-foreground/70 mt-2">Ашиглагдсан: {faq.usage_count}x</p>
                                         )}
                                     </div>
                                     <div className="flex gap-1">
-                                        <button onClick={() => setEditingFaq(faq)} className="p-2 text-gray-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg transition-colors">
+                                        <button onClick={() => setEditingFaq(faq)} className="p-2 text-muted-foreground/70 hover:text-brand-strong hover:bg-brand-soft rounded-lg transition-colors">
                                             <Edit2 className="w-4 h-4" />
                                         </button>
-                                        <button onClick={() => deleteFaq(faq.id)} className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                                        <button onClick={() => deleteFaq(faq.id)} className="p-2 text-muted-foreground/70 hover:text-status-danger hover:bg-status-danger-soft rounded-lg transition-colors">
                                             <Trash2 className="w-4 h-4" />
                                         </button>
                                     </div>
@@ -576,21 +576,21 @@ function NotificationsSection({ notifyOnContact, setNotifyOnContact, notifyOnSup
         <div className="space-y-5">
             <Card>
                 <CardContent className="p-5">
-                    <h3 className="font-semibold text-gray-900 mb-1">🔔 Мэдэгдлийн тохиргоо</h3>
-                    <p className="text-sm text-gray-500 mb-5">AI ямар тохиолдолд танд мэдэгдэл илгээхийг тохируулна</p>
+                    <h3 className="font-semibold text-foreground mb-1">🔔 Мэдэгдлийн тохиргоо</h3>
+                    <p className="text-sm text-muted-foreground mb-5">AI ямар тохиолдолд танд мэдэгдэл илгээхийг тохируулна</p>
                     <div className="space-y-3">
                         {items.map((item) => (
-                            <div key={item.label} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors">
+                            <div key={item.label} className="flex items-center justify-between p-4 bg-surface-2/40 rounded-xl hover:bg-surface-2 transition-colors">
                                 <div className="flex items-center gap-3">
                                     <span className="text-xl">{item.emoji}</span>
                                     <div>
-                                        <p className="font-medium text-gray-900 text-sm">{item.label}</p>
-                                        <p className="text-xs text-gray-500">{item.desc}</p>
+                                        <p className="font-medium text-foreground text-sm">{item.label}</p>
+                                        <p className="text-xs text-muted-foreground">{item.desc}</p>
                                     </div>
                                 </div>
                                 <button onClick={item.toggle}
-                                    className={`w-12 h-6 rounded-full transition-colors relative ${item.value ? 'bg-violet-600' : 'bg-gray-300'}`}>
-                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all shadow-sm ${item.value ? 'left-7' : 'left-1'}`} />
+                                    className={`w-12 h-6 rounded-full transition-colors relative ${item.value ? 'bg-brand' : 'bg-border-strong'}`}>
+                                    <div className={`absolute top-1 w-4 h-4 bg-surface rounded-full transition-all shadow-sm ${item.value ? 'left-7' : 'left-1'}`} />
                                 </button>
                             </div>
                         ))}

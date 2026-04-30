@@ -24,21 +24,20 @@ export function MessageBubble({ message, onAddToCart }: MessageBubbleProps) {
             <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} w-full`}>
                 {/* AI Avatar */}
                 {!isUser && (
-                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 
-                            flex items-center justify-center mr-2 flex-shrink-0">
-                        <Bot className="w-4 h-4 text-white" />
+                    <div className="w-8 h-8 rounded-full bg-foreground text-background flex items-center justify-center mr-2 flex-shrink-0">
+                        <Bot className="w-4 h-4" />
                     </div>
                 )}
 
                 <div className={`max-w-[85%] ${isUser ? 'order-first' : ''}`}>
                     {/* Message Content */}
-                    <div className={`
-              px-4 py-2.5 rounded-2xl
-              ${isUser
-                            ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-br-md shadow-md shadow-violet-500/10'
-                            : 'bg-white border border-gray-100 text-gray-900 rounded-bl-md shadow-sm'
+                    <div
+                        className={
+                            isUser
+                                ? 'px-4 py-2.5 rounded-xl bg-brand text-brand-fg rounded-br-md shadow-sm'
+                                : 'px-4 py-2.5 rounded-xl bg-surface border border-border text-foreground rounded-bl-md shadow-xs'
                         }
-            `}>
+                    >
                         <p className="text-sm leading-relaxed whitespace-pre-wrap">
                             {message.content}
                         </p>

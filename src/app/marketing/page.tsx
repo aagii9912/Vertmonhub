@@ -66,34 +66,34 @@ export default function MarketingPage() {
     const formatCurrency = (v: number) => v >= 1000000 ? `${(v / 1000000).toFixed(1)}M₮` : v >= 1000 ? `${(v / 1000).toFixed(0)}K₮` : v.toLocaleString() + '₮';
 
     const sections = [
-        { title: 'Кампанит ажил', icon: Megaphone, href: '/marketing/campaigns', desc: 'Маркетингийн кампанит ажлууд', color: 'bg-blue-100 text-blue-600' },
-        { title: 'Сошиал медиа', icon: Share2, href: '/marketing/social', desc: 'Нийтлэлүүд болон оролцоо', color: 'bg-pink-100 text-pink-600' },
-        { title: 'Зар сурталчилгаа', icon: BarChart3, href: '/marketing/ads', desc: 'Төлбөрт зарын кампанит ажлууд', color: 'bg-amber-100 text-amber-600' },
-        { title: 'Контент календарь', icon: CalendarDays, href: '/marketing/calendar', desc: 'Контент төлөвлөлт', color: 'bg-emerald-100 text-emerald-600' },
-        { title: 'Мессеж маркетинг', icon: Users, href: '/marketing/messaging', desc: 'Имэйл болон SMS', color: 'bg-indigo-100 text-indigo-600' },
-        { title: 'Вэб аналитик', icon: TrendingUp, href: '/marketing/analytics', desc: 'Хандалтын статистик', color: 'bg-purple-100 text-purple-600' },
+        { title: 'Кампанит ажил', icon: Megaphone, href: '/marketing/campaigns', desc: 'Маркетингийн кампанит ажлууд', color: 'bg-status-info-soft text-status-info' },
+        { title: 'Сошиал медиа', icon: Share2, href: '/marketing/social', desc: 'Нийтлэлүүд болон оролцоо', color: 'bg-brand-soft text-brand-strong' },
+        { title: 'Зар сурталчилгаа', icon: BarChart3, href: '/marketing/ads', desc: 'Төлбөрт зарын кампанит ажлууд', color: 'bg-status-pending-soft text-status-pending' },
+        { title: 'Контент календарь', icon: CalendarDays, href: '/marketing/calendar', desc: 'Контент төлөвлөлт', color: 'bg-status-success-soft text-status-success' },
+        { title: 'Мессеж маркетинг', icon: Users, href: '/marketing/messaging', desc: 'Имэйл болон SMS', color: 'bg-status-info-soft text-status-info' },
+        { title: 'Вэб аналитик', icon: TrendingUp, href: '/marketing/analytics', desc: 'Хандалтын статистик', color: 'bg-brand-soft text-brand-strong' },
     ];
 
     if (loading) {
-        return (<div className="flex items-center justify-center min-h-[400px]"><div className="flex items-center gap-3"><div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" /><span className="text-gray-500">Татаж байна...</span></div></div>);
+        return (<div className="flex items-center justify-center min-h-[400px]"><div className="flex items-center gap-3"><div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" /><span className="text-muted-foreground">Татаж байна...</span></div></div>);
     }
 
     return (
         <div className="space-y-6">
             <div>
-                <h1 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center gap-2">
-                    <TrendingUp className="w-6 h-6 text-emerald-600" />
+                <h1 className="text-xl md:text-2xl font-bold text-foreground flex items-center gap-2">
+                    <TrendingUp className="w-6 h-6 text-status-success" />
                     Маркетинг
                 </h1>
-                <p className="text-sm text-gray-500 mt-1">Маркетингийн ерөнхий тойм</p>
+                <p className="text-sm text-muted-foreground mt-1">Маркетингийн ерөнхий тойм</p>
             </div>
 
             {/* Overview Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card><CardContent className="p-4"><p className="text-sm text-gray-500">Кампани</p><p className="text-2xl font-bold mt-1">{overview.campaigns}</p><p className="text-xs text-emerald-600">{overview.activeCampaigns} идэвхтэй</p></CardContent></Card>
-                <Card><CardContent className="p-4"><p className="text-sm text-gray-500">Нийтлэл</p><p className="text-2xl font-bold mt-1">{overview.socialPosts}</p></CardContent></Card>
-                <Card><CardContent className="p-4"><p className="text-sm text-gray-500">Зарын зардал</p><p className="text-2xl font-bold mt-1">{formatCurrency(overview.adSpend)}</p></CardContent></Card>
-                <Card><CardContent className="p-4"><p className="text-sm text-gray-500">Ирэх контент</p><p className="text-2xl font-bold mt-1">{overview.upcomingContent}</p></CardContent></Card>
+                <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Кампани</p><p className="text-2xl font-bold mt-1">{overview.campaigns}</p><p className="text-xs text-status-success">{overview.activeCampaigns} идэвхтэй</p></CardContent></Card>
+                <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Нийтлэл</p><p className="text-2xl font-bold mt-1">{overview.socialPosts}</p></CardContent></Card>
+                <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Зарын зардал</p><p className="text-2xl font-bold mt-1">{formatCurrency(overview.adSpend)}</p></CardContent></Card>
+                <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Ирэх контент</p><p className="text-2xl font-bold mt-1">{overview.upcomingContent}</p></CardContent></Card>
             </div>
 
             {/* Navigation Cards */}
@@ -106,10 +106,10 @@ export default function MarketingPage() {
                                     <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${section.color}`}>
                                         <section.icon className="w-5 h-5" />
                                     </div>
-                                    <ArrowUpRight className="w-4 h-4 text-gray-400" />
+                                    <ArrowUpRight className="w-4 h-4 text-muted-foreground/70" />
                                 </div>
-                                <h3 className="font-semibold text-gray-900">{section.title}</h3>
-                                <p className="text-sm text-gray-500 mt-1">{section.desc}</p>
+                                <h3 className="font-semibold text-foreground">{section.title}</h3>
+                                <p className="text-sm text-muted-foreground mt-1">{section.desc}</p>
                             </CardContent>
                         </Card>
                     </Link>

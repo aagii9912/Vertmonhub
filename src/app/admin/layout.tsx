@@ -82,7 +82,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
     if (loading || !isLoaded) {
         return (
-            <div className="min-h-screen bg-gray-100 flex items-center justify-center">
+            <div className="min-h-screen bg-surface-2 flex items-center justify-center">
                 <div className="animate-spin w-8 h-8 border-4 border-violet-600 border-t-transparent rounded-full"></div>
             </div>
         );
@@ -93,7 +93,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     }
 
     return (
-        <div className="min-h-screen bg-gray-100">
+        <div className="min-h-screen bg-surface-2">
             {/* Mobile sidebar overlay */}
             {sidebarOpen && (
                 <div
@@ -104,16 +104,16 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
             {/* Sidebar */}
             <aside className={`
-                fixed top-0 left-0 z-50 h-full w-64 bg-gray-900 text-white
+                fixed top-0 left-0 z-50 h-full w-64 bg-foreground text-background
                 transform transition-transform duration-200 ease-in-out
                 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}
                 lg:translate-x-0
             `}>
                 {/* Logo */}
-                <div className="h-16 flex items-center justify-between px-4 border-b border-gray-800">
-                    <span className="text-xl font-bold text-violet-400">Vertmon Admin</span>
+                <div className="h-16 flex items-center justify-between px-4 border-b border-background/10">
+                    <span className="heading-display text-lg text-background">Vertmon Admin</span>
                     <button
-                        className="lg:hidden p-2 hover:bg-gray-800 rounded-lg"
+                        className="lg:hidden p-2 hover:bg-background/10 rounded-md"
                         onClick={() => setSidebarOpen(false)}
                     >
                         <X className="w-5 h-5" />
@@ -128,9 +128,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                             <Link
                                 key={item.href}
                                 href={item.href}
-                                className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${isActive
-                                    ? 'bg-violet-600 text-white'
-                                    : 'text-gray-300 hover:bg-gray-800 hover:text-white'
+                                className={`flex items-center gap-3 px-4 py-3 rounded-md transition-colors ${isActive
+                                    ? 'bg-brand text-brand-fg'
+                                    : 'text-background/70 hover:bg-background/10 hover:text-background'
                                     }`}
                                 onClick={() => setSidebarOpen(false)}
                             >
@@ -142,19 +142,19 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 </nav>
 
                 {/* Admin info */}
-                <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-800">
+                <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-background/10">
                     <div className="flex items-center gap-3 px-4 py-2">
-                        <div className="w-8 h-8 rounded-full bg-violet-600 flex items-center justify-center text-sm font-bold">
+                        <div className="w-8 h-8 rounded-full bg-brand flex items-center justify-center text-sm font-medium text-brand-fg">
                             {admin.email[0].toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{admin.email}</p>
-                            <p className="text-xs text-gray-400 capitalize">{admin.role.replace('_', ' ')}</p>
+                            <p className="text-sm font-medium truncate text-background">{admin.email}</p>
+                            <p className="text-xs text-background/60 capitalize">{admin.role.replace('_', ' ')}</p>
                         </div>
                     </div>
                     <Link
                         href="/dashboard"
-                        className="flex items-center gap-3 px-4 py-2 mt-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+                        className="flex items-center gap-3 px-4 py-2 mt-2 text-background/70 hover:text-background hover:bg-background/10 rounded-md transition-colors"
                     >
                         <LogOut className="w-5 h-5" />
                         <span>Exit Admin</span>
@@ -165,24 +165,24 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             {/* Main content */}
             <div className="lg:pl-64">
                 {/* Top bar */}
-                <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 lg:px-8">
+                <header className="h-16 bg-surface border-b border-border flex items-center justify-between px-4 lg:px-8">
                     <button
-                        className="lg:hidden p-2 hover:bg-gray-100 rounded-lg"
+                        className="lg:hidden p-2 hover:bg-surface-2 rounded-lg"
                         onClick={() => setSidebarOpen(true)}
                     >
                         <Menu className="w-6 h-6" />
                     </button>
 
-                    <div className="flex items-center gap-2 text-sm text-gray-500">
-                        <Link href="/admin" className="hover:text-gray-900">Admin</Link>
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Link href="/admin" className="hover:text-foreground">Admin</Link>
                         <ChevronRight className="w-4 h-4" />
-                        <span className="text-gray-900 font-medium">
+                        <span className="text-foreground font-medium">
                             {navItems.find(n => pathname?.startsWith(n.href))?.label || 'Dashboard'}
                         </span>
                     </div>
 
                     <div className="flex items-center gap-4">
-                        <span className="text-sm text-gray-500">
+                        <span className="text-sm text-muted-foreground">
                             {new Date().toLocaleDateString('mn-MN', {
                                 weekday: 'long',
                                 year: 'numeric',

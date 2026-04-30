@@ -23,11 +23,11 @@ interface FloorPlanProps {
 }
 
 const STATUS_COLORS: Record<string, { bg: string; border: string; text: string; label: string }> = {
-    available: { bg: 'bg-emerald-100 hover:bg-emerald-200', border: 'border-emerald-400', text: 'text-emerald-800', label: 'Чөлөөтэй' },
-    reserved: { bg: 'bg-yellow-100 hover:bg-yellow-200', border: 'border-yellow-400', text: 'text-yellow-800', label: 'Захиалсан' },
-    sold: { bg: 'bg-gray-200', border: 'border-gray-400', text: 'text-gray-500', label: 'Зарагдсан' },
-    rented: { bg: 'bg-blue-100 hover:bg-blue-200', border: 'border-blue-400', text: 'text-blue-800', label: 'Түрээс' },
-    barter: { bg: 'bg-orange-100 hover:bg-orange-200', border: 'border-orange-400', text: 'text-orange-800', label: 'Бартер' },
+    available: { bg: 'bg-status-success-soft hover:bg-status-success', border: 'border-status-success', text: 'text-status-success', label: 'Чөлөөтэй' },
+    reserved: { bg: 'bg-status-pending-soft hover:bg-status-pending', border: 'border-yellow-400', text: 'text-status-pending', label: 'Захиалсан' },
+    sold: { bg: 'bg-surface-3', border: 'border-border', text: 'text-muted-foreground', label: 'Зарагдсан' },
+    rented: { bg: 'bg-status-info-soft hover:bg-status-info', border: 'border-status-info', text: 'text-status-info', label: 'Түрээс' },
+    barter: { bg: 'bg-status-pending-soft hover:bg-status-pending', border: 'border-orange-400', text: 'text-status-pending', label: 'Бартер' },
 };
 
 const formatPrice = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(0)}M` : n.toLocaleString();
@@ -59,15 +59,15 @@ export function FloorPlan({ units, totalFloors, unitsPerFloor, projectName, onUn
     }, [units]);
 
     return (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="bg-surface rounded-xl border border-border overflow-hidden">
             {/* Header */}
-            <div className="p-4 border-b border-gray-100">
+            <div className="p-4 border-b border-border/60">
                 <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
-                        <Building2 className="w-5 h-5 text-violet-600" />
-                        <h3 className="font-semibold text-gray-900">{projectName || 'Давхарын план'}</h3>
+                        <Building2 className="w-5 h-5 text-brand-strong" />
+                        <h3 className="font-semibold text-foreground">{projectName || 'Давхарын план'}</h3>
                     </div>
-                    <div className="text-sm text-gray-500">
+                    <div className="text-sm text-muted-foreground">
                         {stats.available} чөлөөтэй / {stats.total} нийт ({stats.pctSold}% зарагдсан)
                     </div>
                 </div>
@@ -80,7 +80,7 @@ export function FloorPlan({ units, totalFloors, unitsPerFloor, projectName, onUn
                             <button
                                 key={key}
                                 onClick={() => setFilterStatus(filterStatus === key ? 'all' : key)}
-                                className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-all ${filterStatus === key ? `${val.bg} ${val.border} border-2` : 'border border-gray-200 text-gray-500'}`}
+                                className={`flex items-center gap-1.5 px-2 py-1 rounded text-xs font-medium transition-all ${filterStatus === key ? `${val.bg} ${val.border} border-2` : 'border border-border text-muted-foreground'}`}
                             >
                                 <div className={`w-2.5 h-2.5 rounded-sm ${val.bg.split(' ')[0]}`} />
                                 {val.label} ({count})
@@ -97,7 +97,7 @@ export function FloorPlan({ units, totalFloors, unitsPerFloor, projectName, onUn
                     return (
                         <div key={floor} className="flex items-stretch mb-1">
                             {/* Floor Label */}
-                            <div className="w-12 flex items-center justify-center text-xs font-bold text-gray-400 flex-shrink-0">
+                            <div className="w-12 flex items-center justify-center text-xs font-bold text-muted-foreground/70 flex-shrink-0">
                                 {floor}F
                             </div>
 
@@ -106,7 +106,7 @@ export function FloorPlan({ units, totalFloors, unitsPerFloor, projectName, onUn
                                 {Array.from({ length: unitsPerFloor }, (_, pos) => {
                                     const unit = floorUnits.find(u => u.position === pos + 1);
                                     if (!unit) {
-                                        return <div key={pos} className="h-12 bg-gray-50 rounded border border-gray-100" />;
+                                        return <div key={pos} className="h-12 bg-surface-2/40 rounded border border-border/60" />;
                                     }
 
                                     const style = STATUS_COLORS[unit.status] || STATUS_COLORS.available;
@@ -119,7 +119,7 @@ export function FloorPlan({ units, totalFloors, unitsPerFloor, projectName, onUn
                                                 setSelectedUnit(unit);
                                                 onUnitClick?.(unit);
                                             }}
-                                            className={`h-12 rounded border-2 flex flex-col items-center justify-center transition-all text-center ${style.bg} ${style.border} ${style.text} ${!isHighlighted ? 'opacity-20' : ''} ${selectedUnit?.id === unit.id ? 'ring-2 ring-violet-500 scale-105' : ''}`}
+                                            className={`h-12 rounded border-2 flex flex-col items-center justify-center transition-all text-center ${style.bg} ${style.border} ${style.text} ${!isHighlighted ? 'opacity-20' : ''} ${selectedUnit?.id === unit.id ? 'ring-2 ring-brand scale-105' : ''}`}
                                         >
                                             <span className="text-[10px] font-bold leading-tight">{unit.name}</span>
                                             <span className="text-[9px] opacity-70">{unit.rooms}ө • {formatPrice(unit.price)}₮</span>
@@ -134,17 +134,17 @@ export function FloorPlan({ units, totalFloors, unitsPerFloor, projectName, onUn
 
             {/* Selected Unit Detail */}
             {selectedUnit && (
-                <div className="p-4 bg-violet-50 border-t border-violet-100">
+                <div className="p-4 bg-brand-soft border-t border-brand">
                     <div className="flex items-center justify-between">
                         <div>
-                            <p className="font-semibold text-gray-900">{selectedUnit.name}</p>
-                            <p className="text-sm text-gray-600">
+                            <p className="font-semibold text-foreground">{selectedUnit.name}</p>
+                            <p className="text-sm text-muted-foreground">
                                 {selectedUnit.rooms} өрөө • {selectedUnit.size_sqm}м² • {selectedUnit.floor}-р давхар
                             </p>
                         </div>
                         <div className="text-right">
-                            <p className="text-lg font-bold text-violet-700">{formatPrice(selectedUnit.price)}₮</p>
-                            <p className="text-xs text-gray-500">
+                            <p className="text-lg font-bold text-brand-strong">{formatPrice(selectedUnit.price)}₮</p>
+                            <p className="text-xs text-muted-foreground">
                                 {selectedUnit.size_sqm > 0 ? `${formatPrice(Math.round(selectedUnit.price / selectedUnit.size_sqm))}₮/м²` : ''}
                             </p>
                         </div>

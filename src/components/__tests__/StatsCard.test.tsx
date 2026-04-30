@@ -81,7 +81,7 @@ describe('StatsCard', () => {
                 />
             );
             const pill = screen.getByText('20%').closest('div');
-            expect(pill?.className).toContain('text-emerald-700');
+            expect(pill?.className).toContain('text-status-success');
         });
 
         it('applies red colour token for negative change', () => {
@@ -94,7 +94,7 @@ describe('StatsCard', () => {
                 />
             );
             const pill = screen.getByText('5%').closest('div');
-            expect(pill?.className).toContain('text-red-600');
+            expect(pill?.className).toContain('text-status-danger');
         });
 
         it('does not render change indicator when change is undefined', () => {
@@ -123,7 +123,7 @@ describe('StatsCard', () => {
             const { container } = render(
                 <StatsCard title="Test" value={100} icon={Package} />
             );
-            // Default iconColor is 'bg-gold' → amber/orange gradient.
+            // Default iconColor is 'bg-brand' → amber/orange gradient.
             const iconContainer = container.querySelector('.from-amber-400');
             expect(iconContainer).toBeInTheDocument();
         });

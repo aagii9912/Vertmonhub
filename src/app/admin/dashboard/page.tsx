@@ -62,7 +62,7 @@ export default function AdminDashboard() {
     if (!data) {
         return (
             <div className="text-center py-12">
-                <p className="text-gray-500">Failed to load dashboard</p>
+                <p className="text-muted-foreground">Failed to load dashboard</p>
             </div>
         );
     }
@@ -75,8 +75,8 @@ export default function AdminDashboard() {
         <div className="space-y-8">
             {/* Header */}
             <div>
-                <h1 className="text-2xl font-bold text-gray-900">Admin Dashboard</h1>
-                <p className="text-gray-500 mt-1">Overview of your SaaS platform</p>
+                <h1 className="text-2xl font-bold text-foreground">Admin Dashboard</h1>
+                <p className="text-muted-foreground mt-1">Overview of your SaaS platform</p>
             </div>
 
             {/* Stats Grid */}
@@ -86,13 +86,13 @@ export default function AdminDashboard() {
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-gray-500">Total Shops</p>
-                                <p className="text-3xl font-bold text-gray-900 mt-1">
+                                <p className="text-sm text-muted-foreground">Total Shops</p>
+                                <p className="text-3xl font-bold text-foreground mt-1">
                                     {data.stats.total_shops}
                                 </p>
                             </div>
-                            <div className="w-12 h-12 bg-violet-100 rounded-xl flex items-center justify-center">
-                                <Users className="w-6 h-6 text-violet-600" />
+                            <div className="w-12 h-12 bg-brand-soft rounded-xl flex items-center justify-center">
+                                <Users className="w-6 h-6 text-brand-strong" />
                             </div>
                         </div>
                     </CardContent>
@@ -103,18 +103,18 @@ export default function AdminDashboard() {
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-gray-500">Active Subscriptions</p>
-                                <p className="text-3xl font-bold text-gray-900 mt-1">
+                                <p className="text-sm text-muted-foreground">Active Subscriptions</p>
+                                <p className="text-3xl font-bold text-foreground mt-1">
                                     {data.stats.subscriptions.active}
                                 </p>
                                 {data.stats.subscriptions.past_due > 0 && (
-                                    <p className="text-xs text-red-500 mt-1">
+                                    <p className="text-xs text-status-danger mt-1">
                                         {data.stats.subscriptions.past_due} past due
                                     </p>
                                 )}
                             </div>
-                            <div className="w-12 h-12 bg-gold/20 rounded-xl flex items-center justify-center">
-                                <CreditCard className="w-6 h-6 text-gold" />
+                            <div className="w-12 h-12 bg-brand-soft rounded-xl flex items-center justify-center">
+                                <CreditCard className="w-6 h-6 text-brand" />
                             </div>
                         </div>
                     </CardContent>
@@ -125,16 +125,16 @@ export default function AdminDashboard() {
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-gray-500">Total Revenue</p>
-                                <p className="text-3xl font-bold text-gray-900 mt-1">
+                                <p className="text-sm text-muted-foreground">Total Revenue</p>
+                                <p className="text-3xl font-bold text-foreground mt-1">
                                     {formatMoney(data.stats.revenue.total_revenue)}
                                 </p>
-                                <p className="text-xs text-gray-400 mt-1">
+                                <p className="text-xs text-muted-foreground/70 mt-1">
                                     {data.stats.revenue.paid_count} payments
                                 </p>
                             </div>
-                            <div className="w-12 h-12 bg-gold/20 rounded-xl flex items-center justify-center">
-                                <TrendingUp className="w-6 h-6 text-gold" />
+                            <div className="w-12 h-12 bg-brand-soft rounded-xl flex items-center justify-center">
+                                <TrendingUp className="w-6 h-6 text-brand" />
                             </div>
                         </div>
                     </CardContent>
@@ -145,13 +145,13 @@ export default function AdminDashboard() {
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-gray-500">Active Plans</p>
-                                <p className="text-3xl font-bold text-gray-900 mt-1">
+                                <p className="text-sm text-muted-foreground">Active Plans</p>
+                                <p className="text-3xl font-bold text-foreground mt-1">
                                     {data.stats.plans_count}
                                 </p>
                             </div>
-                            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                                <Package className="w-6 h-6 text-blue-600" />
+                            <div className="w-12 h-12 bg-status-info-soft rounded-xl flex items-center justify-center">
+                                <Package className="w-6 h-6 text-status-info" />
                             </div>
                         </div>
                     </CardContent>
@@ -163,20 +163,20 @@ export default function AdminDashboard() {
                 {/* Recent Shops */}
                 <Card>
                     <CardContent className="p-6">
-                        <h2 className="text-lg font-semibold text-gray-900 mb-4">Recent Shops</h2>
+                        <h2 className="text-lg font-semibold text-foreground mb-4">Recent Shops</h2>
                         {data.recent_shops.length === 0 ? (
-                            <p className="text-gray-500 text-center py-4">No recent shops</p>
+                            <p className="text-muted-foreground text-center py-4">No recent shops</p>
                         ) : (
                             <div className="space-y-3">
                                 {data.recent_shops.map((shop) => (
-                                    <div key={shop.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                                    <div key={shop.id} className="flex items-center justify-between py-2 border-b border-border/60 last:border-0">
                                         <div>
-                                            <p className="font-medium text-gray-900">{shop.name}</p>
-                                            <p className="text-sm text-gray-500">
+                                            <p className="font-medium text-foreground">{shop.name}</p>
+                                            <p className="text-sm text-muted-foreground">
                                                 {new Date(shop.created_at).toLocaleDateString('mn-MN')}
                                             </p>
                                         </div>
-                                        <ArrowUpRight className="w-4 h-4 text-gold" />
+                                        <ArrowUpRight className="w-4 h-4 text-brand" />
                                     </div>
                                 ))}
                             </div>
@@ -187,22 +187,22 @@ export default function AdminDashboard() {
                 {/* Recent Invoices */}
                 <Card>
                     <CardContent className="p-6">
-                        <h2 className="text-lg font-semibold text-gray-900 mb-4">Recent Invoices</h2>
+                        <h2 className="text-lg font-semibold text-foreground mb-4">Recent Invoices</h2>
                         {data.recent_invoices.length === 0 ? (
-                            <p className="text-gray-500 text-center py-4">No invoices yet</p>
+                            <p className="text-muted-foreground text-center py-4">No invoices yet</p>
                         ) : (
                             <div className="space-y-3">
                                 {data.recent_invoices.map((invoice) => (
-                                    <div key={invoice.id} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                                    <div key={invoice.id} className="flex items-center justify-between py-2 border-b border-border/60 last:border-0">
                                         <div>
-                                            <p className="font-medium text-gray-900">{invoice.shops?.name}</p>
-                                            <p className="text-sm text-gray-500">{formatMoney(invoice.amount)}</p>
+                                            <p className="font-medium text-foreground">{invoice.shops?.name}</p>
+                                            <p className="text-sm text-muted-foreground">{formatMoney(invoice.amount)}</p>
                                         </div>
                                         <span className={`px-2 py-1 text-xs rounded-full font-medium ${invoice.status === 'paid'
-                                            ? 'bg-gold/20 text-gold-dark'
+                                            ? 'bg-brand-soft text-brand-dark'
                                             : invoice.status === 'pending'
-                                                ? 'bg-yellow-100 text-yellow-700'
-                                                : 'bg-red-100 text-red-700'
+                                                ? 'bg-status-pending-soft text-status-pending'
+                                                : 'bg-status-danger-soft text-status-danger'
                                             }`}>
                                             {invoice.status}
                                         </span>
@@ -217,15 +217,15 @@ export default function AdminDashboard() {
             {/* Plans Overview */}
             <Card>
                 <CardContent className="p-6">
-                    <h2 className="text-lg font-semibold text-gray-900 mb-4">Plans Overview</h2>
+                    <h2 className="text-lg font-semibold text-foreground mb-4">Plans Overview</h2>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         {data.plans.map((plan) => (
-                            <div key={plan.id} className="p-4 bg-gray-50 rounded-xl text-center">
-                                <p className="font-medium text-gray-900">{plan.name}</p>
-                                <p className="text-lg font-bold text-violet-600 mt-1">
+                            <div key={plan.id} className="p-4 bg-surface-2/40 rounded-xl text-center">
+                                <p className="font-medium text-foreground">{plan.name}</p>
+                                <p className="text-lg font-bold text-brand-strong mt-1">
                                     {plan.price_monthly === 0 ? 'Free' : formatMoney(plan.price_monthly)}
                                 </p>
-                                <p className="text-xs text-gray-500">/сар</p>
+                                <p className="text-xs text-muted-foreground">/сар</p>
                             </div>
                         ))}
                     </div>

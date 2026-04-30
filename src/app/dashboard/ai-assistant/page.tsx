@@ -31,7 +31,7 @@ const MODE_CONFIG = {
         label: 'Дата',
         icon: Database,
         color: 'emerald',
-        bgActive: 'bg-emerald-600',
+        bgActive: 'bg-status-success',
         textActive: 'text-white',
         welcomeMsg: 'Сайн байна уу! 👋 Би AI Дата Туслах. Vertmon-ий бүх мэдээллээс асуулт асууж болно — байр, лийд, борлуулалт, статистик бүгдийг мэднэ!',
         placeholder: 'Боломжтой байрууд юу юу байна?...',
@@ -42,7 +42,7 @@ const MODE_CONFIG = {
         label: 'Ерөнхий',
         icon: Globe,
         color: 'violet',
-        bgActive: 'bg-violet-600',
+        bgActive: 'bg-brand',
         textActive: 'text-white',
         welcomeMsg: 'Сайн байна уу! 🚀 Би AI Туслах. Маркетинг төлөвлөгөө, бизнес стратеги, контент, ерөнхий асуулт — бүгдэд хариулна. DB мэдээлэл хэрэгтэй бол шууд татна!',
         placeholder: 'Маркетинг төлөвлөгөө бичиж өгөөч...',
@@ -208,7 +208,7 @@ export default function AIAssistantPage() {
     const renderChart = (chartConfig: any) => {
         if (!chartConfig || !chartConfig.data || chartConfig.data.length === 0) return null;
         return (
-            <div className="h-64 w-full mt-4 bg-white p-4 rounded-xl border border-gray-100 shadow-sm">
+            <div className="h-64 w-full mt-4 bg-surface p-4 rounded-xl border border-border/60 shadow-sm">
                 <ResponsiveContainer width="100%" height="100%">
                     {chartConfig.type === 'line' ? (
                         <LineChart data={chartConfig.data}>
@@ -233,8 +233,8 @@ export default function AIAssistantPage() {
     };
 
     const bubbleColor = mode === 'data'
-        ? { user: 'bg-emerald-600', bot: 'bg-emerald-100', botIcon: 'text-emerald-600' }
-        : { user: 'bg-violet-600', bot: 'bg-violet-100', botIcon: 'text-violet-600' };
+        ? { user: 'bg-status-success', bot: 'bg-status-success-soft', botIcon: 'text-status-success' }
+        : { user: 'bg-brand', bot: 'bg-brand-soft', botIcon: 'text-brand-strong' };
 
     return (
         <div className="flex h-full">
@@ -254,28 +254,28 @@ export default function AIAssistantPage() {
             {/* Main Chat Area */}
             <div className="flex-1 flex flex-col min-w-0">
                 {/* Header with Mode Toggle */}
-                <div className="flex items-center justify-between px-4 md:px-6 py-3 bg-white border-b border-gray-100">
+                <div className="flex items-center justify-between px-4 md:px-6 py-3 bg-surface border-b border-border/60">
                     <div className="flex items-center gap-3">
                         {/* Mobile sidebar toggle */}
                         <button
                             onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                            className="md:hidden p-2 rounded-lg hover:bg-gray-100 text-gray-500"
+                            className="md:hidden p-2 rounded-lg hover:bg-surface-2 text-muted-foreground"
                         >
                             <MessageSquare className="w-5 h-5" />
                         </button>
                         <div>
-                            <h1 className="text-lg md:text-xl font-bold text-gray-900 flex items-center gap-2">
-                                <Sparkles className={`w-5 h-5 ${mode === 'data' ? 'text-emerald-500' : 'text-violet-500'}`} />
+                            <h1 className="text-lg md:text-xl font-bold text-foreground flex items-center gap-2">
+                                <Sparkles className={`w-5 h-5 ${mode === 'data' ? 'text-status-success' : 'text-brand'}`} />
                                 AI Туслах
                             </h1>
-                            <p className="text-gray-500 text-xs hidden sm:block">
+                            <p className="text-muted-foreground text-xs hidden sm:block">
                                 {mode === 'data' ? 'DB мэдээллээс асуулт асуух' : 'Ерөнхий AI — маркетинг, стратеги, бүх зүйл'}
                             </p>
                         </div>
                     </div>
 
                     {/* Mode Toggle */}
-                    <div className="flex bg-gray-100 rounded-xl p-1">
+                    <div className="flex bg-surface-2 rounded-xl p-1">
                         {(['data', 'general'] as Mode[]).map(m => {
                             const cfg = MODE_CONFIG[m];
                             const isActive = mode === m;
@@ -287,7 +287,7 @@ export default function AIAssistantPage() {
                                     className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
                                         isActive
                                             ? `${cfg.bgActive} ${cfg.textActive} shadow-sm`
-                                            : 'text-gray-500 hover:text-gray-700'
+                                            : 'text-muted-foreground hover:text-foreground'
                                     }`}
                                 >
                                     <Icon className="w-3.5 h-3.5" />
@@ -302,7 +302,7 @@ export default function AIAssistantPage() {
                 <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6 space-y-6 bg-gradient-to-b from-gray-50/50 to-white">
                     {messagesLoading ? (
                         <div className="flex items-center justify-center h-full">
-                            <div className="flex items-center gap-3 text-gray-400">
+                            <div className="flex items-center gap-3 text-muted-foreground/70">
                                 <Loader2 className="w-5 h-5 animate-spin" />
                                 <span className="text-sm">Мессежүүд уншиж байна...</span>
                             </div>
@@ -327,7 +327,7 @@ export default function AIAssistantPage() {
                                             className={`px-4 py-3 rounded-2xl ${
                                                 message.role === 'user'
                                                     ? `${bubbleColor.user} text-white rounded-tr-sm`
-                                                    : 'bg-white border border-gray-100 shadow-sm rounded-tl-sm text-gray-800'
+                                                    : 'bg-surface border border-border/60 shadow-sm rounded-tl-sm text-foreground'
                                             }`}
                                         >
                                             <p className="whitespace-pre-wrap leading-relaxed text-[15px]">{message.content}</p>
@@ -336,8 +336,8 @@ export default function AIAssistantPage() {
                                     </div>
 
                                     {message.role === 'user' && (
-                                        <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0 mt-1 order-2">
-                                            <User className="w-5 h-5 text-gray-500" />
+                                        <div className="w-8 h-8 rounded-full bg-surface-2 flex items-center justify-center flex-shrink-0 mt-1 order-2">
+                                            <User className="w-5 h-5 text-muted-foreground" />
                                         </div>
                                     )}
                                 </div>
@@ -348,9 +348,9 @@ export default function AIAssistantPage() {
                                     <div className={`w-8 h-8 rounded-full ${bubbleColor.bot} flex items-center justify-center flex-shrink-0 mt-1`}>
                                         <Bot className={`w-5 h-5 ${bubbleColor.botIcon}`} />
                                     </div>
-                                    <div className="bg-white border border-gray-100 shadow-sm rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-2">
+                                    <div className="bg-surface border border-border/60 shadow-sm rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-2">
                                         <Loader2 className={`w-4 h-4 ${bubbleColor.botIcon} animate-spin`} />
-                                        <span className="text-sm text-gray-500">{config.loadingText}</span>
+                                        <span className="text-sm text-muted-foreground">{config.loadingText}</span>
                                     </div>
                                 </div>
                             )}
@@ -360,7 +360,7 @@ export default function AIAssistantPage() {
                 </div>
 
                 {/* Input Area */}
-                <div className="px-4 md:px-6 py-4 bg-white border-t border-gray-100">
+                <div className="px-4 md:px-6 py-4 bg-surface border-t border-border/60">
                     <div className="max-w-4xl mx-auto">
                         <form onSubmit={handleSubmit} className="relative flex items-center">
                             <input
@@ -368,8 +368,8 @@ export default function AIAssistantPage() {
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 placeholder={config.placeholder}
-                                className={`w-full pl-4 pr-12 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 ${
-                                    mode === 'data' ? 'focus:ring-emerald-500/20 focus:border-emerald-500' : 'focus:ring-violet-500/20 focus:border-violet-500'
+                                className={`w-full pl-4 pr-12 py-3.5 bg-surface-2/40 border border-border rounded-xl focus:outline-none focus:ring-2 ${
+                                    mode === 'data' ? 'focus:ring-emerald-500/20 focus:border-emerald-500' : 'focus:ring-brand/20 focus:border-brand'
                                 } transition-all`}
                                 disabled={isLoading || messagesLoading}
                             />
@@ -377,7 +377,7 @@ export default function AIAssistantPage() {
                                 type="submit"
                                 disabled={isLoading || !input.trim() || messagesLoading}
                                 className={`absolute right-1.5 h-10 w-10 p-0 rounded-lg ${
-                                    mode === 'data' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-violet-600 hover:bg-violet-700'
+                                    mode === 'data' ? 'bg-status-success hover:opacity-90' : 'bg-brand hover:bg-brand-strong'
                                 } text-white transition-colors disabled:opacity-50`}
                             >
                                 <Send className="w-4 h-4" />
@@ -391,8 +391,8 @@ export default function AIAssistantPage() {
                                     onClick={() => setInput(suggestion)}
                                     className={`whitespace-nowrap px-3 py-1.5 text-xs rounded-full border transition-colors ${
                                         mode === 'data'
-                                            ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
-                                            : 'bg-violet-50 hover:bg-violet-100 text-violet-700 border-violet-200'
+                                            ? 'bg-status-success-soft hover:bg-status-success-soft text-status-success border-status-success/30'
+                                            : 'bg-brand-soft hover:bg-brand-soft text-brand-strong border-brand/30'
                                     }`}
                                 >
                                     {suggestion}

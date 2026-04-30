@@ -69,10 +69,10 @@ export function ProductCardInChat({ product, onAddToCart }: ProductCardInChatPro
     };
 
     return (
-        <div className="bg-white border border-gray-100 rounded-xl overflow-hidden 
+        <div className="bg-surface border border-border/60 rounded-xl overflow-hidden 
                     shadow-sm hover:shadow-md transition w-[220px] shrink-0 mt-2">
             {/* Image */}
-            <div className="w-full h-24 bg-gray-50 overflow-hidden relative group">
+            <div className="w-full h-24 bg-surface-2/40 overflow-hidden relative group">
                 {product.image_url ? (
                     <img
                         src={product.image_url}
@@ -80,7 +80,7 @@ export function ProductCardInChat({ product, onAddToCart }: ProductCardInChatPro
                         className="w-full h-full object-cover"
                     />
                 ) : (
-                    <div className="w-full h-full flex items-center justify-center text-gray-300 text-[10px]">
+                    <div className="w-full h-full flex items-center justify-center text-muted-foreground/60 text-[10px]">
                         No image
                     </div>
                 )}
@@ -95,14 +95,14 @@ export function ProductCardInChat({ product, onAddToCart }: ProductCardInChatPro
 
             {/* Content */}
             <div className="p-2.5">
-                <h4 className="font-medium text-gray-900 text-xs truncate" title={product.name}>{product.name}</h4>
+                <h4 className="font-medium text-foreground text-xs truncate" title={product.name}>{product.name}</h4>
 
                 {/* Variant Selection UI */}
                 {showOptions && hasVariants && (
-                    <div className="mt-2 space-y-2 bg-gray-50 p-2 rounded-lg border border-gray-100 mb-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                    <div className="mt-2 space-y-2 bg-surface-2/40 p-2 rounded-lg border border-border/60 mb-2 animate-in fade-in slide-in-from-top-1 duration-200">
                         {optionNames.map(name => (
                             <div key={name}>
-                                <label className="text-[10px] text-gray-500 font-medium block mb-1">{name}</label>
+                                <label className="text-[10px] text-muted-foreground font-medium block mb-1">{name}</label>
                                 <div className="flex flex-wrap gap-1">
                                     {getValuesForOption(name).map(val => (
                                         <button
@@ -110,8 +110,8 @@ export function ProductCardInChat({ product, onAddToCart }: ProductCardInChatPro
                                             onClick={() => handleOptionSelect(name, val)}
                                             className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors
                                                 ${selectedOptions[name] === val
-                                                    ? 'bg-violet-600 text-white border-violet-600'
-                                                    : 'bg-white text-gray-600 border-gray-200 hover:border-violet-300'}`}
+                                                    ? 'bg-brand text-white border-violet-600'
+                                                    : 'bg-surface text-muted-foreground border-border hover:border-brand/40'}`}
                                         >
                                             {val}
                                         </button>
@@ -124,11 +124,11 @@ export function ProductCardInChat({ product, onAddToCart }: ProductCardInChatPro
 
                 <div className="flex items-center justify-between mt-2 pt-1 border-t border-gray-50">
                     <div className="flex flex-col">
-                        <span className="font-bold text-violet-600 text-xs">
+                        <span className="font-bold text-brand-strong text-xs">
                             {(selectedVariant?.price || product.price).toLocaleString()}₮
                         </span>
                         {selectedVariant && (
-                            <span className="text-[10px] text-gray-400">
+                            <span className="text-[10px] text-muted-foreground/70">
                                 {selectedVariant.name}
                             </span>
                         )}
@@ -142,8 +142,8 @@ export function ProductCardInChat({ product, onAddToCart }: ProductCardInChatPro
                                      text-[10px] font-medium 
                                      rounded-lg transition
                                      ${hasVariants && showOptions && !selectedVariant
-                                    ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                    : 'bg-violet-600 text-white hover:bg-violet-700'}`}
+                                    ? 'bg-surface-3 text-muted-foreground/70 cursor-not-allowed'
+                                    : 'bg-brand text-white hover:bg-brand-strong'}`}
                         >
                             <ShoppingCart className="w-3 h-3" />
                             {hasVariants && !selectedVariant ? "Сонгох" : "Сагслах"}

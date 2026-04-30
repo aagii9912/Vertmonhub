@@ -5,37 +5,38 @@ import { cn } from '@/lib/utils';
 interface ProgressProps extends HTMLAttributes<HTMLDivElement> {
     value: number;
     max?: number;
-    color?: 'default' | 'gold' | 'green' | 'blue' | 'red';
+    color?: 'default' | 'brand' | 'success' | 'warning' | 'danger' | 'info';
     size?: 'sm' | 'md' | 'lg';
     showLabel?: boolean;
 }
 
-const colorClasses = {
+const colorClasses: Record<NonNullable<ProgressProps['color']>, string> = {
     default: 'bg-foreground',
-    gold: 'bg-gradient-to-r from-gold-dark via-gold to-gold-light',
-    green: 'bg-green-500',
-    blue: 'bg-blue-500',
-    red: 'bg-red-500',
+    brand: 'bg-brand',
+    success: 'bg-status-success',
+    warning: 'bg-status-pending',
+    danger: 'bg-status-danger',
+    info: 'bg-status-info',
 };
 
-const sizeClasses = {
+const sizeClasses: Record<NonNullable<ProgressProps['size']>, string> = {
     sm: 'h-1',
     md: 'h-2',
     lg: 'h-3',
 };
 
 const Progress = forwardRef<HTMLDivElement, ProgressProps>(
-    ({ value, max = 100, color = 'default', size = 'md', showLabel, className, ...props }, ref) => {
+    ({ value, max = 100, color = 'brand', size = 'md', showLabel, className, ...props }, ref) => {
         const percentage = Math.min(Math.max((value / max) * 100, 0), 100);
 
         return (
             <div ref={ref} className={cn('w-full', className)} {...props}>
                 {showLabel && (
                     <div className="flex justify-between mb-1">
-                        <span className="text-xs text-muted-foreground">{Math.round(percentage)}%</span>
+                        <span className="text-xs text-muted-foreground tabular-nums">{Math.round(percentage)}%</span>
                     </div>
                 )}
-                <div className={cn('w-full rounded-full bg-secondary overflow-hidden', sizeClasses[size])}>
+                <div className={cn('w-full rounded-full bg-surface-2 overflow-hidden', sizeClasses[size])}>
                     <div
                         className={cn('h-full rounded-full transition-all duration-500 ease-out', colorClasses[color])}
                         style={{ width: `${percentage}%` }}
@@ -54,6 +55,7 @@ interface CircularProgressProps {
     size?: number;
     strokeWidth?: number;
     color?: string;
+    trackColor?: string;
     className?: string;
     children?: React.ReactNode;
 }
@@ -63,7 +65,8 @@ function CircularProgress({
     max = 100,
     size = 48,
     strokeWidth = 4,
-    color = 'var(--accent)',
+    color = 'var(--brand)',
+    trackColor = 'var(--surface-2)',
     className,
     children,
 }: CircularProgressProps) {
@@ -80,7 +83,7 @@ function CircularProgress({
                     cy={size / 2}
                     r={radius}
                     fill="none"
-                    stroke="var(--secondary)"
+                    stroke={trackColor}
                     strokeWidth={strokeWidth}
                 />
                 <circle

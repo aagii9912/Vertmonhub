@@ -3,23 +3,24 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
+import { Badge } from '@/components/ui/Badge';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Spinner } from '@/components/ui/Spinner';
+import { PageHeader } from '@/components/dashboard/PageHeader';
+import { FilterBar, FilterSelect } from '@/components/dashboard/FilterBar';
+import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import {
     Building2,
     Eye,
     DollarSign,
     TrendingUp,
     Plus,
-    Search,
-    Filter,
-    MoreVertical,
     Edit,
     Trash2,
     MapPin,
     BedDouble,
     Maximize,
     ArrowUpRight,
-    ChevronDown
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -28,25 +29,22 @@ import Image from 'next/image';
 import Link from 'next/link';
 import type { Property, PropertyType, PropertyStatus } from '@/types/property';
 
-// Property Type colors
-const typeColors: Record<PropertyType, string> = {
-    apartment: 'bg-blue-100 text-blue-700',
-    house: 'bg-green-100 text-green-700',
-    office: 'bg-purple-100 text-purple-700',
-    land: 'bg-amber-100 text-amber-700',
-    commercial: 'bg-rose-100 text-rose-700',
+const typeBadgeVariant: Record<PropertyType, 'info' | 'success' | 'brand' | 'warning' | 'danger'> = {
+    apartment: 'info',
+    house: 'success',
+    office: 'brand',
+    land: 'warning',
+    commercial: 'danger',
 };
 
-// Property Status colors
-const statusColors: Record<PropertyStatus, string> = {
-    available: 'bg-emerald-100 text-emerald-700',
-    reserved: 'bg-yellow-100 text-yellow-700',
-    sold: 'bg-gray-100 text-gray-700',
-    rented: 'bg-blue-100 text-blue-700',
-    barter: 'bg-orange-100 text-orange-700',
+const statusBadgeVariant: Record<PropertyStatus, 'success' | 'warning' | 'default' | 'info' | 'brand'> = {
+    available: 'success',
+    reserved: 'warning',
+    sold: 'default',
+    rented: 'info',
+    barter: 'brand',
 };
 
-// Mongolian labels
 const typeLabels: Record<PropertyType, string> = {
     apartment: 'Орон сууц',
     house: 'Хувийн байшин',
@@ -84,7 +82,6 @@ export default function PropertiesPage() {
         avgPrice: 0,
     });
 
-    // Fetch properties
     useEffect(() => {
         if (!shop?.id) return;
 
@@ -97,12 +94,8 @@ export default function PropertiesPage() {
                     .eq('shop_id', shop.id)
                     .order('created_at', { ascending: false });
 
-                if (typeFilter !== 'all') {
-                    query = query.eq('type', typeFilter);
-                }
-                if (statusFilter !== 'all') {
-                    query = query.eq('status', statusFilter);
-                }
+                if (typeFilter !== 'all') query = query.eq('type', typeFilter);
+                if (statusFilter !== 'all') query = query.eq('status', statusFilter);
 
                 const { data, error } = await query;
 
@@ -111,7 +104,6 @@ export default function PropertiesPage() {
                 const propertiesData = data as Property[];
                 setProperties(propertiesData);
 
-                // Calculate stats
                 const totalValue = propertiesData.reduce((sum, p) => sum + p.price, 0);
                 const totalViews = propertiesData.reduce((sum, p) => sum + (p.views_count || 0), 0);
                 setStats({
@@ -131,27 +123,22 @@ export default function PropertiesPage() {
         fetchProperties();
     }, [shop?.id, typeFilter, statusFilter]);
 
-    // Filter by search
-    const filteredProperties = properties.filter(p => {
+    const filteredProperties = properties.filter((p) => {
         const name = (p.name || (p as any).title || '').toLowerCase();
-        return name.includes(searchQuery.toLowerCase()) ||
+        return (
+            name.includes(searchQuery.toLowerCase()) ||
             p.address?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            p.district?.toLowerCase().includes(searchQuery.toLowerCase());
+            p.district?.toLowerCase().includes(searchQuery.toLowerCase())
+        );
     });
 
-    // Delete property
     const handleDelete = async (id: string) => {
         if (!confirm('Энэ үл хөдлөхийг устгах уу?')) return;
 
         try {
-            const { error } = await supabase
-                .from('properties')
-                .delete()
-                .eq('id', id);
-
+            const { error } = await supabase.from('properties').delete().eq('id', id);
             if (error) throw error;
-
-            setProperties(prev => prev.filter(p => p.id !== id));
+            setProperties((prev) => prev.filter((p) => p.id !== id));
             toast.success('Үл хөдлөх амжилттай устгагдлаа');
         } catch (error) {
             console.error('Error deleting property:', error);
@@ -160,280 +147,271 @@ export default function PropertiesPage() {
     };
 
     const formatPrice = (price: number) => {
-        if (price >= 1000000000) {
-            return `${(price / 1000000000).toFixed(1)}B₮`;
-        }
-        if (price >= 1000000) {
-            return `${(price / 1000000).toFixed(0)}M₮`;
-        }
+        if (price >= 1000000000) return `${(price / 1000000000).toFixed(1)}B₮`;
+        if (price >= 1000000) return `${(price / 1000000).toFixed(0)}M₮`;
         return `${price.toLocaleString()}₮`;
     };
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            {/* Header */}
-            <div className="bg-white border-b border-gray-200 px-6 py-4">
-                <div className="flex items-center justify-between">
-                    <h1 className="text-2xl font-semibold text-gray-900">Үл хөдлөх</h1>
-                    <div className="flex items-center gap-3">
-                        <div className="relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                            <Input
-                                type="text"
-                                placeholder="Хайх..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="pl-10 w-64 bg-gray-50 border-gray-200"
-                            />
-                        </div>
-                        <Link href="/dashboard/properties/new">
-                            <Button className="bg-emerald-600 hover:bg-emerald-700 text-white">
-                                <Plus className="w-4 h-4 mr-2" />
-                                Шинэ нэмэх
-                            </Button>
-                        </Link>
-                    </div>
-                </div>
-            </div>
+        <div>
+            <PageHeader
+                eyebrow="Үл хөдлөх"
+                title="Үл хөдлөх жагсаалт"
+                subtitle="Бүртгэлтэй бүх объектуудыг харах, шинэчлэх, шинээр нэмэх"
+                primaryAction={
+                    <Button href="/dashboard/properties/new" variant="primary" size="md">
+                        <Plus className="w-4 h-4" />
+                        Шинэ нэмэх
+                    </Button>
+                }
+            />
 
-            <div className="p-6">
-                {/* VERTMON: Pro banner removed - full access mode */}
+            {/* Stats */}
+            <StatBar columns={4}>
+                <StatTile
+                    label="Нийт үл хөдлөх"
+                    value={stats.totalProperties}
+                    icon={<Building2 className="w-4 h-4" />}
+                    accent="brand"
+                    helper={
+                        <span className="inline-flex items-center gap-1 text-status-success">
+                            <ArrowUpRight className="w-3 h-3" />
+                            +12% өмнөх сараас
+                        </span>
+                    }
+                />
+                <StatTile
+                    label="Нийт үнэ"
+                    value={formatPrice(stats.totalValue)}
+                    icon={<DollarSign className="w-4 h-4" />}
+                    accent="info"
+                    helper={
+                        <span className="inline-flex items-center gap-1 text-status-success">
+                            <ArrowUpRight className="w-3 h-3" />
+                            +8% өмнөх сараас
+                        </span>
+                    }
+                />
+                <StatTile
+                    label="Нийт үзэлт"
+                    value={stats.totalViews.toLocaleString()}
+                    icon={<Eye className="w-4 h-4" />}
+                    accent="success"
+                    helper={
+                        <span className="inline-flex items-center gap-1 text-status-success">
+                            <ArrowUpRight className="w-3 h-3" />
+                            +24% өмнөх сараас
+                        </span>
+                    }
+                />
+                <StatTile
+                    label="Дундаж үнэ"
+                    value={formatPrice(stats.avgPrice)}
+                    icon={<TrendingUp className="w-4 h-4" />}
+                    accent="warning"
+                    helper={
+                        <span className="inline-flex items-center gap-1 text-status-danger">
+                            <ArrowUpRight className="w-3 h-3 rotate-90" />
+                            -2% өмнөх сараас
+                        </span>
+                    }
+                />
+            </StatBar>
 
-                {/* Stats Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                    <Card className="bg-white border-gray-200">
-                        <CardContent className="p-4">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm text-gray-500">Нийт үл хөдлөх</p>
-                                    <p className="text-2xl font-bold text-gray-900 mt-1">{stats.totalProperties}</p>
-                                    <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
-                                        <ArrowUpRight className="w-3 h-3" />
-                                        +12% өмнөх сараас
-                                    </p>
-                                </div>
-                                <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center">
-                                    <Building2 className="w-6 h-6 text-emerald-600" />
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
+            {/* Filters */}
+            <FilterBar
+                search={{
+                    value: searchQuery,
+                    onChange: setSearchQuery,
+                    placeholder: 'Нэр, хаяг, дүүргээр хайх...',
+                }}
+                showClear={searchQuery !== '' || typeFilter !== 'all' || statusFilter !== 'all'}
+                onClear={() => {
+                    setSearchQuery('');
+                    setTypeFilter('all');
+                    setStatusFilter('all');
+                }}
+            >
+                <FilterSelect
+                    label="Төрөл"
+                    value={typeFilter}
+                    onChange={(e) => setTypeFilter(e.target.value as PropertyType | 'all')}
+                >
+                    <option value="all">Бүх төрөл</option>
+                    <option value="apartment">Орон сууц</option>
+                    <option value="house">Хувийн байшин</option>
+                    <option value="office">Оффис</option>
+                    <option value="land">Газар</option>
+                    <option value="commercial">Худалдааны</option>
+                </FilterSelect>
+                <FilterSelect
+                    label="Төлөв"
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value as PropertyStatus | 'all')}
+                >
+                    <option value="all">Бүх төлөв</option>
+                    <option value="available">Зарагдаж байна</option>
+                    <option value="reserved">Захиалагдсан</option>
+                    <option value="sold">Зарагдсан</option>
+                    <option value="rented">Түрээслэгдсэн</option>
+                    <option value="barter">Бартер</option>
+                </FilterSelect>
+            </FilterBar>
 
-                    <Card className="bg-white border-gray-200">
-                        <CardContent className="p-4">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm text-gray-500">Нийт үнэ</p>
-                                    <p className="text-2xl font-bold text-gray-900 mt-1">{formatPrice(stats.totalValue)}</p>
-                                    <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
-                                        <ArrowUpRight className="w-3 h-3" />
-                                        +8% өмнөх сараас
-                                    </p>
-                                </div>
-                                <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                                    <DollarSign className="w-6 h-6 text-blue-600" />
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    <Card className="bg-white border-gray-200">
-                        <CardContent className="p-4">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm text-gray-500">Нийт үзәлт</p>
-                                    <p className="text-2xl font-bold text-gray-900 mt-1">{stats.totalViews.toLocaleString()}</p>
-                                    <p className="text-xs text-emerald-600 mt-1 flex items-center gap-1">
-                                        <ArrowUpRight className="w-3 h-3" />
-                                        +24% өмнөх сараас
-                                    </p>
-                                </div>
-                                <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center">
-                                    <Eye className="w-6 h-6 text-purple-600" />
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    <Card className="bg-white border-gray-200">
-                        <CardContent className="p-4">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm text-gray-500">Дундаж үнэ</p>
-                                    <p className="text-2xl font-bold text-gray-900 mt-1">{formatPrice(stats.avgPrice)}</p>
-                                    <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-                                        <ArrowUpRight className="w-3 h-3 rotate-90" />
-                                        -2% өмнөх сараас
-                                    </p>
-                                </div>
-                                <div className="w-12 h-12 bg-amber-100 rounded-xl flex items-center justify-center">
-                                    <TrendingUp className="w-6 h-6 text-amber-600" />
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </div>
-
-                {/* Filters & Table */}
-                <Card className="bg-white border-gray-200">
-                    <CardContent className="p-0">
-                        {/* Table Header */}
-                        <div className="flex items-center justify-between p-4 border-b border-gray-200">
-                            <h3 className="font-semibold text-gray-900">Үл хөдлөх жагсаалт</h3>
-                            <div className="flex items-center gap-3">
-                                <select
-                                    value={typeFilter}
-                                    onChange={(e) => setTypeFilter(e.target.value as PropertyType | 'all')}
-                                    className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700"
-                                >
-                                    <option value="all">Бүх төсөл</option>
-                                    <option value="mandala_garden">Mandala Garden</option>
-                                    <option value="mandala_tower">360/365 Mandala Tower</option>
-                                    <option value="elysium">Elysium Residence</option>
-                                </select>
-                                <select
-                                    value={statusFilter}
-                                    onChange={(e) => setStatusFilter(e.target.value as PropertyStatus | 'all')}
-                                    className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700"
-                                >
-                                    <option value="all">Бүх төлөв</option>
-                                    <option value="available">Зарагдаж байна</option>
-                                    <option value="reserved">Захиалагдсан</option>
-                                    <option value="sold">Зарагдсан</option>
-                                    <option value="rented">Түрээслэгдсэн</option>
-                                    <option value="barter">Бартер</option>
-                                </select>
-                                <Button variant="outline" size="sm" className="text-gray-600">
-                                    Дэлгэрэнгүй шүүлт
-                                </Button>
-                            </div>
-                        </div>
-
-                        {/* Table */}
-                        <div className="overflow-x-auto">
-                            <table className="w-full">
-                                <thead className="bg-gray-50 border-b border-gray-200">
+            {/* Table */}
+            <Card>
+                <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                        <table className="w-full">
+                            <thead className="bg-surface-2/50 border-b border-border">
+                                <tr>
+                                    <th className="text-left px-4 py-3 text-[11px] font-medium text-muted-foreground/80 uppercase tracking-[0.08em]">
+                                        Үл хөдлөх
+                                    </th>
+                                    <th className="text-left px-4 py-3 text-[11px] font-medium text-muted-foreground/80 uppercase tracking-[0.08em]">
+                                        Төрөл
+                                    </th>
+                                    <th className="text-left px-4 py-3 text-[11px] font-medium text-muted-foreground/80 uppercase tracking-[0.08em]">
+                                        Үнэ
+                                    </th>
+                                    <th className="text-left px-4 py-3 text-[11px] font-medium text-muted-foreground/80 uppercase tracking-[0.08em]">
+                                        Хэмжээ
+                                    </th>
+                                    <th className="text-left px-4 py-3 text-[11px] font-medium text-muted-foreground/80 uppercase tracking-[0.08em]">
+                                        Төлөв
+                                    </th>
+                                    <th className="text-left px-4 py-3 text-[11px] font-medium text-muted-foreground/80 uppercase tracking-[0.08em]">
+                                        Үзэлт
+                                    </th>
+                                    <th className="text-right px-4 py-3 text-[11px] font-medium text-muted-foreground/80 uppercase tracking-[0.08em]">
+                                        Үйлдэл
+                                    </th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-border/60">
+                                {loading ? (
                                     <tr>
-                                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Үл хөдлөх</th>
-                                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Төрөл</th>
-                                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Үнэ</th>
-                                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Хэмжээ</th>
-                                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Төлөв</th>
-                                        <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Үзэлт</th>
-                                        <th className="text-right px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Үйлдэл</th>
+                                        <td colSpan={7} className="px-4 py-16 text-center">
+                                            <div className="flex flex-col items-center justify-center gap-3">
+                                                <Spinner size="lg" />
+                                                <span className="text-sm text-muted-foreground">Татаж байна...</span>
+                                            </div>
+                                        </td>
                                     </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {loading ? (
-                                        <tr>
-                                            <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
-                                                <div className="flex items-center justify-center gap-2">
-                                                    <div className="w-5 h-5 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-                                                    Татаж байна...
+                                ) : filteredProperties.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={7} className="px-4 py-12">
+                                            <EmptyState
+                                                icon={<Building2 className="w-7 h-7" />}
+                                                title="Үл хөдлөх олдсонгүй"
+                                                description="Шүүлтүүрээ өөрчлөх эсвэл анхны үл хөдлөхөө нэмнэ үү"
+                                                action={
+                                                    <Button href="/dashboard/properties/new" variant="primary" size="sm">
+                                                        <Plus className="w-4 h-4" />
+                                                        Шинэ нэмэх
+                                                    </Button>
+                                                }
+                                            />
+                                        </td>
+                                    </tr>
+                                ) : (
+                                    filteredProperties.map((property) => (
+                                        <tr key={property.id} className="hover:bg-surface-2/40 transition-colors">
+                                            <td className="px-4 py-3">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-16 h-12 bg-surface-2 rounded-md overflow-hidden flex-shrink-0">
+                                                        {property.images?.[0] ? (
+                                                            <Image
+                                                                src={property.images[0]}
+                                                                alt={property.name}
+                                                                width={64}
+                                                                height={48}
+                                                                className="w-full h-full object-cover"
+                                                            />
+                                                        ) : (
+                                                            <div className="w-full h-full flex items-center justify-center">
+                                                                <Building2 className="w-5 h-5 text-muted-foreground/60" />
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-medium text-foreground text-sm">{property.name}</p>
+                                                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                                                            <MapPin className="w-3 h-3" />
+                                                            {property.district || property.city}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <Badge variant={typeBadgeVariant[property.type]}>
+                                                    {typeLabels[property.type]}
+                                                </Badge>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <p className="font-semibold text-foreground tabular-nums">
+                                                    {formatPrice(property.price)}
+                                                </p>
+                                                {property.price_per_sqm && (
+                                                    <p className="text-xs text-muted-foreground tabular-nums">
+                                                        {formatPrice(property.price_per_sqm)}/м²
+                                                    </p>
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                                                    {property.size_sqm && (
+                                                        <span className="flex items-center gap-1 tabular-nums">
+                                                            <Maximize className="w-3.5 h-3.5" />
+                                                            {property.size_sqm}м²
+                                                        </span>
+                                                    )}
+                                                    {property.rooms && (
+                                                        <span className="flex items-center gap-1 tabular-nums">
+                                                            <BedDouble className="w-3.5 h-3.5" />
+                                                            {property.rooms}ө
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <Badge variant={statusBadgeVariant[property.status]}>
+                                                    {statusLabels[property.status]}
+                                                </Badge>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="flex items-center gap-1 text-sm text-muted-foreground tabular-nums">
+                                                    <Eye className="w-4 h-4" />
+                                                    {property.views_count || 0}
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3 text-right">
+                                                <div className="flex items-center justify-end gap-1">
+                                                    <Link href={`/dashboard/properties/${property.id}/edit`}>
+                                                        <button
+                                                            className="p-2 hover:bg-surface-2 rounded-md transition-colors"
+                                                            title="Засах"
+                                                        >
+                                                            <Edit className="w-4 h-4 text-muted-foreground" />
+                                                        </button>
+                                                    </Link>
+                                                    <button
+                                                        onClick={() => handleDelete(property.id)}
+                                                        className="p-2 hover:bg-status-danger-soft rounded-md transition-colors"
+                                                        title="Устгах"
+                                                    >
+                                                        <Trash2 className="w-4 h-4 text-status-danger" />
+                                                    </button>
                                                 </div>
                                             </td>
                                         </tr>
-                                    ) : filteredProperties.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
-                                                <Building2 className="w-12 h-12 mx-auto text-gray-300 mb-3" />
-                                                <p>Үл хөдлөх олдсонгүй</p>
-                                                <Link href="/dashboard/properties/new" className="text-emerald-600 hover:underline mt-2 inline-block">
-                                                    Анхны үл хөдлөхөө нэмэх
-                                                </Link>
-                                            </td>
-                                        </tr>
-                                    ) : (
-                                        filteredProperties.map((property) => (
-                                            <tr key={property.id} className="hover:bg-gray-50 transition-colors">
-                                                <td className="px-4 py-3">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="w-16 h-12 bg-gray-100 rounded-lg overflow-hidden flex-shrink-0">
-                                                            {property.images?.[0] ? (
-                                                                <Image
-                                                                    src={property.images[0]}
-                                                                    alt={property.name}
-                                                                    width={64}
-                                                                    height={48}
-                                                                    className="w-full h-full object-cover"
-                                                                />
-                                                            ) : (
-                                                                <div className="w-full h-full flex items-center justify-center">
-                                                                    <Building2 className="w-5 h-5 text-gray-400" />
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                        <div>
-                                                            <p className="font-medium text-gray-900 text-sm">{property.name}</p>
-                                                            <p className="text-xs text-gray-500 flex items-center gap-1 mt-0.5">
-                                                                <MapPin className="w-3 h-3" />
-                                                                {property.district || property.city}
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${typeColors[property.type]}`}>
-                                                        {typeLabels[property.type]}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <p className="font-semibold text-gray-900">{formatPrice(property.price)}</p>
-                                                    {property.price_per_sqm && (
-                                                        <p className="text-xs text-gray-500">{formatPrice(property.price_per_sqm)}/м²</p>
-                                                    )}
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <div className="flex items-center gap-3 text-sm text-gray-600">
-                                                        {property.size_sqm && (
-                                                            <span className="flex items-center gap-1">
-                                                                <Maximize className="w-3.5 h-3.5" />
-                                                                {property.size_sqm}м²
-                                                            </span>
-                                                        )}
-                                                        {property.rooms && (
-                                                            <span className="flex items-center gap-1">
-                                                                <BedDouble className="w-3.5 h-3.5" />
-                                                                {property.rooms}ө
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <span className={`inline-flex px-2 py-1 text-xs font-medium rounded-full ${statusColors[property.status]}`}>
-                                                        {statusLabels[property.status]}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <div className="flex items-center gap-1 text-sm text-gray-600">
-                                                        <Eye className="w-4 h-4" />
-                                                        {property.views_count || 0}
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 py-3 text-right">
-                                                    <div className="flex items-center justify-end gap-1">
-                                                        <Link href={`/dashboard/properties/${property.id}/edit`}>
-                                                            <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                                                                <Edit className="w-4 h-4 text-gray-500" />
-                                                            </button>
-                                                        </Link>
-                                                        <button
-                                                            onClick={() => handleDelete(property.id)}
-                                                            className="p-2 hover:bg-red-50 rounded-lg transition-colors"
-                                                        >
-                                                            <Trash2 className="w-4 h-4 text-red-500" />
-                                                        </button>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
+                                    ))
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
+                </CardContent>
+            </Card>
         </div>
     );
 }

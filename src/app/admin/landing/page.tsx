@@ -38,35 +38,35 @@ function SectionPanel({
     const [open, setOpen] = useState(false);
 
     return (
-        <div className="rounded-2xl border border-gray-100 bg-white shadow-sm mb-4 overflow-hidden">
+        <div className="rounded-2xl border border-border/60 bg-surface shadow-sm mb-4 overflow-hidden">
             <button
                 onClick={() => setOpen(!open)}
-                className="w-full flex items-center gap-3 px-6 py-5 hover:bg-gray-50/50 transition-colors"
+                className="w-full flex items-center gap-3 px-6 py-5 hover:bg-surface-2/40/50 transition-colors"
             >
                 {open ? (
-                    <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
+                    <ChevronDown className="w-4 h-4 text-muted-foreground/70 shrink-0" />
                 ) : (
-                    <ChevronRight className="w-4 h-4 text-gray-400 shrink-0" />
+                    <ChevronRight className="w-4 h-4 text-muted-foreground/70 shrink-0" />
                 )}
                 <div className="flex-1 text-left">
-                    <h3 className="text-sm font-bold text-gray-900">{title}</h3>
-                    <p className="text-sm text-gray-500 mt-0.5">{description}</p>
+                    <h3 className="text-sm font-bold text-foreground">{title}</h3>
+                    <p className="text-sm text-muted-foreground mt-0.5">{description}</p>
                 </div>
                 {dirty && (
-                    <span className="text-[11px] font-bold text-amber-700 bg-amber-50 border border-amber-200/50 px-2.5 py-1 rounded-full">
+                    <span className="text-[11px] font-bold text-status-pending bg-status-pending-soft border border-status-pending/30/50 px-2.5 py-1 rounded-full">
                         Өөрчлөгдсөн
                     </span>
                 )}
             </button>
 
             {open && (
-                <div className="border-t border-gray-100 px-6 py-6 space-y-5">
+                <div className="border-t border-border/60 px-6 py-6 space-y-5">
                     {children}
-                    <div className="flex items-center justify-end gap-3 pt-5 mt-5 border-t border-gray-100">
+                    <div className="flex items-center justify-end gap-3 pt-5 mt-5 border-t border-border/60">
                         <button
                             onClick={onSave}
                             disabled={saving || !dirty}
-                            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-600 text-white text-sm font-semibold shadow-sm shadow-violet-600/20 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-violet-700 transition-all"
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand text-white text-sm font-semibold shadow-sm shadow-violet-600/20 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-brand-strong transition-all"
                         >
                             {saving ? (
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -97,11 +97,11 @@ function Field({
     placeholder?: string;
 }) {
     const cls =
-        'w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500 transition-all';
+        'w-full bg-surface-2/40 border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground/70 focus:bg-surface focus:outline-none focus:ring-2 focus:ring-brand/20 focus:border-brand transition-all';
 
     return (
         <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">{label}</label>
+            <label className="block text-sm font-medium text-foreground mb-1.5">{label}</label>
             {multiline ? (
                 <textarea
                     className={cls + ' min-h-[100px] resize-y'}
@@ -180,7 +180,7 @@ export default function LandingCMSPage() {
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
-                <Loader2 className="w-6 h-6 animate-spin text-violet-600" />
+                <Loader2 className="w-6 h-6 animate-spin text-brand-strong" />
             </div>
         );
     }
@@ -191,19 +191,19 @@ export default function LandingCMSPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <div className="flex items-center gap-4">
-                        <div className="p-2 rounded-lg bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center justify-center p-3">
-                            <Globe className="w-5 h-5 text-violet-600" />
+                        <div className="p-2 rounded-lg bg-surface rounded-2xl shadow-sm border border-border/60 flex items-center justify-center p-3">
+                            <Globe className="w-5 h-5 text-brand-strong" />
                         </div>
                         <div>
-                            <h1 className="text-2xl font-bold text-gray-900 tracking-tight">Landing Page</h1>
-                            <p className="text-sm text-gray-500 mt-0.5">Контент удирдлага</p>
+                            <h1 className="text-2xl font-bold text-foreground tracking-tight">Landing Page</h1>
+                            <p className="text-sm text-muted-foreground mt-0.5">Контент удирдлага</p>
                         </div>
                     </div>
                 </div>
                 <a
                     href="/"
                     target="_blank"
-                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-700 hover:bg-gray-50 hover:text-gray-900 transition-colors border border-gray-200 rounded-xl px-4 py-2.5 shadow-sm bg-white"
+                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-foreground hover:bg-surface-2/40 hover:text-foreground transition-colors border border-border rounded-xl px-4 py-2.5 shadow-sm bg-surface"
                 >
                     <Globe className="w-3.5 h-3.5" />
                     Үзэх
@@ -257,7 +257,7 @@ export default function LandingCMSPage() {
                 dirty={isDirty('metrics')}
             >
                 {content.metrics.map((m, i) => (
-                    <div key={i} className="flex items-end gap-3 p-4 rounded-xl border border-gray-100 bg-gray-50">
+                    <div key={i} className="flex items-end gap-3 p-4 rounded-xl border border-border/60 bg-surface-2/40">
                         <div className="flex-1">
                             <Field
                                 label={`#${i + 1} Утга`}
@@ -285,7 +285,7 @@ export default function LandingCMSPage() {
                                 const updated = content.metrics.filter((_, idx) => idx !== i);
                                 updateContent('metrics', updated);
                             }}
-                            className="p-2.5 text-gray-400 hover:text-red-600 bg-white border border-gray-200 rounded-lg p-2 hover:bg-red-50 hover:border-red-200 transition-colors"
+                            className="p-2.5 text-muted-foreground/70 hover:text-status-danger bg-surface border border-border rounded-lg p-2 hover:bg-status-danger-soft hover:border-status-danger/30 transition-colors"
                         >
                             <Trash2 className="w-4 h-4" />
                         </button>
@@ -293,7 +293,7 @@ export default function LandingCMSPage() {
                 ))}
                 <button
                     onClick={() => updateContent('metrics', [...content.metrics, { value: '', label: '' }])}
-                    className="inline-flex items-center gap-1.5 text-[12px] text-violet-600 hover:text-indigo-300 transition-colors"
+                    className="inline-flex items-center gap-1.5 text-[12px] text-brand-strong hover:text-indigo-300 transition-colors"
                 >
                     <Plus className="w-3.5 h-3.5" /> Нэмэх
                 </button>
@@ -325,17 +325,17 @@ export default function LandingCMSPage() {
                 />
 
                 <div className="space-y-3 mt-4">
-                    <p className="text-xs font-bold text-gray-500 uppercase tracking-wider">Боломжуудын жагсаалт</p>
+                    <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Боломжуудын жагсаалт</p>
                     {content.features.items.map((item, i) => (
-                        <div key={i} className="p-5 rounded-xl border border-gray-100 bg-gray-50 space-y-2">
+                        <div key={i} className="p-5 rounded-xl border border-border/60 bg-surface-2/40 space-y-2">
                             <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">#{i + 1}</span>
+                                <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">#{i + 1}</span>
                                 <button
                                     onClick={() => {
                                         const updated = { ...content.features, items: content.features.items.filter((_, idx) => idx !== i) };
                                         updateContent('features', updated);
                                     }}
-                                    className="text-gray-400 hover:text-red-600 bg-white border border-gray-200 rounded-lg p-2 hover:bg-red-50 hover:border-red-200 transition-colors"
+                                    className="text-muted-foreground/70 hover:text-status-danger bg-surface border border-border rounded-lg p-2 hover:bg-status-danger-soft hover:border-status-danger/30 transition-colors"
                                 >
                                     <Trash2 className="w-3.5 h-3.5" />
                                 </button>
@@ -368,7 +368,7 @@ export default function LandingCMSPage() {
                                 items: [...content.features.items, { title: '', desc: '' }],
                             });
                         }}
-                        className="inline-flex items-center gap-1.5 text-[12px] text-violet-600 hover:text-indigo-300 transition-colors"
+                        className="inline-flex items-center gap-1.5 text-[12px] text-brand-strong hover:text-indigo-300 transition-colors"
                     >
                         <Plus className="w-3.5 h-3.5" /> Боломж нэмэх
                     </button>
@@ -394,9 +394,9 @@ export default function LandingCMSPage() {
                     onChange={(v) => updateContent('how_it_works', { ...content.how_it_works, sectionTitle: v })}
                 />
                 {content.how_it_works.items.map((item, i) => (
-                    <div key={i} className="p-5 rounded-xl border border-gray-100 bg-gray-50 space-y-2">
+                    <div key={i} className="p-5 rounded-xl border border-border/60 bg-surface-2/40 space-y-2">
                         <div className="flex items-center gap-2">
-                            <span className="text-[11px] font-bold text-violet-600">Алхам {item.step}</span>
+                            <span className="text-[11px] font-bold text-brand-strong">Алхам {item.step}</span>
                         </div>
                         <Field
                             label="Гарчиг"
@@ -440,7 +440,7 @@ export default function LandingCMSPage() {
                     onChange={(v) => updateContent('social_proof', { ...content.social_proof, sectionTitle: v })}
                 />
                 {content.social_proof.items.map((item, i) => (
-                    <div key={i} className="p-5 rounded-xl border border-gray-100 bg-gray-50 space-y-2">
+                    <div key={i} className="p-5 rounded-xl border border-border/60 bg-surface-2/40 space-y-2">
                         <div className="grid grid-cols-2 gap-3">
                             <Field
                                 label="Категори"
@@ -506,8 +506,8 @@ export default function LandingCMSPage() {
 
                 {/* Starter */}
                 {(['starter', 'pro', 'enterprise'] as const).map((plan) => (
-                    <div key={plan} className="p-5 rounded-xl border border-gray-100 bg-gray-50 space-y-2 mt-3">
-                        <p className="text-sm font-bold text-gray-900 capitalize mb-2 block">{content.pricing[plan].label}</p>
+                    <div key={plan} className="p-5 rounded-xl border border-border/60 bg-surface-2/40 space-y-2 mt-3">
+                        <p className="text-sm font-bold text-foreground capitalize mb-2 block">{content.pricing[plan].label}</p>
                         <Field
                             label="Тайлбар"
                             value={content.pricing[plan].desc}
@@ -535,9 +535,9 @@ export default function LandingCMSPage() {
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1.5">Боломжууд (мөр бүр нэг)</label>
+                            <label className="block text-sm font-medium text-foreground mb-1.5">Боломжууд (мөр бүр нэг)</label>
                             <textarea
-                                className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-3.5 py-2.5 text-[13px] text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 min-h-[100px] resize-y transition-all"
+                                className="w-full bg-surface/[0.04] border border-white/[0.08] rounded-lg px-3.5 py-2.5 text-[13px] text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 min-h-[100px] resize-y transition-all"
                                 value={content.pricing[plan].features.join('\n')}
                                 onChange={(e) => updateContent('pricing', {
                                     ...content.pricing,
@@ -560,7 +560,7 @@ export default function LandingCMSPage() {
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                         <thead>
-                            <tr className="text-gray-500 text-xs uppercase tracking-wider bg-gray-50 border-b border-gray-100">
+                            <tr className="text-muted-foreground text-xs uppercase tracking-wider bg-surface-2/40 border-b border-border/60">
                                 <th className="text-left py-2 px-2 font-medium">Нэр</th>
                                 <th className="text-center py-2 px-2 font-medium">Starter</th>
                                 <th className="text-center py-2 px-2 font-medium">Pro</th>
@@ -570,10 +570,10 @@ export default function LandingCMSPage() {
                         </thead>
                         <tbody>
                             {content.comparison.map((row, i) => (
-                                <tr key={i} className="border-t border-gray-100">
+                                <tr key={i} className="border-t border-border/60">
                                     <td className="py-1.5 px-1">
                                         <input
-                                            className="w-full bg-white border border-gray-200 rounded px-2 py-1.5 text-[12px] text-gray-900 focus:outline-none focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
+                                            className="w-full bg-surface border border-border rounded px-2 py-1.5 text-[12px] text-foreground focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                                             value={row.name}
                                             onChange={(e) => {
                                                 const updated = [...content.comparison];
@@ -591,13 +591,13 @@ export default function LandingCMSPage() {
                                                         updated[i] = { ...updated[i], [plan]: !row[plan] };
                                                         updateContent('comparison', updated);
                                                     }}
-                                                    className={`mx-auto w-6 h-6 rounded flex items-center justify-center ${row[plan] ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-400 border border-gray-200 text-transparent'}`}
+                                                    className={`mx-auto w-6 h-6 rounded flex items-center justify-center ${row[plan] ? 'bg-status-success-soft text-status-success' : 'bg-surface-2 text-muted-foreground/70 border border-border text-transparent'}`}
                                                 >
                                                     {row[plan] ? '✓' : '—'}
                                                 </button>
                                             ) : (
                                                 <input
-                                                    className="w-full bg-white border border-gray-200 rounded px-2 py-1.5 text-[12px] text-white text-center focus:outline-none focus:border-indigo-500/50"
+                                                    className="w-full bg-surface border border-border rounded px-2 py-1.5 text-[12px] text-white text-center focus:outline-none focus:border-indigo-500/50"
                                                     value={row[plan] as string}
                                                     onChange={(e) => {
                                                         const updated = [...content.comparison];
@@ -611,7 +611,7 @@ export default function LandingCMSPage() {
                                     <td className="py-1.5 px-1">
                                         <button
                                             onClick={() => updateContent('comparison', content.comparison.filter((_, idx) => idx !== i))}
-                                            className="text-gray-400 hover:text-red-600 bg-white border border-gray-200 rounded-lg p-2 hover:bg-red-50 hover:border-red-200 transition-colors"
+                                            className="text-muted-foreground/70 hover:text-status-danger bg-surface border border-border rounded-lg p-2 hover:bg-status-danger-soft hover:border-status-danger/30 transition-colors"
                                         >
                                             <Trash2 className="w-3.5 h-3.5" />
                                         </button>
@@ -623,7 +623,7 @@ export default function LandingCMSPage() {
                 </div>
                 <button
                     onClick={() => updateContent('comparison', [...content.comparison, { name: '', starter: '', pro: '', enterprise: '' }])}
-                    className="inline-flex items-center gap-1.5 text-[12px] text-violet-600 hover:text-indigo-300 transition-colors mt-2"
+                    className="inline-flex items-center gap-1.5 text-[12px] text-brand-strong hover:text-indigo-300 transition-colors mt-2"
                 >
                     <Plus className="w-3.5 h-3.5" /> Мөр нэмэх
                 </button>
@@ -648,14 +648,14 @@ export default function LandingCMSPage() {
                     onChange={(v) => updateContent('faq', { ...content.faq, sectionTitle: v })}
                 />
                 {content.faq.items.map((item, i) => (
-                    <div key={i} className="p-5 rounded-xl border border-gray-100 bg-gray-50 space-y-2">
+                    <div key={i} className="p-5 rounded-xl border border-border/60 bg-surface-2/40 space-y-2">
                         <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">#{i + 1}</span>
+                            <span className="text-xs font-bold text-muted-foreground uppercase tracking-wider">#{i + 1}</span>
                             <button
                                 onClick={() => {
                                     updateContent('faq', { ...content.faq, items: content.faq.items.filter((_, idx) => idx !== i) });
                                 }}
-                                className="text-gray-400 hover:text-red-600 bg-white border border-gray-200 rounded-lg p-2 hover:bg-red-50 hover:border-red-200 transition-colors"
+                                className="text-muted-foreground/70 hover:text-status-danger bg-surface border border-border rounded-lg p-2 hover:bg-status-danger-soft hover:border-status-danger/30 transition-colors"
                             >
                                 <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -683,7 +683,7 @@ export default function LandingCMSPage() {
                 ))}
                 <button
                     onClick={() => updateContent('faq', { ...content.faq, items: [...content.faq.items, { q: '', a: '' }] })}
-                    className="inline-flex items-center gap-1.5 text-[12px] text-violet-600 hover:text-indigo-300 transition-colors"
+                    className="inline-flex items-center gap-1.5 text-[12px] text-brand-strong hover:text-indigo-300 transition-colors"
                 >
                     <Plus className="w-3.5 h-3.5" /> Асуулт нэмэх
                 </button>
@@ -730,7 +730,7 @@ export default function LandingCMSPage() {
                             toast.info('Анхны утга руу буцлаа. Хадгалахыг мартуузай.');
                         }
                     }}
-                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-500 hover:text-gray-900 hover:bg-gray-50 px-4 py-2 rounded-xl transition-colors"
+                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-surface-2/40 px-4 py-2 rounded-xl transition-colors"
                 >
                     <RotateCcw className="w-3.5 h-3.5" />
                     Бүгдийг анхны байдалд буцаах
