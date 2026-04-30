@@ -22,12 +22,14 @@ export async function GET(request: NextRequest) {
     'email'
   ].join(',');
 
+  const configId = process.env.FACEBOOK_LOGIN_CONFIG_ID?.trim() || '946025855026007';
+
   // Build Facebook OAuth URL
   const fbAuthUrl = new URL('https://www.facebook.com/v21.0/dialog/oauth');
   fbAuthUrl.searchParams.set('client_id', appId);
   fbAuthUrl.searchParams.set('redirect_uri', redirectUri);
   fbAuthUrl.searchParams.set('scope', permissions);
-  fbAuthUrl.searchParams.set('config_id', '946025855026007'); // Facebook Login for Business configuration
+  fbAuthUrl.searchParams.set('config_id', configId);
   fbAuthUrl.searchParams.set('response_type', 'code');
 
   return NextResponse.redirect(fbAuthUrl.toString());
