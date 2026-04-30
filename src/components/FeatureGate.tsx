@@ -80,7 +80,7 @@ export function FeatureGate({
     }
 
     return (
-        <div className="p-4 text-center text-gray-500 text-sm">
+        <div className="p-4 text-center text-muted-foreground text-sm">
             Энэ боломж идэвхгүй байна.
         </div>
     );

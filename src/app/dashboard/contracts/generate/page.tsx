@@ -63,62 +63,62 @@ export default function ContractsPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 p-6">
+        <div className="min-h-screen bg-surface-2/40 p-6">
             <div className="max-w-5xl mx-auto">
-                <h1 className="text-2xl font-bold text-gray-900 mb-1">Гэрээ үүсгэгч</h1>
-                <p className="text-gray-500 text-sm mb-6">Үл хөдлөх хөрөнгийн худалдах-худалдан авах гэрээ</p>
+                <h1 className="text-2xl font-bold text-foreground mb-1">Гэрээ үүсгэгч</h1>
+                <p className="text-muted-foreground text-sm mb-6">Үл хөдлөх хөрөнгийн худалдах-худалдан авах гэрээ</p>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Form */}
-                    <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-5">
+                    <div className="bg-surface rounded-xl border border-border p-6 space-y-5">
                         {/* Buyer */}
                         <div>
-                            <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-1.5 mb-3">
-                                <User className="w-4 h-4 text-violet-600" /> Худалдан авагч
+                            <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-3">
+                                <User className="w-4 h-4 text-brand-strong" /> Худалдан авагч
                             </h3>
                             <div className="grid grid-cols-2 gap-3">
-                                <input placeholder="Нэр *" value={data.buyerName} onChange={e => set('buyerName', e.target.value)} className="col-span-2 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-violet-500" />
-                                <input placeholder="Утас" value={data.buyerPhone} onChange={e => set('buyerPhone', e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                                <input placeholder="Имэйл" value={data.buyerEmail} onChange={e => set('buyerEmail', e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                                <input placeholder="Регистрийн дугаар" value={data.buyerRegister} onChange={e => set('buyerRegister', e.target.value)} className="col-span-2 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                                <input placeholder="Нэр *" value={data.buyerName} onChange={e => set('buyerName', e.target.value)} className="col-span-2 px-3 py-2 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-brand" />
+                                <input placeholder="Утас" value={data.buyerPhone} onChange={e => set('buyerPhone', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
+                                <input placeholder="Имэйл" value={data.buyerEmail} onChange={e => set('buyerEmail', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
+                                <input placeholder="Регистрийн дугаар" value={data.buyerRegister} onChange={e => set('buyerRegister', e.target.value)} className="col-span-2 px-3 py-2 border border-border-strong rounded-lg text-sm" />
                             </div>
                         </div>
 
                         {/* Property */}
                         <div>
-                            <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-1.5 mb-3">
-                                <Building2 className="w-4 h-4 text-emerald-600" /> Үл хөдлөх
+                            <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-3">
+                                <Building2 className="w-4 h-4 text-status-success" /> Үл хөдлөх
                             </h3>
                             <div className="grid grid-cols-2 gap-3">
-                                <input placeholder="Нэр (A-301) *" value={data.propertyName} onChange={e => set('propertyName', e.target.value)} className="col-span-2 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                                <input placeholder="Хаяг *" value={data.propertyAddress} onChange={e => set('propertyAddress', e.target.value)} className="col-span-2 px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                                <input placeholder="Талбай (м²)" value={data.propertySizeSqm} onChange={e => set('propertySizeSqm', e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                                <input placeholder="Давхар" value={data.propertyFloor} onChange={e => set('propertyFloor', e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                                <input placeholder="Өрөө" value={data.propertyRooms} onChange={e => set('propertyRooms', e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                                <input placeholder="Нэр (A-301) *" value={data.propertyName} onChange={e => set('propertyName', e.target.value)} className="col-span-2 px-3 py-2 border border-border-strong rounded-lg text-sm" />
+                                <input placeholder="Хаяг *" value={data.propertyAddress} onChange={e => set('propertyAddress', e.target.value)} className="col-span-2 px-3 py-2 border border-border-strong rounded-lg text-sm" />
+                                <input placeholder="Талбай (м²)" value={data.propertySizeSqm} onChange={e => set('propertySizeSqm', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
+                                <input placeholder="Давхар" value={data.propertyFloor} onChange={e => set('propertyFloor', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
+                                <input placeholder="Өрөө" value={data.propertyRooms} onChange={e => set('propertyRooms', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
                             </div>
                         </div>
 
                         {/* Payment */}
                         <div>
-                            <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-1.5 mb-3">
-                                <DollarSign className="w-4 h-4 text-blue-600" /> Төлбөр
+                            <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-3">
+                                <DollarSign className="w-4 h-4 text-status-info" /> Төлбөр
                             </h3>
                             <div className="grid grid-cols-2 gap-3">
-                                <input placeholder="Үнэ (₮) *" value={data.price} onChange={e => set('price', e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                                <input placeholder="Урьдчилгаа (₮)" value={data.downPayment} onChange={e => set('downPayment', e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
-                                <select value={data.paymentMethod} onChange={e => set('paymentMethod', e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                <input placeholder="Үнэ (₮) *" value={data.price} onChange={e => set('price', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
+                                <input placeholder="Урьдчилгаа (₮)" value={data.downPayment} onChange={e => set('downPayment', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
+                                <select value={data.paymentMethod} onChange={e => set('paymentMethod', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm">
                                     <option value="cash">Бэлэн мөнгө</option>
                                     <option value="mortgage">Банкны зээл</option>
                                     <option value="installment">Хэсэгчлэн</option>
                                 </select>
-                                <input type="date" value={data.contractDate} onChange={e => set('contractDate', e.target.value)} className="px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                                <input type="date" value={data.contractDate} onChange={e => set('contractDate', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
                             </div>
                         </div>
 
                         <button
                             onClick={generateContract}
                             disabled={!data.buyerName || !data.propertyName || !data.price}
-                            className="w-full py-3 bg-violet-600 text-white font-semibold rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                            className="w-full py-3 bg-brand text-white font-semibold rounded-lg hover:bg-brand-strong disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
                         >
                             {generating ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5" />}
                             Гэрээ үүсгэх
@@ -126,16 +126,16 @@ export default function ContractsPage() {
                     </div>
 
                     {/* Preview */}
-                    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                            <span className="text-sm font-semibold text-gray-700">Урьдчилж харах</span>
+                    <div className="bg-surface rounded-xl border border-border overflow-hidden">
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
+                            <span className="text-sm font-semibold text-foreground">Урьдчилж харах</span>
                             {data.buyerName && data.propertyName && (
-                                <button onClick={printContract} className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-xs font-medium hover:bg-emerald-700 transition-colors">
+                                <button onClick={printContract} className="flex items-center gap-1.5 px-3 py-1.5 bg-status-success text-white rounded-lg text-xs font-medium hover:opacity-90 transition-colors">
                                     <Download className="w-3.5 h-3.5" /> PDF / Хэвлэх
                                 </button>
                             )}
                         </div>
-                        <div ref={previewRef} className="p-6 text-sm text-gray-700 leading-relaxed max-h-[700px] overflow-y-auto">
+                        <div ref={previewRef} className="p-6 text-sm text-foreground leading-relaxed max-h-[700px] overflow-y-auto">
                             <h1 style={{ textAlign: 'center', fontSize: '18px', fontWeight: 'bold', marginBottom: '8px' }}>
                                 ҮЛ ХӨДЛӨХ ХӨРӨНГИЙН ХУДАЛДАХ-ХУДАЛДАН АВАХ ГЭРЭЭ
                             </h1>

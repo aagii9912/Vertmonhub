@@ -137,9 +137,9 @@ export default function PropertiesReportPage() {
     };
 
     const statusColors: Record<string, string> = {
-        available: 'bg-emerald-100 text-emerald-700',
-        reserved: 'bg-amber-100 text-amber-700',
-        sold: 'bg-gray-100 text-gray-600',
+        available: 'bg-status-success-soft text-status-success',
+        reserved: 'bg-status-pending-soft text-status-pending',
+        sold: 'bg-surface-2 text-muted-foreground',
     };
 
     const statusLabels: Record<string, string> = {
@@ -152,8 +152,8 @@ export default function PropertiesReportPage() {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
                 <div className="flex items-center gap-3">
-                    <div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-                    <span className="text-gray-500">Тайлан татаж байна...</span>
+                    <div className="w-6 h-6 border-2 border-status-success border-t-transparent rounded-full animate-spin" />
+                    <span className="text-muted-foreground">Тайлан татаж байна...</span>
                 </div>
             </div>
         );
@@ -162,9 +162,9 @@ export default function PropertiesReportPage() {
     if (stats.total === 0) {
         return (
             <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-                <Building2 className="w-16 h-16 text-gray-300 mb-4" />
-                <h2 className="text-xl font-semibold text-gray-700 mb-2">Мэдээлэл байхгүй</h2>
-                <p className="text-gray-500 max-w-md">
+                <Building2 className="w-16 h-16 text-muted-foreground/60 mb-4" />
+                <h2 className="text-xl font-semibold text-foreground mb-2">Мэдээлэл байхгүй</h2>
+                <p className="text-muted-foreground max-w-md">
                     Үл хөдлөхийн тайлан харахын тулд эхлээд үл хөдлөх нэмнэ үү.
                 </p>
             </div>
@@ -176,11 +176,11 @@ export default function PropertiesReportPage() {
             {/* Header */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center gap-2">
-                        <Building2 className="w-6 h-6 text-emerald-600" />
+                    <h1 className="text-xl md:text-2xl font-bold text-foreground flex items-center gap-2">
+                        <Building2 className="w-6 h-6 text-status-success" />
                         Үл хөдлөхийн тайлан
                     </h1>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p className="text-sm text-muted-foreground mt-1">
                         Борлуулалтын үл хөдлөхийн дэлгэрэнгүй статистик
                     </p>
                 </div>
@@ -188,7 +188,7 @@ export default function PropertiesReportPage() {
                     <select
                         value={period}
                         onChange={(e) => setPeriod(e.target.value as typeof period)}
-                        className="px-3 py-2 text-sm border border-gray-200 rounded-lg bg-white text-gray-700"
+                        className="px-3 py-2 text-sm border border-border rounded-lg bg-surface text-foreground"
                     >
                         <option value="week">7 хоног</option>
                         <option value="month">Сар</option>
@@ -204,62 +204,62 @@ export default function PropertiesReportPage() {
 
             {/* Key Stats */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card className="bg-white border-gray-200">
+                <Card className="bg-surface border-border">
                     <CardContent className="p-4">
                         <div className="flex items-center justify-between">
-                            <div className="p-2 bg-blue-100 rounded-lg">
-                                <Building2 className="w-5 h-5 text-blue-600" />
+                            <div className="p-2 bg-status-info-soft rounded-lg">
+                                <Building2 className="w-5 h-5 text-status-info" />
                             </div>
                         </div>
                         <div className="mt-3">
-                            <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
-                            <p className="text-sm text-gray-500">Нийт байр</p>
+                            <p className="text-2xl font-bold text-foreground">{stats.total}</p>
+                            <p className="text-sm text-muted-foreground">Нийт байр</p>
                         </div>
                         <div className="mt-2 flex items-center gap-2 text-xs">
-                            <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded">{stats.available} зарж байна</span>
-                            <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded">{stats.reserved} захиалгатай</span>
+                            <span className="px-2 py-1 bg-status-success-soft text-status-success rounded">{stats.available} зарж байна</span>
+                            <span className="px-2 py-1 bg-status-pending-soft text-status-pending rounded">{stats.reserved} захиалгатай</span>
                         </div>
                     </CardContent>
                 </Card>
 
-                <Card className="bg-white border-gray-200">
+                <Card className="bg-surface border-border">
                     <CardContent className="p-4">
                         <div className="flex items-center justify-between">
-                            <div className="p-2 bg-emerald-100 rounded-lg">
-                                <Eye className="w-5 h-5 text-emerald-600" />
+                            <div className="p-2 bg-status-success-soft rounded-lg">
+                                <Eye className="w-5 h-5 text-status-success" />
                             </div>
                         </div>
                         <div className="mt-3">
-                            <p className="text-2xl font-bold text-gray-900">{stats.total_views.toLocaleString()}</p>
-                            <p className="text-sm text-gray-500">Нийт үзэлт</p>
+                            <p className="text-2xl font-bold text-foreground">{stats.total_views.toLocaleString()}</p>
+                            <p className="text-sm text-muted-foreground">Нийт үзэлт</p>
                         </div>
                     </CardContent>
                 </Card>
 
-                <Card className="bg-white border-gray-200">
+                <Card className="bg-surface border-border">
                     <CardContent className="p-4">
                         <div className="flex items-center justify-between">
-                            <div className="p-2 bg-purple-100 rounded-lg">
-                                <DollarSign className="w-5 h-5 text-purple-600" />
+                            <div className="p-2 bg-brand-soft rounded-lg">
+                                <DollarSign className="w-5 h-5 text-brand-strong" />
                             </div>
                         </div>
                         <div className="mt-3">
-                            <p className="text-2xl font-bold text-gray-900">{formatCurrency(stats.total_value)}</p>
-                            <p className="text-sm text-gray-500">Нийт үнэлгээ</p>
+                            <p className="text-2xl font-bold text-foreground">{formatCurrency(stats.total_value)}</p>
+                            <p className="text-sm text-muted-foreground">Нийт үнэлгээ</p>
                         </div>
                     </CardContent>
                 </Card>
 
-                <Card className="bg-white border-gray-200">
+                <Card className="bg-surface border-border">
                     <CardContent className="p-4">
                         <div className="flex items-center justify-between">
-                            <div className="p-2 bg-amber-100 rounded-lg">
-                                <CheckCircle2 className="w-5 h-5 text-amber-600" />
+                            <div className="p-2 bg-status-pending-soft rounded-lg">
+                                <CheckCircle2 className="w-5 h-5 text-status-pending" />
                             </div>
                         </div>
                         <div className="mt-3">
-                            <p className="text-2xl font-bold text-gray-900">{stats.sold}</p>
-                            <p className="text-sm text-gray-500">Зарагдсан</p>
+                            <p className="text-2xl font-bold text-foreground">{stats.sold}</p>
+                            <p className="text-sm text-muted-foreground">Зарагдсан</p>
                         </div>
                     </CardContent>
                 </Card>
@@ -268,36 +268,36 @@ export default function PropertiesReportPage() {
             {/* Project & Top Viewed */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* By Project */}
-                <Card className="bg-white border-gray-200">
+                <Card className="bg-surface border-border">
                     <CardContent className="p-4">
-                        <h3 className="font-semibold text-gray-900 mb-4">Төслөөр</h3>
+                        <h3 className="font-semibold text-foreground mb-4">Төслөөр</h3>
                         {projectData.length === 0 ? (
-                            <p className="text-sm text-gray-500 text-center py-8">Мэдээлэл байхгүй</p>
+                            <p className="text-sm text-muted-foreground text-center py-8">Мэдээлэл байхгүй</p>
                         ) : (
                             <div className="overflow-x-auto">
                                 <table className="w-full">
                                     <thead>
-                                        <tr className="border-b border-gray-100">
-                                            <th className="text-left py-2 text-xs text-gray-500 font-medium">Төсөл</th>
-                                            <th className="text-center py-2 text-xs text-gray-500 font-medium">Нийт</th>
-                                            <th className="text-center py-2 text-xs text-gray-500 font-medium">Зарж байна</th>
-                                            <th className="text-right py-2 text-xs text-gray-500 font-medium">Үзэлт</th>
+                                        <tr className="border-b border-border/60">
+                                            <th className="text-left py-2 text-xs text-muted-foreground font-medium">Төсөл</th>
+                                            <th className="text-center py-2 text-xs text-muted-foreground font-medium">Нийт</th>
+                                            <th className="text-center py-2 text-xs text-muted-foreground font-medium">Зарж байна</th>
+                                            <th className="text-right py-2 text-xs text-muted-foreground font-medium">Үзэлт</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {projectData.map((project) => (
-                                            <tr key={project.project} className="border-b border-gray-50 hover:bg-gray-50">
+                                            <tr key={project.project} className="border-b border-gray-50 hover:bg-surface-2/40">
                                                 <td className="py-3">
-                                                    <p className="text-sm font-medium text-gray-900">{project.project}</p>
-                                                    <p className="text-xs text-gray-500">{formatCurrency(project.value)}</p>
+                                                    <p className="text-sm font-medium text-foreground">{project.project}</p>
+                                                    <p className="text-xs text-muted-foreground">{formatCurrency(project.value)}</p>
                                                 </td>
-                                                <td className="py-3 text-sm text-center text-gray-600">{project.total}</td>
+                                                <td className="py-3 text-sm text-center text-muted-foreground">{project.total}</td>
                                                 <td className="py-3 text-sm text-center">
-                                                    <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded-full text-xs">
+                                                    <span className="px-2 py-1 bg-status-success-soft text-status-success rounded-full text-xs">
                                                         {project.available}
                                                     </span>
                                                 </td>
-                                                <td className="py-3 text-sm text-right text-gray-600">
+                                                <td className="py-3 text-sm text-right text-muted-foreground">
                                                     {project.views.toLocaleString()}
                                                 </td>
                                             </tr>
@@ -310,45 +310,45 @@ export default function PropertiesReportPage() {
                 </Card>
 
                 {/* Top Viewed */}
-                <Card className="bg-white border-gray-200">
+                <Card className="bg-surface border-border">
                     <CardContent className="p-4">
-                        <h3 className="font-semibold text-gray-900 mb-4">Хамгийн их үзэлттэй</h3>
+                        <h3 className="font-semibold text-foreground mb-4">Хамгийн их үзэлттэй</h3>
                         {topViewed.length === 0 ? (
-                            <p className="text-sm text-gray-500 text-center py-8">Мэдээлэл байхгүй</p>
+                            <p className="text-sm text-muted-foreground text-center py-8">Мэдээлэл байхгүй</p>
                         ) : (
                             <div className="overflow-x-auto">
                                 <table className="w-full">
                                     <thead>
-                                        <tr className="border-b border-gray-100">
-                                            <th className="text-left py-2 text-xs text-gray-500 font-medium">Байр</th>
-                                            <th className="text-center py-2 text-xs text-gray-500 font-medium">Үзэлт</th>
-                                            <th className="text-center py-2 text-xs text-gray-500 font-medium">Төлөв</th>
-                                            <th className="text-right py-2 text-xs text-gray-500 font-medium">Үнэ</th>
+                                        <tr className="border-b border-border/60">
+                                            <th className="text-left py-2 text-xs text-muted-foreground font-medium">Байр</th>
+                                            <th className="text-center py-2 text-xs text-muted-foreground font-medium">Үзэлт</th>
+                                            <th className="text-center py-2 text-xs text-muted-foreground font-medium">Төлөв</th>
+                                            <th className="text-right py-2 text-xs text-muted-foreground font-medium">Үнэ</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         {topViewed.map((property, idx) => (
-                                            <tr key={property.name} className="border-b border-gray-50 hover:bg-gray-50">
+                                            <tr key={property.name} className="border-b border-gray-50 hover:bg-surface-2/40">
                                                 <td className="py-3">
                                                     <div className="flex items-center gap-3">
-                                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white ${idx === 0 ? 'bg-amber-500' : idx === 1 ? 'bg-gray-400' : idx === 2 ? 'bg-amber-700' : 'bg-gray-300'}`}>
+                                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white ${idx === 0 ? 'bg-status-pending' : idx === 1 ? 'bg-surface-2' : idx === 2 ? 'bg-status-pending' : 'bg-border-strong'}`}>
                                                             {idx + 1}
                                                         </div>
-                                                        <span className="text-sm font-medium text-gray-900">{property.name}</span>
+                                                        <span className="text-sm font-medium text-foreground">{property.name}</span>
                                                     </div>
                                                 </td>
                                                 <td className="py-3 text-sm text-center">
-                                                    <span className="flex items-center justify-center gap-1 text-gray-600">
+                                                    <span className="flex items-center justify-center gap-1 text-muted-foreground">
                                                         <Eye className="w-3 h-3" />
                                                         {property.views}
                                                     </span>
                                                 </td>
                                                 <td className="py-3 text-center">
-                                                    <span className={`px-2 py-1 text-xs rounded-full ${statusColors[property.status] || 'bg-gray-100 text-gray-600'}`}>
+                                                    <span className={`px-2 py-1 text-xs rounded-full ${statusColors[property.status] || 'bg-surface-2 text-muted-foreground'}`}>
                                                         {statusLabels[property.status] || property.status}
                                                     </span>
                                                 </td>
-                                                <td className="py-3 text-sm text-right font-medium text-gray-900">
+                                                <td className="py-3 text-sm text-right font-medium text-foreground">
                                                     {formatCurrency(property.price)}
                                                 </td>
                                             </tr>

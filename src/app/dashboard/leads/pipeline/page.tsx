@@ -22,19 +22,19 @@ interface Lead {
 }
 
 const PIPELINE_STAGES = [
-    { key: 'new', label: 'Шинэ', color: 'bg-blue-500', bg: 'bg-blue-50 border-blue-200' },
-    { key: 'contacted', label: 'Холбогдсон', color: 'bg-yellow-500', bg: 'bg-yellow-50 border-yellow-200' },
-    { key: 'viewing_scheduled', label: 'Үзлэг товлосон', color: 'bg-purple-500', bg: 'bg-purple-50 border-purple-200' },
-    { key: 'offered', label: 'Санал илгээсэн', color: 'bg-orange-500', bg: 'bg-orange-50 border-orange-200' },
-    { key: 'negotiating', label: 'Хэлэлцэж байна', color: 'bg-indigo-500', bg: 'bg-indigo-50 border-indigo-200' },
-    { key: 'closed_won', label: '✅ Амжилттай', color: 'bg-emerald-500', bg: 'bg-emerald-50 border-emerald-200' },
-    { key: 'closed_lost', label: '❌ Алдсан', color: 'bg-gray-400', bg: 'bg-gray-50 border-gray-200' },
+    { key: 'new', label: 'Шинэ', color: 'bg-status-info', bg: 'bg-status-info-soft border-status-info/30' },
+    { key: 'contacted', label: 'Холбогдсон', color: 'bg-status-pending', bg: 'bg-status-pending-soft border-yellow-200' },
+    { key: 'viewing_scheduled', label: 'Үзлэг товлосон', color: 'bg-brand', bg: 'bg-brand-soft border-brand' },
+    { key: 'offered', label: 'Санал илгээсэн', color: 'bg-status-pending', bg: 'bg-status-pending-soft border-orange-200' },
+    { key: 'negotiating', label: 'Хэлэлцэж байна', color: 'bg-status-info', bg: 'bg-status-info-soft border-indigo-200' },
+    { key: 'closed_won', label: '✅ Амжилттай', color: 'bg-status-success', bg: 'bg-status-success-soft border-status-success/30' },
+    { key: 'closed_lost', label: '❌ Алдсан', color: 'bg-surface-2', bg: 'bg-surface-2/40 border-border' },
 ];
 
 const urgencyColors: Record<string, string> = {
-    urgent: 'bg-red-100 text-red-700',
-    normal: 'bg-gray-100 text-gray-600',
-    flexible: 'bg-green-100 text-green-700',
+    urgent: 'bg-status-danger-soft text-status-danger',
+    normal: 'bg-surface-2 text-muted-foreground',
+    flexible: 'bg-status-success-soft text-status-success',
 };
 
 const formatBudget = (min: number | null, max: number | null) => {
@@ -97,22 +97,22 @@ export default function PipelinePage() {
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
-                <Loader2 className="w-8 h-8 animate-spin text-violet-600" />
+                <Loader2 className="w-8 h-8 animate-spin text-brand-strong" />
             </div>
         );
     }
 
     return (
-        <div className="min-h-screen bg-gray-50">
-            <div className="bg-white border-b border-gray-200 px-6 py-4">
+        <div className="min-h-screen bg-surface-2/40">
+            <div className="bg-surface border-b border-border px-6 py-4">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                        <Link href="/dashboard/leads" className="p-2 hover:bg-gray-100 rounded-lg">
-                            <ArrowLeft className="w-5 h-5 text-gray-500" />
+                        <Link href="/dashboard/leads" className="p-2 hover:bg-surface-2 rounded-lg">
+                            <ArrowLeft className="w-5 h-5 text-muted-foreground" />
                         </Link>
                         <div>
-                            <h1 className="text-xl font-semibold text-gray-900">Pipeline</h1>
-                            <p className="text-xs text-gray-500">{leads.length} лийд • Чирж зөөнө үү</p>
+                            <h1 className="text-xl font-semibold text-foreground">Pipeline</h1>
+                            <p className="text-xs text-muted-foreground">{leads.length} лийд • Чирж зөөнө үү</p>
                         </div>
                     </div>
                     <div className="flex gap-2">
@@ -123,7 +123,7 @@ export default function PipelinePage() {
                                     <div className={`w-8 h-8 rounded-full ${s.color} text-white text-sm font-bold flex items-center justify-center`}>
                                         {count}
                                     </div>
-                                    <p className="text-[10px] text-gray-400 mt-0.5">{s.label.substring(0, 6)}</p>
+                                    <p className="text-[10px] text-muted-foreground/70 mt-0.5">{s.label.substring(0, 6)}</p>
                                 </div>
                             );
                         })}
@@ -144,8 +144,8 @@ export default function PipelinePage() {
                             >
                                 <div className="flex items-center gap-2 mb-3">
                                     <div className={`w-3 h-3 rounded-full ${stage.color}`} />
-                                    <span className="text-sm font-semibold text-gray-700">{stage.label}</span>
-                                    <span className="text-xs text-gray-400 ml-auto">{stageLeads.length}</span>
+                                    <span className="text-sm font-semibold text-foreground">{stage.label}</span>
+                                    <span className="text-xs text-muted-foreground/70 ml-auto">{stageLeads.length}</span>
                                 </div>
 
                                 <div className="space-y-2 min-h-[100px]">
@@ -154,18 +154,18 @@ export default function PipelinePage() {
                                             key={lead.id}
                                             draggable
                                             onDragStart={e => handleDragStart(e, lead.id)}
-                                            className={`bg-white rounded-lg p-3 border border-gray-200 cursor-grab active:cursor-grabbing hover:shadow-md transition-all ${draggingId === lead.id ? 'opacity-50 scale-95' : ''}`}
+                                            className={`bg-surface rounded-lg p-3 border border-border cursor-grab active:cursor-grabbing hover:shadow-md transition-all ${draggingId === lead.id ? 'opacity-50 scale-95' : ''}`}
                                         >
                                             <div className="flex items-start justify-between mb-1.5">
-                                                <p className="text-sm font-medium text-gray-900 flex items-center gap-1">
-                                                    <User className="w-3.5 h-3.5 text-gray-400" />
+                                                <p className="text-sm font-medium text-foreground flex items-center gap-1">
+                                                    <User className="w-3.5 h-3.5 text-muted-foreground/70" />
                                                     {lead.customer_name || 'Нэргүй'}
                                                 </p>
-                                                <GripVertical className="w-4 h-4 text-gray-300 flex-shrink-0" />
+                                                <GripVertical className="w-4 h-4 text-muted-foreground/60 flex-shrink-0" />
                                             </div>
 
                                             {lead.customer_phone && (
-                                                <p className="text-xs text-gray-500 flex items-center gap-1 mb-1">
+                                                <p className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
                                                     <Phone className="w-3 h-3" />
                                                     {lead.customer_phone}
                                                 </p>
@@ -178,7 +178,7 @@ export default function PipelinePage() {
                                                     </span>
                                                 )}
                                                 {(lead.budget_min || lead.budget_max) && (
-                                                    <span className="text-[10px] text-gray-500 flex items-center gap-0.5">
+                                                    <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
                                                         <DollarSign className="w-2.5 h-2.5" />
                                                         {formatBudget(lead.budget_min, lead.budget_max)}
                                                     </span>
@@ -186,7 +186,7 @@ export default function PipelinePage() {
                                             </div>
 
                                             {lead.next_followup_at && (
-                                                <p className="text-[10px] text-violet-600 mt-1.5 flex items-center gap-1">
+                                                <p className="text-[10px] text-brand-strong mt-1.5 flex items-center gap-1">
                                                     <Calendar className="w-3 h-3" />
                                                     Follow-up: {new Date(lead.next_followup_at).toLocaleDateString('mn-MN')}
                                                 </p>

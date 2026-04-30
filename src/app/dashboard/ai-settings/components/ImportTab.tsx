@@ -45,7 +45,7 @@ const IMPORT_OPTIONS: ImportOption[] = [
         labelMN: 'Компанийн мэдээлэл',
         description: 'Нэр, утас, имэйл, вэб, хаяг, соц.сүлжээ',
         icon: Building2,
-        color: 'from-violet-500 to-purple-500',
+        color: 'from-brand to-purple-500',
     },
     {
         value: 'project',
@@ -198,9 +198,9 @@ export default function ImportTab() {
     return (
         <div className="space-y-6">
             {/* Step 1: Select Type */}
-            <div className="bg-white rounded-2xl border border-gray-200 p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-1">1. Import төрөл сонгох</h3>
-                <p className="text-sm text-gray-500 mb-4">PDF маягтын хэсгүүдэд тохирсон өгөгдлийн төрөл</p>
+            <div className="bg-surface rounded-2xl border border-border p-6">
+                <h3 className="text-lg font-semibold text-foreground mb-1">1. Import төрөл сонгох</h3>
+                <p className="text-sm text-muted-foreground mb-4">PDF маягтын хэсгүүдэд тохирсон өгөгдлийн төрөл</p>
 
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {IMPORT_OPTIONS.map((option) => {
@@ -212,17 +212,17 @@ export default function ImportTab() {
                                 onClick={() => { setSelectedType(option.value); resetState(); }}
                                 className={`group relative p-4 rounded-xl border-2 text-left transition-all duration-200
                                     ${isSelected
-                                        ? 'border-violet-500 bg-violet-50 shadow-md shadow-violet-100'
-                                        : 'border-gray-200 hover:border-gray-300 hover:shadow-sm bg-white'
+                                        ? 'border-brand bg-brand-soft shadow-md shadow-violet-100'
+                                        : 'border-border hover:border-border-strong hover:shadow-sm bg-surface'
                                     }`}
                             >
                                 <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${option.color} flex items-center justify-center mb-2`}>
                                     <Icon className="w-5 h-5 text-white" />
                                 </div>
-                                <div className="font-medium text-gray-900 text-sm">{option.labelMN}</div>
-                                <div className="text-xs text-gray-500 mt-0.5 line-clamp-2">{option.description}</div>
+                                <div className="font-medium text-foreground text-sm">{option.labelMN}</div>
+                                <div className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{option.description}</div>
                                 {isSelected && (
-                                    <div className="absolute top-2 right-2 w-5 h-5 bg-violet-500 rounded-full flex items-center justify-center">
+                                    <div className="absolute top-2 right-2 w-5 h-5 bg-brand rounded-full flex items-center justify-center">
                                         <CheckCircle className="w-3.5 h-3.5 text-white" />
                                     </div>
                                 )}
@@ -234,11 +234,11 @@ export default function ImportTab() {
 
             {/* Step 2: Template & Upload (shown after type selection) */}
             {selectedType && (
-                <div className="bg-white rounded-2xl border border-gray-200 p-6 space-y-5 animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="bg-surface rounded-2xl border border-border p-6 space-y-5 animate-in fade-in slide-in-from-top-2 duration-300">
                     {/* Template download */}
                     <div>
-                        <h3 className="text-lg font-semibold text-gray-900 mb-1">2. Template татах & Файл оруулах</h3>
-                        <p className="text-sm text-gray-500 mb-3">
+                        <h3 className="text-lg font-semibold text-foreground mb-1">2. Template татах & Файл оруулах</h3>
+                        <p className="text-sm text-muted-foreground mb-3">
                             Эхлээд template татаж, мэдээллээ бөглөөд буцааж upload хийнэ үү
                         </p>
 
@@ -260,10 +260,10 @@ export default function ImportTab() {
                         onClick={() => fileInputRef.current?.click()}
                         className={`relative border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200
                             ${dragging
-                                ? 'border-violet-400 bg-violet-50'
+                                ? 'border-violet-400 bg-brand-soft'
                                 : file
-                                    ? 'border-emerald-300 bg-emerald-50'
-                                    : 'border-gray-300 hover:border-gray-400 hover:bg-gray-50'
+                                    ? 'border-status-success/40 bg-status-success-soft'
+                                    : 'border-border-strong hover:border-gray-400 hover:bg-surface-2/40'
                             }`}
                     >
                         <input
@@ -276,28 +276,28 @@ export default function ImportTab() {
 
                         {file ? (
                             <div className="flex items-center justify-center gap-3">
-                                <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center">
-                                    <FileSpreadsheet className="w-6 h-6 text-emerald-600" />
+                                <div className="w-12 h-12 bg-status-success-soft rounded-xl flex items-center justify-center">
+                                    <FileSpreadsheet className="w-6 h-6 text-status-success" />
                                 </div>
                                 <div className="text-left">
-                                    <p className="font-medium text-gray-900">{file.name}</p>
-                                    <p className="text-sm text-gray-500">{(file.size / 1024).toFixed(1)} KB</p>
+                                    <p className="font-medium text-foreground">{file.name}</p>
+                                    <p className="text-sm text-muted-foreground">{(file.size / 1024).toFixed(1)} KB</p>
                                 </div>
                                 <button
                                     onClick={(e) => { e.stopPropagation(); resetState(); }}
-                                    className="ml-4 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                    className="ml-4 p-1.5 text-muted-foreground/70 hover:text-status-danger hover:bg-status-danger-soft rounded-lg transition-colors"
                                 >
                                     <X className="w-4 h-4" />
                                 </button>
                             </div>
                         ) : (
                             <>
-                                <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
-                                    <Upload className="w-8 h-8 text-gray-400" />
+                                <div className="w-16 h-16 bg-surface-2 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                                    <Upload className="w-8 h-8 text-muted-foreground/70" />
                                 </div>
-                                <p className="font-medium text-gray-700">Файлаа энд чирж оруулна уу</p>
-                                <p className="text-sm text-gray-500 mt-1">эсвэл дарж сонгоно</p>
-                                <p className="text-xs text-gray-400 mt-2">.xlsx, .xls, .csv файлууд</p>
+                                <p className="font-medium text-foreground">Файлаа энд чирж оруулна уу</p>
+                                <p className="text-sm text-muted-foreground mt-1">эсвэл дарж сонгоно</p>
+                                <p className="text-xs text-muted-foreground/70 mt-2">.xlsx, .xls, .csv файлууд</p>
                             </>
                         )}
                     </div>
@@ -306,11 +306,11 @@ export default function ImportTab() {
 
             {/* Step 3: Import Button */}
             {selectedType && file && (
-                <div className="bg-white rounded-2xl border border-gray-200 p-6 animate-in fade-in slide-in-from-top-2 duration-300">
-                    <h3 className="text-lg font-semibold text-gray-900 mb-3">3. Import эхлүүлэх</h3>
+                <div className="bg-surface rounded-2xl border border-border p-6 animate-in fade-in slide-in-from-top-2 duration-300">
+                    <h3 className="text-lg font-semibold text-foreground mb-3">3. Import эхлүүлэх</h3>
                     
                     <div className="flex items-center gap-4">
-                        <div className="flex-1 bg-gray-50 rounded-xl p-4">
+                        <div className="flex-1 bg-surface-2/40 rounded-xl p-4">
                             <div className="flex items-center gap-3">
                                 {selectedOption && (
                                     <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${selectedOption.color} flex items-center justify-center`}>
@@ -318,8 +318,8 @@ export default function ImportTab() {
                                     </div>
                                 )}
                                 <div>
-                                    <p className="text-sm font-medium text-gray-900">{selectedOption?.labelMN}</p>
-                                    <p className="text-xs text-gray-500">{file.name}</p>
+                                    <p className="text-sm font-medium text-foreground">{selectedOption?.labelMN}</p>
+                                    <p className="text-xs text-muted-foreground">{file.name}</p>
                                 </div>
                             </div>
                         </div>
@@ -349,20 +349,20 @@ export default function ImportTab() {
             {result && (
                 <div className={`rounded-2xl border p-5 animate-in fade-in duration-300 ${
                     result.success
-                        ? 'bg-emerald-50 border-emerald-200'
-                        : 'bg-red-50 border-red-200'
+                        ? 'bg-status-success-soft border-status-success/30'
+                        : 'bg-status-danger-soft border-status-danger/30'
                 }`}>
                     <div className="flex items-start gap-3">
                         {result.success ? (
-                            <CheckCircle className="w-6 h-6 text-emerald-500 flex-shrink-0 mt-0.5" />
+                            <CheckCircle className="w-6 h-6 text-status-success flex-shrink-0 mt-0.5" />
                         ) : (
-                            <AlertCircle className="w-6 h-6 text-red-500 flex-shrink-0 mt-0.5" />
+                            <AlertCircle className="w-6 h-6 text-status-danger flex-shrink-0 mt-0.5" />
                         )}
                         <div className="flex-1">
                             <p className={`font-semibold ${result.success ? 'text-emerald-800' : 'text-red-800'}`}>
                                 {result.success ? 'Амжилттай!' : 'Алдаа!'}
                             </p>
-                            <p className={`text-sm mt-1 ${result.success ? 'text-emerald-700' : 'text-red-700'}`}>
+                            <p className={`text-sm mt-1 ${result.success ? 'text-status-success' : 'text-status-danger'}`}>
                                 {result.message}
                             </p>
 
@@ -370,12 +370,12 @@ export default function ImportTab() {
                             {result.success && (result.imported || result.updated) && (
                                 <div className="flex gap-4 mt-3">
                                     {result.imported !== undefined && result.imported > 0 && (
-                                        <div className="px-3 py-1.5 bg-emerald-100 rounded-lg text-sm font-medium text-emerald-700">
+                                        <div className="px-3 py-1.5 bg-status-success-soft rounded-lg text-sm font-medium text-status-success">
                                             +{result.imported} шинэ
                                         </div>
                                     )}
                                     {result.updated !== undefined && result.updated > 0 && (
-                                        <div className="px-3 py-1.5 bg-blue-100 rounded-lg text-sm font-medium text-blue-700">
+                                        <div className="px-3 py-1.5 bg-status-info-soft rounded-lg text-sm font-medium text-status-info">
                                             ↻ {result.updated} шинэчлэгдсэн
                                         </div>
                                     )}
@@ -385,10 +385,10 @@ export default function ImportTab() {
                             {/* Errors */}
                             {result.errors && result.errors.length > 0 && (
                                 <div className="mt-3 space-y-1">
-                                    <p className="text-sm font-medium text-amber-700">⚠️ Алдаанууд:</p>
+                                    <p className="text-sm font-medium text-status-pending">⚠️ Алдаанууд:</p>
                                     <div className="max-h-32 overflow-y-auto space-y-0.5">
                                         {result.errors.map((err, i) => (
-                                            <p key={i} className="text-xs text-amber-600 pl-4">• {err}</p>
+                                            <p key={i} className="text-xs text-status-pending pl-4">• {err}</p>
                                         ))}
                                     </div>
                                 </div>
@@ -399,14 +399,14 @@ export default function ImportTab() {
             )}
 
             {/* Info box */}
-            <div className="bg-gradient-to-br from-slate-50 to-gray-50 rounded-2xl border border-gray-200 p-5">
+            <div className="bg-gradient-to-br from-slate-50 to-gray-50 rounded-2xl border border-border p-5">
                 <div className="flex items-start gap-3">
-                    <div className="w-8 h-8 bg-violet-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <Info className="w-4 h-4 text-violet-600" />
+                    <div className="w-8 h-8 bg-brand-soft rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Info className="w-4 h-4 text-brand-strong" />
                     </div>
                     <div>
-                        <p className="font-medium text-gray-900 text-sm">Ашиглах зааварчилгаа</p>
-                        <ul className="text-xs text-gray-600 mt-1.5 space-y-1 list-disc pl-4">
+                        <p className="font-medium text-foreground text-sm">Ашиглах зааварчилгаа</p>
+                        <ul className="text-xs text-muted-foreground mt-1.5 space-y-1 list-disc pl-4">
                             <li>Import төрөл сонгоод Template татна уу</li>
                             <li>Template-д мэдээллээ бөглөнө (жишээ мөрийг устгах эсвэл дээрээс нь бичих)</li>
                             <li>Бөглөсөн файлаа upload хийж, Import товч дарна</li>

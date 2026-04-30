@@ -43,26 +43,26 @@ export default function PoliciesTab({ policies, setPolicies, saving, setSaving, 
         <div className="space-y-6">
             <Card>
                 <CardContent className="p-6">
-                    <h2 className="font-semibold text-gray-900 mb-4">Бодлого & Дүрэм</h2>
+                    <h2 className="font-semibold text-foreground mb-4">Бодлого & Дүрэм</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Хүргэлтийн үнэгүй болох дүн (₮)</label>
+                            <label className="block text-sm font-medium text-foreground mb-1">Хүргэлтийн үнэгүй болох дүн (₮)</label>
                             <Input type="number" value={policies.shipping_threshold} onChange={(e) => setPolicies({ ...policies, shipping_threshold: Number(e.target.value) })} />
-                            <p className="text-xs text-gray-500 mt-1">Энэ дүнгээс дээш хүргэлт үнэгүй.</p>
+                            <p className="text-xs text-muted-foreground mt-1">Энэ дүнгээс дээш хүргэлт үнэгүй.</p>
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Буцаалтын нөхцөл</label>
+                            <label className="block text-sm font-medium text-foreground mb-1">Буцаалтын нөхцөл</label>
                             <Input value={policies.return_policy} onChange={(e) => setPolicies({ ...policies, return_policy: e.target.value })} />
                         </div>
                         <div className="col-span-1 md:col-span-2">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Төлбөрийн хэлбэрүүд</label>
+                            <label className="block text-sm font-medium text-foreground mb-1">Төлбөрийн хэлбэрүүд</label>
                             <div className="flex flex-wrap gap-2 mt-2">
                                 {paymentMethods.map(method => (
                                     <button key={method} onClick={() => {
                                         const current = policies.payment_methods || [];
                                         const newMethods = current.includes(method) ? current.filter(m => m !== method) : [...current, method];
                                         setPolicies({ ...policies, payment_methods: newMethods });
-                                    }} className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors border ${policies.payment_methods?.includes(method) ? 'bg-violet-100 text-violet-700 border-violet-200' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'}`}>
+                                    }} className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors border ${policies.payment_methods?.includes(method) ? 'bg-brand-soft text-brand-strong border-brand/30' : 'bg-surface text-muted-foreground border-border hover:border-border-strong'}`}>
                                         {method}
                                         {policies.payment_methods?.includes(method) && <Check className="w-3 h-3 ml-1 inline-block" />}
                                     </button>
@@ -70,9 +70,9 @@ export default function PoliciesTab({ policies, setPolicies, saving, setSaving, 
                             </div>
                         </div>
                         <div className="col-span-1 md:col-span-2">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Хүргэлтийн бүсүүд</label>
+                            <label className="block text-sm font-medium text-foreground mb-1">Хүргэлтийн бүсүүд</label>
                             <Textarea value={policies.delivery_areas?.join(', ')} onChange={(e) => setPolicies({ ...policies, delivery_areas: e.target.value.split(',').map(s => s.trim()) })} placeholder="Улаанбаатар, Хөдөө орон нутаг..." rows={2} />
-                            <p className="text-xs text-gray-500 mt-1">Таслалаар тусгаарлаж бичнэ үү.</p>
+                            <p className="text-xs text-muted-foreground mt-1">Таслалаар тусгаарлаж бичнэ үү.</p>
                         </div>
                     </div>
 

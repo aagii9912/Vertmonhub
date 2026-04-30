@@ -19,41 +19,36 @@ export function ChatInput({ onSend, disabled, placeholder = 'Мессеж бич
     };
 
     return (
-        <form onSubmit={handleSubmit} className="p-3 bg-white border-t border-gray-100 sticky bottom-0">
-            <div className="flex items-center gap-2 bg-gray-50 rounded-2xl px-3 py-1.5 border border-gray-100">
-                {/* Attachment buttons */}
+        <form onSubmit={handleSubmit} className="p-3 bg-surface border-t border-border sticky bottom-0">
+            <div className="flex items-center gap-2 bg-surface-2 rounded-xl px-3 py-1.5 border border-border">
                 <button
                     type="button"
-                    className="p-1.5 text-gray-400 hover:text-violet-600 transition"
+                    className="p-1.5 text-muted-foreground hover:text-brand transition-colors"
                 >
                     <ImageIcon className="w-5 h-5" />
                 </button>
 
-                {/* Input */}
                 <input
                     type="text"
                     value={message}
                     onChange={(e) => setMessage(e.target.value)}
                     placeholder={placeholder}
                     disabled={disabled}
-                    className="flex-1 bg-transparent border-none outline-none text-sm 
-                     placeholder:text-gray-400 py-2"
+                    className="flex-1 bg-transparent border-none outline-none text-sm text-foreground placeholder:text-muted-foreground/70 py-2"
                 />
 
-                {/* Send/Mic button */}
                 {message.trim() ? (
                     <button
                         type="submit"
                         disabled={disabled}
-                        className="p-2 bg-violet-600 text-white rounded-xl 
-                       hover:bg-violet-700 disabled:opacity-50 transition shadow-lg shadow-violet-500/20"
+                        className="p-2 bg-brand text-brand-fg rounded-md hover:bg-brand-strong disabled:opacity-50 transition-colors"
                     >
                         <Send className="w-4 h-4" />
                     </button>
                 ) : (
                     <button
                         type="button"
-                        className="p-2 text-gray-400 hover:text-violet-600 transition"
+                        className="p-2 text-muted-foreground hover:text-brand transition-colors"
                     >
                         <Mic className="w-5 h-5" />
                     </button>

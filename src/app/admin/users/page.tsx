@@ -18,10 +18,10 @@ interface RoleOption {
 }
 
 const ROLE_COLORS: Record<string, string> = {
-    admin: 'bg-red-100 text-red-700',
-    sales_manager: 'bg-blue-100 text-blue-700',
-    marketing: 'bg-purple-100 text-purple-700',
-    viewer: 'bg-gray-100 text-gray-700',
+    admin: 'bg-status-danger-soft text-status-danger',
+    sales_manager: 'bg-status-info-soft text-status-info',
+    marketing: 'bg-brand-soft text-brand-strong',
+    viewer: 'bg-surface-2 text-foreground',
 };
 
 export default function AdminUsersPage() {
@@ -59,7 +59,7 @@ export default function AdminUsersPage() {
                 setRoles(data.roles.map((r: any) => ({
                     value: r.name,
                     label: r.display_name_mn,
-                    color: ROLE_COLORS[r.name] || 'bg-gray-100 text-gray-700',
+                    color: ROLE_COLORS[r.name] || 'bg-surface-2 text-foreground',
                 })));
             }
         } catch (e) {
@@ -161,30 +161,30 @@ export default function AdminUsersPage() {
 
     const getRoleBadge = (role: string) => {
         const r = roles.find(r => r.value === role);
-        return r || { value: role, label: role, color: 'bg-gray-100 text-gray-700' };
+        return r || { value: role, label: role, color: 'bg-surface-2 text-foreground' };
     };
 
     return (
         <div className="max-w-5xl mx-auto">
             <div className="flex items-center justify-between mb-6">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Хэрэглэгчид & Дүрүүд</h1>
-                    <p className="text-gray-500 text-sm mt-1">Ажилчдын бүртгэл болон эрх удирдах</p>
+                    <h1 className="text-2xl font-bold text-foreground">Хэрэглэгчид & Дүрүүд</h1>
+                    <p className="text-muted-foreground text-sm mt-1">Ажилчдын бүртгэл болон эрх удирдах</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" />
                         <input
                             type="text"
                             placeholder="Хайх..."
                             value={search}
                             onChange={e => setSearch(e.target.value)}
-                            className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm w-64 focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
+                            className="pl-10 pr-4 py-2 border border-border-strong rounded-lg text-sm w-64 focus:ring-2 focus:ring-brand focus:border-brand"
                         />
                     </div>
                     <button
                         onClick={() => { setShowCreate(true); setCreateError(null); }}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 text-white rounded-xl font-medium hover:bg-violet-700 transition-colors"
+                        className="flex items-center gap-2 px-4 py-2.5 bg-brand text-white rounded-xl font-medium hover:bg-brand-strong transition-colors"
                     >
                         <UserPlus className="w-4 h-4" />
                         Хэрэглэгч нэмэх
@@ -194,7 +194,7 @@ export default function AdminUsersPage() {
 
             {/* Success Alert */}
             {createSuccess && (
-                <div className="mb-4 p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 flex items-center gap-2">
+                <div className="mb-4 p-4 bg-status-success-soft border border-status-success/30 rounded-xl text-status-success flex items-center gap-2">
                     <Check className="w-5 h-5" />{createSuccess}
                 </div>
             )}
@@ -209,27 +209,27 @@ export default function AdminUsersPage() {
             </div>
 
             {/* Users Table */}
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="bg-surface rounded-xl border border-border overflow-hidden">
                 <table className="w-full">
-                    <thead className="bg-gray-50 border-b border-gray-200">
+                    <thead className="bg-surface-2/40 border-b border-border">
                         <tr>
-                            <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Хэрэглэгч</th>
-                            <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Дүр</th>
-                            <th className="text-left px-6 py-3 text-xs font-medium text-gray-500 uppercase">Бүртгэгдсэн</th>
-                            <th className="text-right px-6 py-3 text-xs font-medium text-gray-500 uppercase">Үйлдэл</th>
+                            <th className="text-left px-6 py-3 text-xs font-medium text-muted-foreground uppercase">Хэрэглэгч</th>
+                            <th className="text-left px-6 py-3 text-xs font-medium text-muted-foreground uppercase">Дүр</th>
+                            <th className="text-left px-6 py-3 text-xs font-medium text-muted-foreground uppercase">Бүртгэгдсэн</th>
+                            <th className="text-right px-6 py-3 text-xs font-medium text-muted-foreground uppercase">Үйлдэл</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                         {loading ? (
                             <tr>
-                                <td colSpan={4} className="px-6 py-12 text-center text-gray-500">
+                                <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
                                     <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
                                     Уншиж байна...
                                 </td>
                             </tr>
                         ) : filtered.length === 0 ? (
                             <tr>
-                                <td colSpan={4} className="px-6 py-12 text-center text-gray-500">
+                                <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
                                     Хэрэглэгч олдсонгүй
                                 </td>
                             </tr>
@@ -239,15 +239,15 @@ export default function AdminUsersPage() {
                                 const isEditing = editingId === user.id;
 
                                 return (
-                                    <tr key={user.id} className="hover:bg-gray-50 transition-colors">
+                                    <tr key={user.id} className="hover:bg-surface-2/40 transition-colors">
                                         <td className="px-6 py-4">
                                             <div className="flex items-center gap-3">
-                                                <div className="w-9 h-9 rounded-full bg-violet-100 flex items-center justify-center text-sm font-bold text-violet-700">
+                                                <div className="w-9 h-9 rounded-full bg-brand-soft flex items-center justify-center text-sm font-bold text-brand-strong">
                                                     {(user.full_name?.[0] || user.email[0]).toUpperCase()}
                                                 </div>
                                                 <div>
-                                                    <p className="text-sm font-medium text-gray-900">{user.full_name || 'Нэргүй'}</p>
-                                                    <p className="text-xs text-gray-500">{user.email}</p>
+                                                    <p className="text-sm font-medium text-foreground">{user.full_name || 'Нэргүй'}</p>
+                                                    <p className="text-xs text-muted-foreground">{user.email}</p>
                                                 </div>
                                             </div>
                                         </td>
@@ -258,15 +258,15 @@ export default function AdminUsersPage() {
                                                         defaultValue={user.role}
                                                         onChange={e => updateRole(user.id, e.target.value)}
                                                         disabled={saving}
-                                                        className="px-3 py-1.5 text-sm border border-violet-300 rounded-lg bg-white focus:ring-2 focus:ring-violet-500"
+                                                        className="px-3 py-1.5 text-sm border border-brand/40 rounded-lg bg-surface focus:ring-2 focus:ring-brand"
                                                     >
                                                         {roles.map(r => (
                                                             <option key={r.value} value={r.value}>{r.label}</option>
                                                         ))}
                                                     </select>
-                                                    {saving && <Loader2 className="w-4 h-4 animate-spin text-violet-600" />}
-                                                    <button onClick={() => setEditingId(null)} className="p-1 hover:bg-gray-100 rounded">
-                                                        <X className="w-4 h-4 text-gray-400" />
+                                                    {saving && <Loader2 className="w-4 h-4 animate-spin text-brand-strong" />}
+                                                    <button onClick={() => setEditingId(null)} className="p-1 hover:bg-surface-2 rounded">
+                                                        <X className="w-4 h-4 text-muted-foreground/70" />
                                                     </button>
                                                 </div>
                                             ) : (
@@ -275,7 +275,7 @@ export default function AdminUsersPage() {
                                                 </span>
                                             )}
                                         </td>
-                                        <td className="px-6 py-4 text-sm text-gray-500">
+                                        <td className="px-6 py-4 text-sm text-muted-foreground">
                                             {new Date(user.created_at).toLocaleDateString('mn-MN')}
                                         </td>
                                         <td className="px-6 py-4 text-right">
@@ -283,14 +283,14 @@ export default function AdminUsersPage() {
                                                 {!isEditing && (
                                                     <button
                                                         onClick={() => setEditingId(user.id)}
-                                                        className="px-3 py-1.5 text-xs font-medium text-violet-600 hover:bg-violet-50 rounded-lg transition-colors"
+                                                        className="px-3 py-1.5 text-xs font-medium text-brand-strong hover:bg-brand-soft rounded-lg transition-colors"
                                                     >
                                                         Дүр солих
                                                     </button>
                                                 )}
                                                 <button
                                                     onClick={() => setDeleteConfirm(user)}
-                                                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                    className="p-1.5 text-muted-foreground/70 hover:text-status-danger hover:bg-status-danger-soft rounded-lg transition-colors"
                                                     title="Устгах"
                                                 >
                                                     <Trash2 className="w-4 h-4" />
@@ -308,20 +308,20 @@ export default function AdminUsersPage() {
             {/* Create User Modal */}
             {showCreate && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-md shadow-2xl">
-                        <div className="flex items-center justify-between p-6 border-b border-gray-100">
+                    <div className="bg-surface rounded-2xl w-full max-w-md shadow-2xl">
+                        <div className="flex items-center justify-between p-6 border-b border-border/60">
                             <div className="flex items-center gap-2">
-                                <UserPlus className="w-5 h-5 text-violet-600" />
-                                <h2 className="text-lg font-bold text-gray-900">Хэрэглэгч нэмэх</h2>
+                                <UserPlus className="w-5 h-5 text-brand-strong" />
+                                <h2 className="text-lg font-bold text-foreground">Хэрэглэгч нэмэх</h2>
                             </div>
-                            <button onClick={() => setShowCreate(false)} className="p-2 hover:bg-gray-100 rounded-xl">
-                                <X className="w-5 h-5 text-gray-500" />
+                            <button onClick={() => setShowCreate(false)} className="p-2 hover:bg-surface-2 rounded-xl">
+                                <X className="w-5 h-5 text-muted-foreground" />
                             </button>
                         </div>
 
                         <div className="p-6 space-y-4">
                             {createError && (
-                                <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-sm flex items-center gap-2">
+                                <div className="p-3 bg-status-danger-soft border border-status-danger/30 rounded-lg text-status-danger text-sm flex items-center gap-2">
                                     <AlertCircle className="w-4 h-4 flex-shrink-0" />
                                     {createError}
                                 </div>
@@ -329,24 +329,24 @@ export default function AdminUsersPage() {
 
                             {/* Full Name */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Нэр</label>
+                                <label className="block text-sm font-medium text-foreground mb-1">Нэр</label>
                                 <input
                                     type="text"
                                     value={newUser.full_name}
                                     onChange={e => setNewUser(p => ({ ...p, full_name: e.target.value }))}
-                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
+                                    className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-brand focus:border-brand"
                                     placeholder="Нэр оруулах"
                                 />
                             </div>
 
                             {/* Email */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Имэйл <span className="text-red-500">*</span></label>
+                                <label className="block text-sm font-medium text-foreground mb-1">Имэйл <span className="text-status-danger">*</span></label>
                                 <input
                                     type="email"
                                     value={newUser.email}
                                     onChange={e => setNewUser(p => ({ ...p, email: e.target.value }))}
-                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
+                                    className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-brand focus:border-brand"
                                     placeholder="email@example.com"
                                     required
                                 />
@@ -354,13 +354,13 @@ export default function AdminUsersPage() {
 
                             {/* Password */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Нууц үг <span className="text-red-500">*</span></label>
+                                <label className="block text-sm font-medium text-foreground mb-1">Нууц үг <span className="text-status-danger">*</span></label>
                                 <div className="relative">
                                     <input
                                         type={showPassword ? 'text' : 'password'}
                                         value={newUser.password}
                                         onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))}
-                                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm pr-10 focus:ring-2 focus:ring-violet-500 focus:border-violet-500"
+                                        className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm pr-10 focus:ring-2 focus:ring-brand focus:border-brand"
                                         placeholder="Хамгийн багадаа 8 тэмдэгт"
                                         minLength={8}
                                         required
@@ -368,17 +368,17 @@ export default function AdminUsersPage() {
                                     <button
                                         type="button"
                                         onClick={() => setShowPassword(p => !p)}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 hover:text-muted-foreground"
                                     >
                                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                     </button>
                                 </div>
-                                <p className="text-xs text-gray-400 mt-1">Хамгийн багадаа 8 тэмдэгт</p>
+                                <p className="text-xs text-muted-foreground/70 mt-1">Хамгийн багадаа 8 тэмдэгт</p>
                             </div>
 
                             {/* Role Selection */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Дүр (role) сонгох</label>
+                                <label className="block text-sm font-medium text-foreground mb-2">Дүр (role) сонгох</label>
                                 <div className="grid grid-cols-2 gap-2">
                                     {roles.map(r => (
                                         <button
@@ -387,8 +387,8 @@ export default function AdminUsersPage() {
                                             onClick={() => setNewUser(p => ({ ...p, role: r.value }))}
                                             className={`px-3 py-2.5 rounded-lg text-sm font-medium border-2 transition-all text-left ${
                                                 newUser.role === r.value
-                                                    ? 'border-violet-500 bg-violet-50 text-violet-700'
-                                                    : 'border-gray-200 bg-white text-gray-600 hover:border-gray-400'
+                                                    ? 'border-brand bg-brand-soft text-brand-strong'
+                                                    : 'border-border bg-surface text-muted-foreground hover:border-border'
                                             }`}
                                         >
                                             <span className={`inline-block w-2 h-2 rounded-full mr-2 ${r.color.split(' ')[0]}`} />
@@ -396,23 +396,23 @@ export default function AdminUsersPage() {
                                         </button>
                                     ))}
                                 </div>
-                                <p className="text-xs text-gray-400 mt-2">
+                                <p className="text-xs text-muted-foreground/70 mt-2">
                                     Дүр нь module хандалтыг тодорхойлно. Дүр удирдлагыг "Дүрүүд" хуудсаас хийнэ.
                                 </p>
                             </div>
                         </div>
 
-                        <div className="flex justify-end gap-3 p-6 border-t border-gray-100">
+                        <div className="flex justify-end gap-3 p-6 border-t border-border/60">
                             <button
                                 onClick={() => setShowCreate(false)}
-                                className="px-4 py-2.5 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                                className="px-4 py-2.5 text-sm text-foreground bg-surface-2 rounded-lg hover:bg-surface-3"
                             >
                                 Цуцлах
                             </button>
                             <button
                                 onClick={createUser}
                                 disabled={creating || !newUser.email || !newUser.password}
-                                className="flex items-center gap-2 px-5 py-2.5 text-sm bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                                className="flex items-center gap-2 px-5 py-2.5 text-sm bg-brand text-white rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                             >
                                 {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
                                 Үүсгэх
@@ -425,32 +425,32 @@ export default function AdminUsersPage() {
             {/* Delete Confirmation Modal */}
             {deleteConfirm && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl">
+                    <div className="bg-surface rounded-2xl w-full max-w-sm shadow-2xl">
                         <div className="p-6 text-center">
-                            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                                <Trash2 className="w-6 h-6 text-red-600" />
+                            <div className="w-12 h-12 bg-status-danger-soft rounded-full flex items-center justify-center mx-auto mb-4">
+                                <Trash2 className="w-6 h-6 text-status-danger" />
                             </div>
-                            <h3 className="text-lg font-bold text-gray-900 mb-2">Хэрэглэгч устгах</h3>
-                            <p className="text-sm text-gray-500 mb-1">
-                                <span className="font-medium text-gray-700">{deleteConfirm.full_name || deleteConfirm.email}</span>
+                            <h3 className="text-lg font-bold text-foreground mb-2">Хэрэглэгч устгах</h3>
+                            <p className="text-sm text-muted-foreground mb-1">
+                                <span className="font-medium text-foreground">{deleteConfirm.full_name || deleteConfirm.email}</span>
                             </p>
-                            <p className="text-sm text-gray-500">
+                            <p className="text-sm text-muted-foreground">
                                 ({deleteConfirm.email}) хэрэглэгчийг устгахдаа итгэлтэй байна уу?
                             </p>
-                            <p className="text-xs text-red-500 mt-2">Энэ үйлдлийг буцаах боломжгүй!</p>
+                            <p className="text-xs text-status-danger mt-2">Энэ үйлдлийг буцаах боломжгүй!</p>
                         </div>
-                        <div className="flex gap-3 p-4 border-t border-gray-100">
+                        <div className="flex gap-3 p-4 border-t border-border/60">
                             <button
                                 onClick={() => setDeleteConfirm(null)}
                                 disabled={deleting}
-                                className="flex-1 px-4 py-2.5 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 disabled:opacity-50"
+                                className="flex-1 px-4 py-2.5 text-sm text-foreground bg-surface-2 rounded-lg hover:bg-surface-3 disabled:opacity-50"
                             >
                                 Цуцлах
                             </button>
                             <button
                                 onClick={() => deleteUser(deleteConfirm)}
                                 disabled={deleting}
-                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 font-medium"
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm bg-status-danger text-white rounded-lg hover:bg-status-danger disabled:opacity-50 font-medium"
                             >
                                 {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                                 Устгах

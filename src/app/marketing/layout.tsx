@@ -69,33 +69,33 @@ function MarketingSidebar() {
     };
 
     return (
-        <aside className="fixed left-0 top-0 h-screen w-64 bg-white border-r border-gray-200 flex flex-col z-50 hidden md:flex">
+        <aside className="fixed left-0 top-0 h-screen w-64 bg-surface border-r border-border flex flex-col z-50 hidden md:flex">
             {/* Logo */}
-            <div className="flex items-center justify-between h-16 px-4 border-b border-gray-100">
+            <div className="flex items-center justify-between h-16 px-4 border-b border-border/60">
                 <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-purple-600 flex items-center justify-center">
+                    <div className="w-9 h-9 rounded-lg bg-brand flex items-center justify-center">
                         <Megaphone className="w-5 h-5 text-white" />
                     </div>
-                    <span className="font-semibold text-lg text-gray-900">
+                    <span className="font-semibold text-lg text-foreground">
                         Маркетинг
                     </span>
                 </div>
-                <button className="p-1.5 hover:bg-gray-100 rounded-lg transition-colors">
-                    <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <button className="p-1.5 hover:bg-surface-2 rounded-lg transition-colors">
+                    <svg className="w-5 h-5 text-muted-foreground/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 6h16M4 12h16M4 18h16" />
                     </svg>
                 </button>
             </div>
 
             {/* Section Switcher */}
-            <div className="px-3 py-3 border-b border-gray-100">
+            <div className="px-3 py-3 border-b border-border/60">
                 <Link href="/dashboard">
-                    <button className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors group">
+                    <button className="w-full flex items-center justify-between px-3 py-2.5 bg-surface-2/40 hover:bg-surface-2 rounded-lg transition-colors group">
                         <div className="flex items-center gap-3">
-                            <Building2 className="w-5 h-5 text-emerald-600" />
-                            <span className="text-sm font-medium text-gray-700">Борлуулалт руу шилжих</span>
+                            <Building2 className="w-5 h-5 text-status-success" />
+                            <span className="text-sm font-medium text-foreground">Борлуулалт руу шилжих</span>
                         </div>
-                        <ArrowLeftRight className="w-4 h-4 text-gray-400 group-hover:text-gray-600" />
+                        <ArrowLeftRight className="w-4 h-4 text-muted-foreground/70 group-hover:text-muted-foreground" />
                     </button>
                 </Link>
             </div>
@@ -115,34 +115,34 @@ function MarketingSidebar() {
                                         <button
                                             onClick={() => toggleMenu(item.name)}
                                             className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all duration-200 group ${active
-                                                ? 'bg-purple-50 text-purple-700'
-                                                : 'text-gray-600 hover:bg-gray-50'
+                                                ? 'bg-brand-soft text-brand-strong'
+                                                : 'text-muted-foreground hover:bg-surface-2/40'
                                                 }`}
                                         >
                                             <div className="flex items-center gap-3">
-                                                <item.icon className={`w-5 h-5 ${active ? 'text-purple-600' : 'text-gray-400 group-hover:text-gray-600'}`} />
+                                                <item.icon className={`w-5 h-5 ${active ? 'text-brand-strong' : 'text-muted-foreground/70 group-hover:text-muted-foreground'}`} />
                                                 <span className="font-medium text-sm">{item.name}</span>
                                                 {item.badge && (
-                                                    <span className="px-1.5 py-0.5 bg-purple-600 text-white text-[10px] font-bold rounded">
+                                                    <span className="px-1.5 py-0.5 bg-brand text-white text-[10px] font-bold rounded">
                                                         {item.badge}
                                                     </span>
                                                 )}
                                             </div>
                                             {isExpanded ? (
-                                                <ChevronUp className="w-4 h-4 text-gray-400" />
+                                                <ChevronUp className="w-4 h-4 text-muted-foreground/70" />
                                             ) : (
-                                                <ChevronDown className="w-4 h-4 text-gray-400" />
+                                                <ChevronDown className="w-4 h-4 text-muted-foreground/70" />
                                             )}
                                         </button>
                                         {isExpanded && (
-                                            <ul className="mt-1 ml-4 pl-4 border-l border-gray-200 space-y-1">
+                                            <ul className="mt-1 ml-4 pl-4 border-l border-border space-y-1">
                                                 {item.children?.map((child) => (
                                                     <li key={child.name}>
                                                         <Link
                                                             href={child.href}
                                                             className={`block px-3 py-2 rounded-lg text-sm transition-colors ${isActive(child.href)
-                                                                ? 'text-purple-700 bg-purple-50 font-medium'
-                                                                : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                                                                ? 'text-brand-strong bg-brand-soft font-medium'
+                                                                : 'text-muted-foreground hover:text-foreground hover:bg-surface-2/40'
                                                                 }`}
                                                         >
                                                             {child.name}
@@ -156,14 +156,14 @@ function MarketingSidebar() {
                                     <Link
                                         href={item.href}
                                         className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group ${active
-                                            ? 'bg-purple-50 text-purple-700'
-                                            : 'text-gray-600 hover:bg-gray-50'
+                                            ? 'bg-brand-soft text-brand-strong'
+                                            : 'text-muted-foreground hover:bg-surface-2/40'
                                             }`}
                                     >
-                                        <item.icon className={`w-5 h-5 ${active ? 'text-purple-600' : 'text-gray-400 group-hover:text-gray-600'}`} />
+                                        <item.icon className={`w-5 h-5 ${active ? 'text-brand-strong' : 'text-muted-foreground/70 group-hover:text-muted-foreground'}`} />
                                         <span className="font-medium text-sm">{item.name}</span>
                                         {item.badge && (
-                                            <span className="px-1.5 py-0.5 bg-purple-600 text-white text-[10px] font-bold rounded">
+                                            <span className="px-1.5 py-0.5 bg-brand text-white text-[10px] font-bold rounded">
                                                 {item.badge}
                                             </span>
                                         )}
@@ -176,15 +176,15 @@ function MarketingSidebar() {
             </nav>
 
             {/* Bottom Menu */}
-            <div className="px-3 py-3 border-t border-gray-100">
+            <div className="px-3 py-3 border-t border-border/60">
                 <ul className="space-y-1">
                     {bottomMenuItems.map((item) => (
                         <li key={item.name}>
                             <Link
                                 href={item.href}
                                 className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${isActive(item.href)
-                                    ? 'text-purple-700 bg-purple-50'
-                                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                                    ? 'text-brand-strong bg-brand-soft'
+                                    : 'text-muted-foreground hover:bg-surface-2/40 hover:text-foreground'
                                     }`}
                             >
                                 <item.icon className="w-5 h-5" />
@@ -195,7 +195,7 @@ function MarketingSidebar() {
                     <li>
                         <button
                             onClick={() => signOut()}
-                            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-gray-500 hover:bg-gray-50 hover:text-gray-700 transition-colors"
+                            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-muted-foreground hover:bg-surface-2/40 hover:text-foreground transition-colors"
                         >
                             <LogOut className="w-5 h-5" />
                             <span className="text-sm">Гарах</span>
@@ -205,15 +205,15 @@ function MarketingSidebar() {
             </div>
 
             {/* User Profile */}
-            <div className="px-3 pb-4 border-t border-gray-100 pt-3">
-                <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-gray-50 transition-colors">
-                    <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
-                        <UserCircle className="w-5 h-5 text-purple-600" />
+            <div className="px-3 pb-4 border-t border-border/60 pt-3">
+                <button className="w-full flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-surface-2/40 transition-colors">
+                    <div className="w-8 h-8 rounded-full bg-brand-soft flex items-center justify-center">
+                        <UserCircle className="w-5 h-5 text-brand-strong" />
                     </div>
                     <div className="flex-1 text-left">
-                        <p className="text-sm font-medium text-gray-900">{shop?.name || 'Маркетинг'}</p>
+                        <p className="text-sm font-medium text-foreground">{shop?.name || 'Маркетинг'}</p>
                     </div>
-                    <ChevronDown className="w-4 h-4 text-gray-400" />
+                    <ChevronDown className="w-4 h-4 text-muted-foreground/70" />
                 </button>
             </div>
         </aside>
@@ -234,7 +234,7 @@ function MarketingMobileNav() {
     const isActive = (href: string) => pathname === href || (href !== '/marketing' && pathname.startsWith(href));
 
     return (
-        <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden z-50">
+        <nav className="fixed bottom-0 left-0 right-0 bg-surface border-t border-border md:hidden z-50">
             <div className="flex items-center justify-around py-2">
                 {mobileItems.map((item) => {
                     const active = isActive(item.href);
@@ -242,7 +242,7 @@ function MarketingMobileNav() {
                         <Link
                             key={item.name}
                             href={item.href}
-                            className={`flex flex-col items-center gap-1 px-3 py-2 ${active ? 'text-purple-600' : 'text-gray-500'
+                            className={`flex flex-col items-center gap-1 px-3 py-2 ${active ? 'text-brand-strong' : 'text-muted-foreground'
                                 }`}
                         >
                             <item.icon className="w-5 h-5" />
@@ -258,18 +258,18 @@ function MarketingMobileNav() {
 // Marketing Header
 function MarketingHeader() {
     return (
-        <header className="sticky top-0 z-40 h-16 bg-white border-b border-gray-200 flex items-center justify-between px-4 md:px-6">
+        <header className="sticky top-0 z-40 h-16 bg-surface border-b border-border flex items-center justify-between px-4 md:px-6">
             <div className="flex items-center gap-4">
                 <div className="md:hidden flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-purple-600 flex items-center justify-center">
+                    <div className="w-8 h-8 rounded-lg bg-brand flex items-center justify-center">
                         <Megaphone className="w-4 h-4 text-white" />
                     </div>
-                    <span className="font-semibold text-gray-900">Маркетинг</span>
+                    <span className="font-semibold text-foreground">Маркетинг</span>
                 </div>
             </div>
             <div className="flex items-center gap-3">
-                <button className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                    <Settings className="w-5 h-5 text-gray-500" />
+                <button className="p-2 hover:bg-surface-2 rounded-lg transition-colors">
+                    <Settings className="w-5 h-5 text-muted-foreground" />
                 </button>
             </div>
         </header>

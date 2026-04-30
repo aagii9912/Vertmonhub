@@ -141,7 +141,7 @@ export default function RolesPage() {
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
-                <Loader2 className="w-8 h-8 animate-spin text-violet-600" />
+                <Loader2 className="w-8 h-8 animate-spin text-brand-strong" />
             </div>
         );
     }
@@ -151,17 +151,17 @@ export default function RolesPage() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                        <Shield className="w-6 h-6 text-violet-600" />
+                    <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
+                        <Shield className="w-6 h-6 text-brand-strong" />
                         Дүрүүд удирдах
                     </h1>
-                    <p className="text-sm text-gray-500 mt-1">
+                    <p className="text-sm text-muted-foreground mt-1">
                         Дүр (role) тус бүрт module хандалтын зөвшөөрөл тохируулна
                     </p>
                 </div>
                 <button
                     onClick={() => setShowCreate(true)}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-violet-600 text-white rounded-xl font-medium hover:bg-violet-700 transition-colors"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-brand text-white rounded-xl font-medium hover:bg-brand-strong transition-colors"
                 >
                     <Plus className="w-4 h-4" />
                     Шинэ дүр
@@ -170,37 +170,37 @@ export default function RolesPage() {
 
             {/* Alerts */}
             {error && (
-                <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 flex items-center justify-between">
+                <div className="p-4 bg-status-danger-soft border border-status-danger/30 rounded-xl text-status-danger flex items-center justify-between">
                     <div className="flex items-center gap-2"><AlertCircle className="w-5 h-5" />{error}</div>
                     <button onClick={() => setError(null)}><X className="w-4 h-4" /></button>
                 </div>
             )}
             {success && (
-                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 flex items-center gap-2">
+                <div className="p-4 bg-status-success-soft border border-status-success/30 rounded-xl text-status-success flex items-center gap-2">
                     <Check className="w-5 h-5" />{success}
                 </div>
             )}
 
             {/* Permissions Grid */}
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="bg-surface rounded-xl border border-border overflow-hidden">
                 <div className="overflow-x-auto">
                     <table className="w-full">
-                        <thead className="bg-gray-50 border-b border-gray-200">
+                        <thead className="bg-surface-2/40 border-b border-border">
                             <tr>
-                                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-50 min-w-[180px]">
+                                <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider sticky left-0 bg-surface-2/40 min-w-[180px]">
                                     Module
                                 </th>
                                 {roles.map(role => (
                                     <th key={role.id} className="text-center px-3 py-3 min-w-[120px]">
                                         <div className="flex flex-col items-center gap-1">
-                                            <span className="text-sm font-semibold text-gray-900">
+                                            <span className="text-sm font-semibold text-foreground">
                                                 {role.display_name_mn}
                                             </span>
-                                            <span className="text-[10px] text-gray-400 font-mono">
+                                            <span className="text-[10px] text-muted-foreground/70 font-mono">
                                                 {role.name}
                                             </span>
                                             {role.is_system && (
-                                                <Lock className="w-3 h-3 text-gray-400" />
+                                                <Lock className="w-3 h-3 text-muted-foreground/70" />
                                             )}
                                         </div>
                                     </th>
@@ -211,11 +211,11 @@ export default function RolesPage() {
                             {ALL_MODULES.map(module => {
                                 const label = MODULE_LABELS[module];
                                 return (
-                                    <tr key={module} className="hover:bg-gray-50">
-                                        <td className="px-4 py-3 sticky left-0 bg-white">
+                                    <tr key={module} className="hover:bg-surface-2/40">
+                                        <td className="px-4 py-3 sticky left-0 bg-surface">
                                             <div>
-                                                <p className="text-sm font-medium text-gray-900">{label?.mn || module}</p>
-                                                <p className="text-[11px] text-gray-400">{module}</p>
+                                                <p className="text-sm font-medium text-foreground">{label?.mn || module}</p>
+                                                <p className="text-[11px] text-muted-foreground/70">{module}</p>
                                             </div>
                                         </td>
                                         {roles.map(role => {
@@ -228,8 +228,8 @@ export default function RolesPage() {
                                                         disabled={isSaving}
                                                         className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all ${
                                                             hasModule
-                                                                ? 'bg-emerald-500 border-emerald-500 text-white'
-                                                                : 'bg-white border-gray-200 text-gray-300 hover:border-gray-400'
+                                                                ? 'bg-status-success border-emerald-500 text-white'
+                                                                : 'bg-surface border-border text-muted-foreground/60 hover:border-gray-400'
                                                         } ${isSaving ? 'opacity-50' : ''}`}
                                                     >
                                                         {isSaving ? (
@@ -245,8 +245,8 @@ export default function RolesPage() {
                                 );
                             })}
                             {/* Divider */}
-                            <tr className="bg-gray-50">
-                                <td className="px-4 py-2 text-xs font-bold text-gray-500 uppercase sticky left-0 bg-gray-50">
+                            <tr className="bg-surface-2/40">
+                                <td className="px-4 py-2 text-xs font-bold text-muted-foreground uppercase sticky left-0 bg-surface-2/40">
                                     Эрхүүд
                                 </td>
                                 {roles.map(role => (
@@ -254,10 +254,10 @@ export default function RolesPage() {
                                 ))}
                             </tr>
                             {/* canWrite */}
-                            <tr className="hover:bg-gray-50">
-                                <td className="px-4 py-3 sticky left-0 bg-white">
-                                    <p className="text-sm font-medium text-gray-900">Бичих эрх</p>
-                                    <p className="text-[11px] text-gray-400">canWrite</p>
+                            <tr className="hover:bg-surface-2/40">
+                                <td className="px-4 py-3 sticky left-0 bg-surface">
+                                    <p className="text-sm font-medium text-foreground">Бичих эрх</p>
+                                    <p className="text-[11px] text-muted-foreground/70">canWrite</p>
                                 </td>
                                 {roles.map(role => (
                                     <td key={role.id} className="text-center px-3 py-3">
@@ -265,8 +265,8 @@ export default function RolesPage() {
                                             onClick={() => updateRoleField(role.id, 'can_write', !role.can_write)}
                                             className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all ${
                                                 role.can_write
-                                                    ? 'bg-blue-500 border-blue-500 text-white'
-                                                    : 'bg-white border-gray-200 text-gray-300 hover:border-gray-400'
+                                                    ? 'bg-status-info border-blue-500 text-white'
+                                                    : 'bg-surface border-border text-muted-foreground/60 hover:border-gray-400'
                                             }`}
                                         >
                                             {role.can_write && <Check className="w-4 h-4" />}
@@ -275,10 +275,10 @@ export default function RolesPage() {
                                 ))}
                             </tr>
                             {/* canDelete */}
-                            <tr className="hover:bg-gray-50">
-                                <td className="px-4 py-3 sticky left-0 bg-white">
-                                    <p className="text-sm font-medium text-gray-900">Устгах эрх</p>
-                                    <p className="text-[11px] text-gray-400">canDelete</p>
+                            <tr className="hover:bg-surface-2/40">
+                                <td className="px-4 py-3 sticky left-0 bg-surface">
+                                    <p className="text-sm font-medium text-foreground">Устгах эрх</p>
+                                    <p className="text-[11px] text-muted-foreground/70">canDelete</p>
                                 </td>
                                 {roles.map(role => (
                                     <td key={role.id} className="text-center px-3 py-3">
@@ -286,8 +286,8 @@ export default function RolesPage() {
                                             onClick={() => updateRoleField(role.id, 'can_delete', !role.can_delete)}
                                             className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all ${
                                                 role.can_delete
-                                                    ? 'bg-red-500 border-red-500 text-white'
-                                                    : 'bg-white border-gray-200 text-gray-300 hover:border-gray-400'
+                                                    ? 'bg-status-danger border-red-500 text-white'
+                                                    : 'bg-surface border-border text-muted-foreground/60 hover:border-gray-400'
                                             }`}
                                         >
                                             {role.can_delete && <Check className="w-4 h-4" />}
@@ -296,10 +296,10 @@ export default function RolesPage() {
                                 ))}
                             </tr>
                             {/* canAccessAdmin */}
-                            <tr className="hover:bg-gray-50">
-                                <td className="px-4 py-3 sticky left-0 bg-white">
-                                    <p className="text-sm font-medium text-gray-900">Admin хандалт</p>
-                                    <p className="text-[11px] text-gray-400">canAccessAdmin</p>
+                            <tr className="hover:bg-surface-2/40">
+                                <td className="px-4 py-3 sticky left-0 bg-surface">
+                                    <p className="text-sm font-medium text-foreground">Admin хандалт</p>
+                                    <p className="text-[11px] text-muted-foreground/70">canAccessAdmin</p>
                                 </td>
                                 {roles.map(role => (
                                     <td key={role.id} className="text-center px-3 py-3">
@@ -307,8 +307,8 @@ export default function RolesPage() {
                                             onClick={() => updateRoleField(role.id, 'can_access_admin', !role.can_access_admin)}
                                             className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all ${
                                                 role.can_access_admin
-                                                    ? 'bg-violet-500 border-violet-500 text-white'
-                                                    : 'bg-white border-gray-200 text-gray-300 hover:border-gray-400'
+                                                    ? 'bg-brand border-brand text-white'
+                                                    : 'bg-surface border-border text-muted-foreground/60 hover:border-gray-400'
                                             }`}
                                         >
                                             {role.can_access_admin && <Check className="w-4 h-4" />}
@@ -317,19 +317,19 @@ export default function RolesPage() {
                                 ))}
                             </tr>
                             {/* Delete row */}
-                            <tr className="bg-gray-50">
-                                <td className="px-4 py-3 text-xs font-bold text-gray-500 uppercase sticky left-0 bg-gray-50">
+                            <tr className="bg-surface-2/40">
+                                <td className="px-4 py-3 text-xs font-bold text-muted-foreground uppercase sticky left-0 bg-surface-2/40">
                                     Үйлдэл
                                 </td>
                                 {roles.map(role => (
                                     <td key={role.id} className="text-center px-3 py-3">
                                         {role.is_system ? (
-                                            <span className="text-xs text-gray-400">Системийн</span>
+                                            <span className="text-xs text-muted-foreground/70">Системийн</span>
                                         ) : (
                                             <button
                                                 onClick={() => deleteRole(role.id)}
                                                 disabled={saving === role.id}
-                                                className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                                                className="p-2 text-status-danger hover:text-status-danger hover:bg-status-danger-soft rounded-lg transition-colors"
                                             >
                                                 <Trash2 className="w-4 h-4" />
                                             </button>
@@ -345,52 +345,52 @@ export default function RolesPage() {
             {/* Create Role Dialog */}
             {showCreate && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-xl">
-                        <div className="flex items-center justify-between p-6 border-b border-gray-100">
-                            <h2 className="text-lg font-bold text-gray-900">Шинэ дүр үүсгэх</h2>
-                            <button onClick={() => setShowCreate(false)} className="p-2 hover:bg-gray-100 rounded-xl">
-                                <X className="w-5 h-5 text-gray-500" />
+                    <div className="bg-surface rounded-2xl w-full max-w-xl">
+                        <div className="flex items-center justify-between p-6 border-b border-border/60">
+                            <h2 className="text-lg font-bold text-foreground">Шинэ дүр үүсгэх</h2>
+                            <button onClick={() => setShowCreate(false)} className="p-2 hover:bg-surface-2 rounded-xl">
+                                <X className="w-5 h-5 text-muted-foreground" />
                             </button>
                         </div>
                         <div className="p-6 space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Код (English)</label>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Код (English)</label>
                                     <input
                                         type="text"
                                         value={newRole.name}
                                         onChange={e => setNewRole(p => ({ ...p, name: e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, '') }))}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                        className="w-full px-3 py-2 border border-border-strong rounded-lg text-sm"
                                         placeholder="sales_agent"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Нэр (English)</label>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Нэр (English)</label>
                                     <input
                                         type="text"
                                         value={newRole.display_name}
                                         onChange={e => setNewRole(p => ({ ...p, display_name: e.target.value }))}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                        className="w-full px-3 py-2 border border-border-strong rounded-lg text-sm"
                                         placeholder="Sales Agent"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Нэр (Монгол)</label>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Нэр (Монгол)</label>
                                     <input
                                         type="text"
                                         value={newRole.display_name_mn}
                                         onChange={e => setNewRole(p => ({ ...p, display_name_mn: e.target.value }))}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                        className="w-full px-3 py-2 border border-border-strong rounded-lg text-sm"
                                         placeholder="Борлуулалтын ажилтан"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Тайлбар</label>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Тайлбар</label>
                                     <input
                                         type="text"
                                         value={newRole.description}
                                         onChange={e => setNewRole(p => ({ ...p, description: e.target.value }))}
-                                        className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                                        className="w-full px-3 py-2 border border-border-strong rounded-lg text-sm"
                                         placeholder="Хандалтын тайлбар"
                                     />
                                 </div>
@@ -398,7 +398,7 @@ export default function RolesPage() {
 
                             {/* Module selection */}
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">Module зөвшөөрөл</label>
+                                <label className="block text-sm font-medium text-foreground mb-2">Module зөвшөөрөл</label>
                                 <div className="grid grid-cols-3 gap-2">
                                     {ALL_MODULES.map(module => {
                                         const label = MODULE_LABELS[module];
@@ -417,8 +417,8 @@ export default function RolesPage() {
                                                 }}
                                                 className={`px-3 py-2 rounded-lg text-xs font-medium border transition-all text-left ${
                                                     checked
-                                                        ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                                                        : 'bg-white border-gray-200 text-gray-600 hover:border-gray-400'
+                                                        ? 'bg-status-success-soft border-status-success/40 text-status-success'
+                                                        : 'bg-surface border-border text-muted-foreground hover:border-gray-400'
                                                 }`}
                                             >
                                                 {label?.mn || module}
@@ -435,41 +435,41 @@ export default function RolesPage() {
                                         type="checkbox"
                                         checked={newRole.can_write}
                                         onChange={e => setNewRole(p => ({ ...p, can_write: e.target.checked }))}
-                                        className="w-4 h-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                                        className="w-4 h-4 rounded border-border-strong text-brand-strong focus:ring-brand"
                                     />
-                                    <span className="text-sm text-gray-700">Бичих</span>
+                                    <span className="text-sm text-foreground">Бичих</span>
                                 </label>
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input
                                         type="checkbox"
                                         checked={newRole.can_delete}
                                         onChange={e => setNewRole(p => ({ ...p, can_delete: e.target.checked }))}
-                                        className="w-4 h-4 rounded border-gray-300 text-red-600 focus:ring-red-500"
+                                        className="w-4 h-4 rounded border-border-strong text-status-danger focus:ring-red-500"
                                     />
-                                    <span className="text-sm text-gray-700">Устгах</span>
+                                    <span className="text-sm text-foreground">Устгах</span>
                                 </label>
                                 <label className="flex items-center gap-2 cursor-pointer">
                                     <input
                                         type="checkbox"
                                         checked={newRole.can_access_admin}
                                         onChange={e => setNewRole(p => ({ ...p, can_access_admin: e.target.checked }))}
-                                        className="w-4 h-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                                        className="w-4 h-4 rounded border-border-strong text-brand-strong focus:ring-brand"
                                     />
-                                    <span className="text-sm text-gray-700">Admin хандалт</span>
+                                    <span className="text-sm text-foreground">Admin хандалт</span>
                                 </label>
                             </div>
                         </div>
-                        <div className="flex justify-end gap-3 p-6 border-t border-gray-100">
+                        <div className="flex justify-end gap-3 p-6 border-t border-border/60">
                             <button
                                 onClick={() => setShowCreate(false)}
-                                className="px-4 py-2 text-sm text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                                className="px-4 py-2 text-sm text-foreground bg-surface-2 rounded-lg hover:bg-surface-3"
                             >
                                 Цуцлах
                             </button>
                             <button
                                 onClick={createRole}
                                 disabled={saving === 'new'}
-                                className="flex items-center gap-2 px-4 py-2 text-sm bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50"
+                                className="flex items-center gap-2 px-4 py-2 text-sm bg-brand text-white rounded-lg hover:bg-brand-strong disabled:opacity-50"
                             >
                                 {saving === 'new' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                                 Үүсгэх

@@ -144,7 +144,7 @@ export default function SurveyReportPage() {
                         type="text"
                         value={(value as string) ?? ''}
                         onChange={e => setVal(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                        className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand"
                     />
                 );
             case 'long_text':
@@ -153,7 +153,7 @@ export default function SurveyReportPage() {
                         value={(value as string) ?? ''}
                         onChange={e => setVal(e.target.value)}
                         rows={3}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                        className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand"
                     />
                 );
             case 'single_choice':
@@ -202,8 +202,8 @@ export default function SurveyReportPage() {
                                 onClick={() => setVal(n)}
                                 className={`w-10 h-10 rounded-full border-2 text-sm font-semibold transition-colors ${
                                     value === n
-                                        ? 'bg-violet-600 border-violet-600 text-white'
-                                        : 'border-gray-200 text-gray-500 hover:border-violet-400'
+                                        ? 'bg-brand border-violet-600 text-white'
+                                        : 'border-border text-muted-foreground hover:border-violet-400'
                                 }`}
                             >
                                 {n}
@@ -220,12 +220,12 @@ export default function SurveyReportPage() {
         <div className="max-w-5xl mx-auto space-y-6">
             <div className="flex items-center justify-between gap-4 flex-wrap">
                 <div className="flex items-center gap-4">
-                    <Button variant="ghost" onClick={() => router.back()} className="text-gray-500 hover:text-gray-900">
+                    <Button variant="ghost" onClick={() => router.back()} className="text-muted-foreground hover:text-foreground">
                         <ArrowLeft className="w-5 h-5 mr-1" /> Буцах
                     </Button>
                     <div>
-                        <h1 className="text-2xl font-bold text-gray-900">Судалгааны Тайлан</h1>
-                        <p className="text-gray-500 text-sm">Online + биеэр (offline) бүх хариултын нэгдсэн дүр зураг</p>
+                        <h1 className="text-2xl font-bold text-foreground">Судалгааны Тайлан</h1>
+                        <p className="text-muted-foreground text-sm">Online + биеэр (offline) бүх хариултын нэгдсэн дүр зураг</p>
                     </div>
                 </div>
                 <Button onClick={openOfflineModal} disabled={!survey}>
@@ -236,18 +236,18 @@ export default function SurveyReportPage() {
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <Card>
                     <CardHeader>
-                        <CardTitle className="text-sm font-medium text-gray-500">Нийт хариулт</CardTitle>
+                        <CardTitle className="text-sm font-medium text-muted-foreground">Нийт хариулт</CardTitle>
                     </CardHeader>
                     <CardContent>
                         <div className="text-3xl font-bold flex items-center gap-2">
                             <Users className="w-6 h-6 text-primary" />
                             {isLoading ? '...' : responseCount}
                         </div>
-                        <div className="mt-3 flex items-center gap-2 text-xs text-gray-500">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-status-info-soft text-status-info">
                                 <Globe className="w-3 h-3" /> Online {onlineCount}
                             </span>
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-status-pending-soft text-status-pending">
                                 <ClipboardList className="w-3 h-3" /> Биеэр {offlineCount}
                             </span>
                         </div>
@@ -256,7 +256,7 @@ export default function SurveyReportPage() {
 
                 <Card className="md:col-span-2">
                     <CardHeader className="flex flex-row items-center gap-2">
-                        <Sparkles className="w-5 h-5 text-purple-500" />
+                        <Sparkles className="w-5 h-5 text-brand" />
                         <div>
                             <CardTitle>AI Нэгтгэл</CardTitle>
                             <CardDescription>Online + биеэр бүх хариултыг нэгтгэн Gemini-ээр шинжилсэн</CardDescription>
@@ -265,12 +265,12 @@ export default function SurveyReportPage() {
                     <CardContent>
                         {isLoading ? (
                             <div className="animate-pulse space-y-2">
-                                <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                                <div className="h-4 bg-gray-200 rounded w-full"></div>
-                                <div className="h-4 bg-gray-200 rounded w-5/6"></div>
+                                <div className="h-4 bg-surface-3 rounded w-3/4"></div>
+                                <div className="h-4 bg-surface-3 rounded w-full"></div>
+                                <div className="h-4 bg-surface-3 rounded w-5/6"></div>
                             </div>
                         ) : (
-                            <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap">{summary}</div>
+                            <div className="prose prose-sm max-w-none text-foreground whitespace-pre-wrap">{summary}</div>
                         )}
                     </CardContent>
                 </Card>
@@ -278,7 +278,7 @@ export default function SurveyReportPage() {
                 <Card className="md:col-span-3">
                     <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
                         <CardTitle className="flex items-center gap-2">
-                            <FileText className="w-5 h-5 text-gray-400" /> Сүүлийн хариултууд
+                            <FileText className="w-5 h-5 text-muted-foreground/70" /> Сүүлийн хариултууд
                         </CardTitle>
                         <div className="flex gap-1 text-xs">
                             {(['all', 'online', 'offline'] as const).map(f => (
@@ -287,8 +287,8 @@ export default function SurveyReportPage() {
                                     onClick={() => setFilter(f)}
                                     className={`px-3 py-1 rounded-full font-medium transition-colors ${
                                         filter === f
-                                            ? 'bg-violet-600 text-white'
-                                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                                            ? 'bg-brand text-white'
+                                            : 'bg-surface-2 text-muted-foreground hover:bg-surface-3'
                                     }`}
                                 >
                                     {f === 'all' ? 'Бүгд' : f === 'online' ? 'Online' : 'Биеэр'}
@@ -298,8 +298,8 @@ export default function SurveyReportPage() {
                     </CardHeader>
                     <CardContent>
                         <div className="overflow-x-auto">
-                            <table className="w-full text-sm text-left text-gray-500">
-                                <thead className="text-xs text-gray-700 uppercase bg-gray-50">
+                            <table className="w-full text-sm text-left text-muted-foreground">
+                                <thead className="text-xs text-foreground uppercase bg-surface-2/40">
                                     <tr>
                                         <th className="px-4 py-3">Огноо</th>
                                         <th className="px-4 py-3">Эх үүсвэр</th>
@@ -311,39 +311,39 @@ export default function SurveyReportPage() {
                                     {isLoading ? (
                                         <tr><td colSpan={4} className="text-center py-4">Уншиж байна...</td></tr>
                                     ) : filteredResponses.length === 0 ? (
-                                        <tr><td colSpan={4} className="text-center py-4 text-gray-400">Өгөгдөл алга байна</td></tr>
+                                        <tr><td colSpan={4} className="text-center py-4 text-muted-foreground/70">Өгөгдөл алга байна</td></tr>
                                     ) : (
                                         filteredResponses.map(resp => {
                                             const src = resp.source ?? 'online';
                                             return (
-                                                <tr key={resp.id} className="bg-white border-b">
-                                                    <td className="px-4 py-3 font-medium text-gray-900 whitespace-nowrap align-top">
+                                                <tr key={resp.id} className="bg-surface border-b">
+                                                    <td className="px-4 py-3 font-medium text-foreground whitespace-nowrap align-top">
                                                         {new Date(resp.created_at).toLocaleString('mn-MN')}
                                                     </td>
                                                     <td className="px-4 py-3 align-top">
                                                         <span
                                                             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
                                                                 src === 'online'
-                                                                    ? 'bg-blue-100 text-blue-700'
-                                                                    : 'bg-amber-100 text-amber-700'
+                                                                    ? 'bg-status-info-soft text-status-info'
+                                                                    : 'bg-status-pending-soft text-status-pending'
                                                             }`}
                                                         >
                                                             {src === 'online' ? <Globe className="w-3 h-3" /> : <ClipboardList className="w-3 h-3" />}
                                                             {src === 'online' ? 'Online' : 'Биеэр'}
                                                         </span>
                                                     </td>
-                                                    <td className="px-4 py-3 align-top text-gray-700">
+                                                    <td className="px-4 py-3 align-top text-foreground">
                                                         {resp.respondent_name || resp.respondent_phone || '—'}
                                                         {resp.respondent_name && resp.respondent_phone && (
-                                                            <div className="text-xs text-gray-400">{resp.respondent_phone}</div>
+                                                            <div className="text-xs text-muted-foreground/70">{resp.respondent_phone}</div>
                                                         )}
                                                     </td>
                                                     <td className="px-4 py-3 align-top">
-                                                        <pre className="text-xs bg-gray-50 p-2 rounded max-w-md overflow-x-auto whitespace-pre-wrap">
+                                                        <pre className="text-xs bg-surface-2/40 p-2 rounded max-w-md overflow-x-auto whitespace-pre-wrap">
                                                             {JSON.stringify(resp.answers, null, 2)}
                                                         </pre>
                                                         {resp.notes && (
-                                                            <p className="mt-1 text-xs text-gray-500 italic">Тэмдэглэл: {resp.notes}</p>
+                                                            <p className="mt-1 text-xs text-muted-foreground italic">Тэмдэглэл: {resp.notes}</p>
                                                         )}
                                                     </td>
                                                 </tr>
@@ -360,35 +360,35 @@ export default function SurveyReportPage() {
             {/* Offline entry modal */}
             {isOfflineOpen && survey && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-                        <div className="flex items-center justify-between p-6 border-b border-gray-100 sticky top-0 bg-white">
+                    <div className="bg-surface rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+                        <div className="flex items-center justify-between p-6 border-b border-border/60 sticky top-0 bg-surface">
                             <div>
-                                <h2 className="text-lg font-bold text-gray-900">Биеэр хариулт оруулах</h2>
-                                <p className="text-sm text-gray-500">{survey.title}</p>
+                                <h2 className="text-lg font-bold text-foreground">Биеэр хариулт оруулах</h2>
+                                <p className="text-sm text-muted-foreground">{survey.title}</p>
                             </div>
-                            <button onClick={() => setIsOfflineOpen(false)} className="p-2 hover:bg-gray-100 rounded-xl">
-                                <X className="w-5 h-5 text-gray-500" />
+                            <button onClick={() => setIsOfflineOpen(false)} className="p-2 hover:bg-surface-2 rounded-xl">
+                                <X className="w-5 h-5 text-muted-foreground" />
                             </button>
                         </div>
 
                         <div className="p-6 space-y-5">
                             <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Хариулагчийн нэр</label>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Хариулагчийн нэр</label>
                                     <input
                                         type="text"
                                         value={offlineMeta.name}
                                         onChange={e => setOfflineMeta(m => ({ ...m, name: e.target.value }))}
-                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                                        className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand"
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Утас</label>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Утас</label>
                                     <input
                                         type="text"
                                         value={offlineMeta.phone}
                                         onChange={e => setOfflineMeta(m => ({ ...m, phone: e.target.value }))}
-                                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                                        className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand"
                                     />
                                 </div>
                             </div>
@@ -396,9 +396,9 @@ export default function SurveyReportPage() {
                             <div className="space-y-4">
                                 {survey.questions.map(q => (
                                     <div key={q.id}>
-                                        <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        <label className="block text-sm font-medium text-foreground mb-2">
                                             {q.text}
-                                            {q.required && <span className="text-red-500"> *</span>}
+                                            {q.required && <span className="text-status-danger"> *</span>}
                                         </label>
                                         {renderQuestionInput(q)}
                                     </div>
@@ -406,23 +406,23 @@ export default function SurveyReportPage() {
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">Тэмдэглэл (заавал биш)</label>
+                                <label className="block text-sm font-medium text-foreground mb-1">Тэмдэглэл (заавал биш)</label>
                                 <textarea
                                     rows={2}
                                     value={offlineMeta.notes}
                                     onChange={e => setOfflineMeta(m => ({ ...m, notes: e.target.value }))}
                                     placeholder="Жишээ нь: албан байгууллагад очиж асуусан, мини сурвалжлага г.м."
-                                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"
+                                    className="w-full px-3 py-2 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand"
                                 />
                             </div>
 
                             {offlineError && (
-                                <div className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                                <div className="flex items-center gap-2 px-3 py-2 bg-status-danger-soft border border-status-danger/30 rounded-lg text-sm text-status-danger">
                                     <AlertCircle className="w-4 h-4" /> {offlineError}
                                 </div>
                             )}
 
-                            <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
+                            <div className="flex justify-end gap-2 pt-2 border-t border-border/60">
                                 <Button variant="outline" onClick={() => setIsOfflineOpen(false)}>Цуцлах</Button>
                                 <Button onClick={submitOffline} disabled={offlineSubmitting}>
                                     {offlineSubmitting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}

@@ -189,7 +189,7 @@ export default function InboxMessagesPage() {
     if (loading) {
         return (
             <div className="flex items-center justify-center h-[calc(100vh-80px)]">
-                <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
+                <Loader2 className="w-6 h-6 animate-spin text-status-info" />
             </div>
         );
     }
@@ -207,7 +207,7 @@ export default function InboxMessagesPage() {
                             placeholder={t.common.search + '...'}
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2.5 bg-white/[0.05] rounded-lg text-sm text-white/80 placeholder:text-white/25 border border-white/[0.06] focus:border-blue-500/40 outline-none"
+                            className="w-full pl-9 pr-3 py-2.5 bg-surface/[0.05] rounded-lg text-sm text-white/80 placeholder:text-white/25 border border-white/[0.06] focus:border-status-info/40 outline-none"
                         />
                     </div>
                 </div>
@@ -226,8 +226,8 @@ export default function InboxMessagesPage() {
                                 onClick={() => selectConversation(convo)}
                                 className={`w-full flex items-start gap-3 px-4 py-3.5 text-left transition-all border-b border-white/[0.03] ${
                                     activeId === convo.id
-                                        ? 'bg-blue-500/10 border-l-2 border-l-blue-500'
-                                        : 'hover:bg-white/[0.03]'
+                                        ? 'bg-status-info-soft border-l-2 border-l-blue-500'
+                                        : 'hover:bg-surface/[0.03]'
                                 }`}
                             >
                                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500/30 to-violet-500/30 flex items-center justify-center shrink-0 text-sm font-bold text-white/70">
@@ -277,10 +277,10 @@ export default function InboxMessagesPage() {
                             <div className="ml-auto">
                                 <button
                                     onClick={() => handleDeleteCustomer(activeConvo.id, activeConvo.customer_name)}
-                                    className="p-1.5 hover:bg-red-500/10 rounded-md transition-colors group"
+                                    className="p-1.5 hover:bg-status-danger-soft rounded-md transition-colors group"
                                     title="Устгах"
                                 >
-                                    <Trash2 className="w-4 h-4 text-white/20 group-hover:text-red-400" strokeWidth={1.5} />
+                                    <Trash2 className="w-4 h-4 text-white/20 group-hover:text-status-danger" strokeWidth={1.5} />
                                 </button>
                             </div>
                         </div>
@@ -298,25 +298,25 @@ export default function InboxMessagesPage() {
                                         className={`flex gap-2.5 ${msg.role === 'assistant' ? 'justify-end' : 'justify-start'}`}
                                     >
                                         {msg.role === 'user' && (
-                                            <div className="w-7 h-7 rounded-full bg-blue-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                                                <User className="w-3.5 h-3.5 text-blue-400" />
+                                            <div className="w-7 h-7 rounded-full bg-status-info/20 flex items-center justify-center shrink-0 mt-0.5">
+                                                <User className="w-3.5 h-3.5 text-status-info" />
                                             </div>
                                         )}
                                         <div
                                             className={`max-w-[70%] px-3.5 py-2.5 rounded-2xl text-[13px] leading-relaxed ${
                                                 msg.role === 'assistant'
-                                                    ? 'bg-blue-500/20 text-blue-100 rounded-br-md'
-                                                    : 'bg-white/[0.08] text-white/80 rounded-bl-md'
+                                                    ? 'bg-status-info/20 text-status-info rounded-br-md'
+                                                    : 'bg-surface/[0.08] text-white/80 rounded-bl-md'
                                             }`}
                                         >
                                             {msg.content}
-                                            <div className={`text-[10px] mt-1 ${msg.role === 'assistant' ? 'text-blue-400/40' : 'text-white/20'}`}>
+                                            <div className={`text-[10px] mt-1 ${msg.role === 'assistant' ? 'text-status-info/40' : 'text-white/20'}`}>
                                                 {formatTime(msg.created_at)}
                                             </div>
                                         </div>
                                         {msg.role === 'assistant' && (
-                                            <div className="w-7 h-7 rounded-full bg-emerald-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                                                <Bot className="w-3.5 h-3.5 text-emerald-400" />
+                                            <div className="w-7 h-7 rounded-full bg-status-success-soft flex items-center justify-center shrink-0 mt-0.5">
+                                                <Bot className="w-3.5 h-3.5 text-status-success" />
                                             </div>
                                         )}
                                     </div>
@@ -333,8 +333,8 @@ export default function InboxMessagesPage() {
                                     onClick={() => setAiPauseMode('pause')}
                                     className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-all ${
                                         aiPauseMode === 'pause'
-                                            ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                                            : 'bg-white/[0.04] text-white/30 border border-white/[0.06] hover:bg-white/[0.08]'
+                                            ? 'bg-status-pending/20 text-status-pending border border-status-pending/30'
+                                            : 'bg-surface/[0.04] text-white/30 border border-white/[0.06] hover:bg-surface/[0.08]'
                                     }`}
                                 >
                                     <Timer className="w-3 h-3" />
@@ -344,8 +344,8 @@ export default function InboxMessagesPage() {
                                     onClick={() => setAiPauseMode('off')}
                                     className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-all ${
                                         aiPauseMode === 'off'
-                                            ? 'bg-red-500/20 text-red-400 border border-red-500/30'
-                                            : 'bg-white/[0.04] text-white/30 border border-white/[0.06] hover:bg-white/[0.08]'
+                                            ? 'bg-status-danger/20 text-status-danger border border-status-danger/30'
+                                            : 'bg-surface/[0.04] text-white/30 border border-white/[0.06] hover:bg-surface/[0.08]'
                                     }`}
                                 >
                                     <Power className="w-3 h-3" />
@@ -361,12 +361,12 @@ export default function InboxMessagesPage() {
                                     onKeyDown={handleKeyDown}
                                     placeholder={t.inbox.messagePlaceholder}
                                     disabled={isSending}
-                                    className="flex-1 px-4 py-2.5 bg-white/[0.06] rounded-xl text-sm text-white/80 placeholder:text-white/25 border border-white/[0.06] focus:border-blue-500/40 outline-none disabled:opacity-50"
+                                    className="flex-1 px-4 py-2.5 bg-surface/[0.06] rounded-xl text-sm text-white/80 placeholder:text-white/25 border border-white/[0.06] focus:border-status-info/40 outline-none disabled:opacity-50"
                                 />
                                 <button
                                     onClick={handleSendReply}
                                     disabled={!replyMessage.trim() || isSending}
-                                    className="p-2.5 rounded-xl bg-blue-500 hover:bg-blue-400 disabled:bg-white/[0.06] disabled:text-white/20 text-white transition-all"
+                                    className="p-2.5 rounded-xl bg-status-info hover:bg-status-info disabled:bg-surface/[0.06] disabled:text-white/20 text-white transition-all"
                                 >
                                     {isSending ? (
                                         <Loader2 className="w-4 h-4 animate-spin" />

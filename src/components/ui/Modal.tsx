@@ -43,11 +43,11 @@ const sizeClasses = {
 function ModalContent({ children, className, size = 'md', showClose = true, title, description }: ModalContentProps) {
     return (
         <DialogPrimitive.Portal>
-            <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm animate-fade-in" />
+            <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm animate-fade-in" />
             <DialogPrimitive.Content
                 className={cn(
                     'fixed left-[50%] top-[50%] z-50 w-full translate-x-[-50%] translate-y-[-50%]',
-                    'bg-card border border-border rounded-2xl shadow-2xl',
+                    'bg-surface border border-border rounded-xl shadow-xl',
                     'p-6 animate-scale-in',
                     'focus:outline-none',
                     sizeClasses[size],
@@ -56,7 +56,7 @@ function ModalContent({ children, className, size = 'md', showClose = true, titl
             >
                 {title && (
                     <div className="mb-4">
-                        <DialogPrimitive.Title className="text-lg font-semibold text-foreground">
+                        <DialogPrimitive.Title className="heading-section text-lg text-foreground">
                             {title}
                         </DialogPrimitive.Title>
                         {description && (
@@ -68,7 +68,7 @@ function ModalContent({ children, className, size = 'md', showClose = true, titl
                 )}
                 {children}
                 {showClose && (
-                    <DialogPrimitive.Close className="absolute right-4 top-4 rounded-lg p-1.5 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                    <DialogPrimitive.Close className="absolute right-4 top-4 rounded-md p-1.5 text-muted-foreground hover:text-foreground hover:bg-surface-2 transition-colors">
                         <X className="h-4 w-4" />
                         <span className="sr-only">Хаах</span>
                     </DialogPrimitive.Close>

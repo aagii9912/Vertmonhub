@@ -22,27 +22,27 @@ export function LanguageSwitcher() {
         <div className="relative">
             <button
                 onClick={() => setOpen(!open)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 text-sm transition-colors"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border hover:border-border-strong text-sm transition-colors"
                 aria-label="Хэл сонгох"
                 aria-expanded={open}
                 aria-haspopup="menu"
             >
-                <Globe className="w-4 h-4 text-gray-500" />
+                <Globe className="w-4 h-4 text-muted-foreground" />
                 <span>{current.flag}</span>
-                <span className="text-gray-600 text-xs hidden sm:inline">{current.label}</span>
+                <span className="text-muted-foreground text-xs hidden sm:inline">{current.label}</span>
             </button>
 
             {open && (
                 <>
                     <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-                    <div className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50 min-w-[140px]" role="menu" aria-label="Хэл сонгох">
+                    <div className="absolute right-0 top-full mt-1 bg-surface rounded-lg shadow-lg border border-border py-1 z-50 min-w-[140px]" role="menu" aria-label="Хэл сонгох">
                         {LOCALES.map(l => (
                             <button
                                 key={l.code}
                                 onClick={() => handleChange(l.code)}
                                 role="menuitem"
                                 aria-current={locale === l.code ? 'true' : undefined}
-                                className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 transition-colors ${locale === l.code ? 'bg-violet-50 text-violet-700' : 'text-gray-700'}`}
+                                className={`w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-surface-2/40 transition-colors ${locale === l.code ? 'bg-brand-soft text-brand-strong' : 'text-foreground'}`}
                             >
                                 <span>{l.flag}</span>
                                 <span>{l.label}</span>

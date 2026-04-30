@@ -56,10 +56,10 @@ const TABS: { id: TabType; label: string; icon: React.ElementType; color: string
 ];
 
 const TAB_COLORS: Record<string, { bg: string; text: string; border: string; light: string; btn: string }> = {
-    emerald: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-500', light: 'bg-emerald-100', btn: 'bg-emerald-600 hover:bg-emerald-700' },
-    blue: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-500', light: 'bg-blue-100', btn: 'bg-blue-600 hover:bg-blue-700' },
-    orange: { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-500', light: 'bg-orange-100', btn: 'bg-orange-600 hover:bg-orange-700' },
-    violet: { bg: 'bg-violet-50', text: 'text-violet-700', border: 'border-violet-500', light: 'bg-violet-100', btn: 'bg-violet-600 hover:bg-violet-700' },
+    emerald: { bg: 'bg-status-success-soft', text: 'text-status-success', border: 'border-status-success', light: 'bg-status-success-soft', btn: 'bg-status-success hover:opacity-90' },
+    blue: { bg: 'bg-status-info-soft', text: 'text-status-info', border: 'border-status-info', light: 'bg-status-info-soft', btn: 'bg-status-info hover:bg-status-info' },
+    orange: { bg: 'bg-status-pending-soft', text: 'text-status-pending', border: 'border-orange-500', light: 'bg-status-pending-soft', btn: 'bg-status-pending hover:bg-status-pending' },
+    violet: { bg: 'bg-brand-soft', text: 'text-brand-strong', border: 'border-brand', light: 'bg-brand-soft', btn: 'bg-brand hover:bg-brand-strong' },
 };
 
 // ==============================================
@@ -296,18 +296,18 @@ export default function SurveysPage() {
                             <button
                                 key={tool.id}
                                 onClick={() => runResearch(tool.title, tool.prompt)}
-                                className={`group text-left p-5 rounded-xl border-2 border-gray-200 hover:${c.border} hover:${c.bg} transition-all`}
+                                className={`group text-left p-5 rounded-xl border-2 border-border hover:${c.border} hover:${c.bg} transition-all`}
                             >
                                 <div className="flex items-start gap-4">
                                     <div className={`w-11 h-11 ${c.light} rounded-xl flex items-center justify-center flex-shrink-0`}>
                                         <Icon className={`w-5 h-5 ${c.text}`} />
                                     </div>
                                     <div>
-                                        <h3 className="font-semibold text-gray-900 group-hover:text-gray-900">{tool.title}</h3>
-                                        <p className="text-sm text-gray-500 mt-0.5">{tool.desc}</p>
+                                        <h3 className="font-semibold text-foreground group-hover:text-foreground">{tool.title}</h3>
+                                        <p className="text-sm text-muted-foreground mt-0.5">{tool.desc}</p>
                                     </div>
                                 </div>
-                                <div className="mt-3 flex items-center gap-2 text-xs text-gray-400 group-hover:text-gray-500">
+                                <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground/70 group-hover:text-muted-foreground">
                                     <Sparkles className="w-3 h-3" />
                                     AI Gemini шинжилгээ + DB мэдээлэл
                                 </div>
@@ -321,7 +321,7 @@ export default function SurveysPage() {
                     <Card className="relative">
                         <button
                             onClick={() => setResearchResult(null)}
-                            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+                            className="absolute top-4 right-4 text-muted-foreground/70 hover:text-muted-foreground"
                         >
                             <X className="w-5 h-5" />
                         </button>
@@ -335,10 +335,10 @@ export default function SurveysPage() {
                             {researchResult.loading ? (
                                 <div className="flex items-center gap-3 py-12 justify-center">
                                     <Loader2 className={`w-6 h-6 ${c.text} animate-spin`} />
-                                    <span className="text-gray-500">AI шинжилгээ хийж байна... (30-60 секунд)</span>
+                                    <span className="text-muted-foreground">AI шинжилгээ хийж байна... (30-60 секунд)</span>
                                 </div>
                             ) : (
-                                <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap leading-relaxed">
+                                <div className="prose prose-sm max-w-none text-foreground whitespace-pre-wrap leading-relaxed">
                                     {researchResult.content}
                                 </div>
                             )}
@@ -357,7 +357,7 @@ export default function SurveysPage() {
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <p className="text-gray-500 text-sm">Хэрэглэгчдийн санал асуулгын жагсаалт</p>
+                    <p className="text-muted-foreground text-sm">Хэрэглэгчдийн санал асуулгын жагсаалт</p>
                 </div>
                 <Button onClick={() => setView('create')}>
                     <Plus className="w-5 h-5 mr-2" />
@@ -367,12 +367,12 @@ export default function SurveysPage() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {isLoadingList ? (
-                    <div className="col-span-full py-12 text-center text-gray-500">Уншиж байна...</div>
+                    <div className="col-span-full py-12 text-center text-muted-foreground">Уншиж байна...</div>
                 ) : surveyList.length === 0 ? (
-                    <div className="col-span-full py-16 text-center bg-gray-50 rounded-xl border border-dashed border-gray-200">
-                        <Plus className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-                        <h3 className="text-lg font-medium text-gray-900">Судалгаа олдсонгүй</h3>
-                        <p className="text-gray-500 mt-1">Одоогоор шинэ судалгаа үүсгээгүй байна.</p>
+                    <div className="col-span-full py-16 text-center bg-surface-2/40 rounded-xl border border-dashed border-border">
+                        <Plus className="w-12 h-12 text-muted-foreground/60 mx-auto mb-3" />
+                        <h3 className="text-lg font-medium text-foreground">Судалгаа олдсонгүй</h3>
+                        <p className="text-muted-foreground mt-1">Одоогоор шинэ судалгаа үүсгээгүй байна.</p>
                         <Button className="mt-4" onClick={() => setView('create')}>Эхний судалгааг үүсгэх</Button>
                     </div>
                 ) : (
@@ -387,13 +387,13 @@ export default function SurveysPage() {
                                 </div>
                             </CardHeader>
                             <CardContent>
-                                <div className="flex items-center justify-between text-sm text-gray-500 mt-4 pt-4 border-t border-gray-100">
+                                <div className="flex items-center justify-between text-sm text-muted-foreground mt-4 pt-4 border-t border-border/60">
                                     <div className="flex items-center gap-1.5">
                                         <Calendar className="w-4 h-4" />
                                         {new Date(s.created_at || '').toLocaleDateString('mn-MN')}
                                     </div>
                                     <div className="flex items-center gap-1.5">
-                                        <Activity className="w-4 h-4 text-emerald-500" />
+                                        <Activity className="w-4 h-4 text-status-success" />
                                         Идэвхтэй
                                     </div>
                                 </div>
@@ -418,7 +418,7 @@ export default function SurveysPage() {
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <p className="text-gray-500 text-sm">Хэрэглэгчдээс санал асуулга авах, сэтгэл ханамж хэмжих</p>
+                    <p className="text-muted-foreground text-sm">Хэрэглэгчдээс санал асуулга авах, сэтгэл ханамж хэмжих</p>
                 </div>
                 <div className="flex gap-2">
                     <Button variant="outline" onClick={() => setView('list')}><ArrowLeft className="w-4 h-4 mr-2" />Буцах</Button>
@@ -438,7 +438,7 @@ export default function SurveysPage() {
                             {questionTypes.map((qt) => (
                                 <Button key={qt.id} variant="outline" className="w-full justify-start text-left text-sm font-normal"
                                     onClick={() => addQuestion(qt.id as QuestionType)}>
-                                    <Plus className="w-4 h-4 mr-2 text-gray-400" />{qt.label}
+                                    <Plus className="w-4 h-4 mr-2 text-muted-foreground/70" />{qt.label}
                                 </Button>
                             ))}
                         </CardContent>
@@ -450,11 +450,11 @@ export default function SurveysPage() {
                         <CardContent className="pt-6 space-y-4">
                             <input type="text" value={survey.title}
                                 onChange={(e) => setSurvey({ ...survey, title: e.target.value })}
-                                className="text-3xl font-bold w-full outline-none border-b border-transparent hover:border-gray-200 focus:border-primary transition-colors pb-1 bg-transparent"
+                                className="text-3xl font-bold w-full outline-none border-b border-transparent hover:border-border focus:border-primary transition-colors pb-1 bg-transparent"
                                 placeholder="Судалгааны гарчиг" />
                             <textarea value={survey.description}
                                 onChange={(e) => setSurvey({ ...survey, description: e.target.value })}
-                                className="w-full text-sm text-gray-600 outline-none resize-none border-b border-transparent hover:border-gray-200 focus:border-primary transition-colors pb-1 bg-transparent"
+                                className="w-full text-sm text-muted-foreground outline-none resize-none border-b border-transparent hover:border-border focus:border-primary transition-colors pb-1 bg-transparent"
                                 placeholder="Судалгааны тайлбар" rows={2} />
                         </CardContent>
                     </Card>
@@ -469,7 +469,7 @@ export default function SurveysPage() {
                                                 <div ref={provided.innerRef} {...provided.draggableProps} className="group relative">
                                                     <Card>
                                                         <div {...provided.dragHandleProps}
-                                                            className="absolute left-1/2 -top-3 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-white border border-gray-200 rounded px-2 py-0.5 cursor-grab active:cursor-grabbing text-gray-400">
+                                                            className="absolute left-1/2 -top-3 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-surface border border-border rounded px-2 py-0.5 cursor-grab active:cursor-grabbing text-muted-foreground/70">
                                                             <GripVertical className="w-4 h-4" />
                                                         </div>
                                                         <CardContent className="p-6">
@@ -477,21 +477,21 @@ export default function SurveysPage() {
                                                                 <div className="flex-1 space-y-4">
                                                                     <input type="text" value={q.text}
                                                                         onChange={(e) => updateQuestion(q.id, { text: e.target.value })}
-                                                                        className="w-full text-lg font-medium outline-none border-b bg-gray-50 px-3 py-2 rounded focus:bg-white focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                                                                        className="w-full text-lg font-medium outline-none border-b bg-surface-2/40 px-3 py-2 rounded focus:bg-surface focus:border-primary focus:ring-1 focus:ring-primary transition-all"
                                                                         placeholder="Асуултаа энд бичнэ үү" />
 
-                                                                    <div className="ml-3 mt-4 text-sm text-gray-500">
-                                                                        {q.type === 'short_text' && <div className="border-b border-gray-300 w-1/2 pb-1">Bogino khariу үлдээх зай...</div>}
-                                                                        {q.type === 'long_text' && <div className="border border-gray-200 rounded p-2 h-20 bg-gray-50 flex items-center text-gray-400">Урт хариу үлдээх зай...</div>}
+                                                                    <div className="ml-3 mt-4 text-sm text-muted-foreground">
+                                                                        {q.type === 'short_text' && <div className="border-b border-border-strong w-1/2 pb-1">Bogino khariу үлдээх зай...</div>}
+                                                                        {q.type === 'long_text' && <div className="border border-border rounded p-2 h-20 bg-surface-2/40 flex items-center text-muted-foreground/70">Урт хариу үлдээх зай...</div>}
                                                                         {(q.type === 'single_choice' || q.type === 'multiple_choice') && (
                                                                             <div className="space-y-2">
                                                                                 {q.options?.map((opt, i) => (
                                                                                     <div key={i} className="flex items-center gap-2">
-                                                                                        {q.type === 'single_choice' ? <div className="w-4 h-4 rounded-full border border-gray-300" /> : <div className="w-4 h-4 rounded border border-gray-300" />}
+                                                                                        {q.type === 'single_choice' ? <div className="w-4 h-4 rounded-full border border-border-strong" /> : <div className="w-4 h-4 rounded border border-border-strong" />}
                                                                                         <input type="text" value={opt}
                                                                                             onChange={(e) => { const newOpts = [...(q.options || [])]; newOpts[i] = e.target.value; updateQuestion(q.id, { options: newOpts }); }}
-                                                                                            className="outline-none border-b border-transparent hover:border-gray-200 focus:border-primary text-gray-700 bg-transparent px-1" />
-                                                                                        <button onClick={() => updateQuestion(q.id, { options: q.options?.filter((_, idx) => idx !== i) })} className="text-gray-300 hover:text-red-500 ml-2">
+                                                                                            className="outline-none border-b border-transparent hover:border-border focus:border-primary text-foreground bg-transparent px-1" />
+                                                                                        <button onClick={() => updateQuestion(q.id, { options: q.options?.filter((_, idx) => idx !== i) })} className="text-muted-foreground/60 hover:text-status-danger ml-2">
                                                                                             <X className="w-3 h-3" />
                                                                                         </button>
                                                                                     </div>
@@ -505,22 +505,22 @@ export default function SurveysPage() {
                                                                         {q.type === 'rating' && (
                                                                             <div className="flex gap-4 items-center mt-2">
                                                                                 {[1, 2, 3, 4, 5].map(num => (
-                                                                                    <div key={num} className="w-10 h-10 rounded-full border-2 border-gray-200 flex items-center justify-center font-medium text-gray-400">{num}</div>
+                                                                                    <div key={num} className="w-10 h-10 rounded-full border-2 border-border flex items-center justify-center font-medium text-muted-foreground/70">{num}</div>
                                                                                 ))}
                                                                             </div>
                                                                         )}
                                                                     </div>
                                                                 </div>
 
-                                                                <div className="flex flex-col items-center gap-4 pt-2 border-l border-gray-100 pl-4">
-                                                                    <button onClick={() => removeQuestion(q.id)} className="text-gray-400 hover:text-red-500 p-2 rounded hover:bg-red-50 transition-colors">
+                                                                <div className="flex flex-col items-center gap-4 pt-2 border-l border-border/60 pl-4">
+                                                                    <button onClick={() => removeQuestion(q.id)} className="text-muted-foreground/70 hover:text-status-danger p-2 rounded hover:bg-status-danger-soft transition-colors">
                                                                         <Trash2 className="w-4 h-4" />
                                                                     </button>
-                                                                    <div className="flex items-center gap-2 mt-4 text-xs font-medium text-gray-500">
+                                                                    <div className="flex items-center gap-2 mt-4 text-xs font-medium text-muted-foreground">
                                                                         Шаардлагатай
                                                                         <label className="relative inline-flex items-center cursor-pointer">
                                                                             <input type="checkbox" checked={q.required} onChange={(e) => updateQuestion(q.id, { required: e.target.checked })} className="sr-only peer" />
-                                                                            <div className="w-7 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary"></div>
+                                                                            <div className="w-7 h-4 bg-surface-3 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface after:border-border-strong after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary"></div>
                                                                         </label>
                                                                     </div>
                                                                 </div>
@@ -538,10 +538,10 @@ export default function SurveysPage() {
                     </DragDropContext>
 
                     {survey.questions.length === 0 && (
-                        <div className="text-center py-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
-                            <Plus className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                            <p className="text-gray-500 font-medium">Асуулт одоогоор алга байна</p>
-                            <p className="text-sm text-gray-400 mt-1">Зүүн талаас асуултын төрөл сонгож эхэлнэ үү</p>
+                        <div className="text-center py-12 bg-surface-2/40 rounded-xl border-2 border-dashed border-border">
+                            <Plus className="w-8 h-8 text-muted-foreground/60 mx-auto mb-2" />
+                            <p className="text-muted-foreground font-medium">Асуулт одоогоор алга байна</p>
+                            <p className="text-sm text-muted-foreground/70 mt-1">Зүүн талаас асуултын төрөл сонгож эхэлнэ үү</p>
                         </div>
                     )}
                 </div>
@@ -560,12 +560,12 @@ export default function SurveysPage() {
         <div className="max-w-5xl mx-auto space-y-6">
             {/* Page Header */}
             <div>
-                <h1 className="text-2xl font-bold text-gray-900">Судалгаа & Шинжилгээ</h1>
-                <p className="text-gray-500 text-sm mt-1">Зах зээлийн судалгаа, өрсөлдөгчдийн шинжилгээ, social стратеги</p>
+                <h1 className="text-2xl font-bold text-foreground">Судалгаа & Шинжилгээ</h1>
+                <p className="text-muted-foreground text-sm mt-1">Зах зээлийн судалгаа, өрсөлдөгчдийн шинжилгээ, social стратеги</p>
             </div>
 
             {/* Tab Navigation */}
-            <div className="flex gap-2 border-b border-gray-200 pb-0">
+            <div className="flex gap-2 border-b border-border pb-0">
                 {TABS.map(tab => {
                     const Icon = tab.icon;
                     const isActive = activeTab === tab.id;
@@ -577,7 +577,7 @@ export default function SurveysPage() {
                             className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all -mb-[1px] ${
                                 isActive
                                     ? `${tc.border} ${tc.text}`
-                                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                                    : 'border-transparent text-muted-foreground hover:text-foreground'
                             }`}
                         >
                             <Icon className="w-4 h-4" />

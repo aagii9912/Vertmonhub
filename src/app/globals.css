@@ -2,456 +2,422 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+@custom-variant dark (&:is(.dark *, [data-theme="dark"] *));
+
+/* ============================================================
+   Vertmon Hub — Editorial Design System
+   Warm cream base + deep ink + terracotta brand
+   Fraunces display + IBM Plex Sans body (Cyrillic-ready)
+   ============================================================ */
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
+  /* --- Surfaces & foreground --- */
+  --color-background: var(--bg);
+  --color-foreground: var(--fg);
+  --color-fg-2: var(--fg-2);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
   --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-success: var(--success);
-  --color-success-foreground: var(--success-foreground);
-  /* Gold accent colors - Royal Gold theme */
-  --color-gold: #D4AF37;
-  --color-gold-light: #F4E4BA;
-  --color-gold-dark: #9A7B2E;
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  /* Premium Typography */
-  --font-sans: var(--font-sans);
-  --font-serif: var(--font-serif);
-  --font-mono: var(--font-mono);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-border-strong: var(--border-strong);
+  --color-muted: var(--surface-2);
+  --color-muted-foreground: var(--muted);
+  --color-muted-2: var(--muted-2);
+
+  /* --- Brand (terracotta) --- */
+  --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-strong: var(--brand-strong);
+  --color-brand-fg: var(--brand-fg);
+
+  /* --- Semantic shadcn aliases (for compatibility with existing shadcn primitives) --- */
+  --color-card: var(--surface);
+  --color-card-foreground: var(--fg);
+  --color-popover: var(--surface);
+  --color-popover-foreground: var(--fg);
+  --color-primary: var(--brand);
+  --color-primary-foreground: var(--brand-fg);
+  --color-secondary: var(--surface-2);
+  --color-secondary-foreground: var(--fg);
+  --color-accent: var(--brand-soft);
+  --color-accent-foreground: var(--brand-strong);
+  --color-destructive: var(--status-danger);
+  --color-destructive-foreground: #FFFFFF;
+  --color-input: var(--border);
+  --color-ring: var(--brand);
+  --color-success: var(--status-success);
+  --color-success-foreground: #FFFFFF;
+
+  /* --- Status palette --- */
+  --color-status-active: var(--status-active);
+  --color-status-active-soft: var(--status-active-soft);
+  --color-status-pending: var(--status-pending);
+  --color-status-pending-soft: var(--status-pending-soft);
+  --color-status-success: var(--status-success);
+  --color-status-success-soft: var(--status-success-soft);
+  --color-status-danger: var(--status-danger);
+  --color-status-danger-soft: var(--status-danger-soft);
+  --color-status-info: var(--status-info);
+  --color-status-info-soft: var(--status-info-soft);
+  --color-status-neutral: var(--status-neutral);
+  --color-status-neutral-soft: var(--status-neutral-soft);
+
+  /* --- Sidebar --- */
   --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* --- Charts --- */
   --color-chart-1: var(--chart-1);
-  --radius-xl: calc(var(--radius) + 4px);
-  --radius-2xl: calc(var(--radius) + 8px);
-  --radius-3xl: calc(var(--radius) + 12px);
-  --radius-4xl: calc(var(--radius) + 16px);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  /* --- Typography --- */
+  --font-sans: var(--font-sans-stack);
+  --font-serif: var(--font-display-stack);
+  --font-display: var(--font-display-stack);
+  --font-mono: var(--font-mono-stack);
+
+  /* --- Radius scale --- */
+  --radius-xs: var(--r-xs);
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+  --radius-xl: var(--r-xl);
+  --radius-2xl: var(--r-2xl);
+  --radius-3xl: var(--r-3xl);
+  --radius: var(--r-lg);
+
+  /* --- Shadow scale --- */
+  --shadow-xs: var(--shadow-xs-val);
+  --shadow-sm: var(--shadow-sm-val);
+  --shadow-md: var(--shadow-md-val);
+  --shadow-lg: var(--shadow-lg-val);
+  --shadow-xl: var(--shadow-xl-val);
 }
 
-/* Premium "Monochrome + Royal Gold" Design System */
-/* Light Mode: Architectural Elegance */
+/* ============================================================
+   Light mode (default) — Editorial cream + deep ink
+   ============================================================ */
 :root {
-  /* Pure Black text */
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
+  /* Surfaces */
+  --bg: #FAFAF7;
+  --surface: #FFFFFF;
+  --surface-2: #F4F3EE;
+  --surface-3: #ECEAE3;
+  --border: #E5E3DB;
+  --border-strong: #D4D1C7;
 
-  /* Premium Brand: Monochrome + Royal Gold */
-  --primary: oklch(0.205 0 0);
-  /* Pure Black - Bold, Architectural */
-  --primary-foreground: oklch(0.985 0 0);
+  /* Foreground */
+  --fg: #0E0E10;
+  --fg-2: #2E2D2A;
+  --muted: #6B6962;
+  --muted-2: #908D84;
 
-  --secondary: oklch(0.97 0 0);
-  /* Dark Gray */
-  --secondary-foreground: oklch(0.205 0 0);
+  /* Brand — Terracotta (hue 38) */
+  --brand: oklch(0.62 0.13 38);
+  --brand-soft: oklch(0.94 0.04 38);
+  --brand-strong: oklch(0.50 0.15 38);
+  --brand-fg: #FFFFFF;
 
-  --muted: oklch(0.97 0 0);
-  /* Near White */
-  --muted-foreground: oklch(0.556 0 0);
-  /* Neutral 600 */
+  /* Status */
+  --status-active: oklch(0.58 0.10 165);
+  --status-active-soft: oklch(0.94 0.04 165);
+  --status-pending: oklch(0.68 0.11 75);
+  --status-pending-soft: oklch(0.95 0.04 75);
+  --status-success: oklch(0.58 0.10 145);
+  --status-success-soft: oklch(0.94 0.04 145);
+  --status-danger: oklch(0.55 0.15 25);
+  --status-danger-soft: oklch(0.95 0.04 25);
+  --status-info: oklch(0.55 0.08 240);
+  --status-info-soft: oklch(0.95 0.03 240);
+  --status-neutral: var(--muted);
+  --status-neutral-soft: var(--surface-2);
 
-  --accent: oklch(0.97 0 0);
-  /* Royal Gold - Premium CTA */
-  --accent-foreground: oklch(0.205 0 0);
+  /* Charts */
+  --chart-1: oklch(0.62 0.13 38);
+  --chart-2: oklch(0.55 0.08 240);
+  --chart-3: oklch(0.58 0.10 165);
+  --chart-4: oklch(0.68 0.11 75);
+  --chart-5: oklch(0.45 0.05 280);
 
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: #FFFFFF;
+  /* Typography stacks */
+  --font-sans-stack: var(--font-sans-google, 'IBM Plex Sans'), -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-display-stack: var(--font-display-google, 'Fraunces'), 'IBM Plex Sans', Georgia, serif;
+  --font-mono-stack: var(--font-mono-google, 'IBM Plex Mono'), ui-monospace, 'SF Mono', Menlo, monospace;
 
-  --border: oklch(0.922 0 0);
-  /* Light Gray */
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  /* Gold focus ring */
+  /* Typography metrics */
+  --leading-body: 1.55;
+  --leading-tight: 1.35;
+  --leading-heading: 1.15;
+  --tracking-tight: -0.015em;
+  --tracking-body: -0.005em;
 
-  --success: #16A34A;
-  --success-foreground: #FFFFFF;
+  /* Radius scale */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-2xl: 20px;
+  --r-3xl: 28px;
 
-  /* Gold accent variations */
-  --gold: #D4AF37;
-  --gold-light: #F4E4BA;
-  --gold-dark: #9A7B2E;
+  /* Spacing scale (semantic) */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+  --s-16: 64px;
 
-  --radius: 0.625rem;
-  /* Slightly less rounded = more architectural */
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Shadows (warm-tinted ink) */
+  --shadow-xs-val: 0 1px 2px rgba(20, 18, 12, 0.04);
+  --shadow-sm-val: 0 1px 2px rgba(20, 18, 12, 0.04), 0 1px 3px rgba(20, 18, 12, 0.06);
+  --shadow-md-val: 0 2px 4px rgba(20, 18, 12, 0.04), 0 4px 12px rgba(20, 18, 12, 0.06);
+  --shadow-lg-val: 0 4px 8px rgba(20, 18, 12, 0.04), 0 12px 32px rgba(20, 18, 12, 0.08);
+  --shadow-xl-val: 0 8px 16px rgba(20, 18, 12, 0.06), 0 24px 56px rgba(20, 18, 12, 0.10);
+
+  /* Sidebar (uses surface tokens) */
+  --sidebar: var(--surface);
+  --sidebar-foreground: var(--fg);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: var(--brand-fg);
+  --sidebar-accent: var(--surface-2);
+  --sidebar-accent-foreground: var(--fg);
+  --sidebar-border: var(--border);
+  --sidebar-ring: var(--brand);
 }
 
-/* Dark Mode: "Obsidian" & "Nebula" */
-/* Dark Mode: "Obsidian + Royal Gold" */
+/* ============================================================
+   Dark mode — Obsidian + warm cream foreground
+   Activated by [data-theme="dark"] on <html> or .dark class
+   ============================================================ */
+:root[data-theme="dark"],
+.dark {
+  --bg: #0E0E10;
+  --surface: #16161A;
+  --surface-2: #1C1C21;
+  --surface-3: #25252B;
+  --border: #2A2A30;
+  --border-strong: #3A3A42;
+
+  --fg: #FAFAF7;
+  --fg-2: #ECEAE3;
+  --muted: #908D84;
+  --muted-2: #6B6962;
+
+  --brand: oklch(0.72 0.13 38);
+  --brand-soft: oklch(0.30 0.06 38);
+  --brand-strong: oklch(0.78 0.14 38);
+  --brand-fg: #14110D;
+
+  --status-active: oklch(0.72 0.10 165);
+  --status-active-soft: oklch(0.28 0.05 165);
+  --status-pending: oklch(0.78 0.11 75);
+  --status-pending-soft: oklch(0.30 0.05 75);
+  --status-success: oklch(0.72 0.10 145);
+  --status-success-soft: oklch(0.28 0.05 145);
+  --status-danger: oklch(0.70 0.14 25);
+  --status-danger-soft: oklch(0.30 0.06 25);
+  --status-info: oklch(0.70 0.09 240);
+  --status-info-soft: oklch(0.28 0.05 240);
+
+  --chart-1: oklch(0.72 0.13 38);
+  --chart-2: oklch(0.70 0.09 240);
+  --chart-3: oklch(0.72 0.10 165);
+  --chart-4: oklch(0.78 0.11 75);
+  --chart-5: oklch(0.55 0.06 280);
+}
+
+/* System preference fallback (only applies when no explicit data-theme set) */
 @media (prefers-color-scheme: dark) {
-  :root {
-    /* True Obsidian Black */
-    /* Near White */
-
-    --card: rgba(23, 23, 23, 0.9);
-    /* Dark with slight transparency */
-    --card-foreground: #FAFAFA;
-
-    --popover: #0A0A0A;
-    --popover-foreground: #FAFAFA;
-
-    --primary: #FAFAFA;
-    /* White on dark = inverted */
-    --primary-foreground: #0A0A0A;
-
-    --secondary: #262626;
-    /* Neutral 800 */
-    --secondary-foreground: #FAFAFA;
-
-    --muted: #171717;
-    /* Neutral 900 */
-    --muted-foreground: #A3A3A3;
-    /* Neutral 400 */
-
-    --accent: #D4AF37;
-    /* Royal Gold - same in dark mode */
-    --accent-foreground: #0A0A0A;
-
-    --destructive: #EF4444;
-    --destructive-foreground: #FFFFFF;
-
-    --border: #262626;
-    --input: #262626;
-    --ring: #D4AF37;
-    /* Gold focus ring */
-
-    /* Gold variations in dark mode */
-    --gold: #D4AF37;
-    --gold-light: #E8C95F;
-    --gold-dark: #9A7B2E;
+  :root:not([data-theme]) {
+    --bg: #0E0E10;
+    --surface: #16161A;
+    --surface-2: #1C1C21;
+    --surface-3: #25252B;
+    --border: #2A2A30;
+    --border-strong: #3A3A42;
+    --fg: #FAFAF7;
+    --fg-2: #ECEAE3;
+    --muted: #908D84;
+    --muted-2: #6B6962;
+    --brand: oklch(0.72 0.13 38);
+    --brand-soft: oklch(0.30 0.06 38);
+    --brand-strong: oklch(0.78 0.14 38);
+    --brand-fg: #14110D;
+    --status-active: oklch(0.72 0.10 165);
+    --status-active-soft: oklch(0.28 0.05 165);
+    --status-pending: oklch(0.78 0.11 75);
+    --status-pending-soft: oklch(0.30 0.05 75);
+    --status-success: oklch(0.72 0.10 145);
+    --status-success-soft: oklch(0.28 0.05 145);
+    --status-danger: oklch(0.70 0.14 25);
+    --status-danger-soft: oklch(0.30 0.06 25);
+    --status-info: oklch(0.70 0.09 240);
+    --status-info-soft: oklch(0.28 0.05 240);
+    --chart-1: oklch(0.72 0.13 38);
+    --chart-2: oklch(0.70 0.09 240);
+    --chart-3: oklch(0.72 0.10 165);
+    --chart-4: oklch(0.78 0.11 75);
+    --chart-5: oklch(0.55 0.06 280);
   }
 }
 
-/* Force light mode for dashboard content */
-.dashboard-content {
-  --background: #f8f9fa;
-  --foreground: #111111;
-  --card: #ffffff;
-  --card-foreground: #111111;
-  --muted-foreground: #6c757d;
-  --border: #dee2e6;
-}
-
-body {
-  background-color: var(--background);
-  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
-  /* Prevent horizontal scroll globally */
-  width: 100%;
-  position: relative;
-}
-
+/* ============================================================
+   Base elements
+   ============================================================ */
 html {
   -webkit-text-size-adjust: 100%;
-  /* Prevent font scaling in landscape/on some Androids */
   text-size-adjust: 100%;
   height: 100%;
 }
 
-/* Mobile optimizations */
+body {
+  background-color: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans-stack);
+  font-feature-settings: "ss01", "cv11";
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+  width: 100%;
+  position: relative;
+}
+
+/* Display heading utility — Fraunces serif, tight leading */
+.heading-display {
+  font-family: var(--font-display-stack);
+  font-feature-settings: "ss01";
+  line-height: var(--leading-heading);
+  letter-spacing: var(--tracking-tight);
+  font-weight: 500;
+}
+
+/* Section heading utility — IBM Plex Sans semibold */
+.heading-section {
+  font-family: var(--font-sans-stack);
+  line-height: var(--leading-tight);
+  letter-spacing: var(--tracking-tight);
+  font-weight: 600;
+}
+
+/* Tabular numerals for prices, stats */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   Utilities
+   ============================================================ */
 @layer utilities {
-
   /* Safe area handling for notched devices */
-  .pb-safe {
-    padding-bottom: max(env(safe-area-inset-bottom), 1rem);
-  }
-
-  .pt-safe {
-    padding-top: max(env(safe-area-inset-top), 1rem);
-  }
-
-  .pl-safe {
-    padding-left: env(safe-area-inset-left);
-  }
-
-  .pr-safe {
-    padding-right: env(safe-area-inset-right);
-  }
+  .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 1rem); }
+  .pt-safe { padding-top: max(env(safe-area-inset-top), 1rem); }
+  .pl-safe { padding-left: env(safe-area-inset-left); }
+  .pr-safe { padding-right: env(safe-area-inset-right); }
 
   /* Scrollbar hiding */
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
-  .no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
+  /* Touch targets */
+  .touch-target { min-width: 44px; min-height: 44px; }
+  .touch-target-lg { min-width: 48px; min-height: 48px; }
 
-  /* Touch target minimum sizes (44x44px for accessibility) */
-  .touch-target {
-    min-width: 44px;
-    min-height: 44px;
-  }
-
-  .touch-target-lg {
-    min-width: 48px;
-    min-height: 48px;
-  }
-
-  /* Loading skeleton animation */
+  /* Skeleton loading */
   @keyframes skeleton-loading {
-    0% {
-      background-position: -200% 0;
-    }
-
-    100% {
-      background-position: 200% 0;
-    }
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
   }
-
   .skeleton {
     background: linear-gradient(90deg,
-        var(--secondary) 0%,
-        var(--muted) 50%,
-        var(--secondary) 100%);
+      var(--surface-2) 0%,
+      var(--surface-3) 50%,
+      var(--surface-2) 100%);
     background-size: 200% 100%;
     animation: skeleton-loading 1.5s ease-in-out infinite;
-    border-radius: 0.5rem;
+    border-radius: var(--r-md);
   }
 
-  /* Touch feedback animation */
+  /* Tap feedback */
   @keyframes tap-feedback {
-    0% {
-      transform: scale(1);
-    }
-
-    50% {
-      transform: scale(0.96);
-    }
-
-    100% {
-      transform: scale(1);
-    }
+    0% { transform: scale(1); }
+    50% { transform: scale(0.96); }
+    100% { transform: scale(1); }
   }
+  .tap-feedback:active { animation: tap-feedback 0.2s ease-out; }
 
-  .tap-feedback:active {
-    animation: tap-feedback 0.2s ease-out;
-  }
-
-  /* Reduced motion support */
+  /* Reduced motion */
   @media (prefers-reduced-motion: reduce) {
-
-    *,
-    *::before,
-    *::after {
+    *, *::before, *::after {
       animation-duration: 0.01ms !important;
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
     }
-
-    .skeleton {
-      animation: none;
-      background: var(--secondary);
-    }
+    .skeleton { animation: none; background: var(--surface-2); }
   }
 }
 
-/* Mobile-specific global styles */
+/* Mobile-specific */
 @media (max-width: 768px) {
-  html {
-    -webkit-text-size-adjust: 100%;
-    text-size-adjust: 100%;
-  }
-
-  * {
-    -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
-  }
-
-  body {
-    overscroll-behavior-y: contain;
-  }
+  * { -webkit-tap-highlight-color: rgba(20, 18, 12, 0.08); }
+  body { overscroll-behavior-y: contain; }
 }
 
-/* Status badge colors */
-.badge-shipping {
-  background-color: #3b82f6;
-  color: white;
-}
-
-.badge-delivered {
-  background-color: #D4AF37;
-  color: #171717;
-}
-
-.badge-pending {
-  background-color: #f59e0b;
-  color: white;
-}
-
-.badge-cancelled {
-  background-color: #ef4444;
-  color: white;
-}
-
-.badge-paid {
-  background-color: #D4AF37;
-  color: #171717;
-}
-
-.badge-pickups {
-  background-color: #8b5cf6;
-  color: white;
-}
-
-/* PWA Install prompt animation */
+/* ============================================================
+   Animations (kept from prior system, useful site-wide)
+   ============================================================ */
 @keyframes slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(100%);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(100%); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-/* Glassmorphism Utilities */
-.glass {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-}
-
-.glass-dark {
-  background: rgba(17, 24, 39, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* Premium Animations */
 @keyframes float {
-  0% {
-    transform: translateY(0px);
-  }
-
-  50% {
-    transform: translateY(-10px);
-  }
-
-  100% {
-    transform: translateY(0px);
-  }
-}
-
-.animate-float {
-  animation: float 6s ease-in-out infinite;
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
 }
 
 @keyframes fade-in-up {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.animate-fade-in-up {
-  animation: fade-in-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-}
+.animate-float { animation: float 6s ease-in-out infinite; }
+.animate-fade-in-up { animation: fade-in-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.animate-slide-up { animation: slide-up 0.4s ease-out forwards; }
 
-.delay-100 {
-  animation-delay: 100ms;
-}
+.delay-100 { animation-delay: 100ms; }
+.delay-200 { animation-delay: 200ms; }
+.delay-300 { animation-delay: 300ms; }
 
-.delay-200 {
-  animation-delay: 200ms;
-}
+/* ============================================================
+   Status badge classes (legacy compat — Badge primitive preferred)
+   ============================================================ */
+.badge-shipping { background-color: var(--status-info); color: #fff; }
+.badge-delivered { background-color: var(--status-success); color: #fff; }
+.badge-pending { background-color: var(--status-pending); color: var(--fg); }
+.badge-cancelled { background-color: var(--status-danger); color: #fff; }
+.badge-paid { background-color: var(--status-success); color: #fff; }
+.badge-pickups { background-color: var(--brand); color: var(--brand-fg); }
 
-.delay-300 {
-  animation-delay: 300ms;
-}
-
-.animate-slide-up {
-  animation: slide-up 0.4s ease-out forwards;
-}
-
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
-}
-
+/* ============================================================
+   Base layer
+   ============================================================ */
 @layer base {
   * {
     @apply border-border outline-ring/50;

@@ -27,10 +27,10 @@ const statusSizeClasses = {
 };
 
 const statusColors = {
-    online: 'bg-green-500',
-    offline: 'bg-gray-400',
-    away: 'bg-blue-400',
-    busy: 'bg-red-500',
+    online: 'bg-status-success',
+    offline: 'bg-muted',
+    away: 'bg-status-pending',
+    busy: 'bg-status-danger',
 };
 
 function getInitials(name?: string): string {
@@ -48,7 +48,7 @@ const Avatar = forwardRef<HTMLDivElement, AvatarProps>(
         <div ref={ref} className={cn('relative inline-flex shrink-0', className)} {...props}>
             <div
                 className={cn(
-                    'rounded-full bg-secondary flex items-center justify-center font-medium text-muted-foreground overflow-hidden',
+                    'rounded-full bg-surface-2 flex items-center justify-center font-medium text-muted-foreground overflow-hidden',
                     sizeClasses[size]
                 )}
             >
@@ -61,7 +61,7 @@ const Avatar = forwardRef<HTMLDivElement, AvatarProps>(
             {status && (
                 <span
                     className={cn(
-                        'absolute bottom-0 right-0 rounded-full ring-card',
+                        'absolute bottom-0 right-0 rounded-full ring-surface',
                         statusColors[status],
                         statusSizeClasses[size]
                     )}
@@ -87,14 +87,14 @@ function AvatarGroup({ max = 4, size = 'sm', children, className, ...props }: Av
     return (
         <div className={cn('flex -space-x-2', className)} {...props}>
             {visible.map((child, i) => (
-                <div key={i} className="ring-2 ring-card rounded-full">
+                <div key={i} className="ring-2 ring-surface rounded-full">
                     {child}
                 </div>
             ))}
             {remaining > 0 && (
                 <div
                     className={cn(
-                        'rounded-full bg-secondary flex items-center justify-center font-medium text-muted-foreground ring-2 ring-card',
+                        'rounded-full bg-surface-2 flex items-center justify-center font-medium text-muted-foreground ring-2 ring-surface',
                         sizeClasses[size]
                     )}
                 >

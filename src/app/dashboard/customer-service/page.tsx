@@ -48,26 +48,26 @@ interface ServiceLog {
 }
 
 const TYPE_LABELS: Record<string, { text: string; icon: React.ReactNode; cls: string }> = {
-    inquiry: { text: 'Лавлагаа', icon: <MessageSquare className="w-3 h-3" />, cls: 'bg-blue-500/10 text-blue-400' },
-    complaint: { text: 'Гомдол', icon: <AlertTriangle className="w-3 h-3" />, cls: 'bg-red-500/10 text-red-400' },
-    maintenance: { text: 'Засвар', icon: <Wrench className="w-3 h-3" />, cls: 'bg-amber-500/10 text-amber-400' },
-    handover: { text: 'Хүлээлцэх', icon: <ArrowRight className="w-3 h-3" />, cls: 'bg-emerald-500/10 text-emerald-400' },
-    payment: { text: 'Төлбөр', icon: <DollarSign className="w-3 h-3" />, cls: 'bg-violet-500/10 text-violet-400' },
-    other: { text: 'Бусад', icon: <FileText className="w-3 h-3" />, cls: 'bg-gray-500/10 text-gray-400' },
+    inquiry: { text: 'Лавлагаа', icon: <MessageSquare className="w-3 h-3" />, cls: 'bg-status-info-soft text-status-info' },
+    complaint: { text: 'Гомдол', icon: <AlertTriangle className="w-3 h-3" />, cls: 'bg-status-danger-soft text-status-danger' },
+    maintenance: { text: 'Засвар', icon: <Wrench className="w-3 h-3" />, cls: 'bg-status-pending-soft text-status-pending' },
+    handover: { text: 'Хүлээлцэх', icon: <ArrowRight className="w-3 h-3" />, cls: 'bg-status-success-soft text-status-success' },
+    payment: { text: 'Төлбөр', icon: <DollarSign className="w-3 h-3" />, cls: 'bg-brand-soft text-brand' },
+    other: { text: 'Бусад', icon: <FileText className="w-3 h-3" />, cls: 'bg-surface-2/10 text-muted-foreground/70' },
 };
 
 const PRIORITY_LABELS: Record<string, { text: string; cls: string }> = {
-    low: { text: 'Бага', cls: 'bg-gray-500/10 text-gray-400' },
-    medium: { text: 'Дунд', cls: 'bg-blue-500/10 text-blue-400' },
-    high: { text: 'Өндөр', cls: 'bg-amber-500/10 text-amber-400' },
-    urgent: { text: 'Яаралтай', cls: 'bg-red-500/10 text-red-400' },
+    low: { text: 'Бага', cls: 'bg-surface-2/10 text-muted-foreground/70' },
+    medium: { text: 'Дунд', cls: 'bg-status-info-soft text-status-info' },
+    high: { text: 'Өндөр', cls: 'bg-status-pending-soft text-status-pending' },
+    urgent: { text: 'Яаралтай', cls: 'bg-status-danger-soft text-status-danger' },
 };
 
 const STATUS_LABELS: Record<string, { text: string; cls: string }> = {
-    open: { text: 'Нээлттэй', cls: 'bg-blue-500/10 text-blue-400 border-blue-500/30' },
-    in_progress: { text: 'Ажиллаж буй', cls: 'bg-amber-500/10 text-amber-400 border-amber-500/30' },
-    resolved: { text: 'Шийдвэрлэсэн', cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' },
-    closed: { text: 'Хаагдсан', cls: 'bg-gray-500/10 text-gray-400 border-gray-500/30' },
+    open: { text: 'Нээлттэй', cls: 'bg-status-info-soft text-status-info border-status-info/30' },
+    in_progress: { text: 'Ажиллаж буй', cls: 'bg-status-pending-soft text-status-pending border-status-pending/30' },
+    resolved: { text: 'Шийдвэрлэсэн', cls: 'bg-status-success-soft text-status-success border-status-success/30' },
+    closed: { text: 'Хаагдсан', cls: 'bg-surface-2/10 text-muted-foreground/70 border-border/30' },
 };
 
 function formatMoney(n: number | null): string {
@@ -165,7 +165,7 @@ export default function CustomerServicePage() {
     if (loading && !kpi) {
         return (
             <div className="min-h-screen bg-[#0a0a0f] flex items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin text-violet-400" />
+                <Loader2 className="w-8 h-8 animate-spin text-brand" />
             </div>
         );
     }
@@ -179,7 +179,7 @@ export default function CustomerServicePage() {
                 <div className="flex items-start justify-between mb-6">
                     <div>
                         <h1 className="text-2xl font-bold text-white flex items-center gap-2.5">
-                            <Headphones className="w-6 h-6 text-violet-400" />
+                            <Headphones className="w-6 h-6 text-brand" />
                             Үйлчилгээний хяналт
                         </h1>
                         <p className="text-white/40 text-sm mt-1">
@@ -188,7 +188,7 @@ export default function CustomerServicePage() {
                     </div>
                     <button
                         onClick={() => setShowNewForm(true)}
-                        className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium flex items-center gap-1.5"
+                        className="px-4 py-2 rounded-lg bg-brand hover:bg-brand text-white text-sm font-medium flex items-center gap-1.5"
                     >
                         <Plus className="w-4 h-4" /> Шинэ хүсэлт
                     </button>
@@ -197,27 +197,27 @@ export default function CustomerServicePage() {
                 {/* KPI Cards - Row 1: Гэрээ & Төлбөр */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                     <KPICard
-                        icon={<FileText className="w-4 h-4 text-blue-400" />}
+                        icon={<FileText className="w-4 h-4 text-status-info" />}
                         label="Идэвхтэй гэрээ"
                         value={String(k.active_contracts || 0)}
                         sub={`Нийт ${k.total_contracts || 0} / ${k.closed_contracts || 0} хаагдсан`}
                     />
                     <KPICard
-                        icon={<DollarSign className="w-4 h-4 text-emerald-400" />}
+                        icon={<DollarSign className="w-4 h-4 text-status-success" />}
                         label="Цуглуулалт"
                         value={`${k.collection_rate || 0}%`}
                         sub={formatMoney(k.total_collected || 0)}
                         accent="emerald"
                     />
                     <KPICard
-                        icon={<AlertTriangle className="w-4 h-4 text-red-400" />}
+                        icon={<AlertTriangle className="w-4 h-4 text-status-danger" />}
                         label="Хоцорсон төлбөр"
                         value={formatMoney(k.total_overdue_amount || 0)}
                         sub={`${k.overdue_contract_count || 0} гэрээ`}
                         accent="red"
                     />
                     <KPICard
-                        icon={<Clock className="w-4 h-4 text-amber-400" />}
+                        icon={<Clock className="w-4 h-4 text-status-pending" />}
                         label="Ирэх 7 хоногт"
                         value={`${k.upcoming_payments_7d || 0} төлбөр`}
                         sub={`${k.overdue_payments || 0} хоцорсон`}
@@ -228,27 +228,27 @@ export default function CustomerServicePage() {
                 {/* KPI Cards - Row 2: Үйлчилгээ & Сэтгэл ханамж */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
                     <KPICard
-                        icon={<Headphones className="w-4 h-4 text-violet-400" />}
+                        icon={<Headphones className="w-4 h-4 text-brand" />}
                         label="Нээлттэй хүсэлт"
                         value={String(k.open_requests || 0)}
                         sub={`Нийт ${k.total_requests || 0} / ${k.resolved_requests || 0} шийдвэрлэсэн`}
                         accent="violet"
                     />
                     <KPICard
-                        icon={<Clock className="w-4 h-4 text-sky-400" />}
+                        icon={<Clock className="w-4 h-4 text-status-info" />}
                         label="Дундаж шийдвэрлэх"
                         value={k.avg_resolution_hours ? `${k.avg_resolution_hours} цаг` : '—'}
                         accent="sky"
                     />
                     <KPICard
-                        icon={<ThumbsUp className="w-4 h-4 text-emerald-400" />}
+                        icon={<ThumbsUp className="w-4 h-4 text-status-success" />}
                         label="NPS"
                         value={k.nps !== null ? String(k.nps) : '—'}
                         sub={k.total_surveys > 0 ? `${k.total_surveys} судалгаа` : 'Мэдээлэл алга'}
                         accent="emerald"
                     />
                     <KPICard
-                        icon={<Star className="w-4 h-4 text-amber-400" />}
+                        icon={<Star className="w-4 h-4 text-status-pending" />}
                         label="CSAT"
                         value={k.avg_csat !== null ? `${k.avg_csat}/5` : '—'}
                         sub={k.avg_service_rating ? `Үнэлгээ: ${k.avg_service_rating}/5` : undefined}
@@ -266,13 +266,13 @@ export default function CustomerServicePage() {
                                 placeholder="Хүсэлт, нэр, утас хайх..."
                                 value={search}
                                 onChange={e => setSearch(e.target.value)}
-                                className="w-full pl-9 pr-3 py-2 bg-white/[0.04] border border-white/[0.06] rounded-lg text-sm text-white/80 placeholder:text-white/30 focus:border-violet-500/40 outline-none"
+                                className="w-full pl-9 pr-3 py-2 bg-surface/[0.04] border border-white/[0.06] rounded-lg text-sm text-white/80 placeholder:text-white/30 focus:border-brand/40 outline-none"
                             />
                         </div>
                         <select
                             value={statusFilter}
                             onChange={e => setStatusFilter(e.target.value)}
-                            className="px-3 py-2 bg-white/[0.04] border border-white/[0.06] rounded-lg text-sm text-white/80 outline-none"
+                            className="px-3 py-2 bg-surface/[0.04] border border-white/[0.06] rounded-lg text-sm text-white/80 outline-none"
                         >
                             <option value="">Бүх төлөв</option>
                             <option value="open">Нээлттэй</option>
@@ -283,7 +283,7 @@ export default function CustomerServicePage() {
                         <select
                             value={typeFilter}
                             onChange={e => setTypeFilter(e.target.value)}
-                            className="px-3 py-2 bg-white/[0.04] border border-white/[0.06] rounded-lg text-sm text-white/80 outline-none"
+                            className="px-3 py-2 bg-surface/[0.04] border border-white/[0.06] rounded-lg text-sm text-white/80 outline-none"
                         >
                             <option value="">Бүх төрөл</option>
                             <option value="inquiry">Лавлагаа</option>
@@ -299,7 +299,7 @@ export default function CustomerServicePage() {
                 <div className="bg-[#11111a] rounded-xl border border-white/[0.06] overflow-hidden">
                     {loading ? (
                         <div className="flex items-center justify-center py-20">
-                            <Loader2 className="w-6 h-6 animate-spin text-violet-400" />
+                            <Loader2 className="w-6 h-6 animate-spin text-brand" />
                         </div>
                     ) : logs.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -310,7 +310,7 @@ export default function CustomerServicePage() {
                             </p>
                             <button
                                 onClick={() => setShowNewForm(true)}
-                                className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg flex items-center gap-1.5"
+                                className="px-4 py-2 bg-brand hover:bg-brand text-white text-sm font-medium rounded-lg flex items-center gap-1.5"
                             >
                                 <Plus className="w-4 h-4" /> Шинэ хүсэлт
                             </button>
@@ -337,7 +337,7 @@ export default function CustomerServicePage() {
                                         const statusInfo = STATUS_LABELS[log.status] || STATUS_LABELS.open;
 
                                         return (
-                                            <tr key={log.id} className="border-b border-white/[0.03] hover:bg-white/[0.02]">
+                                            <tr key={log.id} className="border-b border-white/[0.03] hover:bg-surface/[0.02]">
                                                 <td className="px-4 py-3">
                                                     <div className="font-medium text-white/90 max-w-[200px] truncate">
                                                         {log.subject}
@@ -387,14 +387,14 @@ export default function CustomerServicePage() {
                                                             {log.status === 'open' && (
                                                                 <button
                                                                     onClick={() => updateLogStatus(log.id, 'in_progress')}
-                                                                    className="px-2 py-1 rounded text-[10px] bg-amber-500/10 text-amber-400 hover:bg-amber-500/20"
+                                                                    className="px-2 py-1 rounded text-[10px] bg-status-pending-soft text-status-pending hover:bg-status-pending/20"
                                                                 >
                                                                     Эхлэх
                                                                 </button>
                                                             )}
                                                             <button
                                                                 onClick={() => updateLogStatus(log.id, 'resolved')}
-                                                                className="px-2 py-1 rounded text-[10px] bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20"
+                                                                className="px-2 py-1 rounded text-[10px] bg-status-success-soft text-status-success hover:bg-status-success-soft"
                                                             >
                                                                 Шийдсэн
                                                             </button>
@@ -405,7 +405,7 @@ export default function CustomerServicePage() {
                                                             {[1, 2, 3, 4, 5].map(s => (
                                                                 <Star
                                                                     key={s}
-                                                                    className={`w-3 h-3 ${s <= log.satisfaction_rating! ? 'text-amber-400 fill-amber-400' : 'text-white/10'}`}
+                                                                    className={`w-3 h-3 ${s <= log.satisfaction_rating! ? 'text-status-pending fill-amber-400' : 'text-white/10'}`}
                                                                 />
                                                             ))}
                                                         </div>
@@ -486,7 +486,7 @@ function NewServiceLogModal({ onClose, onSubmit }: {
                 onClick={e => e.stopPropagation()}
             >
                 <h2 className="text-white font-semibold text-lg mb-4 flex items-center gap-2">
-                    <Plus className="w-5 h-5 text-violet-400" />
+                    <Plus className="w-5 h-5 text-brand" />
                     Шинэ хүсэлт бүртгэх
                 </h2>
 
@@ -498,7 +498,7 @@ function NewServiceLogModal({ onClose, onSubmit }: {
                             value={form.subject}
                             onChange={e => setForm({ ...form, subject: e.target.value })}
                             placeholder="Хүсэлтийн товч тайлбар"
-                            className="w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-sm text-white/90 placeholder:text-white/30 outline-none focus:border-violet-500/40"
+                            className="w-full px-3 py-2 bg-surface/[0.04] border border-white/[0.08] rounded-lg text-sm text-white/90 placeholder:text-white/30 outline-none focus:border-brand/40"
                             required
                         />
                     </div>
@@ -509,7 +509,7 @@ function NewServiceLogModal({ onClose, onSubmit }: {
                             <select
                                 value={form.type}
                                 onChange={e => setForm({ ...form, type: e.target.value })}
-                                className="w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-sm text-white/80 outline-none"
+                                className="w-full px-3 py-2 bg-surface/[0.04] border border-white/[0.08] rounded-lg text-sm text-white/80 outline-none"
                             >
                                 <option value="inquiry">Лавлагаа</option>
                                 <option value="complaint">Гомдол</option>
@@ -524,7 +524,7 @@ function NewServiceLogModal({ onClose, onSubmit }: {
                             <select
                                 value={form.priority}
                                 onChange={e => setForm({ ...form, priority: e.target.value })}
-                                className="w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-sm text-white/80 outline-none"
+                                className="w-full px-3 py-2 bg-surface/[0.04] border border-white/[0.08] rounded-lg text-sm text-white/80 outline-none"
                             >
                                 <option value="low">Бага</option>
                                 <option value="medium">Дунд</option>
@@ -541,7 +541,7 @@ function NewServiceLogModal({ onClose, onSubmit }: {
                                 type="text"
                                 value={form.customer_name}
                                 onChange={e => setForm({ ...form, customer_name: e.target.value })}
-                                className="w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-sm text-white/90 outline-none"
+                                className="w-full px-3 py-2 bg-surface/[0.04] border border-white/[0.08] rounded-lg text-sm text-white/90 outline-none"
                             />
                         </div>
                         <div>
@@ -550,7 +550,7 @@ function NewServiceLogModal({ onClose, onSubmit }: {
                                 type="text"
                                 value={form.customer_phone}
                                 onChange={e => setForm({ ...form, customer_phone: e.target.value })}
-                                className="w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-sm text-white/90 outline-none"
+                                className="w-full px-3 py-2 bg-surface/[0.04] border border-white/[0.08] rounded-lg text-sm text-white/90 outline-none"
                             />
                         </div>
                     </div>
@@ -562,7 +562,7 @@ function NewServiceLogModal({ onClose, onSubmit }: {
                             value={form.assigned_to}
                             onChange={e => setForm({ ...form, assigned_to: e.target.value })}
                             placeholder="Менежерийн нэр"
-                            className="w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-sm text-white/90 placeholder:text-white/30 outline-none"
+                            className="w-full px-3 py-2 bg-surface/[0.04] border border-white/[0.08] rounded-lg text-sm text-white/90 placeholder:text-white/30 outline-none"
                         />
                     </div>
 
@@ -572,7 +572,7 @@ function NewServiceLogModal({ onClose, onSubmit }: {
                             value={form.description}
                             onChange={e => setForm({ ...form, description: e.target.value })}
                             rows={3}
-                            className="w-full px-3 py-2 bg-white/[0.04] border border-white/[0.08] rounded-lg text-sm text-white/90 outline-none resize-none"
+                            className="w-full px-3 py-2 bg-surface/[0.04] border border-white/[0.08] rounded-lg text-sm text-white/90 outline-none resize-none"
                         />
                     </div>
 
@@ -587,7 +587,7 @@ function NewServiceLogModal({ onClose, onSubmit }: {
                         <button
                             type="submit"
                             disabled={submitting || !form.subject.trim()}
-                            className="px-4 py-2 bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium rounded-lg disabled:opacity-50 flex items-center gap-1.5"
+                            className="px-4 py-2 bg-brand hover:bg-brand text-white text-sm font-medium rounded-lg disabled:opacity-50 flex items-center gap-1.5"
                         >
                             {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
                             Бүртгэх

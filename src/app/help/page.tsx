@@ -31,11 +31,11 @@ export default function HelpPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-surface-2/40">
       {/* Hero Section */}
       <div className="bg-gradient-to-br from-violet-600 to-indigo-700 text-white">
         <div className="max-w-4xl mx-auto px-6 py-16 text-center">
-          <div className="w-20 h-20 bg-white/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
+          <div className="w-20 h-20 bg-surface/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
             <HelpCircle className="w-10 h-10" />
           </div>
           <h1 className="text-4xl font-bold mb-4">Тусламж & FAQ</h1>
@@ -48,42 +48,42 @@ export default function HelpPage() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Link
             href="/setup"
-            className="bg-white rounded-xl p-6 shadow-lg hover:shadow-xl transition-all border border-gray-100 group"
+            className="bg-surface rounded-xl p-6 shadow-lg hover:shadow-xl transition-all border border-border/60 group"
           >
-            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center mb-4">
-              <Facebook className="w-6 h-6 text-blue-600" />
+            <div className="w-12 h-12 bg-status-info-soft rounded-xl flex items-center justify-center mb-4">
+              <Facebook className="w-6 h-6 text-status-info" />
             </div>
-            <h3 className="font-semibold text-gray-900 mb-2">Facebook холбох</h3>
-            <p className="text-sm text-gray-500 mb-3">Page-ээ холбож чатбот идэвхжүүлэх</p>
-            <span className="text-violet-600 text-sm font-medium flex items-center gap-1 group-hover:gap-2 transition-all">
+            <h3 className="font-semibold text-foreground mb-2">Facebook холбох</h3>
+            <p className="text-sm text-muted-foreground mb-3">Page-ээ холбож чатбот идэвхжүүлэх</p>
+            <span className="text-brand-strong text-sm font-medium flex items-center gap-1 group-hover:gap-2 transition-all">
               Тохируулах <ArrowRight className="w-4 h-4" />
             </span>
           </Link>
 
           <Link
             href="/dashboard/products"
-            className="bg-white rounded-xl p-6 shadow-lg hover:shadow-xl transition-all border border-gray-100 group"
+            className="bg-surface rounded-xl p-6 shadow-lg hover:shadow-xl transition-all border border-border/60 group"
           >
-            <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center mb-4">
-              <Package className="w-6 h-6 text-emerald-600" />
+            <div className="w-12 h-12 bg-status-success-soft rounded-xl flex items-center justify-center mb-4">
+              <Package className="w-6 h-6 text-status-success" />
             </div>
-            <h3 className="font-semibold text-gray-900 mb-2">Бүтээгдэхүүн</h3>
-            <p className="text-sm text-gray-500 mb-3">Бүтээгдэхүүн нэмж удирдах</p>
-            <span className="text-violet-600 text-sm font-medium flex items-center gap-1 group-hover:gap-2 transition-all">
+            <h3 className="font-semibold text-foreground mb-2">Бүтээгдэхүүн</h3>
+            <p className="text-sm text-muted-foreground mb-3">Бүтээгдэхүүн нэмж удирдах</p>
+            <span className="text-brand-strong text-sm font-medium flex items-center gap-1 group-hover:gap-2 transition-all">
               Бүтээгдэхүүнүүд <ArrowRight className="w-4 h-4" />
             </span>
           </Link>
 
           <Link
             href="/dashboard"
-            className="bg-white rounded-xl p-6 shadow-lg hover:shadow-xl transition-all border border-gray-100 group"
+            className="bg-surface rounded-xl p-6 shadow-lg hover:shadow-xl transition-all border border-border/60 group"
           >
-            <div className="w-12 h-12 bg-violet-100 rounded-xl flex items-center justify-center mb-4">
-              <Sparkles className="w-6 h-6 text-violet-600" />
+            <div className="w-12 h-12 bg-brand-soft rounded-xl flex items-center justify-center mb-4">
+              <Sparkles className="w-6 h-6 text-brand-strong" />
             </div>
-            <h3 className="font-semibold text-gray-900 mb-2">Dashboard</h3>
-            <p className="text-sm text-gray-500 mb-3">Борлуулалт, захиалга хянах</p>
-            <span className="text-violet-600 text-sm font-medium flex items-center gap-1 group-hover:gap-2 transition-all">
+            <h3 className="font-semibold text-foreground mb-2">Dashboard</h3>
+            <p className="text-sm text-muted-foreground mb-3">Борлуулалт, захиалга хянах</p>
+            <span className="text-brand-strong text-sm font-medium flex items-center gap-1 group-hover:gap-2 transition-all">
               Dashboard <ArrowRight className="w-4 h-4" />
             </span>
           </Link>
@@ -92,20 +92,20 @@ export default function HelpPage() {
 
       {/* FAQs */}
       <div className="max-w-4xl mx-auto px-6 py-16">
-        <h2 className="text-2xl font-bold text-gray-900 mb-8 text-center">Түгээмэл асуултууд</h2>
+        <h2 className="text-2xl font-bold text-foreground mb-8 text-center">Түгээмэл асуултууд</h2>
         <div className="space-y-4">
           {faqs.map((faq, index) => (
             <details
               key={index}
-              className="group bg-white rounded-xl border border-gray-200 overflow-hidden"
+              className="group bg-surface rounded-xl border border-border overflow-hidden"
             >
-              <summary className="px-6 py-4 cursor-pointer flex items-center justify-between hover:bg-gray-50">
-                <span className="font-medium text-gray-900">{faq.question}</span>
-                <span className="text-gray-400 group-open:rotate-180 transition-transform">
+              <summary className="px-6 py-4 cursor-pointer flex items-center justify-between hover:bg-surface-2/40">
+                <span className="font-medium text-foreground">{faq.question}</span>
+                <span className="text-muted-foreground/70 group-open:rotate-180 transition-transform">
                   ▼
                 </span>
               </summary>
-              <div className="px-6 pb-4 text-gray-600">
+              <div className="px-6 pb-4 text-muted-foreground">
                 {faq.answer}
               </div>
             </details>
@@ -114,17 +114,17 @@ export default function HelpPage() {
       </div>
 
       {/* Contact Section */}
-      <div className="bg-gray-100 py-16">
+      <div className="bg-surface-2 py-16">
         <div className="max-w-4xl mx-auto px-6 text-center">
-          <h2 className="text-2xl font-bold text-gray-900 mb-4">Дэмжлэг хэрэгтэй юу?</h2>
-          <p className="text-gray-600 mb-8">Бидэнтэй холбоо барина уу</p>
+          <h2 className="text-2xl font-bold text-foreground mb-4">Дэмжлэг хэрэгтэй юу?</h2>
+          <p className="text-muted-foreground mb-8">Бидэнтэй холбоо барина уу</p>
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <a
               href="mailto:info@vertmon.mn"
-              className="flex items-center gap-2 px-6 py-3 bg-white rounded-xl shadow hover:shadow-lg transition-all"
+              className="flex items-center gap-2 px-6 py-3 bg-surface rounded-xl shadow hover:shadow-lg transition-all"
             >
-              <Mail className="w-5 h-5 text-violet-600" />
-              <span className="font-medium text-gray-900">info@vertmon.mn</span>
+              <Mail className="w-5 h-5 text-brand-strong" />
+              <span className="font-medium text-foreground">info@vertmon.mn</span>
             </a>
             <a
               href="https://m.me/vertmonhub"
@@ -144,7 +144,7 @@ export default function HelpPage() {
       <div className="text-center py-8">
         <Link
           href="/dashboard"
-          className="text-violet-600 hover:text-violet-700 font-medium"
+          className="text-brand-strong hover:text-brand-strong font-medium"
         >
           ← Dashboard руу буцах
         </Link>

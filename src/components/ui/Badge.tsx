@@ -1,37 +1,52 @@
 import React from 'react';
+import { cva, type VariantProps } from 'class-variance-authority';
+import { cn } from '@/lib/utils';
 
-interface BadgeProps {
-    children: React.ReactNode;
-    variant?: 'default' | 'success' | 'warning' | 'danger' | 'info' | 'vip';
-    size?: 'sm' | 'md';
-    className?: string;
-}
+const badgeVariants = cva(
+    'inline-flex items-center font-medium rounded-md whitespace-nowrap',
+    {
+        variants: {
+            variant: {
+                default: 'bg-surface-2 text-foreground border border-border',
+                neutral: 'bg-surface-2 text-muted-foreground',
+                brand: 'bg-brand-soft text-brand-strong',
+                success: 'bg-status-success-soft text-status-success',
+                warning: 'bg-status-pending-soft text-status-pending',
+                pending: 'bg-status-pending-soft text-status-pending',
+                danger: 'bg-status-danger-soft text-status-danger',
+                info: 'bg-status-info-soft text-status-info',
+                active: 'bg-status-active-soft text-status-active',
+                outline: 'border border-border-strong text-foreground',
+                vip: 'bg-brand text-brand-fg',
+            },
+            size: {
+                sm: 'px-2 py-0.5 text-xs',
+                md: 'px-2.5 py-1 text-xs',
+                lg: 'px-3 py-1.5 text-sm',
+            },
+        },
+        defaultVariants: {
+            variant: 'default',
+            size: 'sm',
+        },
+    },
+);
 
-export function Badge({ children, variant = 'default', size = 'sm', className = '' }: BadgeProps) {
-    const variants = {
-        default: 'bg-secondary text-secondary-foreground',
-        success: 'bg-emerald-500/10 text-emerald-600',
-        warning: 'bg-amber-500/10 text-amber-600',
-        danger: 'bg-destructive/10 text-destructive',
-        info: 'bg-blue-500/10 text-blue-600',
-        vip: 'bg-gradient-to-r from-amber-400 to-yellow-500 text-white shadow-sm',
-    };
+export interface BadgeProps
+    extends React.HTMLAttributes<HTMLSpanElement>,
+        VariantProps<typeof badgeVariants> {}
 
-    const sizes = {
-        sm: 'px-2 py-0.5 text-xs',
-        md: 'px-3 py-1 text-sm',
-    };
-
+export function Badge({ children, variant, size, className, ...props }: BadgeProps) {
     return (
-        <span className={`inline-flex items-center font-medium rounded-full ${variants[variant]} ${sizes[size]} ${className}`}>
+        <span className={cn(badgeVariants({ variant, size }), className)} {...props}>
             {children}
         </span>
     );
 }
 
-// Order status badge
+// Order status badge — kept for backwards compat
 export function OrderStatusBadge({ status }: { status: string }) {
-    const statusConfig: Record<string, { label: string; variant: BadgeProps['variant'] }> = {
+    const statusConfig: Record<string, { label: string; variant: NonNullable<BadgeProps['variant']> }> = {
         pending: { label: 'Хүлээгдэж буй', variant: 'warning' },
         confirmed: { label: 'Баталгаажсан', variant: 'info' },
         processing: { label: 'Бэлтгэж буй', variant: 'info' },
@@ -40,7 +55,9 @@ export function OrderStatusBadge({ status }: { status: string }) {
         cancelled: { label: 'Цуцлагдсан', variant: 'danger' },
     };
 
-    const config = statusConfig[status] || { label: status, variant: 'default' as const };
+    const config = statusConfig[status] || { label: status, variant: 'default' };
 
     return <Badge variant={config.variant}>{config.label}</Badge>;
 }
+
+export { badgeVariants };

@@ -71,9 +71,9 @@ export function DataTable<TData, TValue>({
         <div className="space-y-4">
             {/* Bulk Actions Bar */}
             {enableRowSelection && selectedRows.length > 0 && (
-                <div className="bg-violet-50 border border-violet-200 rounded-lg p-3 flex items-center justify-between">
+                <div className="bg-brand-soft border border-brand/30 rounded-lg p-3 flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 bg-violet-600 rounded flex items-center justify-center">
+                        <div className="w-6 h-6 bg-brand rounded flex items-center justify-center">
                             <Check className="w-4 h-4 text-white" />
                         </div>
                         <span className="text-sm font-medium text-violet-900">
@@ -104,7 +104,7 @@ export function DataTable<TData, TValue>({
             )}
 
             {/* Table */}
-            <div className="rounded-xl border border-border overflow-hidden bg-white">
+            <div className="rounded-xl border border-border overflow-hidden bg-surface">
                 <table className="w-full">
                     <thead className="bg-secondary/50 border-b border-border">
                         {table.getHeaderGroups().map((headerGroup) => (
@@ -147,7 +147,7 @@ export function DataTable<TData, TValue>({
                                 <tr
                                     key={row.id}
                                     data-state={row.getIsSelected() && 'selected'}
-                                    className="hover:bg-secondary/30 transition-colors data-[state=selected]:bg-violet-50"
+                                    className="hover:bg-secondary/30 transition-colors data-[state=selected]:bg-brand-soft"
                                 >
                                     {row.getVisibleCells().map((cell) => (
                                         <td key={cell.id} className="px-4 py-3">
@@ -208,7 +208,7 @@ export function createSelectColumn<T>(): ColumnDef<T, unknown> {
                 type="checkbox"
                 checked={table.getIsAllPageRowsSelected()}
                 onChange={(e) => table.toggleAllPageRowsSelected(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                className="w-4 h-4 rounded border-border-strong text-brand-strong focus:ring-brand"
             />
         ),
         cell: ({ row }) => (
@@ -216,7 +216,7 @@ export function createSelectColumn<T>(): ColumnDef<T, unknown> {
                 type="checkbox"
                 checked={row.getIsSelected()}
                 onChange={(e) => row.toggleSelected(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-300 text-violet-600 focus:ring-violet-500"
+                className="w-4 h-4 rounded border-border-strong text-brand-strong focus:ring-brand"
             />
         ),
         enableSorting: false,

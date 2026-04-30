@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bot, Loader2, CheckCircle, ShoppingCart, User, CreditCard } from 'lucide-react';
+import { Loader2, CheckCircle, ShoppingCart, User, CreditCard } from 'lucide-react';
 
 interface ToolProcessingIndicatorProps {
     toolName: string;
@@ -16,11 +16,11 @@ export function ToolProcessingIndicator({ toolName, status }: ToolProcessingIndi
     const config = toolConfig[toolName] || { icon: null, label: toolName };
 
     return (
-        <div className="flex items-center gap-2 mt-2 ml-10 text-[11px] text-gray-500 bg-gray-50/50 py-1 px-2 rounded-lg border border-gray-100/50 w-fit">
+        <div className="flex items-center gap-2 mt-2 ml-10 text-[11px] text-muted-foreground bg-surface-2/60 py-1 px-2 rounded-md border border-border w-fit">
             {status === 'pending' ? (
-                <Loader2 className="w-3 h-3 animate-spin text-violet-500" />
+                <Loader2 className="w-3 h-3 animate-spin text-brand" />
             ) : (
-                <CheckCircle className="w-3 h-3 text-emerald-500" />
+                <CheckCircle className="w-3 h-3 text-status-success" />
             )}
             <span className="flex items-center gap-1">
                 {config.icon}

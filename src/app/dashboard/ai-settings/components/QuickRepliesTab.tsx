@@ -55,7 +55,7 @@ export default function QuickRepliesTab({ quickReplies, setQuickReplies, editing
             </div>
 
             {editingQuickReply && (
-                <Card className="border-violet-200 bg-violet-50">
+                <Card className="border-brand/30 bg-brand-soft">
                     <CardContent className="p-4 space-y-4">
                         <Input placeholder="Нэр (жишээ: Үнэ асуулт)" value={editingQuickReply.name || ''} onChange={(e) => setEditingQuickReply({ ...editingQuickReply, name: e.target.value })} />
                         <Input
@@ -73,7 +73,7 @@ export default function QuickRepliesTab({ quickReplies, setQuickReplies, editing
             )}
 
             {quickReplies.length === 0 && !editingQuickReply ? (
-                <Card><CardContent className="p-8 text-center text-gray-500"><MessageCircle className="w-12 h-12 mx-auto mb-4 text-gray-300" /><p>Хурдан хариулт байхгүй.</p></CardContent></Card>
+                <Card><CardContent className="p-8 text-center text-muted-foreground"><MessageCircle className="w-12 h-12 mx-auto mb-4 text-muted-foreground/60" /><p>Хурдан хариулт байхгүй.</p></CardContent></Card>
             ) : (
                 <div className="space-y-3">
                     {quickReplies.map((qr) => (
@@ -81,17 +81,17 @@ export default function QuickRepliesTab({ quickReplies, setQuickReplies, editing
                             <CardContent className="p-4">
                                 <div className="flex justify-between items-start gap-4">
                                     <div className="flex-1">
-                                        <p className="font-medium text-gray-900">{qr.name}</p>
+                                        <p className="font-medium text-foreground">{qr.name}</p>
                                         <div className="flex flex-wrap gap-1 mt-2">
                                             {qr.trigger_words.map((word, i) => (
-                                                <span key={i} className="px-2 py-0.5 bg-violet-100 text-violet-700 text-xs rounded">{word}</span>
+                                                <span key={i} className="px-2 py-0.5 bg-brand-soft text-brand-strong text-xs rounded">{word}</span>
                                             ))}
                                         </div>
-                                        <p className="text-sm text-gray-600 mt-2">{qr.response}</p>
+                                        <p className="text-sm text-muted-foreground mt-2">{qr.response}</p>
                                     </div>
                                     <div className="flex gap-2">
-                                        <button onClick={() => setEditingQuickReply(qr)} className="p-2 text-gray-400 hover:text-violet-600"><Edit2 className="w-4 h-4" /></button>
-                                        <button onClick={() => deleteQuickReply(qr.id)} className="p-2 text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                                        <button onClick={() => setEditingQuickReply(qr)} className="p-2 text-muted-foreground/70 hover:text-brand-strong"><Edit2 className="w-4 h-4" /></button>
+                                        <button onClick={() => deleteQuickReply(qr.id)} className="p-2 text-muted-foreground/70 hover:text-status-danger"><Trash2 className="w-4 h-4" /></button>
                                     </div>
                                 </div>
                             </CardContent>

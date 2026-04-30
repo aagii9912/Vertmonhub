@@ -50,7 +50,7 @@ export default function FaqTab({ faqs, setFaqs, editingFaq, setEditingFaq, setEr
             </div>
 
             {editingFaq && (
-                <Card className="border-violet-200 bg-violet-50">
+                <Card className="border-brand/30 bg-brand-soft">
                     <CardContent className="p-4 space-y-4">
                         <Input placeholder="Асуулт" value={editingFaq.question || ''} onChange={(e) => setEditingFaq({ ...editingFaq, question: e.target.value })} />
                         <Textarea placeholder="Хариулт" value={editingFaq.answer || ''} onChange={(e) => setEditingFaq({ ...editingFaq, answer: e.target.value })} rows={3} />
@@ -63,7 +63,7 @@ export default function FaqTab({ faqs, setFaqs, editingFaq, setEditingFaq, setEr
             )}
 
             {faqs.length === 0 && !editingFaq ? (
-                <Card><CardContent className="p-8 text-center text-gray-500"><HelpCircle className="w-12 h-12 mx-auto mb-4 text-gray-300" /><p>FAQ байхгүй байна.</p></CardContent></Card>
+                <Card><CardContent className="p-8 text-center text-muted-foreground"><HelpCircle className="w-12 h-12 mx-auto mb-4 text-muted-foreground/60" /><p>FAQ байхгүй байна.</p></CardContent></Card>
             ) : (
                 <div className="space-y-3">
                     {faqs.map((faq) => (
@@ -71,13 +71,13 @@ export default function FaqTab({ faqs, setFaqs, editingFaq, setEditingFaq, setEr
                             <CardContent className="p-4">
                                 <div className="flex justify-between items-start gap-4">
                                     <div className="flex-1">
-                                        <p className="font-medium text-gray-900">{faq.question}</p>
-                                        <p className="text-sm text-gray-600 mt-1">{faq.answer}</p>
-                                        <p className="text-xs text-gray-400 mt-2">Ашиглагдсан: {faq.usage_count}x</p>
+                                        <p className="font-medium text-foreground">{faq.question}</p>
+                                        <p className="text-sm text-muted-foreground mt-1">{faq.answer}</p>
+                                        <p className="text-xs text-muted-foreground/70 mt-2">Ашиглагдсан: {faq.usage_count}x</p>
                                     </div>
                                     <div className="flex gap-2">
-                                        <button onClick={() => setEditingFaq(faq)} className="p-2 text-gray-400 hover:text-violet-600"><Edit2 className="w-4 h-4" /></button>
-                                        <button onClick={() => deleteFaq(faq.id)} className="p-2 text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                                        <button onClick={() => setEditingFaq(faq)} className="p-2 text-muted-foreground/70 hover:text-brand-strong"><Edit2 className="w-4 h-4" /></button>
+                                        <button onClick={() => deleteFaq(faq.id)} className="p-2 text-muted-foreground/70 hover:text-status-danger"><Trash2 className="w-4 h-4" /></button>
                                     </div>
                                 </div>
                             </CardContent>

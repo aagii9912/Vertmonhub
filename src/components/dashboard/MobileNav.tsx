@@ -5,8 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
     LayoutDashboard,
-    Package,
-    ShoppingCart,
+    Building2,
     BarChart3,
     Menu,
     X,
@@ -14,19 +13,17 @@ import {
     Settings,
     Bot,
     FileText,
-    MessageCircle,
     Eye,
     TrendingUp,
 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
-// Main nav items (4 essential)
 const primaryNavItems = [
     { name: 'Нүүр', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Захиалга', href: '/dashboard/orders', icon: ShoppingCart },
+    { name: 'Үл хөдлөх', href: '/dashboard/properties', icon: Building2 },
     { name: 'Тайлан', href: '/dashboard/reports', icon: BarChart3 },
 ];
 
-// Secondary nav items (in More menu)
 const secondaryNavItems = [
     { name: 'Лийд', href: '/dashboard/leads', icon: Users },
     { name: 'Үзлэг', href: '/dashboard/viewings', icon: Eye },
@@ -44,26 +41,25 @@ export function MobileNav() {
         return pathname === href || (href !== '/dashboard' && pathname.startsWith(href));
     };
 
-    const isMoreActive = secondaryNavItems.some(item => isActiveItem(item.href));
+    const isMoreActive = secondaryNavItems.some((item) => isActiveItem(item.href));
 
     return (
         <>
-            {/* More Menu Overlay */}
             {showMore && (
                 <div className="fixed inset-0 z-40 md:hidden" onClick={() => setShowMore(false)}>
-                    <div className="absolute inset-0 bg-black/50" />
+                    <div className="absolute inset-0 bg-foreground/40 backdrop-blur-sm" />
                     <div
-                        className="absolute bottom-[72px] left-4 right-4 bg-white rounded-2xl shadow-2xl overflow-hidden"
+                        className="absolute bottom-[72px] left-4 right-4 bg-surface rounded-xl shadow-xl border border-border overflow-hidden"
                         onClick={(e) => e.stopPropagation()}
                     >
                         <div className="p-2">
-                            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-                                <span className="font-semibold text-gray-900">Бусад</span>
+                            <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
+                                <span className="heading-section text-sm text-foreground">Бусад</span>
                                 <button
                                     onClick={() => setShowMore(false)}
-                                    className="p-2 rounded-full hover:bg-gray-100"
+                                    className="p-2 rounded-full hover:bg-surface-2"
                                 >
-                                    <X className="w-5 h-5 text-gray-500" />
+                                    <X className="w-5 h-5 text-muted-foreground" />
                                 </button>
                             </div>
                             <div className="grid grid-cols-3 gap-2 p-3">
@@ -72,10 +68,12 @@ export function MobileNav() {
                                         key={item.name}
                                         href={item.href}
                                         onClick={() => setShowMore(false)}
-                                        className={`flex flex-col items-center gap-2 p-4 rounded-xl transition-all ${isActiveItem(item.href)
-                                            ? 'bg-gold/10 text-gold'
-                                            : 'hover:bg-gray-50 text-gray-600'
-                                            }`}
+                                        className={cn(
+                                            'flex flex-col items-center gap-2 p-4 rounded-md transition-colors',
+                                            isActiveItem(item.href)
+                                                ? 'bg-brand-soft text-brand-strong'
+                                                : 'hover:bg-surface-2 text-muted-foreground',
+                                        )}
                                     >
                                         <item.icon className="w-6 h-6" />
                                         <span className="text-xs font-medium text-center">{item.name}</span>
@@ -88,7 +86,7 @@ export function MobileNav() {
             )}
 
             {/* Bottom Navigation */}
-            <nav className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-200 pb-safe block md:hidden">
+            <nav className="fixed bottom-0 left-0 right-0 z-50 bg-surface border-t border-border pb-safe block md:hidden">
                 <ul className="flex justify-around items-stretch h-[72px]">
                     {primaryNavItems.map((item) => {
                         const isActive = isActiveItem(item.href);
@@ -96,40 +94,37 @@ export function MobileNav() {
                             <li key={item.name} className="flex-1">
                                 <Link
                                     href={item.href}
-                                    className={`flex flex-col items-center justify-center w-full h-full gap-1.5 transition-all active:scale-95 ${isActive
-                                        ? 'text-gold'
-                                        : 'text-gray-500'
-                                        }`}
+                                    className={cn(
+                                        'flex flex-col items-center justify-center w-full h-full gap-1.5 transition-colors active:scale-95',
+                                        isActive ? 'text-brand' : 'text-muted-foreground',
+                                    )}
                                 >
-                                    <div className={`p-2 rounded-xl transition-all ${isActive ? 'bg-gold/10' : ''}`}>
-                                        <item.icon
-                                            className="w-6 h-6"
-                                            strokeWidth={isActive ? 2.5 : 2}
-                                        />
+                                    <div className={cn('p-2 rounded-md transition-colors', isActive && 'bg-brand-soft')}>
+                                        <item.icon className="w-6 h-6" strokeWidth={isActive ? 2.25 : 1.75} />
                                     </div>
-                                    <span className={`text-xs font-medium ${isActive ? 'text-gold' : ''}`}>
-                                        {item.name}
-                                    </span>
+                                    <span className="text-xs font-medium">{item.name}</span>
                                 </Link>
                             </li>
                         );
                     })}
 
-                    {/* More Button */}
                     <li className="flex-1">
                         <button
                             onClick={() => setShowMore(!showMore)}
-                            className={`flex flex-col items-center justify-center w-full h-full gap-1.5 transition-all active:scale-95 ${showMore || isMoreActive
-                                ? 'text-gold'
-                                : 'text-gray-500'
-                                }`}
+                            className={cn(
+                                'flex flex-col items-center justify-center w-full h-full gap-1.5 transition-colors active:scale-95',
+                                showMore || isMoreActive ? 'text-brand' : 'text-muted-foreground',
+                            )}
                         >
-                            <div className={`p-2 rounded-xl transition-all ${showMore || isMoreActive ? 'bg-gold/10' : ''}`}>
-                                <Menu className="w-6 h-6" strokeWidth={showMore || isMoreActive ? 2.5 : 2} />
+                            <div
+                                className={cn(
+                                    'p-2 rounded-md transition-colors',
+                                    (showMore || isMoreActive) && 'bg-brand-soft',
+                                )}
+                            >
+                                <Menu className="w-6 h-6" strokeWidth={showMore || isMoreActive ? 2.25 : 1.75} />
                             </div>
-                            <span className={`text-xs font-medium ${showMore || isMoreActive ? 'text-gold' : ''}`}>
-                                Бусад
-                            </span>
+                            <span className="text-xs font-medium">Бусад</span>
                         </button>
                     </li>
                 </ul>

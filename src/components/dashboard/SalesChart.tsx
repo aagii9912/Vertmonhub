@@ -29,8 +29,8 @@ interface SalesChartProps {
 const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
         return (
-            <div className="bg-white p-3 rounded-lg shadow-lg border border-gray-200">
-                <p className="font-medium text-sm text-gray-900">{label}</p>
+            <div className="bg-surface p-3 rounded-lg shadow-lg border border-border">
+                <p className="font-medium text-sm text-foreground">{label}</p>
                 <p className="text-primary font-semibold">
                     ₮{Number(payload[0].value).toLocaleString()}
                 </p>
@@ -57,8 +57,8 @@ export function SalesChart({ data, type = 'line', height = 300 }: SalesChartProp
 
     if (chartData.length === 0) {
         return (
-            <div className="flex items-center justify-center h-[300px] bg-gray-50 rounded-lg">
-                <p className="text-gray-500">Өгөгдөл байхгүй</p>
+            <div className="flex items-center justify-center h-[300px] bg-surface-2/40 rounded-lg">
+                <p className="text-muted-foreground">Өгөгдөл байхгүй</p>
             </div>
         );
     }

@@ -3,26 +3,21 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { Spinner } from '@/components/ui/Spinner';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import {
     Users,
-    TrendingUp,
     Target,
     CheckCircle2,
-    XCircle,
     Clock,
-    BarChart3,
-    ArrowUpRight,
-    ArrowDownRight,
     Download,
-    Calendar,
-    DollarSign,
     PieChart,
-    Filter,
     Building2,
-    Percent
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { cn } from '@/lib/utils';
 
 interface LeadStats {
     total: number;
@@ -35,7 +30,7 @@ interface SourceData {
     source: string;
     count: number;
     percentage: number;
-    color: string;
+    barClass: string;
 }
 
 interface ProjectData {
@@ -45,13 +40,13 @@ interface ProjectData {
     value: number;
 }
 
-const sourceColors: Record<string, string> = {
-    messenger: 'bg-blue-500',
-    instagram: 'bg-pink-500',
-    website: 'bg-indigo-500',
-    referral: 'bg-emerald-500',
-    phone: 'bg-amber-500',
-    other: 'bg-gray-500',
+const sourceBarClass: Record<string, string> = {
+    messenger: 'bg-status-info',
+    instagram: 'bg-brand',
+    website: 'bg-status-info',
+    referral: 'bg-status-success',
+    phone: 'bg-status-pending',
+    other: 'bg-muted',
 };
 
 const sourceLabels: Record<string, string> = {
@@ -90,10 +85,9 @@ export default function LeadsReport() {
                     return;
                 }
 
-                // Stats
-                const won = leads.filter(l => l.status === 'closed_won').length;
-                const inProgress = leads.filter(l =>
-                    ['contacted', 'viewing_scheduled', 'offered', 'negotiating'].includes(l.status)
+                const won = leads.filter((l) => l.status === 'closed_won').length;
+                const inProgress = leads.filter((l) =>
+                    ['contacted', 'viewing_scheduled', 'offered', 'negotiating'].includes(l.status),
                 ).length;
 
                 setStats({
@@ -103,7 +97,6 @@ export default function LeadsReport() {
                     conversionRate: leads.length > 0 ? (won / leads.length) * 100 : 0,
                 });
 
-                // Source breakdown
                 const sourceCounts = new Map<string, number>();
                 for (const lead of leads) {
                     const src = lead.source || 'other';
@@ -114,12 +107,11 @@ export default function LeadsReport() {
                         source: sourceLabels[source] || source,
                         count,
                         percentage: Math.round((count / leads.length) * 100),
-                        color: sourceColors[source] || 'bg-gray-500',
+                        barClass: sourceBarClass[source] || 'bg-muted',
                     }))
                     .sort((a, b) => b.count - a.count);
                 setSourceData(srcData);
 
-                // Project breakdown
                 const projectMap = new Map<string, { leads: number; won: number; value: number }>();
                 for (const lead of leads) {
                     const project = lead.preferred_type || 'Бусад';
@@ -137,7 +129,7 @@ export default function LeadsReport() {
                     Array.from(projectMap.entries())
                         .map(([project, data]) => ({ project, ...data }))
                         .sort((a, b) => b.leads - a.leads)
-                        .slice(0, 5)
+                        .slice(0, 5),
                 );
             } catch (error) {
                 console.error('Error fetching leads report:', error);
@@ -157,49 +149,44 @@ export default function LeadsReport() {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="flex items-center gap-3">
-                    <div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-                    <span className="text-gray-500">Тайлан татаж байна...</span>
+            <Card>
+                <div className="flex items-center justify-center py-16 gap-3">
+                    <Spinner size="md" />
+                    <span className="text-muted-foreground">Тайлан татаж байна...</span>
                 </div>
-            </div>
+            </Card>
         );
     }
 
     if (stats.total === 0) {
         return (
-            <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-                <Users className="w-16 h-16 text-gray-300 mb-4" />
-                <h2 className="text-xl font-semibold text-gray-700 mb-2">Мэдээлэл байхгүй</h2>
-                <p className="text-gray-500 max-w-md">
-                    Сэжмийн тайлан харахын тулд лийд мэдээлэл оруулна уу.
-                </p>
-            </div>
+            <Card>
+                <div className="py-12">
+                    <EmptyState
+                        icon={<Users className="w-7 h-7" />}
+                        title="Мэдээлэл байхгүй"
+                        description="Сэжмийн тайлан харахын тулд лийд мэдээлэл оруулна уу."
+                    />
+                </div>
+            </Card>
         );
     }
 
-    const kpiCards = [
-        { label: 'Нийт сэжим', value: String(stats.total), icon: Users, color: 'text-blue-600', bgColor: 'bg-blue-100' },
-        { label: 'Амжилттай', value: String(stats.won), icon: CheckCircle2, color: 'text-emerald-600', bgColor: 'bg-emerald-100' },
-        { label: 'Хөрвүүлэлт', value: `${stats.conversionRate.toFixed(1)}%`, icon: Target, color: 'text-purple-600', bgColor: 'bg-purple-100' },
-        { label: 'Боловсруулалтанд', value: String(stats.inProgress), icon: Clock, color: 'text-amber-600', bgColor: 'bg-amber-100' },
-    ];
-
     return (
         <div className="space-y-6">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            {/* Sub header */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
-                    <h1 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center gap-2">
-                        <Users className="w-6 h-6 text-primary" />
+                    <h2 className="heading-section text-lg text-foreground flex items-center gap-2">
+                        <Users className="w-5 h-5 text-brand" />
                         Сэжмийн тайлан
-                    </h1>
-                    <p className="text-sm text-gray-500 mt-1">
+                    </h2>
+                    <p className="text-sm text-muted-foreground mt-1">
                         Худалдан авах магадлалтай харилцагчдын анализ
                     </p>
                 </div>
-                <Button variant="outline" size="sm">
-                    <Download className="w-4 h-4 mr-2" />
+                <Button variant="secondary" size="sm">
+                    <Download className="w-4 h-4" />
                     Экспорт
                 </Button>
             </div>
@@ -215,10 +202,12 @@ export default function LeadsReport() {
                     <button
                         key={option.value}
                         onClick={() => setPeriod(option.value as Period)}
-                        className={`px-4 py-2 rounded-lg font-medium text-sm transition-all ${period === option.value
-                            ? 'bg-primary text-white'
-                            : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                            }`}
+                        className={cn(
+                            'px-4 py-2 rounded-md font-medium text-sm transition-colors border',
+                            period === option.value
+                                ? 'bg-foreground text-background border-foreground'
+                                : 'bg-surface text-muted-foreground border-border hover:bg-surface-2',
+                        )}
                     >
                         {option.label}
                     </button>
@@ -226,50 +215,54 @@ export default function LeadsReport() {
             </div>
 
             {/* KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {kpiCards.map((stat, index) => (
-                    <Card key={index} className="transition-all hover:shadow-md">
-                        <CardContent className="p-6">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <p className="text-sm font-medium text-gray-500">{stat.label}</p>
-                                    <h3 className="text-2xl font-bold text-gray-900 mt-1">{stat.value}</h3>
-                                </div>
-                                <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${stat.bgColor}`}>
-                                    <stat.icon className={`w-6 h-6 ${stat.color}`} />
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                ))}
-            </div>
+            <StatBar columns={4}>
+                <StatTile label="Нийт сэжим" value={stats.total} icon={<Users className="w-4 h-4" />} accent="info" />
+                <StatTile
+                    label="Амжилттай"
+                    value={stats.won}
+                    icon={<CheckCircle2 className="w-4 h-4" />}
+                    accent="success"
+                />
+                <StatTile
+                    label="Хөрвүүлэлт"
+                    value={`${stats.conversionRate.toFixed(1)}%`}
+                    icon={<Target className="w-4 h-4" />}
+                    accent="brand"
+                />
+                <StatTile
+                    label="Боловсруулалтанд"
+                    value={stats.inProgress}
+                    icon={<Clock className="w-4 h-4" />}
+                    accent="warning"
+                />
+            </StatBar>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Source Analysis */}
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                            <PieChart className="w-5 h-5 text-primary" />
+                            <PieChart className="w-5 h-5 text-brand" />
                             Сувгийн анализ
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
                         {sourceData.length === 0 ? (
-                            <p className="text-sm text-gray-500 text-center py-8">Мэдээлэл байхгүй</p>
+                            <p className="text-sm text-muted-foreground text-center py-8">Мэдээлэл байхгүй</p>
                         ) : (
                             <div className="space-y-6">
                                 {sourceData.map((item, i) => (
                                     <div key={i}>
                                         <div className="flex items-center justify-between mb-2">
-                                            <span className="font-medium text-gray-700">{item.source}</span>
-                                            <div className="text-right">
-                                                <span className="font-bold text-gray-900">{item.count}</span>
-                                                <span className="text-sm text-gray-500 ml-2">({item.percentage}%)</span>
+                                            <span className="font-medium text-foreground">{item.source}</span>
+                                            <div className="text-right tabular-nums">
+                                                <span className="font-semibold text-foreground">{item.count}</span>
+                                                <span className="text-sm text-muted-foreground ml-2">({item.percentage}%)</span>
                                             </div>
                                         </div>
-                                        <div className="w-full bg-gray-100 rounded-full h-2">
+                                        <div className="w-full bg-surface-2 rounded-full h-2 overflow-hidden">
                                             <div
-                                                className={`${item.color} h-2 rounded-full transition-all`}
+                                                className={cn('h-full rounded-full transition-all', item.barClass)}
                                                 style={{ width: `${item.percentage}%` }}
                                             />
                                         </div>
@@ -284,27 +277,32 @@ export default function LeadsReport() {
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">
-                            <Building2 className="w-5 h-5 text-primary" />
+                            <Building2 className="w-5 h-5 text-brand" />
                             Төслөөр
                         </CardTitle>
                     </CardHeader>
                     <CardContent>
                         {projectData.length === 0 ? (
-                            <p className="text-sm text-gray-500 text-center py-8">Мэдээлэл байхгүй</p>
+                            <p className="text-sm text-muted-foreground text-center py-8">Мэдээлэл байхгүй</p>
                         ) : (
-                            <div className="space-y-4">
+                            <div className="space-y-3">
                                 {projectData.map((item, i) => (
-                                    <div key={i} className="flex items-center justify-between p-4 bg-gray-50 rounded-xl">
+                                    <div
+                                        key={i}
+                                        className="flex items-center justify-between p-4 bg-surface-2/40 border border-border rounded-md"
+                                    >
                                         <div>
-                                            <p className="font-medium text-gray-900">{item.project}</p>
+                                            <p className="font-medium text-foreground">{item.project}</p>
                                             <div className="flex gap-4 mt-1">
-                                                <p className="text-xs text-gray-500">Сэжим: {item.leads}</p>
-                                                <p className="text-xs text-green-600">Амжилттай: {item.won}</p>
+                                                <p className="text-xs text-muted-foreground tabular-nums">Сэжим: {item.leads}</p>
+                                                <p className="text-xs text-status-success tabular-nums">Амжилттай: {item.won}</p>
                                             </div>
                                         </div>
                                         {item.value > 0 && (
                                             <div className="text-right">
-                                                <p className="font-bold text-primary">{formatCurrency(item.value)}</p>
+                                                <p className="font-semibold text-brand tabular-nums">
+                                                    {formatCurrency(item.value)}
+                                                </p>
                                             </div>
                                         )}
                                     </div>

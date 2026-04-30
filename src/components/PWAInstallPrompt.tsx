@@ -81,7 +81,7 @@ export function PWAInstallPrompt() {
 
     return (
         <div className="fixed bottom-20 left-4 right-4 md:bottom-6 md:left-auto md:right-6 md:w-80 z-50 animate-slide-up">
-            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 rounded-2xl p-4 shadow-2xl shadow-blue-500/25">
+            <div className="bg-gradient-to-r from-blue-600 to-brand-strong rounded-2xl p-4 shadow-2xl shadow-blue-500/25">
                 <button
                     onClick={handleDismiss}
                     className="absolute top-2 right-2 p-1 text-white/70 hover:text-white transition-colors"
@@ -91,7 +91,7 @@ export function PWAInstallPrompt() {
                 </button>
 
                 <div className="flex items-start gap-3">
-                    <div className="p-2 bg-white/20 rounded-xl flex-shrink-0">
+                    <div className="p-2 bg-surface/20 rounded-xl flex-shrink-0">
                         <Download size={24} className="text-white" />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -107,14 +107,14 @@ export function PWAInstallPrompt() {
                 </div>
 
                 {isIOS ? (
-                    <div className="mt-3 flex items-center justify-center gap-2 text-white/90 text-xs bg-white/10 rounded-lg py-2 px-3">
+                    <div className="mt-3 flex items-center justify-center gap-2 text-white/90 text-xs bg-surface/10 rounded-lg py-2 px-3">
                         <Share size={16} />
                         <span>Share товч → Add to Home Screen</span>
                     </div>
                 ) : (
                     <button
                         onClick={handleInstall}
-                        className="mt-3 w-full bg-white text-blue-600 font-semibold py-2.5 px-4 rounded-xl text-sm hover:bg-blue-50 transition-colors active:scale-[0.98]"
+                        className="mt-3 w-full bg-surface text-status-info font-semibold py-2.5 px-4 rounded-xl text-sm hover:bg-status-info-soft transition-colors active:scale-[0.98]"
                     >
                         Суулгах
                     </button>

@@ -26,7 +26,7 @@ export function NotificationButton() {
         flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium
         transition-all duration-200
         ${isSubscribed
-                    ? 'bg-green-500/20 text-green-400 hover:bg-green-500/30'
+                    ? 'bg-status-success/20 text-green-400 hover:bg-status-success/30'
                     : 'bg-slate-700/50 text-slate-300 hover:bg-slate-700'
                 }
         ${isLoading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}

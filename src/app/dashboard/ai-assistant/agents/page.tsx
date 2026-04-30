@@ -46,28 +46,28 @@ export default function AgentsPage() {
     }, [shop?.id]);
 
     if (loading) {
-        return (<div className="flex items-center justify-center min-h-[400px]"><div className="flex items-center gap-3"><div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" /><span className="text-gray-500">Татаж байна...</span></div></div>);
+        return (<div className="flex items-center justify-center min-h-[400px]"><div className="flex items-center gap-3"><div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" /><span className="text-muted-foreground">Татаж байна...</span></div></div>);
     }
 
     return (
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center gap-2">
-                        <Bot className="w-6 h-6 text-emerald-600" />
+                    <h1 className="text-xl md:text-2xl font-bold text-foreground flex items-center gap-2">
+                        <Bot className="w-6 h-6 text-status-success" />
                         AI Агентууд
                     </h1>
-                    <p className="text-sm text-gray-500 mt-1">AI туслагчдын тохиргоо</p>
+                    <p className="text-sm text-muted-foreground mt-1">AI туслагчдын тохиргоо</p>
                 </div>
-                <Button className="bg-emerald-600 hover:bg-emerald-700 text-white"><Plus className="w-4 h-4 mr-2" />Шинэ агент</Button>
+                <Button className="bg-status-success hover:opacity-90 text-white"><Plus className="w-4 h-4 mr-2" />Шинэ агент</Button>
             </div>
 
             {agents.length === 0 ? (
                 <Card>
                     <CardContent className="flex flex-col items-center justify-center py-16">
-                        <Bot className="w-16 h-16 text-gray-300 mb-4" />
-                        <h2 className="text-xl font-semibold text-gray-700 mb-2">Мэдээлэл байхгүй</h2>
-                        <p className="text-gray-500 mb-4">AI агент нэмэхийн тулд "Шинэ агент" товчийг дарна уу.</p>
+                        <Bot className="w-16 h-16 text-muted-foreground/60 mb-4" />
+                        <h2 className="text-xl font-semibold text-foreground mb-2">Мэдээлэл байхгүй</h2>
+                        <p className="text-muted-foreground mb-4">AI агент нэмэхийн тулд "Шинэ агент" товчийг дарна уу.</p>
                     </CardContent>
                 </Card>
             ) : (
@@ -77,31 +77,31 @@ export default function AgentsPage() {
                             <CardContent className="p-5">
                                 <div className="flex items-start justify-between mb-3">
                                     <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${agent.status === 'active' ? 'bg-emerald-100' : 'bg-gray-100'}`}>
-                                            <Bot className={`w-5 h-5 ${agent.status === 'active' ? 'text-emerald-600' : 'text-gray-400'}`} />
+                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${agent.status === 'active' ? 'bg-status-success-soft' : 'bg-surface-2'}`}>
+                                            <Bot className={`w-5 h-5 ${agent.status === 'active' ? 'text-status-success' : 'text-muted-foreground/70'}`} />
                                         </div>
                                         <div>
-                                            <h3 className="font-semibold text-gray-900">{agent.name}</h3>
-                                            <span className="text-xs text-gray-500">{agent.model}</span>
+                                            <h3 className="font-semibold text-foreground">{agent.name}</h3>
+                                            <span className="text-xs text-muted-foreground">{agent.model}</span>
                                         </div>
                                     </div>
-                                    <span className={`px-2 py-1 text-xs rounded-full ${agent.status === 'active' ? 'bg-emerald-100 text-emerald-700' : agent.status === 'error' ? 'bg-red-100 text-red-600' : 'bg-gray-100 text-gray-600'}`}>
+                                    <span className={`px-2 py-1 text-xs rounded-full ${agent.status === 'active' ? 'bg-status-success-soft text-status-success' : agent.status === 'error' ? 'bg-status-danger-soft text-status-danger' : 'bg-surface-2 text-muted-foreground'}`}>
                                         {agent.status === 'active' ? 'Идэвхтэй' : agent.status === 'error' ? 'Алдаа' : 'Идэвхгүй'}
                                     </span>
                                 </div>
-                                {agent.description && <p className="text-sm text-gray-600 mb-4 line-clamp-2">{agent.description}</p>}
-                                <div className="grid grid-cols-3 gap-2 pt-3 border-t border-gray-100">
+                                {agent.description && <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{agent.description}</p>}
+                                <div className="grid grid-cols-3 gap-2 pt-3 border-t border-border/60">
                                     <div className="text-center">
-                                        <p className="text-lg font-bold text-gray-900">{agent.total_conversations}</p>
-                                        <p className="text-xs text-gray-500">Харилцан яриа</p>
+                                        <p className="text-lg font-bold text-foreground">{agent.total_conversations}</p>
+                                        <p className="text-xs text-muted-foreground">Харилцан яриа</p>
                                     </div>
                                     <div className="text-center">
-                                        <p className="text-lg font-bold text-gray-900">{agent.avg_response_time_ms ? `${(agent.avg_response_time_ms / 1000).toFixed(1)}s` : '-'}</p>
-                                        <p className="text-xs text-gray-500">Хариу хугацаа</p>
+                                        <p className="text-lg font-bold text-foreground">{agent.avg_response_time_ms ? `${(agent.avg_response_time_ms / 1000).toFixed(1)}s` : '-'}</p>
+                                        <p className="text-xs text-muted-foreground">Хариу хугацаа</p>
                                     </div>
                                     <div className="text-center">
-                                        <p className="text-lg font-bold text-gray-900">{agent.satisfaction_rate ? `${agent.satisfaction_rate}%` : '-'}</p>
-                                        <p className="text-xs text-gray-500">Сэтгэл ханамж</p>
+                                        <p className="text-lg font-bold text-foreground">{agent.satisfaction_rate ? `${agent.satisfaction_rate}%` : '-'}</p>
+                                        <p className="text-xs text-muted-foreground">Сэтгэл ханамж</p>
                                     </div>
                                 </div>
                             </CardContent>

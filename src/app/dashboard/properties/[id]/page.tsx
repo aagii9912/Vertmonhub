@@ -20,8 +20,8 @@ const statusLabels: Record<PropertyStatus, string> = {
     available: 'Чөлөөтэй', reserved: 'Захиалсан', sold: 'Зарагдсан', rented: 'Түрээслэсэн', barter: 'Бартер',
 };
 const statusColors: Record<PropertyStatus, string> = {
-    available: 'bg-emerald-100 text-emerald-700', reserved: 'bg-yellow-100 text-yellow-700',
-    sold: 'bg-gray-200 text-gray-600', rented: 'bg-blue-100 text-blue-700', barter: 'bg-orange-100 text-orange-700',
+    available: 'bg-status-success-soft text-status-success', reserved: 'bg-status-pending-soft text-status-pending',
+    sold: 'bg-surface-3 text-muted-foreground', rented: 'bg-status-info-soft text-status-info', barter: 'bg-status-pending-soft text-status-pending',
 };
 const typeLabels: Record<PropertyType, string> = {
     apartment: 'Орон сууц', house: 'Хувийн байшин', office: 'Оффис', land: 'Газар', commercial: 'Худалдааны',
@@ -60,7 +60,7 @@ export default function PropertyDetailPage() {
     if (loading || !property) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
-                <Loader2 className="w-8 h-8 animate-spin text-violet-600" />
+                <Loader2 className="w-8 h-8 animate-spin text-brand-strong" />
             </div>
         );
     }
@@ -73,14 +73,14 @@ export default function PropertyDetailPage() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                    <Link href="/dashboard/properties" className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                        <ArrowLeft className="w-5 h-5 text-gray-500" />
+                    <Link href="/dashboard/properties" className="p-2 hover:bg-surface-2 rounded-lg transition-colors">
+                        <ArrowLeft className="w-5 h-5 text-muted-foreground" />
                     </Link>
                     <div>
-                        <h1 className="text-2xl font-bold text-gray-900">{property.name}</h1>
+                        <h1 className="text-2xl font-bold text-foreground">{property.name}</h1>
                         <div className="flex items-center gap-2 mt-0.5">
                             {property.district && (
-                                <span className="text-sm text-gray-500 flex items-center gap-1">
+                                <span className="text-sm text-muted-foreground flex items-center gap-1">
                                     <MapPin className="w-3.5 h-3.5" />{property.district}, {property.city}
                                 </span>
                             )}
@@ -92,7 +92,7 @@ export default function PropertyDetailPage() {
                         {statusLabels[property.status]}
                     </span>
                     <Link href={`/dashboard/properties/new?edit=${property.id}`}
-                        className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 transition-colors">
+                        className="flex items-center gap-1.5 px-3 py-2 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand-strong transition-colors">
                         <Edit className="w-4 h-4" /> Засах
                     </Link>
                 </div>
@@ -100,7 +100,7 @@ export default function PropertyDetailPage() {
 
             {/* Image Gallery */}
             {images.length > 0 && (
-                <div className="relative rounded-2xl overflow-hidden bg-gray-100 aspect-[16/9]">
+                <div className="relative rounded-2xl overflow-hidden bg-surface-2 aspect-[16/9]">
                     <Image
                         src={images[currentImage]}
                         alt={property.name}
@@ -122,7 +122,7 @@ export default function PropertyDetailPage() {
                             <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
                                 {images.map((_, idx) => (
                                     <button key={idx} onClick={() => setCurrentImage(idx)}
-                                        className={`w-2 h-2 rounded-full transition-all ${idx === currentImage ? 'bg-white w-6' : 'bg-white/50'}`} />
+                                        className={`w-2 h-2 rounded-full transition-all ${idx === currentImage ? 'bg-surface w-6' : 'bg-surface/50'}`} />
                                 ))}
                             </div>
                         </>
@@ -139,42 +139,42 @@ export default function PropertyDetailPage() {
                 {/* Left Column */}
                 <div className="lg:col-span-2 space-y-6">
                     {/* Key Specs */}
-                    <div className="bg-white rounded-2xl border border-gray-200 p-5">
+                    <div className="bg-surface rounded-2xl border border-border p-5">
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="text-center p-3 bg-violet-50 rounded-xl">
-                                <DollarSign className="w-5 h-5 text-violet-600 mx-auto mb-1" />
-                                <p className="text-lg font-bold text-gray-900">{Number(property.price).toLocaleString()}₮</p>
-                                <p className="text-xs text-gray-500">Үнэ</p>
+                            <div className="text-center p-3 bg-brand-soft rounded-xl">
+                                <DollarSign className="w-5 h-5 text-brand-strong mx-auto mb-1" />
+                                <p className="text-lg font-bold text-foreground">{Number(property.price).toLocaleString()}₮</p>
+                                <p className="text-xs text-muted-foreground">Үнэ</p>
                             </div>
-                            <div className="text-center p-3 bg-blue-50 rounded-xl">
-                                <Maximize className="w-5 h-5 text-blue-600 mx-auto mb-1" />
-                                <p className="text-lg font-bold text-gray-900">{property.size_sqm || '-'} м²</p>
-                                <p className="text-xs text-gray-500">Талбай</p>
+                            <div className="text-center p-3 bg-status-info-soft rounded-xl">
+                                <Maximize className="w-5 h-5 text-status-info mx-auto mb-1" />
+                                <p className="text-lg font-bold text-foreground">{property.size_sqm || '-'} м²</p>
+                                <p className="text-xs text-muted-foreground">Талбай</p>
                             </div>
-                            <div className="text-center p-3 bg-emerald-50 rounded-xl">
-                                <BedDouble className="w-5 h-5 text-emerald-600 mx-auto mb-1" />
-                                <p className="text-lg font-bold text-gray-900">{property.rooms || '-'}</p>
-                                <p className="text-xs text-gray-500">Өрөө</p>
+                            <div className="text-center p-3 bg-status-success-soft rounded-xl">
+                                <BedDouble className="w-5 h-5 text-status-success mx-auto mb-1" />
+                                <p className="text-lg font-bold text-foreground">{property.rooms || '-'}</p>
+                                <p className="text-xs text-muted-foreground">Өрөө</p>
                             </div>
-                            <div className="text-center p-3 bg-amber-50 rounded-xl">
-                                <Building2 className="w-5 h-5 text-amber-600 mx-auto mb-1" />
-                                <p className="text-lg font-bold text-gray-900">{property.floor || '-'}</p>
-                                <p className="text-xs text-gray-500">Давхар</p>
+                            <div className="text-center p-3 bg-status-pending-soft rounded-xl">
+                                <Building2 className="w-5 h-5 text-status-pending mx-auto mb-1" />
+                                <p className="text-lg font-bold text-foreground">{property.floor || '-'}</p>
+                                <p className="text-xs text-muted-foreground">Давхар</p>
                             </div>
                         </div>
 
                         {property.price_per_sqm && (
-                            <p className="text-sm text-gray-500 mt-3 text-center">
-                                м² үнэ: <span className="font-semibold text-gray-700">{Number(property.price_per_sqm).toLocaleString()}₮/м²</span>
+                            <p className="text-sm text-muted-foreground mt-3 text-center">
+                                м² үнэ: <span className="font-semibold text-foreground">{Number(property.price_per_sqm).toLocaleString()}₮/м²</span>
                             </p>
                         )}
                     </div>
 
                     {/* Description */}
                     {property.description && (
-                        <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                            <h3 className="font-semibold text-gray-900 mb-2">Тайлбар</h3>
-                            <p className="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap">{property.description}</p>
+                        <div className="bg-surface rounded-2xl border border-border p-5">
+                            <h3 className="font-semibold text-foreground mb-2">Тайлбар</h3>
+                            <p className="text-muted-foreground text-sm leading-relaxed whitespace-pre-wrap">{property.description}</p>
                         </div>
                     )}
 
@@ -194,38 +194,38 @@ export default function PropertyDetailPage() {
                     />
 
                     {/* Details */}
-                    <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                        <h3 className="font-semibold text-gray-900 mb-3">Дэлгэрэнгүй</h3>
+                    <div className="bg-surface rounded-2xl border border-border p-5">
+                        <h3 className="font-semibold text-foreground mb-3">Дэлгэрэнгүй</h3>
                         <div className="grid grid-cols-2 gap-3 text-sm">
-                            <div className="flex justify-between py-2 border-b border-gray-100">
-                                <span className="text-gray-500">Төрөл</span>
-                                <span className="font-medium text-gray-900">{typeLabels[property.type]}</span>
+                            <div className="flex justify-between py-2 border-b border-border/60">
+                                <span className="text-muted-foreground">Төрөл</span>
+                                <span className="font-medium text-foreground">{typeLabels[property.type]}</span>
                             </div>
-                            <div className="flex justify-between py-2 border-b border-gray-100">
-                                <span className="text-gray-500">Статус</span>
-                                <span className="font-medium text-gray-900">{statusLabels[property.status]}</span>
+                            <div className="flex justify-between py-2 border-b border-border/60">
+                                <span className="text-muted-foreground">Статус</span>
+                                <span className="font-medium text-foreground">{statusLabels[property.status]}</span>
                             </div>
                             {property.bedrooms && (
-                                <div className="flex justify-between py-2 border-b border-gray-100">
-                                    <span className="text-gray-500">Унтлагын өрөө</span>
-                                    <span className="font-medium text-gray-900">{property.bedrooms}</span>
+                                <div className="flex justify-between py-2 border-b border-border/60">
+                                    <span className="text-muted-foreground">Унтлагын өрөө</span>
+                                    <span className="font-medium text-foreground">{property.bedrooms}</span>
                                 </div>
                             )}
                             {property.bathrooms && (
-                                <div className="flex justify-between py-2 border-b border-gray-100">
-                                    <span className="text-gray-500">Угаалгын өрөө</span>
-                                    <span className="font-medium text-gray-900">{property.bathrooms}</span>
+                                <div className="flex justify-between py-2 border-b border-border/60">
+                                    <span className="text-muted-foreground">Угаалгын өрөө</span>
+                                    <span className="font-medium text-foreground">{property.bathrooms}</span>
                                 </div>
                             )}
                             {property.year_built && (
-                                <div className="flex justify-between py-2 border-b border-gray-100">
-                                    <span className="text-gray-500">Баригдсан он</span>
-                                    <span className="font-medium text-gray-900">{property.year_built}</span>
+                                <div className="flex justify-between py-2 border-b border-border/60">
+                                    <span className="text-muted-foreground">Баригдсан он</span>
+                                    <span className="font-medium text-foreground">{property.year_built}</span>
                                 </div>
                             )}
-                            <div className="flex justify-between py-2 border-b border-gray-100">
-                                <span className="text-gray-500">Үзсэн</span>
-                                <span className="font-medium text-gray-900">{property.views_count} удаа</span>
+                            <div className="flex justify-between py-2 border-b border-border/60">
+                                <span className="text-muted-foreground">Үзсэн</span>
+                                <span className="font-medium text-foreground">{property.views_count} удаа</span>
                             </div>
                         </div>
                     </div>
@@ -234,15 +234,15 @@ export default function PropertyDetailPage() {
                 {/* Right Column */}
                 <div className="space-y-6">
                     {/* Quick Actions */}
-                    <div className="bg-white rounded-2xl border border-gray-200 p-5">
-                        <h3 className="font-semibold text-gray-900 mb-3">Үйлдлүүд</h3>
+                    <div className="bg-surface rounded-2xl border border-border p-5">
+                        <h3 className="font-semibold text-foreground mb-3">Үйлдлүүд</h3>
                         <div className="space-y-2">
                             <Link href={`/dashboard/leads?property=${property.id}`}
-                                className="w-full flex items-center gap-2 px-4 py-2.5 bg-violet-600 text-white rounded-lg text-sm font-medium hover:bg-violet-700 transition-colors">
+                                className="w-full flex items-center gap-2 px-4 py-2.5 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand-strong transition-colors">
                                 <Eye className="w-4 h-4" /> Лийд харах
                             </Link>
                             <Link href={`/dashboard/properties/new?edit=${property.id}`}
-                                className="w-full flex items-center gap-2 px-4 py-2.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                                className="w-full flex items-center gap-2 px-4 py-2.5 border border-border rounded-lg text-sm font-medium text-foreground hover:bg-surface-2/40 transition-colors">
                                 <Edit className="w-4 h-4" /> Засварлах
                             </Link>
                         </div>
@@ -252,7 +252,7 @@ export default function PropertyDetailPage() {
                     <MortgageCalculator defaultPrice={Number(property.price)} />
 
                     {/* Meta */}
-                    <div className="bg-white rounded-2xl border border-gray-200 p-5 text-sm text-gray-500">
+                    <div className="bg-surface rounded-2xl border border-border p-5 text-sm text-muted-foreground">
                         <div className="flex justify-between mb-1">
                             <span>Нэмэгдсэн</span>
                             <span>{new Date(property.created_at).toLocaleDateString('mn-MN')}</span>

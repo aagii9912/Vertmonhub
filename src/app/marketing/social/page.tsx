@@ -257,24 +257,24 @@ export default function SocialPage() {
             {/* Header */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-xl md:text-2xl font-bold text-gray-900 flex items-center gap-2">
-                        <Share2 className="w-6 h-6 text-emerald-600" />
+                    <h1 className="text-xl md:text-2xl font-bold text-foreground flex items-center gap-2">
+                        <Share2 className="w-6 h-6 text-status-success" />
                         Сошиал медиа
                     </h1>
-                    <p className="text-sm text-gray-500 mt-1">Facebook & Instagram нийтлэлүүд</p>
+                    <p className="text-sm text-muted-foreground mt-1">Facebook & Instagram нийтлэлүүд</p>
                 </div>
                 {fbConnected && activeTab === 'facebook' && (
                     <div className="flex items-center gap-2">
                         <Button
                             variant="outline"
                             onClick={() => fetchFacebookData()}
-                            className="text-gray-600"
+                            className="text-muted-foreground"
                         >
                             <RefreshCw className="w-4 h-4 mr-2" />
                             Шинэчлэх
                         </Button>
                         <Button
-                            className="bg-blue-600 hover:bg-blue-700 text-white"
+                            className="bg-status-info hover:bg-status-info text-white"
                             onClick={() => setShowPublishModal(true)}
                         >
                             <Plus className="w-4 h-4 mr-2" />
@@ -285,7 +285,7 @@ export default function SocialPage() {
             </div>
 
             {/* Tabs */}
-            <div className="flex items-center gap-1 bg-gray-100 rounded-xl p-1">
+            <div className="flex items-center gap-1 bg-surface-2 rounded-xl p-1">
                 {tabs.map(tab => {
                     const Icon = tab.icon;
                     return (
@@ -294,8 +294,8 @@ export default function SocialPage() {
                             onClick={() => setActiveTab(tab.id)}
                             className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-medium transition-all flex-1 justify-center ${
                                 activeTab === tab.id
-                                    ? 'bg-white text-gray-900 shadow-sm'
-                                    : 'text-gray-500 hover:text-gray-700'
+                                    ? 'bg-surface text-foreground shadow-sm'
+                                    : 'text-muted-foreground hover:text-foreground'
                             }`}
                         >
                             <Icon className="w-4 h-4" />
@@ -400,8 +400,8 @@ function FacebookTabContent({
         return (
             <div className="flex items-center justify-center min-h-[400px]">
                 <div className="flex items-center gap-3">
-                    <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                    <span className="text-gray-500">Facebook мэдээлэл ачаалж байна...</span>
+                    <div className="w-6 h-6 border-2 border-status-info border-t-transparent rounded-full animate-spin" />
+                    <span className="text-muted-foreground">Facebook мэдээлэл ачаалж байна...</span>
                 </div>
             </div>
         );
@@ -410,32 +410,32 @@ function FacebookTabContent({
     // Not connected
     if (!connected) {
         return (
-            <Card className="border-dashed border-2 border-gray-200">
+            <Card className="border-dashed border-2 border-border">
                 <CardContent className="flex flex-col items-center justify-center py-16">
-                    <div className="w-20 h-20 rounded-full bg-blue-50 flex items-center justify-center mb-6">
-                        <Facebook className="w-10 h-10 text-blue-600" />
+                    <div className="w-20 h-20 rounded-full bg-status-info-soft flex items-center justify-center mb-6">
+                        <Facebook className="w-10 h-10 text-status-info" />
                     </div>
-                    <h2 className="text-xl font-bold text-gray-900 mb-2">
+                    <h2 className="text-xl font-bold text-foreground mb-2">
                         Facebook Page холбох
                     </h2>
-                    <p className="text-gray-500 text-center max-w-md mb-2">
+                    <p className="text-muted-foreground text-center max-w-md mb-2">
                         Facebook Page-ээ холбож, нийтлэлүүд, insights, audience мэдээллийг шууд Marketing хэсгээс харна уу.
                     </p>
                     {tokenExpired && (
-                        <div className="flex items-center gap-2 text-amber-600 bg-amber-50 px-4 py-2 rounded-lg mb-4">
+                        <div className="flex items-center gap-2 text-status-pending bg-status-pending-soft px-4 py-2 rounded-lg mb-4">
                             <AlertCircle className="w-4 h-4" />
                             <span className="text-sm">Token хугацаа дууссан. Дахин холбоно уу.</span>
                         </div>
                     )}
                     {error && !tokenExpired && (
-                        <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-2 rounded-lg mb-4">
+                        <div className="flex items-center gap-2 text-status-danger bg-status-danger-soft px-4 py-2 rounded-lg mb-4">
                             <AlertCircle className="w-4 h-4" />
                             <span className="text-sm">{error}</span>
                         </div>
                     )}
                     <Button
                         onClick={onConnect}
-                        className="bg-blue-600 hover:bg-blue-700 text-white mt-4 px-8 py-3 text-base"
+                        className="bg-status-info hover:bg-status-info text-white mt-4 px-8 py-3 text-base"
                     >
                         <Facebook className="w-5 h-5 mr-2" />
                         Facebook-ээр холбох
@@ -472,17 +472,17 @@ function FacebookTabContent({
                                 className="w-16 h-16 rounded-xl border-4 border-white shadow-lg"
                             />
                         ) : (
-                            <div className="w-16 h-16 rounded-xl border-4 border-white shadow-lg bg-blue-100 flex items-center justify-center">
-                                <Facebook className="w-8 h-8 text-blue-600" />
+                            <div className="w-16 h-16 rounded-xl border-4 border-white shadow-lg bg-status-info-soft flex items-center justify-center">
+                                <Facebook className="w-8 h-8 text-status-info" />
                             </div>
                         )}
                         <div className="flex-1 pb-1">
                             <div className="flex items-center gap-2">
-                                <h2 className="text-lg font-bold text-gray-900">{page?.name}</h2>
-                                <CheckCircle2 className="w-5 h-5 text-blue-600" />
+                                <h2 className="text-lg font-bold text-foreground">{page?.name}</h2>
+                                <CheckCircle2 className="w-5 h-5 text-status-info" />
                             </div>
                             {page?.category && (
-                                <p className="text-sm text-gray-500">{page.category}</p>
+                                <p className="text-sm text-muted-foreground">{page.category}</p>
                             )}
                         </div>
                         {page?.link && (
@@ -490,7 +490,7 @@ function FacebookTabContent({
                                 href={page.link}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-700"
+                                className="flex items-center gap-1 text-sm text-status-info hover:text-status-info"
                             >
                                 <ExternalLink className="w-4 h-4" />
                                 Page харах
@@ -506,11 +506,11 @@ function FacebookTabContent({
                     <CardContent className="p-4">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-gray-500">Дагагчид</p>
+                                <p className="text-sm text-muted-foreground">Дагагчид</p>
                                 <p className="text-2xl font-bold mt-1">{formatNumber(page?.followers_count || 0)}</p>
                             </div>
-                            <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center">
-                                <Users className="w-6 h-6 text-blue-600" />
+                            <div className="w-12 h-12 bg-status-info-soft rounded-xl flex items-center justify-center">
+                                <Users className="w-6 h-6 text-status-info" />
                             </div>
                         </div>
                     </CardContent>
@@ -519,11 +519,11 @@ function FacebookTabContent({
                     <CardContent className="p-4">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-gray-500">Like тоо</p>
+                                <p className="text-sm text-muted-foreground">Like тоо</p>
                                 <p className="text-2xl font-bold mt-1">{formatNumber(page?.fan_count || 0)}</p>
                             </div>
-                            <div className="w-12 h-12 bg-pink-50 rounded-xl flex items-center justify-center">
-                                <ThumbsUp className="w-6 h-6 text-pink-600" />
+                            <div className="w-12 h-12 bg-brand-soft rounded-xl flex items-center justify-center">
+                                <ThumbsUp className="w-6 h-6 text-brand-strong" />
                             </div>
                         </div>
                     </CardContent>
@@ -532,11 +532,11 @@ function FacebookTabContent({
                     <CardContent className="p-4">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-gray-500">Нийтлэл</p>
+                                <p className="text-sm text-muted-foreground">Нийтлэл</p>
                                 <p className="text-2xl font-bold mt-1">{posts.length}</p>
                             </div>
-                            <div className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center">
-                                <Share2 className="w-6 h-6 text-emerald-600" />
+                            <div className="w-12 h-12 bg-status-success-soft rounded-xl flex items-center justify-center">
+                                <Share2 className="w-6 h-6 text-status-success" />
                             </div>
                         </div>
                     </CardContent>
@@ -545,13 +545,13 @@ function FacebookTabContent({
                     <CardContent className="p-4">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-gray-500">Нийт engagement</p>
+                                <p className="text-sm text-muted-foreground">Нийт engagement</p>
                                 <p className="text-2xl font-bold mt-1">
                                     {formatNumber(posts.reduce((s, p) => s + p.likes + p.comments + p.shares, 0))}
                                 </p>
                             </div>
-                            <div className="w-12 h-12 bg-amber-50 rounded-xl flex items-center justify-center">
-                                <TrendingUp className="w-6 h-6 text-amber-600" />
+                            <div className="w-12 h-12 bg-status-pending-soft rounded-xl flex items-center justify-center">
+                                <TrendingUp className="w-6 h-6 text-status-pending" />
                             </div>
                         </div>
                     </CardContent>
@@ -562,33 +562,33 @@ function FacebookTabContent({
             {insights && (
                 <Card>
                     <CardContent className="p-5">
-                        <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                            <BarChart3 className="w-5 h-5 text-purple-600" />
+                        <h3 className="font-semibold text-foreground mb-4 flex items-center gap-2">
+                            <BarChart3 className="w-5 h-5 text-brand-strong" />
                             Page Insights
                         </h3>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                             {insights.page_impressions && (
-                                <div className="bg-gray-50 rounded-lg p-3">
-                                    <p className="text-xs text-gray-500">Impressions</p>
-                                    <p className="text-lg font-bold text-gray-900">{formatNumber(insights.page_impressions.value as number)}</p>
+                                <div className="bg-surface-2/40 rounded-lg p-3">
+                                    <p className="text-xs text-muted-foreground">Impressions</p>
+                                    <p className="text-lg font-bold text-foreground">{formatNumber(insights.page_impressions.value as number)}</p>
                                 </div>
                             )}
                             {insights.page_impressions_unique && (
-                                <div className="bg-gray-50 rounded-lg p-3">
-                                    <p className="text-xs text-gray-500">Reach</p>
-                                    <p className="text-lg font-bold text-gray-900">{formatNumber(insights.page_impressions_unique.value as number)}</p>
+                                <div className="bg-surface-2/40 rounded-lg p-3">
+                                    <p className="text-xs text-muted-foreground">Reach</p>
+                                    <p className="text-lg font-bold text-foreground">{formatNumber(insights.page_impressions_unique.value as number)}</p>
                                 </div>
                             )}
                             {insights.page_engaged_users && (
-                                <div className="bg-gray-50 rounded-lg p-3">
-                                    <p className="text-xs text-gray-500">Engaged Users</p>
-                                    <p className="text-lg font-bold text-gray-900">{formatNumber(insights.page_engaged_users.value as number)}</p>
+                                <div className="bg-surface-2/40 rounded-lg p-3">
+                                    <p className="text-xs text-muted-foreground">Engaged Users</p>
+                                    <p className="text-lg font-bold text-foreground">{formatNumber(insights.page_engaged_users.value as number)}</p>
                                 </div>
                             )}
                             {insights.page_views_total && (
-                                <div className="bg-gray-50 rounded-lg p-3">
-                                    <p className="text-xs text-gray-500">Page Views</p>
-                                    <p className="text-lg font-bold text-gray-900">{formatNumber(insights.page_views_total.value as number)}</p>
+                                <div className="bg-surface-2/40 rounded-lg p-3">
+                                    <p className="text-xs text-muted-foreground">Page Views</p>
+                                    <p className="text-lg font-bold text-foreground">{formatNumber(insights.page_views_total.value as number)}</p>
                                 </div>
                             )}
                         </div>
@@ -599,19 +599,19 @@ function FacebookTabContent({
             {/* Posts List */}
             <Card>
                 <CardContent className="p-0">
-                    <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-                        <h3 className="font-semibold text-gray-900">Сүүлийн нийтлэлүүд</h3>
-                        <span className="text-sm text-gray-500">{posts.length} нийтлэл</span>
+                    <div className="px-5 py-4 border-b border-border/60 flex items-center justify-between">
+                        <h3 className="font-semibold text-foreground">Сүүлийн нийтлэлүүд</h3>
+                        <span className="text-sm text-muted-foreground">{posts.length} нийтлэл</span>
                     </div>
                     {posts.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-16">
-                            <Share2 className="w-12 h-12 text-gray-300 mb-3" />
-                            <p className="text-gray-500">Нийтлэл байхгүй</p>
+                            <Share2 className="w-12 h-12 text-muted-foreground/60 mb-3" />
+                            <p className="text-muted-foreground">Нийтлэл байхгүй</p>
                         </div>
                     ) : (
                         <div className="divide-y divide-gray-50">
                             {posts.map(post => (
-                                <div key={post.id} className="p-4 hover:bg-gray-50/50 transition-colors">
+                                <div key={post.id} className="p-4 hover:bg-surface-2/40/50 transition-colors">
                                     <div className="flex gap-4">
                                         {post.image && (
                                             <img
@@ -621,10 +621,10 @@ function FacebookTabContent({
                                             />
                                         )}
                                         <div className="flex-1 min-w-0">
-                                            <p className="text-sm text-gray-900 line-clamp-2 mb-2">
+                                            <p className="text-sm text-foreground line-clamp-2 mb-2">
                                                 {post.message || '(Зурган нийтлэл)'}
                                             </p>
-                                            <div className="flex items-center gap-4 text-xs text-gray-500">
+                                            <div className="flex items-center gap-4 text-xs text-muted-foreground">
                                                 <span className="flex items-center gap-1">
                                                     <Heart className="w-3.5 h-3.5" />
                                                     {post.likes}
@@ -645,9 +645,9 @@ function FacebookTabContent({
                                                 href={post.permalink}
                                                 target="_blank"
                                                 rel="noopener noreferrer"
-                                                className="flex-shrink-0 p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                                                className="flex-shrink-0 p-2 hover:bg-surface-2 rounded-lg transition-colors"
                                             >
-                                                <ExternalLink className="w-4 h-4 text-gray-400" />
+                                                <ExternalLink className="w-4 h-4 text-muted-foreground/70" />
                                             </a>
                                         )}
                                     </div>
@@ -682,8 +682,8 @@ function AllPostsContent({
         return (
             <div className="flex items-center justify-center min-h-[400px]">
                 <div className="flex items-center gap-3">
-                    <div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
-                    <span className="text-gray-500">Татаж байна...</span>
+                    <div className="w-6 h-6 border-2 border-status-success border-t-transparent rounded-full animate-spin" />
+                    <span className="text-muted-foreground">Татаж байна...</span>
                 </div>
             </div>
         );
@@ -696,11 +696,11 @@ function AllPostsContent({
                     <CardContent className="p-4">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-gray-500">Нийт нийтлэл</p>
+                                <p className="text-sm text-muted-foreground">Нийт нийтлэл</p>
                                 <p className="text-2xl font-bold mt-1">{posts.length}</p>
                             </div>
-                            <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
-                                <Share2 className="w-6 h-6 text-blue-600" />
+                            <div className="w-12 h-12 bg-status-info-soft rounded-xl flex items-center justify-center">
+                                <Share2 className="w-6 h-6 text-status-info" />
                             </div>
                         </div>
                     </CardContent>
@@ -709,11 +709,11 @@ function AllPostsContent({
                     <CardContent className="p-4">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-gray-500">Нийт like</p>
+                                <p className="text-sm text-muted-foreground">Нийт like</p>
                                 <p className="text-2xl font-bold mt-1">{totalLikes.toLocaleString()}</p>
                             </div>
-                            <div className="w-12 h-12 bg-pink-100 rounded-xl flex items-center justify-center">
-                                <Heart className="w-6 h-6 text-pink-600" />
+                            <div className="w-12 h-12 bg-brand-soft rounded-xl flex items-center justify-center">
+                                <Heart className="w-6 h-6 text-brand-strong" />
                             </div>
                         </div>
                     </CardContent>
@@ -722,11 +722,11 @@ function AllPostsContent({
                     <CardContent className="p-4">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-gray-500">Нийт хүрэлт</p>
+                                <p className="text-sm text-muted-foreground">Нийт хүрэлт</p>
                                 <p className="text-2xl font-bold mt-1">{totalReach.toLocaleString()}</p>
                             </div>
-                            <div className="w-12 h-12 bg-emerald-100 rounded-xl flex items-center justify-center">
-                                <Eye className="w-6 h-6 text-emerald-600" />
+                            <div className="w-12 h-12 bg-status-success-soft rounded-xl flex items-center justify-center">
+                                <Eye className="w-6 h-6 text-status-success" />
                             </div>
                         </div>
                     </CardContent>
@@ -737,26 +737,26 @@ function AllPostsContent({
                 <CardContent className="p-0">
                     {posts.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-16">
-                            <Share2 className="w-16 h-16 text-gray-300 mb-4" />
-                            <h2 className="text-xl font-semibold text-gray-700 mb-2">Мэдээлэл байхгүй</h2>
-                            <p className="text-gray-500">Сошиал медиа нийтлэлүүд энд харагдана.</p>
+                            <Share2 className="w-16 h-16 text-muted-foreground/60 mb-4" />
+                            <h2 className="text-xl font-semibold text-foreground mb-2">Мэдээлэл байхгүй</h2>
+                            <p className="text-muted-foreground">Сошиал медиа нийтлэлүүд энд харагдана.</p>
                         </div>
                     ) : (
                         <div className="divide-y">
                             {posts.map(post => (
-                                <div key={post.id} className="p-4 hover:bg-gray-50">
+                                <div key={post.id} className="p-4 hover:bg-surface-2/40">
                                     <div className="flex items-start justify-between">
                                         <div className="flex-1">
                                             <div className="flex items-center gap-2 mb-2">
-                                                {post.platform === 'facebook' ? <Facebook className="w-4 h-4 text-blue-600" /> : <Instagram className="w-4 h-4 text-pink-600" />}
-                                                <span className="text-xs text-gray-500 capitalize">{post.platform}</span>
-                                                <span className={`px-2 py-0.5 text-xs rounded-full ${post.status === 'published' ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600'}`}>
+                                                {post.platform === 'facebook' ? <Facebook className="w-4 h-4 text-status-info" /> : <Instagram className="w-4 h-4 text-brand-strong" />}
+                                                <span className="text-xs text-muted-foreground capitalize">{post.platform}</span>
+                                                <span className={`px-2 py-0.5 text-xs rounded-full ${post.status === 'published' ? 'bg-status-success-soft text-status-success' : 'bg-surface-2 text-muted-foreground'}`}>
                                                     {post.status === 'published' ? 'Нийтлэгдсэн' : post.status === 'scheduled' ? 'Төлөвлөсөн' : 'Ноорог'}
                                                 </span>
                                             </div>
-                                            <p className="text-sm text-gray-900 line-clamp-2">{post.content}</p>
+                                            <p className="text-sm text-foreground line-clamp-2">{post.content}</p>
                                         </div>
-                                        <div className="flex items-center gap-4 text-sm text-gray-500 ml-4">
+                                        <div className="flex items-center gap-4 text-sm text-muted-foreground ml-4">
                                             <span className="flex items-center gap-1"><Heart className="w-3 h-3" />{post.likes}</span>
                                             <span className="flex items-center gap-1"><MessageCircle className="w-3 h-3" />{post.comments}</span>
                                             <span className="flex items-center gap-1"><Share2 className="w-3 h-3" />{post.shares}</span>
@@ -797,20 +797,20 @@ function PublishModal({
 }) {
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl">
+            <div className="bg-surface rounded-2xl w-full max-w-lg shadow-2xl">
                 {/* Header */}
-                <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-border/60">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                            <Facebook className="w-5 h-5 text-blue-600" />
+                        <div className="w-10 h-10 rounded-full bg-status-info-soft flex items-center justify-center">
+                            <Facebook className="w-5 h-5 text-status-info" />
                         </div>
                         <div>
-                            <h3 className="font-semibold text-gray-900">Шинэ нийтлэл</h3>
-                            <p className="text-xs text-gray-500">{pageName} • Facebook</p>
+                            <h3 className="font-semibold text-foreground">Шинэ нийтлэл</h3>
+                            <p className="text-xs text-muted-foreground">{pageName} • Facebook</p>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg transition-colors">
-                        <X className="w-5 h-5 text-gray-400" />
+                    <button onClick={onClose} className="p-2 hover:bg-surface-2 rounded-lg transition-colors">
+                        <X className="w-5 h-5 text-muted-foreground/70" />
                     </button>
                 </div>
 
@@ -820,32 +820,32 @@ function PublishModal({
                         value={message}
                         onChange={(e) => setMessage(e.target.value)}
                         placeholder="Юу бодож байна?"
-                        className="w-full h-32 resize-none border border-gray-200 rounded-xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        className="w-full h-32 resize-none border border-border rounded-xl p-4 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         disabled={publishing}
                     />
 
                     {/* Image URL */}
                     <div className="flex items-center gap-2">
-                        <ImageIcon className="w-4 h-4 text-gray-400" />
+                        <ImageIcon className="w-4 h-4 text-muted-foreground/70" />
                         <input
                             type="url"
                             value={imageUrl}
                             onChange={(e) => setImageUrl(e.target.value)}
                             placeholder="Зургийн URL (заавал биш)"
-                            className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="flex-1 border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                             disabled={publishing}
                         />
                     </div>
 
                     {/* Result */}
                     {publishResult === 'success' && (
-                        <div className="flex items-center gap-2 text-emerald-600 bg-emerald-50 px-4 py-3 rounded-lg">
+                        <div className="flex items-center gap-2 text-status-success bg-status-success-soft px-4 py-3 rounded-lg">
                             <CheckCircle2 className="w-5 h-5" />
                             <span className="text-sm font-medium">Амжилттай нийтлэгдлээ!</span>
                         </div>
                     )}
                     {publishResult && publishResult !== 'success' && (
-                        <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-3 rounded-lg">
+                        <div className="flex items-center gap-2 text-status-danger bg-status-danger-soft px-4 py-3 rounded-lg">
                             <AlertCircle className="w-5 h-5" />
                             <span className="text-sm">{publishResult}</span>
                         </div>
@@ -853,14 +853,14 @@ function PublishModal({
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-100">
+                <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border/60">
                     <Button variant="outline" onClick={onClose} disabled={publishing}>
                         Болих
                     </Button>
                     <Button
                         onClick={onPublish}
                         disabled={!message.trim() || publishing}
-                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                        className="bg-status-info hover:bg-status-info text-white"
                     >
                         {publishing ? (
                             <>
@@ -906,7 +906,7 @@ function InstagramTabContent({
             <div className="flex items-center justify-center min-h-[400px]">
                 <div className="flex items-center gap-3">
                     <div className="w-6 h-6 border-2 border-pink-600 border-t-transparent rounded-full animate-spin" />
-                    <span className="text-gray-500">Instagram мэдээлэл ачаалж байна...</span>
+                    <span className="text-muted-foreground">Instagram мэдээлэл ачаалж байна...</span>
                 </div>
             </div>
         );
@@ -914,19 +914,19 @@ function InstagramTabContent({
 
     if (!connected) {
         return (
-            <Card className="border-dashed border-2 border-gray-200">
+            <Card className="border-dashed border-2 border-border">
                 <CardContent className="flex flex-col items-center justify-center py-16">
                     <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-yellow-400 via-pink-500 to-purple-600 flex items-center justify-center mb-6">
                         <Instagram className="w-10 h-10 text-white" />
                     </div>
-                    <h2 className="text-xl font-bold text-gray-900 mb-2">
+                    <h2 className="text-xl font-bold text-foreground mb-2">
                         Instagram холбох
                     </h2>
-                    <p className="text-gray-500 text-center max-w-md mb-2">
+                    <p className="text-muted-foreground text-center max-w-md mb-2">
                         Instagram Business аккаунтаа холбож, нийтлэлүүд, дагагчдын мэдээллийг шууд харна уу.
                     </p>
                     {error && (
-                        <div className="flex items-center gap-2 text-red-600 bg-red-50 px-4 py-2 rounded-lg mb-4">
+                        <div className="flex items-center gap-2 text-status-danger bg-status-danger-soft px-4 py-2 rounded-lg mb-4">
                             <AlertCircle className="w-4 h-4" />
                             <span className="text-sm">{error}</span>
                         </div>
@@ -957,23 +957,23 @@ function InstagramTabContent({
                                 className="w-16 h-16 rounded-xl border-4 border-white shadow-lg"
                             />
                         ) : (
-                            <div className="w-16 h-16 rounded-xl border-4 border-white shadow-lg bg-pink-100 flex items-center justify-center">
-                                <Instagram className="w-8 h-8 text-pink-600" />
+                            <div className="w-16 h-16 rounded-xl border-4 border-white shadow-lg bg-brand-soft flex items-center justify-center">
+                                <Instagram className="w-8 h-8 text-brand-strong" />
                             </div>
                         )}
                         <div className="flex-1 pb-1">
                             <div className="flex items-center gap-2">
-                                <h2 className="text-lg font-bold text-gray-900">@{account?.username}</h2>
-                                <CheckCircle2 className="w-5 h-5 text-pink-600" />
+                                <h2 className="text-lg font-bold text-foreground">@{account?.username}</h2>
+                                <CheckCircle2 className="w-5 h-5 text-brand-strong" />
                             </div>
-                            {account?.name && <p className="text-sm text-gray-500">{account.name}</p>}
+                            {account?.name && <p className="text-sm text-muted-foreground">{account.name}</p>}
                         </div>
                         {account?.username && (
                             <a
                                 href={`https://instagram.com/${account.username}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-1 text-sm text-pink-600 hover:text-pink-700"
+                                className="flex items-center gap-1 text-sm text-brand-strong hover:text-brand-strong"
                             >
                                 <ExternalLink className="w-4 h-4" />
                                 Profile
@@ -981,7 +981,7 @@ function InstagramTabContent({
                         )}
                     </div>
                     {account?.biography && (
-                        <p className="text-sm text-gray-600 mt-3">{account.biography}</p>
+                        <p className="text-sm text-muted-foreground mt-3">{account.biography}</p>
                     )}
                 </CardContent>
             </Card>
@@ -991,19 +991,19 @@ function InstagramTabContent({
                 <Card>
                     <CardContent className="p-4 text-center">
                         <p className="text-2xl font-bold">{formatNumber(account?.followers_count || 0)}</p>
-                        <p className="text-sm text-gray-500">Дагагчид</p>
+                        <p className="text-sm text-muted-foreground">Дагагчид</p>
                     </CardContent>
                 </Card>
                 <Card>
                     <CardContent className="p-4 text-center">
                         <p className="text-2xl font-bold">{formatNumber(account?.follows_count || 0)}</p>
-                        <p className="text-sm text-gray-500">Дагаж буй</p>
+                        <p className="text-sm text-muted-foreground">Дагаж буй</p>
                     </CardContent>
                 </Card>
                 <Card>
                     <CardContent className="p-4 text-center">
                         <p className="text-2xl font-bold">{formatNumber(account?.media_count || 0)}</p>
-                        <p className="text-sm text-gray-500">Нийтлэл</p>
+                        <p className="text-sm text-muted-foreground">Нийтлэл</p>
                     </CardContent>
                 </Card>
             </div>
@@ -1011,23 +1011,23 @@ function InstagramTabContent({
             {/* Posts Grid */}
             <Card>
                 <CardContent className="p-0">
-                    <div className="px-5 py-4 border-b border-gray-100">
-                        <h3 className="font-semibold text-gray-900">Сүүлийн нийтлэлүүд</h3>
+                    <div className="px-5 py-4 border-b border-border/60">
+                        <h3 className="font-semibold text-foreground">Сүүлийн нийтлэлүүд</h3>
                     </div>
                     {posts.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-16">
-                            <Instagram className="w-12 h-12 text-gray-300 mb-3" />
-                            <p className="text-gray-500">Нийтлэл байхгүй</p>
+                            <Instagram className="w-12 h-12 text-muted-foreground/60 mb-3" />
+                            <p className="text-muted-foreground">Нийтлэл байхгүй</p>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-3 gap-px bg-gray-100">
+                        <div className="grid grid-cols-3 gap-px bg-surface-2">
                             {posts.map((post: any) => (
                                 <a
                                     key={post.id}
                                     href={post.permalink}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="relative aspect-square bg-white group"
+                                    className="relative aspect-square bg-surface group"
                                 >
                                     {post.media_url ? (
                                         <img
@@ -1036,8 +1036,8 @@ function InstagramTabContent({
                                             className="w-full h-full object-cover"
                                         />
                                     ) : (
-                                        <div className="w-full h-full bg-gray-50 flex items-center justify-center">
-                                            <Instagram className="w-8 h-8 text-gray-300" />
+                                        <div className="w-full h-full bg-surface-2/40 flex items-center justify-center">
+                                            <Instagram className="w-8 h-8 text-muted-foreground/60" />
                                         </div>
                                     )}
                                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 text-white">
