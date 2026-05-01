@@ -69,34 +69,8 @@ export async function middleware(request: NextRequest) {
         return NextResponse.next();
     }
 
-    // Check auth for protected routes
+    // Check auth for protected routes via Supabase session.
     if (matchesRoute(pathname, protectedRoutes)) {
-        // Check custom session cookie first (GoTrue bypass)
-        const sessionCookie = request.cookies.get('vertmon-session');
-        if (sessionCookie?.value) {
-            // Verify JWT signature before trusting the cookie
-            const jwtSecret = process.env.SESSION_JWT_SECRET;
-            if (jwtSecret) {
-                try {
-                    // Decode and verify structure (Edge-compatible check)
-                    const parts = sessionCookie.value.split('.');
-                    if (parts.length === 3) {
-                        const payload = JSON.parse(atob(parts[1]));
-                        // Check expiry
-                        if (payload.exp && payload.exp * 1000 > Date.now() && payload.sub) {
-                            return NextResponse.next();
-                        }
-                    }
-                } catch {
-                    // Invalid JWT — fall through to Supabase check
-                }
-            } else {
-                // No JWT secret configured — trust cookie existence (dev mode)
-                return NextResponse.next();
-            }
-        }
-
-        // Fallback: check Supabase session
         try {
             const { supabase, response } = createSupabaseMiddlewareClient(request);
             const { data: { user } } = await supabase.auth.getUser();
@@ -104,10 +78,9 @@ export async function middleware(request: NextRequest) {
                 return response;
             }
         } catch {
-            // Supabase auth check failed (GoTrue down)
+            // Supabase auth check failed (GoTrue down) — fall through to redirect
         }
 
-        // No valid session found — redirect to login
         const signInUrl = new URL('/auth/login', request.url);
         signInUrl.searchParams.set('redirect_url', pathname);
         return NextResponse.redirect(signInUrl);

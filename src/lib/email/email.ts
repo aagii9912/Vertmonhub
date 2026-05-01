@@ -257,6 +257,71 @@ export async function sendShippingUpdateEmail(params: {
 }
 
 /**
+ * Payment Reminder (real-estate contract overdue)
+ */
+export async function sendPaymentReminderEmail(params: {
+    customerEmail: string;
+    customerName: string;
+    contractNumber: string;
+    propertyName: string;
+    amountDue: number;
+    dueDate: string;
+    overdueDays: number;
+    shopName: string;
+}): Promise<boolean> {
+    const { customerEmail, customerName, contractNumber, propertyName, amountDue, dueDate, overdueDays, shopName } = params;
+
+    const html = `
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #DC2626; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+        .content { background: #f9fafb; padding: 30px; border-radius: 0 0 8px 8px; }
+        .info-box { background: white; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .amount { font-size: 24px; font-weight: bold; color: #DC2626; text-align: right; }
+        .footer { text-align: center; color: #6b7280; font-size: 12px; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>⏰ Төлбөрийн сануулга</h1>
+        </div>
+        <div class="content">
+            <p>Сайн байна уу <strong>${customerName}</strong>,</p>
+            <p>Таны гэрээний төлбөр ${overdueDays} хоногоор хэтэрсэн байна.</p>
+
+            <div class="info-box">
+                <p><strong>Гэрээний дугаар:</strong> ${contractNumber}</p>
+                <p><strong>Үл хөдлөх:</strong> ${propertyName}</p>
+                <p><strong>Төлөх ёстой огноо:</strong> ${dueDate}</p>
+                <div class="amount">${new Intl.NumberFormat('mn-MN').format(amountDue)}₮</div>
+            </div>
+
+            <p>Аливаа асуудал гарвал бидэнтэй холбогдоно уу.</p>
+
+            <div class="footer">
+                <p>${shopName}</p>
+                <p>Энэ имэйл нь Vertmon Hub системээс автоматаар илгээгдсэн</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+    `;
+
+    return sendEmail({
+        to: customerEmail,
+        subject: `Төлбөрийн сануулга - ${propertyName}`,
+        html,
+    });
+}
+
+/**
  * Delivery Confirmation Email
  */
 export async function sendDeliveryConfirmationEmail(params: {
