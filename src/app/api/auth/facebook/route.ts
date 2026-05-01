@@ -12,24 +12,27 @@ export async function GET(request: NextRequest) {
   const origin = request.nextUrl.origin;
   const redirectUri = `${origin}/api/auth/facebook/callback`;
 
-  // Required permissions for Messenger chatbot
+  // Phase 1: read-only scopes — list user's pages, read posts/engagement,
+  // read insights/analytics. No messaging, no metadata writes (those will be
+  // added in Phase 2 when the chatbot/campaigns are enabled).
   const permissions = [
     'pages_show_list',
-    'pages_messaging',
-    // 'pages_read_engagement', // Removed due to invalid scope error
-    'pages_manage_metadata',
+    'pages_read_engagement',
+    'read_insights',
     'public_profile',
     'email'
   ].join(',');
 
-  const configId = process.env.FACEBOOK_LOGIN_CONFIG_ID?.trim() || '946025855026007';
+  const configId = process.env.FACEBOOK_LOGIN_CONFIG_ID?.trim();
 
   // Build Facebook OAuth URL
   const fbAuthUrl = new URL('https://www.facebook.com/v21.0/dialog/oauth');
   fbAuthUrl.searchParams.set('client_id', appId);
   fbAuthUrl.searchParams.set('redirect_uri', redirectUri);
   fbAuthUrl.searchParams.set('scope', permissions);
-  fbAuthUrl.searchParams.set('config_id', configId);
+  if (configId) {
+    fbAuthUrl.searchParams.set('config_id', configId);
+  }
   fbAuthUrl.searchParams.set('response_type', 'code');
 
   return NextResponse.redirect(fbAuthUrl.toString());
