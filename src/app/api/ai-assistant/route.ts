@@ -10,6 +10,24 @@ import {
     fetchCustomerInsights, generateChartConfig,
 } from '@/lib/ai/data-assistant/functions';
 import { resolveApiUser } from '@/lib/auth/resolve-user';
+import { buildDynamicKnowledge, buildFAQs } from '@/lib/ai/services/PromptService';
+
+/**
+ * Load shop's custom_knowledge + shop_faqs and format as a prompt suffix.
+ * Returns '' if shopId is missing or there's no knowledge to inject.
+ */
+async function loadShopKnowledge(shopId: string | undefined): Promise<string> {
+    if (!shopId) return '';
+    const db = supabaseAdmin();
+    const [shopRes, faqRes] = await Promise.all([
+        db.from('shops').select('custom_knowledge').eq('id', shopId).single(),
+        db.from('shop_faqs').select('question, answer').eq('shop_id', shopId).eq('is_active', true),
+    ]);
+    const ck = (shopRes.data?.custom_knowledge as Record<string, unknown> | string | null) || null;
+    const faqs = (faqRes.data || []) as { question: string; answer: string }[];
+    const parts = [buildDynamicKnowledge(ck), buildFAQs(faqs)].filter(Boolean);
+    return parts.join('\n');
+}
 
 export const maxDuration = 60;
 
@@ -66,10 +84,11 @@ async function handleGeneralQuery(
     message: string,
     shopId: string,
     history: any[] = [],
+    shopKnowledge?: string,
 ) {
     const model = genAI.getGenerativeModel({
         model: 'gemini-2.5-flash',
-        systemInstruction: GENERAL_SYSTEM_PROMPT,
+        systemInstruction: shopKnowledge ? GENERAL_SYSTEM_PROMPT + '\n\n' + shopKnowledge : GENERAL_SYSTEM_PROMPT,
         tools: [{ functionDeclarations: readTools }],
         generationConfig: { temperature: 0.7, topP: 0.9, maxOutputTokens: 4096 },
     });
@@ -127,11 +146,13 @@ export async function POST(req: Request) {
         if (!message) return NextResponse.json({ error: 'Message is required' }, { status: 400 });
         if (!process.env.GEMINI_API_KEY) return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 });
 
+        const shopKnowledge = await loadShopKnowledge(shopId);
+
         let response;
         if (mode === 'general') {
-            response = await handleGeneralQuery(message, shopId, history);
+            response = await handleGeneralQuery(message, shopId, history, shopKnowledge);
         } else {
-            response = await handleDataAssistantQuery(message, shopId, resolvedUser.id, history, userRole);
+            response = await handleDataAssistantQuery(message, shopId, resolvedUser.id, history, userRole, shopKnowledge);
         }
 
         // Persist messages to database
