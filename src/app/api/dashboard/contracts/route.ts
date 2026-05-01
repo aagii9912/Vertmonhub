@@ -84,6 +84,22 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Файл оруулна уу' }, { status: 400 });
         }
 
+        const MAX_EXCEL_BYTES = 5 * 1024 * 1024;
+        if (file.size > MAX_EXCEL_BYTES) {
+            return NextResponse.json(
+                { error: `Excel файлын хэмжээ хэтэрсэн (max ${MAX_EXCEL_BYTES / (1024 * 1024)}MB)` },
+                { status: 413 }
+            );
+        }
+
+        const ext = file.name.split('.').pop()?.toLowerCase();
+        if (ext !== 'xlsx' && ext !== 'xls') {
+            return NextResponse.json(
+                { error: 'Зөвхөн .xlsx эсвэл .xls файл хүлээн авна' },
+                { status: 400 }
+            );
+        }
+
         const buffer = Buffer.from(await file.arrayBuffer());
         const result = await importContracts(authShop.id, buffer);
         return NextResponse.json(result, { status: result.success ? 200 : 400 });
@@ -201,6 +217,16 @@ async function importContracts(
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: null });
     if (rows.length === 0) {
         return { success: false, imported: 0, errors: [], message: 'Excel файл хоосон байна' };
+    }
+
+    const MAX_ROWS = 5000;
+    if (rows.length > MAX_ROWS) {
+        return {
+            success: false,
+            imported: 0,
+            errors: [],
+            message: `Хэт олон мөр (${rows.length}). Дээд хязгаар ${MAX_ROWS}. Файлыг хувааж оруулна уу.`,
+        };
     }
 
     const records: ImportRow[] = [];

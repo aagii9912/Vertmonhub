@@ -62,7 +62,7 @@ export default function AdminDashboard() {
     if (!data) {
         return (
             <div className="text-center py-12">
-                <p className="text-muted-foreground">Failed to load dashboard</p>
+                <p className="text-muted-foreground">Хяналтын самбарыг ачааллахад алдаа гарлаа</p>
             </div>
         );
     }
@@ -75,8 +75,8 @@ export default function AdminDashboard() {
         <div className="space-y-8">
             {/* Header */}
             <div>
-                <h1 className="text-2xl font-bold text-foreground">Admin Dashboard</h1>
-                <p className="text-muted-foreground mt-1">Overview of your SaaS platform</p>
+                <h1 className="text-2xl font-bold text-foreground">Админ хяналт</h1>
+                <p className="text-muted-foreground mt-1">Платформын ерөнхий тойм</p>
             </div>
 
             {/* Stats Grid */}
@@ -86,7 +86,7 @@ export default function AdminDashboard() {
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-muted-foreground">Total Shops</p>
+                                <p className="text-sm text-muted-foreground">Нийт дэлгүүр</p>
                                 <p className="text-3xl font-bold text-foreground mt-1">
                                     {data.stats.total_shops}
                                 </p>
@@ -103,13 +103,13 @@ export default function AdminDashboard() {
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-muted-foreground">Active Subscriptions</p>
+                                <p className="text-sm text-muted-foreground">Идэвхтэй захиалга</p>
                                 <p className="text-3xl font-bold text-foreground mt-1">
                                     {data.stats.subscriptions.active}
                                 </p>
                                 {data.stats.subscriptions.past_due > 0 && (
                                     <p className="text-xs text-status-danger mt-1">
-                                        {data.stats.subscriptions.past_due} past due
+                                        {data.stats.subscriptions.past_due} хугацаа хэтэрсэн
                                     </p>
                                 )}
                             </div>
@@ -125,12 +125,12 @@ export default function AdminDashboard() {
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-muted-foreground">Total Revenue</p>
+                                <p className="text-sm text-muted-foreground">Нийт орлого</p>
                                 <p className="text-3xl font-bold text-foreground mt-1">
                                     {formatMoney(data.stats.revenue.total_revenue)}
                                 </p>
                                 <p className="text-xs text-muted-foreground/70 mt-1">
-                                    {data.stats.revenue.paid_count} payments
+                                    {data.stats.revenue.paid_count} төлбөр
                                 </p>
                             </div>
                             <div className="w-12 h-12 bg-brand-soft rounded-xl flex items-center justify-center">
@@ -145,7 +145,7 @@ export default function AdminDashboard() {
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-muted-foreground">Active Plans</p>
+                                <p className="text-sm text-muted-foreground">Идэвхтэй багц</p>
                                 <p className="text-3xl font-bold text-foreground mt-1">
                                     {data.stats.plans_count}
                                 </p>
@@ -163,9 +163,9 @@ export default function AdminDashboard() {
                 {/* Recent Shops */}
                 <Card>
                     <CardContent className="p-6">
-                        <h2 className="text-lg font-semibold text-foreground mb-4">Recent Shops</h2>
+                        <h2 className="text-lg font-semibold text-foreground mb-4">Сүүлийн дэлгүүрүүд</h2>
                         {data.recent_shops.length === 0 ? (
-                            <p className="text-muted-foreground text-center py-4">No recent shops</p>
+                            <p className="text-muted-foreground text-center py-4">Шинэ дэлгүүр байхгүй</p>
                         ) : (
                             <div className="space-y-3">
                                 {data.recent_shops.map((shop) => (
@@ -187,9 +187,9 @@ export default function AdminDashboard() {
                 {/* Recent Invoices */}
                 <Card>
                     <CardContent className="p-6">
-                        <h2 className="text-lg font-semibold text-foreground mb-4">Recent Invoices</h2>
+                        <h2 className="text-lg font-semibold text-foreground mb-4">Сүүлийн нэхэмжлэхүүд</h2>
                         {data.recent_invoices.length === 0 ? (
-                            <p className="text-muted-foreground text-center py-4">No invoices yet</p>
+                            <p className="text-muted-foreground text-center py-4">Нэхэмжлэх байхгүй</p>
                         ) : (
                             <div className="space-y-3">
                                 {data.recent_invoices.map((invoice) => (
@@ -217,7 +217,7 @@ export default function AdminDashboard() {
             {/* Plans Overview */}
             <Card>
                 <CardContent className="p-6">
-                    <h2 className="text-lg font-semibold text-foreground mb-4">Plans Overview</h2>
+                    <h2 className="text-lg font-semibold text-foreground mb-4">Багцын тойм</h2>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         {data.plans.map((plan) => (
                             <div key={plan.id} className="p-4 bg-surface-2/40 rounded-xl text-center">
