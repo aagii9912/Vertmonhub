@@ -152,7 +152,7 @@ Supabase Auth (Email/Password, Google, Facebook). `src/middleware.ts` protects `
 1. Customer DMs the shop's Facebook Page or Instagram account.
 2. Meta posts to `/api/webhook` (signature-verified).
 3. `WebhookService` resolves the shop, gets/creates a `Customer`, and gathers AI features.
-4. `AIRouter.routeToAI()` calls Gemini with the real-estate system prompt and 8 function-calling tools.
+4. `AIRouter.routeToAI()` calls Gemini with the real-estate system prompt and 10 function-calling tools.
 5. `ToolExecutor` runs tools that hit `properties`, `leads`, `customers`, etc.
 6. The final response is sent back via `messenger.ts` (text, gallery, or property images).
 7. Notable handover: when a tool fires `request_human_support`, the platform pushes a notification to the sales manager via `/api/push`.
@@ -203,6 +203,8 @@ Defined in [src/lib/ai/tools/definitions.ts](src/lib/ai/tools/definitions.ts), e
 | `collect_contact_info` | Save a name + phone for follow-up |
 | `request_human_support` | Page the sales manager |
 | `remember_preference` | Save customer preferences (district, rooms, budget...) for next session |
+| `check_payment_status` | Look up a contract's payment status, balance, and overdue days |
+| `log_service_request` | Log a customer service request and notify the manager |
 
 ---
 
