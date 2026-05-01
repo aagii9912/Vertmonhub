@@ -13,6 +13,10 @@ export const CreateLeadSchema = z.object({
     email: z.string().email('Email буруу формат').max(255).optional().nullable(),
     company: z.string().max(255).optional().nullable(),
     message: z.string().max(2000).optional().nullable(),
+    // Honeypot: real users leave this empty; bots fill it
+    website: z.string().max(0).optional().nullable(),
+    // Optional Cloudflare Turnstile token (verified server-side when configured)
+    turnstileToken: z.string().max(2048).optional().nullable(),
 });
 
 // ============================================
