@@ -1,15 +1,46 @@
 /**
  * Admin Setup API
- * This endpoint automatically sets up the current user as a super admin.
- * 
- * WARNING: This should be disabled or protected in production!
+ *
+ * Bootstrap endpoint to grant the current authenticated user the `super_admin`
+ * role. Disabled by default — only active when `ADMIN_SETUP_SECRET` is set in
+ * the environment AND the request supplies the matching secret via the
+ * `x-admin-setup-secret` header (or `?secret=` query param as a fallback).
+ *
+ * Without the env var the endpoint returns 404 so its existence is hidden.
  */
 
-import { NextResponse } from 'next/server';
+import { timingSafeEqual } from 'crypto';
+import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser, supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { logger } from '@/lib/utils/logger';
 
-export async function GET() {
+function notFound() {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+}
+
+function constantTimeEquals(a: string, b: string): boolean {
+    const aBuf = Buffer.from(a, 'utf8');
+    const bBuf = Buffer.from(b, 'utf8');
+    if (aBuf.length !== bBuf.length) return false;
+    return timingSafeEqual(aBuf, bBuf);
+}
+
+export async function GET(request: NextRequest) {
+    const expectedSecret = process.env.ADMIN_SETUP_SECRET;
+
+    if (!expectedSecret || expectedSecret.length < 16) {
+        return notFound();
+    }
+
+    const providedSecret =
+        request.headers.get('x-admin-setup-secret') ||
+        request.nextUrl.searchParams.get('secret') ||
+        '';
+
+    if (!providedSecret || !constantTimeEquals(providedSecret, expectedSecret)) {
+        return notFound();
+    }
+
     try {
         const user = await getAuthUser();
 
@@ -24,24 +55,20 @@ export async function GET() {
         const email = user.email || 'admin@vertmonhub.mn';
         const supabase = supabaseAdmin();
 
-        // Step 1: Check if admins table exists and fix schema if needed
         try {
             await supabase.rpc('exec_sql', {
                 sql: `
-                    DO $$ 
+                    DO $$
                     DECLARE r RECORD;
                     BEGIN
-                        -- Drop policies first
                         FOR r IN (SELECT policyname FROM pg_policies WHERE tablename = 'admins') LOOP
                             EXECUTE 'DROP POLICY IF EXISTS "' || r.policyname || '" ON admins';
                         END LOOP;
-                        
-                        -- Drop FK and change type
+
                         ALTER TABLE admins DROP CONSTRAINT IF EXISTS admins_user_id_fkey;
-                        
-                        -- Only alter if not already text
+
                         IF EXISTS (
-                            SELECT 1 FROM information_schema.columns 
+                            SELECT 1 FROM information_schema.columns
                             WHERE table_name = 'admins' AND column_name = 'user_id' AND data_type = 'uuid'
                         ) THEN
                             ALTER TABLE admins ALTER COLUMN user_id TYPE text;
@@ -49,12 +76,10 @@ export async function GET() {
                     END $$;
                 `
             });
-        } catch (rpcError) {
-            // RPC might not exist, try direct approach
+        } catch {
             logger.debug('RPC not available, using direct approach');
         }
 
-        // Step 2: Try to insert/update admin record
         const { data: existingAdmin } = await supabase
             .from('admins')
             .select('id, user_id, email, role')
@@ -64,7 +89,6 @@ export async function GET() {
         let result;
 
         if (existingAdmin) {
-            // Update existing admin with new user_id
             const { data, error } = await supabase
                 .from('admins')
                 .update({
@@ -79,7 +103,6 @@ export async function GET() {
             if (error) throw error;
             result = { action: 'updated', admin: data };
         } else {
-            // Create new admin
             const { data, error } = await supabase
                 .from('admins')
                 .insert({
@@ -95,6 +118,8 @@ export async function GET() {
             result = { action: 'created', admin: data };
         }
 
+        logger.info('Admin setup invoked', { userId, email, action: result.action });
+
         return NextResponse.json({
             success: true,
             message: `Super admin ${result.action} successfully!`,
@@ -108,9 +133,8 @@ export async function GET() {
 
     } catch (error: unknown) {
         const err = error as { message?: string; code?: string };
-        console.error('Admin setup error:', err);
+        logger.error('Admin setup error', { error: err.message, code: err.code });
 
-        // Check if it's a type mismatch error
         if (err.message?.includes('uuid') || err.code === '22P02') {
             return NextResponse.json({
                 error: 'Database schema needs manual fix',
