@@ -82,6 +82,11 @@ export async function GET(request: NextRequest) {
 }
 
 // Handle incoming messages (POST request from Facebook/Instagram)
+// Phase 1 (data-only) kill switch. When FACEBOOK_BOT_ENABLED is not "true",
+// the webhook acks Meta but skips all AI/auto-reply processing. Set to "true"
+// in Vercel ENV when Phase 2 (chatbot/comment automation) is ready.
+const BOT_ENABLED = process.env.FACEBOOK_BOT_ENABLED?.trim().toLowerCase() === 'true';
+
 export async function POST(request: NextRequest) {
     try {
         // Verify webhook signature (X-Hub-Signature-256)
@@ -106,6 +111,12 @@ export async function POST(request: NextRequest) {
         }
 
         logger.info(`Webhook received for platform: ${platform}`);
+
+        // Phase 1: ack the webhook but skip all auto-reply processing.
+        if (!BOT_ENABLED) {
+            logger.info('Bot disabled (FACEBOOK_BOT_ENABLED!=true); skipping AI processing');
+            return NextResponse.json({ ok: true, mode: 'data_only' });
+        }
 
         // Process each entry
         for (const entry of body.entry as WebhookEntry[]) {
