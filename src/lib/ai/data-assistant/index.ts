@@ -93,8 +93,9 @@ const READ_ONLY_INSTRUCTION = `
 
 Та УНШИЖ ЗӨВХӨН чадна. Мэдээлэл өөрчлөх, статус солих боломжгүй. Хэрэв хэрэглэгч өөрчлөлт хийхийг хүсвэл "Энэ үйлдлийг зөвхөн Super Admin хийх боломжтой" гэж хариулна.`;
 
-function getSystemInstruction(userRole: string): string {
-    return userRole === 'super_admin' ? BASE_INSTRUCTION + ADMIN_WRITE_INSTRUCTION : BASE_INSTRUCTION + READ_ONLY_INSTRUCTION;
+function getSystemInstruction(userRole: string, shopKnowledge?: string): string {
+    const base = userRole === 'super_admin' ? BASE_INSTRUCTION + ADMIN_WRITE_INSTRUCTION : BASE_INSTRUCTION + READ_ONLY_INSTRUCTION;
+    return shopKnowledge ? base + '\n\n' + shopKnowledge : base;
 }
 
 // ============================================
@@ -106,14 +107,15 @@ export async function handleDataAssistantQuery(
     shopId: string,
     userId: string,
     history: any[] = [],
-    userRole: string = 'user'
+    userRole: string = 'user',
+    shopKnowledge?: string
 ) {
     try {
         const activeTools = userRole === 'super_admin' ? [...readTools, ...writeTools] : readTools;
 
         const model = genAI.getGenerativeModel({
             model: 'gemini-2.5-flash',
-            systemInstruction: getSystemInstruction(userRole),
+            systemInstruction: getSystemInstruction(userRole, shopKnowledge),
             tools: [{ functionDeclarations: activeTools }],
             generationConfig: { temperature: 0.3, topP: 0.8, maxOutputTokens: 2048 },
         });
