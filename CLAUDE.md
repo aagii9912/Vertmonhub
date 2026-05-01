@@ -11,7 +11,7 @@
 
 - **Repo:** https://github.com/aagii9912/smarthub.git
 - **UI Language:** Mongolian (all labels, comments and content)
-- **Branch under active cleanup:** `chore/remove-syncly-legacy` (removes leftover Syncly e-commerce code)
+- **Default branch:** `main`
 
 ---
 
@@ -242,7 +242,7 @@ Conventions: tables `snake_case` plural, columns `snake_case`, functions `snake_
 
 ## Recently Removed (do NOT reintroduce)
 
-The following Syncly e-commerce surface was removed in [chore/remove-syncly-legacy](#):
+The following Syncly e-commerce surface was removed during the earlier `chore/remove-syncly-legacy` cleanup (now merged and the branch deleted):
 
 - Pages: `dashboard/products`, `dashboard/orders`, `dashboard/comment-automation`, `dashboard/complaints`, `dashboard/subscription`, `setup/`, `test-ui/`
 - API routes: `cart/*`, `orders/*`, `payment/*` (QPay), `dashboard/active-carts`, `dashboard/products`, `dashboard/orders`, `dashboard/comment-automations`, `dashboard/complaints`, `setup-shop`, `invoice`, `admin/plans`, `admin/subscriptions`, `cron/process-messages`, `cron/cleanup-orders`, `dashboard/reports` (the old e-commerce reports endpoint)
