@@ -1,13 +1,14 @@
 /**
  * Rate Limiter Utility
- * Supports both in-memory (dev) and Redis (production) backends
- * 
- * Production: Set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN env vars
- * Dev: Falls back to in-memory Map automatically
+ * Backend selection (in priority order):
+ *   1. Upstash Redis  — if UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN set
+ *   2. Supabase       — if SUPABASE_SERVICE_ROLE_KEY set (atomic via check_rate_limit() RPC)
+ *   3. In-memory Map  — dev fallback (NOT shared across Vercel instances)
  */
 
 import { NextResponse } from 'next/server';
 import { logger } from '@/lib/utils/logger';
+import { supabaseAdmin } from '@/lib/supabase';
 
 interface RateLimitConfig {
     windowMs: number;      // Time window in milliseconds
@@ -145,6 +146,43 @@ class RedisBackend implements RateLimitBackend {
 }
 
 // ============================================
+// Supabase Backend (production / multi-instance, no extra service)
+// ============================================
+
+class SupabaseBackend implements RateLimitBackend {
+    async check(key: string, config: RateLimitConfig): Promise<RateLimitResult> {
+        try {
+            const { data, error } = await supabaseAdmin().rpc('check_rate_limit', {
+                p_key: key,
+                p_max_requests: config.maxRequests,
+                p_window_ms: config.windowMs,
+            });
+
+            if (error) {
+                throw error;
+            }
+
+            const row = Array.isArray(data) ? data[0] : data;
+            if (!row) {
+                throw new Error('check_rate_limit returned no row');
+            }
+
+            return {
+                allowed: !!row.allowed,
+                remaining: typeof row.remaining === 'number' ? row.remaining : config.maxRequests,
+                resetAt: typeof row.reset_at_ms === 'number'
+                    ? row.reset_at_ms
+                    : Number(row.reset_at_ms) || Date.now() + config.windowMs,
+            };
+        } catch (err) {
+            // Fail open — never block users because rate limiter backend is down
+            logger.warn('Supabase rate limit failed, allowing request', { error: err });
+            return { allowed: true, remaining: config.maxRequests, resetAt: Date.now() + config.windowMs };
+        }
+    }
+}
+
+// ============================================
 // Backend Selection (auto-detect)
 // ============================================
 
@@ -155,13 +193,18 @@ function getBackend(): RateLimitBackend {
 
     const redisUrl = process.env.UPSTASH_REDIS_REST_URL;
     const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 
     if (redisUrl && redisToken) {
         logger.info('Rate limiter: Using Redis backend');
         _backend = new RedisBackend(redisUrl, redisToken);
+    } else if (supabaseServiceKey && supabaseUrl) {
+        logger.info('Rate limiter: Using Supabase backend');
+        _backend = new SupabaseBackend();
     } else {
         if (process.env.NODE_ENV === 'production') {
-            logger.warn('Rate limiter: UPSTASH_REDIS_REST_URL not set — using in-memory (NOT recommended for production)');
+            logger.warn('Rate limiter: no Redis or Supabase configured — using in-memory (NOT recommended for production)');
         }
         _backend = new MemoryBackend();
     }
