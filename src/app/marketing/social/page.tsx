@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import {
@@ -65,9 +66,34 @@ type TabType = 'all' | 'facebook' | 'instagram';
 
 // ======= Component =======
 
+interface AvailableFbPage {
+    id: string;
+    name: string;
+    category?: string;
+}
+
 export default function SocialPage() {
+    return (
+        <Suspense fallback={<div className="flex items-center justify-center min-h-[400px]"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>}>
+            <SocialPageContent />
+        </Suspense>
+    );
+}
+
+function SocialPageContent() {
     const { shop } = useAuth();
+    const searchParams = useSearchParams();
+    const router = useRouter();
     const [activeTab, setActiveTab] = useState<TabType>('facebook');
+
+    // Page selector modal (after OAuth callback)
+    const [pageSelectorOpen, setPageSelectorOpen] = useState(false);
+    const [availablePages, setAvailablePages] = useState<AvailableFbPage[]>([]);
+    const [pagesLoading, setPagesLoading] = useState(false);
+    const [selectedPageId, setSelectedPageId] = useState<string>('');
+    const [savingPage, setSavingPage] = useState(false);
+    const [pageSelectorError, setPageSelectorError] = useState<string | null>(null);
+    const [oauthBanner, setOauthBanner] = useState<string | null>(null);
 
     // Internal posts
     const [posts, setPosts] = useState<SocialPost[]>([]);
@@ -190,6 +216,94 @@ export default function SocialPage() {
     useEffect(() => {
         fetchInstagramData();
     }, [fetchInstagramData]);
+
+    // ======= Handle OAuth callback (?fb_success / ?fb_error) =======
+    useEffect(() => {
+        const success = searchParams.get('fb_success');
+        const errParam = searchParams.get('fb_error');
+
+        if (errParam) {
+            setOauthBanner(`Facebook холболт амжилтгүй: ${decodeURIComponent(errParam)}`);
+            router.replace('/marketing/social');
+            return;
+        }
+
+        if (success !== 'true') return;
+
+        // Fetch pages from cookie set by callback
+        let cancelled = false;
+        const loadPages = async () => {
+            setPagesLoading(true);
+            setPageSelectorError(null);
+            try {
+                const res = await fetch('/api/auth/facebook/pages');
+                const data = await res.json();
+                if (cancelled) return;
+
+                if (data.code === 'SESSION_EXPIRED' || !data.pages?.length) {
+                    setOauthBanner('Facebook session дууссан эсвэл хуудас олдсонгүй. Дахин холбоно уу.');
+                    router.replace('/marketing/social');
+                    return;
+                }
+
+                setAvailablePages(data.pages);
+                setSelectedPageId(data.pages[0]?.id || '');
+                setPageSelectorOpen(true);
+            } catch (e) {
+                if (!cancelled) setPageSelectorError('Pages татахад алдаа гарлаа');
+            } finally {
+                if (!cancelled) setPagesLoading(false);
+            }
+        };
+        loadPages();
+        return () => { cancelled = true; };
+    }, [searchParams, router]);
+
+    // ======= Save selected page to shop =======
+    const handleSavePage = useCallback(async () => {
+        if (!selectedPageId) return;
+        setSavingPage(true);
+        setPageSelectorError(null);
+        try {
+            // Step 1: get the access token by selecting the page
+            const selectRes = await fetch('/api/auth/facebook/pages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pageId: selectedPageId }),
+            });
+            const selectData = await selectRes.json();
+
+            if (!selectRes.ok || !selectData.success) {
+                throw new Error(selectData.error || 'Page сонгоход алдаа');
+            }
+
+            // Step 2: save to shop
+            const patchRes = await fetch('/api/shop', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    facebook_page_id: selectData.page.id,
+                    facebook_page_name: selectData.page.name,
+                    facebook_page_access_token: selectData.page.access_token,
+                }),
+            });
+            const patchData = await patchRes.json();
+
+            if (!patchRes.ok) {
+                throw new Error(patchData.error || 'Shop шинэчлэх алдаа');
+            }
+
+            setPageSelectorOpen(false);
+            setOauthBanner(`✅ "${selectData.page.name}" хуудас амжилттай холбогдлоо`);
+            router.replace('/marketing/social');
+            // Refresh Facebook data
+            fetchFacebookData();
+        } catch (e: any) {
+            setPageSelectorError(e?.message || 'Хадгалахад алдаа гарлаа');
+        } finally {
+            setSavingPage(false);
+        }
+    }, [selectedPageId, router, fetchFacebookData]);
 
     // ======= Publish post =======
     const handlePublish = async () => {
@@ -365,6 +479,138 @@ export default function SocialPage() {
                     pageName={fbPage?.name || ''}
                 />
             )}
+
+            {/* OAuth result banner */}
+            {oauthBanner && (
+                <div className="fixed top-4 right-4 z-50 max-w-md bg-surface border border-border rounded-lg shadow-lg p-4 flex items-start gap-3">
+                    <div className="flex-1 text-sm text-foreground">{oauthBanner}</div>
+                    <button
+                        onClick={() => setOauthBanner(null)}
+                        className="text-muted-foreground hover:text-foreground"
+                    >
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+            )}
+
+            {/* Page Selector Modal */}
+            {pageSelectorOpen && (
+                <PageSelectorModal
+                    pages={availablePages}
+                    selectedPageId={selectedPageId}
+                    setSelectedPageId={setSelectedPageId}
+                    saving={savingPage}
+                    error={pageSelectorError}
+                    onSave={handleSavePage}
+                    onClose={() => {
+                        setPageSelectorOpen(false);
+                        router.replace('/marketing/social');
+                    }}
+                />
+            )}
+        </div>
+    );
+}
+
+// ======= Page Selector Modal =======
+
+function PageSelectorModal({
+    pages,
+    selectedPageId,
+    setSelectedPageId,
+    saving,
+    error,
+    onSave,
+    onClose,
+}: {
+    pages: AvailableFbPage[];
+    selectedPageId: string;
+    setSelectedPageId: (v: string) => void;
+    saving: boolean;
+    error: string | null;
+    onSave: () => void;
+    onClose: () => void;
+}) {
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+            <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md">
+                <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+                    <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+                        <Facebook className="w-5 h-5 text-status-info" />
+                        Facebook Page сонгох
+                    </h3>
+                    <button
+                        onClick={onClose}
+                        disabled={saving}
+                        className="text-muted-foreground hover:text-foreground disabled:opacity-50"
+                    >
+                        <X className="w-5 h-5" />
+                    </button>
+                </div>
+
+                <div className="p-5 space-y-2 max-h-96 overflow-y-auto">
+                    <p className="text-sm text-muted-foreground mb-3">
+                        Холбохыг хүсэж буй Facebook Page-ээ сонгоно уу.
+                    </p>
+                    {pages.map(p => (
+                        <label
+                            key={p.id}
+                            className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                                selectedPageId === p.id
+                                    ? 'border-status-info bg-status-info-soft'
+                                    : 'border-border hover:bg-surface-2'
+                            }`}
+                        >
+                            <input
+                                type="radio"
+                                name="fb-page"
+                                value={p.id}
+                                checked={selectedPageId === p.id}
+                                onChange={() => setSelectedPageId(p.id)}
+                                disabled={saving}
+                                className="mt-1"
+                            />
+                            <div className="flex-1">
+                                <div className="font-medium text-foreground">{p.name}</div>
+                                {p.category && (
+                                    <div className="text-xs text-muted-foreground mt-0.5">{p.category}</div>
+                                )}
+                                <div className="text-xs text-muted-foreground mt-0.5">ID: {p.id}</div>
+                            </div>
+                        </label>
+                    ))}
+                </div>
+
+                {error && (
+                    <div className="px-5 pb-2 flex items-start gap-2 text-status-danger text-sm">
+                        <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+                        <span>{error}</span>
+                    </div>
+                )}
+
+                <div className="px-5 py-4 border-t border-border flex items-center justify-end gap-2">
+                    <Button variant="outline" onClick={onClose} disabled={saving}>
+                        Цуцлах
+                    </Button>
+                    <Button
+                        onClick={onSave}
+                        disabled={saving || !selectedPageId}
+                        className="bg-status-info hover:bg-status-info text-white"
+                    >
+                        {saving ? (
+                            <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                Хадгалж байна...
+                            </>
+                        ) : (
+                            <>
+                                <CheckCircle2 className="w-4 h-4 mr-2" />
+                                Холбох
+                            </>
+                        )}
+                    </Button>
+                </div>
+            </div>
         </div>
     );
 }
