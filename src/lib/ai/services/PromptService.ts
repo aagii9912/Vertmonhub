@@ -59,21 +59,38 @@ export function buildCustomInstructions(aiInstructions?: string): string {
 /**
  * Build dynamic knowledge section
  */
-export function buildDynamicKnowledge(customKnowledge?: Record<string, unknown>): string {
-    if (!customKnowledge || Object.keys(customKnowledge).length === 0) {
-        return '';
-    }
+export function buildDynamicKnowledge(customKnowledge?: Record<string, unknown> | string | null): string {
+    if (!customKnowledge) return '';
 
-    const knowledgeList = Object.entries(customKnowledge)
+    const normalized: Record<string, unknown> = typeof customKnowledge === 'string'
+        ? { knowledge_legacy: customKnowledge }
+        : customKnowledge;
+
+    if (Object.keys(normalized).length === 0) return '';
+
+    const knowledgeList = Object.entries(normalized)
         .map(([key, value]) => {
             const displayValue = typeof value === 'object'
                 ? JSON.stringify(value)
                 : String(value);
-            return `- ${key}: ${displayValue}`;
+            return `### ${key}\n${displayValue}`;
         })
-        .join('\n');
+        .join('\n\n');
 
     return `\nТУСГАЙ МЭДЭЭЛЭЛ:\n${knowledgeList}\n`;
+}
+
+/**
+ * Build FAQ section from shop_faqs
+ */
+export function buildFAQs(faqs?: ChatContext['faqs']): string {
+    if (!faqs || faqs.length === 0) return '';
+
+    const list = faqs
+        .map((f, i) => `${i + 1}. Q: ${f.question}\n   A: ${f.answer}`)
+        .join('\n');
+
+    return `\nТҮГЭЭМЭЛ АСУУЛТ-ХАРИУЛТ:\n${list}\n`;
 }
 
 /**
@@ -84,6 +101,7 @@ export function buildSystemPrompt(context: ChatContext): string {
     const propertiesInfo = buildPropertiesInfo(context.properties);
     const customInstructions = buildCustomInstructions(context.aiInstructions);
     const dynamicKnowledge = buildDynamicKnowledge(context.customKnowledge);
+    const faqsBlock = buildFAQs(context.faqs);
 
     // Customer memory
     const customerMemory = context.planFeatures?.ai_memory !== false
@@ -110,7 +128,7 @@ export function buildSystemPrompt(context: ChatContext): string {
 ЗАН БАЙДАЛ:
 ${emotionStyle}
 
-${companyInfo}${customInstructions}${dynamicKnowledge}${customerMemory}${customerGreeting}
+${companyInfo}${customInstructions}${dynamicKnowledge}${faqsBlock}${customerMemory}${customerGreeting}
 
 ЧАДВАРУУД (Tools):
 1. search_properties - Үл хөдлөх хайх (төрөл, үнэ, байршил, өрөөний тооор)
@@ -142,6 +160,11 @@ ${companyInfo}${customInstructions}${dynamicKnowledge}${customerMemory}${custome
    - Хэрэглэгч сонирхвол үзлэг санал болго
    - Утас, имэйл авах
    - Тохиромжтой цаг асуух
+
+5. ҮНИЙН МЭДЭЭЛЭЛ:
+   - Хэрэв тухайн байрны үнэ 0 эсвэл алга бол "0₮" гэж бүү хэл.
+   - Үүний оронд: "Үнийн талаар манай борлуулалтын менежертэй холбогдоно уу" гэж хариул.
+   - Зөвхөн ТУСГАЙ МЭДЭЭЛЭЛ ба ТҮГЭЭМЭЛ АСУУЛТ-ХАРИУЛТ хэсэгт байгаа үнэ, нөхцлийг иш татна.
 
 МОНГОЛЫН ҮЛ ХӨДЛӨХИЙН ЗАХ ЗЭЭЛ:
 - Дундаж үнэ: ~3-5 сая ₮/м² (UB хотод)
