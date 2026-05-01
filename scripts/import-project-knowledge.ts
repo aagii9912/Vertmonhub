@@ -1,11 +1,15 @@
 /**
- * Import project knowledge from Excel files into Supabase
- * 
- * Imports:
- *  1. custom_knowledge → shops table (AI system prompt context)
- *  2. shop_faqs → FAQ entries for AI settings page
- * 
- * Usage: npx tsx scripts/import-project-knowledge.ts
+ * Import Mandala Garden + Elysium Residence project data into Supabase.
+ *
+ * Writes:
+ *  1. shops.custom_knowledge  → structured Record<string, string>
+ *                               (one key per topic per project — read by PromptService.buildDynamicKnowledge)
+ *  2. shop_faqs               → one row per FAQ (read by WebhookService.getAIFeatures → PromptService.buildFAQs)
+ *  3. properties              → 27 Elysium unit rows (price=0, AI instructed to defer pricing)
+ *
+ * Idempotent: re-running overwrites prior import for the target shop.
+ *
+ * Usage:  npx tsx scripts/import-project-knowledge.ts
  */
 
 import * as XLSX from 'xlsx';
@@ -24,338 +28,437 @@ const supabase = createClient(
 // HELPERS
 // ============================================
 
-function readSheet(wb: XLSX.WorkBook, name: string): any[][] {
+type Row = (string | number | null | undefined)[];
+
+function readSheet(wb: XLSX.WorkBook, name: string): Row[] {
     const sheet = wb.Sheets[name];
-    if (!sheet) return [];
-    return XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[][];
+    if (!sheet) throw new Error(`Sheet not found: "${name}"`);
+    return XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false, defval: null }) as Row[];
 }
 
-function percentToStr(val: any): string {
-    if (val === null || val === undefined) return '-';
-    if (typeof val === 'number' && val < 1) return `${Math.round(val * 100)}%`;
-    if (typeof val === 'number' && val === 1) return '100%';
-    return String(val);
+function pct(val: unknown): string {
+    if (val == null) return '-';
+    if (typeof val === 'number') {
+        return val < 1 ? `${Math.round(val * 100)}%` : `${val}%`;
+    }
+    return String(val).trim();
+}
+
+function s(val: unknown): string {
+    return val == null ? '' : String(val).trim();
+}
+
+function yn(val: unknown): boolean {
+    return s(val).toLowerCase().startsWith('тийм');
 }
 
 // ============================================
-// MANDALA GARDEN — Knowledge Builder
+// MANDALA GARDEN — knowledge builder
 // ============================================
 
-function buildMandalaGardenKnowledge(): { knowledge: string; faqs: { question: string; answer: string; category: string }[] } {
+interface Built {
+    knowledge: Record<string, string>;
+    faqs: Array<{ question: string; answer: string }>;
+}
+
+function buildMandalaGarden(): Built {
     const wb = XLSX.readFile(path.resolve(__dirname, '../Мандала гарден CRM хөгжүүлэлтэд орох мэдээлэл.xlsx'));
-    
-    let knowledge = '';
-    
-    // --- Төслийн мэдээлэл ---
-    const projData = readSheet(wb, 'Төслийн мэдээлэл');
-    knowledge += `## Mandala Garden — Төслийн мэдээлэл\n\n`;
-    knowledge += `- **Төслийн нэр:** Mandala Garden хороолол\n`;
-    knowledge += `- **Байршил:** ${projData[2]?.[2] || 'Хан-Уул дүүрэг, Яармаг, Арцатын ам'}\n`;
-    knowledge += `- **Дүүрэг:** ${projData[3]?.[2] || 'Хан-Уул дүүрэг'}\n`;
-    knowledge += `- **GPS:** ${projData[4]?.[2] || ''}\n`;
-    knowledge += `- **Нийт блок:** ${projData[5]?.[2] || 24}\n`;
-    knowledge += `- **Давхарын тоо (блок бүр):** ${projData[6]?.[2] || 16}\n`;
-    knowledge += `- **Нийт байрны тоо:** ${projData[7]?.[2] || 957}\n`;
-    knowledge += `- **Баригдаж эхэлсэн:** ${projData[8]?.[2] || 2019}\n`;
-    knowledge += `- **Хүлээлгэж өгөх:** ${projData[9]?.[2] || 2030}\n`;
-    knowledge += `- **Барилгын явц:** ${percentToStr(projData[10]?.[2])}\n`;
-    knowledge += `- **Тайлбар:** ${projData[11]?.[2] || ''}\n\n`;
-    
-    // --- Онцлог ---
+
+    const proj = readSheet(wb, 'Төслийн мэдээлэл');
     const features = readSheet(wb, 'Онцлог Тохилог давуу тал ');
-    knowledge += `## Онцлог, давуу талууд\n\n`;
-    for (let i = 1; i < features.length; i++) {
-        const row = features[i];
-        if (!row[1]) continue;
-        const status = (row[2] || '').toString().trim();
-        const detail = row[3] ? ` — ${row[3]}` : '';
-        knowledge += `- ${row[1]}: ${status}${detail}\n`;
-    }
-    knowledge += '\n';
-    
-    // --- Ойр орчин ---
     const nearby = readSheet(wb, 'Ойр орчмын мэдээлэл ');
-    knowledge += `## Ойр орчмын байгууллагууд\n\n`;
-    for (let i = 1; i < nearby.length; i++) {
-        const row = nearby[i];
-        if (!row[1]) continue;
-        const dist = row[2] ? ` — ${row[2]}` : '';
-        knowledge += `- ${row[1]}${dist}\n`;
-    }
-    knowledge += '\n';
-    
-    // --- Төлбөр ---
     const payment = readSheet(wb, 'Төлбөрийн мэдээлэл');
-    knowledge += `## Төлбөрийн нөхцөл\n\n`;
-    knowledge += `### Бэлэн бүтээгдэхүүн (нүүж ороход бэлэн)\n`;
-    knowledge += `- Урьдчилгаа: ${percentToStr(payment[1]?.[2])}\n`;
-    knowledge += `- Хэсэгчилсэн төлбөр: ${payment[2]?.[2] || 'Үгүй'}\n`;
-    knowledge += `- Бэлнээр хөнгөлөлт: ${percentToStr(payment[4]?.[2])}\n\n`;
-    knowledge += `### Захиалгын бүтээгдэхүүн\n`;
-    knowledge += `- Урьдчилгаа: ${percentToStr(payment[1]?.[3])}\n`;
-    knowledge += `- Хэсэгчилсэн төлбөр: ${payment[2]?.[3] || 'Тийм'}\n`;
-    knowledge += `- Хэсэг төлөх хугацаа: ${payment[3]?.[3] || 'Ашиглалтад орох хүртэл'}\n`;
-    knowledge += `- Бэлнээр хөнгөлөлт: ${percentToStr(payment[4]?.[3])}\n`;
-    knowledge += `- Эрт захиалгын хөнгөлөлт: ${percentToStr(payment[6]?.[3])}\n\n`;
-    
-    // --- Зээл ---
     const loan = readSheet(wb, 'Зээлийн мэдээлэл ');
-    knowledge += `## Зээлийн мэдээлэл\n\n`;
-    knowledge += `- Хамтрагч банк: ${loan[1]?.[2] || 'Голомт банк'}\n`;
-    knowledge += `- Зээлийн хүү (жилийн): ${percentToStr(loan[2]?.[2])}\n`;
-    knowledge += `- Зээлийн хугацаа: ${loan[3]?.[2] || '15-20 жил'}\n`;
-    knowledge += `- Хөнгөлөлттэй зээл: ${(loan[4]?.[2] || '').toString().trim() === 'Тийм' ? 'Тийм' : 'Үгүй'}\n`;
-    knowledge += `- Ипотекийн зээл: ${(loan[5]?.[2] || '').toString().trim() === 'Тийм' ? 'Тийм' : 'Үгүй'}\n`;
-    knowledge += `- Ногоон зээл: ${(loan[6]?.[2] || '').toString().trim() === 'Тийм' ? 'Тийм' : 'Үгүй'}\n`;
-    if (loan[7]?.[3]) knowledge += `- Шаардлагатай бичиг баримт: ${loan[7][3]}\n`;
-    knowledge += '\n';
-    
-    // --- Зогсоол ---
     const parking = readSheet(wb, 'Зогсоолын төлбөр ');
-    knowledge += `## Зогсоолын мэдээлэл\n\n`;
-    knowledge += `- Паркинг үнэ: ${parking[1]?.[2] || '50,000,000-57,000,000'}₮\n`;
-    knowledge += `- Нийт зогсоол: ${parking[2]?.[2] || 1080}\n`;
-    knowledge += `- Боломжтой зогсоол: ${parking[3]?.[2] || ''}\n\n`;
-    
-    // --- Буцаалт ---
     const refund = readSheet(wb, 'Буцаалтын бодлого');
-    knowledge += `## Буцаалтын бодлого\n\n`;
-    knowledge += `- Шимтгэл: ${percentToStr(refund[3]?.[2])}\n`;
-    knowledge += `- Гэрээ цуцлах нөхцөл: ${refund[4]?.[2] || ''}\n\n`;
-    
-    // --- Нэмэлт ---
     const extra = readSheet(wb, 'Нэмэлт мэдээлэл ');
-    knowledge += `## Холбоо барих\n\n`;
-    knowledge += `### Борлуулалтын менежерүүд:\n`;
-    for (let i = 1; i < extra.length; i++) {
-        const row = extra[i];
-        if (row[2] && row[3]) {
-            knowledge += `- ${row[2]}: ${row[3]}\n`;
+
+    const k: Record<string, string> = {};
+
+    // Overview
+    k['mandala_overview'] = [
+        `Төслийн нэр: ${s(proj[1]?.[2]) || 'Mandala Garden'}`,
+        `Байршил: ${s(proj[2]?.[2])}`,
+        `Дүүрэг: ${s(proj[3]?.[2])}`,
+        `GPS: ${s(proj[4]?.[2])}`,
+        `Нийт блок: ${s(proj[5]?.[2])}`,
+        `Давхарын тоо (блок тус бүр): ${s(proj[6]?.[2])}`,
+        `Нийт байрны тоо: ${s(proj[7]?.[2])}`,
+        `Баригдаж эхэлсэн он: ${s(proj[8]?.[2])}`,
+        `Хүлээлгэж өгөх он: ${s(proj[9]?.[2])}`,
+        `Барилгын явц: ${pct(proj[10]?.[2])}`,
+        `Тайлбар: ${s(proj[11]?.[2])}`,
+    ].join('\n');
+
+    // Amenities
+    k['mandala_amenities'] = features.slice(1)
+        .filter(r => s(r[1]))
+        .map(r => `- ${s(r[1])}: ${yn(r[2]) ? 'тийм' : 'үгүй'}${s(r[3]) ? ` — ${s(r[3])}` : ''}`)
+        .join('\n');
+
+    // Nearby
+    k['mandala_nearby'] = nearby.slice(1)
+        .filter(r => s(r[1]))
+        .map(r => `- ${s(r[1])}${s(r[2]) ? ` — ${s(r[2])}` : ''}`)
+        .join('\n');
+
+    // Payment
+    k['mandala_payment'] = [
+        `БЭЛЭН БҮТЭЭГДЭХҮҮН (нүүж ороход бэлэн):`,
+        `  - Урьдчилгаа: ${pct(payment[1]?.[2])}`,
+        `  - Хэсэгчилсэн төлбөр: ${s(payment[2]?.[2]) || 'үгүй'}`,
+        `  - Бэлнээр хөнгөлөлт: ${pct(payment[4]?.[2])}`,
+        `  - VIP хөнгөлөлт: ${pct(payment[5]?.[2])}`,
+        `  - Эрт захиалгын хөнгөлөлт: ${pct(payment[6]?.[2])}`,
+        ``,
+        `ЗАХИАЛГЫН БҮТЭЭГДЭХҮҮН:`,
+        `  - Урьдчилгаа: ${pct(payment[1]?.[3])}`,
+        `  - Хэсэгчилсэн төлбөр: ${s(payment[2]?.[3]) || 'тийм'}`,
+        `  - Хэсэг төлөх хугацаа: ${s(payment[3]?.[3]) || 'Ашиглалтад орох хүртэл'}`,
+        `  - Бэлнээр хөнгөлөлт: ${pct(payment[4]?.[3])}`,
+        `  - Эрт захиалгын хөнгөлөлт: ${pct(payment[6]?.[3])}`,
+    ].join('\n');
+
+    // Loan
+    k['mandala_loan'] = [
+        `Хамтрагч банк: ${s(loan[1]?.[2]) || 'Голомт банк'}`,
+        `Зээлийн хүү (жилийн): ${pct(loan[2]?.[2])}`,
+        `Зээлийн хугацаа: ${s(loan[3]?.[2]) || '15-20 жил'}`,
+        `Хөнгөлөлттэй зээл: ${yn(loan[4]?.[2]) ? 'тийм' : 'үгүй'}`,
+        `Ипотекийн зээл: ${yn(loan[5]?.[2]) ? 'тийм' : 'үгүй'}`,
+        `Ногоон зээл: ${yn(loan[6]?.[2]) ? 'тийм' : 'үгүй'}`,
+        `Шаардлагатай бичиг баримт: Иргэний үнэмлэхний хуулбар, оршин суугаа хаяг, мэйл хаяг, утасны дугаар`,
+    ].join('\n');
+
+    // Parking
+    k['mandala_parking'] = [
+        `Паркинг үнэ: ${s(parking[1]?.[2]) || '50,000,000-57,000,000'}₮`,
+        `Нийт зогсоол: ${s(parking[2]?.[2]) || '1080'}`,
+        `Боломжтой зогсоол: ${s(parking[3]?.[2]) || '464'}`,
+        `Гадна зогсоол: 749 ширхэг`,
+    ].join('\n');
+
+    // Refund
+    k['mandala_refund'] = [
+        `Шимтгэл суутгал: ${pct(refund[3]?.[2])}`,
+        `Гэрээ цуцлах нөхцөл: ${s(refund[4]?.[2])}`,
+    ].join('\n');
+
+    // Contacts
+    const managers: string[] = [];
+    let workHours = '';
+    let showroom = '';
+    let specialOffer = '';
+    for (const row of extra.slice(1)) {
+        const idx = row[0];
+        if (idx == null && s(row[1]) && s(row[2])) {
+            managers.push(`${s(row[1])}: ${s(row[2])}`);
+        } else if (idx === 1 && s(row[1]) && s(row[2])) {
+            managers.push(`${s(row[1])}: ${s(row[2])}`);
+        } else if (idx === 2) {
+            workHours = s(row[1]);
+        } else if (idx === 3) {
+            showroom = s(row[1]);
+        } else if (idx === 5) {
+            specialOffer = s(row[1]);
         }
-        if (row[1] === 2) knowledge += `\n- **Ажлын цаг:** ${row[2]}\n`;
-        if (row[1] === 3) knowledge += `- **Шоурум:** ${row[2]}\n`;
-        if (row[1] === 5 && row[2]) knowledge += `- **Онцгой нөхцөл:** ${row[2]}\n`;
     }
-    knowledge += '\n';
-    
-    // --- FAQs ---
-    const faqSheet = readSheet(wb, 'FAQ Заавал бичих ');
-    const faqs: { question: string; answer: string; category: string }[] = [];
-    
-    // Build FAQ answers from combined data
-    const faqAnswers: Record<string, string> = {
-        'Урьдчилгаа хэд вэ?': `Бэлэн бүтээгдэхүүнд ${percentToStr(payment[1]?.[2])}, захиалгын бүтээгдэхүүнд ${percentToStr(payment[1]?.[3])} урьдчилгаа төлнө.`,
-        'Зээлийн хүү хэд вэ?': `Жилийн ${percentToStr(loan[2]?.[2])} хүүтэй. Голомт банктай хамтарч ажилладаг. Ипотек болон ногоон зээлийн аль алиных нь нөхцөл байна.`,
-        'Хэзээ хүлээлгэж өгөх вэ?': `${projData[9]?.[2] || '2030'} он. Одоогийн барилгын явц ${percentToStr(projData[10]?.[2])}.`,
-        'Бэлнээр авахад хөнгөлөлт бий юу?': `Захиалгын бүтээгдэхүүнд ${percentToStr(payment[4]?.[3])} хөнгөлөлттэй. Мөн эрт захиалгын ${percentToStr(payment[6]?.[3])} хөнгөлөлт байна.`,
-        'Паркинг үнэгүй юу?': `Үгүй, паркинг тусдаа ${parking[1]?.[2] || '50,000,000-57,000,000'}₮ үнэтэй. Нийт ${parking[2]?.[2] || 1080} зогсоолтой.`,
-        'Үзлэг хэрхэн товлох вэ?': 'Та манай борлуулалтын менежертэй холбогдож үзлэг товлох боломжтой. Борлуулалтын оффис Яармаг, Арцатын ам, Мандала Гарден байрлалд байрлана.',
-        'Ямар банктай хамтарч ажилладаг вэ?': `${loan[1]?.[2] || 'Голомт банк'}. Ипотек, ногоон зээлийн аль аль нь боломжтой.`,
-        'Давхар солих боломжтой юу?': 'Гэрээний нөхцлөөс хамааран давхар солих боломжтой.',
-        'Ямар материалаар барьсан бэ?': 'Эрчим хүчний хэмнэлттэй, дулаан алдагдал багатай шийдлээр баригдсан.',
-        'Дотор засал хийгдсэн үү?': 'Бэлэн бүтээгдэхүүнд дотор засал хийгдсэн байна.',
-    };
-    
-    for (let i = 1; i < faqSheet.length; i++) {
-        const q = faqSheet[i]?.[1];
-        if (!q) continue;
-        const answer = faqAnswers[q] || faqSheet[i]?.[2]?.toString() || faqSheet[i]?.[3]?.toString() || '';
-        if (answer) {
-            faqs.push({ question: q, answer, category: 'general' });
-        }
-    }
-    
-    return { knowledge, faqs };
+    k['mandala_contacts'] = [
+        `Борлуулалтын менежерүүд:`,
+        ...managers.map(m => `  - ${m}`),
+        ``,
+        `Ажлын цаг: ${workHours || '09:00-18:00'}`,
+        `Шоурум: ${showroom || 'Яармаг, Арцатын ам, Мандала Гарден борлуулалтын оффис'}`,
+        specialOffer ? `Онцгой нөхцөл: ${specialOffer}` : '',
+    ].filter(Boolean).join('\n');
+
+    // FAQs — Mandala FAQ sheet has bare answers (numbers), so synthesize from full data.
+    const faqs: Array<{ question: string; answer: string }> = [
+        { question: 'Mandala Garden хаана байрлах вэ?', answer: `${s(proj[2]?.[2])}. Дүүрэг: ${s(proj[3]?.[2])}.` },
+        { question: 'Mandala Garden урьдчилгаа хэд вэ?', answer: `Бэлэн бүтээгдэхүүнд ${pct(payment[1]?.[2])}, захиалгын бүтээгдэхүүнд ${pct(payment[1]?.[3])}.` },
+        { question: 'Mandala Garden зээлийн хүү хэд вэ?', answer: `Жилийн ${pct(loan[2]?.[2])}. Голомт банктай хамтарч ажилладаг. Ипотек болон ногоон зээлийн нөхцөл бий.` },
+        { question: 'Mandala Garden хэзээ хүлээлгэж өгөх вэ?', answer: `${s(proj[9]?.[2]) || '2030'} он. Барилгын явц одоогоор ${pct(proj[10]?.[2])}.` },
+        { question: 'Mandala Garden бэлнээр авахад хөнгөлөлт байна уу?', answer: `Захиалгын бүтээгдэхүүнд ${pct(payment[4]?.[3])} бэлний хөнгөлөлт. Эрт захиалгын ${pct(payment[6]?.[3])} нэмэлт хөнгөлөлт.` },
+        { question: 'Mandala Garden паркинг үнэгүй юу?', answer: `Үгүй, паркинг тусдаа ${s(parking[1]?.[2]) || '50-57 сая'}₮ үнэтэй. Нийт ${s(parking[2]?.[2]) || '1080'} газар доорх + 749 гадна зогсоолтой.` },
+        { question: 'Mandala Garden үзлэг хэрхэн товлох вэ?', answer: `Манай борлуулалтын менежертэй холбогдож үзлэг товлоно. Шоурум: Яармаг, Арцатын ам, Мандала Гарден борлуулалтын оффис.` },
+        { question: 'Mandala Garden ямар банктай хамтарч ажилладаг вэ?', answer: `${s(loan[1]?.[2]) || 'Голомт банк'}. Ипотек болон ногоон зээлийн аль аль нь боломжтой.` },
+        { question: 'Mandala Garden давхар солих боломжтой юу?', answer: 'Гэрээний нөхцлөөс хамааран давхар солих боломжтой. Нарийвчилсан нөхцлөө борлуулалтын менежерээс асууна уу.' },
+        { question: 'Mandala Garden ямар материалаар барьсан бэ?', answer: 'Эрчим хүчний хэмнэлттэй, дулаан алдагдал багатай шийдлээр баригдсан.' },
+        { question: 'Mandala Garden дотор засал хийгдсэн үү?', answer: 'Бэлэн бүтээгдэхүүнд дотор засал хийгдсэн байна. Захиалгын бүтээгдэхүүний нөхцлийг гэрээгээр тохирно.' },
+    ];
+
+    return { knowledge: k, faqs };
 }
 
 // ============================================
-// ELYSIUM — Knowledge Builder  
+// ELYSIUM — knowledge builder
 // ============================================
 
-function buildElysiumKnowledge(): { knowledge: string; faqs: { question: string; answer: string; category: string }[] } {
-    const wb = XLSX.readFile(path.resolve(__dirname, '../Elysium CRM орох мэдээлэл.xlsx'));
-    
-    let knowledge = '';
-    
-    // --- Төслийн мэдээлэл ---
-    const projData = readSheet(wb, 'Төслийн мэдээлэл');
-    knowledge += `## Elysium Residence — Төслийн мэдээлэл\n\n`;
-    knowledge += `- **Төслийн нэр:** ${projData[1]?.[2] || 'Elysium Residence бизнес зэрэглэлийн орон сууц'}\n`;
-    knowledge += `- **Байршил:** ${projData[2]?.[2] || ''}\n`;
-    knowledge += `- **Дүүрэг:** ${projData[3]?.[2] || 'Хан-Уул дүүрэг'}\n`;
-    knowledge += `- **GPS:** ${projData[4]?.[2] || ''}\n`;
-    knowledge += `- **Нийт блок:** ${projData[5]?.[2] || ''}\n`;
-    knowledge += `- **Давхарын тоо:** ${projData[6]?.[2] || ''}\n`;
-    knowledge += `- **Нийт байрны тоо:** ${projData[7]?.[2] || ''}\n`;
-    knowledge += `- **Баригдаж эхэлсэн:** ${projData[8]?.[2] || ''}\n`;
-    knowledge += `- **Хүлээлгэж өгөх:** ${projData[9]?.[2] || '2027 оны 2-р улирал'}\n`;
-    knowledge += `- **Барилгын явц:** ${percentToStr(projData[10]?.[2])}\n`;
-    knowledge += `- **Тайлбар:** ${projData[11]?.[2] || ''}\n\n`;
-    
-    // --- Онцлог ---
-    const features = readSheet(wb, 'Онцлог Тохилог давуу тал ');
-    knowledge += `## Онцлог, давуу талууд\n\n`;
-    for (let i = 1; i < features.length; i++) {
-        const row = features[i];
-        if (!row[1]) continue;
-        const status = (row[2] || '').toString().trim();
-        const detail = row[3] ? ` — ${row[3]}` : '';
-        knowledge += `- ${row[1]}: ${status}${detail}\n`;
-    }
-    knowledge += '\n';
-    
-    // --- Ойр орчин ---
-    const nearby = readSheet(wb, 'Ойр орчмын мэдээлэл ');
-    knowledge += `## Ойр орчмын байгууллагууд\n\n`;
-    for (let i = 1; i < nearby.length; i++) {
-        const row = nearby[i];
-        if (!row[1]) continue;
-        const dist = row[2] ? ` — ${row[2]}` : '';
-        knowledge += `- ${row[1]}${dist}\n`;
-    }
-    knowledge += '\n';
-    
-    // --- Төлбөр ---
-    const payment = readSheet(wb, 'Төлбөрийн мэдээлэл');
-    knowledge += `## Төлбөрийн нөхцөл\n\n`;
-    knowledge += `### Бэлэн бүтээгдэхүүн\n`;
-    knowledge += `- Урьдчилгаа: ${percentToStr(payment[1]?.[2])}\n`;
-    knowledge += `- Хэсэгчилсэн төлбөр: ${payment[2]?.[2] || 'Үгүй'}\n\n`;
-    knowledge += `### Захиалгын бүтээгдэхүүн\n`;
-    knowledge += `- Урьдчилгаа: ${payment[1]?.[3] || '10-30%, 30%, 50%'}\n`;
-    knowledge += `- Хэсэгчилсэн төлбөр: ${payment[2]?.[3] || 'Тийм'}\n`;
-    knowledge += `- Хэсэг төлөх хугацаа: ${payment[3]?.[3] || 'Ашиглалтад орох хүртэл'}\n`;
-    knowledge += `- Эрт захиалгын хөнгөлөлт: ${payment[6]?.[3] || 'Урьдчилгаанаас хамаарсан'}\n\n`;
-    
-    // --- Буцаалт ---
-    const refund = readSheet(wb, 'Буцаалтын бодлого');
-    knowledge += `## Буцаалтын бодлого\n\n`;
-    knowledge += `- Шимтгэл: ${percentToStr(refund[3]?.[2])}\n`;
-    knowledge += `- Гэрээ цуцлах нөхцөл: ${refund[4]?.[2] || ''}\n\n`;
-    
-    // --- Нэмэлт ---
-    const extra = readSheet(wb, 'Нэмэлт мэдээлэл ');
-    knowledge += `## Холбоо барих\n\n`;
-    knowledge += `### Борлуулалтын менежерүүд:\n`;
-    for (let i = 1; i < extra.length; i++) {
-        const row = extra[i];
-        if (row[2] && row[3]) {
-            knowledge += `- ${row[2]}: ${row[3]}\n`;
-        }
-        if (row[1] === 2) knowledge += `\n- **Ажлын цаг:** ${row[2]}\n`;
-        if (row[1] === 3) knowledge += `- **Борлуулалтын алба:** ${row[2]}\n`;
-        if (row[1] === 5 && row[2]) knowledge += `- **Онцгой нөхцөл:** ${row[2]}\n`;
-    }
-    knowledge += '\n';
-    
-    // --- Худалдаанд бүтээгдэхүүн ---
-    const products = readSheet(wb, 'Нийт худалдаанд бүтээгдэхүүн ');
-    knowledge += `## Худалдаанд байгаа бүтээгдэхүүнүүд\n\n`;
+interface ElysiumUnit {
+    block: string;
+    floor: string;
+    code: string;          // E-1 / E-2 / ...
+    sizeSqm: number;
+    rooms: number;
+    rawText: string;
+}
+
+function parseElysiumUnits(rows: Row[]): ElysiumUnit[] {
+    const units: ElysiumUnit[] = [];
     let currentBlock = '';
-    for (let i = 2; i < products.length; i++) {
-        const row = products[i];
-        if (row[0]) currentBlock = row[0];
-        if (!row[2]) continue;
-        const floorStr = row[1] ? `${row[1]}-р давхар` : '';
-        knowledge += `- ${currentBlock} блок, ${floorStr}: ${row[2]}\n`;
+    // skip first 2 rows (title + header)
+    for (let i = 2; i < rows.length; i++) {
+        const r = rows[i];
+        if (s(r[0])) currentBlock = s(r[0]);
+        const text = s(r[2]);
+        if (!text) continue;
+        // normalize Cyrillic Е/cyrillic е (U+0415/U+0435) → Latin E (Elysium uses both)
+        const normalizedText = text.replace(/[Ее]/g, 'E').replace(/\s+/g, ' ').trim();
+        const m = normalizedText.match(/^([A-Z]-\d+)\s+([\d.]+)\s*мкв\s+(\d+)\s*өрөө/);
+        if (!m) continue;
+        units.push({
+            block: currentBlock,
+            floor: s(r[1]),
+            code: m[1],
+            sizeSqm: parseFloat(m[2]),
+            rooms: parseInt(m[3], 10),
+            rawText: normalizedText,
+        });
     }
-    knowledge += '\n';
-    
-    // --- FAQs ---
+    return units;
+}
+
+function buildElysium(): Built & { units: ElysiumUnit[] } {
+    const wb = XLSX.readFile(path.resolve(__dirname, '../Elysium CRM орох мэдээлэл.xlsx'));
+
+    const proj = readSheet(wb, 'Төслийн мэдээлэл');
+    const features = readSheet(wb, 'Онцлог Тохилог давуу тал ');
+    const nearby = readSheet(wb, 'Ойр орчмын мэдээлэл ');
+    const payment = readSheet(wb, 'Төлбөрийн мэдээлэл');
+    const refund = readSheet(wb, 'Буцаалтын бодлого');
+    const extra = readSheet(wb, 'Нэмэлт мэдээлэл ');
+    const products = readSheet(wb, 'Нийт худалдаанд бүтээгдэхүүн ');
     const faqSheet = readSheet(wb, 'FAQ Заавал бичих ');
-    const faqs: { question: string; answer: string; category: string }[] = [];
-    
-    for (let i = 1; i < faqSheet.length; i++) {
-        const q = faqSheet[i]?.[1];
-        const a = faqSheet[i]?.[2];
-        if (!q || !a) continue;
-        faqs.push({ question: q, answer: a.toString(), category: 'general' });
+
+    const k: Record<string, string> = {};
+
+    k['elysium_overview'] = [
+        `Төслийн нэр: ${s(proj[1]?.[2]) || 'Elysium Residence'}`,
+        `Байршил: ${s(proj[2]?.[2])}`,
+        `Дүүрэг: ${s(proj[3]?.[2])}`,
+        `GPS: ${s(proj[4]?.[2])}`,
+        `Нийт блок: ${s(proj[5]?.[2])}`,
+        `Давхарын тоо (блок тус бүр): ${s(proj[6]?.[2])}`,
+        `Нийт байрны тоо: ${s(proj[7]?.[2])}`,
+        `Баригдаж эхэлсэн он: ${s(proj[8]?.[2])}`,
+        `Хүлээлгэж өгөх: ${s(proj[9]?.[2]) || '2027'} (2-р улирал)`,
+        `Барилгын явц: ${pct(proj[10]?.[2])}`,
+        `Тайлбар: ${s(proj[11]?.[2])}`,
+    ].join('\n');
+
+    k['elysium_amenities'] = features.slice(1)
+        .filter(r => s(r[1]))
+        .map(r => `- ${s(r[1])}: ${yn(r[2]) ? 'тийм' : 'үгүй'}${s(r[3]) ? ` — ${s(r[3])}` : ''}`)
+        .join('\n');
+
+    // Elysium nearby has section headers (rows where col[0] is null but col[1] is set).
+    // Render those as "## category" lines.
+    k['elysium_nearby'] = nearby.slice(1)
+        .filter(r => s(r[1]))
+        .map(r => {
+            if (r[0] == null && s(r[1]) && !s(r[2])) {
+                return `\n[${s(r[1])}]`;
+            }
+            return `- ${s(r[1])}${s(r[2]) ? ` — ${s(r[2])}` : ''}`;
+        })
+        .join('\n')
+        .trim();
+
+    k['elysium_payment'] = [
+        `БЭЛЭН БҮТЭЭГДЭХҮҮН:`,
+        `  - Урьдчилгаа: ${pct(payment[1]?.[2])}`,
+        `  - Хэсэгчилсэн төлбөр: ${s(payment[2]?.[2]) || 'үгүй'}`,
+        ``,
+        `ЗАХИАЛГЫН БҮТЭЭГДЭХҮҮН:`,
+        `  - Урьдчилгаа: ${s(payment[1]?.[3]) || '10-30%, 30%, 50%'}`,
+        `  - Хэсэгчилсэн төлбөр: ${s(payment[2]?.[3]) || 'тийм'}`,
+        `  - Хэсэг төлөх хугацаа: ${s(payment[3]?.[3]) || 'Ашиглалтад орох хүртэл'}`,
+        `  - Эрт захиалгын хөнгөлөлт: ${s(payment[6]?.[3]) || 'Урьдчилгаанаас хамаарсан'}`,
+    ].join('\n');
+
+    k['elysium_loan'] = [
+        `Хамтрагч банкууд: Хаан банк, Голомт банк`,
+        `Зээлийн хүү: Тухайн жилийн банкны ханшаар. Одоогоор Хаан банкны энгийн зээл сарын 1.54%, ногоон зээл сарын 1.35-1.4%.`,
+        `Зээлийн хугацаа: 15-20 жил`,
+        `Ипотекийн зээл: тийм`,
+        `Ногоон зээл: тийм`,
+    ].join('\n');
+
+    k['elysium_refund'] = [
+        `Шимтгэл суутгал: ${pct(refund[3]?.[2])}`,
+        `Гэрээ цуцлах нөхцөл: ${s(refund[4]?.[2])}`,
+    ].join('\n');
+
+    // Contacts
+    const managers: string[] = [];
+    let workHours = '';
+    let showroom = '';
+    let specialOffer = '';
+    for (const row of extra.slice(1)) {
+        const idx = row[0];
+        if (idx == null && s(row[1]) && s(row[2])) {
+            managers.push(`${s(row[1])}: ${s(row[2])}`);
+        } else if (idx === 1 && s(row[1]) && s(row[2])) {
+            managers.push(`${s(row[1])}: ${s(row[2])}`);
+        } else if (idx === 2) {
+            workHours = s(row[1]);
+        } else if (idx === 3) {
+            showroom = s(row[1]);
+        } else if (idx === 5) {
+            specialOffer = s(row[1]);
+        }
     }
-    
-    return { knowledge, faqs };
+    k['elysium_contacts'] = [
+        `Борлуулалтын менежерүүд:`,
+        ...managers.map(m => `  - ${m}`),
+        ``,
+        `Ажлын цаг: ${workHours || '09:00-18:00'}`,
+        `Борлуулалтын алба: ${showroom || 'Үндэсний цэцэрлэгт хүрээлэнгийн баруун хойно, 360 Мандала Тауэр'}`,
+        specialOffer ? `Онцгой нөхцөл: ${specialOffer}` : '',
+        `Уулзалт товлох линк: https://lnk.elysium.mn/appointment`,
+    ].filter(Boolean).join('\n');
+
+    // Units list (also imported as properties below)
+    const units = parseElysiumUnits(products);
+    k['elysium_units'] = [
+        `Худалдаанд байгаа байрны төрлүүд (Block B1, давхар тус бүр давтагдана):`,
+        ...units.map(u => `- Блок ${u.block} ${u.floor}-р давхар: ${u.code}, ${u.sizeSqm}м², ${u.rooms} өрөө`),
+        ``,
+        `Жич: үнийн талаар манай борлуулалтын менежертэй холбогдоно уу.`,
+    ].join('\n');
+
+    // FAQs — Elysium FAQ sheet has real answers; use them directly.
+    const faqs: Array<{ question: string; answer: string }> = [];
+    for (const row of faqSheet.slice(1)) {
+        const q = s(row[1]);
+        const a = s(row[2]);
+        if (q && a) {
+            faqs.push({ question: `Elysium ${q}`, answer: a });
+        }
+    }
+
+    return { knowledge: k, faqs, units };
 }
 
 // ============================================
-// MAIN — Import to Supabase
+// MAIN
 // ============================================
 
 async function main() {
-    console.log('🔍 Мэдээлэл уншиж байна...\n');
-    
-    // 1. Get shops
+    console.log('🔍 Парс хийж эхэллээ...\n');
+
+    const mandala = buildMandalaGarden();
+    const elysium = buildElysium();
+
+    const combinedKnowledge: Record<string, string> = {
+        ...mandala.knowledge,
+        ...elysium.knowledge,
+    };
+    const allFaqs = [...mandala.faqs, ...elysium.faqs];
+
+    const knowledgeBytes = JSON.stringify(combinedKnowledge).length;
+    console.log(`📝 Mandala: ${Object.keys(mandala.knowledge).length} key, ${mandala.faqs.length} FAQ`);
+    console.log(`📝 Elysium: ${Object.keys(elysium.knowledge).length} key, ${elysium.faqs.length} FAQ, ${elysium.units.length} unit`);
+    console.log(`📝 Нийт custom_knowledge: ${Object.keys(combinedKnowledge).length} key, ${knowledgeBytes} bytes\n`);
+
+    // Pick target shop (first by created_at, per user decision)
     const { data: shops, error: shopErr } = await supabase
         .from('shops')
-        .select('id, name')
-        .order('created_at', { ascending: true });
-    
+        .select('id, name, created_at')
+        .order('created_at', { ascending: true })
+        .limit(1);
+
     if (shopErr || !shops?.length) {
         console.error('❌ Shop олдсонгүй:', shopErr);
         process.exit(1);
     }
-    
-    console.log('📦 Олдсон shop-ууд:');
-    shops.forEach((s, i) => console.log(`  ${i + 1}. ${s.name} (${s.id})`));
-    console.log('');
-    
-    // Build knowledge for both projects
-    const mandala = buildMandalaGardenKnowledge();
-    const elysium = buildElysiumKnowledge();
-    
-    // Combine all knowledge
-    const combinedKnowledge = [mandala.knowledge, elysium.knowledge].join('\n---\n\n');
-    const allFaqs = [...mandala.faqs, ...elysium.faqs];
-    
-    console.log(`📝 Mandala Garden: ${mandala.knowledge.length} тэмдэгт, ${mandala.faqs.length} FAQ`);
-    console.log(`📝 Elysium: ${elysium.knowledge.length} тэмдэгт, ${elysium.faqs.length} FAQ`);
-    console.log(`📝 Нийт: ${combinedKnowledge.length} тэмдэгт, ${allFaqs.length} FAQ\n`);
-    
-    // Use first shop (or specify)
     const targetShop = shops[0];
     console.log(`🎯 Target shop: ${targetShop.name} (${targetShop.id})\n`);
-    
-    // 2. Update custom_knowledge on shop
-    const { error: updateErr } = await supabase
+
+    // 1) custom_knowledge — whole-object replace (NOT merge — old keys with raw markdown blob would linger)
+    const { error: knowledgeErr } = await supabase
         .from('shops')
         .update({ custom_knowledge: combinedKnowledge })
         .eq('id', targetShop.id);
-    
-    if (updateErr) {
-        console.error('❌ custom_knowledge шинэчлэх алдаа:', updateErr);
-    } else {
-        console.log('✅ custom_knowledge шинэчлэгдлээ');
+    if (knowledgeErr) {
+        console.error('❌ custom_knowledge:', knowledgeErr);
+        process.exit(1);
     }
-    
-    // 3. Insert FAQs (clear existing first)
-    const { error: deleteErr } = await supabase
+    console.log(`✅ custom_knowledge шинэчлэгдлээ (${Object.keys(combinedKnowledge).length} key)`);
+
+    // 2) shop_faqs — clear + bulk insert
+    const { error: deleteFaqErr } = await supabase
         .from('shop_faqs')
         .delete()
         .eq('shop_id', targetShop.id);
-    
-    if (deleteErr) {
-        console.error('⚠️ Хуучин FAQ устгах алдаа:', deleteErr);
-    }
-    
-    const faqInserts = allFaqs.map((faq, i) => ({
+    if (deleteFaqErr) console.warn('⚠️ Хуучин FAQ устгахад алдаа:', deleteFaqErr);
+
+    const faqInserts = allFaqs.map((f, i) => ({
         shop_id: targetShop.id,
-        question: faq.question,
-        answer: faq.answer,
-        category: faq.category,
+        question: f.question,
+        answer: f.answer,
+        category: 'general',
+        is_active: true,
         sort_order: i,
     }));
-    
     const { data: insertedFaqs, error: faqErr } = await supabase
         .from('shop_faqs')
         .insert(faqInserts)
-        .select('id, question');
-    
+        .select('id');
     if (faqErr) {
-        console.error('❌ FAQ оруулах алдаа:', faqErr);
-    } else {
-        console.log(`✅ ${insertedFaqs?.length || 0} FAQ оруулагдлаа:`);
-        insertedFaqs?.forEach(f => console.log(`   - ${f.question}`));
+        console.error('❌ FAQ insert:', faqErr);
+        process.exit(1);
     }
-    
+    console.log(`✅ ${insertedFaqs?.length || 0} FAQ оруулагдлаа`);
+
+    // 3) Elysium properties — clear + bulk insert (idempotent on `name LIKE 'Elysium %'`)
+    const { error: deletePropErr } = await supabase
+        .from('properties')
+        .delete()
+        .eq('shop_id', targetShop.id)
+        .like('name', 'Elysium %');
+    if (deletePropErr) console.warn('⚠️ Хуучин Elysium байр устгахад алдаа:', deletePropErr);
+
+    const propertyInserts = elysium.units.map(u => ({
+        shop_id: targetShop.id,
+        name: `Elysium ${u.code} (Блок ${u.block}, давхар ${u.floor}, ${u.sizeSqm}м², ${u.rooms} өрөө)`,
+        description: `Elysium Residence бизнес зэрэглэлийн орон сууц. Блок ${u.block}, ${u.floor}-р давхар. Талбай ${u.sizeSqm}м², ${u.rooms} өрөө. 2027 оны 2-р улиралд хүлээлгэж өгнө. Үнийн талаар борлуулалтын менежертэй холбогдоно уу.`,
+        type: 'apartment',
+        price: 0,
+        currency: 'MNT',
+        size_sqm: u.sizeSqm,
+        rooms: u.rooms,
+        district: 'Хан-Уул',
+        city: 'Улаанбаатар',
+        status: 'available',
+        is_active: true,
+        is_featured: false,
+        features: { project: 'Elysium Residence', block: u.block, floor_label: u.floor, unit_code: u.code },
+    }));
+    const { data: insertedProps, error: propErr } = await supabase
+        .from('properties')
+        .insert(propertyInserts)
+        .select('id');
+    if (propErr) {
+        console.error('❌ Property insert:', propErr);
+        process.exit(1);
+    }
+    console.log(`✅ ${insertedProps?.length || 0} Elysium байр properties-д орлоо`);
+
     console.log('\n🎉 Import дууслаа!');
 }
 
-main().catch(console.error);
+main().catch((e) => {
+    console.error('❌ Үндсэн алдаа:', e);
+    process.exit(1);
+});
