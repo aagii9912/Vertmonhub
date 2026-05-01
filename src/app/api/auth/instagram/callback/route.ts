@@ -29,18 +29,18 @@ export async function GET(request: NextRequest) {
     // Handle error from Facebook
     if (error) {
         const errorReason = searchParams.get('error_reason') || 'Unknown error';
-        return NextResponse.redirect(`${origin}/setup?ig_error=${encodeURIComponent(errorReason)}`);
+        return NextResponse.redirect(`${origin}/marketing/social?ig_error=${encodeURIComponent(errorReason)}`);
     }
 
     if (!code) {
-        return NextResponse.redirect(`${origin}/setup?ig_error=no_code`);
+        return NextResponse.redirect(`${origin}/marketing/social?ig_error=no_code`);
     }
 
     const appId = process.env.FACEBOOK_APP_ID?.trim();
     const appSecret = process.env.FACEBOOK_APP_SECRET?.trim();
 
     if (!appId || !appSecret || appSecret === 'your_facebook_app_secret') {
-        return NextResponse.redirect(`${origin}/setup?ig_error=config_missing`);
+        return NextResponse.redirect(`${origin}/marketing/social?ig_error=config_missing`);
     }
 
     const redirectUri = `${origin}/api/auth/instagram/callback`;
@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
 
         if (tokenData.error) {
             console.error('Instagram token error:', tokenData.error);
-            return NextResponse.redirect(`${origin}/setup?ig_error=token_error`);
+            return NextResponse.redirect(`${origin}/marketing/social?ig_error=token_error`);
         }
 
         const userAccessToken = tokenData.access_token;
@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
 
         if (pagesData.error) {
             console.error('Instagram pages error:', pagesData.error);
-            return NextResponse.redirect(`${origin}/setup?ig_error=pages_error`);
+            return NextResponse.redirect(`${origin}/marketing/social?ig_error=pages_error`);
         }
 
         // Debug: Log all pages data
@@ -89,7 +89,7 @@ export async function GET(request: NextRequest) {
             console.log('Total Facebook Pages:', allPages.length);
             console.log('Pages without IG:', allPages.map((p: any) => ({ id: p.id, name: p.name, hasIG: !!p.instagram_business_account })));
 
-            return NextResponse.redirect(`${origin}/setup?ig_error=no_instagram_account&pages=${allPages.length}`);
+            return NextResponse.redirect(`${origin}/marketing/social?ig_error=no_instagram_account&pages=${allPages.length}`);
         }
 
         // Prepare Instagram accounts data
@@ -118,10 +118,10 @@ export async function GET(request: NextRequest) {
         });
 
         // Redirect back to setup with success
-        return NextResponse.redirect(`${origin}/setup?ig_success=true&ig_count=${instagramAccounts.length}`);
+        return NextResponse.redirect(`${origin}/marketing/social?ig_success=true&ig_count=${instagramAccounts.length}`);
 
     } catch (err) {
         console.error('Instagram OAuth error:', err);
-        return NextResponse.redirect(`${origin}/setup?ig_error=exception`);
+        return NextResponse.redirect(`${origin}/marketing/social?ig_error=exception`);
     }
 }
