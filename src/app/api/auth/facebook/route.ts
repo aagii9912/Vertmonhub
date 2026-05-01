@@ -24,6 +24,14 @@ export async function GET(request: NextRequest) {
     'email'
   ].join(',');
 
+  // Facebook Login for Business config_id is opt-in. We default to standard
+  // Facebook Login because the FB Login for Business flow has its own internal
+  // domain whitelist that returns "Can't load URL" if the redirect_uri isn't
+  // explicitly tied to the configured business asset, and the standard flow
+  // works with just App Domains. To re-enable FB Login for Business set BOTH:
+  //   FACEBOOK_LOGIN_USE_CONFIG=true
+  //   FACEBOOK_LOGIN_CONFIG_ID=<configuration_id>
+  const useConfig = process.env.FACEBOOK_LOGIN_USE_CONFIG?.trim().toLowerCase() === 'true';
   const configId = process.env.FACEBOOK_LOGIN_CONFIG_ID?.trim();
 
   // Build Facebook OAuth URL
@@ -31,7 +39,7 @@ export async function GET(request: NextRequest) {
   fbAuthUrl.searchParams.set('client_id', appId);
   fbAuthUrl.searchParams.set('redirect_uri', redirectUri);
   fbAuthUrl.searchParams.set('scope', permissions);
-  if (configId) {
+  if (useConfig && configId) {
     fbAuthUrl.searchParams.set('config_id', configId);
   }
   fbAuthUrl.searchParams.set('response_type', 'code');
