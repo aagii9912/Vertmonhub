@@ -12,14 +12,14 @@ export async function GET(request: NextRequest) {
   const origin = request.nextUrl.origin;
   const redirectUri = `${origin}/api/auth/facebook/callback`;
 
-  // Phase 1: read-only scopes — list user's pages and read posts/engagement.
-  // No messaging, no metadata writes (those come in Phase 2 with the chatbot).
-  // read_insights is gated by App Review and not in standard access, so we
-  // skip it for now — the marketing/insights endpoint will degrade gracefully
-  // when the permission isn't granted.
+  // Phase 2 scopes — list pages, read engagement, send DMs, subscribe webhooks.
+  // `pages_messaging` + `pages_manage_metadata` require Meta App Review approval
+  // before they can be granted on a Live app.
   const permissions = [
     'pages_show_list',
     'pages_read_engagement',
+    'pages_messaging',
+    'pages_manage_metadata',
     'public_profile',
     'email'
   ].join(',');
