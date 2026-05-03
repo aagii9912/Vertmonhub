@@ -5,7 +5,7 @@
 
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
-import { sendImage, sendImageGallery } from '@/lib/facebook/messenger';
+import { sendImage, sendImageGallery, appsecretProof } from '@/lib/facebook/messenger';
 import { generateCommentReply } from '@/lib/ai/comment-detector';
 import type { AIFAQ, AIQuickReply, AISlogan, NotifySettings, ChatMessage as AIChatMessage } from '@/types/ai';
 import { IntentResult } from '@/lib/ai/intent-detector';
@@ -274,8 +274,10 @@ export async function getOrCreateInstagramCustomer(
  */
 async function fetchInstagramUserName(userId: string, accessToken: string): Promise<string | null> {
     try {
+        const proof = appsecretProof(accessToken);
+        const proofParam = proof ? `&appsecret_proof=${proof}` : '';
         const response = await fetch(
-            `https://graph.facebook.com/v21.0/${userId}?fields=username,name&access_token=${accessToken}`
+            `https://graph.facebook.com/v21.0/${userId}?fields=username,name&access_token=${accessToken}${proofParam}`
         );
         if (response.ok) {
             const data = await response.json();
@@ -292,8 +294,10 @@ async function fetchInstagramUserName(userId: string, accessToken: string): Prom
  */
 async function fetchFacebookUserName(userId: string, accessToken: string): Promise<string | null> {
     try {
+        const proof = appsecretProof(accessToken);
+        const proofParam = proof ? `&appsecret_proof=${proof}` : '';
         const response = await fetch(
-            `https://graph.facebook.com/v21.0/${userId}?fields=first_name,last_name,name&access_token=${accessToken}`
+            `https://graph.facebook.com/v21.0/${userId}?fields=first_name,last_name,name&access_token=${accessToken}${proofParam}`
         );
         if (response.ok) {
             const data = await response.json();
@@ -567,14 +571,15 @@ export async function replyToComment(
     const replyMessage = generateCommentReply(shopName, pageUsername || undefined);
 
     try {
+        const proof = appsecretProof(pageAccessToken);
+        const proofParam = proof ? `&appsecret_proof=${proof}` : '';
         const response = await fetch(
-            `https://graph.facebook.com/v21.0/${commentId}/comments`,
+            `https://graph.facebook.com/v21.0/${commentId}/comments?access_token=${pageAccessToken}${proofParam}`,
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     message: replyMessage,
-                    access_token: pageAccessToken,
                 }),
             }
         );

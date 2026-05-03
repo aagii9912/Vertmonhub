@@ -1,4 +1,22 @@
+import crypto from 'crypto';
+
 const GRAPH_API_URL = 'https://graph.facebook.com/v21.0';
+
+// Meta recommends signing every Graph API call with appsecret_proof when the
+// "Require App Secret Proof for Server API calls" toggle is on. Returns null
+// when FACEBOOK_APP_SECRET is not configured, in which case the param is
+// omitted (Meta accepts the call so long as the toggle is off).
+export function appsecretProof(token: string): string | null {
+    const secret = process.env.FACEBOOK_APP_SECRET;
+    if (!secret) return null;
+    return crypto.createHmac('sha256', secret).update(token).digest('hex');
+}
+
+function buildSendUrl(pageAccessToken: string): string {
+    const proof = appsecretProof(pageAccessToken);
+    const base = `${GRAPH_API_URL}/me/messages?access_token=${pageAccessToken}`;
+    return proof ? `${base}&appsecret_proof=${proof}` : base;
+}
 
 interface SendMessageOptions {
     recipientId: string;
@@ -23,7 +41,7 @@ export async function sendSenderAction(
     pageAccessToken: string
 ) {
     try {
-        const response = await fetch(`${GRAPH_API_URL}/me/messages?access_token=${pageAccessToken}`, {
+        const response = await fetch(buildSendUrl(pageAccessToken), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -41,7 +59,7 @@ export async function sendSenderAction(
 }
 
 export async function sendTextMessage({ recipientId, message, pageAccessToken }: SendMessageOptions) {
-    const response = await fetch(`${GRAPH_API_URL}/me/messages?access_token=${pageAccessToken}`, {
+    const response = await fetch(buildSendUrl(pageAccessToken), {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -68,7 +86,7 @@ export async function sendMessageWithQuickReplies({
     quickReplies,
     pageAccessToken,
 }: SendMessageWithQuickRepliesOptions) {
-    const response = await fetch(`${GRAPH_API_URL}/me/messages?access_token=${pageAccessToken}`, {
+    const response = await fetch(buildSendUrl(pageAccessToken), {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -101,7 +119,7 @@ export async function sendProductCard({
     product: { name: string; description: string; price: number; imageUrl?: string };
     pageAccessToken: string;
 }) {
-    const response = await fetch(`${GRAPH_API_URL}/me/messages?access_token=${pageAccessToken}`, {
+    const response = await fetch(buildSendUrl(pageAccessToken), {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -158,7 +176,7 @@ export async function sendImage({
     imageUrl: string;
     pageAccessToken: string;
 }) {
-    const response = await fetch(`${GRAPH_API_URL}/me/messages?access_token=${pageAccessToken}`, {
+    const response = await fetch(buildSendUrl(pageAccessToken), {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -233,7 +251,7 @@ export async function sendImageGallery({
             ],
     }));
 
-    const response = await fetch(`${GRAPH_API_URL}/me/messages?access_token=${pageAccessToken}`, {
+    const response = await fetch(buildSendUrl(pageAccessToken), {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
