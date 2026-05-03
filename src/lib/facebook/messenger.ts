@@ -1,4 +1,4 @@
-const GRAPH_API_URL = 'https://graph.facebook.com/v18.0';
+const GRAPH_API_URL = 'https://graph.facebook.com/v21.0';
 
 interface SendMessageOptions {
     recipientId: string;
@@ -48,6 +48,7 @@ export async function sendTextMessage({ recipientId, message, pageAccessToken }:
         },
         body: JSON.stringify({
             recipient: { id: recipientId },
+            messaging_type: 'RESPONSE',
             message: { text: message },
         }),
     });
@@ -74,6 +75,7 @@ export async function sendMessageWithQuickReplies({
         },
         body: JSON.stringify({
             recipient: { id: recipientId },
+            messaging_type: 'RESPONSE',
             message: {
                 text: message,
                 quick_replies: quickReplies,
@@ -106,6 +108,7 @@ export async function sendProductCard({
         },
         body: JSON.stringify({
             recipient: { id: recipientId },
+            messaging_type: 'RESPONSE',
             message: {
                 attachment: {
                     type: 'template',
@@ -162,6 +165,7 @@ export async function sendImage({
         },
         body: JSON.stringify({
             recipient: { id: recipientId },
+            messaging_type: 'RESPONSE',
             message: {
                 attachment: {
                     type: 'image',
@@ -236,6 +240,7 @@ export async function sendImageGallery({
         },
         body: JSON.stringify({
             recipient: { id: recipientId },
+            messaging_type: 'RESPONSE',
             message: {
                 attachment: {
                     type: 'template',

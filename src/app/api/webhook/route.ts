@@ -93,11 +93,13 @@ export async function POST(request: NextRequest) {
         const rawBody = await request.text();
         const signature = request.headers.get('x-hub-signature-256');
 
-        if (APP_SECRET) {
-            if (!verifyWebhookSignature(rawBody, signature, APP_SECRET)) {
-                logger.warn('Webhook signature verification failed');
-                return NextResponse.json({ error: 'Invalid signature' }, { status: 403 });
-            }
+        if (!APP_SECRET) {
+            logger.error('FACEBOOK_APP_SECRET not configured — refusing webhook');
+            return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 });
+        }
+        if (!verifyWebhookSignature(rawBody, signature, APP_SECRET)) {
+            logger.warn('Webhook signature verification failed');
+            return NextResponse.json({ error: 'Invalid signature' }, { status: 403 });
         }
 
         const body = JSON.parse(rawBody);
