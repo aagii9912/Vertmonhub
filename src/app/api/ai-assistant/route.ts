@@ -7,7 +7,8 @@ import { readTools } from '@/lib/ai/data-assistant/tools';
 import {
     fetchDashboardStats, fetchProperties, fetchLeads,
     fetchSalesSummary, fetchSalesForecast, fetchOrders,
-    fetchCustomerInsights, generateChartConfig,
+    fetchCustomerInsights, fetchContracts, fetchContractDetails,
+    fetchContractsSummary, generateChartConfig,
 } from '@/lib/ai/data-assistant/functions';
 import { resolveApiUser } from '@/lib/auth/resolve-user';
 import { buildDynamicKnowledge, buildFAQs } from '@/lib/ai/services/PromptService';
@@ -46,7 +47,7 @@ const GENERAL_SYSTEM_PROMPT = `Та бол Vertmon Hub-ийн AI Туслах. �
 - Үл хөдлөхийн зах зээлийн чиг хандлага, тренд
 - Ерөнхий бизнесийн зөвлөгөө
 - Mongolian зах зээлд тохирсон маркетинг
-- DB мэдээлэлтэй ажиллах — бодит property, leads, sales data татах
+- DB мэдээлэлтэй ажиллах — бодит property, leads, customers, contracts, sales data татах
 
 МАРКЕТИНГ ТӨЛӨВЛӨГӨӨ бичихдээ:
 - Зорилтот бүлэг → Суваг → Контент → Хуваарь → Төсөв → KPI гэсэн бүтэцтэй
@@ -73,6 +74,9 @@ async function executeGeneralTool(toolName: string, args: any, shopId: string): 
         case 'get_sales_forecast': return await fetchSalesForecast(shopId, args);
         case 'list_orders': return await fetchOrders(shopId, args.status, args.limit || 10);
         case 'get_customer_insights': return await fetchCustomerInsights(shopId, args);
+        case 'list_contracts': return await fetchContracts(shopId, args);
+        case 'get_contract_details': return await fetchContractDetails(shopId, args);
+        case 'get_contracts_summary': return await fetchContractsSummary(shopId, args);
         default: return { error: `Unknown tool: ${toolName}` };
     }
 }

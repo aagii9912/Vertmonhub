@@ -191,17 +191,160 @@ export async function fetchLeadDetails(shopId: string, args: any) {
 
 export async function fetchCustomerInsights(shopId: string, args: any) {
     const limit = args.limit || 10;
+    const customerSelect = 'id, name, phone, email, address, tags, notes, message_count, last_contact_at, created_at, facebook_id, instagram_id';
+
+    // ---- Single-customer details ----
     if (args.customer_id) {
-        const { data: customer } = await supabaseAdmin.from('customers').select('id, name, phone, email, facebook_id, instagram_id, created_at').eq('id', args.customer_id).single();
+        const { data: customer } = await supabaseAdmin.from('customers')
+            .select(customerSelect)
+            .eq('id', args.customer_id).single();
         if (!customer) return { error: 'Харилцагч олдсонгүй' };
-        const { data: orders } = await supabaseAdmin.from('orders').select('id, total_amount, status, created_at').eq('customer_id', args.customer_id).eq('shop_id', shopId).order('created_at', { ascending: false }).limit(10);
-        const { data: leads } = await supabaseAdmin.from('leads').select('id, status, preferred_type, budget_min, budget_max, urgency').eq('customer_id', args.customer_id).eq('shop_id', shopId);
-        return { customer, orders: orders || [], leads: leads || [], totalSpent: orders?.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0) || 0 };
+
+        const { data: leads } = await supabaseAdmin.from('leads')
+            .select('id, status, source, preferred_type, preferred_district, preferred_rooms, budget_min, budget_max, urgency, created_at, last_contact_at')
+            .eq('customer_id', args.customer_id).eq('shop_id', shopId)
+            .order('created_at', { ascending: false });
+
+        // Contracts are denormalized — join by phone (no FK).
+        const { data: contracts } = customer.phone ? await supabaseAdmin.from('property_contracts')
+            .select('id, contract_number, contract_status, unit_label, block_name, total_price, paid_amount, balance, paid_percent, overdue_days, sales_manager, sales_channel, contract_date')
+            .eq('shop_id', shopId).eq('customer_phone', customer.phone)
+            .order('contract_date', { ascending: false }) : { data: [] };
+
+        return { customer, leads: leads || [], contracts: contracts || [] };
     }
-    let query = supabaseAdmin.from('customers').select('id, name, phone, email, created_at').eq('shop_id', shopId).order('created_at', { ascending: false }).limit(limit);
+
+    // ---- Customer list ----
+    let query = supabaseAdmin.from('customers')
+        .select(customerSelect)
+        .eq('shop_id', shopId)
+        .order('created_at', { ascending: false }).limit(limit);
     if (args.customer_name) query = query.ilike('name', `%${args.customer_name}%`);
+    if (args.phone) query = query.ilike('phone', `%${args.phone}%`);
+    if (args.tag) query = query.contains('tags', [args.tag]);
+
     const { data } = await query;
     return { customers: data || [] };
+}
+
+// ============================================
+// PROPERTY CONTRACTS
+// ============================================
+
+const CONTRACT_LIST_FIELDS = 'id, contract_number, contract_status, unit_label, block_name, floor, model, customer_name, customer_phone, total_price, paid_amount, balance, paid_percent, overdue_days, sales_manager, sales_channel, contract_date';
+const CONTRACT_DETAIL_FIELDS = `${CONTRACT_LIST_FIELDS}, customer_first_name, customer_last_name, customer_registration, customer_mobile, product_type, unit_number, unit_type, rooms, contracted_area, price_per_sqm, first_price, payment_condition, prepayment_condition, prepayment_percent, prepayment_due, prepayment_paid, prepayment_paid_cash, prepayment_paid_barter, balance_payment_method, bank_status, barter_status, barter_type, order_date, commissioning_date, hubspot_contact_id, created_at, updated_at`;
+
+export async function fetchContracts(shopId: string, args: any) {
+    const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 100);
+    let query = supabaseAdmin.from('property_contracts')
+        .select(CONTRACT_LIST_FIELDS)
+        .eq('shop_id', shopId)
+        .order('contract_date', { ascending: false, nullsFirst: false })
+        .limit(limit);
+
+    if (args.status) query = query.eq('contract_status', args.status);
+    if (args.customer_search) query = query.or(`customer_name.ilike.%${args.customer_search}%,customer_phone.ilike.%${args.customer_search}%,customer_registration.ilike.%${args.customer_search}%`);
+    if (args.sales_manager) query = query.ilike('sales_manager', `%${args.sales_manager}%`);
+    if (args.sales_channel) query = query.eq('sales_channel', args.sales_channel);
+    if (args.block_name) query = query.ilike('block_name', `%${args.block_name}%`);
+    if (args.contract_number) query = query.ilike('contract_number', `%${args.contract_number}%`);
+    if (args.overdue_only) query = query.gt('overdue_days', 0);
+    if (args.has_balance) query = query.gt('balance', 0);
+
+    const { data, error } = await query;
+    if (error) return { error: `Алдаа: ${error.message}` };
+
+    return {
+        contracts: (data || []).map(c => ({
+            ...c,
+            total_price_fmt: c.total_price != null ? `${Number(c.total_price).toLocaleString()}₮` : '-',
+            paid_amount_fmt: c.paid_amount != null ? `${Number(c.paid_amount).toLocaleString()}₮` : '-',
+            balance_fmt: c.balance != null ? `${Number(c.balance).toLocaleString()}₮` : '-',
+        })),
+        count: data?.length || 0,
+    };
+}
+
+export async function fetchContractDetails(shopId: string, args: any) {
+    let query = supabaseAdmin.from('property_contracts')
+        .select(CONTRACT_DETAIL_FIELDS)
+        .eq('shop_id', shopId)
+        .limit(1);
+
+    if (args.contract_id) query = query.eq('id', args.contract_id);
+    else if (args.contract_number) query = query.eq('contract_number', args.contract_number);
+    else if (args.customer_phone) query = query.eq('customer_phone', args.customer_phone);
+    else return { error: 'contract_id, contract_number эсвэл customer_phone шаардлагатай' };
+
+    const { data, error } = await query.maybeSingle();
+    if (error) return { error: `Алдаа: ${error.message}` };
+    if (!data) return { error: 'Гэрээ олдсонгүй' };
+
+    return {
+        contract: {
+            ...data,
+            total_price_fmt: data.total_price != null ? `${Number(data.total_price).toLocaleString()}₮` : '-',
+            paid_amount_fmt: data.paid_amount != null ? `${Number(data.paid_amount).toLocaleString()}₮` : '-',
+            balance_fmt: data.balance != null ? `${Number(data.balance).toLocaleString()}₮` : '-',
+            first_price_fmt: data.first_price != null ? `${Number(data.first_price).toLocaleString()}₮` : '-',
+            prepayment_due_fmt: data.prepayment_due != null ? `${Number(data.prepayment_due).toLocaleString()}₮` : '-',
+            prepayment_paid_fmt: data.prepayment_paid != null ? `${Number(data.prepayment_paid).toLocaleString()}₮` : '-',
+        },
+    };
+}
+
+export async function fetchContractsSummary(shopId: string, args: any) {
+    let query = supabaseAdmin.from('property_contracts')
+        .select('contract_status, total_price, paid_amount, balance, overdue_days, sales_manager, sales_channel, block_name, product_type')
+        .eq('shop_id', shopId);
+
+    if (args.block_name) query = query.ilike('block_name', `%${args.block_name}%`);
+    if (args.sales_channel) query = query.eq('sales_channel', args.sales_channel);
+
+    const { data, error } = await query;
+    if (error) return { error: `Алдаа: ${error.message}` };
+    if (!data || data.length === 0) return { error: 'Гэрээ олдсонгүй' };
+
+    const totals = data.reduce((acc, c) => {
+        acc.total_price += Number(c.total_price) || 0;
+        acc.paid_amount += Number(c.paid_amount) || 0;
+        acc.balance += Number(c.balance) || 0;
+        if ((Number(c.overdue_days) || 0) > 0) acc.overdue_count++;
+        if (c.contract_status === 'active') acc.active++;
+        if (c.contract_status === 'closed') acc.closed++;
+        return acc;
+    }, { total_price: 0, paid_amount: 0, balance: 0, overdue_count: 0, active: 0, closed: 0 });
+
+    const byManager: Record<string, { count: number; total: number; balance: number }> = {};
+    const byChannel: Record<string, number> = {};
+    const byBlock: Record<string, number> = {};
+    for (const c of data) {
+        if (c.sales_manager) {
+            if (!byManager[c.sales_manager]) byManager[c.sales_manager] = { count: 0, total: 0, balance: 0 };
+            byManager[c.sales_manager].count++;
+            byManager[c.sales_manager].total += Number(c.total_price) || 0;
+            byManager[c.sales_manager].balance += Number(c.balance) || 0;
+        }
+        if (c.sales_channel) byChannel[c.sales_channel] = (byChannel[c.sales_channel] || 0) + 1;
+        if (c.block_name) byBlock[c.block_name] = (byBlock[c.block_name] || 0) + 1;
+    }
+
+    return {
+        count: data.length,
+        active: totals.active,
+        closed: totals.closed,
+        overdue_count: totals.overdue_count,
+        total_contract_value: `${Math.round(totals.total_price).toLocaleString()}₮`,
+        total_collected: `${Math.round(totals.paid_amount).toLocaleString()}₮`,
+        total_outstanding: `${Math.round(totals.balance).toLocaleString()}₮`,
+        collection_rate_pct: totals.total_price > 0 ? Math.round((totals.paid_amount / totals.total_price) * 1000) / 10 : 0,
+        topManagers: Object.entries(byManager)
+            .sort((a, b) => b[1].total - a[1].total)
+            .slice(0, 5)
+            .map(([name, v]) => ({ name, contracts: v.count, total: `${Math.round(v.total).toLocaleString()}₮`, balance: `${Math.round(v.balance).toLocaleString()}₮` })),
+        byChannel,
+        byBlock,
+    };
 }
 
 // ============================================

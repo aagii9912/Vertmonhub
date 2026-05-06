@@ -84,13 +84,56 @@ export const readTools: any[] = [
     },
     {
         name: 'get_customer_insights',
-        description: 'Харилцагчийн мэдээлэл, захиалгын түүх, чатын түүх авах.',
+        description: 'Харилцагчийн мэдээлэл авах. customer_id өгсөн бол тухайн харилцагчийн дэлгэрэнгүй (хаяг, тагууд, тэмдэглэл, мессеж тоо, лийдүүд, гэрээнүүд) буцаана. Үгүй бол жагсаалт буцаана (нэр/утас/тагаар шүүж болно).',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
-                customer_id: { type: SchemaType.STRING, description: 'Харилцагчийн ID' },
-                customer_name: { type: SchemaType.STRING, description: 'Нэрээр хайх' },
+                customer_id: { type: SchemaType.STRING, description: 'Харилцагчийн ID (UUID)' },
+                customer_name: { type: SchemaType.STRING, description: 'Нэрээр хайх (хэсэгчилсэн ч болно)' },
+                phone: { type: SchemaType.STRING, description: 'Утасны дугаараар хайх (хэсэгчилсэн)' },
+                tag: { type: SchemaType.STRING, description: 'Тагаар шүүх. Жишээ: "source:facebook", "interest:apartment", "stage:hot_lead"' },
                 limit: { type: SchemaType.NUMBER, description: 'Хэдэн харилцагч авах (default: 10)' }
+            }
+        }
+    },
+    {
+        name: 'list_contracts',
+        description: 'Үл хөдлөхийн гэрээний (property_contracts) жагсаалт авах. Статус, харилцагч, борлуулагч менежер, төсөл, гэрээний дугаараар шүүж болно. Хугацаа хэтэрсэн (overdue_only) болон үлдэгдэлтэй (has_balance) гэрээг тусгайлан хайх боломжтой.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                status: { type: SchemaType.STRING, enum: ['active', 'closed'], description: 'Гэрээний төлөв (active=идэвхтэй, closed=хаагдсан)' },
+                customer_search: { type: SchemaType.STRING, description: 'Харилцагчийн нэр/утас/регистер дугаараар хайх' },
+                contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар' },
+                sales_manager: { type: SchemaType.STRING, description: 'Борлуулагч менежерийн нэр' },
+                sales_channel: { type: SchemaType.STRING, description: 'Борлуулалтын суваг (ПРОПЕРТИС, БАРТЕР, ТҮРЭЭС гэх мэт)' },
+                block_name: { type: SchemaType.STRING, description: 'Төсөл/блокийн нэр (Mandala Garden, Elysium Б1 г.м.)' },
+                overdue_only: { type: SchemaType.BOOLEAN, description: 'Зөвхөн хугацаа хэтэрсэн гэрээ' },
+                has_balance: { type: SchemaType.BOOLEAN, description: 'Зөвхөн үлдэгдэл төлбөртэй гэрээ' },
+                limit: { type: SchemaType.NUMBER, description: 'Хэдэн гэрээ авах (default: 20, max: 100)' }
+            }
+        }
+    },
+    {
+        name: 'get_contract_details',
+        description: 'Нэг гэрээний бүх мэдээлэл авах: үнийн задаргаа (1-р үнэ, м²-ийн үнэ, нийт, төлсөн, үлдэгдэл), төлбөрийн нөхцөл, урьдчилгаа, гарын үсэг/ашиглалтын огноо, борлуулагч менежер, банкны/бартерын төлөв.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                contract_id: { type: SchemaType.STRING, description: 'Гэрээний ID (UUID)' },
+                contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар' },
+                customer_phone: { type: SchemaType.STRING, description: 'Харилцагчийн утсаар (нэг гэрээ олдоно)' }
+            }
+        }
+    },
+    {
+        name: 'get_contracts_summary',
+        description: 'Бүх гэрээний нэгтгэсэн статистик: нийт гэрээ тоо, идэвхтэй/хаагдсан, нийт үнийн дүн, нийт цуглуулсан, үлдэгдэл, цуглуулалтын хувь, хугацаа хэтэрсэн гэрээ тоо, ТОП-5 менежер, суваг ба төслөөр задаргаа.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                block_name: { type: SchemaType.STRING, description: 'Зөвхөн нэг төслийн статистик' },
+                sales_channel: { type: SchemaType.STRING, description: 'Зөвхөн нэг сувгийн статистик' }
             }
         }
     },
