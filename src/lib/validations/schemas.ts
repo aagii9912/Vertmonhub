@@ -17,6 +17,64 @@ export const CreateLeadSchema = z.object({
     website: z.string().max(0).optional().nullable(),
     // Optional Cloudflare Turnstile token (verified server-side when configured)
     turnstileToken: z.string().max(2048).optional().nullable(),
+    // Attribution (Facebook Ads / UTM)
+    fbclid: z.string().max(500).optional().nullable(),
+    utm_source: z.string().max(255).optional().nullable(),
+    utm_medium: z.string().max(255).optional().nullable(),
+    utm_campaign: z.string().max(255).optional().nullable(),
+    utm_content: z.string().max(255).optional().nullable(),
+    utm_term: z.string().max(255).optional().nullable(),
+    facebook_campaign_id: z.string().max(255).optional().nullable(),
+    facebook_adset_id: z.string().max(255).optional().nullable(),
+    facebook_ad_id: z.string().max(255).optional().nullable(),
+});
+
+// ============================================
+// Property Schemas
+// ============================================
+const PropertyTypeEnum = z.enum(['apartment', 'house', 'office', 'land', 'commercial']);
+const PropertyStatusEnum = z.enum(['available', 'reserved', 'sold', 'rented', 'barter']);
+
+export const CreatePropertySchema = z.object({
+    name: z.string().min(1, 'Нэр шаардлагатай').max(255),
+    description: z.string().max(10000).optional().nullable(),
+    type: PropertyTypeEnum,
+    price: z.number().nonnegative('Үнэ 0-ээс багагүй байх ёстой').max(1e15),
+    price_per_sqm: z.number().nonnegative().max(1e15).optional().nullable(),
+    currency: z.string().max(3).optional().default('MNT'),
+    size_sqm: z.number().nonnegative().max(1e9).optional().nullable(),
+    rooms: z.number().int().nonnegative().max(1000).optional().nullable(),
+    bedrooms: z.number().int().nonnegative().max(1000).optional().nullable(),
+    bathrooms: z.number().int().nonnegative().max(1000).optional().nullable(),
+    floor: z.string().max(20).optional().nullable(),
+    year_built: z.number().int().min(1800).max(2200).optional().nullable(),
+    address: z.string().max(500).optional().nullable(),
+    district: z.string().max(100).optional().nullable(),
+    city: z.string().max(100).optional().default('Ulaanbaatar'),
+    location_lat: z.number().min(-90).max(90).optional().nullable(),
+    location_lng: z.number().min(-180).max(180).optional().nullable(),
+    status: PropertyStatusEnum.optional().default('available'),
+    is_active: z.boolean().optional().default(true),
+    is_featured: z.boolean().optional().default(false),
+    images: z.array(z.string().url().max(2000)).max(50).optional().default([]),
+    video_url: z.string().url().max(2000).optional().nullable(),
+    virtual_tour_url: z.string().url().max(2000).optional().nullable(),
+    features: z.array(z.string().max(100)).max(50).optional().default([]),
+    amenities: z.array(z.string().max(100)).max(50).optional().default([]),
+});
+
+export const UpdatePropertySchema = CreatePropertySchema.partial();
+
+// ============================================
+// Customer Schemas
+// ============================================
+export const CreateCustomerSchema = z.object({
+    name: z.string().min(1, 'Нэр шаардлагатай').max(255),
+    phone: z.string().max(50).optional().nullable(),
+    email: z.string().email('И-мэйл буруу формат').max(255).optional().nullable().or(z.literal('')),
+    address: z.string().max(500).optional().nullable(),
+    notes: z.string().max(10000).optional().nullable(),
+    tags: z.array(z.string().max(100)).max(50).optional(),
 });
 
 // ============================================

@@ -91,7 +91,7 @@ export default function PropertyDetailPage() {
                     <span className={`px-3 py-1 rounded-full text-sm font-medium ${statusColors[property.status]}`}>
                         {statusLabels[property.status]}
                     </span>
-                    <Link href={`/dashboard/properties/new?edit=${property.id}`}
+                    <Link href={`/dashboard/properties/${property.id}/edit`}
                         className="flex items-center gap-1.5 px-3 py-2 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand-strong transition-colors">
                         <Edit className="w-4 h-4" /> Засах
                     </Link>
@@ -241,7 +241,7 @@ export default function PropertyDetailPage() {
                                 className="w-full flex items-center gap-2 px-4 py-2.5 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand-strong transition-colors">
                                 <Eye className="w-4 h-4" /> Лийд харах
                             </Link>
-                            <Link href={`/dashboard/properties/new?edit=${property.id}`}
+                            <Link href={`/dashboard/properties/${property.id}/edit`}
                                 className="w-full flex items-center gap-2 px-4 py-2.5 border border-border rounded-lg text-sm font-medium text-foreground hover:bg-surface-2/40 transition-colors">
                                 <Edit className="w-4 h-4" /> Засварлах
                             </Link>
