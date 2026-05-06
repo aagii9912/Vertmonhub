@@ -136,13 +136,21 @@ export default function PropertiesPage() {
         if (!confirm('Энэ үл хөдлөхийг устгах уу?')) return;
 
         try {
-            const { error } = await supabase.from('properties').delete().eq('id', id);
-            if (error) throw error;
+            const res = await fetch(`/api/properties/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
+                },
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err?.error || 'Устгахад алдаа');
+            }
             setProperties((prev) => prev.filter((p) => p.id !== id));
             toast.success('Үл хөдлөх амжилттай устгагдлаа');
         } catch (error) {
             console.error('Error deleting property:', error);
-            toast.error('Устгахад алдаа гарлаа');
+            toast.error(error instanceof Error ? error.message : 'Устгахад алдаа гарлаа');
         }
     };
 
