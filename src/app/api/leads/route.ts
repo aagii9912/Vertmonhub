@@ -71,7 +71,11 @@ export async function POST(request: NextRequest) {
         const validation = validateBody(CreateLeadSchema, body);
         if (!validation.success) return validation.response;
 
-        const { name, phone, email, company, message, website, turnstileToken } = validation.data;
+        const {
+            name, phone, email, company, message, website, turnstileToken,
+            fbclid, utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+            facebook_campaign_id, facebook_adset_id, facebook_ad_id,
+        } = validation.data;
 
         if (website && website.length > 0) {
             logger.warn('Honeypot triggered on /api/leads', { clientIp });
@@ -116,6 +120,10 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
 Яаралтай байвал ${phone} руу залгаарай!`;
         }
 
+        const inferredSource = facebook_campaign_id || utm_source === 'facebook' || fbclid
+            ? 'facebook_ads'
+            : utm_source || undefined;
+
         const { data, error } = await supabase
             .from('leads')
             .insert([{
@@ -125,6 +133,16 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
                 company,
                 message,
                 ai_response: aiResponse,
+                fbclid: fbclid || null,
+                utm_source: utm_source || null,
+                utm_medium: utm_medium || null,
+                utm_campaign: utm_campaign || null,
+                utm_content: utm_content || null,
+                utm_term: utm_term || null,
+                facebook_campaign_id: facebook_campaign_id || null,
+                facebook_adset_id: facebook_adset_id || null,
+                facebook_ad_id: facebook_ad_id || null,
+                ...(inferredSource ? { source: inferredSource } : {}),
             }])
             .select()
             .single();

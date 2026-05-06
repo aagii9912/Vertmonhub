@@ -12,7 +12,7 @@ export type PropertyStatus = 'available' | 'reserved' | 'sold' | 'rented' | 'bar
 export type LeadStatus = 'new' | 'contacted' | 'viewing_scheduled' | 'offered' | 'negotiating' | 'closed_won' | 'closed_lost';
 
 // Lead source
-export type LeadSource = 'messenger' | 'instagram' | 'website' | 'referral' | 'phone' | 'other';
+export type LeadSource = 'messenger' | 'instagram' | 'website' | 'referral' | 'phone' | 'facebook_ads' | 'google_ads' | 'other';
 
 /**
  * Property Interface
@@ -103,6 +103,17 @@ export interface Lead {
     // CRM Integration
     hubspot_deal_id: string | null;
     hubspot_contact_id: string | null;
+
+    // Attribution (Facebook Ads / UTM)
+    fbclid: string | null;
+    utm_source: string | null;
+    utm_medium: string | null;
+    utm_campaign: string | null;
+    utm_content: string | null;
+    utm_term: string | null;
+    facebook_campaign_id: string | null;
+    facebook_adset_id: string | null;
+    facebook_ad_id: string | null;
 
     // Activity
     last_contact_at: string | null;
