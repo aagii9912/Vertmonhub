@@ -16,6 +16,8 @@ import type {
     CollectContactArgs,
     RequestHumanSupportArgs,
     RememberPreferenceArgs,
+    TagCustomerBehaviorArgs,
+    AppendCustomerNoteArgs,
     CheckPaymentStatusArgs,
     LogServiceRequestArgs,
     ToolName,
@@ -563,6 +565,96 @@ export async function executeRememberPreference(
     };
 }
 
+/**
+ * Execute tag_customer_behavior tool
+ * Merges new behavior tags into customers.tags JSONB array (deduped)
+ */
+export async function executeTagCustomerBehavior(
+    args: TagCustomerBehaviorArgs,
+    context: ToolExecutionContext
+): Promise<ToolExecutionResult> {
+    if (!context.customerId) {
+        return { success: false, error: 'Хэрэглэгчийн мэдээлэл олдсонгүй.' };
+    }
+    if (!Array.isArray(args.tags) || args.tags.length === 0) {
+        return { success: false, error: 'Tag олдсонгүй.' };
+    }
+
+    const supabase = supabaseAdmin();
+
+    const { data: existing } = await supabase
+        .from('customers')
+        .select('tags')
+        .eq('id', context.customerId)
+        .single();
+
+    const currentTags: string[] = Array.isArray(existing?.tags) ? existing!.tags : [];
+    const incoming = args.tags
+        .map(t => String(t).trim().toLowerCase())
+        .filter(t => t.length > 0 && t.length <= 100);
+    const merged = Array.from(new Set([...currentTags, ...incoming]));
+
+    const { error } = await supabase
+        .from('customers')
+        .update({ tags: merged })
+        .eq('id', context.customerId);
+
+    if (error) {
+        logger.error('[AI] tag_customer_behavior update error:', { error });
+        return { success: false, error: 'Tag хадгалахад алдаа гарлаа.' };
+    }
+
+    return {
+        success: true,
+        message: `Tag-ууд хадгалагдлаа: ${incoming.join(', ')}`
+    };
+}
+
+/**
+ * Execute append_customer_note tool
+ * Appends an AI-prefixed summary to customers.notes
+ */
+export async function executeAppendCustomerNote(
+    args: AppendCustomerNoteArgs,
+    context: ToolExecutionContext
+): Promise<ToolExecutionResult> {
+    if (!context.customerId) {
+        return { success: false, error: 'Хэрэглэгчийн мэдээлэл олдсонгүй.' };
+    }
+    const summary = String(args.summary || '').trim();
+    if (!summary) {
+        return { success: false, error: 'Summary хоосон байна.' };
+    }
+
+    const supabase = supabaseAdmin();
+
+    const { data: existing } = await supabase
+        .from('customers')
+        .select('notes')
+        .eq('id', context.customerId)
+        .single();
+
+    const today = new Date().toISOString().slice(0, 10);
+    const stamp = `[AI ${today}]`;
+    const newLine = `${stamp} ${summary}`;
+    const merged = existing?.notes ? `${existing.notes}\n${newLine}` : newLine;
+
+    const { error } = await supabase
+        .from('customers')
+        .update({ notes: merged })
+        .eq('id', context.customerId);
+
+    if (error) {
+        logger.error('[AI] append_customer_note update error:', { error });
+        return { success: false, error: 'Тэмдэглэл хадгалахад алдаа гарлаа.' };
+    }
+
+    return {
+        success: true,
+        message: 'Тэмдэглэл хадгалагдлаа.'
+    };
+}
+
 // ============================================
 // CUSTOMER SERVICE TOOLS
 // ============================================
@@ -706,6 +798,12 @@ export async function executeTool(
 
             case 'remember_preference':
                 return await executeRememberPreference(args as RememberPreferenceArgs, context);
+
+            case 'tag_customer_behavior':
+                return await executeTagCustomerBehavior(args as TagCustomerBehaviorArgs, context);
+
+            case 'append_customer_note':
+                return await executeAppendCustomerNote(args as AppendCustomerNoteArgs, context);
 
             case 'check_payment_status':
                 return await executeCheckPaymentStatus(args as CheckPaymentStatusArgs, context);

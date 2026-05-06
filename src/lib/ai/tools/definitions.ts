@@ -133,6 +133,35 @@ export const GEMINI_TOOLS: any[] = [
             required: ['key', 'value']
         }
     },
+    {
+        name: 'tag_customer_behavior',
+        description: 'Харилцагчийн зан төлөвийг tag-аар тэмдэглэх. Жишээ: "interest:apartment", "budget:300m", "urgency:high", "stage:browsing", "stage:hot_lead". Чат явц дунд хэрэглэгчийн талаар ойлгож авсан зан төлөвийг тэмдэглэхэд ашигла.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                tags: {
+                    type: SchemaType.ARRAY,
+                    items: { type: SchemaType.STRING },
+                    description: 'Tag-уудын жагсаалт. category:value форматтай (жишээ: ["interest:apartment", "budget:300m", "urgency:high"])'
+                }
+            },
+            required: ['tags']
+        }
+    },
+    {
+        name: 'append_customer_note',
+        description: 'Харилцагчийн talaar AI-ийн товч тэмдэглэл бичих. Sales manager-т хүлээлгэн өгөхийн өмнө эсвэл чухал мэдээлэл цуглуулсны дараа дуудна. 1-2 өгүүлбэрийн товч Mongolian summary бичнэ.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                summary: {
+                    type: SchemaType.STRING,
+                    description: 'Mongolian, 1-2 өгүүлбэрийн товч summary. Хэрэглэгчийн хэрэгцээ, төсөв, шийдвэр гаргах хугацаа гэх мэт.'
+                }
+            },
+            required: ['summary']
+        }
+    },
     // ============================================
     // CUSTOMER SERVICE TOOLS
     // ============================================
@@ -235,6 +264,14 @@ export interface RememberPreferenceArgs {
     value: string;
 }
 
+export interface TagCustomerBehaviorArgs {
+    tags: string[];
+}
+
+export interface AppendCustomerNoteArgs {
+    summary: string;
+}
+
 export interface CheckPaymentStatusArgs {
     customer_phone?: string;
     customer_name?: string;
@@ -260,6 +297,8 @@ export type ToolArgs =
     | CollectContactArgs
     | RequestHumanSupportArgs
     | RememberPreferenceArgs
+    | TagCustomerBehaviorArgs
+    | AppendCustomerNoteArgs
     | CheckPaymentStatusArgs
     | LogServiceRequestArgs;
 
@@ -275,5 +314,7 @@ export type ToolName =
     | 'collect_contact_info'
     | 'request_human_support'
     | 'remember_preference'
+    | 'tag_customer_behavior'
+    | 'append_customer_note'
     | 'check_payment_status'
     | 'log_service_request';
