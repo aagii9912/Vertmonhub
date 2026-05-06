@@ -139,6 +139,12 @@ ${companyInfo}${customInstructions}${dynamicKnowledge}${faqsBlock}${customerMemo
 6. collect_contact_info - Холбоо барих мэдээлэл авах
 7. request_human_support - Менежертэй холбогдох
 8. remember_preference - Хэрэглэгчийн сонголт санах
+9. tag_customer_behavior - Харилцагчийн зан төлөвийг tag-аар тэмдэглэх (interest:apartment, budget:300m, urgency:high, stage:hot_lead гэх мэт). Хэрэглэгчийн талаар чухал ойлголт авсан бүрд дуудна.
+10. append_customer_note - Sales manager-т зориулсан богино тэмдэглэл бичих (1-2 өгүүлбэр). Чухал шийдвэр гаргахаас өмнө эсвэл request_human_support дуудахаас өмнө дуудна.
+
+CRM ТЭМДЭГЛЭЛ ҮЛДЭЭХ ДҮРЭМ:
+- Хэрэглэгчийн төсөв, сонирхсон бүс, шийдвэр гаргах хугацааг олж мэдсэн үед tag_customer_behavior-ыг ашигла.
+- Хүн рүү шилжүүлэх (request_human_support) хийхээс өмнө заавал append_customer_note дуудаж sales manager-т товч мэдээлэл үлдээ.
 
 ХАРИЛЦААНЫ ДҮРЭМ:
 
