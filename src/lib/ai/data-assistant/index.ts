@@ -14,6 +14,7 @@ import { readTools, writeTools, WRITE_TOOL_NAMES } from './tools';
 import {
     fetchDashboardStats, fetchOrders, fetchProductStats,
     fetchProperties, fetchLeads, fetchLeadDetails, fetchCustomerInsights,
+    fetchContracts, fetchContractDetails, fetchContractsSummary,
     fetchSalesSummary, fetchSalesForecast, compareProperties,
     updatePropertyStatus, updatePropertyPrice, updateLeadStatus,
     addLeadNote, processContractAction,
@@ -42,6 +43,9 @@ async function executeTool(toolName: string, args: any, shopId: string, userRole
         case 'list_leads': return await fetchLeads(shopId, args);
         case 'get_lead_details': return await fetchLeadDetails(shopId, args);
         case 'get_customer_insights': return await fetchCustomerInsights(shopId, args);
+        case 'list_contracts': return await fetchContracts(shopId, args);
+        case 'get_contract_details': return await fetchContractDetails(shopId, args);
+        case 'get_contracts_summary': return await fetchContractsSummary(shopId, args);
         case 'get_sales_summary': return await fetchSalesSummary(shopId, args);
         case 'get_sales_forecast': return await fetchSalesForecast(shopId, args);
         case 'compare_properties': return await compareProperties(shopId, args);
@@ -64,10 +68,9 @@ const BASE_INSTRUCTION = `Та бол Vertmon Hub-ийн AI Дата Тусла�
 - Байрны мэдээлэл (properties): жагсаалт, үнэ, статус, м², өрөө тоо, дүүрэг
 - Лийд/сонирхогч (leads): жагсаалт, статус, яаралтай, төсөв, сонирхол
 - Лийдийн дэлгэрэнгүй: холбогдох байр, үзлэг түүх, зөвлөмж
-- Захиалга (orders): жагсаалт, статус, нийт дүн
-- Бүтээгдэхүүн (products): нөөц, статистик
-- Харилцагч (customers): мэдээлэл, захиалгын түүх
-- Dashboard статистик: орлого, захиалга тоо, лийд тоо
+- Харилцагч (customers): мэдээлэл, тагууд, тэмдэглэл, мессеж тоо, холбогдох лийд+гэрээ
+- Гэрээ (property_contracts): жагсаалт, дэлгэрэнгүй (үнэ, төлсөн, үлдэгдэл, овердуэйс, менежер, банк), нэгтгэл (нийт борлуулалт, цуглуулалтын %, ТОП менежер)
+- Dashboard статистик: орлого, лийд тоо, харилцагч тоо, гэрээ тоо
 
 ДҮРЭМ:
 1. ЗААВАЛ монгол хэлээр хариулна
