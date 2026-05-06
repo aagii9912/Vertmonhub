@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { CreateCustomerSchema, validateBody } from '@/lib/validations/schemas';
 
 export async function GET(request: NextRequest) {
   try {
@@ -55,6 +56,55 @@ export async function GET(request: NextRequest) {
   }
 }
 
+
+// Manually create a new customer (sales manager entry)
+export async function POST(request: NextRequest) {
+  try {
+    const authShop = await getUserShop();
+
+    if (!authShop) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await request.json();
+    const validation = validateBody(CreateCustomerSchema, body);
+    if (!validation.success) {
+      return validation.response;
+    }
+
+    const supabase = supabaseAdmin();
+    const { name, phone, email, address, notes, tags } = validation.data;
+
+    const baseTags = Array.isArray(tags) ? tags : [];
+    const finalTags = baseTags.includes('source:manual')
+      ? baseTags
+      : ['source:manual', ...baseTags];
+
+    const { data: customer, error } = await supabase
+      .from('customers')
+      .insert({
+        shop_id: authShop.id,
+        name,
+        phone: phone || null,
+        email: email || null,
+        address: address || null,
+        notes: notes || null,
+        tags: finalTags,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      logger.error('[Customers POST] Insert failed:', { error });
+      return NextResponse.json({ error: 'Failed to create customer' }, { status: 500 });
+    }
+
+    return NextResponse.json({ customer, message: 'Customer created' }, { status: 201 });
+  } catch (error) {
+    console.error('Customer create error:', error);
+    return NextResponse.json({ error: 'Failed to create customer' }, { status: 500 });
+  }
+}
 
 // Update customer info
 export async function PATCH(request: NextRequest) {

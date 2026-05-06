@@ -21,6 +21,8 @@ import {
     FileText,
     Plus,
     AlertCircle,
+    Upload,
+    Cloud,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -98,6 +100,23 @@ export default function CustomersPage() {
         notes: '',
     });
 
+    // Inline notes editor (separate from full edit mode)
+    const [notesEditing, setNotesEditing] = useState(false);
+    const [notesDraft, setNotesDraft] = useState('');
+    const [notesSaving, setNotesSaving] = useState(false);
+
+    // Manual create modal
+    const [isCreateOpen, setIsCreateOpen] = useState(false);
+    const [createForm, setCreateForm] = useState({
+        name: '',
+        phone: '',
+        email: '',
+        address: '',
+        notes: '',
+    });
+    const [creating, setCreating] = useState(false);
+    const [createError, setCreateError] = useState<string | null>(null);
+
     const [logForm, setLogForm] = useState<{ type: ServiceLogType; subject: string; description: string }>({
         type: 'complaint',
         subject: '',
@@ -105,6 +124,23 @@ export default function CustomersPage() {
     });
     const [logSubmitting, setLogSubmitting] = useState(false);
     const [logError, setLogError] = useState<string | null>(null);
+
+    // HubSpot import modal
+    const [isImportOpen, setIsImportOpen] = useState(false);
+    const [importFile, setImportFile] = useState<File | null>(null);
+    const [importPreview, setImportPreview] = useState<{ total: number; sample: Array<{ name: string; email: string | null; phone: string | null; tags: string[] }> } | null>(null);
+    const [importing, setImporting] = useState(false);
+    const [importError, setImportError] = useState<string | null>(null);
+    const [importResult, setImportResult] = useState<{ imported: number; skipped: number; errors: Array<{ name: string; reason: string }> } | null>(null);
+
+    // HubSpot direct API sync
+    const [isHubspotSyncOpen, setIsHubspotSyncOpen] = useState(false);
+    const [hubspotToken, setHubspotToken] = useState('');
+    const [hubspotSaveToken, setHubspotSaveToken] = useState(true);
+    const [hubspotPreview, setHubspotPreview] = useState<{ sample: Array<{ id: string; name: string; email: string | null; phone: string | null; lifecycle: string | null; lead_status: string | null }>; has_more: boolean } | null>(null);
+    const [hubspotSyncing, setHubspotSyncing] = useState(false);
+    const [hubspotError, setHubspotError] = useState<string | null>(null);
+    const [hubspotResult, setHubspotResult] = useState<{ total: number; imported: number; skipped: number; errors: Array<{ name: string; reason: string }> } | null>(null);
 
     useEffect(() => {
         fetchCustomers();
@@ -191,6 +227,184 @@ export default function CustomersPage() {
         }
     }
 
+    async function previewImport() {
+        if (!importFile) {
+            setImportError('Файл сонгоно уу');
+            return;
+        }
+        setImporting(true);
+        setImportError(null);
+        try {
+            const fd = new FormData();
+            fd.append('file', importFile);
+            fd.append('preview', 'true');
+            const res = await fetch('/api/dashboard/customers/import/hubspot', {
+                method: 'POST',
+                body: fd,
+                headers: {
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
+                },
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data?.error || 'Урьдчилан харахад алдаа');
+            setImportPreview(data);
+        } catch (err) {
+            setImportError(err instanceof Error ? err.message : 'Урьдчилан харахад алдаа');
+        } finally {
+            setImporting(false);
+        }
+    }
+
+    async function confirmImport() {
+        if (!importFile) return;
+        setImporting(true);
+        setImportError(null);
+        try {
+            const fd = new FormData();
+            fd.append('file', importFile);
+            const res = await fetch('/api/dashboard/customers/import/hubspot', {
+                method: 'POST',
+                body: fd,
+                headers: {
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
+                },
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data?.error || 'Импорт амжилтгүй');
+            setImportResult(data);
+            setImportPreview(null);
+            await fetchCustomers();
+        } catch (err) {
+            setImportError(err instanceof Error ? err.message : 'Импорт амжилтгүй');
+        } finally {
+            setImporting(false);
+        }
+    }
+
+    function resetImport() {
+        setIsImportOpen(false);
+        setImportFile(null);
+        setImportPreview(null);
+        setImportResult(null);
+        setImportError(null);
+    }
+
+    function resetHubspotSync() {
+        setIsHubspotSyncOpen(false);
+        setHubspotToken('');
+        setHubspotPreview(null);
+        setHubspotResult(null);
+        setHubspotError(null);
+    }
+
+    async function previewHubspot() {
+        if (!hubspotToken.trim() && !hubspotPreview) {
+            // Allow preview without token if shop already has one stored — server checks env/shop
+        }
+        setHubspotSyncing(true);
+        setHubspotError(null);
+        try {
+            const res = await fetch('/api/integrations/hubspot/sync', {
+                headers: {
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
+                    ...(hubspotToken.trim() ? { 'x-hubspot-token': hubspotToken.trim() } : {}),
+                },
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data?.error || 'Урьдчилан харахад алдаа');
+            setHubspotPreview(data);
+        } catch (err) {
+            setHubspotError(err instanceof Error ? err.message : 'Алдаа');
+        } finally {
+            setHubspotSyncing(false);
+        }
+    }
+
+    async function confirmHubspotSync() {
+        setHubspotSyncing(true);
+        setHubspotError(null);
+        try {
+            const res = await fetch('/api/integrations/hubspot/sync', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
+                    ...(hubspotToken.trim() ? { 'x-hubspot-token': hubspotToken.trim() } : {}),
+                },
+                body: JSON.stringify({
+                    save_token: hubspotSaveToken && hubspotToken.trim() ? hubspotToken.trim() : undefined,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data?.error || 'Sync алдаа');
+            setHubspotResult(data);
+            setHubspotPreview(null);
+            await fetchCustomers();
+        } catch (err) {
+            setHubspotError(err instanceof Error ? err.message : 'Sync алдаа');
+        } finally {
+            setHubspotSyncing(false);
+        }
+    }
+
+    async function createCustomer() {
+        if (!createForm.name.trim()) {
+            setCreateError('Нэр шаардлагатай');
+            return;
+        }
+        setCreating(true);
+        setCreateError(null);
+        try {
+            const res = await fetch('/api/dashboard/customers', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
+                },
+                body: JSON.stringify({
+                    name: createForm.name.trim(),
+                    phone: createForm.phone.trim() || null,
+                    email: createForm.email.trim() || null,
+                    address: createForm.address.trim() || null,
+                    notes: createForm.notes.trim() || null,
+                }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err?.error || 'Бүртгэхэд алдаа гарлаа');
+            }
+            setCreateForm({ name: '', phone: '', email: '', address: '', notes: '' });
+            setIsCreateOpen(false);
+            await fetchCustomers();
+        } catch (err) {
+            setCreateError(err instanceof Error ? err.message : 'Бүртгэхэд алдаа гарлаа');
+        } finally {
+            setCreating(false);
+        }
+    }
+
+    async function saveNotesOnly() {
+        if (!selectedCustomer) return;
+        setNotesSaving(true);
+        try {
+            const res = await fetch('/api/dashboard/customers', {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
+                },
+                body: JSON.stringify({ id: selectedCustomer.id, notes: notesDraft }),
+            });
+            if (!res.ok) throw new Error('Тэмдэглэл хадгалахад алдаа');
+            setSelectedCustomer({ ...selectedCustomer, notes: notesDraft });
+            setNotesEditing(false);
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setNotesSaving(false);
+        }
+    }
+
     async function saveCustomer() {
         if (!selectedCustomer) return;
         setSaving(true);
@@ -246,6 +460,24 @@ export default function CustomersPage() {
                 eyebrow="CRM"
                 title="Харилцагчид"
                 subtitle={`Нийт ${customers.length} харилцагч бүртгэлтэй`}
+                primaryAction={
+                    <Button variant="primary" size="sm" onClick={() => setIsCreateOpen(true)}>
+                        <Plus className="w-4 h-4" />
+                        Шинэ харилцагч
+                    </Button>
+                }
+                secondaryActions={
+                    <>
+                        <Button variant="secondary" size="sm" onClick={() => setIsHubspotSyncOpen(true)}>
+                            <Cloud className="w-4 h-4" />
+                            HubSpot татах
+                        </Button>
+                        <Button variant="secondary" size="sm" onClick={() => setIsImportOpen(true)}>
+                            <Upload className="w-4 h-4" />
+                            HubSpot CSV
+                        </Button>
+                    </>
+                }
             />
 
             <FilterBar
@@ -357,6 +589,380 @@ export default function CustomersPage() {
                         </table>
                     </div>
                 </Card>
+            )}
+
+            {/* HubSpot Direct Sync Modal */}
+            {isHubspotSyncOpen && (
+                <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-surface rounded-xl border border-border w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-xl">
+                        <div className="flex items-center justify-between p-6 border-b border-border">
+                            <h2 className="heading-section text-lg text-foreground">HubSpot-аас шууд татах</h2>
+                            <button onClick={resetHubspotSync} className="p-2 hover:bg-surface-2 rounded-md transition-colors">
+                                <X className="w-5 h-5 text-muted-foreground" />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            {!hubspotPreview && !hubspotResult && (
+                                <>
+                                    <div className="bg-status-info-soft p-3 rounded-md text-sm text-status-info space-y-1">
+                                        <p className="font-medium">HubSpot Private App token хэрхэн авах:</p>
+                                        <ol className="list-decimal pl-5 space-y-0.5 text-xs">
+                                            <li>HubSpot → Settings (⚙️) → Integrations → <strong>Private Apps</strong></li>
+                                            <li>"Create a private app" дарна</li>
+                                            <li>Scopes таб → <strong>crm.objects.contacts.read</strong> сонгох</li>
+                                            <li>Create → Access token-ийг хуулж энд буулгах</li>
+                                        </ol>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-1.5">
+                                            HubSpot Access Token
+                                        </label>
+                                        <input
+                                            type="password"
+                                            value={hubspotToken}
+                                            onChange={(e) => setHubspotToken(e.target.value)}
+                                            placeholder="pat-na1-xxxxxxxx-..."
+                                            className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+                                        />
+                                        <p className="mt-1 text-xs text-muted-foreground/70">
+                                            Token хадгалагдсан бол хоосон үлдээж болно — хадгалсан token-ыг автоматаар ашиглана.
+                                        </p>
+                                    </div>
+                                    <label className="flex items-center gap-2 text-sm">
+                                        <input
+                                            type="checkbox"
+                                            checked={hubspotSaveToken}
+                                            onChange={(e) => setHubspotSaveToken(e.target.checked)}
+                                        />
+                                        Token-ыг shop-д хадгалах (дараагийн удаа дахин оруулахгүй)
+                                    </label>
+                                    {hubspotError && (
+                                        <p className="flex items-center gap-1.5 text-sm text-status-danger">
+                                            <AlertCircle className="w-4 h-4" /> {hubspotError}
+                                        </p>
+                                    )}
+                                    <div className="flex justify-end gap-2 pt-2">
+                                        <Button variant="secondary" size="sm" onClick={resetHubspotSync}>Цуцлах</Button>
+                                        <Button
+                                            variant="primary"
+                                            size="sm"
+                                            onClick={previewHubspot}
+                                            disabled={hubspotSyncing}
+                                            isLoading={hubspotSyncing}
+                                        >
+                                            Урьдчилан харах
+                                        </Button>
+                                    </div>
+                                </>
+                            )}
+
+                            {hubspotPreview && !hubspotResult && (
+                                <>
+                                    <div className="bg-status-success-soft p-3 rounded-md text-sm text-status-success">
+                                        ✓ Token хүчинтэй. Эхний {hubspotPreview.sample.length} contact:
+                                    </div>
+                                    <div className="border border-border rounded-md overflow-hidden">
+                                        <table className="w-full text-sm">
+                                            <thead className="bg-surface-2/50">
+                                                <tr>
+                                                    <th className="px-3 py-2 text-left">Нэр</th>
+                                                    <th className="px-3 py-2 text-left">Email</th>
+                                                    <th className="px-3 py-2 text-left">Утас</th>
+                                                    <th className="px-3 py-2 text-left">Lifecycle</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-border/60">
+                                                {hubspotPreview.sample.map((c) => (
+                                                    <tr key={c.id}>
+                                                        <td className="px-3 py-2">{c.name}</td>
+                                                        <td className="px-3 py-2 text-muted-foreground">{c.email || '-'}</td>
+                                                        <td className="px-3 py-2 text-muted-foreground">{c.phone || '-'}</td>
+                                                        <td className="px-3 py-2 text-muted-foreground">{c.lifecycle || '-'}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    {hubspotPreview.has_more && (
+                                        <p className="text-xs text-muted-foreground">Илүү олон contact байгаа — sync дарвал бүгдийг (5000-аас бага) татна.</p>
+                                    )}
+                                    {hubspotError && (
+                                        <p className="flex items-center gap-1.5 text-sm text-status-danger">
+                                            <AlertCircle className="w-4 h-4" /> {hubspotError}
+                                        </p>
+                                    )}
+                                    <div className="flex justify-end gap-2 pt-2">
+                                        <Button variant="secondary" size="sm" onClick={() => setHubspotPreview(null)}>Буцах</Button>
+                                        <Button
+                                            variant="primary"
+                                            size="sm"
+                                            onClick={confirmHubspotSync}
+                                            disabled={hubspotSyncing}
+                                            isLoading={hubspotSyncing}
+                                        >
+                                            Бүх contact-ыг татаж импортлох
+                                        </Button>
+                                    </div>
+                                </>
+                            )}
+
+                            {hubspotResult && (
+                                <>
+                                    <div className="bg-status-success-soft p-4 rounded-md">
+                                        <p className="text-status-success font-medium">✓ HubSpot sync амжилттай боллоо</p>
+                                        <ul className="mt-2 text-sm text-foreground space-y-1">
+                                            <li>HubSpot-ээс татсан: <strong>{hubspotResult.total}</strong></li>
+                                            <li>Шинэ нэмэгдсэн: <strong>{hubspotResult.imported}</strong></li>
+                                            <li>Алгассан (давхардсан): <strong>{hubspotResult.skipped}</strong></li>
+                                            {hubspotResult.errors.length > 0 && (
+                                                <li className="text-status-danger">Алдаатай: <strong>{hubspotResult.errors.length}</strong></li>
+                                            )}
+                                        </ul>
+                                    </div>
+                                    {hubspotResult.errors.length > 0 && (
+                                        <div className="max-h-40 overflow-y-auto bg-status-danger-soft p-3 rounded-md text-xs">
+                                            {hubspotResult.errors.slice(0, 10).map((e, i) => (
+                                                <p key={i}>{e.name}: {e.reason}</p>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div className="flex justify-end pt-2">
+                                        <Button variant="primary" size="sm" onClick={resetHubspotSync}>Хаах</Button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* HubSpot Import Modal */}
+            {isImportOpen && (
+                <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-surface rounded-xl border border-border w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-xl">
+                        <div className="flex items-center justify-between p-6 border-b border-border">
+                            <h2 className="heading-section text-lg text-foreground">HubSpot CSV импорт</h2>
+                            <button onClick={resetImport} className="p-2 hover:bg-surface-2 rounded-md transition-colors">
+                                <X className="w-5 h-5 text-muted-foreground" />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            {!importPreview && !importResult && (
+                                <>
+                                    <p className="text-sm text-muted-foreground">
+                                        HubSpot Contacts хэсгээс экспортолсон CSV/XLSX файл сонгоно уу. Email эсвэл утсаар давхардлыг таниж хасна.
+                                    </p>
+                                    <input
+                                        type="file"
+                                        accept=".csv,.xlsx,.xls"
+                                        onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                                        className="block w-full text-sm text-foreground file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-brand file:text-brand-fg file:font-medium hover:file:bg-brand-strong"
+                                    />
+                                    {importError && (
+                                        <p className="flex items-center gap-1.5 text-sm text-status-danger">
+                                            <AlertCircle className="w-4 h-4" /> {importError}
+                                        </p>
+                                    )}
+                                    <div className="flex justify-end gap-2 pt-2">
+                                        <Button variant="secondary" size="sm" onClick={resetImport}>Цуцлах</Button>
+                                        <Button
+                                            variant="primary"
+                                            size="sm"
+                                            onClick={previewImport}
+                                            disabled={!importFile || importing}
+                                            isLoading={importing}
+                                        >
+                                            Урьдчилан харах
+                                        </Button>
+                                    </div>
+                                </>
+                            )}
+
+                            {importPreview && !importResult && (
+                                <>
+                                    <div className="bg-status-info-soft p-3 rounded-md text-sm text-status-info">
+                                        Нийт <strong>{importPreview.total}</strong> мөр танигдлаа. Эхний {importPreview.sample.length}-г харуулж байна:
+                                    </div>
+                                    <div className="border border-border rounded-md overflow-hidden">
+                                        <table className="w-full text-sm">
+                                            <thead className="bg-surface-2/50">
+                                                <tr>
+                                                    <th className="px-3 py-2 text-left">Нэр</th>
+                                                    <th className="px-3 py-2 text-left">Email</th>
+                                                    <th className="px-3 py-2 text-left">Утас</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-border/60">
+                                                {importPreview.sample.map((c, i) => (
+                                                    <tr key={i}>
+                                                        <td className="px-3 py-2">{c.name}</td>
+                                                        <td className="px-3 py-2 text-muted-foreground">{c.email || '-'}</td>
+                                                        <td className="px-3 py-2 text-muted-foreground">{c.phone || '-'}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    {importError && (
+                                        <p className="flex items-center gap-1.5 text-sm text-status-danger">
+                                            <AlertCircle className="w-4 h-4" /> {importError}
+                                        </p>
+                                    )}
+                                    <div className="flex justify-end gap-2 pt-2">
+                                        <Button variant="secondary" size="sm" onClick={() => setImportPreview(null)}>Буцах</Button>
+                                        <Button
+                                            variant="primary"
+                                            size="sm"
+                                            onClick={confirmImport}
+                                            disabled={importing}
+                                            isLoading={importing}
+                                        >
+                                            Импорт хийх ({importPreview.total})
+                                        </Button>
+                                    </div>
+                                </>
+                            )}
+
+                            {importResult && (
+                                <>
+                                    <div className="bg-status-success-soft p-4 rounded-md">
+                                        <p className="text-status-success font-medium">
+                                            ✓ Импорт амжилттай боллоо
+                                        </p>
+                                        <ul className="mt-2 text-sm text-foreground space-y-1">
+                                            <li>Нэмэгдсэн: <strong>{importResult.imported}</strong></li>
+                                            <li>Алгассан (давхардсан): <strong>{importResult.skipped}</strong></li>
+                                            {importResult.errors.length > 0 && (
+                                                <li className="text-status-danger">Алдаатай: <strong>{importResult.errors.length}</strong></li>
+                                            )}
+                                        </ul>
+                                    </div>
+                                    {importResult.errors.length > 0 && (
+                                        <div className="max-h-40 overflow-y-auto bg-status-danger-soft p-3 rounded-md text-xs">
+                                            {importResult.errors.slice(0, 10).map((e, i) => (
+                                                <p key={i}>{e.name}: {e.reason}</p>
+                                            ))}
+                                        </div>
+                                    )}
+                                    <div className="flex justify-end pt-2">
+                                        <Button variant="primary" size="sm" onClick={resetImport}>Хаах</Button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Create Customer Modal */}
+            {isCreateOpen && (
+                <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="bg-surface rounded-xl border border-border w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl">
+                        <div className="flex items-center justify-between p-6 border-b border-border">
+                            <h2 className="heading-section text-lg text-foreground">Шинэ харилцагч нэмэх</h2>
+                            <button
+                                onClick={() => {
+                                    setIsCreateOpen(false);
+                                    setCreateError(null);
+                                }}
+                                className="p-2 hover:bg-surface-2 rounded-md transition-colors"
+                            >
+                                <X className="w-5 h-5 text-muted-foreground" />
+                            </button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-1.5">
+                                    Нэр <span className="text-status-danger">*</span>
+                                </label>
+                                <input
+                                    type="text"
+                                    value={createForm.name}
+                                    onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
+                                    placeholder="Б. Болд"
+                                    className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+                                />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-1.5">
+                                        Утас
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={createForm.phone}
+                                        onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })}
+                                        placeholder="9999-9999"
+                                        className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-1.5">
+                                        И-мэйл
+                                    </label>
+                                    <input
+                                        type="email"
+                                        value={createForm.email}
+                                        onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
+                                        placeholder="bold@example.com"
+                                        className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-1.5">
+                                    Хаяг
+                                </label>
+                                <input
+                                    type="text"
+                                    value={createForm.address}
+                                    onChange={(e) => setCreateForm({ ...createForm, address: e.target.value })}
+                                    placeholder="УБ хот, СБД, ..."
+                                    className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-1.5">
+                                    Тэмдэглэл
+                                </label>
+                                <textarea
+                                    value={createForm.notes}
+                                    onChange={(e) => setCreateForm({ ...createForm, notes: e.target.value })}
+                                    rows={3}
+                                    placeholder="Хэрэгцээ, хүсэлт, бусад мэдээлэл..."
+                                    className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+                                />
+                            </div>
+                            {createError && (
+                                <p className="flex items-center gap-1.5 text-sm text-status-danger">
+                                    <AlertCircle className="w-4 h-4" /> {createError}
+                                </p>
+                            )}
+                            <div className="flex justify-end gap-2 pt-2">
+                                <Button
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => {
+                                        setIsCreateOpen(false);
+                                        setCreateError(null);
+                                    }}
+                                >
+                                    Цуцлах
+                                </Button>
+                                <Button
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={createCustomer}
+                                    disabled={creating || !createForm.name.trim()}
+                                    isLoading={creating}
+                                >
+                                    {!creating && <Plus className="w-4 h-4" />}
+                                    Бүртгэх
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
 
             {/* Customer Detail Modal */}
@@ -484,12 +1090,53 @@ export default function CustomersPage() {
 
                             {/* Notes */}
                             <div>
-                                <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-2">
-                                    Тэмдэглэл
-                                </label>
-                                <p className="text-foreground bg-surface-2/40 border border-border p-3 rounded-md whitespace-pre-wrap">
-                                    {selectedCustomer.notes || 'Тэмдэглэл байхгүй'}
-                                </p>
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80">
+                                        Тэмдэглэл
+                                    </label>
+                                    {!notesEditing ? (
+                                        <button
+                                            onClick={() => {
+                                                setNotesDraft(selectedCustomer.notes || '');
+                                                setNotesEditing(true);
+                                            }}
+                                            className="text-xs text-brand hover:underline flex items-center gap-1"
+                                        >
+                                            <Edit2 className="w-3 h-3" />
+                                            Засах
+                                        </button>
+                                    ) : (
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={() => setNotesEditing(false)}
+                                                className="text-xs text-muted-foreground hover:underline"
+                                            >
+                                                Цуцлах
+                                            </button>
+                                            <button
+                                                onClick={saveNotesOnly}
+                                                disabled={notesSaving}
+                                                className="text-xs text-brand font-medium hover:underline flex items-center gap-1 disabled:opacity-50"
+                                            >
+                                                <Save className="w-3 h-3" />
+                                                {notesSaving ? 'Хадгалж байна...' : 'Хадгалах'}
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
+                                {notesEditing ? (
+                                    <textarea
+                                        value={notesDraft}
+                                        onChange={(e) => setNotesDraft(e.target.value)}
+                                        rows={5}
+                                        placeholder="Харилцагчийн талаар тэмдэглэл бичих..."
+                                        className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-border-strong"
+                                    />
+                                ) : (
+                                    <p className="text-foreground bg-surface-2/40 border border-border p-3 rounded-md whitespace-pre-wrap min-h-[60px]">
+                                        {selectedCustomer.notes || 'Тэмдэглэл байхгүй'}
+                                    </p>
+                                )}
                             </div>
 
                             {/* Stats */}
