@@ -80,6 +80,82 @@ async function fbFetch<T>(url: string): Promise<T> {
     return data as T;
 }
 
+// ============ Ads API ============
+
+export interface FacebookAdAccount {
+    id: string;
+    account_id: string;
+    name?: string;
+    account_status?: number;
+    currency?: string;
+    business_name?: string;
+    timezone_name?: string;
+}
+
+export interface FacebookAdCampaign {
+    id: string;
+    name: string;
+    status?: 'ACTIVE' | 'PAUSED' | 'DELETED' | 'ARCHIVED';
+    objective?: string;
+    daily_budget?: string;
+    lifetime_budget?: string;
+    start_time?: string;
+    stop_time?: string;
+    created_time?: string;
+    updated_time?: string;
+}
+
+export interface FacebookCampaignInsight {
+    campaign_id?: string;
+    campaign_name?: string;
+    spend?: string;
+    impressions?: string;
+    clicks?: string;
+    ctr?: string;
+    cpc?: string;
+    cpm?: string;
+    reach?: string;
+    actions?: Array<{ action_type: string; value: string }>;
+    date_start?: string;
+    date_stop?: string;
+}
+
+/**
+ * Хэрэглэгчийн ad account-уудыг авах
+ */
+export async function getAdAccounts(accessToken: string): Promise<{ data: FacebookAdAccount[] }> {
+    const fields = 'id,account_id,name,account_status,currency,business_name,timezone_name';
+    const url = `${GRAPH_API_BASE}/me/adaccounts?fields=${fields}&access_token=${accessToken}`;
+    return fbFetch<{ data: FacebookAdAccount[] }>(url);
+}
+
+/**
+ * Ad account-ийн campaign-уудыг авах
+ */
+export async function fetchAdAccountCampaigns(
+    adAccountId: string,
+    accessToken: string,
+    limit: number = 50
+): Promise<{ data: FacebookAdCampaign[] }> {
+    const accountId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
+    const fields = 'id,name,status,objective,daily_budget,lifetime_budget,start_time,stop_time,created_time,updated_time';
+    const url = `${GRAPH_API_BASE}/${accountId}/campaigns?fields=${fields}&limit=${limit}&access_token=${accessToken}`;
+    return fbFetch<{ data: FacebookAdCampaign[] }>(url);
+}
+
+/**
+ * Кампанит ажлын insights авах (date_preset: today, yesterday, last_7d, last_30d, lifetime)
+ */
+export async function fetchCampaignInsights(
+    campaignId: string,
+    accessToken: string,
+    datePreset: string = 'last_30d'
+): Promise<{ data: FacebookCampaignInsight[] }> {
+    const fields = 'spend,impressions,clicks,ctr,cpc,cpm,reach,actions,date_start,date_stop,campaign_name';
+    const url = `${GRAPH_API_BASE}/${campaignId}/insights?fields=${fields}&date_preset=${datePreset}&access_token=${accessToken}`;
+    return fbFetch<{ data: FacebookCampaignInsight[] }>(url);
+}
+
 // ============ Page Info ============
 
 /**

@@ -1,16 +1,42 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { TrendingUp, Users, Target, BarChart3 } from 'lucide-react';
+import { TrendingUp, Users, Target, BarChart3, RefreshCw, Megaphone } from 'lucide-react';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
+
+interface AdCampaign {
+    id: string;
+    name: string;
+    external_id: string | null;
+    status: string;
+    objective: string | null;
+    budget: number;
+    spend: number;
+    impressions: number;
+    clicks: number;
+    conversions: number;
+    ctr: number;
+    cpc: number;
+    last_synced_at: string | null;
+}
+
+interface AdAccount {
+    id: string;
+    account_id: string;
+    name?: string;
+    currency?: string;
+    business_name?: string;
+}
 
 const sourceLabels: Record<string, string> = {
     messenger: 'Messenger',
@@ -27,6 +53,11 @@ export default function MarketingROIPage() {
     const { shop } = useAuth();
     const [leads, setLeads] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]);
+    const [selectedAdAccount, setSelectedAdAccount] = useState<string | null>(null);
+    const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
+    const [campaignsLoading, setCampaignsLoading] = useState(false);
+    const [campaignsError, setCampaignsError] = useState<string | null>(null);
 
     useEffect(() => {
         if (!shop?.id) return;
@@ -40,7 +71,87 @@ export default function MarketingROIPage() {
             .select('id, source, status, budget_min, budget_max, created_at')
             .eq('shop_id', shop!.id);
         setLeads(data || []);
+
+        // Load already-stored Facebook campaigns from DB (no remote sync)
+        const { data: stored } = await supabase
+            .from('ad_campaigns')
+            .select('*')
+            .eq('shop_id', shop!.id)
+            .eq('platform', 'facebook')
+            .order('updated_at', { ascending: false });
+        setCampaigns((stored || []) as AdCampaign[]);
+
         setLoading(false);
+    }
+
+    const fetchAdAccounts = useCallback(async () => {
+        try {
+            const res = await fetch('/api/marketing/facebook/ads/accounts', {
+                headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data?.error || 'Ad account татахад алдаа');
+            }
+            setAdAccounts(data.accounts || []);
+            if (data.selected_id) setSelectedAdAccount(data.selected_id);
+            else if ((data.accounts || []).length === 1) setSelectedAdAccount(data.accounts[0].id);
+        } catch (err) {
+            setCampaignsError(err instanceof Error ? err.message : 'Алдаа');
+        }
+    }, []);
+
+    async function syncCampaigns() {
+        if (!selectedAdAccount) {
+            toast.error('Ad account сонгоно уу');
+            return;
+        }
+        setCampaignsLoading(true);
+        setCampaignsError(null);
+        try {
+            // Persist selection
+            await fetch('/api/marketing/facebook/ads/accounts', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
+                },
+                body: JSON.stringify({ ad_account_id: selectedAdAccount }),
+            });
+            const res = await fetch(`/api/marketing/facebook/ads/campaigns?ad_account_id=${encodeURIComponent(selectedAdAccount)}`, {
+                headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data?.error || 'Sync алдаа');
+            setCampaigns(data.campaigns || []);
+            toast.success(`${data.synced} кампанит ажил татлаа`);
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : 'Sync алдаа';
+            setCampaignsError(msg);
+            toast.error(msg);
+        } finally {
+            setCampaignsLoading(false);
+        }
+    }
+
+    async function syncInsights(campaign: AdCampaign) {
+        if (!campaign.external_id) return;
+        try {
+            const res = await fetch(`/api/marketing/facebook/ads/insights?campaign_id=${encodeURIComponent(campaign.external_id)}`, {
+                headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data?.error || 'Insights алдаа');
+            // refetch list
+            const listRes = await fetch('/api/marketing/facebook/ads/campaigns', {
+                headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
+            });
+            const listData = await listRes.json();
+            if (listRes.ok) setCampaigns(listData.campaigns || []);
+            toast.success('Insights шинэчлэгдлээ');
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Insights алдаа');
+        }
     }
 
     const analytics = useMemo(() => {
@@ -206,6 +317,119 @@ export default function MarketingROIPage() {
                                 </tbody>
                             </table>
                         </div>
+                    </Card>
+
+                    {/* Facebook Ads Campaigns */}
+                    <Card className="mb-6">
+                        <div className="px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                                <Megaphone className="w-4 h-4 text-brand" />
+                                <h3 className="heading-section text-sm text-foreground">Facebook Ads кампаниуд</h3>
+                                {campaigns.length > 0 && (
+                                    <span className="text-xs text-muted-foreground">({campaigns.length})</span>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {adAccounts.length === 0 ? (
+                                    <Button variant="secondary" size="sm" onClick={fetchAdAccounts}>
+                                        Ad account-уудыг ачаалах
+                                    </Button>
+                                ) : (
+                                    <>
+                                        <select
+                                            value={selectedAdAccount || ''}
+                                            onChange={(e) => setSelectedAdAccount(e.target.value || null)}
+                                            className="px-3 py-1.5 bg-background border border-border rounded-md text-sm"
+                                        >
+                                            <option value="">Ad account сонгоно уу</option>
+                                            {adAccounts.map((a) => (
+                                                <option key={a.id} value={a.id}>
+                                                    {a.name || a.business_name || a.account_id}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <Button
+                                            variant="primary"
+                                            size="sm"
+                                            onClick={syncCampaigns}
+                                            disabled={!selectedAdAccount || campaignsLoading}
+                                            isLoading={campaignsLoading}
+                                        >
+                                            <RefreshCw className="w-3.5 h-3.5" />
+                                            Синк хийх
+                                        </Button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                        {campaignsError && (
+                            <div className="px-4 py-2 text-sm text-status-danger bg-status-danger-soft">
+                                {campaignsError}
+                            </div>
+                        )}
+                        {campaigns.length === 0 ? (
+                            <div className="py-12">
+                                <EmptyState
+                                    icon={<Megaphone className="w-7 h-7" />}
+                                    title="Кампанит ажил байхгүй"
+                                    description="Facebook Ad account сонгож синк хийнэ үү"
+                                />
+                            </div>
+                        ) : (
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm">
+                                    <thead className="bg-surface-2/50 border-b border-border">
+                                        <tr>
+                                            <th className="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">Нэр</th>
+                                            <th className="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">Төлөв</th>
+                                            <th className="text-right px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">Зарцуулалт</th>
+                                            <th className="text-right px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">Imp</th>
+                                            <th className="text-right px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">Click</th>
+                                            <th className="text-right px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">CTR</th>
+                                            <th className="text-right px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">CPC</th>
+                                            <th className="text-right px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">Конверс</th>
+                                            <th className="px-4 py-2.5"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-border/60">
+                                        {campaigns.map((c) => (
+                                            <tr key={c.id} className="hover:bg-surface-2/40 transition-colors">
+                                                <td className="px-4 py-3 font-medium text-foreground">
+                                                    {c.name}
+                                                    {c.objective && (
+                                                        <p className="text-[11px] text-muted-foreground/70 mt-0.5 normal-case">{c.objective}</p>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3">
+                                                    <Badge
+                                                        variant={c.status === 'active' ? 'success' : c.status === 'paused' ? 'warning' : 'default'}
+                                                        size="sm"
+                                                    >
+                                                        {c.status}
+                                                    </Badge>
+                                                </td>
+                                                <td className="px-4 py-3 text-right tabular-nums">{Number(c.spend || 0).toLocaleString()}₮</td>
+                                                <td className="px-4 py-3 text-right tabular-nums">{Number(c.impressions || 0).toLocaleString()}</td>
+                                                <td className="px-4 py-3 text-right tabular-nums">{Number(c.clicks || 0).toLocaleString()}</td>
+                                                <td className="px-4 py-3 text-right tabular-nums">{Number(c.ctr || 0).toFixed(2)}%</td>
+                                                <td className="px-4 py-3 text-right tabular-nums">{Number(c.cpc || 0).toFixed(0)}₮</td>
+                                                <td className="px-4 py-3 text-right tabular-nums">{c.conversions}</td>
+                                                <td className="px-4 py-3 text-right">
+                                                    <button
+                                                        onClick={() => syncInsights(c)}
+                                                        className="text-xs text-brand hover:underline"
+                                                        title="Insights дахин татах"
+                                                        disabled={!c.external_id}
+                                                    >
+                                                        <RefreshCw className="w-3.5 h-3.5 inline" />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                     </Card>
 
                     {/* Monthly Trend */}
