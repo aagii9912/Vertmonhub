@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
     'pages_read_engagement',
     'pages_messaging',
     'pages_manage_metadata',
+    'ads_read',
     'public_profile',
     'email'
   ].join(',');
