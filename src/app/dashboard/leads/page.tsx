@@ -55,6 +55,8 @@ const sourceLabels: Record<LeadSource, string> = {
     website: 'Вэбсайт',
     referral: 'Зөвлөмж',
     phone: 'Утас',
+    facebook_ads: 'Facebook Ads',
+    google_ads: 'Google Ads',
     other: 'Бусад',
 };
 

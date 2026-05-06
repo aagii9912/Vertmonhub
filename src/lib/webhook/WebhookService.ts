@@ -199,6 +199,7 @@ export async function getOrCreateCustomer(
             shop_id: shopId,
             facebook_id: facebookId,
             name: userName,
+            tags: ['source:facebook'],
         })
         .select()
         .single();
@@ -254,6 +255,7 @@ export async function getOrCreateInstagramCustomer(
             instagram_id: instagramId,
             name: userName,
             platform: 'instagram',
+            tags: ['source:instagram'],
         })
         .select()
         .single();
