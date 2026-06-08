@@ -1,7 +1,7 @@
 # Vertmon Hub — Маркетинг Хэсгийн Аудит ба Сайжруулалтын Замын Зураг
 
-> **Төлөв:** Phase 1 (Tracking суурь — Meta Pixel + GA4 + Conversions API + client attribution)
-> хэрэгжиж эхэлсэн. Phase 2–4 нь хүлээгдэж буй замын зураг.
+> **Төлөв:** Phase 1 (Tracking суурь) ба Phase 2 (жинхэнэ ROI — CPL/CPA/ROAS + FB Lead Ads
+> webhook + insights cron) хэрэгжсэн. Phase 3–4 нь хүлээгдэж буй замын зураг.
 > **Хамрах гол чиглэлүүд:** (1) Pixel & tracking, (2) ROI/attribution засах, (3) хоёр UI-г нэг hub
 > болгон нэгтгэх + organic social analytics-ийг хадгалах.
 > *(Email/SMS broadcast одоохондоо хойшлуулсан.)*

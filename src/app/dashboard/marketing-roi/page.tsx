@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { TrendingUp, Users, Target, BarChart3, RefreshCw, Megaphone } from 'lucide-react';
+import { TrendingUp, Users, Target, BarChart3, RefreshCw, Megaphone, DollarSign } from 'lucide-react';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { Card } from '@/components/ui/Card';
@@ -49,6 +49,30 @@ const sourceLabels: Record<string, string> = {
     other: 'Бусад',
 };
 
+interface CampaignRoi {
+    external_id: string;
+    name: string;
+    spend: number;
+    leads: number;
+    won: number;
+    revenue: number;
+    cpl: number | null;
+    cpa: number | null;
+    roas: number | null;
+    profit: number;
+}
+interface RoiTotals {
+    spend: number; leads: number; won: number; revenue: number;
+    cpl: number | null; cpa: number | null; roas: number | null; profit: number;
+}
+interface RoiData { campaigns: CampaignRoi[]; sources: unknown[]; totals: RoiTotals; }
+
+function fmtMNT(n: number): string {
+    if (Math.abs(n) >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B₮`;
+    if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M₮`;
+    return `${Math.round(n).toLocaleString()}₮`;
+}
+
 export default function MarketingROIPage() {
     const { shop } = useAuth();
     const [leads, setLeads] = useState<any[]>([]);
@@ -58,6 +82,7 @@ export default function MarketingROIPage() {
     const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
     const [campaignsLoading, setCampaignsLoading] = useState(false);
     const [campaignsError, setCampaignsError] = useState<string | null>(null);
+    const [roi, setRoi] = useState<RoiData | null>(null);
 
     useEffect(() => {
         if (!shop?.id) return;
@@ -80,6 +105,17 @@ export default function MarketingROIPage() {
             .eq('platform', 'facebook')
             .order('updated_at', { ascending: false });
         setCampaigns((stored || []) as AdCampaign[]);
+
+        // Жинхэнэ ROI roll-up (spend↔lead↔орлого)
+        try {
+            const res = await fetch('/api/dashboard/marketing-roi', {
+                headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
+            });
+            const data = await res.json();
+            setRoi(data.roi || null);
+        } catch {
+            // best-effort
+        }
 
         setLoading(false);
     }
@@ -247,6 +283,56 @@ export default function MarketingROIPage() {
                             }
                         />
                     </StatBar>
+
+                    {/* True ROI (spend ↔ lead ↔ орлого) */}
+                    {roi && roi.totals.spend > 0 && (
+                        <>
+                            <StatBar columns={4}>
+                                <StatTile label="Зарын зардал" value={fmtMNT(roi.totals.spend)} icon={<DollarSign className="w-4 h-4" />} accent="warning" />
+                                <StatTile label="Орлого (won)" value={fmtMNT(roi.totals.revenue)} icon={<Target className="w-4 h-4" />} accent="success" />
+                                <StatTile label="ROAS" value={roi.totals.roas !== null ? `${roi.totals.roas}x` : '—'} helper={roi.totals.cpl !== null ? `CPL ${fmtMNT(roi.totals.cpl)}` : undefined} icon={<TrendingUp className="w-4 h-4" />} accent="brand" />
+                                <StatTile label="Цэвэр ашиг" value={fmtMNT(roi.totals.profit)} helper={roi.totals.cpa !== null ? `CPA ${fmtMNT(roi.totals.cpa)}` : undefined} icon={<BarChart3 className="w-4 h-4" />} accent={roi.totals.profit >= 0 ? 'success' : 'danger'} />
+                            </StatBar>
+
+                            {roi.campaigns.length > 0 && (
+                                <Card className="mb-6">
+                                    <div className="px-4 py-3 border-b border-border">
+                                        <h3 className="heading-section text-sm text-foreground">Кампанит ажлын ROI</h3>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm">
+                                            <thead className="bg-surface-2/50 border-b border-border">
+                                                <tr className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground/80">
+                                                    <th className="text-left px-4 py-2.5">Кампанит ажил</th>
+                                                    <th className="text-right px-4 py-2.5">Зардал</th>
+                                                    <th className="text-center px-4 py-2.5">Лийд</th>
+                                                    <th className="text-right px-4 py-2.5">CPL</th>
+                                                    <th className="text-center px-4 py-2.5">Won</th>
+                                                    <th className="text-right px-4 py-2.5">Орлого</th>
+                                                    <th className="text-right px-4 py-2.5">ROAS</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-border/60">
+                                                {roi.campaigns.map((c) => (
+                                                    <tr key={c.external_id}>
+                                                        <td className="px-4 py-2.5 font-medium text-foreground">{c.name}</td>
+                                                        <td className="px-4 py-2.5 text-right tabular-nums">{fmtMNT(c.spend)}</td>
+                                                        <td className="px-4 py-2.5 text-center tabular-nums">{c.leads}</td>
+                                                        <td className="px-4 py-2.5 text-right tabular-nums">{c.cpl !== null ? fmtMNT(c.cpl) : '—'}</td>
+                                                        <td className="px-4 py-2.5 text-center tabular-nums">{c.won}</td>
+                                                        <td className="px-4 py-2.5 text-right tabular-nums">{fmtMNT(c.revenue)}</td>
+                                                        <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${c.roas !== null && c.roas >= 1 ? 'text-status-success' : c.roas !== null ? 'text-status-danger' : ''}`}>
+                                                            {c.roas !== null ? `${c.roas}x` : '—'}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </Card>
+                            )}
+                        </>
+                    )}
 
                     {/* Source Breakdown */}
                     <Card className="mb-6">
