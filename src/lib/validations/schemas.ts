@@ -77,6 +77,25 @@ export const CreateCustomerSchema = z.object({
     tags: z.array(z.string().max(100)).max(50).optional(),
 });
 
+// PATCH /api/dashboard/customers — хэсэгчилсэн засвар (id + сонголтот талбарууд)
+export const UpdateCustomerSchema = z.object({
+    id: z.string().uuid('Customer ID буруу формат'),
+    name: z.string().min(1, 'Нэр хоосон байж болохгүй').max(255).optional(),
+    phone: z.string().max(50).optional().nullable(),
+    email: z.string().email('И-мэйл буруу формат').max(255).optional().nullable().or(z.literal('')),
+    address: z.string().max(500).optional().nullable(),
+    notes: z.string().max(10000).optional().nullable(),
+    tags: z.array(z.string().max(100)).max(50).optional(),
+});
+
+// POST /api/dashboard/customers/merge — давхардсан харилцагчдыг нэгтгэх
+export const MergeCustomersSchema = z.object({
+    primaryId: z.string().uuid('Primary ID буруу формат'),
+    duplicateId: z.string().uuid('Duplicate ID буруу формат'),
+}).refine(d => d.primaryId !== d.duplicateId, {
+    message: 'Нэг харилцагчийг өөртэй нь нэгтгэх боломжгүй',
+});
+
 // ============================================
 // Shop Schemas
 // ============================================

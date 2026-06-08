@@ -3,6 +3,7 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { parseHubspotContacts } from '@/lib/utils/file-parser';
+import { normalizePhone } from '@/lib/utils/phone';
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10MB
 const PREVIEW_ROWS = 10;
@@ -49,24 +50,19 @@ export async function POST(request: NextRequest) {
         const errors: Array<{ name: string; reason: string }> = [];
 
         for (const c of contacts) {
-            // Dedupe by email (if present) within shop
-            if (c.email) {
+            const phoneNormalized = normalizePhone(c.phone);
+
+            // Dedup: и-мэйл эсвэл нормчилсон утсаар shop дотор давхардлыг шалгана
+            if (c.email || phoneNormalized) {
+                const orParts: string[] = [];
+                if (c.email) orParts.push(`email.eq.${c.email}`);
+                if (phoneNormalized) orParts.push(`phone_normalized.eq.${phoneNormalized}`);
+
                 const { data: existing } = await supabase
                     .from('customers')
                     .select('id')
                     .eq('shop_id', authShop.id)
-                    .eq('email', c.email)
-                    .maybeSingle();
-                if (existing) {
-                    skipped++;
-                    continue;
-                }
-            } else if (c.phone) {
-                const { data: existing } = await supabase
-                    .from('customers')
-                    .select('id')
-                    .eq('shop_id', authShop.id)
-                    .eq('phone', c.phone)
+                    .or(orParts.join(','))
                     .maybeSingle();
                 if (existing) {
                     skipped++;
@@ -81,6 +77,7 @@ export async function POST(request: NextRequest) {
                     name: c.name,
                     email: c.email,
                     phone: c.phone,
+                    phone_normalized: phoneNormalized,
                     notes: c.notes,
                     tags: c.tags,
                 });

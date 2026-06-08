@@ -23,6 +23,7 @@ import {
     AlertCircle,
     Upload,
     Cloud,
+    Users,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -92,6 +93,12 @@ export default function CustomersPage() {
     const [isDetailOpen, setIsDetailOpen] = useState(false);
     const [editMode, setEditMode] = useState(false);
     const [saving, setSaving] = useState(false);
+
+    // Давхардал нэгтгэх
+    const [mergeMode, setMergeMode] = useState(false);
+    const [mergeTargetId, setMergeTargetId] = useState('');
+    const [merging, setMerging] = useState(false);
+    const [mergeError, setMergeError] = useState<string | null>(null);
 
     const [editForm, setEditForm] = useState({
         name: '',
@@ -224,6 +231,37 @@ export default function CustomersPage() {
             setLogError(err instanceof Error ? err.message : 'Бүртгэхэд алдаа гарлаа');
         } finally {
             setLogSubmitting(false);
+        }
+    }
+
+    async function submitMerge() {
+        if (!selectedCustomer || !mergeTargetId) return;
+        setMerging(true);
+        setMergeError(null);
+        try {
+            const res = await fetch('/api/dashboard/customers/merge', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
+                },
+                body: JSON.stringify({
+                    primaryId: selectedCustomer.id,
+                    duplicateId: mergeTargetId,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data?.error || 'Нэгтгэхэд алдаа гарлаа');
+            }
+            setMergeMode(false);
+            setMergeTargetId('');
+            await fetchCustomers();
+            await fetchCustomerDetail(selectedCustomer.id);
+        } catch (err) {
+            setMergeError(err instanceof Error ? err.message : 'Нэгтгэхэд алдаа гарлаа');
+        } finally {
+            setMerging(false);
         }
     }
 
@@ -997,15 +1035,26 @@ export default function CustomersPage() {
                                         Хадгалах
                                     </Button>
                                 ) : (
-                                    <Button onClick={() => setEditMode(true)} variant="secondary" size="sm">
-                                        <Edit2 className="w-4 h-4" />
-                                        Засах
-                                    </Button>
+                                    <>
+                                        <Button onClick={() => setEditMode(true)} variant="secondary" size="sm">
+                                            <Edit2 className="w-4 h-4" />
+                                            Засах
+                                        </Button>
+                                        <Button
+                                            onClick={() => { setMergeMode(m => !m); setMergeError(null); setMergeTargetId(''); }}
+                                            variant="secondary"
+                                            size="sm"
+                                        >
+                                            <Users className="w-4 h-4" />
+                                            Нэгтгэх
+                                        </Button>
+                                    </>
                                 )}
                                 <button
                                     onClick={() => {
                                         setIsDetailOpen(false);
                                         setEditMode(false);
+                                        setMergeMode(false);
                                     }}
                                     className="p-2 hover:bg-surface-2 rounded-md transition-colors"
                                 >
@@ -1016,6 +1065,48 @@ export default function CustomersPage() {
 
                         {/* Content */}
                         <div className="p-6 space-y-6">
+                            {/* Давхардал нэгтгэх panel */}
+                            {mergeMode && (
+                                <div className="rounded-lg border border-border bg-surface-2/40 p-4 space-y-3">
+                                    <div className="flex items-start gap-2">
+                                        <Users className="w-4 h-4 text-brand-strong mt-0.5" />
+                                        <div className="text-sm text-muted-foreground">
+                                            Энэ харилцагч руу нэгтгэх <span className="font-medium text-foreground">давхардсан</span> харилцагчийг сонгоно уу.
+                                            Сонгосон харилцагчийн бүх холбоо энд шилжээд устана.
+                                        </div>
+                                    </div>
+                                    {mergeError && (
+                                        <p className="text-sm text-status-danger flex items-center gap-1">
+                                            <AlertCircle className="w-4 h-4" />{mergeError}
+                                        </p>
+                                    )}
+                                    <div className="flex items-center gap-2">
+                                        <select
+                                            value={mergeTargetId}
+                                            onChange={e => setMergeTargetId(e.target.value)}
+                                            className="flex-1 px-3 py-2 border border-border-strong rounded-lg text-sm bg-surface"
+                                        >
+                                            <option value="">— Давхардсан харилцагч сонгох —</option>
+                                            {customers
+                                                .filter(c => c.id !== selectedCustomer.id)
+                                                .map(c => (
+                                                    <option key={c.id} value={c.id}>
+                                                        {(c.name || 'Нэргүй')}{c.phone ? ` · ${c.phone}` : ''}
+                                                    </option>
+                                                ))}
+                                        </select>
+                                        <Button
+                                            onClick={submitMerge}
+                                            disabled={!mergeTargetId || merging}
+                                            isLoading={merging}
+                                            variant="primary"
+                                            size="sm"
+                                        >
+                                            Нэгтгэх
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-1.5">
