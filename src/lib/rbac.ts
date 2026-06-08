@@ -118,6 +118,26 @@ export const ROLE_PERMISSIONS: Record<string, RolePermissions> = {
         displayName: 'Marketing',
         displayNameMN: 'Маркетинг',
     },
+    finance_manager: {
+        modules: [
+            'dashboard', 'finance', 'procurement', 'contracts', 'reports',
+        ],
+        canWrite: true,
+        canDelete: true,
+        canAccessAdmin: false,
+        displayName: 'Finance Manager',
+        displayNameMN: 'Санхүүгийн менежер',
+    },
+    accountant: {
+        modules: [
+            'dashboard', 'finance', 'procurement', 'contracts', 'reports',
+        ],
+        canWrite: true,
+        canDelete: false,
+        canAccessAdmin: false,
+        displayName: 'Accountant',
+        displayNameMN: 'Нягтлан бодогч',
+    },
     viewer: {
         modules: ['dashboard', 'reports'],
         canWrite: false,
