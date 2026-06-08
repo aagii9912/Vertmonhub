@@ -24,6 +24,8 @@ import {
     Upload,
     Cloud,
     Users,
+    RefreshCw,
+    Star,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -41,6 +43,9 @@ interface ServiceLogEntry {
     resolved_at: string | null;
 }
 
+type LifecycleStage =
+    | 'prospect' | 'engaged' | 'qualified' | 'viewing' | 'negotiating' | 'won' | 'lost' | 'dormant';
+
 interface Customer {
     id: string;
     name: string | null;
@@ -52,9 +57,40 @@ interface Customer {
     message_count?: number;
     last_contact_at?: string | null;
     created_at: string;
+    quality_score?: number;
+    quality_tier?: 'A' | 'B' | 'C' | null;
+    lifecycle_stage?: LifecycleStage | null;
     chat_history?: Array<{ message: string; response: string; created_at: string }>;
     service_logs?: ServiceLogEntry[];
 }
+
+const STAGE_LABELS: Record<LifecycleStage, string> = {
+    prospect: 'Шинэ сонирхогч',
+    engaged: 'Идэвхтэй',
+    qualified: 'Шалгарсан',
+    viewing: 'Үзлэг',
+    negotiating: 'Хэлэлцээр',
+    won: 'Амжилттай',
+    lost: 'Алдсан',
+    dormant: 'Идэвхгүй',
+};
+
+const STAGE_VARIANT: Record<LifecycleStage, 'info' | 'danger' | 'warning' | 'success' | 'brand' | 'default'> = {
+    prospect: 'default',
+    engaged: 'info',
+    qualified: 'info',
+    viewing: 'warning',
+    negotiating: 'brand',
+    won: 'success',
+    lost: 'danger',
+    dormant: 'default',
+};
+
+const TIER_VARIANT: Record<'A' | 'B' | 'C', 'success' | 'warning' | 'default'> = {
+    A: 'success',
+    B: 'warning',
+    C: 'default',
+};
 
 const SERVICE_LOG_TYPE_LABELS: Record<ServiceLogType, string> = {
     inquiry: 'Хүсэлт',
@@ -87,8 +123,11 @@ export default function CustomersPage() {
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedTag, setSelectedTag] = useState<string | null>(null);
+    const [tierFilter, setTierFilter] = useState('');
+    const [stageFilter, setStageFilter] = useState('');
     const [sortBy, setSortBy] = useState('created_at');
     const [loading, setLoading] = useState(true);
+    const [recomputing, setRecomputing] = useState(false);
     const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
     const [editMode, setEditMode] = useState(false);
@@ -152,13 +191,15 @@ export default function CustomersPage() {
     useEffect(() => {
         fetchCustomers();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedTag, sortBy]);
+    }, [selectedTag, sortBy, tierFilter, stageFilter]);
 
     async function fetchCustomers() {
         try {
             setLoading(true);
             const params = new URLSearchParams();
             if (selectedTag) params.set('tag', selectedTag);
+            if (tierFilter) params.set('tier', tierFilter);
+            if (stageFilter) params.set('stage', stageFilter);
             params.set('sortBy', sortBy);
 
             const res = await fetch(`/api/dashboard/customers?${params}`, {
@@ -172,6 +213,25 @@ export default function CustomersPage() {
             console.error('Failed to fetch customers:', error);
         } finally {
             setLoading(false);
+        }
+    }
+
+    async function recomputeScores() {
+        setRecomputing(true);
+        try {
+            const res = await fetch('/api/dashboard/customers/recompute-scores', {
+                method: 'POST',
+                headers: {
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
+                },
+            });
+            if (res.ok) {
+                await fetchCustomers();
+            }
+        } catch (error) {
+            console.error('Failed to recompute scores:', error);
+        } finally {
+            setRecomputing(false);
         }
     }
 
@@ -506,6 +566,10 @@ export default function CustomersPage() {
                 }
                 secondaryActions={
                     <>
+                        <Button variant="secondary" size="sm" onClick={recomputeScores} isLoading={recomputing}>
+                            {!recomputing && <RefreshCw className="w-4 h-4" />}
+                            Скор шинэчлэх
+                        </Button>
                         <Button variant="secondary" size="sm" onClick={() => setIsHubspotSyncOpen(true)}>
                             <Cloud className="w-4 h-4" />
                             HubSpot татах
@@ -524,10 +588,12 @@ export default function CustomersPage() {
                     onChange: setSearchQuery,
                     placeholder: 'Нэр, утсаар хайх...',
                 }}
-                showClear={searchQuery !== '' || selectedTag !== null || sortBy !== 'created_at'}
+                showClear={searchQuery !== '' || selectedTag !== null || tierFilter !== '' || stageFilter !== '' || sortBy !== 'created_at'}
                 onClear={() => {
                     setSearchQuery('');
                     setSelectedTag(null);
+                    setTierFilter('');
+                    setStageFilter('');
                     setSortBy('created_at');
                 }}
             >
@@ -543,9 +609,22 @@ export default function CustomersPage() {
                         </option>
                     ))}
                 </FilterSelect>
+                <FilterSelect label="Чанар" value={tierFilter} onChange={(e) => setTierFilter(e.target.value)}>
+                    <option value="">Бүх түвшин</option>
+                    <option value="A">A (өндөр)</option>
+                    <option value="B">B (дунд)</option>
+                    <option value="C">C (бага)</option>
+                </FilterSelect>
+                <FilterSelect label="Шат" value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
+                    <option value="">Бүх шат</option>
+                    {(Object.keys(STAGE_LABELS) as LifecycleStage[]).map((s) => (
+                        <option key={s} value={s}>{STAGE_LABELS[s]}</option>
+                    ))}
+                </FilterSelect>
                 <FilterSelect label="Эрэмбэлэх" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
                     <option value="created_at">Бүртгэсэн огноо</option>
                     <option value="last_contact_at">Сүүлд харьцсан</option>
+                    <option value="quality_score">Чанарын оноо</option>
                 </FilterSelect>
             </FilterBar>
 
@@ -569,6 +648,9 @@ export default function CustomersPage() {
                                 <tr>
                                     <th className="px-6 py-3 text-left text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
                                         Харилцагч
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
+                                        Чанар
                                     </th>
                                     <th className="px-6 py-3 text-left text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
                                         Tags
@@ -599,6 +681,23 @@ export default function CustomersPage() {
                                                     </p>
                                                     <p className="text-sm text-muted-foreground">{customer.phone || '-'}</p>
                                                 </div>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-2">
+                                                {customer.quality_tier ? (
+                                                    <Badge variant={TIER_VARIANT[customer.quality_tier]} size="sm">
+                                                        <Star className="w-3 h-3" />
+                                                        {customer.quality_score ?? 0} · {customer.quality_tier}
+                                                    </Badge>
+                                                ) : (
+                                                    <span className="text-xs text-muted-foreground/60">—</span>
+                                                )}
+                                                {customer.lifecycle_stage && (
+                                                    <Badge variant={STAGE_VARIANT[customer.lifecycle_stage]} size="sm">
+                                                        {STAGE_LABELS[customer.lifecycle_stage]}
+                                                    </Badge>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">

@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { CreateCustomerSchema, UpdateCustomerSchema, validateBody } from '@/lib/validations/schemas';
 import { normalizePhone } from '@/lib/utils/phone';
+import { recomputeCustomerScore } from '@/lib/services/CustomerScoringService';
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,12 +24,18 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const search = searchParams.get('search');
     const tag = searchParams.get('tag');
-    const sortBy = searchParams.get('sortBy') || 'created_at';
+    const stage = searchParams.get('stage');
+    const tier = searchParams.get('tier');
+    const requestedSort = searchParams.get('sortBy') || 'created_at';
     const sortOrder = searchParams.get('sortOrder') === 'asc' ? true : false;
+
+    // Эрэмбэлэх баганыг хязгаарлана (дурын багана зөвшөөрөхгүй)
+    const ALLOWED_SORT = ['created_at', 'last_contact_at', 'quality_score', 'message_count', 'name'];
+    const sortBy = ALLOWED_SORT.includes(requestedSort) ? requestedSort : 'created_at';
 
     let query = supabase
       .from('customers')
-      .select('id, name, facebook_id, phone, email, address, notes, tags, message_count, last_contact_at, created_at')
+      .select('id, name, facebook_id, phone, email, address, notes, tags, message_count, last_contact_at, created_at, quality_score, quality_tier, lifecycle_stage, score_breakdown, next_followup_at')
       .eq('shop_id', shopId);
 
     // Search by name or phone
@@ -39,6 +46,14 @@ export async function GET(request: NextRequest) {
     // Filter by tag (tags JSONB багана migration-оор нэмэгдсэн)
     if (tag) {
       query = query.contains('tags', [tag]);
+    }
+
+    // Filter by lifecycle stage / quality tier
+    if (stage) {
+      query = query.eq('lifecycle_stage', stage);
+    }
+    if (tier) {
+      query = query.eq('quality_tier', tier);
     }
 
     // Sort
@@ -124,6 +139,13 @@ export async function POST(request: NextRequest) {
     if (error) {
       logger.error('[Customers POST] Insert failed:', { error });
       return NextResponse.json({ error: 'Failed to create customer' }, { status: 500 });
+    }
+
+    // Шинэ харилцагчийн чанарын оноог тооцоолно (амжилтгүй болсон ч insert хүчинтэй)
+    try {
+      await recomputeCustomerScore(customer.id);
+    } catch (scoreErr) {
+      logger.warn('[Customers POST] scoring failed', { error: scoreErr });
     }
 
     return NextResponse.json({ customer, message: 'Customer created' }, { status: 201 });
