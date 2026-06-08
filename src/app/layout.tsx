@@ -5,6 +5,8 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
 import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { QueryProvider } from "@/components/providers/QueryProvider";
+import { AnalyticsScripts } from "@/components/marketing/AnalyticsScripts";
+import { MarketingAttribution } from "@/components/marketing/MarketingAttribution";
 import { Toaster } from 'sonner';
 
 // Editorial typography: Fraunces display + IBM Plex Sans body (Cyrillic-ready) + IBM Plex Mono
@@ -71,6 +73,8 @@ export default function RootLayout({
         suppressHydrationWarning
         className={`${ibmPlexSans.variable} ${fraunces.variable} ${ibmPlexMono.variable} antialiased`}
       >
+        <AnalyticsScripts />
+        <MarketingAttribution />
         <ServiceWorkerRegistration />
         <PWAInstallPrompt />
         <QueryProvider>
