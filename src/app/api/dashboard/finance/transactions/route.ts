@@ -3,6 +3,7 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { CreateFinanceTransactionSchema, validateBody } from '@/lib/validations/schemas';
+import { logFinanceAudit } from '@/lib/erp/audit';
 
 /**
  * GET /api/dashboard/finance/transactions — Гүйлгээний жагсаалт (шүүлттэй)
@@ -78,6 +79,15 @@ export async function POST(request: NextRequest) {
             .single();
 
         if (error) throw error;
+
+        await logFinanceAudit({
+            shopId: authShop.id,
+            action: 'transaction.create',
+            entity: 'finance_transaction',
+            entityId: txn.id,
+            amount: d.amount,
+            meta: { type: d.type, method: d.method || null },
+        });
 
         return NextResponse.json({ transaction: txn, message: 'Гүйлгээ бүртгэлээ' }, { status: 201 });
     } catch (error) {

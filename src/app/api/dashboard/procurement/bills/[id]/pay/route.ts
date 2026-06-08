@@ -3,6 +3,7 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { PayBillSchema, validateBody } from '@/lib/validations/schemas';
+import { logFinanceAudit } from '@/lib/erp/audit';
 
 /**
  * POST /api/dashboard/procurement/bills/[id]/pay
@@ -58,6 +59,15 @@ export async function POST(
         if (txnError) {
             logger.warn('[Bill Pay] finance_transactions insert failed', { error: txnError });
         }
+
+        await logFinanceAudit({
+            shopId: authShop.id,
+            action: 'bill.pay',
+            entity: 'vendor_bill',
+            entityId: id,
+            amount: d.amount,
+            meta: { status: newStatus },
+        });
 
         return NextResponse.json({
             success: true,
