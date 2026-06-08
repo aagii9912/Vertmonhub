@@ -112,6 +112,39 @@ export const CreateFinanceTransactionSchema = z.object({
     note: z.string().max(2000).optional().nullable(),
 });
 
+// Procurement (AP)
+export const CreateVendorSchema = z.object({
+    name: z.string().min(1, 'Нэр шаардлагатай').max(255),
+    registration: z.string().max(50).optional().nullable(),
+    phone: z.string().max(50).optional().nullable(),
+    email: z.string().email('И-мэйл буруу').max(255).optional().nullable().or(z.literal('')),
+    bank_name: z.string().max(100).optional().nullable(),
+    account_number: z.string().max(50).optional().nullable(),
+    account_name: z.string().max(255).optional().nullable(),
+    note: z.string().max(2000).optional().nullable(),
+});
+
+export const CreateBillSchema = z.object({
+    vendor_id: z.string().uuid().optional().nullable(),
+    project_id: z.string().uuid().optional().nullable(),
+    bill_number: z.string().max(100).optional().nullable(),
+    bill_date: z.string().optional().nullable(),
+    due_date: z.string().optional().nullable(),
+    vat_amount: z.number().nonnegative().max(1e15).optional().nullable(),
+    note: z.string().max(2000).optional().nullable(),
+    lines: z.array(z.object({
+        description: z.string().max(500).optional().nullable(),
+        account_id: z.string().uuid().optional().nullable(),
+        amount: z.number().nonnegative().max(1e15),
+    })).min(1, 'Дор хаяж нэг мөр шаардлагатай').max(50),
+});
+
+export const PayBillSchema = z.object({
+    amount: z.number().positive('Дүн 0-ээс их байх ёстой').max(1e15),
+    method: z.enum(['cash', 'bank', 'barter', 'mortgage']).optional().nullable(),
+    paid_date: z.string().optional().nullable(),
+});
+
 // ============================================
 // Shop Schemas
 // ============================================
