@@ -97,6 +97,22 @@ export const MergeCustomersSchema = z.object({
 });
 
 // ============================================
+// Finance / ERP Schemas
+// ============================================
+export const CreateFinanceTransactionSchema = z.object({
+    txn_date: z.string().optional().nullable(),
+    type: z.enum(['receipt', 'disbursement']),
+    amount: z.number().positive('Дүн 0-ээс их байх ёстой').max(1e15),
+    vat_amount: z.number().nonnegative().max(1e15).optional().nullable(),
+    method: z.enum(['cash', 'bank', 'barter', 'mortgage']).optional().nullable(),
+    account_id: z.string().uuid().optional().nullable(),
+    contract_id: z.string().uuid().optional().nullable(),
+    payment_schedule_id: z.string().uuid().optional().nullable(),
+    project_id: z.string().uuid().optional().nullable(),
+    note: z.string().max(2000).optional().nullable(),
+});
+
+// ============================================
 // Shop Schemas
 // ============================================
 export const CreateShopSchema = z.object({
