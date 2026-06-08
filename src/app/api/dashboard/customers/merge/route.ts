@@ -3,6 +3,7 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { MergeCustomersSchema, validateBody } from '@/lib/validations/schemas';
+import { recomputeCustomerScore } from '@/lib/services/CustomerScoringService';
 
 // customer_id-аар customers-ыг лавладаг хүүхэд хүснэгтүүд — нэгтгэхэд repoint хийнэ.
 // Зарим хүснэгт deployment-д байхгүй байж болзошгүй тул алдааг тус бүрд нь тэвчинэ.
@@ -124,6 +125,13 @@ export async function POST(request: NextRequest) {
         if (deleteError) {
             logger.error('[Customer Merge] delete duplicate failed', { error: deleteError });
             return NextResponse.json({ error: 'Давхардлыг устгах үед алдаа гарлаа' }, { status: 500 });
+        }
+
+        // Нэгтгэсний дараа primary-ийн оноог дахин тооцоолно
+        try {
+            await recomputeCustomerScore(primaryId);
+        } catch (scoreErr) {
+            logger.warn('[Customer Merge] scoring failed', { error: scoreErr });
         }
 
         logger.info('[Customer Merge] success', {
