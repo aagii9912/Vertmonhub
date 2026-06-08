@@ -82,6 +82,7 @@ const sections: MenuSection[] = [
         icon: Wallet,
         items: [
             { name: 'Санхүү', href: '/dashboard/finance', icon: Wallet, badge: 'Шинэ', module: 'finance' },
+            { name: 'Худалдан авалт', href: '/dashboard/procurement', icon: Building2, module: 'procurement' },
         ],
     },
     {
