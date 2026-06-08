@@ -4,6 +4,7 @@
 
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { normalizePhone, extractPhoneFromText } from '@/lib/utils/phone';
 import { DatabaseError, NotFoundError } from '@/types/errors';
 import type { Customer } from '@/types/database';
 
@@ -80,6 +81,7 @@ export class CustomerService {
                 facebook_id: data.facebookId,
                 name: data.name,
                 phone: data.phone,
+                phone_normalized: normalizePhone(data.phone),
                 address: data.address,
             })
             .select()
@@ -98,9 +100,15 @@ export class CustomerService {
      * Update customer data
      */
     async update(id: string, data: UpdateCustomerData): Promise<Customer> {
+        // Утас өгөгдсөн бол нормчилсон хэлбэрийг хамт хадгална (dedup-д)
+        const payload: Record<string, unknown> = { ...data };
+        if (data.phone !== undefined) {
+            payload.phone_normalized = normalizePhone(data.phone);
+        }
+
         const { data: updated, error } = await this.supabase
             .from('customers')
-            .update(data)
+            .update(payload)
             .eq('id', id)
             .select()
             .single();
@@ -153,10 +161,9 @@ export class CustomerService {
      * Extract phone number from message and update customer
      */
     async extractAndUpdatePhone(customerId: string, message: string): Promise<string | null> {
-        const phoneMatch = message.match(/(\d{8})/);
+        const phone = extractPhoneFromText(message);
 
-        if (phoneMatch) {
-            const phone = phoneMatch[1];
+        if (phone) {
             await this.update(customerId, { phone });
             logger.info('Phone extracted from message', { phone, customerId });
             return phone;
