@@ -8,6 +8,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { FilterBar, FilterSelect } from '@/components/dashboard/FilterBar';
+import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import {
     User,
     Phone,
@@ -128,6 +129,16 @@ export default function CustomersPage() {
     const [sortBy, setSortBy] = useState('created_at');
     const [loading, setLoading] = useState(true);
     const [recomputing, setRecomputing] = useState(false);
+
+    const [health, setHealth] = useState<{
+        total: number;
+        newThisMonth: number;
+        dormant: number;
+        avgQualityScore: number;
+        tiers: { A: number; B: number; C: number };
+        needFollowup: number;
+        avgDaysToConvert: number | null;
+    } | null>(null);
     const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
     const [editMode, setEditMode] = useState(false);
@@ -193,6 +204,25 @@ export default function CustomersPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedTag, sortBy, tierFilter, stageFilter]);
 
+    useEffect(() => {
+        fetchHealth();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    async function fetchHealth() {
+        try {
+            const res = await fetch('/api/dashboard/customer-health', {
+                headers: {
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
+                },
+            });
+            const data = await res.json();
+            setHealth(data.health || null);
+        } catch (error) {
+            console.error('Failed to fetch customer health:', error);
+        }
+    }
+
     async function fetchCustomers() {
         try {
             setLoading(true);
@@ -226,7 +256,7 @@ export default function CustomersPage() {
                 },
             });
             if (res.ok) {
-                await fetchCustomers();
+                await Promise.all([fetchCustomers(), fetchHealth()]);
             }
         } catch (error) {
             console.error('Failed to recompute scores:', error);
@@ -581,6 +611,39 @@ export default function CustomersPage() {
                     </>
                 }
             />
+
+            {health && health.total > 0 && (
+                <StatBar columns={4}>
+                    <StatTile
+                        label="Нийт харилцагч"
+                        value={health.total}
+                        helper={`Энэ сард +${health.newThisMonth}`}
+                        icon={<Users className="w-5 h-5" />}
+                        accent="brand"
+                    />
+                    <StatTile
+                        label="Дундаж чанар"
+                        value={health.avgQualityScore}
+                        helper={`A: ${health.tiers.A} · B: ${health.tiers.B} · C: ${health.tiers.C}`}
+                        icon={<Star className="w-5 h-5" />}
+                        accent="success"
+                    />
+                    <StatTile
+                        label="Дагах шаардлагатай"
+                        value={health.needFollowup}
+                        helper="Чимээгүй чанартай харилцагч"
+                        icon={<Clock className="w-5 h-5" />}
+                        accent="warning"
+                    />
+                    <StatTile
+                        label="Идэвхгүй (dormant)"
+                        value={health.dormant}
+                        helper={health.avgDaysToConvert !== null ? `Хөрвөх дундаж: ${health.avgDaysToConvert} хон.` : 'Идэвхжүүлэх боломжтой'}
+                        icon={<AlertCircle className="w-5 h-5" />}
+                        accent="danger"
+                    />
+                </StatBar>
+            )}
 
             <FilterBar
                 search={{

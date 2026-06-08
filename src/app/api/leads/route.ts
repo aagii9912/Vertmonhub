@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
 
             const prompt = `Чи Vertmon компанийн найрсаг менежер шүү! 😊
 
-Одоо ${name}${company ? ` (${company}-с)` : ''} Odoo ERP-ийн талаар сонирхож байна. Түүнд ээлтэй, хүн шиг хариулт өг.
+Одоо ${name}${company ? ` (${company}-с)` : ''} Vertmon-ий шийдлийн талаар сонирхож байна. Түүнд ээлтэй, хүн шиг хариулт өг.
 
 ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий сонирхол илэрхийлж байна.'}
 
