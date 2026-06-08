@@ -145,6 +145,14 @@ export const PayBillSchema = z.object({
     paid_date: z.string().optional().nullable(),
 });
 
+export const CreateBudgetLineSchema = z.object({
+    project_id: z.string().uuid('Төсөл сонгоно уу'),
+    account_id: z.string().uuid().optional().nullable(),
+    label: z.string().max(255).optional().nullable(),
+    planned_amount: z.number().nonnegative().max(1e15),
+    note: z.string().max(2000).optional().nullable(),
+});
+
 // ============================================
 // Shop Schemas
 // ============================================
