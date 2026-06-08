@@ -26,6 +26,7 @@ import {
     Share2,
     ChevronRight,
     Headphones,
+    Wallet,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccessModule, canAccessModuleDynamic, getRoleDisplayName } from '@/lib/rbac';
@@ -73,6 +74,14 @@ const sections: MenuSection[] = [
             { name: 'Гэрээ', href: '/dashboard/contracts', icon: FileText, module: 'contracts' },
             { name: 'Харилцагч', href: '/dashboard/customers', icon: Users, module: 'customers' },
             { name: 'Үйлчилгээ', href: '/dashboard/customer-service', icon: Headphones, badge: 'Шинэ', module: 'contracts' },
+        ],
+    },
+    {
+        id: 'finance',
+        title: 'FINANCE / ERP',
+        icon: Wallet,
+        items: [
+            { name: 'Санхүү', href: '/dashboard/finance', icon: Wallet, badge: 'Шинэ', module: 'finance' },
         ],
     },
     {

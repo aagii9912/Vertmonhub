@@ -89,6 +89,25 @@ export async function POST(
 
         if (error) throw error;
 
+        // ERP: бодит төлбөр төлөгдсөн бол кассын дэвтэрт орлого (receipt) бичнэ
+        if (Number(body.paid_amount) > 0) {
+            const { error: txnError } = await supabase
+                .from('finance_transactions')
+                .insert({
+                    shop_id: authShop.id,
+                    txn_date: body.paid_date || new Date().toISOString().slice(0, 10),
+                    type: 'receipt',
+                    amount: Number(body.paid_amount),
+                    method: body.payment_method || null,
+                    contract_id: contractId,
+                    payment_schedule_id: data.id,
+                    note: body.label || 'Гэрээний төлбөр',
+                });
+            if (txnError) {
+                logger.warn('[Payments API] finance_transactions insert failed', { error: txnError });
+            }
+        }
+
         return NextResponse.json({ payment: data, message: 'Төлбөр амжилттай бүртгэлээ' }, { status: 201 });
     } catch (error) {
         logger.error('[Payments API] POST error:', { error });
