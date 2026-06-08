@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Super admin required' }, { status: 403 });
         }
 
-        const { email, password, full_name, role } = await request.json();
+        const { email, password, full_name, role, shop_id } = await request.json();
 
         if (!email || !password) {
             return NextResponse.json({ error: 'Имэйл болон нууц үг шаардлагатай' }, { status: 400 });
@@ -140,21 +140,44 @@ export async function POST(request: NextRequest) {
         }, { onConflict: 'id' });
 
         // Assign role if provided
-        let roleWarning: string | null = null;
+        const warnings: string[] = [];
         if (role) {
             const { error: roleErr } = await supabase
                 .from('user_roles')
                 .upsert({ user_id: newUserId, role }, { onConflict: 'user_id' });
 
             if (roleErr) {
-                roleWarning = 'Дүр оноох үед алдаа: ' + roleErr.message;
+                warnings.push('Дүр оноох үед алдаа: ' + roleErr.message);
                 console.error('Role assignment warning:', roleErr.message);
+            }
+        }
+
+        // Shop-д гишүүнээр оноох. shop_id өгөгдсөн бол түүнийг, эс бөгөөс ганц л shop
+        // байвал автоматаар тэр shop-д холбоно (нэг компанийн дотоод системд хялбар болгох).
+        let targetShopId: string | null = shop_id || null;
+        if (!targetShopId) {
+            const { data: shopRows } = await supabase.from('shops').select('id').limit(2);
+            if (shopRows && shopRows.length === 1) {
+                targetShopId = shopRows[0].id;
+            }
+        }
+
+        if (targetShopId) {
+            const { error: memberErr } = await supabase
+                .from('shop_members')
+                .upsert(
+                    { shop_id: targetShopId, user_id: newUserId, role: 'member' },
+                    { onConflict: 'shop_id,user_id' }
+                );
+            if (memberErr) {
+                warnings.push('Shop-д холбох үед алдаа: ' + memberErr.message);
+                console.error('Shop membership warning:', memberErr.message);
             }
         }
 
         return NextResponse.json({
             success: true,
-            warning: roleWarning,
+            warning: warnings.length > 0 ? warnings.join(' / ') : null,
             user: {
                 id: newUserId,
                 email,
