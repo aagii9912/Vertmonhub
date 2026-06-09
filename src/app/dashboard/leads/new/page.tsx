@@ -94,8 +94,9 @@ export default function NewLeadPage() {
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-foreground mb-1">Нэр</label>
+                                <label htmlFor="customer_name" className="block text-sm font-medium text-foreground mb-1">Нэр</label>
                                 <Input
+                                    id="customer_name"
                                     name="customer_name"
                                     value={formData.customer_name}
                                     onChange={handleChange}
@@ -105,8 +106,9 @@ export default function NewLeadPage() {
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-foreground mb-1">Утас</label>
+                                    <label htmlFor="phone" className="block text-sm font-medium text-foreground mb-1">Утас</label>
                                     <Input
+                                        id="phone"
                                         name="phone"
                                         value={formData.phone}
                                         onChange={handleChange}
@@ -114,8 +116,9 @@ export default function NewLeadPage() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-foreground mb-1">Имэйл</label>
+                                    <label htmlFor="email" className="block text-sm font-medium text-foreground mb-1">Имэйл</label>
                                     <Input
+                                        id="email"
                                         name="email"
                                         type="email"
                                         value={formData.email}
@@ -125,8 +128,9 @@ export default function NewLeadPage() {
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-foreground mb-1">Эх үүсвэр</label>
+                                <label htmlFor="source" className="block text-sm font-medium text-foreground mb-1">Эх үүсвэр</label>
                                 <select
+                                    id="source"
                                     name="source"
                                     value={formData.source}
                                     onChange={handleChange}
@@ -153,8 +157,9 @@ export default function NewLeadPage() {
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-foreground mb-1">Сонирхож буй төрөл</label>
+                                <label htmlFor="preferred_type" className="block text-sm font-medium text-foreground mb-1">Сонирхож буй төрөл</label>
                                 <select
+                                    id="preferred_type"
                                     name="preferred_type"
                                     value={formData.preferred_type}
                                     onChange={handleChange}
@@ -169,8 +174,9 @@ export default function NewLeadPage() {
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-foreground mb-1">Төсөв (доод)</label>
+                                    <label htmlFor="budget_min" className="block text-sm font-medium text-foreground mb-1">Төсөв (доод)</label>
                                     <Input
+                                        id="budget_min"
                                         name="budget_min"
                                         type="number"
                                         value={formData.budget_min}
@@ -179,8 +185,9 @@ export default function NewLeadPage() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-foreground mb-1">Төсөв (дээд)</label>
+                                    <label htmlFor="budget_max" className="block text-sm font-medium text-foreground mb-1">Төсөв (дээд)</label>
                                     <Input
+                                        id="budget_max"
                                         name="budget_max"
                                         type="number"
                                         value={formData.budget_max}
