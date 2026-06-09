@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { getUserShop } from '@/lib/auth/supabase-auth';
+import { requireWrite } from '@/lib/auth/require-permission';
 import * as z from 'zod';
 
 const createSurveySchema = z.object({
@@ -37,6 +38,9 @@ export async function POST(req: NextRequest) {
         if (authError || !session) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
+
+        const denied = await requireWrite();
+        if (denied) return denied;
 
         const authShop = await getUserShop();
         if (!authShop) {
