@@ -34,7 +34,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         // Check if survey exists and is active
         const { data: survey, error: surveyError } = await supabase
             .from('surveys')
-            .select('is_active')
+            .select('is_active, shop_id')
             .eq('id', surveyId)
             .single();
 
@@ -63,6 +63,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             .from('survey_responses')
             .insert([{
                 survey_id: surveyId,
+                shop_id: survey.shop_id,
                 answers: validatedData.answers,
                 customer_id: validatedData.customer_id,
                 source,
