@@ -10,7 +10,7 @@ import { z } from 'zod';
 export const CreateLeadSchema = z.object({
     name: z.string().min(1, 'Нэр шаардлагатай').max(255),
     phone: z.string().min(8, 'Утасны дугаар буруу').max(20).regex(/^[\d+\-() ]{8,20}$/, 'Утасны дугаар буруу формат'),
-    email: z.string().email('Email буруу формат').max(255).optional().nullable(),
+    email: z.string().email('И-мэйл буруу формат').max(255).optional().nullable(),
     company: z.string().max(255).optional().nullable(),
     message: z.string().max(2000).optional().nullable(),
     // Honeypot: real users leave this empty; bots fill it

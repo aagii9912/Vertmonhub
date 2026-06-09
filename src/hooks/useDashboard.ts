@@ -47,25 +47,32 @@ export function useDashboard(timeFilter: 'today' | 'week' | 'month' = 'today') {
                 // Total leads
                 supabase.from('leads').select('id', { count: 'exact', head: true }).eq('shop_id', shopId),
                 // Monthly viewings
-                supabase.from('viewings').select('id', { count: 'exact', head: true })
+                supabase.from('property_viewings').select('id', { count: 'exact', head: true })
                     .eq('shop_id', shopId)
                     .gte('created_at', fromDate.toISOString()),
-                // Pending contracts
-                supabase.from('contracts').select('id', { count: 'exact', head: true })
+                // Pending (active) contracts
+                supabase.from('property_contracts').select('id', { count: 'exact', head: true })
                     .eq('shop_id', shopId)
-                    .eq('status', 'pending'),
+                    .eq('contract_status', 'active'),
                 // Recent leads (latest 5)
                 supabase.from('leads').select('*')
                     .eq('shop_id', shopId)
                     .order('created_at', { ascending: false })
                     .limit(5),
                 // Upcoming viewings
-                supabase.from('viewings').select('*, properties(title)')
+                supabase.from('property_viewings').select('*, properties(name)')
                     .eq('shop_id', shopId)
                     .gte('scheduled_at', now.toISOString())
                     .order('scheduled_at', { ascending: true })
                     .limit(3),
             ]);
+
+            // Алдааг чимээгүй залгилгүйгээр react-query-ийн error төлөвт буулгана
+            const failed = [propertiesRes, leadsRes, viewingsRes, contractsRes, recentLeadsRes, upcomingViewingsRes]
+                .find((r) => r.error);
+            if (failed?.error) {
+                throw new Error(failed.error.message);
+            }
 
             return {
                 stats: {

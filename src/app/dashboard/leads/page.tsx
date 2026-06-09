@@ -20,7 +20,6 @@ import {
     Plus,
     MessageSquare,
     Building2,
-    ArrowUpRight,
     Clock,
     CheckCircle2,
     XCircle,
@@ -224,12 +223,7 @@ export default function LeadsPage() {
                     value={stats.total}
                     icon={<Users className="w-4 h-4" />}
                     accent="brand"
-                    helper={
-                        <span className="inline-flex items-center gap-1 text-status-success">
-                            <ArrowUpRight className="w-3 h-3" />
-                            +18% өмнөх сараас
-                        </span>
-                    }
+                    helper="Бүх цаг үеийн нийт"
                 />
                 <StatTile
                     label="Шинэ лийд"
@@ -250,12 +244,7 @@ export default function LeadsPage() {
                     value={`${stats.conversionRate.toFixed(1)}%`}
                     icon={<TrendingUp className="w-4 h-4" />}
                     accent="success"
-                    helper={
-                        <span className="inline-flex items-center gap-1 text-status-success">
-                            <ArrowUpRight className="w-3 h-3" />
-                            +5% өмнөх сараас
-                        </span>
-                    }
+                    helper="Лийдээс гэрээ хүртэл"
                 />
             </StatBar>
 
