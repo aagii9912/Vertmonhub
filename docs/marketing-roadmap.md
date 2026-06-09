@@ -1,7 +1,10 @@
 # Vertmon Hub — Маркетинг Хэсгийн Аудит ба Сайжруулалтын Замын Зураг
 
-> **Төлөв:** Phase 1 (Tracking суурь) ба Phase 2 (жинхэнэ ROI — CPL/CPA/ROAS + FB Lead Ads
-> webhook + insights cron) хэрэгжсэн. Phase 3–4 нь хүлээгдэж буй замын зураг.
+> **Төлөв:** Phase 1 (Tracking суурь), Phase 2 (жинхэнэ ROI + FB Lead Ads), Phase 3 (organic
+> social хадгалалт + навигацийн нэгтгэл) хэрэгжсэн. Phase 4 хүлээгдэж буй.
+> *(UI-ийн бүрэн физик нэгтгэл — `/marketing/*` хуудсуудыг `/dashboard` доор зөөх — нь том
+> бүтцийн refactor тул дараагийн алхамд үлдээв; одоо навигацийг нэг dashboard sidebar-аас
+> хүрдэг болгосон.)*
 > **Хамрах гол чиглэлүүд:** (1) Pixel & tracking, (2) ROI/attribution засах, (3) хоёр UI-г нэг hub
 > болгон нэгтгэх + organic social analytics-ийг хадгалах.
 > *(Email/SMS broadcast одоохондоо хойшлуулсан.)*

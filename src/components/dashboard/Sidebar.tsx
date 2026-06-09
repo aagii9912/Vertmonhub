@@ -92,7 +92,17 @@ const sections: MenuSection[] = [
         title: 'MARKETING',
         icon: Megaphone,
         items: [
-            { name: 'Маркетинг ROI', href: '/dashboard/marketing-roi', icon: TrendingUp, module: 'marketing-roi' },
+            {
+                name: 'Маркетинг', href: '/dashboard/marketing-roi', icon: TrendingUp, module: 'marketing-roi',
+                children: [
+                    { name: 'ROI самбар', href: '/dashboard/marketing-roi' },
+                    { name: 'Кампейн', href: '/marketing/campaigns' },
+                    { name: 'Зар сурталчилгаа', href: '/marketing/ads' },
+                    { name: 'Контент календарь', href: '/marketing/calendar' },
+                    { name: 'Социал медиа', href: '/marketing/social' },
+                    { name: 'Lead эх үүсвэр', href: '/marketing/sources' },
+                ],
+            },
             {
                 name: 'Аналитик', href: '/dashboard/reports', icon: BarChart3, module: 'reports',
                 children: [

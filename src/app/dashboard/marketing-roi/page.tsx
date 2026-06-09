@@ -67,6 +67,9 @@ interface RoiTotals {
 }
 interface RoiData { campaigns: CampaignRoi[]; sources: unknown[]; totals: RoiTotals; }
 
+interface SocialPost { id: string; content: string | null; likes: number; comments: number; shares: number; published_at: string | null; }
+interface SocialInsight { captured_at: string; reach: number; impressions: number; followers: number; }
+
 function fmtMNT(n: number): string {
     if (Math.abs(n) >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B₮`;
     if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M₮`;
@@ -83,6 +86,8 @@ export default function MarketingROIPage() {
     const [campaignsLoading, setCampaignsLoading] = useState(false);
     const [campaignsError, setCampaignsError] = useState<string | null>(null);
     const [roi, setRoi] = useState<RoiData | null>(null);
+    const [social, setSocial] = useState<{ posts: SocialPost[]; insights: SocialInsight[] } | null>(null);
+    const [syncingSocial, setSyncingSocial] = useState(false);
 
     useEffect(() => {
         if (!shop?.id) return;
@@ -117,6 +122,17 @@ export default function MarketingROIPage() {
             // best-effort
         }
 
+        // Хадгалсан organic social түүх
+        try {
+            const res = await fetch('/api/dashboard/marketing/social-history', {
+                headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
+            });
+            const data = await res.json();
+            setSocial({ posts: data.posts || [], insights: data.insights || [] });
+        } catch {
+            // best-effort
+        }
+
         setLoading(false);
     }
 
@@ -136,6 +152,24 @@ export default function MarketingROIPage() {
             setCampaignsError(err instanceof Error ? err.message : 'Алдаа');
         }
     }, []);
+
+    async function syncSocial() {
+        setSyncingSocial(true);
+        try {
+            const headers = { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' };
+            const res = await fetch('/api/dashboard/marketing/sync-social', { method: 'POST', headers });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data?.error || 'Sync алдаа');
+            const h = await fetch('/api/dashboard/marketing/social-history', { headers });
+            const hist = await h.json();
+            setSocial({ posts: hist.posts || [], insights: hist.insights || [] });
+            toast.success(data.message || 'Social хадгаллаа');
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Sync алдаа');
+        } finally {
+            setSyncingSocial(false);
+        }
+    }
 
     async function syncCampaigns() {
         if (!selectedAdAccount) {
@@ -333,6 +367,40 @@ export default function MarketingROIPage() {
                             )}
                         </>
                     )}
+
+                    {/* Organic социал (хадгалсан түүх) */}
+                    <Card className="mb-6">
+                        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+                            <h3 className="heading-section text-sm text-foreground">Organic социал</h3>
+                            <Button variant="secondary" size="sm" onClick={syncSocial} isLoading={syncingSocial} disabled={syncingSocial}>
+                                {!syncingSocial && <RefreshCw className="w-4 h-4" />}
+                                Хадгалах
+                            </Button>
+                        </div>
+                        <div className="p-4">
+                            {social && social.insights[0] && (
+                                <div className="flex flex-wrap gap-4 mb-4 text-sm">
+                                    <span className="text-muted-foreground">Дагагч: <span className="font-semibold text-foreground tabular-nums">{social.insights[0].followers.toLocaleString()}</span></span>
+                                    <span className="text-muted-foreground">Reach: <span className="font-semibold text-foreground tabular-nums">{social.insights[0].reach.toLocaleString()}</span></span>
+                                    <span className="text-muted-foreground">Snapshot: <span className="font-semibold text-foreground tabular-nums">{social.insights.length}</span></span>
+                                </div>
+                            )}
+                            {!social || social.posts.length === 0 ? (
+                                <p className="text-sm text-muted-foreground py-4 text-center">Хадгалсан нийтлэл алга. "Хадгалах" дарж Facebook-аас татна уу.</p>
+                            ) : (
+                                <div className="divide-y divide-border/60">
+                                    {social.posts.slice(0, 5).map((p) => (
+                                        <div key={p.id} className="py-2.5 flex items-start justify-between gap-3">
+                                            <p className="text-sm text-foreground line-clamp-2 flex-1">{p.content || '(зураг)'}</p>
+                                            <span className="text-xs text-muted-foreground whitespace-nowrap tabular-nums">
+                                                ❤ {p.likes} · 💬 {p.comments} · ↗ {p.shares}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </Card>
 
                     {/* Source Breakdown */}
                     <Card className="mb-6">
