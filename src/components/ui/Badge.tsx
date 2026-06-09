@@ -44,20 +44,4 @@ export function Badge({ children, variant, size, className, ...props }: BadgePro
     );
 }
 
-// Order status badge — kept for backwards compat
-export function OrderStatusBadge({ status }: { status: string }) {
-    const statusConfig: Record<string, { label: string; variant: NonNullable<BadgeProps['variant']> }> = {
-        pending: { label: 'Хүлээгдэж буй', variant: 'warning' },
-        confirmed: { label: 'Баталгаажсан', variant: 'info' },
-        processing: { label: 'Бэлтгэж буй', variant: 'info' },
-        shipped: { label: 'Илгээсэн', variant: 'success' },
-        delivered: { label: 'Хүргэгдсэн', variant: 'success' },
-        cancelled: { label: 'Цуцлагдсан', variant: 'danger' },
-    };
-
-    const config = statusConfig[status] || { label: status, variant: 'default' };
-
-    return <Badge variant={config.variant}>{config.label}</Badge>;
-}
-
 export { badgeVariants };

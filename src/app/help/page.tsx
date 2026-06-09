@@ -33,13 +33,13 @@ export default function HelpPage() {
   return (
     <div className="min-h-screen bg-surface-2/40">
       {/* Hero Section */}
-      <div className="bg-gradient-to-br from-violet-600 to-indigo-700 text-white">
+      <div className="bg-gradient-to-br from-brand to-brand-strong text-white">
         <div className="max-w-4xl mx-auto px-6 py-16 text-center">
           <div className="w-20 h-20 bg-surface/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
             <HelpCircle className="w-10 h-10" />
           </div>
           <h1 className="text-4xl font-bold mb-4">Тусламж & FAQ</h1>
-          <p className="text-xl text-violet-100">Vertmon Hub ашиглахад тусламж хэрэгтэй юу?</p>
+          <p className="text-xl text-white/80">Vertmon Hub ашиглахад тусламж хэрэгтэй юу?</p>
         </div>
       </div>
 
