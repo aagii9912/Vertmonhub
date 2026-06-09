@@ -20,7 +20,6 @@ import {
     MapPin,
     BedDouble,
     Maximize,
-    ArrowUpRight,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -181,48 +180,28 @@ export default function PropertiesPage() {
                     value={stats.totalProperties}
                     icon={<Building2 className="w-4 h-4" />}
                     accent="brand"
-                    helper={
-                        <span className="inline-flex items-center gap-1 text-status-success">
-                            <ArrowUpRight className="w-3 h-3" />
-                            +12% өмнөх сараас
-                        </span>
-                    }
+                    helper="Бүртгэлтэй нийт"
                 />
                 <StatTile
                     label="Нийт үнэ"
                     value={formatPrice(stats.totalValue)}
                     icon={<DollarSign className="w-4 h-4" />}
                     accent="info"
-                    helper={
-                        <span className="inline-flex items-center gap-1 text-status-success">
-                            <ArrowUpRight className="w-3 h-3" />
-                            +8% өмнөх сараас
-                        </span>
-                    }
+                    helper="Бүх үл хөдлөхийн нийлбэр"
                 />
                 <StatTile
                     label="Нийт үзэлт"
                     value={stats.totalViews.toLocaleString()}
                     icon={<Eye className="w-4 h-4" />}
                     accent="success"
-                    helper={
-                        <span className="inline-flex items-center gap-1 text-status-success">
-                            <ArrowUpRight className="w-3 h-3" />
-                            +24% өмнөх сараас
-                        </span>
-                    }
+                    helper="Бүх зарын нийт үзэлт"
                 />
                 <StatTile
                     label="Дундаж үнэ"
                     value={formatPrice(stats.avgPrice)}
                     icon={<TrendingUp className="w-4 h-4" />}
                     accent="warning"
-                    helper={
-                        <span className="inline-flex items-center gap-1 text-status-danger">
-                            <ArrowUpRight className="w-3 h-3 rotate-90" />
-                            -2% өмнөх сараас
-                        </span>
-                    }
+                    helper="Нэг үл хөдлөхөд"
                 />
             </StatBar>
 

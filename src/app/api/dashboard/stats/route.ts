@@ -54,17 +54,17 @@ export async function GET(request: NextRequest) {
 
     // Viewings this period
     const { count: monthlyViewings } = await supabase
-      .from('viewings')
+      .from('property_viewings')
       .select('*', { count: 'exact', head: true })
       .eq('shop_id', shopId)
       .gte('created_at', periodStart.toISOString());
 
-    // Pending contracts
+    // Pending (active) contracts
     const { count: pendingContracts } = await supabase
-      .from('contracts')
+      .from('property_contracts')
       .select('*', { count: 'exact', head: true })
       .eq('shop_id', shopId)
-      .eq('status', 'pending');
+      .eq('contract_status', 'active');
 
     // Total customers
     const { count: totalCustomers } = await supabase
