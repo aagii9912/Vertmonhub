@@ -3,6 +3,7 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { recomputeCustomerScore } from '@/lib/services/CustomerScoringService';
+import { logAttributionEvent } from '@/lib/marketing/attribution-events';
 
 /**
  * POST /api/dashboard/leads/[id]/convert
@@ -63,6 +64,14 @@ export async function POST(
             .select('*')
             .eq('lead_id', id)
             .maybeSingle();
+
+        // Attribution: won үйл явдал бичих (multi-touch)
+        await logAttributionEvent({
+            shopId: authShop.id,
+            leadId: id,
+            eventType: 'won',
+            value: conversionValue ?? (contract ? Number(contract.total_price) || null : null),
+        });
 
         // Харилцагчийн чанарын оноог дахин тооцоолно (won → funnel оноо нэмэгдэнэ)
         if (lead.customer_id) {

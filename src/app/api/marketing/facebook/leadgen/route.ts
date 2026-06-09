@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { verifyWebhookSignature } from '@/lib/utils/verify-webhook-signature';
+import { logAttributionEvent } from '@/lib/marketing/attribution-events';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -87,16 +88,25 @@ export async function POST(request: NextRequest) {
                 const lead = await res.json();
                 const { name, phone, email } = mapFields(lead.field_data || []);
 
-                await supabase.from('leads').insert([{
+                const campaignId = lead.campaign_id || v.campaign_id || null;
+                const { data: inserted } = await supabase.from('leads').insert([{
                     shop_id: shop.id,
                     name: name || 'Facebook lead',
                     phone,
                     email,
                     source: 'facebook_ads',
-                    facebook_campaign_id: lead.campaign_id || v.campaign_id || null,
+                    facebook_campaign_id: campaignId,
                     facebook_adset_id: lead.adset_id || v.adset_id || null,
                     facebook_ad_id: lead.ad_id || v.ad_id || null,
-                }]);
+                }]).select('id').single();
+
+                await logAttributionEvent({
+                    shopId: shop.id,
+                    leadId: inserted?.id,
+                    eventType: 'lead',
+                    source: 'facebook_ads',
+                    facebook_campaign_id: campaignId,
+                });
                 ingested++;
             }
         }

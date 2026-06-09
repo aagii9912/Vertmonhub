@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { getUserShop } from '@/lib/auth/supabase-auth';
 import * as z from 'zod';
 
 const contractSchema = z.object({
@@ -32,12 +33,16 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
 
+        const authShop = await getUserShop();
+        if (!authShop) return NextResponse.json({ error: 'Shop олдсонгүй' }, { status: 401 });
+
         const { searchParams } = new URL(req.url);
         const channelId = searchParams.get('channel_id');
 
         let query = supabase
             .from('channel_contracts')
             .select('*, marketing_channels(name)')
+            .eq('shop_id', authShop.id)
             .order('start_date', { ascending: false });
 
         if (channelId) {
@@ -73,6 +78,9 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
 
+        const authShop = await getUserShop();
+        if (!authShop) return NextResponse.json({ error: 'Shop олдсонгүй' }, { status: 401 });
+
         const body = await req.json();
 
         // Zod validation
@@ -80,7 +88,7 @@ export async function POST(req: NextRequest) {
 
         const { data, error } = await supabase
             .from('channel_contracts')
-            .insert([validatedData])
+            .insert([{ ...validatedData, shop_id: authShop.id }])
             .select()
             .single();
 
