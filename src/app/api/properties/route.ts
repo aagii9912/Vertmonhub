@@ -22,7 +22,8 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from('properties')
       .select('*')
-      .eq('shop_id', authShop.id);
+      .eq('shop_id', authShop.id)
+      .is('deleted_at', null);
 
     if (type) query = query.eq('type', type);
     if (status) query = query.eq('status', status);
