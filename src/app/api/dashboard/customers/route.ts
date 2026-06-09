@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
+import { requireWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { CreateCustomerSchema, UpdateCustomerSchema, validateBody } from '@/lib/validations/schemas';
@@ -76,6 +77,8 @@ export async function GET(request: NextRequest) {
 // Manually create a new customer (sales manager entry)
 export async function POST(request: NextRequest) {
   try {
+    const denied = await requireWrite();
+    if (denied) return denied;
     const authShop = await getUserShop();
 
     if (!authShop) {
@@ -158,6 +161,8 @@ export async function POST(request: NextRequest) {
 // Update customer info
 export async function PATCH(request: NextRequest) {
   try {
+    const denied = await requireWrite();
+    if (denied) return denied;
     const authShop = await getUserShop();
 
     if (!authShop) {
