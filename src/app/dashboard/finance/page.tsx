@@ -15,6 +15,7 @@ import {
     X,
     AlertCircle,
 } from 'lucide-react';
+import { formatMNT as formatMNTShared } from '@/lib/utils/currency';
 
 interface Summary {
     totalRevenue: number;
@@ -49,9 +50,7 @@ interface Txn {
 }
 
 function formatMNT(n: number): string {
-    if (Math.abs(n) >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B₮`;
-    if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M₮`;
-    return `${Math.round(n).toLocaleString()}₮`;
+    return formatMNTShared(n, { compact: true });
 }
 
 const METHOD_LABELS: Record<string, string> = {

@@ -27,6 +27,7 @@ import { toast } from 'sonner';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { Property, PropertyType, PropertyStatus } from '@/types/property';
+import { formatMNT } from '@/lib/utils/currency';
 
 const typeBadgeVariant: Record<PropertyType, 'info' | 'success' | 'brand' | 'warning' | 'danger'> = {
     apartment: 'info',
@@ -155,11 +156,7 @@ export default function PropertiesPage() {
         }
     };
 
-    const formatPrice = (price: number) => {
-        if (price >= 1000000000) return `${(price / 1000000000).toFixed(1)}B₮`;
-        if (price >= 1000000) return `${(price / 1000000).toFixed(0)}M₮`;
-        return `${price.toLocaleString()}₮`;
-    };
+    const formatPrice = (price: number) => formatMNT(price, { compact: true });
 
     return (
         <div>

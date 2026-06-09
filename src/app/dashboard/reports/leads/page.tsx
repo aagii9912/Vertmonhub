@@ -18,6 +18,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
+import { formatMNT } from '@/lib/utils/currency';
 
 interface LeadStats {
     total: number;
@@ -150,11 +151,7 @@ export default function LeadsReport() {
         fetchData();
     }, [shop?.id, period]);
 
-    const formatCurrency = (value: number) => {
-        if (value >= 1000000000) return `${(value / 1000000000).toFixed(1)} тэрбум ₮`;
-        if (value >= 1000000) return `${(value / 1000000).toLocaleString()} сая ₮`;
-        return value.toLocaleString() + '₮';
-    };
+    const formatCurrency = (value: number) => formatMNT(value, { compact: true });
 
     if (loading) {
         return (

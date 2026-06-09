@@ -36,6 +36,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import type { Lead, LeadStatus, LeadSource } from '@/types/property';
 import { cn } from '@/lib/utils';
+import { formatMNT } from '@/lib/utils/currency';
 
 type StatusVariant = 'info' | 'brand' | 'warning' | 'success' | 'danger' | 'default';
 
@@ -179,14 +180,10 @@ export default function LeadsPage() {
 
     const formatBudget = (min?: number | null, max?: number | null) => {
         if (!min && !max) return '-';
-        const formatPrice = (p: number) => {
-            if (p >= 1000000000) return `${(p / 1000000000).toFixed(1)}B`;
-            if (p >= 1000000) return `${(p / 1000000).toFixed(0)}M`;
-            return p.toLocaleString();
-        };
-        if (min && max) return `${formatPrice(min)} - ${formatPrice(max)}₮`;
-        if (min) return `${formatPrice(min)}₮+`;
-        if (max) return `${formatPrice(max)}₮ хүртэл`;
+        const formatPrice = (p: number) => formatMNT(p, { compact: true });
+        if (min && max) return `${formatPrice(min)} - ${formatPrice(max)}`;
+        if (min) return `${formatPrice(min)}+`;
+        if (max) return `${formatPrice(max)} хүртэл`;
         return '-';
     };
 

@@ -8,6 +8,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { Building2, Wallet, AlertCircle, TrendingDown, Plus, X, Banknote } from 'lucide-react';
+import { formatMNT as formatMNTShared } from '@/lib/utils/currency';
 
 interface Summary { totalBills: number; totalPayable: number; outstanding: number; overdueAmount: number; monthSpend: number; }
 interface Vendor { id: string; name: string; phone: string | null; }
@@ -20,9 +21,7 @@ interface Bill {
 }
 
 function formatMNT(n: number): string {
-    if (Math.abs(n) >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B₮`;
-    if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M₮`;
-    return `${Math.round(n).toLocaleString()}₮`;
+    return formatMNTShared(n, { compact: true });
 }
 
 const STATUS: Record<string, { label: string; variant: 'success' | 'warning' | 'danger' | 'default' | 'info' }> = {
