@@ -28,6 +28,7 @@ import { PageHeader } from '@/components/dashboard/PageHeader';
 import { FilterBar, FilterSelect } from '@/components/dashboard/FilterBar';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { cn } from '@/lib/utils';
+import { formatShortDate } from '@/lib/utils/date';
 
 const SHOP_KEY = 'vertmonhub_active_shop_id';
 
@@ -52,11 +53,7 @@ function formatMoney(n: number | null | undefined): string {
 function formatDate(s: string | null | undefined): string {
     if (!s) return '—';
     try {
-        return new Date(s).toLocaleDateString('mn-MN', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-        });
+        return formatShortDate(s);
     } catch {
         return s;
     }

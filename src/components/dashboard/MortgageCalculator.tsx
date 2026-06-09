@@ -65,7 +65,7 @@ export function MortgageCalculator({ defaultPrice = 380_000_000, propertyName }:
                         type="number"
                         value={price}
                         onChange={e => setPrice(Number(e.target.value))}
-                        className="w-full px-3 py-2 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                        className="w-full px-3 py-2 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-brand focus:border-brand"
                     />
                     <p className="text-xs text-muted-foreground/70 mt-1">{formatMoney(price)}</p>
                 </div>
@@ -110,7 +110,7 @@ export function MortgageCalculator({ defaultPrice = 380_000_000, propertyName }:
                                 key={bank.name}
                                 onClick={() => setSelectedBank(bank)}
                                 className={`px-2.5 py-1.5 text-xs rounded-lg border transition-all ${selectedBank.name === bank.name
-                                    ? 'border-emerald-600 bg-status-success-soft text-status-success font-medium'
+                                    ? 'border-status-success bg-status-success-soft text-status-success font-medium'
                                     : 'border-border text-muted-foreground hover:border-border-strong'
                                     }`}
                             >

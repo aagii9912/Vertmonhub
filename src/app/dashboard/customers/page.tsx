@@ -30,6 +30,7 @@ import {
     Star,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatShortDate } from '@/lib/utils/date';
 
 type ServiceLogType = 'inquiry' | 'complaint' | 'maintenance' | 'handover' | 'payment' | 'other';
 type ServiceLogStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
@@ -581,7 +582,7 @@ export default function CustomersPage() {
 
     const formatDate = (date: string | null) => {
         if (!date) return '-';
-        return new Date(date).toLocaleDateString('mn-MN');
+        return formatShortDate(date);
     };
 
     const formatTime = (date: string | null) => {

@@ -7,6 +7,7 @@ import {
     Phone, User, FileText, MessageSquare, Wrench, ArrowRight,
     BarChart3, ThumbsUp,
 } from 'lucide-react';
+import { formatShortDate } from '@/lib/utils/date';
 
 const SHOP_KEY = 'vertmonhub_active_shop_id';
 
@@ -86,7 +87,7 @@ function formatDate(s: string | null): string {
     if (diffH < 24) return `${diffH} цагийн өмнө`;
     const diffD = Math.floor(diffH / 24);
     if (diffD < 7) return `${diffD} өдрийн өмнө`;
-    return d.toLocaleDateString('mn-MN');
+    return formatShortDate(s);
 }
 
 function shopHeaders(): HeadersInit {
