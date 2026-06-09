@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { getUserShop } from '@/lib/auth/supabase-auth';
 import * as z from 'zod';
 
 const createSurveySchema = z.object({
@@ -37,15 +38,21 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
 
+        const authShop = await getUserShop();
+        if (!authShop) {
+            return NextResponse.json({ error: 'Холбогдсон shop олдсонгүй' }, { status: 403 });
+        }
+
         const body = await req.json();
 
         // Validate request body
         const validatedData = createSurveySchema.parse(body);
 
-        // Insert into database
+        // Insert into database (shop-scoped)
         const { data, error } = await supabase
             .from('surveys')
             .insert([{
+                shop_id: authShop.id,
                 title: validatedData.title,
                 description: validatedData.description,
                 questions: validatedData.questions,
@@ -91,10 +98,16 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
 
-        // Fetch user's business surveys or all surveys if admin mapping is simple
+        const authShop = await getUserShop();
+        if (!authShop) {
+            return NextResponse.json({ surveys: [] }, { status: 200 });
+        }
+
+        // Зөвхөн тухайн shop-ийн судалгаа (RLS бас баталгаажуулна)
         const { data, error } = await supabase
             .from('surveys')
             .select('*')
+            .eq('shop_id', authShop.id)
             .order('created_at', { ascending: false });
 
         if (error) {

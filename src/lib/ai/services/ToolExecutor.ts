@@ -335,6 +335,7 @@ export async function executeScheduleViewing(
     const { error: viewingError } = await supabase
         .from('property_viewings')
         .insert({
+            shop_id: context.shopId,
             lead_id: leadId,
             property_id: propertyId,
             scheduled_at: scheduledAt.toISOString(),
