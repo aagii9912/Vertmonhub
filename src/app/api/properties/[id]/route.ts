@@ -105,9 +105,10 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: 'Property not found' }, { status: 404 });
     }
 
+    // Soft-delete: deleted_at тэмдэглэж, идэвхгүй болгоно (AI search/жагсаалтаас хасагдана)
     const { error } = await supabase
       .from('properties')
-      .delete()
+      .update({ deleted_at: new Date().toISOString(), is_active: false })
       .eq('id', id);
 
     if (error) {
