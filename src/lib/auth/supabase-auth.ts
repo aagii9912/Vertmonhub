@@ -144,29 +144,40 @@ export async function getUserShop() {
 
     const supabase = supabaseAdmin();
 
-    // Build query
-    let query = supabase
-        .from('shops')
-        .select('id, name, owner_name, phone, facebook_page_id, facebook_page_name, is_active, setup_completed, created_at, bank_name, account_number, account_name')
-        .eq('user_id', userId);
+    // Хэрэглэгчийн хандаж болох shop-уудыг цуглуулна: эзэмшсэн + гишүүн байгаа
+    const [{ data: ownedRows }, { data: memberRows }] = await Promise.all([
+        supabase.from('shops').select('id').eq('user_id', userId),
+        supabase.from('shop_members').select('shop_id').eq('user_id', userId),
+    ]);
 
-    // If specific shop requested, use it, otherwise get first
-    if (requestedShopId) {
-        query = query.eq('id', requestedShopId);
+    const ownedIds = (ownedRows || []).map(r => r.id);
+    const memberIds = (memberRows || []).map(r => r.shop_id);
+    const accessibleIds = new Set<string>([...ownedIds, ...memberIds]);
+
+    // Зорилтот shop-ыг тодорхойлно: хүсэлтийн shop эсвэл эзэмшсэн/гишүүн эхнийх
+    let targetId = requestedShopId || undefined;
+    if (targetId && !accessibleIds.has(targetId)) {
+        return null; // Энэ shop руу хандах эрхгүй
+    }
+    if (!targetId) {
+        targetId = ownedIds[0] || memberIds[0];
+    }
+    if (!targetId) {
+        return null;
     }
 
-    const { data: shops, error } = await query.limit(1);
+    const { data: shop, error } = await supabase
+        .from('shops')
+        .select('id, name, owner_name, phone, facebook_page_id, facebook_page_name, is_active, setup_completed, created_at, bank_name, account_number, account_name')
+        .eq('id', targetId)
+        .single();
 
     if (error) {
         logger.error('getUserShop Error:', { error });
         return null;
     }
 
-    if (!shops || shops.length === 0) {
-        return null;
-    }
-
-    return shops[0];
+    return shop;
 }
 
 // Legacy aliases — re-export for backward compat during migration

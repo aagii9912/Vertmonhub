@@ -11,6 +11,7 @@ import {
 } from '@/lib/ai/data-assistant/functions';
 import { resolveApiUser } from '@/lib/auth/resolve-user';
 import { buildDynamicKnowledge, buildFAQs } from '@/lib/ai/services/PromptService';
+import { fetchRolePermissions } from '@/lib/rbac';
 
 /**
  * Load shop's custom_knowledge + shop_faqs and format as a prompt suffix.
@@ -134,38 +135,73 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        // Check admin role
-        let userRole: 'super_admin' | 'admin' | 'user' = 'user';
         const adminDb = supabaseAdmin();
-        const { data: adminData } = await adminDb
-            .from('admins').select('role')
-            .eq('user_id', resolvedUser.id).eq('is_active', true).single();
-        if (adminData) userRole = adminData.role as 'super_admin' | 'admin';
+
+        // Хэрэглэгчийн дүрийг RBAC-аар тодорхойлно (user_roles → admins fallback)
+        let roleName = 'viewer';
+        const { data: roleRow } = await adminDb
+            .from('user_roles').select('role').eq('user_id', resolvedUser.id).single();
+        if (roleRow?.role) {
+            roleName = roleRow.role;
+        } else {
+            const { data: adminData } = await adminDb
+                .from('admins').select('role').eq('user_id', resolvedUser.id).eq('is_active', true).single();
+            if (adminData?.role) roleName = adminData.role;
+        }
+        const permissions = await fetchRolePermissions(roleName);
+
+        // RBAC: ai-assistant модулийн эрхгүй бол блоклоно
+        if (!permissions.modules.includes('ai-assistant')) {
+            return NextResponse.json({ error: 'AI туслах ашиглах эрх танд алга' }, { status: 403 });
+        }
 
         const { message, shopId, history = [], mode = 'data', conversationId } = await req.json();
         if (!message) return NextResponse.json({ error: 'Message is required' }, { status: 400 });
         if (!process.env.GEMINI_API_KEY) return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 });
 
-        const shopKnowledge = await loadShopKnowledge(shopId);
+        // Shop scoping: хүсэлтийн shopId-г хэрэглэгчийн хандах эрхтэй shop-уудтай тулгана
+        const [{ data: ownedRows }, { data: memberRows }] = await Promise.all([
+            adminDb.from('shops').select('id').eq('user_id', resolvedUser.id),
+            adminDb.from('shop_members').select('shop_id').eq('user_id', resolvedUser.id),
+        ]);
+        const accessibleShopIds = new Set<string>([
+            ...(ownedRows || []).map(r => r.id),
+            ...(memberRows || []).map(r => r.shop_id),
+        ]);
+        if (shopId && !accessibleShopIds.has(shopId)) {
+            return NextResponse.json({ error: 'Энэ shop-ийн мэдээлэлд хандах эрхгүй' }, { status: 403 });
+        }
+        const effectiveShopId = shopId || [...accessibleShopIds][0];
+        if (!effectiveShopId) {
+            return NextResponse.json({ error: 'Холбогдсон shop олдсонгүй' }, { status: 403 });
+        }
+
+        const perms = {
+            canWrite: permissions.canWrite,
+            canDelete: permissions.canDelete,
+            role: roleName,
+        };
+
+        const shopKnowledge = await loadShopKnowledge(effectiveShopId);
 
         let response;
         if (mode === 'general') {
-            response = await handleGeneralQuery(message, shopId, history, shopKnowledge);
+            response = await handleGeneralQuery(message, effectiveShopId, history, shopKnowledge);
         } else {
-            response = await handleDataAssistantQuery(message, shopId, resolvedUser.id, history, userRole, shopKnowledge);
+            response = await handleDataAssistantQuery(message, effectiveShopId, resolvedUser.id, history, perms, shopKnowledge);
         }
 
         // Persist messages to database
         let activeConversationId = conversationId;
         try {
             // Auto-create conversation if none provided
-            if (!activeConversationId && shopId) {
+            if (!activeConversationId && effectiveShopId) {
                 const autoTitle = message.length > 40 ? message.substring(0, 40) + '...' : message;
                 const { data: conv } = await adminDb
                     .from('ai_conversations')
                     .insert({
                         user_id: resolvedUser.id,
-                        shop_id: shopId,
+                        shop_id: effectiveShopId,
                         title: autoTitle,
                         mode,
                     })

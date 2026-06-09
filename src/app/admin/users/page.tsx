@@ -17,6 +17,11 @@ interface RoleOption {
     color: string;
 }
 
+interface ShopOption {
+    id: string;
+    name: string;
+}
+
 const ROLE_COLORS: Record<string, string> = {
     admin: 'bg-status-danger-soft text-status-danger',
     sales_manager: 'bg-status-info-soft text-status-info',
@@ -27,6 +32,7 @@ const ROLE_COLORS: Record<string, string> = {
 export default function AdminUsersPage() {
     const [users, setUsers] = useState<UserWithRole[]>([]);
     const [roles, setRoles] = useState<RoleOption[]>([]);
+    const [shops, setShops] = useState<ShopOption[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
     const [editingId, setEditingId] = useState<string | null>(null);
@@ -45,11 +51,27 @@ export default function AdminUsersPage() {
         password: '',
         full_name: '',
         role: 'viewer',
+        shop_id: '',
     });
 
     useEffect(() => {
-        Promise.all([fetchUsers(), fetchRoles()]).finally(() => setLoading(false));
+        Promise.all([fetchUsers(), fetchRoles(), fetchShops()]).finally(() => setLoading(false));
     }, []);
+
+    async function fetchShops() {
+        try {
+            const res = await fetch('/api/admin/shops');
+            const data = await res.json();
+            const list: ShopOption[] = data.shops || [];
+            setShops(list);
+            // Ганц shop байвал автоматаар сонгож тавьна
+            if (list.length === 1) {
+                setNewUser(p => ({ ...p, shop_id: list[0].id }));
+            }
+        } catch (e) {
+            console.error('Failed to fetch shops:', e);
+        }
+    }
 
     async function fetchRoles() {
         try {
@@ -119,9 +141,9 @@ export default function AdminUsersPage() {
             if (res.ok) {
                 setUsers(prev => [...prev, data.user]);
                 setShowCreate(false);
-                setNewUser({ email: '', password: '', full_name: '', role: 'viewer' });
-                setCreateSuccess('Хэрэглэгч амжилттай үүсгэлээ');
-                setTimeout(() => setCreateSuccess(null), 4000);
+                setNewUser({ email: '', password: '', full_name: '', role: 'viewer', shop_id: '' });
+                setCreateSuccess(data.warning ? `Хэрэглэгч үүслээ (анхааруулга: ${data.warning})` : 'Хэрэглэгч амжилттай үүсгэлээ');
+                setTimeout(() => setCreateSuccess(null), 5000);
             } else {
                 setCreateError(data.error || 'Алдаа гарлаа');
             }
@@ -400,6 +422,27 @@ export default function AdminUsersPage() {
                                     Дүр нь module хандалтыг тодорхойлно. Дүр удирдлагыг "Дүрүүд" хуудсаас хийнэ.
                                 </p>
                             </div>
+
+                            {/* Shop Membership */}
+                            {shops.length > 0 && (
+                                <div>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Shop (байгууллага)</label>
+                                    <select
+                                        value={newUser.shop_id}
+                                        onChange={e => setNewUser(p => ({ ...p, shop_id: e.target.value }))}
+                                        className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface focus:ring-2 focus:ring-brand focus:border-brand"
+                                    >
+                                        {shops.length > 1 && <option value="">— Shop сонгох —</option>}
+                                        {shops.map(s => (
+                                            <option key={s.id} value={s.id}>{s.name}</option>
+                                        ))}
+                                    </select>
+                                    <p className="text-xs text-muted-foreground/70 mt-1">
+                                        Ажилтан энэ shop-ийн dashboard-д хандах эрхтэй болно.
+                                        {shops.length === 1 && ' (Ганц shop байгаа тул автоматаар холбогдоно.)'}
+                                    </p>
+                                </div>
+                            )}
                         </div>
 
                         <div className="flex justify-end gap-3 p-6 border-t border-border/60">

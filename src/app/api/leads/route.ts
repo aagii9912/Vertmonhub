@@ -8,6 +8,7 @@ import {
     createRateLimitResponse,
 } from '@/lib/utils/rate-limiter';
 import { logger } from '@/lib/utils/logger';
+import { sendMetaCapiEvent, buildFbc } from '@/lib/marketing/meta-capi';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
 
             const prompt = `Чи Vertmon компанийн найрсаг менежер шүү! 😊
 
-Одоо ${name}${company ? ` (${company}-с)` : ''} Odoo ERP-ийн талаар сонирхож байна. Түүнд ээлтэй, хүн шиг хариулт өг.
+Одоо ${name}${company ? ` (${company}-с)` : ''} Vertmon-ий шийдлийн талаар сонирхож байна. Түүнд ээлтэй, хүн шиг хариулт өг.
 
 ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий сонирхол илэрхийлж байна.'}
 
@@ -154,6 +155,21 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
                 { status: 500 }
             );
         }
+
+        // Meta Conversions API — сервер талаас Lead event (best-effort)
+        await sendMetaCapiEvent({
+            eventName: 'Lead',
+            eventId: data?.id,
+            eventSourceUrl: request.headers.get('referer'),
+            userData: {
+                email,
+                phone,
+                fbc: buildFbc(fbclid),
+                clientIp,
+                userAgent: request.headers.get('user-agent'),
+            },
+            customData: { lead_source: inferredSource || 'website' },
+        });
 
         return NextResponse.json({
             success: true,

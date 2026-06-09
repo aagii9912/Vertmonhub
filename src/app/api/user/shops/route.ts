@@ -12,11 +12,25 @@ export async function GET() {
 
         const supabase = supabaseAdmin();
 
-        const { data: shops, error } = await supabase
+        // Хэрэглэгчийн хандаж болох shop-ууд: эзэмшсэн + гишүүнчлэлээр
+        const { data: memberRows } = await supabase
+            .from('shop_members')
+            .select('shop_id')
+            .eq('user_id', userId);
+        const memberIds = (memberRows || []).map(r => r.shop_id);
+
+        let query = supabase
             .from('shops')
             .select('id, name, owner_name, phone, facebook_page_id, facebook_page_name, is_active, setup_completed, created_at')
-            .eq('user_id', userId)
             .order('created_at', { ascending: true });
+
+        if (memberIds.length > 0) {
+            query = query.or(`user_id.eq.${userId},id.in.(${memberIds.join(',')})`);
+        } else {
+            query = query.eq('user_id', userId);
+        }
+
+        const { data: shops, error } = await query;
 
         if (error) throw error;
 

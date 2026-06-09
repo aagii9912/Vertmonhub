@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
+import { getUserShop } from '@/lib/auth/supabase-auth';
 import * as z from 'zod';
 
 const channelSchema = z.object({
@@ -28,9 +29,13 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
 
+        const authShop = await getUserShop();
+        if (!authShop) return NextResponse.json({ error: 'Shop олдсонгүй' }, { status: 401 });
+
         const { data, error } = await supabase
             .from('marketing_channels')
             .select('*')
+            .eq('shop_id', authShop.id)
             .order('created_at', { ascending: false });
 
         if (error) throw error;
@@ -60,12 +65,15 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
 
+        const authShop = await getUserShop();
+        if (!authShop) return NextResponse.json({ error: 'Shop олдсонгүй' }, { status: 401 });
+
         const body = await req.json();
         const validatedData = channelSchema.parse(body);
 
         const { data, error } = await supabase
             .from('marketing_channels')
-            .insert([validatedData])
+            .insert([{ ...validatedData, shop_id: authShop.id }])
             .select()
             .single();
 

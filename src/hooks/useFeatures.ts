@@ -51,7 +51,7 @@ interface FeaturesResponse {
 }
 
 const fetchFeatures = async (): Promise<FeaturesResponse> => {
-    const shopId = typeof window !== 'undefined' ? localStorage.getItem('smarthub_active_shop_id') : null;
+    const shopId = typeof window !== 'undefined' ? localStorage.getItem('vertmonhub_active_shop_id') : null;
     const res = await fetch('/api/features', {
         headers: shopId ? { 'x-shop-id': shopId } : {}
     });
@@ -61,7 +61,7 @@ const fetchFeatures = async (): Promise<FeaturesResponse> => {
 
 export function useFeatures() {
     const queryClient = useQueryClient();
-    const shopId = typeof window !== 'undefined' ? localStorage.getItem('smarthub_active_shop_id') : null;
+    const shopId = typeof window !== 'undefined' ? localStorage.getItem('vertmonhub_active_shop_id') : null;
 
     const { data, error, isLoading } = useQuery<FeaturesResponse>({
         queryKey: ['features', shopId],

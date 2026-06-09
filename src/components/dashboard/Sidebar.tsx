@@ -26,6 +26,7 @@ import {
     Share2,
     ChevronRight,
     Headphones,
+    Wallet,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccessModule, canAccessModuleDynamic, getRoleDisplayName } from '@/lib/rbac';
@@ -76,11 +77,32 @@ const sections: MenuSection[] = [
         ],
     },
     {
+        id: 'finance',
+        title: 'FINANCE / ERP',
+        icon: Wallet,
+        items: [
+            { name: 'Санхүү', href: '/dashboard/finance', icon: Wallet, badge: 'Шинэ', module: 'finance' },
+            { name: 'Төслийн санхүү', href: '/dashboard/finance/projects', icon: TrendingUp, module: 'finance' },
+            { name: 'Санхүүгийн тайлан', href: '/dashboard/finance/reports', icon: BarChart3, module: 'finance' },
+            { name: 'Худалдан авалт', href: '/dashboard/procurement', icon: Building2, module: 'procurement' },
+        ],
+    },
+    {
         id: 'marketing',
         title: 'MARKETING',
         icon: Megaphone,
         items: [
-            { name: 'Маркетинг ROI', href: '/dashboard/marketing-roi', icon: TrendingUp, module: 'marketing-roi' },
+            {
+                name: 'Маркетинг', href: '/dashboard/marketing-roi', icon: TrendingUp, module: 'marketing-roi',
+                children: [
+                    { name: 'ROI самбар', href: '/dashboard/marketing-roi' },
+                    { name: 'Кампейн', href: '/marketing/campaigns' },
+                    { name: 'Зар сурталчилгаа', href: '/marketing/ads' },
+                    { name: 'Контент календарь', href: '/marketing/calendar' },
+                    { name: 'Социал медиа', href: '/marketing/social' },
+                    { name: 'Lead эх үүсвэр', href: '/marketing/sources' },
+                ],
+            },
             {
                 name: 'Аналитик', href: '/dashboard/reports', icon: BarChart3, module: 'reports',
                 children: [
