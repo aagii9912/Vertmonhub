@@ -68,7 +68,9 @@ interface Stats {
 }
 
 export default function PropertiesPage() {
-    const { shop } = useAuth();
+    const { shop, user } = useAuth();
+    const canWrite = user?.permissions?.canWrite ?? false;
+    const canDelete = user?.permissions?.canDelete ?? false;
     const [properties, setProperties] = useState<Property[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -166,10 +168,12 @@ export default function PropertiesPage() {
                 title="Үл хөдлөх жагсаалт"
                 subtitle="Бүртгэлтэй бүх объектуудыг харах, шинэчлэх, шинээр нэмэх"
                 primaryAction={
-                    <Button href="/dashboard/properties/new" variant="primary" size="md">
-                        <Plus className="w-4 h-4" />
-                        Шинэ нэмэх
-                    </Button>
+                    canWrite ? (
+                        <Button href="/dashboard/properties/new" variant="primary" size="md">
+                            <Plus className="w-4 h-4" />
+                            Шинэ нэмэх
+                        </Button>
+                    ) : undefined
                 }
             />
 
@@ -293,10 +297,12 @@ export default function PropertiesPage() {
                                                 title="Үл хөдлөх олдсонгүй"
                                                 description="Шүүлтүүрээ өөрчлөх эсвэл анхны үл хөдлөхөө нэмнэ үү"
                                                 action={
-                                                    <Button href="/dashboard/properties/new" variant="primary" size="sm">
-                                                        <Plus className="w-4 h-4" />
-                                                        Шинэ нэмэх
-                                                    </Button>
+                                                    canWrite ? (
+                                                        <Button href="/dashboard/properties/new" variant="primary" size="sm">
+                                                            <Plus className="w-4 h-4" />
+                                                            Шинэ нэмэх
+                                                        </Button>
+                                                    ) : undefined
                                                 }
                                             />
                                         </td>
@@ -374,21 +380,28 @@ export default function PropertiesPage() {
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 <div className="flex items-center justify-end gap-1">
-                                                    <Link href={`/dashboard/properties/${property.id}/edit`}>
+                                                    {canWrite && (
+                                                        <Link href={`/dashboard/properties/${property.id}/edit`}>
+                                                            <button
+                                                                className="p-2 hover:bg-surface-2 rounded-md transition-colors"
+                                                                title="Засах"
+                                                            >
+                                                                <Edit className="w-4 h-4 text-muted-foreground" />
+                                                            </button>
+                                                        </Link>
+                                                    )}
+                                                    {canDelete && (
                                                         <button
-                                                            className="p-2 hover:bg-surface-2 rounded-md transition-colors"
-                                                            title="Засах"
+                                                            onClick={() => handleDelete(property.id)}
+                                                            className="p-2 hover:bg-status-danger-soft rounded-md transition-colors"
+                                                            title="Устгах"
                                                         >
-                                                            <Edit className="w-4 h-4 text-muted-foreground" />
+                                                            <Trash2 className="w-4 h-4 text-status-danger" />
                                                         </button>
-                                                    </Link>
-                                                    <button
-                                                        onClick={() => handleDelete(property.id)}
-                                                        className="p-2 hover:bg-status-danger-soft rounded-md transition-colors"
-                                                        title="Устгах"
-                                                    >
-                                                        <Trash2 className="w-4 h-4 text-status-danger" />
-                                                    </button>
+                                                    )}
+                                                    {!canWrite && !canDelete && (
+                                                        <span className="text-xs text-muted-foreground/60">—</span>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>

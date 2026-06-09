@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import {
-  HelpCircle, MessageSquare, Facebook, Package,
+  HelpCircle, MessageSquare, Facebook, Building2,
   Settings, Mail, ArrowRight, ExternalLink, Sparkles
 } from 'lucide-react';
 
@@ -17,12 +17,12 @@ export default function HelpPage() {
       answer: 'Тохиргоо хуудсанд орж "Facebook-ээр холбох" товчийг дарна уу. Facebook бүртгэлээрээ нэвтэрч, чатбот ажиллуулах Page-ээ сонгоно.'
     },
     {
-      question: 'Бүтээгдэхүүн нэмж болох уу?',
-      answer: 'Тийм! Dashboard дээрх "Бүтээгдэхүүн" хэсэгт орж шинэ бүтээгдэхүүн нэмэх боломжтой. Чатбот эдгээр бүтээгдэхүүнүүдийг харилцагчдад танилцуулна.'
+      question: 'Үл хөдлөх хөрөнгө нэмж болох уу?',
+      answer: 'Тийм! Хянах самбар дээрх "Үл хөдлөх" хэсэгт орж шинэ зар нэмэх боломжтой. Чатбот эдгээр үл хөдлөх хөрөнгийг сонирхогчдод танилцуулна.'
     },
     {
-      question: 'Захиалга хэрхэн үүсдэг вэ?',
-      answer: 'Харилцагч Messenger-ээр бүтээгдэхүүн захиалахад системд автоматаар захиалга бүртгэгдэнэ. Dashboard дээр захиалгуудыг удирдах боломжтой.'
+      question: 'Лийд хэрхэн үүсдэг вэ?',
+      answer: 'Сонирхогч Messenger эсвэл вэбсайтаар хүсэлт илгээхэд системд автоматаар лийд бүртгэгдэнэ. Хянах самбарын "Лийд" хэсэгт лийдүүдийг удирдах боломжтой.'
     },
     {
       question: 'Чатбот ажиллахгүй байна?',
@@ -47,7 +47,7 @@ export default function HelpPage() {
       <div className="max-w-4xl mx-auto px-6 -mt-8">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Link
-            href="/setup"
+            href="/dashboard/settings"
             className="bg-surface rounded-xl p-6 shadow-lg hover:shadow-xl transition-all border border-border/60 group"
           >
             <div className="w-12 h-12 bg-status-info-soft rounded-xl flex items-center justify-center mb-4">
@@ -61,16 +61,16 @@ export default function HelpPage() {
           </Link>
 
           <Link
-            href="/dashboard/products"
+            href="/dashboard/properties"
             className="bg-surface rounded-xl p-6 shadow-lg hover:shadow-xl transition-all border border-border/60 group"
           >
             <div className="w-12 h-12 bg-status-success-soft rounded-xl flex items-center justify-center mb-4">
-              <Package className="w-6 h-6 text-status-success" />
+              <Building2 className="w-6 h-6 text-status-success" />
             </div>
-            <h3 className="font-semibold text-foreground mb-2">Бүтээгдэхүүн</h3>
-            <p className="text-sm text-muted-foreground mb-3">Бүтээгдэхүүн нэмж удирдах</p>
+            <h3 className="font-semibold text-foreground mb-2">Үл хөдлөх</h3>
+            <p className="text-sm text-muted-foreground mb-3">Үл хөдлөх хөрөнгө нэмж удирдах</p>
             <span className="text-brand-strong text-sm font-medium flex items-center gap-1 group-hover:gap-2 transition-all">
-              Бүтээгдэхүүнүүд <ArrowRight className="w-4 h-4" />
+              Үл хөдлөх <ArrowRight className="w-4 h-4" />
             </span>
           </Link>
 
@@ -81,10 +81,10 @@ export default function HelpPage() {
             <div className="w-12 h-12 bg-brand-soft rounded-xl flex items-center justify-center mb-4">
               <Sparkles className="w-6 h-6 text-brand-strong" />
             </div>
-            <h3 className="font-semibold text-foreground mb-2">Dashboard</h3>
-            <p className="text-sm text-muted-foreground mb-3">Борлуулалт, захиалга хянах</p>
+            <h3 className="font-semibold text-foreground mb-2">Хянах самбар</h3>
+            <p className="text-sm text-muted-foreground mb-3">Борлуулалт, лийд хянах</p>
             <span className="text-brand-strong text-sm font-medium flex items-center gap-1 group-hover:gap-2 transition-all">
-              Dashboard <ArrowRight className="w-4 h-4" />
+              Хянах самбар <ArrowRight className="w-4 h-4" />
             </span>
           </Link>
         </div>
