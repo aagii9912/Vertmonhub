@@ -123,8 +123,8 @@ describe('StatsCard', () => {
             const { container } = render(
                 <StatsCard title="Test" value={100} icon={Package} />
             );
-            // Default iconColor is 'bg-brand' → amber/orange gradient.
-            const iconContainer = container.querySelector('.from-amber-400');
+            // Default iconColor 'bg-brand' → brand-soft tile tone.
+            const iconContainer = container.querySelector('.bg-brand-soft');
             expect(iconContainer).toBeInTheDocument();
         });
 
@@ -137,7 +137,7 @@ describe('StatsCard', () => {
                     iconColor="bg-blue"
                 />
             );
-            const iconContainer = container.querySelector('.from-blue-400');
+            const iconContainer = container.querySelector('.bg-status-info-soft');
             expect(iconContainer).toBeInTheDocument();
         });
     });
@@ -148,17 +148,17 @@ describe('StatsCard', () => {
                 <StatsCard title="Test" value={100} icon={Package} />
             );
             const card = container.firstChild as HTMLElement;
-            expect(card.className).toContain('rounded-2xl');
+            expect(card.className).toContain('rounded-xl');
             expect(card.className).toContain('border');
-            expect(card.className).toContain('bg-gradient-to-br');
+            expect(card.className).toContain('bg-surface');
         });
 
-        it('has transition-all class', () => {
+        it('has transition class', () => {
             const { container } = render(
                 <StatsCard title="Test" value={100} icon={Package} />
             );
             const card = container.firstChild as HTMLElement;
-            expect(card.className).toContain('transition-all');
+            expect(card.className).toContain('transition-colors');
         });
     });
 

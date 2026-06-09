@@ -35,13 +35,13 @@ describe('Button', () => {
         it('applies primary variant by default', () => {
             render(<Button>Primary</Button>);
             const button = screen.getByRole('button');
-            expect(button.className).toContain('bg-primary');
+            expect(button.className).toContain('bg-brand');
         });
 
         it('applies secondary variant', () => {
             render(<Button variant="secondary">Secondary</Button>);
             const button = screen.getByRole('button');
-            expect(button.className).toContain('bg-secondary');
+            expect(button.className).toContain('bg-surface');
         });
 
         it('applies danger variant', () => {
@@ -67,19 +67,19 @@ describe('Button', () => {
         it('applies md size by default', () => {
             render(<Button>Medium</Button>);
             const button = screen.getByRole('button');
-            expect(button.className).toContain('min-h-[44px]');
+            expect(button.className).toContain('min-h-[40px]');
         });
 
         it('applies sm size', () => {
             render(<Button size="sm">Small</Button>);
             const button = screen.getByRole('button');
-            expect(button.className).toContain('min-h-[40px]');
+            expect(button.className).toContain('min-h-[36px]');
         });
 
         it('applies lg size', () => {
             render(<Button size="lg">Large</Button>);
             const button = screen.getByRole('button');
-            expect(button.className).toContain('min-h-[48px]');
+            expect(button.className).toContain('min-h-[44px]');
         });
 
         it('applies icon size', () => {
