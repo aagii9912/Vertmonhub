@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
+import { requireWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { CreatePropertySchema, validateBody } from '@/lib/validations/schemas';
@@ -21,7 +22,8 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from('properties')
       .select('*')
-      .eq('shop_id', authShop.id);
+      .eq('shop_id', authShop.id)
+      .is('deleted_at', null);
 
     if (type) query = query.eq('type', type);
     if (status) query = query.eq('status', status);
@@ -44,6 +46,8 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
+    const denied = await requireWrite();
+    if (denied) return denied;
     const authShop = await getUserShop();
     if (!authShop) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

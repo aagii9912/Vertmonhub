@@ -21,13 +21,19 @@ export interface Customer {
     id: string;
     shop_id: string;
     facebook_id: string | null;
+    instagram_id?: string | null;
+    platform?: string | null;
     name: string | null;
     phone: string | null;
+    phone_normalized?: string | null;
     email?: string | null;
     address: string | null;
     notes?: string | null;
     tags?: string[];
+    ai_memory?: Record<string, unknown> | null;
+    ai_paused_until?: string | null;
     message_count?: number;
+    message_count_reset_at?: string | null;
     last_contact_at?: string | null;
     created_at: string;
 }
