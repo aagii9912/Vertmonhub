@@ -1,11 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
+import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
 /** GET /api/dashboard/procurement/summary — Худалдан авалтын ерөнхий үзүүлэлт */
 export async function GET() {
     try {
+        const denied = await requireModule('procurement');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) return NextResponse.json({ summary: null });
 

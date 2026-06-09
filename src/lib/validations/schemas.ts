@@ -30,6 +30,20 @@ export const CreateLeadSchema = z.object({
 });
 
 // ============================================
+// Contract Payment Schedule Schema
+// ============================================
+export const CreatePaymentScheduleSchema = z.object({
+    installment_number: z.coerce.number().int().positive().max(1000).optional().default(1),
+    label: z.string().max(255).optional().nullable(),
+    due_date: z.string().min(1, 'Төлөх огноо шаардлагатай').max(40),
+    amount: z.coerce.number().nonnegative('Дүн 0-ээс багагүй байх ёстой').max(1e15),
+    paid_amount: z.coerce.number().nonnegative('Төлсөн дүн 0-ээс багагүй байх ёстой').max(1e15).optional().default(0),
+    paid_date: z.string().max(40).optional().nullable(),
+    payment_method: z.string().max(50).optional().nullable(),
+    notes: z.string().max(2000).optional().nullable(),
+});
+
+// ============================================
 // Property Schemas
 // ============================================
 const PropertyTypeEnum = z.enum(['apartment', 'house', 'office', 'land', 'commercial']);
