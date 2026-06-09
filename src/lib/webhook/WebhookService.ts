@@ -5,6 +5,7 @@
 
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { extractPhoneFromText } from '@/lib/utils/phone';
 import { sendImage, sendImageGallery, appsecretProof } from '@/lib/facebook/messenger';
 import { generateCommentReply } from '@/lib/ai/comment-detector';
 import type { AIFAQ, AIQuickReply, AISlogan, NotifySettings, ChatMessage as AIChatMessage } from '@/types/ai';
@@ -325,14 +326,14 @@ export async function updateCustomerInfo(
 
     // Extract phone from message if not saved
     if (!customer.phone) {
-        const phoneMatch = message.match(/(\d{8})/);
-        if (phoneMatch) {
+        const extracted = extractPhoneFromText(message);
+        if (extracted) {
             await supabase
                 .from('customers')
-                .update({ phone: phoneMatch[1] })
+                .update({ phone: extracted, phone_normalized: extracted })
                 .eq('id', customer.id);
-            updatedCustomer.phone = phoneMatch[1];
-            logger.info('Phone extracted from message', { phone: phoneMatch[1] });
+            updatedCustomer.phone = extracted;
+            logger.info('Phone extracted from message', { phone: extracted });
         }
     }
 

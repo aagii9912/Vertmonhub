@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
+import { requireWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 
 // Add tag to customer
@@ -8,6 +9,8 @@ export async function POST(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const denied = await requireWrite();
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -65,6 +68,8 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const denied = await requireWrite();
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

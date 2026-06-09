@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { TrendingUp, Users, Target, BarChart3, RefreshCw, Megaphone } from 'lucide-react';
+import { TrendingUp, Users, Target, BarChart3, RefreshCw, Megaphone, DollarSign } from 'lucide-react';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { Card } from '@/components/ui/Card';
@@ -49,6 +49,33 @@ const sourceLabels: Record<string, string> = {
     other: 'Бусад',
 };
 
+interface CampaignRoi {
+    external_id: string;
+    name: string;
+    spend: number;
+    leads: number;
+    won: number;
+    revenue: number;
+    cpl: number | null;
+    cpa: number | null;
+    roas: number | null;
+    profit: number;
+}
+interface RoiTotals {
+    spend: number; leads: number; won: number; revenue: number;
+    cpl: number | null; cpa: number | null; roas: number | null; profit: number;
+}
+interface RoiData { campaigns: CampaignRoi[]; sources: unknown[]; totals: RoiTotals; }
+
+interface SocialPost { id: string; content: string | null; likes: number; comments: number; shares: number; published_at: string | null; }
+interface SocialInsight { captured_at: string; reach: number; impressions: number; followers: number; }
+
+function fmtMNT(n: number): string {
+    if (Math.abs(n) >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B₮`;
+    if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M₮`;
+    return `${Math.round(n).toLocaleString()}₮`;
+}
+
 export default function MarketingROIPage() {
     const { shop } = useAuth();
     const [leads, setLeads] = useState<any[]>([]);
@@ -58,6 +85,9 @@ export default function MarketingROIPage() {
     const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
     const [campaignsLoading, setCampaignsLoading] = useState(false);
     const [campaignsError, setCampaignsError] = useState<string | null>(null);
+    const [roi, setRoi] = useState<RoiData | null>(null);
+    const [social, setSocial] = useState<{ posts: SocialPost[]; insights: SocialInsight[] } | null>(null);
+    const [syncingSocial, setSyncingSocial] = useState(false);
 
     useEffect(() => {
         if (!shop?.id) return;
@@ -81,6 +111,28 @@ export default function MarketingROIPage() {
             .order('updated_at', { ascending: false });
         setCampaigns((stored || []) as AdCampaign[]);
 
+        // Жинхэнэ ROI roll-up (spend↔lead↔орлого)
+        try {
+            const res = await fetch('/api/dashboard/marketing-roi', {
+                headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
+            });
+            const data = await res.json();
+            setRoi(data.roi || null);
+        } catch {
+            // best-effort
+        }
+
+        // Хадгалсан organic social түүх
+        try {
+            const res = await fetch('/api/dashboard/marketing/social-history', {
+                headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
+            });
+            const data = await res.json();
+            setSocial({ posts: data.posts || [], insights: data.insights || [] });
+        } catch {
+            // best-effort
+        }
+
         setLoading(false);
     }
 
@@ -100,6 +152,24 @@ export default function MarketingROIPage() {
             setCampaignsError(err instanceof Error ? err.message : 'Алдаа');
         }
     }, []);
+
+    async function syncSocial() {
+        setSyncingSocial(true);
+        try {
+            const headers = { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' };
+            const res = await fetch('/api/dashboard/marketing/sync-social', { method: 'POST', headers });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data?.error || 'Sync алдаа');
+            const h = await fetch('/api/dashboard/marketing/social-history', { headers });
+            const hist = await h.json();
+            setSocial({ posts: hist.posts || [], insights: hist.insights || [] });
+            toast.success(data.message || 'Social хадгаллаа');
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Sync алдаа');
+        } finally {
+            setSyncingSocial(false);
+        }
+    }
 
     async function syncCampaigns() {
         if (!selectedAdAccount) {
@@ -247,6 +317,90 @@ export default function MarketingROIPage() {
                             }
                         />
                     </StatBar>
+
+                    {/* True ROI (spend ↔ lead ↔ орлого) */}
+                    {roi && roi.totals.spend > 0 && (
+                        <>
+                            <StatBar columns={4}>
+                                <StatTile label="Зарын зардал" value={fmtMNT(roi.totals.spend)} icon={<DollarSign className="w-4 h-4" />} accent="warning" />
+                                <StatTile label="Орлого (won)" value={fmtMNT(roi.totals.revenue)} icon={<Target className="w-4 h-4" />} accent="success" />
+                                <StatTile label="ROAS" value={roi.totals.roas !== null ? `${roi.totals.roas}x` : '—'} helper={roi.totals.cpl !== null ? `CPL ${fmtMNT(roi.totals.cpl)}` : undefined} icon={<TrendingUp className="w-4 h-4" />} accent="brand" />
+                                <StatTile label="Цэвэр ашиг" value={fmtMNT(roi.totals.profit)} helper={roi.totals.cpa !== null ? `CPA ${fmtMNT(roi.totals.cpa)}` : undefined} icon={<BarChart3 className="w-4 h-4" />} accent={roi.totals.profit >= 0 ? 'success' : 'danger'} />
+                            </StatBar>
+
+                            {roi.campaigns.length > 0 && (
+                                <Card className="mb-6">
+                                    <div className="px-4 py-3 border-b border-border">
+                                        <h3 className="heading-section text-sm text-foreground">Кампанит ажлын ROI</h3>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm">
+                                            <thead className="bg-surface-2/50 border-b border-border">
+                                                <tr className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground/80">
+                                                    <th className="text-left px-4 py-2.5">Кампанит ажил</th>
+                                                    <th className="text-right px-4 py-2.5">Зардал</th>
+                                                    <th className="text-center px-4 py-2.5">Лийд</th>
+                                                    <th className="text-right px-4 py-2.5">CPL</th>
+                                                    <th className="text-center px-4 py-2.5">Won</th>
+                                                    <th className="text-right px-4 py-2.5">Орлого</th>
+                                                    <th className="text-right px-4 py-2.5">ROAS</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-border/60">
+                                                {roi.campaigns.map((c) => (
+                                                    <tr key={c.external_id}>
+                                                        <td className="px-4 py-2.5 font-medium text-foreground">{c.name}</td>
+                                                        <td className="px-4 py-2.5 text-right tabular-nums">{fmtMNT(c.spend)}</td>
+                                                        <td className="px-4 py-2.5 text-center tabular-nums">{c.leads}</td>
+                                                        <td className="px-4 py-2.5 text-right tabular-nums">{c.cpl !== null ? fmtMNT(c.cpl) : '—'}</td>
+                                                        <td className="px-4 py-2.5 text-center tabular-nums">{c.won}</td>
+                                                        <td className="px-4 py-2.5 text-right tabular-nums">{fmtMNT(c.revenue)}</td>
+                                                        <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${c.roas !== null && c.roas >= 1 ? 'text-status-success' : c.roas !== null ? 'text-status-danger' : ''}`}>
+                                                            {c.roas !== null ? `${c.roas}x` : '—'}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </Card>
+                            )}
+                        </>
+                    )}
+
+                    {/* Organic социал (хадгалсан түүх) */}
+                    <Card className="mb-6">
+                        <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+                            <h3 className="heading-section text-sm text-foreground">Organic социал</h3>
+                            <Button variant="secondary" size="sm" onClick={syncSocial} isLoading={syncingSocial} disabled={syncingSocial}>
+                                {!syncingSocial && <RefreshCw className="w-4 h-4" />}
+                                Хадгалах
+                            </Button>
+                        </div>
+                        <div className="p-4">
+                            {social && social.insights[0] && (
+                                <div className="flex flex-wrap gap-4 mb-4 text-sm">
+                                    <span className="text-muted-foreground">Дагагч: <span className="font-semibold text-foreground tabular-nums">{social.insights[0].followers.toLocaleString()}</span></span>
+                                    <span className="text-muted-foreground">Reach: <span className="font-semibold text-foreground tabular-nums">{social.insights[0].reach.toLocaleString()}</span></span>
+                                    <span className="text-muted-foreground">Snapshot: <span className="font-semibold text-foreground tabular-nums">{social.insights.length}</span></span>
+                                </div>
+                            )}
+                            {!social || social.posts.length === 0 ? (
+                                <p className="text-sm text-muted-foreground py-4 text-center">Хадгалсан нийтлэл алга. "Хадгалах" дарж Facebook-аас татна уу.</p>
+                            ) : (
+                                <div className="divide-y divide-border/60">
+                                    {social.posts.slice(0, 5).map((p) => (
+                                        <div key={p.id} className="py-2.5 flex items-start justify-between gap-3">
+                                            <p className="text-sm text-foreground line-clamp-2 flex-1">{p.content || '(зураг)'}</p>
+                                            <span className="text-xs text-muted-foreground whitespace-nowrap tabular-nums">
+                                                ❤ {p.likes} · 💬 {p.comments} · ↗ {p.shares}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </Card>
 
                     {/* Source Breakdown */}
                     <Card className="mb-6">

@@ -19,15 +19,29 @@ export async function POST(request: Request) {
 
         const supabase = supabaseAdmin();
 
-        // Verify the shop belongs to the user
+        // Shop-ыг авч, хэрэглэгч эзэн ЭСВЭЛ гишүүн эсэхийг шалгана
         const { data: shop, error } = await supabase
             .from('shops')
             .select('*')
             .eq('id', shopId)
-            .eq('user_id', userId)
             .single();
 
         if (error || !shop) {
+            return NextResponse.json({ error: 'Shop not found or access denied' }, { status: 404 });
+        }
+
+        let hasAccess = shop.user_id === userId;
+        if (!hasAccess) {
+            const { data: membership } = await supabase
+                .from('shop_members')
+                .select('id')
+                .eq('shop_id', shopId)
+                .eq('user_id', userId)
+                .maybeSingle();
+            hasAccess = !!membership;
+        }
+
+        if (!hasAccess) {
             return NextResponse.json({ error: 'Shop not found or access denied' }, { status: 404 });
         }
 

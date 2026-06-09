@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
+import { logAdminAudit } from '@/lib/admin/audit';
 
 /**
  * GET /api/admin/users — List all users with roles
@@ -79,6 +80,8 @@ export async function PATCH(request: NextRequest) {
 
         if (error) return safeErrorResponse(error, 'Хэрэглэгчийн эрх шинэчлэх үед алдаа гарлаа');
 
+        await logAdminAudit({ actorId: userId, action: 'user.role_update', targetId: targetUserId, meta: { role } });
+
         return NextResponse.json({ success: true, message: `Role updated to ${role}` });
     } catch (error) {
         return safeErrorResponse(error, 'Хэрэглэгчийн эрх шинэчлэх үед алдаа гарлаа');
@@ -102,7 +105,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Super admin required' }, { status: 403 });
         }
 
-        const { email, password, full_name, role } = await request.json();
+        const { email, password, full_name, role, shop_id } = await request.json();
 
         if (!email || !password) {
             return NextResponse.json({ error: 'Имэйл болон нууц үг шаардлагатай' }, { status: 400 });
@@ -140,21 +143,46 @@ export async function POST(request: NextRequest) {
         }, { onConflict: 'id' });
 
         // Assign role if provided
-        let roleWarning: string | null = null;
+        const warnings: string[] = [];
         if (role) {
             const { error: roleErr } = await supabase
                 .from('user_roles')
                 .upsert({ user_id: newUserId, role }, { onConflict: 'user_id' });
 
             if (roleErr) {
-                roleWarning = 'Дүр оноох үед алдаа: ' + roleErr.message;
+                warnings.push('Дүр оноох үед алдаа: ' + roleErr.message);
                 console.error('Role assignment warning:', roleErr.message);
             }
         }
 
+        // Shop-д гишүүнээр оноох. shop_id өгөгдсөн бол түүнийг, эс бөгөөс ганц л shop
+        // байвал автоматаар тэр shop-д холбоно (нэг компанийн дотоод системд хялбар болгох).
+        let targetShopId: string | null = shop_id || null;
+        if (!targetShopId) {
+            const { data: shopRows } = await supabase.from('shops').select('id').limit(2);
+            if (shopRows && shopRows.length === 1) {
+                targetShopId = shopRows[0].id;
+            }
+        }
+
+        if (targetShopId) {
+            const { error: memberErr } = await supabase
+                .from('shop_members')
+                .upsert(
+                    { shop_id: targetShopId, user_id: newUserId, role: 'member' },
+                    { onConflict: 'shop_id,user_id' }
+                );
+            if (memberErr) {
+                warnings.push('Shop-д холбох үед алдаа: ' + memberErr.message);
+                console.error('Shop membership warning:', memberErr.message);
+            }
+        }
+
+        await logAdminAudit({ actorId: userId, action: 'user.create', targetId: newUserId, meta: { email, role: role || 'viewer' } });
+
         return NextResponse.json({
             success: true,
-            warning: roleWarning,
+            warning: warnings.length > 0 ? warnings.join(' / ') : null,
             user: {
                 id: newUserId,
                 email,
@@ -210,6 +238,8 @@ export async function DELETE(request: NextRequest) {
             console.error('Delete user error:', deleteError);
             return NextResponse.json({ error: 'Хэрэглэгч устгах үед алдаа: ' + deleteError.message }, { status: 500 });
         }
+
+        await logAdminAudit({ actorId: userId, action: 'user.delete', targetId: targetUserId });
 
         return NextResponse.json({
             success: true,

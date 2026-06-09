@@ -8,6 +8,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { FilterBar, FilterSelect } from '@/components/dashboard/FilterBar';
+import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import {
     User,
     Phone,
@@ -23,6 +24,9 @@ import {
     AlertCircle,
     Upload,
     Cloud,
+    Users,
+    RefreshCw,
+    Star,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -40,6 +44,9 @@ interface ServiceLogEntry {
     resolved_at: string | null;
 }
 
+type LifecycleStage =
+    | 'prospect' | 'engaged' | 'qualified' | 'viewing' | 'negotiating' | 'won' | 'lost' | 'dormant';
+
 interface Customer {
     id: string;
     name: string | null;
@@ -51,9 +58,40 @@ interface Customer {
     message_count?: number;
     last_contact_at?: string | null;
     created_at: string;
+    quality_score?: number;
+    quality_tier?: 'A' | 'B' | 'C' | null;
+    lifecycle_stage?: LifecycleStage | null;
     chat_history?: Array<{ message: string; response: string; created_at: string }>;
     service_logs?: ServiceLogEntry[];
 }
+
+const STAGE_LABELS: Record<LifecycleStage, string> = {
+    prospect: 'Шинэ сонирхогч',
+    engaged: 'Идэвхтэй',
+    qualified: 'Шалгарсан',
+    viewing: 'Үзлэг',
+    negotiating: 'Хэлэлцээр',
+    won: 'Амжилттай',
+    lost: 'Алдсан',
+    dormant: 'Идэвхгүй',
+};
+
+const STAGE_VARIANT: Record<LifecycleStage, 'info' | 'danger' | 'warning' | 'success' | 'brand' | 'default'> = {
+    prospect: 'default',
+    engaged: 'info',
+    qualified: 'info',
+    viewing: 'warning',
+    negotiating: 'brand',
+    won: 'success',
+    lost: 'danger',
+    dormant: 'default',
+};
+
+const TIER_VARIANT: Record<'A' | 'B' | 'C', 'success' | 'warning' | 'default'> = {
+    A: 'success',
+    B: 'warning',
+    C: 'default',
+};
 
 const SERVICE_LOG_TYPE_LABELS: Record<ServiceLogType, string> = {
     inquiry: 'Хүсэлт',
@@ -86,12 +124,31 @@ export default function CustomersPage() {
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedTag, setSelectedTag] = useState<string | null>(null);
+    const [tierFilter, setTierFilter] = useState('');
+    const [stageFilter, setStageFilter] = useState('');
     const [sortBy, setSortBy] = useState('created_at');
     const [loading, setLoading] = useState(true);
+    const [recomputing, setRecomputing] = useState(false);
+
+    const [health, setHealth] = useState<{
+        total: number;
+        newThisMonth: number;
+        dormant: number;
+        avgQualityScore: number;
+        tiers: { A: number; B: number; C: number };
+        needFollowup: number;
+        avgDaysToConvert: number | null;
+    } | null>(null);
     const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
     const [isDetailOpen, setIsDetailOpen] = useState(false);
     const [editMode, setEditMode] = useState(false);
     const [saving, setSaving] = useState(false);
+
+    // Давхардал нэгтгэх
+    const [mergeMode, setMergeMode] = useState(false);
+    const [mergeTargetId, setMergeTargetId] = useState('');
+    const [merging, setMerging] = useState(false);
+    const [mergeError, setMergeError] = useState<string | null>(null);
 
     const [editForm, setEditForm] = useState({
         name: '',
@@ -145,13 +202,34 @@ export default function CustomersPage() {
     useEffect(() => {
         fetchCustomers();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedTag, sortBy]);
+    }, [selectedTag, sortBy, tierFilter, stageFilter]);
+
+    useEffect(() => {
+        fetchHealth();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    async function fetchHealth() {
+        try {
+            const res = await fetch('/api/dashboard/customer-health', {
+                headers: {
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
+                },
+            });
+            const data = await res.json();
+            setHealth(data.health || null);
+        } catch (error) {
+            console.error('Failed to fetch customer health:', error);
+        }
+    }
 
     async function fetchCustomers() {
         try {
             setLoading(true);
             const params = new URLSearchParams();
             if (selectedTag) params.set('tag', selectedTag);
+            if (tierFilter) params.set('tier', tierFilter);
+            if (stageFilter) params.set('stage', stageFilter);
             params.set('sortBy', sortBy);
 
             const res = await fetch(`/api/dashboard/customers?${params}`, {
@@ -165,6 +243,25 @@ export default function CustomersPage() {
             console.error('Failed to fetch customers:', error);
         } finally {
             setLoading(false);
+        }
+    }
+
+    async function recomputeScores() {
+        setRecomputing(true);
+        try {
+            const res = await fetch('/api/dashboard/customers/recompute-scores', {
+                method: 'POST',
+                headers: {
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
+                },
+            });
+            if (res.ok) {
+                await Promise.all([fetchCustomers(), fetchHealth()]);
+            }
+        } catch (error) {
+            console.error('Failed to recompute scores:', error);
+        } finally {
+            setRecomputing(false);
         }
     }
 
@@ -224,6 +321,37 @@ export default function CustomersPage() {
             setLogError(err instanceof Error ? err.message : 'Бүртгэхэд алдаа гарлаа');
         } finally {
             setLogSubmitting(false);
+        }
+    }
+
+    async function submitMerge() {
+        if (!selectedCustomer || !mergeTargetId) return;
+        setMerging(true);
+        setMergeError(null);
+        try {
+            const res = await fetch('/api/dashboard/customers/merge', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
+                },
+                body: JSON.stringify({
+                    primaryId: selectedCustomer.id,
+                    duplicateId: mergeTargetId,
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                throw new Error(data?.error || 'Нэгтгэхэд алдаа гарлаа');
+            }
+            setMergeMode(false);
+            setMergeTargetId('');
+            await fetchCustomers();
+            await fetchCustomerDetail(selectedCustomer.id);
+        } catch (err) {
+            setMergeError(err instanceof Error ? err.message : 'Нэгтгэхэд алдаа гарлаа');
+        } finally {
+            setMerging(false);
         }
     }
 
@@ -468,6 +596,10 @@ export default function CustomersPage() {
                 }
                 secondaryActions={
                     <>
+                        <Button variant="secondary" size="sm" onClick={recomputeScores} isLoading={recomputing}>
+                            {!recomputing && <RefreshCw className="w-4 h-4" />}
+                            Скор шинэчлэх
+                        </Button>
                         <Button variant="secondary" size="sm" onClick={() => setIsHubspotSyncOpen(true)}>
                             <Cloud className="w-4 h-4" />
                             HubSpot татах
@@ -480,16 +612,51 @@ export default function CustomersPage() {
                 }
             />
 
+            {health && health.total > 0 && (
+                <StatBar columns={4}>
+                    <StatTile
+                        label="Нийт харилцагч"
+                        value={health.total}
+                        helper={`Энэ сард +${health.newThisMonth}`}
+                        icon={<Users className="w-5 h-5" />}
+                        accent="brand"
+                    />
+                    <StatTile
+                        label="Дундаж чанар"
+                        value={health.avgQualityScore}
+                        helper={`A: ${health.tiers.A} · B: ${health.tiers.B} · C: ${health.tiers.C}`}
+                        icon={<Star className="w-5 h-5" />}
+                        accent="success"
+                    />
+                    <StatTile
+                        label="Дагах шаардлагатай"
+                        value={health.needFollowup}
+                        helper="Чимээгүй чанартай харилцагч"
+                        icon={<Clock className="w-5 h-5" />}
+                        accent="warning"
+                    />
+                    <StatTile
+                        label="Идэвхгүй (dormant)"
+                        value={health.dormant}
+                        helper={health.avgDaysToConvert !== null ? `Хөрвөх дундаж: ${health.avgDaysToConvert} хон.` : 'Идэвхжүүлэх боломжтой'}
+                        icon={<AlertCircle className="w-5 h-5" />}
+                        accent="danger"
+                    />
+                </StatBar>
+            )}
+
             <FilterBar
                 search={{
                     value: searchQuery,
                     onChange: setSearchQuery,
                     placeholder: 'Нэр, утсаар хайх...',
                 }}
-                showClear={searchQuery !== '' || selectedTag !== null || sortBy !== 'created_at'}
+                showClear={searchQuery !== '' || selectedTag !== null || tierFilter !== '' || stageFilter !== '' || sortBy !== 'created_at'}
                 onClear={() => {
                     setSearchQuery('');
                     setSelectedTag(null);
+                    setTierFilter('');
+                    setStageFilter('');
                     setSortBy('created_at');
                 }}
             >
@@ -505,9 +672,22 @@ export default function CustomersPage() {
                         </option>
                     ))}
                 </FilterSelect>
+                <FilterSelect label="Чанар" value={tierFilter} onChange={(e) => setTierFilter(e.target.value)}>
+                    <option value="">Бүх түвшин</option>
+                    <option value="A">A (өндөр)</option>
+                    <option value="B">B (дунд)</option>
+                    <option value="C">C (бага)</option>
+                </FilterSelect>
+                <FilterSelect label="Шат" value={stageFilter} onChange={(e) => setStageFilter(e.target.value)}>
+                    <option value="">Бүх шат</option>
+                    {(Object.keys(STAGE_LABELS) as LifecycleStage[]).map((s) => (
+                        <option key={s} value={s}>{STAGE_LABELS[s]}</option>
+                    ))}
+                </FilterSelect>
                 <FilterSelect label="Эрэмбэлэх" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
                     <option value="created_at">Бүртгэсэн огноо</option>
                     <option value="last_contact_at">Сүүлд харьцсан</option>
+                    <option value="quality_score">Чанарын оноо</option>
                 </FilterSelect>
             </FilterBar>
 
@@ -531,6 +711,9 @@ export default function CustomersPage() {
                                 <tr>
                                     <th className="px-6 py-3 text-left text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
                                         Харилцагч
+                                    </th>
+                                    <th className="px-6 py-3 text-left text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
+                                        Чанар
                                     </th>
                                     <th className="px-6 py-3 text-left text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
                                         Tags
@@ -561,6 +744,23 @@ export default function CustomersPage() {
                                                     </p>
                                                     <p className="text-sm text-muted-foreground">{customer.phone || '-'}</p>
                                                 </div>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex items-center gap-2">
+                                                {customer.quality_tier ? (
+                                                    <Badge variant={TIER_VARIANT[customer.quality_tier]} size="sm">
+                                                        <Star className="w-3 h-3" />
+                                                        {customer.quality_score ?? 0} · {customer.quality_tier}
+                                                    </Badge>
+                                                ) : (
+                                                    <span className="text-xs text-muted-foreground/60">—</span>
+                                                )}
+                                                {customer.lifecycle_stage && (
+                                                    <Badge variant={STAGE_VARIANT[customer.lifecycle_stage]} size="sm">
+                                                        {STAGE_LABELS[customer.lifecycle_stage]}
+                                                    </Badge>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4">
@@ -997,15 +1197,26 @@ export default function CustomersPage() {
                                         Хадгалах
                                     </Button>
                                 ) : (
-                                    <Button onClick={() => setEditMode(true)} variant="secondary" size="sm">
-                                        <Edit2 className="w-4 h-4" />
-                                        Засах
-                                    </Button>
+                                    <>
+                                        <Button onClick={() => setEditMode(true)} variant="secondary" size="sm">
+                                            <Edit2 className="w-4 h-4" />
+                                            Засах
+                                        </Button>
+                                        <Button
+                                            onClick={() => { setMergeMode(m => !m); setMergeError(null); setMergeTargetId(''); }}
+                                            variant="secondary"
+                                            size="sm"
+                                        >
+                                            <Users className="w-4 h-4" />
+                                            Нэгтгэх
+                                        </Button>
+                                    </>
                                 )}
                                 <button
                                     onClick={() => {
                                         setIsDetailOpen(false);
                                         setEditMode(false);
+                                        setMergeMode(false);
                                     }}
                                     className="p-2 hover:bg-surface-2 rounded-md transition-colors"
                                 >
@@ -1016,6 +1227,48 @@ export default function CustomersPage() {
 
                         {/* Content */}
                         <div className="p-6 space-y-6">
+                            {/* Давхардал нэгтгэх panel */}
+                            {mergeMode && (
+                                <div className="rounded-lg border border-border bg-surface-2/40 p-4 space-y-3">
+                                    <div className="flex items-start gap-2">
+                                        <Users className="w-4 h-4 text-brand-strong mt-0.5" />
+                                        <div className="text-sm text-muted-foreground">
+                                            Энэ харилцагч руу нэгтгэх <span className="font-medium text-foreground">давхардсан</span> харилцагчийг сонгоно уу.
+                                            Сонгосон харилцагчийн бүх холбоо энд шилжээд устана.
+                                        </div>
+                                    </div>
+                                    {mergeError && (
+                                        <p className="text-sm text-status-danger flex items-center gap-1">
+                                            <AlertCircle className="w-4 h-4" />{mergeError}
+                                        </p>
+                                    )}
+                                    <div className="flex items-center gap-2">
+                                        <select
+                                            value={mergeTargetId}
+                                            onChange={e => setMergeTargetId(e.target.value)}
+                                            className="flex-1 px-3 py-2 border border-border-strong rounded-lg text-sm bg-surface"
+                                        >
+                                            <option value="">— Давхардсан харилцагч сонгох —</option>
+                                            {customers
+                                                .filter(c => c.id !== selectedCustomer.id)
+                                                .map(c => (
+                                                    <option key={c.id} value={c.id}>
+                                                        {(c.name || 'Нэргүй')}{c.phone ? ` · ${c.phone}` : ''}
+                                                    </option>
+                                                ))}
+                                        </select>
+                                        <Button
+                                            onClick={submitMerge}
+                                            disabled={!mergeTargetId || merging}
+                                            isLoading={merging}
+                                            variant="primary"
+                                            size="sm"
+                                        >
+                                            Нэгтгэх
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
                                     <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-1.5">

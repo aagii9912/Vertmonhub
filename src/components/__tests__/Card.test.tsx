@@ -16,7 +16,7 @@ describe('Card', () => {
             const { container } = render(<Card>Test</Card>);
             const card = container.firstChild as HTMLElement;
             expect(card.className).toContain('bg-surface');
-            expect(card.className).toContain('rounded-2xl');
+            expect(card.className).toContain('rounded-xl');
             expect(card.className).toContain('border');
         });
 
@@ -24,7 +24,7 @@ describe('Card', () => {
             const { container } = render(<Card hover>Hoverable</Card>);
             const card = container.firstChild as HTMLElement;
             expect(card.className).toContain('hover:border-border-strong');
-            expect(card.className).toContain('transition-all');
+            expect(card.className).toContain('transition-colors');
         });
 
         it('does not apply hover styles when hover prop is false', () => {
@@ -105,7 +105,7 @@ describe('Card', () => {
         it('applies font styles', () => {
             render(<CardTitle>Title</CardTitle>);
             const title = screen.getByText('Title');
-            expect(title.className).toContain('font-semibold');
+            expect(title.className).toContain('heading-section');
             expect(title.className).toContain('text-foreground');
         });
 
