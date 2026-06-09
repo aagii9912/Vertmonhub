@@ -8,9 +8,12 @@ import { ArrowLeft, Users, Phone, Mail, DollarSign, Building2, MessageSquare } f
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function NewLeadPage() {
     const router = useRouter();
+    const { shop } = useAuth();
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({
         customer_name: '',
@@ -25,13 +28,39 @@ export default function NewLeadPage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (!shop?.id) {
+            toast.error('Дэлгүүр сонгогдоогүй байна. Дахин нэвтэрнэ үү.');
+            return;
+        }
+        if (!formData.customer_name.trim()) {
+            toast.error('Нэр оруулна уу');
+            return;
+        }
+
         setLoading(true);
 
-        // Demo mode - just show success
-        setTimeout(() => {
-            toast.success('Лийд амжилттай нэмэгдлээ!');
-            router.push('/dashboard/leads');
-        }, 1000);
+        const { error } = await supabase.from('leads').insert({
+            shop_id: shop.id,
+            customer_name: formData.customer_name.trim(),
+            customer_phone: formData.phone.trim() || null,
+            customer_email: formData.email.trim() || null,
+            source: formData.source,
+            preferred_type: formData.preferred_type,
+            budget_min: formData.budget_min ? Number(formData.budget_min) : null,
+            budget_max: formData.budget_max ? Number(formData.budget_max) : null,
+            notes: formData.notes.trim() || null,
+            status: 'new',
+        });
+
+        if (error) {
+            setLoading(false);
+            toast.error('Лийд хадгалахад алдаа гарлаа');
+            return;
+        }
+
+        toast.success('Лийд амжилттай нэмэгдлээ!');
+        router.push('/dashboard/leads');
     };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -101,7 +130,7 @@ export default function NewLeadPage() {
                                     name="source"
                                     value={formData.source}
                                     onChange={handleChange}
-                                    className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-emerald-500"
+                                    className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand"
                                 >
                                     <option value="messenger">Messenger</option>
                                     <option value="instagram">Instagram</option>
@@ -129,7 +158,7 @@ export default function NewLeadPage() {
                                     name="preferred_type"
                                     value={formData.preferred_type}
                                     onChange={handleChange}
-                                    className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-emerald-500"
+                                    className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand"
                                 >
                                     <option value="apartment">Орон сууц</option>
                                     <option value="house">Хувийн байшин</option>
@@ -177,7 +206,7 @@ export default function NewLeadPage() {
                                 value={formData.notes}
                                 onChange={handleChange}
                                 rows={4}
-                                className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-emerald-500"
+                                className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand"
                                 placeholder="Нэмэлт мэдээлэл, тайлбар..."
                             />
                         </CardContent>
