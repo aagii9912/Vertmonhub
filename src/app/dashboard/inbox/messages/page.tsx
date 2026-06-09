@@ -195,19 +195,19 @@ export default function InboxMessagesPage() {
     }
 
     return (
-        <div className="flex h-[calc(100vh-80px)] bg-[#0a0a0f] rounded-xl overflow-hidden border border-white/[0.06]">
+        <div className="flex h-[calc(100vh-80px)] bg-background rounded-xl overflow-hidden border border-border">
             {/* Left: Conversation list */}
-            <div className="w-[340px] border-r border-white/[0.06] flex flex-col shrink-0">
+            <div className="w-[340px] border-r border-border flex flex-col shrink-0">
                 {/* Search */}
-                <div className="p-3 border-b border-white/[0.06]">
+                <div className="p-3 border-b border-border">
                     <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60" />
                         <input
                             type="text"
                             placeholder={t.common.search + '...'}
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2.5 bg-surface/[0.05] rounded-lg text-sm text-white/80 placeholder:text-white/25 border border-white/[0.06] focus:border-status-info/40 outline-none"
+                            className="w-full pl-9 pr-3 py-2.5 bg-surface-2 rounded-lg text-sm text-foreground placeholder:text-muted-foreground/60 border border-border focus:border-status-info/40 outline-none"
                         />
                     </div>
                 </div>
@@ -215,7 +215,7 @@ export default function InboxMessagesPage() {
                 {/* Conversations */}
                 <div className="flex-1 overflow-y-auto">
                     {filtered.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center h-full text-white/30 gap-2">
+                        <div className="flex flex-col items-center justify-center h-full text-muted-foreground/60 gap-2">
                             <InboxIcon className="w-8 h-8" />
                             <p className="text-sm">{t.inbox.noConversations || 'Чат байхгүй'}</p>
                         </div>
@@ -224,25 +224,25 @@ export default function InboxMessagesPage() {
                             <button
                                 key={convo.id}
                                 onClick={() => selectConversation(convo)}
-                                className={`w-full flex items-start gap-3 px-4 py-3.5 text-left transition-all border-b border-white/[0.03] ${
+                                className={`w-full flex items-start gap-3 px-4 py-3.5 text-left transition-all border-b border-border ${
                                     activeId === convo.id
                                         ? 'bg-status-info-soft border-l-2 border-l-blue-500'
-                                        : 'hover:bg-surface/[0.03]'
+                                        : 'hover:bg-surface-2'
                                 }`}
                             >
-                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500/30 to-violet-500/30 flex items-center justify-center shrink-0 text-sm font-bold text-white/70">
+                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500/30 to-violet-500/30 flex items-center justify-center shrink-0 text-sm font-bold text-foreground">
                                     {convo.customer_name?.[0]?.toUpperCase() || '?'}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center justify-between">
-                                        <span className="text-sm font-medium text-white/80 truncate">
+                                        <span className="text-sm font-medium text-foreground truncate">
                                             {convo.customer_name || 'Guest'}
                                         </span>
-                                        <span className="text-[10px] text-white/25 shrink-0 ml-2">
+                                        <span className="text-[10px] text-muted-foreground/60 shrink-0 ml-2">
                                             {formatDate(convo.last_message_at)}
                                         </span>
                                     </div>
-                                    <p className="text-xs text-white/35 truncate mt-0.5">
+                                    <p className="text-xs text-muted-foreground/60 truncate mt-0.5">
                                         {convo.last_message || '...'}
                                     </p>
                                 </div>
@@ -255,22 +255,22 @@ export default function InboxMessagesPage() {
             {/* Right: Chat area */}
             <div className="flex-1 flex flex-col">
                 {!activeConvo ? (
-                    <div className="flex-1 flex flex-col items-center justify-center text-white/20 gap-3">
+                    <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground/60 gap-3">
                         <MessageSquare className="w-12 h-12" />
                         <p className="text-sm">{t.inbox.selectCustomer}</p>
                     </div>
                 ) : (
                     <>
                         {/* Chat header */}
-                        <div className="px-5 py-3.5 border-b border-white/[0.06] flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500/30 to-violet-500/30 flex items-center justify-center text-sm font-bold text-white/70">
+                        <div className="px-5 py-3.5 border-b border-border flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500/30 to-violet-500/30 flex items-center justify-center text-sm font-bold text-foreground">
                                 {activeConvo.customer_name?.[0]?.toUpperCase() || '?'}
                             </div>
                             <div>
-                                <p className="text-sm font-semibold text-white/90">
+                                <p className="text-sm font-semibold text-foreground">
                                     {activeConvo.customer_name || 'Guest'}
                                 </p>
-                                <p className="text-[11px] text-white/30">
+                                <p className="text-[11px] text-muted-foreground/60">
                                     {chatMessages.length} {t.inbox.messages}
                                 </p>
                             </div>
@@ -280,7 +280,7 @@ export default function InboxMessagesPage() {
                                     className="p-1.5 hover:bg-status-danger-soft rounded-md transition-colors group"
                                     title="Устгах"
                                 >
-                                    <Trash2 className="w-4 h-4 text-white/20 group-hover:text-status-danger" strokeWidth={1.5} />
+                                    <Trash2 className="w-4 h-4 text-muted-foreground/60 group-hover:text-status-danger" strokeWidth={1.5} />
                                 </button>
                             </div>
                         </div>
@@ -288,7 +288,7 @@ export default function InboxMessagesPage() {
                         {/* Messages */}
                         <div className="flex-1 overflow-y-auto p-5 space-y-3">
                             {chatMessages.length === 0 ? (
-                                <div className="flex items-center justify-center h-full text-white/20 text-sm">
+                                <div className="flex items-center justify-center h-full text-muted-foreground/60 text-sm">
                                     {t.inbox.emptyChatHistory}
                                 </div>
                             ) : (
@@ -306,11 +306,11 @@ export default function InboxMessagesPage() {
                                             className={`max-w-[70%] px-3.5 py-2.5 rounded-2xl text-[13px] leading-relaxed ${
                                                 msg.role === 'assistant'
                                                     ? 'bg-status-info/20 text-status-info rounded-br-md'
-                                                    : 'bg-surface/[0.08] text-white/80 rounded-bl-md'
+                                                    : 'bg-surface-2 text-foreground rounded-bl-md'
                                             }`}
                                         >
                                             {msg.content}
-                                            <div className={`text-[10px] mt-1 ${msg.role === 'assistant' ? 'text-status-info/40' : 'text-white/20'}`}>
+                                            <div className={`text-[10px] mt-1 ${msg.role === 'assistant' ? 'text-status-info/40' : 'text-muted-foreground/60'}`}>
                                                 {formatTime(msg.created_at)}
                                             </div>
                                         </div>
@@ -326,15 +326,15 @@ export default function InboxMessagesPage() {
                         </div>
 
                         {/* Reply input */}
-                        <div className="px-4 py-3 border-t border-white/[0.06]">
+                        <div className="px-4 py-3 border-t border-border">
                             <div className="flex items-center gap-1.5 mb-2 px-1">
-                                <span className="text-[10px] text-white/25 mr-1">AI mode:</span>
+                                <span className="text-[10px] text-muted-foreground/60 mr-1">AI mode:</span>
                                 <button
                                     onClick={() => setAiPauseMode('pause')}
                                     className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-all ${
                                         aiPauseMode === 'pause'
                                             ? 'bg-status-pending/20 text-status-pending border border-status-pending/30'
-                                            : 'bg-surface/[0.04] text-white/30 border border-white/[0.06] hover:bg-surface/[0.08]'
+                                            : 'bg-surface-2 text-muted-foreground/60 border border-border hover:bg-surface-2'
                                     }`}
                                 >
                                     <Timer className="w-3 h-3" />
@@ -345,7 +345,7 @@ export default function InboxMessagesPage() {
                                     className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-all ${
                                         aiPauseMode === 'off'
                                             ? 'bg-status-danger/20 text-status-danger border border-status-danger/30'
-                                            : 'bg-surface/[0.04] text-white/30 border border-white/[0.06] hover:bg-surface/[0.08]'
+                                            : 'bg-surface-2 text-muted-foreground/60 border border-border hover:bg-surface-2'
                                     }`}
                                 >
                                     <Power className="w-3 h-3" />
@@ -361,12 +361,12 @@ export default function InboxMessagesPage() {
                                     onKeyDown={handleKeyDown}
                                     placeholder={t.inbox.messagePlaceholder}
                                     disabled={isSending}
-                                    className="flex-1 px-4 py-2.5 bg-surface/[0.06] rounded-xl text-sm text-white/80 placeholder:text-white/25 border border-white/[0.06] focus:border-status-info/40 outline-none disabled:opacity-50"
+                                    className="flex-1 px-4 py-2.5 bg-surface-2 rounded-xl text-sm text-foreground placeholder:text-muted-foreground/60 border border-border focus:border-status-info/40 outline-none disabled:opacity-50"
                                 />
                                 <button
                                     onClick={handleSendReply}
                                     disabled={!replyMessage.trim() || isSending}
-                                    className="p-2.5 rounded-xl bg-status-info hover:bg-status-info disabled:bg-surface/[0.06] disabled:text-white/20 text-white transition-all"
+                                    className="p-2.5 rounded-xl bg-status-info hover:bg-status-info disabled:bg-surface-2 disabled:text-muted-foreground/60 text-white transition-all"
                                 >
                                     {isSending ? (
                                         <Loader2 className="w-4 h-4 animate-spin" />
