@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -128,6 +129,7 @@ export default function CustomersPage() {
     const [stageFilter, setStageFilter] = useState('');
     const [sortBy, setSortBy] = useState('created_at');
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [recomputing, setRecomputing] = useState(false);
 
     const [health, setHealth] = useState<{
@@ -216,6 +218,7 @@ export default function CustomersPage() {
                     'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
                 },
             });
+            if (!res.ok) throw new Error('Failed to fetch customer health');
             const data = await res.json();
             setHealth(data.health || null);
         } catch (error) {
@@ -226,6 +229,7 @@ export default function CustomersPage() {
     async function fetchCustomers() {
         try {
             setLoading(true);
+            setLoadError(false);
             const params = new URLSearchParams();
             if (selectedTag) params.set('tag', selectedTag);
             if (tierFilter) params.set('tier', tierFilter);
@@ -237,10 +241,12 @@ export default function CustomersPage() {
                     'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
                 },
             });
+            if (!res.ok) throw new Error('Харилцагчдын мэдээлэл татаж чадсангүй');
             const data = await res.json();
             setCustomers(data.customers || []);
         } catch (error) {
             console.error('Failed to fetch customers:', error);
+            setLoadError(true);
         } finally {
             setLoading(false);
         }
@@ -272,6 +278,7 @@ export default function CustomersPage() {
                     'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
                 },
             });
+            if (!res.ok) throw new Error('Харилцагчийн мэдээлэл татаж чадсангүй');
             const data = await res.json();
             setSelectedCustomer(data.customer);
             setEditForm({
@@ -283,6 +290,7 @@ export default function CustomersPage() {
             setIsDetailOpen(true);
         } catch (error) {
             console.error('Failed to fetch customer detail:', error);
+            toast.error('Харилцагчийн мэдээлэл татахад алдаа гарлаа');
         }
     }
 
@@ -537,7 +545,7 @@ export default function CustomersPage() {
         if (!selectedCustomer) return;
         setSaving(true);
         try {
-            await fetch('/api/dashboard/customers', {
+            const res = await fetch('/api/dashboard/customers', {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json',
@@ -548,11 +556,17 @@ export default function CustomersPage() {
                     ...editForm,
                 }),
             });
+            if (!res.ok) {
+                toast.error('Хадгалахад алдаа гарлаа');
+                return;
+            }
+            toast.success('Хадгаллаа');
             setEditMode(false);
             fetchCustomers();
             fetchCustomerDetail(selectedCustomer.id);
         } catch (error) {
             console.error('Failed to save customer:', error);
+            toast.error('Хадгалахад алдаа гарлаа');
         } finally {
             setSaving(false);
         }
@@ -695,6 +709,14 @@ export default function CustomersPage() {
                 <Card>
                     <div className="flex items-center justify-center py-16">
                         <Spinner size="lg" />
+                    </div>
+                </Card>
+            ) : loadError ? (
+                <Card>
+                    <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                        <AlertCircle className="w-8 h-8 text-status-danger" />
+                        <p className="text-sm text-muted-foreground">Харилцагчдын мэдээлэл татахад алдаа гарлаа</p>
+                        <Button variant="secondary" size="sm" onClick={fetchCustomers}>Дахин оролдох</Button>
                     </div>
                 </Card>
             ) : filteredCustomers.length === 0 ? (

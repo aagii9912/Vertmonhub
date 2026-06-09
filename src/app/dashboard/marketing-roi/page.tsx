@@ -80,6 +80,7 @@ export default function MarketingROIPage() {
     const { shop } = useAuth();
     const [leads, setLeads] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]);
     const [selectedAdAccount, setSelectedAdAccount] = useState<string | null>(null);
     const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
@@ -96,44 +97,55 @@ export default function MarketingROIPage() {
     }, [shop?.id]);
 
     async function fetchData() {
-        const { data } = await supabase
-            .from('leads')
-            .select('id, source, status, budget_min, budget_max, created_at')
-            .eq('shop_id', shop!.id);
-        setLeads(data || []);
-
-        // Load already-stored Facebook campaigns from DB (no remote sync)
-        const { data: stored } = await supabase
-            .from('ad_campaigns')
-            .select('*')
-            .eq('shop_id', shop!.id)
-            .eq('platform', 'facebook')
-            .order('updated_at', { ascending: false });
-        setCampaigns((stored || []) as AdCampaign[]);
-
-        // Жинхэнэ ROI roll-up (spend↔lead↔орлого)
+        setLoadError(false);
         try {
-            const res = await fetch('/api/dashboard/marketing-roi', {
-                headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
-            });
-            const data = await res.json();
-            setRoi(data.roi || null);
-        } catch {
-            // best-effort
-        }
+            const { data, error: leadsError } = await supabase
+                .from('leads')
+                .select('id, source, status, budget_min, budget_max, created_at')
+                .eq('shop_id', shop!.id);
+            if (leadsError) throw leadsError;
+            setLeads(data || []);
 
-        // Хадгалсан organic social түүх
-        try {
-            const res = await fetch('/api/dashboard/marketing/social-history', {
-                headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
-            });
-            const data = await res.json();
-            setSocial({ posts: data.posts || [], insights: data.insights || [] });
-        } catch {
-            // best-effort
-        }
+            // Load already-stored Facebook campaigns from DB (no remote sync)
+            const { data: stored, error: campError } = await supabase
+                .from('ad_campaigns')
+                .select('*')
+                .eq('shop_id', shop!.id)
+                .eq('platform', 'facebook')
+                .order('updated_at', { ascending: false });
+            if (campError) throw campError;
+            setCampaigns((stored || []) as AdCampaign[]);
 
-        setLoading(false);
+            // Жинхэнэ ROI roll-up (spend↔lead↔орлого) — best-effort
+            try {
+                const res = await fetch('/api/dashboard/marketing-roi', {
+                    headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
+                });
+                if (res.ok) {
+                    const roiJson = await res.json();
+                    setRoi(roiJson.roi || null);
+                }
+            } catch {
+                // best-effort
+            }
+
+            // Хадгалсан organic social түүх — best-effort
+            try {
+                const res = await fetch('/api/dashboard/marketing/social-history', {
+                    headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
+                });
+                if (res.ok) {
+                    const socialJson = await res.json();
+                    setSocial({ posts: socialJson.posts || [], insights: socialJson.insights || [] });
+                }
+            } catch {
+                // best-effort
+            }
+        } catch {
+            setLoadError(true);
+        } finally {
+            setLoading(false);
+        }
     }
 
     const fetchAdAccounts = useCallback(async () => {
@@ -268,6 +280,18 @@ export default function MarketingROIPage() {
             <Card>
                 <div className="flex items-center justify-center py-20">
                     <Spinner size="lg" />
+                </div>
+            </Card>
+        );
+
+    if (loadError)
+        return (
+            <Card>
+                <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
+                    <p className="font-medium text-foreground">Маркетингийн мэдээлэл ачаалахад алдаа гарлаа</p>
+                    <Button onClick={() => { setLoading(true); fetchData(); }} variant="secondary" size="sm">
+                        <RefreshCw className="w-4 h-4 mr-2" /> Дахин оролдох
+                    </Button>
                 </div>
             </Card>
         );

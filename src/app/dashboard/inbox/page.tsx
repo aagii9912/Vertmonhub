@@ -12,7 +12,7 @@ import { MessageSquare, RefreshCcw, User } from 'lucide-react';
 import { formatTimeAgo } from '@/lib/utils/date';
 
 export default function InboxPage() {
-    const { data: conversations = [], isLoading, refetch } = useConversations();
+    const { data: conversations = [], isLoading, isError, refetch } = useConversations();
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -24,6 +24,17 @@ export default function InboxPage() {
         return (
             <div className="flex h-[calc(100vh-140px)] items-center justify-center">
                 <Spinner size="lg" />
+            </div>
+        );
+    }
+
+    if (isError) {
+        return (
+            <div className="flex h-[calc(100vh-140px)] flex-col items-center justify-center gap-4 text-center">
+                <p className="font-medium text-foreground">Мессеж ачаалахад алдаа гарлаа</p>
+                <Button onClick={() => refetch()} variant="secondary" size="sm">
+                    <RefreshCcw className="w-4 h-4" /> Дахин оролдох
+                </Button>
             </div>
         );
     }
