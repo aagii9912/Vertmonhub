@@ -24,7 +24,10 @@ ALTER VIEW IF EXISTS public.contract_payment_status    SET (security_invoker = o
 --    RBAC уншилт ажиллана; зөвхөн INSERT/UPDATE/DELETE-д админ шаардана.
 --    Анхаар: хуучин check_admin_user() нь legacy Clerk хүснэгт
 --    (admin_users.clerk_user_id)-ийг шалгадаг тул Supabase auth.uid()-тэй
---    таарахгүй. Иймд одоогийн admins хүснэгтэд суурилсан шинэ helper үүсгэв.
+--    таарахгүй; мөн public.admins хүснэгт энэ DB-д байхгүй. Иймд бодитоор
+--    байгаа public.user_roles хүснэгтийн admin дүрд суурилав. SECURITY DEFINER
+--    (эзэн = postgres) нь user_roles-ийн RLS-ийг тойрдог тул user_roles дээрх
+--    policy дотроос дуудахад рекурс үүсэхгүй.
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.is_active_admin()
 RETURNS boolean
@@ -34,8 +37,8 @@ STABLE
 SET search_path = public, pg_temp
 AS $$
     SELECT EXISTS (
-        SELECT 1 FROM public.admins
-        WHERE user_id = auth.uid() AND is_active = true
+        SELECT 1 FROM public.user_roles
+        WHERE user_id = auth.uid() AND role IN ('admin', 'super_admin')
     );
 $$;
 GRANT EXECUTE ON FUNCTION public.is_active_admin() TO authenticated;
