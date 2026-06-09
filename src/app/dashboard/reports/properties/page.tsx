@@ -64,10 +64,19 @@ export default function PropertiesReportPage() {
         const fetchData = async () => {
             setLoading(true);
             try {
+                // Сонгосон хугацааны эхлэл
+                const now = new Date();
+                const start = new Date(now);
+                if (period === 'week') start.setDate(now.getDate() - 7);
+                else if (period === 'month') start.setMonth(now.getMonth() - 1);
+                else if (period === 'quarter') start.setMonth(now.getMonth() - 3);
+                else start.setFullYear(now.getFullYear() - 1);
+
                 const { data: properties, error } = await supabase
                     .from('properties')
                     .select('*')
-                    .eq('shop_id', shop.id);
+                    .eq('shop_id', shop.id)
+                    .gte('created_at', start.toISOString());
 
                 if (error) throw error;
 

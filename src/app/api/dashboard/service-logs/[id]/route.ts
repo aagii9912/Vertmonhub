@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
+import { requireWrite, requireDelete } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
@@ -12,6 +13,8 @@ export async function PATCH(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const denied = await requireWrite();
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
@@ -63,6 +66,8 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const denied = await requireDelete();
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });

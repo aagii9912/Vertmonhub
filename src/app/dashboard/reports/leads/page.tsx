@@ -73,10 +73,19 @@ export default function LeadsReport() {
         const fetchData = async () => {
             setLoading(true);
             try {
+                // Сонгосон хугацааны эхлэлийг тооцоолно
+                const now = new Date();
+                const start = new Date(now);
+                if (period === 'today') start.setHours(0, 0, 0, 0);
+                else if (period === 'week') start.setDate(now.getDate() - 7);
+                else if (period === 'month') start.setMonth(now.getMonth() - 1);
+                else start.setFullYear(now.getFullYear() - 1);
+
                 const { data: leads, error } = await supabase
                     .from('leads')
                     .select('*')
-                    .eq('shop_id', shop.id);
+                    .eq('shop_id', shop.id)
+                    .gte('created_at', start.toISOString());
 
                 if (error) throw error;
 

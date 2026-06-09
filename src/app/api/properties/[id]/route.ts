@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
+import { requireWrite, requireDelete } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { UpdatePropertySchema, validateBody } from '@/lib/validations/schemas';
@@ -35,6 +36,8 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
 export async function PATCH(request: NextRequest, { params }: Params) {
   try {
+    const denied = await requireWrite();
+    if (denied) return denied;
     const { id } = await params;
     const authShop = await getUserShop();
     if (!authShop) {
@@ -81,6 +84,8 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
 export async function DELETE(_request: NextRequest, { params }: Params) {
   try {
+    const denied = await requireDelete();
+    if (denied) return denied;
     const { id } = await params;
     const authShop = await getUserShop();
     if (!authShop) {
@@ -100,9 +105,10 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: 'Property not found' }, { status: 404 });
     }
 
+    // Soft-delete: deleted_at тэмдэглэж, идэвхгүй болгоно (AI search/жагсаалтаас хасагдана)
     const { error } = await supabase
       .from('properties')
-      .delete()
+      .update({ deleted_at: new Date().toISOString(), is_active: false })
       .eq('id', id);
 
     if (error) {

@@ -35,7 +35,7 @@ export default function InboxMessagesPage() {
     const chatEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    const shopId = typeof window !== 'undefined' ? localStorage.getItem('smarthub_active_shop_id') || '' : '';
+    const shopId = typeof window !== 'undefined' ? localStorage.getItem('vertmonhub_active_shop_id') || '' : '';
 
     // Fetch all conversations
     const fetchConversations = useCallback(async () => {

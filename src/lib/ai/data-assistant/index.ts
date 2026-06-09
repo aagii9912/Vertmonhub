@@ -11,6 +11,7 @@
 import { GoogleGenerativeAI, Content } from '@google/generative-ai';
 import { logger } from '@/lib/utils/logger';
 import { readTools, writeTools, WRITE_TOOL_NAMES } from './tools';
+import { logAiAudit } from './audit';
 import {
     fetchDashboardStats, fetchOrders, fetchProductStats,
     fetchProperties, fetchLeads, fetchLeadDetails, fetchCustomerInsights,
@@ -23,39 +24,63 @@ import {
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
+/** AI Assistant-ийн RBAC эрхүүд (route-аас тооцоолж дамжуулна). */
+export interface AssistantPerms {
+    canWrite: boolean;
+    canDelete: boolean;
+    role: string;
+}
+
+// Устгах tool одоохондоо байхгүй — gate-ийг ирээдүйд зориулж бэлдэв.
+const DELETE_TOOL_NAMES: string[] = [];
+
 // ============================================
 // TOOL EXECUTOR
 // ============================================
 
-async function executeTool(toolName: string, args: any, shopId: string, userRole: string): Promise<any> {
-    logger.info(`[AI Data Assistant] Executing tool: ${toolName}`, { args, userRole });
+async function executeTool(toolName: string, args: any, shopId: string, perms: AssistantPerms, userId: string): Promise<any> {
+    logger.info(`[AI Data Assistant] Executing tool: ${toolName}`, { args, role: perms.role });
 
-    // Block write tools for non-super_admin
-    if (WRITE_TOOL_NAMES.includes(toolName) && userRole !== 'super_admin') {
-        return { error: 'Энэ үйлдлийг хийх эрхгүй. Зөвхөн Super Admin ашиглах боломжтой.' };
+    const isWrite = WRITE_TOOL_NAMES.includes(toolName);
+    const isDelete = DELETE_TOOL_NAMES.includes(toolName);
+
+    // RBAC: бичих эрхгүй бол write tool, устгах эрхгүй бол delete tool-ыг блоклоно
+    if (isWrite && !perms.canWrite) {
+        return { error: 'Энэ үйлдлийг хийх эрх танд алга (бичих эрх шаардлагатай).' };
+    }
+    if (isDelete && !perms.canDelete) {
+        return { error: 'Энэ үйлдлийг хийх эрх танд алга (устгах эрх шаардлагатай).' };
     }
 
+    let result: any;
     switch (toolName) {
-        case 'get_dashboard_stats': return await fetchDashboardStats(shopId, args.timeRange || 'month');
-        case 'list_orders': return await fetchOrders(shopId, args.status, args.limit || 10);
-        case 'get_product_stats': return await fetchProductStats(shopId, args.type || 'all', args.limit || 10);
-        case 'list_properties': return await fetchProperties(shopId, args);
-        case 'list_leads': return await fetchLeads(shopId, args);
-        case 'get_lead_details': return await fetchLeadDetails(shopId, args);
-        case 'get_customer_insights': return await fetchCustomerInsights(shopId, args);
-        case 'list_contracts': return await fetchContracts(shopId, args);
-        case 'get_contract_details': return await fetchContractDetails(shopId, args);
-        case 'get_contracts_summary': return await fetchContractsSummary(shopId, args);
-        case 'get_sales_summary': return await fetchSalesSummary(shopId, args);
-        case 'get_sales_forecast': return await fetchSalesForecast(shopId, args);
-        case 'compare_properties': return await compareProperties(shopId, args);
-        case 'update_property_status': return await updatePropertyStatus(shopId, args);
-        case 'update_property_price': return await updatePropertyPrice(shopId, args);
-        case 'update_lead_status': return await updateLeadStatus(shopId, args);
-        case 'add_lead_note': return await addLeadNote(shopId, args);
-        case 'process_contract_action': return await processContractAction(shopId, args);
+        case 'get_dashboard_stats': result = await fetchDashboardStats(shopId, args.timeRange || 'month'); break;
+        case 'list_orders': result = await fetchOrders(shopId, args.status, args.limit || 10); break;
+        case 'get_product_stats': result = await fetchProductStats(shopId, args.type || 'all', args.limit || 10); break;
+        case 'list_properties': result = await fetchProperties(shopId, args); break;
+        case 'list_leads': result = await fetchLeads(shopId, args); break;
+        case 'get_lead_details': result = await fetchLeadDetails(shopId, args); break;
+        case 'get_customer_insights': result = await fetchCustomerInsights(shopId, args); break;
+        case 'list_contracts': result = await fetchContracts(shopId, args); break;
+        case 'get_contract_details': result = await fetchContractDetails(shopId, args); break;
+        case 'get_contracts_summary': result = await fetchContractsSummary(shopId, args); break;
+        case 'get_sales_summary': result = await fetchSalesSummary(shopId, args); break;
+        case 'get_sales_forecast': result = await fetchSalesForecast(shopId, args); break;
+        case 'compare_properties': result = await compareProperties(shopId, args); break;
+        case 'update_property_status': result = await updatePropertyStatus(shopId, args); break;
+        case 'update_property_price': result = await updatePropertyPrice(shopId, args); break;
+        case 'update_lead_status': result = await updateLeadStatus(shopId, args); break;
+        case 'add_lead_note': result = await addLeadNote(shopId, args); break;
+        case 'process_contract_action': result = await processContractAction(shopId, args); break;
         default: return { error: `Unknown tool: ${toolName}` };
     }
+
+    // Audit: write/delete үйлдлийг бүртгэнэ
+    if (isWrite || isDelete) {
+        await logAiAudit({ shopId, userId, tool: toolName, args, success: !(result && result.error) });
+    }
+
+    return result;
 }
 
 // ============================================
@@ -83,7 +108,7 @@ const BASE_INSTRUCTION = `Та бол Vertmon Hub-ийн AI Дата Тусла�
 
 const ADMIN_WRITE_INSTRUCTION = `
 
-Та SUPER ADMIN эрхтэй хэрэглэгч. Нэмэлт чадварууд:
+Танд өгөгдөл өөрчлөх (бичих) эрх бий. Нэмэлт чадварууд:
 - Байрны статус солих (available/reserved/sold/rented/barter)
 - Байрны үнэ өөрчлөх
 - Лийд статус солих
@@ -94,10 +119,10 @@ const ADMIN_WRITE_INSTRUCTION = `
 
 const READ_ONLY_INSTRUCTION = `
 
-Та УНШИЖ ЗӨВХӨН чадна. Мэдээлэл өөрчлөх, статус солих боломжгүй. Хэрэв хэрэглэгч өөрчлөлт хийхийг хүсвэл "Энэ үйлдлийг зөвхөн Super Admin хийх боломжтой" гэж хариулна.`;
+Та УНШИЖ ЗӨВХӨН чадна. Мэдээлэл өөрчлөх, статус солих боломжгүй. Хэрэв хэрэглэгч өөрчлөлт хийхийг хүсвэл "Танд энэ үйлдлийг хийх эрх алга" гэж хариулна.`;
 
-function getSystemInstruction(userRole: string, shopKnowledge?: string): string {
-    const base = userRole === 'super_admin' ? BASE_INSTRUCTION + ADMIN_WRITE_INSTRUCTION : BASE_INSTRUCTION + READ_ONLY_INSTRUCTION;
+function getSystemInstruction(canWrite: boolean, shopKnowledge?: string): string {
+    const base = canWrite ? BASE_INSTRUCTION + ADMIN_WRITE_INSTRUCTION : BASE_INSTRUCTION + READ_ONLY_INSTRUCTION;
     return shopKnowledge ? base + '\n\n' + shopKnowledge : base;
 }
 
@@ -110,15 +135,15 @@ export async function handleDataAssistantQuery(
     shopId: string,
     userId: string,
     history: any[] = [],
-    userRole: string = 'user',
+    perms: AssistantPerms = { canWrite: false, canDelete: false, role: 'viewer' },
     shopKnowledge?: string
 ) {
     try {
-        const activeTools = userRole === 'super_admin' ? [...readTools, ...writeTools] : readTools;
+        const activeTools = perms.canWrite ? [...readTools, ...writeTools] : readTools;
 
         const model = genAI.getGenerativeModel({
             model: 'gemini-2.5-flash',
-            systemInstruction: getSystemInstruction(userRole, shopKnowledge),
+            systemInstruction: getSystemInstruction(perms.canWrite, shopKnowledge),
             tools: [{ functionDeclarations: activeTools }],
             generationConfig: { temperature: 0.3, topP: 0.8, maxOutputTokens: 2048 },
         });
@@ -138,7 +163,7 @@ export async function handleDataAssistantQuery(
             let chartConfig: any = null;
 
             for (const fc of functionCalls) {
-                const toolResult = await executeTool(fc.name, fc.args || {}, shopId, userRole);
+                const toolResult = await executeTool(fc.name, fc.args || {}, shopId, perms, userId);
                 toolResults.push({ functionResponse: { name: fc.name, response: { result: toolResult } } });
                 allData = toolResult;
                 chartConfig = generateChartConfig(fc.name, fc.args || {}, toolResult);

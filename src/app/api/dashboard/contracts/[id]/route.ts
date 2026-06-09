@@ -74,6 +74,7 @@ export async function PATCH(request: NextRequest, ctx: RouteContext) {
             'overdue_days', 'prepayment_paid', 'prepayment_paid_cash',
             'prepayment_paid_barter', 'customer_phone', 'customer_name',
             'remaining_payment_condition', 'balance_payment_method',
+            'project_id',
         ];
         const updateData: Record<string, unknown> = {};
         for (const key of allowed) {

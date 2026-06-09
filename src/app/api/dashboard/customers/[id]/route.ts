@@ -16,18 +16,10 @@ export async function GET(
         const { id } = await params;
         const supabase = supabaseAdmin();
 
-        // Get customer with orders
+        // Get customer
         const { data: customer, error } = await supabase
             .from('customers')
-            .select(`
-        *,
-        orders (
-          id,
-          status,
-          total_amount,
-          created_at
-        )
-      `)
+            .select('*')
             .eq('id', id)
             .eq('shop_id', authShop.id)
             .single();

@@ -30,6 +30,7 @@ import {
     Sparkles,
     Zap,
     Star,
+    FileText,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -151,6 +152,28 @@ export default function LeadsPage() {
         } catch (error) {
             console.error('Error updating lead:', error);
             toast.error('Шинэчлэхэд алдаа гарлаа');
+        }
+    };
+
+    const convertLead = async (id: string) => {
+        try {
+            const res = await fetch(`/api/dashboard/leads/${id}/convert`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
+                },
+                body: JSON.stringify({}),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err?.error || 'Гэрээ болгоход алдаа гарлаа');
+            }
+            setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, status: 'closed_won' } : l)));
+            toast.success('Гэрээ үүсгэж, борлуулалт хаалаа');
+        } catch (error) {
+            console.error('Error converting lead:', error);
+            toast.error(error instanceof Error ? error.message : 'Гэрээ болгоход алдаа гарлаа');
         }
     };
 
@@ -508,6 +531,24 @@ export default function LeadsPage() {
                                                                             Мессеж
                                                                         </button>
                                                                     </div>
+                                                                    {lead.status === 'closed_won' ? (
+                                                                        <a
+                                                                            href="/dashboard/contracts"
+                                                                            onClick={(e) => e.stopPropagation()}
+                                                                            className="inline-flex items-center justify-center gap-2 px-4 py-2 w-full bg-status-success-soft text-status-success rounded-md hover:opacity-90 transition-colors text-sm font-medium"
+                                                                        >
+                                                                            <FileText className="w-4 h-4" />
+                                                                            Гэрээ үзэх
+                                                                        </a>
+                                                                    ) : (
+                                                                        <button
+                                                                            onClick={(e) => { e.stopPropagation(); convertLead(lead.id); }}
+                                                                            className="inline-flex items-center justify-center gap-2 px-4 py-2 w-full bg-brand-soft text-brand-strong rounded-md hover:bg-brand-soft/80 transition-colors text-sm font-medium"
+                                                                        >
+                                                                            <FileText className="w-4 h-4" />
+                                                                            Гэрээ болгох
+                                                                        </button>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         </td>
