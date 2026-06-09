@@ -148,3 +148,8 @@ export async function GET(request: NextRequest) {
         }, { status: 500 });
     }
 }
+
+// Hardening: mutation учраас POST-оор дуудах боломжтой (GET-ийг backward-compat болгож үлдээв).
+export async function POST(request: NextRequest) {
+    return GET(request);
+}

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
+import { logAdminAudit } from '@/lib/admin/audit';
 
 /**
  * GET /api/admin/users — List all users with roles
@@ -78,6 +79,8 @@ export async function PATCH(request: NextRequest) {
             .upsert({ user_id: targetUserId, role }, { onConflict: 'user_id' });
 
         if (error) return safeErrorResponse(error, 'Хэрэглэгчийн эрх шинэчлэх үед алдаа гарлаа');
+
+        await logAdminAudit({ actorId: userId, action: 'user.role_update', targetId: targetUserId, meta: { role } });
 
         return NextResponse.json({ success: true, message: `Role updated to ${role}` });
     } catch (error) {
@@ -175,6 +178,8 @@ export async function POST(request: NextRequest) {
             }
         }
 
+        await logAdminAudit({ actorId: userId, action: 'user.create', targetId: newUserId, meta: { email, role: role || 'viewer' } });
+
         return NextResponse.json({
             success: true,
             warning: warnings.length > 0 ? warnings.join(' / ') : null,
@@ -233,6 +238,8 @@ export async function DELETE(request: NextRequest) {
             console.error('Delete user error:', deleteError);
             return NextResponse.json({ error: 'Хэрэглэгч устгах үед алдаа: ' + deleteError.message }, { status: 500 });
         }
+
+        await logAdminAudit({ actorId: userId, action: 'user.delete', targetId: targetUserId });
 
         return NextResponse.json({
             success: true,
