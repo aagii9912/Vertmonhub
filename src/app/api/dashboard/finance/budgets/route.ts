@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
+import { requireWrite, requireDelete } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { CreateBudgetLineSchema, validateBody } from '@/lib/validations/schemas';
@@ -33,6 +34,8 @@ export async function GET(request: NextRequest) {
 /** POST /api/dashboard/finance/budgets — Төсвийн мөр нэмэх */
 export async function POST(request: NextRequest) {
     try {
+        const denied = await requireWrite();
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -66,6 +69,8 @@ export async function POST(request: NextRequest) {
 /** DELETE /api/dashboard/finance/budgets?id= — Төсвийн мөр устгах */
 export async function DELETE(request: NextRequest) {
     try {
+        const denied = await requireDelete();
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
