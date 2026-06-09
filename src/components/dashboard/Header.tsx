@@ -44,22 +44,23 @@ export function Header() {
             );
         }
 
-        let title = 'Dashboard';
-        if (path.includes('/pipeline')) title = 'Pipeline';
+        let title = 'Хянах самбар';
+        if (path.includes('/pipeline')) title = 'Лийдийн шугам';
         else if (path.includes('/leads')) title = 'Лийд';
-        else if (path.includes('/orders')) title = 'Захиалга';
-        else if (path.includes('/products')) title = 'Бүтээгдэхүүн';
+        else if (path.includes('/properties')) title = 'Үл хөдлөх';
+        else if (path.includes('/customer-service')) title = 'Үйлчилгээ';
         else if (path.includes('/customers')) title = 'Харилцагч';
         else if (path.includes('/reports')) title = 'Тайлан';
         else if (path.includes('/settings')) title = 'Тохиргоо';
-        else if (path.includes('/inbox')) title = 'Идэвхтэй Сагс';
+        else if (path.includes('/inbox')) title = 'Мессеж';
         else if (path.includes('/viewings')) title = 'Үзлэг';
         else if (path.includes('/contracts')) title = 'Гэрээ';
+        else if (path.includes('/finance')) title = 'Санхүү';
+        else if (path.includes('/procurement')) title = 'Худалдан авалт';
         else if (path.includes('/marketing-roi')) title = 'Маркетинг ROI';
         else if (path.includes('/ai-settings')) title = 'AI Тохиргоо';
         else if (path.includes('/ai-assistant')) title = 'AI Туслах';
         else if (path.includes('/surveys')) title = 'Судалгаа';
-        else if (path.includes('/subscription')) title = 'Төлбөр & Эрх';
 
         return <h1 className="heading-section text-base md:text-lg text-foreground">{title}</h1>;
     };

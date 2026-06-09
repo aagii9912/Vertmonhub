@@ -69,7 +69,8 @@ interface LeadStats {
 }
 
 export default function LeadsPage() {
-    const { shop } = useAuth();
+    const { shop, user } = useAuth();
+    const canWrite = user?.permissions?.canWrite ?? false;
     const [leads, setLeads] = useState<Lead[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -209,10 +210,12 @@ export default function LeadsPage() {
                 title="Лийд шугам"
                 subtitle="Орж ирж буй хүсэлтүүдийг хянах, төлөв шинэчлэх, дараагийн алхмыг төлөвлөх"
                 primaryAction={
-                    <Button href="/dashboard/leads/new" variant="primary" size="md">
-                        <Plus className="w-4 h-4" />
-                        Лийд нэмэх
-                    </Button>
+                    canWrite ? (
+                        <Button href="/dashboard/leads/new" variant="primary" size="md">
+                            <Plus className="w-4 h-4" />
+                            Лийд нэмэх
+                        </Button>
+                    ) : undefined
                 }
             />
 

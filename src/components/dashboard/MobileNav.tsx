@@ -15,33 +15,48 @@ import {
     FileText,
     Eye,
     TrendingUp,
+    Wallet,
+    MessageSquare,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { canAccessModule, canAccessModuleDynamic } from '@/lib/rbac';
 
 const primaryNavItems = [
-    { name: 'Нүүр', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Үл хөдлөх', href: '/dashboard/properties', icon: Building2 },
-    { name: 'Тайлан', href: '/dashboard/reports', icon: BarChart3 },
+    { name: 'Нүүр', href: '/dashboard', icon: LayoutDashboard, module: 'dashboard' },
+    { name: 'Үл хөдлөх', href: '/dashboard/properties', icon: Building2, module: 'properties' },
+    { name: 'Тайлан', href: '/dashboard/reports', icon: BarChart3, module: 'reports' },
 ];
 
 const secondaryNavItems = [
-    { name: 'Лийд', href: '/dashboard/leads', icon: Users },
-    { name: 'Үзлэг', href: '/dashboard/viewings', icon: Eye },
-    { name: 'Гэрээ', href: '/dashboard/contracts', icon: FileText },
-    { name: 'Маркетинг', href: '/dashboard/marketing-roi', icon: TrendingUp },
-    { name: 'AI Тохиргоо', href: '/dashboard/ai-settings', icon: Bot },
-    { name: 'Тохиргоо', href: '/dashboard/settings', icon: Settings },
+    { name: 'Лийд', href: '/dashboard/leads', icon: Users, module: 'leads' },
+    { name: 'Үзлэг', href: '/dashboard/viewings', icon: Eye, module: 'viewings' },
+    { name: 'Гэрээ', href: '/dashboard/contracts', icon: FileText, module: 'contracts' },
+    { name: 'Санхүү', href: '/dashboard/finance', icon: Wallet, module: 'finance' },
+    { name: 'Мессеж', href: '/dashboard/inbox', icon: MessageSquare, module: 'inbox' },
+    { name: 'Маркетинг', href: '/dashboard/marketing-roi', icon: TrendingUp, module: 'marketing-roi' },
+    { name: 'AI Тохиргоо', href: '/dashboard/ai-settings', icon: Bot, module: 'ai-settings' },
+    { name: 'Тохиргоо', href: '/dashboard/settings', icon: Settings, module: 'settings' },
 ];
 
 export function MobileNav() {
     const pathname = usePathname();
+    const { user } = useAuth();
     const [showMore, setShowMore] = useState(false);
+
+    const canSee = (module: string): boolean => {
+        if (user?.permissions) return canAccessModuleDynamic(user.permissions, module);
+        return canAccessModule(user?.role || 'viewer', module);
+    };
+
+    const primaryItems = primaryNavItems.filter((i) => canSee(i.module));
+    const secondaryItems = secondaryNavItems.filter((i) => canSee(i.module));
 
     const isActiveItem = (href: string) => {
         return pathname === href || (href !== '/dashboard' && pathname.startsWith(href));
     };
 
-    const isMoreActive = secondaryNavItems.some((item) => isActiveItem(item.href));
+    const isMoreActive = secondaryItems.some((item) => isActiveItem(item.href));
 
     return (
         <>
@@ -63,7 +78,7 @@ export function MobileNav() {
                                 </button>
                             </div>
                             <div className="grid grid-cols-3 gap-2 p-3">
-                                {secondaryNavItems.map((item) => (
+                                {secondaryItems.map((item) => (
                                     <Link
                                         key={item.name}
                                         href={item.href}
@@ -88,7 +103,7 @@ export function MobileNav() {
             {/* Bottom Navigation */}
             <nav className="fixed bottom-0 left-0 right-0 z-50 bg-surface border-t border-border pb-safe block md:hidden">
                 <ul className="flex justify-around items-stretch h-[72px]">
-                    {primaryNavItems.map((item) => {
+                    {primaryItems.map((item) => {
                         const isActive = isActiveItem(item.href);
                         return (
                             <li key={item.name} className="flex-1">
