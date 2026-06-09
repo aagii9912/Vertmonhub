@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
 import { Loader2, Send, MessageSquare, User, Bot, PauseCircle, Search, Inbox as InboxIcon, Timer, Power, Trash2 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { formatTime as formatTimeShared, formatShortDate } from '@/lib/utils/date';
 
 interface ChatMessage {
     id: string;
@@ -158,10 +159,7 @@ export default function InboxMessagesPage() {
 
     const formatTime = (dateStr: string) => {
         try {
-            return new Date(dateStr).toLocaleTimeString('mn-MN', {
-                hour: '2-digit',
-                minute: '2-digit',
-            });
+            return formatTimeShared(dateStr);
         } catch {
             return '';
         }
@@ -174,7 +172,7 @@ export default function InboxMessagesPage() {
             const diff = now.getTime() - d.getTime();
             if (diff < 86400000) return formatTime(dateStr);
             if (diff < 172800000) return 'Yesterday';
-            return d.toLocaleDateString('mn-MN', { month: 'short', day: 'numeric' });
+            return formatShortDate(dateStr);
         } catch {
             return '';
         }

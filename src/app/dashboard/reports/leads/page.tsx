@@ -222,7 +222,7 @@ export default function LeadsReport() {
 
             {/* KPI Cards */}
             <StatBar columns={4}>
-                <StatTile label="Нийт сэжим" value={stats.total} icon={<Users className="w-4 h-4" />} accent="info" />
+                <StatTile label="Нийт лийд" value={stats.total} icon={<Users className="w-4 h-4" />} accent="info" />
                 <StatTile
                     label="Амжилттай"
                     value={stats.won}

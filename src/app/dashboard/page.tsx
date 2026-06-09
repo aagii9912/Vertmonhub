@@ -11,7 +11,7 @@ import { PullToRefresh } from '@/components/ui/PullToRefresh';
 import { DashboardSkeleton } from '@/components/ui/LoadingSkeleton';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDashboard } from '@/hooks/useDashboard';
-import { formatTimeAgo } from '@/lib/utils/date';
+import { formatTimeAgo, formatShortDate } from '@/lib/utils/date';
 import { cn } from '@/lib/utils';
 import {
     Building2,
@@ -216,7 +216,7 @@ export default function DashboardPage() {
                                                 <div className="flex items-center gap-2">
                                                     <Clock className="w-3.5 h-3.5 text-muted-foreground/70" />
                                                     <span className="text-sm font-medium text-foreground tabular-nums">
-                                                        {v.scheduled_at ? new Date(v.scheduled_at).toLocaleDateString('mn-MN') : 'TBD'}
+                                                        {v.scheduled_at ? formatShortDate(v.scheduled_at) : 'TBD'}
                                                     </span>
                                                 </div>
                                                 <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
