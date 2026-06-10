@@ -1,7 +1,9 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
+import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { CreatePaymentScheduleSchema, validateBody } from '@/lib/validations/schemas';
 
 // ============================================
 // GET /api/dashboard/contracts/[id]/payments
@@ -12,6 +14,8 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const denied = await requireModule('contracts');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
@@ -48,13 +52,18 @@ export async function POST(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const denied = await requireModuleWrite('contracts');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
 
         const { id: contractId } = await params;
-        const body = await request.json();
+        const rawBody = await request.json();
+        const validation = validateBody(CreatePaymentScheduleSchema, rawBody);
+        if (!validation.success) return validation.response;
+        const d = validation.data;
         const supabase = supabaseAdmin();
 
         // Гэрээ байгаа эсэхийг шалгах
@@ -74,15 +83,15 @@ export async function POST(
             .insert({
                 contract_id: contractId,
                 shop_id: authShop.id,
-                installment_number: body.installment_number || 1,
-                label: body.label || null,
-                due_date: body.due_date,
-                amount: body.amount || 0,
-                paid_amount: body.paid_amount || 0,
-                paid_date: body.paid_date || null,
-                payment_method: body.payment_method || null,
-                status: body.paid_amount >= body.amount ? 'paid' : body.paid_amount > 0 ? 'partial' : 'pending',
-                notes: body.notes || null,
+                installment_number: d.installment_number,
+                label: d.label || null,
+                due_date: d.due_date,
+                amount: d.amount,
+                paid_amount: d.paid_amount,
+                paid_date: d.paid_date || null,
+                payment_method: d.payment_method || null,
+                status: d.paid_amount >= d.amount ? 'paid' : d.paid_amount > 0 ? 'partial' : 'pending',
+                notes: d.notes || null,
             })
             .select()
             .single();
@@ -90,18 +99,18 @@ export async function POST(
         if (error) throw error;
 
         // ERP: бодит төлбөр төлөгдсөн бол кассын дэвтэрт орлого (receipt) бичнэ
-        if (Number(body.paid_amount) > 0) {
+        if (d.paid_amount > 0) {
             const { error: txnError } = await supabase
                 .from('finance_transactions')
                 .insert({
                     shop_id: authShop.id,
-                    txn_date: body.paid_date || new Date().toISOString().slice(0, 10),
+                    txn_date: d.paid_date || new Date().toISOString().slice(0, 10),
                     type: 'receipt',
-                    amount: Number(body.paid_amount),
-                    method: body.payment_method || null,
+                    amount: d.paid_amount,
+                    method: d.payment_method || null,
                     contract_id: contractId,
                     payment_schedule_id: data.id,
-                    note: body.label || 'Гэрээний төлбөр',
+                    note: d.label || 'Гэрээний төлбөр',
                 });
             if (txnError) {
                 logger.warn('[Payments API] finance_transactions insert failed', { error: txnError });
@@ -127,6 +136,8 @@ export async function PATCH(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const denied = await requireModuleWrite('contracts');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
@@ -142,12 +153,16 @@ export async function PATCH(
 
         const supabase = supabaseAdmin();
 
-        // Автомат status тодорхойлох
+        // Автомат status тодорхойлох (тоон утгаар найдвартай харьцуулна)
         if (updates.paid_amount !== undefined && updates.amount !== undefined) {
-            if (updates.paid_amount >= updates.amount) {
-                updates.status = 'paid';
-            } else if (updates.paid_amount > 0) {
-                updates.status = 'partial';
+            const paid = Number(updates.paid_amount);
+            const total = Number(updates.amount);
+            if (Number.isFinite(paid) && Number.isFinite(total)) {
+                if (paid >= total) {
+                    updates.status = 'paid';
+                } else if (paid > 0) {
+                    updates.status = 'partial';
+                }
             }
         }
 

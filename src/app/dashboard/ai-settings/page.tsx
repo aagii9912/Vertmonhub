@@ -376,12 +376,12 @@ function KnowledgeSection({ customKnowledge, setCustomKnowledge, saving, setSavi
                     <h3 className="font-semibold text-foreground mb-3">➕ Мэдээлэл нэмэх</h3>
                     <div className="flex gap-3 items-end">
                         <div className="flex-1">
-                            <label className="text-xs font-medium text-muted-foreground mb-1 block">Гарчиг / Түлхүүр</label>
-                            <Input placeholder="Жишээ: Борлуулалтын утас" value={newKey} onChange={(e) => setNewKey(e.target.value)} />
+                            <label htmlFor="knowledge-key" className="text-xs font-medium text-muted-foreground mb-1 block">Гарчиг / Түлхүүр</label>
+                            <Input id="knowledge-key" placeholder="Жишээ: Борлуулалтын утас" value={newKey} onChange={(e) => setNewKey(e.target.value)} />
                         </div>
                         <div className="flex-[2]">
-                            <label className="text-xs font-medium text-muted-foreground mb-1 block">Утга / Агуулга</label>
-                            <Input placeholder="Жишээ: 9911-2233, 8800-1122" value={newValue} onChange={(e) => setNewValue(e.target.value)} />
+                            <label htmlFor="knowledge-value" className="text-xs font-medium text-muted-foreground mb-1 block">Утга / Агуулга</label>
+                            <Input id="knowledge-value" placeholder="Жишээ: 9911-2233, 8800-1122" value={newValue} onChange={(e) => setNewValue(e.target.value)} />
                         </div>
                         <Button onClick={() => {
                             if (newKey && newValue) {

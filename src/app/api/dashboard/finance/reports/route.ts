@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
+import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
@@ -40,6 +41,8 @@ function agingBuckets(items: Array<{ outstanding: number; due_date: string | nul
  */
 export async function GET() {
     try {
+        const denied = await requireModule('finance');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) return NextResponse.json({ reports: null });
 

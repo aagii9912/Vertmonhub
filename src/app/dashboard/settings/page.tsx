@@ -98,10 +98,11 @@ export default function SettingsPage() {
                 <CardContent className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label className="block text-sm font-medium text-foreground mb-1">
+                            <label htmlFor="company-name" className="block text-sm font-medium text-foreground mb-1">
                                 Компанийн нэр
                             </label>
                             <input
+                                id="company-name"
                                 type="text"
                                 value={companyName}
                                 onChange={(e) => setCompanyName(e.target.value)}
@@ -110,10 +111,11 @@ export default function SettingsPage() {
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-foreground mb-1">
+                            <label htmlFor="owner-name" className="block text-sm font-medium text-foreground mb-1">
                                 Удирдлагын нэр
                             </label>
                             <input
+                                id="owner-name"
                                 type="text"
                                 value={ownerName}
                                 onChange={(e) => setOwnerName(e.target.value)}
@@ -122,11 +124,12 @@ export default function SettingsPage() {
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-foreground mb-1">
+                            <label htmlFor="company-phone" className="block text-sm font-medium text-foreground mb-1">
                                 <Phone className="w-3.5 h-3.5 inline mr-1" />
                                 Утасны дугаар
                             </label>
                             <input
+                                id="company-phone"
                                 type="tel"
                                 value={phone}
                                 onChange={(e) => setPhone(e.target.value)}
@@ -135,11 +138,12 @@ export default function SettingsPage() {
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-foreground mb-1">
+                            <label htmlFor="company-email" className="block text-sm font-medium text-foreground mb-1">
                                 <Mail className="w-3.5 h-3.5 inline mr-1" />
                                 Имэйл хаяг
                             </label>
                             <input
+                                id="company-email"
                                 type="email"
                                 value={companyEmail}
                                 onChange={(e) => setCompanyEmail(e.target.value)}
@@ -148,11 +152,12 @@ export default function SettingsPage() {
                             />
                         </div>
                         <div className="md:col-span-2">
-                            <label className="block text-sm font-medium text-foreground mb-1">
+                            <label htmlFor="company-address" className="block text-sm font-medium text-foreground mb-1">
                                 <MapPin className="w-3.5 h-3.5 inline mr-1" />
                                 Хаяг
                             </label>
                             <input
+                                id="company-address"
                                 type="text"
                                 value={address}
                                 onChange={(e) => setAddress(e.target.value)}
@@ -161,11 +166,12 @@ export default function SettingsPage() {
                             />
                         </div>
                         <div className="md:col-span-2">
-                            <label className="block text-sm font-medium text-foreground mb-1">
+                            <label htmlFor="company-website" className="block text-sm font-medium text-foreground mb-1">
                                 <Globe className="w-3.5 h-3.5 inline mr-1" />
                                 Вэб сайт
                             </label>
                             <input
+                                id="company-website"
                                 type="url"
                                 value={website}
                                 onChange={(e) => setWebsite(e.target.value)}

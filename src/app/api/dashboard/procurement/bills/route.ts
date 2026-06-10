@@ -1,6 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireWrite } from '@/lib/auth/require-permission';
+import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { CreateBillSchema, validateBody } from '@/lib/validations/schemas';
@@ -8,6 +8,8 @@ import { CreateBillSchema, validateBody } from '@/lib/validations/schemas';
 /** GET /api/dashboard/procurement/bills — Нэхэмжлэхүүд (vendor нэртэй) */
 export async function GET(request: NextRequest) {
     try {
+        const denied = await requireModule('procurement');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) return NextResponse.json({ bills: [] });
 
@@ -34,7 +36,7 @@ export async function GET(request: NextRequest) {
 /** POST /api/dashboard/procurement/bills — Шинэ нэхэмжлэх (мөрүүдтэй) */
 export async function POST(request: NextRequest) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('procurement');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

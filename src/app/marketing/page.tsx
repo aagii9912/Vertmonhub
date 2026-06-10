@@ -10,6 +10,7 @@ import {
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { formatMNT } from '@/lib/utils/currency';
 
 interface MarketingOverview {
     campaigns: number;
@@ -63,7 +64,7 @@ export default function MarketingPage() {
     }, [shop?.id]);
 
     const formatNumber = (v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}K` : String(v);
-    const formatCurrency = (v: number) => v >= 1000000 ? `${(v / 1000000).toFixed(1)}M₮` : v >= 1000 ? `${(v / 1000).toFixed(0)}K₮` : v.toLocaleString() + '₮';
+    const formatCurrency = (v: number) => formatMNT(v, { compact: true });
 
     const sections = [
         { title: 'Кампанит ажил', icon: Megaphone, href: '/marketing/campaigns', desc: 'Маркетингийн кампанит ажлууд', color: 'bg-status-info-soft text-status-info' },

@@ -1,5 +1,6 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
+import { requireModule, requireModuleWrite, requireModuleDelete } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
@@ -9,6 +10,8 @@ interface RouteContext {
 
 export async function GET(_request: NextRequest, ctx: RouteContext) {
     try {
+        const denied = await requireModule('contracts');
+        if (denied) return denied;
         const { id } = await ctx.params;
         const authShop = await getUserShop();
         if (!authShop) {
@@ -36,6 +39,8 @@ export async function GET(_request: NextRequest, ctx: RouteContext) {
 
 export async function DELETE(_request: NextRequest, ctx: RouteContext) {
     try {
+        const denied = await requireModuleDelete('contracts');
+        if (denied) return denied;
         const { id } = await ctx.params;
         const authShop = await getUserShop();
         if (!authShop) {
@@ -59,6 +64,8 @@ export async function DELETE(_request: NextRequest, ctx: RouteContext) {
 
 export async function PATCH(request: NextRequest, ctx: RouteContext) {
     try {
+        const denied = await requireModuleWrite('contracts');
+        if (denied) return denied;
         const { id } = await ctx.params;
         const authShop = await getUserShop();
         if (!authShop) {

@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { formatMNT } from '@/lib/utils/currency';
 
 interface PropertyStats {
     total: number;
@@ -139,11 +140,7 @@ export default function PropertiesReportPage() {
         fetchData();
     }, [shop?.id, period]);
 
-    const formatCurrency = (value: number) => {
-        if (value >= 1000000000) return `${(value / 1000000000).toFixed(1)} тэрбум`;
-        if (value >= 1000000) return `${(value / 1000000).toFixed(0)} сая`;
-        return value.toLocaleString() + '₮';
-    };
+    const formatCurrency = (value: number) => formatMNT(value, { compact: true });
 
     const statusColors: Record<string, string> = {
         available: 'bg-status-success-soft text-status-success',

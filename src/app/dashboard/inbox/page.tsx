@@ -10,11 +10,11 @@ import { FilterBar } from '@/components/dashboard/FilterBar';
 import { useConversations } from '@/hooks/useConversations';
 import { MessageSquare, RefreshCcw, User } from 'lucide-react';
 import { formatTimeAgo } from '@/lib/utils/date';
+import Link from 'next/link';
 
 export default function InboxPage() {
-    const { data: conversations = [], isLoading, refetch } = useConversations();
+    const { data: conversations = [], isLoading, isError, refetch } = useConversations();
     const [searchQuery, setSearchQuery] = useState('');
-    const [selectedId, setSelectedId] = useState<string | null>(null);
 
     const filtered = conversations.filter((c: any) =>
         (c.customer_name || '').toLowerCase().includes(searchQuery.toLowerCase()),
@@ -24,6 +24,17 @@ export default function InboxPage() {
         return (
             <div className="flex h-[calc(100vh-140px)] items-center justify-center">
                 <Spinner size="lg" />
+            </div>
+        );
+    }
+
+    if (isError) {
+        return (
+            <div className="flex h-[calc(100vh-140px)] flex-col items-center justify-center gap-4 text-center">
+                <p className="font-medium text-foreground">Мессеж ачаалахад алдаа гарлаа</p>
+                <Button onClick={() => refetch()} variant="secondary" size="sm">
+                    <RefreshCcw className="w-4 h-4" /> Дахин оролдох
+                </Button>
             </div>
         );
     }
@@ -60,29 +71,26 @@ export default function InboxPage() {
             ) : (
                 <div className="grid grid-cols-1 gap-3">
                     {filtered.map((conv: any) => (
-                        <Card
-                            key={conv.id}
-                            hover
-                            className="cursor-pointer"
-                            onClick={() => setSelectedId(conv.id)}
-                        >
-                            <CardContent className="p-4 flex items-center gap-4">
-                                <div className="w-10 h-10 rounded-full bg-brand-soft flex items-center justify-center flex-shrink-0">
-                                    <User className="w-5 h-5 text-brand-strong" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="font-medium text-foreground truncate">
-                                        {conv.customer_name || 'Харилцагч'}
-                                    </p>
-                                    <p className="text-sm text-muted-foreground truncate">
-                                        {conv.last_message || 'Мессеж байхгүй'}
-                                    </p>
-                                </div>
-                                <div className="text-xs text-muted-foreground/70 flex-shrink-0">
-                                    {conv.updated_at ? formatTimeAgo(conv.updated_at) : ''}
-                                </div>
-                            </CardContent>
-                        </Card>
+                        <Link key={conv.id} href="/dashboard/inbox/messages" className="block">
+                            <Card hover className="cursor-pointer">
+                                <CardContent className="p-4 flex items-center gap-4">
+                                    <div className="w-10 h-10 rounded-full bg-brand-soft flex items-center justify-center flex-shrink-0">
+                                        <User className="w-5 h-5 text-brand-strong" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-medium text-foreground truncate">
+                                            {conv.customer_name || 'Харилцагч'}
+                                        </p>
+                                        <p className="text-sm text-muted-foreground truncate">
+                                            {conv.last_message || 'Мессеж байхгүй'}
+                                        </p>
+                                    </div>
+                                    <div className="text-xs text-muted-foreground/70 flex-shrink-0">
+                                        {conv.updated_at ? formatTimeAgo(conv.updated_at) : ''}
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </Link>
                     ))}
                 </div>
             )}
