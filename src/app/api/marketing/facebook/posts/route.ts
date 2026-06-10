@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { getPagePosts } from '@/lib/facebook/marketing-api';
+import { decryptToken } from '@/lib/crypto/tokens';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 
@@ -54,19 +55,33 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ posts: [], message: 'Facebook Page холбогдоогүй' });
         }
 
-        const result = await getPagePosts(shop.facebook_page_id, shop.facebook_page_access_token, limit);
+        const pageToken = decryptToken(shop.facebook_page_access_token) || '';
+        const result = await getPagePosts(shop.facebook_page_id, pageToken, limit);
 
         // Transform posts for frontend
-        const posts = (result.data || []).map(post => ({
-            id: post.id,
-            message: post.message || post.story || '',
-            image: post.full_picture || null,
-            permalink: post.permalink_url || null,
-            created_time: post.created_time,
-            likes: post.likes?.summary?.total_count || 0,
-            comments: post.comments?.summary?.total_count || 0,
-            shares: post.shares?.count || 0,
-        }));
+        const posts = (result.data || []).map(post => {
+            // Per-post insights-ийг metric нэрээр map болгож задлах
+            const im: Record<string, number | Record<string, number>> = {};
+            for (const m of post.insights?.data || []) {
+                const v = m.values?.[0]?.value;
+                if (v !== undefined) im[m.name] = v;
+            }
+            return {
+                id: post.id,
+                message: post.message || post.story || '',
+                image: post.full_picture || null,
+                permalink: post.permalink_url || null,
+                created_time: post.created_time,
+                likes: post.likes?.summary?.total_count || 0,
+                comments: post.comments?.summary?.total_count || 0,
+                shares: post.shares?.count || 0,
+                insights: {
+                    reach: (im.post_impressions_unique as number) || 0,
+                    clicks: (im.post_clicks as number) || 0,
+                    reactions: (im.post_reactions_by_type_total as Record<string, number>) || {},
+                },
+            };
+        });
 
         return NextResponse.json({ posts, paging: result.paging });
 

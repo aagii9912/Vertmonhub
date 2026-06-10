@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { getPageInfo } from '@/lib/facebook/marketing-api';
+import { decryptToken } from '@/lib/crypto/tokens';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 
@@ -66,7 +67,8 @@ export async function GET(req: NextRequest) {
 
         // Fetch page info from Graph API
         try {
-            const pageInfo = await getPageInfo(shop.facebook_page_id, shop.facebook_page_access_token);
+            const pageToken = decryptToken(shop.facebook_page_access_token) || '';
+            const pageInfo = await getPageInfo(shop.facebook_page_id, pageToken);
             return NextResponse.json({
                 connected: true,
                 page: {

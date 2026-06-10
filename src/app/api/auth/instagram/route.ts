@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 
 // Instagram OAuth - Start (uses Facebook OAuth with Instagram permissions)
 export async function GET(request: NextRequest) {
@@ -15,10 +16,13 @@ export async function GET(request: NextRequest) {
     // Required permissions for Instagram messaging
     const permissions = [
         'pages_show_list',
+        'pages_read_engagement',
         'pages_messaging',
         'pages_manage_metadata',
         'instagram_basic',
         'instagram_manage_messages',
+        'instagram_manage_comments',
+        'instagram_manage_insights',
         'public_profile',
     ].join(',');
 
@@ -29,5 +33,17 @@ export async function GET(request: NextRequest) {
     fbAuthUrl.searchParams.set('scope', permissions);
     fbAuthUrl.searchParams.set('response_type', 'code');
 
-    return NextResponse.redirect(fbAuthUrl.toString());
+    // CSRF state — sameSite:'lax' заавал (facebook.com-оос буцах redirect-д cookie илгээгдэнэ)
+    const state = crypto.randomBytes(32).toString('hex');
+    fbAuthUrl.searchParams.set('state', state);
+
+    const response = NextResponse.redirect(fbAuthUrl.toString());
+    response.cookies.set('ig_oauth_state', state, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        maxAge: 600,
+        path: '/',
+    });
+    return response;
 }

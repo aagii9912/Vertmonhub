@@ -3,6 +3,7 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { sendTextMessage } from '@/lib/facebook/messenger';
+import { decryptToken } from '@/lib/crypto/tokens';
 
 export async function POST(request: NextRequest) {
     try {
@@ -47,10 +48,14 @@ export async function POST(request: NextRequest) {
         }
 
         // Send message to Facebook Messenger
+        const pageAccessToken = decryptToken(shop.facebook_page_access_token);
+        if (!pageAccessToken) {
+            return NextResponse.json({ error: 'Facebook token decrypt хийж чадсангүй' }, { status: 400 });
+        }
         await sendTextMessage({
             recipientId: customer.facebook_id,
             message: message,
-            pageAccessToken: shop.facebook_page_access_token,
+            pageAccessToken,
         });
 
         // Save message to chat_history

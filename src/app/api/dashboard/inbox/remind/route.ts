@@ -5,6 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { sendPushNotification } from '@/lib/notifications';
 import { sendTextMessage } from '@/lib/facebook/messenger';
+import { decryptToken } from '@/lib/crypto/tokens';
 
 const remindSchema = z.object({
     customerId: z.string().uuid(),
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
             .eq('id', shop.id)
             .single();
 
-        const pageAccessToken = shopRow?.facebook_page_access_token ?? process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
+        const pageAccessToken = decryptToken(shopRow?.facebook_page_access_token) ?? process.env.FACEBOOK_PAGE_ACCESS_TOKEN;
         let sentMethod: 'facebook' | 'none' = 'none';
 
         if (customer.facebook_id && pageAccessToken) {

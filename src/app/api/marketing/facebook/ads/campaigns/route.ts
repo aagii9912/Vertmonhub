@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserShop, supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { fetchAdAccountCampaigns } from '@/lib/facebook/marketing-api';
+import { decryptToken } from '@/lib/crypto/tokens';
 import { logger } from '@/lib/utils/logger';
 
 const STATUS_MAP: Record<string, 'active' | 'paused' | 'completed' | 'draft'> = {
@@ -37,7 +38,8 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Ad Account ID шаардлагатай' }, { status: 400 });
         }
 
-        const result = await fetchAdAccountCampaigns(adAccountId, shop.facebook_page_access_token);
+        const pageToken = decryptToken(shop.facebook_page_access_token) || '';
+        const result = await fetchAdAccountCampaigns(adAccountId, pageToken);
         const campaigns = result.data || [];
 
         // Upsert campaigns into ad_campaigns table

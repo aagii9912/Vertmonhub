@@ -285,6 +285,7 @@ function SocialPageContent() {
                     facebook_page_id: selectData.page.id,
                     facebook_page_name: selectData.page.name,
                     facebook_page_access_token: selectData.page.access_token,
+                    facebook_token_expires_in: selectData.page.token_expires_in ?? undefined,
                 }),
             });
             const patchData = await patchRes.json();
@@ -294,7 +295,10 @@ function SocialPageContent() {
             }
 
             setPageSelectorOpen(false);
-            setOauthBanner(`✅ "${selectData.page.name}" хуудас амжилттай холбогдлоо`);
+            const subNote = patchData.webhookSubscribed === false
+                ? ' (⚠️ Webhook subscribe хийгдсэнгүй — App Dashboard дээр гараар тохируулна уу)'
+                : '';
+            setOauthBanner(`✅ "${selectData.page.name}" хуудас амжилттай холбогдлоо${subNote}`);
             router.replace('/marketing/social');
             // Refresh Facebook data
             fetchFacebookData();

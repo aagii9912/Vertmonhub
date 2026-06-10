@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 
 // Facebook OAuth - Start
 export async function GET(request: NextRequest) {
@@ -45,6 +46,20 @@ export async function GET(request: NextRequest) {
   }
   fbAuthUrl.searchParams.set('response_type', 'code');
 
-  return NextResponse.redirect(fbAuthUrl.toString());
+  // CSRF state — санамсаргүй токеныг httpOnly cookie-д хадгалж callback дээр шалгана.
+  // sameSite:'lax' ЗААВАЛ — 'strict' бол facebook.com-оос буцах redirect дээр cookie
+  // илгээгдэхгүй тул login бүхэлдээ эвдэрнэ.
+  const state = crypto.randomBytes(32).toString('hex');
+  fbAuthUrl.searchParams.set('state', state);
+
+  const response = NextResponse.redirect(fbAuthUrl.toString());
+  response.cookies.set('fb_oauth_state', state, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: 600,
+    path: '/',
+  });
+  return response;
 }
 
