@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { publishTextPost, publishPhotoPost } from '@/lib/facebook/marketing-api';
+import { decryptToken } from '@/lib/crypto/tokens';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 
@@ -59,18 +60,19 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Facebook Page холбогдоогүй байна' }, { status: 400 });
         }
 
+        const pageToken = decryptToken(shop.facebook_page_access_token) || '';
         let result;
         if (imageUrl) {
             result = await publishPhotoPost(
                 shop.facebook_page_id,
-                shop.facebook_page_access_token,
+                pageToken,
                 message.trim(),
                 imageUrl
             );
         } else {
             result = await publishTextPost(
                 shop.facebook_page_id,
-                shop.facebook_page_access_token,
+                pageToken,
                 message.trim()
             );
         }

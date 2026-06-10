@@ -8,6 +8,7 @@ import {
     FOLLOWUP_QUIET_DAYS,
     FOLLOWUP_SNOOZE_DAYS,
 } from '@/lib/config/scoring';
+import { isAuthorizedCron } from '@/lib/auth/cron';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,12 +19,8 @@ export const dynamic = 'force-dynamic';
  * CRON_SECRET тохируулсан бол `x-cron-secret` header шаардана.
  */
 export async function POST(request: NextRequest) {
-    const expected = process.env.CRON_SECRET;
-    if (expected) {
-        const provided = request.headers.get('x-cron-secret');
-        if (provided !== expected) {
-            return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-        }
+    if (!isAuthorizedCron(request)) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
     try {
@@ -88,3 +85,5 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Followup cron failed' }, { status: 500 });
     }
 }
+
+export const GET = POST;

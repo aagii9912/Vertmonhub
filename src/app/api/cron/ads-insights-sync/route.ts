@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { fetchCampaignInsights } from '@/lib/facebook/marketing-api';
+import { decryptToken } from '@/lib/crypto/tokens';
+import { isAuthorizedCron } from '@/lib/auth/cron';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,8 +13,7 @@ export const dynamic = 'force-dynamic';
  * Ингэснээр ROI dashboard-ийн зардал сэргэж байна. CRON_SECRET-ээр хамгаалагдсан.
  */
 export async function POST(request: NextRequest) {
-    const expected = process.env.CRON_SECRET;
-    if (expected && request.headers.get('x-cron-secret') !== expected) {
+    if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     }
 
@@ -26,7 +27,7 @@ export async function POST(request: NextRequest) {
 
         let updated = 0;
         for (const shop of shops || []) {
-            const token = shop.facebook_page_access_token;
+            const token = decryptToken(shop.facebook_page_access_token);
             if (!token) continue;
 
             const { data: campaigns } = await supabase
@@ -54,6 +55,8 @@ export async function POST(request: NextRequest) {
                             clicks: Number(insight.clicks) || 0,
                             ctr: Number(insight.ctr) || 0,
                             cpc: Number(insight.cpc) || 0,
+                            cpm: Number(insight.cpm) || 0,
+                            reach: Number(insight.reach) || 0,
                             conversions,
                             last_synced_at: new Date().toISOString(),
                         })
@@ -73,3 +76,5 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Insights sync failed' }, { status: 500 });
     }
 }
+
+export const GET = POST;

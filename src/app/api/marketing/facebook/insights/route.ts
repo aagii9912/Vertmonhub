@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/auth/supabase-auth';
-import { getPageInsights } from '@/lib/facebook/marketing-api';
+import { getPageInsights, getPageMessagingInsights } from '@/lib/facebook/marketing-api';
+import { decryptToken } from '@/lib/crypto/tokens';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 
@@ -54,7 +55,8 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ insights: null, message: 'Facebook Page холбогдоогүй' });
         }
 
-        const result = await getPageInsights(shop.facebook_page_id, shop.facebook_page_access_token, undefined, period);
+        const pageToken = decryptToken(shop.facebook_page_access_token) || '';
+        const result = await getPageInsights(shop.facebook_page_id, pageToken, undefined, period);
 
         // Transform insights for frontend
         const insightsMap: Record<string, any> = {};
@@ -67,6 +69,12 @@ export async function GET(req: NextRequest) {
                 value: latestValue?.value || 0,
                 values: metric.values || [],
             };
+        }
+
+        // Messenger харилцааны хэмжээ — pages_messaging эрхгүй бол хоосон (isolated helper)
+        const messaging = await getPageMessagingInsights(shop.facebook_page_id, pageToken);
+        for (const [name, value] of Object.entries(messaging)) {
+            insightsMap[name] = { ...(insightsMap[name] || {}), value, values: insightsMap[name]?.values || [] };
         }
 
         return NextResponse.json({ insights: insightsMap });

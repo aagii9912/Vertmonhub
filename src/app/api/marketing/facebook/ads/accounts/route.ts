@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserShop, supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { getAdAccounts } from '@/lib/facebook/marketing-api';
+import { decryptToken } from '@/lib/crypto/tokens';
 import { logger } from '@/lib/utils/logger';
 
 /**
@@ -25,7 +26,8 @@ export async function GET(_req: NextRequest) {
             return NextResponse.json({ error: 'Facebook account холбогдоогүй' }, { status: 400 });
         }
 
-        const result = await getAdAccounts(shop.facebook_page_access_token);
+        const pageToken = decryptToken(shop.facebook_page_access_token) || '';
+        const result = await getAdAccounts(pageToken);
 
         return NextResponse.json({
             accounts: result.data || [],

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { encryptToken, decryptToken } from '@/lib/crypto/tokens';
 
 /**
  * POST /api/dashboard/connect-instagram
@@ -19,7 +20,7 @@ export async function POST(request: NextRequest) {
         // Get shop with existing Facebook Page token
         const { data: shop, error: shopError } = await supabase
             .from('shops')
-            .select('id, name, facebook_page_id, facebook_page_access_token, instagram_business_account_id')
+            .select('id, name, facebook_page_id, facebook_page_access_token, facebook_token_expires_at, instagram_business_account_id')
             .eq('id', shopId)
             .single();
 
@@ -31,8 +32,14 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Facebook Page not connected. Connect Facebook first.' }, { status: 400 });
         }
 
+        // Хадгалсан токен encrypt байж болзошгүй тул эхлээд decrypt.
+        const pageToken = decryptToken(shop.facebook_page_access_token);
+        if (!pageToken) {
+            return NextResponse.json({ error: 'Facebook Page token decrypt хийж чадсангүй. Дахин холбоно уу.' }, { status: 400 });
+        }
+
         // Query Graph API for linked Instagram Business Account
-        const igUrl = `https://graph.facebook.com/v21.0/${shop.facebook_page_id}?fields=instagram_business_account{id,username,name,profile_picture_url}&access_token=${shop.facebook_page_access_token}`;
+        const igUrl = `https://graph.facebook.com/v21.0/${shop.facebook_page_id}?fields=instagram_business_account{id,username,name,profile_picture_url}&access_token=${pageToken}`;
 
         const igResponse = await fetch(igUrl);
         const igData = await igResponse.json();
@@ -57,7 +64,8 @@ export async function POST(request: NextRequest) {
             .update({
                 instagram_business_account_id: igAccount.id,
                 instagram_username: igAccount.username || '',
-                instagram_access_token: shop.facebook_page_access_token, // Page token works for IG too
+                instagram_access_token: encryptToken(pageToken), // Page token works for IG too (encrypt-at-rest)
+                instagram_token_expires_at: shop.facebook_token_expires_at ?? null,
             })
             .eq('id', shopId);
 

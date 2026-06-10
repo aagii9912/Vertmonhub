@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserShop, supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { fetchCampaignInsights } from '@/lib/facebook/marketing-api';
+import { decryptToken } from '@/lib/crypto/tokens';
 import { logger } from '@/lib/utils/logger';
 
 /**
@@ -33,7 +34,8 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ error: 'Facebook account холбогдоогүй' }, { status: 400 });
         }
 
-        const result = await fetchCampaignInsights(externalId, shop.facebook_page_access_token, datePreset);
+        const pageToken = decryptToken(shop.facebook_page_access_token) || '';
+        const result = await fetchCampaignInsights(externalId, pageToken, datePreset);
         const insight = result.data?.[0];
 
         if (insight) {
@@ -49,6 +51,8 @@ export async function GET(req: NextRequest) {
                     clicks: Number(insight.clicks || 0),
                     ctr: Number(insight.ctr || 0),
                     cpc: Number(insight.cpc || 0),
+                    cpm: Number(insight.cpm || 0),
+                    reach: Number(insight.reach || 0),
                     conversions,
                     last_synced_at: new Date().toISOString(),
                     updated_at: new Date().toISOString(),

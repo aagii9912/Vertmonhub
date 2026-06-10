@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { decryptToken } from '@/lib/crypto/tokens';
 
 /**
  * GET /api/dashboard/posts
@@ -40,11 +41,14 @@ export async function GET(request: NextRequest) {
             type: string;
         }> = [];
 
+        // Токенуудыг decrypt (encrypt-at-rest)
+        const fbToken = decryptToken(shop.facebook_page_access_token);
+
         // 1. Fetch Facebook Page posts
-        if (shop.facebook_page_id && shop.facebook_page_access_token) {
+        if (shop.facebook_page_id && fbToken) {
             try {
                 const fbRes = await fetch(
-                    `https://graph.facebook.com/v21.0/${shop.facebook_page_id}/published_posts?fields=id,message,full_picture,created_time,is_published,type&limit=25&access_token=${shop.facebook_page_access_token}`
+                    `https://graph.facebook.com/v21.0/${shop.facebook_page_id}/published_posts?fields=id,message,full_picture,created_time,is_published,type&limit=25&access_token=${fbToken}`
                 );
 
                 if (fbRes.ok) {
@@ -66,7 +70,7 @@ export async function GET(request: NextRequest) {
         }
 
         // 2. Fetch Instagram media
-        const igToken = shop.instagram_access_token || shop.facebook_page_access_token;
+        const igToken = decryptToken(shop.instagram_access_token) || fbToken;
         if (shop.instagram_business_account_id && igToken) {
             try {
                 const igRes = await fetch(
