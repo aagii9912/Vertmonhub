@@ -8,6 +8,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { Building2, Wallet, AlertCircle, TrendingDown, Plus, X, Banknote } from 'lucide-react';
+import { formatMNT as formatMNTShared } from '@/lib/utils/currency';
 
 interface Summary { totalBills: number; totalPayable: number; outstanding: number; overdueAmount: number; monthSpend: number; }
 interface Vendor { id: string; name: string; phone: string | null; }
@@ -20,9 +21,7 @@ interface Bill {
 }
 
 function formatMNT(n: number): string {
-    if (Math.abs(n) >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B₮`;
-    if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M₮`;
-    return `${Math.round(n).toLocaleString()}₮`;
+    return formatMNTShared(n, { compact: true });
 }
 
 const STATUS: Record<string, { label: string; variant: 'success' | 'warning' | 'danger' | 'default' | 'info' }> = {
@@ -40,6 +39,7 @@ export default function ProcurementPage() {
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [projects, setProjects] = useState<Project[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
 
     const [showVendor, setShowVendor] = useState(false);
     const [vendorForm, setVendorForm] = useState({ name: '', phone: '' });
@@ -62,20 +62,31 @@ export default function ProcurementPage() {
 
     async function loadAll() {
         setLoading(true);
+        setLoadError(false);
         try {
-            const [s, v, b, ac, pr] = await Promise.all([
-                fetch('/api/dashboard/procurement/summary', { headers: headers() }).then(r => r.json()),
-                fetch('/api/dashboard/procurement/vendors', { headers: headers() }).then(r => r.json()),
-                fetch('/api/dashboard/procurement/bills', { headers: headers() }).then(r => r.json()),
-                fetch('/api/dashboard/finance/accounts', { headers: headers() }).then(r => r.json()),
-                fetch('/api/dashboard/projects', { headers: headers() }).then(r => r.json()),
-            ]);
+            // Primary data fetch — its failure marks the whole page as errored.
+            const summaryRes = await fetch('/api/dashboard/procurement/summary', { headers: headers() });
+            if (!summaryRes.ok) throw new Error('Худалдан авалтын мэдээлэл татаж чадсангүй');
+            const s = await summaryRes.json();
             setSummary(s.summary || null);
-            setVendors(v.vendors || []);
-            setBills(b.bills || []);
-            setAccounts(ac.accounts || []);
-            setProjects(pr.projects || []);
-        } catch (e) { console.error(e); } finally { setLoading(false); }
+
+            // Secondary / best-effort fetches — still check res.ok before parsing.
+            const [v, b, ac, pr] = await Promise.all([
+                fetch('/api/dashboard/procurement/vendors', { headers: headers() }),
+                fetch('/api/dashboard/procurement/bills', { headers: headers() }),
+                fetch('/api/dashboard/finance/accounts', { headers: headers() }),
+                fetch('/api/dashboard/projects', { headers: headers() }),
+            ]);
+            setVendors(v.ok ? (await v.json()).vendors || [] : []);
+            setBills(b.ok ? (await b.json()).bills || [] : []);
+            setAccounts(ac.ok ? (await ac.json()).accounts || [] : []);
+            setProjects(pr.ok ? (await pr.json()).projects || [] : []);
+        } catch (e) {
+            console.error(e);
+            setLoadError(true);
+        } finally {
+            setLoading(false);
+        }
     }
 
     async function addVendor() {
@@ -150,6 +161,14 @@ export default function ProcurementPage() {
 
             {loading ? (
                 <Card><div className="flex items-center justify-center py-16"><Spinner size="lg" /></div></Card>
+            ) : loadError ? (
+                <Card>
+                    <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                        <AlertCircle className="w-8 h-8 text-status-danger" />
+                        <p className="text-sm text-muted-foreground">Мэдээлэл татахад алдаа гарлаа</p>
+                        <Button variant="secondary" size="sm" onClick={loadAll}>Дахин оролдох</Button>
+                    </div>
+                </Card>
             ) : (
                 <>
                     {summary && (

@@ -10,7 +10,7 @@ import { z } from 'zod';
 export const CreateLeadSchema = z.object({
     name: z.string().min(1, 'Нэр шаардлагатай').max(255),
     phone: z.string().min(8, 'Утасны дугаар буруу').max(20).regex(/^[\d+\-() ]{8,20}$/, 'Утасны дугаар буруу формат'),
-    email: z.string().email('Email буруу формат').max(255).optional().nullable(),
+    email: z.string().email('И-мэйл буруу формат').max(255).optional().nullable(),
     company: z.string().max(255).optional().nullable(),
     message: z.string().max(2000).optional().nullable(),
     // Honeypot: real users leave this empty; bots fill it
@@ -27,6 +27,20 @@ export const CreateLeadSchema = z.object({
     facebook_campaign_id: z.string().max(255).optional().nullable(),
     facebook_adset_id: z.string().max(255).optional().nullable(),
     facebook_ad_id: z.string().max(255).optional().nullable(),
+});
+
+// ============================================
+// Contract Payment Schedule Schema
+// ============================================
+export const CreatePaymentScheduleSchema = z.object({
+    installment_number: z.coerce.number().int().positive().max(1000).optional().default(1),
+    label: z.string().max(255).optional().nullable(),
+    due_date: z.string().min(1, 'Төлөх огноо шаардлагатай').max(40),
+    amount: z.coerce.number().nonnegative('Дүн 0-ээс багагүй байх ёстой').max(1e15),
+    paid_amount: z.coerce.number().nonnegative('Төлсөн дүн 0-ээс багагүй байх ёстой').max(1e15).optional().default(0),
+    paid_date: z.string().max(40).optional().nullable(),
+    payment_method: z.string().max(50).optional().nullable(),
+    notes: z.string().max(2000).optional().nullable(),
 });
 
 // ============================================

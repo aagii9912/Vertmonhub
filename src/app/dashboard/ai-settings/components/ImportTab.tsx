@@ -45,7 +45,7 @@ const IMPORT_OPTIONS: ImportOption[] = [
         labelMN: 'Компанийн мэдээлэл',
         description: 'Нэр, утас, имэйл, вэб, хаяг, соц.сүлжээ',
         icon: Building2,
-        color: 'from-brand to-purple-500',
+        color: 'from-brand to-brand-strong',
     },
     {
         value: 'project',
@@ -212,7 +212,7 @@ export default function ImportTab() {
                                 onClick={() => { setSelectedType(option.value); resetState(); }}
                                 className={`group relative p-4 rounded-xl border-2 text-left transition-all duration-200
                                     ${isSelected
-                                        ? 'border-brand bg-brand-soft shadow-md shadow-violet-100'
+                                        ? 'border-brand bg-brand-soft shadow-md'
                                         : 'border-border hover:border-border-strong hover:shadow-sm bg-surface'
                                     }`}
                             >
@@ -260,7 +260,7 @@ export default function ImportTab() {
                         onClick={() => fileInputRef.current?.click()}
                         className={`relative border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all duration-200
                             ${dragging
-                                ? 'border-violet-400 bg-brand-soft'
+                                ? 'border-brand bg-brand-soft'
                                 : file
                                     ? 'border-status-success/40 bg-status-success-soft'
                                     : 'border-border-strong hover:border-gray-400 hover:bg-surface-2/40'
@@ -327,7 +327,7 @@ export default function ImportTab() {
                         <button
                             onClick={handleImport}
                             disabled={importing}
-                            className="px-6 py-3 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl font-semibold hover:from-violet-700 hover:to-purple-700 transition-all shadow-lg shadow-violet-200 hover:shadow-violet-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                            className="px-6 py-3 bg-brand text-brand-fg rounded-xl font-semibold hover:bg-brand-strong transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                         >
                             {importing ? (
                                 <>
@@ -359,7 +359,7 @@ export default function ImportTab() {
                             <AlertCircle className="w-6 h-6 text-status-danger flex-shrink-0 mt-0.5" />
                         )}
                         <div className="flex-1">
-                            <p className={`font-semibold ${result.success ? 'text-emerald-800' : 'text-red-800'}`}>
+                            <p className={`font-semibold ${result.success ? 'text-status-success' : 'text-status-danger'}`}>
                                 {result.success ? 'Амжилттай!' : 'Алдаа!'}
                             </p>
                             <p className={`text-sm mt-1 ${result.success ? 'text-status-success' : 'text-status-danger'}`}>

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
+import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
@@ -21,6 +22,8 @@ interface ProjectPnl {
  */
 export async function GET() {
     try {
+        const denied = await requireModule('finance');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) return NextResponse.json({ projects: [] });
 

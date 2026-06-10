@@ -119,7 +119,8 @@
   --fg: #0E0E10;
   --fg-2: #2E2D2A;
   --muted: #6B6962;
-  --muted-2: #908D84;
+  /* Хүртээмж: cream дэвсгэр дээр AA (4.5:1) хангахаар бараантгав (өмнө #908D84 ~3.2:1) */
+  --muted-2: #757368;
 
   /* Brand — Terracotta (hue 38) */
   --brand: oklch(0.62 0.13 38);
@@ -424,5 +425,14 @@ body {
   }
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* Хүртээмж: гар (keyboard) хэрэглэгчдэд ил харагдах focus ring.
+     :where() нь specificity 0 тул !important-аар focus:outline-none-ийг даран
+     бүх интерактив элементэд найдвартай focus indicator өгнө (WCAG 2.4.7). */
+  :where(a, button, [role="button"], input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--brand) !important;
+    outline-offset: 2px !important;
+    border-radius: 2px;
   }
 }

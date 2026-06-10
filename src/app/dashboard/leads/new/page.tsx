@@ -8,9 +8,12 @@ import { ArrowLeft, Users, Phone, Mail, DollarSign, Building2, MessageSquare } f
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { supabase } from '@/lib/supabase';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function NewLeadPage() {
     const router = useRouter();
+    const { shop } = useAuth();
     const [loading, setLoading] = useState(false);
     const [formData, setFormData] = useState({
         customer_name: '',
@@ -25,13 +28,39 @@ export default function NewLeadPage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (!shop?.id) {
+            toast.error('Дэлгүүр сонгогдоогүй байна. Дахин нэвтэрнэ үү.');
+            return;
+        }
+        if (!formData.customer_name.trim()) {
+            toast.error('Нэр оруулна уу');
+            return;
+        }
+
         setLoading(true);
 
-        // Demo mode - just show success
-        setTimeout(() => {
-            toast.success('Лийд амжилттай нэмэгдлээ!');
-            router.push('/dashboard/leads');
-        }, 1000);
+        const { error } = await supabase.from('leads').insert({
+            shop_id: shop.id,
+            customer_name: formData.customer_name.trim(),
+            customer_phone: formData.phone.trim() || null,
+            customer_email: formData.email.trim() || null,
+            source: formData.source,
+            preferred_type: formData.preferred_type,
+            budget_min: formData.budget_min ? Number(formData.budget_min) : null,
+            budget_max: formData.budget_max ? Number(formData.budget_max) : null,
+            notes: formData.notes.trim() || null,
+            status: 'new',
+        });
+
+        if (error) {
+            setLoading(false);
+            toast.error('Лийд хадгалахад алдаа гарлаа');
+            return;
+        }
+
+        toast.success('Лийд амжилттай нэмэгдлээ!');
+        router.push('/dashboard/leads');
     };
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -65,8 +94,9 @@ export default function NewLeadPage() {
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-foreground mb-1">Нэр</label>
+                                <label htmlFor="customer_name" className="block text-sm font-medium text-foreground mb-1">Нэр</label>
                                 <Input
+                                    id="customer_name"
                                     name="customer_name"
                                     value={formData.customer_name}
                                     onChange={handleChange}
@@ -76,8 +106,9 @@ export default function NewLeadPage() {
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-foreground mb-1">Утас</label>
+                                    <label htmlFor="phone" className="block text-sm font-medium text-foreground mb-1">Утас</label>
                                     <Input
+                                        id="phone"
                                         name="phone"
                                         value={formData.phone}
                                         onChange={handleChange}
@@ -85,8 +116,9 @@ export default function NewLeadPage() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-foreground mb-1">Имэйл</label>
+                                    <label htmlFor="email" className="block text-sm font-medium text-foreground mb-1">Имэйл</label>
                                     <Input
+                                        id="email"
                                         name="email"
                                         type="email"
                                         value={formData.email}
@@ -96,12 +128,13 @@ export default function NewLeadPage() {
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-foreground mb-1">Эх үүсвэр</label>
+                                <label htmlFor="source" className="block text-sm font-medium text-foreground mb-1">Эх үүсвэр</label>
                                 <select
+                                    id="source"
                                     name="source"
                                     value={formData.source}
                                     onChange={handleChange}
-                                    className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-emerald-500"
+                                    className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand"
                                 >
                                     <option value="messenger">Messenger</option>
                                     <option value="instagram">Instagram</option>
@@ -124,12 +157,13 @@ export default function NewLeadPage() {
                         </CardHeader>
                         <CardContent className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-foreground mb-1">Сонирхож буй төрөл</label>
+                                <label htmlFor="preferred_type" className="block text-sm font-medium text-foreground mb-1">Сонирхож буй төрөл</label>
                                 <select
+                                    id="preferred_type"
                                     name="preferred_type"
                                     value={formData.preferred_type}
                                     onChange={handleChange}
-                                    className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-emerald-500"
+                                    className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand"
                                 >
                                     <option value="apartment">Орон сууц</option>
                                     <option value="house">Хувийн байшин</option>
@@ -140,8 +174,9 @@ export default function NewLeadPage() {
                             </div>
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-foreground mb-1">Төсөв (доод)</label>
+                                    <label htmlFor="budget_min" className="block text-sm font-medium text-foreground mb-1">Төсөв (доод)</label>
                                     <Input
+                                        id="budget_min"
                                         name="budget_min"
                                         type="number"
                                         value={formData.budget_min}
@@ -150,8 +185,9 @@ export default function NewLeadPage() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-foreground mb-1">Төсөв (дээд)</label>
+                                    <label htmlFor="budget_max" className="block text-sm font-medium text-foreground mb-1">Төсөв (дээд)</label>
                                     <Input
+                                        id="budget_max"
                                         name="budget_max"
                                         type="number"
                                         value={formData.budget_max}
@@ -177,7 +213,7 @@ export default function NewLeadPage() {
                                 value={formData.notes}
                                 onChange={handleChange}
                                 rows={4}
-                                className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-emerald-500"
+                                className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand"
                                 placeholder="Нэмэлт мэдээлэл, тайлбар..."
                             />
                         </CardContent>

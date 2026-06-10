@@ -73,7 +73,7 @@ const sections: MenuSection[] = [
             { name: 'Үзлэг', href: '/dashboard/viewings', icon: Eye, module: 'viewings' },
             { name: 'Гэрээ', href: '/dashboard/contracts', icon: FileText, module: 'contracts' },
             { name: 'Харилцагч', href: '/dashboard/customers', icon: Users, module: 'customers' },
-            { name: 'Үйлчилгээ', href: '/dashboard/customer-service', icon: Headphones, badge: 'Шинэ', module: 'contracts' },
+            { name: 'Үйлчилгээ', href: '/dashboard/customer-service', icon: Headphones, badge: 'Шинэ', module: 'customer-service' },
         ],
     },
     {
@@ -108,6 +108,7 @@ const sections: MenuSection[] = [
                 children: [
                     { name: 'Тойм', href: '/dashboard/reports' },
                     { name: 'Лийд шинжилгээ', href: '/dashboard/reports/leads' },
+                    { name: 'Үл хөдлөх шинжилгээ', href: '/dashboard/reports/properties' },
                 ],
             },
             { name: 'Судалгаа', href: '/dashboard/surveys', icon: ClipboardList, badge: 'Шинэ', module: 'surveys' },
@@ -119,9 +120,7 @@ const sections: MenuSection[] = [
         icon: Sparkles,
         items: [
             { name: 'AI Дата Туслах', href: '/dashboard/ai-assistant', icon: Sparkles, module: 'ai-assistant' },
-            {
-                name: 'Тайлан', href: '/dashboard/reports', icon: BarChart3, module: 'reports',
-            },
+            { name: 'AI Агентууд', href: '/dashboard/ai-assistant/agents', icon: Bot, module: 'ai-assistant' },
         ],
     },
     {
@@ -171,8 +170,13 @@ export function Sidebar() {
 
     const isActive = (href: string) => pathname === href;
     const isParentActive = (item: MenuItem) => {
-        if (isActive(item.href)) return true;
-        return item.children?.some((child) => isActive(child.href)) ?? false;
+        if (pathname === item.href) return true;
+        // Дэд хуудас (жишээ: /properties/[id], /leads/pipeline) дээр эх цэс тодорно
+        if (item.children?.length) {
+            if (item.children.some((child) => isActive(child.href))) return true;
+            if (pathname.startsWith(item.href + '/')) return true;
+        }
+        return false;
     };
 
     const filteredBottomItems = bottomMenuItems.filter((item) => {

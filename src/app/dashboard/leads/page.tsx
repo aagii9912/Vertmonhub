@@ -20,7 +20,6 @@ import {
     Plus,
     MessageSquare,
     Building2,
-    ArrowUpRight,
     Clock,
     CheckCircle2,
     XCircle,
@@ -37,6 +36,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import type { Lead, LeadStatus, LeadSource } from '@/types/property';
 import { cn } from '@/lib/utils';
+import { formatMNT } from '@/lib/utils/currency';
 
 type StatusVariant = 'info' | 'brand' | 'warning' | 'success' | 'danger' | 'default';
 
@@ -70,7 +70,8 @@ interface LeadStats {
 }
 
 export default function LeadsPage() {
-    const { shop } = useAuth();
+    const { shop, user } = useAuth();
+    const canWrite = user?.permissions?.canWrite ?? false;
     const [leads, setLeads] = useState<Lead[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -179,14 +180,10 @@ export default function LeadsPage() {
 
     const formatBudget = (min?: number | null, max?: number | null) => {
         if (!min && !max) return '-';
-        const formatPrice = (p: number) => {
-            if (p >= 1000000000) return `${(p / 1000000000).toFixed(1)}B`;
-            if (p >= 1000000) return `${(p / 1000000).toFixed(0)}M`;
-            return p.toLocaleString();
-        };
-        if (min && max) return `${formatPrice(min)} - ${formatPrice(max)}₮`;
-        if (min) return `${formatPrice(min)}₮+`;
-        if (max) return `${formatPrice(max)}₮ хүртэл`;
+        const formatPrice = (p: number) => formatMNT(p, { compact: true });
+        if (min && max) return `${formatPrice(min)} - ${formatPrice(max)}`;
+        if (min) return `${formatPrice(min)}+`;
+        if (max) return `${formatPrice(max)} хүртэл`;
         return '-';
     };
 
@@ -210,10 +207,12 @@ export default function LeadsPage() {
                 title="Лийд шугам"
                 subtitle="Орж ирж буй хүсэлтүүдийг хянах, төлөв шинэчлэх, дараагийн алхмыг төлөвлөх"
                 primaryAction={
-                    <Button href="/dashboard/leads/new" variant="primary" size="md">
-                        <Plus className="w-4 h-4" />
-                        Лийд нэмэх
-                    </Button>
+                    canWrite ? (
+                        <Button href="/dashboard/leads/new" variant="primary" size="md">
+                            <Plus className="w-4 h-4" />
+                            Лийд нэмэх
+                        </Button>
+                    ) : undefined
                 }
             />
 
@@ -224,12 +223,7 @@ export default function LeadsPage() {
                     value={stats.total}
                     icon={<Users className="w-4 h-4" />}
                     accent="brand"
-                    helper={
-                        <span className="inline-flex items-center gap-1 text-status-success">
-                            <ArrowUpRight className="w-3 h-3" />
-                            +18% өмнөх сараас
-                        </span>
-                    }
+                    helper="Бүх цаг үеийн нийт"
                 />
                 <StatTile
                     label="Шинэ лийд"
@@ -250,12 +244,7 @@ export default function LeadsPage() {
                     value={`${stats.conversionRate.toFixed(1)}%`}
                     icon={<TrendingUp className="w-4 h-4" />}
                     accent="success"
-                    helper={
-                        <span className="inline-flex items-center gap-1 text-status-success">
-                            <ArrowUpRight className="w-3 h-3" />
-                            +5% өмнөх сараас
-                        </span>
-                    }
+                    helper="Лийдээс гэрээ хүртэл"
                 />
             </StatBar>
 

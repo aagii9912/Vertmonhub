@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { GripVertical, User, Phone, Calendar, DollarSign, ArrowLeft, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import { formatShortDate } from '@/lib/utils/date';
 
 interface Lead {
     id: string;
@@ -188,7 +189,7 @@ export default function PipelinePage() {
                                             {lead.next_followup_at && (
                                                 <p className="text-[10px] text-brand-strong mt-1.5 flex items-center gap-1">
                                                     <Calendar className="w-3 h-3" />
-                                                    Follow-up: {new Date(lead.next_followup_at).toLocaleDateString('mn-MN')}
+                                                    Follow-up: {formatShortDate(lead.next_followup_at)}
                                                 </p>
                                             )}
                                         </div>

@@ -11,7 +11,7 @@ import { PullToRefresh } from '@/components/ui/PullToRefresh';
 import { DashboardSkeleton } from '@/components/ui/LoadingSkeleton';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDashboard } from '@/hooks/useDashboard';
-import { formatTimeAgo } from '@/lib/utils/date';
+import { formatTimeAgo, formatShortDate } from '@/lib/utils/date';
 import { cn } from '@/lib/utils';
 import {
     Building2,
@@ -44,7 +44,7 @@ export default function DashboardPage() {
     const { loading: authLoading } = useAuth();
     const [timeFilter, setTimeFilter] = useState<TimeFilter>('today');
 
-    const { data, isLoading, refetch, isRefetching } = useDashboard(timeFilter);
+    const { data, isLoading, isError, refetch, isRefetching } = useDashboard(timeFilter);
 
     const stats = data?.stats || { totalProperties: 0, totalLeads: 0, monthlyViewings: 0, pendingContracts: 0 };
     const recentLeads = data?.recentLeads || [];
@@ -57,6 +57,23 @@ export default function DashboardPage() {
     const handleRefresh = async () => {
         await refetch();
     };
+
+    if (isError) {
+        return (
+            <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
+                <div className="w-12 h-12 rounded-full bg-status-danger-soft flex items-center justify-center">
+                    <RefreshCw className="w-6 h-6 text-status-danger" />
+                </div>
+                <div>
+                    <p className="font-medium text-foreground">Мэдээлэл ачаалахад алдаа гарлаа</p>
+                    <p className="text-sm text-muted-foreground mt-1">Сүлжээгээ шалгаад дахин оролдоно уу</p>
+                </div>
+                <Button onClick={() => refetch()} variant="secondary" size="sm">
+                    <RefreshCw className="w-4 h-4 mr-2" /> Дахин оролдох
+                </Button>
+            </div>
+        );
+    }
 
     return (
         <PullToRefresh onRefresh={handleRefresh}>
@@ -157,10 +174,10 @@ export default function DashboardPage() {
                                                         </div>
                                                         <div className="min-w-0">
                                                             <p className="font-medium text-sm md:text-base text-foreground truncate">
-                                                                {lead.name || 'Лийд'}
+                                                                {lead.customer_name || 'Лийд'}
                                                             </p>
                                                             <p className="text-xs text-muted-foreground truncate">
-                                                                {lead.phone || lead.email || 'Холбоо барих'} • {formatTimeAgo(lead.created_at)}
+                                                                {lead.customer_phone || lead.customer_email || 'Холбоо барих'} • {formatTimeAgo(lead.created_at)}
                                                             </p>
                                                         </div>
                                                     </div>
@@ -199,12 +216,12 @@ export default function DashboardPage() {
                                                 <div className="flex items-center gap-2">
                                                     <Clock className="w-3.5 h-3.5 text-muted-foreground/70" />
                                                     <span className="text-sm font-medium text-foreground tabular-nums">
-                                                        {v.scheduled_at ? new Date(v.scheduled_at).toLocaleDateString('mn-MN') : 'TBD'}
+                                                        {v.scheduled_at ? formatShortDate(v.scheduled_at) : 'TBD'}
                                                     </span>
                                                 </div>
                                                 <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                                                     <MapPin className="w-3 h-3" />
-                                                    {v.properties?.title || v.notes || 'Үзлэг'}
+                                                    {v.properties?.name || v.agent_notes || 'Үзлэг'}
                                                 </p>
                                             </div>
                                         ))

@@ -15,6 +15,7 @@ import {
     X,
     AlertCircle,
 } from 'lucide-react';
+import { formatMNT as formatMNTShared } from '@/lib/utils/currency';
 
 interface Summary {
     totalRevenue: number;
@@ -49,9 +50,7 @@ interface Txn {
 }
 
 function formatMNT(n: number): string {
-    if (Math.abs(n) >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B₮`;
-    if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M₮`;
-    return `${Math.round(n).toLocaleString()}₮`;
+    return formatMNTShared(n, { compact: true });
 }
 
 const METHOD_LABELS: Record<string, string> = {
@@ -64,6 +63,7 @@ export default function FinancePage() {
     const [accounts, setAccounts] = useState<Account[]>([]);
     const [transactions, setTransactions] = useState<Txn[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
 
     const [showForm, setShowForm] = useState(false);
     const [saving, setSaving] = useState(false);
@@ -88,19 +88,26 @@ export default function FinancePage() {
 
     async function loadAll() {
         setLoading(true);
+        setLoadError(false);
         try {
-            const [s, a, t, ac] = await Promise.all([
-                fetch('/api/dashboard/finance/summary', { headers: headers() }).then(r => r.json()),
-                fetch('/api/dashboard/finance/ar-aging', { headers: headers() }).then(r => r.json()),
-                fetch('/api/dashboard/finance/transactions?limit=20', { headers: headers() }).then(r => r.json()),
-                fetch('/api/dashboard/finance/accounts', { headers: headers() }).then(r => r.json()),
-            ]);
+            // Primary data fetch — its failure marks the whole page as errored.
+            const summaryRes = await fetch('/api/dashboard/finance/summary', { headers: headers() });
+            if (!summaryRes.ok) throw new Error('Санхүүгийн мэдээлэл татаж чадсангүй');
+            const s = await summaryRes.json();
             setSummary(s.summary || null);
-            setAging(a.aging || null);
-            setTransactions(t.transactions || []);
-            setAccounts(ac.accounts || []);
+
+            // Secondary / best-effort fetches — still check res.ok before parsing.
+            const [a, t, ac] = await Promise.all([
+                fetch('/api/dashboard/finance/ar-aging', { headers: headers() }),
+                fetch('/api/dashboard/finance/transactions?limit=20', { headers: headers() }),
+                fetch('/api/dashboard/finance/accounts', { headers: headers() }),
+            ]);
+            setAging(a.ok ? (await a.json()).aging || null : null);
+            setTransactions(t.ok ? (await t.json()).transactions || [] : []);
+            setAccounts(ac.ok ? (await ac.json()).accounts || [] : []);
         } catch (e) {
             console.error('Failed to load finance data:', e);
+            setLoadError(true);
         } finally {
             setLoading(false);
         }
@@ -158,6 +165,14 @@ export default function FinancePage() {
                 <Card>
                     <div className="flex items-center justify-center py-16">
                         <Spinner size="lg" />
+                    </div>
+                </Card>
+            ) : loadError ? (
+                <Card>
+                    <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+                        <AlertCircle className="w-8 h-8 text-status-danger" />
+                        <p className="text-sm text-muted-foreground">Мэдээлэл татахад алдаа гарлаа</p>
+                        <Button variant="secondary" size="sm" onClick={loadAll}>Дахин оролдох</Button>
                     </div>
                 </Card>
             ) : (

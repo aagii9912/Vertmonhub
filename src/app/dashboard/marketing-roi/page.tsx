@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { cn } from '@/lib/utils';
+import { formatMNT } from '@/lib/utils/currency';
 import { toast } from 'sonner';
 
 interface AdCampaign {
@@ -70,16 +71,13 @@ interface RoiData { campaigns: CampaignRoi[]; sources: unknown[]; totals: RoiTot
 interface SocialPost { id: string; content: string | null; likes: number; comments: number; shares: number; published_at: string | null; }
 interface SocialInsight { captured_at: string; reach: number; impressions: number; followers: number; }
 
-function fmtMNT(n: number): string {
-    if (Math.abs(n) >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B₮`;
-    if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M₮`;
-    return `${Math.round(n).toLocaleString()}₮`;
-}
+const fmtMNT = (n: number): string => formatMNT(n, { compact: true });
 
 export default function MarketingROIPage() {
     const { shop } = useAuth();
     const [leads, setLeads] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
     const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]);
     const [selectedAdAccount, setSelectedAdAccount] = useState<string | null>(null);
     const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
@@ -96,44 +94,55 @@ export default function MarketingROIPage() {
     }, [shop?.id]);
 
     async function fetchData() {
-        const { data } = await supabase
-            .from('leads')
-            .select('id, source, status, budget_min, budget_max, created_at')
-            .eq('shop_id', shop!.id);
-        setLeads(data || []);
-
-        // Load already-stored Facebook campaigns from DB (no remote sync)
-        const { data: stored } = await supabase
-            .from('ad_campaigns')
-            .select('*')
-            .eq('shop_id', shop!.id)
-            .eq('platform', 'facebook')
-            .order('updated_at', { ascending: false });
-        setCampaigns((stored || []) as AdCampaign[]);
-
-        // Жинхэнэ ROI roll-up (spend↔lead↔орлого)
+        setLoadError(false);
         try {
-            const res = await fetch('/api/dashboard/marketing-roi', {
-                headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
-            });
-            const data = await res.json();
-            setRoi(data.roi || null);
-        } catch {
-            // best-effort
-        }
+            const { data, error: leadsError } = await supabase
+                .from('leads')
+                .select('id, source, status, budget_min, budget_max, created_at')
+                .eq('shop_id', shop!.id);
+            if (leadsError) throw leadsError;
+            setLeads(data || []);
 
-        // Хадгалсан organic social түүх
-        try {
-            const res = await fetch('/api/dashboard/marketing/social-history', {
-                headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
-            });
-            const data = await res.json();
-            setSocial({ posts: data.posts || [], insights: data.insights || [] });
-        } catch {
-            // best-effort
-        }
+            // Load already-stored Facebook campaigns from DB (no remote sync)
+            const { data: stored, error: campError } = await supabase
+                .from('ad_campaigns')
+                .select('*')
+                .eq('shop_id', shop!.id)
+                .eq('platform', 'facebook')
+                .order('updated_at', { ascending: false });
+            if (campError) throw campError;
+            setCampaigns((stored || []) as AdCampaign[]);
 
-        setLoading(false);
+            // Жинхэнэ ROI roll-up (spend↔lead↔орлого) — best-effort
+            try {
+                const res = await fetch('/api/dashboard/marketing-roi', {
+                    headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
+                });
+                if (res.ok) {
+                    const roiJson = await res.json();
+                    setRoi(roiJson.roi || null);
+                }
+            } catch {
+                // best-effort
+            }
+
+            // Хадгалсан organic social түүх — best-effort
+            try {
+                const res = await fetch('/api/dashboard/marketing/social-history', {
+                    headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
+                });
+                if (res.ok) {
+                    const socialJson = await res.json();
+                    setSocial({ posts: socialJson.posts || [], insights: socialJson.insights || [] });
+                }
+            } catch {
+                // best-effort
+            }
+        } catch {
+            setLoadError(true);
+        } finally {
+            setLoading(false);
+        }
     }
 
     const fetchAdAccounts = useCallback(async () => {
@@ -272,6 +281,18 @@ export default function MarketingROIPage() {
             </Card>
         );
 
+    if (loadError)
+        return (
+            <Card>
+                <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
+                    <p className="font-medium text-foreground">Маркетингийн мэдээлэл ачаалахад алдаа гарлаа</p>
+                    <Button onClick={() => { setLoading(true); fetchData(); }} variant="secondary" size="sm">
+                        <RefreshCw className="w-4 h-4 mr-2" /> Дахин оролдох
+                    </Button>
+                </div>
+            </Card>
+        );
+
     return (
         <div>
             <PageHeader
@@ -323,7 +344,7 @@ export default function MarketingROIPage() {
                         <>
                             <StatBar columns={4}>
                                 <StatTile label="Зарын зардал" value={fmtMNT(roi.totals.spend)} icon={<DollarSign className="w-4 h-4" />} accent="warning" />
-                                <StatTile label="Орлого (won)" value={fmtMNT(roi.totals.revenue)} icon={<Target className="w-4 h-4" />} accent="success" />
+                                <StatTile label="Орлого (хожсон)" value={fmtMNT(roi.totals.revenue)} icon={<Target className="w-4 h-4" />} accent="success" />
                                 <StatTile label="ROAS" value={roi.totals.roas !== null ? `${roi.totals.roas}x` : '—'} helper={roi.totals.cpl !== null ? `CPL ${fmtMNT(roi.totals.cpl)}` : undefined} icon={<TrendingUp className="w-4 h-4" />} accent="brand" />
                                 <StatTile label="Цэвэр ашиг" value={fmtMNT(roi.totals.profit)} helper={roi.totals.cpa !== null ? `CPA ${fmtMNT(roi.totals.cpa)}` : undefined} icon={<BarChart3 className="w-4 h-4" />} accent={roi.totals.profit >= 0 ? 'success' : 'danger'} />
                             </StatBar>
@@ -341,7 +362,7 @@ export default function MarketingROIPage() {
                                                     <th className="text-right px-4 py-2.5">Зардал</th>
                                                     <th className="text-center px-4 py-2.5">Лийд</th>
                                                     <th className="text-right px-4 py-2.5">CPL</th>
-                                                    <th className="text-center px-4 py-2.5">Won</th>
+                                                    <th className="text-center px-4 py-2.5">Хожсон</th>
                                                     <th className="text-right px-4 py-2.5">Орлого</th>
                                                     <th className="text-right px-4 py-2.5">ROAS</th>
                                                 </tr>
@@ -371,7 +392,7 @@ export default function MarketingROIPage() {
                     {/* Organic социал (хадгалсан түүх) */}
                     <Card className="mb-6">
                         <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-                            <h3 className="heading-section text-sm text-foreground">Organic социал</h3>
+                            <h3 className="heading-section text-sm text-foreground">Органик сошиал</h3>
                             <Button variant="secondary" size="sm" onClick={syncSocial} isLoading={syncingSocial} disabled={syncingSocial}>
                                 {!syncingSocial && <RefreshCw className="w-4 h-4" />}
                                 Хадгалах
@@ -381,7 +402,7 @@ export default function MarketingROIPage() {
                             {social && social.insights[0] && (
                                 <div className="flex flex-wrap gap-4 mb-4 text-sm">
                                     <span className="text-muted-foreground">Дагагч: <span className="font-semibold text-foreground tabular-nums">{social.insights[0].followers.toLocaleString()}</span></span>
-                                    <span className="text-muted-foreground">Reach: <span className="font-semibold text-foreground tabular-nums">{social.insights[0].reach.toLocaleString()}</span></span>
+                                    <span className="text-muted-foreground">Хүртээмж: <span className="font-semibold text-foreground tabular-nums">{social.insights[0].reach.toLocaleString()}</span></span>
                                     <span className="text-muted-foreground">Snapshot: <span className="font-semibold text-foreground tabular-nums">{social.insights.length}</span></span>
                                 </div>
                             )}

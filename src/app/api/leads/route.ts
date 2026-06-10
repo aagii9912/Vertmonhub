@@ -66,7 +66,8 @@ export async function POST(request: NextRequest) {
             return createRateLimitResponse(rl.resetAt);
         }
 
-        const { supabase } = await import('@/lib/supabase');
+        const { supabaseAdmin } = await import('@/lib/supabase');
+        const supabase = supabaseAdmin();
         const body = await request.json();
 
         const validation = validateBody(CreateLeadSchema, body);
@@ -123,17 +124,40 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
 
         const inferredSource = facebook_campaign_id || utm_source === 'facebook' || fbclid
             ? 'facebook_ads'
-            : utm_source || undefined;
+            : utm_source || 'website';
+
+        // Public form — эзэн shop-ийг тодорхойлох (одоогоор нэг tenant: хамгийн эртний shop)
+        const { data: primaryShop, error: shopError } = await supabase
+            .from('shops')
+            .select('id')
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+        if (shopError || !primaryShop) {
+            logger.error('Lead insert: primary shop not found', { error: shopError });
+            return NextResponse.json(
+                { error: 'Хүсэлт илгээхэд алдаа гарлаа' },
+                { status: 500 }
+            );
+        }
+
+        // company / AI хариуг тусдаа багана байхгүй тул internal_notes-д хадгална
+        const internalNotes = [
+            company ? `Компани: ${company}` : null,
+            aiResponse ? `AI хариу: ${aiResponse}` : null,
+        ].filter(Boolean).join('\n\n') || null;
 
         const { data, error } = await supabase
             .from('leads')
             .insert([{
-                name,
-                phone,
-                email,
-                company,
-                message,
-                ai_response: aiResponse,
+                shop_id: primaryShop.id,
+                customer_name: name,
+                customer_phone: phone,
+                customer_email: email || null,
+                notes: message || null,
+                internal_notes: internalNotes,
+                source: inferredSource,
                 fbclid: fbclid || null,
                 utm_source: utm_source || null,
                 utm_medium: utm_medium || null,
@@ -143,7 +167,6 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
                 facebook_campaign_id: facebook_campaign_id || null,
                 facebook_adset_id: facebook_adset_id || null,
                 facebook_ad_id: facebook_ad_id || null,
-                ...(inferredSource ? { source: inferredSource } : {}),
             }])
             .select()
             .single();

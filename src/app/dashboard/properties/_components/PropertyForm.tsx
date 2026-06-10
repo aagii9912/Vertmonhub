@@ -230,10 +230,11 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">
+              <label htmlFor="property-name" className="block text-sm font-medium text-foreground mb-1">
                 Нэр <span className="text-status-danger">*</span>
               </label>
               <Input
+                id="property-name"
                 value={formData.name}
                 onChange={(e) => handleField('name', e.target.value)}
                 placeholder="Жишээ: 3 өрөө байр, Зайсан"
@@ -242,8 +243,9 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">Төрөл</label>
+                <label htmlFor="property-type" className="block text-sm font-medium text-foreground mb-1">Төрөл</label>
                 <select
+                  id="property-type"
                   value={formData.type}
                   onChange={(e) => handleField('type', e.target.value as PropertyType)}
                   className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-ring/40 bg-background"
@@ -254,8 +256,9 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">Төлөв</label>
+                <label htmlFor="property-status" className="block text-sm font-medium text-foreground mb-1">Төлөв</label>
                 <select
+                  id="property-status"
                   value={formData.status}
                   onChange={(e) => handleField('status', e.target.value as PropertyStatus)}
                   className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-ring/40 bg-background"
@@ -268,8 +271,9 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">Үнэ (₮) <span className="text-status-danger">*</span></label>
+                <label htmlFor="property-price" className="block text-sm font-medium text-foreground mb-1">Үнэ (₮) <span className="text-status-danger">*</span></label>
                 <Input
+                  id="property-price"
                   type="number"
                   value={formData.price}
                   onChange={(e) => handleField('price', e.target.value)}
@@ -278,8 +282,9 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">м²-ийн үнэ (₮)</label>
+                <label htmlFor="property-price_per_sqm" className="block text-sm font-medium text-foreground mb-1">м²-ийн үнэ (₮)</label>
                 <Input
+                  id="property-price_per_sqm"
                   type="number"
                   value={formData.price_per_sqm}
                   onChange={(e) => handleField('price_per_sqm', e.target.value)}
@@ -288,8 +293,9 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">Тайлбар</label>
+              <label htmlFor="property-description" className="block text-sm font-medium text-foreground mb-1">Тайлбар</label>
               <textarea
+                id="property-description"
                 value={formData.description}
                 onChange={(e) => handleField('description', e.target.value)}
                 rows={3}
@@ -329,8 +335,9 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">Хэмжээ (м²)</label>
+                <label htmlFor="property-size_sqm" className="block text-sm font-medium text-foreground mb-1">Хэмжээ (м²)</label>
                 <Input
+                  id="property-size_sqm"
                   type="number"
                   value={formData.size_sqm}
                   onChange={(e) => handleField('size_sqm', e.target.value)}
@@ -338,8 +345,9 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">Өрөөний тоо</label>
+                <label htmlFor="property-rooms" className="block text-sm font-medium text-foreground mb-1">Өрөөний тоо</label>
                 <Input
+                  id="property-rooms"
                   type="number"
                   value={formData.rooms}
                   onChange={(e) => handleField('rooms', e.target.value)}
@@ -347,8 +355,9 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">Унтлагын өрөө</label>
+                <label htmlFor="property-bedrooms" className="block text-sm font-medium text-foreground mb-1">Унтлагын өрөө</label>
                 <Input
+                  id="property-bedrooms"
                   type="number"
                   value={formData.bedrooms}
                   onChange={(e) => handleField('bedrooms', e.target.value)}
@@ -356,8 +365,9 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">Угаалгын өрөө</label>
+                <label htmlFor="property-bathrooms" className="block text-sm font-medium text-foreground mb-1">Угаалгын өрөө</label>
                 <Input
+                  id="property-bathrooms"
                   type="number"
                   value={formData.bathrooms}
                   onChange={(e) => handleField('bathrooms', e.target.value)}
@@ -365,16 +375,18 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">Давхар</label>
+                <label htmlFor="property-floor" className="block text-sm font-medium text-foreground mb-1">Давхар</label>
                 <Input
+                  id="property-floor"
                   value={formData.floor}
                   onChange={(e) => handleField('floor', e.target.value)}
                   placeholder="5/12"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">Ашиглалтанд орсон он</label>
+                <label htmlFor="property-year_built" className="block text-sm font-medium text-foreground mb-1">Ашиглалтанд орсон он</label>
                 <Input
+                  id="property-year_built"
                   type="number"
                   value={formData.year_built}
                   onChange={(e) => handleField('year_built', e.target.value)}
@@ -396,8 +408,9 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">Дүүрэг</label>
+                <label htmlFor="property-district" className="block text-sm font-medium text-foreground mb-1">Дүүрэг</label>
                 <select
+                  id="property-district"
                   value={formData.district}
                   onChange={(e) => handleField('district', e.target.value)}
                   className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-ring/40 bg-background"
@@ -409,8 +422,9 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-foreground mb-1">Хот</label>
+                <label htmlFor="property-city" className="block text-sm font-medium text-foreground mb-1">Хот</label>
                 <Input
+                  id="property-city"
                   value={formData.city}
                   onChange={(e) => handleField('city', e.target.value)}
                   placeholder="Ulaanbaatar"
@@ -418,8 +432,9 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-foreground mb-1">Хаяг</label>
+              <label htmlFor="property-address" className="block text-sm font-medium text-foreground mb-1">Хаяг</label>
               <Input
+                id="property-address"
                 value={formData.address}
                 onChange={(e) => handleField('address', e.target.value)}
                 placeholder="Зайсан, 12-р хороо"

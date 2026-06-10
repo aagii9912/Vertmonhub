@@ -20,7 +20,6 @@ import {
     MapPin,
     BedDouble,
     Maximize,
-    ArrowUpRight,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -28,6 +27,7 @@ import { toast } from 'sonner';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { Property, PropertyType, PropertyStatus } from '@/types/property';
+import { formatMNT } from '@/lib/utils/currency';
 
 const typeBadgeVariant: Record<PropertyType, 'info' | 'success' | 'brand' | 'warning' | 'danger'> = {
     apartment: 'info',
@@ -69,7 +69,9 @@ interface Stats {
 }
 
 export default function PropertiesPage() {
-    const { shop } = useAuth();
+    const { shop, user } = useAuth();
+    const canWrite = user?.permissions?.canWrite ?? false;
+    const canDelete = user?.permissions?.canDelete ?? false;
     const [properties, setProperties] = useState<Property[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -154,11 +156,7 @@ export default function PropertiesPage() {
         }
     };
 
-    const formatPrice = (price: number) => {
-        if (price >= 1000000000) return `${(price / 1000000000).toFixed(1)}B₮`;
-        if (price >= 1000000) return `${(price / 1000000).toFixed(0)}M₮`;
-        return `${price.toLocaleString()}₮`;
-    };
+    const formatPrice = (price: number) => formatMNT(price, { compact: true });
 
     return (
         <div>
@@ -167,10 +165,12 @@ export default function PropertiesPage() {
                 title="Үл хөдлөх жагсаалт"
                 subtitle="Бүртгэлтэй бүх объектуудыг харах, шинэчлэх, шинээр нэмэх"
                 primaryAction={
-                    <Button href="/dashboard/properties/new" variant="primary" size="md">
-                        <Plus className="w-4 h-4" />
-                        Шинэ нэмэх
-                    </Button>
+                    canWrite ? (
+                        <Button href="/dashboard/properties/new" variant="primary" size="md">
+                            <Plus className="w-4 h-4" />
+                            Шинэ нэмэх
+                        </Button>
+                    ) : undefined
                 }
             />
 
@@ -181,48 +181,28 @@ export default function PropertiesPage() {
                     value={stats.totalProperties}
                     icon={<Building2 className="w-4 h-4" />}
                     accent="brand"
-                    helper={
-                        <span className="inline-flex items-center gap-1 text-status-success">
-                            <ArrowUpRight className="w-3 h-3" />
-                            +12% өмнөх сараас
-                        </span>
-                    }
+                    helper="Бүртгэлтэй нийт"
                 />
                 <StatTile
                     label="Нийт үнэ"
                     value={formatPrice(stats.totalValue)}
                     icon={<DollarSign className="w-4 h-4" />}
                     accent="info"
-                    helper={
-                        <span className="inline-flex items-center gap-1 text-status-success">
-                            <ArrowUpRight className="w-3 h-3" />
-                            +8% өмнөх сараас
-                        </span>
-                    }
+                    helper="Бүх үл хөдлөхийн нийлбэр"
                 />
                 <StatTile
                     label="Нийт үзэлт"
                     value={stats.totalViews.toLocaleString()}
                     icon={<Eye className="w-4 h-4" />}
                     accent="success"
-                    helper={
-                        <span className="inline-flex items-center gap-1 text-status-success">
-                            <ArrowUpRight className="w-3 h-3" />
-                            +24% өмнөх сараас
-                        </span>
-                    }
+                    helper="Бүх зарын нийт үзэлт"
                 />
                 <StatTile
                     label="Дундаж үнэ"
                     value={formatPrice(stats.avgPrice)}
                     icon={<TrendingUp className="w-4 h-4" />}
                     accent="warning"
-                    helper={
-                        <span className="inline-flex items-center gap-1 text-status-danger">
-                            <ArrowUpRight className="w-3 h-3 rotate-90" />
-                            -2% өмнөх сараас
-                        </span>
-                    }
+                    helper="Нэг үл хөдлөхөд"
                 />
             </StatBar>
 
@@ -314,10 +294,12 @@ export default function PropertiesPage() {
                                                 title="Үл хөдлөх олдсонгүй"
                                                 description="Шүүлтүүрээ өөрчлөх эсвэл анхны үл хөдлөхөө нэмнэ үү"
                                                 action={
-                                                    <Button href="/dashboard/properties/new" variant="primary" size="sm">
-                                                        <Plus className="w-4 h-4" />
-                                                        Шинэ нэмэх
-                                                    </Button>
+                                                    canWrite ? (
+                                                        <Button href="/dashboard/properties/new" variant="primary" size="sm">
+                                                            <Plus className="w-4 h-4" />
+                                                            Шинэ нэмэх
+                                                        </Button>
+                                                    ) : undefined
                                                 }
                                             />
                                         </td>
@@ -395,21 +377,28 @@ export default function PropertiesPage() {
                                             </td>
                                             <td className="px-4 py-3 text-right">
                                                 <div className="flex items-center justify-end gap-1">
-                                                    <Link href={`/dashboard/properties/${property.id}/edit`}>
+                                                    {canWrite && (
+                                                        <Link href={`/dashboard/properties/${property.id}/edit`}>
+                                                            <button
+                                                                className="p-2 hover:bg-surface-2 rounded-md transition-colors"
+                                                                title="Засах"
+                                                            >
+                                                                <Edit className="w-4 h-4 text-muted-foreground" />
+                                                            </button>
+                                                        </Link>
+                                                    )}
+                                                    {canDelete && (
                                                         <button
-                                                            className="p-2 hover:bg-surface-2 rounded-md transition-colors"
-                                                            title="Засах"
+                                                            onClick={() => handleDelete(property.id)}
+                                                            className="p-2 hover:bg-status-danger-soft rounded-md transition-colors"
+                                                            title="Устгах"
                                                         >
-                                                            <Edit className="w-4 h-4 text-muted-foreground" />
+                                                            <Trash2 className="w-4 h-4 text-status-danger" />
                                                         </button>
-                                                    </Link>
-                                                    <button
-                                                        onClick={() => handleDelete(property.id)}
-                                                        className="p-2 hover:bg-status-danger-soft rounded-md transition-colors"
-                                                        title="Устгах"
-                                                    >
-                                                        <Trash2 className="w-4 h-4 text-status-danger" />
-                                                    </button>
+                                                    )}
+                                                    {!canWrite && !canDelete && (
+                                                        <span className="text-xs text-muted-foreground/60">—</span>
+                                                    )}
                                                 </div>
                                             </td>
                                         </tr>

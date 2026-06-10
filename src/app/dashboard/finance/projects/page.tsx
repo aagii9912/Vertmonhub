@@ -7,6 +7,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { Banknote, TrendingUp, TrendingDown, Target, Plus, X, AlertCircle, Link2 } from 'lucide-react';
+import { formatMNT as formatMNTShared } from '@/lib/utils/currency';
 
 interface Pnl {
     project_id: string | null;
@@ -22,9 +23,7 @@ interface Project { id: string; name: string; }
 interface Account { id: string; code: string; name: string; }
 
 function formatMNT(n: number): string {
-    if (Math.abs(n) >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B₮`;
-    if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M₮`;
-    return `${Math.round(n).toLocaleString()}₮`;
+    return formatMNTShared(n, { compact: true });
 }
 
 export default function ProjectFinancePage() {

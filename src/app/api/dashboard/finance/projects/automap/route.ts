@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
@@ -10,6 +11,8 @@ import { logger } from '@/lib/utils/logger';
  */
 export async function POST() {
     try {
+        const denied = await requireModuleWrite('finance');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
