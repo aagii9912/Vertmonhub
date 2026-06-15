@@ -22,12 +22,13 @@ export async function POST(request: NextRequest) {
 
         const { data: shops } = await supabase
             .from('shops')
-            .select('id, facebook_page_access_token')
+            .select('id, facebook_user_access_token, facebook_page_access_token')
             .not('facebook_page_access_token', 'is', null);
 
         let updated = 0;
         for (const shop of shops || []) {
-            const token = decryptToken(shop.facebook_page_access_token);
+            // Ads insights нь ads_read (USER token) шаардана — Page token-д БИШ.
+            const token = decryptToken(shop.facebook_user_access_token) || decryptToken(shop.facebook_page_access_token);
             if (!token) continue;
 
             const { data: campaigns } = await supabase

@@ -89,6 +89,9 @@ export async function GET(request: NextRequest) {
     const pages = (pagesData.data || []).slice(0, 10).map((p: Record<string, unknown>) => ({
       ...p,
       token_expires_in: tokenExpiresIn ?? null,
+      // ads_read зэрэг user-level эрхэд ашиглах USER token (Page token-д БИШ байдаг)
+      user_access_token: userAccessToken,
+      user_token_expires_in: tokenExpiresIn ?? null,
     }));
     const pagesJson = JSON.stringify(pages);
     const encodedPages = Buffer.from(pagesJson).toString('base64');

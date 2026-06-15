@@ -26,16 +26,17 @@ export async function GET(req: NextRequest) {
         const admin = supabaseAdmin();
         const { data: shop } = await admin
             .from('shops')
-            .select('facebook_page_access_token')
+            .select('facebook_user_access_token, facebook_page_access_token')
             .eq('id', authShop.id)
             .single();
 
-        if (!shop?.facebook_page_access_token) {
+        // Campaign insights нь ads_read (USER token) шаардана — Page token-д БИШ.
+        const adsToken = decryptToken(shop?.facebook_user_access_token) || decryptToken(shop?.facebook_page_access_token) || '';
+        if (!adsToken) {
             return NextResponse.json({ error: 'Facebook account холбогдоогүй' }, { status: 400 });
         }
 
-        const pageToken = decryptToken(shop.facebook_page_access_token) || '';
-        const result = await fetchCampaignInsights(externalId, pageToken, datePreset);
+        const result = await fetchCampaignInsights(externalId, adsToken, datePreset);
         const insight = result.data?.[0];
 
         if (insight) {
