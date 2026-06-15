@@ -25,21 +25,22 @@ export async function GET(req: NextRequest) {
         const admin = supabaseAdmin();
         const { data: shop } = await admin
             .from('shops')
-            .select('facebook_page_access_token, facebook_ad_account_id')
+            .select('facebook_user_access_token, facebook_page_access_token, facebook_ad_account_id')
             .eq('id', authShop.id)
             .single();
 
-        if (!shop?.facebook_page_access_token) {
+        // Ads API нь ads_read (USER token) шаардана — Page token-д БИШ.
+        const adsToken = decryptToken(shop?.facebook_user_access_token) || decryptToken(shop?.facebook_page_access_token) || '';
+        if (!adsToken) {
             return NextResponse.json({ error: 'Facebook account холбогдоогүй' }, { status: 400 });
         }
 
-        const adAccountId = req.nextUrl.searchParams.get('ad_account_id') || shop.facebook_ad_account_id;
+        const adAccountId = req.nextUrl.searchParams.get('ad_account_id') || shop?.facebook_ad_account_id;
         if (!adAccountId) {
             return NextResponse.json({ error: 'Ad Account ID шаардлагатай' }, { status: 400 });
         }
 
-        const pageToken = decryptToken(shop.facebook_page_access_token) || '';
-        const result = await fetchAdAccountCampaigns(adAccountId, pageToken);
+        const result = await fetchAdAccountCampaigns(adAccountId, adsToken);
         const campaigns = result.data || [];
 
         // Upsert campaigns into ad_campaigns table

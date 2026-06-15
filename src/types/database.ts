@@ -9,6 +9,8 @@ export interface Shop {
     facebook_page_access_token?: string | null;
     facebook_ad_account_id?: string | null;
     facebook_token_expires_at?: string | null;
+    facebook_user_access_token?: string | null;
+    facebook_user_token_expires_at?: string | null;
     owner_name: string | null;
     phone: string | null;
     created_at: string;

@@ -124,6 +124,7 @@ export async function PATCH(request: NextRequest) {
       'bank_name', 'account_number', 'account_name',
       'facebook_page_id', 'facebook_page_name', 'facebook_page_username', 'facebook_page_access_token',
       'facebook_ad_account_id', 'facebook_token_expires_at',
+      'facebook_user_access_token', 'facebook_user_token_expires_at',
       'instagram_business_account_id', 'instagram_access_token', 'instagram_username', 'instagram_token_expires_at',
       'notify_on_lead', 'notify_on_viewing', 'notify_on_contact', 'notify_on_support',
     ];
@@ -139,6 +140,9 @@ export async function PATCH(request: NextRequest) {
     }
     if (typeof body.instagram_token_expires_in === 'number') {
       safeBody.instagram_token_expires_at = new Date(Date.now() + body.instagram_token_expires_in * 1000).toISOString();
+    }
+    if (typeof body.facebook_user_token_expires_in === 'number') {
+      safeBody.facebook_user_token_expires_at = new Date(Date.now() + body.facebook_user_token_expires_in * 1000).toISOString();
     }
 
     if (Object.keys(safeBody).length === 0) {
@@ -159,6 +163,9 @@ export async function PATCH(request: NextRequest) {
     }
     if (typeof safeBody.instagram_access_token === 'string') {
       safeBody.instagram_access_token = encryptToken(safeBody.instagram_access_token as string);
+    }
+    if (typeof safeBody.facebook_user_access_token === 'string') {
+      safeBody.facebook_user_access_token = encryptToken(safeBody.facebook_user_access_token as string);
     }
 
     // Update shop

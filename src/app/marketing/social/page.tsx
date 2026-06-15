@@ -286,6 +286,8 @@ function SocialPageContent() {
                     facebook_page_name: selectData.page.name,
                     facebook_page_access_token: selectData.page.access_token,
                     facebook_token_expires_in: selectData.page.token_expires_in ?? undefined,
+                    facebook_user_access_token: selectData.page.user_access_token ?? undefined,
+                    facebook_user_token_expires_in: selectData.page.user_token_expires_in ?? undefined,
                 }),
             });
             const patchData = await patchRes.json();

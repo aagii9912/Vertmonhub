@@ -213,9 +213,18 @@ export async function getPagePosts(
     accessToken: string,
     limit: number = 25
 ): Promise<{ data: FacebookPost[]; paging?: { next?: string; previous?: string } }> {
-    const fields = 'id,message,story,full_picture,permalink_url,created_time,likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique,post_clicks,post_reactions_by_type_total)';
-    const url = `${GRAPH_API_BASE}/${pageId}/posts?fields=${fields}&limit=${limit}&access_token=${accessToken}`;
-    return fbFetch<{ data: FacebookPost[]; paging?: { next?: string; previous?: string } }>(url);
+    const baseFields = 'id,message,story,full_picture,permalink_url,created_time,likes.summary(true),comments.summary(true),shares';
+    const withInsights = `${baseFields},insights.metric(post_impressions_unique,post_clicks,post_reactions_by_type_total)`;
+    const buildUrl = (f: string) => `${GRAPH_API_BASE}/${pageId}/posts?fields=${f}&limit=${limit}&access_token=${accessToken}`;
+    type R = { data: FacebookPost[]; paging?: { next?: string; previous?: string } };
+    try {
+        return await fbFetch<R>(buildUrl(withInsights));
+    } catch (err) {
+        // insights метрик буруу/устгагдсан бол бүхэл /posts унадаг — insights-гүйгээр
+        // дахин татаж нийтлэлийн жагсаалт хэзээ ч хоосрохгүй болгоно (fail-safe).
+        logger.warn('getPagePosts with insights failed, retrying without insights', { error: String(err) });
+        return await fbFetch<R>(buildUrl(baseFields));
+    }
 }
 
 /**
@@ -225,9 +234,14 @@ export async function getPostDetails(
     postId: string,
     accessToken: string
 ): Promise<FacebookPost> {
-    const fields = 'id,message,story,full_picture,permalink_url,created_time,likes.summary(true),comments.summary(true),shares,insights.metric(post_impressions_unique,post_clicks,post_reactions_by_type_total)';
-    const url = `${GRAPH_API_BASE}/${postId}?fields=${fields}&access_token=${accessToken}`;
-    return fbFetch<FacebookPost>(url);
+    const baseFields = 'id,message,story,full_picture,permalink_url,created_time,likes.summary(true),comments.summary(true),shares';
+    const withInsights = `${baseFields},insights.metric(post_impressions_unique,post_clicks,post_reactions_by_type_total)`;
+    const buildUrl = (f: string) => `${GRAPH_API_BASE}/${postId}?fields=${f}&access_token=${accessToken}`;
+    try {
+        return await fbFetch<FacebookPost>(buildUrl(withInsights));
+    } catch {
+        return await fbFetch<FacebookPost>(buildUrl(baseFields));
+    }
 }
 
 // ============ Insights ============
@@ -250,9 +264,31 @@ export async function getPageInsights(
     ],
     period: 'day' | 'week' | 'days_28' = 'day'
 ): Promise<{ data: PageInsightMetric[] }> {
-    const metricStr = metrics.join(',');
-    const url = `${GRAPH_API_BASE}/${pageId}/insights?metric=${metricStr}&period=${period}&access_token=${accessToken}`;
-    return fbFetch<{ data: PageInsightMetric[] }>(url);
+    const fetchMetrics = async (ms: string[]): Promise<PageInsightMetric[]> => {
+        const url = `${GRAPH_API_BASE}/${pageId}/insights?metric=${ms.join(',')}&period=${period}&access_token=${accessToken}`;
+        const res = await fetch(url);
+        const json = await res.json();
+        if (json.error) throw new Error(json.error.message);
+        return (json.data || []) as PageInsightMetric[];
+    };
+    try {
+        // Хурдан зам: бүх метрикийг нэг дуудлагаар.
+        return { data: await fetchMetrics(metrics) };
+    } catch (err) {
+        // Нэг буруу/устгагдсан метрик бүхэл батчийг унагасан байж магадгүй — метрик
+        // бүрийг тусад нь оролдож, хүчинтэйг нь л цуглуулна (fail-safe). Ингэснээр
+        // ирээдүйд Meta өөр метрик уствал бусад нь хэвээр ажиллана.
+        logger.warn('getPageInsights batch failed, retrying per-metric', { error: String(err) });
+        const data: PageInsightMetric[] = [];
+        for (const m of metrics) {
+            try {
+                data.push(...(await fetchMetrics([m])));
+            } catch {
+                logger.warn('getPageInsights metric skipped (invalid/unavailable)', { metric: m });
+            }
+        }
+        return { data };
+    }
 }
 
 // ============ Publish ============

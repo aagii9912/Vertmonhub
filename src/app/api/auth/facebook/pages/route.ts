@@ -7,6 +7,8 @@ interface FacebookPage {
   access_token: string;
   category?: string;
   token_expires_in?: number | null;
+  user_access_token?: string | null;
+  user_token_expires_in?: number | null;
 }
 
 // GET - Fetch pages from cookie
@@ -80,6 +82,8 @@ export async function POST(request: NextRequest) {
         name: selectedPage.name,
         access_token: selectedPage.access_token,
         token_expires_in: selectedPage.token_expires_in ?? null,
+        user_access_token: selectedPage.user_access_token ?? null,
+        user_token_expires_in: selectedPage.user_token_expires_in ?? null,
       }
     });
   } catch (err: any) {
