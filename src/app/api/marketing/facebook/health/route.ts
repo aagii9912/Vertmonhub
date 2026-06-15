@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getUserShop, supabaseAdmin } from '@/lib/auth/supabase-auth';
-import { getPageInfo, getPageInsights, getPageSubscribedApps } from '@/lib/facebook/marketing-api';
+import { getPageInfo, getPageInsights, getPageSubscribedApps, subscribePageToApp } from '@/lib/facebook/marketing-api';
 import { decryptToken } from '@/lib/crypto/tokens';
 import { logger } from '@/lib/utils/logger';
 
@@ -88,12 +88,19 @@ export async function GET() {
             checks.page = { ok: false, detail: String(e) };
         }
 
-        // 3) webhook_subscription — subscribed_apps хоосон биш эсэх
+        // 3) webhook_subscription — хэрэв subscribe хийгдээгүй бол оролдоод (idempotent)
+        // яг ямар Graph алдаа гарч байгааг surface хийнэ. Амжилттай бол ok болж засагдана.
         try {
-            const apps = await getPageSubscribedApps(pageId, token);
-            checks.webhook_subscription = apps.length > 0
-                ? { ok: true, data: apps }
-                : { ok: false, detail: 'Page webhook-д subscribe хийгдээгүй' };
+            let apps = await getPageSubscribedApps(pageId, token);
+            if (apps.length === 0) {
+                const sub = await subscribePageToApp(pageId, token);
+                apps = await getPageSubscribedApps(pageId, token);
+                checks.webhook_subscription = apps.length > 0
+                    ? { ok: true, data: apps, detail: 'subscribed just now' }
+                    : { ok: false, detail: `subscribe failed: ${sub.error || 'unknown error'}` };
+            } else {
+                checks.webhook_subscription = { ok: true, data: apps };
+            }
         } catch (e) {
             checks.webhook_subscription = { ok: false, detail: String(e) };
         }
