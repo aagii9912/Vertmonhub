@@ -98,10 +98,12 @@ export async function GET() {
             checks.webhook_subscription = { ok: false, detail: String(e) };
         }
 
-        // 4) insights — page_impressions (end-to-end метрик нотолгоо)
+        // 4) insights — хүчинтэй метрикээр (page_impressions нь v21-д устгагдсан)
         try {
-            const result = await getPageInsights(pageId, token, ['page_impressions'], 'day');
-            checks.insights = { ok: (result.data?.length || 0) > 0, data: result.data };
+            const result = await getPageInsights(pageId, token, ['page_impressions_unique', 'page_post_engagements'], 'days_28');
+            checks.insights = (result.data?.length || 0) > 0
+                ? { ok: true, data: result.data }
+                : { ok: false, detail: 'Insights дуудлага амжилттай ч өгөгдөл хоосон (Page-д сүүлийн үед reach/engagement алга)' };
         } catch (e) {
             checks.insights = { ok: false, detail: String(e) };
         }
