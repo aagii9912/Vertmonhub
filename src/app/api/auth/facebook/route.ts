@@ -16,14 +16,16 @@ export async function GET(request: NextRequest) {
   // Phase 2 scopes — list pages, read engagement, send DMs, subscribe webhooks.
   // `pages_messaging` + `pages_manage_metadata` require Meta App Review approval
   // before they can be granted on a Live app.
+  // ⚠️ 'email' нь энэ FB-Login-for-Business аппад invalid scope — login dialog-ийг
+  // блоклодог тул хассан. business_management нь ad account жагсаалтад туслана.
   const permissions = [
     'pages_show_list',
     'pages_read_engagement',
     'pages_messaging',
     'pages_manage_metadata',
     'ads_read',
-    'public_profile',
-    'email'
+    'business_management',
+    'public_profile'
   ].join(',');
 
   // Facebook Login for Business config_id is opt-in. We default to standard
