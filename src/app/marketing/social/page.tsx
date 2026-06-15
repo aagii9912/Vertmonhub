@@ -311,6 +311,20 @@ function SocialPageContent() {
         }
     }, [selectedPageId, router, fetchFacebookData]);
 
+    // ======= Disconnect platform =======
+    const handleDisconnect = useCallback(async (platform: 'facebook' | 'instagram') => {
+        const label = platform === 'facebook' ? 'Facebook' : 'Instagram';
+        if (!window.confirm(`${label} холболтыг салгах уу? Дараа нь дахин холбож болно.`)) return;
+        try {
+            await fetch('/api/shop/disconnect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ platform }),
+            });
+        } catch { /* алдааг үл хайхран reload хийнэ */ }
+        window.location.reload();
+    }, []);
+
     // ======= Publish post =======
     const handlePublish = async () => {
         if (!publishMessage.trim()) return;
@@ -439,6 +453,7 @@ function SocialPageContent() {
                     formatDate={formatDate}
                     onConnect={() => window.location.href = '/api/auth/facebook'}
                     onRefresh={fetchFacebookData}
+                    onDisconnect={() => handleDisconnect('facebook')}
                 />
             )}
 
@@ -635,6 +650,7 @@ function FacebookTabContent({
     formatDate,
     onConnect,
     onRefresh,
+    onDisconnect,
 }: {
     loading: boolean;
     connected: boolean;
@@ -647,6 +663,7 @@ function FacebookTabContent({
     formatDate: (d: string) => string;
     onConnect: () => void;
     onRefresh: () => void;
+    onDisconnect: () => void;
 }) {
     if (loading) {
         return (
@@ -748,6 +765,13 @@ function FacebookTabContent({
                                 Page харах
                             </a>
                         )}
+                        <button
+                            onClick={onDisconnect}
+                            className="flex items-center gap-1 text-sm text-status-danger hover:opacity-80 ml-3"
+                        >
+                            <AlertCircle className="w-4 h-4" />
+                            Салгах
+                        </button>
                     </div>
                 </CardContent>
             </Card>
