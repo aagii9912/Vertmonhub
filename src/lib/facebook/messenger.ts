@@ -7,7 +7,10 @@ const GRAPH_API_URL = 'https://graph.facebook.com/v21.0';
 // when FACEBOOK_APP_SECRET is not configured, in which case the param is
 // omitted (Meta accepts the call so long as the toggle is off).
 export function appsecretProof(token: string): string | null {
-    const secret = process.env.FACEBOOK_APP_SECRET;
+    // ⚠️ .trim() ЗААВАЛ — Vercel env-д сүүл newline/зай орвол OAuth (trim хийдэг)
+    // ажиллах ч энэ proof буруу гарч "Invalid appsecret_proof" алдаа өгдөг
+    // (subscribe + DM send хоёуланг унагадаг).
+    const secret = process.env.FACEBOOK_APP_SECRET?.trim();
     if (!secret) return null;
     return crypto.createHmac('sha256', secret).update(token).digest('hex');
 }
