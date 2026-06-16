@@ -148,7 +148,13 @@ export async function routeToAI(
 
         logger.info(`AIRouter: Routing to Gemini [${backendModel}] (Plan: ${planType})`);
 
-        // Build system prompt
+        // Get tools enabled for this plan
+        const planTools = planConfig.features.toolCalling
+            ? getToolsForPlan(planType)
+            : undefined;
+
+        // Build system prompt — идэвхтэй tool-уудын нэрийг дамжуулж prompt-ын
+        // ЧАДВАРУУД хэсгийг динамикаар бүтээлгэнэ
         const systemPrompt = buildSystemPrompt({
             ...context,
             planFeatures: {
@@ -156,13 +162,9 @@ export async function routeToAI(
                 sales_intelligence: planConfig.features.salesIntelligence,
                 ai_memory: planConfig.features.memory,
                 max_tokens: planConfig.maxTokens,
+                enabledTools: planTools?.map((t: { name: string }) => t.name),
             },
         });
-
-        // Get tools enabled for this plan
-        const planTools = planConfig.features.toolCalling
-            ? getToolsForPlan(planType)
-            : undefined;
 
         // Configure Gemini model
         const model = genAI.getGenerativeModel({
