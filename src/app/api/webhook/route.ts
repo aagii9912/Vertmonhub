@@ -4,6 +4,7 @@ import { routeToAI, analyzeProductImageWithPlan } from '@/lib/ai/AIRouter';
 import { detectIntent } from '@/lib/ai/intent-detector';
 import { shouldReplyToComment } from '@/lib/ai/comment-detector';
 import { getCustomerMemory } from '@/lib/ai/tools/memory';
+import { isDuplicateWebhookEvent, queueWebhookJob } from '@/lib/webhook/retryService';
 import { logger } from '@/lib/utils/logger';
 import { verifyWebhookSignature } from '@/lib/utils/verify-webhook-signature';
 import {
@@ -49,6 +50,7 @@ interface WebhookEntry {
     messaging?: Array<{
         sender: { id: string };
         message?: {
+            mid?: string;
             text?: string;
             attachments?: Array<{
                 type: string;
@@ -189,6 +191,13 @@ export async function POST(request: NextRequest) {
             for (const event of entry.messaging || []) {
                 const senderId = event.sender.id;
 
+                // Idempotency: Meta нэг мессежийг давхар илгээж болзошгүй тул
+                // message ID (mid)-аар давхардлыг таслана (давхар AI хариунаас сэргийлнэ)
+                if (event.message?.mid && await isDuplicateWebhookEvent(event.message.mid)) {
+                    logger.info(`[${shop.name}] Duplicate message skipped`, { mid: event.message.mid });
+                    continue;
+                }
+
                 // Handle text messages
                 if (event.message?.text) {
                     const userMessage = event.message.text;
@@ -287,20 +296,31 @@ export async function POST(request: NextRequest) {
                     // Increment message count
                     await incrementMessageCount(customer.id);
 
-                    // Send the AI response via Messenger API (works for both platforms)
-                    if (aiQuickReplies && aiQuickReplies.length > 0) {
-                        await sendMessageWithQuickReplies({
-                            recipientId: senderId,
-                            message: aiResponse,
-                            pageAccessToken: accessToken,
-                            quickReplies: aiQuickReplies.map(qr => ({
-                                content_type: 'text' as const,
-                                title: qr.title,
-                                payload: qr.payload,
-                            })),
-                        });
-                    } else {
-                        await sendTextMessage({
+                    // Send the AI response via Messenger API (works for both platforms).
+                    // Илгээлт (3 удаа retry хийсний дараа ч) бүрэн унавал хариу
+                    // алдагдахаас сэргийлж дараалалд оруулж, cron дахин оролдоно.
+                    try {
+                        if (aiQuickReplies && aiQuickReplies.length > 0) {
+                            await sendMessageWithQuickReplies({
+                                recipientId: senderId,
+                                message: aiResponse,
+                                pageAccessToken: accessToken,
+                                quickReplies: aiQuickReplies.map(qr => ({
+                                    content_type: 'text' as const,
+                                    title: qr.title,
+                                    payload: qr.payload,
+                                })),
+                            });
+                        } else {
+                            await sendTextMessage({
+                                recipientId: senderId,
+                                message: aiResponse,
+                                pageAccessToken: accessToken,
+                            });
+                        }
+                    } catch (sendError) {
+                        logger.error(`[${shop.name}] Send failed, queueing for retry`, { error: sendError instanceof Error ? sendError.message : String(sendError) });
+                        await queueWebhookJob('notification', {
                             recipientId: senderId,
                             message: aiResponse,
                             pageAccessToken: accessToken,
