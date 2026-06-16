@@ -148,6 +148,14 @@ src/
 ### Authentication
 Supabase Auth (Email/Password, Google, Facebook). `src/middleware.ts` protects `/dashboard` and `/admin`. Unauthenticated users are bounced to `/auth/login`.
 
+### Dashboard AI Orchestrator (`/dashboard/ai-assistant`)
+The internal staff assistant is a **multi-agent orchestrator** (`src/lib/ai/orchestrator/`), not a manual dual-mode chat anymore. Flow:
+1. `POST /api/ai-assistant` (RBAC `ai-assistant`, shop-scoped) calls `runOrchestrator()`.
+2. **Planner** (`planner.ts`) analyzes the request → JSON plan selecting 1–3 specialized agents.
+3. **Agents** (`agents.ts`): `data-analyst`, `property-expert`, `crm-specialist`, `finance-analyst`, `advisor`. Each has a focused Mongolian system prompt + a curated subset of the shared data-assistant tools. They run via the generic `runAgent.ts` (reuses `executeDataTool` from `lib/ai/data-assistant`; write tools gated by `perms.canWrite`).
+4. **Synthesizer** merges multi-agent output into one answer (skipped for single-agent).
+5. Returns `{ text, data, chartConfig, agentsUsed, trace }`. The **trace** (planner reasoning, per-step latency/tokens/tools) is shown in the UI (`components/ai-assistant/OrchestrationTrace.tsx`) and persisted to `ai_messages.agents_used` / `ai_messages.trace` (migration `20260616150000`). The old `data`/`general` mode toggle was removed — routing is automatic. Persistence and trace reads are migration-resilient (best-effort update + fallback select).
+
 ### Inbound message flow (lead generation)
 1. Customer DMs the shop's Facebook Page or Instagram account.
 2. Meta posts to `/api/webhook` (signature-verified).

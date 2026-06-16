@@ -4,7 +4,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import {
     Plus, Search, MessageSquare, MoreHorizontal,
     Pencil, Trash2, Database, Globe, X, Check,
-    Sparkles, ChevronLeft,
+    Sparkles, ChevronLeft, Network,
 } from 'lucide-react';
 import type { AIConversation } from '@/hooks/useAIConversations';
 
@@ -210,7 +210,7 @@ export function ConversationSidebar({
                                 {group.items.map(conv => {
                                     const isActive = activeId === conv.id;
                                     const isRenaming = renamingId === conv.id;
-                                    const ModeIcon = conv.mode === 'data' ? Database : Globe;
+                                    const ModeIcon = conv.mode === 'data' ? Database : conv.mode === 'general' ? Globe : Network;
                                     const modeColor = conv.mode === 'data' ? 'text-status-success' : 'text-brand';
 
                                     return (
