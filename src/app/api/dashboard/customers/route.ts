@@ -1,11 +1,13 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { getUserShop } from '@/lib/auth/supabase-auth';
+import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { requireWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { CreateCustomerSchema, UpdateCustomerSchema, validateBody } from '@/lib/validations/schemas';
 import { normalizePhone } from '@/lib/utils/phone';
 import { recomputeCustomerScore } from '@/lib/services/CustomerScoringService';
+import { parsePagination, buildPageMeta } from '@/lib/utils/pagination';
+import { recordAudit } from '@/lib/services/AuditService';
 
 export async function GET(request: NextRequest) {
   try {
@@ -34,9 +36,13 @@ export async function GET(request: NextRequest) {
     const ALLOWED_SORT = ['created_at', 'last_contact_at', 'quality_score', 'message_count', 'name'];
     const sortBy = ALLOWED_SORT.includes(requestedSort) ? requestedSort : 'created_at';
 
+    // Хуудаслалт: их өгөгдөлд бүгдийг татаж OOM болохоос сэргийлнэ.
+    // ?page&pageSize эсвэл ?limit&offset өгөөгүй бол аюулгүйн таг хэрэгжинэ.
+    const pagination = parsePagination(searchParams);
+
     let query = supabase
       .from('customers')
-      .select('id, name, facebook_id, phone, email, address, notes, tags, message_count, last_contact_at, created_at, quality_score, quality_tier, lifecycle_stage, score_breakdown, next_followup_at')
+      .select('id, name, facebook_id, phone, email, address, notes, tags, message_count, last_contact_at, created_at, quality_score, quality_tier, lifecycle_stage, score_breakdown, next_followup_at', { count: 'exact' })
       .eq('shop_id', shopId);
 
     // Search by name or phone
@@ -57,16 +63,21 @@ export async function GET(request: NextRequest) {
       query = query.eq('quality_tier', tier);
     }
 
-    // Sort
-    query = query.order(sortBy, { ascending: sortOrder, nullsFirst: false });
+    // Sort + paginate
+    query = query
+      .order(sortBy, { ascending: sortOrder, nullsFirst: false })
+      .range(pagination.from, pagination.to);
 
-    const { data: customers, error } = await query;
+    const { data: customers, error, count } = await query;
 
-    logger.debug('[Customers API] Query result', { count: customers?.length, error });
+    logger.debug('[Customers API] Query result', { count: customers?.length, total: count, error });
 
     if (error) throw error;
 
-    return NextResponse.json({ customers: customers || [] });
+    return NextResponse.json({
+      customers: customers || [],
+      pagination: buildPageMeta(count ?? 0, pagination),
+    });
   } catch (error) {
     console.error('Customers API error:', error);
     return NextResponse.json({ error: 'Failed to fetch customers' }, { status: 500 });
@@ -151,6 +162,15 @@ export async function POST(request: NextRequest) {
       logger.warn('[Customers POST] scoring failed', { error: scoreErr });
     }
 
+    await recordAudit({
+      shopId: authShop.id,
+      actorId: await getUserId(),
+      entity: 'customer',
+      entityId: customer.id,
+      action: 'create',
+      changes: { name, phone: phone || null, email: cleanEmail },
+    });
+
     return NextResponse.json({ customer, message: 'Customer created' }, { status: 201 });
   } catch (error) {
     console.error('Customer create error:', error);
@@ -210,6 +230,15 @@ export async function PATCH(request: NextRequest) {
       .single();
 
     if (error) throw error;
+
+    await recordAudit({
+      shopId: authShop.id,
+      actorId: await getUserId(),
+      entity: 'customer',
+      entityId: id,
+      action: 'update',
+      changes: updateData,
+    });
 
     return NextResponse.json({ customer, message: 'Customer updated' });
   } catch (error) {
