@@ -185,17 +185,35 @@ export async function executeCalculateLoan(
     args: CalculateLoanArgs
 ): Promise<ToolExecutionResult> {
     const { amount, years, down_payment = 0 } = args;
-    // Default to Khan Bank mortgage rate
-    const rate = args.rate || 12.5;
+    // Default to Khan Bank mortgage rate. ?? ашиглав — хэрэглэгч 0% хүү
+    // (хүүгүй урамшуулал) зориуд оруулбал түүнийг хүндэтгэнэ.
+    const rate = args.rate ?? 12.5;
+
+    // Оролтын валидаци — буруу утга NaN/Infinity үр дүн өгөхөөс сэргийлнэ
+    if (!(amount > 0)) {
+        return { success: false, error: 'Зээлийн дүн 0-ээс их байх ёстой.' };
+    }
+    if (!(years > 0)) {
+        return { success: false, error: 'Зээлийн хугацаа 0-ээс их (жилээр) байх ёстой.' };
+    }
+    if (rate < 0) {
+        return { success: false, error: 'Зээлийн хүү сөрөг байж болохгүй.' };
+    }
+    if (down_payment < 0 || down_payment >= amount) {
+        return { success: false, error: 'Урьдчилгаа төлбөр 0-ээс их, зээлийн дүнгээс бага байх ёстой.' };
+    }
 
     const principal = amount - down_payment;
     const monthlyRate = rate / 100 / 12;
     const totalPayments = years * 12;
 
     // Monthly payment formula: M = P * [r(1+r)^n] / [(1+r)^n - 1]
-    const monthlyPayment = principal *
-        (monthlyRate * Math.pow(1 + monthlyRate, totalPayments)) /
-        (Math.pow(1 + monthlyRate, totalPayments) - 1);
+    // Хүү 0 бол энгийн хуваалт (тэгд хуваахаас сэргийлэх)
+    const monthlyPayment = monthlyRate === 0
+        ? principal / totalPayments
+        : principal *
+            (monthlyRate * Math.pow(1 + monthlyRate, totalPayments)) /
+            (Math.pow(1 + monthlyRate, totalPayments) - 1);
 
     const totalPayment = monthlyPayment * totalPayments;
     const totalInterest = totalPayment - principal;

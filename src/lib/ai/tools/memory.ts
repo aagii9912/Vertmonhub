@@ -111,10 +111,34 @@ export function formatMemoryForPrompt(memory: CustomerMemory | null): string {
 
     const memoryLines = preferenceKeys.map(key => {
         const displayKey = formatKeyName(key);
-        return `- ${displayKey}: ${memory[key]}`;
+        return `- ${displayKey}: ${sanitizeMemoryValue(memory[key])}`;
     });
 
     return `\nХЭРЭГЛЭГЧИЙН САНАХ ОЙ (Өмнө сурсан):\n${memoryLines.join('\n')}\n`;
+}
+
+/**
+ * Санах ойн утгыг prompt-д оруулахын өмнө цэвэрлэнэ.
+ *
+ * Хэрэглэгчийн чатнаас гаралтай тул prompt injection-аас сэргийлж шинэ мөр,
+ * удирдлагын тэмдэгт болон markdown тэмдэглэгээг (#, *, `) арилгаж, уртыг
+ * хязгаарлана. Ингэснээр санах ойн агуулга системийн зааврыг дарж бичих
+ * боломжгүй болно. char-code шүүлтүүр ашигласан нь эх кодод түүхий удирдлагын
+ * тэмдэгт оруулахаас сэргийлнэ.
+ */
+export function sanitizeMemoryValue(value: string | string[] | number): string {
+    const raw = Array.isArray(value) ? value.join(', ') : String(value);
+    const flattened = raw.replace(/[\r\n]+/g, ' ');
+
+    let out = '';
+    for (const ch of flattened) {
+        const code = ch.charCodeAt(0);
+        if (code < 0x20) continue;                          // удирдлагын тэмдэгт
+        if (ch === '`' || ch === '#' || ch === '*') continue; // markdown тэмдэглэгээ
+        out += ch;
+    }
+
+    return out.trim().slice(0, 200); // хэт урт утгаас сэргийлэх
 }
 
 /**
