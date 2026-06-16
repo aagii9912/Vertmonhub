@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyWebhook, sendTextMessage, sendSenderAction, sendMessageWithQuickReplies } from '@/lib/facebook/messenger';
 import { routeToAI, analyzeProductImageWithPlan } from '@/lib/ai/AIRouter';
@@ -90,6 +91,8 @@ export async function GET(request: NextRequest) {
 const BOT_ENABLED = process.env.FACEBOOK_BOT_ENABLED?.trim().toLowerCase() === 'true';
 
 export async function POST(request: NextRequest) {
+    // Correlation ID — webhook → AI → send гинжийг лог-д мөшгихөд тусална
+    const requestId = randomUUID();
     try {
         // Verify webhook signature (X-Hub-Signature-256)
         const rawBody = await request.text();
@@ -201,7 +204,7 @@ export async function POST(request: NextRequest) {
                 // Handle text messages
                 if (event.message?.text) {
                     const userMessage = event.message.text;
-                    logger.info(`[${shop.name}] Received ${platform} message`, { userMessage, senderId });
+                    logger.info(`[${shop.name}] Received ${platform} message`, { requestId, userMessage, senderId });
 
                     // Mark Seen & Typing indicators
                     await sendSenderAction(senderId, 'mark_seen', accessToken);
@@ -284,7 +287,7 @@ export async function POST(request: NextRequest) {
                     } catch (aiError) {
                         const errorMessage = aiError instanceof Error ? aiError.message : 'Unknown error';
                         const errorStack = aiError instanceof Error ? aiError.stack : undefined;
-                        logger.error('AI Error:', { message: errorMessage, stack: errorStack });
+                        logger.error('AI Error:', { requestId, shopId: shop.id, customerId: customer.id, message: errorMessage, stack: errorStack });
 
                         // Generate fallback response based on intent
                         aiResponse = generateFallbackResponse(intent, shop.name, shop.properties);
@@ -319,7 +322,7 @@ export async function POST(request: NextRequest) {
                             });
                         }
                     } catch (sendError) {
-                        logger.error(`[${shop.name}] Send failed, queueing for retry`, { error: sendError instanceof Error ? sendError.message : String(sendError) });
+                        logger.error(`[${shop.name}] Send failed, queueing for retry`, { requestId, error: sendError instanceof Error ? sendError.message : String(sendError) });
                         await queueWebhookJob('notification', {
                             recipientId: senderId,
                             message: aiResponse,
