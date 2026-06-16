@@ -38,7 +38,7 @@ const DELETE_TOOL_NAMES: string[] = [];
 // TOOL EXECUTOR
 // ============================================
 
-async function executeTool(toolName: string, args: any, shopId: string, perms: AssistantPerms, userId: string): Promise<any> {
+export async function executeDataTool(toolName: string, args: any, shopId: string, perms: AssistantPerms, userId: string): Promise<any> {
     logger.info(`[AI Data Assistant] Executing tool: ${toolName}`, { args, role: perms.role });
 
     const isWrite = WRITE_TOOL_NAMES.includes(toolName);
@@ -163,7 +163,7 @@ export async function handleDataAssistantQuery(
             let chartConfig: any = null;
 
             for (const fc of functionCalls) {
-                const toolResult = await executeTool(fc.name, fc.args || {}, shopId, perms, userId);
+                const toolResult = await executeDataTool(fc.name, fc.args || {}, shopId, perms, userId);
                 toolResults.push({ functionResponse: { name: fc.name, response: { result: toolResult } } });
                 allData = toolResult;
                 chartConfig = generateChartConfig(fc.name, fc.args || {}, toolResult);

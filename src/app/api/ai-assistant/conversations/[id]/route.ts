@@ -31,16 +31,28 @@ export async function GET(req: Request, { params }: RouteParams) {
             return NextResponse.json({ error: 'Not found' }, { status: 404 });
         }
 
-        // Fetch messages
-        const { data: messages, error } = await db
+        // Fetch messages. Try with orchestrator metadata first; fall back gracefully
+        // if the agents_used/trace migration hasn't been applied yet.
+        let messages: unknown[] | null = null;
+        const withMeta = await db
             .from('ai_messages')
-            .select('id, role, content, chart_config, data, created_at')
+            .select('id, role, content, chart_config, data, agents_used, trace, created_at')
             .eq('conversation_id', id)
             .order('created_at', { ascending: true });
 
-        if (error) {
-            console.error('Failed to fetch messages:', error);
-            return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 });
+        if (withMeta.error) {
+            const fallback = await db
+                .from('ai_messages')
+                .select('id, role, content, chart_config, data, created_at')
+                .eq('conversation_id', id)
+                .order('created_at', { ascending: true });
+            if (fallback.error) {
+                console.error('Failed to fetch messages:', fallback.error);
+                return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 });
+            }
+            messages = fallback.data;
+        } else {
+            messages = withMeta.data;
         }
 
         return NextResponse.json({

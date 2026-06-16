@@ -59,7 +59,7 @@ export function Header() {
         else if (path.includes('/procurement')) title = 'Худалдан авалт';
         else if (path.includes('/marketing-roi')) title = 'Маркетинг ROI';
         else if (path.includes('/ai-settings')) title = 'AI Тохиргоо';
-        else if (path.includes('/ai-assistant')) title = 'AI Туслах';
+        else if (path.includes('/ai-assistant')) title = 'AI Orchestrator';
         else if (path.includes('/surveys')) title = 'Судалгаа';
 
         return <h1 className="heading-section text-base md:text-lg text-foreground">{title}</h1>;

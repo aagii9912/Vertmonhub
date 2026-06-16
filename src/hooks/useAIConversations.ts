@@ -5,7 +5,8 @@ import { useState, useCallback, useRef } from 'react';
 export interface AIConversation {
     id: string;
     title: string;
-    mode: 'data' | 'general';
+    /** 'orchestrator' (шинэ) эсвэл хуучин 'data'/'general'. */
+    mode: string;
     created_at: string;
     updated_at: string;
 }
@@ -16,6 +17,8 @@ export interface AIConversationMessage {
     content: string;
     chart_config?: any;
     data?: any;
+    agents_used?: any;
+    trace?: any;
     created_at: string;
 }
 
@@ -47,7 +50,7 @@ export function useAIConversations({ shopId }: UseAIConversationsOptions) {
     }, [shopId]);
 
     /** Create a new conversation */
-    const createConversation = useCallback(async (mode: 'data' | 'general', title?: string): Promise<AIConversation | null> => {
+    const createConversation = useCallback(async (mode: string, title?: string): Promise<AIConversation | null> => {
         if (!shopId) return null;
         try {
             const res = await fetch('/api/ai-assistant/conversations', {

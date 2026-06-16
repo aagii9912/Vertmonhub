@@ -70,7 +70,7 @@ export const MODULE_LABELS: Record<string, { en: string; mn: string }> = {
     'reports-leads': { en: 'Leads Report', mn: 'Лийд тайлан' },
     'marketing-roi': { en: 'Marketing ROI', mn: 'Маркетинг ROI' },
     'surveys': { en: 'Surveys', mn: 'Судалгаа' },
-    'ai-assistant': { en: 'AI Assistant', mn: 'AI Туслах' },
+    'ai-assistant': { en: 'AI Orchestrator', mn: 'AI Orchestrator' },
     'ai-settings': { en: 'AI Settings', mn: 'AI Тохируулга' },
     'settings': { en: 'Settings', mn: 'Тохиргоо' },
 };
