@@ -115,6 +115,42 @@ export async function retryWithBackoff<T>(
 }
 
 /**
+ * Webhook event давхардсан эсэхийг шалгана (idempotency).
+ *
+ * Meta нэг event-ийг хэд хэдэн удаа илгээж болдог тул event_id-г
+ * webhook_dedup хүснэгтэд оруулахыг оролдоно. Оруулж чадвал анх удаа
+ * (давхардаагүй) → false. Unique зөрчил гарвал давхардсан → true.
+ *
+ * DB алдаа гарвал боловсруулалтыг зогсоохгүйн тулд false буцаана
+ * (хариу алдагдахаас давхардал илүү дээр гэж үзэв — fail-open).
+ */
+export async function isDuplicateWebhookEvent(eventId: string): Promise<boolean> {
+    if (!eventId) return false;
+
+    const supabase = supabaseAdmin();
+
+    try {
+        const { error } = await supabase
+            .from('webhook_dedup')
+            .insert({ event_id: eventId });
+
+        if (!error) return false; // Амжилттай оруулсан → анх удаа
+
+        // 23505 = unique_violation → аль хэдийн боловсруулсан event
+        if (error.code === '23505') {
+            logger.info('Duplicate webhook event skipped', { eventId });
+            return true;
+        }
+
+        logger.warn('Webhook dedup check failed, processing anyway', { eventId, error: error.message });
+        return false;
+    } catch (err) {
+        logger.warn('Webhook dedup error, processing anyway', { eventId, error: String(err) });
+        return false;
+    }
+}
+
+/**
  * Queue a webhook job for retry (DB-based for persistence)
  */
 export async function queueWebhookJob(
