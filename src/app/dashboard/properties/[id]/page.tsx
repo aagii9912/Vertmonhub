@@ -12,6 +12,7 @@ import {
     Eye, Calendar, Edit, Share2, Heart, Loader2, ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { PropertyTags } from '@/components/dashboard/PropertyTags';
+import { EntityAttachments } from '@/components/dashboard/EntityAttachments';
 import { MortgageCalculator } from '@/components/dashboard/MortgageCalculator';
 import { VirtualTour } from '@/components/dashboard/VirtualTour';
 import type { Property, PropertyStatus, PropertyType } from '@/types/property';
@@ -250,6 +251,9 @@ export default function PropertyDetailPage() {
 
                     {/* Mortgage Calculator */}
                     <MortgageCalculator defaultPrice={Number(property.price)} />
+
+                    {/* AI-аар хавсаргасан файлууд */}
+                    <EntityAttachments entityType="property" entityId={property.id} />
 
                     {/* Meta */}
                     <div className="bg-surface rounded-2xl border border-border p-5 text-sm text-muted-foreground">

@@ -85,11 +85,11 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         color: 'rose',
         description: 'Маркетингийн төлөвлөгөө, борлуулалтын стратеги, контент, ROI, зах зээлийн чиг хандлага, ерөнхий бизнес зөвлөгөө. Тоон үндэслэл хэрэгтэй бол DB-ээс татаж болно. Бүтээлч/нээлттэй асуултад.',
         temperature: 0.7,
-        readToolNames: ['get_dashboard_stats', 'get_sales_summary', 'get_contracts_summary', 'list_properties'],
-        writeToolNames: [],
+        readToolNames: ['get_dashboard_stats', 'get_sales_summary', 'get_contracts_summary', 'list_properties', 'get_marketing_summary'],
+        writeToolNames: ['remember_fact'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн БИЗНЕС ЗӨВЛӨХ agent. Таны үүрэг: маркетингийн төлөвлөгөө (Зорилтот бүлэг → Суваг → Контент → Хуваарь → Төсөв → KPI), борлуулалтын стратеги, контент, ROI, Монголын үл хөдлөхийн зах зээлийн зөвлөгөө.
-Бодит тоон үндэслэл шаардвал tool дуудаж DB-ээс мэдээлэл ав. Хэрэгжих боломжтой, тодорхой зөвлөгөө өг.${COMMON_RULES}`, k),
+Бодит тоон үндэслэл шаардвал tool дуудаж DB-ээс мэдээлэл ав. Хэрэгжих боломжтой, тодорхой зөвлөгөө өг. Хэрэглэгч чухал тохиргоо/баримт хэлбэл remember_fact-аар санаж ав.${COMMON_RULES}`, k),
     },
     'operations-admin': {
         id: 'operations-admin',
@@ -113,6 +113,19 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
 4. Анх нэвтэрсний дараа Тохиргоо хэсгээс нууц үгээ солихыг зөвлө.
 5. Хэрэв хэрэглэгч аль хэдийн бүртгэлтэй бол шинэ нууц үг үүсгэхгүй, зөвхөн эрхийг нь шинэчилнэ; нууц үг мартсан бол нэвтрэх хуудасны "нууц үг сэргээх"-ийг ашиглана.
 Эрхгүй (super_admin биш) хэрэглэгчид эелдгээр татгалз.${COMMON_RULES}`, k),
+    },
+    'marketing-specialist': {
+        id: 'marketing-specialist',
+        name: 'Маркетинг мэргэжилтэн',
+        emoji: '📣',
+        color: 'violet',
+        description: 'Маркетингийн гүйцэтгэл (кампанит ажил, ROI, сошиал постын метрик), контент бичих, сошиал постын ноорог/товлосон пост ҮҮСГЭХ. Сурталчилгаа, пост, кампанит ажилтай холбоотой асуулт, үйлдэл.',
+        temperature: 0.6,
+        readToolNames: ['get_marketing_summary', 'get_dashboard_stats', 'list_leads'],
+        writeToolNames: ['create_social_post', 'remember_fact'],
+        buildInstruction: (k) => withKnowledge(
+            `Та бол Vertmon Hub-ийн МАРКЕТИНГ МЭРГЭЖИЛТЭН agent. Таны үүрэг: маркетингийн гүйцэтгэлийг шинжлэх (кампанит ажил, зарцуулалт, CTR, CPA, ROI, сошиал постын метрик), контент/постын текст бичих, сошиал постын ноорог буюу товлосон пост үүсгэх (create_social_post).
+get_marketing_summary-аар бодит тоог ав. Пост үүсгэх нь DB-д ноорог/товлосон болж хадгалагдана (Facebook-д шууд нийтлэхгүй) — гүйцэтгэхээс өмнө систем баталгаажуулалт авна. Контентыг Монгол зах зээлд тохирсон, татах хүчтэй бичнэ.${COMMON_RULES}`, k),
     },
 };
 

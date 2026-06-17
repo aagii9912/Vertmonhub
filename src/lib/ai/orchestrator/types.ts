@@ -15,7 +15,8 @@ export type AgentId =
     | 'crm-specialist'
     | 'finance-analyst'
     | 'advisor'
-    | 'operations-admin';
+    | 'operations-admin'
+    | 'marketing-specialist';
 
 /** Нэг agent-ийн тодорхойлолт (registry дотор). */
 export interface AgentDefinition {

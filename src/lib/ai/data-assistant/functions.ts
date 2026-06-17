@@ -964,6 +964,87 @@ export async function bulkUpdateLeads(shopId: string, args: any, confirm = false
     return { success: true, message: `${ids.length} лийдийн статусыг "${args.new_status}" болгож шинэчиллээ.`, count: ids.length };
 }
 
+// ---- Marketing ----
+
+export async function fetchMarketingSummary(shopId: string, args: any) {
+    const [{ data: campaigns }, { data: posts }] = await Promise.all([
+        supabaseAdmin.from('ad_campaigns').select('name, platform, status, budget, spend, impressions, clicks, conversions, reach').eq('shop_id', shopId),
+        supabaseAdmin.from('social_posts').select('platform, status, likes, comments, shares, reach, engagement_rate, published_at').eq('shop_id', shopId).order('published_at', { ascending: false, nullsFirst: false }).limit(10),
+    ]);
+    const camps = campaigns || [];
+    const totals = camps.reduce((a, c: any) => ({
+        spend: a.spend + Number(c.spend || 0),
+        impressions: a.impressions + Number(c.impressions || 0),
+        clicks: a.clicks + Number(c.clicks || 0),
+        conversions: a.conversions + Number(c.conversions || 0),
+    }), { spend: 0, impressions: 0, clicks: 0, conversions: 0 });
+    return {
+        campaignCount: camps.length,
+        activeCampaigns: camps.filter((c: any) => c.status === 'active').length,
+        totals: {
+            spend: `${totals.spend.toLocaleString()}₮`,
+            impressions: totals.impressions,
+            clicks: totals.clicks,
+            conversions: totals.conversions,
+            ctr: totals.impressions ? `${((totals.clicks / totals.impressions) * 100).toFixed(2)}%` : '0%',
+            cpa: totals.conversions ? `${Math.round(totals.spend / totals.conversions).toLocaleString()}₮` : '-',
+        },
+        campaigns: camps.slice(0, 10),
+        recentPosts: (posts || []).map((p: any) => ({ platform: p.platform, status: p.status, likes: p.likes, comments: p.comments, reach: p.reach, engagement_rate: p.engagement_rate })),
+    };
+}
+
+export async function createSocialPost(shopId: string, args: any, confirm = false, salesManagerName = '') {
+    if (!args.content) return { error: 'content (постын текст) шаардлагатай' };
+    const platforms = ['facebook', 'instagram', 'twitter', 'linkedin', 'tiktok'];
+    const platform = platforms.includes(args.platform) ? args.platform : 'facebook';
+    const status = args.scheduled_at ? 'scheduled' : 'draft';
+
+    const preview = {
+        Суваг: platform,
+        Төлөв: status === 'scheduled' ? 'Товлосон' : 'Ноорог',
+        Хуваарь: args.scheduled_at || '-',
+        Текст: String(args.content).slice(0, 120) + (String(args.content).length > 120 ? '…' : ''),
+    };
+    if (!confirm) return confirmNeeded('create_social_post', { ...args, platform, status }, `Сошиал пост (${status === 'scheduled' ? 'товлосон' : 'ноорог'})`, preview);
+
+    const insert: Record<string, unknown> = {
+        shop_id: shopId, platform, content: args.content, status,
+        media_urls: args.media_url ? [args.media_url] : null,
+    };
+    if (args.scheduled_at) insert.published_at = args.scheduled_at;
+    const { data, error } = await supabaseAdmin.from('social_posts').insert(insert).select('id').single();
+    if (error) return { error: `Алдаа: ${error.message}` };
+    return { success: true, message: `Сошиал пост ${status === 'scheduled' ? 'товлолоо' : 'ноорог болгож хадгаллаа'} (${platform})${salesManagerName ? ` — ${salesManagerName}` : ''}.`, postId: data.id };
+}
+
+// ---- Long-term shop memory ----
+
+/** Shop-ийн урт хугацааны санах ойг (key-value баримтууд) уншина. */
+export async function getShopMemory(shopId: string): Promise<{ key: string; value: string }[]> {
+    const { data } = await supabaseAdmin.from('ai_shop_memory')
+        .select('key, value').eq('shop_id', shopId).order('updated_at', { ascending: false }).limit(30);
+    return data || [];
+}
+
+/** Орчестраторын системд оруулах memory мэдээллийг текст болгоно. */
+export function formatShopMemory(rows: { key: string; value: string }[]): string {
+    if (!rows.length) return '';
+    const list = rows.map((r) => `- ${r.key}: ${r.value}`).join('\n');
+    return `ДЭЛГҮҮРИЙН УРТ ХУГАЦААНЫ САНАХ ОЙ (өмнө сурсан баримтууд):\n${list}`;
+}
+
+/** Баримт сануулах — шууд гүйцэтгэнэ (баталгаажуулалтгүй, эргүүлж засах боломжтой). */
+export async function rememberFact(shopId: string, args: any, _confirm = false, salesManagerName = '') {
+    if (!args.key || !args.value) return { error: 'key ба value шаардлагатай' };
+    const key = String(args.key).slice(0, 80).trim();
+    const value = String(args.value).slice(0, 500).trim();
+    const { error } = await supabaseAdmin.from('ai_shop_memory')
+        .upsert({ shop_id: shopId, key, value, created_by: salesManagerName || null, updated_at: new Date().toISOString() }, { onConflict: 'shop_id,key' });
+    if (error) return { error: `Алдаа: ${error.message}` };
+    return { success: true, message: `Санаж авлаа: "${key}".` };
+}
+
 // ---- File attach (файл хавсаргах) ----
 
 /** Хавсаргах entity-г төрөл + id/нэрээр шийдвэрлэнэ. */
