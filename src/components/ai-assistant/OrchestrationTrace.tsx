@@ -45,9 +45,9 @@ interface Trace {
 const COLOR_MAP: Record<string, { chip: string; dot: string }> = {
     emerald: { chip: 'bg-status-success-soft text-status-success border-status-success/30', dot: 'bg-status-success' },
     violet: { chip: 'bg-brand-soft text-brand-strong border-brand/30', dot: 'bg-brand' },
-    sky: { chip: 'bg-sky-100 text-sky-700 border-sky-300', dot: 'bg-sky-500' },
-    amber: { chip: 'bg-amber-100 text-amber-700 border-amber-300', dot: 'bg-amber-500' },
-    rose: { chip: 'bg-rose-100 text-rose-700 border-rose-300', dot: 'bg-rose-500' },
+    sky: { chip: 'bg-status-info-soft text-status-info border-status-info/30', dot: 'bg-status-info' },
+    amber: { chip: 'bg-status-pending-soft text-status-pending border-status-pending/30', dot: 'bg-status-pending' },
+    rose: { chip: 'bg-status-danger-soft text-status-danger border-status-danger/30', dot: 'bg-status-danger' },
 };
 
 function colorOf(color: string) {

@@ -72,9 +72,9 @@ export function ActionConfirmCard({ action, onReopen }: Props) {
     const isDelete = DELETE_TOOLS.includes(action.tool);
     const isAdmin = ADMIN_TOOLS.includes(action.tool);
     const accentCls = isDelete
-        ? 'border-rose-300 bg-rose-50'
+        ? 'border-status-danger/30 bg-status-danger-soft'
         : isAdmin
-            ? 'border-amber-300 bg-amber-50'
+            ? 'border-status-pending/40 bg-status-pending-soft'
             : 'border-brand/30 bg-brand-soft/40';
 
     return (

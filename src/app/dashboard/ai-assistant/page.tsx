@@ -20,6 +20,7 @@ import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
     ResponsiveContainer, LineChart, Line,
 } from 'recharts';
+import { useChartColors } from '@/hooks/useChartColors';
 
 interface SentAttachment { url: string; name: string; mimeType: string }
 
@@ -54,6 +55,7 @@ const AGENT_LEGEND = [
 
 export default function AIAssistantPage() {
     const { shop } = useAuth();
+    const chartColors = useChartColors();
     const {
         conversations, activeConversationId, setActiveConversationId,
         loading: convLoading, messagesLoading,
@@ -221,19 +223,19 @@ export default function AIAssistantPage() {
                 <ResponsiveContainer width="100%" height="100%">
                     {chartConfig.type === 'line' ? (
                         <LineChart data={chartConfig.data}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} />
-                            <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} />
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartColors.grid} />
+                            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: chartColors.axis, fontSize: 12 }} />
+                            <YAxis axisLine={false} tickLine={false} tick={{ fill: chartColors.axis, fontSize: 12 }} />
                             <Tooltip contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px -1px rgb(0 0 0 / 0.12)' }} />
-                            <Line type="monotone" dataKey="value" stroke="#7C3AED" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
+                            <Line type="monotone" dataKey="value" stroke={chartColors.line} strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} activeDot={{ r: 6 }} />
                         </LineChart>
                     ) : (
                         <BarChart data={chartConfig.data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
-                            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} />
-                            <YAxis axisLine={false} tickLine={false} tick={{ fill: '#6B7280', fontSize: 12 }} />
-                            <Tooltip cursor={{ fill: '#F3F4F6' }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px -1px rgb(0 0 0 / 0.12)' }} />
-                            <Bar dataKey="value" fill="#7C3AED" radius={[6, 6, 0, 0]} maxBarSize={48} />
+                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={chartColors.grid} />
+                            <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: chartColors.axis, fontSize: 12 }} />
+                            <YAxis axisLine={false} tickLine={false} tick={{ fill: chartColors.axis, fontSize: 12 }} />
+                            <Tooltip cursor={{ fill: chartColors.track }} contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px -1px rgb(0 0 0 / 0.12)' }} />
+                            <Bar dataKey="value" fill={chartColors.line} radius={[6, 6, 0, 0]} maxBarSize={48} />
                         </BarChart>
                     )}
                 </ResponsiveContainer>

@@ -13,6 +13,7 @@ import {
     Tooltip,
     Legend,
 } from 'recharts';
+import { useChartColors } from '@/hooks/useChartColors';
 
 interface ChartDataPoint {
     date: string;
@@ -54,6 +55,7 @@ export function SalesChart({ data, type = 'line', height = 300 }: SalesChartProp
 
 
     const chartData = useMemo(() => data || [], [data]);
+    const c = useChartColors();
 
     if (chartData.length === 0) {
         return (
@@ -72,48 +74,48 @@ export function SalesChart({ data, type = 'line', height = 300 }: SalesChartProp
         <ResponsiveContainer width="100%" height={height}>
             {type === 'line' ? (
                 <LineChart {...commonProps}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <CartesianGrid strokeDasharray="3 3" stroke={c.grid} />
                     <XAxis
                         dataKey="label"
-                        tick={{ fontSize: 12, fill: '#6b7280' }}
+                        tick={{ fontSize: 12, fill: c.axis }}
                         tickLine={false}
-                        axisLine={{ stroke: '#e5e7eb' }}
+                        axisLine={{ stroke: c.grid }}
                     />
                     <YAxis
                         tickFormatter={formatRevenue}
-                        tick={{ fontSize: 12, fill: '#6b7280' }}
+                        tick={{ fontSize: 12, fill: c.axis }}
                         tickLine={false}
-                        axisLine={{ stroke: '#e5e7eb' }}
+                        axisLine={{ stroke: c.grid }}
                     />
                     <Tooltip content={<CustomTooltip />} />
                     <Line
                         type="monotone"
                         dataKey="revenue"
-                        stroke="#D4AF37"
+                        stroke={c.line}
                         strokeWidth={2}
-                        dot={{ fill: '#D4AF37', strokeWidth: 2, r: 4 }}
-                        activeDot={{ r: 6, fill: '#D4AF37' }}
+                        dot={{ fill: c.line, strokeWidth: 2, r: 4 }}
+                        activeDot={{ r: 6, fill: c.line }}
                     />
                 </LineChart>
             ) : (
                 <BarChart {...commonProps}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <CartesianGrid strokeDasharray="3 3" stroke={c.grid} />
                     <XAxis
                         dataKey="label"
-                        tick={{ fontSize: 12, fill: '#6b7280' }}
+                        tick={{ fontSize: 12, fill: c.axis }}
                         tickLine={false}
-                        axisLine={{ stroke: '#e5e7eb' }}
+                        axisLine={{ stroke: c.grid }}
                     />
                     <YAxis
                         tickFormatter={formatRevenue}
-                        tick={{ fontSize: 12, fill: '#6b7280' }}
+                        tick={{ fontSize: 12, fill: c.axis }}
                         tickLine={false}
-                        axisLine={{ stroke: '#e5e7eb' }}
+                        axisLine={{ stroke: c.grid }}
                     />
                     <Tooltip content={<CustomTooltip />} />
                     <Bar
                         dataKey="revenue"
-                        fill="#D4AF37"
+                        fill={c.line}
                         radius={[4, 4, 0, 0]}
                     />
                 </BarChart>
