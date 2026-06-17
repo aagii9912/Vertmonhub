@@ -183,12 +183,13 @@ export async function fetchRolePermissions(roleName: string, supabaseClient?: an
             supabase = createClient(supabaseUrl, supabaseKey);
         }
 
-        // Fetch role details + permissions in one go
+        // Fetch role details + permissions in one go.
+        // maybeSingle() — мөр олдохгүй бол 406 биш, null буцаана (static fallback руу шилжинэ).
         const { data: role, error: roleError } = await supabase
             .from('roles')
             .select('*, role_permissions(module)')
             .eq('name', roleName)
-            .single();
+            .maybeSingle();
 
         if (roleError || !role) {
             return getStaticPermissions(roleName);
