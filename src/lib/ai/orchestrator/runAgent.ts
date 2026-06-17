@@ -8,21 +8,28 @@
 
 import { GoogleGenerativeAI, Content } from '@google/generative-ai';
 import { logger } from '@/lib/utils/logger';
-import { readTools, writeTools } from '@/lib/ai/data-assistant/tools';
+import { readTools, writeTools, deleteTools, adminTools } from '@/lib/ai/data-assistant/tools';
 import { executeDataTool } from '@/lib/ai/data-assistant';
 import { generateChartConfig } from '@/lib/ai/data-assistant/functions';
-import type { AgentDefinition, AgentRunResult, OrchestratorContext } from './types';
+import { randomUUID } from 'crypto';
+import type { AgentDefinition, AgentRunResult, OrchestratorContext, PendingAction } from './types';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 const AGENT_MODEL = 'gemini-2.5-flash';
 
 /** Agent-ийн зөвшөөрөгдсөн tool тодорхойлолтуудыг бэлдэнэ (perms-ийг харгалзана). */
-function resolveAgentTools(agent: AgentDefinition, canWrite: boolean) {
+function resolveAgentTools(agent: AgentDefinition, perms: OrchestratorContext['perms']) {
     const reads = readTools.filter((t: any) => agent.readToolNames.includes(t.name));
-    const writes = canWrite
+    const writes = perms.canWrite
         ? writeTools.filter((t: any) => agent.writeToolNames.includes(t.name))
         : [];
-    return [...reads, ...writes];
+    const deletes = perms.canDelete
+        ? deleteTools.filter((t: any) => (agent.deleteToolNames || []).includes(t.name))
+        : [];
+    const admins = perms.role === 'super_admin'
+        ? adminTools.filter((t: any) => (agent.adminToolNames || []).includes(t.name))
+        : [];
+    return [...reads, ...writes, ...deletes, ...admins];
 }
 
 function tokensFrom(response: any): number {
@@ -39,10 +46,11 @@ export async function runAgent(
 ): Promise<AgentRunResult> {
     const started = Date.now();
     const toolsUsed: string[] = [];
+    const pendingActions: PendingAction[] = [];
     let tokens = 0;
 
     try {
-        const tools = resolveAgentTools(agent, ctx.perms.canWrite);
+        const tools = resolveAgentTools(agent, ctx.perms);
         const model = genAI.getGenerativeModel({
             model: AGENT_MODEL,
             systemInstruction: agent.buildInstruction(ctx.shopKnowledge),
@@ -66,10 +74,28 @@ export async function runAgent(
 
             for (const fc of functionCalls) {
                 toolsUsed.push(fc.name);
-                const toolResult = await executeDataTool(fc.name, fc.args || {}, ctx.shopId, ctx.perms, ctx.userId);
-                toolResponses.push({ functionResponse: { name: fc.name, response: { result: toolResult } } });
-                data = toolResult;
-                chartConfig = generateChartConfig(fc.name, fc.args || {}, toolResult) || chartConfig;
+                // Mutating tool-уудыг confirm=false-ээр дуудна → preview буцаана (гүйцэтгэхгүй).
+                const toolResult = await executeDataTool(fc.name, fc.args || {}, ctx.shopId, ctx.perms, ctx.userId, false);
+
+                // Баталгаажуулалт шаардсан үйлдлийг pending болгож цуглуулна.
+                if (toolResult && toolResult.requiresConfirmation) {
+                    pendingActions.push({
+                        id: randomUUID(),
+                        tool: toolResult.action.tool,
+                        args: toolResult.action.args || {},
+                        label: toolResult.label || 'Үйлдэл',
+                        preview: toolResult.preview || {},
+                        agentId: agent.id,
+                        agentName: agent.name,
+                        emoji: agent.emoji,
+                    });
+                    // Gemini-д "хэрэглэгчийн баталгаажуулалт хүлээж байна" гэж мэдэгдэнэ.
+                    toolResponses.push({ functionResponse: { name: fc.name, response: { result: { status: 'awaiting_user_confirmation', label: toolResult.label, preview: toolResult.preview } } } });
+                } else {
+                    toolResponses.push({ functionResponse: { name: fc.name, response: { result: toolResult } } });
+                    data = toolResult;
+                    chartConfig = generateChartConfig(fc.name, fc.args || {}, toolResult) || chartConfig;
+                }
             }
 
             const synthesis = await chat.sendMessage(toolResponses.map((tr) => ({ functionResponse: tr.functionResponse })));
@@ -83,6 +109,7 @@ export async function runAgent(
                 tokens,
                 latencyMs: Date.now() - started,
                 ok: true,
+                pendingActions,
             };
         }
 
@@ -94,6 +121,7 @@ export async function runAgent(
             tokens,
             latencyMs: Date.now() - started,
             ok: true,
+            pendingActions,
         };
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
@@ -107,6 +135,7 @@ export async function runAgent(
             latencyMs: Date.now() - started,
             ok: false,
             error: message,
+            pendingActions,
         };
     }
 }

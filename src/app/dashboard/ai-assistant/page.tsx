@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAIConversations } from '@/hooks/useAIConversations';
 import { ConversationSidebar } from '@/components/ai-assistant/ConversationSidebar';
 import { AgentBadges, OrchestrationTrace, type AgentBadge } from '@/components/ai-assistant/OrchestrationTrace';
+import { ActionConfirmCard, type PendingActionUI } from '@/components/ai-assistant/ActionConfirmCard';
 import type { AIConversationMessage } from '@/hooks/useAIConversations';
 import {
     Send, Bot, User, Sparkles, Loader2, MessageSquare, Network,
@@ -22,6 +23,7 @@ interface Message {
     data?: any;
     agentsUsed?: AgentBadge[];
     trace?: any;
+    pendingActions?: PendingActionUI[];
 }
 
 const WELCOME_MSG = 'Сайн байна уу! 👋 Би Vertmon AI Orchestrator. Таны асуултыг шинжилж, тохирох мэргэжилтэн agent (Дата аналист, Байрны мэргэжилтэн, CRM, Санхүү, Зөвлөх)-д автоматаар замчилж хариулна. Юу асуух вэ?';
@@ -133,6 +135,7 @@ export default function AIAssistantPage() {
                 data: data.data,
                 agentsUsed: data.agentsUsed,
                 trace: data.trace,
+                pendingActions: (data.pendingActions || []).map((a: any) => ({ ...a, status: 'pending' as const })),
             };
 
             setMessages(prev => [...prev, assistantMsg]);
@@ -166,6 +169,42 @@ export default function AIAssistantPage() {
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const updatePendingAction = (actionId: string, patch: Partial<PendingActionUI>) => {
+        setMessages(prev => prev.map(m => m.pendingActions ? {
+            ...m,
+            pendingActions: m.pendingActions.map(a => a.id === actionId ? { ...a, ...patch } : a),
+        } : m));
+    };
+
+    const handleApproveAction = async (action: PendingActionUI) => {
+        updatePendingAction(action.id, { status: 'running' });
+        try {
+            const res = await fetch('/api/ai-assistant/action', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    shopId: shop?.id,
+                    tool: action.tool,
+                    args: action.args,
+                    conversationId: currentConversationId,
+                }),
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                updatePendingAction(action.id, { status: 'done', resultMessage: data.message });
+                if (currentConversationId) touchConversation(currentConversationId);
+            } else {
+                updatePendingAction(action.id, { status: 'error', resultMessage: data.message || data.error || 'Алдаа гарлаа' });
+            }
+        } catch {
+            updatePendingAction(action.id, { status: 'error', resultMessage: 'Сүлжээний алдаа гарлаа' });
+        }
+    };
+
+    const handleCancelAction = (action: PendingActionUI) => {
+        updatePendingAction(action.id, { status: 'cancelled' });
     };
 
     const renderChart = (chartConfig: any) => {
@@ -275,6 +314,14 @@ export default function AIAssistantPage() {
                                             <p className="whitespace-pre-wrap leading-relaxed text-[15px]">{message.content}</p>
                                         </div>
                                         {message.chartConfig && renderChart(message.chartConfig)}
+                                        {message.role === 'assistant' && message.pendingActions && message.pendingActions.map((a) => (
+                                            <ActionConfirmCard
+                                                key={a.id}
+                                                action={a}
+                                                onApprove={handleApproveAction}
+                                                onCancel={handleCancelAction}
+                                            />
+                                        ))}
                                         {message.role === 'assistant' && message.trace && (
                                             <OrchestrationTrace trace={message.trace} />
                                         )}

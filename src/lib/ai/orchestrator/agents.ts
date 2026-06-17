@@ -40,26 +40,28 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         name: 'Байрны мэргэжилтэн',
         emoji: '🏠',
         color: 'sky',
-        description: 'Үл хөдлөх хөрөнгийн жагсаалт, үнэ, статус, м², өрөө, дүүрэг, байр харьцуулах, борлуулалтын прогноз. Байр/орон сууцтай холбоотой асуултад.',
+        description: 'Үл хөдлөх хөрөнгийн жагсаалт, үнэ, статус, м², өрөө, дүүрэг, байр харьцуулах, борлуулалтын прогноз. Шинэ байр НЭМЭХ, байр УСТГАХ. Байр/орон сууцтай холбоотой бүх асуулт, үйлдэл.',
         temperature: 0.3,
         readToolNames: ['list_properties', 'compare_properties', 'get_product_stats', 'get_sales_summary', 'get_sales_forecast'],
-        writeToolNames: ['update_property_status', 'update_property_price'],
+        writeToolNames: ['update_property_status', 'update_property_price', 'create_property'],
+        deleteToolNames: ['delete_property'],
         buildInstruction: (k) => withKnowledge(
-            `Та бол Vertmon Hub-ийн БАЙРНЫ МЭРГЭЖИЛТЭН agent. Таны үүрэг: үл хөдлөх хөрөнгийн дэлгэрэнгүй (үнэ, статус, м², өрөө, байршил), байр харьцуулах, эрэлт/прогноз.
-Хэрэв танд бичих эрх олгогдсон бол байрны статус/үнийг шинэчилж болно — юу өөрчилснөө тодорхой хэлнэ.${COMMON_RULES}`, k),
+            `Та бол Vertmon Hub-ийн БАЙРНЫ МЭРГЭЖИЛТЭН agent. Таны үүрэг: үл хөдлөх хөрөнгийн дэлгэрэнгүй (үнэ, статус, м², өрөө, байршил), байр харьцуулах, эрэлт/прогноз, шинэ байр нэмэх, байр устгах.
+Хэрэв танд бичих/устгах эрх олгогдсон бол байр нэмэх, статус/үнэ шинэчлэх, устгаж болно. БҮХ өөрчлөлт/устгалыг гүйцэтгэхээс өмнө систем хэрэглэгчээс баталгаажуулалт авна — чи зүгээр л зөв tool-оо дуудаж, юу хийхээ тодорхой хэл.${COMMON_RULES}`, k),
     },
     'crm-specialist': {
         id: 'crm-specialist',
         name: 'CRM мэргэжилтэн',
         emoji: '🤝',
         color: 'violet',
-        description: 'Лийд/сонирхогчид, харилцагчийн мэдээлэл, тагууд, тэмдэглэл, лийдийн дэлгэрэнгүй, статус шинэчлэх, тэмдэглэл нэмэх. Худалдан авагч, лийд, харилцагчтай холбоотой асуултад.',
+        description: 'Лийд/сонирхогчид, харилцагчийн мэдээлэл, тагууд, тэмдэглэл, лийдийн дэлгэрэнгүй. Шинэ лийд/харилцагч ҮҮСГЭХ, лийд УСТГАХ, статус шинэчлэх. Худалдан авагч, лийд, харилцагчтай холбоотой бүх асуулт, үйлдэл.',
         temperature: 0.35,
         readToolNames: ['list_leads', 'get_lead_details', 'get_customer_insights', 'list_properties'],
-        writeToolNames: ['update_lead_status', 'add_lead_note'],
+        writeToolNames: ['update_lead_status', 'add_lead_note', 'create_lead', 'create_customer'],
+        deleteToolNames: ['delete_lead'],
         buildInstruction: (k) => withKnowledge(
-            `Та бол Vertmon Hub-ийн CRM МЭРГЭЖИЛТЭН agent. Таны үүрэг: лийд/харилцагчийн менежмент — жагсаалт, дэлгэрэнгүй, төсөв, сонирхол, тагууд, тэмдэглэл.
-Хэрэв танд бичих эрх олгогдсон бол лийдийн статус солих, тэмдэглэл нэмж болно.${COMMON_RULES}`, k),
+            `Та бол Vertmon Hub-ийн CRM МЭРГЭЖИЛТЭН agent. Таны үүрэг: лийд/харилцагчийн менежмент — жагсаалт, дэлгэрэнгүй, төсөв, сонирхол, тагууд, тэмдэглэл, шинэ лийд/харилцагч үүсгэх, лийд устгах.
+Хэрэв танд бичих/устгах эрх олгогдсон бол лийд/харилцагч үүсгэх, статус солих, тэмдэглэл нэмэх, устгаж болно. БҮХ үүсгэх/устгах/өөрчлөх үйлдлийг гүйцэтгэхээс өмнө систем хэрэглэгчээс баталгаажуулалт авна — чи зөв tool-оо дуудаж, юу хийхээ тодорхой хэл.${COMMON_RULES}`, k),
     },
     'finance-analyst': {
         id: 'finance-analyst',
@@ -86,6 +88,21 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн БИЗНЕС ЗӨВЛӨХ agent. Таны үүрэг: маркетингийн төлөвлөгөө (Зорилтот бүлэг → Суваг → Контент → Хуваарь → Төсөв → KPI), борлуулалтын стратеги, контент, ROI, Монголын үл хөдлөхийн зах зээлийн зөвлөгөө.
 Бодит тоон үндэслэл шаардвал tool дуудаж DB-ээс мэдээлэл ав. Хэрэгжих боломжтой, тодорхой зөвлөгөө өг.${COMMON_RULES}`, k),
+    },
+    'operations-admin': {
+        id: 'operations-admin',
+        name: 'Үйл ажиллагаа/Админ',
+        emoji: '🛡️',
+        color: 'rose',
+        description: 'Хэрэглэгч урих, дүр (role) оноох/үүсгэх, эрх удирдах зэрэг өндөр эрхийн админ үйлдлүүд. ЗӨВХӨН super_admin-д зориулсан. Хэрэглэгч/баг/эрхтэй холбоотой асуултад.',
+        temperature: 0.2,
+        readToolNames: ['get_dashboard_stats'],
+        writeToolNames: [],
+        deleteToolNames: [],
+        adminToolNames: ['invite_user', 'assign_role', 'create_role'],
+        buildInstruction: (k) => withKnowledge(
+            `Та бол Vertmon Hub-ийн ҮЙЛ АЖИЛЛАГАА/АДМИН agent. Таны үүрэг: хэрэглэгч урих (invite_user), дүр оноох (assign_role), шинэ дүр үүсгэх (create_role).
+Эдгээр нь ЗӨВХӨН super_admin-д нээлттэй өндөр эрхийн үйлдэл. Үйлдэл бүрийг гүйцэтгэхээс өмнө систем хэрэглэгчээс баталгаажуулалт авна — чи зөв tool-оо дуудаж, юу хийхээ тодорхой хэл. Эрхгүй бол эелдгээр татгалз.${COMMON_RULES}`, k),
     },
 };
 

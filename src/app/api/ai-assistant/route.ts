@@ -160,6 +160,7 @@ export async function POST(req: Request) {
             chartConfig: response.chartConfig,
             agentsUsed: response.agentsUsed,
             trace: response.trace,
+            pendingActions: response.pendingActions,
             conversationId: activeConversationId || null,
         });
     } catch (error) {
