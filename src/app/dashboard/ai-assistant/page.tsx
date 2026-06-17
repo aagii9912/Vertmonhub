@@ -9,6 +9,7 @@ import { ActionConfirmCard, type PendingActionUI } from '@/components/ai-assista
 import { ChatComposer, type ChatAttachment } from '@/components/ai-assistant/ChatComposer';
 import { MessageAttachments } from '@/components/ai-assistant/MessageAttachments';
 import { MarkdownMessage } from '@/components/ai-assistant/MarkdownMessage';
+import { MessageActions } from '@/components/ai-assistant/MessageActions';
 import type { AIConversationMessage } from '@/hooks/useAIConversations';
 import {
     Bot, User, Sparkles, Loader2, MessageSquare, Network,
@@ -87,18 +88,13 @@ export default function AIAssistantPage() {
         })));
     }, [loadMessages, setActiveConversationId]);
 
-    const sendMessage = async (text: string, attachments: ChatAttachment[]) => {
-        const userMessage = text.trim();
-        const ready: SentAttachment[] = attachments.filter(a => a.url).map(a => ({ url: a.url!, name: a.name, mimeType: a.mimeType }));
-        if (!userMessage && ready.length === 0) return;
-
-        const newMessage: Message = {
-            id: Date.now().toString(), role: 'user',
-            content: userMessage || '(файл хавсаргав)', attachments: ready,
-        };
-        setMessages(prev => [...prev, newMessage]);
+    /** Серверээс хариу авч, assistant мессеж нэмэх цөм логик (send + regenerate хуваалцана). */
+    const requestAssistant = async (
+        userMessage: string,
+        attachments: SentAttachment[],
+        history: { role: string; content: string }[],
+    ) => {
         setIsLoading(true);
-
         try {
             const response = await fetch('/api/ai-assistant', {
                 method: 'POST',
@@ -107,8 +103,8 @@ export default function AIAssistantPage() {
                     message: userMessage || 'Хавсаргасан файлыг шинжилж туслаач.',
                     shopId: shop?.id,
                     conversationId: currentConversationId,
-                    attachments: ready,
-                    history: messages.filter(m => m.id !== 'init').map(m => ({ role: m.role, content: m.content })),
+                    attachments,
+                    history,
                 }),
             });
             if (!response.ok) throw new Error('Failed to fetch');
@@ -136,6 +132,31 @@ export default function AIAssistantPage() {
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const sendMessage = async (text: string, attachments: ChatAttachment[]) => {
+        const userMessage = text.trim();
+        const ready: SentAttachment[] = attachments.filter(a => a.url).map(a => ({ url: a.url!, name: a.name, mimeType: a.mimeType }));
+        if (!userMessage && ready.length === 0) return;
+
+        const history = messages.filter(m => m.id !== 'init').map(m => ({ role: m.role, content: m.content }));
+        setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: userMessage || '(файл хавсаргав)', attachments: ready }]);
+        await requestAssistant(userMessage, ready, history);
+    };
+
+    /** Сүүлийн хариуг дахин үүсгэх: өмнөх хэрэглэгчийн мессежээр дахин дуудна. */
+    const regenerate = async (assistantId: string) => {
+        if (isLoading) return;
+        const idx = messages.findIndex(m => m.id === assistantId);
+        if (idx <= 0) return;
+        let uIdx = idx - 1;
+        while (uIdx >= 0 && messages[uIdx].role !== 'user') uIdx--;
+        if (uIdx < 0) return;
+        const userMsg = messages[uIdx];
+        const history = messages.slice(0, uIdx).filter(m => m.id !== 'init').map(m => ({ role: m.role, content: m.content }));
+        const attachments = userMsg.attachments || [];
+        setMessages(prev => prev.slice(0, idx)); // assistant хариунаас хойшхийг хасна
+        await requestAssistant(userMsg.content === '(файл хавсаргав)' ? '' : userMsg.content, attachments, history);
     };
 
     const updatePendingAction = (actionId: string, patch: Partial<PendingActionUI>) => {
@@ -264,7 +285,7 @@ export default function AIAssistantPage() {
                     ) : (
                         <div className="space-y-6">
                             {messages.map((message) => (
-                                <div key={message.id} className={`flex gap-3 md:gap-4 max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-2 duration-300 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                <div key={message.id} className={`flex gap-3 md:gap-4 max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-2 duration-300 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                                     {message.role === 'assistant' && (
                                         <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand to-brand-strong flex items-center justify-center flex-shrink-0 mt-1 shadow-sm">
                                             <Bot className="w-5 h-5 text-white" />
@@ -293,6 +314,9 @@ export default function AIAssistantPage() {
                                             <ActionConfirmCard key={a.id} action={a} onApprove={handleApproveAction} onCancel={handleCancelAction} />
                                         ))}
                                         {message.role === 'assistant' && message.trace && <OrchestrationTrace trace={message.trace} />}
+                                        {message.role === 'assistant' && message.id !== 'init' && message.content && (
+                                            <MessageActions content={message.content} onRegenerate={() => regenerate(message.id)} disabled={isLoading} />
+                                        )}
                                     </div>
                                     {message.role === 'user' && (
                                         <div className="w-8 h-8 rounded-full bg-surface-2 flex items-center justify-center flex-shrink-0 mt-1 order-2">
@@ -302,7 +326,7 @@ export default function AIAssistantPage() {
                                 </div>
                             ))}
                             {isLoading && (
-                                <div className="flex gap-4 justify-start max-w-3xl mx-auto animate-in fade-in duration-200">
+                                <div className="flex gap-4 justify-start max-w-4xl mx-auto animate-in fade-in duration-200">
                                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand to-brand-strong flex items-center justify-center flex-shrink-0 mt-1 shadow-sm">
                                         <Bot className="w-5 h-5 text-white" />
                                     </div>

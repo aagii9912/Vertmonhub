@@ -89,7 +89,7 @@ export function ChatComposer({ disabled, shopId, onSend, showSuggestions, sugges
 
     return (
         <div className="px-4 md:px-6 py-4 bg-surface border-t border-border/60">
-            <div className="max-w-3xl mx-auto">
+            <div className="max-w-4xl mx-auto">
                 {showSuggestions && suggestions.length > 0 && attachments.length === 0 && !input && (
                     <div className="mb-2 flex gap-2 overflow-x-auto pb-1 hide-scrollbar">
                         {suggestions.map(s => (
