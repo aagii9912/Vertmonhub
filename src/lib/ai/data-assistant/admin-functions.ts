@@ -32,7 +32,7 @@ async function findUserIdByEmail(db: ReturnType<typeof supabaseAdmin>, email: st
 }
 
 /**
- * Хэрэглэгчийг үүсгэж дүр + дэлгүүрийн гишүүнчлэл онооно.
+ * Хэрэглэгчийг үүсгэж дүр + төслийн гишүүнчлэл онооно.
  * Имэйл хүргэлтээс ХАМААРАХГҮЙ: түр нууц үгтэй шууд үүсгээд, нэвтрэх мэдээллийг
  * буцаана (супер админ тухайн хүнд дамжуулна).
  */
@@ -44,7 +44,7 @@ export async function inviteUser(shopId: string, args: any, confirm = false) {
     if (!confirm) {
         return confirmNeeded('invite_user', { email: args.email, role, shop_id: targetShop },
             `Хэрэглэгч нэмэх: ${args.email}`,
-            { Имэйл: args.email, 'Дүр (role)': role, 'Дэлгүүр': targetShop || '-' });
+            { Имэйл: args.email, 'Дүр (role)': role, 'Төсөл': targetShop || '-' });
     }
 
     const db = supabaseAdmin();

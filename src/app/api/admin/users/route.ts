@@ -156,7 +156,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Shop-д гишүүнээр оноох. shop_id өгөгдсөн бол түүнийг, эс бөгөөс ганц л shop
-        // байвал автоматаар тэр shop-д холбоно (нэг компанийн дотоод системд хялбар болгох).
+        // байвал автоматаар тэр shop-д холбоно (нэг төслийн дотоод системд хялбар болгох).
         let targetShopId: string | null = shop_id || null;
         if (!targetShopId) {
             const { data: shopRows } = await supabase.from('shops').select('id').limit(2);

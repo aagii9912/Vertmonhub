@@ -14,7 +14,7 @@ export async function POST(request: Request) {
         const { shopId } = body;
 
         if (!shopId) {
-            return NextResponse.json({ error: 'Shop ID is required' }, { status: 400 });
+            return NextResponse.json({ error: 'Төслийн ID шаардлагатай' }, { status: 400 });
         }
 
         const supabase = supabaseAdmin();
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
             .single();
 
         if (error || !shop) {
-            return NextResponse.json({ error: 'Shop not found or access denied' }, { status: 404 });
+            return NextResponse.json({ error: 'Төсөл олдсонгүй эсвэл хандах эрхгүй' }, { status: 404 });
         }
 
         let hasAccess = shop.user_id === userId;
@@ -42,7 +42,7 @@ export async function POST(request: Request) {
         }
 
         if (!hasAccess) {
-            return NextResponse.json({ error: 'Shop not found or access denied' }, { status: 404 });
+            return NextResponse.json({ error: 'Төсөл олдсонгүй эсвэл хандах эрхгүй' }, { status: 404 });
         }
 
         // The actual switching is handled client-side via localStorage + context

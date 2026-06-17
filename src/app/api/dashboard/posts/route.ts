@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth/auth';
+import { getAccessibleShopIds } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { decryptToken } from '@/lib/crypto/tokens';
@@ -18,7 +19,13 @@ export async function GET(request: NextRequest) {
 
         const shopId = request.headers.get('x-shop-id');
         if (!shopId) {
-            return NextResponse.json({ error: 'Shop ID required' }, { status: 400 });
+            return NextResponse.json({ error: 'Төслийн ID шаардлагатай' }, { status: 400 });
+        }
+
+        // Тухайн хэрэглэгч энэ төсөлд (shop) хандах эрхтэй эсэхийг баталгаажуулна
+        const accessibleIds = await getAccessibleShopIds(userId);
+        if (!accessibleIds.has(shopId)) {
+            return NextResponse.json({ error: 'Энэ төсөлд хандах эрхгүй' }, { status: 403 });
         }
 
         const supabase = supabaseAdmin();
@@ -29,7 +36,7 @@ export async function GET(request: NextRequest) {
             .single();
 
         if (!shop) {
-            return NextResponse.json({ error: 'Shop not found' }, { status: 404 });
+            return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 404 });
         }
 
         const posts: Array<{
