@@ -57,13 +57,21 @@ export async function inviteUser(shopId: string, args: any, confirm = false) {
         user_metadata: {},
     });
 
-    // Аль хэдийн бүртгэлтэй бол — зөвхөн эрх онооно
+    // Аль хэдийн бүртгэлтэй бол — нууц үгийг шинэ түр нууц үгээр тохируулж, эрх онооно
     if (error || !created?.user) {
         const existingId = await findUserIdByEmail(db, args.email);
         if (!existingId) return { error: `Хэрэглэгч үүсгэхэд алдаа: ${error?.message || 'тодорхойгүй'}` };
+        // Нууц үгийг шинэчилж, имэйлийг баталгаажуулна (имэйлээс хамаарахгүй нэвтрэх боломж)
+        await db.auth.admin.updateUserById(existingId, { password: tempPassword, email_confirm: true });
         await db.from('user_roles').upsert({ user_id: existingId, role }, { onConflict: 'user_id' });
         if (targetShop) await db.from('shop_members').upsert({ shop_id: targetShop, user_id: existingId, role: 'member' }, { onConflict: 'shop_id,user_id' });
-        return { success: true, message: `${args.email} аль хэдийн бүртгэлтэй байсан тул "${role}" эрх оноолоо. Нууц үгээ мартсан бол ${loginUrl()} хаягийн "Нууц үг сэргээх"-ийг ашиглана.`, userId: existingId };
+        return {
+            success: true,
+            message: `${args.email} аль хэдийн бүртгэлтэй байсан тул "${role}" эрх оноож, нэвтрэх нууц үгийг шинэчиллээ. Доорхийг тухайн хүнд дамжуулна уу:\n\n` +
+                `- **Имэйл:** ${args.email}\n- **Түр нууц үг:** \`${tempPassword}\`\n- **Нэвтрэх хаяг:** ${loginUrl()}\n- **Эрх:** ${role}\n\n` +
+                `Анх нэвтэрсний дараа нууц үгээ солихыг зөвлөж байна.`,
+            userId: existingId,
+        };
     }
 
     const uid = created.user.id;
