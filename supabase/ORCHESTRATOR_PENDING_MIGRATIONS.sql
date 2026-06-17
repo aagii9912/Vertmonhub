@@ -25,6 +25,12 @@ CREATE INDEX IF NOT EXISTS idx_property_viewings_deleted_at  ON property_viewing
 CREATE INDEX IF NOT EXISTS idx_property_contracts_deleted_at ON property_contracts (shop_id, deleted_at);
 CREATE INDEX IF NOT EXISTS idx_customers_deleted_at          ON customers          (shop_id, deleted_at);
 
+-- 3b) 20260617160000 — ai_conversations.mode allow 'orchestrator' (чат түүх хадгалагдах засвар)
+ALTER TABLE ai_conversations DROP CONSTRAINT IF EXISTS ai_conversations_mode_check;
+ALTER TABLE ai_conversations
+    ADD CONSTRAINT ai_conversations_mode_check CHECK (mode IN ('data', 'general', 'orchestrator'));
+ALTER TABLE ai_conversations ALTER COLUMN mode SET DEFAULT 'orchestrator';
+
 -- 4) 20260617140000 — ai_attachments (файл хавсралт)
 CREATE TABLE IF NOT EXISTS ai_attachments (
     id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
