@@ -11,7 +11,31 @@ function confirmNeeded(tool: string, args: any, label: string, preview: Record<s
     return { requiresConfirmation: true, action: { tool, args }, label, preview };
 }
 
-/** Хэрэглэгчийг имэйлээр урьж, дүр + дэлгүүрийн гишүүнчлэл онооно. */
+/** Аппын нэвтрэх хаягийг тодорхойлно. */
+function loginUrl(): string {
+    const base = (process.env.NEXT_PUBLIC_APP_URL || '').trim().replace(/\/$/, '');
+    return base ? `${base}/auth/login` : '(аппын нэвтрэх хуудас)';
+}
+
+/** Хүчтэй түр нууц үг үүсгэнэ. */
+function genPassword(): string {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    let p = '';
+    for (let i = 0; i < 10; i++) p += chars[Math.floor(Math.random() * chars.length)];
+    return `Vh${p}!`; // том/жижиг үсэг + тоо + тэмдэгт баталгаажуулна
+}
+
+/** user_profiles-оос имэйлээр хэрэглэгчийн id олох (re-invite үед). */
+async function findUserIdByEmail(db: ReturnType<typeof supabaseAdmin>, email: string): Promise<string | null> {
+    const { data } = await db.from('user_profiles').select('id').ilike('email', email).maybeSingle();
+    return data?.id || null;
+}
+
+/**
+ * Хэрэглэгчийг үүсгэж дүр + дэлгүүрийн гишүүнчлэл онооно.
+ * Имэйл хүргэлтээс ХАМААРАХГҮЙ: түр нууц үгтэй шууд үүсгээд, нэвтрэх мэдээллийг
+ * буцаана (супер админ тухайн хүнд дамжуулна).
+ */
 export async function inviteUser(shopId: string, args: any, confirm = false) {
     if (!args.email) return { error: 'email шаардлагатай' };
     const role = args.role || 'viewer';
@@ -19,22 +43,41 @@ export async function inviteUser(shopId: string, args: any, confirm = false) {
 
     if (!confirm) {
         return confirmNeeded('invite_user', { email: args.email, role, shop_id: targetShop },
-            `Хэрэглэгч урих: ${args.email}`,
+            `Хэрэглэгч нэмэх: ${args.email}`,
             { Имэйл: args.email, 'Дүр (role)': role, 'Дэлгүүр': targetShop || '-' });
     }
 
     const db = supabaseAdmin();
-    const { data: invited, error } = await db.auth.admin.inviteUserByEmail(args.email);
-    if (error || !invited?.user) {
-        return { error: `Урилга илгээхэд алдаа: ${error?.message || 'тодорхойгүй (Supabase email тохиргоо шалгана уу)'}` };
+    const tempPassword = genPassword();
+
+    const { data: created, error } = await db.auth.admin.createUser({
+        email: args.email,
+        password: tempPassword,
+        email_confirm: true,
+        user_metadata: {},
+    });
+
+    // Аль хэдийн бүртгэлтэй бол — зөвхөн эрх онооно
+    if (error || !created?.user) {
+        const existingId = await findUserIdByEmail(db, args.email);
+        if (!existingId) return { error: `Хэрэглэгч үүсгэхэд алдаа: ${error?.message || 'тодорхойгүй'}` };
+        await db.from('user_roles').upsert({ user_id: existingId, role }, { onConflict: 'user_id' });
+        if (targetShop) await db.from('shop_members').upsert({ shop_id: targetShop, user_id: existingId, role: 'member' }, { onConflict: 'shop_id,user_id' });
+        return { success: true, message: `${args.email} аль хэдийн бүртгэлтэй байсан тул "${role}" эрх оноолоо. Нууц үгээ мартсан бол ${loginUrl()} хаягийн "Нууц үг сэргээх"-ийг ашиглана.`, userId: existingId };
     }
-    const uid = invited.user.id;
+
+    const uid = created.user.id;
     await db.from('user_profiles').upsert({ id: uid, email: args.email });
     await db.from('user_roles').upsert({ user_id: uid, role }, { onConflict: 'user_id' });
-    if (targetShop) {
-        await db.from('shop_members').upsert({ shop_id: targetShop, user_id: uid, role: 'member' }, { onConflict: 'shop_id,user_id' });
-    }
-    return { success: true, message: `${args.email} хаягт урилга илгээж, "${role}" дүр оноолоо.`, userId: uid };
+    if (targetShop) await db.from('shop_members').upsert({ shop_id: targetShop, user_id: uid, role: 'member' }, { onConflict: 'shop_id,user_id' });
+
+    return {
+        success: true,
+        message: `Хэрэглэгч амжилттай үүсгэлээ. Доорх нэвтрэх мэдээллийг тухайн хүнд дамжуулна уу (имэйл автоматаар илгээгдэхгүй):\n\n` +
+            `- **Имэйл:** ${args.email}\n- **Түр нууц үг:** \`${tempPassword}\`\n- **Нэвтрэх хаяг:** ${loginUrl()}\n- **Эрх:** ${role}\n\n` +
+            `Тухайн хүн анх нэвтэрсний дараа нууц үгээ солихыг зөвлөж байна.`,
+        userId: uid,
+    };
 }
 
 /** Бүртгэлтэй хэрэглэгчид (имэйлээр) дүр оноох/солих. */
