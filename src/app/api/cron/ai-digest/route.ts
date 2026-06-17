@@ -4,7 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { sendPushNotification } from '@/lib/notifications';
 
 /**
- * AI өдрийн тойм (proactive digest). Push бүхий дэлгүүр бүрт өнөөдрийн шинэ лийд,
+ * AI өдрийн тойм (proactive digest). Push бүхий төсөл бүрт өнөөдрийн шинэ лийд,
  * хугацаа хэтэрсэн гэрээ, удахгүйх үзлэгийн товч мэдээллийг push-аар илгээнэ.
  * Өдөрт нэг удаа (vercel.json cron). CRON_SECRET-ээр хамгаалагдсан.
  */
@@ -43,7 +43,7 @@ async function run(request: Request) {
             });
             sent++;
         } catch {
-            // нэг дэлгүүрийн алдаа бусдыг зогсоохгүй
+            // нэг төслийн алдаа бусдыг зогсоохгүй
         }
     }
 
