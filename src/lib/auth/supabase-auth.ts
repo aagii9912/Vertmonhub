@@ -130,6 +130,45 @@ export function supabaseAdmin() {
 }
 
 /**
+ * Хэрэглэгчийн хандаж болох бүх төсөл (shop)-ийн id-г буцаана: эзэмшсэн + гишүүн.
+ * Эзэмшсэн shop-ууд эхэнд (insertion order хадгалагдана).
+ */
+export async function getAccessibleShopIds(userId: string): Promise<Set<string>> {
+    const supabase = supabaseAdmin();
+    const [{ data: ownedRows }, { data: memberRows }] = await Promise.all([
+        supabase.from('shops').select('id').eq('user_id', userId),
+        supabase.from('shop_members').select('shop_id').eq('user_id', userId),
+    ]);
+
+    const ids = [
+        ...((ownedRows || []).map(r => r.id)),
+        ...((memberRows || []).map(r => r.shop_id)),
+    ];
+    return new Set<string>(ids);
+}
+
+/**
+ * Зорилтот төсөл (shop)-д хэрэглэгч хандах эрхтэй эсэхийг шалгана.
+ * shopId өгөгдөөгүй бол x-shop-id header-ээс, эс бөгөөс эхний хандах боломжтой
+ * shop-ыг сонгоно. Зөвшөөрвөл зорилтот shopId, эс бөгөөс null буцаана.
+ * ХЭРЭГЛЭЭ: client-аас ирсэн shop_id-г шууд итгэхгүйгээр гишүүнчлэлээр баталгаажуулах.
+ */
+export async function assertShopAccess(shopId?: string | null): Promise<string | null> {
+    const userId = await getUserId();
+    if (!userId) return null;
+
+    const headerList = await headers();
+    const requested = shopId || headerList.get('x-shop-id') || undefined;
+
+    const accessibleIds = await getAccessibleShopIds(userId);
+    if (requested) {
+        return accessibleIds.has(requested) ? requested : null;
+    }
+    const first = accessibleIds.values().next().value;
+    return first ?? null;
+}
+
+/**
  * Get shop for authenticated user
  */
 export async function getUserShop() {
@@ -142,17 +181,8 @@ export async function getUserShop() {
     const headerList = await headers();
     const requestedShopId = headerList.get('x-shop-id');
 
-    const supabase = supabaseAdmin();
-
     // Хэрэглэгчийн хандаж болох shop-уудыг цуглуулна: эзэмшсэн + гишүүн байгаа
-    const [{ data: ownedRows }, { data: memberRows }] = await Promise.all([
-        supabase.from('shops').select('id').eq('user_id', userId),
-        supabase.from('shop_members').select('shop_id').eq('user_id', userId),
-    ]);
-
-    const ownedIds = (ownedRows || []).map(r => r.id);
-    const memberIds = (memberRows || []).map(r => r.shop_id);
-    const accessibleIds = new Set<string>([...ownedIds, ...memberIds]);
+    const accessibleIds = await getAccessibleShopIds(userId);
 
     // Зорилтот shop-ыг тодорхойлно: хүсэлтийн shop эсвэл эзэмшсэн/гишүүн эхнийх
     let targetId = requestedShopId || undefined;
@@ -160,12 +190,13 @@ export async function getUserShop() {
         return null; // Энэ shop руу хандах эрхгүй
     }
     if (!targetId) {
-        targetId = ownedIds[0] || memberIds[0];
+        targetId = accessibleIds.values().next().value;
     }
     if (!targetId) {
         return null;
     }
 
+    const supabase = supabaseAdmin();
     const { data: shop, error } = await supabase
         .from('shops')
         .select('id, name, owner_name, phone, facebook_page_id, facebook_page_name, is_active, setup_completed, created_at, bank_name, account_number, account_name')

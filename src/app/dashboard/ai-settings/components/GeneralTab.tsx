@@ -94,9 +94,9 @@ export default function GeneralTab({
                             <p className="text-xs font-semibold text-muted-foreground mb-1">Жишээ хариулт ({emotionOptions.find(e => e.value === aiEmotion)?.label}):</p>
                             <p className="text-sm text-foreground italic">
                                 &quot;{
-                                    aiEmotion === 'friendly' ? 'Сайн байна уу! 😊 Та манай дэлгүүрийг сонирхсонд баярлалаа. Би танд юугаар туслах вэ?' :
+                                    aiEmotion === 'friendly' ? 'Сайн байна уу! 😊 Та манай төслийг сонирхсонд баярлалаа. Би танд юугаар туслах вэ?' :
                                         aiEmotion === 'professional' ? 'Сайн байна уу. Vertmon Hub-д тавтай морил. Танд бүтээгдэхүүний мэдээлэл хэрэгтэй юу?' :
-                                            aiEmotion === 'enthusiastic' ? 'Сайн уу!! 🎉 Манай дэлгүүрт тавтай морил! Өнөөдөр ямар гоё зүйл хайж байна вэ?' :
+                                            aiEmotion === 'enthusiastic' ? 'Сайн уу!! 🎉 Манай төсөлд тавтай морил! Өнөөдөр ямар гоё зүйл хайж байна вэ?' :
                                                 aiEmotion === 'calm' ? 'Сайн байна уу. Тавтай морилно уу. Та тайван сонголтоо хийгээрэй, асуух зүйл байвал би энд байна. 🧘' :
                                                     'Хөөх, сайн уу! 🎮 Юу сонирхож байна? Гоё юмнууд их байгаа шүү!'
                                 }&quot;
@@ -114,7 +114,7 @@ export default function GeneralTab({
                     <Textarea
                         value={shopDescription}
                         onChange={(e) => setShopDescription(e.target.value)}
-                        placeholder="Жишээ: Манай компани бол орон сууцны хороолол хөгжүүлэгч..."
+                        placeholder="Жишээ: Манай төсөл бол орон сууцны хороолол хөгжүүлэгч..."
                         rows={4}
                     />
                 </CardContent>
