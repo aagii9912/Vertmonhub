@@ -330,6 +330,23 @@ export const writeTools: any[] = [
             },
             required: ['customer_name']
         }
+    },
+    {
+        name: 'attach_file',
+        description: 'Хэрэглэгчийн чатад оруулсан файл/зургийг тодорхой бичлэгт (байр/лийд/харилцагч/гэрээ) хавсаргах. file_url-ийг хэрэглэгчийн хавсаргасан файлын мэдээллээс ав. Байрны зураг бол зургийн санд нь нэмэгдэнэ. Баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                entity_type: { type: SchemaType.STRING, enum: ['property', 'lead', 'customer', 'contract'], description: 'Хавсаргах бичлэгийн төрөл' },
+                entity_id: { type: SchemaType.STRING, description: 'Бичлэгийн ID (мэдэж байвал)' },
+                entity_name: { type: SchemaType.STRING, description: 'Байр/лийд/харилцагчийн нэрээр хайх' },
+                contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар (entity_type=contract үед)' },
+                file_url: { type: SchemaType.STRING, description: 'Хавсаргасан файлын URL (чатын хавсралтаас)' },
+                file_name: { type: SchemaType.STRING, description: 'Файлын нэр' },
+                mime_type: { type: SchemaType.STRING, description: 'Файлын MIME төрөл (жишээ: image/jpeg, application/pdf)' }
+            },
+            required: ['entity_type', 'file_url']
+        }
     }
 ];
 
@@ -447,7 +464,7 @@ export const adminTools: any[] = [
     }
 ];
 
-export const WRITE_TOOL_NAMES = ['update_property_status', 'update_property_price', 'update_lead_status', 'add_lead_note', 'process_contract_action', 'create_property', 'create_lead', 'create_customer', 'schedule_viewing', 'create_contract'];
+export const WRITE_TOOL_NAMES = ['update_property_status', 'update_property_price', 'update_lead_status', 'add_lead_note', 'process_contract_action', 'create_property', 'create_lead', 'create_customer', 'schedule_viewing', 'create_contract', 'attach_file'];
 export const DELETE_TOOL_NAMES = ['delete_property', 'delete_lead', 'delete_viewing', 'delete_contract', 'delete_customer'];
 export const ADMIN_TOOL_NAMES = ['invite_user', 'assign_role', 'create_role'];
 

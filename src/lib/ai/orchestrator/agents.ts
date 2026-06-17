@@ -43,7 +43,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         description: 'Үл хөдлөх хөрөнгийн жагсаалт, үнэ, статус, м², өрөө, дүүрэг, байр харьцуулах, борлуулалтын прогноз. Шинэ байр НЭМЭХ, байр УСТГАХ. Байр/орон сууцтай холбоотой бүх асуулт, үйлдэл.',
         temperature: 0.3,
         readToolNames: ['list_properties', 'compare_properties', 'get_product_stats', 'get_sales_summary', 'get_sales_forecast'],
-        writeToolNames: ['update_property_status', 'update_property_price', 'create_property'],
+        writeToolNames: ['update_property_status', 'update_property_price', 'create_property', 'attach_file'],
         deleteToolNames: ['delete_property'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн БАЙРНЫ МЭРГЭЖИЛТЭН agent. Таны үүрэг: үл хөдлөх хөрөнгийн дэлгэрэнгүй (үнэ, статус, м², өрөө, байршил), байр харьцуулах, эрэлт/прогноз, шинэ байр нэмэх, байр устгах.
@@ -57,7 +57,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         description: 'Лийд/сонирхогчид, харилцагч, ҮЗЛЭГ (viewing) товлох/цуцлах, тагууд, тэмдэглэл. Шинэ лийд/харилцагч ҮҮСГЭХ, лийд/харилцагч/үзлэг УСТГАХ, статус шинэчлэх. Худалдан авагч, лийд, харилцагч, үзлэгтэй холбоотой бүх асуулт, үйлдэл.',
         temperature: 0.35,
         readToolNames: ['list_leads', 'get_lead_details', 'get_customer_insights', 'list_properties'],
-        writeToolNames: ['update_lead_status', 'add_lead_note', 'create_lead', 'create_customer', 'schedule_viewing'],
+        writeToolNames: ['update_lead_status', 'add_lead_note', 'create_lead', 'create_customer', 'schedule_viewing', 'attach_file'],
         deleteToolNames: ['delete_lead', 'delete_customer', 'delete_viewing'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн CRM МЭРГЭЖИЛТЭН agent. Таны үүрэг: лийд/харилцагчийн менежмент — жагсаалт, дэлгэрэнгүй, төсөв, сонирхол, тагууд, тэмдэглэл, шинэ лийд/харилцагч үүсгэх, лийд/харилцагч устгах, ҮЗЛЭГ (viewing) товлох болон цуцлах.
@@ -71,7 +71,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         description: 'Гэрээ (property_contracts), төлбөр, үлдэгдэл, цуглуулалтын хувь, овердуэйс, борлуулалтын нэгтгэл, прогноз, гэрээний процесс (sign/paid/cancel). Шинэ гэрээ ҮҮСГЭХ, гэрээ УСТГАХ.',
         temperature: 0.25,
         readToolNames: ['list_contracts', 'get_contract_details', 'get_contracts_summary', 'get_sales_summary', 'get_sales_forecast', 'get_dashboard_stats'],
-        writeToolNames: ['process_contract_action', 'create_contract'],
+        writeToolNames: ['process_contract_action', 'create_contract', 'attach_file'],
         deleteToolNames: ['delete_contract'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн САНХҮҮГИЙН АНАЛИСТ agent. Таны үүрэг: гэрээ, төлбөр, үлдэгдэл, цуглуулалт, овердуэйс, борлуулалтын мөнгөн урсгал ба прогноз, шинэ гэрээ үүсгэх, гэрээ устгах.

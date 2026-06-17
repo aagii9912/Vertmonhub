@@ -81,9 +81,12 @@ export async function planRequest(
 
         const recent = (ctx.history || []).slice(-4)
             .map((m) => `${m.role === 'assistant' ? 'AI' : 'Хэрэглэгч'}: ${m.content}`).join('\n');
+        const attachNote = (ctx.attachments && ctx.attachments.length)
+            ? `\n[Хавсаргасан файл: ${ctx.attachments.map((a) => a.name || a.mimeType || 'файл').join(', ')}]`
+            : '';
         const prompt = recent
-            ? `Сүүлийн харилцаа:\n${recent}\n\nШинэ хүсэлт: ${message}`
-            : message;
+            ? `Сүүлийн харилцаа:\n${recent}\n\nШинэ хүсэлт: ${message}${attachNote}`
+            : `${message}${attachNote}`;
 
         const result = await model.generateContent(prompt);
         const raw = JSON.parse(result.response.text()) as OrchestrationPlan;
