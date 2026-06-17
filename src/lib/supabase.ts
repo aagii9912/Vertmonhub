@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { requireSupabaseAnon, requireSupabaseService } from './supabase-env';
 
 // Lazy singleton — created on first property access rather than at module load.
 // This avoids "supabaseUrl is required" during Next.js page-data collection,
@@ -7,11 +8,7 @@ let _supabase: SupabaseClient | null = null;
 
 function getSupabase(): SupabaseClient {
     if (_supabase) return _supabase;
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-    if (!url || !anonKey) {
-        throw new Error('Supabase env vars (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY) are not configured');
-    }
+    const { url, anonKey } = requireSupabaseAnon();
     _supabase = createClient(url, anonKey);
     return _supabase;
 }
@@ -26,10 +23,6 @@ export const supabase = new Proxy({} as SupabaseClient, {
 
 // Server-side client with service role key (for admin operations)
 export const supabaseAdmin = (): SupabaseClient => {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    if (!url || !serviceKey) {
-        throw new Error('Supabase admin env vars (NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY) are not configured');
-    }
+    const { url, serviceKey } = requireSupabaseService();
     return createClient(url, serviceKey);
 };

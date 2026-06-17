@@ -173,8 +173,8 @@ export async function fetchRolePermissions(roleName: string, supabaseClient?: an
         let supabase = supabaseClient;
 
         if (!supabase) {
-            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-            const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+            const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
 
             if (!supabaseUrl || !supabaseKey) {
                 return getStaticPermissions(roleName);

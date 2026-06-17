@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextRequest, NextResponse } from 'next/server';
+import { requireSupabaseAnon } from './supabase-env';
 
 /**
  * Create a Supabase client specifically for Next.js Middleware.
@@ -10,9 +11,10 @@ export function createSupabaseMiddlewareClient(request: NextRequest) {
         request,
     });
 
+    const { url, anonKey } = requireSupabaseAnon();
     const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        url,
+        anonKey,
         {
             cookies: {
                 getAll() {
