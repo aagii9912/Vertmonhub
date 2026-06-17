@@ -63,6 +63,15 @@ export interface OrchestratorContext {
     history?: Array<{ role: string; content: string }>;
     /** Нэвтэрсэн хэрэглэгчийн (борлуулалтын менежер) нэр — үүсгэх үйлдэлд хадгална. */
     userName?: string;
+    /** Чатад хавсаргасан файлууд (AI унших/шинжлэх + бичлэгт хавсаргах). */
+    attachments?: OrchestratorAttachment[];
+}
+
+/** Чатын хавсралт — /api/dashboard/upload-аас ирсэн URL. */
+export interface OrchestratorAttachment {
+    url: string;
+    name?: string;
+    mimeType?: string;
 }
 
 /** Planner-ийн гаргасан нэг алхам. */

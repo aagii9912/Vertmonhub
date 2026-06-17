@@ -36,6 +36,40 @@ function tokensFrom(response: any): number {
     return response?.usageMetadata?.totalTokenCount ?? 0;
 }
 
+/** Gemini inlineData-аар дамжуулж болох MIME (зураг + PDF). */
+function isInlineSupported(mime?: string): boolean {
+    if (!mime) return false;
+    return mime.startsWith('image/') || mime === 'application/pdf';
+}
+
+/**
+ * Хавсралтуудаас Gemini-д илгээх parts (текст даалгавар + inline зураг/PDF) бэлдэнэ.
+ * Мөн файлын URL-ийг текстэд оруулж AI attach_file tool-д ашиглах боломжтой болгоно.
+ */
+async function buildMessageParts(task: string, attachments?: { url: string; name?: string; mimeType?: string }[]): Promise<any[]> {
+    if (!attachments || attachments.length === 0) return [{ text: task }];
+
+    const list = attachments.map((a, i) => `${i + 1}. ${a.name || 'файл'} — ${a.url}${a.mimeType ? ` (${a.mimeType})` : ''}`).join('\n');
+    const note = `${task}\n\n[Хэрэглэгчийн хавсаргасан файлууд]:\n${list}\nХэрэв хэрэглэгч эдгээрийг бичлэгт хавсаргахыг хүсвэл attach_file tool-д file_url-ийг яг дээрх URL-ээс ав. Зураг/баримтыг шинжлэхийг хүсвэл агуулгад нь үндэслэн хариул.`;
+    const parts: any[] = [{ text: note }];
+
+    for (const att of attachments) {
+        if (!isInlineSupported(att.mimeType)) continue;
+        try {
+            const res = await fetch(att.url);
+            if (!res.ok) continue;
+            const buf = await res.arrayBuffer();
+            // Хэт том файлыг алгасна (~8MB)
+            if (buf.byteLength > 8 * 1024 * 1024) continue;
+            const base64 = Buffer.from(buf).toString('base64');
+            parts.push({ inlineData: { data: base64, mimeType: att.mimeType } });
+        } catch {
+            // Татаж чадахгүй бол алгасна — URL текстэд хэвээр байгаа
+        }
+    }
+    return parts;
+}
+
 /**
  * Нэг agent-ийг даалгаврын дагуу гүйцэтгэнэ.
  */
@@ -63,7 +97,8 @@ export async function runAgent(
             .map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
 
         const chat = model.startChat({ history: geminiHistory });
-        const result = await chat.sendMessage(task);
+        const messageParts = await buildMessageParts(task, ctx.attachments);
+        const result = await chat.sendMessage(messageParts);
         tokens += tokensFrom(result.response);
         const functionCalls = result.response.functionCalls();
 

@@ -21,6 +21,7 @@ import {
     addLeadNote, processContractAction,
     createProperty, deleteProperty, createLead, deleteLead, createCustomer,
     scheduleViewing, deleteViewing, createContract, deleteContract, deleteCustomer,
+    attachFile,
     generateChartConfig,
 } from './functions';
 import { inviteUser, assignRole, createRole } from './admin-functions';
@@ -92,6 +93,7 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'create_contract': result = await createContract(shopId, args, confirm, userName); break;
         case 'delete_contract': result = await deleteContract(shopId, args, confirm); break;
         case 'delete_customer': result = await deleteCustomer(shopId, args, confirm); break;
+        case 'attach_file': result = await attachFile(shopId, args, confirm, userName); break;
         case 'invite_user': result = await inviteUser(shopId, args, confirm); break;
         case 'assign_role': result = await assignRole(shopId, args, confirm); break;
         case 'create_role': result = await createRole(shopId, args, confirm); break;

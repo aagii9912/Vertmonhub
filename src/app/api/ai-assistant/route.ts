@@ -61,7 +61,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'AI Orchestrator ашиглах эрх танд алга' }, { status: 403 });
         }
 
-        const { message, shopId, history = [], conversationId } = await req.json();
+        const { message, shopId, history = [], conversationId, attachments = [] } = await req.json();
         if (!message) return NextResponse.json({ error: 'Message is required' }, { status: 400 });
         if (!process.env.GEMINI_API_KEY) return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 });
 
@@ -98,6 +98,7 @@ export async function POST(req: Request) {
             shopKnowledge,
             history,
             userName,
+            attachments: Array.isArray(attachments) ? attachments : [],
         });
 
         // Persist messages to database

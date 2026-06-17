@@ -934,6 +934,87 @@ export async function deleteCustomer(shopId: string, args: any, confirm = false)
     return { success: true, message: `"${c.name}" харилцагчийг устгалаа (сэргээх боломжтой).`, customerId: c.id };
 }
 
+// ---- File attach (файл хавсаргах) ----
+
+/** Хавсаргах entity-г төрөл + id/нэрээр шийдвэрлэнэ. */
+async function resolveEntity(shopId: string, entityType: string, args: any): Promise<{ id: string; label: string } | { error: string; options?: any[] }> {
+    const byId = args.entity_id;
+    if (entityType === 'property') {
+        let q = supabaseAdmin.from('properties').select('id, name').eq('shop_id', shopId).is('deleted_at', null);
+        q = byId ? q.eq('id', byId) : q.ilike('name', `%${args.entity_name || ''}%`);
+        const { data } = await q;
+        if (!data || !data.length) return { error: 'Байр олдсонгүй' };
+        if (data.length > 1) return { error: `${data.length} байр олдлоо, тодруулна уу`, options: data.map(d => ({ id: d.id, name: d.name })) };
+        return { id: data[0].id, label: data[0].name };
+    }
+    if (entityType === 'lead') {
+        let q = supabaseAdmin.from('leads').select('id, customer_name').eq('shop_id', shopId).is('deleted_at', null);
+        q = byId ? q.eq('id', byId) : q.ilike('customer_name', `%${args.entity_name || ''}%`);
+        const { data } = await q;
+        if (!data || !data.length) return { error: 'Лийд олдсонгүй' };
+        if (data.length > 1) return { error: `${data.length} лийд олдлоо, тодруулна уу`, options: data.map(d => ({ id: d.id, name: d.customer_name })) };
+        return { id: data[0].id, label: data[0].customer_name };
+    }
+    if (entityType === 'customer') {
+        let q = supabaseAdmin.from('customers').select('id, name').eq('shop_id', shopId).is('deleted_at', null);
+        q = byId ? q.eq('id', byId) : q.ilike('name', `%${args.entity_name || ''}%`);
+        const { data } = await q;
+        if (!data || !data.length) return { error: 'Харилцагч олдсонгүй' };
+        if (data.length > 1) return { error: `${data.length} харилцагч олдлоо, тодруулна уу`, options: data.map(d => ({ id: d.id, name: d.name })) };
+        return { id: data[0].id, label: data[0].name };
+    }
+    // contract
+    let q = supabaseAdmin.from('property_contracts').select('id, contract_number, customer_name').eq('shop_id', shopId);
+    if (byId) q = q.eq('id', byId);
+    else if (args.contract_number) q = q.ilike('contract_number', `%${args.contract_number}%`);
+    else q = q.ilike('customer_name', `%${args.entity_name || ''}%`);
+    const { data } = await q;
+    if (!data || !data.length) return { error: 'Гэрээ олдсонгүй' };
+    if (data.length > 1) return { error: `${data.length} гэрээ олдлоо, тодруулна уу`, options: data.map(d => ({ id: d.id, name: d.customer_name || d.contract_number })) };
+    return { id: data[0].id, label: data[0].customer_name || data[0].contract_number || 'гэрээ' };
+}
+
+export async function attachFile(shopId: string, args: any, confirm = false, salesManagerName = '') {
+    const types = ['property', 'lead', 'customer', 'contract'];
+    if (!args.entity_type || !types.includes(args.entity_type)) return { error: 'entity_type буруу (property/lead/customer/contract)' };
+    if (!args.file_url) return { error: 'file_url шаардлагатай' };
+
+    const resolved = await resolveEntity(shopId, args.entity_type, args);
+    if ('error' in resolved) return resolved;
+
+    const typeLabel: Record<string, string> = { property: 'Байр', lead: 'Лийд', customer: 'Харилцагч', contract: 'Гэрээ' };
+    if (!confirm) {
+        return confirmNeeded('attach_file',
+            { ...args, entity_id: resolved.id },
+            `Файл хавсаргах: ${resolved.label}`,
+            { Төрөл: typeLabel[args.entity_type], Бичлэг: resolved.label, Файл: args.file_name || args.file_url, Менежер: salesManagerName || '-' });
+    }
+
+    // Generic attachment бичлэг
+    const { error: insErr } = await supabaseAdmin.from('ai_attachments').insert({
+        shop_id: shopId,
+        entity_type: args.entity_type,
+        entity_id: resolved.id,
+        url: args.file_url,
+        file_name: args.file_name || null,
+        mime_type: args.mime_type || null,
+        uploaded_by: salesManagerName || null,
+    });
+    if (insErr) return { error: `Алдаа: ${insErr.message}` };
+
+    // Байрны зураг бол properties.images[]-д давхар нэмнэ
+    const isImage = (args.mime_type || '').startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(args.file_url);
+    if (args.entity_type === 'property' && isImage) {
+        const { data: prop } = await supabaseAdmin.from('properties').select('images').eq('id', resolved.id).single();
+        const images = Array.isArray(prop?.images) ? prop!.images : [];
+        if (!images.includes(args.file_url)) {
+            await supabaseAdmin.from('properties').update({ images: [...images, args.file_url] }).eq('id', resolved.id);
+        }
+    }
+
+    return { success: true, message: `Файлыг "${resolved.label}" ${typeLabel[args.entity_type].toLowerCase()}-д хавсаргалаа.`, entityId: resolved.id };
+}
+
 // ============================================
 // CHART CONFIG GENERATOR
 // ============================================
