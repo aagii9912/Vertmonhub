@@ -12,6 +12,7 @@ import { logger } from '@/lib/utils/logger';
 import { AGENTS } from './agents';
 import { runAgent } from './runAgent';
 import { planRequest } from './planner';
+import { withRetry } from './retry';
 import type {
     AgentBadge, AgentRunResult, OrchestratorContext,
     OrchestratorResult, OrchestrationTrace, TraceStep, PendingAction,
@@ -34,9 +35,9 @@ async function synthesize(
     });
 
     const composed = parts.map((p) => `### ${p.emoji} ${p.name}\n${p.text}`).join('\n\n');
-    const result = await model.generateContent(
+    const result = await withRetry(() => model.generateContent(
         `Хэрэглэгчийн асуулт: ${message}\n\nМэргэжилтнүүдийн хариу:\n${composed}\n\nДээрхийг нэгтгэн эцсийн хариу бэлдэнэ үү.`,
-    );
+    ));
     return {
         text: result.response.text(),
         latencyMs: Date.now() - started,

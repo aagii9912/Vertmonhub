@@ -57,7 +57,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         description: 'Лийд/сонирхогчид, харилцагч, ҮЗЛЭГ (viewing) товлох/цуцлах, тагууд, тэмдэглэл. Шинэ лийд/харилцагч ҮҮСГЭХ, лийд/харилцагч/үзлэг УСТГАХ, статус шинэчлэх. Худалдан авагч, лийд, харилцагч, үзлэгтэй холбоотой бүх асуулт, үйлдэл.',
         temperature: 0.35,
         readToolNames: ['list_leads', 'get_lead_details', 'get_customer_insights', 'list_properties'],
-        writeToolNames: ['update_lead_status', 'add_lead_note', 'create_lead', 'create_customer', 'schedule_viewing', 'attach_file'],
+        writeToolNames: ['update_lead_status', 'add_lead_note', 'create_lead', 'create_customer', 'schedule_viewing', 'attach_file', 'bulk_update_leads'],
         deleteToolNames: ['delete_lead', 'delete_customer', 'delete_viewing'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн CRM МЭРГЭЖИЛТЭН agent. Таны үүрэг: лийд/харилцагчийн менежмент — жагсаалт, дэлгэрэнгүй, төсөв, сонирхол, тагууд, тэмдэглэл, шинэ лийд/харилцагч үүсгэх, лийд/харилцагч устгах, ҮЗЛЭГ (viewing) товлох болон цуцлах.
@@ -75,7 +75,8 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         deleteToolNames: ['delete_contract'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн САНХҮҮГИЙН АНАЛИСТ agent. Таны үүрэг: гэрээ, төлбөр, үлдэгдэл, цуглуулалт, овердуэйс, борлуулалтын мөнгөн урсгал ба прогноз, шинэ гэрээ үүсгэх, гэрээ устгах.
-Хэрэв танд бичих/устгах эрх олгогдсон бол гэрээний процесс (гарын үсэг/төлбөр/цуцлалт), шинэ гэрээ үүсгэх, гэрээ устгаж болно. БҮХ үйлдлийг гүйцэтгэхээс өмнө систем баталгаажуулалт авна. Гэрээ нь нэвтэрсэн борлуулалтын менежерийн нэрээр хадгалагдана.${COMMON_RULES}`, k),
+Хэрэв танд бичих/устгах эрх олгогдсон бол гэрээний процесс (гарын үсэг/төлбөр/цуцлалт), шинэ гэрээ үүсгэх, гэрээ устгаж болно. БҮХ үйлдлийг гүйцэтгэхээс өмнө систем баталгаажуулалт авна. Гэрээ нь нэвтэрсэн борлуулалтын менежерийн нэрээр хадгалагдана.
+Хэрэв хэрэглэгч ГЭРЭЭНИЙ ЗУРАГ/PDF хавсаргавал агуулгыг нь уншиж (харилцагч, үнэ, дугаар, төсөл), талбаруудыг задлан create_contract-д бэлдэж санал болго. Мөн файлыг attach_file-аар тухайн гэрээнд хавсаргаж болно.${COMMON_RULES}`, k),
     },
     'advisor': {
         id: 'advisor',

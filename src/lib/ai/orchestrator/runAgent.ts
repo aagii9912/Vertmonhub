@@ -12,7 +12,11 @@ import { readTools, writeTools, deleteTools, adminTools } from '@/lib/ai/data-as
 import { executeDataTool } from '@/lib/ai/data-assistant';
 import { generateChartConfig } from '@/lib/ai/data-assistant/functions';
 import { randomUUID } from 'crypto';
+import { withRetry } from './retry';
 import type { AgentDefinition, AgentRunResult, OrchestratorContext, PendingAction } from './types';
+
+/** Токен/зардлыг хязгаарлахын тулд агентад дамжуулах түүхийн дээд хэмжээ. */
+const MAX_HISTORY = 10;
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 const AGENT_MODEL = 'gemini-2.5-flash';
@@ -94,16 +98,17 @@ export async function runAgent(
 
         const geminiHistory: Content[] = (ctx.history || [])
             .filter((m) => m.role && m.content)
+            .slice(-MAX_HISTORY)
             .map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
 
         const chat = model.startChat({ history: geminiHistory });
         const messageParts = await buildMessageParts(task, ctx.attachments);
-        const result = await chat.sendMessage(messageParts);
+        const result = await withRetry(() => chat.sendMessage(messageParts));
         tokens += tokensFrom(result.response);
         const functionCalls = result.response.functionCalls();
 
         if (functionCalls && functionCalls.length > 0) {
-            const toolResponses = [];
+            const toolResponses: any[] = [];
             let data: any = null;
             let chartConfig: any = null;
 
@@ -133,7 +138,7 @@ export async function runAgent(
                 }
             }
 
-            const synthesis = await chat.sendMessage(toolResponses.map((tr) => ({ functionResponse: tr.functionResponse })));
+            const synthesis = await withRetry(() => chat.sendMessage(toolResponses.map((tr) => ({ functionResponse: tr.functionResponse }))));
             tokens += tokensFrom(synthesis.response);
 
             return {

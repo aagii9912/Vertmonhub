@@ -8,6 +8,7 @@
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 import { logger } from '@/lib/utils/logger';
 import { AGENTS, AGENT_LIST } from './agents';
+import { withRetry } from './retry';
 import type { AgentId, OrchestrationPlan, OrchestratorContext } from './types';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
@@ -88,7 +89,7 @@ export async function planRequest(
             ? `Сүүлийн харилцаа:\n${recent}\n\nШинэ хүсэлт: ${message}${attachNote}`
             : `${message}${attachNote}`;
 
-        const result = await model.generateContent(prompt);
+        const result = await withRetry(() => model.generateContent(prompt));
         const raw = JSON.parse(result.response.text()) as OrchestrationPlan;
 
         const steps = (raw.steps || [])

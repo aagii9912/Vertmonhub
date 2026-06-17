@@ -332,6 +332,19 @@ export const writeTools: any[] = [
         }
     },
     {
+        name: 'bulk_update_leads',
+        description: 'Олон лийдийн статусыг нэг дор шинэчлэх. from_status (тухайн статустай бүгд) эсвэл lead_ids (таслалаар) -ээр сонгоно. Баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                from_status: { type: SchemaType.STRING, enum: ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'], description: 'Энэ статустай бүх лийдийг сонгох' },
+                lead_ids: { type: SchemaType.STRING, description: 'Лийдийн ID-ууд (таслалаар)' },
+                new_status: { type: SchemaType.STRING, enum: ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'], description: 'Шинэ статус' }
+            },
+            required: ['new_status']
+        }
+    },
+    {
         name: 'attach_file',
         description: 'Хэрэглэгчийн чатад оруулсан файл/зургийг тодорхой бичлэгт (байр/лийд/харилцагч/гэрээ) хавсаргах. file_url-ийг хэрэглэгчийн хавсаргасан файлын мэдээллээс ав. Байрны зураг бол зургийн санд нь нэмэгдэнэ. Баталгаажуулалт авна.',
         parameters: {
@@ -464,7 +477,7 @@ export const adminTools: any[] = [
     }
 ];
 
-export const WRITE_TOOL_NAMES = ['update_property_status', 'update_property_price', 'update_lead_status', 'add_lead_note', 'process_contract_action', 'create_property', 'create_lead', 'create_customer', 'schedule_viewing', 'create_contract', 'attach_file'];
+export const WRITE_TOOL_NAMES = ['update_property_status', 'update_property_price', 'update_lead_status', 'add_lead_note', 'process_contract_action', 'create_property', 'create_lead', 'create_customer', 'schedule_viewing', 'create_contract', 'attach_file', 'bulk_update_leads'];
 export const DELETE_TOOL_NAMES = ['delete_property', 'delete_lead', 'delete_viewing', 'delete_contract', 'delete_customer'];
 export const ADMIN_TOOL_NAMES = ['invite_user', 'assign_role', 'create_role'];
 
