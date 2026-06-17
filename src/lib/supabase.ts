@@ -1,21 +1,18 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { requireSupabaseAnon, requireSupabaseService } from './supabase-env';
+import { requireSupabaseService } from './supabase-env';
+import { createSupabaseBrowserClient } from './supabase-browser';
 
-// Lazy singleton — created on first property access rather than at module load.
-// This avoids "supabaseUrl is required" during Next.js page-data collection,
-// where the module can be evaluated before the runtime env is wired up.
-let _supabase: SupabaseClient | null = null;
-
-function getSupabase(): SupabaseClient {
-    if (_supabase) return _supabase;
-    const { url, anonKey } = requireSupabaseAnon();
-    _supabase = createClient(url, anonKey);
-    return _supabase;
-}
-
+/**
+ * Browser Supabase client.
+ *
+ * Cookie-д суурилсан НЭГ session (AuthContext + middleware-тэй хуваалцдаг,
+ * middleware шинэчилж байдаг) дээр тулгуурлана — өмнө нь localStorage-ийн
+ * тусдаа session ашигладаг байсан тул хуучирч 401 (Unauthorized) өгдөг байв.
+ * Lazy Proxy — зөвхөн браузерт (эхний хандалтад) instantiate болно.
+ */
 export const supabase = new Proxy({} as SupabaseClient, {
     get(_target, prop, receiver) {
-        const client = getSupabase();
+        const client = createSupabaseBrowserClient();
         const value = Reflect.get(client, prop, client);
         return typeof value === 'function' ? value.bind(client) : value;
     },

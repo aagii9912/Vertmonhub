@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
           totalCustomers: 0,
         },
         recentLeads: [],
+        upcomingViewings: [],
         recentChats: [],
         activeConversations: [],
         unansweredCount: 0,
@@ -77,8 +78,18 @@ export async function GET(request: NextRequest) {
       .from('leads')
       .select('*')
       .eq('shop_id', shopId)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .limit(10);
+
+    // Upcoming viewings (next scheduled)
+    const { data: upcomingViewings } = await supabase
+      .from('property_viewings')
+      .select('*, properties(name)')
+      .eq('shop_id', shopId)
+      .gte('scheduled_at', new Date().toISOString())
+      .order('scheduled_at', { ascending: true })
+      .limit(3);
 
     // Recent chats (grouped by customer)
     const { data: recentChats } = await supabase
@@ -148,6 +159,7 @@ export async function GET(request: NextRequest) {
         totalCustomers: totalCustomers || 0,
       },
       recentLeads: recentLeads || [],
+      upcomingViewings: upcomingViewings || [],
       recentChats: recentChats || [],
       activeConversations,
       unansweredCount,

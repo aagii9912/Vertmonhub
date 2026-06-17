@@ -1,20 +1,17 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
-import { createBrowserClient } from '@supabase/ssr';
 import type { User, Session } from '@supabase/supabase-js';
 import type { UserRole, RolePermissions } from '@/lib/rbac';
 import { fetchRolePermissions, ROLE_PERMISSIONS } from '@/lib/rbac';
+import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
 
 const isDev = process.env.NODE_ENV === 'development';
 const ACTIVE_SHOP_KEY = 'vertmonhub_active_shop_id';
 
-// Create browser Supabase client
+// Shared browser Supabase client (cookie session, trimmed env, single GoTrueClient)
 function createClient() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  return createSupabaseBrowserClient();
 }
 
 export interface Shop {

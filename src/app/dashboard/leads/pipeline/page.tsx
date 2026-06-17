@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import { GripVertical, User, Phone, Calendar, DollarSign, ArrowLeft, Loader2 } from 'lucide-react';
 import Link from 'next/link';
@@ -59,26 +58,38 @@ export default function PipelinePage() {
     async function fetchLeads() {
         if (!shop?.id) return;
         setLoading(true);
-        const { data, error } = await supabase
-            .from('leads')
-            .select('id, customer_name, customer_phone, status, source, budget_min, budget_max, preferred_type, urgency, next_followup_at, created_at')
-            .eq('shop_id', shop.id)
-            .order('created_at', { ascending: false });
-
-        if (error) { toast.error('Лийд татахад алдаа'); return; }
-        setLeads(data || []);
-        setLoading(false);
+        try {
+            const res = await fetch('/api/dashboard/leads', {
+                headers: { 'x-shop-id': shop.id },
+            });
+            if (!res.ok) throw new Error('Failed');
+            const json = await res.json();
+            setLeads(json.leads || []);
+        } catch {
+            toast.error('Лийд татахад алдаа');
+        } finally {
+            setLoading(false);
+        }
     }
 
     async function moveToStage(leadId: string, newStatus: string) {
-        const { error } = await supabase
-            .from('leads')
-            .update({ status: newStatus, updated_at: new Date().toISOString() })
-            .eq('id', leadId);
-
-        if (error) { toast.error('Статус солиход алдаа'); return; }
-        setLeads(prev => prev.map(l => l.id === leadId ? { ...l, status: newStatus } : l));
-        toast.success('Статус солигдлоо');
+        const prev = leads;
+        setLeads(p => p.map(l => l.id === leadId ? { ...l, status: newStatus } : l));
+        try {
+            const res = await fetch(`/api/dashboard/leads/${leadId}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || shop?.id || '',
+                },
+                body: JSON.stringify({ status: newStatus }),
+            });
+            if (!res.ok) throw new Error('Failed');
+            toast.success('Статус солигдлоо');
+        } catch {
+            setLeads(prev);
+            toast.error('Статус солиход алдаа');
+        }
     }
 
     const handleDragStart = (e: React.DragEvent, leadId: string) => {
