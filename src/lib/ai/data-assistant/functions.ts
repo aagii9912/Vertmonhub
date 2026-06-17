@@ -215,15 +215,17 @@ export async function fetchCustomerInsights(shopId: string, args: any) {
     }
 
     // ---- Customer list ----
-    let query = supabaseAdmin.from('customers')
-        .select(customerSelect)
-        .eq('shop_id', shopId)
-        .order('created_at', { ascending: false }).limit(limit);
-    if (args.customer_name) query = query.ilike('name', `%${args.customer_name}%`);
-    if (args.phone) query = query.ilike('phone', `%${args.phone}%`);
-    if (args.tag) query = query.contains('tags', [args.tag]);
-
-    const { data } = await query;
+    const { data } = await runExcludingDeleted((excludeDeleted) => {
+        let query = supabaseAdmin.from('customers')
+            .select(customerSelect)
+            .eq('shop_id', shopId)
+            .order('created_at', { ascending: false }).limit(limit);
+        if (excludeDeleted) query = query.is('deleted_at', null);
+        if (args.customer_name) query = query.ilike('name', `%${args.customer_name}%`);
+        if (args.phone) query = query.ilike('phone', `%${args.phone}%`);
+        if (args.tag) query = query.contains('tags', [args.tag]);
+        return query;
+    });
     return { customers: data || [] };
 }
 
@@ -236,26 +238,27 @@ const CONTRACT_DETAIL_FIELDS = `${CONTRACT_LIST_FIELDS}, customer_first_name, cu
 
 export async function fetchContracts(shopId: string, args: any) {
     const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 100);
-    let query = supabaseAdmin.from('property_contracts')
-        .select(CONTRACT_LIST_FIELDS)
-        .eq('shop_id', shopId)
-        .order('contract_date', { ascending: false, nullsFirst: false })
-        .limit(limit);
-
-    if (args.status) query = query.eq('contract_status', args.status);
-    if (args.customer_search) query = query.or(`customer_name.ilike.%${args.customer_search}%,customer_phone.ilike.%${args.customer_search}%,customer_registration.ilike.%${args.customer_search}%`);
-    if (args.sales_manager) query = query.ilike('sales_manager', `%${args.sales_manager}%`);
-    if (args.sales_channel) query = query.eq('sales_channel', args.sales_channel);
-    if (args.block_name) query = query.ilike('block_name', `%${args.block_name}%`);
-    if (args.contract_number) query = query.ilike('contract_number', `%${args.contract_number}%`);
-    if (args.overdue_only) query = query.gt('overdue_days', 0);
-    if (args.has_balance) query = query.gt('balance', 0);
-
-    const { data, error } = await query;
+    const { data, error } = await runExcludingDeleted((excludeDeleted) => {
+        let query = supabaseAdmin.from('property_contracts')
+            .select(CONTRACT_LIST_FIELDS)
+            .eq('shop_id', shopId)
+            .order('contract_date', { ascending: false, nullsFirst: false })
+            .limit(limit);
+        if (excludeDeleted) query = query.is('deleted_at', null);
+        if (args.status) query = query.eq('contract_status', args.status);
+        if (args.customer_search) query = query.or(`customer_name.ilike.%${args.customer_search}%,customer_phone.ilike.%${args.customer_search}%,customer_registration.ilike.%${args.customer_search}%`);
+        if (args.sales_manager) query = query.ilike('sales_manager', `%${args.sales_manager}%`);
+        if (args.sales_channel) query = query.eq('sales_channel', args.sales_channel);
+        if (args.block_name) query = query.ilike('block_name', `%${args.block_name}%`);
+        if (args.contract_number) query = query.ilike('contract_number', `%${args.contract_number}%`);
+        if (args.overdue_only) query = query.gt('overdue_days', 0);
+        if (args.has_balance) query = query.gt('balance', 0);
+        return query;
+    });
     if (error) return { error: `Алдаа: ${error.message}` };
 
     return {
-        contracts: (data || []).map(c => ({
+        contracts: (data || []).map((c: any) => ({
             ...c,
             total_price_fmt: c.total_price != null ? `${Number(c.total_price).toLocaleString()}₮` : '-',
             paid_amount_fmt: c.paid_amount != null ? `${Number(c.paid_amount).toLocaleString()}₮` : '-',
@@ -604,6 +607,32 @@ function confirmNeeded(tool: string, args: any, label: string, preview: Record<s
     return { requiresConfirmation: true, action: { tool, args }, label, preview };
 }
 
+/** Нэвтэрсэн хэрэглэгчийн (борлуулалтын менежер) харагдах нэрийг тодорхойлно. */
+export async function resolveSalesManagerName(userId?: string, fallback?: string): Promise<string> {
+    if (!userId) return fallback || '';
+    const { data } = await supabaseAdmin.from('user_profiles').select('full_name, email').eq('id', userId).maybeSingle();
+    return data?.full_name || data?.email || fallback || '';
+}
+
+/** Best-effort: sales_manager_name баганад нэр бичнэ. Багана байхгүй (миграци ороогүй) бол алгасна. */
+async function stampSalesManager(table: string, id: string | undefined, name?: string) {
+    if (!id || !name) return;
+    const { error } = await supabaseAdmin.from(table).update({ sales_manager_name: name }).eq('id', id);
+    if (error) logger.warn(`[stampSalesManager] skipped (${table}): ${error.message}`);
+}
+
+/**
+ * Soft-delete-ийг харгалзан query гүйцэтгэнэ. deleted_at багана байхгүй (миграци
+ * ороогүй) бол шүүлтгүйгээр дахин оролдоно — read regression-аас сэргийлнэ.
+ */
+async function runExcludingDeleted(build: (excludeDeleted: boolean) => any) {
+    const res = await build(true);
+    if (res.error && /deleted_at/i.test(res.error.message || '')) {
+        return await build(false);
+    }
+    return res;
+}
+
 export async function createProperty(shopId: string, args: any, confirm = false) {
     if (!args.name || !args.type || args.price == null) {
         return { error: 'name, type, price талбарууд заавал шаардлагатай' };
@@ -663,7 +692,7 @@ export async function deleteProperty(shopId: string, args: any, confirm = false)
     return { success: true, message: `"${prop.name}" байрыг устгалаа (сэргээх боломжтой).`, propertyId: prop.id };
 }
 
-export async function createLead(shopId: string, args: any, confirm = false) {
+export async function createLead(shopId: string, args: any, confirm = false, salesManagerName = '') {
     if (!args.customer_name) return { error: 'customer_name шаардлагатай' };
     const validStatus = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'];
     const status = args.status && validStatus.includes(args.status) ? args.status : 'new';
@@ -673,6 +702,7 @@ export async function createLead(shopId: string, args: any, confirm = false) {
     const preview = {
         Нэр: args.customer_name, Утас: args.customer_phone || '-', Статус: status, 'Эх сурвалж': source,
         Төсөв: args.budget_max ? `${Number(args.budget_max).toLocaleString()}₮` : '-',
+        Менежер: salesManagerName || '-',
     };
     if (!confirm) return confirmNeeded('create_lead', { ...args, status, source }, `Шинэ лийд: ${args.customer_name}`, preview);
 
@@ -690,7 +720,8 @@ export async function createLead(shopId: string, args: any, confirm = false) {
     };
     const { data, error } = await supabaseAdmin.from('leads').insert(insert).select('id, customer_name').single();
     if (error) return { error: `Алдаа: ${error.message}` };
-    return { success: true, message: `"${data.customer_name}" лийд амжилттай үүсгэлээ.`, leadId: data.id };
+    await stampSalesManager('leads', data.id, salesManagerName);
+    return { success: true, message: `"${data.customer_name}" лийд амжилттай үүсгэлээ${salesManagerName ? ` (менежер: ${salesManagerName})` : ''}.`, leadId: data.id };
 }
 
 export async function deleteLead(shopId: string, args: any, confirm = false) {
@@ -718,7 +749,7 @@ export async function deleteLead(shopId: string, args: any, confirm = false) {
     return { success: true, message: `"${lead.customer_name}" лийдийг устгалаа (сэргээх боломжтой).`, leadId: lead.id };
 }
 
-export async function createCustomer(shopId: string, args: any, confirm = false) {
+export async function createCustomer(shopId: string, args: any, confirm = false, salesManagerName = '') {
     if (!args.name) return { error: 'name шаардлагатай' };
     const phoneNorm = args.phone ? String(args.phone).replace(/\D/g, '') : null;
 
@@ -734,7 +765,7 @@ export async function createCustomer(shopId: string, args: any, confirm = false)
         }
     }
 
-    const preview = { Нэр: args.name, Утас: args.phone || '-', Имэйл: args.email || '-' };
+    const preview = { Нэр: args.name, Утас: args.phone || '-', Имэйл: args.email || '-', Менежер: salesManagerName || '-' };
     if (!confirm) return confirmNeeded('create_customer', args, `Шинэ харилцагч: ${args.name}`, preview);
 
     const insert = {
@@ -745,7 +776,162 @@ export async function createCustomer(shopId: string, args: any, confirm = false)
     };
     const { data, error } = await supabaseAdmin.from('customers').insert(insert).select('id, name').single();
     if (error) return { error: `Алдаа: ${error.message}` };
-    return { success: true, message: `"${data.name}" харилцагч амжилттай үүсгэлээ.`, customerId: data.id };
+    await stampSalesManager('customers', data.id, salesManagerName);
+    return { success: true, message: `"${data.name}" харилцагч амжилттай үүсгэлээ${salesManagerName ? ` (менежер: ${salesManagerName})` : ''}.`, customerId: data.id };
+}
+
+// ---- Viewings (үзлэг) ----
+
+export async function scheduleViewing(shopId: string, args: any, confirm = false, salesManagerName = '') {
+    if (!args.scheduled_at) return { error: 'scheduled_at (огноо/цаг) шаардлагатай' };
+    if (!args.property_id && !args.property_name) return { error: 'property_id эсвэл property_name шаардлагатай' };
+
+    // Байр шийдвэрлэх
+    let propQuery = supabaseAdmin.from('properties').select('id, name').eq('shop_id', shopId).is('deleted_at', null);
+    propQuery = args.property_id ? propQuery.eq('id', args.property_id) : propQuery.ilike('name', `%${args.property_name}%`);
+    const { data: props } = await propQuery;
+    if (!props || props.length === 0) return { error: 'Байр олдсонгүй' };
+    if (props.length > 1) return { error: `${props.length} байр олдлоо, тодруулна уу`, options: props.map(p => ({ id: p.id, name: p.name })) };
+    const prop = props[0];
+
+    // Лийд шийдвэрлэх (заавал биш)
+    let leadId: string | null = args.lead_id || null;
+    if (!leadId && args.customer_name) {
+        const { data: leads } = await supabaseAdmin.from('leads').select('id').eq('shop_id', shopId).is('deleted_at', null).ilike('customer_name', `%${args.customer_name}%`).limit(1);
+        if (leads && leads.length) leadId = leads[0].id;
+    }
+
+    const scheduledAt = new Date(args.scheduled_at);
+    if (isNaN(scheduledAt.getTime())) return { error: 'scheduled_at буруу огноо' };
+
+    const preview = {
+        Байр: prop.name, Огноо: scheduledAt.toLocaleString('mn-MN'),
+        Харилцагч: args.customer_name || '-', Менежер: salesManagerName || '-',
+    };
+    if (!confirm) return confirmNeeded('schedule_viewing', { ...args, property_id: prop.id, lead_id: leadId }, `Үзлэг товлох: ${prop.name}`, preview);
+
+    const { data, error } = await supabaseAdmin.from('property_viewings').insert({
+        shop_id: shopId, property_id: prop.id, lead_id: leadId,
+        scheduled_at: scheduledAt.toISOString(), status: 'scheduled',
+        agent_notes: args.notes || null,
+    }).select('id').single();
+    if (error) return { error: `Алдаа: ${error.message}` };
+    await stampSalesManager('property_viewings', data.id, salesManagerName);
+    return { success: true, message: `"${prop.name}" байрны үзлэгийг ${scheduledAt.toLocaleString('mn-MN')}-д товлолоо${salesManagerName ? ` (менежер: ${salesManagerName})` : ''}.`, viewingId: data.id };
+}
+
+export async function deleteViewing(shopId: string, args: any, confirm = false) {
+    let query = supabaseAdmin.from('property_viewings')
+        .select('id, scheduled_at, status, properties(name)')
+        .eq('shop_id', shopId).is('deleted_at', null);
+    if (args.viewing_id) {
+        query = query.eq('id', args.viewing_id);
+    } else if (args.property_name) {
+        // тухайн байрны товлогдсон үзлэгийг хайна
+        const { data: props } = await supabaseAdmin.from('properties').select('id').eq('shop_id', shopId).ilike('name', `%${args.property_name}%`).limit(1);
+        if (!props || !props.length) return { error: 'Байр олдсонгүй' };
+        query = query.eq('property_id', props[0].id).eq('status', 'scheduled').order('scheduled_at', { ascending: true });
+    } else {
+        return { error: 'viewing_id эсвэл property_name шаардлагатай' };
+    }
+
+    const { data: viewings } = await query;
+    if (!viewings || viewings.length === 0) return { error: 'Үзлэг олдсонгүй' };
+    if (viewings.length > 1) return { error: `${viewings.length} үзлэг олдлоо, viewing_id-г тодруулна уу`, options: viewings.map((v: any) => ({ id: v.id, scheduled_at: v.scheduled_at })) };
+    const v: any = viewings[0];
+    const propName = v.properties?.name || 'байр';
+
+    if (!confirm) {
+        return confirmNeeded('delete_viewing', { viewing_id: v.id, reason: args.reason }, `Үзлэг устгах: ${propName}`,
+            { Байр: propName, Огноо: v.scheduled_at ? new Date(v.scheduled_at).toLocaleString('mn-MN') : '-', Шалтгаан: args.reason || '-' });
+    }
+
+    const { error } = await supabaseAdmin.from('property_viewings').update({ deleted_at: new Date().toISOString(), status: 'cancelled' }).eq('id', v.id);
+    if (error) return { error: `Алдаа: ${error.message}` };
+    return { success: true, message: `"${propName}" байрны үзлэгийг устгалаа (сэргээх боломжтой).`, viewingId: v.id };
+}
+
+// ---- Contracts (гэрээ) ----
+
+export async function createContract(shopId: string, args: any, confirm = false, salesManagerName = '') {
+    if (!args.customer_name) return { error: 'customer_name шаардлагатай' };
+
+    const preview = {
+        Харилцагч: args.customer_name, Утас: args.customer_phone || '-',
+        'Нийт үнэ': args.total_price ? `${Number(args.total_price).toLocaleString()}₮` : '-',
+        'Төсөл/блок': args.block_name || '-', 'Байр': args.unit_number || '-',
+        Менежер: salesManagerName || '-',
+    };
+    if (!confirm) return confirmNeeded('create_contract', args, `Шинэ гэрээ: ${args.customer_name}`, preview);
+
+    const insert: Record<string, unknown> = {
+        shop_id: shopId,
+        product_type: args.product_type || 'residential',
+        contract_status: 'active',
+        customer_name: args.customer_name,
+        customer_phone: args.customer_phone || null,
+        total_price: args.total_price ?? null,
+        balance: args.total_price ?? null,
+        block_name: args.block_name || null,
+        unit_number: args.unit_number || null,
+        contract_number: args.contract_number || null,
+        sales_channel: args.sales_channel || 'ПРОПЕРТИС',
+        sales_manager: salesManagerName || null,
+        contract_date: new Date().toISOString().slice(0, 10),
+        lead_id: args.lead_id || null,
+        customer_id: args.customer_id || null,
+    };
+    const { data, error } = await supabaseAdmin.from('property_contracts').insert(insert).select('id, customer_name').single();
+    if (error) return { error: `Алдаа: ${error.message}` };
+    return { success: true, message: `"${data.customer_name}"-ийн гэрээ үүсгэлээ${salesManagerName ? ` (менежер: ${salesManagerName})` : ''}.`, contractId: data.id };
+}
+
+export async function deleteContract(shopId: string, args: any, confirm = false) {
+    let query = supabaseAdmin.from('property_contracts')
+        .select('id, contract_number, customer_name, contract_status')
+        .eq('shop_id', shopId).is('deleted_at', null);
+    if (args.contract_id) query = query.eq('id', args.contract_id);
+    else if (args.contract_number) query = query.ilike('contract_number', `%${args.contract_number}%`);
+    else if (args.customer_name) query = query.ilike('customer_name', `%${args.customer_name}%`);
+    else return { error: 'contract_id, contract_number эсвэл customer_name шаардлагатай' };
+
+    const { data: contracts } = await query;
+    if (!contracts || contracts.length === 0) return { error: 'Гэрээ олдсонгүй' };
+    if (contracts.length > 1) return { error: `${contracts.length} гэрээ олдлоо, тодруулна уу`, options: contracts.map(c => ({ id: c.id, number: c.contract_number, name: c.customer_name })) };
+    const c = contracts[0];
+
+    if (!confirm) {
+        return confirmNeeded('delete_contract', { contract_id: c.id, reason: args.reason }, `Гэрээ устгах: ${c.customer_name || c.contract_number || ''}`,
+            { Харилцагч: c.customer_name || '-', 'Гэрээ №': c.contract_number || '-', Шалтгаан: args.reason || '-' });
+    }
+
+    const { error } = await supabaseAdmin.from('property_contracts').update({ deleted_at: new Date().toISOString(), contract_status: 'cancelled' }).eq('id', c.id);
+    if (error) return { error: `Алдаа: ${error.message}` };
+    return { success: true, message: `"${c.customer_name || c.contract_number}" гэрээг устгалаа (сэргээх боломжтой).`, contractId: c.id };
+}
+
+// ---- Customer delete (харилцагч хасах) ----
+
+export async function deleteCustomer(shopId: string, args: any, confirm = false) {
+    let query = supabaseAdmin.from('customers').select('id, name, phone').eq('shop_id', shopId).is('deleted_at', null);
+    if (args.customer_id) query = query.eq('id', args.customer_id);
+    else if (args.phone) query = query.ilike('phone', `%${args.phone}%`);
+    else if (args.name) query = query.ilike('name', `%${args.name}%`);
+    else return { error: 'customer_id, name эсвэл phone шаардлагатай' };
+
+    const { data: customers } = await query;
+    if (!customers || customers.length === 0) return { error: 'Харилцагч олдсонгүй' };
+    if (customers.length > 1) return { error: `${customers.length} харилцагч олдлоо, тодруулна уу`, options: customers.map(c => ({ id: c.id, name: c.name, phone: c.phone })) };
+    const c = customers[0];
+
+    if (!confirm) {
+        return confirmNeeded('delete_customer', { customer_id: c.id, reason: args.reason }, `Харилцагч устгах: ${c.name}`,
+            { Нэр: c.name, Утас: c.phone || '-', Шалтгаан: args.reason || '-' });
+    }
+
+    const { error } = await supabaseAdmin.from('customers').update({ deleted_at: new Date().toISOString() }).eq('id', c.id);
+    if (error) return { error: `Алдаа: ${error.message}` };
+    return { success: true, message: `"${c.name}" харилцагчийг устгалаа (сэргээх боломжтой).`, customerId: c.id };
 }
 
 // ============================================

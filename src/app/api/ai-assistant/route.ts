@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { runOrchestrator } from '@/lib/ai/orchestrator';
+import { resolveSalesManagerName } from '@/lib/ai/data-assistant/functions';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { resolveApiUser } from '@/lib/auth/resolve-user';
@@ -88,6 +89,7 @@ export async function POST(req: Request) {
         };
 
         const shopKnowledge = await loadShopKnowledge(effectiveShopId);
+        const userName = await resolveSalesManagerName(resolvedUser.id, resolvedUser.email);
 
         const response = await runOrchestrator(message, {
             shopId: effectiveShopId,
@@ -95,6 +97,7 @@ export async function POST(req: Request) {
             perms,
             shopKnowledge,
             history,
+            userName,
         });
 
         // Persist messages to database

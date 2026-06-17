@@ -75,7 +75,7 @@ export async function runAgent(
             for (const fc of functionCalls) {
                 toolsUsed.push(fc.name);
                 // Mutating tool-уудыг confirm=false-ээр дуудна → preview буцаана (гүйцэтгэхгүй).
-                const toolResult = await executeDataTool(fc.name, fc.args || {}, ctx.shopId, ctx.perms, ctx.userId, false);
+                const toolResult = await executeDataTool(fc.name, fc.args || {}, ctx.shopId, ctx.perms, ctx.userId, false, ctx.userName || '');
 
                 // Баталгаажуулалт шаардсан үйлдлийг pending болгож цуглуулна.
                 if (toolResult && toolResult.requiresConfirmation) {

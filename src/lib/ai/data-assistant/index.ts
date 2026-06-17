@@ -20,6 +20,7 @@ import {
     updatePropertyStatus, updatePropertyPrice, updateLeadStatus,
     addLeadNote, processContractAction,
     createProperty, deleteProperty, createLead, deleteLead, createCustomer,
+    scheduleViewing, deleteViewing, createContract, deleteContract, deleteCustomer,
     generateChartConfig,
 } from './functions';
 import { inviteUser, assignRole, createRole } from './admin-functions';
@@ -42,7 +43,7 @@ export interface AssistantPerms {
  * confirm=false → mutating tool-ууд preview (баталгаажуулалт хүсэх) буцаана.
  * confirm=true  → бодит үйлдлийг гүйцэтгэнэ (зөвшөөрлийн дараа action endpoint дуудна).
  */
-export async function executeDataTool(toolName: string, args: any, shopId: string, perms: AssistantPerms, userId: string, confirm = false): Promise<any> {
+export async function executeDataTool(toolName: string, args: any, shopId: string, perms: AssistantPerms, userId: string, confirm = false, userName = ''): Promise<any> {
     logger.info(`[AI Data Assistant] Executing tool: ${toolName}`, { args, role: perms.role, confirm });
 
     const isWrite = WRITE_TOOL_NAMES.includes(toolName);
@@ -80,12 +81,17 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'update_lead_status': result = await updateLeadStatus(shopId, args); break;
         case 'add_lead_note': result = await addLeadNote(shopId, args); break;
         case 'process_contract_action': result = await processContractAction(shopId, args); break;
-        // Mutating (баталгаажуулалт шаардах) — confirm-gated
+        // Mutating (баталгаажуулалт шаардах) — confirm-gated. userName = борлуулалтын менежер.
         case 'create_property': result = await createProperty(shopId, args, confirm); break;
         case 'delete_property': result = await deleteProperty(shopId, args, confirm); break;
-        case 'create_lead': result = await createLead(shopId, args, confirm); break;
+        case 'create_lead': result = await createLead(shopId, args, confirm, userName); break;
         case 'delete_lead': result = await deleteLead(shopId, args, confirm); break;
-        case 'create_customer': result = await createCustomer(shopId, args, confirm); break;
+        case 'create_customer': result = await createCustomer(shopId, args, confirm, userName); break;
+        case 'schedule_viewing': result = await scheduleViewing(shopId, args, confirm, userName); break;
+        case 'delete_viewing': result = await deleteViewing(shopId, args, confirm); break;
+        case 'create_contract': result = await createContract(shopId, args, confirm, userName); break;
+        case 'delete_contract': result = await deleteContract(shopId, args, confirm); break;
+        case 'delete_customer': result = await deleteCustomer(shopId, args, confirm); break;
         case 'invite_user': result = await inviteUser(shopId, args, confirm); break;
         case 'assign_role': result = await assignRole(shopId, args, confirm); break;
         case 'create_role': result = await createRole(shopId, args, confirm); break;

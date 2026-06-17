@@ -294,6 +294,42 @@ export const writeTools: any[] = [
             },
             required: ['name']
         }
+    },
+    {
+        name: 'schedule_viewing',
+        description: 'Үл хөдлөхийн үзлэг товлох. Бичих эрхтэй ажилтан ашиглана. Баталгаажуулалт авна. Борлуулалтын менежерийн нэрээр хадгална.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                property_id: { type: SchemaType.STRING, description: 'Байрны ID' },
+                property_name: { type: SchemaType.STRING, description: 'Байрны нэрээр хайх' },
+                scheduled_at: { type: SchemaType.STRING, description: 'Үзлэгийн огноо/цаг (ISO эсвэл "2026-06-20 14:00")' },
+                customer_name: { type: SchemaType.STRING, description: 'Харилцагчийн нэр (лийдтэй холбоход)' },
+                lead_id: { type: SchemaType.STRING, description: 'Лийдийн ID (байвал)' },
+                notes: { type: SchemaType.STRING, description: 'Тэмдэглэл' }
+            },
+            required: ['scheduled_at']
+        }
+    },
+    {
+        name: 'create_contract',
+        description: 'Шинэ үл хөдлөхийн гэрээ үүсгэх. Бичих эрхтэй ажилтан ашиглана. Баталгаажуулалт авна. Борлуулалтын менежерийн нэрээр хадгална.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                customer_name: { type: SchemaType.STRING, description: 'Харилцагчийн нэр' },
+                customer_phone: { type: SchemaType.STRING, description: 'Утас' },
+                total_price: { type: SchemaType.NUMBER, description: 'Нийт үнэ (MNT)' },
+                block_name: { type: SchemaType.STRING, description: 'Төсөл/блокийн нэр' },
+                unit_number: { type: SchemaType.STRING, description: 'Байрны дугаар' },
+                contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар' },
+                sales_channel: { type: SchemaType.STRING, description: 'Борлуулалтын суваг (default: ПРОПЕРТИС)' },
+                product_type: { type: SchemaType.STRING, enum: ['residential', 'parking', 'industry', 'commercial'], description: 'Бүтээгдэхүүний төрөл (default: residential)' },
+                lead_id: { type: SchemaType.STRING, description: 'Холбогдох лийдийн ID' },
+                customer_id: { type: SchemaType.STRING, description: 'Холбогдох харилцагчийн ID' }
+            },
+            required: ['customer_name']
+        }
     }
 ];
 
@@ -320,6 +356,44 @@ export const deleteTools: any[] = [
             properties: {
                 lead_id: { type: SchemaType.STRING, description: 'Лийдийн ID' },
                 customer_name: { type: SchemaType.STRING, description: 'Харилцагчийн нэрээр хайх' },
+                reason: { type: SchemaType.STRING, description: 'Устгах шалтгаан' }
+            }
+        }
+    },
+    {
+        name: 'delete_viewing',
+        description: 'Товлогдсон үзлэгийг устгах/цуцлах (soft delete — сэргээх боломжтой). Устгах эрхтэй ажилтан. Баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                viewing_id: { type: SchemaType.STRING, description: 'Үзлэгийн ID' },
+                property_name: { type: SchemaType.STRING, description: 'Байрны нэрээр товлогдсон үзлэгийг хайх' },
+                reason: { type: SchemaType.STRING, description: 'Устгах шалтгаан' }
+            }
+        }
+    },
+    {
+        name: 'delete_contract',
+        description: 'Гэрээг устгах/цуцлах (soft delete — сэргээх боломжтой). Устгах эрхтэй ажилтан. Баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                contract_id: { type: SchemaType.STRING, description: 'Гэрээний ID' },
+                contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар' },
+                customer_name: { type: SchemaType.STRING, description: 'Харилцагчийн нэрээр хайх' },
+                reason: { type: SchemaType.STRING, description: 'Устгах шалтгаан' }
+            }
+        }
+    },
+    {
+        name: 'delete_customer',
+        description: 'Харилцагчийг устгах (soft delete — сэргээх боломжтой). Устгах эрхтэй ажилтан. Баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                customer_id: { type: SchemaType.STRING, description: 'Харилцагчийн ID' },
+                name: { type: SchemaType.STRING, description: 'Нэрээр хайх' },
+                phone: { type: SchemaType.STRING, description: 'Утсаар хайх' },
                 reason: { type: SchemaType.STRING, description: 'Устгах шалтгаан' }
             }
         }
@@ -373,8 +447,8 @@ export const adminTools: any[] = [
     }
 ];
 
-export const WRITE_TOOL_NAMES = ['update_property_status', 'update_property_price', 'update_lead_status', 'add_lead_note', 'process_contract_action', 'create_property', 'create_lead', 'create_customer'];
-export const DELETE_TOOL_NAMES = ['delete_property', 'delete_lead'];
+export const WRITE_TOOL_NAMES = ['update_property_status', 'update_property_price', 'update_lead_status', 'add_lead_note', 'process_contract_action', 'create_property', 'create_lead', 'create_customer', 'schedule_viewing', 'create_contract'];
+export const DELETE_TOOL_NAMES = ['delete_property', 'delete_lead', 'delete_viewing', 'delete_contract', 'delete_customer'];
 export const ADMIN_TOOL_NAMES = ['invite_user', 'assign_role', 'create_role'];
 
 /** Бодит өгөгдөл өөрчилдөг (баталгаажуулалт шаардах) бүх tool. */
