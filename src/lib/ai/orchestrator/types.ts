@@ -61,6 +61,8 @@ export interface OrchestratorContext {
     perms: AssistantPerms;
     shopKnowledge?: string;
     history?: Array<{ role: string; content: string }>;
+    /** Нэвтэрсэн хэрэглэгчийн (борлуулалтын менежер) нэр — үүсгэх үйлдэлд хадгална. */
+    userName?: string;
 }
 
 /** Planner-ийн гаргасан нэг алхам. */

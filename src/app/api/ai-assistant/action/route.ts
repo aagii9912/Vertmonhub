@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { executeDataTool } from '@/lib/ai/data-assistant';
+import { resolveSalesManagerName } from '@/lib/ai/data-assistant/functions';
 import { MUTATING_TOOL_NAMES } from '@/lib/ai/data-assistant/tools';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
@@ -73,7 +74,8 @@ export async function POST(req: Request) {
         };
 
         // RBAC-г executeDataTool дотор дахин шалгана. confirm=true → бодит үйлдэл.
-        const result = await executeDataTool(tool, args || {}, effectiveShopId, perms, resolvedUser.id, true);
+        const userName = await resolveSalesManagerName(resolvedUser.id, resolvedUser.email);
+        const result = await executeDataTool(tool, args || {}, effectiveShopId, perms, resolvedUser.id, true, userName);
 
         const ok = !(result && result.error);
         const message = ok
