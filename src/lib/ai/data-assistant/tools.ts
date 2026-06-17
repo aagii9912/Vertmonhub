@@ -168,6 +168,11 @@ export const readTools: any[] = [
                 property_ids: { type: SchemaType.STRING, description: 'Байрнуудын ID-ууд (таслалаар)' }
             }
         }
+    },
+    {
+        name: 'get_marketing_summary',
+        description: 'Маркетингийн нэгтгэл: зар сурталчилгааны кампанит ажил (зарцуулалт, харагдалт, клик, хөрвүүлэлт, CTR, CPA) ба сошиал постын гүйцэтгэл.',
+        parameters: { type: SchemaType.OBJECT, properties: {} }
     }
 ];
 
@@ -332,6 +337,32 @@ export const writeTools: any[] = [
         }
     },
     {
+        name: 'create_social_post',
+        description: 'Сошиал постын ноорог эсвэл товлосон пост үүсгэх (DB-д хадгална, FB-д шууд нийтлэхгүй). Баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                content: { type: SchemaType.STRING, description: 'Постын текст' },
+                platform: { type: SchemaType.STRING, enum: ['facebook', 'instagram', 'twitter', 'linkedin', 'tiktok'], description: 'Суваг (default: facebook)' },
+                media_url: { type: SchemaType.STRING, description: 'Зургийн URL (заавал биш)' },
+                scheduled_at: { type: SchemaType.STRING, description: 'Товлох огноо/цаг (ISO). Байвал scheduled, үгүй бол draft' }
+            },
+            required: ['content']
+        }
+    },
+    {
+        name: 'remember_fact',
+        description: 'Дэлгүүрийн талаар чухал баримт/тохиргоог урт хугацааны санах ойд хадгалах (дараагийн ярианд автоматаар санана). Жишээ: "комисс: 2%", "ажлын цаг: 09-18".',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                key: { type: SchemaType.STRING, description: 'Богино түлхүүр (жишээ: комисс, ажлын цаг)' },
+                value: { type: SchemaType.STRING, description: 'Утга' }
+            },
+            required: ['key', 'value']
+        }
+    },
+    {
         name: 'bulk_update_leads',
         description: 'Олон лийдийн статусыг нэг дор шинэчлэх. from_status (тухайн статустай бүгд) эсвэл lead_ids (таслалаар) -ээр сонгоно. Баталгаажуулалт авна.',
         parameters: {
@@ -477,7 +508,7 @@ export const adminTools: any[] = [
     }
 ];
 
-export const WRITE_TOOL_NAMES = ['update_property_status', 'update_property_price', 'update_lead_status', 'add_lead_note', 'process_contract_action', 'create_property', 'create_lead', 'create_customer', 'schedule_viewing', 'create_contract', 'attach_file', 'bulk_update_leads'];
+export const WRITE_TOOL_NAMES = ['update_property_status', 'update_property_price', 'update_lead_status', 'add_lead_note', 'process_contract_action', 'create_property', 'create_lead', 'create_customer', 'schedule_viewing', 'create_contract', 'attach_file', 'bulk_update_leads', 'create_social_post', 'remember_fact'];
 export const DELETE_TOOL_NAMES = ['delete_property', 'delete_lead', 'delete_viewing', 'delete_contract', 'delete_customer'];
 export const ADMIN_TOOL_NAMES = ['invite_user', 'assign_role', 'create_role'];
 

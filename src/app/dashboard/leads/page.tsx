@@ -36,6 +36,7 @@ import { toast } from 'sonner';
 import type { Lead, LeadStatus, LeadSource } from '@/types/property';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
+import { EntityAttachments } from '@/components/dashboard/EntityAttachments';
 
 type StatusVariant = 'info' | 'brand' | 'warning' | 'success' | 'danger' | 'default';
 
@@ -537,6 +538,9 @@ export default function LeadsPage() {
                                                                         </button>
                                                                     )}
                                                                 </div>
+                                                            </div>
+                                                            <div className="mt-4">
+                                                                <EntityAttachments entityType="lead" entityId={lead.id} />
                                                             </div>
                                                         </td>
                                                     </tr>

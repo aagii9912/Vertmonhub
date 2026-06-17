@@ -13,6 +13,7 @@ import { AGENTS } from './agents';
 import { runAgent } from './runAgent';
 import { planRequest } from './planner';
 import { withRetry } from './retry';
+import { getShopMemory, formatShopMemory } from '@/lib/ai/data-assistant/functions';
 import type {
     AgentBadge, AgentRunResult, OrchestratorContext,
     OrchestratorResult, OrchestrationTrace, TraceStep, PendingAction,
@@ -53,6 +54,12 @@ export async function runOrchestrator(
     ctx: OrchestratorContext,
 ): Promise<OrchestratorResult> {
     const orchestratorStart = Date.now();
+
+    // 0. Урт хугацааны shop memory-г контекстод нэмнэ (агентууд санана)
+    try {
+        const memText = formatShopMemory(await getShopMemory(ctx.shopId));
+        if (memText) ctx = { ...ctx, shopKnowledge: [ctx.shopKnowledge, memText].filter(Boolean).join('\n\n') };
+    } catch { /* memory багана/хүснэгт байхгүй бол алгасна */ }
 
     // 1. Plan
     const { plan, latencyMs: plannerLatencyMs, model: plannerModel } = await planRequest(message, ctx);
