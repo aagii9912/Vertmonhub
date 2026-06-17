@@ -14,7 +14,7 @@ import { runAgent } from './runAgent';
 import { planRequest } from './planner';
 import type {
     AgentBadge, AgentRunResult, OrchestratorContext,
-    OrchestratorResult, OrchestrationTrace, TraceStep,
+    OrchestratorResult, OrchestrationTrace, TraceStep, PendingAction,
 } from './types';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
@@ -122,6 +122,9 @@ export async function runOrchestrator(
     const withChart = runResults.find((r) => r.result.ok && r.result.chartConfig);
     const withData = runResults.find((r) => r.result.ok && r.result.data);
 
+    // Бүх алхмаас баталгаажуулалт хүлээж буй үйлдлүүдийг цуглуулна.
+    const pendingActions: PendingAction[] = runResults.flatMap((r) => r.result.pendingActions || []);
+
     const agentsUsed: AgentBadge[] = runResults
         .filter((r) => r.result.ok)
         .map((r) => ({ id: r.agentId as AgentBadge['id'], name: r.name, emoji: r.emoji, color: AGENTS[r.agentId as AgentBadge['id']].color }));
@@ -143,6 +146,7 @@ export async function runOrchestrator(
         chartConfig: withChart?.result.chartConfig ?? null,
         agentsUsed,
         trace,
+        pendingActions,
     };
 }
 

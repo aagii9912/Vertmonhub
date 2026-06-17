@@ -127,7 +127,7 @@ export async function fetchLeads(shopId: string, args: any) {
     const limit = args.limit || 10;
     let query = supabaseAdmin.from('leads')
         .select('id, customer_name, customer_phone, customer_email, status, source, budget_min, budget_max, preferred_type, preferred_district, preferred_rooms, urgency, notes, internal_notes, last_contact_at, next_followup_at, viewing_scheduled_at, created_at, updated_at')
-        .eq('shop_id', shopId).order('created_at', { ascending: false }).limit(limit);
+        .eq('shop_id', shopId).is('deleted_at', null).order('created_at', { ascending: false }).limit(limit);
 
     if (args.status) query = query.eq('status', args.status);
     if (args.source) query = query.eq('source', args.source);
@@ -592,6 +592,160 @@ export async function processContractAction(shopId: string, args: any) {
     }
 
     return results;
+}
+
+// ============================================
+// MUTATING FUNCTIONS — CREATE / DELETE (confirm-gated)
+// ============================================
+// confirm=false → preview буцаана (хэрэглэгчээс зөвшөөрөл хүснэ).
+// confirm=true  → бодит үйлдлийг гүйцэтгэнэ (action endpoint-оос дуудна).
+
+function confirmNeeded(tool: string, args: any, label: string, preview: Record<string, unknown>) {
+    return { requiresConfirmation: true, action: { tool, args }, label, preview };
+}
+
+export async function createProperty(shopId: string, args: any, confirm = false) {
+    if (!args.name || !args.type || args.price == null) {
+        return { error: 'name, type, price талбарууд заавал шаардлагатай' };
+    }
+    const validTypes = ['apartment', 'house', 'office', 'land', 'commercial'];
+    if (!validTypes.includes(args.type)) return { error: `type буруу байна. Зөвшөөрөгдсөн: ${validTypes.join(', ')}` };
+
+    const preview = {
+        Нэр: args.name, Төрөл: args.type,
+        Үнэ: `${Number(args.price).toLocaleString()}₮`,
+        Дүүрэг: args.district || '-', 'Өрөө': args.rooms ?? '-', 'м²': args.size_sqm ?? '-',
+        Статус: args.status || 'available',
+    };
+    if (!confirm) return confirmNeeded('create_property', args, `Шинэ байр нэмэх: ${args.name}`, preview);
+
+    const insert = {
+        shop_id: shopId,
+        name: args.name, type: args.type, price: args.price,
+        description: args.description || null,
+        price_per_sqm: args.price_per_sqm ?? null,
+        currency: args.currency || 'MNT',
+        size_sqm: args.size_sqm ?? null,
+        rooms: args.rooms ?? null,
+        district: args.district || null,
+        address: args.address || null,
+        city: args.city || 'Ulaanbaatar',
+        status: args.status || 'available',
+        is_active: true,
+    };
+    const { data, error } = await supabaseAdmin.from('properties').insert(insert).select('id, name').single();
+    if (error) return { error: `Алдаа: ${error.message}` };
+    return { success: true, message: `"${data.name}" байр амжилттай нэмэгдлээ.`, propertyId: data.id };
+}
+
+export async function deleteProperty(shopId: string, args: any, confirm = false) {
+    let query = supabaseAdmin.from('properties').select('id, name, status').eq('shop_id', shopId).is('deleted_at', null);
+    if (args.property_id) query = query.eq('id', args.property_id);
+    else if (args.property_name) query = query.ilike('name', `%${args.property_name}%`);
+    else return { error: 'property_id эсвэл property_name шаардлагатай' };
+
+    const { data: properties } = await query;
+    if (!properties || properties.length === 0) return { error: 'Байр олдсонгүй' };
+    if (properties.length > 1) return { error: `${properties.length} байр олдлоо, ID-г тодруулна уу`, options: properties.map(p => ({ id: p.id, name: p.name })) };
+
+    const prop = properties[0];
+    if (!confirm) {
+        return confirmNeeded('delete_property',
+            { property_id: prop.id, reason: args.reason, document_url: args.document_url },
+            `Байр устгах: ${prop.name}`,
+            { Нэр: prop.name, Статус: prop.status, Шалтгаан: args.reason || '-', 'Баримт/гэрээ': args.document_url || '-' });
+    }
+
+    const { error } = await supabaseAdmin.from('properties')
+        .update({ deleted_at: new Date().toISOString(), is_active: false })
+        .eq('id', prop.id);
+    if (error) return { error: `Алдаа: ${error.message}` };
+    return { success: true, message: `"${prop.name}" байрыг устгалаа (сэргээх боломжтой).`, propertyId: prop.id };
+}
+
+export async function createLead(shopId: string, args: any, confirm = false) {
+    if (!args.customer_name) return { error: 'customer_name шаардлагатай' };
+    const validStatus = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'];
+    const status = args.status && validStatus.includes(args.status) ? args.status : 'new';
+    const validSource = ['messenger', 'instagram', 'website', 'referral', 'phone', 'facebook_ads', 'google_ads', 'other'];
+    const source = args.source && validSource.includes(args.source) ? args.source : 'other';
+
+    const preview = {
+        Нэр: args.customer_name, Утас: args.customer_phone || '-', Статус: status, 'Эх сурвалж': source,
+        Төсөв: args.budget_max ? `${Number(args.budget_max).toLocaleString()}₮` : '-',
+    };
+    if (!confirm) return confirmNeeded('create_lead', { ...args, status, source }, `Шинэ лийд: ${args.customer_name}`, preview);
+
+    const insert = {
+        shop_id: shopId,
+        customer_name: args.customer_name,
+        customer_phone: args.customer_phone || null,
+        customer_email: args.customer_email || null,
+        status, source,
+        notes: args.notes || null,
+        budget_min: args.budget_min ?? null,
+        budget_max: args.budget_max ?? null,
+        preferred_district: args.preferred_district || null,
+        preferred_rooms: args.preferred_rooms ?? null,
+    };
+    const { data, error } = await supabaseAdmin.from('leads').insert(insert).select('id, customer_name').single();
+    if (error) return { error: `Алдаа: ${error.message}` };
+    return { success: true, message: `"${data.customer_name}" лийд амжилттай үүсгэлээ.`, leadId: data.id };
+}
+
+export async function deleteLead(shopId: string, args: any, confirm = false) {
+    let query = supabaseAdmin.from('leads').select('id, customer_name, status').eq('shop_id', shopId).is('deleted_at', null);
+    if (args.lead_id) query = query.eq('id', args.lead_id);
+    else if (args.customer_name) query = query.ilike('customer_name', `%${args.customer_name}%`);
+    else return { error: 'lead_id эсвэл customer_name шаардлагатай' };
+
+    const { data: leads } = await query;
+    if (!leads || leads.length === 0) return { error: 'Лийд олдсонгүй' };
+    if (leads.length > 1) return { error: `${leads.length} лийд олдлоо, тодруулна уу`, options: leads.map(l => ({ id: l.id, name: l.customer_name })) };
+
+    const lead = leads[0];
+    if (!confirm) {
+        return confirmNeeded('delete_lead',
+            { lead_id: lead.id, reason: args.reason },
+            `Лийд устгах: ${lead.customer_name}`,
+            { Нэр: lead.customer_name, Статус: lead.status, Шалтгаан: args.reason || '-' });
+    }
+
+    const { error } = await supabaseAdmin.from('leads')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', lead.id);
+    if (error) return { error: `Алдаа: ${error.message}` };
+    return { success: true, message: `"${lead.customer_name}" лийдийг устгалаа (сэргээх боломжтой).`, leadId: lead.id };
+}
+
+export async function createCustomer(shopId: string, args: any, confirm = false) {
+    if (!args.name) return { error: 'name шаардлагатай' };
+    const phoneNorm = args.phone ? String(args.phone).replace(/\D/g, '') : null;
+
+    // Давхардал шалгах (утас/имэйлээр)
+    if (phoneNorm || args.email) {
+        const ors: string[] = [];
+        if (phoneNorm) ors.push(`phone_normalized.eq.${phoneNorm}`);
+        if (args.email) ors.push(`email.eq.${args.email}`);
+        const { data: dupes } = await supabaseAdmin.from('customers')
+            .select('id, name').eq('shop_id', shopId).or(ors.join(','));
+        if (dupes && dupes.length > 0) {
+            return { error: `Ийм харилцагч аль хэдийн бүртгэлтэй: ${dupes[0].name}`, existing: dupes };
+        }
+    }
+
+    const preview = { Нэр: args.name, Утас: args.phone || '-', Имэйл: args.email || '-' };
+    if (!confirm) return confirmNeeded('create_customer', args, `Шинэ харилцагч: ${args.name}`, preview);
+
+    const insert = {
+        shop_id: shopId, name: args.name,
+        phone: args.phone || null, phone_normalized: phoneNorm,
+        email: args.email || null, address: args.address || null,
+        notes: args.notes || null, tags: ['source:ai'],
+    };
+    const { data, error } = await supabaseAdmin.from('customers').insert(insert).select('id, name').single();
+    if (error) return { error: `Алдаа: ${error.message}` };
+    return { success: true, message: `"${data.name}" харилцагч амжилттай үүсгэлээ.`, customerId: data.id };
 }
 
 // ============================================

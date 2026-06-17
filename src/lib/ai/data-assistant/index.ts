@@ -10,7 +10,7 @@
 
 import { GoogleGenerativeAI, Content } from '@google/generative-ai';
 import { logger } from '@/lib/utils/logger';
-import { readTools, writeTools, WRITE_TOOL_NAMES } from './tools';
+import { readTools, writeTools, WRITE_TOOL_NAMES, DELETE_TOOL_NAMES, ADMIN_TOOL_NAMES } from './tools';
 import { logAiAudit } from './audit';
 import {
     fetchDashboardStats, fetchOrders, fetchProductStats,
@@ -19,8 +19,10 @@ import {
     fetchSalesSummary, fetchSalesForecast, compareProperties,
     updatePropertyStatus, updatePropertyPrice, updateLeadStatus,
     addLeadNote, processContractAction,
+    createProperty, deleteProperty, createLead, deleteLead, createCustomer,
     generateChartConfig,
 } from './functions';
+import { inviteUser, assignRole, createRole } from './admin-functions';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
@@ -31,25 +33,31 @@ export interface AssistantPerms {
     role: string;
 }
 
-// Устгах tool одоохондоо байхгүй — gate-ийг ирээдүйд зориулж бэлдэв.
-const DELETE_TOOL_NAMES: string[] = [];
-
 // ============================================
 // TOOL EXECUTOR
 // ============================================
 
-export async function executeDataTool(toolName: string, args: any, shopId: string, perms: AssistantPerms, userId: string): Promise<any> {
-    logger.info(`[AI Data Assistant] Executing tool: ${toolName}`, { args, role: perms.role });
+/**
+ * Data/admin tool гүйцэтгэгч.
+ * confirm=false → mutating tool-ууд preview (баталгаажуулалт хүсэх) буцаана.
+ * confirm=true  → бодит үйлдлийг гүйцэтгэнэ (зөвшөөрлийн дараа action endpoint дуудна).
+ */
+export async function executeDataTool(toolName: string, args: any, shopId: string, perms: AssistantPerms, userId: string, confirm = false): Promise<any> {
+    logger.info(`[AI Data Assistant] Executing tool: ${toolName}`, { args, role: perms.role, confirm });
 
     const isWrite = WRITE_TOOL_NAMES.includes(toolName);
     const isDelete = DELETE_TOOL_NAMES.includes(toolName);
+    const isAdmin = ADMIN_TOOL_NAMES.includes(toolName);
 
-    // RBAC: бичих эрхгүй бол write tool, устгах эрхгүй бол delete tool-ыг блоклоно
+    // RBAC: write→canWrite, delete→canDelete, admin→зөвхөн super_admin
     if (isWrite && !perms.canWrite) {
         return { error: 'Энэ үйлдлийг хийх эрх танд алга (бичих эрх шаардлагатай).' };
     }
     if (isDelete && !perms.canDelete) {
         return { error: 'Энэ үйлдлийг хийх эрх танд алга (устгах эрх шаардлагатай).' };
+    }
+    if (isAdmin && perms.role !== 'super_admin') {
+        return { error: 'Энэ үйлдлийг зөвхөн super_admin хийх боломжтой.' };
     }
 
     let result: any;
@@ -72,11 +80,20 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'update_lead_status': result = await updateLeadStatus(shopId, args); break;
         case 'add_lead_note': result = await addLeadNote(shopId, args); break;
         case 'process_contract_action': result = await processContractAction(shopId, args); break;
+        // Mutating (баталгаажуулалт шаардах) — confirm-gated
+        case 'create_property': result = await createProperty(shopId, args, confirm); break;
+        case 'delete_property': result = await deleteProperty(shopId, args, confirm); break;
+        case 'create_lead': result = await createLead(shopId, args, confirm); break;
+        case 'delete_lead': result = await deleteLead(shopId, args, confirm); break;
+        case 'create_customer': result = await createCustomer(shopId, args, confirm); break;
+        case 'invite_user': result = await inviteUser(shopId, args, confirm); break;
+        case 'assign_role': result = await assignRole(shopId, args, confirm); break;
+        case 'create_role': result = await createRole(shopId, args, confirm); break;
         default: return { error: `Unknown tool: ${toolName}` };
     }
 
-    // Audit: write/delete үйлдлийг бүртгэнэ
-    if (isWrite || isDelete) {
+    // Audit: бодит үйлдэл хийсэн үед (confirm=true) write/delete/admin-ийг бүртгэнэ
+    if ((isWrite || isDelete || isAdmin) && confirm) {
         await logAiAudit({ shopId, userId, tool: toolName, args, success: !(result && result.error) });
     }
 

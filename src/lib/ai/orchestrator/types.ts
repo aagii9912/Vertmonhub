@@ -14,7 +14,8 @@ export type AgentId =
     | 'property-expert'
     | 'crm-specialist'
     | 'finance-analyst'
-    | 'advisor';
+    | 'advisor'
+    | 'operations-admin';
 
 /** Нэг agent-ийн тодорхойлолт (registry дотор). */
 export interface AgentDefinition {
@@ -29,10 +30,28 @@ export interface AgentDefinition {
     temperature: number;
     /** Энэ agent-д нээлттэй унших tool-уудын нэрс (data-assistant readTools-оос). */
     readToolNames: string[];
-    /** Бичих эрхтэй үед нээгдэх write tool-уудын нэрс (perms.canWrite шаардана). */
+    /** Бичих эрхтэй үед нээгдэх write/create tool-уудын нэрс (perms.canWrite шаардана). */
     writeToolNames: string[];
+    /** Устгах эрхтэй үед нээгдэх delete tool-уудын нэрс (perms.canDelete шаардана). */
+    deleteToolNames?: string[];
+    /** ЗӨВХӨН super_admin-д нээгдэх admin tool-уудын нэрс. */
+    adminToolNames?: string[];
     /** Тухайн agent-д зориулсан фокустай систем заавар. */
     buildInstruction: (shopKnowledge?: string) => string;
+}
+
+/** AI санал болгосон, хэрэглэгчийн зөвшөөрлийг хүлээж буй үйлдэл. */
+export interface PendingAction {
+    id: string;
+    tool: string;
+    args: Record<string, unknown>;
+    /** Хэрэглэгчид харагдах товч гарчиг. */
+    label: string;
+    /** Гүйцэтгэхээс өмнө харуулах талбарууд. */
+    preview: Record<string, unknown>;
+    agentId: string;
+    agentName: string;
+    emoji: string;
 }
 
 /** Orchestrator гүйцэтгэлд дамжуулах контекст. */
@@ -67,6 +86,8 @@ export interface AgentRunResult {
     tokens: number;
     ok: boolean;
     error?: string;
+    /** Энэ agent-ийн санал болгосон, баталгаажуулалт хүлээж буй үйлдлүүд. */
+    pendingActions: PendingAction[];
 }
 
 /** Trace-д бичигдэх нэг алхмын мөшгилт. */
@@ -110,4 +131,6 @@ export interface OrchestratorResult {
     chartConfig: any;
     agentsUsed: AgentBadge[];
     trace: OrchestrationTrace;
+    /** Хэрэглэгчийн зөвшөөрлийг хүлээж буй үйлдлүүд (баталгаажуулалтын карт). */
+    pendingActions: PendingAction[];
 }

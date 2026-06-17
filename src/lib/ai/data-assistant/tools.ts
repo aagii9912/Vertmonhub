@@ -239,7 +239,143 @@ export const writeTools: any[] = [
             },
             required: ['action']
         }
+    },
+    {
+        name: 'create_property',
+        description: 'Шинэ үл хөдлөх хөрөнгө (байр) нэмэх. Бичих эрхтэй ажилтан ашиглана. Үйлдэл хийхээс өмнө хэрэглэгчээс баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                name: { type: SchemaType.STRING, description: 'Байрны нэр' },
+                type: { type: SchemaType.STRING, enum: ['apartment', 'house', 'office', 'land', 'commercial'], description: 'Байрны төрөл' },
+                price: { type: SchemaType.NUMBER, description: 'Үнэ (MNT)' },
+                price_per_sqm: { type: SchemaType.NUMBER, description: 'м²-ийн үнэ (MNT)' },
+                size_sqm: { type: SchemaType.NUMBER, description: 'Талбай (м²)' },
+                rooms: { type: SchemaType.NUMBER, description: 'Өрөөний тоо' },
+                district: { type: SchemaType.STRING, description: 'Дүүрэг/Байршил' },
+                address: { type: SchemaType.STRING, description: 'Хаяг' },
+                description: { type: SchemaType.STRING, description: 'Тайлбар' },
+                status: { type: SchemaType.STRING, enum: ['available', 'reserved', 'sold', 'rented', 'barter'], description: 'Статус (default: available)' }
+            },
+            required: ['name', 'type', 'price']
+        }
+    },
+    {
+        name: 'create_lead',
+        description: 'Шинэ лийд/сонирхогч үүсгэх. Бичих эрхтэй ажилтан ашиглана. Үйлдэл хийхээс өмнө хэрэглэгчээс баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                customer_name: { type: SchemaType.STRING, description: 'Харилцагчийн нэр' },
+                customer_phone: { type: SchemaType.STRING, description: 'Утасны дугаар' },
+                customer_email: { type: SchemaType.STRING, description: 'Имэйл' },
+                status: { type: SchemaType.STRING, enum: ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'], description: 'Статус (default: new)' },
+                source: { type: SchemaType.STRING, enum: ['messenger', 'instagram', 'website', 'referral', 'phone', 'facebook_ads', 'google_ads', 'other'], description: 'Эх үүсвэр' },
+                budget_min: { type: SchemaType.NUMBER, description: 'Доод төсөв (MNT)' },
+                budget_max: { type: SchemaType.NUMBER, description: 'Дээд төсөв (MNT)' },
+                preferred_district: { type: SchemaType.STRING, description: 'Сонирхсон дүүрэг' },
+                preferred_rooms: { type: SchemaType.NUMBER, description: 'Сонирхсон өрөөний тоо' },
+                notes: { type: SchemaType.STRING, description: 'Тэмдэглэл' }
+            },
+            required: ['customer_name']
+        }
+    },
+    {
+        name: 'create_customer',
+        description: 'Шинэ харилцагч үүсгэх. Утас/имэйлээр давхардлыг шалгана. Үйлдэл хийхээс өмнө хэрэглэгчээс баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                name: { type: SchemaType.STRING, description: 'Харилцагчийн нэр' },
+                phone: { type: SchemaType.STRING, description: 'Утас' },
+                email: { type: SchemaType.STRING, description: 'Имэйл' },
+                address: { type: SchemaType.STRING, description: 'Хаяг' },
+                notes: { type: SchemaType.STRING, description: 'Тэмдэглэл' }
+            },
+            required: ['name']
+        }
     }
 ];
 
-export const WRITE_TOOL_NAMES = ['update_property_status', 'update_property_price', 'update_lead_status', 'add_lead_note', 'process_contract_action'];
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const deleteTools: any[] = [
+    {
+        name: 'delete_property',
+        description: 'Байрыг устгах (soft delete — сэргээх боломжтой). Устгах эрхтэй ажилтан ашиглана. Хэрэглэгчээс заавал баталгаажуулалт авна. Шалтгаан/гэрээний баримтын линк хавсаргаж болно.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                property_id: { type: SchemaType.STRING, description: 'Байрны ID' },
+                property_name: { type: SchemaType.STRING, description: 'Байрны нэрээр хайх' },
+                reason: { type: SchemaType.STRING, description: 'Устгах шалтгаан' },
+                document_url: { type: SchemaType.STRING, description: 'Холбогдох баримт/гэрээний зургийн линк' }
+            }
+        }
+    },
+    {
+        name: 'delete_lead',
+        description: 'Лийдийг устгах (soft delete — сэргээх боломжтой). Устгах эрхтэй ажилтан ашиглана. Хэрэглэгчээс заавал баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                lead_id: { type: SchemaType.STRING, description: 'Лийдийн ID' },
+                customer_name: { type: SchemaType.STRING, description: 'Харилцагчийн нэрээр хайх' },
+                reason: { type: SchemaType.STRING, description: 'Устгах шалтгаан' }
+            }
+        }
+    }
+];
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const adminTools: any[] = [
+    {
+        name: 'invite_user',
+        description: 'Шинэ хэрэглэгчийг имэйлээр урьж, дүр (role) болон дэлгүүрийн гишүүнчлэл онооно. ЗӨВХӨН super_admin. Хэрэглэгчээс баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                email: { type: SchemaType.STRING, description: 'Урих хэрэглэгчийн имэйл' },
+                role: { type: SchemaType.STRING, description: 'Оноох дүр: admin, sales_manager, marketing, finance_manager, accountant, viewer гэх мэт (default: viewer)' },
+                shop_id: { type: SchemaType.STRING, description: 'Дэлгүүрийн ID (default: одоогийн дэлгүүр)' }
+            },
+            required: ['email']
+        }
+    },
+    {
+        name: 'assign_role',
+        description: 'Бүртгэлтэй хэрэглэгчид (имэйлээр) дүр оноох/солих. ЗӨВХӨН super_admin. Хэрэглэгчээс баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                email: { type: SchemaType.STRING, description: 'Хэрэглэгчийн имэйл' },
+                role: { type: SchemaType.STRING, description: 'Шинэ дүр (role нэр)' }
+            },
+            required: ['email', 'role']
+        }
+    },
+    {
+        name: 'create_role',
+        description: 'Шинэ дүр (role) ба модулийн эрхүүдийг үүсгэх. ЗӨВХӨН super_admin. Хэрэглэгчээс баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                name: { type: SchemaType.STRING, description: 'Дүрийн систем нэр (англиар, жишээ: junior_sales)' },
+                display_name_mn: { type: SchemaType.STRING, description: 'Монгол нэр' },
+                display_name: { type: SchemaType.STRING, description: 'Англи харагдах нэр' },
+                description: { type: SchemaType.STRING, description: 'Тайлбар' },
+                can_write: { type: SchemaType.BOOLEAN, description: 'Бичих эрх' },
+                can_delete: { type: SchemaType.BOOLEAN, description: 'Устгах эрх' },
+                can_access_admin: { type: SchemaType.BOOLEAN, description: 'Админ хандах эрх' },
+                modules: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: 'Эрх олгох модулиуд: dashboard, properties, leads, viewings, contracts, customers, inbox, reports, marketing-roi, surveys, ai-assistant, ai-settings, settings' }
+            },
+            required: ['name', 'display_name_mn']
+        }
+    }
+];
+
+export const WRITE_TOOL_NAMES = ['update_property_status', 'update_property_price', 'update_lead_status', 'add_lead_note', 'process_contract_action', 'create_property', 'create_lead', 'create_customer'];
+export const DELETE_TOOL_NAMES = ['delete_property', 'delete_lead'];
+export const ADMIN_TOOL_NAMES = ['invite_user', 'assign_role', 'create_role'];
+
+/** Бодит өгөгдөл өөрчилдөг (баталгаажуулалт шаардах) бүх tool. */
+export const MUTATING_TOOL_NAMES = [...WRITE_TOOL_NAMES, ...DELETE_TOOL_NAMES, ...ADMIN_TOOL_NAMES];
