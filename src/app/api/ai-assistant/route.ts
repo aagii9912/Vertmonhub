@@ -107,16 +107,13 @@ export async function POST(req: Request) {
             // Auto-create conversation if none provided
             if (!activeConversationId && effectiveShopId) {
                 const autoTitle = message.length > 40 ? message.substring(0, 40) + '...' : message;
-                const { data: conv } = await adminDb
-                    .from('ai_conversations')
-                    .insert({
-                        user_id: resolvedUser.id,
-                        shop_id: effectiveShopId,
-                        title: autoTitle,
-                        mode: 'orchestrator',
-                    })
-                    .select('id')
-                    .single();
+                const base = { user_id: resolvedUser.id, shop_id: effectiveShopId, title: autoTitle };
+                // 'orchestrator'-оор оролдоно; хуучин mode CHECK constraint (data/general)
+                // байвал зөрчигдөж амжилтгүй болох тул 'data'-аар найдвартай fallback хийнэ.
+                let conv = (await adminDb.from('ai_conversations').insert({ ...base, mode: 'orchestrator' }).select('id').single()).data;
+                if (!conv) {
+                    conv = (await adminDb.from('ai_conversations').insert({ ...base, mode: 'data' }).select('id').single()).data;
+                }
                 if (conv) activeConversationId = conv.id;
             }
 
