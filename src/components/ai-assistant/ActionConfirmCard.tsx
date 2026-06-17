@@ -1,12 +1,15 @@
 'use client';
 
 /**
- * AI Orchestrator-ийн санал болгосон үйлдлийг хэрэглэгчээр баталгаажуулах карт.
- * Зөвшөөрөх → бодит үйлдлийг /api/ai-assistant/action гүйцэтгэнэ. Цуцлах → үл хийнэ.
+ * AI Orchestrator-ийн санал болгосон үйлдлийн харилцан-ярианы доторх ХУРААНГУЙ тэмдэглэл.
+ * Баталгаажуулах/цуцлах гол UI нь ActionConfirmModal попап цонхонд байна.
+ * - pending  → дарж попап нээх "Баталгаажуулах" pill
+ * - running  → гүйцэтгэж буй индикатор
+ * - done/cancelled/error → үр дүнгийн мөр
  */
 
 import React from 'react';
-import { Check, X, Loader2, ShieldAlert, CheckCircle2, XCircle } from 'lucide-react';
+import { Loader2, ShieldAlert, CheckCircle2, XCircle, ChevronRight, Clock } from 'lucide-react';
 
 export interface PendingActionUI {
     id: string;
@@ -22,23 +25,14 @@ export interface PendingActionUI {
 
 interface Props {
     action: PendingActionUI;
-    onApprove: (action: PendingActionUI) => void;
-    onCancel: (action: PendingActionUI) => void;
+    /** pending pill дарахад баталгаажуулах попапыг (дахин) нээнэ. */
+    onReopen: (action: PendingActionUI) => void;
 }
 
-const DELETE_TOOLS = ['delete_property', 'delete_lead'];
+const DELETE_TOOLS = ['delete_property', 'delete_lead', 'delete_viewing', 'delete_contract', 'delete_customer'];
 const ADMIN_TOOLS = ['invite_user', 'assign_role', 'create_role'];
 
-export function ActionConfirmCard({ action, onApprove, onCancel }: Props) {
-    const isDelete = DELETE_TOOLS.includes(action.tool);
-    const isAdmin = ADMIN_TOOLS.includes(action.tool);
-    const accent = isDelete ? 'rose' : isAdmin ? 'amber' : 'emerald';
-    const accentCls = {
-        rose: 'border-rose-300 bg-rose-50',
-        amber: 'border-amber-300 bg-amber-50',
-        emerald: 'border-status-success/30 bg-status-success-soft',
-    }[accent];
-
+export function ActionConfirmCard({ action, onReopen }: Props) {
     const status = action.status || 'pending';
 
     if (status === 'done') {
@@ -65,42 +59,39 @@ export function ActionConfirmCard({ action, onApprove, onCancel }: Props) {
             </div>
         );
     }
+    if (status === 'running') {
+        return (
+            <div className="mt-2 flex items-center gap-2 text-sm text-foreground/80 bg-surface-2/60 border border-border/60 rounded-xl px-3 py-2">
+                <Loader2 className="w-4 h-4 flex-shrink-0 animate-spin text-brand" />
+                <span>Гүйцэтгэж байна: {action.label}</span>
+            </div>
+        );
+    }
+
+    // pending → дарахад баталгаажуулах попап нээгдэнэ
+    const isDelete = DELETE_TOOLS.includes(action.tool);
+    const isAdmin = ADMIN_TOOLS.includes(action.tool);
+    const accentCls = isDelete
+        ? 'border-rose-300 bg-rose-50'
+        : isAdmin
+            ? 'border-amber-300 bg-amber-50'
+            : 'border-brand/30 bg-brand-soft/40';
 
     return (
-        <div className={`mt-2 rounded-xl border ${accentCls} p-3`}>
-            <div className="flex items-center gap-2 mb-2">
-                {isDelete || isAdmin ? <ShieldAlert className="w-4 h-4 text-foreground/70" /> : <span>{action.emoji}</span>}
-                <span className="text-sm font-semibold text-foreground">{action.label}</span>
-                <span className="ml-auto text-[11px] text-muted-foreground">{action.agentName}</span>
+        <button
+            onClick={() => onReopen(action)}
+            className={`mt-2 w-full flex items-center gap-2.5 text-left rounded-xl border ${accentCls} px-3 py-2.5 hover:shadow-sm transition group`}
+        >
+            {isDelete || isAdmin
+                ? <ShieldAlert className="w-4 h-4 text-foreground/70 flex-shrink-0" />
+                : <Clock className="w-4 h-4 text-brand flex-shrink-0" />}
+            <div className="min-w-0">
+                <p className="text-sm font-semibold text-foreground truncate">{action.label}</p>
+                <p className="text-[11px] text-muted-foreground">Баталгаажуулалт хүлээгдэж байна — {action.agentName}</p>
             </div>
-
-            <div className="rounded-lg bg-surface/70 border border-border/40 p-2 mb-3 space-y-0.5">
-                {Object.entries(action.preview).map(([k, v]) => (
-                    <div key={k} className="flex gap-2 text-xs">
-                        <span className="text-muted-foreground min-w-[90px]">{k}:</span>
-                        <span className="text-foreground font-medium break-all">{String(v)}</span>
-                    </div>
-                ))}
-            </div>
-
-            <div className="flex items-center gap-2">
-                <button
-                    onClick={() => onApprove(action)}
-                    disabled={status === 'running'}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-status-success text-white text-xs font-medium hover:opacity-90 disabled:opacity-60 transition"
-                >
-                    {status === 'running' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                    Зөвшөөрөх
-                </button>
-                <button
-                    onClick={() => onCancel(action)}
-                    disabled={status === 'running'}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface border border-border text-muted-foreground text-xs font-medium hover:bg-surface-2 disabled:opacity-60 transition"
-                >
-                    <X className="w-3.5 h-3.5" />
-                    Цуцлах
-                </button>
-            </div>
-        </div>
+            <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-brand-strong flex-shrink-0">
+                Баталгаажуулах <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+            </span>
+        </button>
     );
 }

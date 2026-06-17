@@ -6,6 +6,7 @@ import { useAIConversations } from '@/hooks/useAIConversations';
 import { ConversationSidebar } from '@/components/ai-assistant/ConversationSidebar';
 import { AgentBadges, OrchestrationTrace, type AgentBadge } from '@/components/ai-assistant/OrchestrationTrace';
 import { ActionConfirmCard, type PendingActionUI } from '@/components/ai-assistant/ActionConfirmCard';
+import { ActionConfirmModal } from '@/components/ai-assistant/ActionConfirmModal';
 import { ChatComposer, type ChatAttachment } from '@/components/ai-assistant/ChatComposer';
 import { MessageAttachments } from '@/components/ai-assistant/MessageAttachments';
 import { MarkdownMessage } from '@/components/ai-assistant/MarkdownMessage';
@@ -64,6 +65,8 @@ export default function AIAssistantPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
     const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+    // Баталгаажуулах попапаас түр хаасан (шийдээгүй) үйлдлүүдийн id-нууд
+    const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const isEmpty = messages.length <= 1 && messages[0]?.id === 'init';
@@ -184,6 +187,19 @@ export default function AIAssistantPage() {
     };
 
     const handleCancelAction = (action: PendingActionUI) => updatePendingAction(action.id, { status: 'cancelled' });
+
+    const reopenAction = (action: PendingActionUI) =>
+        setDismissedIds(prev => { const n = new Set(prev); n.delete(action.id); return n; });
+    const dismissAction = (action: PendingActionUI) =>
+        setDismissedIds(prev => new Set(prev).add(action.id));
+
+    // Баталгаажуулалт хүлээж буй үйлдлүүд — попапаар нэг нэгээр нь (queue) гаргана.
+    // 'running'-г эхэнд барьж байж гүйцэтгэл дуустал попапыг тогтвортой байлгана.
+    const pendingQueue = messages.flatMap(m => m.pendingActions || []).filter(a => a.status === 'pending' || a.status === 'running');
+    const activePending = pendingQueue.find(a => a.status === 'running')
+        || pendingQueue.find(a => !dismissedIds.has(a.id))
+        || null;
+    const activeIndex = activePending ? Math.max(0, pendingQueue.findIndex(a => a.id === activePending.id)) : 0;
 
     const renderChart = (chartConfig: any) => {
         if (!chartConfig || !chartConfig.data || chartConfig.data.length === 0) return null;
@@ -311,7 +327,7 @@ export default function AIAssistantPage() {
                                         )}
                                         {message.chartConfig && renderChart(message.chartConfig)}
                                         {message.role === 'assistant' && message.pendingActions?.map((a) => (
-                                            <ActionConfirmCard key={a.id} action={a} onApprove={handleApproveAction} onCancel={handleCancelAction} />
+                                            <ActionConfirmCard key={a.id} action={a} onReopen={reopenAction} />
                                         ))}
                                         {message.role === 'assistant' && message.trace && <OrchestrationTrace trace={message.trace} />}
                                         {message.role === 'assistant' && message.id !== 'init' && message.content && (
@@ -354,6 +370,15 @@ export default function AIAssistantPage() {
                     suggestions={SUGGESTIONS.map(s => ({ label: s.label, prompt: s.prompt }))}
                 />
             </div>
+
+            <ActionConfirmModal
+                action={activePending}
+                queueIndex={activeIndex}
+                queueTotal={pendingQueue.length}
+                onApprove={handleApproveAction}
+                onCancel={handleCancelAction}
+                onDismiss={dismissAction}
+            />
         </div>
     );
 }
