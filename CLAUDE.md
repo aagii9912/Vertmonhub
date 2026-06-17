@@ -149,7 +149,7 @@ src/
 Supabase Auth (Email/Password, Google, Facebook). `src/middleware.ts` protects `/dashboard` and `/admin`. Unauthenticated users are bounced to `/auth/login`.
 
 ### Dashboard AI Orchestrator (`/dashboard/ai-assistant`)
-The internal staff assistant is a **multi-agent orchestrator** (`src/lib/ai/orchestrator/`), not a manual dual-mode chat anymore. Flow:
+The internal staff assistant is a **multi-agent orchestrator** (`src/lib/ai/orchestrator/`), not a manual dual-mode chat anymore. Reliability: all Gemini calls (planner, agents, synthesizer) use `withRetry` (`orchestrator/retry.ts`, backoff on 429/503); agent history is capped to the last 10 messages for token control. Markdown answers render via a dependency-free renderer (`components/ai-assistant/MarkdownMessage.tsx`). An admin-only audit view lives at `/dashboard/ai-assistant/audit` (`GET /api/dashboard/ai-audit`, reads `ai_audit_log`). Orchestrator unit tests: `src/lib/ai/orchestrator/__tests__`. Flow:
 1. `POST /api/ai-assistant` (RBAC `ai-assistant`, shop-scoped) calls `runOrchestrator()`.
 2. **Planner** (`planner.ts`) analyzes the request → JSON plan selecting 1–3 specialized agents.
 3. **Agents** (`agents.ts`): `data-analyst`, `property-expert`, `crm-specialist`, `finance-analyst`, `advisor`. Each has a focused Mongolian system prompt + a curated subset of the shared data-assistant tools. They run via the generic `runAgent.ts` (reuses `executeDataTool` from `lib/ai/data-assistant`; write tools gated by `perms.canWrite`).
@@ -158,7 +158,7 @@ The internal staff assistant is a **multi-agent orchestrator** (`src/lib/ai/orch
 
 **Write / actions (confirm-gated).** Agents can perform real CRM/sales/admin actions, not just read:
 - Property (property-expert): `create_property`, `update_property_*`, `delete_property`.
-- Leads/customers/viewings (crm-specialist): `create_lead`, `delete_lead`, `update_lead_*`, `add_lead_note`, `create_customer`, `delete_customer`, `schedule_viewing`, `delete_viewing`.
+- Leads/customers/viewings (crm-specialist): `create_lead`, `delete_lead`, `update_lead_*`, `add_lead_note`, `bulk_update_leads`, `create_customer`, `delete_customer`, `schedule_viewing`, `delete_viewing`.
 - Contracts/finance (finance-analyst): `process_contract_action`, `create_contract`, `delete_contract`.
 - Admin (`operations-admin`, super_admin only): `invite_user`, `assign_role`, `create_role`.
 - RBAC gating in `executeDataTool` (`lib/ai/data-assistant`): create/update→`canWrite`, delete→`canDelete`, admin→`role === 'super_admin'`.

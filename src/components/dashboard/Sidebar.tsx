@@ -121,6 +121,7 @@ const sections: MenuSection[] = [
         items: [
             { name: 'AI Orchestrator', href: '/dashboard/ai-assistant', icon: Sparkles, module: 'ai-assistant' },
             { name: 'AI Агентууд', href: '/dashboard/ai-assistant/agents', icon: Bot, module: 'ai-assistant' },
+            { name: 'AI Аудит', href: '/dashboard/ai-assistant/audit', icon: Bot, module: 'ai-assistant' },
         ],
     },
     {

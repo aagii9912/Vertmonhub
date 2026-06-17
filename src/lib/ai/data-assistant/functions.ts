@@ -934,6 +934,36 @@ export async function deleteCustomer(shopId: string, args: any, confirm = false)
     return { success: true, message: `"${c.name}" харилцагчийг устгалаа (сэргээх боломжтой).`, customerId: c.id };
 }
 
+// ---- Bulk үйлдэл ----
+
+export async function bulkUpdateLeads(shopId: string, args: any, confirm = false) {
+    const valid = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'];
+    if (!args.new_status || !valid.includes(args.new_status)) return { error: 'new_status шаардлагатай ба зөв төлөв байх ёстой' };
+
+    let q = supabaseAdmin.from('leads').select('id, customer_name, status').eq('shop_id', shopId).is('deleted_at', null);
+    if (args.from_status) q = q.eq('status', args.from_status);
+    else if (args.lead_ids) {
+        const ids = String(args.lead_ids).split(',').map((s) => s.trim()).filter(Boolean);
+        if (!ids.length) return { error: 'lead_ids хоосон байна' };
+        q = q.in('id', ids);
+    } else {
+        return { error: 'from_status эсвэл lead_ids шаардлагатай' };
+    }
+
+    const { data: leads } = await q;
+    if (!leads || leads.length === 0) return { error: 'Тохирох лийд олдсонгүй' };
+
+    if (!confirm) {
+        return confirmNeeded('bulk_update_leads', args, `${leads.length} лийдийн статус → ${args.new_status}`,
+            { 'Лийд тоо': leads.length, 'Шинэ статус': args.new_status, 'Жишээ': leads.slice(0, 5).map((l) => l.customer_name).join(', ') || '-' });
+    }
+
+    const ids = leads.map((l) => l.id);
+    const { error } = await supabaseAdmin.from('leads').update({ status: args.new_status, updated_at: new Date().toISOString() }).in('id', ids);
+    if (error) return { error: `Алдаа: ${error.message}` };
+    return { success: true, message: `${ids.length} лийдийн статусыг "${args.new_status}" болгож шинэчиллээ.`, count: ids.length };
+}
+
 // ---- File attach (файл хавсаргах) ----
 
 /** Хавсаргах entity-г төрөл + id/нэрээр шийдвэрлэнэ. */
