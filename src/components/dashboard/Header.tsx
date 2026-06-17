@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { NotificationButton } from '@/components/NotificationButton';
 import { ShopSwitcher } from '@/components/dashboard/ShopSwitcher';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 export function Header() {
     const router = useRouter();
@@ -82,6 +83,8 @@ export function Header() {
                 {shops.length > 1 && <ShopSwitcher />}
 
                 <LanguageSwitcher />
+
+                <ThemeToggle />
 
                 <NotificationButton />
 
