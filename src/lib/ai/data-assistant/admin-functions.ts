@@ -31,15 +31,31 @@ async function findUserIdByEmail(db: ReturnType<typeof supabaseAdmin>, email: st
     return data?.id || null;
 }
 
+/** Урьж буй админ тухайн төсөлд (shop) эзэн эсвэл гишүүн эсэхийг шалгана. */
+async function userCanAccessShop(userId: string, shopId: string): Promise<boolean> {
+    const db = supabaseAdmin();
+    const [{ data: owned }, { data: member }] = await Promise.all([
+        db.from('shops').select('id').eq('id', shopId).eq('user_id', userId).maybeSingle(),
+        db.from('shop_members').select('shop_id').eq('shop_id', shopId).eq('user_id', userId).maybeSingle(),
+    ]);
+    return !!owned || !!member;
+}
+
 /**
  * Хэрэглэгчийг үүсгэж дүр + төслийн гишүүнчлэл онооно.
  * Имэйл хүргэлтээс ХАМААРАХГҮЙ: түр нууц үгтэй шууд үүсгээд, нэвтрэх мэдээллийг
  * буцаана (супер админ тухайн хүнд дамжуулна).
  */
-export async function inviteUser(shopId: string, args: any, confirm = false) {
+export async function inviteUser(shopId: string, args: any, confirm = false, actingUserId?: string) {
     if (!args.email) return { error: 'email шаардлагатай' };
     const role = args.role || 'viewer';
     const targetShop = args.shop_id || shopId;
+
+    // Зорилтот төсөлд урьж буй админ өөрөө тэр төсөлд харьяалагдаж байгаа эсэхийг шалгана —
+    // args.shop_id-аар дурын төсөл рүү гишүүн нэмэхээс сэргийлнэ (super_admin ч хамаарна).
+    if (targetShop && actingUserId && !(await userCanAccessShop(actingUserId, targetShop))) {
+        return { error: 'Та энэ төсөлд хэрэглэгч урих эрхгүй (тухайн төсөлд харьяалагдахгүй байна).' };
+    }
 
     if (!confirm) {
         return confirmNeeded('invite_user', { email: args.email, role, shop_id: targetShop },
