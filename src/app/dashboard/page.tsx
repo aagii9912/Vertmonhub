@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { StatsCard } from '@/components/dashboard/StatsCard';
+import { AskAIHero } from '@/components/dashboard/AskAIHero';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -78,6 +79,9 @@ export default function DashboardPage() {
     return (
         <PullToRefresh onRefresh={handleRefresh}>
             <div className="space-y-6 md:space-y-8">
+                {/* AI Orchestrator launcher — нүүрэн дээрх гол хэрэгсэл */}
+                <AskAIHero />
+
                 {/* Toolbar */}
                 <div className="flex items-center justify-end gap-2">
                     <div className="relative">
