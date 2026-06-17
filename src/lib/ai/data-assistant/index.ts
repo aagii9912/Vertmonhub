@@ -99,7 +99,7 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'get_marketing_summary': result = await fetchMarketingSummary(shopId, args); break;
         case 'create_social_post': result = await createSocialPost(shopId, args, confirm, userName); break;
         case 'remember_fact': result = await rememberFact(shopId, args, confirm, userName); break;
-        case 'invite_user': result = await inviteUser(shopId, args, confirm); break;
+        case 'invite_user': result = await inviteUser(shopId, args, confirm, userId); break;
         case 'assign_role': result = await assignRole(shopId, args, confirm); break;
         case 'create_role': result = await createRole(shopId, args, confirm); break;
         default: return { error: `Unknown tool: ${toolName}` };
