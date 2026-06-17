@@ -68,6 +68,7 @@ export default function AIAssistantPage() {
     // Баталгаажуулах попапаас түр хаасан (шийдээгүй) үйлдлүүдийн id-нууд
     const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const autoSentRef = useRef(false);
 
     const isEmpty = messages.length <= 1 && messages[0]?.id === 'init';
 
@@ -146,6 +147,18 @@ export default function AIAssistantPage() {
         setMessages(prev => [...prev, { id: Date.now().toString(), role: 'user', content: userMessage || '(файл хавсаргав)', attachments: ready }]);
         await requestAssistant(userMessage, ready, history);
     };
+
+    // Нүүр хуудаснаас ?q=... deep-link ирвэл нэг удаа автоматаар илгээнэ.
+    useEffect(() => {
+        if (autoSentRef.current || !shop?.id) return;
+        const q = new URLSearchParams(window.location.search).get('q');
+        if (q && q.trim()) {
+            autoSentRef.current = true;
+            // refresh дээр дахин илгээхгүйн тулд URL-ийн q-г цэвэрлэнэ
+            window.history.replaceState(null, '', '/dashboard/ai-assistant');
+            void sendMessage(q, []);
+        }
+    }, [shop?.id]);
 
     /** Сүүлийн хариуг дахин үүсгэх: өмнөх хэрэглэгчийн мессежээр дахин дуудна. */
     const regenerate = async (assistantId: string) => {
