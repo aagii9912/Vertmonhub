@@ -171,7 +171,7 @@ export const CreateBudgetLineSchema = z.object({
 // Shop Schemas
 // ============================================
 export const CreateShopSchema = z.object({
-    name: z.string().min(1, 'Shop нэр шаардлагатай').max(255),
+    name: z.string().min(1, 'Төслийн нэр шаардлагатай').max(255),
     owner_name: z.string().max(255).optional().nullable(),
     phone: z.string().max(20).optional().nullable(),
 });
@@ -282,7 +282,7 @@ export const UpdateInvoiceSchema = z.object({
 // Admin Shop Update Schema
 // ============================================
 export const AdminUpdateShopSchema = z.object({
-    id: z.string().uuid('Shop ID шаардлагатай'),
+    id: z.string().uuid('Төслийн ID шаардлагатай'),
     is_active: z.boolean().optional(),
     plan_id: z.string().uuid().optional().nullable(),
     name: z.string().min(1).max(255).optional(),

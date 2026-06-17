@@ -434,13 +434,13 @@ export const deleteTools: any[] = [
 export const adminTools: any[] = [
     {
         name: 'invite_user',
-        description: 'Шинэ хэрэглэгчийг түр нууц үгтэй үүсгэж, дүр (role) болон дэлгүүрийн гишүүнчлэл онооно. Имэйл автоматаар илгээгдэхгүй — нэвтрэх мэдээлэл (имэйл+түр нууц үг+линк) буцаж ирэх тул админ тухайн хүнд дамжуулна. ЗӨВХӨН super_admin. Баталгаажуулалт авна.',
+        description: 'Шинэ хэрэглэгчийг түр нууц үгтэй үүсгэж, дүр (role) болон төслийн гишүүнчлэл онооно. Имэйл автоматаар илгээгдэхгүй — нэвтрэх мэдээлэл (имэйл+түр нууц үг+линк) буцаж ирэх тул админ тухайн хүнд дамжуулна. ЗӨВХӨН super_admin. Баталгаажуулалт авна.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 email: { type: SchemaType.STRING, description: 'Урих хэрэглэгчийн имэйл' },
                 role: { type: SchemaType.STRING, description: 'Оноох дүр: admin, sales_manager, marketing, finance_manager, accountant, viewer гэх мэт (default: viewer)' },
-                shop_id: { type: SchemaType.STRING, description: 'Дэлгүүрийн ID (default: одоогийн дэлгүүр)' }
+                shop_id: { type: SchemaType.STRING, description: 'Төслийн ID (default: одоогийн төсөл)' }
             },
             required: ['email']
         }

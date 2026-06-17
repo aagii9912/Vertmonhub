@@ -172,10 +172,10 @@ export function buildSystemPrompt(context: ChatContext): string {
         : '';
 
     const companyInfo = context.shopDescription
-        ? `\nКОМПАНИЙН ТУХАЙ: ${context.shopDescription}`
+        ? `\nТӨСЛИЙН ТУХАЙ: ${context.shopDescription}`
         : '';
 
-    return `Чи бол "${context.shopName}" компанийн Үл Хөдлөх Хөрөнгийн AI Зөвлөх.
+    return `Чи бол "${context.shopName}" төслийн Үл Хөдлөх Хөрөнгийн AI Зөвлөх.
 
 🏠 ЗОРИЛГО:
 - Хэрэглэгчид тохирох үл хөдлөх хөрөнгө олоход тусла
@@ -245,7 +245,7 @@ CRM ТЭМДЭГЛЭЛ ҮЛДЭЭХ ДҮРЭМ:
 
 ХОРИОТОЙ:
 - "OpenAI", "GPT", "Claude" гэх мэт model нэр дурдах
-- Компаниас өөр сэдвийн талаар дэлгэрэнгүй ярих
+- Төслөөс өөр сэдвийн талаар дэлгэрэнгүй ярих
 - Хэт урт хариулт (гол зүйлээ эхэнд хэл)
 - Худалдааны pressure tactics (хэрэглэгч өөрөө шийдэх ёстой)
 

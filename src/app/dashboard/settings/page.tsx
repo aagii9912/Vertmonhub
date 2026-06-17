@@ -84,7 +84,7 @@ export default function SettingsPage() {
             {/* Header */}
             <div>
                 <h1 className="text-2xl font-bold text-foreground">Тохиргоо</h1>
-                <p className="text-muted-foreground mt-1">Компани болон системийн тохиргоо</p>
+                <p className="text-muted-foreground mt-1">Төсөл болон системийн тохиргоо</p>
             </div>
 
             {/* Company Information */}
@@ -92,14 +92,14 @@ export default function SettingsPage() {
                 <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                         <Building2 className="w-5 h-5 text-brand-strong" />
-                        Компанийн мэдээлэл
+                        Төслийн мэдээлэл
                     </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label htmlFor="company-name" className="block text-sm font-medium text-foreground mb-1">
-                                Компанийн нэр
+                                Төслийн нэр
                             </label>
                             <input
                                 id="company-name"

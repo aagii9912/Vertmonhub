@@ -30,7 +30,7 @@ export default function NewLeadPage() {
         e.preventDefault();
 
         if (!shop?.id) {
-            toast.error('Дэлгүүр сонгогдоогүй байна. Дахин нэвтэрнэ үү.');
+            toast.error('Төсөл сонгогдоогүй байна. Дахин нэвтэрнэ үү.');
             return;
         }
         if (!formData.customer_name.trim()) {

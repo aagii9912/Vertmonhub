@@ -46,21 +46,21 @@ export function ShopSwitcher({ onAddShop }: ShopSwitcherProps) {
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 className="flex items-center gap-2 px-3 py-2 bg-secondary hover:bg-secondary/80 rounded-lg transition-colors"
-                aria-label="Дэлгүүр сонгох"
+                aria-label="Төсөл сонгох"
                 aria-expanded={isOpen}
                 aria-haspopup="menu"
             >
                 <Store className="w-4 h-4 text-primary" />
                 <span className="font-medium text-sm text-foreground max-w-[120px] truncate">
-                    {activeShop?.name || 'Дэлгүүр сонгох'}
+                    {activeShop?.name || 'Төсөл сонгох'}
                 </span>
                 <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {isOpen && (
-                <div className="absolute top-full right-0 mt-2 w-64 bg-surface rounded-xl shadow-xl border border-border z-50 overflow-hidden" role="menu" aria-label="Дэлгүүр сонгох">
+                <div className="absolute top-full right-0 mt-2 w-64 bg-surface rounded-xl shadow-xl border border-border z-50 overflow-hidden" role="menu" aria-label="Төсөл сонгох">
                     <div className="p-2 border-b border-border">
-                        <p className="text-xs text-muted-foreground px-2">Миний дэлгүүрүүд</p>
+                        <p className="text-xs text-muted-foreground px-2">Миний төслүүд</p>
                     </div>
 
                     <div className="max-h-64 overflow-y-auto">
@@ -101,7 +101,7 @@ export function ShopSwitcher({ onAddShop }: ShopSwitcherProps) {
                                 className="w-full flex items-center gap-3 px-4 py-2 text-primary hover:bg-primary/5 rounded-lg transition-colors"
                             >
                                 <Plus className="w-4 h-4" />
-                                <span className="text-sm font-medium">Шинэ дэлгүүр нэмэх</span>
+                                <span className="text-sm font-medium">Шинэ төсөл нэмэх</span>
                             </button>
                         </div>
                     )}

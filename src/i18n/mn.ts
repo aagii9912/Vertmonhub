@@ -62,7 +62,7 @@ export const mn = {
 
   // ─── Setup Wizard ───
   setup: {
-    stepLabels: ['Дэлгүүр', 'Facebook', 'Instagram', 'Бараа', 'AI', 'Төлбөр'],
+    stepLabels: ['Төсөл', 'Facebook', 'Instagram', 'Бараа', 'AI', 'Төлбөр'],
     resumeTitle: 'Үргэлжлүүлэх үү?',
     resumeDesc: 'Та өмнө нь алхам {step} хүртэл хийсэн байна',
     resumeContinue: 'Үргэлжлүүлэх',
@@ -70,12 +70,12 @@ export const mn = {
 
     // Shop Info Step
     shop: {
-      title: 'Дэлгүүрийн мэдээлэл',
-      subtitle: 'Таны дэлгүүрийн үндсэн мэдээлэл',
-      shopName: 'Дэлгүүрийн нэр',
-      shopNameRequired: 'Дэлгүүрийн нэр оруулна уу',
+      title: 'Төслийн мэдээлэл',
+      subtitle: 'Таны төслийн үндсэн мэдээлэл',
+      shopName: 'Төслийн нэр',
+      shopNameRequired: 'Төслийн нэр оруулна уу',
       shopNameMin: 'Хамгийн багадаа 2 тэмдэгт байх ёстой',
-      shopNamePlaceholder: 'Жишээ: Миний дэлгүүр',
+      shopNamePlaceholder: 'Жишээ: Миний төсөл',
       ownerName: 'Эзэмшигчийн нэр',
       ownerNamePlaceholder: 'Таны нэр',
       phone: 'Утасны дугаар',
@@ -151,7 +151,7 @@ export const mn = {
       step: 'Алхам',
       templateHint: '💡 Таны сонгосон загвар дээр үндэслэн AI өөрөө зааварчилгаагаа зохиох болно.',
       selectBusinessType: '1. Бизнесийн төрлөө сонгоно уу',
-      shopDescription: '2. Дэлгүүрийн тайлбар',
+      shopDescription: '2. Төслийн тайлбар',
       shopDescPlaceholder: 'Бид ямар үйл ажиллагаа явуулдаг вэ? Онцлог нь юу вэ?',
       fetchFromFb: 'Facebook-ээс татах',
       personalityHint: '🎭 AI ямар өнгө аясаар харилцахыг энд тохируулна.',
@@ -436,7 +436,7 @@ export const mn = {
   // ─── Settings Page ───
   settingsPage: {
     title: 'Тохиргоо',
-    shopInfo: 'Дэлгүүрийн мэдээлэл',
+    shopInfo: 'Төслийн мэдээлэл',
     notifications: 'Мэдэгдэл',
     danger: 'Аюултай бүс',
   },
