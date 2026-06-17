@@ -8,6 +8,7 @@ import { AgentBadges, OrchestrationTrace, type AgentBadge } from '@/components/a
 import { ActionConfirmCard, type PendingActionUI } from '@/components/ai-assistant/ActionConfirmCard';
 import { ChatComposer, type ChatAttachment } from '@/components/ai-assistant/ChatComposer';
 import { MessageAttachments } from '@/components/ai-assistant/MessageAttachments';
+import { MarkdownMessage } from '@/components/ai-assistant/MarkdownMessage';
 import type { AIConversationMessage } from '@/hooks/useAIConversations';
 import {
     Bot, User, Sparkles, Loader2, MessageSquare, Network,
@@ -282,7 +283,9 @@ export default function AIAssistantPage() {
                                             <div className={`px-4 py-3 rounded-2xl ${message.role === 'user'
                                                 ? 'bg-gradient-to-br from-brand to-brand-strong text-white rounded-tr-sm shadow-sm'
                                                 : 'bg-surface border border-border/60 shadow-sm rounded-tl-sm text-foreground'}`}>
-                                                <p className="whitespace-pre-wrap leading-relaxed text-[15px]">{message.content}</p>
+                                                {message.role === 'assistant'
+                                                    ? <MarkdownMessage content={message.content} />
+                                                    : <p className="whitespace-pre-wrap leading-relaxed text-[15px]">{message.content}</p>}
                                             </div>
                                         )}
                                         {message.chartConfig && renderChart(message.chartConfig)}
