@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
         }
 
         const authShop = await getUserShop();
-        if (!authShop) return NextResponse.json({ error: 'Shop олдсонгүй' }, { status: 401 });
+        if (!authShop) return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 401 });
 
         const { searchParams } = new URL(req.url);
         const channelId = searchParams.get('channel_id');
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
         }
 
         const authShop = await getUserShop();
-        if (!authShop) return NextResponse.json({ error: 'Shop олдсонгүй' }, { status: 401 });
+        if (!authShop) return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 401 });
 
         const body = await req.json();
 

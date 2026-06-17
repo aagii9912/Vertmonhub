@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getAuthUser } from '@/lib/auth/auth';
+import { getAccessibleShopIds } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { encryptToken, decryptToken } from '@/lib/crypto/tokens';
@@ -10,9 +12,20 @@ import { encryptToken, decryptToken } from '@/lib/crypto/tokens';
  */
 export async function POST(request: NextRequest) {
     try {
+        const userId = await getAuthUser();
+        if (!userId) {
+            return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
+        }
+
         const shopId = request.headers.get('x-shop-id');
         if (!shopId) {
-            return NextResponse.json({ error: 'Shop ID required' }, { status: 400 });
+            return NextResponse.json({ error: 'Төслийн ID шаардлагатай' }, { status: 400 });
+        }
+
+        // Тухайн хэрэглэгч энэ төсөлд (shop) хандах эрхтэй эсэхийг баталгаажуулна
+        const accessibleIds = await getAccessibleShopIds(userId);
+        if (!accessibleIds.has(shopId)) {
+            return NextResponse.json({ error: 'Энэ төсөлд хандах эрхгүй' }, { status: 403 });
         }
 
         const supabase = supabaseAdmin();
@@ -25,7 +38,7 @@ export async function POST(request: NextRequest) {
             .single();
 
         if (shopError || !shop) {
-            return NextResponse.json({ error: 'Shop not found' }, { status: 404 });
+            return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 404 });
         }
 
         if (!shop.facebook_page_id || !shop.facebook_page_access_token) {

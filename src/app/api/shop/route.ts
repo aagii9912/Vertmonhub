@@ -114,7 +114,7 @@ export async function PATCH(request: NextRequest) {
       .single();
 
     if (!shop) {
-      return NextResponse.json({ error: 'Shop not found' }, { status: 404 });
+      return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 404 });
     }
 
     // Whitelist allowed fields to prevent mass assignment

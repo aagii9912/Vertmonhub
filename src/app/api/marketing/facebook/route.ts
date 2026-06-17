@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/auth/supabase-auth';
+import { supabaseAdmin, getAccessibleShopIds } from '@/lib/auth/supabase-auth';
 import { getPageInfo } from '@/lib/facebook/marketing-api';
 import { decryptToken } from '@/lib/crypto/tokens';
 import { cookies } from 'next/headers';
@@ -40,19 +40,21 @@ export async function GET(req: NextRequest) {
         // Get shop with facebook credentials
         const shopId = req.nextUrl.searchParams.get('shop_id');
         const admin = supabaseAdmin();
-        let query = admin
-            .from('shops')
-            .select('id, name, facebook_page_id, facebook_page_name, facebook_page_access_token')
-            .eq('user_id', userId);
-
-        if (shopId) {
-            query = query.eq('id', shopId);
+        // Хэрэглэгчийн хандах эрхтэй төслүүдээс зорилтот shop-ыг баталгаажуулна
+        const accessibleIds = await getAccessibleShopIds(userId);
+        const targetShopId = shopId || accessibleIds.values().next().value;
+        if (!targetShopId || !accessibleIds.has(targetShopId)) {
+            return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 404 });
         }
 
-        const { data: shops, error: shopError } = await query.limit(1);
+        const { data: shops, error: shopError } = await admin
+            .from('shops')
+            .select('id, name, facebook_page_id, facebook_page_name, facebook_page_access_token')
+            .eq('id', targetShopId)
+            .limit(1);
 
         if (shopError || !shops || shops.length === 0) {
-            return NextResponse.json({ error: 'Дэлгүүр олдсонгүй' }, { status: 404 });
+            return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 404 });
         }
 
         const shop = shops[0];

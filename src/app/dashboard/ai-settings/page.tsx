@@ -275,12 +275,12 @@ function GeneralSection({ isAiActive, setIsAiActive, aiEmotion, setAiEmotion, sh
             {/* Business Description */}
             <Card>
                 <CardContent className="p-5">
-                    <h3 className="font-semibold text-foreground mb-1">🏢 Компанийн тайлбар</h3>
-                    <p className="text-sm text-muted-foreground mb-3">AI энэ мэдээллийг ашиглан компанийн талаар хариулна</p>
+                    <h3 className="font-semibold text-foreground mb-1">🏢 Төслийн тайлбар</h3>
+                    <p className="text-sm text-muted-foreground mb-3">AI энэ мэдээллийг ашиглан төслийн талаар хариулна</p>
                     <Textarea
                         value={shopDescription}
                         onChange={(e) => setShopDescription(e.target.value)}
-                        placeholder="Жишээ: Монкон Констракшн нь 2010 оноос хойш 15+ орон сууцны хороолол барьсан тэргүүлэх барилгын компани..."
+                        placeholder="Жишээ: Монкон Констракшн нь 2010 оноос хойш 15+ орон сууцны хороолол барьсан тэргүүлэх барилгын төсөл..."
                         rows={4}
                         className="resize-none"
                     />
