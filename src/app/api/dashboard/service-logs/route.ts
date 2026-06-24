@@ -1,5 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { getUserShop } from '@/lib/auth/supabase-auth';
+import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
@@ -79,6 +79,20 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Гарчиг (subject) шаардлагатай' }, { status: 400 });
         }
 
+        // Тэмдэглэгчийн нэрийг автоматаар тогтоох (assigned_to өгөгдөөгүй бол)
+        let actor: string | null = body.assigned_to || null;
+        if (!actor) {
+            const uid = await getUserId();
+            if (uid) {
+                const { data: prof } = await supabase
+                    .from('user_profiles')
+                    .select('full_name')
+                    .eq('id', uid)
+                    .maybeSingle();
+                actor = prof?.full_name || null;
+            }
+        }
+
         const { data, error } = await supabase
             .from('service_logs')
             .insert({
@@ -91,8 +105,8 @@ export async function POST(request: NextRequest) {
                 priority: body.priority || 'medium',
                 subject: body.subject,
                 description: body.description || null,
-                status: 'open',
-                assigned_to: body.assigned_to || null,
+                status: body.status || 'open',
+                assigned_to: actor,
             })
             .select()
             .single();

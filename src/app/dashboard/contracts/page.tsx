@@ -398,6 +398,7 @@ function ContractDrawer({
     const [serviceLogs, setServiceLogs] = useState<Array<Record<string, unknown>>>([]);
     const [handovers, setHandovers] = useState<Array<Record<string, unknown>>>([]);
     const [tabLoading, setTabLoading] = useState(false);
+    const [serviceRefresh, setServiceRefresh] = useState(0);
 
     const status = STATUS_LABEL[c.contract_status] || STATUS_LABEL.active;
     const paidPct =
@@ -427,7 +428,7 @@ function ContractDrawer({
                 .then((d) => setHandovers(d.records || []))
                 .finally(() => setTabLoading(false));
         }
-    }, [activeTab, c.id, c.customer_phone, c.customer_name]);
+    }, [activeTab, c.id, c.customer_phone, c.customer_name, serviceRefresh]);
 
     const tabs = [
         { id: 'info' as const, label: 'Мэдээлэл', icon: <FileText className="w-3.5 h-3.5" /> },
@@ -555,7 +556,7 @@ function ContractDrawer({
                     )}
 
                     {activeTab === 'service' && (
-                        <ServiceTab logs={serviceLogs} loading={tabLoading} />
+                        <ServiceTab logs={serviceLogs} loading={tabLoading} contract={c} onAdded={() => setServiceRefresh((n) => n + 1)} />
                     )}
 
                     {activeTab === 'handover' && (
@@ -627,57 +628,93 @@ function PaymentsTab({ payments, loading }: { payments: Array<Record<string, unk
     );
 }
 
-function ServiceTab({ logs, loading }: { logs: Array<Record<string, unknown>>; loading: boolean }) {
-    if (loading)
-        return (
-            <div className="flex justify-center py-10">
-                <Spinner size="md" />
-            </div>
-        );
+function ServiceTab({ logs, loading, contract, onAdded }: {
+    logs: Array<Record<string, unknown>>;
+    loading: boolean;
+    contract: PropertyContract;
+    onAdded: () => void;
+}) {
+    const [note, setNote] = useState('');
+    const [saving, setSaving] = useState(false);
+
+    async function addNote() {
+        if (!note.trim()) return;
+        setSaving(true);
+        try {
+            const res = await fetch('/api/dashboard/service-logs', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...shopHeaders() },
+                body: JSON.stringify({
+                    contract_id: contract.id,
+                    customer_name: contract.customer_name,
+                    customer_phone: contract.customer_phone,
+                    type: 'other',
+                    subject: 'Борлуулалтын тэмдэглэл',
+                    description: note.trim(),
+                    status: 'closed',
+                }),
+            });
+            if (res.ok) { setNote(''); onAdded(); }
+        } catch (e) {
+            console.error('[ServiceTab] add note error', e);
+        } finally {
+            setSaving(false);
+        }
+    }
 
     return (
         <div>
+            {/* Менежерийн тэмдэглэл нэмэх (уулзалтын дараах сэтгэгдэл) */}
+            <div className="mb-4">
+                <label className="block text-[12px] font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5">
+                    <User className="w-3.5 h-3.5 text-brand" /> Уулзалтын тэмдэглэл нэмэх
+                </label>
+                <textarea
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    rows={2}
+                    placeholder="Харилцагчийн талаарх сэтгэгдэл, дараагийн алхам..."
+                    className="w-full px-3 py-2 rounded-md border border-border bg-surface text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-brand"
+                />
+                <div className="flex justify-end mt-1.5">
+                    <Button onClick={addNote} variant="primary" size="sm" isLoading={saving} disabled={!note.trim()}>
+                        Тэмдэглэх
+                    </Button>
+                </div>
+            </div>
+
             <h3 className="heading-section text-sm text-foreground flex items-center gap-2 mb-3">
-                <Phone className="w-4 h-4 text-brand" /> Үйлчилгээний түүх
+                <Phone className="w-4 h-4 text-brand" /> Тэмдэглэл ба үйлчилгээний түүх
             </h3>
-            {logs.length === 0 ? (
-                <EmptyState icon={<Phone className="w-7 h-7" />} title="Бүртгэл алга" />
+            {loading ? (
+                <div className="flex justify-center py-8"><Spinner size="md" /></div>
+            ) : logs.length === 0 ? (
+                <EmptyState icon={<Phone className="w-7 h-7" />} title="Тэмдэглэл алга" description="Эхний тэмдэглэлээ дээр нэмнэ үү" />
             ) : (
                 <div className="space-y-2">
-                    {logs.map((log, i) => (
-                        <div key={String(log.id) || i} className="bg-surface-2/40 border border-border rounded-md p-3">
-                            <div className="flex items-center justify-between mb-1">
-                                <span className="text-foreground text-sm font-medium truncate max-w-[200px]">
-                                    {String(log.subject || '—')}
-                                </span>
-                                <Badge
-                                    variant={
-                                        log.status === 'resolved' || log.status === 'closed' ? 'success' : 'info'
-                                    }
-                                    size="sm"
-                                >
-                                    {log.status === 'resolved'
-                                        ? 'Шийдвэрлэсэн'
-                                        : log.status === 'closed'
-                                          ? 'Хаагдсан'
-                                          : log.status === 'in_progress'
-                                            ? 'Ажиллаж буй'
-                                            : 'Нээлттэй'}
-                                </Badge>
+                    {logs.map((log, i) => {
+                        const isNote = log.subject === 'Борлуулалтын тэмдэглэл' || log.type === 'other';
+                        return (
+                            <div key={String(log.id) || i} className="bg-surface-2/40 border border-border rounded-md p-3">
+                                <div className="flex items-center justify-between mb-1">
+                                    <span className="text-foreground text-sm font-medium truncate max-w-[220px]">
+                                        {isNote ? '📝 Тэмдэглэл' : String(log.subject || '—')}
+                                    </span>
+                                    <span className="text-[11px] text-muted-foreground">
+                                        {log.created_at ? formatDate(String(log.created_at)) : ''}
+                                    </span>
+                                </div>
+                                {log.description ? (
+                                    <p className="text-[13px] text-foreground/90 whitespace-pre-line">{String(log.description)}</p>
+                                ) : null}
+                                {log.assigned_to ? (
+                                    <div className="text-[11px] text-muted-foreground mt-1.5 flex items-center gap-1">
+                                        <User className="w-3 h-3" /> {String(log.assigned_to)}
+                                    </div>
+                                ) : null}
                             </div>
-                            <div className="text-[11px] text-muted-foreground">
-                                {log.type === 'complaint'
-                                    ? '🔴 Гомдол'
-                                    : log.type === 'maintenance'
-                                      ? '🔧 Засвар'
-                                      : log.type === 'payment'
-                                        ? '💰 Төлбөр'
-                                        : '💬 Лавлагаа'}
-                                {' · '}
-                                {log.created_at ? formatDate(String(log.created_at)) : ''}
-                            </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
         </div>
