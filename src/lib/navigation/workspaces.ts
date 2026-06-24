@@ -204,7 +204,7 @@ export const WORKSPACES: Workspace[] = [
         home: '/marketing',
         // Одоогийн /marketing/* shell-д RBAC байхгүй тул үргэлж нээлттэй.
         accessModules: [],
-        match: ['/marketing', '/dashboard/marketing-roi', '/dashboard/surveys'],
+        match: ['/marketing', '/dashboard/marketing-roi', '/dashboard/surveys', '/dashboard/competitor-research'],
         mobilePrimary: [
             { name: 'Самбар', href: '/marketing', icon: LayoutDashboard, module: '' },
             { name: 'Кампейн', href: '/marketing/campaigns', icon: Megaphone, module: '' },
@@ -218,6 +218,7 @@ export const WORKSPACES: Workspace[] = [
                 items: [
                     { name: 'Хянах самбар', href: '/marketing', icon: LayoutDashboard, module: '' },
                     { name: 'Маркетинг ROI', href: '/dashboard/marketing-roi', icon: TrendingUp, module: 'marketing-roi' },
+                    { name: 'Өрсөлдөгч судалгаа', href: '/dashboard/competitor-research', icon: Building2, badge: 'Шинэ', module: 'marketing-roi' },
                     { name: 'Судалгаа', href: '/dashboard/surveys', icon: ClipboardList, badge: 'Шинэ', module: 'surveys' },
                 ],
             },

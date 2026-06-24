@@ -349,9 +349,17 @@ export async function executeScheduleViewing(
         leadId = newLead.id;
     }
 
-    // Уулзалтын төрөл: өмнө lead байсан бол давтан, эс бөгөөс шинэ харилцагч.
-    // (existing_buyer-ийг ирээдүйд гэрээтэй холбож тодорхойлно.)
-    const meetingType = existingLead ? 'repeat_customer' : 'new_customer';
+    // Уулзалтын төрөл: гэрээтэй бол ХУДАЛДАН АВАГЧ, өмнө lead байсан бол ДАВТАН,
+    // эс бөгөөс ШИНЭ харилцагч.
+    let meetingType = existingLead ? 'repeat_customer' : 'new_customer';
+    if (context.customerName) {
+        const { count: contractCount } = await supabase
+            .from('property_contracts')
+            .select('*', { count: 'exact', head: true })
+            .eq('shop_id', context.shopId)
+            .ilike('customer_name', `%${context.customerName}%`);
+        if (contractCount && contractCount > 0) meetingType = 'existing_buyer';
+    }
 
     // Create viewing record
     const { error: viewingError } = await supabase

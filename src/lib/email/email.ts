@@ -51,6 +51,62 @@ async function sendEmail({ to, subject, html }: EmailParams): Promise<boolean> {
 }
 
 /**
+ * Захирлын өдрийн тайлан (digest) — шинэ лийд, гэрээ, топ менежерүүд.
+ */
+export interface DirectorDigestData {
+    shopName: string;
+    date: string;
+    newLeads: number;
+    newContracts: number;
+    activeContracts: number;
+    totalSales: number;
+    collected: number;
+    overdueCount: number;
+    topManagers: Array<{ name: string; contracts: number; sales: number }>;
+}
+export async function sendDirectorDigestEmail(to: string, d: DirectorDigestData): Promise<boolean> {
+    const money = (n: number) => new Intl.NumberFormat('mn-MN').format(Math.round(n)) + '₮';
+    const tile = (label: string, value: string) =>
+        `<td style="padding:12px;background:#f9fafb;border-radius:8px;text-align:center;width:25%">
+            <div style="font-size:22px;font-weight:700;color:#111">${value}</div>
+            <div style="font-size:12px;color:#6b7280">${label}</div>
+        </td>`;
+    const managerRows = d.topManagers.length
+        ? d.topManagers.map((m, i) =>
+            `<tr><td style="padding:8px;border-bottom:1px solid #eee">${i + 1}. ${m.name}</td>
+             <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${m.contracts} гэрээ</td>
+             <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${money(m.sales)}</td></tr>`).join('')
+        : `<tr><td colspan="3" style="padding:8px;color:#6b7280">Мэдээлэл алга</td></tr>`;
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="font-family:Arial,sans-serif;color:#333;background:#f3f4f6;padding:20px">
+  <div style="max-width:640px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden">
+    <div style="background:#C2613A;color:#fff;padding:22px 24px">
+      <div style="font-size:18px;font-weight:700">${d.shopName} — Өдрийн тайлан</div>
+      <div style="font-size:13px;opacity:.9">${d.date}</div>
+    </div>
+    <div style="padding:24px">
+      <table style="width:100%;border-collapse:separate;border-spacing:8px"><tr>
+        ${tile('Шинэ лийд', String(d.newLeads))}
+        ${tile('Шинэ гэрээ', String(d.newContracts))}
+        ${tile('Идэвхтэй гэрээ', String(d.activeContracts))}
+        ${tile('Хоцролттой', String(d.overdueCount))}
+      </tr></table>
+      <table style="width:100%;border-collapse:separate;border-spacing:8px;margin-top:4px"><tr>
+        ${tile('Нийт борлуулалт', money(d.totalSales))}
+        ${tile('Цуглуулсан', money(d.collected))}
+      </tr></table>
+      <h3 style="margin:24px 0 8px;font-size:15px;color:#111">🏆 Топ менежерүүд</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">${managerRows}</table>
+      <p style="margin-top:24px;font-size:12px;color:#9ca3af">Энэ тайланг Vertmon Hub автоматаар илгээв.</p>
+    </div>
+  </div>
+</body></html>`;
+
+    return sendEmail({ to, subject: `${d.shopName} — Өдрийн тайлан (${d.date})`, html });
+}
+
+/**
  * Order Confirmation Email
  */
 export async function sendOrderConfirmationEmail(params: {
