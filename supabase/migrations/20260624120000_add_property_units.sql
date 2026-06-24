@@ -127,10 +127,12 @@ LEFT JOIN LATERAL (
 -- ============================================
 ALTER TABLE property_units ENABLE ROW LEVEL SECURITY;
 
+DROP POLICY IF EXISTS "shop_owners_manage_units" ON property_units;
 CREATE POLICY "shop_owners_manage_units"
     ON property_units FOR ALL
     USING (shop_id = get_user_shop_id());
 
+DROP POLICY IF EXISTS "service_role_all_units" ON property_units;
 CREATE POLICY "service_role_all_units"
     ON property_units FOR ALL
     TO service_role
