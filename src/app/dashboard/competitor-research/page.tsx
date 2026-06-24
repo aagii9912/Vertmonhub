@@ -87,6 +87,11 @@ export default function CompetitorResearchPage() {
         } catch (e) { console.error(e); }
     }
 
+    const MANDALA_PRICE = 4850000;
+    const priced = competitors.filter((c) => c.price_per_sqm && c.price_per_sqm > 0);
+    const avgComp = priced.length ? Math.round(priced.reduce((s, c) => s + (c.price_per_sqm || 0), 0) / priced.length) : 0;
+    const position = avgComp ? (MANDALA_PRICE > avgComp * 1.05 ? { label: 'Дунджаас ДЭЭГҮҮР', tone: 'text-status-danger' } : MANDALA_PRICE < avgComp * 0.95 ? { label: 'Дунджаас ДООГУУР', tone: 'text-status-success' } : { label: 'ДУНДАЖ түвшинд', tone: 'text-status-info' }) : null;
+
     return (
         <div>
             <PageHeader
@@ -95,6 +100,29 @@ export default function CompetitorResearchPage() {
                 subtitle="Зах зээл дэх өрсөлдөгчдийн үнэ, байршил, блок, төлбөрийн нөхцөл"
                 primaryAction={<Button onClick={openNew} variant="primary" size="md"><Plus className="w-4 h-4" /> Өрсөлдөгч нэмэх</Button>}
             />
+
+            {/* Зах зээл дэх байршуулалт (Мандала vs өрсөлдөгчид) */}
+            {avgComp > 0 && (
+                <Card className="mb-5">
+                    <CardContent className="p-4">
+                        <h3 className="text-sm font-semibold text-foreground mb-3">📊 Зах зээл дэх байршуулалт</h3>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                            <div className="p-3 rounded-lg bg-brand-soft">
+                                <div className="text-[11px] text-muted-foreground">Мандала Гарден (м.кв)</div>
+                                <div className="text-xl font-semibold text-brand-strong tabular-nums">{formatMoney(MANDALA_PRICE)}</div>
+                            </div>
+                            <div className="p-3 rounded-lg bg-surface-2/50">
+                                <div className="text-[11px] text-muted-foreground">Өрсөлдөгчдийн дундаж</div>
+                                <div className="text-xl font-semibold text-foreground tabular-nums">{formatMoney(avgComp)}</div>
+                            </div>
+                            <div className="p-3 rounded-lg bg-surface-2/50">
+                                <div className="text-[11px] text-muted-foreground">Байр суурь ({priced.length} өрсөлдөгч)</div>
+                                <div className={`text-lg font-semibold ${position?.tone}`}>{position?.label}</div>
+                            </div>
+                        </div>
+                    </CardContent>
+                </Card>
+            )}
 
             {loading ? (
                 <div className="flex items-center justify-center py-24"><Spinner size="lg" /></div>

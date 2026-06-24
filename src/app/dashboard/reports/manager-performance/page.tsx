@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Users, FileText, CheckCircle2, TrendingUp, DollarSign, Award } from 'lucide-react';
+import { Users, FileText, CheckCircle2, TrendingUp, DollarSign, Award, Download } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/dashboard/PageHeader';
@@ -42,6 +43,22 @@ export default function ManagerPerformancePage() {
     const [managers, setManagers] = useState<ManagerRow[]>([]);
     const [totals, setTotals] = useState<Totals>({ managers: 0, contracts: 0, closed: 0, sales: 0, collected: 0 });
     const [loading, setLoading] = useState(true);
+    const [exporting, setExporting] = useState(false);
+
+    async function exportExcel() {
+        setExporting(true);
+        try {
+            const res = await fetch('/api/dashboard/export/excel?type=manager', { headers: shopHeaders() });
+            if (!res.ok) throw new Error('export failed');
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `менежер_гүйцэтгэл_${new Date().toISOString().slice(0, 10)}.xlsx`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (e) { console.error('[ManagerPerformance] export error', e); } finally { setExporting(false); }
+    }
 
     useEffect(() => {
         (async () => {
@@ -68,6 +85,11 @@ export default function ManagerPerformancePage() {
                 eyebrow="Аналитик"
                 title="Менежерийн гүйцэтгэл"
                 subtitle="Менежер тус бүрийн гэрээ, хаалт, борлуулалт, цуглуулалт"
+                primaryAction={
+                    <Button onClick={exportExcel} variant="secondary" size="md" isLoading={exporting} disabled={exporting || managers.length === 0}>
+                        {!exporting && <Download className="w-4 h-4" />} Excel татах
+                    </Button>
+                }
             />
 
             <StatBar columns={4}>

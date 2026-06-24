@@ -17,6 +17,7 @@ import {
     User,
     Calendar,
     DollarSign,
+    Download,
 } from 'lucide-react';
 import type { PropertyContract, ContractStats } from '@/types/property';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -80,7 +81,10 @@ export default function ContractsPage() {
     const [search, setSearch] = useState('');
     const [statusFilter, setStatusFilter] = useState<string>('');
     const [overdueOnly, setOverdueOnly] = useState(false);
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
     const [importing, setImporting] = useState(false);
+    const [exporting, setExporting] = useState(false);
     const [importMsg, setImportMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
     const [selected, setSelected] = useState<PropertyContract | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -92,6 +96,8 @@ export default function ContractsPage() {
             if (search) params.set('search', search);
             if (statusFilter) params.set('status', statusFilter);
             if (overdueOnly) params.set('overdue', '1');
+            if (dateFrom) params.set('from', dateFrom);
+            if (dateTo) params.set('to', dateTo);
 
             const res = await fetch(`/api/dashboard/contracts?${params}`, {
                 headers: shopHeaders(),
@@ -105,7 +111,7 @@ export default function ContractsPage() {
             setLoading(false);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [search, statusFilter, overdueOnly]);
+    }, [search, statusFilter, overdueOnly, dateFrom, dateTo]);
 
     useEffect(() => {
         const t = setTimeout(fetchContracts, search ? 300 : 0);
@@ -139,6 +145,25 @@ export default function ContractsPage() {
             setImporting(false);
             if (fileInputRef.current) fileInputRef.current.value = '';
             setTimeout(() => setImportMsg(null), 6000);
+        }
+    }
+
+    async function exportExcel() {
+        setExporting(true);
+        try {
+            const res = await fetch('/api/dashboard/export/excel?type=contracts', { headers: shopHeaders() });
+            if (!res.ok) throw new Error('export failed');
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `гэрээнүүд_${new Date().toISOString().slice(0, 10)}.xlsx`;
+            a.click();
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('[Contracts] export error:', err);
+        } finally {
+            setExporting(false);
         }
     }
 
@@ -176,9 +201,14 @@ export default function ContractsPage() {
                     </Button>
                 }
                 secondaryActions={
-                    <Button href="/dashboard/contracts/generate" variant="secondary" size="md">
-                        <FileText className="w-4 h-4" /> Гэрээ үүсгэх
-                    </Button>
+                    <>
+                        <Button onClick={exportExcel} variant="secondary" size="md" isLoading={exporting} disabled={exporting}>
+                            {!exporting && <Download className="w-4 h-4" />} Excel татах
+                        </Button>
+                        <Button href="/dashboard/contracts/generate" variant="secondary" size="md">
+                            <FileText className="w-4 h-4" /> Гэрээ үүсгэх
+                        </Button>
+                    </>
                 }
             />
             <input
@@ -246,13 +276,30 @@ export default function ContractsPage() {
                     onChange: setSearch,
                     placeholder: 'Гэрээний дугаар, нэр, утас, регистр...',
                 }}
-                showClear={search !== '' || statusFilter !== '' || overdueOnly}
+                showClear={search !== '' || statusFilter !== '' || overdueOnly || dateFrom !== '' || dateTo !== ''}
                 onClear={() => {
                     setSearch('');
                     setStatusFilter('');
                     setOverdueOnly(false);
+                    setDateFrom('');
+                    setDateTo('');
                 }}
             >
+                <input
+                    type="date"
+                    value={dateFrom}
+                    onChange={(e) => setDateFrom(e.target.value)}
+                    title="Эхлэх огноо"
+                    className="px-3 py-1.5 rounded-md text-xs border border-border bg-background text-foreground"
+                />
+                <span className="text-muted-foreground text-xs">—</span>
+                <input
+                    type="date"
+                    value={dateTo}
+                    onChange={(e) => setDateTo(e.target.value)}
+                    title="Дуусах огноо"
+                    className="px-3 py-1.5 rounded-md text-xs border border-border bg-background text-foreground"
+                />
                 <FilterSelect
                     label="Төлөв"
                     value={statusFilter}

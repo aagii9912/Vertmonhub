@@ -181,6 +181,7 @@ interface ContractInsert {
     penalty_amount: number | null;
     overdue_days: number | null;
     order_date: string | null;
+    contract_date: string | null;
     prepayment_condition: string | null;
     prepayment_due: number | null;
     contract_status: string;
@@ -227,6 +228,9 @@ function mapRow(row: Row, shopId: string, units: Map<string, UnitInfo>) {
         penalty_amount: num(row, 'Төлбөр хоцролт'),
         overdue_days: intNum(row, 'Нийт хоцорсон хоног'),
         order_date: excelDateToISO(row, 'Захиалга өгсөн огноо'),
+        // Эх файлд тусдаа гэрээний огноо байхгүй тул захиалгын огноог ашиглана
+        // (UI харагдац, эрэмбэлэлт, огнооны муж шүүлт, export-д хэрэгтэй).
+        contract_date: excelDateToISO(row, 'Захиалга өгсөн огноо'),
         prepayment_condition: cell(row, 'Урьдчилгааны нөхцөл') || null,
         prepayment_due: num(row, 'Урьдчилгааны дүн'),
         contract_status: parseStatus(cell(row, 'Төлөв')),

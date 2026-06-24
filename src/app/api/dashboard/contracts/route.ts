@@ -27,6 +27,8 @@ export async function GET(request: NextRequest) {
         const manager = sp.get('manager');
         const channel = sp.get('channel');
         const overdueOnly = sp.get('overdue') === '1';
+        const dateFrom = sp.get('from'); // YYYY-MM-DD
+        const dateTo = sp.get('to');     // YYYY-MM-DD
         const sortBy = sp.get('sortBy') || 'contract_date';
         const sortOrder = sp.get('sortOrder') === 'asc';
 
@@ -41,6 +43,8 @@ export async function GET(request: NextRequest) {
             if (manager) q = q.eq('sales_manager', manager);
             if (channel) q = q.eq('sales_channel', channel);
             if (overdueOnly) q = q.gt('overdue_days', 0);
+            if (dateFrom) q = q.gte('contract_date', dateFrom);
+            if (dateTo) q = q.lte('contract_date', dateTo);
 
             if (search) {
                 // Гэрээний дугаар, нэр, утас, регистр-ээр хайх
