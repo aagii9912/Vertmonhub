@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="mn">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vertmon Hub — Production-Ready төлөвлөгөө</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --navy:#1E2761; --navy2:#141B45; --deep:#0E1330;
+  --ice:#CADCFC; --gold:#D9A441; --gold2:#F0C674;
+  --ink:#263042; --muted:#6B7690; --bg:#F6F8FE; --card:#FFFFFF; --border:#E3E9F7;
+  --red:#B3402F; --amber:#B97014; --mid:#51608A; --green:#2E7D5B;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--deep);font-family:'Manrope',-apple-system,'Segoe UI',sans-serif;color:var(--ink);overflow:hidden}
+.serif{font-family:'Playfair Display',Georgia,serif}
+
+/* ---------- stage & deck ---------- */
+#stage{position:fixed;left:50%;top:50%;width:1280px;height:720px;transform:translate(-50%,-50%);transform-origin:center}
+.slide{position:absolute;inset:0;opacity:0;visibility:hidden;transform:translateX(48px);
+  transition:opacity .5s ease,transform .5s ease,visibility .5s;overflow:hidden;border-radius:6px}
+.slide.active{opacity:1;visibility:visible;transform:none}
+.slide.done{transform:translateX(-48px)}
+.slide .a{opacity:0}
+.slide.active .a{animation:rise .6s cubic-bezier(.2,.7,.3,1) both;animation-delay:var(--d,0s)}
+@keyframes rise{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
+
+/* ---------- light slide scaffolding ---------- */
+.light{background:var(--bg);background-image:radial-gradient(circle at 88% -12%,#E2EBFD 0,rgba(226,235,253,0) 52%);display:flex;flex-direction:column}
+.light .s-head{display:flex;justify-content:space-between;align-items:flex-end;padding:52px 64px 0}
+.light h2{font-family:'Playfair Display',Georgia,serif;font-size:34px;color:var(--navy);letter-spacing:.2px}
+.kicker{font-size:10.5px;font-weight:700;letter-spacing:3px;color:var(--muted);padding-bottom:8px;white-space:nowrap}
+.s-body{flex:1;display:flex;flex-direction:column;justify-content:center;padding:10px 64px 56px}
+
+/* ---------- dark slides ---------- */
+.dark{background:linear-gradient(135deg,var(--deep) 0%,var(--navy2) 55%,var(--navy) 100%);color:#fff;display:flex;flex-direction:column}
+.dark::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 78% 18%,rgba(217,164,65,.14) 0,transparent 45%)}
+.gridlines::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background-image:linear-gradient(rgba(202,220,252,.045) 1px,transparent 1px),linear-gradient(90deg,rgba(202,220,252,.045) 1px,transparent 1px);
+  background-size:64px 64px}
+
+/* ---------- cards / shared ---------- */
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;box-shadow:0 10px 28px rgba(14,19,48,.08)}
+.icirc{width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,var(--navy) 0%,#3A4690 100%);
+  display:flex;align-items:center;justify-content:center;flex:none}
+.icirc svg{width:21px;height:21px;stroke:#fff;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.chip{display:inline-flex;align-items:center;font-size:10.5px;font-weight:800;letter-spacing:1.5px;color:#fff;
+  border-radius:20px;padding:4px 12px}
+.gold-text{background:linear-gradient(100deg,var(--gold) 10%,var(--gold2) 60%,var(--gold) 100%);
+  -webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+
+/* ---------- slide 1 hero ---------- */
+.hero{display:flex;flex-direction:column;justify-content:center;padding:0 90px}
+.hero .kick{font-size:13px;font-weight:700;letter-spacing:5px;color:var(--ice);margin-bottom:22px}
+.hero h1{font-family:'Playfair Display',Georgia,serif;font-size:88px;line-height:1;color:#fff;letter-spacing:1px}
+.hero .sub{font-size:23px;font-weight:500;color:var(--ice);margin-top:18px;letter-spacing:.3px}
+.hero .chips{display:flex;gap:18px;margin-top:58px;position:relative;z-index:2}
+.hchip{display:flex;align-items:center;gap:14px;background:rgba(202,220,252,.08);border:1px solid rgba(202,220,252,.22);
+  backdrop-filter:blur(6px);border-radius:14px;padding:14px 22px 14px 14px}
+.hchip .icirc{background:rgba(202,220,252,.14);border:1px solid rgba(202,220,252,.25)}
+.hchip .icirc svg{stroke:var(--gold2)}
+.hchip .lab{font-size:10px;font-weight:700;letter-spacing:2.5px;color:#93A6D8}
+.hchip .val{font-size:16.5px;font-weight:800;color:#fff;margin-top:2px}
+.skyline{position:absolute;left:0;right:0;bottom:0;height:190px;opacity:.5;z-index:1}
+.prep{position:absolute;left:90px;bottom:30px;font-size:12px;color:#5D6BA4;z-index:2}
+
+/* ---------- slide 2 capability grid ---------- */
+.grid6{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;align-content:center}
+.cap{padding:22px;display:flex;flex-direction:column;gap:12px;position:relative;overflow:hidden}
+.cap::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:linear-gradient(180deg,var(--navy),#4253A8)}
+.cap .top{display:flex;align-items:center;gap:13px}
+.cap h3{font-size:16.5px;font-weight:800;color:var(--navy);line-height:1.25}
+.cap p{font-size:13.5px;color:var(--muted);line-height:1.5}
+
+/* ---------- slide 3 health ---------- */
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.stat{padding:24px;text-align:center}
+.stat .n{font-family:'Playfair Display',Georgia,serif;font-size:58px;font-weight:800;color:var(--navy);line-height:1}
+.stat .l{font-size:12.5px;color:var(--muted);margin-top:10px;font-weight:600}
+.duo{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px}
+.duo .card{padding:22px 26px}
+.duo h3{font-size:15.5px;font-weight:800;color:var(--navy);margin-bottom:14px}
+.donelist li{list-style:none;display:flex;gap:10px;align-items:flex-start;font-size:13.5px;color:var(--ink);
+  line-height:1.45;padding:5px 0}
+.donelist svg{width:17px;height:17px;stroke:var(--green);fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;flex:none;margin-top:2px}
+.stack{width:100%;border-collapse:collapse}
+.stack td{font-size:13px;padding:6.5px 0;border-bottom:1px solid #EFF3FC}
+.stack tr:last-child td{border-bottom:none}
+.stack td:first-child{font-weight:700;color:var(--mid);width:38%}
+.stack td:last-child{color:var(--ink)}
+
+/* ---------- slide 4 gaps ---------- */
+.gaps{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-content:center}
+.gap{padding:16px 20px;display:flex;flex-direction:column;gap:8px;border-left:5px solid var(--mid);align-items:flex-start}
+.gap.crit{border-left-color:var(--red)}
+.gap.high{border-left-color:var(--amber)}
+.gap p{font-size:13.5px;line-height:1.45;color:var(--ink)}
+.chip.crit{background:var(--red)}.chip.high{background:var(--amber)}.chip.mid{background:var(--mid)}
+
+/* ---------- slide 5 weeks ---------- */
+.weeks{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.week{overflow:hidden;display:flex;flex-direction:column}
+.week .head{background:linear-gradient(135deg,var(--navy2),var(--navy));color:#fff;padding:14px 20px}
+.week.w3 .head{background:linear-gradient(135deg,#8C6516,var(--gold))}
+.week .head .t{font-size:15px;font-weight:800}
+.week .head .d{font-size:11.5px;color:rgba(255,255,255,.75);margin-top:2px;font-weight:600}
+.week .theme{font-size:13px;font-weight:800;color:var(--gold);padding:14px 20px 0;letter-spacing:.3px}
+.week.w3 .theme{color:#8C6516}
+.week ul{padding:10px 20px 14px 36px;flex:1}
+.week li{font-size:12.8px;color:var(--ink);line-height:1.4;padding:4px 0}
+.week li::marker{color:var(--gold)}
+.week .foot{margin:0 18px 16px;text-align:center;font-size:11.5px;font-weight:800;color:var(--navy);
+  background:#E7EEFD;border-radius:20px;padding:6px}
+.week.w3 .foot{background:linear-gradient(100deg,var(--gold),var(--gold2));color:#fff}
+.flowline{text-align:center;font-size:14px;font-weight:800;color:var(--navy);margin-top:20px}
+.flowline .gold-text{font-weight:800}
+
+/* ---------- slide 6 timeline ---------- */
+.tl{position:relative;margin:46px 30px 0}
+.tl .line{position:absolute;left:30px;right:30px;top:9px;height:3px;border-radius:3px;
+  background:linear-gradient(90deg,var(--navy) 0%,var(--navy) 62%,var(--gold) 100%)}
+.tl .nodes{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+.node{position:relative;text-align:center}
+.node .dot{width:21px;height:21px;border-radius:50%;background:var(--navy);border:4px solid #fff;
+  box-shadow:0 0 0 2px var(--navy),0 4px 10px rgba(14,19,48,.25);margin:0 auto;position:relative;z-index:2}
+.node.today .dot::after{content:"";position:absolute;inset:-12px;border-radius:50%;border:2px solid rgba(30,39,97,.4);animation:pulse 1.8s infinite}
+@keyframes pulse{0%{transform:scale(.6);opacity:1}100%{transform:scale(1.25);opacity:0}}
+.node.fin .dot{background:var(--gold);box-shadow:0 0 0 2px var(--gold),0 4px 10px rgba(140,101,22,.3)}
+.node .date{font-size:13.5px;font-weight:800;color:var(--navy);margin:-34px 0 26px}
+.node .body{margin-top:18px;padding:16px 14px}
+.node .body .t{font-size:14.5px;font-weight:800;color:var(--navy)}
+.node.fin .body .t{color:var(--amber)}
+.node .body .s{font-size:12px;color:var(--muted);margin-top:6px;line-height:1.45}
+.icsbar{display:flex;align-items:center;gap:14px;margin:34px 0 0;padding:15px 22px}
+.icsbar .icirc{width:38px;height:38px}
+.icsbar .icirc svg{width:18px;height:18px}
+.icsbar p{font-size:13.5px;color:var(--ink);line-height:1.4}
+.icsbar code{font-size:12px;background:#EDF2FD;border:1px solid var(--border);border-radius:6px;padding:2px 7px;color:var(--navy)}
+
+/* ---------- slide 7 risks ---------- */
+.risk{display:grid;grid-template-columns:46px 1fr 36px 1fr;align-items:center;gap:18px;padding:13px 22px;margin-bottom:14px}
+.risk .r{font-size:14.5px;font-weight:800;color:var(--ink)}
+.risk .arrow{font-size:20px;font-weight:800;color:var(--gold);text-align:center}
+.risk .m{font-size:13.5px;color:var(--muted);line-height:1.45}
+
+/* ---------- slide 8 checklist ---------- */
+.ready{display:grid;grid-template-columns:300px 1fr;gap:28px;align-items:stretch;align-content:center}
+.donut-card{padding:26px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px}
+.donut{position:relative;width:170px;height:170px}
+.donut svg{transform:rotate(-90deg)}
+.donut .pct{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.donut .pct b{font-family:'Playfair Display',Georgia,serif;font-size:38px;color:var(--navy)}
+.donut .pct span{font-size:11px;color:var(--muted);font-weight:700;letter-spacing:1px}
+.donut-card .cap2{font-size:13px;color:var(--muted);text-align:center;font-weight:600;line-height:1.5}
+.checks{display:grid;grid-template-columns:1fr 1fr;gap:8px 26px;align-content:center}
+.check{display:flex;align-items:center;gap:11px;font-size:14px;padding:7px 0}
+.check svg{width:21px;height:21px;flex:none;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.check.on{color:var(--ink);font-weight:700}.check.on svg{stroke:var(--green)}
+.check.off{color:var(--mid)}.check.off svg{stroke:#9AA7CB}
+.legend{font-size:12px;color:var(--muted);font-weight:600;padding-bottom:9px}
+.legend b{color:var(--green)} .legend i{color:var(--mid);font-style:normal}
+
+/* ---------- slide 9 ---------- */
+.next{position:relative;z-index:2;flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 96px 90px}
+.next h2{font-family:'Playfair Display',Georgia,serif;font-size:46px;color:#fff;margin-bottom:42px}
+.step{display:flex;gap:24px;align-items:flex-start;margin-bottom:30px}
+.step .no{font-family:'Playfair Display',Georgia,serif;font-size:30px;font-weight:800;line-height:1;width:34px;flex:none}
+.step p{font-size:17.5px;color:#E8EEFC;line-height:1.45;padding-top:5px}
+.step p b{color:#fff}
+.nextfoot{position:absolute;left:0;right:0;bottom:0;background:rgba(10,14,38,.65);border-top:1px solid rgba(202,220,252,.15);
+  padding:20px 96px;display:flex;align-items:center;gap:14px;z-index:2}
+.nextfoot svg{width:22px;height:22px;stroke:var(--gold2);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.nextfoot p{font-size:16px;font-weight:800;color:var(--ice)}
+
+/* ---------- capabilities detail ---------- */
+.caps{display:grid;grid-template-columns:1fr 1.15fr;gap:24px;align-content:center}
+.caps .card{padding:24px 28px}
+.caps h3{font-size:16px;font-weight:800;color:var(--navy)}
+.caps .sub{font-size:12.5px;color:var(--muted);margin:4px 0 12px}
+.tools{list-style:none}
+.tools li{display:flex;gap:12px;padding:6.5px 0;font-size:13.5px;color:var(--ink);align-items:baseline;line-height:1.4}
+.tools .n{font-family:'Playfair Display',Georgia,serif;color:var(--gold);font-weight:800;font-size:15px;width:20px;flex:none;text-align:right}
+.mods{display:grid;grid-template-columns:1fr 1fr;gap:5px 20px;margin-top:10px}
+.mod{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--ink);padding:5.5px 0}
+.mod svg{width:15px;height:15px;stroke:var(--navy);fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+/* ---------- tools detail ---------- */
+.tool-grid{display:grid;grid-template-columns:1fr 1fr;gap:13px 18px}
+.tool-card{padding:13px 18px;border-left:4px solid var(--gold)}
+.tool-card .num{font-family:'Playfair Display',Georgia,serif;color:var(--gold);font-size:16px;font-weight:800;margin-bottom:3px}
+.tool-card .title{font-size:12px;font-weight:800;color:var(--navy);margin-bottom:6px;letter-spacing:.3px}
+.tool-card .val{font-size:11.5px;color:var(--ink);line-height:1.45}
+.tool-card .val b{color:var(--gold);font-weight:800}
+
+/* ---------- chrome ---------- */
+#bar{position:fixed;left:0;top:0;height:4px;width:0;background:linear-gradient(90deg,var(--gold),var(--gold2));z-index:10;transition:width .4s ease}
+#chrome{position:fixed;left:0;right:0;bottom:0;display:flex;justify-content:space-between;align-items:center;
+  padding:12px 22px;z-index:10;pointer-events:none}
+#chrome .logo{font-size:10.5px;font-weight:800;letter-spacing:3px;color:#5D6BA4}
+#chrome .ctrl{display:flex;align-items:center;gap:10px;pointer-events:auto}
+#chrome .cnt{font-size:12px;font-weight:700;color:#7C89B8;min-width:46px;text-align:center}
+#chrome button{width:34px;height:34px;border-radius:50%;border:1px solid rgba(202,220,252,.3);background:rgba(202,220,252,.08);
+  color:var(--ice);font-size:15px;cursor:pointer;transition:.2s}
+#chrome button:hover{background:var(--gold);border-color:var(--gold);color:#fff}
+#hint{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);font-size:11px;color:#49558C;z-index:10}
+
+/* ---------- print ---------- */
+@page{size:1280px 720px;margin:0}
+@media print{
+  body{overflow:visible;background:#fff}
+  #bar,#chrome,#hint{display:none}
+  #stage{position:static;transform:none!important;width:1280px;height:auto}
+  .slide{position:relative;inset:auto;width:1280px;height:720px;opacity:1!important;visibility:visible!important;
+    transform:none!important;page-break-after:always;border-radius:0}
+  .slide .a{opacity:1!important;animation:none!important;transform:none!important}
+  .node.today .dot::after{display:none}
+}
+</style>
+</head>
+<body>
+<div id="bar"></div>
+<div id="stage">
+
+<!-- ============ SLIDE 1 ============ -->
+<section class="slide dark gridlines hero">
+  <div class="kick a" style="--d:.05s">VERTMON LLC &nbsp;·&nbsp; ХАМТАРСАН ТӨСЛИЙН УУЛЗАЛТ</div>
+  <h1 class="a" style="--d:.15s">VERTMON <span class="gold-text">HUB</span></h1>
+  <div class="sub a" style="--d:.28s">Production-Ready төлөвлөгөө ба ажлын дараалал</div>
+  <div class="chips">
+    <div class="hchip a" style="--d:.42s">
+      <div class="icirc"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+      <div><div class="lab">ХУГАЦАА</div><div class="val">2026.06.10 – 06.30</div></div>
+    </div>
+    <div class="hchip a" style="--d:.52s">
+      <div class="icirc"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+      <div><div class="lab">УУЛЗАЛТ</div><div class="val">Лхагва бүр · 16:00 (биечлэн)</div></div>
+    </div>
+    <div class="hchip a" style="--d:.62s">
+      <div class="icirc"><svg viewBox="0 0 24 24"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg></div>
+      <div><div class="lab">ЗОРИЛТ</div><div class="val">06.30 — Go-Live</div></div>
+    </div>
+  </div>
+  <svg class="skyline" viewBox="0 0 1280 200" preserveAspectRatio="none">
+    <g fill="#CADCFC" opacity=".10">
+      <rect x="40" y="90" width="70" height="110"/><rect x="130" y="50" width="55" height="150"/>
+      <rect x="205" y="120" width="80" height="80"/><rect x="305" y="70" width="48" height="130"/>
+      <rect x="373" y="105" width="92" height="95"/><rect x="485" y="35" width="60" height="165"/>
+      <rect x="565" y="95" width="75" height="105"/><rect x="660" y="60" width="50" height="140"/>
+      <rect x="730" y="115" width="88" height="85"/><rect x="838" y="45" width="58" height="155"/>
+      <rect x="916" y="100" width="72" height="100"/><rect x="1008" y="70" width="52" height="130"/>
+      <rect x="1080" y="120" width="84" height="80"/><rect x="1184" y="55" width="56" height="145"/>
+    </g>
+    <g fill="#CADCFC" opacity=".06">
+      <rect x="90" y="140" width="120" height="60"/><rect x="420" y="150" width="140" height="50"/>
+      <rect x="780" y="145" width="130" height="55"/><rect x="1110" y="150" width="130" height="50"/>
+    </g>
+  </svg>
+  <div class="prep">Бэлтгэсэн: 2026.06.10</div>
+</section>
+
+<!-- ============ SLIDE 2 ============ -->
+<section class="slide light">
+  <header class="s-head"><h2 class="a">Өнөөгийн байдал — юу ажиллаж байна</h2><span class="kicker">VERTMON HUB · PRODUCTION PLAN</span></header>
+  <div class="s-body grid6">
+    <div class="card cap a" style="--d:.1s"><div class="top"><div class="icirc"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/></svg></div><h3>AI борлуулалтын агент</h3></div><p>FB/IG чатад Gemini AI найман хэрэгслээр автоматаар хариулна</p></div>
+    <div class="card cap a" style="--d:.18s"><div class="top"><div class="icirc"><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div><h3>Үл хөдлөхийн CRM</h3></div><p>Объект, лийд, үзүүлэх цаг, гэрээний бүрэн урсгал</p></div>
+    <div class="card cap a" style="--d:.26s"><div class="top"><div class="icirc"><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><h3>RBAC эрхийн систем</h3></div><p>5 үүрэг, модуль бүрээр ялгасан хандалтын эрх</p></div>
+    <div class="card cap a" style="--d:.34s"><div class="top"><div class="icirc"><svg viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div><h3>Менежер дуудах шилжүүлэг</h3></div><p>AI → хүн шилжих үед push мэдэгдэл шууд очно</p></div>
+    <div class="card cap a" style="--d:.42s"><div class="top"><div class="icirc"><svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg></div><h3>Маркетинг ба тайлан</h3></div><p>ROI, судалгаа, KPI самбар, Excel экспорт</p></div>
+    <div class="card cap a" style="--d:.5s"><div class="top"><div class="icirc"><svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div><h3>Аюулгүй байдал</h3></div><p>HMAC webhook, rate limit, RLS бодлогын засварууд</p></div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 2b — AI TOOLS DETAILED ============ -->
+<section class="slide light">
+  <header class="s-head"><h2 class="a">AI агентын 8 хэрэгсэл — нарийн</h2><span class="kicker">VERTMON HUB · PRODUCTION PLAN</span></header>
+  <div class="s-body tool-grid">
+    <div class="card tool-card a" style="--d:.08s">
+      <div class="num">1</div>
+      <div class="title">ОРОН СУУЦ ХАЙХ</div>
+      <div class="val">Хэрэглэгчийн бичсэн шаардлагаар (төрөл, үнийн дүн, дүүрэг, өрөөний тоо, талбай) <b>тохирох орон сууцыг шууд олж</b> чатад санал болгоно. Жишээ: «ХУД-д 2 өрөө, 150 саяас доош» → таарах объектуудыг жагсаана.</div>
+    </div>
+    <div class="card tool-card a" style="--d:.12s">
+      <div class="num">2</div>
+      <div class="title">ЗУРАГ ИЛГЭЭХ</div>
+      <div class="val">Сонирхсон объектын <b>зургуудыг чатад шууд илгээнэ</b>. Хэрэглэгч өөр сайт руу орох шаардлагагүй — зураг, төлөвлөгөөг яриа дотроо хармагц шийдвэрээ хурдан гаргадаг.</div>
+    </div>
+    <div class="card tool-card a" style="--d:.16s">
+      <div class="num">3</div>
+      <div class="title">ЗЭЭЛИЙН ТООЦООЛУУР</div>
+      <div class="val">Ипотекийн төлбөрийг <b>чатад тэр дороо тооцоолно</b>: сарын төлбөр, урьдчилгаа, хүү, хугацаа. «Сард хэд төлөх вэ?» гэсэн асуултад хариулж, <b>худалдан авах сонирхлыг бэхжүүлнэ.</b></div>
+    </div>
+    <div class="card tool-card a" style="--d:.2s">
+      <div class="num">4</div>
+      <div class="title">ҮЗҮҮЛЭХ ЦАГ ТОВЛОХ</div>
+      <div class="val">Объект үзэх цагийг <b>чатаар шууд захиалуулна</b>. Хэрэглэгчийн сонгосон өдөр, цаг бүртгэгдэж, менежерт мэдэгдэнэ — утсаар ярилцах шаардлагагүйгээр уулзалт товлогдоно.</div>
+    </div>
+    <div class="card tool-card a" style="--d:.24s">
+      <div class="num">5</div>
+      <div class="title">ЛИЙД ҮҮСГЭХ</div>
+      <div class="val">Хэрэглэгчийн сонирхсон объект, үнэ, ярианы агуулгад тулгуурлан <b>автоматаар лийд (боломжит худалдан авагч) үүсгэж</b> менежерийн жагсаалтад нэмнэ. Нэг ч сонирхогч орхигдохгүй.</div>
+    </div>
+    <div class="card tool-card a" style="--d:.28s">
+      <div class="num">6</div>
+      <div class="title">НЭР & УТАС АВАХ</div>
+      <div class="val">Сонирхож буй хэрэглэгчийн <b>нэр, утасны дугаарыг чатаар эелдэгээр асууж цуглуулна</b>. Мэдээлэл CRM-д хадгалагдаж, борлуулалтын баг дараа нь холбоо барих боломжтой.</div>
+    </div>
+    <div class="card tool-card a" style="--d:.32s">
+      <div class="num">7</div>
+      <div class="title">МЕНЕЖЕР ДУУДАХ</div>
+      <div class="val">Хүний оролцоо шаардсан асуулт гарвал AI <b>менежерт шууд дамжуулж</b>, утсанд push мэдэгдэл илгээнэ. Менежер яриаг тасралтгүй үргэлжлүүлж, чухал хэрэглэгчийг алдахгүй.</div>
+    </div>
+    <div class="card tool-card a" style="--d:.36s">
+      <div class="num">8</div>
+      <div class="title">СОНГОЛТ САНАХ</div>
+      <div class="val">Хэрэглэгчийн дуртай дүүрэг, төсөв, өрөөний тоо, объектын төрлийг <b>санаж хадгална</b>. Дараа дахин бичихэд нь өмнөх сонголтод нь тааруулж шууд санал болгодог.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 2c — CAPABILITIES DETAIL ============ -->
+<section class="slide light">
+  <header class="s-head"><h2 class="a">Чадамжийн дэлгэрэнгүй</h2><span class="kicker">VERTMON HUB · PRODUCTION PLAN</span></header>
+  <div class="s-body caps">
+    <div class="card a" style="--d:.12s;border-left:5px solid var(--gold)">
+      <h3>AI агентын чадамж — 8 хэрэгсэл</h3>
+      <div class="sub">Facebook / Instagram чатад 24/7 автоматаар:</div>
+      <ul class="tools">
+        <li><span class="n">1</span>Орон сууц хайх — төрөл, үнэ, дүүрэг, өрөө, талбайгаар</li>
+        <li><span class="n">2</span>Объектын зургийг чатад шууд илгээх</li>
+        <li><span class="n">3</span>Ипотекийн зээлийн тооцоолуур</li>
+        <li><span class="n">4</span>Үзүүлэх цаг товлох</li>
+        <li><span class="n">5</span>Лийд (сонирхогч) автоматаар үүсгэх</li>
+        <li><span class="n">6</span>Нэр, утасны дугаар цуглуулах</li>
+        <li><span class="n">7</span>Менежер дуудах — хүнд шилжүүлэх + push</li>
+        <li><span class="n">8</span>Хэрэглэгчийн сонголтыг санах (дүүрэг, төсөв…)</li>
+      </ul>
+    </div>
+    <div class="card a" style="--d:.24s;border-left:5px solid var(--navy)">
+      <h3>Платформын модулиуд</h3>
+      <div class="sub">Борлуулалтын багт зориулсан бүрэн CRM:</div>
+      <div class="mods">
+        <div class="mod"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Хяналтын самбар (KPI)</div>
+        <div class="mod"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Объектын удирдлага</div>
+        <div class="mod"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Лийд / борлуулалтын pipeline</div>
+        <div class="mod"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Үзүүлэх цагийн товлолт</div>
+        <div class="mod"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Гэрээний бүртгэл</div>
+        <div class="mod"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Харилцагчийн CRM</div>
+        <div class="mod"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Live inbox (FB/IG чат)</div>
+        <div class="mod"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Тайлан, аналитик</div>
+        <div class="mod"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Маркетингийн ROI</div>
+        <div class="mod"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Санал асуулга / судалгаа</div>
+        <div class="mod"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>AI туслах ба тохиргоо</div>
+        <div class="mod"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Эрхийн удирдлага (RBAC)</div>
+        <div class="mod"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Push мэдэгдэл</div>
+        <div class="mod"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Excel экспорт</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 3 ============ -->
+<section class="slide light">
+  <header class="s-head"><h2 class="a">Техникийн эрүүл мэнд — 2026.06.10</h2><span class="kicker">VERTMON HUB · PRODUCTION PLAN</span></header>
+  <div class="s-body">
+    <div class="stats">
+      <div class="card stat a" style="--d:.1s"><div class="n">0</div><div class="l">TypeScript алдаа (tsc --noEmit)</div></div>
+      <div class="card stat a" style="--d:.2s"><div class="n">100<span style="font-size:30px;color:var(--muted)">/100</span></div><div class="l">Unit тест амжилттай (Vitest)</div></div>
+      <div class="card stat a" style="--d:.3s"><div class="n">5</div><div class="l">E2E тест (Playwright)</div></div>
+    </div>
+    <div class="duo">
+      <div class="card a" style="--d:.42s;border-left:5px solid var(--green)">
+        <h3>Сүүлд хийгдсэн ажлууд</h3>
+        <ul class="donelist">
+          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>RLS, SECURITY DEFINER, storage бодлогын засвар</li>
+          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Хуучин багана устгах migration хийгдсэн</li>
+          <li><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>Webhook гарын үсэг (HMAC, timing-safe) зөв</li>
+        </ul>
+      </div>
+      <div class="card a" style="--d:.52s;border-left:5px solid var(--navy)">
+        <h3>Технологийн стек</h3>
+        <table class="stack">
+          <tr><td>Framework</td><td>Next.js 16.1.1 · React 19.2.3</td></tr>
+          <tr><td>Хэл</td><td>TypeScript 5</td></tr>
+          <tr><td>Өгөгдөл / Auth</td><td>Supabase (PostgreSQL + RLS)</td></tr>
+          <tr><td>AI</td><td>Google Gemini (function calling)</td></tr>
+          <tr><td>Хостинг</td><td>Vercel · sin1 бүс</td></tr>
+          <tr><td>Мониторинг</td><td>Sentry (client / server / edge)</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 4 ============ -->
+<section class="slide light">
+  <header class="s-head"><h2 class="a">Production-Ready цоорхой — TOP 8</h2><span class="kicker">VERTMON HUB · PRODUCTION PLAN</span></header>
+  <div class="s-body gaps">
+    <div class="card gap crit a" style="--d:.08s"><span class="chip crit">КРИТИК</span><p>Gemini дуудлагад timeout алга — webhook 30 секунд хүртэл гацаж болно</p></div>
+    <div class="card gap high a" style="--d:.16s"><span class="chip high">ӨНДӨР</span><p>Env тохиргооны startup шалгалт алга — буруу deploy хожуу илэрнэ</p></div>
+    <div class="card gap crit a" style="--d:.24s"><span class="chip crit">КРИТИК</span><p>AI түлхүүр хоосон утга руу fallback хийдэг — алдаа нь нууцлаг гарна</p></div>
+    <div class="card gap high a" style="--d:.32s"><span class="chip high">ӨНДӨР</span><p>Чат түүх хадгалахад retry алга — DB түр тасалдвал яриа алдагдана</p></div>
+    <div class="card gap crit a" style="--d:.4s"><span class="chip crit">КРИТИК</span><p>Webhook → AI гол зам unit тестгүй (мессежийн орох цэг)</p></div>
+    <div class="card gap mid a" style="--d:.48s"><span class="chip mid">ДУНД</span><p>Харилцагчийн жагсаалт pagination-гүй — өгөгдөл өсөхөд удааширна</p></div>
+    <div class="card gap crit a" style="--d:.56s"><span class="chip crit">КРИТИК</span><p>Амжилтгүй мессежийн dead-letter дараалал алга — мессеж алдагдаж болно</p></div>
+    <div class="card gap mid a" style="--d:.64s"><span class="chip mid">ДУНД</span><p>console.log үлдэгдэл — төвлөрсөн logger руу шилжүүлэх шаардлагатай</p></div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 5 ============ -->
+<section class="slide light">
+  <header class="s-head"><h2 class="a">Ажлын дараалал — 3 долоо хоног</h2><span class="kicker">VERTMON HUB · PRODUCTION PLAN</span></header>
+  <div class="s-body">
+    <div class="weeks">
+      <div class="card week a" style="--d:.1s">
+        <div class="head"><div class="t">1-р долоо хоног</div><div class="d">06.11 – 06.17</div></div>
+        <div class="theme">НАЙДВАРТАЙ БАЙДАЛ</div>
+        <ul>
+          <li>Gemini дуудлагад timeout + fallback</li>
+          <li>Env хувьсагчийн startup шалгалт (Zod)</li>
+          <li>AI түлхүүрийг нэг factory-д төвлөрүүлэх</li>
+          <li>Чат хадгалалтад retry логик</li>
+          <li>Meta App Review өргөдлийг илгээх</li>
+        </ul>
+        <div class="foot">Уулзалт: 06.17 Лхагва</div>
+      </div>
+      <div class="card week a" style="--d:.22s">
+        <div class="head"><div class="t">2-р долоо хоног</div><div class="d">06.18 – 06.24</div></div>
+        <div class="theme">ТЕСТ БА АЖИГЛАЛТ</div>
+        <ul>
+          <li>Webhook, AIRouter, ToolExecutor тест</li>
+          <li>RBAC, rate limit (middleware) тест</li>
+          <li>Dead-letter дараалал нэвтрүүлэх</li>
+          <li>Sentry breadcrumb — мессежийн зам</li>
+          <li>Health check: DB + Gemini холболт</li>
+        </ul>
+        <div class="foot">Уулзалт: 06.24 Лхагва</div>
+      </div>
+      <div class="card week w3 a" style="--d:.34s">
+        <div class="head"><div class="t">3-р долоо хоног</div><div class="d">06.25 – 06.30</div></div>
+        <div class="theme">ХАТУУЖИЛ БА НЭЭЛТ</div>
+        <ul>
+          <li>Webhook load тест, гүйцэтгэл</li>
+          <li>Pagination + лог цэвэрлэгээ</li>
+          <li>Backup / restore туршилт</li>
+          <li>Runbook + rollback төлөвлөгөө</li>
+          <li>06.30: Go-live эцсийн хяналт</li>
+        </ul>
+        <div class="foot">Зорилт: 06.30 Мягмар</div>
+      </div>
+    </div>
+    <div class="flowline a" style="--d:.5s">Лхагва бүрийн уулзалтаар явцыг хянаж, эрэмбийг шинэчилнэ &nbsp;→&nbsp; <span class="gold-text">2026.06.30 PRODUCTION READY</span></div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 6 ============ -->
+<section class="slide light">
+  <header class="s-head"><h2 class="a">Vertmon LLC — уулзалтын хуваарь</h2><span class="kicker">VERTMON HUB · PRODUCTION PLAN</span></header>
+  <div class="s-body">
+    <div class="tl a" style="--d:.15s">
+      <div class="line"></div>
+      <div class="nodes">
+        <div class="node today">
+          <div class="date">06.10 · Лхагва</div><div class="dot"></div>
+          <div class="card body"><div class="t">Танилцуулга</div><div class="s">Демо · санал цуглуулах · чиглэл тогтоох</div></div>
+        </div>
+        <div class="node">
+          <div class="date">06.17 · Лхагва 16:00</div><div class="dot"></div>
+          <div class="card body"><div class="t">Явц №1</div><div class="s">Менежер, тест хэрэглэгч томилох · туршилт · UX асуулга</div></div>
+        </div>
+        <div class="node">
+          <div class="date">06.24 · Лхагва 16:00</div><div class="dot"></div>
+          <div class="card body"><div class="t">Явц №2</div><div class="s">Туршилт, асуулгын дүн · нээлтийн бэлтгэл</div></div>
+        </div>
+        <div class="node fin">
+          <div class="date">06.30 · Мягмар</div><div class="dot"></div>
+          <div class="card body"><div class="t">PRODUCTION READY</div><div class="s">Go-live шалгуурын эцсийн хяналт</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card icsbar a" style="--d:.4s">
+      <div class="icirc"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg></div>
+      <p><b>Календарийн урилга бэлэн:</b> Лхагва бүр 16:00–17:00 биечлэн, 30 минутын өмнө сануулгатай — <code>docs/vertmon-llc/Vertmon_LLC_uulzalt_huvaari.ics</code></p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 6b — AGENDA ============ -->
+<section class="slide light">
+  <header class="s-head"><h2 class="a">Уулзалт бүрийн агенда</h2><span class="kicker">VERTMON HUB · PRODUCTION PLAN</span></header>
+  <div class="s-body">
+    <div class="weeks">
+      <div class="card week a" style="--d:.1s">
+        <div class="head"><div class="t">06.10 · Лхагва</div><div class="d">Өнөөдөр — танилцуулга</div></div>
+        <div class="theme">ЧИГЛЭЛ ТОГТООХ</div>
+        <ul>
+          <li>Системийн чадамжийн демо</li>
+          <li>Нэмэлт санал, хүсэлтийг сонсож цуглуулах</li>
+          <li>Хөгжүүлэлтийн чиглэл, эрэмбийг тогтоох</li>
+        </ul>
+        <div class="foot">Үр дүн: батлагдсан чиглэл</div>
+      </div>
+      <div class="card week a" style="--d:.22s">
+        <div class="head"><div class="t">06.17 · Лхагва 16:00</div><div class="d">Явц №1 · биечлэн</div></div>
+        <div class="theme">ТОМИЛОЛТ БА ТУРШИЛТ</div>
+        <ul>
+          <li>Хариуцсан борлуулалтын менежерүүдийг томилох</li>
+          <li>Тест хэрэглэгчдийг сонгож, эрх олгох</li>
+          <li>Системийг бодит хэрэглээнд туршуулж эхлэх</li>
+          <li>UX санал асуулгыг тараах</li>
+        </ul>
+        <div class="foot">Үр дүн: туршилт эхэлсэн</div>
+      </div>
+      <div class="card week a" style="--d:.34s">
+        <div class="head"><div class="t">06.24 · Лхагва 16:00</div><div class="d">Явц №2 · биечлэн</div></div>
+        <div class="theme">ДҮН БА БЭЛТГЭЛ</div>
+        <ul>
+          <li>Туршилт + UX санал асуулгын дүнг хэлэлцэх</li>
+          <li>Засварын эрэмбэ, go-live шалгуурыг шалгах</li>
+          <li>Нээлтийн бэлтгэл, runbook тойм</li>
+        </ul>
+        <div class="foot">Үр дүн: нээлтийн шийдвэр</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 7 ============ -->
+<section class="slide light">
+  <header class="s-head"><h2 class="a">Эрсдэл ба бууруулах арга</h2><span class="kicker">VERTMON HUB · PRODUCTION PLAN</span></header>
+  <div class="s-body">
+    <div class="card risk a" style="--d:.08s">
+      <div class="icirc"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></div>
+      <div class="r">Meta App Review удаж болзошгүй</div><div class="arrow">→</div>
+      <div class="m">Өргөдлийг 1-р долоо хоногт илгээж, зэрэгцээ ажиллана</div>
+    </div>
+    <div class="card risk a" style="--d:.16s">
+      <div class="icirc"><svg viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></div>
+      <div class="r">Gemini моделийн нэр тохиргооноос зөрүүтэй</div><div class="arrow">→</div>
+      <div class="m">Модел, квот, billing-ийг 1-р долоо хоногт баталгаажуулна</div>
+    </div>
+    <div class="card risk a" style="--d:.24s">
+      <div class="icirc"><svg viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg></div>
+      <div class="r">Backup сэргээлт хэзээ ч туршигдаагүй</div><div class="arrow">→</div>
+      <div class="m">3-р долоо хоногт restore туршилт, баримтжуулалт</div>
+    </div>
+    <div class="card risk a" style="--d:.32s">
+      <div class="icirc"><svg viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg></div>
+      <div class="r">Vercel функцийн 30 секундын хязгаар</div><div class="arrow">→</div>
+      <div class="m">AI дуудлагад өөрийн timeout + бэлэн fallback хариу</div>
+    </div>
+    <div class="card risk a" style="--d:.4s">
+      <div class="icirc"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><polyline points="12 9 12 12 13.5 13.5"/><path d="M16.51 17.35l-.35 3.83a2 2 0 0 1-2 1.82H9.83a2 2 0 0 1-2-1.82l-.35-3.83m.01-10.7l.35-3.83A2 2 0 0 1 9.83 1h4.35a2 2 0 0 1 2 1.82l.35 3.83"/></svg></div>
+      <div class="r">3 долоо хоногийн шахуу хугацаа</div><div class="arrow">→</div>
+      <div class="m">Лхагва бүр scope-оо эргэн хянаж, дахин эрэмбэлнэ</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 8 ============ -->
+<section class="slide light">
+  <header class="s-head"><h2 class="a">«Production Ready» шалгуур</h2>
+    <span class="legend a" style="--d:.2s"><b>●</b> одоо бэлэн &nbsp;&nbsp; <i>○</i> 06.30 хүртэл хийгдэнэ</span></header>
+  <div class="s-body ready">
+    <div class="card donut-card a" style="--d:.12s">
+      <div class="donut">
+        <svg width="170" height="170" viewBox="0 0 170 170">
+          <circle cx="85" cy="85" r="70" stroke="#E7EEFD" stroke-width="16" fill="none"/>
+          <circle cx="85" cy="85" r="70" stroke="#2E7D5B" stroke-width="16" fill="none" stroke-linecap="round"
+            stroke-dasharray="110 440"/>
+        </svg>
+        <div class="pct"><b>25%</b><span>3 / 12 БЭЛЭН</span></div>
+      </div>
+      <div class="cap2">Үлдсэн 9 шалгуурыг<br>3 долоо хоногт хаана</div>
+    </div>
+    <div class="checks">
+      <div class="check on a" style="--d:.2s"><svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>Build, typecheck, тест бүгд ногоон</div>
+      <div class="check off a" style="--d:.24s"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>Sentry alert + health monitoring</div>
+      <div class="check on a" style="--d:.28s"><svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>Webhook гарын үсэг + rate limit</div>
+      <div class="check off a" style="--d:.32s"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>Backup / restore туршигдсан</div>
+      <div class="check on a" style="--d:.36s"><svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>RLS, аюулгүй байдлын засварууд</div>
+      <div class="check off a" style="--d:.4s"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>Load тест давсан</div>
+      <div class="check off a" style="--d:.44s"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>Env тохиргооны startup шалгалт</div>
+      <div class="check off a" style="--d:.48s"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>Meta App Review баталгаажсан</div>
+      <div class="check off a" style="--d:.52s"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>Timeout + retry + dead-letter</div>
+      <div class="check off a" style="--d:.56s"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>Runbook + rollback бэлэн</div>
+      <div class="check off a" style="--d:.6s"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>Гол замын unit тест бүрэн</div>
+      <div class="check off a" style="--d:.64s"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>Pagination, гүйцэтгэлийн цэвэрлэгээ</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SLIDE 9 ============ -->
+<section class="slide dark gridlines">
+  <div class="next">
+    <h2 class="a">Дараагийн алхам</h2>
+    <div class="step a" style="--d:.15s"><div class="no gold-text">1</div><p><b>Уулзалтын хуваарийг батлах</b> — календарийн урилгыг (.ics) багт түгээх</p></div>
+    <div class="step a" style="--d:.25s"><div class="no gold-text">2</div><p><b>Тест хэрэглэгчдийг томилох</b> — санал асуулгыг UX талаас цуглуулж эхлэх</p></div>
+    <div class="step a" style="--d:.35s"><div class="no gold-text">3</div><p><b>Meta Business Verification-ийг өнөөдрөөс эхлүүлэх</b> — хамгийн урт хүлээлттэй алхам</p></div>
+    <div class="step a" style="--d:.45s"><div class="no gold-text">4</div><p><b>Production орчны түлхүүр, эрхийн солилцоо</b> — аюулгүй сувгаар</p></div>
+  </div>
+  <div class="nextfoot a" style="--d:.6s">
+    <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    <p>Дараагийн уулзалт — 2026.06.17, Лхагва, 16:00 · Vertmon LLC (биечлэн)</p>
+  </div>
+</section>
+
+</div>
+
+<div id="chrome">
+  <span class="logo">VERTMON HUB · PRODUCTION PLAN · 2026.06</span>
+  <div class="ctrl">
+    <button id="prev" aria-label="Өмнөх">‹</button>
+    <span class="cnt"><span id="cur">1</span> / <span id="tot">9</span></span>
+    <button id="next" aria-label="Дараах">›</button>
+  </div>
+</div>
+<div id="hint">← → шилжих · F дэлгэц дүүрэн · P хэвлэх (PDF)</div>
+
+<script>
+const slides=[...document.querySelectorAll('.slide')];
+document.getElementById('tot').textContent=slides.length;
+let i=0;
+function go(n){
+  i=Math.max(0,Math.min(slides.length-1,n));
+  slides.forEach((s,k)=>{s.classList.toggle('active',k===i);s.classList.toggle('done',k<i);});
+  document.getElementById('cur').textContent=i+1;
+  document.getElementById('bar').style.width=((i+1)/slides.length*100)+'%';
+  history.replaceState(null,'','#s'+(i+1));
+}
+addEventListener('keydown',e=>{
+  if(['ArrowRight','PageDown',' ','Enter'].includes(e.key)){e.preventDefault();go(i+1);}
+  else if(['ArrowLeft','PageUp','Backspace'].includes(e.key)){e.preventDefault();go(i-1);}
+  else if(e.key==='Home')go(0);
+  else if(e.key==='End')go(slides.length-1);
+  else if(e.key==='f'||e.key==='F'){document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();}
+  else if(e.key==='p'||e.key==='P'){window.print();}
+});
+document.getElementById('prev').onclick=()=>go(i-1);
+document.getElementById('next').onclick=()=>go(i+1);
+let tx=0;
+addEventListener('touchstart',e=>tx=e.touches[0].clientX,{passive:true});
+addEventListener('touchend',e=>{const d=e.changedTouches[0].clientX-tx;if(Math.abs(d)>50)go(i+(d<0?1:-1));},{passive:true});
+function fit(){const s=Math.min(innerWidth/1280,innerHeight/720)*0.96;
+  document.getElementById('stage').style.transform=`translate(-50%,-50%) scale(${s})`;}
+addEventListener('resize',fit);
+const m=location.hash.match(/s(\d+)/);
+go(m?+m[1]-1:0);fit();
+</script>
+</body>
+</html>

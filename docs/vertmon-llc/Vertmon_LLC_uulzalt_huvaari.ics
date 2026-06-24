@@ -1,0 +1,29 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Vertmon Hub//Vertmon LLC Weekly Meetings//MN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+BEGIN:VEVENT
+UID:vertmon-llc-weekly-2026@vertmonhub
+DTSTAMP:20260610T045300Z
+DTSTART:20260617T160000
+DTEND:20260617T170000
+RRULE:FREQ=WEEKLY;BYDAY=WE;UNTIL=20260630T235959
+SUMMARY:Vertmon LLC — 7 хоног тутмын биечлэн уулзалт (Production Ready явц)
+DESCRIPTION:Биечлэн (нүүр тулсан) уулзалт. Хэлэлцэх сэдэв: Өнгөрсөн долоо хоногийн ажлын явц\, ажлын дарааллын шинэчлэл\, production-ready бэлэн байдлын шалгуур\, эрсдэл ба шийдвэр шаардлагатай асуудлууд. Материал: Vertmon_Hub_Production_Plan.pptx
+LOCATION:Vertmon LLC оффис (биечлэн)
+BEGIN:VALARM
+TRIGGER:-PT30M
+ACTION:DISPLAY
+DESCRIPTION:Vertmon LLC уулзалт 30 минутын дараа эхэлнэ
+END:VALARM
+END:VEVENT
+BEGIN:VEVENT
+UID:vertmon-hub-golive-20260630@vertmonhub
+DTSTAMP:20260610T045300Z
+DTSTART;VALUE=DATE:20260630
+DTEND;VALUE=DATE:20260701
+SUMMARY:Vertmon Hub — PRODUCTION READY (зорилтот огноо)
+DESCRIPTION:Go-live шалгуурын эцсийн хяналт: build\, monitoring\, alerting\, backup\, Meta App Review\, runbook бүгд бэлэн байх ёстой.
+END:VEVENT
+END:VCALENDAR

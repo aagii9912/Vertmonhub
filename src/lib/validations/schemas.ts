@@ -13,6 +13,13 @@ export const CreateLeadSchema = z.object({
     email: z.string().email('И-мэйл буруу формат').max(255).optional().nullable(),
     company: z.string().max(255).optional().nullable(),
     message: z.string().max(2000).optional().nullable(),
+    // Нийтийн intake form-ийн нэмэлт талбарууд (анкет)
+    preferred_type: z.enum(['apartment', 'house', 'office', 'land', 'commercial']).optional().nullable(),
+    preferred_rooms: z.coerce.number().int().min(0).max(20).optional().nullable(),
+    financing_intent: z.enum(['bank_loan', 'cash', 'mortgage', 'leasing', 'barter', 'other']).optional().nullable(),
+    interested_phase: z.string().max(100).optional().nullable(),
+    advance_percent: z.coerce.number().min(0).max(100).optional().nullable(),
+    source: z.string().max(50).optional().nullable(),
     // Honeypot: real users leave this empty; bots fill it
     website: z.string().max(0).optional().nullable(),
     // Optional Cloudflare Turnstile token (verified server-side when configured)

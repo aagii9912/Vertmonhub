@@ -9,8 +9,7 @@ test.describe('Landing Page', () => {
         await page.waitForLoadState('networkidle');
 
         // Check if the title is correct or exists
-        // E.g., Syncly is the name according to plans.ts "Syncly AI Plan Configuration"
-        await expect(page).toHaveTitle(/Sync|SmartHub|Home/i);
+        await expect(page).toHaveTitle(/Vertmon/i);
 
         // Take a screenshot of the landing page
         await page.screenshot({ path: 'test-results/landing-page.png', fullPage: true });
