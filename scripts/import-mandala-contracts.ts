@@ -1,29 +1,27 @@
 /**
  * Import Mandala Garden contracts ("Бүх гэрээ.xlsx") → property_contracts.
  *
- * ⚠ Энэ файлын багана нь POST /api/dashboard/contracts (Аагийд загвар) -аас ӨӨР:
- *   - Гэрээний дугаар БАЙХГҮЙ (тиймээс upsert key алга → snapshot replace)
- *   - Нэр/регистр НЭГ талбарт ("Анужин.Баттулга ЖЯ94...") → задлан авна
- *   - Утас БАЙХГҮЙ
- *   - Бүтээгдэхүүний төрөл нь "Бүтээгдэхүүн" мөрөнд шигдсэн → парслана
- *
- * Багана: Захиалга өгсөн огноо | Борлуулалтын менежер | Бүтээгдэхүүн |
- *   Блокын дугаар | Борлуулалтын суваг | Үндсэн захиалагч | Урьдчилгааны нөхцөл |
- *   Урьдчилгааны дүн | Төлөв | Банкны төлөв | ТХЗ-н төлөв | М.кв үнэ |
- *   Гэрээлсэн талбай | Нийт дүн | Нийт төлсөн дүн | Нийт үлдэгдэл |
- *   Төлбөр хоцролт | Нийт хоцорсон хоног | Шинэ тоот | Шинэчилсэн борлуулах талбай
+ * ⚠ "Бүх гэрээ" нь орон сууцны ЦЭВЭР талбаруудыг (давхар/өрөө/айлын төрөл/загвар)
+ * тусдаа баганаар БИШ, "Бүтээгдэхүүн" мөрөнд шигтгэсэн байдаг:
+ *   "Г1485-68, Энгийн-12.5, Зогсоол, МГ-I ээлж \"Зүү Гарден\""
+ * Тиймээс:
+ *   1. "Бүтээгдэхүүн"-ээс КОД (Г1485-68) -ыг салгана.
+ *   2. Тэр кодоор НЭГЖИЙН файлуудаас (zip-ууд) давхар/өрөө/айлын төрөл/загвар/
+ *      цонх/талбай/блок/ээлжийг БАЯЖУУЛНА (≈97% тохирно).
+ *   3. М.кв үнийг эх баганаас бус, Нийт дүн ÷ Талбай-аар ЗӨВ тооцно (эх багана
+ *      зарим мөрөнд нийт үнийг агуулдаг тул найдваргүй).
+ *   4. Бүх 20 баганыг (Төлбөр хоцролт г.м.) бүрэн авна.
  *
  * Usage:
- *   npx tsx scripts/import-mandala-contracts.ts "/tmp/mandala_analysis/Buh_geree.xlsx"            # DRY RUN
- *   npx tsx scripts/import-mandala-contracts.ts "<file>" --commit --wipe                          # replace shop's contracts
- *   npx tsx scripts/import-mandala-contracts.ts "<file>" --commit --append                        # insert without wiping
- *   SHOP_ID=<uuid> npx tsx scripts/import-mandala-contracts.ts "<file>" --commit --wipe
+ *   npx tsx scripts/import-mandala-contracts.ts "<Buh_geree.xlsx>"                                  # DRY RUN
+ *   npx tsx scripts/import-mandala-contracts.ts "<Buh_geree.xlsx>" --units-dir=/tmp/mandala_analysis/zips --commit --wipe
  */
 
 import * as XLSX from 'xlsx';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
 import * as path from 'path';
+import * as fs from 'fs';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
 
@@ -32,11 +30,12 @@ const FILE = args.find((a) => !a.startsWith('--'));
 const COMMIT = args.includes('--commit');
 const WIPE = args.includes('--wipe');
 const APPEND = args.includes('--append');
+const UNITS_DIR = args.find((a) => a.startsWith('--units-dir='))?.slice('--units-dir='.length) || '/tmp/mandala_analysis/zips';
 const SHOP_ID = process.env.SHOP_ID;
 const BATCH = 200;
 
 if (!FILE) {
-    console.error('Usage: npx tsx scripts/import-mandala-contracts.ts <Buh_geree.xlsx> [--commit --wipe|--append]');
+    console.error('Usage: npx tsx scripts/import-mandala-contracts.ts <Buh_geree.xlsx> [--units-dir=… --commit --wipe|--append]');
     process.exit(1);
 }
 
@@ -64,8 +63,7 @@ function excelDateToISO(row: Row, ...keys: string[]): string | null {
         const v = row[k];
         if (v instanceof Date) return v.toISOString().slice(0, 10);
         if (typeof v === 'number' && v > 0) {
-            const ms = (v - 25569) * 86400 * 1000;
-            const d = new Date(ms);
+            const d = new Date((v - 25569) * 86400 * 1000);
             if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10);
         }
         if (typeof v === 'string' && v.trim()) {
@@ -76,6 +74,64 @@ function excelDateToISO(row: Row, ...keys: string[]): string | null {
     return null;
 }
 
+// ---------- НЭГЖИЙН ИНДЕКС (баяжуулалт) ----------
+interface UnitInfo {
+    phase: string; block: string | null; building: string | null;
+    floor: string | null; unit_type: string | null; model: string | null;
+    window_view: string | null; rooms: number | null; area: number | null;
+}
+function phaseFromPath(p: string): string {
+    const l = p.toLowerCase();
+    if (l.includes('watergarden')) return 'Water Garden';
+    if (l.includes('zoogarden')) return 'Zoo Garden';
+    if (l.includes('zooplus')) return 'Zoo Plus';
+    return 'Unknown';
+}
+function findXlsx(dir: string): string[] {
+    const out: string[] = [];
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) out.push(...findXlsx(full));
+        else if (e.name.toLowerCase().endsWith('.xlsx') && !e.name.startsWith('~$')) out.push(full);
+    }
+    return out;
+}
+function loadUnitIndex(dir: string): Map<string, UnitInfo> {
+    const idx = new Map<string, UnitInfo>();
+    if (!fs.existsSync(dir)) { console.warn(`⚠ units-dir not found: ${dir} — баяжуулалтгүй үргэлжилнэ`); return idx; }
+    for (const f of findXlsx(dir)) {
+        const phase = phaseFromPath(f);
+        const fileBlock = path.basename(f).match(/^(\d+)/)?.[1] || null;
+        const wb = XLSX.readFile(f);
+        const rows = XLSX.utils.sheet_to_json<Row>(wb.Sheets[wb.SheetNames[0]], { defval: null });
+        for (const r of rows) {
+            const code = cell(r, 'Код');
+            if (!code) continue;
+            const building = code.includes('-') ? code.split('-')[0] : code;
+            idx.set(code, {
+                phase,
+                block: fileBlock || building,
+                building,
+                floor: cell(r, 'Давхар') || null,
+                unit_type: cell(r, 'Айлын төрөл') || null,
+                model: cell(r, 'Загвар') || null,
+                window_view: cell(r, 'Цонхны харагдац') || null,
+                rooms: intNum(r, 'Өрөөний тоо'),
+                area: num(r, 'Борлуулах талбай'),
+            });
+        }
+    }
+    return idx;
+}
+
+// ---------- "Бүтээгдэхүүн" задлал ----------
+// "Г1485-68, Энгийн-12.5, Зогсоол, МГ-I ээлж \"Зүү Гарден\""
+function parseProduct(s: string): { code: string; descriptor: string; categoryWord: string } {
+    const parts = s.split(',').map((p) => p.trim());
+    return { code: parts[0] || '', descriptor: parts[1] || '', categoryWord: parts[2] || '' };
+}
+// Төрлийг "Бүтээгдэхүүн"-ий БҮТЭН мөрнөөс хайна (зарим мөрд ангилал 3-р token биш
+// тул бүтэн мөр найдвартай — хурлын тоо 724/599/262/32-той тааруулна).
 function inferProductType(label: string): string {
     const s = label.toLowerCase();
     if (s.includes('зогсоол') || s.includes('зогс')) return 'parking';
@@ -87,26 +143,21 @@ function inferProductType(label: string): string {
 function parseStatus(raw: string): string {
     const v = raw.toLowerCase();
     if (v.includes('цуцл')) return 'cancelled';
-    if (v.includes('шилж')) return 'transferred';      // Тоот шилжсэн
-    if (v.includes('хаас') || v.includes('хаагдсан')) return 'closed'; // Гэрээ хаасан
-    return 'active';                                     // Гэрээ үүссэн, НӨАТ олгосон
+    if (v.includes('шилж')) return 'transferred';
+    if (v.includes('хаас') || v.includes('хаагдсан')) return 'closed';
+    return 'active';
 }
 
-// "Анужин.Баттулга ЖЯ94012345" → { name, registration, first, last }
 const REG_RE = /([А-ЯӨҮЁ]{2}\s?\d{8})/u;
-function parseCustomer(raw: string): {
-    name: string | null; reg: string | null; first: string | null; last: string | null;
-} {
+function parseCustomer(raw: string): { name: string | null; reg: string | null; first: string | null; last: string | null } {
     if (!raw) return { name: null, reg: null, first: null, last: null };
-    let reg: string | null = null;
     const m = raw.match(REG_RE);
-    if (m) reg = m[1].replace(/\s/g, '');
+    const reg = m ? m[1].replace(/\s/g, '') : null;
     const name = raw.replace(REG_RE, '').trim() || null;
     let first: string | null = null, last: string | null = null;
     if (name && name.includes('.')) {
         const [a, b] = name.split('.', 2).map((s) => s.trim());
-        last = a || null;   // Эцгийн нэр
-        first = b || null;  // Өөрийн нэр
+        last = a || null; first = b || null;
     }
     return { name, reg, first, last };
 }
@@ -115,13 +166,19 @@ interface ContractInsert {
     shop_id: string;
     product_type: string;
     block_name: string | null;
+    building_number: string | null;
+    floor: string | null;
     unit_number: string | null;
     unit_label: string | null;
+    unit_type: string | null;
+    model: string | null;
+    rooms: number | null;
     contracted_area: number | null;
     price_per_sqm: number | null;
     total_price: number | null;
     paid_amount: number | null;
     balance: number | null;
+    penalty_amount: number | null;
     overdue_days: number | null;
     order_date: string | null;
     prepayment_condition: string | null;
@@ -136,23 +193,38 @@ interface ContractInsert {
     customer_registration: string | null;
 }
 
-function mapRow(row: Row, shopId: string): ContractInsert | null {
-    const label = cell(row, 'Бүтээгдэхүүн');
-    const block = cell(row, 'Блокын дугаар');
-    if (!label && !block) return null;
+function mapRow(row: Row, shopId: string, units: Map<string, UnitInfo>) {
+    const productStr = cell(row, 'Бүтээгдэхүүн');
+    const blockRaw = cell(row, 'Блокын дугаар');
+    if (!productStr && !blockRaw) return null;
+
+    const { code, descriptor } = parseProduct(productStr);
+    const u = code ? units.get(code) : undefined;
     const cust = parseCustomer(cell(row, 'Үндсэн захиалагч'));
+
+    const total = num(row, 'Нийт дүн');
+    const area = num(row, 'Гэрээлсэн талбай') ?? u?.area ?? null;
+    const pricePerSqm = total && area && area > 0 ? Math.round((total / area) * 100) / 100 : null;
 
     return {
         shop_id: shopId,
-        product_type: inferProductType(label || block),
-        block_name: block || null,
+        product_type: inferProductType(productStr),
+        block_name: u?.block ?? (code.includes('-') ? code.split('-')[0] : null) ?? blockRaw ?? null,
+        building_number: u?.building ?? (code.includes('-') ? code.split('-')[0] : code || null),
+        floor: u?.floor ?? null,
         unit_number: cell(row, 'Шинэ тоот') || null,
-        unit_label: label || null,
-        contracted_area: num(row, 'Гэрээлсэн талбай'),
-        price_per_sqm: num(row, 'М.кв үнэ'),
-        total_price: num(row, 'Нийт дүн'),
+        // unit_label-д НЭГЖИЙН КОД-ыг хадгална: цэвэр + property_units_with_buyer
+        // view-ийн split_part(unit_label,',',1)=code холболтыг ажиллуулна.
+        unit_label: code || null,
+        unit_type: u?.unit_type ?? null,
+        model: u?.model ?? descriptor ?? null,
+        rooms: u?.rooms ?? null,
+        contracted_area: area,
+        price_per_sqm: pricePerSqm,
+        total_price: total,
         paid_amount: num(row, 'Нийт төлсөн дүн'),
         balance: num(row, 'Нийт үлдэгдэл'),
+        penalty_amount: num(row, 'Төлбөр хоцролт'),
         overdue_days: intNum(row, 'Нийт хоцорсон хоног'),
         order_date: excelDateToISO(row, 'Захиалга өгсөн огноо'),
         prepayment_condition: cell(row, 'Урьдчилгааны нөхцөл') || null,
@@ -165,7 +237,8 @@ function mapRow(row: Row, shopId: string): ContractInsert | null {
         customer_first_name: cust.first,
         customer_last_name: cust.last,
         customer_registration: cust.reg,
-    };
+        _matched: !!u,
+    } as ContractInsert & { _matched: boolean };
 }
 
 function pct(part: number, total: number): string {
@@ -187,59 +260,56 @@ async function resolveShopId(supabase: SupabaseClient): Promise<string> {
 
 async function main() {
     if (COMMIT && !WIPE && !APPEND) {
-        console.error('❌ --commit-той хамт --wipe (бүгдийг солих) эсвэл --append (нэмэх) -ийн аль нэгийг заавал өгнө.');
-        console.error('   Бүх гэрээд гэрээний дугаар байхгүй тул давхардлаас сэргийлж энэ нь шаардлагатай.');
+        console.error('❌ --commit-той хамт --wipe эсвэл --append заавал өгнө (гэрээний дугаар байхгүй тул давхардлаас сэргийлнэ).');
         process.exit(1);
     }
 
+    console.log(`📦 Нэгжийн индекс ачаалж байна (${UNITS_DIR})…`);
+    const units = loadUnitIndex(UNITS_DIR);
+    console.log(`   ${units.size} нэгж индекслэв.\n`);
+
     console.log(`📂 ${FILE}`);
     const wb = XLSX.readFile(FILE!, { cellDates: true });
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json<Row>(sheet, { defval: null });
+    const rows = XLSX.utils.sheet_to_json<Row>(wb.Sheets[wb.SheetNames[0]], { defval: null });
     console.log(`📄 Excel мөр: ${rows.length}\n`);
 
-    const placeholderShop = '00000000-0000-0000-0000-000000000000';
-    const mapped: ContractInsert[] = [];
+    const placeholder = '00000000-0000-0000-0000-000000000000';
+    const mapped: (ContractInsert & { _matched: boolean })[] = [];
     for (const r of rows) {
-        const m = mapRow(r, placeholderShop);
+        const m = mapRow(r, placeholder, units);
         if (m) mapped.push(m);
     }
 
     // ----- summary -----
     const byType: Record<string, number> = {};
-    const byStatus: Record<string, number> = {};
-    const managers = new Set<string>();
-    let withReg = 0, withName = 0, totalSales = 0, totalPaid = 0, totalBalance = 0;
+    let enriched = 0, withFloor = 0, withRooms = 0, withReg = 0, badPrice = 0;
     for (const c of mapped) {
         byType[c.product_type] = (byType[c.product_type] || 0) + 1;
-        byStatus[c.contract_status] = (byStatus[c.contract_status] || 0) + 1;
-        if (c.sales_manager) managers.add(c.sales_manager);
+        if (c._matched) enriched++;
+        if (c.floor) withFloor++;
+        if (c.rooms != null) withRooms++;
         if (c.customer_registration) withReg++;
-        if (c.customer_name) withName++;
-        totalSales += c.total_price || 0;
-        totalPaid += c.paid_amount || 0;
-        totalBalance += c.balance || 0;
+        if (c.price_per_sqm == null) badPrice++;
     }
-
     console.log('────────── SUMMARY ──────────');
-    console.log(`Эх мөр: ${rows.length} → mapped: ${mapped.length}`);
-    console.log('Төрлөөр  :', byType);
-    console.log('Төлөвөөр :', byStatus);
-    console.log(`Менежер  : ${managers.size} өвөрмөц`);
-    console.log(`Захиалагчийн нэр задарсан: ${withName} (${pct(withName, mapped.length)}), регистртэй: ${withReg} (${pct(withReg, mapped.length)})`);
-    console.log(`Нийт борлуулалт: ${Math.round(totalSales).toLocaleString()}₮ | Төлсөн: ${Math.round(totalPaid).toLocaleString()}₮ | Үлдэгдэл: ${Math.round(totalBalance).toLocaleString()}₮`);
+    console.log(`mapped: ${mapped.length}`);
+    console.log('төрлөөр:', byType);
+    console.log(`нэгжээс баяжсан: ${enriched} (${pct(enriched, mapped.length)})`);
+    console.log(`  → давхартай: ${withFloor} | өрөөтэй: ${withRooms} | м.кв үнэ тооцоолсон: ${mapped.length - badPrice}`);
+    console.log(`регистр задарсан: ${withReg} (${pct(withReg, mapped.length)})`);
+
+    const strip = (c: ContractInsert & { _matched?: boolean }) => { const { _matched, ...rest } = c; void _matched; return rest; };
 
     if (!COMMIT) {
-        console.log('\n🟡 DRY RUN — DB-д бичсэнгүй. Бодитоор: --commit --wipe (эсвэл --append).');
+        const sample = mapped.find((c) => c._matched && c.product_type === 'residential');
+        console.log('\nЖишээ баяжсан гэрээ:', JSON.stringify(strip(sample || mapped[0]), null, 1));
+        console.log('\n🟡 DRY RUN — DB-д бичсэнгүй. Бодитоор: --commit --wipe.');
         return;
     }
 
-    const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
+    const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!);
     const shopId = await resolveShopId(supabase);
-    mapped.forEach((c) => (c.shop_id = shopId));
+    const records = mapped.map((c) => { const r = strip(c); r.shop_id = shopId; return r; });
 
     if (WIPE) {
         console.log(`\n🗑  Хуучин property_contracts устгаж байна (shop ${shopId})…`);
@@ -248,14 +318,14 @@ async function main() {
     }
 
     let inserted = 0;
-    for (let i = 0; i < mapped.length; i += BATCH) {
-        const chunk = mapped.slice(i, i + BATCH);
+    for (let i = 0; i < records.length; i += BATCH) {
+        const chunk = records.slice(i, i + BATCH);
         const { error } = await supabase.from('property_contracts').insert(chunk);
         if (error) { console.error(`\nBatch ${i / BATCH + 1} failed: ${error.message}`); throw error; }
         inserted += chunk.length;
-        process.stdout.write(`\rInserted ${inserted}/${mapped.length}…`);
+        process.stdout.write(`\rInserted ${inserted}/${records.length}…`);
     }
-    console.log(`\n✅ ${inserted} гэрээ property_contracts-д оруулсан.`);
+    console.log(`\n✅ ${inserted} гэрээ property_contracts-д оруулсан (баяжуулсан).`);
 }
 
 main().catch((e) => { console.error('❌', e); process.exit(1); });
