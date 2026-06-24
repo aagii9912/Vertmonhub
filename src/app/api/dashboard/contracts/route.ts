@@ -30,32 +30,43 @@ export async function GET(request: NextRequest) {
         const sortBy = sp.get('sortBy') || 'contract_date';
         const sortOrder = sp.get('sortOrder') === 'asc';
 
-        let query = supabase
-            .from('property_contracts')
-            .select('*')
-            .eq('shop_id', shopId);
+        // Шүүлттэй query-г дахин барих туслах (хуудаслалт бүрт шинээр)
+        const buildQuery = () => {
+            let q = supabase
+                .from('property_contracts')
+                .select('*')
+                .eq('shop_id', shopId);
 
-        if (status) query = query.eq('contract_status', status);
-        if (manager) query = query.eq('sales_manager', manager);
-        if (channel) query = query.eq('sales_channel', channel);
-        if (overdueOnly) query = query.gt('overdue_days', 0);
+            if (status) q = q.eq('contract_status', status);
+            if (manager) q = q.eq('sales_manager', manager);
+            if (channel) q = q.eq('sales_channel', channel);
+            if (overdueOnly) q = q.gt('overdue_days', 0);
 
-        if (search) {
-            // Гэрээний дугаар, нэр, утас, регистр-ээр хайх
-            query = query.or(
-                `contract_number.ilike.%${search}%,` +
-                `customer_name.ilike.%${search}%,` +
-                `customer_first_name.ilike.%${search}%,` +
-                `customer_last_name.ilike.%${search}%,` +
-                `customer_phone.ilike.%${search}%,` +
-                `customer_registration.ilike.%${search}%`
-            );
+            if (search) {
+                // Гэрээний дугаар, нэр, утас, регистр-ээр хайх
+                q = q.or(
+                    `contract_number.ilike.%${search}%,` +
+                    `customer_name.ilike.%${search}%,` +
+                    `customer_first_name.ilike.%${search}%,` +
+                    `customer_last_name.ilike.%${search}%,` +
+                    `customer_phone.ilike.%${search}%,` +
+                    `customer_registration.ilike.%${search}%`
+                );
+            }
+            return q.order(sortBy, { ascending: sortOrder, nullsFirst: false });
+        };
+
+        // Supabase 1000-мөрийн default хязгаарыг хуудаслалтаар давах
+        // (Мандала гэрээ 1600+ тул жагсаалт ба статистик бүрэн байх ёстой).
+        const PAGE = 1000;
+        const contracts: Array<Record<string, unknown>> = [];
+        for (let from = 0; ; from += PAGE) {
+            const { data, error } = await buildQuery().range(from, from + PAGE - 1);
+            if (error) throw error;
+            if (!data || data.length === 0) break;
+            contracts.push(...data);
+            if (data.length < PAGE) break;
         }
-
-        query = query.order(sortBy, { ascending: sortOrder, nullsFirst: false });
-
-        const { data: contracts, error } = await query;
-        if (error) throw error;
 
         // Статистик
         const stats = computeStats(contracts || []);
