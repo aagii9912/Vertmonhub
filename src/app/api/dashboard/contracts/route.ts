@@ -50,6 +50,8 @@ export async function GET(request: NextRequest) {
                 // Гэрээний дугаар, нэр, утас, регистр-ээр хайх
                 q = q.or(
                     `contract_number.ilike.%${search}%,` +
+                    `unit_label.ilike.%${search}%,` +
+                    `block_name.ilike.%${search}%,` +
                     `customer_name.ilike.%${search}%,` +
                     `customer_first_name.ilike.%${search}%,` +
                     `customer_last_name.ilike.%${search}%,` +
