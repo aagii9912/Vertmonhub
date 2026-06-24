@@ -41,11 +41,13 @@ export async function GET(request: NextRequest) {
     const shopId = authShop.id;
     const periodStart = getStartOfPeriod(period);
 
-    // Properties count
+    // Properties count — Мандалын орон сууцны нэгжийн сан (property_units).
+    // (Хуучин `properties` хүснэгт нь өөр төслийн данс байсан тул нөөцийн grid-ийг тоолно.)
     const { count: totalProperties } = await supabase
-      .from('properties')
+      .from('property_units')
       .select('*', { count: 'exact', head: true })
-      .eq('shop_id', shopId);
+      .eq('shop_id', shopId)
+      .eq('category', 'residential');
 
     // Leads count
     const { count: totalLeads } = await supabase
