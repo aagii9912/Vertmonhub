@@ -1,371 +1,164 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import {
-    Building2,
-    TrendingUp,
-    Eye,
-    DollarSign,
-    Download,
-    ArrowUpRight,
-    ArrowDownRight,
-    MapPin,
-    Home,
-    CheckCircle2,
-    Clock,
-    Tag,
-} from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
-import { formatMNT } from '@/lib/utils/currency';
+import { Building2, Download, CheckCircle2, Layers, Home } from 'lucide-react';
 
-interface PropertyStats {
-    total: number;
-    available: number;
-    reserved: number;
-    sold: number;
-    total_value: number;
-    avg_price: number;
-    total_views: number;
-}
+const SHOP_KEY = 'vertmonhub_active_shop_id';
 
-interface ProjectData {
-    project: string;
-    total: number;
-    available: number;
-    reserved: number;
-    sold: number;
-    value: number;
-    views: number;
-}
+interface Stats { total: number; available: number; sold: number; reserved: number; totalArea: number; }
+interface GroupRow { key: string; total: number; available: number; sold: number; }
 
-interface TopViewed {
-    name: string;
-    views: number;
-    status: string;
-    price: number;
+const CAT_LABEL: Record<string, string> = { residential: 'Орон сууц', parking: 'Зогсоол', industry: 'Агуулах', commercial: 'Үйлчилгээ' };
+
+function shopHeaders(): HeadersInit {
+    return { 'x-shop-id': typeof window !== 'undefined' ? localStorage.getItem(SHOP_KEY) || '' : '' };
 }
 
 export default function PropertiesReportPage() {
-    const { shop } = useAuth();
-    const [period, setPeriod] = useState<'week' | 'month' | 'quarter' | 'year'>('month');
     const [loading, setLoading] = useState(true);
-    const [stats, setStats] = useState<PropertyStats>({
-        total: 0, available: 0, reserved: 0, sold: 0,
-        total_value: 0, avg_price: 0, total_views: 0,
-    });
-    const [projectData, setProjectData] = useState<ProjectData[]>([]);
-    const [topViewed, setTopViewed] = useState<TopViewed[]>([]);
+    const [exporting, setExporting] = useState(false);
+    const [stats, setStats] = useState<Stats>({ total: 0, available: 0, sold: 0, reserved: 0, totalArea: 0 });
+    const [byPhase, setByPhase] = useState<GroupRow[]>([]);
+    const [byCategory, setByCategory] = useState<GroupRow[]>([]);
 
     useEffect(() => {
-        if (!shop?.id) return;
-
-        const fetchData = async () => {
+        (async () => {
             setLoading(true);
             try {
-                // Сонгосон хугацааны эхлэл
-                const now = new Date();
-                const start = new Date(now);
-                if (period === 'week') start.setDate(now.getDate() - 7);
-                else if (period === 'month') start.setMonth(now.getMonth() - 1);
-                else if (period === 'quarter') start.setMonth(now.getMonth() - 3);
-                else start.setFullYear(now.getFullYear() - 1);
+                // property_block_summary view-ээс ээлж/блок/ангиллын нэгтгэлийг авна
+                const res = await fetch('/api/dashboard/units', { headers: shopHeaders() });
+                const data = await res.json();
+                const summary: Array<Record<string, number | string>> = data.summary || [];
 
-                const { data: properties, error } = await supabase
-                    .from('properties')
-                    .select('*')
-                    .eq('shop_id', shop.id)
-                    .gte('created_at', start.toISOString());
+                const s: Stats = { total: 0, available: 0, sold: 0, reserved: 0, totalArea: 0 };
+                const phaseMap = new Map<string, GroupRow>();
+                const catMap = new Map<string, GroupRow>();
+                for (const r of summary) {
+                    const total = Number(r.total_units) || 0;
+                    const avail = Number(r.available_units) || 0;
+                    const sold = Number(r.sold_units) || 0;
+                    const pending = Number(r.pending_units) || 0;
+                    s.total += total; s.available += avail; s.sold += sold; s.reserved += pending;
+                    s.totalArea += Number(r.total_area) || 0;
 
-                if (error) throw error;
+                    const ph = String(r.phase || '—');
+                    const p = phaseMap.get(ph) || { key: ph, total: 0, available: 0, sold: 0 };
+                    p.total += total; p.available += avail; p.sold += sold; phaseMap.set(ph, p);
 
-                if (!properties || properties.length === 0) {
-                    setLoading(false);
-                    return;
+                    const cat = CAT_LABEL[String(r.category)] || String(r.category || '—');
+                    const c = catMap.get(cat) || { key: cat, total: 0, available: 0, sold: 0 };
+                    c.total += total; c.available += avail; c.sold += sold; catMap.set(cat, c);
                 }
-
-                // Calculate stats
-                const available = properties.filter(p => p.status === 'available').length;
-                const reserved = properties.filter(p => p.status === 'reserved').length;
-                const sold = properties.filter(p => p.status === 'sold').length;
-                const totalValue = properties.reduce((sum, p) => sum + (p.price || 0), 0);
-                const totalViews = properties.reduce((sum, p) => sum + (p.views_count || 0), 0);
-
-                setStats({
-                    total: properties.length,
-                    available,
-                    reserved,
-                    sold,
-                    total_value: totalValue,
-                    avg_price: properties.length > 0 ? totalValue / properties.length : 0,
-                    total_views: totalViews,
-                });
-
-                // Group by project
-                const projectMap = new Map<string, ProjectData>();
-                for (const p of properties) {
-                    const project = p.project_name || p.type || 'Бусад';
-                    if (!projectMap.has(project)) {
-                        projectMap.set(project, {
-                            project, total: 0, available: 0, reserved: 0, sold: 0, value: 0, views: 0,
-                        });
-                    }
-                    const d = projectMap.get(project)!;
-                    d.total++;
-                    if (p.status === 'available') d.available++;
-                    if (p.status === 'reserved') d.reserved++;
-                    if (p.status === 'sold') d.sold++;
-                    d.value += p.price || 0;
-                    d.views += p.views_count || 0;
-                }
-                setProjectData(Array.from(projectMap.values()));
-
-                // Top viewed
-                const sorted = [...properties].sort((a, b) => (b.views_count || 0) - (a.views_count || 0)).slice(0, 5);
-                setTopViewed(sorted.map(p => ({
-                    name: p.name || p.title || '',
-                    views: p.views_count || 0,
-                    status: p.status || 'available',
-                    price: p.price || 0,
-                })));
-            } catch (error) {
-                console.error('Error fetching properties report:', error);
+                setStats(s);
+                setByPhase([...phaseMap.values()].sort((a, b) => b.total - a.total));
+                setByCategory([...catMap.values()].sort((a, b) => b.total - a.total));
+            } catch (e) {
+                console.error('[PropertiesReport] error', e);
             } finally {
                 setLoading(false);
             }
-        };
+        })();
+    }, []);
 
-        fetchData();
-    }, [shop?.id, period]);
-
-    const formatCurrency = (value: number) => formatMNT(value, { compact: true });
-
-    const statusColors: Record<string, string> = {
-        available: 'bg-status-success-soft text-status-success',
-        reserved: 'bg-status-pending-soft text-status-pending',
-        sold: 'bg-surface-2 text-muted-foreground',
-    };
-
-    const statusLabels: Record<string, string> = {
-        available: 'Зарагдаж байна',
-        reserved: 'Захиалгатай',
-        sold: 'Зарагдсан',
-    };
+    async function exportExcel() {
+        setExporting(true);
+        try {
+            const res = await fetch('/api/dashboard/export/excel?type=properties', { headers: shopHeaders() });
+            if (!res.ok) throw new Error('export failed');
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `нэгжүүд_${new Date().toISOString().slice(0, 10)}.xlsx`; a.click();
+            URL.revokeObjectURL(url);
+        } catch (e) { console.error(e); } finally { setExporting(false); }
+    }
 
     if (loading) {
-        return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <div className="flex items-center gap-3">
-                    <div className="w-6 h-6 border-2 border-status-success border-t-transparent rounded-full animate-spin" />
-                    <span className="text-muted-foreground">Тайлан татаж байна...</span>
-                </div>
-            </div>
-        );
+        return <div className="flex items-center justify-center min-h-[400px]"><div className="w-6 h-6 border-2 border-status-success border-t-transparent rounded-full animate-spin" /></div>;
     }
 
-    if (stats.total === 0) {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-[400px] text-center">
-                <Building2 className="w-16 h-16 text-muted-foreground/60 mb-4" />
-                <h2 className="text-xl font-semibold text-foreground mb-2">Мэдээлэл байхгүй</h2>
-                <p className="text-muted-foreground max-w-md">
-                    Үл хөдлөхийн тайлан харахын тулд эхлээд үл хөдлөх нэмнэ үү.
-                </p>
-            </div>
-        );
-    }
+    const pctSold = stats.total > 0 ? Math.round((stats.sold / stats.total) * 100) : 0;
 
     return (
         <div className="space-y-6">
-            {/* Header */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-xl md:text-2xl font-bold text-foreground flex items-center gap-2">
-                        <Building2 className="w-6 h-6 text-status-success" />
-                        Үл хөдлөхийн тайлан
+                        <Building2 className="w-6 h-6 text-status-success" /> Үл хөдлөхийн тайлан
                     </h1>
-                    <p className="text-sm text-muted-foreground mt-1">
-                        Борлуулалтын үл хөдлөхийн дэлгэрэнгүй статистик
-                    </p>
+                    <p className="text-sm text-muted-foreground mt-1">Нэгжийн нөөц: ээлж, ангилал, төлөвөөр</p>
                 </div>
-                <div className="flex items-center gap-2">
-                    <select
-                        value={period}
-                        onChange={(e) => setPeriod(e.target.value as typeof period)}
-                        className="px-3 py-2 text-sm border border-border rounded-lg bg-surface text-foreground"
-                    >
-                        <option value="week">7 хоног</option>
-                        <option value="month">Сар</option>
-                        <option value="quarter">Улирал</option>
-                        <option value="year">Жил</option>
-                    </select>
-                    <Button variant="secondary" size="sm">
-                        <Download className="w-4 h-4 mr-2" />
-                        Татах
-                    </Button>
+                <Button onClick={exportExcel} variant="secondary" size="sm" isLoading={exporting} disabled={exporting || stats.total === 0}>
+                    {!exporting && <Download className="w-4 h-4 mr-2" />} Татах
+                </Button>
+            </div>
+
+            {stats.total === 0 ? (
+                <div className="flex flex-col items-center justify-center min-h-[300px] text-center">
+                    <Building2 className="w-16 h-16 text-muted-foreground/60 mb-4" />
+                    <h2 className="text-xl font-semibold text-foreground mb-2">Мэдээлэл байхгүй</h2>
+                    <p className="text-muted-foreground max-w-md">Нэгжийн дата импортлоогүй байна.</p>
                 </div>
-            </div>
+            ) : (
+                <>
+                    {/* Key stats */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <StatCard icon={<Building2 className="w-5 h-5 text-status-info" />} bg="bg-status-info-soft" value={stats.total.toLocaleString()} label="Нийт нэгж" />
+                        <StatCard icon={<Home className="w-5 h-5 text-status-success" />} bg="bg-status-success-soft" value={stats.available.toLocaleString()} label="Зарагдаагүй" />
+                        <StatCard icon={<CheckCircle2 className="w-5 h-5 text-brand-strong" />} bg="bg-brand-soft" value={stats.sold.toLocaleString()} label={`Зарагдсан (${pctSold}%)`} />
+                        <StatCard icon={<Layers className="w-5 h-5 text-status-pending" />} bg="bg-status-pending-soft" value={Math.round(stats.totalArea).toLocaleString() + ' м²'} label="Нийт талбай" />
+                    </div>
 
-            {/* Key Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card className="bg-surface border-border">
-                    <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                            <div className="p-2 bg-status-info-soft rounded-lg">
-                                <Building2 className="w-5 h-5 text-status-info" />
-                            </div>
-                        </div>
-                        <div className="mt-3">
-                            <p className="text-2xl font-bold text-foreground">{stats.total}</p>
-                            <p className="text-sm text-muted-foreground">Нийт байр</p>
-                        </div>
-                        <div className="mt-2 flex items-center gap-2 text-xs">
-                            <span className="px-2 py-1 bg-status-success-soft text-status-success rounded">{stats.available} зарж байна</span>
-                            <span className="px-2 py-1 bg-status-pending-soft text-status-pending rounded">{stats.reserved} захиалгатай</span>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card className="bg-surface border-border">
-                    <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                            <div className="p-2 bg-status-success-soft rounded-lg">
-                                <Eye className="w-5 h-5 text-status-success" />
-                            </div>
-                        </div>
-                        <div className="mt-3">
-                            <p className="text-2xl font-bold text-foreground">{stats.total_views.toLocaleString()}</p>
-                            <p className="text-sm text-muted-foreground">Нийт үзэлт</p>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card className="bg-surface border-border">
-                    <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                            <div className="p-2 bg-brand-soft rounded-lg">
-                                <DollarSign className="w-5 h-5 text-brand-strong" />
-                            </div>
-                        </div>
-                        <div className="mt-3">
-                            <p className="text-2xl font-bold text-foreground">{formatCurrency(stats.total_value)}</p>
-                            <p className="text-sm text-muted-foreground">Нийт үнэлгээ</p>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                <Card className="bg-surface border-border">
-                    <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                            <div className="p-2 bg-status-pending-soft rounded-lg">
-                                <CheckCircle2 className="w-5 h-5 text-status-pending" />
-                            </div>
-                        </div>
-                        <div className="mt-3">
-                            <p className="text-2xl font-bold text-foreground">{stats.sold}</p>
-                            <p className="text-sm text-muted-foreground">Зарагдсан</p>
-                        </div>
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* Project & Top Viewed */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* By Project */}
-                <Card className="bg-surface border-border">
-                    <CardContent className="p-4">
-                        <h3 className="font-semibold text-foreground mb-4">Төслөөр</h3>
-                        {projectData.length === 0 ? (
-                            <p className="text-sm text-muted-foreground text-center py-8">Мэдээлэл байхгүй</p>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full">
-                                    <thead>
-                                        <tr className="border-b border-border/60">
-                                            <th className="text-left py-2 text-xs text-muted-foreground font-medium">Төсөл</th>
-                                            <th className="text-center py-2 text-xs text-muted-foreground font-medium">Нийт</th>
-                                            <th className="text-center py-2 text-xs text-muted-foreground font-medium">Зарж байна</th>
-                                            <th className="text-right py-2 text-xs text-muted-foreground font-medium">Үзэлт</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {projectData.map((project) => (
-                                            <tr key={project.project} className="border-b border-gray-50 hover:bg-surface-2/40">
-                                                <td className="py-3">
-                                                    <p className="text-sm font-medium text-foreground">{project.project}</p>
-                                                    <p className="text-xs text-muted-foreground">{formatCurrency(project.value)}</p>
-                                                </td>
-                                                <td className="py-3 text-sm text-center text-muted-foreground">{project.total}</td>
-                                                <td className="py-3 text-sm text-center">
-                                                    <span className="px-2 py-1 bg-status-success-soft text-status-success rounded-full text-xs">
-                                                        {project.available}
-                                                    </span>
-                                                </td>
-                                                <td className="py-3 text-sm text-right text-muted-foreground">
-                                                    {project.views.toLocaleString()}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-
-                {/* Top Viewed */}
-                <Card className="bg-surface border-border">
-                    <CardContent className="p-4">
-                        <h3 className="font-semibold text-foreground mb-4">Хамгийн их үзэлттэй</h3>
-                        {topViewed.length === 0 ? (
-                            <p className="text-sm text-muted-foreground text-center py-8">Мэдээлэл байхгүй</p>
-                        ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full">
-                                    <thead>
-                                        <tr className="border-b border-border/60">
-                                            <th className="text-left py-2 text-xs text-muted-foreground font-medium">Байр</th>
-                                            <th className="text-center py-2 text-xs text-muted-foreground font-medium">Үзэлт</th>
-                                            <th className="text-center py-2 text-xs text-muted-foreground font-medium">Төлөв</th>
-                                            <th className="text-right py-2 text-xs text-muted-foreground font-medium">Үнэ</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {topViewed.map((property, idx) => (
-                                            <tr key={property.name} className="border-b border-gray-50 hover:bg-surface-2/40">
-                                                <td className="py-3">
-                                                    <div className="flex items-center gap-3">
-                                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-white ${idx === 0 ? 'bg-status-pending' : idx === 1 ? 'bg-surface-2' : idx === 2 ? 'bg-status-pending' : 'bg-border-strong'}`}>
-                                                            {idx + 1}
-                                                        </div>
-                                                        <span className="text-sm font-medium text-foreground">{property.name}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="py-3 text-sm text-center">
-                                                    <span className="flex items-center justify-center gap-1 text-muted-foreground">
-                                                        <Eye className="w-3 h-3" />
-                                                        {property.views}
-                                                    </span>
-                                                </td>
-                                                <td className="py-3 text-center">
-                                                    <span className={`px-2 py-1 text-xs rounded-full ${statusColors[property.status] || 'bg-surface-2 text-muted-foreground'}`}>
-                                                        {statusLabels[property.status] || property.status}
-                                                    </span>
-                                                </td>
-                                                <td className="py-3 text-sm text-right font-medium text-foreground">
-                                                    {formatCurrency(property.price)}
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-            </div>
+                    {/* By phase + by category */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <GroupCard title="Ээлжээр" rows={byPhase} />
+                        <GroupCard title="Ангиллаар" rows={byCategory} />
+                    </div>
+                </>
+            )}
         </div>
+    );
+}
+
+function StatCard({ icon, bg, value, label }: { icon: React.ReactNode; bg: string; value: string; label: string }) {
+    return (
+        <Card className="bg-surface border-border"><CardContent className="p-4">
+            <div className={`p-2 ${bg} rounded-lg w-fit`}>{icon}</div>
+            <div className="mt-3"><p className="text-2xl font-bold text-foreground tabular-nums">{value}</p><p className="text-sm text-muted-foreground">{label}</p></div>
+        </CardContent></Card>
+    );
+}
+
+function GroupCard({ title, rows }: { title: string; rows: GroupRow[] }) {
+    return (
+        <Card className="bg-surface border-border"><CardContent className="p-4">
+            <h3 className="font-semibold text-foreground mb-4">{title}</h3>
+            {rows.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">Мэдээлэл байхгүй</p>
+            ) : (
+                <table className="w-full text-sm">
+                    <thead>
+                        <tr className="border-b border-border/60 text-xs text-muted-foreground">
+                            <th className="text-left py-2 font-medium">{title === 'Ээлжээр' ? 'Ээлж' : 'Ангилал'}</th>
+                            <th className="text-center py-2 font-medium">Нийт</th>
+                            <th className="text-center py-2 font-medium">Зарагдаагүй</th>
+                            <th className="text-right py-2 font-medium">Зарагдсан %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.map((r) => (
+                            <tr key={r.key} className="border-b border-border/40 hover:bg-surface-2/40">
+                                <td className="py-3 font-medium text-foreground">{r.key}</td>
+                                <td className="py-3 text-center text-muted-foreground tabular-nums">{r.total}</td>
+                                <td className="py-3 text-center"><span className="px-2 py-1 bg-status-success-soft text-status-success rounded-full text-xs tabular-nums">{r.available}</span></td>
+                                <td className="py-3 text-right text-foreground tabular-nums">{r.total > 0 ? Math.round((r.sold / r.total) * 100) : 0}%</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+            )}
+        </CardContent></Card>
     );
 }

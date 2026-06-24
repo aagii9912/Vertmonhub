@@ -21,29 +21,41 @@ export async function GET(request: NextRequest) {
         let filename;
 
         if (type === 'properties') {
-            // Export Properties
-            const { data: properties } = await supabase
-                .from('properties')
-                .select('*')
-                .eq('shop_id', shopId)
-                .order('created_at', { ascending: false })
-                .limit(500);
+            // Export нэгжийн нөөц (property_units) — Мандалын 2544 нэгж (paginate)
+            const CAT: Record<string, string> = { residential: 'Орон сууц', parking: 'Зогсоол', industry: 'Агуулах', commercial: 'Үйлчилгээ' };
+            const STAT: Record<string, string> = { available: 'Худалдаанд', reserved: 'Хадгалсан', ordered: 'Захиалсан', sold: 'Зарагдсан', handed_over: 'Хүлээлгэсэн' };
+            const PAGE = 1000;
+            const units: Array<Record<string, unknown>> = [];
+            for (let from = 0; ; from += PAGE) {
+                const { data } = await supabase
+                    .from('property_units')
+                    .select('*')
+                    .eq('shop_id', shopId)
+                    .order('phase', { ascending: true })
+                    .range(from, from + PAGE - 1);
+                if (!data || data.length === 0) break;
+                units.push(...data);
+                if (data.length < PAGE) break;
+            }
 
-            const exportData = properties?.map(p => ({
-                'Нэр': p.title || p.name || '-',
-                'Төрөл': p.type || '-',
-                'Байршил': p.location || p.address || '-',
-                'Үнэ': Number(p.price) || 0,
-                'Талбай (м²)': p.area || '-',
-                'Өрөө': p.rooms || '-',
-                'Төлөв': p.status === 'available' ? 'Зарагдаагүй' : p.status === 'sold' ? 'Зарагдсан' : p.status || '-',
-                'Огноо': new Date(p.created_at).toLocaleDateString('mn-MN'),
-            })) || [];
+            const exportData = units.map((u) => ({
+                'Код': u.code || '-',
+                'Ээлж': u.phase || '-',
+                'Блок': u.block || '-',
+                'Давхар': u.floor || '-',
+                'Ангилал': CAT[String(u.category)] || u.category || '-',
+                'Айлын төрөл': u.unit_type || '-',
+                'Загвар': u.model || '-',
+                'Өрөө': u.rooms || '-',
+                'Талбай (м²)': u.sale_area || '-',
+                'Төлөв': STAT[String(u.status)] || u.status || '-',
+                'Менежер': u.sales_manager || '-',
+            }));
 
             workbook = XLSX.utils.book_new();
             const worksheet = XLSX.utils.json_to_sheet(exportData);
-            XLSX.utils.book_append_sheet(workbook, worksheet, 'Байрууд');
-            filename = `байрууд_${new Date().toISOString().split('T')[0]}.xlsx`;
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Нэгжүүд');
+            filename = `нэгжүүд_${new Date().toISOString().split('T')[0]}.xlsx`;
 
         } else if (type === 'leads') {
             // Export Leads

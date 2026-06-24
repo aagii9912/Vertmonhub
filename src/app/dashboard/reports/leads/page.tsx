@@ -67,6 +67,22 @@ export default function LeadsReport() {
     const [stats, setStats] = useState<LeadStats>({ total: 0, won: 0, inProgress: 0, conversionRate: 0 });
     const [sourceData, setSourceData] = useState<SourceData[]>([]);
     const [projectData, setProjectData] = useState<ProjectData[]>([]);
+    const [exporting, setExporting] = useState(false);
+
+    async function exportExcel() {
+        setExporting(true);
+        try {
+            const res = await fetch('/api/dashboard/export/excel?type=leads', {
+                headers: { 'x-shop-id': typeof window !== 'undefined' ? localStorage.getItem('vertmonhub_active_shop_id') || '' : '' },
+            });
+            if (!res.ok) throw new Error('export failed');
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = `лийдүүд_${new Date().toISOString().slice(0, 10)}.xlsx`; a.click();
+            URL.revokeObjectURL(url);
+        } catch (e) { console.error('[LeadsReport] export error', e); } finally { setExporting(false); }
+    }
 
     useEffect(() => {
         if (!shop?.id) return;
@@ -191,8 +207,8 @@ export default function LeadsReport() {
                         Худалдан авах магадлалтай харилцагчдын анализ
                     </p>
                 </div>
-                <Button variant="secondary" size="sm">
-                    <Download className="w-4 h-4" />
+                <Button variant="secondary" size="sm" onClick={exportExcel} isLoading={exporting} disabled={exporting}>
+                    {!exporting && <Download className="w-4 h-4" />}
                     Экспорт
                 </Button>
             </div>

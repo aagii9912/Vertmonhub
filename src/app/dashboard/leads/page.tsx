@@ -427,7 +427,7 @@ export default function LeadsPage() {
                                                     </td>
                                                     <td className="px-4 py-3">
                                                         <p className="text-sm text-muted-foreground">
-                                                            {leadData.last_contact || getTimeAgo(lead.created_at)}
+                                                            {leadData.last_contact_at ? getTimeAgo(leadData.last_contact_at) : getTimeAgo(lead.created_at)}
                                                         </p>
                                                     </td>
                                                     <td className="px-4 py-3 text-right">

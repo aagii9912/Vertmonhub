@@ -50,6 +50,7 @@ export default function ViewingsPage() {
             .from('property_viewings')
             .select('*, leads(customer_name, customer_phone), properties(name, district)')
             .eq('shop_id', shop!.id)
+            .is('deleted_at', null)
             .order('scheduled_at', { ascending: true });
 
         setViewings(

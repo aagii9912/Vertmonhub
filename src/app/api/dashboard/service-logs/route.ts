@@ -24,30 +24,39 @@ export async function GET(request: NextRequest) {
         const customerId = sp.get('customer_id');
         const search = sp.get('search')?.trim() || '';
 
-        let query = supabase
-            .from('service_logs')
-            .select('*')
-            .eq('shop_id', authShop.id);
+        const buildQuery = () => {
+            let q = supabase
+                .from('service_logs')
+                .select('*')
+                .eq('shop_id', authShop.id);
 
-        if (status) query = query.eq('status', status);
-        if (type) query = query.eq('type', type);
-        if (priority) query = query.eq('priority', priority);
-        if (assignedTo) query = query.eq('assigned_to', assignedTo);
-        if (customerId) query = query.eq('customer_id', customerId);
+            if (status) q = q.eq('status', status);
+            if (type) q = q.eq('type', type);
+            if (priority) q = q.eq('priority', priority);
+            if (assignedTo) q = q.eq('assigned_to', assignedTo);
+            if (customerId) q = q.eq('customer_id', customerId);
 
-        if (search) {
-            query = query.or(
-                `subject.ilike.%${search}%,` +
-                `customer_name.ilike.%${search}%,` +
-                `customer_phone.ilike.%${search}%,` +
-                `description.ilike.%${search}%`
-            );
+            if (search) {
+                q = q.or(
+                    `subject.ilike.%${search}%,` +
+                    `customer_name.ilike.%${search}%,` +
+                    `customer_phone.ilike.%${search}%,` +
+                    `description.ilike.%${search}%`
+                );
+            }
+            return q.order('created_at', { ascending: false });
+        };
+
+        // Supabase 1000-мөрийн хязгаарыг хуудаслалтаар давах
+        const PAGE = 1000;
+        const logs: Array<Record<string, unknown>> = [];
+        for (let from = 0; ; from += PAGE) {
+            const { data, error } = await buildQuery().range(from, from + PAGE - 1);
+            if (error) throw error;
+            if (!data || data.length === 0) break;
+            logs.push(...data);
+            if (data.length < PAGE) break;
         }
-
-        query = query.order('created_at', { ascending: false });
-
-        const { data: logs, error } = await query;
-        if (error) throw error;
 
         const stats = computeStats(logs || []);
 
