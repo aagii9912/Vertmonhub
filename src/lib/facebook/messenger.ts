@@ -1,13 +1,78 @@
 import crypto from 'crypto';
+import { calculateBackoffDelay } from '@/lib/webhook/retryService';
 
 const GRAPH_API_URL = 'https://graph.facebook.com/v21.0';
+
+// Meta Graph API статус кодууд: түр зуурын алдаа (rate limit / серверийн талын)
+// үед дахин оролдоно. 4xx (429-аас бусад) алдааг дахин оролдох нь утгагүй —
+// тэдгээр нь буруу хүсэлт (буруу recipient, токен г.м.) тул шууд унагана.
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
+const MAX_SEND_ATTEMPTS = 3;
+
+/**
+ * Meta Graph API руу мессеж илгээх нэгдсэн helper.
+ * Түр зуурын алдаа (429/5xx) болон сүлжээний алдаа гарвал exponential
+ * backoff-оор дахин оролдоно. Бусад тохиолдолд шууд алдаа шиднэ.
+ */
+async function postToGraph(
+    pageAccessToken: string,
+    body: Record<string, unknown>,
+    operation: string
+): Promise<unknown> {
+    let lastError: Error | undefined;
+
+    for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
+        let response: Response;
+        try {
+            response = await fetch(buildSendUrl(pageAccessToken), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+        } catch (err) {
+            // Сүлжээний алдаа — түр зуурын гэж үзэж дахин оролдоно
+            lastError = err instanceof Error ? err : new Error(String(err));
+            if (attempt === MAX_SEND_ATTEMPTS) break;
+            await sleepBackoff(attempt, operation);
+            continue;
+        }
+
+        if (response.ok) {
+            return response.json();
+        }
+
+        const error = await response.json().catch(() => ({}));
+        const message = error?.error?.message || `HTTP ${response.status}`;
+
+        // Дахин оролдох боломжгүй алдаа (4xx, 429-аас бусад) — шууд унагана
+        if (!RETRYABLE_STATUS.has(response.status)) {
+            console.error(`Facebook API error [${operation}]:`, error);
+            throw new Error(`Failed to ${operation}: ${message}`);
+        }
+
+        lastError = new Error(message);
+        if (attempt === MAX_SEND_ATTEMPTS) break;
+        await sleepBackoff(attempt, operation);
+    }
+
+    throw new Error(`Failed to ${operation}${lastError ? `: ${lastError.message}` : ''}`);
+}
+
+async function sleepBackoff(attempt: number, operation: string): Promise<void> {
+    const delay = calculateBackoffDelay(attempt, { initialDelayMs: 500, maxDelayMs: 8000 });
+    console.warn(`⚠️ [${operation}] оролдлого ${attempt}/${MAX_SEND_ATTEMPTS} амжилтгүй, ${Math.round(delay)}ms-ийн дараа дахин оролдоно...`);
+    await new Promise(resolve => setTimeout(resolve, delay));
+}
 
 // Meta recommends signing every Graph API call with appsecret_proof when the
 // "Require App Secret Proof for Server API calls" toggle is on. Returns null
 // when FACEBOOK_APP_SECRET is not configured, in which case the param is
 // omitted (Meta accepts the call so long as the toggle is off).
 export function appsecretProof(token: string): string | null {
-    const secret = process.env.FACEBOOK_APP_SECRET;
+    // ⚠️ .trim() ЗААВАЛ — Vercel env-д сүүл newline/зай орвол OAuth (trim хийдэг)
+    // ажиллах ч энэ proof буруу гарч "Invalid appsecret_proof" алдаа өгдөг
+    // (subscribe + DM send хоёуланг унагадаг).
+    const secret = process.env.FACEBOOK_APP_SECRET?.trim();
     if (!secret) return null;
     return crypto.createHmac('sha256', secret).update(token).digest('hex');
 }
@@ -59,25 +124,11 @@ export async function sendSenderAction(
 }
 
 export async function sendTextMessage({ recipientId, message, pageAccessToken }: SendMessageOptions) {
-    const response = await fetch(buildSendUrl(pageAccessToken), {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            recipient: { id: recipientId },
-            messaging_type: 'RESPONSE',
-            message: { text: message },
-        }),
-    });
-
-    if (!response.ok) {
-        const error = await response.json();
-        console.error('Facebook API error:', error);
-        throw new Error(`Failed to send message: ${error.error?.message || 'Unknown error'}`);
-    }
-
-    return response.json();
+    return postToGraph(pageAccessToken, {
+        recipient: { id: recipientId },
+        messaging_type: 'RESPONSE',
+        message: { text: message },
+    }, 'send message');
 }
 
 export async function sendMessageWithQuickReplies({
@@ -86,28 +137,14 @@ export async function sendMessageWithQuickReplies({
     quickReplies,
     pageAccessToken,
 }: SendMessageWithQuickRepliesOptions) {
-    const response = await fetch(buildSendUrl(pageAccessToken), {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
+    return postToGraph(pageAccessToken, {
+        recipient: { id: recipientId },
+        messaging_type: 'RESPONSE',
+        message: {
+            text: message,
+            quick_replies: quickReplies,
         },
-        body: JSON.stringify({
-            recipient: { id: recipientId },
-            messaging_type: 'RESPONSE',
-            message: {
-                text: message,
-                quick_replies: quickReplies,
-            },
-        }),
-    });
-
-    if (!response.ok) {
-        const error = await response.json();
-        console.error('Facebook API error:', error);
-        throw new Error(`Failed to send message: ${error.error?.message || 'Unknown error'}`);
-    }
-
-    return response.json();
+    }, 'send message');
 }
 
 export async function sendProductCard({
@@ -119,51 +156,37 @@ export async function sendProductCard({
     product: { name: string; description: string; price: number; imageUrl?: string };
     pageAccessToken: string;
 }) {
-    const response = await fetch(buildSendUrl(pageAccessToken), {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            recipient: { id: recipientId },
-            messaging_type: 'RESPONSE',
-            message: {
-                attachment: {
-                    type: 'template',
-                    payload: {
-                        template_type: 'generic',
-                        elements: [
-                            {
-                                title: product.name,
-                                subtitle: `${product.price.toLocaleString()}₮\n${product.description || ''}`,
-                                image_url: product.imageUrl || undefined,
-                                buttons: [
-                                    {
-                                        type: 'postback',
-                                        title: 'Захиалах 🛒',
-                                        payload: `ORDER_${product.name}`,
-                                    },
-                                    {
-                                        type: 'postback',
-                                        title: 'Дэлгэрэнгүй',
-                                        payload: `DETAILS_${product.name}`,
-                                    },
-                                ],
-                            },
-                        ],
-                    },
+    return postToGraph(pageAccessToken, {
+        recipient: { id: recipientId },
+        messaging_type: 'RESPONSE',
+        message: {
+            attachment: {
+                type: 'template',
+                payload: {
+                    template_type: 'generic',
+                    elements: [
+                        {
+                            title: product.name,
+                            subtitle: `${product.price.toLocaleString()}₮\n${product.description || ''}`,
+                            image_url: product.imageUrl || undefined,
+                            buttons: [
+                                {
+                                    type: 'postback',
+                                    title: 'Захиалах 🛒',
+                                    payload: `ORDER_${product.name}`,
+                                },
+                                {
+                                    type: 'postback',
+                                    title: 'Дэлгэрэнгүй',
+                                    payload: `DETAILS_${product.name}`,
+                                },
+                            ],
+                        },
+                    ],
                 },
             },
-        }),
-    });
-
-    if (!response.ok) {
-        const error = await response.json();
-        console.error('Facebook API error:', error);
-        throw new Error(`Failed to send product card: ${error.error?.message || 'Unknown error'}`);
-    }
-
-    return response.json();
+        },
+    }, 'send product card');
 }
 
 // Send a single image
@@ -176,33 +199,19 @@ export async function sendImage({
     imageUrl: string;
     pageAccessToken: string;
 }) {
-    const response = await fetch(buildSendUrl(pageAccessToken), {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            recipient: { id: recipientId },
-            messaging_type: 'RESPONSE',
-            message: {
-                attachment: {
-                    type: 'image',
-                    payload: {
-                        url: imageUrl,
-                        is_reusable: true,
-                    },
+    return postToGraph(pageAccessToken, {
+        recipient: { id: recipientId },
+        messaging_type: 'RESPONSE',
+        message: {
+            attachment: {
+                type: 'image',
+                payload: {
+                    url: imageUrl,
+                    is_reusable: true,
                 },
             },
-        }),
-    });
-
-    if (!response.ok) {
-        const error = await response.json();
-        console.error('Facebook API error:', error);
-        throw new Error(`Failed to send image: ${error.error?.message || 'Unknown error'}`);
-    }
-
-    return response.json();
+        },
+    }, 'send image');
 }
 
 // Send multiple products as carousel gallery (max 10)
@@ -251,33 +260,19 @@ export async function sendImageGallery({
             ],
     }));
 
-    const response = await fetch(buildSendUrl(pageAccessToken), {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            recipient: { id: recipientId },
-            messaging_type: 'RESPONSE',
-            message: {
-                attachment: {
-                    type: 'template',
-                    payload: {
-                        template_type: 'generic',
-                        elements,
-                    },
+    return postToGraph(pageAccessToken, {
+        recipient: { id: recipientId },
+        messaging_type: 'RESPONSE',
+        message: {
+            attachment: {
+                type: 'template',
+                payload: {
+                    template_type: 'generic',
+                    elements,
                 },
             },
-        }),
-    });
-
-    if (!response.ok) {
-        const error = await response.json();
-        console.error('Facebook API error:', error);
-        throw new Error(`Failed to send image gallery: ${error.error?.message || 'Unknown error'}`);
-    }
-
-    return response.json();
+        },
+    }, 'send image gallery');
 }
 
 export function verifyWebhook(

@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
             .single();
 
         if (shopError || !shop) {
-            return NextResponse.json({ error: 'Shop not found' }, { status: 404 });
+            return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 404 });
         }
 
         // Clear platform-specific fields

@@ -285,6 +285,9 @@ function SocialPageContent() {
                     facebook_page_id: selectData.page.id,
                     facebook_page_name: selectData.page.name,
                     facebook_page_access_token: selectData.page.access_token,
+                    facebook_token_expires_in: selectData.page.token_expires_in ?? undefined,
+                    facebook_user_access_token: selectData.page.user_access_token ?? undefined,
+                    facebook_user_token_expires_in: selectData.page.user_token_expires_in ?? undefined,
                 }),
             });
             const patchData = await patchRes.json();
@@ -294,7 +297,10 @@ function SocialPageContent() {
             }
 
             setPageSelectorOpen(false);
-            setOauthBanner(`✅ "${selectData.page.name}" хуудас амжилттай холбогдлоо`);
+            const subNote = patchData.webhookSubscribed === false
+                ? ' (⚠️ Webhook subscribe хийгдсэнгүй — App Dashboard дээр гараар тохируулна уу)'
+                : '';
+            setOauthBanner(`✅ "${selectData.page.name}" хуудас амжилттай холбогдлоо${subNote}`);
             router.replace('/marketing/social');
             // Refresh Facebook data
             fetchFacebookData();
@@ -304,6 +310,20 @@ function SocialPageContent() {
             setSavingPage(false);
         }
     }, [selectedPageId, router, fetchFacebookData]);
+
+    // ======= Disconnect platform =======
+    const handleDisconnect = useCallback(async (platform: 'facebook' | 'instagram') => {
+        const label = platform === 'facebook' ? 'Facebook' : 'Instagram';
+        if (!window.confirm(`${label} холболтыг салгах уу? Дараа нь дахин холбож болно.`)) return;
+        try {
+            await fetch('/api/shop/disconnect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ platform }),
+            });
+        } catch { /* алдааг үл хайхран reload хийнэ */ }
+        window.location.reload();
+    }, []);
 
     // ======= Publish post =======
     const handlePublish = async () => {
@@ -433,6 +453,7 @@ function SocialPageContent() {
                     formatDate={formatDate}
                     onConnect={() => window.location.href = '/api/auth/facebook'}
                     onRefresh={fetchFacebookData}
+                    onDisconnect={() => handleDisconnect('facebook')}
                 />
             )}
 
@@ -629,6 +650,7 @@ function FacebookTabContent({
     formatDate,
     onConnect,
     onRefresh,
+    onDisconnect,
 }: {
     loading: boolean;
     connected: boolean;
@@ -641,6 +663,7 @@ function FacebookTabContent({
     formatDate: (d: string) => string;
     onConnect: () => void;
     onRefresh: () => void;
+    onDisconnect: () => void;
 }) {
     if (loading) {
         return (
@@ -742,6 +765,13 @@ function FacebookTabContent({
                                 Page харах
                             </a>
                         )}
+                        <button
+                            onClick={onDisconnect}
+                            className="flex items-center gap-1 text-sm text-status-danger hover:opacity-80 ml-3"
+                        >
+                            <AlertCircle className="w-4 h-4" />
+                            Салгах
+                        </button>
                     </div>
                 </CardContent>
             </Card>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/auth/supabase-auth';
-import { getPageInsights } from '@/lib/facebook/marketing-api';
+import { supabaseAdmin, getAccessibleShopIds } from '@/lib/auth/supabase-auth';
+import { getPageInsights, getPageMessagingInsights } from '@/lib/facebook/marketing-api';
+import { decryptToken } from '@/lib/crypto/tokens';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 
@@ -37,16 +38,20 @@ export async function GET(req: NextRequest) {
         const period = (req.nextUrl.searchParams.get('period') || 'day') as 'day' | 'week' | 'days_28';
         const admin = supabaseAdmin();
 
-        let query = admin
+        // Хэрэглэгчийн хандах эрхтэй төслүүдээс зорилтот shop-ыг баталгаажуулна
+        const accessibleIds = await getAccessibleShopIds(userId);
+        const targetShopId = shopId || accessibleIds.values().next().value;
+        if (!targetShopId || !accessibleIds.has(targetShopId)) {
+            return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 404 });
+        }
+
+        const { data: shops, error } = await admin
             .from('shops')
             .select('id, facebook_page_id, facebook_page_access_token')
-            .eq('user_id', userId);
-
-        if (shopId) query = query.eq('id', shopId);
-
-        const { data: shops, error } = await query.limit(1);
+            .eq('id', targetShopId)
+            .limit(1);
         if (error || !shops?.length) {
-            return NextResponse.json({ error: 'Дэлгүүр олдсонгүй' }, { status: 404 });
+            return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 404 });
         }
 
         const shop = shops[0];
@@ -54,7 +59,8 @@ export async function GET(req: NextRequest) {
             return NextResponse.json({ insights: null, message: 'Facebook Page холбогдоогүй' });
         }
 
-        const result = await getPageInsights(shop.facebook_page_id, shop.facebook_page_access_token, undefined, period);
+        const pageToken = decryptToken(shop.facebook_page_access_token) || '';
+        const result = await getPageInsights(shop.facebook_page_id, pageToken, undefined, period);
 
         // Transform insights for frontend
         const insightsMap: Record<string, any> = {};
@@ -67,6 +73,12 @@ export async function GET(req: NextRequest) {
                 value: latestValue?.value || 0,
                 values: metric.values || [],
             };
+        }
+
+        // Messenger харилцааны хэмжээ — pages_messaging эрхгүй бол хоосон (isolated helper)
+        const messaging = await getPageMessagingInsights(shop.facebook_page_id, pageToken);
+        for (const [name, value] of Object.entries(messaging)) {
+            insightsMap[name] = { ...(insightsMap[name] || {}), value, values: insightsMap[name]?.values || [] };
         }
 
         return NextResponse.json({ insights: insightsMap });

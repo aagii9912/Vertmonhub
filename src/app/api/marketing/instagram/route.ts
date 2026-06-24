@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin } from '@/lib/auth/supabase-auth';
+import { supabaseAdmin, getAccessibleShopIds } from '@/lib/auth/supabase-auth';
+import { getInstagramInsights, getInstagramMediaInsights } from '@/lib/facebook/marketing-api';
+import { decryptToken } from '@/lib/crypto/tokens';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 
@@ -37,20 +39,25 @@ export async function GET(req: NextRequest) {
         const shopId = req.nextUrl.searchParams.get('shop_id');
         const admin = supabaseAdmin();
 
-        let query = admin
+        // Хэрэглэгчийн хандах эрхтэй төслүүдээс зорилтот shop-ыг баталгаажуулна
+        const accessibleIds = await getAccessibleShopIds(userId);
+        const targetShopId = shopId || accessibleIds.values().next().value;
+        if (!targetShopId || !accessibleIds.has(targetShopId)) {
+            return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 404 });
+        }
+
+        const { data: shops, error } = await admin
             .from('shops')
             .select('id, instagram_business_account_id, instagram_access_token, instagram_username, facebook_page_access_token')
-            .eq('user_id', userId);
-        if (shopId) query = query.eq('id', shopId);
-
-        const { data: shops, error } = await query.limit(1);
+            .eq('id', targetShopId)
+            .limit(1);
         if (error || !shops?.length) {
-            return NextResponse.json({ error: 'Дэлгүүр олдсонгүй' }, { status: 404 });
+            return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 404 });
         }
 
         const shop = shops[0];
         const igId = shop.instagram_business_account_id;
-        const accessToken = shop.instagram_access_token || shop.facebook_page_access_token;
+        const accessToken = decryptToken(shop.instagram_access_token) || decryptToken(shop.facebook_page_access_token);
 
         if (!igId || !accessToken) {
             return NextResponse.json({
@@ -78,22 +85,36 @@ export async function GET(req: NextRequest) {
                 });
             }
 
+            // Account-level insights (reach, impressions, profile_views, accounts_engaged)
+            const period = (req.nextUrl.searchParams.get('period') || 'day') as 'day' | 'week' | 'days_28';
+            const insights = await getInstagramInsights(igId, accessToken, period);
+
             // Get recent media
             const limit = parseInt(req.nextUrl.searchParams.get('limit') || '25');
+            const withMediaInsights = req.nextUrl.searchParams.get('media_insights') === '1';
             const mediaRes = await fetch(
                 `${GRAPH_API_BASE}/${igId}/media?fields=id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count&limit=${limit}&access_token=${accessToken}`
             );
             const mediaData = await mediaRes.json();
 
-            const posts = (mediaData.data || []).map((post: any) => ({
-                id: post.id,
-                caption: post.caption || '',
-                media_type: post.media_type,
-                media_url: post.media_url || post.thumbnail_url || null,
-                permalink: post.permalink,
-                timestamp: post.timestamp,
-                likes: post.like_count || 0,
-                comments: post.comments_count || 0,
+            const rawPosts = (mediaData.data || []) as any[];
+            const posts = await Promise.all(rawPosts.map(async (post: any) => {
+                const base = {
+                    id: post.id,
+                    caption: post.caption || '',
+                    media_type: post.media_type,
+                    media_url: post.media_url || post.thumbnail_url || null,
+                    permalink: post.permalink,
+                    timestamp: post.timestamp,
+                    likes: post.like_count || 0,
+                    comments: post.comments_count || 0,
+                };
+                // ?media_insights=1 үед per-post insights (N нэмэлт Graph дуудлага → rate-limit эрсдэл)
+                if (withMediaInsights) {
+                    const mi = await getInstagramMediaInsights(post.id, accessToken, post.media_type);
+                    return { ...base, insights: mi };
+                }
+                return base;
             }));
 
             return NextResponse.json({
@@ -108,6 +129,7 @@ export async function GET(req: NextRequest) {
                     media_count: account.media_count || 0,
                     biography: account.biography,
                 },
+                insights,
                 posts,
             });
 

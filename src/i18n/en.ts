@@ -64,20 +64,20 @@ export const en: Translations = {
 
   // ─── Setup Wizard ───
   setup: {
-    stepLabels: ['Shop', 'Facebook', 'Instagram', 'Products', 'AI', 'Plan'],
+    stepLabels: ['Project', 'Facebook', 'Instagram', 'Products', 'AI', 'Plan'],
     resumeTitle: 'Continue setup?',
     resumeDesc: 'You previously completed up to step {step}',
     resumeContinue: 'Continue',
     resumeRestart: 'Start over',
 
-    // Shop Info Step
+    // Project Info Step
     shop: {
-      title: 'Shop Information',
-      subtitle: 'Basic information about your shop',
-      shopName: 'Shop Name',
-      shopNameRequired: 'Please enter a shop name',
+      title: 'Project Information',
+      subtitle: 'Basic information about your project',
+      shopName: 'Project Name',
+      shopNameRequired: 'Please enter a project name',
       shopNameMin: 'Must be at least 2 characters',
-      shopNamePlaceholder: 'e.g. My Shop',
+      shopNamePlaceholder: 'e.g. My Project',
       ownerName: 'Owner Name',
       ownerNamePlaceholder: 'Your name',
       phone: 'Phone Number',
@@ -153,7 +153,7 @@ export const en: Translations = {
       step: 'Step',
       templateHint: '💡 Based on your selected template, the AI will generate its own instructions.',
       selectBusinessType: '1. Select your business type',
-      shopDescription: '2. Shop description',
+      shopDescription: '2. Project description',
       shopDescPlaceholder: 'What does your business do? What makes it unique?',
       fetchFromFb: 'Fetch from Facebook',
       personalityHint: '🎭 Configure the tone and style of AI conversations here.',
@@ -438,7 +438,7 @@ export const en: Translations = {
   // ─── Settings Page ───
   settingsPage: {
     title: 'Settings',
-    shopInfo: 'Shop information',
+    shopInfo: 'Project information',
     notifications: 'Notifications',
     danger: 'Danger zone',
   },

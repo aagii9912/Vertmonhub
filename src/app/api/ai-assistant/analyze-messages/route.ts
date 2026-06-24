@@ -10,7 +10,7 @@ export async function POST(req: Request) {
         const { shopId } = await req.json();
 
         if (!shopId) {
-            return NextResponse.json({ error: 'Shop ID is required' }, { status: 400 });
+            return NextResponse.json({ error: 'Төслийн ID шаардлагатай' }, { status: 400 });
         }
 
         const supabase = supabaseAdmin();

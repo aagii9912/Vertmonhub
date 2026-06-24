@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
         }
 
         const authShop = await getUserShop();
-        if (!authShop) return NextResponse.json({ error: 'Shop олдсонгүй' }, { status: 401 });
+        if (!authShop) return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 401 });
 
         const { data, error } = await supabase
             .from('marketing_channels')
@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
         }
 
         const authShop = await getUserShop();
-        if (!authShop) return NextResponse.json({ error: 'Shop олдсонгүй' }, { status: 401 });
+        if (!authShop) return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 401 });
 
         const body = await req.json();
         const validatedData = channelSchema.parse(body);

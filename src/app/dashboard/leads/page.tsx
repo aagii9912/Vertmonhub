@@ -32,11 +32,11 @@ import {
     FileText,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import type { Lead, LeadStatus, LeadSource } from '@/types/property';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
+import { EntityAttachments } from '@/components/dashboard/EntityAttachments';
 
 type StatusVariant = 'info' | 'brand' | 'warning' | 'success' | 'danger' | 'default';
 
@@ -91,20 +91,13 @@ export default function LeadsPage() {
         const fetchLeads = async () => {
             setLoading(true);
             try {
-                let query = supabase
-                    .from('leads')
-                    .select('*')
-                    .eq('shop_id', shop.id)
-                    .order('created_at', { ascending: false });
+                const res = await fetch(`/api/dashboard/leads?status=${statusFilter}`, {
+                    headers: { 'x-shop-id': shop.id },
+                });
+                if (!res.ok) throw new Error('Failed to fetch leads');
+                const json = await res.json();
 
-                if (statusFilter !== 'all') {
-                    query = query.eq('status', statusFilter);
-                }
-
-                const { data, error } = await query;
-                if (error) throw error;
-
-                const leadsData = data as Lead[];
+                const leadsData = (json.leads || []) as Lead[];
                 setLeads(leadsData);
 
                 const newCount = leadsData.filter((l) => l.status === 'new').length;
@@ -141,18 +134,24 @@ export default function LeadsPage() {
 
     const updateStatus = async (id: string, newStatus: LeadStatus) => {
         try {
-            const { error } = await supabase
-                .from('leads')
-                .update({ status: newStatus, updated_at: new Date().toISOString() })
-                .eq('id', id);
-
-            if (error) throw error;
+            const res = await fetch(`/api/dashboard/leads/${id}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || shop?.id || '',
+                },
+                body: JSON.stringify({ status: newStatus }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err?.error || 'Шинэчлэхэд алдаа гарлаа');
+            }
 
             setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, status: newStatus } : l)));
             toast.success('Статус шинэчлэгдлээ');
         } catch (error) {
             console.error('Error updating lead:', error);
-            toast.error('Шинэчлэхэд алдаа гарлаа');
+            toast.error(error instanceof Error ? error.message : 'Шинэчлэхэд алдаа гарлаа');
         }
     };
 
@@ -539,6 +538,9 @@ export default function LeadsPage() {
                                                                         </button>
                                                                     )}
                                                                 </div>
+                                                            </div>
+                                                            <div className="mt-4">
+                                                                <EntityAttachments entityType="lead" entityId={lead.id} />
                                                             </div>
                                                         </td>
                                                     </tr>

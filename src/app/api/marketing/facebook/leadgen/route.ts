@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { verifyWebhookSignature } from '@/lib/utils/verify-webhook-signature';
 import { logAttributionEvent } from '@/lib/marketing/attribution-events';
+import { decryptToken } from '@/lib/crypto/tokens';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -76,10 +77,12 @@ export async function POST(request: NextRequest) {
                     .eq('facebook_page_id', v.page_id || pageId)
                     .single();
                 if (!shop?.facebook_page_access_token) continue;
+                const pageToken = decryptToken(shop.facebook_page_access_token);
+                if (!pageToken) continue;
 
                 // Lead-ийн дэлгэрэнгүйг Graph-аас татах
                 const res = await fetch(
-                    `${GRAPH}/${leadgenId}?fields=field_data,campaign_id,adset_id,ad_id&access_token=${shop.facebook_page_access_token}`
+                    `${GRAPH}/${leadgenId}?fields=field_data,campaign_id,adset_id,ad_id&access_token=${pageToken}`
                 );
                 if (!res.ok) {
                     logger.warn('[Leadgen] fetch failed', { leadgenId, status: res.status });

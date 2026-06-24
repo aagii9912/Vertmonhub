@@ -13,6 +13,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(`${origin}/marketing/social?fb_error=${encodeURIComponent(errorReason)}`);
   }
 
+  // CSRF state шалгалт — start route-ийн тавьсан cookie-тэй тулгана (нэг удаагийн).
+  const cookieStore = await cookies();
+  const returnedState = searchParams.get('state');
+  const expectedState = cookieStore.get('fb_oauth_state')?.value;
+  cookieStore.delete('fb_oauth_state');
+  if (!returnedState || !expectedState || returnedState !== expectedState) {
+    return NextResponse.redirect(`${origin}/marketing/social?fb_error=state_mismatch`);
+  }
+
   if (!code) {
     return NextResponse.redirect(`${origin}/marketing/social?fb_error=no_code`);
   }
@@ -42,7 +51,29 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${origin}/marketing/social?fb_error=token_error`);
     }
 
-    const userAccessToken = tokenData.access_token;
+    let userAccessToken = tokenData.access_token;
+    let tokenExpiresIn: number | undefined;
+
+    // Long-lived token exchange — me/accounts-аас ӨМНӨ ажиллана. Long-lived user
+    // token-оос үүсэх Page token-ууд effectively non-expiring статус өвлөнө.
+    // Алдаа гарвал short-lived токеноор үргэлжилнэ (fatal биш).
+    try {
+      const llUrl = new URL('https://graph.facebook.com/v21.0/oauth/access_token');
+      llUrl.searchParams.set('grant_type', 'fb_exchange_token');
+      llUrl.searchParams.set('client_id', appId);
+      llUrl.searchParams.set('client_secret', appSecret);
+      llUrl.searchParams.set('fb_exchange_token', userAccessToken);
+      const llRes = await fetch(llUrl.toString());
+      const llData = await llRes.json();
+      if (llData.access_token) {
+        userAccessToken = llData.access_token;
+        if (typeof llData.expires_in === 'number') tokenExpiresIn = llData.expires_in;
+      } else if (llData.error) {
+        console.warn('Long-lived token exchange failed:', llData.error?.message);
+      }
+    } catch (e) {
+      console.warn('Long-lived token exchange exception:', e);
+    }
 
     // Get user's Facebook Pages
     const pagesUrl = `https://graph.facebook.com/v21.0/me/accounts?access_token=${userAccessToken}&fields=id,name,access_token,category`;
@@ -54,13 +85,18 @@ export async function GET(request: NextRequest) {
       return NextResponse.redirect(`${origin}/marketing/social?fb_error=pages_error`);
     }
 
-    // Store pages data in a cookie
-    const pages = (pagesData.data || []).slice(0, 10);
+    // Store pages data in a cookie (токений дуусах хугацааг хамт дамжуулна)
+    const pages = (pagesData.data || []).slice(0, 10).map((p: Record<string, unknown>) => ({
+      ...p,
+      token_expires_in: tokenExpiresIn ?? null,
+      // ads_read зэрэг user-level эрхэд ашиглах USER token (Page token-д БИШ байдаг)
+      user_access_token: userAccessToken,
+      user_token_expires_in: tokenExpiresIn ?? null,
+    }));
     const pagesJson = JSON.stringify(pages);
     const encodedPages = Buffer.from(pagesJson).toString('base64');
 
     // Set cookie with pages data
-    const cookieStore = await cookies();
     cookieStore.set('fb_pages', encodedPages, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',

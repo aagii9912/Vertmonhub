@@ -52,6 +52,20 @@ export async function POST(request: Request) {
             results.memory_cleaned = 'skipped';
         }
 
+        // 4. Webhook idempotency бүртгэлийг цэвэрлэх (> 7 хоног)
+        try {
+            const cutoff = new Date();
+            cutoff.setDate(cutoff.getDate() - 7);
+            const { error: dedupError } = await supabase
+                .from('webhook_dedup')
+                .delete()
+                .lt('created_at', cutoff.toISOString());
+            results.webhook_dedup_cleaned = dedupError ? 'skipped' : 'ok';
+        } catch (e) {
+            logger.warn('[Cron] webhook_dedup cleanup failed:', { error: e });
+            results.webhook_dedup_cleaned = 'skipped';
+        }
+
         logger.info('[Cron] Data cleanup completed', results);
 
         return NextResponse.json({

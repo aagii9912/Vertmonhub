@@ -19,6 +19,22 @@
     {
       "path": "/api/cron/data-cleanup",
       "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/ads-insights-sync",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/social-insights-sync",
+      "schedule": "30 */6 * * *"
+    },
+    {
+      "path": "/api/cron/process-webhook-jobs",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/cron/ai-digest",
+      "schedule": "0 1 * * *"
     }
   ]
 }

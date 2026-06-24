@@ -32,6 +32,15 @@ export async function GET(request: NextRequest) {
         return NextResponse.redirect(`${origin}/marketing/social?ig_error=${encodeURIComponent(errorReason)}`);
     }
 
+    // CSRF state шалгалт — start route-ийн тавьсан cookie-тэй тулгана (нэг удаагийн).
+    const cookieStore = await cookies();
+    const returnedState = searchParams.get('state');
+    const expectedState = cookieStore.get('ig_oauth_state')?.value;
+    cookieStore.delete('ig_oauth_state');
+    if (!returnedState || !expectedState || returnedState !== expectedState) {
+        return NextResponse.redirect(`${origin}/marketing/social?ig_error=state_mismatch`);
+    }
+
     if (!code) {
         return NextResponse.redirect(`${origin}/marketing/social?ig_error=no_code`);
     }
@@ -61,7 +70,27 @@ export async function GET(request: NextRequest) {
             return NextResponse.redirect(`${origin}/marketing/social?ig_error=token_error`);
         }
 
-        const userAccessToken = tokenData.access_token;
+        let userAccessToken = tokenData.access_token;
+        let tokenExpiresIn: number | undefined;
+
+        // Long-lived token exchange — me/accounts-аас ӨМНӨ (алдаа гарвал short-lived-аар үргэлжилнэ)
+        try {
+            const llUrl = new URL('https://graph.facebook.com/v21.0/oauth/access_token');
+            llUrl.searchParams.set('grant_type', 'fb_exchange_token');
+            llUrl.searchParams.set('client_id', appId);
+            llUrl.searchParams.set('client_secret', appSecret);
+            llUrl.searchParams.set('fb_exchange_token', userAccessToken);
+            const llRes = await fetch(llUrl.toString());
+            const llData = await llRes.json();
+            if (llData.access_token) {
+                userAccessToken = llData.access_token;
+                if (typeof llData.expires_in === 'number') tokenExpiresIn = llData.expires_in;
+            } else if (llData.error) {
+                console.warn('IG long-lived token exchange failed:', llData.error?.message);
+            }
+        } catch (e) {
+            console.warn('IG long-lived token exchange exception:', e);
+        }
 
         // Get user's Facebook Pages with Instagram Business Account info
         const pagesUrl = `https://graph.facebook.com/v21.0/me/accounts?access_token=${userAccessToken}&fields=id,name,access_token,instagram_business_account{id,username,name,profile_picture_url}`;
@@ -101,6 +130,7 @@ export async function GET(request: NextRequest) {
             instagramUsername: page.instagram_business_account!.username || '',
             instagramName: page.instagram_business_account!.name || page.name,
             profilePicture: page.instagram_business_account!.profile_picture_url || '',
+            tokenExpiresIn: tokenExpiresIn ?? null,
         }));
 
         // Store Instagram accounts data in a cookie
@@ -108,7 +138,6 @@ export async function GET(request: NextRequest) {
         const encodedAccounts = Buffer.from(accountsJson).toString('base64');
 
         // Set cookie with Instagram accounts data
-        const cookieStore = await cookies();
         cookieStore.set('ig_accounts', encodedAccounts, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',

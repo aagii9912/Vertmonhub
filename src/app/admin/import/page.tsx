@@ -120,12 +120,12 @@ const IMPORT_CATEGORIES: ImportCategory[] = [
     },
     {
         type: 'company',
-        label: 'Компани',
-        desc: 'Компанийн мэдээлэл',
+        label: 'Төсөл',
+        desc: 'Төслийн ерөнхий мэдээлэл',
         icon: Package,
         color: 'indigo',
         columns: [
-            { name: 'Компанийн бүтэн нэр', required: true },
+            { name: 'Төслийн бүтэн нэр', required: true },
             { name: 'Утас' },
             { name: 'Имэйл' },
             { name: 'Хаяг' },
@@ -133,8 +133,8 @@ const IMPORT_CATEGORIES: ImportCategory[] = [
             { name: 'Facebook хуудас' },
         ],
         templateFn: () =>
-            'Компанийн бүтэн нэр,Үүсгэн байгуулагдсан он,Утас,Имэйл,Вэбсайт,Хаяг,Facebook хуудас,Instagram хуудас,Компанийн товч танилцуулга\n' +
-            'Vertmon LLC,2020,77001122,info@vertmon.mn,vertmon.mn,Улаанбаатар Сүхбаатар дүүрэг,facebook.com/vertmon,instagram.com/vertmon,Үл хөдлөх хөрөнгийн компани\n',
+            'Төслийн бүтэн нэр,Үүсгэн байгуулагдсан он,Утас,Имэйл,Вэбсайт,Хаяг,Facebook хуудас,Instagram хуудас,Төслийн товч танилцуулга\n' +
+            'Vertmon LLC,2020,77001122,info@vertmon.mn,vertmon.mn,Улаанбаатар Сүхбаатар дүүрэг,facebook.com/vertmon,instagram.com/vertmon,Үл хөдлөх хөрөнгийн төсөл\n',
     },
     {
         type: 'payment_policy',
