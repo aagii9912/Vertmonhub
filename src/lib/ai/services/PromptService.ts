@@ -5,6 +5,61 @@
 
 import type { ChatContext } from '@/types/ai';
 import { formatMemoryForPrompt } from '../tools/memory';
+import { logger } from '@/lib/utils/logger';
+
+/**
+ * Динамик хэсгүүдийн тэмдэгтийн дээд хязгаар (token budget).
+ * Олон үл хөдлөх/FAQ/тусгай мэдээлэл prompt-ыг хэт томруулж model-ийн
+ * контекстийг дүүргэхээс сэргийлнэ (~4 тэмдэгт ≈ 1 token гэж тооцов).
+ */
+export const SECTION_CHAR_LIMITS = {
+    properties: 6000,
+    faqs: 4000,
+    knowledge: 4000,
+} as const;
+
+/**
+ * Хэсгийг тэмдэгтийн төсөвт багтаах. Хэтэрвэл таслаж, тэмдэглэгээ нэмж,
+ * лог-д анхааруулга бичнэ.
+ */
+export function clampSection(content: string, maxChars: number, label: string): string {
+    if (content.length <= maxChars) return content;
+    logger.warn(`Prompt section truncated to fit token budget`, { label, original: content.length, maxChars });
+    return content.slice(0, maxChars) + `\n…(${label} хэтэрсэн тул таслав)`;
+}
+
+/**
+ * Tool-уудын монгол тайлбар. Prompt-ын ЧАДВАРУУД хэсгийг энэхүү map-аас
+ * динамикаар бүтээнэ — план дээр идэвхтэй tool-уудыг л жагсааж, Gemini-д
+ * тогтвортой дохио өгнө.
+ */
+const TOOL_DESCRIPTIONS: Record<string, string> = {
+    search_properties: 'Үл хөдлөх хайх (төрөл, үнэ, байршил, өрөөний тооор)',
+    calculate_loan: 'Зээлийн сарын төлбөр тооцоох',
+    schedule_viewing: 'Үзлэг товлох',
+    show_property_images: 'Зураг харуулах',
+    create_lead: 'Хүсэлт бүртгэх',
+    collect_contact_info: 'Холбоо барих мэдээлэл авах',
+    request_human_support: 'Менежертэй холбогдох',
+    remember_preference: 'Хэрэглэгчийн сонголт санах',
+    tag_customer_behavior: 'Харилцагчийн зан төлөвийг tag-аар тэмдэглэх (interest:apartment, budget:300m, urgency:high, stage:hot_lead гэх мэт). Хэрэглэгчийн талаар чухал ойлголт авсан бүрд дуудна.',
+    append_customer_note: 'Sales manager-т зориулсан богино тэмдэглэл бичих (1-2 өгүүлбэр). Чухал шийдвэр гаргахаас өмнө эсвэл request_human_support дуудахаас өмнө дуудна.',
+};
+
+/**
+ * ЧАДВАРУУД хэсгийг идэвхтэй tool-уудаас динамикаар бүтээнэ.
+ * enabledTools өгөгдөөгүй бол бүх tool-ийг жагсаана (буцаад нийцтэй).
+ */
+export function buildToolsSection(enabledTools?: string[]): string {
+    const allNames = Object.keys(TOOL_DESCRIPTIONS);
+    const names = enabledTools && enabledTools.length > 0
+        ? allNames.filter(name => enabledTools.includes(name))
+        : allNames;
+
+    return names
+        .map((name, i) => `${i + 1}. ${name} - ${TOOL_DESCRIPTIONS[name]}`)
+        .join('\n');
+}
 
 /**
  * Real Estate Agent emotion/style prompts
@@ -98,10 +153,13 @@ export function buildFAQs(faqs?: ChatContext['faqs']): string {
  */
 export function buildSystemPrompt(context: ChatContext): string {
     const emotionStyle = EMOTION_PROMPTS[context.aiEmotion || 'friendly'];
-    const propertiesInfo = buildPropertiesInfo(context.properties);
+    const propertiesInfo = clampSection(buildPropertiesInfo(context.properties), SECTION_CHAR_LIMITS.properties, 'үл хөдлөхийн жагсаалт');
     const customInstructions = buildCustomInstructions(context.aiInstructions);
-    const dynamicKnowledge = buildDynamicKnowledge(context.customKnowledge);
-    const faqsBlock = buildFAQs(context.faqs);
+    const dynamicKnowledge = clampSection(buildDynamicKnowledge(context.customKnowledge), SECTION_CHAR_LIMITS.knowledge, 'тусгай мэдээлэл');
+    const faqsBlock = clampSection(buildFAQs(context.faqs), SECTION_CHAR_LIMITS.faqs, 'түгээмэл асуулт');
+
+    // Идэвхтэй tool-уудаас ЧАДВАРУУД хэсгийг динамикаар бүтээнэ
+    const toolsSection = buildToolsSection(context.planFeatures?.enabledTools);
 
     // Customer memory
     const customerMemory = context.planFeatures?.ai_memory !== false
@@ -114,10 +172,10 @@ export function buildSystemPrompt(context: ChatContext): string {
         : '';
 
     const companyInfo = context.shopDescription
-        ? `\nКОМПАНИЙН ТУХАЙ: ${context.shopDescription}`
+        ? `\nТӨСЛИЙН ТУХАЙ: ${context.shopDescription}`
         : '';
 
-    return `Чи бол "${context.shopName}" компанийн Үл Хөдлөх Хөрөнгийн AI Зөвлөх.
+    return `Чи бол "${context.shopName}" төслийн Үл Хөдлөх Хөрөнгийн AI Зөвлөх.
 
 🏠 ЗОРИЛГО:
 - Хэрэглэгчид тохирох үл хөдлөх хөрөнгө олоход тусла
@@ -131,16 +189,7 @@ ${emotionStyle}
 ${companyInfo}${customInstructions}${dynamicKnowledge}${faqsBlock}${customerMemory}${customerGreeting}
 
 ЧАДВАРУУД (Tools):
-1. search_properties - Үл хөдлөх хайх (төрөл, үнэ, байршил, өрөөний тооор)
-2. calculate_loan - Зээлийн сарын төлбөр тооцоох
-3. schedule_viewing - Үзлэг товлох
-4. show_property_images - Зураг харуулах
-5. create_lead - Хүсэлт бүртгэх
-6. collect_contact_info - Холбоо барих мэдээлэл авах
-7. request_human_support - Менежертэй холбогдох
-8. remember_preference - Хэрэглэгчийн сонголт санах
-9. tag_customer_behavior - Харилцагчийн зан төлөвийг tag-аар тэмдэглэх (interest:apartment, budget:300m, urgency:high, stage:hot_lead гэх мэт). Хэрэглэгчийн талаар чухал ойлголт авсан бүрд дуудна.
-10. append_customer_note - Sales manager-т зориулсан богино тэмдэглэл бичих (1-2 өгүүлбэр). Чухал шийдвэр гаргахаас өмнө эсвэл request_human_support дуудахаас өмнө дуудна.
+${toolsSection}
 
 CRM ТЭМДЭГЛЭЛ ҮЛДЭЭХ ДҮРЭМ:
 - Хэрэглэгчийн төсөв, сонирхсон бүс, шийдвэр гаргах хугацааг олж мэдсэн үед tag_customer_behavior-ыг ашигла.
@@ -196,7 +245,7 @@ CRM ТЭМДЭГЛЭЛ ҮЛДЭЭХ ДҮРЭМ:
 
 ХОРИОТОЙ:
 - "OpenAI", "GPT", "Claude" гэх мэт model нэр дурдах
-- Компаниас өөр сэдвийн талаар дэлгэрэнгүй ярих
+- Төслөөс өөр сэдвийн талаар дэлгэрэнгүй ярих
 - Хэт урт хариулт (гол зүйлээ эхэнд хэл)
 - Худалдааны pressure tactics (хэрэглэгч өөрөө шийдэх ёстой)
 

@@ -48,7 +48,7 @@ const messages: Record<SupportedLanguage, Record<MessageKey, string>> = {
     mn: {
         // Errors
         'error.no_customer_context': 'Хэрэглэгчийн мэдээлэл олдсонгүй',
-        'error.no_shop_context': 'Дэлгүүрийн мэдээлэл олдсонгүй',
+        'error.no_shop_context': 'Төслийн мэдээлэл олдсонгүй',
         'error.product_not_found': '"{product}" бүтээгдэхүүн олдсонгүй',
         'error.insufficient_stock': 'Үлдэгдэл хүрэлцэхгүй байна. Боломжит: {available} ширхэг',
         'error.cart_empty': 'Сагс хоосон байна',

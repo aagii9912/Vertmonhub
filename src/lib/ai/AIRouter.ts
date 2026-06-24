@@ -58,6 +58,21 @@ export interface RouterResponse extends ChatResponse {
     limitReached?: boolean;
 }
 
+// Gemini дуудлага хэт удвал webhook-ийг блоклохгүйн тулд timeout тавина.
+const GEMINI_TIMEOUT_MS = 25_000;
+
+/**
+ * Promise-г тогтоосон хугацаанд багтаах. Хэтэрвэл алдаа шиднэ.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+    return Promise.race([
+        promise,
+        new Promise<T>((_, reject) =>
+            setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+        ),
+    ]);
+}
+
 /**
  * Retry operation with exponential backoff
  */
@@ -133,7 +148,13 @@ export async function routeToAI(
 
         logger.info(`AIRouter: Routing to Gemini [${backendModel}] (Plan: ${planType})`);
 
-        // Build system prompt
+        // Get tools enabled for this plan
+        const planTools = planConfig.features.toolCalling
+            ? getToolsForPlan(planType)
+            : undefined;
+
+        // Build system prompt — идэвхтэй tool-уудын нэрийг дамжуулж prompt-ын
+        // ЧАДВАРУУД хэсгийг динамикаар бүтээлгэнэ
         const systemPrompt = buildSystemPrompt({
             ...context,
             planFeatures: {
@@ -141,13 +162,9 @@ export async function routeToAI(
                 sales_intelligence: planConfig.features.salesIntelligence,
                 ai_memory: planConfig.features.memory,
                 max_tokens: planConfig.maxTokens,
+                enabledTools: planTools?.map((t: { name: string }) => t.name),
             },
         });
-
-        // Get tools enabled for this plan
-        const planTools = planConfig.features.toolCalling
-            ? getToolsForPlan(planType)
-            : undefined;
 
         // Configure Gemini model
         const model = genAI.getGenerativeModel({
@@ -172,8 +189,11 @@ export async function routeToAI(
             logger.info(`Sending to Gemini ${backendModel}...`);
 
             const chat = model.startChat({ history: geminiHistory });
-            const result = await chat.sendMessage(message);
+            const result = await withTimeout(chat.sendMessage(message), GEMINI_TIMEOUT_MS, 'Gemini sendMessage');
             const response = result.response;
+
+            // Токены хэрэглээг хуримтлуулж хянана (анхны дуудлага + tool synthesis)
+            let tokensUsed = response.usageMetadata?.totalTokenCount || 0;
 
             // Check for function calls
             const functionCalls = response.functionCalls();
@@ -236,13 +256,16 @@ export async function routeToAI(
                 }
 
                 // Send tool results back to Gemini
-                const synthesisResult = await chat.sendMessage(
-                    toolResults.map(tr => ({ functionResponse: tr.functionResponse }))
+                const synthesisResult = await withTimeout(
+                    chat.sendMessage(toolResults.map(tr => ({ functionResponse: tr.functionResponse }))),
+                    GEMINI_TIMEOUT_MS,
+                    'Gemini tool synthesis'
                 );
                 finalResponseText = synthesisResult.response.text() || '';
+                tokensUsed += synthesisResult.response.usageMetadata?.totalTokenCount || 0;
             }
 
-            logger.success(`AIRouter response received (${planType}/Gemini)`);
+            logger.success(`AIRouter response received (${planType}/Gemini)`, { tokensUsed });
 
             return {
                 text: finalResponseText,
@@ -253,6 +276,7 @@ export async function routeToAI(
                     model: planConfig.model,
                     messagesUsed: messageCount + 1,
                     messagesRemaining: limitCheck.remaining - 1,
+                    tokensUsed,
                 },
             };
         });
@@ -299,7 +323,7 @@ export async function analyzeProductImageWithPlan(
         const backendModel = MODEL_MAPPING[planConfig.model];
         const productList = products.map(p => `- ${p.name}: ${p.description || ''}`).join('\n');
 
-        const prompt = `Та бол дэлгүүрийн ухаалаг туслах юм. Энэ зургийг шинжилж, хоёр зүйлийн аль нэг гэж ангилна уу:
+        const prompt = `Та бол төслийн ухаалаг туслах юм. Энэ зургийг шинжилж, хоёр зүйлийн аль нэг гэж ангилна уу:
 1. "product_inquiry": Хэрэглэгч барааны зураг явуулж, байгаа эсэхийг асууж байна.
 2. "payment_receipt": Хэрэглэгч төлбөрийн баримт явуулж байна.
 

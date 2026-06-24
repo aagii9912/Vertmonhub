@@ -63,7 +63,7 @@ export async function POST(req: Request) {
                 user_id: user.id,
                 shop_id: shopId,
                 title: title || 'Шинэ харилцан яриа',
-                mode: mode || 'data',
+                mode: mode || 'orchestrator',
             })
             .select('id, title, mode, created_at, updated_at')
             .single();

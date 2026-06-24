@@ -42,7 +42,7 @@ const IMPORT_OPTIONS: ImportOption[] = [
     {
         value: 'company',
         label: 'Company',
-        labelMN: 'Компанийн мэдээлэл',
+        labelMN: 'Төслийн ерөнхий мэдээлэл',
         description: 'Нэр, утас, имэйл, вэб, хаяг, соц.сүлжээ',
         icon: Building2,
         color: 'from-brand to-brand-strong',
@@ -165,7 +165,7 @@ export default function ImportTab() {
             const shopRes = await fetch('/api/shop');
             const shopData = await shopRes.json();
             const shopId = shopData.shop?.id;
-            if (!shopId) throw new Error('Shop олдсонгүй');
+            if (!shopId) throw new Error('Төсөл олдсонгүй');
 
             const formData = new FormData();
             formData.append('file', file);
@@ -410,7 +410,7 @@ export default function ImportTab() {
                             <li>Import төрөл сонгоод Template татна уу</li>
                             <li>Template-д мэдээллээ бөглөнө (жишээ мөрийг устгах эсвэл дээрээс нь бичих)</li>
                             <li>Бөглөсөн файлаа upload хийж, Import товч дарна</li>
-                            <li>Компани, Төсөл, Зээл зэрэг мэдээлэл аль хэдийн байвал шинэчлэгдэнэ (upsert)</li>
+                            <li>Төсөл, Зээл зэрэг мэдээлэл аль хэдийн байвал шинэчлэгдэнэ (upsert)</li>
                             <li>Зөвхөн <strong>Super Admin</strong> болон зөвшөөрөгдсөн хүмүүс ашиглах боломжтой</li>
                         </ul>
                     </div>

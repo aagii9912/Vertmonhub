@@ -349,15 +349,15 @@ async function importCompany(supabase: any, buffer: Buffer, shopId: string): Pro
     // Each row is a key-value or we take the first row as a single company
     const row = rows[0];
     const mappings: [string, string[], string][] = [
-        ['company_name', ['Компанийн бүтэн нэр', 'Нэр', 'Company Name', 'name'], 'Компанийн нэр'],
+        ['company_name', ['Төслийн бүтэн нэр', 'Компанийн бүтэн нэр', 'Нэр', 'Company Name', 'name'], 'Төслийн нэр'],
         ['founded_year', ['Үүсгэн байгуулагдсан он', 'Founded', 'Он'], 'Үүсгэн байгуулагдсан'],
-        ['phone', ['Утас', 'Phone', 'Утас (компани)'], 'Утас'],
+        ['phone', ['Утас', 'Phone', 'Утас (төсөл)', 'Утас (компани)'], 'Утас'],
         ['email', ['Имэйл', 'Email'], 'Имэйл'],
         ['website', ['Вэбсайт', 'Website'], 'Вэбсайт'],
         ['address', ['Хаяг', 'Address', 'Хаяг (оффис)'], 'Хаяг'],
         ['facebook', ['Facebook хуудас', 'Facebook', 'FB'], 'Facebook'],
         ['instagram', ['Instagram хуудас', 'Instagram', 'IG'], 'Instagram'],
-        ['description', ['Компанийн товч танилцуулга', 'Description', 'Тайлбар'], 'Танилцуулга'],
+        ['description', ['Төслийн товч танилцуулга', 'Компанийн товч танилцуулга', 'Description', 'Тайлбар'], 'Танилцуулга'],
         ['total_projects', ['Нийт барьсан төслийн тоо', 'Projects', 'Төслийн тоо'], 'Нийт төслийн тоо'],
     ];
 
@@ -374,7 +374,7 @@ async function importCompany(supabase: any, buffer: Buffer, shopId: string): Pro
         }
     }
 
-    if (entries.length === 0) return { success: false, message: 'Компанийн мэдээлэл олдсонгүй' };
+    if (entries.length === 0) return { success: false, message: 'Төслийн мэдээлэл олдсонгүй' };
 
     const { imported, updated } = await batchUpsertKnowledge(supabase, entries, shopId, 'company');
 
@@ -382,7 +382,7 @@ async function importCompany(supabase: any, buffer: Buffer, shopId: string): Pro
         success: true,
         imported,
         updated,
-        message: `Компанийн мэдээлэл: ${imported} шинэ, ${updated} шинэчлэгдсэн`,
+        message: `Төслийн мэдээлэл: ${imported} шинэ, ${updated} шинэчлэгдсэн`,
     };
 }
 

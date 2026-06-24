@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { StatsCard } from '@/components/dashboard/StatsCard';
+import { AskAIHero } from '@/components/dashboard/AskAIHero';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
@@ -24,7 +25,6 @@ import {
     ChevronDown,
     Eye,
     MapPin,
-    Sparkles,
 } from 'lucide-react';
 
 const TIME_FILTER_OPTIONS = [
@@ -79,14 +79,12 @@ export default function DashboardPage() {
     return (
         <PullToRefresh onRefresh={handleRefresh}>
             <div className="space-y-6 md:space-y-8">
-                {/* Гарчиг + хэрэгслүүд */}
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <div>
-                        <h2 className="heading-display text-xl md:text-2xl text-foreground">Тойм</h2>
-                        <p className="text-sm text-muted-foreground mt-0.5">Борлуулалт, лийд, үзлэгийн төлөв</p>
-                    </div>
-                    <div className="flex items-center justify-end gap-2">
-                        <div className="relative">
+                {/* AI Orchestrator launcher — нүүрэн дээрх гол хэрэгсэл */}
+                <AskAIHero />
+
+                {/* Toolbar */}
+                <div className="flex items-center justify-end gap-2">
+                    <div className="relative">
                         <button
                             onClick={() => document.getElementById('time-filter-dropdown')?.classList.toggle('hidden')}
                             onBlur={() =>
@@ -129,7 +127,6 @@ export default function DashboardPage() {
                     >
                         <RefreshCw className={cn('w-4 h-4', isRefetching && 'animate-spin')} />
                     </Button>
-                    </div>
                 </div>
 
                 {/* Stats Grid */}
@@ -208,21 +205,6 @@ export default function DashboardPage() {
 
                     {/* Upcoming Viewings */}
                     <div className="space-y-6">
-                        {/* AI Туслах CTA */}
-                        <Link href="/dashboard/ai-assistant" className="block">
-                            <Card hover className="bg-brand-soft border-brand/20">
-                                <CardContent className="p-4 flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-md bg-brand text-brand-fg flex items-center justify-center shrink-0">
-                                        <Sparkles className="w-5 h-5" />
-                                    </div>
-                                    <div className="min-w-0 flex-1">
-                                        <p className="font-medium text-foreground text-sm">AI Туслах</p>
-                                        <p className="text-xs text-muted-foreground truncate">Дататайгаа чатлаж дүн шинжилгээ хий</p>
-                                    </div>
-                                    <ArrowRight className="w-4 h-4 text-brand-strong shrink-0" />
-                                </CardContent>
-                            </Card>
-                        </Link>
                         <Card>
                             <CardHeader className="py-3">
                                 <CardTitle className="flex items-center gap-2 text-base">

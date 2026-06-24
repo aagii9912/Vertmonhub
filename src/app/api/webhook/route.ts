@@ -1,9 +1,11 @@
+import { randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyWebhook, sendTextMessage, sendSenderAction, sendMessageWithQuickReplies } from '@/lib/facebook/messenger';
 import { routeToAI, analyzeProductImageWithPlan } from '@/lib/ai/AIRouter';
 import { detectIntent } from '@/lib/ai/intent-detector';
 import { shouldReplyToComment } from '@/lib/ai/comment-detector';
 import { getCustomerMemory } from '@/lib/ai/tools/memory';
+import { isDuplicateWebhookEvent, queueWebhookJob } from '@/lib/webhook/retryService';
 import { logger } from '@/lib/utils/logger';
 import { verifyWebhookSignature } from '@/lib/utils/verify-webhook-signature';
 import {
@@ -49,6 +51,7 @@ interface WebhookEntry {
     messaging?: Array<{
         sender: { id: string };
         message?: {
+            mid?: string;
             text?: string;
             attachments?: Array<{
                 type: string;
@@ -88,6 +91,8 @@ export async function GET(request: NextRequest) {
 const BOT_ENABLED = process.env.FACEBOOK_BOT_ENABLED?.trim().toLowerCase() === 'true';
 
 export async function POST(request: NextRequest) {
+    // Correlation ID — webhook → AI → send гинжийг лог-д мөшгихөд тусална
+    const requestId = randomUUID();
     try {
         // Verify webhook signature (X-Hub-Signature-256)
         const rawBody = await request.text();
@@ -189,10 +194,17 @@ export async function POST(request: NextRequest) {
             for (const event of entry.messaging || []) {
                 const senderId = event.sender.id;
 
+                // Idempotency: Meta нэг мессежийг давхар илгээж болзошгүй тул
+                // message ID (mid)-аар давхардлыг таслана (давхар AI хариунаас сэргийлнэ)
+                if (event.message?.mid && await isDuplicateWebhookEvent(event.message.mid)) {
+                    logger.info(`[${shop.name}] Duplicate message skipped`, { mid: event.message.mid });
+                    continue;
+                }
+
                 // Handle text messages
                 if (event.message?.text) {
                     const userMessage = event.message.text;
-                    logger.info(`[${shop.name}] Received ${platform} message`, { userMessage, senderId });
+                    logger.info(`[${shop.name}] Received ${platform} message`, { requestId, userMessage, senderId });
 
                     // Mark Seen & Typing indicators
                     await sendSenderAction(senderId, 'mark_seen', accessToken);
@@ -275,7 +287,7 @@ export async function POST(request: NextRequest) {
                     } catch (aiError) {
                         const errorMessage = aiError instanceof Error ? aiError.message : 'Unknown error';
                         const errorStack = aiError instanceof Error ? aiError.stack : undefined;
-                        logger.error('AI Error:', { message: errorMessage, stack: errorStack });
+                        logger.error('AI Error:', { requestId, shopId: shop.id, customerId: customer.id, message: errorMessage, stack: errorStack });
 
                         // Generate fallback response based on intent
                         aiResponse = generateFallbackResponse(intent, shop.name, shop.properties);
@@ -287,20 +299,31 @@ export async function POST(request: NextRequest) {
                     // Increment message count
                     await incrementMessageCount(customer.id);
 
-                    // Send the AI response via Messenger API (works for both platforms)
-                    if (aiQuickReplies && aiQuickReplies.length > 0) {
-                        await sendMessageWithQuickReplies({
-                            recipientId: senderId,
-                            message: aiResponse,
-                            pageAccessToken: accessToken,
-                            quickReplies: aiQuickReplies.map(qr => ({
-                                content_type: 'text' as const,
-                                title: qr.title,
-                                payload: qr.payload,
-                            })),
-                        });
-                    } else {
-                        await sendTextMessage({
+                    // Send the AI response via Messenger API (works for both platforms).
+                    // Илгээлт (3 удаа retry хийсний дараа ч) бүрэн унавал хариу
+                    // алдагдахаас сэргийлж дараалалд оруулж, cron дахин оролдоно.
+                    try {
+                        if (aiQuickReplies && aiQuickReplies.length > 0) {
+                            await sendMessageWithQuickReplies({
+                                recipientId: senderId,
+                                message: aiResponse,
+                                pageAccessToken: accessToken,
+                                quickReplies: aiQuickReplies.map(qr => ({
+                                    content_type: 'text' as const,
+                                    title: qr.title,
+                                    payload: qr.payload,
+                                })),
+                            });
+                        } else {
+                            await sendTextMessage({
+                                recipientId: senderId,
+                                message: aiResponse,
+                                pageAccessToken: accessToken,
+                            });
+                        }
+                    } catch (sendError) {
+                        logger.error(`[${shop.name}] Send failed, queueing for retry`, { requestId, error: sendError instanceof Error ? sendError.message : String(sendError) });
+                        await queueWebhookJob('notification', {
                             recipientId: senderId,
                             message: aiResponse,
                             pageAccessToken: accessToken,

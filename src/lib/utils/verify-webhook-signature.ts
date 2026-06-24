@@ -21,14 +21,17 @@ export function verifyWebhookSignature(
         return false;
     }
 
-    if (!appSecret) {
+    // .trim() — Vercel env-д whitespace орвол signature таарахгүй болж бүх webhook
+    // 403 болдог тул заавал цэвэрлэнэ.
+    const secret = appSecret?.trim();
+    if (!secret) {
         console.error('[Webhook] FACEBOOK_APP_SECRET not configured');
         return false;
     }
 
     // Signature format: "sha256=<hash>"
     const expectedSignature = 'sha256=' + crypto
-        .createHmac('sha256', appSecret)
+        .createHmac('sha256', secret)
         .update(payload)
         .digest('hex');
 

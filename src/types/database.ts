@@ -1,8 +1,16 @@
 export interface Shop {
     id: string;
     name: string;
+    user_id?: string | null;
+    setup_completed?: boolean | null;
     facebook_page_id: string | null;
     facebook_page_name?: string | null;
+    facebook_page_username?: string | null;
+    facebook_page_access_token?: string | null;
+    facebook_ad_account_id?: string | null;
+    facebook_token_expires_at?: string | null;
+    facebook_user_access_token?: string | null;
+    facebook_user_token_expires_at?: string | null;
     owner_name: string | null;
     phone: string | null;
     created_at: string;
@@ -15,6 +23,7 @@ export interface Shop {
     instagram_business_account_id?: string | null;
     instagram_access_token?: string | null;
     instagram_username?: string | null;
+    instagram_token_expires_at?: string | null;
 }
 
 export interface Customer {

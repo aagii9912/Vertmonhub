@@ -57,6 +57,9 @@ export interface ChatContext {
         sales_intelligence?: boolean;
         ai_memory?: boolean;
         max_tokens?: number;
+        // Энэ план дээр идэвхтэй tool-уудын нэр. Өгөгдвөл prompt-ын tool
+        // жагсаалтыг зөвхөн эдгээрээр динамикаар бүтээнэ (Gemini-д тогтвортой дохио)
+        enabledTools?: string[];
     };
 }
 

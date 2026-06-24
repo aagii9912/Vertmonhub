@@ -8,7 +8,7 @@ import { sendPushNotification } from '@/lib/notifications';
 // Өдөр бүр шалгах:
 //  1. payment_schedules дээр хугацаа дууссан → overdue болгох
 //  2. property_contracts дээр overdue_days шинэчлэх
-//  3. Дэлгүүр бүрд push notification илгээх
+//  3. Төсөл бүрд push notification илгээх
 // ============================================
 export async function POST(request: Request) {
     try {

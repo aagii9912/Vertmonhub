@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth/auth';
+import { getAccessibleShopIds } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { decryptToken } from '@/lib/crypto/tokens';
 
 /**
  * GET /api/dashboard/posts
@@ -17,7 +19,13 @@ export async function GET(request: NextRequest) {
 
         const shopId = request.headers.get('x-shop-id');
         if (!shopId) {
-            return NextResponse.json({ error: 'Shop ID required' }, { status: 400 });
+            return NextResponse.json({ error: 'Төслийн ID шаардлагатай' }, { status: 400 });
+        }
+
+        // Тухайн хэрэглэгч энэ төсөлд (shop) хандах эрхтэй эсэхийг баталгаажуулна
+        const accessibleIds = await getAccessibleShopIds(userId);
+        if (!accessibleIds.has(shopId)) {
+            return NextResponse.json({ error: 'Энэ төсөлд хандах эрхгүй' }, { status: 403 });
         }
 
         const supabase = supabaseAdmin();
@@ -28,7 +36,7 @@ export async function GET(request: NextRequest) {
             .single();
 
         if (!shop) {
-            return NextResponse.json({ error: 'Shop not found' }, { status: 404 });
+            return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 404 });
         }
 
         const posts: Array<{
@@ -40,11 +48,14 @@ export async function GET(request: NextRequest) {
             type: string;
         }> = [];
 
+        // Токенуудыг decrypt (encrypt-at-rest)
+        const fbToken = decryptToken(shop.facebook_page_access_token);
+
         // 1. Fetch Facebook Page posts
-        if (shop.facebook_page_id && shop.facebook_page_access_token) {
+        if (shop.facebook_page_id && fbToken) {
             try {
                 const fbRes = await fetch(
-                    `https://graph.facebook.com/v21.0/${shop.facebook_page_id}/published_posts?fields=id,message,full_picture,created_time,is_published,type&limit=25&access_token=${shop.facebook_page_access_token}`
+                    `https://graph.facebook.com/v21.0/${shop.facebook_page_id}/published_posts?fields=id,message,full_picture,created_time,is_published,type&limit=25&access_token=${fbToken}`
                 );
 
                 if (fbRes.ok) {
@@ -66,7 +77,7 @@ export async function GET(request: NextRequest) {
         }
 
         // 2. Fetch Instagram media
-        const igToken = shop.instagram_access_token || shop.facebook_page_access_token;
+        const igToken = decryptToken(shop.instagram_access_token) || fbToken;
         if (shop.instagram_business_account_id && igToken) {
             try {
                 const igRes = await fetch(

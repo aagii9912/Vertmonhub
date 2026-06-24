@@ -7,6 +7,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { extractPhoneFromText } from '@/lib/utils/phone';
 import { sendImage, sendImageGallery, appsecretProof } from '@/lib/facebook/messenger';
+import { decryptToken } from '@/lib/crypto/tokens';
 import { generateCommentReply } from '@/lib/ai/comment-detector';
 import type { AIFAQ, AIQuickReply, AISlogan, NotifySettings, ChatMessage as AIChatMessage } from '@/types/ai';
 import { IntentResult } from '@/lib/ai/intent-detector';
@@ -92,7 +93,7 @@ export async function getShopByPageId(pageId: string): Promise<ShopWithProducts 
         ai_emotion: data.ai_emotion,
         facebook_page_id: data.facebook_page_id,
         facebook_page_username: data.facebook_page_username,
-        facebook_page_access_token: data.facebook_page_access_token,
+        facebook_page_access_token: decryptToken(data.facebook_page_access_token),
         properties: data.properties || [],
         notify_on_lead: data.notify_on_lead,
         notify_on_viewing: data.notify_on_viewing,
@@ -102,7 +103,7 @@ export async function getShopByPageId(pageId: string): Promise<ShopWithProducts 
         custom_knowledge: data.custom_knowledge,
         // Instagram fields
         instagram_business_account_id: data.instagram_business_account_id,
-        instagram_access_token: data.instagram_access_token,
+        instagram_access_token: decryptToken(data.instagram_access_token),
         instagram_username: data.instagram_username,
     };
 }
@@ -130,9 +131,9 @@ export async function getShopByInstagramId(instagramId: string): Promise<ShopWit
         ai_emotion: data.ai_emotion,
         facebook_page_id: data.facebook_page_id,
         facebook_page_username: data.facebook_page_username,
-        facebook_page_access_token: data.facebook_page_access_token,
+        facebook_page_access_token: decryptToken(data.facebook_page_access_token),
         instagram_business_account_id: data.instagram_business_account_id,
-        instagram_access_token: data.instagram_access_token,
+        instagram_access_token: decryptToken(data.instagram_access_token),
         instagram_username: data.instagram_username,
         properties: data.properties || [],
         notify_on_lead: data.notify_on_lead,

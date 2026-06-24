@@ -70,7 +70,7 @@ export const MODULE_LABELS: Record<string, { en: string; mn: string }> = {
     'reports-leads': { en: 'Leads Report', mn: 'Лийд тайлан' },
     'marketing-roi': { en: 'Marketing ROI', mn: 'Маркетинг ROI' },
     'surveys': { en: 'Surveys', mn: 'Судалгаа' },
-    'ai-assistant': { en: 'AI Assistant', mn: 'AI Туслах' },
+    'ai-assistant': { en: 'AI Orchestrator', mn: 'AI Orchestrator' },
     'ai-settings': { en: 'AI Settings', mn: 'AI Тохируулга' },
     'settings': { en: 'Settings', mn: 'Тохиргоо' },
 };
@@ -173,8 +173,8 @@ export async function fetchRolePermissions(roleName: string, supabaseClient?: an
         let supabase = supabaseClient;
 
         if (!supabase) {
-            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-            const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+            const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
 
             if (!supabaseUrl || !supabaseKey) {
                 return getStaticPermissions(roleName);
@@ -183,12 +183,13 @@ export async function fetchRolePermissions(roleName: string, supabaseClient?: an
             supabase = createClient(supabaseUrl, supabaseKey);
         }
 
-        // Fetch role details + permissions in one go
+        // Fetch role details + permissions in one go.
+        // maybeSingle() — мөр олдохгүй бол 406 биш, null буцаана (static fallback руу шилжинэ).
         const { data: role, error: roleError } = await supabase
             .from('roles')
             .select('*, role_permissions(module)')
             .eq('name', roleName)
-            .single();
+            .maybeSingle();
 
         if (roleError || !role) {
             return getStaticPermissions(roleName);

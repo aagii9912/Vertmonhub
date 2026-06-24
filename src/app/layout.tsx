@@ -67,11 +67,17 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="mn" data-theme="light" suppressHydrationWarning>
+    <html lang="mn" suppressHydrationWarning>
       <body
         suppressHydrationWarning
         className={`${ibmPlexSans.variable} ${fraunces.variable} ${ibmPlexMono.variable} antialiased`}
       >
+        {/* Theme-ийг будахаас өмнө тавьж flash-аас сэргийлнэ (хадгалсан сонголт эсвэл OS) */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem('vh-theme');if(t!=='light'&&t!=='dark'){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`,
+          }}
+        />
         <AnalyticsScripts />
         <MarketingAttribution />
         <ServiceWorkerRegistration />

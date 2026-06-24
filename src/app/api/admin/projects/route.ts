@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
         }
 
         if (!targetShopId) {
-            return NextResponse.json({ error: 'Shop олдсонгүй' }, { status: 400 });
+            return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 400 });
         }
 
         const { data: project, error } = await supabase

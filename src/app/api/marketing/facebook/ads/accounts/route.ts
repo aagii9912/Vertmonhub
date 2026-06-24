@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserShop, supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { getAdAccounts } from '@/lib/facebook/marketing-api';
+import { decryptToken } from '@/lib/crypto/tokens';
 import { logger } from '@/lib/utils/logger';
 
 /**
@@ -17,19 +18,21 @@ export async function GET(_req: NextRequest) {
         const admin = supabaseAdmin();
         const { data: shop } = await admin
             .from('shops')
-            .select('facebook_page_access_token, facebook_ad_account_id')
+            .select('facebook_user_access_token, facebook_page_access_token, facebook_ad_account_id')
             .eq('id', authShop.id)
             .single();
 
-        if (!shop?.facebook_page_access_token) {
+        // Ads API нь ads_read эрх шаардана — энэ нь USER token дээр байдаг (Page token-д БИШ).
+        const adsToken = decryptToken(shop?.facebook_user_access_token) || decryptToken(shop?.facebook_page_access_token) || '';
+        if (!adsToken) {
             return NextResponse.json({ error: 'Facebook account холбогдоогүй' }, { status: 400 });
         }
 
-        const result = await getAdAccounts(shop.facebook_page_access_token);
+        const result = await getAdAccounts(adsToken);
 
         return NextResponse.json({
             accounts: result.data || [],
-            selected_id: shop.facebook_ad_account_id || null,
+            selected_id: shop?.facebook_ad_account_id || null,
         });
     } catch (error: any) {
         logger.error('[FB Ads Accounts] error:', { error });
