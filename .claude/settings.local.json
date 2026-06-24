@@ -17,7 +17,9 @@
       "Bash(npm install:*)",
       "Bash(npx -y supabase@2.91.1 login --help)",
       "Bash(./node_modules/.bin/supabase --version)",
-      "Bash(SUPABASE_DB_PASSWORD='Vertmon123!' ./node_modules/.bin/supabase link --project-ref gwwzfrffwiiniqwqkgnq)"
+      "Bash(SUPABASE_DB_PASSWORD='Vertmon123!' ./node_modules/.bin/supabase link --project-ref gwwzfrffwiiniqwqkgnq)",
+      "Bash(xargs ls -la)",
+      "Bash(python3)"
     ]
   }
 }

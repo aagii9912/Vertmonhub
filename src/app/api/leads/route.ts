@@ -77,6 +77,7 @@ export async function POST(request: NextRequest) {
             name, phone, email, company, message, website, turnstileToken,
             fbclid, utm_source, utm_medium, utm_campaign, utm_content, utm_term,
             facebook_campaign_id, facebook_adset_id, facebook_ad_id,
+            preferred_type, preferred_rooms, financing_intent, interested_phase, advance_percent, source,
         } = validation.data;
 
         if (website && website.length > 0) {
@@ -122,9 +123,17 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
 Яаралтай байвал ${phone} руу залгаарай!`;
         }
 
-        const inferredSource = facebook_campaign_id || utm_source === 'facebook' || fbclid
-            ? 'facebook_ads'
-            : utm_source || 'website';
+        const inferredSource = source
+            || (facebook_campaign_id || utm_source === 'facebook' || fbclid
+                ? 'facebook_ads'
+                : utm_source || 'website');
+
+        // Анкетын нэмэлт талбаруудыг (ээлж, урьдчилгаа %) тэмдэглэлд нэгтгэнэ
+        const notesComposed = [
+            message || null,
+            interested_phase ? `Сонирхсон ээлж: ${interested_phase}` : null,
+            advance_percent != null ? `Урьдчилгаа: ${advance_percent}%` : null,
+        ].filter(Boolean).join('\n') || null;
 
         // Public form — эзэн shop-ийг тодорхойлох (одоогоор нэг tenant: хамгийн эртний shop)
         const { data: primaryShop, error: shopError } = await supabase
@@ -155,9 +164,12 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
                 customer_name: name,
                 customer_phone: phone,
                 customer_email: email || null,
-                notes: message || null,
+                notes: notesComposed,
                 internal_notes: internalNotes,
                 source: inferredSource,
+                preferred_type: preferred_type || null,
+                preferred_rooms: preferred_rooms ?? null,
+                financing_intent: financing_intent || null,
                 fbclid: fbclid || null,
                 utm_source: utm_source || null,
                 utm_medium: utm_medium || null,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Shield, ChevronDown, Search, UserPlus, Check, X, Loader2, Eye, EyeOff, AlertCircle, Trash2 } from 'lucide-react';
+import { Shield, ChevronDown, Search, UserPlus, Check, X, Loader2, Eye, EyeOff, AlertCircle, Trash2, Link as LinkIcon, Copy } from 'lucide-react';
 
 interface UserWithRole {
     id: string;
@@ -53,6 +53,14 @@ export default function AdminUsersPage() {
         role: 'viewer',
         shop_id: '',
     });
+
+    // Invite link modal
+    const [showInvite, setShowInvite] = useState(false);
+    const [inviting, setInviting] = useState(false);
+    const [inviteForm, setInviteForm] = useState({ email: '', full_name: '', role: 'sales_manager' });
+    const [inviteError, setInviteError] = useState<string | null>(null);
+    const [inviteResult, setInviteResult] = useState<{ link: string; mode: string } | null>(null);
+    const [copied, setCopied] = useState(false);
 
     useEffect(() => {
         Promise.all([fetchUsers(), fetchRoles(), fetchShops()]).finally(() => setLoading(false));
@@ -154,6 +162,45 @@ export default function AdminUsersPage() {
         }
     }
 
+    async function sendInvite() {
+        if (!inviteForm.email) {
+            setInviteError('Имэйл оруулна уу');
+            return;
+        }
+        setInviting(true);
+        setInviteError(null);
+        setInviteResult(null);
+        try {
+            const res = await fetch('/api/admin/users/invite', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: inviteForm.email, full_name: inviteForm.full_name, role: inviteForm.role }),
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                setInviteResult({ link: data.action_link || '', mode: data.mode });
+                fetchUsers();
+            } else {
+                setInviteError(data.error || 'Холбоос үүсгэхэд алдаа гарлаа');
+            }
+        } catch {
+            setInviteError('Сүлжээний алдаа');
+        } finally {
+            setInviting(false);
+        }
+    }
+
+    async function copyInviteLink() {
+        if (!inviteResult?.link) return;
+        try {
+            await navigator.clipboard.writeText(inviteResult.link);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch {
+            // clipboard блоклогдсон бол input-ыг сонгох
+        }
+    }
+
     async function deleteUser(user: UserWithRole) {
         setDeleting(true);
         try {
@@ -204,6 +251,13 @@ export default function AdminUsersPage() {
                             className="pl-10 pr-4 py-2 border border-border-strong rounded-lg text-sm w-64 focus:ring-2 focus:ring-brand focus:border-brand"
                         />
                     </div>
+                    <button
+                        onClick={() => { setShowInvite(true); setInviteError(null); setInviteResult(null); }}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-surface-2 text-foreground border border-border rounded-xl font-medium hover:bg-surface-3 transition-colors"
+                    >
+                        <LinkIcon className="w-4 h-4" />
+                        Урих холбоос
+                    </button>
                     <button
                         onClick={() => { setShowCreate(true); setCreateError(null); }}
                         className="flex items-center gap-2 px-4 py-2.5 bg-brand text-white rounded-xl font-medium hover:bg-brand-strong transition-colors"
@@ -326,6 +380,114 @@ export default function AdminUsersPage() {
                     </tbody>
                 </table>
             </div>
+
+            {/* Invite Link Modal */}
+            {showInvite && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-surface rounded-2xl w-full max-w-md shadow-2xl">
+                        <div className="flex items-center justify-between p-6 border-b border-border/60">
+                            <div className="flex items-center gap-2">
+                                <LinkIcon className="w-5 h-5 text-brand-strong" />
+                                <h2 className="text-lg font-bold text-foreground">Урих / нэвтрэх холбоос</h2>
+                            </div>
+                            <button onClick={() => setShowInvite(false)} className="p-2 hover:bg-surface-2 rounded-xl">
+                                <X className="w-5 h-5 text-muted-foreground" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            {inviteError && (
+                                <div className="p-3 bg-status-danger-soft border border-status-danger/30 rounded-lg text-status-danger text-sm flex items-center gap-2">
+                                    <AlertCircle className="w-4 h-4 flex-shrink-0" />{inviteError}
+                                </div>
+                            )}
+
+                            {!inviteResult ? (
+                                <>
+                                    <p className="text-sm text-muted-foreground">
+                                        Имэйл оруулахад нэг удаагийн холбоос үүснэ. Холбоосыг хуулж ажилтанд илгээнэ үү — нэвтрэхэд нууц үг шаардахгүй.
+                                    </p>
+                                    <div>
+                                        <label className="block text-sm font-medium text-foreground mb-1">Нэр</label>
+                                        <input
+                                            type="text"
+                                            value={inviteForm.full_name}
+                                            onChange={e => setInviteForm(p => ({ ...p, full_name: e.target.value }))}
+                                            className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-brand focus:border-brand"
+                                            placeholder="Борлуулалтын менежер"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-foreground mb-1">Имэйл <span className="text-status-danger">*</span></label>
+                                        <input
+                                            type="email"
+                                            value={inviteForm.email}
+                                            onChange={e => setInviteForm(p => ({ ...p, email: e.target.value }))}
+                                            className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-brand focus:border-brand"
+                                            placeholder="manager@example.com"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-foreground mb-1">Дүр</label>
+                                        <select
+                                            value={inviteForm.role}
+                                            onChange={e => setInviteForm(p => ({ ...p, role: e.target.value }))}
+                                            className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface focus:ring-2 focus:ring-brand focus:border-brand"
+                                        >
+                                            {roles.map(r => (
+                                                <option key={r.value} value={r.value}>{r.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="space-y-3">
+                                    <div className="p-3 bg-status-success-soft border border-status-success/30 rounded-lg text-status-success text-sm flex items-center gap-2">
+                                        <Check className="w-4 h-4 flex-shrink-0" />
+                                        {inviteResult.mode === 'invite' ? 'Урилгын холбоос үүслээ' : 'Нэвтрэх холбоос үүслээ (бүртгэлтэй)'}
+                                    </div>
+                                    <label className="block text-sm font-medium text-foreground">Холбоос (ажилтанд илгээнэ үү)</label>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            readOnly
+                                            value={inviteResult.link}
+                                            onFocus={(e) => e.currentTarget.select()}
+                                            className="flex-1 px-3 py-2.5 border border-border-strong rounded-lg text-xs bg-surface-2 text-foreground"
+                                        />
+                                        <button
+                                            onClick={copyInviteLink}
+                                            className="flex items-center gap-1.5 px-3 py-2.5 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand-strong"
+                                        >
+                                            {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                                            {copied ? 'Хуулсан' : 'Хуулах'}
+                                        </button>
+                                    </div>
+                                    <p className="text-xs text-muted-foreground/70">Энэ холбоос нэг удаа, хязгаарлагдмал хугацаанд хүчинтэй.</p>
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex justify-end gap-3 p-6 border-t border-border/60">
+                            <button
+                                onClick={() => setShowInvite(false)}
+                                className="px-4 py-2.5 text-sm text-foreground bg-surface-2 rounded-lg hover:bg-surface-3"
+                            >
+                                {inviteResult ? 'Хаах' : 'Цуцлах'}
+                            </button>
+                            {!inviteResult && (
+                                <button
+                                    onClick={sendInvite}
+                                    disabled={inviting || !inviteForm.email}
+                                    className="flex items-center gap-2 px-5 py-2.5 text-sm bg-brand text-white rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                                >
+                                    {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <LinkIcon className="w-4 h-4" />}
+                                    Холбоос үүсгэх
+                                </button>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Create User Modal */}
             {showCreate && (

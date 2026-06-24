@@ -23,6 +23,7 @@ export default function NewLeadPage() {
         budget_min: '',
         budget_max: '',
         preferred_type: 'apartment',
+        financing_intent: '',
         notes: '',
     });
 
@@ -47,6 +48,7 @@ export default function NewLeadPage() {
             customer_email: formData.email.trim() || null,
             source: formData.source,
             preferred_type: formData.preferred_type,
+            financing_intent: formData.financing_intent || null,
             budget_min: formData.budget_min ? Number(formData.budget_min) : null,
             budget_max: formData.budget_max ? Number(formData.budget_max) : null,
             notes: formData.notes.trim() || null,
@@ -170,6 +172,23 @@ export default function NewLeadPage() {
                                     <option value="office">Оффис</option>
                                     <option value="commercial">Худалдааны</option>
                                     <option value="land">Газар</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label htmlFor="financing_intent" className="block text-sm font-medium text-foreground mb-1">Санхүүжилтийн суваг</label>
+                                <select
+                                    id="financing_intent"
+                                    name="financing_intent"
+                                    value={formData.financing_intent}
+                                    onChange={handleChange}
+                                    className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand"
+                                >
+                                    <option value="">— Сонгох —</option>
+                                    <option value="bank_loan">Банкны зээл</option>
+                                    <option value="cash">Бэлэн төлөлт</option>
+                                    <option value="mortgage">Ипотек</option>
+                                    <option value="leasing">Хувь лизинг</option>
+                                    <option value="barter">Бартер</option>
                                 </select>
                             </div>
                             <div className="grid grid-cols-2 gap-4">

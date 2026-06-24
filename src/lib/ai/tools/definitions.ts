@@ -91,6 +91,11 @@ export const GEMINI_TOOLS: any[] = [
                 },
                 preferred_district: { type: SchemaType.STRING, description: 'Сонирхсон байршил' },
                 preferred_rooms: { type: SchemaType.NUMBER, description: 'Хүссэн өрөөний тоо' },
+                financing_intent: {
+                    type: SchemaType.STRING,
+                    enum: ['bank_loan', 'cash', 'mortgage', 'leasing', 'barter', 'other'],
+                    description: 'Санхүүжилтийн суваг: банкны зээл / бэлэн / ипотек / лизинг / бартер'
+                },
                 notes: { type: SchemaType.STRING, description: 'Нэмэлт тэмдэглэл' }
             }
         }
@@ -246,6 +251,7 @@ export interface CreateLeadArgs {
     preferred_type?: 'apartment' | 'house' | 'office' | 'land' | 'commercial';
     preferred_district?: string;
     preferred_rooms?: number;
+    financing_intent?: 'bank_loan' | 'cash' | 'mortgage' | 'leasing' | 'barter' | 'other';
     notes?: string;
 }
 

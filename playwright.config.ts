@@ -17,12 +17,17 @@ export default defineConfig({
         baseURL: 'http://localhost:3001',
         trace: 'on-first-retry',
         screenshot: 'only-on-failure',
-        storageState: 'playwright/.auth/user.json',
     },
     projects: [
+        // Нэвтрэлтийг бэлдэх (E2E_EMAIL/E2E_PASSWORD байвал session хадгална)
+        { name: 'setup', testMatch: /auth\.setup\.ts/ },
         {
             name: 'chromium',
-            use: { ...devices['Desktop Chrome'] },
+            use: {
+                ...devices['Desktop Chrome'],
+                storageState: 'playwright/.auth/user.json',
+            },
+            dependencies: ['setup'],
         },
     ],
 });

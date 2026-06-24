@@ -3,57 +3,40 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-    LayoutDashboard,
-    Building2,
-    BarChart3,
-    Menu,
-    X,
-    Users,
-    Settings,
-    Bot,
-    FileText,
-    Eye,
-    TrendingUp,
-    Wallet,
-    MessageSquare,
-} from 'lucide-react';
+import { Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccessModule, canAccessModuleDynamic } from '@/lib/rbac';
-
-const primaryNavItems = [
-    { name: 'Нүүр', href: '/dashboard', icon: LayoutDashboard, module: 'dashboard' },
-    { name: 'Үл хөдлөх', href: '/dashboard/properties', icon: Building2, module: 'properties' },
-    { name: 'Тайлан', href: '/dashboard/reports', icon: BarChart3, module: 'reports' },
-];
-
-const secondaryNavItems = [
-    { name: 'Лийд', href: '/dashboard/leads', icon: Users, module: 'leads' },
-    { name: 'Үзлэг', href: '/dashboard/viewings', icon: Eye, module: 'viewings' },
-    { name: 'Гэрээ', href: '/dashboard/contracts', icon: FileText, module: 'contracts' },
-    { name: 'Санхүү', href: '/dashboard/finance', icon: Wallet, module: 'finance' },
-    { name: 'Мессеж', href: '/dashboard/inbox', icon: MessageSquare, module: 'inbox' },
-    { name: 'Маркетинг', href: '/dashboard/marketing-roi', icon: TrendingUp, module: 'marketing-roi' },
-    { name: 'AI Тохиргоо', href: '/dashboard/ai-settings', icon: Bot, module: 'ai-settings' },
-    { name: 'Тохиргоо', href: '/dashboard/settings', icon: Settings, module: 'settings' },
-];
+import { BOTTOM_ITEMS, type NavItem } from '@/lib/navigation/workspaces';
+import { useActiveWorkspace } from '@/lib/navigation/useActiveWorkspace';
 
 export function MobileNav() {
     const pathname = usePathname();
     const { user } = useAuth();
     const [showMore, setShowMore] = useState(false);
+    const active = useActiveWorkspace();
 
     const canSee = (module: string): boolean => {
+        if (module === '') return true;
         if (user?.permissions) return canAccessModuleDynamic(user.permissions, module);
         return canAccessModule(user?.role || 'viewer', module);
     };
 
-    const primaryItems = primaryNavItems.filter((i) => canSee(i.module));
-    const secondaryItems = secondaryNavItems.filter((i) => canSee(i.module));
+    // Идэвхтэй workspace-ийн үндсэн 3 цэс
+    const primaryItems = active.mobilePrimary.filter((i) => canSee(i.module));
+    const primaryHrefs = new Set(active.mobilePrimary.map((i) => i.href));
+
+    // "Бусад" — тухайн workspace-ийн үлдсэн цэс + нийтлэг доод цэс
+    const sectionItems = active.sections.flatMap((s) => s.items);
+    const secondaryItems: NavItem[] = [
+        ...sectionItems.filter((i) => !primaryHrefs.has(i.href) && canSee(i.module)),
+        ...BOTTOM_ITEMS.filter((i) => canSee(i.module)),
+    ];
 
     const isActiveItem = (href: string) => {
-        return pathname === href || (href !== '/dashboard' && pathname.startsWith(href));
+        if (pathname === href) return true;
+        if (href === active.home) return false; // workspace нүүр зөвхөн яг таарвал
+        return !!pathname && pathname.startsWith(href + '/');
     };
 
     const isMoreActive = secondaryItems.some((item) => isActiveItem(item.href));
@@ -80,7 +63,7 @@ export function MobileNav() {
                             <div className="grid grid-cols-3 gap-2 p-3">
                                 {secondaryItems.map((item) => (
                                     <Link
-                                        key={item.name}
+                                        key={item.href}
                                         href={item.href}
                                         onClick={() => setShowMore(false)}
                                         className={cn(
@@ -100,22 +83,22 @@ export function MobileNav() {
                 </div>
             )}
 
-            {/* Bottom Navigation */}
+            {/* Доод навигаци */}
             <nav className="fixed bottom-0 left-0 right-0 z-50 bg-surface border-t border-border pb-safe block md:hidden">
                 <ul className="flex justify-around items-stretch h-[72px]">
                     {primaryItems.map((item) => {
-                        const isActive = isActiveItem(item.href);
+                        const itemActive = isActiveItem(item.href);
                         return (
-                            <li key={item.name} className="flex-1">
+                            <li key={item.href} className="flex-1">
                                 <Link
                                     href={item.href}
                                     className={cn(
                                         'flex flex-col items-center justify-center w-full h-full gap-1.5 transition-colors active:scale-95',
-                                        isActive ? 'text-brand' : 'text-muted-foreground',
+                                        itemActive ? 'text-brand' : 'text-muted-foreground',
                                     )}
                                 >
-                                    <div className={cn('p-2 rounded-md transition-colors', isActive && 'bg-brand-soft')}>
-                                        <item.icon className="w-6 h-6" strokeWidth={isActive ? 2.25 : 1.75} />
+                                    <div className={cn('p-2 rounded-md transition-colors', itemActive && 'bg-brand-soft')}>
+                                        <item.icon className="w-6 h-6" strokeWidth={itemActive ? 2.25 : 1.75} />
                                     </div>
                                     <span className="text-xs font-medium">{item.name}</span>
                                 </Link>

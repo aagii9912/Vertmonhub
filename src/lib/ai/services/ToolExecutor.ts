@@ -331,6 +331,10 @@ export async function executeScheduleViewing(
         leadId = newLead.id;
     }
 
+    // Уулзалтын төрөл: өмнө lead байсан бол давтан, эс бөгөөс шинэ харилцагч.
+    // (existing_buyer-ийг ирээдүйд гэрээтэй холбож тодорхойлно.)
+    const meetingType = existingLead ? 'repeat_customer' : 'new_customer';
+
     // Create viewing record
     const { error: viewingError } = await supabase
         .from('property_viewings')
@@ -339,7 +343,8 @@ export async function executeScheduleViewing(
             lead_id: leadId,
             property_id: propertyId,
             scheduled_at: scheduledAt.toISOString(),
-            status: 'scheduled'
+            status: 'scheduled',
+            meeting_type: meetingType
         });
 
     if (viewingError) {
@@ -409,6 +414,7 @@ export async function executeCreateLead(
         preferred_type: args.preferred_type || null,
         preferred_district: args.preferred_district || null,
         preferred_rooms: args.preferred_rooms || null,
+        financing_intent: args.financing_intent || null,
         notes: args.notes || null,
         source: 'messenger',
         status: 'new' as const

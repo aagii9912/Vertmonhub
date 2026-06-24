@@ -7,6 +7,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { NotificationButton } from '@/components/NotificationButton';
 import { ShopSwitcher } from '@/components/dashboard/ShopSwitcher';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
+import { WorkspaceSwitcher } from '@/components/dashboard/WorkspaceSwitcher';
+import { getNavTitle } from '@/lib/navigation/workspaces';
 
 export function Header() {
     const router = useRouter();
@@ -33,59 +35,50 @@ export function Header() {
     const firstName = fullName.split(' ')[0];
     const displayEmail = user?.email || '';
 
-    const getHeaderTitle = () => {
+    const renderTitle = () => {
         const path = pathname || '';
         if (path === '/dashboard' || path === '/dashboard/') {
             return (
-                <h1 className="heading-section text-base md:text-lg text-foreground truncate">
-                    <span className="hidden sm:inline">Сайн байна уу, {fullName}!</span>
-                    <span className="sm:hidden">Сайн уу, {firstName}!</span>
-                </h1>
+                <>
+                    <h1 className="heading-display text-base md:text-lg text-foreground truncate">
+                        Сайн байна уу, {fullName}!
+                    </h1>
+                    {shop && (
+                        <p className="text-xs text-muted-foreground truncate">{shop.name}</p>
+                    )}
+                </>
             );
         }
-
-        let title = 'Хянах самбар';
-        if (path.includes('/pipeline')) title = 'Лийдийн шугам';
-        else if (path.includes('/leads')) title = 'Лийд';
-        else if (path.includes('/properties')) title = 'Үл хөдлөх';
-        else if (path.includes('/customer-service')) title = 'Үйлчилгээ';
-        else if (path.includes('/customers')) title = 'Харилцагч';
-        else if (path.includes('/reports')) title = 'Тайлан';
-        else if (path.includes('/settings')) title = 'Тохиргоо';
-        else if (path.includes('/inbox')) title = 'Мессеж';
-        else if (path.includes('/viewings')) title = 'Үзлэг';
-        else if (path.includes('/contracts')) title = 'Гэрээ';
-        else if (path.includes('/finance')) title = 'Санхүү';
-        else if (path.includes('/procurement')) title = 'Худалдан авалт';
-        else if (path.includes('/marketing-roi')) title = 'Маркетинг ROI';
-        else if (path.includes('/ai-settings')) title = 'AI Тохиргоо';
-        else if (path.includes('/ai-assistant')) title = 'AI Туслах';
-        else if (path.includes('/surveys')) title = 'Судалгаа';
-
-        return <h1 className="heading-section text-base md:text-lg text-foreground">{title}</h1>;
+        return (
+            <h1 className="heading-section text-base md:text-lg text-foreground truncate">
+                {getNavTitle(path)}
+            </h1>
+        );
     };
 
     return (
-        <header className="h-14 md:h-16 bg-surface border-b border-border flex items-center justify-between px-4 md:px-6 sticky top-0 z-40">
-            {/* Left: Title or Greeting */}
-            <div className="flex-1 min-w-0">
-                {getHeaderTitle()}
-                {shop && (pathname === '/dashboard' || pathname === '/dashboard/') && (
-                    <p className="text-xs text-muted-foreground truncate hidden sm:block">
-                        {shop.name}
-                    </p>
-                )}
+        <header className="h-14 md:h-16 bg-surface border-b border-border sticky top-0 z-40 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 md:px-6">
+            {/* Зүүн: Гарчиг / мэндчилгээ (жижиг дэлгэцэд төв switcher-т зай гаргахаар нуугдана) */}
+            <div className="min-w-0 justify-self-start hidden sm:block">
+                {renderTitle()}
             </div>
 
-            {/* Right: Actions */}
-            <div className="flex items-center gap-2 md:gap-3">
+            {/* Төв: Workspace switcher */}
+            <div className="justify-self-center">
+                <WorkspaceSwitcher />
+            </div>
+
+            {/* Баруун: Үйлдлүүд */}
+            <div className="justify-self-end flex items-center gap-2 md:gap-3">
                 {shops.length > 1 && <ShopSwitcher />}
 
-                <LanguageSwitcher />
+                <div className="hidden sm:block">
+                    <LanguageSwitcher />
+                </div>
 
                 <NotificationButton />
 
-                {/* Profile Dropdown */}
+                {/* Профайл цэс */}
                 <div className="relative">
                     <button
                         onClick={() => setShowDropdown(!showDropdown)}
@@ -100,7 +93,7 @@ export function Header() {
                         <ChevronDown className="w-4 h-4 text-muted-foreground/60 hidden md:block" />
                     </button>
 
-                    {/* Dropdown Menu */}
+                    {/* Унждаг цэс */}
                     {showDropdown && (
                         <>
                             <div

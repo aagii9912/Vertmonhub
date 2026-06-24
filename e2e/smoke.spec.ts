@@ -1,6 +1,6 @@
 /**
- * Syncly E2E Smoke Tests
- * 
+ * Vertmon Hub E2E Smoke Tests
+ *
  * Core user flows:
  * 1. Landing page loads
  * 2. Login page accessible
@@ -14,15 +14,15 @@ test.describe('Landing Page', () => {
         await page.goto('/');
 
         // Page should have a title
-        await expect(page).toHaveTitle(/Syncly/i);
+        await expect(page).toHaveTitle(/Vertmon/i);
     });
 
     test('has visible CTA button', async ({ page }) => {
         await page.goto('/');
 
-        // Should have a call-to-action
+        // Should have a call-to-action (landing has several; assert at least one)
         const cta = page.getByRole('link', { name: /эхлэх|бүртгүүлэх|нэвтрэх|start/i });
-        await expect(cta).toBeVisible();
+        await expect(cta.first()).toBeVisible();
     });
 
     test('has proper meta description', async ({ page }) => {
