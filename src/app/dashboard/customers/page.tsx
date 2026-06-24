@@ -681,7 +681,10 @@ export default function CustomersPage() {
                     onChange={(e) => setSelectedTag(e.target.value || null)}
                 >
                     <option value="">Бүх Tag</option>
-                    {PREDEFINED_TAGS.map((tag) => (
+                    {Array.from(new Set([
+                        ...PREDEFINED_TAGS,
+                        ...customers.flatMap((c) => ((c as { tags?: string[] }).tags) || []),
+                    ])).sort().map((tag) => (
                         <option key={tag} value={tag}>
                             {tag}
                         </option>

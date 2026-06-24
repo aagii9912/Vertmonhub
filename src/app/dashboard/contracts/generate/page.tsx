@@ -1,9 +1,12 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { FileText, Download, Loader2, User, Building2, DollarSign, Calendar } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { FileText, Download, Loader2, User, Building2, DollarSign, Search, Check } from 'lucide-react';
+
+const SHOP_KEY = 'vertmonhub_active_shop_id';
 
 interface ContractData {
+    contractNumber: string;
     buyerName: string;
     buyerPhone: string;
     buyerEmail: string;
@@ -13,115 +16,202 @@ interface ContractData {
     propertySizeSqm: string;
     propertyFloor: string;
     propertyRooms: string;
+    pricePerSqm: string;
     price: string;
     downPayment: string;
-    paymentMethod: 'cash' | 'mortgage' | 'installment';
+    paymentMethod: 'cash' | 'mortgage' | 'installment' | 'leasing' | 'barter';
     contractDate: string;
 }
 
+// Мандала Гарден — худалдагч/төслийн тогтмол мэдээлэл
+const SELLER = {
+    company: 'МОНКОН Констракшн ХХК',
+    project: 'Мандала Гарден цогцолбор хороолол',
+    address: 'Улаанбаатар, Хан-Уул дүүрэг, 23-р хороо, Яармаг, Арцатын ам',
+};
+
 const empty: ContractData = {
-    buyerName: '', buyerPhone: '', buyerEmail: '', buyerRegister: '',
-    propertyName: '', propertyAddress: '', propertySizeSqm: '', propertyFloor: '', propertyRooms: '',
-    price: '', downPayment: '',
+    contractNumber: '', buyerName: '', buyerPhone: '', buyerEmail: '', buyerRegister: '',
+    propertyName: '', propertyAddress: SELLER.address, propertySizeSqm: '', propertyFloor: '', propertyRooms: '',
+    pricePerSqm: '', price: '', downPayment: '',
     paymentMethod: 'cash',
     contractDate: new Date().toISOString().split('T')[0],
 };
 
-export default function ContractsPage() {
+interface ContractRow {
+    id: string; unit_label?: string; block_name?: string; floor?: string; rooms?: number;
+    contracted_area?: number; price_per_sqm?: number; total_price?: number; prepayment_due?: number;
+    prepayment_condition?: string; bank_status?: string; contract_date?: string; order_date?: string;
+    customer_name?: string; customer_phone?: string; customer_registration?: string;
+}
+
+function shopHeaders(): HeadersInit {
+    return { 'x-shop-id': typeof window !== 'undefined' ? localStorage.getItem(SHOP_KEY) || '' : '' };
+}
+function money(n: string | number | undefined | null): string {
+    const v = Number(n);
+    return Number.isFinite(v) && v ? v.toLocaleString('mn-MN') + '₮' : '___';
+}
+function derivePaymentMethod(c: ContractRow): ContractData['paymentMethod'] {
+    const cond = (c.prepayment_condition || '').toLowerCase();
+    const bank = (c.bank_status || '').toLowerCase();
+    if (bank.includes('зээл') || cond.includes('ипотек')) return 'mortgage';
+    if (cond === '100%') return 'cash';
+    if (cond.includes('-')) return 'installment';
+    return 'cash';
+}
+
+export default function ContractGeneratePage() {
     const [data, setData] = useState<ContractData>(empty);
     const [generating, setGenerating] = useState(false);
+    const [search, setSearch] = useState('');
+    const [results, setResults] = useState<ContractRow[]>([]);
+    const [searching, setSearching] = useState(false);
+    const [loadedId, setLoadedId] = useState<string | null>(null);
     const previewRef = useRef<HTMLDivElement>(null);
 
-    const set = (key: keyof ContractData, val: string) =>
-        setData(prev => ({ ...prev, [key]: val }));
+    const set = (key: keyof ContractData, val: string) => setData(prev => ({ ...prev, [key]: val }));
+
+    // Гэрээ хайх (нэр / код / регистр)
+    useEffect(() => {
+        if (!search.trim()) { setResults([]); return; }
+        const t = setTimeout(async () => {
+            setSearching(true);
+            try {
+                const res = await fetch(`/api/dashboard/contracts?search=${encodeURIComponent(search.trim())}`, { headers: shopHeaders() });
+                const d = await res.json();
+                setResults((d.contracts || []).slice(0, 6));
+            } catch { /* ignore */ } finally { setSearching(false); }
+        }, 350);
+        return () => clearTimeout(t);
+    }, [search]);
+
+    function loadContract(c: ContractRow) {
+        setData({
+            contractNumber: c.unit_label || '',
+            buyerName: c.customer_name || '',
+            buyerPhone: c.customer_phone || '',
+            buyerEmail: '',
+            buyerRegister: c.customer_registration || '',
+            propertyName: c.unit_label || c.block_name || '',
+            propertyAddress: SELLER.address,
+            propertySizeSqm: c.contracted_area?.toString() || '',
+            propertyFloor: c.floor || '',
+            propertyRooms: c.rooms?.toString() || '',
+            pricePerSqm: c.price_per_sqm?.toString() || '',
+            price: c.total_price?.toString() || '',
+            downPayment: c.prepayment_due?.toString() || '',
+            paymentMethod: derivePaymentMethod(c),
+            contractDate: (c.contract_date || c.order_date || new Date().toISOString()).slice(0, 10),
+        });
+        setLoadedId(c.id);
+        setResults([]);
+        setSearch('');
+    }
 
     const paymentLabels: Record<string, string> = {
-        cash: 'Бэлэн мөнгө', mortgage: 'Банкны зээл', installment: 'Хэсэгчлэн',
+        cash: 'Бэлэн төлбөр', mortgage: 'Банкны зээл', installment: 'Хэсэгчилсэн төлбөр', leasing: 'Хувь лизинг', barter: 'Бартер',
     };
 
-    const generateContract = () => {
-        setGenerating(true);
-        setTimeout(() => setGenerating(false), 800);
-    };
+    const generateContract = () => { setGenerating(true); setTimeout(() => setGenerating(false), 600); };
 
     const printContract = () => {
         const content = previewRef.current;
         if (!content) return;
-        const win = window.open('', '', 'width=800,height=1000');
+        const win = window.open('', '', 'width=820,height=1100');
         if (!win) return;
         win.document.write(`
-            <html><head><title>Гэрээ - ${data.propertyName}</title>
-            <style>body{font-family:Arial,sans-serif;padding:40px;color:#333;line-height:1.8}
-            h1{text-align:center;font-size:20px}h2{font-size:16px;border-bottom:1px solid #ccc;padding-bottom:4px}
-            table{width:100%;border-collapse:collapse;margin:12px 0}td{padding:6px 8px;border:1px solid #ddd}
-            .sig{display:flex;justify-content:space-between;margin-top:60px}
-            .sig-box{width:45%;text-align:center;border-top:1px solid #333;padding-top:8px}
+            <html><head><title>Гэрээ ${data.contractNumber || ''}</title>
+            <style>
+              @page { margin: 24mm 18mm; }
+              body{font-family:'Times New Roman',serif;color:#1a1a1a;line-height:1.7;font-size:13px}
+              h1{text-align:center;font-size:18px;margin-bottom:4px}
+              h2{font-size:14px;margin-top:18px;border-bottom:1px solid #999;padding-bottom:3px}
+              table{width:100%;border-collapse:collapse;margin:8px 0}
+              td{padding:5px 8px;border:1px solid #ccc;vertical-align:top}
+              p{margin:6px 0}
+              .muted{color:#666;text-align:center;margin-bottom:18px}
+              .sig{display:flex;justify-content:space-between;margin-top:56px}
+              .sig-box{width:45%;text-align:center;border-top:1px solid #333;padding-top:8px}
             </style></head><body>${content.innerHTML}</body></html>
         `);
         win.document.close();
-        win.print();
+        setTimeout(() => win.print(), 250);
     };
+
+    const balance = (Number(data.price) || 0) - (Number(data.downPayment) || 0);
 
     return (
         <div className="min-h-screen bg-surface-2/40 p-6">
             <div className="max-w-5xl mx-auto">
                 <h1 className="text-2xl font-bold text-foreground mb-1">Гэрээ үүсгэгч</h1>
-                <p className="text-muted-foreground text-sm mb-6">Үл хөдлөх хөрөнгийн худалдах-худалдан авах гэрээ</p>
+                <p className="text-muted-foreground text-sm mb-4">Үл хөдлөх хөрөнгө худалдах-худалдан авах гэрээ — Мандала Гарден</p>
+
+                {/* Гэрээ хайж дуудах */}
+                <div className="bg-surface rounded-xl border border-border p-4 mb-6">
+                    <label className="text-sm font-medium text-foreground flex items-center gap-1.5 mb-2">
+                        <Search className="w-4 h-4 text-brand-strong" /> Одоо байгаа гэрээнээс дуудах
+                    </label>
+                    <div className="relative">
+                        <input
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            placeholder="Худалдан авагчийн нэр, код (ж: 203-305), эсвэл регистрээр хайх..."
+                            className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-brand"
+                        />
+                        {searching && <Loader2 className="w-4 h-4 animate-spin absolute right-3 top-3 text-muted-foreground" />}
+                        {results.length > 0 && (
+                            <div className="absolute z-10 mt-1 w-full bg-surface border border-border rounded-lg shadow-lg max-h-72 overflow-y-auto">
+                                {results.map((c) => (
+                                    <button key={c.id} onClick={() => loadContract(c)} className="w-full text-left px-3 py-2.5 hover:bg-surface-2 border-b border-border/40 last:border-0">
+                                        <div className="text-sm font-medium text-foreground">{c.customer_name || '—'}</div>
+                                        <div className="text-[11px] text-muted-foreground">{c.unit_label || c.block_name} · {money(c.total_price)} · {c.contract_date || c.order_date || ''}</div>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    {loadedId && <p className="text-[12px] text-status-success mt-2 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Гэрээний мэдээлэл дуудагдлаа — доороос засаж болно.</p>}
+                </div>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Form */}
                     <div className="bg-surface rounded-xl border border-border p-6 space-y-5">
-                        {/* Buyer */}
                         <div>
-                            <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-3">
-                                <User className="w-4 h-4 text-brand-strong" /> Худалдан авагч
-                            </h3>
+                            <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-3"><User className="w-4 h-4 text-brand-strong" /> Худалдан авагч</h3>
                             <div className="grid grid-cols-2 gap-3">
                                 <input placeholder="Нэр *" value={data.buyerName} onChange={e => set('buyerName', e.target.value)} className="col-span-2 px-3 py-2 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-brand" />
                                 <input placeholder="Утас" value={data.buyerPhone} onChange={e => set('buyerPhone', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
-                                <input placeholder="Имэйл" value={data.buyerEmail} onChange={e => set('buyerEmail', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
-                                <input placeholder="Регистрийн дугаар" value={data.buyerRegister} onChange={e => set('buyerRegister', e.target.value)} className="col-span-2 px-3 py-2 border border-border-strong rounded-lg text-sm" />
+                                <input placeholder="Регистр" value={data.buyerRegister} onChange={e => set('buyerRegister', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
                             </div>
                         </div>
-
-                        {/* Property */}
                         <div>
-                            <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-3">
-                                <Building2 className="w-4 h-4 text-status-success" /> Үл хөдлөх
-                            </h3>
+                            <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-3"><Building2 className="w-4 h-4 text-status-success" /> Үл хөдлөх</h3>
                             <div className="grid grid-cols-2 gap-3">
-                                <input placeholder="Нэр (A-301) *" value={data.propertyName} onChange={e => set('propertyName', e.target.value)} className="col-span-2 px-3 py-2 border border-border-strong rounded-lg text-sm" />
-                                <input placeholder="Хаяг *" value={data.propertyAddress} onChange={e => set('propertyAddress', e.target.value)} className="col-span-2 px-3 py-2 border border-border-strong rounded-lg text-sm" />
+                                <input placeholder="Код / нэр (203-305) *" value={data.propertyName} onChange={e => set('propertyName', e.target.value)} className="col-span-2 px-3 py-2 border border-border-strong rounded-lg text-sm" />
                                 <input placeholder="Талбай (м²)" value={data.propertySizeSqm} onChange={e => set('propertySizeSqm', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
                                 <input placeholder="Давхар" value={data.propertyFloor} onChange={e => set('propertyFloor', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
                                 <input placeholder="Өрөө" value={data.propertyRooms} onChange={e => set('propertyRooms', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
                             </div>
                         </div>
-
-                        {/* Payment */}
                         <div>
-                            <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-3">
-                                <DollarSign className="w-4 h-4 text-status-info" /> Төлбөр
-                            </h3>
+                            <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-3"><DollarSign className="w-4 h-4 text-status-info" /> Төлбөр</h3>
                             <div className="grid grid-cols-2 gap-3">
-                                <input placeholder="Үнэ (₮) *" value={data.price} onChange={e => set('price', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
+                                <input placeholder="М.кв үнэ (₮)" value={data.pricePerSqm} onChange={e => set('pricePerSqm', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
+                                <input placeholder="Нийт үнэ (₮) *" value={data.price} onChange={e => set('price', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
                                 <input placeholder="Урьдчилгаа (₮)" value={data.downPayment} onChange={e => set('downPayment', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
                                 <select value={data.paymentMethod} onChange={e => set('paymentMethod', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm">
-                                    <option value="cash">Бэлэн мөнгө</option>
+                                    <option value="cash">Бэлэн төлбөр</option>
                                     <option value="mortgage">Банкны зээл</option>
-                                    <option value="installment">Хэсэгчлэн</option>
+                                    <option value="installment">Хэсэгчилсэн</option>
+                                    <option value="leasing">Хувь лизинг</option>
+                                    <option value="barter">Бартер</option>
                                 </select>
-                                <input type="date" value={data.contractDate} onChange={e => set('contractDate', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
+                                <input type="date" value={data.contractDate} onChange={e => set('contractDate', e.target.value)} className="col-span-2 px-3 py-2 border border-border-strong rounded-lg text-sm" />
                             </div>
                         </div>
-
-                        <button
-                            onClick={generateContract}
-                            disabled={!data.buyerName || !data.propertyName || !data.price}
-                            className="w-full py-3 bg-brand text-white font-semibold rounded-lg hover:bg-brand-strong disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
-                        >
-                            {generating ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5" />}
-                            Гэрээ үүсгэх
+                        <button onClick={generateContract} disabled={!data.buyerName || !data.propertyName || !data.price} className="w-full py-3 bg-brand text-white font-semibold rounded-lg hover:bg-brand-strong disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
+                            {generating ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5" />} Гэрээ шинэчлэх
                         </button>
                     </div>
 
@@ -130,59 +220,59 @@ export default function ContractsPage() {
                         <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
                             <span className="text-sm font-semibold text-foreground">Урьдчилж харах</span>
                             {data.buyerName && data.propertyName && (
-                                <button onClick={printContract} className="flex items-center gap-1.5 px-3 py-1.5 bg-status-success text-white rounded-lg text-xs font-medium hover:opacity-90 transition-colors">
+                                <button onClick={printContract} className="flex items-center gap-1.5 px-3 py-1.5 bg-status-success text-white rounded-lg text-xs font-medium hover:opacity-90">
                                     <Download className="w-3.5 h-3.5" /> PDF / Хэвлэх
                                 </button>
                             )}
                         </div>
                         <div ref={previewRef} className="p-6 text-sm text-foreground leading-relaxed max-h-[700px] overflow-y-auto">
-                            <h1 style={{ textAlign: 'center', fontSize: '18px', fontWeight: 'bold', marginBottom: '8px' }}>
-                                ҮЛ ХӨДЛӨХ ХӨРӨНГИЙН ХУДАЛДАХ-ХУДАЛДАН АВАХ ГЭРЭЭ
-                            </h1>
-                            <p style={{ textAlign: 'center', color: '#666', marginBottom: '24px' }}>
-                                № ___ / {data.contractDate || '____'}
+                            <h1 style={{ textAlign: 'center', fontSize: '17px', fontWeight: 'bold', marginBottom: '4px' }}>ҮЛ ХӨДЛӨХ ХӨРӨНГӨ ХУДАЛДАХ-ХУДАЛДАН АВАХ ГЭРЭЭ</h1>
+                            <p className="muted" style={{ textAlign: 'center', color: '#666', marginBottom: '20px' }}>
+                                Гэрээ №: {data.contractNumber || '________'}<br />Огноо: {data.contractDate || '____'} · Улаанбаатар хот
                             </p>
 
-                            <h2 style={{ fontWeight: 'bold', marginTop: '16px' }}>1. ТАЛУУД</h2>
-                            <table>
-                                <tbody>
-                                    <tr><td style={{ width: '40%', fontWeight: 'bold' }}>Худалдагч:</td><td>Vertmon LLC</td></tr>
-                                    <tr><td style={{ fontWeight: 'bold' }}>Худалдан авагч:</td><td>{data.buyerName || '___'}</td></tr>
-                                    <tr><td style={{ fontWeight: 'bold' }}>Регистр:</td><td>{data.buyerRegister || '___'}</td></tr>
-                                    <tr><td style={{ fontWeight: 'bold' }}>Утас:</td><td>{data.buyerPhone || '___'}</td></tr>
-                                </tbody>
-                            </table>
+                            <h2 style={{ fontWeight: 'bold', marginTop: '14px' }}>НЭГ. ГЭРЭЭНИЙ ТАЛУУД</h2>
+                            <table><tbody>
+                                <tr><td style={{ width: '38%', fontWeight: 'bold' }}>Худалдагч (А тал):</td><td>{SELLER.company} — «{SELLER.project}»</td></tr>
+                                <tr><td style={{ fontWeight: 'bold' }}>Худалдан авагч (Б тал):</td><td>{data.buyerName || '___'}</td></tr>
+                                <tr><td style={{ fontWeight: 'bold' }}>Регистрийн дугаар:</td><td>{data.buyerRegister || '___'}</td></tr>
+                                <tr><td style={{ fontWeight: 'bold' }}>Холбоо барих утас:</td><td>{data.buyerPhone || '___'}</td></tr>
+                            </tbody></table>
 
-                            <h2 style={{ fontWeight: 'bold', marginTop: '16px' }}>2. ЗҮЙЛ</h2>
-                            <table>
-                                <tbody>
-                                    <tr><td style={{ width: '40%', fontWeight: 'bold' }}>Байрны нэр:</td><td>{data.propertyName || '___'}</td></tr>
-                                    <tr><td style={{ fontWeight: 'bold' }}>Хаяг:</td><td>{data.propertyAddress || '___'}</td></tr>
-                                    <tr><td style={{ fontWeight: 'bold' }}>Талбай:</td><td>{data.propertySizeSqm ? `${data.propertySizeSqm} м²` : '___'}</td></tr>
-                                    <tr><td style={{ fontWeight: 'bold' }}>Давхар / Өрөө:</td><td>{data.propertyFloor || '___'} давхар, {data.propertyRooms || '___'} өрөө</td></tr>
-                                </tbody>
-                            </table>
+                            <h2 style={{ fontWeight: 'bold', marginTop: '14px' }}>ХОЁР. ГЭРЭЭНИЙ ЗҮЙЛ</h2>
+                            <p>2.1. А тал нь дараах үл хөдлөх хөрөнгийг Б талд худалдан борлуулж, Б тал худалдан авна:</p>
+                            <table><tbody>
+                                <tr><td style={{ width: '38%', fontWeight: 'bold' }}>Байр / код:</td><td>{data.propertyName || '___'}</td></tr>
+                                <tr><td style={{ fontWeight: 'bold' }}>Хаяг:</td><td>{data.propertyAddress || '___'}</td></tr>
+                                <tr><td style={{ fontWeight: 'bold' }}>Талбай:</td><td>{data.propertySizeSqm ? `${data.propertySizeSqm} м²` : '___'}</td></tr>
+                                <tr><td style={{ fontWeight: 'bold' }}>Давхар / өрөө:</td><td>{data.propertyFloor || '___'}-р давхар, {data.propertyRooms || '___'} өрөө</td></tr>
+                            </tbody></table>
 
-                            <h2 style={{ fontWeight: 'bold', marginTop: '16px' }}>3. ТӨЛБӨР</h2>
-                            <table>
-                                <tbody>
-                                    <tr><td style={{ width: '40%', fontWeight: 'bold' }}>Нийт үнэ:</td><td>{data.price ? `${Number(data.price).toLocaleString()}₮` : '___'}</td></tr>
-                                    <tr><td style={{ fontWeight: 'bold' }}>Урьдчилгаа:</td><td>{data.downPayment ? `${Number(data.downPayment).toLocaleString()}₮` : '___'}</td></tr>
-                                    <tr><td style={{ fontWeight: 'bold' }}>Төлбөрийн хэлбэр:</td><td>{paymentLabels[data.paymentMethod]}</td></tr>
-                                </tbody>
-                            </table>
+                            <h2 style={{ fontWeight: 'bold', marginTop: '14px' }}>ГУРАВ. ҮНЭ, ТӨЛБӨРИЙН НӨХЦӨЛ</h2>
+                            <table><tbody>
+                                <tr><td style={{ width: '38%', fontWeight: 'bold' }}>1 м² үнэ:</td><td>{money(data.pricePerSqm)}</td></tr>
+                                <tr><td style={{ fontWeight: 'bold' }}>Гэрээний нийт үнэ:</td><td><strong>{money(data.price)}</strong></td></tr>
+                                <tr><td style={{ fontWeight: 'bold' }}>Урьдчилгаа төлбөр:</td><td>{money(data.downPayment)}</td></tr>
+                                <tr><td style={{ fontWeight: 'bold' }}>Үлдэгдэл төлбөр:</td><td>{balance > 0 ? money(balance) : '0₮'}</td></tr>
+                                <tr><td style={{ fontWeight: 'bold' }}>Төлбөрийн хэлбэр:</td><td>{paymentLabels[data.paymentMethod]}</td></tr>
+                            </tbody></table>
 
-                            <h2 style={{ fontWeight: 'bold', marginTop: '16px' }}>4. НӨХЦӨЛ</h2>
-                            <p>4.1. Худалдагч нь дээрх үл хөдлөх хөрөнгийг худалдан авагчид гэрээнд заасан нөхцлөөр шилжүүлнэ.</p>
-                            <p>4.2. Урьдчилгаа төлбөрийг гэрээ байгуулсан өдрөөс хойш 3 хоногийн дотор төлнө.</p>
-                            <p>4.3. Үлдэгдэл төлбөрийг {paymentLabels[data.paymentMethod].toLowerCase()}-өөр төлнө.</p>
+                            <h2 style={{ fontWeight: 'bold', marginTop: '14px' }}>ДӨРӨВ. ТАЛУУДЫН ЭРХ, ҮҮРЭГ</h2>
+                            <p>4.1. Б тал урьдчилгаа төлбөрийг гэрээ байгуулсан өдрөөс хойш ажлын 3 хоногийн дотор төлнө.</p>
+                            <p>4.2. Үлдэгдэл төлбөрийг {paymentLabels[data.paymentMethod].toLowerCase()}-ийн нөхцлөөр, тохиролцсон хуваарийн дагуу төлнө.</p>
+                            <p>4.3. А тал төлбөр бүрэн төлөгдсөний дараа үл хөдлөх хөрөнгийг актаар хүлээлгэн өгч, өмчлөх эрхийн бичиг баримтыг шилжүүлнэ.</p>
+                            <p>4.4. Б тал гэрээгээр хүлээсэн төлбөрийн үүргээ хугацаандаа биелүүлээгүй тохиолдолд хугацаа хэтэрсэн дүнгийн 0.1%-ийн алданги хоног тутамд тооцно.</p>
 
-                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '60px' }}>
+                            <h2 style={{ fontWeight: 'bold', marginTop: '14px' }}>ТАВ. БУСАД НӨХЦӨЛ</h2>
+                            <p>5.1. Гэрээтэй холбоотой маргааныг талууд харилцан тохиролцох замаар, эс бөгөөс Монгол Улсын хууль тогтоомжийн дагуу шийдвэрлэнэ.</p>
+                            <p>5.2. Энэхүү гэрээ нь талууд гарын үсэг зурсан өдрөөс хүчин төгөлдөр болно. Хоёр хувь үйлдэж, тал тус бүр нэг хувийг хадгална.</p>
+
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '56px' }}>
                                 <div style={{ width: '45%', textAlign: 'center', borderTop: '1px solid #333', paddingTop: '8px' }}>
-                                    Худалдагч<br /><small>Vertmon LLC</small>
+                                    ХУДАЛДАГЧ<br /><small>{SELLER.company}</small>
                                 </div>
                                 <div style={{ width: '45%', textAlign: 'center', borderTop: '1px solid #333', paddingTop: '8px' }}>
-                                    Худалдан авагч<br /><small>{data.buyerName || '___'}</small>
+                                    ХУДАЛДАН АВАГЧ<br /><small>{data.buyerName || '___'}</small>
                                 </div>
                             </div>
                         </div>

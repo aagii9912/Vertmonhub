@@ -19,25 +19,34 @@ export async function GET(request: NextRequest) {
     const district = sp.get('district');
     const search = sp.get('search');
 
-    let query = supabase
-      .from('properties')
-      .select('*')
-      .eq('shop_id', authShop.id)
-      .is('deleted_at', null);
+    const buildQuery = () => {
+      let q = supabase
+        .from('properties')
+        .select('*')
+        .eq('shop_id', authShop.id)
+        .is('deleted_at', null);
 
-    if (type) query = query.eq('type', type);
-    if (status) query = query.eq('status', status);
-    if (district) query = query.ilike('district', `%${district}%`);
-    if (search) {
-      query = query.or(`name.ilike.%${search}%,address.ilike.%${search}%,district.ilike.%${search}%`);
+      if (type) q = q.eq('type', type);
+      if (status) q = q.eq('status', status);
+      if (district) q = q.ilike('district', `%${district}%`);
+      if (search) {
+        q = q.or(`name.ilike.%${search}%,address.ilike.%${search}%,district.ilike.%${search}%`);
+      }
+      return q.order('created_at', { ascending: false });
+    };
+
+    // Supabase 1000-мөрийн хязгаарыг хуудаслалтаар давах
+    const PAGE = 1000;
+    const data: Array<Record<string, unknown>> = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data: page, error } = await buildQuery().range(from, from + PAGE - 1);
+      if (error) throw error;
+      if (!page || page.length === 0) break;
+      data.push(...page);
+      if (page.length < PAGE) break;
     }
 
-    query = query.order('created_at', { ascending: false });
-
-    const { data, error } = await query;
-    if (error) throw error;
-
-    return NextResponse.json({ properties: data || [] });
+    return NextResponse.json({ properties: data });
   } catch (error) {
     logger.error('[Properties GET] error:', { error });
     return NextResponse.json({ error: 'Failed to fetch properties' }, { status: 500 });
