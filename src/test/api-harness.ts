@@ -67,3 +67,16 @@ export function jsonRequest(
 export function nextGet(url: string, headers: Record<string, string> = {}): NextRequest {
     return new NextRequest(url, { headers });
 }
+
+/** JSON body-той POST NextRequest үүсгэнэ (NextRequest гарын үсэгтэй route-уудад). */
+export function nextPost(
+    url: string,
+    body: unknown,
+    headers: Record<string, string> = {}
+): NextRequest {
+    return new NextRequest(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...headers },
+        body: body === undefined ? undefined : JSON.stringify(body),
+    });
+}
