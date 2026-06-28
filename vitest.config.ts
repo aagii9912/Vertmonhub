@@ -16,9 +16,20 @@ export default defineConfig({
             exclude: [
                 'node_modules/',
                 '.next/',
+                'e2e/',
                 'src/test/',
+                'src/types/**',
                 '**/*.d.ts',
+                '**/*.config.{ts,js,mjs,cts,mts}',
             ],
+            // Ratchet floor — одоогийн хамралтаас (~33% stmts) хэдэн нэгжээр доогуур
+            // тогтоосон. Хамралт буурвал CI унана. Тест нэмэгдэхэд аажмаар өсгөнө.
+            thresholds: {
+                statements: 30,
+                branches: 20,
+                functions: 33,
+                lines: 31,
+            },
         },
     },
     resolve: {
