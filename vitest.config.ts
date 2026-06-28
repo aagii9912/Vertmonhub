@@ -25,10 +25,10 @@ export default defineConfig({
             // Ratchet floor — одоогийн хамралтаас (~33% stmts) хэдэн нэгжээр доогуур
             // тогтоосон. Хамралт буурвал CI унана. Тест нэмэгдэхэд аажмаар өсгөнө.
             thresholds: {
-                statements: 30,
-                branches: 20,
-                functions: 33,
-                lines: 31,
+                statements: 34,
+                branches: 24,
+                functions: 37,
+                lines: 36,
             },
         },
     },
