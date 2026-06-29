@@ -29,8 +29,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
                 return NextResponse.json({ error: 'Буруу төлөв' }, { status: 400 });
             }
             updates.status = body.status;
+            // closed_lost-аас өөр шат руу шилжвэл алдсан шалтгааныг цэвэрлэнэ.
+            if (body.status !== 'closed_lost' && body.lost_reason === undefined) {
+                updates.lost_reason = null;
+            }
         }
         if (typeof body.notes === 'string') updates.notes = body.notes;
+        if (typeof body.lost_reason === 'string') updates.lost_reason = body.lost_reason.slice(0, 300) || null;
 
         const db = supabaseAdmin();
 
