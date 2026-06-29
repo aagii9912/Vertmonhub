@@ -74,6 +74,35 @@ export function parsePagination(searchParams: URLSearchParams): Pagination {
 }
 
 /**
+ * Бүх мөрийг найдвартай татах — Supabase REST нь нэг хүсэлтэд max ~1000 мөр
+ * буцаадаг тул `.select()` дангаараа их өгөгдлийг ЧИМЭЭГҮЙ тасалдаг. Энэ туслах
+ * нь `.range(from, to)`-аар хуудас хуудсаар нь бүх мөрийг цуглуулна. Нэгтгэл
+ * (sum/count/group) хийдэг тайлан/AI tool-уудад ашиглах ёстой.
+ *
+ * Жишээ:
+ *   const rows = await fetchAllRows((from, to) =>
+ *     supabase.from('property_contracts').select('total_price').eq('shop_id', id).range(from, to));
+ */
+export async function fetchAllRows<T = unknown>(
+    page: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+    pageSize: number = MAX_PAGE_SIZE,
+): Promise<T[]> {
+    const all: T[] = [];
+    let from = 0;
+    // Аюулгүйн дээд хязгаар — гацахаас сэргийлнэ (1000 хуудас × 1000 = 1M мөр).
+    for (let guard = 0; guard < 1000; guard++) {
+        const to = from + pageSize - 1;
+        const { data, error } = await page(from, to);
+        if (error) throw new Error(error.message);
+        const rows = data ?? [];
+        all.push(...rows);
+        if (rows.length < pageSize) break;
+        from += pageSize;
+    }
+    return all;
+}
+
+/**
  * Жагсаалтын хариунд хавсаргах хуудаслалтын мета мэдээлэл.
  */
 export function buildPageMeta(total: number, pagination: Pagination) {

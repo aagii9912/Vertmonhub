@@ -4,6 +4,7 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '@/lib/utils/logger';
+import { fetchAllRows } from '@/lib/utils/pagination';
 
 // Lazy admin client — built on first property access so missing env at
 // module-evaluation time (e.g. Next.js page-data collection) does not
@@ -297,15 +298,25 @@ export async function fetchContractDetails(shopId: string, args: any) {
 }
 
 export async function fetchContractsSummary(shopId: string, args: any) {
-    let query = supabaseAdmin.from('property_contracts')
-        .select('contract_status, total_price, paid_amount, balance, overdue_days, sales_manager, sales_channel, block_name, product_type')
-        .eq('shop_id', shopId);
-
-    if (args.block_name) query = query.ilike('block_name', `%${args.block_name}%`);
-    if (args.sales_channel) query = query.eq('sales_channel', args.sales_channel);
-
-    const { data, error } = await query;
-    if (error) return { error: `Алдаа: ${error.message}` };
+    // Бүх гэрээг татна — энгийн .select() нь ~1000 мөрөнд тасардаг тул AI
+    // нэгтгэсэн тоо (нийт борлуулалт/үлдэгдэл)-г бодитоос бага мэдээлж байсан.
+    let data: Array<{
+        contract_status: string | null; total_price: number | null; paid_amount: number | null;
+        balance: number | null; overdue_days: number | null; sales_manager: string | null;
+        sales_channel: string | null; block_name: string | null; product_type: string | null;
+    }>;
+    try {
+        data = await fetchAllRows((from, to) => {
+            let query = supabaseAdmin.from('property_contracts')
+                .select('contract_status, total_price, paid_amount, balance, overdue_days, sales_manager, sales_channel, block_name, product_type')
+                .eq('shop_id', shopId);
+            if (args.block_name) query = query.ilike('block_name', `%${args.block_name}%`);
+            if (args.sales_channel) query = query.eq('sales_channel', args.sales_channel);
+            return query.range(from, to);
+        });
+    } catch (e: any) {
+        return { error: `Алдаа: ${e?.message || e}` };
+    }
     if (!data || data.length === 0) return { error: 'Гэрээ олдсонгүй' };
 
     const totals = data.reduce((acc, c) => {

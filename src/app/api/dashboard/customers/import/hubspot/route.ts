@@ -48,44 +48,62 @@ export async function POST(request: NextRequest) {
         let imported = 0;
         let skipped = 0;
         const errors: Array<{ name: string; reason: string }> = [];
+        const CHUNK = 500;
 
-        for (const c of contacts) {
-            const phoneNormalized = normalizePhone(c.phone);
+        // Мөр бүрд SELECT хийхгүй (N+1) — бүх и-мэйл/утсыг урьдчилан нормчилж,
+        // байгаа хэрэглэгчдийг chunk-аар .in()-ээр татаж Set болгоно.
+        const prepared = contacts.map(c => ({ ...c, phoneNormalized: normalizePhone(c.phone) }));
+        const emails = [...new Set(prepared.map(c => c.email).filter(Boolean))] as string[];
+        const phones = [...new Set(prepared.map(c => c.phoneNormalized).filter(Boolean))] as string[];
 
-            // Dedup: и-мэйл эсвэл нормчилсон утсаар shop дотор давхардлыг шалгана
-            if (c.email || phoneNormalized) {
-                const orParts: string[] = [];
-                if (c.email) orParts.push(`email.eq.${c.email}`);
-                if (phoneNormalized) orParts.push(`phone_normalized.eq.${phoneNormalized}`);
+        const existingEmails = new Set<string>();
+        const existingPhones = new Set<string>();
+        for (let i = 0; i < emails.length; i += CHUNK) {
+            const { data } = await supabase.from('customers').select('email')
+                .eq('shop_id', authShop.id).in('email', emails.slice(i, i + CHUNK));
+            for (const r of data || []) if (r.email) existingEmails.add(r.email);
+        }
+        for (let i = 0; i < phones.length; i += CHUNK) {
+            const { data } = await supabase.from('customers').select('phone_normalized')
+                .eq('shop_id', authShop.id).in('phone_normalized', phones.slice(i, i + CHUNK));
+            for (const r of data || []) if (r.phone_normalized) existingPhones.add(r.phone_normalized);
+        }
 
-                const { data: existing } = await supabase
-                    .from('customers')
-                    .select('id')
-                    .eq('shop_id', authShop.id)
-                    .or(orParts.join(','))
-                    .maybeSingle();
-                if (existing) {
-                    skipped++;
-                    continue;
-                }
+        // DB-д байгаа + файл доторх давхардлыг шүүнэ (анхны семантик хэвээр).
+        const seenEmails = new Set<string>();
+        const seenPhones = new Set<string>();
+        const toInsert: Array<Record<string, unknown>> = [];
+        const insertNames: string[] = [];
+        for (const c of prepared) {
+            if (c.email || c.phoneNormalized) {
+                const dupDb = (c.email && existingEmails.has(c.email)) || (c.phoneNormalized && existingPhones.has(c.phoneNormalized));
+                const dupFile = (c.email && seenEmails.has(c.email)) || (c.phoneNormalized && seenPhones.has(c.phoneNormalized));
+                if (dupDb || dupFile) { skipped++; continue; }
+                if (c.email) seenEmails.add(c.email);
+                if (c.phoneNormalized) seenPhones.add(c.phoneNormalized);
             }
+            toInsert.push({
+                shop_id: authShop.id,
+                name: c.name,
+                email: c.email,
+                phone: c.phone,
+                phone_normalized: c.phoneNormalized,
+                notes: c.notes,
+                tags: c.tags,
+            });
+            insertNames.push(c.name);
+        }
 
-            const { error: insertError } = await supabase
-                .from('customers')
-                .insert({
-                    shop_id: authShop.id,
-                    name: c.name,
-                    email: c.email,
-                    phone: c.phone,
-                    phone_normalized: phoneNormalized,
-                    notes: c.notes,
-                    tags: c.tags,
-                });
-
-            if (insertError) {
-                errors.push({ name: c.name, reason: insertError.message });
-            } else {
-                imported++;
+        // Chunk-аар bulk insert; chunk алдаа гарвал мөр-мөрөөр fallback (алдааны
+        // нарийвчлал хадгалагдана).
+        for (let i = 0; i < toInsert.length; i += CHUNK) {
+            const chunk = toInsert.slice(i, i + CHUNK);
+            const { error: bulkError } = await supabase.from('customers').insert(chunk);
+            if (!bulkError) { imported += chunk.length; continue; }
+            for (let j = 0; j < chunk.length; j++) {
+                const { error: rowError } = await supabase.from('customers').insert(chunk[j]);
+                if (rowError) errors.push({ name: insertNames[i + j], reason: rowError.message });
+                else imported++;
             }
         }
 
