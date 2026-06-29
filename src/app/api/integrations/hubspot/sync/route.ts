@@ -143,46 +143,63 @@ export async function POST(req: NextRequest) {
         let imported = 0;
         let skipped = 0;
         const errors: Array<{ name: string; reason: string }> = [];
+        const CHUNK = 500;
 
-        for (const c of contacts) {
-            const email = c.properties.email || null;
-            const phone = c.properties.phone || c.properties.mobilephone || null;
-            const name = buildName(c);
+        // Мөр бүрд SELECT хийхгүй (N+1). Dedup семантик хэвээр: email байвал
+        // email-ээр, эс бөгөөс phone-оор давхардлыг шалгана.
+        const prepared = contacts.map(c => ({
+            email: c.properties.email || null,
+            phone: c.properties.phone || c.properties.mobilephone || null,
+            name: buildName(c),
+            c,
+        }));
+        const emails = [...new Set(prepared.map(p => p.email).filter(Boolean))] as string[];
+        const phones = [...new Set(prepared.filter(p => !p.email && p.phone).map(p => p.phone).filter(Boolean))] as string[];
 
-            // Dedupe by email then phone within this shop
-            if (email) {
-                const { data: existing } = await supabase
-                    .from('customers')
-                    .select('id')
-                    .eq('shop_id', authShop.id)
-                    .eq('email', email)
-                    .maybeSingle();
-                if (existing) { skipped++; continue; }
-            } else if (phone) {
-                const { data: existing } = await supabase
-                    .from('customers')
-                    .select('id')
-                    .eq('shop_id', authShop.id)
-                    .eq('phone', phone)
-                    .maybeSingle();
-                if (existing) { skipped++; continue; }
+        const existingEmails = new Set<string>();
+        const existingPhones = new Set<string>();
+        for (let i = 0; i < emails.length; i += CHUNK) {
+            const { data } = await supabase.from('customers').select('email')
+                .eq('shop_id', authShop.id).in('email', emails.slice(i, i + CHUNK));
+            for (const r of data || []) if (r.email) existingEmails.add(r.email);
+        }
+        for (let i = 0; i < phones.length; i += CHUNK) {
+            const { data } = await supabase.from('customers').select('phone')
+                .eq('shop_id', authShop.id).in('phone', phones.slice(i, i + CHUNK));
+            for (const r of data || []) if (r.phone) existingPhones.add(r.phone);
+        }
+
+        const seenEmails = new Set<string>();
+        const seenPhones = new Set<string>();
+        const toInsert: Array<Record<string, unknown>> = [];
+        const insertNames: string[] = [];
+        for (const p of prepared) {
+            if (p.email) {
+                if (existingEmails.has(p.email) || seenEmails.has(p.email)) { skipped++; continue; }
+                seenEmails.add(p.email);
+            } else if (p.phone) {
+                if (existingPhones.has(p.phone) || seenPhones.has(p.phone)) { skipped++; continue; }
+                seenPhones.add(p.phone);
             }
+            toInsert.push({
+                shop_id: authShop.id,
+                name: p.name,
+                email: p.email,
+                phone: p.phone,
+                notes: buildNotes(p.c),
+                tags: buildTags(p.c),
+            });
+            insertNames.push(p.name);
+        }
 
-            const { error: insertError } = await supabase
-                .from('customers')
-                .insert({
-                    shop_id: authShop.id,
-                    name,
-                    email,
-                    phone,
-                    notes: buildNotes(c),
-                    tags: buildTags(c),
-                });
-
-            if (insertError) {
-                errors.push({ name, reason: insertError.message });
-            } else {
-                imported++;
+        for (let i = 0; i < toInsert.length; i += CHUNK) {
+            const chunk = toInsert.slice(i, i + CHUNK);
+            const { error: bulkError } = await supabase.from('customers').insert(chunk);
+            if (!bulkError) { imported += chunk.length; continue; }
+            for (let j = 0; j < chunk.length; j++) {
+                const { error: rowError } = await supabase.from('customers').insert(chunk[j]);
+                if (rowError) errors.push({ name: insertNames[i + j], reason: rowError.message });
+                else imported++;
             }
         }
 

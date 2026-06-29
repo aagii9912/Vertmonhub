@@ -157,48 +157,28 @@ async function batchUpsertKnowledge(
 ): Promise<{ imported: number; updated: number }> {
     if (entries.length === 0) return { imported: 0, updated: 0 };
 
-    // 1. Fetch all existing records for this shop+category in ONE query
+    // 1. Одоо байгаа key-үүдийг ганц query-гээр татна (imported/updated тоо гаргахад).
     const { data: existingRecords } = await supabase
         .from('ai_knowledge_base')
-        .select('id, key')
+        .select('key')
         .eq('shop_id', shopId)
         .eq('category', category);
 
-    const existingMap = new Map<string, string>();
-    if (existingRecords) {
-        for (const rec of existingRecords) {
-            existingMap.set(rec.key, rec.id);
-        }
+    const existingKeys = new Set<string>((existingRecords || []).map((r: { key: string }) => r.key));
+    const updated = entries.filter(e => existingKeys.has(e.key)).length;
+    const imported = entries.length - updated;
+
+    // 2. Ганц upsert (UNIQUE(shop_id, category, key)) — өмнөх N parallel update-ийг
+    //    орлоно. Аюулгүйн үүднээс chunk-аар.
+    const CHUNK = 500;
+    for (let i = 0; i < entries.length; i += CHUNK) {
+        const { error } = await supabase
+            .from('ai_knowledge_base')
+            .upsert(entries.slice(i, i + CHUNK), { onConflict: 'shop_id,category,key' });
+        if (error) throw error;
     }
 
-    // 2. Split into inserts vs updates
-    const toInsert: typeof entries = [];
-    const toUpdate: Array<{ id: string; value: string; description?: string }> = [];
-
-    for (const entry of entries) {
-        const existingId = existingMap.get(entry.key);
-        if (existingId) {
-            toUpdate.push({ id: existingId, value: entry.value, description: entry.description });
-        } else {
-            toInsert.push(entry);
-        }
-    }
-
-    // 3. Batch insert new records
-    if (toInsert.length > 0) {
-        await supabase.from('ai_knowledge_base').insert(toInsert);
-    }
-
-    // 4. Batch update existing records (in parallel)
-    if (toUpdate.length > 0) {
-        await Promise.all(toUpdate.map(u =>
-            supabase.from('ai_knowledge_base')
-                .update({ value: u.value, description: u.description })
-                .eq('id', u.id)
-        ));
-    }
-
-    return { imported: toInsert.length, updated: toUpdate.length };
+    return { imported, updated };
 }
 
 function mapPropertyType(input: string): string {

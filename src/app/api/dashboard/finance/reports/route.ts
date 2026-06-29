@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
+import { fetchAllRows } from '@/lib/utils/pagination';
 import { logger } from '@/lib/utils/logger';
 
 function monthKey(d: string | null): string | null {
@@ -51,21 +52,31 @@ export async function GET() {
         const months = lastMonths(6);
         const horizonIso = new Date(Date.now() - 200 * 86400000).toISOString().slice(0, 10);
 
-        const [{ data: contracts }, { data: bills }, { data: schedules }, { data: txns }] = await Promise.all([
-            supabase.from('property_contracts')
-                .select('total_price, vat_amount, sales_channel, contract_date, contract_status')
-                .eq('shop_id', shopId),
-            supabase.from('vendor_bills')
-                .select('total_amount, paid_amount, vat_amount, bill_date, due_date, status')
-                .eq('shop_id', shopId),
-            supabase.from('payment_schedules')
-                .select('amount, paid_amount, due_date, status')
-                .eq('shop_id', shopId)
-                .in('status', ['pending', 'partial', 'overdue']),
-            supabase.from('finance_transactions')
-                .select('type, amount, txn_date')
-                .eq('shop_id', shopId)
-                .gte('txn_date', horizonIso),
+        // ВАЖНО: бүх мөрийг fetchAllRows-аар татна. Энгийн .select() нь ~1000 мөрөнд
+        // чимээгүй тасардаг тул нэгтгэсэн орлого/НӨАТ/авлага бодитоос бага гарч байсан.
+        const [contracts, bills, schedules, txns] = await Promise.all([
+            fetchAllRows<{ total_price: number | null; vat_amount: number | null; sales_channel: string | null; contract_date: string | null; contract_status: string | null }>(
+                (from, to) => supabase.from('property_contracts')
+                    .select('total_price, vat_amount, sales_channel, contract_date, contract_status')
+                    .eq('shop_id', shopId)
+                    .range(from, to)),
+            fetchAllRows<{ total_amount: number | null; paid_amount: number | null; vat_amount: number | null; bill_date: string | null; due_date: string | null; status: string | null }>(
+                (from, to) => supabase.from('vendor_bills')
+                    .select('total_amount, paid_amount, vat_amount, bill_date, due_date, status')
+                    .eq('shop_id', shopId)
+                    .range(from, to)),
+            fetchAllRows<{ amount: number | null; paid_amount: number | null; due_date: string | null; status: string | null }>(
+                (from, to) => supabase.from('payment_schedules')
+                    .select('amount, paid_amount, due_date, status')
+                    .eq('shop_id', shopId)
+                    .in('status', ['pending', 'partial', 'overdue'])
+                    .range(from, to)),
+            fetchAllRows<{ type: string | null; amount: number | null; txn_date: string | null }>(
+                (from, to) => supabase.from('finance_transactions')
+                    .select('type, amount, txn_date')
+                    .eq('shop_id', shopId)
+                    .gte('txn_date', horizonIso)
+                    .range(from, to)),
         ]);
 
         const activeContracts = (contracts || []).filter(c => c.contract_status !== 'cancelled');

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
+import { fetchAllRows } from '@/lib/utils/pagination';
 import { logger } from '@/lib/utils/logger';
 
 /**
@@ -19,13 +20,15 @@ export async function GET() {
 
         const supabase = supabaseAdmin();
 
-        const { data: schedules, error } = await supabase
-            .from('payment_schedules')
-            .select('amount, paid_amount, due_date, status')
-            .eq('shop_id', authShop.id)
-            .in('status', ['pending', 'partial', 'overdue']);
-
-        if (error) throw error;
+        // Бүх installment-ийг татна — payment_schedules нь нэгж тутамд олон мөртэй
+        // тул ~1000 мөрийн хязгаараар тасрахаас сэргийлж fetchAllRows ашиглана.
+        const schedules = await fetchAllRows<{ amount: number | null; paid_amount: number | null; due_date: string | null; status: string | null }>(
+            (from, to) => supabase
+                .from('payment_schedules')
+                .select('amount, paid_amount, due_date, status')
+                .eq('shop_id', authShop.id)
+                .in('status', ['pending', 'partial', 'overdue'])
+                .range(from, to));
 
         const buckets = {
             current: 0,   // хугацаа болоогүй
