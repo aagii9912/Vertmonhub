@@ -4,7 +4,8 @@ import { cn } from '@/lib/utils';
 
 interface StatsCardProps {
     title: string;
-    value: string | number;
+    /** string | number, or a node such as <Money/> for token-formatted figures */
+    value: React.ReactNode;
     change?: {
         value: number;
         isPositive: boolean;

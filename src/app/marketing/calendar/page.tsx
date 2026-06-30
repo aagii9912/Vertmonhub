@@ -3,10 +3,28 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { CalendarDays, Plus, ChevronLeft, ChevronRight, X, Loader2 } from 'lucide-react';
+import { CalendarDays, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Input } from '@/components/ui/Input';
+import { Spinner } from '@/components/ui/Spinner';
+import { cn } from '@/lib/utils';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from '@/components/ui/Dialog';
+import { FormField, FieldGroup } from '@/components/ui/FormField';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/Select';
 
 interface CalendarItem {
     id: string;
@@ -93,35 +111,47 @@ export default function CalendarPage() {
     };
 
     if (loading) {
-        return (<div className="flex items-center justify-center min-h-[400px]"><div className="flex items-center gap-3"><div className="w-6 h-6 border-2 border-status-success border-t-transparent rounded-full animate-spin" /><span className="text-muted-foreground">Татаж байна...</span></div></div>);
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <div className="flex items-center gap-3">
+                    <Spinner />
+                    <span className="text-muted-foreground">Татаж байна...</span>
+                </div>
+            </div>
+        );
     }
 
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-xl md:text-2xl font-bold text-foreground flex items-center gap-2">
-                        <CalendarDays className="w-6 h-6 text-status-success" />
-                        Контент календарь
-                    </h1>
-                    <p className="text-sm text-muted-foreground mt-1">Контент төлөвлөлт</p>
-                </div>
-                <Button className="bg-status-success hover:bg-status-success text-white" onClick={() => setShowCreateModal(true)}><Plus className="w-4 h-4 mr-2" />Шинэ контент</Button>
-            </div>
+        <div>
+            <PageHeader
+                eyebrow="Маркетинг"
+                title="Контент календарь"
+                subtitle="Контент төлөвлөлт"
+                primaryAction={
+                    <Button onClick={() => setShowCreateModal(true)}>
+                        <Plus className="w-4 h-4" />
+                        Шинэ контент
+                    </Button>
+                }
+            />
 
             <Card>
                 <CardContent className="p-4">
                     {/* Month navigation */}
                     <div className="flex items-center justify-between mb-6">
-                        <button onClick={prevMonth} className="p-2 hover:bg-surface-2 rounded-lg"><ChevronLeft className="w-5 h-5" /></button>
-                        <h2 className="text-lg font-semibold capitalize">{monthName}</h2>
-                        <button onClick={nextMonth} className="p-2 hover:bg-surface-2 rounded-lg"><ChevronRight className="w-5 h-5" /></button>
+                        <Button variant="ghost" size="iconSm" aria-label="Өмнөх сар" onClick={prevMonth}>
+                            <ChevronLeft className="w-5 h-5" />
+                        </Button>
+                        <h2 className="heading-section text-lg text-foreground capitalize">{monthName}</h2>
+                        <Button variant="ghost" size="iconSm" aria-label="Дараах сар" onClick={nextMonth}>
+                            <ChevronRight className="w-5 h-5" />
+                        </Button>
                     </div>
 
                     {/* Calendar grid */}
-                    <div className="grid grid-cols-7 gap-px bg-surface-3 rounded-lg overflow-hidden">
+                    <div className="grid grid-cols-7 gap-px bg-border rounded-lg overflow-hidden">
                         {['Да', 'Мя', 'Лх', 'Пү', 'Ба', 'Бя', 'Ня'].map(d => (
-                            <div key={d} className="bg-surface-2/40 p-2 text-center text-xs font-medium text-muted-foreground">{d}</div>
+                            <div key={d} className="bg-surface-2 p-2 text-center text-2xs font-semibold uppercase tracking-wide text-muted-2">{d}</div>
                         ))}
                         {Array.from({ length: firstDayOfMonth === 0 ? 6 : firstDayOfMonth - 1 }).map((_, i) => (
                             <div key={`empty-${i}`} className="bg-surface p-2 min-h-[80px]" />
@@ -131,15 +161,15 @@ export default function CalendarPage() {
                             const dayItems = getItemsForDay(day);
                             const isToday = new Date().getDate() === day && new Date().getMonth() === currentDate.getMonth() && new Date().getFullYear() === currentDate.getFullYear();
                             return (
-                                <div key={day} className={`bg-surface p-2 min-h-[80px] ${isToday ? 'ring-2 ring-emerald-500 ring-inset' : ''}`}>
-                                    <span className={`text-sm ${isToday ? 'font-bold text-status-success' : 'text-foreground'}`}>{day}</span>
+                                <div key={day} className={cn('bg-surface p-2 min-h-[80px]', isToday && 'ring-2 ring-brand ring-inset')}>
+                                    <span className={cn('text-sm tabular-nums', isToday ? 'font-bold text-brand-strong' : 'text-foreground')}>{day}</span>
                                     <div className="mt-1 space-y-1">
                                         {dayItems.slice(0, 2).map(item => (
                                             <div key={item.id} className="text-xs px-1 py-0.5 rounded truncate" style={{ backgroundColor: item.color + '20', color: item.color || '#3B82F6' }}>
                                                 {item.title}
                                             </div>
                                         ))}
-                                        {dayItems.length > 2 && <p className="text-xs text-muted-foreground/70">+{dayItems.length - 2}</p>}
+                                        {dayItems.length > 2 && <p className="text-xs text-muted-foreground">+{dayItems.length - 2}</p>}
                                     </div>
                                 </div>
                             );
@@ -154,39 +184,65 @@ export default function CalendarPage() {
                     )}
                 </CardContent>
             </Card>
-            {showCreateModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-surface rounded-2xl w-full max-w-md shadow-2xl">
-                        <div className="flex items-center justify-between px-6 py-4 border-b">
-                            <h3 className="font-semibold text-foreground">Шинэ контент</h3>
-                            <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-surface-2 rounded-lg"><X className="w-5 h-5 text-muted-foreground/70" /></button>
+
+            {/* Create Modal */}
+            <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+                <DialogContent showCloseButton={false} className="rounded-xl sm:max-w-md max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle className="heading-section text-lg text-foreground">Шинэ контент</DialogTitle>
+                    </DialogHeader>
+                    <FieldGroup>
+                        <FormField label="Гарчиг" htmlFor="calendar-title" required>
+                            <Input id="calendar-title" value={newItem.title} onChange={e => setNewItem(p => ({ ...p, title: e.target.value }))} placeholder="Контентын гарчиг" />
+                        </FormField>
+                        <div className="grid grid-cols-2 gap-3">
+                            <FormField label="Төрөл" htmlFor="calendar-type">
+                                <Select value={newItem.type} onValueChange={v => setNewItem(p => ({ ...p, type: v }))}>
+                                    <SelectTrigger id="calendar-type">
+                                        <SelectValue placeholder="— Сонгох —" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="post">Пост</SelectItem>
+                                        <SelectItem value="story">Story</SelectItem>
+                                        <SelectItem value="reel">Reel</SelectItem>
+                                        <SelectItem value="blog">Блог</SelectItem>
+                                        <SelectItem value="ad">Зар</SelectItem>
+                                        <SelectItem value="event">Эвент</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </FormField>
+                            <FormField label="Платформ" htmlFor="calendar-platform">
+                                <Select value={newItem.platform} onValueChange={v => setNewItem(p => ({ ...p, platform: v }))}>
+                                    <SelectTrigger id="calendar-platform">
+                                        <SelectValue placeholder="— Сонгох —" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="facebook">Facebook</SelectItem>
+                                        <SelectItem value="instagram">Instagram</SelectItem>
+                                        <SelectItem value="tiktok">TikTok</SelectItem>
+                                        <SelectItem value="web">Вэб</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </FormField>
                         </div>
-                        <div className="px-6 py-4 space-y-4">
-                            <div><label className="text-sm font-medium text-foreground block mb-1">Гарчиг *</label><Input value={newItem.title} onChange={e => setNewItem(p => ({ ...p, title: e.target.value }))} placeholder="Контентын гарчиг" /></div>
-                            <div className="grid grid-cols-2 gap-3">
-                                <div><label className="text-sm font-medium text-foreground block mb-1">Төрөл</label>
-                                    <select value={newItem.type} onChange={e => setNewItem(p => ({ ...p, type: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm">
-                                        <option value="post">Пост</option><option value="story">Story</option><option value="reel">Reel</option><option value="blog">Блог</option><option value="ad">Зар</option><option value="event">Эвент</option>
-                                    </select></div>
-                                <div><label className="text-sm font-medium text-foreground block mb-1">Платформ</label>
-                                    <select value={newItem.platform} onChange={e => setNewItem(p => ({ ...p, platform: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm">
-                                        <option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="web">Вэб</option>
-                                    </select></div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                                <div><label className="text-sm font-medium text-foreground block mb-1">Огноо</label><Input type="date" value={newItem.scheduled_date} onChange={e => setNewItem(p => ({ ...p, scheduled_date: e.target.value }))} /></div>
-                                <div><label className="text-sm font-medium text-foreground block mb-1">Өнгө</label><input type="color" value={newItem.color} onChange={e => setNewItem(p => ({ ...p, color: e.target.value }))} className="w-full h-9 rounded-lg cursor-pointer" /></div>
-                            </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <FormField label="Огноо" htmlFor="calendar-date">
+                                <Input id="calendar-date" type="date" value={newItem.scheduled_date} onChange={e => setNewItem(p => ({ ...p, scheduled_date: e.target.value }))} />
+                            </FormField>
+                            <FormField label="Өнгө" htmlFor="calendar-color">
+                                <input id="calendar-color" type="color" value={newItem.color} onChange={e => setNewItem(p => ({ ...p, color: e.target.value }))} className="w-full h-9 rounded-md border border-border-strong cursor-pointer" />
+                            </FormField>
                         </div>
-                        <div className="flex justify-end gap-3 px-6 py-4 border-t">
-                            <Button variant="outline" onClick={() => setShowCreateModal(false)}>Болих</Button>
-                            <Button className="bg-status-success hover:bg-status-success text-white" onClick={handleCreate} disabled={!newItem.title.trim() || creating}>
-                                {creating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Үүсгэж байна...</> : <><Plus className="w-4 h-4 mr-2" />Үүсгэх</>}
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                    </FieldGroup>
+                    <DialogFooter>
+                        <Button variant="secondary" onClick={() => setShowCreateModal(false)}>Болих</Button>
+                        <Button onClick={handleCreate} disabled={!newItem.title.trim() || creating} isLoading={creating}>
+                            {!creating && <Plus className="w-4 h-4" />}
+                            Үүсгэх
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

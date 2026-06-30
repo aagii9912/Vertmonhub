@@ -1,16 +1,36 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import {
-    Megaphone, Plus, Search, Play, Pause, CheckCircle2,
-    Calendar, DollarSign, TrendingUp, ArrowUpRight, MoreVertical,
-    Target, BarChart3, X, Loader2
-} from 'lucide-react';
+import { Megaphone, Plus, Search, Play, DollarSign } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { PageHeader } from '@/components/dashboard/PageHeader';
+import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { StatsCard } from '@/components/dashboard/StatsCard';
+import { Spinner } from '@/components/ui/Spinner';
+import {
+    DataTable,
+    type DataTableColumn,
+    Money,
+    DateText,
+    StatusPill,
+} from '@/components/ui/DataTable';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from '@/components/ui/Dialog';
+import { FormField, FieldGroup } from '@/components/ui/FormField';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/Select';
 
 interface Campaign {
     id: string;
@@ -24,12 +44,12 @@ interface Campaign {
     metrics: Record<string, number>;
 }
 
-const statusColors: Record<string, string> = {
-    draft: 'bg-surface-2 text-muted-foreground',
-    active: 'bg-status-success-soft text-status-success',
-    paused: 'bg-status-pending-soft text-status-pending',
-    completed: 'bg-status-info-soft text-status-info',
-    cancelled: 'bg-status-danger-soft text-status-danger',
+const statusVariants: Record<string, 'neutral' | 'success' | 'pending' | 'info' | 'danger'> = {
+    draft: 'neutral',
+    active: 'success',
+    paused: 'pending',
+    completed: 'info',
+    cancelled: 'danger',
 };
 
 const statusLabels: Record<string, string> = {
@@ -98,17 +118,58 @@ export default function CampaignsPage() {
     const totalBudget = campaigns.reduce((sum, c) => sum + (c.budget || 0), 0);
     const totalSpend = campaigns.reduce((sum, c) => sum + (c.spend || 0), 0);
 
-    const formatCurrency = (value: number) => {
-        if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M₮`;
-        if (value >= 1000) return `${(value / 1000).toFixed(0)}K₮`;
-        return value.toLocaleString() + '₮';
-    };
+    const columns: DataTableColumn<Campaign>[] = [
+        {
+            key: 'name',
+            header: 'Нэр',
+            sortable: true,
+            accessor: (c) => c.name,
+            cell: (c) => <span className="font-medium text-foreground">{c.name}</span>,
+        },
+        {
+            key: 'type',
+            header: 'Төрөл',
+            accessor: (c) => c.type,
+            cell: (c) => <span className="text-muted-foreground">{c.type}</span>,
+        },
+        {
+            key: 'status',
+            header: 'Төлөв',
+            cell: (c) => (
+                <StatusPill variant={statusVariants[c.status] ?? 'neutral'}>
+                    {statusLabels[c.status] || c.status}
+                </StatusPill>
+            ),
+        },
+        {
+            key: 'budget',
+            header: 'Төсөв',
+            align: 'right',
+            sortable: true,
+            accessor: (c) => c.budget,
+            cell: (c) => <Money value={c.budget} compact />,
+        },
+        {
+            key: 'spend',
+            header: 'Зарцуулалт',
+            align: 'right',
+            sortable: true,
+            accessor: (c) => c.spend,
+            cell: (c) => <Money value={c.spend} compact />,
+        },
+        {
+            key: 'start_date',
+            header: 'Хугацаа',
+            align: 'right',
+            cell: (c) => <DateText value={c.start_date} className="text-muted-foreground" />,
+        },
+    ];
 
     if (loading) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
                 <div className="flex items-center gap-3">
-                    <div className="w-6 h-6 border-2 border-status-success border-t-transparent rounded-full animate-spin" />
+                    <Spinner />
                     <span className="text-muted-foreground">Татаж байна...</span>
                 </div>
             </div>
@@ -116,153 +177,97 @@ export default function CampaignsPage() {
     }
 
     return (
-        <div className="space-y-6">
-            {/* Header */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div>
-                    <h1 className="text-xl md:text-2xl font-bold text-foreground flex items-center gap-2">
-                        <Megaphone className="w-6 h-6 text-status-success" />
-                        Кампанит ажил
-                    </h1>
-                    <p className="text-sm text-muted-foreground mt-1">Маркетингийн кампанит ажлууд</p>
-                </div>
-                <div className="flex items-center gap-3">
+        <div>
+            <PageHeader
+                eyebrow="Маркетинг"
+                title="Кампанит ажил"
+                subtitle="Маркетингийн кампанит ажлууд"
+                secondaryActions={
                     <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" />
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                         <Input
                             type="text"
                             placeholder="Хайх..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="pl-10 w-64 bg-surface-2/40"
+                            className="pl-10 w-full sm:w-64"
                         />
                     </div>
-                    <Button className="bg-status-success hover:bg-status-success text-white" onClick={() => setShowCreateModal(true)}>
-                        <Plus className="w-4 h-4 mr-2" />
+                }
+                primaryAction={
+                    <Button onClick={() => setShowCreateModal(true)}>
+                        <Plus className="w-4 h-4" />
                         Шинэ кампани
                     </Button>
-                </div>
-            </div>
+                }
+            />
 
             {/* Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <Card className="bg-surface">
-                    <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-muted-foreground">Нийт кампани</p>
-                                <p className="text-2xl font-bold text-foreground mt-1">{campaigns.length}</p>
-                            </div>
-                            <div className="w-12 h-12 bg-status-info-soft rounded-xl flex items-center justify-center">
-                                <Megaphone className="w-6 h-6 text-status-info" />
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card className="bg-surface">
-                    <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-muted-foreground">Идэвхтэй</p>
-                                <p className="text-2xl font-bold text-foreground mt-1">{activeCampaigns}</p>
-                            </div>
-                            <div className="w-12 h-12 bg-status-success-soft rounded-xl flex items-center justify-center">
-                                <Play className="w-6 h-6 text-status-success" />
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-                <Card className="bg-surface">
-                    <CardContent className="p-4">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-muted-foreground">Нийт зарцуулалт</p>
-                                <p className="text-2xl font-bold text-foreground mt-1">{formatCurrency(totalSpend)}</p>
-                            </div>
-                            <div className="w-12 h-12 bg-brand-soft rounded-xl flex items-center justify-center">
-                                <DollarSign className="w-6 h-6 text-brand-strong" />
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <StatsCard title="Нийт кампани" value={campaigns.length} icon={Megaphone} iconColor="info" />
+                <StatsCard title="Идэвхтэй" value={activeCampaigns} icon={Play} iconColor="success" />
+                <StatsCard
+                    title="Нийт зарцуулалт"
+                    value={<Money value={totalSpend} compact />}
+                    icon={DollarSign}
+                    iconColor="brand"
+                />
             </div>
 
-            {/* Campaigns List */}
-            <Card className="bg-surface">
-                <CardContent className="p-0">
-                    {filteredCampaigns.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-16">
-                            <Megaphone className="w-16 h-16 text-muted-foreground/60 mb-4" />
-                            <h2 className="text-xl font-semibold text-foreground mb-2">Мэдээлэл байхгүй</h2>
-                            <p className="text-muted-foreground">Кампанит ажил нэмэхийн тулд "Шинэ кампани" товчийг дарна уу.</p>
-                        </div>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full">
-                                <thead className="bg-surface-2/40 border-b">
-                                    <tr>
-                                        <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">Нэр</th>
-                                        <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">Төрөл</th>
-                                        <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">Төлөв</th>
-                                        <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">Төсөв</th>
-                                        <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">Зарцуулалт</th>
-                                        <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">Хугацаа</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                    {filteredCampaigns.map((campaign) => (
-                                        <tr key={campaign.id} className="hover:bg-surface-2/40">
-                                            <td className="px-4 py-3">
-                                                <p className="font-medium text-foreground">{campaign.name}</p>
-                                            </td>
-                                            <td className="px-4 py-3 text-sm text-muted-foreground">{campaign.type}</td>
-                                            <td className="px-4 py-3">
-                                                <span className={`px-2 py-1 text-xs rounded-full ${statusColors[campaign.status] || 'bg-surface-2'}`}>
-                                                    {statusLabels[campaign.status] || campaign.status}
-                                                </span>
-                                            </td>
-                                            <td className="px-4 py-3 text-sm font-medium">{formatCurrency(campaign.budget)}</td>
-                                            <td className="px-4 py-3 text-sm">{formatCurrency(campaign.spend)}</td>
-                                            <td className="px-4 py-3 text-sm text-muted-foreground">
-                                                {campaign.start_date ? new Date(campaign.start_date).toLocaleDateString('mn-MN') : '-'}
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
+            {/* Campaigns Table */}
+            <DataTable
+                columns={columns}
+                data={filteredCampaigns}
+                getRowId={(c) => c.id}
+                caption="Кампанит ажлууд"
+                emptyMessage="Кампанит ажил нэмэхийн тулд “Шинэ кампани” товчийг дарна уу."
+            />
+
             {/* Create Modal */}
-            {showCreateModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-surface rounded-2xl w-full max-w-md shadow-2xl">
-                        <div className="flex items-center justify-between px-6 py-4 border-b">
-                            <h3 className="font-semibold text-foreground">Шинэ кампани</h3>
-                            <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-surface-2 rounded-lg"><X className="w-5 h-5 text-muted-foreground/70" /></button>
+            <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+                <DialogContent showCloseButton={false} className="rounded-xl sm:max-w-md max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle className="heading-section text-lg text-foreground">Шинэ кампани</DialogTitle>
+                    </DialogHeader>
+                    <FieldGroup>
+                        <FormField label="Нэр" htmlFor="campaign-name" required>
+                            <Input id="campaign-name" value={newCampaign.name} onChange={e => setNewCampaign(p => ({ ...p, name: e.target.value }))} placeholder="Кампанийн нэр" />
+                        </FormField>
+                        <FormField label="Төрөл" htmlFor="campaign-type">
+                            <Select value={newCampaign.type} onValueChange={v => setNewCampaign(p => ({ ...p, type: v }))}>
+                                <SelectTrigger id="campaign-type">
+                                    <SelectValue placeholder="— Сонгох —" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="social">Сошиал</SelectItem>
+                                    <SelectItem value="search">Хайлт</SelectItem>
+                                    <SelectItem value="display">Дэлгэц</SelectItem>
+                                    <SelectItem value="email">Имэйл</SelectItem>
+                                    <SelectItem value="event">Эвент</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </FormField>
+                        <FormField label="Төсөв (₮)" htmlFor="campaign-budget">
+                            <Input id="campaign-budget" type="number" value={newCampaign.budget} onChange={e => setNewCampaign(p => ({ ...p, budget: Number(e.target.value) }))} />
+                        </FormField>
+                        <div className="grid grid-cols-2 gap-3">
+                            <FormField label="Эхлэх" htmlFor="campaign-start">
+                                <Input id="campaign-start" type="date" value={newCampaign.start_date} onChange={e => setNewCampaign(p => ({ ...p, start_date: e.target.value }))} />
+                            </FormField>
+                            <FormField label="Дуусах" htmlFor="campaign-end">
+                                <Input id="campaign-end" type="date" value={newCampaign.end_date} onChange={e => setNewCampaign(p => ({ ...p, end_date: e.target.value }))} />
+                            </FormField>
                         </div>
-                        <div className="px-6 py-4 space-y-4">
-                            <div><label className="text-sm font-medium text-foreground block mb-1">Нэр *</label><Input value={newCampaign.name} onChange={e => setNewCampaign(p => ({ ...p, name: e.target.value }))} placeholder="Кампанийн нэр" /></div>
-                            <div><label className="text-sm font-medium text-foreground block mb-1">Төрөл</label>
-                                <select value={newCampaign.type} onChange={e => setNewCampaign(p => ({ ...p, type: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm">
-                                    <option value="social">Сошиал</option><option value="search">Хайлт</option><option value="display">Дэлгэц</option><option value="email">Имэйл</option><option value="event">Эвент</option>
-                                </select></div>
-                            <div><label className="text-sm font-medium text-foreground block mb-1">Төсөв (₮)</label><Input type="number" value={newCampaign.budget} onChange={e => setNewCampaign(p => ({ ...p, budget: Number(e.target.value) }))} /></div>
-                            <div className="grid grid-cols-2 gap-3">
-                                <div><label className="text-sm font-medium text-foreground block mb-1">Эхлэх</label><Input type="date" value={newCampaign.start_date} onChange={e => setNewCampaign(p => ({ ...p, start_date: e.target.value }))} /></div>
-                                <div><label className="text-sm font-medium text-foreground block mb-1">Дуусах</label><Input type="date" value={newCampaign.end_date} onChange={e => setNewCampaign(p => ({ ...p, end_date: e.target.value }))} /></div>
-                            </div>
-                        </div>
-                        <div className="flex justify-end gap-3 px-6 py-4 border-t">
-                            <Button variant="outline" onClick={() => setShowCreateModal(false)}>Болих</Button>
-                            <Button className="bg-status-success hover:bg-status-success text-white" onClick={handleCreate} disabled={!newCampaign.name.trim() || creating}>
-                                {creating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Үүсгэж байна...</> : <><Plus className="w-4 h-4 mr-2" />Үүсгэх</>}
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
+                    </FieldGroup>
+                    <DialogFooter>
+                        <Button variant="secondary" onClick={() => setShowCreateModal(false)}>Болих</Button>
+                        <Button onClick={handleCreate} disabled={!newCampaign.name.trim() || creating} isLoading={creating}>
+                            {!creating && <Plus className="w-4 h-4" />}
+                            Үүсгэх
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
