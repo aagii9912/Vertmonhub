@@ -344,7 +344,7 @@ export async function executeScheduleViewing(
 
         if (leadError || !newLead) {
             logger.error('Lead creation error:', { error: leadError });
-            return { success: false, error: 'Үзлэг товлоход алдаа гарлаа.' };
+            return { success: false, error: 'Уулзалт товлоход алдаа гарлаа.' };
         }
         leadId = newLead.id;
     }
@@ -387,8 +387,8 @@ export async function executeScheduleViewing(
 
     // Send notification to owner
     await sendPushNotification(context.shopId, {
-        title: '🏠 Шинэ үзлэг товлогдлоо',
-        body: `${context.customerName || 'Хэрэглэгч'} ${scheduledAt.toLocaleDateString('mn-MN')} ${hour}:00 цагт үзлэг хийхийг хүсэж байна.`,
+        title: '🏠 Шинэ уулзалт товлогдлоо',
+        body: `${context.customerName || 'Хэрэглэгч'} ${scheduledAt.toLocaleDateString('mn-MN')} ${hour}:00 цагт уулзалт хийхийг хүсэж байна.`,
         url: `/dashboard/leads/${leadId}`,
         tag: `viewing-${leadId}`
     });
@@ -402,7 +402,7 @@ export async function executeScheduleViewing(
 
     return {
         success: true,
-        message: `✅ Үзлэг товлогдлоо!\n\n📅 ${dateStr}\n⏰ ${hour}:00 цаг\n\nТа ${args.customer_phone ? 'энэ' : 'холбоо барих'} дугаараар холбогдоно уу.`,
+        message: `✅ Уулзалт товлогдлоо!\n\n📅 ${dateStr}\n⏰ ${hour}:00 цаг\n\nТа ${args.customer_phone ? 'энэ' : 'холбоо барих'} дугаараар холбогдоно уу.`,
         data: { leadId, scheduledAt: scheduledAt.toISOString() },
         quickReplies: !args.customer_phone ? [
             { title: '📞 Утас өгөх', payload: 'Миний утас' }

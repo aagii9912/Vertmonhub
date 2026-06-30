@@ -91,7 +91,7 @@ export default function DashboardPage() {
     const STAT_CARDS = [
         { title: 'Нийт байр', value: stats.totalProperties.toString(), icon: Building2, iconColor: 'brand' as const },
         { title: 'Нийт лийд', value: stats.totalLeads.toString(), icon: Users, iconColor: 'success' as const },
-        { title: 'Үзлэг (сар)', value: stats.monthlyViewings.toString(), icon: Eye, iconColor: 'info' as const },
+        { title: 'Уулзалт (сар)', value: stats.monthlyViewings.toString(), icon: Eye, iconColor: 'info' as const },
         {
             title: 'Хүлээгдэж буй гэрээ',
             value: stats.pendingContracts.toString(),
@@ -227,7 +227,7 @@ export default function DashboardPage() {
                             <CardHeader className="py-3">
                                 <CardTitle className="flex items-center gap-2 text-base">
                                     <Eye className="w-4 h-4 text-status-info" />
-                                    Ойролцоох үзлэгүүд
+                                    Ойролцоох уулзалтууд
                                 </CardTitle>
                             </CardHeader>
                             <CardContent className="p-0">
@@ -260,7 +260,7 @@ export default function DashboardPage() {
                                                     </div>
                                                     <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
                                                         <MapPin className="w-3 h-3" />
-                                                        {v.properties?.name || v.agent_notes || 'Үзлэг'}
+                                                        {v.properties?.name || v.agent_notes || 'Уулзалт'}
                                                     </p>
                                                 </Link>
                                             </motion.div>
@@ -268,7 +268,7 @@ export default function DashboardPage() {
                                     ) : (
                                         <EmptyState
                                             icon={<Eye className="w-7 h-7" />}
-                                            title="Товлосон үзлэг байхгүй"
+                                            title="Товлосон уулзалт байхгүй"
                                         />
                                     )}
                                 </div>

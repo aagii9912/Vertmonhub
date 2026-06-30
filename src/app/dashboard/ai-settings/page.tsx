@@ -557,7 +557,7 @@ function NotificationsSection({ notifyOnContact, setNotifyOnContact, notifyOnSup
     const items = [
         { label: 'Холбогдох хүсэлт', desc: 'Хэрэглэгч утасны дугаар эсвэл имэйл үлдээх үед', value: notifyOnContact, onChange: setNotifyOnContact },
         { label: 'Тусламж хүсэх', desc: 'Хэрэглэгч борлуулагчтай холбогдохыг хүсэх үед', value: notifyOnSupport, onChange: setNotifyOnSupport },
-        { label: 'Үзлэг цуцлах', desc: 'Хэрэглэгч товлосон үзлэгээ цуцлах үед', value: notifyOnCancel, onChange: setNotifyOnCancel },
+        { label: 'Уулзалт цуцлах', desc: 'Хэрэглэгч товлосон уулзалтаа цуцлах үед', value: notifyOnCancel, onChange: setNotifyOnCancel },
     ];
 
     return (

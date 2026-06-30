@@ -40,7 +40,7 @@
 npm run dev
 
 npm run build          # production build
-npm run lint           # next lint
+npm run lint           # eslint . (flat config; Next 16 removed `next lint`)
 npm run typecheck      # tsc --noEmit
 npm run test           # vitest run
 ```

@@ -18,7 +18,7 @@ const TOOL_LABEL: Record<string, string> = {
     create_property: 'Байр нэмэх', update_property_status: 'Байрны статус', update_property_price: 'Байрны үнэ', delete_property: 'Байр устгах',
     create_lead: 'Лийд үүсгэх', update_lead_status: 'Лийдийн статус', add_lead_note: 'Лийд тэмдэглэл', delete_lead: 'Лийд устгах', bulk_update_leads: 'Бөөнөөр лийд шинэчлэх',
     create_customer: 'Харилцагч үүсгэх', delete_customer: 'Харилцагч устгах',
-    schedule_viewing: 'Үзлэг товлох', delete_viewing: 'Үзлэг устгах',
+    schedule_viewing: 'Уулзалт товлох', delete_viewing: 'Уулзалт устгах',
     create_contract: 'Гэрээ үүсгэх', delete_contract: 'Гэрээ устгах', process_contract_action: 'Гэрээний процесс',
     invite_user: 'Хэрэглэгч урих', assign_role: 'Дүр оноох', create_role: 'Дүр үүсгэх', attach_file: 'Файл хавсаргах',
 };

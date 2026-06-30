@@ -791,7 +791,7 @@ export async function createCustomer(shopId: string, args: any, confirm = false,
     return { success: true, message: `"${data.name}" харилцагч амжилттай үүсгэлээ${salesManagerName ? ` (менежер: ${salesManagerName})` : ''}.`, customerId: data.id };
 }
 
-// ---- Viewings (үзлэг) ----
+// ---- Viewings (уулзалт) ----
 
 export async function scheduleViewing(shopId: string, args: any, confirm = false, salesManagerName = '') {
     if (!args.scheduled_at) return { error: 'scheduled_at (огноо/цаг) шаардлагатай' };
@@ -819,7 +819,7 @@ export async function scheduleViewing(shopId: string, args: any, confirm = false
         Байр: prop.name, Огноо: scheduledAt.toLocaleString('mn-MN'),
         Харилцагч: args.customer_name || '-', Менежер: salesManagerName || '-',
     };
-    if (!confirm) return confirmNeeded('schedule_viewing', { ...args, property_id: prop.id, lead_id: leadId }, `Үзлэг товлох: ${prop.name}`, preview);
+    if (!confirm) return confirmNeeded('schedule_viewing', { ...args, property_id: prop.id, lead_id: leadId }, `Уулзалт товлох: ${prop.name}`, preview);
 
     const { data, error } = await supabaseAdmin.from('property_viewings').insert({
         shop_id: shopId, property_id: prop.id, lead_id: leadId,
@@ -828,7 +828,7 @@ export async function scheduleViewing(shopId: string, args: any, confirm = false
     }).select('id').single();
     if (error) return { error: `Алдаа: ${error.message}` };
     await stampSalesManager('property_viewings', data.id, salesManagerName);
-    return { success: true, message: `"${prop.name}" байрны үзлэгийг ${scheduledAt.toLocaleString('mn-MN')}-д товлолоо${salesManagerName ? ` (менежер: ${salesManagerName})` : ''}.`, viewingId: data.id };
+    return { success: true, message: `"${prop.name}" байрны уулзалтыг ${scheduledAt.toLocaleString('mn-MN')}-д товлолоо${salesManagerName ? ` (менежер: ${salesManagerName})` : ''}.`, viewingId: data.id };
 }
 
 export async function deleteViewing(shopId: string, args: any, confirm = false) {
@@ -838,7 +838,7 @@ export async function deleteViewing(shopId: string, args: any, confirm = false) 
     if (args.viewing_id) {
         query = query.eq('id', args.viewing_id);
     } else if (args.property_name) {
-        // тухайн байрны товлогдсон үзлэгийг хайна
+        // тухайн байрны товлогдсон уулзалтыг хайна
         const { data: props } = await supabaseAdmin.from('properties').select('id').eq('shop_id', shopId).ilike('name', `%${args.property_name}%`).limit(1);
         if (!props || !props.length) return { error: 'Байр олдсонгүй' };
         query = query.eq('property_id', props[0].id).eq('status', 'scheduled').order('scheduled_at', { ascending: true });
@@ -847,19 +847,19 @@ export async function deleteViewing(shopId: string, args: any, confirm = false) 
     }
 
     const { data: viewings } = await query;
-    if (!viewings || viewings.length === 0) return { error: 'Үзлэг олдсонгүй' };
-    if (viewings.length > 1) return { error: `${viewings.length} үзлэг олдлоо, viewing_id-г тодруулна уу`, options: viewings.map((v: any) => ({ id: v.id, scheduled_at: v.scheduled_at })) };
+    if (!viewings || viewings.length === 0) return { error: 'Уулзалт олдсонгүй' };
+    if (viewings.length > 1) return { error: `${viewings.length} уулзалт олдлоо, viewing_id-г тодруулна уу`, options: viewings.map((v: any) => ({ id: v.id, scheduled_at: v.scheduled_at })) };
     const v: any = viewings[0];
     const propName = v.properties?.name || 'байр';
 
     if (!confirm) {
-        return confirmNeeded('delete_viewing', { viewing_id: v.id, reason: args.reason }, `Үзлэг устгах: ${propName}`,
+        return confirmNeeded('delete_viewing', { viewing_id: v.id, reason: args.reason }, `Уулзалт устгах: ${propName}`,
             { Байр: propName, Огноо: v.scheduled_at ? new Date(v.scheduled_at).toLocaleString('mn-MN') : '-', Шалтгаан: args.reason || '-' });
     }
 
     const { error } = await supabaseAdmin.from('property_viewings').update({ deleted_at: new Date().toISOString(), status: 'cancelled' }).eq('id', v.id);
     if (error) return { error: `Алдаа: ${error.message}` };
-    return { success: true, message: `"${propName}" байрны үзлэгийг устгалаа (сэргээх боломжтой).`, viewingId: v.id };
+    return { success: true, message: `"${propName}" байрны уулзалтыг устгалаа (сэргээх боломжтой).`, viewingId: v.id };
 }
 
 // ---- Contracts (гэрээ) ----
@@ -1163,7 +1163,7 @@ export function generateChartConfig(toolName: string, args: any, data: any): any
             if (Array.isArray(data) && data.length > 0) {
                 const statusCounts: Record<string, number> = {};
                 data.forEach((l: any) => { statusCounts[l.status] = (statusCounts[l.status] || 0) + 1; });
-                const statusLabels: Record<string, string> = { new: 'Шинэ', contacted: 'Холбогдсон', viewing_scheduled: 'Үзлэг', offered: 'Санал', negotiating: 'Хэлэлцээр', closed_won: 'Амжилттай', closed_lost: 'Алдсан' };
+                const statusLabels: Record<string, string> = { new: 'Шинэ', contacted: 'Холбогдсон', viewing_scheduled: 'Уулзалт', offered: 'Санал', negotiating: 'Хэлэлцээр', closed_won: 'Амжилттай', closed_lost: 'Алдсан' };
                 return { type: 'bar', data: Object.entries(statusCounts).map(([status, count]) => ({ name: statusLabels[status] || status, value: count })) };
             }
             return null;

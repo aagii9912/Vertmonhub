@@ -7,7 +7,7 @@
 
 import { SchemaType } from '@google/generative-ai';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export const readTools: any[] = [
     {
         name: 'get_dashboard_stats',
@@ -176,7 +176,7 @@ export const readTools: any[] = [
     }
 ];
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export const writeTools: any[] = [
     {
         name: 'update_property_status',
@@ -302,13 +302,13 @@ export const writeTools: any[] = [
     },
     {
         name: 'schedule_viewing',
-        description: 'Үл хөдлөхийн үзлэг товлох. Бичих эрхтэй ажилтан ашиглана. Баталгаажуулалт авна. Борлуулалтын менежерийн нэрээр хадгална.',
+        description: 'Үл хөдлөхийн уулзалт товлох. Бичих эрхтэй ажилтан ашиглана. Баталгаажуулалт авна. Борлуулалтын менежерийн нэрээр хадгална.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 property_id: { type: SchemaType.STRING, description: 'Байрны ID' },
                 property_name: { type: SchemaType.STRING, description: 'Байрны нэрээр хайх' },
-                scheduled_at: { type: SchemaType.STRING, description: 'Үзлэгийн огноо/цаг (ISO эсвэл "2026-06-20 14:00")' },
+                scheduled_at: { type: SchemaType.STRING, description: 'Уулзалтын огноо/цаг (ISO эсвэл "2026-06-20 14:00")' },
                 customer_name: { type: SchemaType.STRING, description: 'Харилцагчийн нэр (лийдтэй холбоход)' },
                 lead_id: { type: SchemaType.STRING, description: 'Лийдийн ID (байвал)' },
                 notes: { type: SchemaType.STRING, description: 'Тэмдэглэл' }
@@ -394,7 +394,7 @@ export const writeTools: any[] = [
     }
 ];
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export const deleteTools: any[] = [
     {
         name: 'delete_property',
@@ -423,12 +423,12 @@ export const deleteTools: any[] = [
     },
     {
         name: 'delete_viewing',
-        description: 'Товлогдсон үзлэгийг устгах/цуцлах (soft delete — сэргээх боломжтой). Устгах эрхтэй ажилтан. Баталгаажуулалт авна.',
+        description: 'Товлогдсон уулзалтыг устгах/цуцлах (soft delete — сэргээх боломжтой). Устгах эрхтэй ажилтан. Баталгаажуулалт авна.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
-                viewing_id: { type: SchemaType.STRING, description: 'Үзлэгийн ID' },
-                property_name: { type: SchemaType.STRING, description: 'Байрны нэрээр товлогдсон үзлэгийг хайх' },
+                viewing_id: { type: SchemaType.STRING, description: 'Уулзалтын ID' },
+                property_name: { type: SchemaType.STRING, description: 'Байрны нэрээр товлогдсон уулзалтыг хайх' },
                 reason: { type: SchemaType.STRING, description: 'Устгах шалтгаан' }
             }
         }
@@ -461,7 +461,7 @@ export const deleteTools: any[] = [
     }
 ];
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export const adminTools: any[] = [
     {
         name: 'invite_user',

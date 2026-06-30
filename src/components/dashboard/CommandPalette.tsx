@@ -71,10 +71,10 @@ const ROUTE_SECTIONS: RouteSection[] = [
         keywords: ["leads", "лид", "сонирхогч"],
       },
       {
-        label: "Үзлэг",
+        label: "Уулзалт",
         href: "/dashboard/viewings",
         icon: CalendarCheck,
-        keywords: ["viewings", "үзлэг", "захиалга"],
+        keywords: ["viewings", "уулзалт", "үзлэг", "захиалга"],
       },
       {
         label: "Гэрээ",

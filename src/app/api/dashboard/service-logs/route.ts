@@ -22,6 +22,7 @@ export async function GET(request: NextRequest) {
         const priority = sp.get('priority');
         const assignedTo = sp.get('assigned_to');
         const customerId = sp.get('customer_id');
+        const channel = sp.get('channel');
         const search = sp.get('search')?.trim() || '';
 
         const buildQuery = () => {
@@ -35,6 +36,7 @@ export async function GET(request: NextRequest) {
             if (priority) q = q.eq('priority', priority);
             if (assignedTo) q = q.eq('assigned_to', assignedTo);
             if (customerId) q = q.eq('customer_id', customerId);
+            if (channel) q = q.eq('channel', channel);
 
             if (search) {
                 q = q.or(
@@ -64,7 +66,7 @@ export async function GET(request: NextRequest) {
     } catch (error) {
         logger.error('[ServiceLogs API] GET error:', { error });
         return NextResponse.json(
-            { error: 'Үйлчилгээний бүртгэл татахад алдаа гарлаа', logs: [], stats: emptyStats() },
+            { error: 'Санал гомдлын бүртгэл татахад алдаа гарлаа', logs: [], stats: emptyStats() },
             { status: 500 }
         );
     }
@@ -121,6 +123,12 @@ export async function POST(request: NextRequest) {
             .single();
 
         if (error) throw error;
+
+        // channel — 20260630150000 migration хэрэгжээгүй байж болзошгүй тул
+        // best-effort (үндсэн insert-ийг унагаахгүйгээр тусад нь шинэчилнэ).
+        if (body.channel) {
+            await supabase.from('service_logs').update({ channel: body.channel }).eq('id', data.id);
+        }
 
         return NextResponse.json(
             { log: data, message: 'Хүсэлт амжилттай бүртгэлээ' },

@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { FileText, Download, Loader2, User, Building2, DollarSign, Search, Check } from 'lucide-react';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -74,6 +75,14 @@ function derivePaymentMethod(c: ContractRow): ContractData['paymentMethod'] {
 }
 
 export default function ContractGeneratePage() {
+    return (
+        <Suspense fallback={null}>
+            <ContractGenerateInner />
+        </Suspense>
+    );
+}
+
+function ContractGenerateInner() {
     const [data, setData] = useState<ContractData>(empty);
     const [generating, setGenerating] = useState(false);
     const [search, setSearch] = useState('');
@@ -97,6 +106,16 @@ export default function ContractGeneratePage() {
         }, 350);
         return () => clearTimeout(t);
     }, [search]);
+
+    // Уулзалт г.м.-ээс query param-аар урьдчилан бөглөх (mount дээр нэг удаа)
+    const searchParams = useSearchParams();
+    useEffect(() => {
+        const keys = ['buyerName', 'buyerPhone', 'buyerRegister', 'propertyName', 'propertySizeSqm', 'propertyFloor', 'propertyRooms', 'pricePerSqm', 'price', 'downPayment'] as const;
+        const next: Partial<ContractData> = {};
+        for (const k of keys) { const val = searchParams.get(k); if (val) next[k] = val; }
+        if (Object.keys(next).length) setData(prev => ({ ...prev, ...next }));
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     function loadContract(c: ContractRow) {
         setData({

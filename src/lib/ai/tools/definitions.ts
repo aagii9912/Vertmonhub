@@ -9,7 +9,7 @@ import { SchemaType } from '@google/generative-ai';
 /**
  * All available AI tools for Gemini function calling
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export const GEMINI_TOOLS: any[] = [
     // ============================================
     // REAL ESTATE TOOLS
@@ -62,7 +62,7 @@ export const GEMINI_TOOLS: any[] = [
     },
     {
         name: 'schedule_viewing',
-        description: 'Үл хөдлөх үзэх уулзалт товлох. Хэрэглэгч үзлэг хийхийг хүссэн үед.',
+        description: 'Үл хөдлөх үзэх уулзалт товлох. Хэрэглэгч уулзалт хийхийг хүссэн үед.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {

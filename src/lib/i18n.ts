@@ -25,7 +25,7 @@ const translations: Record<Locale, TranslationMap> = {
         'nav.reports': 'Тайлан',
         'nav.settings': 'Тохиргоо',
         'nav.contracts': 'Гэрээ',
-        'nav.viewings': 'Үзлэг',
+        'nav.viewings': 'Уулзалт',
         'nav.pipeline': 'Pipeline',
         'nav.ai_assistant': 'AI Туслах',
         'nav.marketing': 'Маркетинг',
@@ -54,7 +54,7 @@ const translations: Record<Locale, TranslationMap> = {
         // Leads
         'lead.new': 'Шинэ',
         'lead.contacted': 'Холбогдсон',
-        'lead.viewing_scheduled': 'Үзлэг товлосон',
+        'lead.viewing_scheduled': 'Уулзалт товлосон',
         'lead.offered': 'Санал илгээсэн',
         'lead.negotiating': 'Хэлэлцэж байна',
         'lead.closed_won': 'Амжилттай',
