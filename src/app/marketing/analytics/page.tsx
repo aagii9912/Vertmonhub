@@ -2,7 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/Card';
-import { BarChart3, Globe, Monitor, Smartphone, Tablet, MapPin, Eye, Clock, ArrowUpRight } from 'lucide-react';
+import { PageHeader } from '@/components/dashboard/PageHeader';
+import { StatsCard } from '@/components/dashboard/StatsCard';
+import { ChartCard } from '@/components/ui/ChartCard';
+import { BarChart } from '@/components/charts/BarChart';
+import { Spinner } from '@/components/ui/Spinner';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { BarChart3, Globe, Monitor, Smartphone, Tablet, Eye, Clock, ArrowUpRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 
@@ -67,7 +73,6 @@ export default function AnalyticsPage() {
         if (d.source) sourceMap.set(d.source, (sourceMap.get(d.source) || 0) + d.visitors);
     }
     const sources = Array.from(sourceMap.entries()).map(([source, visitors]) => ({ source, visitors })).sort((a, b) => b.visitors - a.visitors);
-    const totalSourceVisitors = sources.reduce((s, d) => s + d.visitors, 0);
 
     // Device aggregation
     const deviceMap = new Map<string, number>();
@@ -83,95 +88,118 @@ export default function AnalyticsPage() {
     };
 
     if (loading) {
-        return (<div className="flex items-center justify-center min-h-[400px]"><div className="flex items-center gap-3"><div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" /><span className="text-muted-foreground">Татаж байна...</span></div></div>);
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <Spinner size="md" label="Татаж байна..." />
+            </div>
+        );
     }
 
     return (
-        <div className="space-y-6">
-            <div>
-                <h1 className="text-xl md:text-2xl font-bold text-foreground flex items-center gap-2">
-                    <BarChart3 className="w-6 h-6 text-status-success" />
-                    Вэб аналитик
-                </h1>
-                <p className="text-sm text-muted-foreground mt-1">Вэбсайтын хандалтын статистик</p>
-            </div>
+        <div>
+            <PageHeader
+                eyebrow="Маркетинг"
+                title="Вэб аналитик"
+                subtitle="Вэбсайтын хандалтын статистик"
+            />
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Нийт зочид</p><p className="text-2xl font-bold mt-1">{totalVisitors.toLocaleString()}</p></div><div className="w-10 h-10 bg-status-info-soft rounded-lg flex items-center justify-center"><Eye className="w-5 h-5 text-status-info" /></div></div></CardContent></Card>
-                <Card><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Хуудас үзэлт</p><p className="text-2xl font-bold mt-1">{totalPageViews.toLocaleString()}</p></div><div className="w-10 h-10 bg-status-success-soft rounded-lg flex items-center justify-center"><Globe className="w-5 h-5 text-status-success" /></div></div></CardContent></Card>
-                <Card><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Bounce rate</p><p className="text-2xl font-bold mt-1">{avgBounce.toFixed(1)}%</p></div><div className="w-10 h-10 bg-status-pending-soft rounded-lg flex items-center justify-center"><ArrowUpRight className="w-5 h-5 text-status-pending" /></div></div></CardContent></Card>
-                <Card><CardContent className="p-4"><div className="flex items-center justify-between"><div><p className="text-sm text-muted-foreground">Дундаж хугацаа</p><p className="text-2xl font-bold mt-1">{Math.floor(avgTime / 60)}:{String(avgTime % 60).padStart(2, '0')}</p></div><div className="w-10 h-10 bg-brand-soft rounded-lg flex items-center justify-center"><Clock className="w-5 h-5 text-brand-strong" /></div></div></CardContent></Card>
-            </div>
-
-            {data.length === 0 ? (
-                <Card>
-                    <CardContent className="flex flex-col items-center justify-center py-16">
-                        <BarChart3 className="w-16 h-16 text-muted-foreground/60 mb-4" />
-                        <h2 className="text-xl font-semibold text-foreground mb-2">Мэдээлэл байхгүй</h2>
-                        <p className="text-muted-foreground">Вэб аналитикийн мэдээлэл энд харагдана.</p>
-                    </CardContent>
-                </Card>
-            ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Top Pages */}
-                    <Card>
-                        <CardContent className="p-4">
-                            <h3 className="font-semibold text-foreground mb-4">Шилдэг хуудсууд</h3>
-                            <div className="space-y-3">
-                                {topPages.map((p, i) => (
-                                    <div key={p.page} className="flex items-center justify-between">
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-xs font-bold text-muted-foreground/70 w-5">{i + 1}</span>
-                                            <span className="text-sm text-foreground truncate max-w-[200px]">{p.page}</span>
-                                        </div>
-                                        <span className="text-sm font-medium text-muted-foreground">{p.views.toLocaleString()}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* Sources + Devices */}
-                    <div className="space-y-6">
-                        <Card>
-                            <CardContent className="p-4">
-                                <h3 className="font-semibold text-foreground mb-4">Эх сурвалж</h3>
-                                <div className="space-y-3">
-                                    {sources.map(s => (
-                                        <div key={s.source}>
-                                            <div className="flex items-center justify-between mb-1">
-                                                <span className="text-sm text-foreground capitalize">{s.source}</span>
-                                                <span className="text-xs text-muted-foreground">{totalSourceVisitors > 0 ? Math.round((s.visitors / totalSourceVisitors) * 100) : 0}%</span>
-                                            </div>
-                                            <div className="w-full bg-surface-2 rounded-full h-1.5">
-                                                <div className="bg-status-success h-1.5 rounded-full" style={{ width: `${totalSourceVisitors > 0 ? (s.visitors / totalSourceVisitors) * 100 : 0}%` }} />
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {sources.length === 0 && <p className="text-sm text-muted-foreground text-center">Мэдээлэл байхгүй</p>}
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="p-4">
-                                <h3 className="font-semibold text-foreground mb-4">Төхөөрөмж</h3>
-                                <div className="space-y-3">
-                                    {devices.map(d => (
-                                        <div key={d.device} className="flex items-center justify-between">
-                                            <div className="flex items-center gap-2">
-                                                {deviceIcons[d.device] || <Globe className="w-4 h-4 text-muted-foreground/70" />}
-                                                <span className="text-sm text-foreground capitalize">{d.device}</span>
-                                            </div>
-                                            <span className="text-sm font-medium">{d.visitors.toLocaleString()}</span>
-                                        </div>
-                                    ))}
-                                    {devices.length === 0 && <p className="text-sm text-muted-foreground text-center">Мэдээлэл байхгүй</p>}
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </div>
+            <div className="space-y-6">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                    <StatsCard
+                        icon={Eye}
+                        iconColor="info"
+                        title="Нийт зочид"
+                        value={totalVisitors.toLocaleString()}
+                    />
+                    <StatsCard
+                        icon={Globe}
+                        iconColor="success"
+                        title="Хуудас үзэлт"
+                        value={totalPageViews.toLocaleString()}
+                    />
+                    <StatsCard
+                        icon={ArrowUpRight}
+                        iconColor="warning"
+                        title="Bounce rate"
+                        value={`${avgBounce.toFixed(1)}%`}
+                    />
+                    <StatsCard
+                        icon={Clock}
+                        iconColor="brand"
+                        title="Дундаж хугацаа"
+                        value={`${Math.floor(avgTime / 60)}:${String(avgTime % 60).padStart(2, '0')}`}
+                    />
                 </div>
-            )}
+
+                {data.length === 0 ? (
+                    <EmptyState
+                        icon={<BarChart3 className="w-7 h-7" />}
+                        title="Мэдээлэл байхгүй"
+                        description="Вэб аналитикийн мэдээлэл энд харагдана."
+                    />
+                ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Top Pages */}
+                        <Card>
+                            <CardContent className="p-4">
+                                <h3 className="heading-section text-base text-foreground mb-4">Шилдэг хуудсууд</h3>
+                                <div className="space-y-3">
+                                    {topPages.map((p, i) => (
+                                        <div key={p.page} className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xs font-bold text-muted-foreground/70 w-5 tabular-nums">{i + 1}</span>
+                                                <span className="text-sm text-foreground truncate max-w-[200px]">{p.page}</span>
+                                            </div>
+                                            <span className="text-sm font-medium text-muted-foreground tabular-nums">{p.views.toLocaleString()}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </CardContent>
+                        </Card>
+
+                        {/* Sources + Devices */}
+                        <div className="space-y-6">
+                            {sources.length > 0 ? (
+                                <ChartCard
+                                    title="Эх сурвалж"
+                                    subtitle="Зочдын тоо эх сурвалжаар"
+                                    height={Math.max(180, sources.length * 48)}
+                                >
+                                    <BarChart
+                                        data={sources.map(s => ({ source: s.source, visitors: s.visitors }))}
+                                        xKey="source"
+                                        series={[{ key: 'visitors', name: 'Зочид' }]}
+                                        horizontal
+                                        colorByPoint
+                                        valueFormatter={(v) => v.toLocaleString()}
+                                    />
+                                </ChartCard>
+                            ) : (
+                                <ChartCard title="Эх сурвалж" raw height={140}>
+                                    <p className="text-sm text-muted-foreground text-center py-8">Мэдээлэл байхгүй</p>
+                                </ChartCard>
+                            )}
+                            <Card>
+                                <CardContent className="p-4">
+                                    <h3 className="heading-section text-base text-foreground mb-4">Төхөөрөмж</h3>
+                                    <div className="space-y-3">
+                                        {devices.map(d => (
+                                            <div key={d.device} className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    {deviceIcons[d.device] || <Globe className="w-4 h-4 text-muted-foreground/70" />}
+                                                    <span className="text-sm text-foreground capitalize">{d.device}</span>
+                                                </div>
+                                                <span className="text-sm font-medium tabular-nums">{d.visitors.toLocaleString()}</span>
+                                            </div>
+                                        ))}
+                                        {devices.length === 0 && <p className="text-sm text-muted-foreground text-center">Мэдээлэл байхгүй</p>}
+                                    </div>
+                                </CardContent>
+                            </Card>
+                        </div>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }

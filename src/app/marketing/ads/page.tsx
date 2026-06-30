@@ -1,12 +1,36 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Card, CardContent } from '@/components/ui/Card';
+import { PageHeader } from '@/components/dashboard/PageHeader';
+import { StatsCard } from '@/components/dashboard/StatsCard';
 import { Button } from '@/components/ui/Button';
-import { BarChart3, Plus, DollarSign, MousePointer, Eye, Target, TrendingUp, X, Loader2 } from 'lucide-react';
+import { Spinner } from '@/components/ui/Spinner';
+import { EmptyState } from '@/components/ui/EmptyState';
+import {
+    DataTable,
+    type DataTableColumn,
+    Money,
+    StatusPill,
+} from '@/components/ui/DataTable';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from '@/components/ui/Dialog';
+import { FormField, FieldGroup } from '@/components/ui/FormField';
+import { Input } from '@/components/ui/Input';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/Select';
+import { BarChart3, Plus, DollarSign, Target, TrendingUp, MousePointer } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { Input } from '@/components/ui/Input';
 
 interface AdCampaign {
     id: string;
@@ -74,92 +98,174 @@ export default function AdsPage() {
     const avgCtr = totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : 0;
     const avgCpc = totalClicks > 0 ? totalSpend / totalClicks : 0;
 
-    const formatCurrency = (v: number) => v >= 1000000 ? `${(v / 1000000).toFixed(1)}M₮` : v >= 1000 ? `${(v / 1000).toFixed(0)}K₮` : v.toLocaleString() + '₮';
+    const columns: DataTableColumn<AdCampaign>[] = [
+        {
+            key: 'name',
+            header: 'Нэр',
+            accessor: (ad) => ad.name,
+            cell: (ad) => <span className="font-medium text-foreground">{ad.name}</span>,
+            sortable: true,
+        },
+        {
+            key: 'platform',
+            header: 'Платформ',
+            accessor: (ad) => ad.platform,
+            cell: (ad) => <span className="text-sm text-muted-foreground capitalize">{ad.platform}</span>,
+            sortable: true,
+        },
+        {
+            key: 'status',
+            header: 'Төлөв',
+            accessor: (ad) => ad.status,
+            cell: (ad) => (
+                <StatusPill variant={ad.status === 'active' ? 'success' : 'neutral'}>
+                    {ad.status === 'active' ? 'Идэвхтэй' : ad.status === 'paused' ? 'Зогссон' : ad.status}
+                </StatusPill>
+            ),
+        },
+        {
+            key: 'spend',
+            header: 'Зарцуулалт',
+            align: 'right',
+            accessor: (ad) => ad.spend,
+            cell: (ad) => <Money value={ad.spend} compact />,
+            sortable: true,
+        },
+        {
+            key: 'clicks',
+            header: 'Click',
+            align: 'right',
+            accessor: (ad) => ad.clicks,
+            cell: (ad) => <span className="tabular-nums">{ad.clicks.toLocaleString()}</span>,
+            sortable: true,
+        },
+        {
+            key: 'ctr',
+            header: 'CTR',
+            align: 'right',
+            accessor: (ad) => ad.ctr,
+            cell: (ad) => <span className="tabular-nums">{ad.ctr.toFixed(2)}%</span>,
+            sortable: true,
+        },
+    ];
 
     if (loading) {
-        return (<div className="flex items-center justify-center min-h-[400px]"><div className="flex items-center gap-3"><div className="w-6 h-6 border-2 border-status-success border-t-transparent rounded-full animate-spin" /><span className="text-muted-foreground">Татаж байна...</span></div></div>);
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <Spinner size="md" label="Татаж байна..." />
+            </div>
+        );
     }
 
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-xl md:text-2xl font-bold text-foreground flex items-center gap-2">
-                        <BarChart3 className="w-6 h-6 text-status-success" />
-                        Зар сурталчилгаа
-                    </h1>
-                    <p className="text-sm text-muted-foreground mt-1">Төлбөрт зарын кампанит ажлууд</p>
+        <div>
+            <PageHeader
+                eyebrow="Маркетинг"
+                title="Зар сурталчилгаа"
+                subtitle="Төлбөрт зарын кампанит ажлууд"
+                primaryAction={
+                    <Button onClick={() => setShowCreateModal(true)}>
+                        <Plus className="w-4 h-4" />Шинэ зар
+                    </Button>
+                }
+            />
+
+            <div className="space-y-6">
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                    <StatsCard
+                        icon={DollarSign}
+                        iconColor="warning"
+                        title="Нийт зарцуулалт"
+                        value={<Money value={totalSpend} compact />}
+                    />
+                    <StatsCard
+                        icon={TrendingUp}
+                        iconColor="info"
+                        title="CTR"
+                        value={`${avgCtr.toFixed(2)}%`}
+                    />
+                    <StatsCard
+                        icon={MousePointer}
+                        iconColor="brand"
+                        title="CPC"
+                        value={<Money value={avgCpc} compact />}
+                    />
+                    <StatsCard
+                        icon={Target}
+                        iconColor="success"
+                        title="Хөрвүүлэлт"
+                        value={totalConversions}
+                    />
                 </div>
-                <Button className="bg-status-success hover:bg-status-success text-white" onClick={() => setShowCreateModal(true)}><Plus className="w-4 h-4 mr-2" />Шинэ зар</Button>
+
+                {ads.length === 0 ? (
+                    <EmptyState
+                        icon={<BarChart3 className="w-7 h-7" />}
+                        title="Мэдээлэл байхгүй"
+                        description="Зар сурталчилгааны мэдээлэл энд харагдана."
+                    />
+                ) : (
+                    <DataTable
+                        columns={columns}
+                        data={ads}
+                        getRowId={(ad) => ad.id}
+                        caption="Зар сурталчилгааны кампанит ажлууд"
+                    />
+                )}
             </div>
 
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Нийт зарцуулалт</p><p className="text-2xl font-bold mt-1">{formatCurrency(totalSpend)}</p></CardContent></Card>
-                <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">CTR</p><p className="text-2xl font-bold mt-1">{avgCtr.toFixed(2)}%</p></CardContent></Card>
-                <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">CPC</p><p className="text-2xl font-bold mt-1">{formatCurrency(avgCpc)}</p></CardContent></Card>
-                <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Хөрвүүлэлт</p><p className="text-2xl font-bold mt-1">{totalConversions}</p></CardContent></Card>
-            </div>
-
-            <Card>
-                <CardContent className="p-0">
-                    {ads.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-16">
-                            <BarChart3 className="w-16 h-16 text-muted-foreground/60 mb-4" />
-                            <h2 className="text-xl font-semibold text-foreground mb-2">Мэдээлэл байхгүй</h2>
-                            <p className="text-muted-foreground">Зар сурталчилгааны мэдээлэл энд харагдана.</p>
-                        </div>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full">
-                                <thead className="bg-surface-2/40 border-b"><tr>
-                                    <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">Нэр</th>
-                                    <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">Платформ</th>
-                                    <th className="text-left px-4 py-3 text-xs font-medium text-muted-foreground uppercase">Төлөв</th>
-                                    <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground uppercase">Зарцуулалт</th>
-                                    <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground uppercase">Click</th>
-                                    <th className="text-right px-4 py-3 text-xs font-medium text-muted-foreground uppercase">CTR</th>
-                                </tr></thead>
-                                <tbody className="divide-y">
-                                    {ads.map(ad => (
-                                        <tr key={ad.id} className="hover:bg-surface-2/40">
-                                            <td className="px-4 py-3 font-medium text-foreground">{ad.name}</td>
-                                            <td className="px-4 py-3 text-sm text-muted-foreground capitalize">{ad.platform}</td>
-                                            <td className="px-4 py-3"><span className={`px-2 py-1 text-xs rounded-full ${ad.status === 'active' ? 'bg-status-success-soft text-status-success' : 'bg-surface-2 text-muted-foreground'}`}>{ad.status === 'active' ? 'Идэвхтэй' : ad.status === 'paused' ? 'Зогссон' : ad.status}</span></td>
-                                            <td className="px-4 py-3 text-sm text-right">{formatCurrency(ad.spend)}</td>
-                                            <td className="px-4 py-3 text-sm text-right">{ad.clicks.toLocaleString()}</td>
-                                            <td className="px-4 py-3 text-sm text-right">{ad.ctr.toFixed(2)}%</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
-            {showCreateModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-surface rounded-2xl w-full max-w-md shadow-2xl">
-                        <div className="flex items-center justify-between px-6 py-4 border-b">
-                            <h3 className="font-semibold text-foreground">Шинэ зар</h3>
-                            <button onClick={() => setShowCreateModal(false)} className="p-2 hover:bg-surface-2 rounded-lg"><X className="w-5 h-5 text-muted-foreground/70" /></button>
-                        </div>
-                        <div className="px-6 py-4 space-y-4">
-                            <div><label className="text-sm font-medium text-foreground block mb-1">Нэр *</label><Input value={newAd.name} onChange={e => setNewAd(p => ({ ...p, name: e.target.value }))} placeholder="Зарын нэр" /></div>
-                            <div><label className="text-sm font-medium text-foreground block mb-1">Платформ</label>
-                                <select value={newAd.platform} onChange={e => setNewAd(p => ({ ...p, platform: e.target.value }))} className="w-full border border-border rounded-lg px-3 py-2 text-sm">
-                                    <option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="google">Google</option><option value="tiktok">TikTok</option>
-                                </select></div>
-                            <div><label className="text-sm font-medium text-foreground block mb-1">Төсөв (₮)</label><Input type="number" value={newAd.budget} onChange={e => setNewAd(p => ({ ...p, budget: Number(e.target.value) }))} /></div>
-                        </div>
-                        <div className="flex justify-end gap-3 px-6 py-4 border-t">
-                            <Button variant="outline" onClick={() => setShowCreateModal(false)}>Болих</Button>
-                            <Button className="bg-status-success hover:bg-status-success text-white" onClick={handleCreate} disabled={!newAd.name.trim() || creating}>
-                                {creating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Үүсгэж байна...</> : <><Plus className="w-4 h-4 mr-2" />Үүсгэх</>}
-                            </Button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Шинэ зар</DialogTitle>
+                    </DialogHeader>
+                    <FieldGroup>
+                        <FormField label="Нэр" htmlFor="ad-name" required>
+                            <Input
+                                id="ad-name"
+                                value={newAd.name}
+                                onChange={e => setNewAd(p => ({ ...p, name: e.target.value }))}
+                                placeholder="Зарын нэр"
+                            />
+                        </FormField>
+                        <FormField label="Платформ" htmlFor="ad-platform">
+                            <Select
+                                value={newAd.platform}
+                                onValueChange={value => setNewAd(p => ({ ...p, platform: value }))}
+                            >
+                                <SelectTrigger id="ad-platform">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="facebook">Facebook</SelectItem>
+                                    <SelectItem value="instagram">Instagram</SelectItem>
+                                    <SelectItem value="google">Google</SelectItem>
+                                    <SelectItem value="tiktok">TikTok</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </FormField>
+                        <FormField label="Төсөв (₮)" htmlFor="ad-budget">
+                            <Input
+                                id="ad-budget"
+                                type="number"
+                                value={newAd.budget}
+                                onChange={e => setNewAd(p => ({ ...p, budget: Number(e.target.value) }))}
+                            />
+                        </FormField>
+                    </FieldGroup>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowCreateModal(false)}>Болих</Button>
+                        <Button
+                            onClick={handleCreate}
+                            disabled={!newAd.name.trim() || creating}
+                            isLoading={creating}
+                        >
+                            {!creating && <Plus className="w-4 h-4" />}
+                            {creating ? 'Үүсгэж байна...' : 'Үүсгэх'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

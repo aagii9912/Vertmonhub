@@ -2,15 +2,18 @@
 
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/dashboard/PageHeader';
+import { StatsCard } from '@/components/dashboard/StatsCard';
+import { Money } from '@/components/ui/Money';
+import { Spinner } from '@/components/ui/Spinner';
 import {
     TrendingUp, Megaphone, Share2, CalendarDays, BarChart3,
-    ArrowUpRight, Eye, Target, DollarSign, Users
+    ArrowUpRight, Target, DollarSign, Users
 } from 'lucide-react';
 import Link from 'next/link';
+import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { formatMNT } from '@/lib/utils/currency';
 
 interface MarketingOverview {
     campaigns: number;
@@ -63,58 +66,79 @@ export default function MarketingPage() {
         fetch();
     }, [shop?.id]);
 
-    const formatNumber = (v: number) => v >= 1000 ? `${(v / 1000).toFixed(1)}K` : String(v);
-    const formatCurrency = (v: number) => formatMNT(v, { compact: true });
-
     const sections = [
-        { title: 'Кампанит ажил', icon: Megaphone, href: '/marketing/campaigns', desc: 'Маркетингийн кампанит ажлууд', color: 'bg-status-info-soft text-status-info' },
-        { title: 'Сошиал медиа', icon: Share2, href: '/marketing/social', desc: 'Нийтлэлүүд болон оролцоо', color: 'bg-brand-soft text-brand-strong' },
-        { title: 'Зар сурталчилгаа', icon: BarChart3, href: '/marketing/ads', desc: 'Төлбөрт зарын кампанит ажлууд', color: 'bg-status-pending-soft text-status-pending' },
-        { title: 'Контент календарь', icon: CalendarDays, href: '/marketing/calendar', desc: 'Контент төлөвлөлт', color: 'bg-status-success-soft text-status-success' },
-        { title: 'Мессеж маркетинг', icon: Users, href: '/marketing/messaging', desc: 'Имэйл болон SMS', color: 'bg-status-info-soft text-status-info' },
-        { title: 'Вэб аналитик', icon: TrendingUp, href: '/marketing/analytics', desc: 'Хандалтын статистик', color: 'bg-brand-soft text-brand-strong' },
+        { title: 'Кампанит ажил', icon: Megaphone, href: '/marketing/campaigns', desc: 'Маркетингийн кампанит ажлууд', tile: 'bg-status-info-soft text-status-info' },
+        { title: 'Сошиал медиа', icon: Share2, href: '/marketing/social', desc: 'Нийтлэлүүд болон оролцоо', tile: 'bg-brand-soft text-brand-strong' },
+        { title: 'Зар сурталчилгаа', icon: BarChart3, href: '/marketing/ads', desc: 'Төлбөрт зарын кампанит ажлууд', tile: 'bg-status-pending-soft text-status-pending' },
+        { title: 'Контент календарь', icon: CalendarDays, href: '/marketing/calendar', desc: 'Контент төлөвлөлт', tile: 'bg-status-success-soft text-status-success' },
+        { title: 'Мессеж маркетинг', icon: Users, href: '/marketing/messaging', desc: 'Имэйл болон SMS', tile: 'bg-status-info-soft text-status-info' },
+        { title: 'Вэб аналитик', icon: TrendingUp, href: '/marketing/analytics', desc: 'Хандалтын статистик', tile: 'bg-brand-soft text-brand-strong' },
     ];
 
     if (loading) {
-        return (<div className="flex items-center justify-center min-h-[400px]"><div className="flex items-center gap-3"><div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" /><span className="text-muted-foreground">Татаж байна...</span></div></div>);
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <Spinner size="md" label="Татаж байна..." />
+            </div>
+        );
     }
 
     return (
-        <div className="space-y-6">
-            <div>
-                <h1 className="text-xl md:text-2xl font-bold text-foreground flex items-center gap-2">
-                    <TrendingUp className="w-6 h-6 text-status-success" />
-                    Маркетинг
-                </h1>
-                <p className="text-sm text-muted-foreground mt-1">Маркетингийн ерөнхий тойм</p>
-            </div>
+        <div>
+            <PageHeader
+                eyebrow="Маркетинг"
+                title="Маркетинг"
+                subtitle="Маркетингийн ерөнхий тойм"
+            />
 
-            {/* Overview Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Кампани</p><p className="text-2xl font-bold mt-1">{overview.campaigns}</p><p className="text-xs text-status-success">{overview.activeCampaigns} идэвхтэй</p></CardContent></Card>
-                <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Нийтлэл</p><p className="text-2xl font-bold mt-1">{overview.socialPosts}</p></CardContent></Card>
-                <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Зарын зардал</p><p className="text-2xl font-bold mt-1">{formatCurrency(overview.adSpend)}</p></CardContent></Card>
-                <Card><CardContent className="p-4"><p className="text-sm text-muted-foreground">Ирэх контент</p><p className="text-2xl font-bold mt-1">{overview.upcomingContent}</p></CardContent></Card>
-            </div>
+            <div className="space-y-6">
+                {/* Overview Stats */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                    <StatsCard
+                        icon={Target}
+                        iconColor="info"
+                        title="Кампани"
+                        value={overview.campaigns}
+                    />
+                    <StatsCard
+                        icon={Share2}
+                        iconColor="brand"
+                        title="Нийтлэл"
+                        value={overview.socialPosts}
+                    />
+                    <StatsCard
+                        icon={DollarSign}
+                        iconColor="warning"
+                        title="Зарын зардал"
+                        value={<Money value={overview.adSpend} compact />}
+                    />
+                    <StatsCard
+                        icon={CalendarDays}
+                        iconColor="success"
+                        title="Ирэх контент"
+                        value={overview.upcomingContent}
+                    />
+                </div>
 
-            {/* Navigation Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {sections.map(section => (
-                    <Link key={section.href} href={section.href}>
-                        <Card className="hover:shadow-md transition-all cursor-pointer h-full">
-                            <CardContent className="p-5">
-                                <div className="flex items-start justify-between mb-3">
-                                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${section.color}`}>
-                                        <section.icon className="w-5 h-5" />
+                {/* Navigation Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {sections.map(section => (
+                        <Link key={section.href} href={section.href} className="block">
+                            <Card interactive className="h-full">
+                                <CardContent className="p-5">
+                                    <div className="flex items-start justify-between mb-3">
+                                        <div className={cn('w-10 h-10 rounded-md flex items-center justify-center', section.tile)}>
+                                            <section.icon className="w-5 h-5" />
+                                        </div>
+                                        <ArrowUpRight className="w-4 h-4 text-muted-foreground/70" />
                                     </div>
-                                    <ArrowUpRight className="w-4 h-4 text-muted-foreground/70" />
-                                </div>
-                                <h3 className="font-semibold text-foreground">{section.title}</h3>
-                                <p className="text-sm text-muted-foreground mt-1">{section.desc}</p>
-                            </CardContent>
-                        </Card>
-                    </Link>
-                ))}
+                                    <h3 className="heading-section text-base text-foreground">{section.title}</h3>
+                                    <p className="text-sm text-muted-foreground mt-1">{section.desc}</p>
+                                </CardContent>
+                            </Card>
+                        </Link>
+                    ))}
+                </div>
             </div>
         </div>
     );

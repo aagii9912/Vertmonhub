@@ -3,14 +3,25 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { TrendingUp, Users, Target, BarChart3, RefreshCw, Megaphone, DollarSign } from 'lucide-react';
+import { TrendingUp, Users, Target, BarChart3, RefreshCw, Megaphone, DollarSign, Heart, MessageCircle, Share2 } from 'lucide-react';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { Card } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Alert } from '@/components/ui/Alert';
+import { Progress } from '@/components/ui/Progress';
+import { DataTable, Money, StatusPill, type DataTableColumn } from '@/components/ui/DataTable';
+import { ChartCard } from '@/components/ui/ChartCard';
+import { BarChart } from '@/components/charts/BarChart';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/Select';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
 import { toast } from 'sonner';
@@ -72,6 +83,70 @@ interface SocialPost { id: string; content: string | null; likes: number; commen
 interface SocialInsight { captured_at: string; reach: number; impressions: number; followers: number; }
 
 const fmtMNT = (n: number): string => formatMNT(n, { compact: true });
+
+interface SourceRow {
+    source: string;
+    label: string;
+    total: number;
+    won: number;
+    lost: number;
+    active: number;
+    conversionRate: number;
+}
+
+const conversionPillVariant = (rate: number) =>
+    rate >= 50 ? 'success' : rate >= 20 ? 'pending' : 'neutral';
+
+// Кампанит ажлын ROI хүснэгтийн багана
+const roiColumns: DataTableColumn<CampaignRoi>[] = [
+    { key: 'name', header: 'Кампанит ажил', accessor: (c) => c.name, sortable: true, cell: (c) => <span className="font-medium text-foreground">{c.name}</span> },
+    { key: 'spend', header: 'Зардал', align: 'right', sortable: true, accessor: (c) => c.spend, cell: (c) => <Money value={c.spend} compact /> },
+    { key: 'leads', header: 'Лийд', align: 'center', sortable: true, accessor: (c) => c.leads, cell: (c) => <span className="tabular-nums">{c.leads}</span> },
+    { key: 'cpl', header: 'CPL', align: 'right', sortable: true, accessor: (c) => c.cpl ?? -1, cell: (c) => (c.cpl !== null ? <Money value={c.cpl} compact /> : '—') },
+    { key: 'won', header: 'Хожсон', align: 'center', sortable: true, accessor: (c) => c.won, cell: (c) => <span className="tabular-nums">{c.won}</span> },
+    { key: 'revenue', header: 'Орлого', align: 'right', sortable: true, accessor: (c) => c.revenue, cell: (c) => <Money value={c.revenue} compact /> },
+    {
+        key: 'roas',
+        header: 'ROAS',
+        align: 'right',
+        sortable: true,
+        accessor: (c) => c.roas ?? -1,
+        cell: (c) =>
+            c.roas !== null ? (
+                <span className={cn('tabular-nums font-semibold', c.roas >= 1 ? 'text-status-success' : 'text-status-danger')}>
+                    {c.roas}x
+                </span>
+            ) : (
+                '—'
+            ),
+    },
+];
+
+// Эх үүсвэрийн шинжилгээний багана
+const sourceColumns: DataTableColumn<SourceRow>[] = [
+    { key: 'label', header: 'Суваг', accessor: (s) => s.label, sortable: true, cell: (s) => <span className="font-medium text-foreground">{s.label}</span> },
+    { key: 'total', header: 'Лийд', align: 'center', sortable: true, accessor: (s) => s.total, cell: (s) => <span className="tabular-nums">{s.total}</span> },
+    { key: 'won', header: 'Амжилт', align: 'center', sortable: true, accessor: (s) => s.won, cell: (s) => <span className="font-medium text-status-success tabular-nums">{s.won}</span> },
+    { key: 'lost', header: 'Алдсан', align: 'center', sortable: true, accessor: (s) => s.lost, cell: (s) => <span className="text-status-danger tabular-nums">{s.lost}</span> },
+    { key: 'active', header: 'Идэвхтэй', align: 'center', sortable: true, accessor: (s) => s.active, cell: (s) => <span className="text-status-info tabular-nums">{s.active}</span> },
+    {
+        key: 'conversionRate',
+        header: 'Конверс',
+        align: 'center',
+        sortable: true,
+        accessor: (s) => s.conversionRate,
+        cell: (s) => <StatusPill variant={conversionPillVariant(s.conversionRate)}>{s.conversionRate}%</StatusPill>,
+    },
+    {
+        key: 'visual',
+        header: 'Визуал',
+        width: 140,
+        cell: (s) => <Progress value={s.conversionRate} size="md" />,
+    },
+];
+
+const campaignStatusVariant = (status: string) =>
+    status === 'active' ? 'success' : status === 'paused' ? 'pending' : 'neutral';
 
 export default function MarketingROIPage() {
     const { shop } = useAuth();
@@ -272,6 +347,111 @@ export default function MarketingROIPage() {
         return { sources, totalLeads, totalWon, totalLost, overallConversion, monthly, bestSource };
     }, [leads]);
 
+    // Сар бүрийн лийдийн чартын өгөгдөл — анхны логиктой ижил (сүүлийн 6 сар)
+    const monthlyChartData = useMemo(
+        () =>
+            analytics
+                ? Object.entries(analytics.monthly)
+                      .slice(-6)
+                      .map(([month, count]) => ({ month, count }))
+                : [],
+        [analytics],
+    );
+
+    // Facebook Ads кампаниудын багана (syncInsights handler-тэй тул компонент дотор)
+    const campaignColumns = useMemo<DataTableColumn<AdCampaign>[]>(
+        () => [
+            {
+                key: 'name',
+                header: 'Нэр',
+                sortable: true,
+                accessor: (c) => c.name,
+                cell: (c) => (
+                    <div>
+                        <p className="font-medium text-foreground">{c.name}</p>
+                        {c.objective && (
+                            <p className="text-[11px] text-muted-foreground/70 mt-0.5 normal-case">{c.objective}</p>
+                        )}
+                    </div>
+                ),
+            },
+            {
+                key: 'status',
+                header: 'Төлөв',
+                sortable: true,
+                accessor: (c) => c.status,
+                cell: (c) => <StatusPill variant={campaignStatusVariant(c.status)}>{c.status}</StatusPill>,
+            },
+            {
+                key: 'spend',
+                header: 'Зарцуулалт',
+                align: 'right',
+                sortable: true,
+                accessor: (c) => Number(c.spend || 0),
+                cell: (c) => <span className="tabular-nums">{Number(c.spend || 0).toLocaleString()}₮</span>,
+            },
+            {
+                key: 'impressions',
+                header: 'Imp',
+                align: 'right',
+                sortable: true,
+                accessor: (c) => Number(c.impressions || 0),
+                cell: (c) => <span className="tabular-nums">{Number(c.impressions || 0).toLocaleString()}</span>,
+            },
+            {
+                key: 'clicks',
+                header: 'Click',
+                align: 'right',
+                sortable: true,
+                accessor: (c) => Number(c.clicks || 0),
+                cell: (c) => <span className="tabular-nums">{Number(c.clicks || 0).toLocaleString()}</span>,
+            },
+            {
+                key: 'ctr',
+                header: 'CTR',
+                align: 'right',
+                sortable: true,
+                accessor: (c) => Number(c.ctr || 0),
+                cell: (c) => <span className="tabular-nums">{Number(c.ctr || 0).toFixed(2)}%</span>,
+            },
+            {
+                key: 'cpc',
+                header: 'CPC',
+                align: 'right',
+                sortable: true,
+                accessor: (c) => Number(c.cpc || 0),
+                cell: (c) => <span className="tabular-nums">{Number(c.cpc || 0).toFixed(0)}₮</span>,
+            },
+            {
+                key: 'conversions',
+                header: 'Конверс',
+                align: 'right',
+                sortable: true,
+                accessor: (c) => c.conversions,
+                cell: (c) => <span className="tabular-nums">{c.conversions}</span>,
+            },
+            {
+                key: 'actions',
+                header: '',
+                align: 'right',
+                cell: (c) => (
+                    <Button
+                        variant="ghost"
+                        size="iconSm"
+                        onClick={() => syncInsights(c)}
+                        title="Insights дахин татах"
+                        disabled={!c.external_id}
+                        aria-label="Insights дахин татах"
+                    >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                    </Button>
+                ),
+            },
+        ],
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        [],
+    );
+
     if (loading)
         return (
             <Card>
@@ -350,39 +530,19 @@ export default function MarketingROIPage() {
                             </StatBar>
 
                             {roi.campaigns.length > 0 && (
-                                <Card className="mb-6">
+                                <Card className="mb-6 overflow-hidden">
                                     <div className="px-4 py-3 border-b border-border">
                                         <h3 className="heading-section text-sm text-foreground">Кампанит ажлын ROI</h3>
                                     </div>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-sm">
-                                            <thead className="bg-surface-2/50 border-b border-border">
-                                                <tr className="text-[11px] uppercase tracking-[0.08em] text-muted-foreground/80">
-                                                    <th className="text-left px-4 py-2.5">Кампанит ажил</th>
-                                                    <th className="text-right px-4 py-2.5">Зардал</th>
-                                                    <th className="text-center px-4 py-2.5">Лийд</th>
-                                                    <th className="text-right px-4 py-2.5">CPL</th>
-                                                    <th className="text-center px-4 py-2.5">Хожсон</th>
-                                                    <th className="text-right px-4 py-2.5">Орлого</th>
-                                                    <th className="text-right px-4 py-2.5">ROAS</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-border/60">
-                                                {roi.campaigns.map((c) => (
-                                                    <tr key={c.external_id}>
-                                                        <td className="px-4 py-2.5 font-medium text-foreground">{c.name}</td>
-                                                        <td className="px-4 py-2.5 text-right tabular-nums">{fmtMNT(c.spend)}</td>
-                                                        <td className="px-4 py-2.5 text-center tabular-nums">{c.leads}</td>
-                                                        <td className="px-4 py-2.5 text-right tabular-nums">{c.cpl !== null ? fmtMNT(c.cpl) : '—'}</td>
-                                                        <td className="px-4 py-2.5 text-center tabular-nums">{c.won}</td>
-                                                        <td className="px-4 py-2.5 text-right tabular-nums">{fmtMNT(c.revenue)}</td>
-                                                        <td className={`px-4 py-2.5 text-right tabular-nums font-semibold ${c.roas !== null && c.roas >= 1 ? 'text-status-success' : c.roas !== null ? 'text-status-danger' : ''}`}>
-                                                            {c.roas !== null ? `${c.roas}x` : '—'}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
+                                    <div className="p-4">
+                                        <DataTable
+                                            caption="Кампанит ажлын ROI"
+                                            data={roi.campaigns}
+                                            getRowId={(c) => c.external_id}
+                                            showDensityToggle={false}
+                                            hidePagination
+                                            columns={roiColumns}
+                                        />
                                     </div>
                                 </Card>
                             )}
@@ -413,8 +573,10 @@ export default function MarketingROIPage() {
                                     {social.posts.slice(0, 5).map((p) => (
                                         <div key={p.id} className="py-2.5 flex items-start justify-between gap-3">
                                             <p className="text-sm text-foreground line-clamp-2 flex-1">{p.content || '(зураг)'}</p>
-                                            <span className="text-xs text-muted-foreground whitespace-nowrap tabular-nums">
-                                                ❤ {p.likes} · 💬 {p.comments} · ↗ {p.shares}
+                                            <span className="flex items-center gap-3 text-xs text-muted-foreground whitespace-nowrap tabular-nums">
+                                                <span className="flex items-center gap-1"><Heart className="w-3.5 h-3.5" /> {p.likes}</span>
+                                                <span className="flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5" /> {p.comments}</span>
+                                                <span className="flex items-center gap-1"><Share2 className="w-3.5 h-3.5" /> {p.shares}</span>
                                             </span>
                                         </div>
                                     ))}
@@ -424,84 +586,30 @@ export default function MarketingROIPage() {
                     </Card>
 
                     {/* Source Breakdown */}
-                    <Card className="mb-6">
+                    <Card className="mb-6 overflow-hidden">
                         <div className="px-4 py-3 border-b border-border">
                             <h3 className="heading-section text-sm text-foreground">Эх үүсвэрийн шинжилгээ</h3>
                         </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead className="bg-surface-2/50 border-b border-border">
-                                    <tr>
-                                        <th className="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
-                                            Суваг
-                                        </th>
-                                        <th className="text-center px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
-                                            Лийд
-                                        </th>
-                                        <th className="text-center px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
-                                            Амжилт
-                                        </th>
-                                        <th className="text-center px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
-                                            Алдсан
-                                        </th>
-                                        <th className="text-center px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
-                                            Идэвхтэй
-                                        </th>
-                                        <th className="text-center px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
-                                            Конверс
-                                        </th>
-                                        <th className="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
-                                            Визуал
-                                        </th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-border/60">
-                                    {analytics.sources.map((s) => (
-                                        <tr key={s.source} className="hover:bg-surface-2/40 transition-colors">
-                                            <td className="px-4 py-3 font-medium text-foreground">{s.label}</td>
-                                            <td className="px-4 py-3 text-center text-foreground tabular-nums">{s.total}</td>
-                                            <td className="px-4 py-3 text-center text-status-success font-medium tabular-nums">
-                                                {s.won}
-                                            </td>
-                                            <td className="px-4 py-3 text-center text-status-danger tabular-nums">{s.lost}</td>
-                                            <td className="px-4 py-3 text-center text-status-info tabular-nums">{s.active}</td>
-                                            <td className="px-4 py-3 text-center">
-                                                <Badge
-                                                    variant={
-                                                        s.conversionRate >= 50
-                                                            ? 'success'
-                                                            : s.conversionRate >= 20
-                                                              ? 'warning'
-                                                              : 'default'
-                                                    }
-                                                    size="sm"
-                                                >
-                                                    {s.conversionRate}%
-                                                </Badge>
-                                            </td>
-                                            <td className="px-4 py-3 min-w-[120px]">
-                                                <div className="w-full bg-surface-2 rounded-full h-2 overflow-hidden">
-                                                    <div
-                                                        className="bg-brand h-full rounded-full transition-all"
-                                                        style={{ width: `${s.conversionRate}%` }}
-                                                    />
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
+                        <div className="p-4">
+                            <DataTable
+                                caption="Эх үүсвэрийн шинжилгээ"
+                                data={analytics.sources}
+                                getRowId={(s) => s.source}
+                                showDensityToggle={false}
+                                hidePagination
+                                columns={sourceColumns}
+                            />
                         </div>
                     </Card>
 
                     {/* Facebook Ads Campaigns */}
-                    <Card className="mb-6">
+                    <Card className="mb-6 overflow-hidden">
                         <div className="px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-3">
                             <div className="flex items-center gap-2">
                                 <Megaphone className="w-4 h-4 text-brand" />
                                 <h3 className="heading-section text-sm text-foreground">Facebook Ads кампаниуд</h3>
                                 {campaigns.length > 0 && (
-                                    <span className="text-xs text-muted-foreground">({campaigns.length})</span>
+                                    <span className="text-xs text-muted-foreground tabular-nums">({campaigns.length})</span>
                                 )}
                             </div>
                             <div className="flex items-center gap-2">
@@ -511,18 +619,21 @@ export default function MarketingROIPage() {
                                     </Button>
                                 ) : (
                                     <>
-                                        <select
+                                        <Select
                                             value={selectedAdAccount || ''}
-                                            onChange={(e) => setSelectedAdAccount(e.target.value || null)}
-                                            className="px-3 py-1.5 bg-background border border-border rounded-md text-sm"
+                                            onValueChange={(v) => setSelectedAdAccount(v || null)}
                                         >
-                                            <option value="">Ad account сонгоно уу</option>
-                                            {adAccounts.map((a) => (
-                                                <option key={a.id} value={a.id}>
-                                                    {a.name || a.business_name || a.account_id}
-                                                </option>
-                                            ))}
-                                        </select>
+                                            <SelectTrigger className="h-9 w-56 text-sm">
+                                                <SelectValue placeholder="Ad account сонгоно уу" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {adAccounts.map((a) => (
+                                                    <SelectItem key={a.id} value={a.id}>
+                                                        {a.name || a.business_name || a.account_id}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
                                         <Button
                                             variant="primary"
                                             size="sm"
@@ -538,8 +649,8 @@ export default function MarketingROIPage() {
                             </div>
                         </div>
                         {campaignsError && (
-                            <div className="px-4 py-2 text-sm text-status-danger bg-status-danger-soft">
-                                {campaignsError}
+                            <div className="px-4 pt-3">
+                                <Alert variant="danger">{campaignsError}</Alert>
                             </div>
                         )}
                         {campaigns.length === 0 ? (
@@ -551,96 +662,27 @@ export default function MarketingROIPage() {
                                 />
                             </div>
                         ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm">
-                                    <thead className="bg-surface-2/50 border-b border-border">
-                                        <tr>
-                                            <th className="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">Нэр</th>
-                                            <th className="text-left px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">Төлөв</th>
-                                            <th className="text-right px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">Зарцуулалт</th>
-                                            <th className="text-right px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">Imp</th>
-                                            <th className="text-right px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">Click</th>
-                                            <th className="text-right px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">CTR</th>
-                                            <th className="text-right px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">CPC</th>
-                                            <th className="text-right px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">Конверс</th>
-                                            <th className="px-4 py-2.5"></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-border/60">
-                                        {campaigns.map((c) => (
-                                            <tr key={c.id} className="hover:bg-surface-2/40 transition-colors">
-                                                <td className="px-4 py-3 font-medium text-foreground">
-                                                    {c.name}
-                                                    {c.objective && (
-                                                        <p className="text-[11px] text-muted-foreground/70 mt-0.5 normal-case">{c.objective}</p>
-                                                    )}
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <Badge
-                                                        variant={c.status === 'active' ? 'success' : c.status === 'paused' ? 'warning' : 'default'}
-                                                        size="sm"
-                                                    >
-                                                        {c.status}
-                                                    </Badge>
-                                                </td>
-                                                <td className="px-4 py-3 text-right tabular-nums">{Number(c.spend || 0).toLocaleString()}₮</td>
-                                                <td className="px-4 py-3 text-right tabular-nums">{Number(c.impressions || 0).toLocaleString()}</td>
-                                                <td className="px-4 py-3 text-right tabular-nums">{Number(c.clicks || 0).toLocaleString()}</td>
-                                                <td className="px-4 py-3 text-right tabular-nums">{Number(c.ctr || 0).toFixed(2)}%</td>
-                                                <td className="px-4 py-3 text-right tabular-nums">{Number(c.cpc || 0).toFixed(0)}₮</td>
-                                                <td className="px-4 py-3 text-right tabular-nums">{c.conversions}</td>
-                                                <td className="px-4 py-3 text-right">
-                                                    <button
-                                                        onClick={() => syncInsights(c)}
-                                                        className="text-xs text-brand hover:underline"
-                                                        title="Insights дахин татах"
-                                                        disabled={!c.external_id}
-                                                    >
-                                                        <RefreshCw className="w-3.5 h-3.5 inline" />
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
+                            <div className="p-4">
+                                <DataTable
+                                    caption="Facebook Ads кампаниуд"
+                                    data={campaigns}
+                                    getRowId={(c) => c.id}
+                                    showDensityToggle={false}
+                                    hidePagination
+                                    columns={campaignColumns}
+                                />
                             </div>
                         )}
                     </Card>
 
                     {/* Monthly Trend */}
-                    <Card>
-                        <div className="px-4 py-3 border-b border-border">
-                            <h3 className="heading-section text-sm text-foreground">Сар бүрийн лийд</h3>
-                        </div>
-                        <div className="p-4">
-                            <div className="flex items-end gap-2 h-32">
-                                {Object.entries(analytics.monthly)
-                                    .slice(-6)
-                                    .map(([month, count]) => {
-                                        const max = Math.max(...Object.values(analytics.monthly));
-                                        const height = max > 0 ? (count / max) * 100 : 0;
-                                        return (
-                                            <div key={month} className="flex-1 flex flex-col items-center gap-1">
-                                                <span className="text-xs font-medium text-foreground tabular-nums">
-                                                    {count}
-                                                </span>
-                                                <div
-                                                    className={cn(
-                                                        'w-full bg-brand-soft rounded-t transition-all',
-                                                    )}
-                                                    style={{ height: `${height}%`, minHeight: '4px' }}
-                                                >
-                                                    <div className="w-full h-full bg-brand rounded-t" />
-                                                </div>
-                                                <span className="text-[10px] text-muted-foreground truncate w-full text-center">
-                                                    {month}
-                                                </span>
-                                            </div>
-                                        );
-                                    })}
-                            </div>
-                        </div>
-                    </Card>
+                    <ChartCard title="Сар бүрийн лийд" height={240}>
+                        <BarChart
+                            data={monthlyChartData}
+                            xKey="month"
+                            series={[{ key: 'count', name: 'Лийд' }]}
+                        />
+                    </ChartCard>
                 </>
             )}
         </div>
