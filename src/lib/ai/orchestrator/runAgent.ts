@@ -89,9 +89,18 @@ export async function runAgent(
 
     try {
         const tools = resolveAgentTools(agent, ctx.perms);
+        // Агентад одоогийн хэрэглэгчийн эрхийг ФАКТ болгож дамжуулна. Ингэснээр
+        // (ялангуяа admin agent) хэрэглэгчээс "та super_admin мөн үү" гэж дахин
+        // асуухаа болино — танд өгөгдсөн tool бүр энэ эрхээр аль хэдийн зөвшөөрөгдсөн.
+        const userContext =
+            `\n\n[ОДООГИЙН ХЭРЭГЛЭГЧ] Эрх (role): ${ctx.perms.role}` +
+            (ctx.userName ? `, Нэр: ${ctx.userName}` : '') +
+            `. Чамд энэ ярианд өгөгдсөн tool бүрийг систем энэ хэрэглэгчийн эрхээр аль хэдийн зөвшөөрсөн. ` +
+            `Тиймээс хэрэглэгчээс эрх/эрхийн зэрэглэлээ (super_admin эсэх гэх мэт) НОТЛОХЫГ БҮҮ АСУУ — ` +
+            `зөвхөн үйлдэлд шаардлагатай оролтыг (жишээ нь: имэйл хаяг, оноох дүр) асуу.`;
         const model = genAI.getGenerativeModel({
             model: AGENT_MODEL,
-            systemInstruction: agent.buildInstruction(ctx.shopKnowledge),
+            systemInstruction: agent.buildInstruction(ctx.shopKnowledge) + userContext,
             ...(tools.length > 0 ? { tools: [{ functionDeclarations: tools }] } : {}),
             generationConfig: { temperature: agent.temperature, topP: 0.85, maxOutputTokens: 2048 },
         });
