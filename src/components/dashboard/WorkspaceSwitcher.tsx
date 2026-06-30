@@ -17,15 +17,23 @@ import {
 
 const byId = (id: WorkspaceId) => WORKSPACES.find((w) => w.id === id)!;
 
+interface WorkspaceSwitcherProps {
+    /** 'pill' — header-ийн хөвмөл segmented pill (default). 'sidebar' — босоо жагсаалт. */
+    variant?: 'pill' | 'sidebar';
+    /** Зөвхөн variant='sidebar' үед: icon-rail горимд icon-only болгоно. */
+    collapsed?: boolean;
+}
+
 /**
- * Гурван талт workspace switcher — header-ийн төвд хөвмөл segmented pill.
- * [ Борлуулалт ] [ ✦ AI Туслах ] [ Маркетинг ] — AI төв нь голлох (terracotta) hero.
+ * Гурван талт workspace switcher.
+ * - variant='pill': header-ийн төвд хөвмөл segmented pill (хуучин байдал).
+ * - variant='sidebar': sidebar-ийн дээд хэсэгт босоо жагсаалт (Workspace → Section → Item
+ *   гэсэн нэг тасралтгүй зүүн талын шатлал). collapsed үед icon-only.
+ * [ Борлуулалт ] [ ✦ AI Туслах ] [ Маркетинг ] — AI нь голлох (terracotta) hero.
  *
- * Дарж солино (hover биш). Гулсдаг indicator нь тэнцүү 3 хэсэгт тулгуурлах тул
- * хэмжилт хийхгүй — анхны зурагнаас зөв байрлана. prefers-reduced-motion-д globals.css
- * автоматаар хүндрэлгүй (агшина).
+ * Дарж солино (hover биш). prefers-reduced-motion-д globals.css автоматаар хүндрэлгүй.
  */
-export function WorkspaceSwitcher() {
+export function WorkspaceSwitcher({ variant = 'pill', collapsed = false }: WorkspaceSwitcherProps = {}) {
     const router = useRouter();
     const active = useActiveWorkspace();
     const { user } = useAuth();
@@ -50,6 +58,51 @@ export function WorkspaceSwitcher() {
         // AI төв нь үргэлж бүтэн хуудас руу (бүтээгдэхүүний шийдвэр).
         router.push(ws.id === 'ai' ? ws.home : getSwitchTarget(ws));
     };
+
+    // ─── Sidebar variant — босоо жагсаалт ───
+    if (variant === 'sidebar') {
+        return (
+            <div role="tablist" aria-label="Ажлын талбар" className="flex flex-col gap-1">
+                {order.map((id) => {
+                    const ws = byId(id);
+                    const isActive = active.id === id;
+                    const enabled = canAccessWs(id);
+                    const isAi = id === 'ai';
+                    const Icon = ws.icon;
+                    return (
+                        <button
+                            key={id}
+                            ref={(el) => { tabRefs.current[id] = el; }}
+                            role="tab"
+                            type="button"
+                            aria-selected={isActive}
+                            aria-label={ws.label}
+                            title={collapsed ? ws.label : undefined}
+                            disabled={!enabled}
+                            onClick={() => go(id)}
+                            className={cn(
+                                'group flex items-center rounded-md h-9 text-sm font-medium transition-colors min-w-0',
+                                collapsed ? 'justify-center w-9 mx-auto px-0' : 'gap-2.5 px-2.5 w-full',
+                                'disabled:opacity-40 disabled:cursor-not-allowed',
+                                isActive && isAi && 'bg-brand text-brand-fg shadow-sm',
+                                isActive && !isAi && 'bg-surface-2 text-foreground',
+                                !isActive && isAi && 'text-brand hover:bg-brand-soft',
+                                !isActive && !isAi && 'text-muted-foreground hover:bg-surface-2 hover:text-foreground',
+                            )}
+                        >
+                            <Icon
+                                className={cn('shrink-0', isAi ? 'w-[18px] h-[18px]' : 'w-4 h-4')}
+                                strokeWidth={isActive ? 2.25 : 1.75}
+                            />
+                            {!collapsed && <span className="truncate">{ws.label}</span>}
+                        </button>
+                    );
+                })}
+            </div>
+        );
+    }
+
+    // ─── Pill variant (default) ───
 
     const onKeyDown = (e: React.KeyboardEvent, idx: number) => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;

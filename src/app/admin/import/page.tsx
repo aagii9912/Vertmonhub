@@ -208,11 +208,11 @@ const COLOR_MAP: Record<string, { bg: string; border: string; text: string; ligh
     blue: { bg: 'bg-status-info-soft', border: 'border-status-info', text: 'text-status-info', light: 'bg-status-info-soft' },
     emerald: { bg: 'bg-status-success-soft', border: 'border-status-success', text: 'text-status-success', light: 'bg-status-success-soft' },
     amber: { bg: 'bg-status-pending-soft', border: 'border-status-pending', text: 'text-status-pending', light: 'bg-status-pending-soft' },
-    pink: { bg: 'bg-brand-soft', border: 'border-pink-500', text: 'text-brand-strong', light: 'bg-brand-soft' },
+    pink: { bg: 'bg-brand-soft', border: 'border-brand', text: 'text-brand-strong', light: 'bg-brand-soft' },
     indigo: { bg: 'bg-status-info-soft', border: 'border-status-info', text: 'text-status-info', light: 'bg-status-info-soft' },
-    cyan: { bg: 'bg-cyan-50', border: 'border-cyan-500', text: 'text-cyan-700', light: 'bg-cyan-100' },
-    teal: { bg: 'bg-teal-50', border: 'border-teal-500', text: 'text-teal-700', light: 'bg-teal-100' },
-    orange: { bg: 'bg-status-pending-soft', border: 'border-orange-500', text: 'text-status-pending', light: 'bg-status-pending-soft' },
+    cyan: { bg: 'bg-status-info-soft', border: 'border-status-info', text: 'text-status-info', light: 'bg-status-info-soft' },
+    teal: { bg: 'bg-status-active-soft', border: 'border-status-active', text: 'text-status-active', light: 'bg-status-active-soft' },
+    orange: { bg: 'bg-status-pending-soft', border: 'border-status-pending', text: 'text-status-pending', light: 'bg-status-pending-soft' },
     purple: { bg: 'bg-brand-soft', border: 'border-brand', text: 'text-brand-strong', light: 'bg-brand-soft' },
 };
 
@@ -372,7 +372,7 @@ export default function AdminImportPage() {
                         <label className="block text-sm font-medium text-foreground">Төсөл сонгох</label>
                         <button
                             onClick={() => setShowNewProject(!showNewProject)}
-                            className="text-xs text-brand-strong hover:text-brand-strong font-medium"
+                            className="text-xs text-brand-strong hover:text-brand font-medium"
                         >
                             {showNewProject ? '✕ Хаах' : '+ Шинэ төсөл нэмэх'}
                         </button>
@@ -397,7 +397,7 @@ export default function AdminImportPage() {
                             <button
                                 onClick={createProject}
                                 disabled={!newProjectName.trim() || creatingProject}
-                                className="w-full py-2 bg-brand text-white rounded-lg hover:bg-brand-strong disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2"
+                                className="w-full py-2 bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2"
                             >
                                 {creatingProject ? (
                                     <><Loader2 className="w-4 h-4 animate-spin" /> Үүсгэж байна...</>
@@ -441,7 +441,7 @@ export default function AdminImportPage() {
                     </div>
                     <button
                         onClick={downloadTemplate}
-                        className="flex items-center gap-2 px-4 py-2 bg-status-info text-white rounded-lg hover:bg-status-info transition-colors text-sm font-medium"
+                        className="flex items-center gap-2 px-4 py-2 bg-status-info text-background rounded-lg hover:opacity-90 transition-opacity text-sm font-medium"
                     >
                         <Download className="w-4 h-4" />
                         Загвар татах
@@ -499,7 +499,7 @@ export default function AdminImportPage() {
                 <button
                     onClick={handleImport}
                     disabled={!file || !selectedProject || loading}
-                    className="w-full py-3 bg-brand text-white font-semibold rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                    className="w-full py-3 bg-brand text-brand-fg font-semibold rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                 >
                     {loading ? (
                         <><Loader2 className="w-5 h-5 animate-spin" /> Импорт хийж байна...</>
@@ -511,7 +511,7 @@ export default function AdminImportPage() {
 
             {/* Result */}
             {result && (
-                <div className={`mt-6 p-6 rounded-xl border ${result.success ? 'bg-status-success-soft border-green-200' : 'bg-status-danger-soft border-status-danger/30'}`}>
+                <div className={`mt-6 p-6 rounded-xl border ${result.success ? 'bg-status-success-soft border-status-success/30' : 'bg-status-danger-soft border-status-danger/30'}`}>
                     <div className="flex items-center gap-3 mb-3">
                         {result.success ? (
                             <CheckCircle2 className="w-6 h-6 text-status-success" />

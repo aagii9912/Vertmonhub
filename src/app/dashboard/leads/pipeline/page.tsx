@@ -3,8 +3,46 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
-import { GripVertical, User, Phone, Calendar, DollarSign, ArrowLeft, Loader2, AlertTriangle, Clock, X } from 'lucide-react';
-import Link from 'next/link';
+import {
+    GripVertical,
+    User,
+    Phone,
+    Calendar,
+    DollarSign,
+    Loader2,
+    AlertTriangle,
+    Clock,
+    CheckCircle2,
+    XCircle,
+    Flame,
+    Circle,
+} from 'lucide-react';
+import {
+    DndContext,
+    DragOverlay,
+    PointerSensor,
+    KeyboardSensor,
+    useSensor,
+    useSensors,
+    useDraggable,
+    useDroppable,
+    closestCorners,
+    type DragStartEvent,
+    type DragEndEvent,
+} from '@dnd-kit/core';
+import { motion } from 'motion/react';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { PageHeader } from '@/components/dashboard/PageHeader';
+import { Button } from '@/components/ui/Button';
+import { StatusPill } from '@/components/ui/StatusPill';
+import {
+    Sheet,
+    SheetContent,
+    SheetHeader,
+    SheetTitle,
+    SheetDescription,
+} from '@/components/ui/Sheet';
+import { cn } from '@/lib/utils';
 import { formatShortDate } from '@/lib/utils/date';
 
 interface Lead {
@@ -26,7 +64,9 @@ interface Lead {
 interface Stage {
     key: string;
     label: string;
-    color: string;
+    /** толгойн цэгийн өнгө (token) */
+    dot: string;
+    /** баганын дэвсгэр + хүрээ (token) */
     bg: string;
     /** closed_won-руу хүрэх магадлал (weighted forecast) */
     probability: number;
@@ -35,13 +75,13 @@ interface Stage {
 }
 
 const PIPELINE_STAGES: Stage[] = [
-    { key: 'new', label: 'Шинэ', color: 'bg-status-info', bg: 'bg-status-info-soft border-status-info/30', probability: 0.1, stalledDays: 3 },
-    { key: 'contacted', label: 'Холбогдсон', color: 'bg-status-pending', bg: 'bg-status-pending-soft border-yellow-200', probability: 0.2, stalledDays: 5 },
-    { key: 'viewing_scheduled', label: 'Үзлэг товлосон', color: 'bg-brand', bg: 'bg-brand-soft border-brand', probability: 0.4, stalledDays: 7 },
-    { key: 'offered', label: 'Санал илгээсэн', color: 'bg-status-pending', bg: 'bg-status-pending-soft border-orange-200', probability: 0.6, stalledDays: 7 },
-    { key: 'negotiating', label: 'Хэлэлцэж байна', color: 'bg-status-info', bg: 'bg-status-info-soft border-indigo-200', probability: 0.8, stalledDays: 10 },
-    { key: 'closed_won', label: '✅ Амжилттай', color: 'bg-status-success', bg: 'bg-status-success-soft border-status-success/30', probability: 1, stalledDays: 0 },
-    { key: 'closed_lost', label: '❌ Алдсан', color: 'bg-surface-2', bg: 'bg-surface-2/40 border-border', probability: 0, stalledDays: 0 },
+    { key: 'new', label: 'Шинэ', dot: 'bg-status-info', bg: 'bg-status-info-soft border-status-info/30', probability: 0.1, stalledDays: 3 },
+    { key: 'contacted', label: 'Холбогдсон', dot: 'bg-status-pending', bg: 'bg-status-pending-soft border-status-pending/30', probability: 0.2, stalledDays: 5 },
+    { key: 'viewing_scheduled', label: 'Үзлэг товлосон', dot: 'bg-brand', bg: 'bg-brand-soft border-brand/30', probability: 0.4, stalledDays: 7 },
+    { key: 'offered', label: 'Санал илгээсэн', dot: 'bg-status-pending', bg: 'bg-status-pending-soft border-status-pending/30', probability: 0.6, stalledDays: 7 },
+    { key: 'negotiating', label: 'Хэлэлцэж байна', dot: 'bg-status-info', bg: 'bg-status-info-soft border-status-info/30', probability: 0.8, stalledDays: 10 },
+    { key: 'closed_won', label: 'Амжилттай', dot: 'bg-status-success', bg: 'bg-status-success-soft border-status-success/30', probability: 1, stalledDays: 0 },
+    { key: 'closed_lost', label: 'Алдсан', dot: 'bg-status-neutral-soft', bg: 'bg-surface-2/40 border-border', probability: 0, stalledDays: 0 },
 ];
 
 const STAGE_MAP: Record<string, Stage> = Object.fromEntries(PIPELINE_STAGES.map(s => [s.key, s]));
@@ -55,10 +95,10 @@ const LOST_REASONS = [
     'Бусад',
 ];
 
-const urgencyColors: Record<string, string> = {
-    urgent: 'bg-status-danger-soft text-status-danger',
-    normal: 'bg-surface-2 text-muted-foreground',
-    flexible: 'bg-status-success-soft text-status-success',
+const urgencyVariant: Record<string, 'danger' | 'neutral' | 'success'> = {
+    urgent: 'danger',
+    normal: 'neutral',
+    flexible: 'success',
 };
 
 const DAY_MS = 86400000;
@@ -98,14 +138,201 @@ const isOverdue = (l: Lead, now: number): boolean =>
 
 const noNextStep = (l: Lead): boolean => !l.next_followup_at && !isClosed(l.status);
 
+/* -------------------------------------------------------------------------- */
+/*  Lead card (дотоод харагдац) — drag overlay болон багана дотор хоёуланд нь   */
+/* -------------------------------------------------------------------------- */
+
+function LeadCardBody({ lead, now }: { lead: Lead; now: number }) {
+    const stalled = isStalled(lead, now);
+    const overdue = isOverdue(lead, now);
+    const days = daysInStage(lead, now);
+
+    return (
+        <>
+            <div className="flex items-start justify-between mb-1.5">
+                <p className="text-sm font-medium text-foreground flex items-center gap-1">
+                    <User className="w-3.5 h-3.5 text-muted-foreground/70" />
+                    {lead.customer_name || 'Нэргүй'}
+                </p>
+                <GripVertical className="w-4 h-4 text-muted-foreground/60 flex-shrink-0" />
+            </div>
+
+            {lead.customer_phone && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
+                    <Phone className="w-3 h-3" />
+                    {lead.customer_phone}
+                </p>
+            )}
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+                {lead.urgency && (
+                    <StatusPill variant={urgencyVariant[lead.urgency] || urgencyVariant.normal} className="text-2xs px-1.5 py-0.5">
+                        {lead.urgency === 'urgent' ? (
+                            <Flame className="w-2.5 h-2.5" />
+                        ) : lead.urgency === 'flexible' ? (
+                            <Circle className="w-2.5 h-2.5 fill-current" />
+                        ) : (
+                            <Circle className="w-2.5 h-2.5" />
+                        )}
+                        {lead.urgency}
+                    </StatusPill>
+                )}
+                {(lead.budget_min || lead.budget_max) && (
+                    <span className="text-2xs text-muted-foreground flex items-center gap-0.5 tabular-nums">
+                        <DollarSign className="w-2.5 h-2.5" />
+                        {formatBudget(lead.budget_min, lead.budget_max)}
+                    </span>
+                )}
+                {/* Шатанд байсан хугацаа — зогссон бол улаан */}
+                {!isClosed(lead.status) && (
+                    <span className={cn(
+                        'px-1.5 py-0.5 rounded text-2xs font-medium inline-flex items-center gap-0.5 tabular-nums',
+                        stalled ? 'bg-status-danger-soft text-status-danger' : 'bg-surface-2 text-muted-foreground/80',
+                    )}>
+                        <Clock className="w-2.5 h-2.5" />{days}х
+                    </span>
+                )}
+            </div>
+
+            {/* closed_lost дээр алдсан шалтгаан */}
+            {lead.status === 'closed_lost' && lead.lost_reason && (
+                <p className="text-2xs text-muted-foreground mt-1.5 flex items-center gap-1">
+                    <XCircle className="w-3 h-3 flex-shrink-0" />{lead.lost_reason}
+                </p>
+            )}
+
+            {/* Дараагийн алхам / overdue / алхамгүй */}
+            {lead.next_followup_at ? (
+                <p className={cn(
+                    'text-2xs mt-1.5 flex items-center gap-1',
+                    overdue ? 'text-status-danger font-medium' : 'text-brand-strong',
+                )}>
+                    <Calendar className="w-3 h-3" />
+                    {overdue ? 'Хугацаа хэтэрсэн: ' : 'Follow-up: '}{formatShortDate(lead.next_followup_at)}
+                </p>
+            ) : !isClosed(lead.status) && (
+                <p className="text-2xs mt-1.5 flex items-center gap-1 text-status-pending">
+                    <AlertTriangle className="w-3 h-3" />
+                    Дараагийн алхамгүй
+                </p>
+            )}
+        </>
+    );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Draggable lead card                                                        */
+/* -------------------------------------------------------------------------- */
+
+function DraggableLeadCard({
+    lead,
+    now,
+    isDragging,
+    reduced,
+}: {
+    lead: Lead;
+    now: number;
+    isDragging: boolean;
+    reduced: boolean;
+}) {
+    const stalled = isStalled(lead, now);
+    const { attributes, listeners, setNodeRef } = useDraggable({ id: lead.id });
+
+    return (
+        <motion.div
+            ref={setNodeRef}
+            {...attributes}
+            {...listeners}
+            layout={!reduced}
+            initial={reduced ? false : { opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: reduced ? 0 : 0.22 }}
+            className={cn(
+                'bg-surface rounded-lg p-3 border cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow touch-none outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                isDragging ? 'opacity-50 scale-95' : '',
+                stalled ? 'border-status-danger/50 ring-1 ring-status-danger/20' : 'border-border',
+            )}
+        >
+            <LeadCardBody lead={lead} now={now} />
+        </motion.div>
+    );
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Droppable stage column                                                     */
+/* -------------------------------------------------------------------------- */
+
+function StageColumn({
+    stage,
+    stageLeads,
+    stageValue,
+    now,
+    activeDragId,
+    reduced,
+}: {
+    stage: Stage;
+    stageLeads: Lead[];
+    stageValue: number;
+    now: number;
+    activeDragId: string | null;
+    reduced: boolean;
+}) {
+    const { setNodeRef, isOver } = useDroppable({ id: stage.key });
+
+    return (
+        <div
+            ref={setNodeRef}
+            className={cn(
+                'flex-1 min-w-[240px] rounded-xl border p-3 transition-all',
+                stage.bg,
+                activeDragId ? 'ring-2 ring-ring/40' : '',
+                isOver ? 'ring-2 ring-ring' : '',
+            )}
+        >
+            <div className="flex items-center gap-2 mb-3">
+                <div className={cn('w-3 h-3 rounded-full', stage.dot)} />
+                <span className="text-sm font-semibold text-foreground flex items-center gap-1">
+                    {stage.key === 'closed_won' && <CheckCircle2 className="w-3.5 h-3.5 text-status-success" />}
+                    {stage.key === 'closed_lost' && <XCircle className="w-3.5 h-3.5 text-muted-foreground" />}
+                    {stage.label}
+                </span>
+                <span className="text-xs text-muted-foreground/70 ml-auto tabular-nums">{stageLeads.length}</span>
+            </div>
+            {stageValue > 0 && (
+                <p className="text-2xs text-muted-foreground -mt-2 mb-2 flex items-center gap-0.5 tabular-nums">
+                    <DollarSign className="w-3 h-3" />{fmtMoney(stageValue)}₮
+                </p>
+            )}
+
+            <div className="space-y-2 min-h-[100px]">
+                {stageLeads.map(lead => (
+                    <DraggableLeadCard
+                        key={lead.id}
+                        lead={lead}
+                        now={now}
+                        isDragging={activeDragId === lead.id}
+                        reduced={reduced}
+                    />
+                ))}
+            </div>
+        </div>
+    );
+}
+
 export default function PipelinePage() {
     const { shop } = useAuth();
+    const reduced = useReducedMotion();
     const [leads, setLeads] = useState<Lead[]>([]);
     const [loading, setLoading] = useState(true);
-    const [draggingId, setDraggingId] = useState<string | null>(null);
+    const [activeDragId, setActiveDragId] = useState<string | null>(null);
     const [lostModal, setLostModal] = useState<{ leadId: string; name: string } | null>(null);
     const [now, setNow] = useState<number>(() => Date.now());
     const [total, setTotal] = useState(0);
+
+    const sensors = useSensors(
+        useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+        useSensor(KeyboardSensor),
+    );
 
     useEffect(() => {
         if (!shop?.id) return;
@@ -172,16 +399,15 @@ export default function PipelinePage() {
         }
     }
 
-    const handleDragStart = (e: React.DragEvent, leadId: string) => {
-        e.dataTransfer.setData('leadId', leadId);
-        setDraggingId(leadId);
+    const handleDragStart = (e: DragStartEvent) => {
+        setActiveDragId(String(e.active.id));
     };
 
-    const handleDrop = (e: React.DragEvent, stageKey: string) => {
-        e.preventDefault();
-        const leadId = e.dataTransfer.getData('leadId');
-        setDraggingId(null);
-        if (!leadId) return;
+    const handleDragEnd = (e: DragEndEvent) => {
+        const leadId = String(e.active.id);
+        const stageKey = e.over ? String(e.over.id) : null;
+        setActiveDragId(null);
+        if (!leadId || !stageKey) return;
         const lead = leads.find(l => l.id === leadId);
         if (!lead || lead.status === stageKey) return;
         // "Алдсан"-руу шилжихэд шалтгаан асууна (win/loss analysis).
@@ -192,8 +418,6 @@ export default function PipelinePage() {
         moveToStage(leadId, stageKey);
     };
 
-    const handleDragOver = (e: React.DragEvent) => e.preventDefault();
-
     // ---- Forecast / hygiene нэгтгэлүүд ----
     const activeLeads = leads.filter(l => !isClosed(l.status));
     const openValue = activeLeads.reduce((s, l) => s + leadValue(l), 0);
@@ -201,6 +425,8 @@ export default function PipelinePage() {
     const wonValue = leads.filter(l => l.status === 'closed_won').reduce((s, l) => s + leadValue(l), 0);
     const stalledCount = activeLeads.filter(l => isStalled(l, now)).length;
     const noStepCount = activeLeads.filter(noNextStep).length;
+
+    const activeLead = activeDragId ? leads.find(l => l.id === activeDragId) ?? null : null;
 
     if (loading) {
         return (
@@ -211,186 +437,126 @@ export default function PipelinePage() {
     }
 
     return (
-        <div className="min-h-screen bg-surface-2/40">
-            <div className="bg-surface border-b border-border px-6 py-4">
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                    <div className="flex items-center gap-3">
-                        <Link href="/dashboard/leads" className="p-2 hover:bg-surface-2 rounded-lg">
-                            <ArrowLeft className="w-5 h-5 text-muted-foreground" />
-                        </Link>
-                        <div>
-                            <h1 className="text-xl font-semibold text-foreground">Pipeline</h1>
-                            <p className="text-xs text-muted-foreground">{leads.length} лийд • Чирж зөөнө үү</p>
-                        </div>
-                    </div>
-
-                    {/* Forecast хураангуй */}
+        <div>
+            <PageHeader
+                eyebrow="Pipeline"
+                title="Pipeline"
+                subtitle={`${leads.length} лийд • Чирж зөөнө үү`}
+                breadcrumbs={[
+                    { label: 'Лийдүүд', href: '/dashboard/leads' },
+                    { label: 'Pipeline' },
+                ]}
+                secondaryActions={
+                    <Button variant="secondary" size="sm" href="/dashboard/leads">
+                        Буцах
+                    </Button>
+                }
+                primaryAction={
                     <div className="flex items-center gap-4">
                         <div className="text-right">
-                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground/70">Нээлттэй дүн</p>
-                            <p className="text-sm font-semibold text-foreground">{fmtMoney(openValue)}₮</p>
+                            <p className="text-2xs uppercase tracking-wide text-muted-foreground/70">Нээлттэй дүн</p>
+                            <p className="text-sm font-semibold text-foreground tabular-nums">{fmtMoney(openValue)}₮</p>
                         </div>
                         <div className="text-right">
-                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground/70">Жинлэсэн таамаг</p>
-                            <p className="text-sm font-bold text-brand-strong">{fmtMoney(weightedForecast)}₮</p>
+                            <p className="text-2xs uppercase tracking-wide text-muted-foreground/70">Жинлэсэн таамаг</p>
+                            <p className="text-sm font-bold text-brand-strong tabular-nums">{fmtMoney(weightedForecast)}₮</p>
                         </div>
                         <div className="text-right">
-                            <p className="text-[10px] uppercase tracking-wide text-muted-foreground/70">Хаасан</p>
-                            <p className="text-sm font-semibold text-status-success">{fmtMoney(wonValue)}₮</p>
+                            <p className="text-2xs uppercase tracking-wide text-muted-foreground/70">Хаасан</p>
+                            <p className="text-sm font-semibold text-status-success tabular-nums">{fmtMoney(wonValue)}₮</p>
                         </div>
                     </div>
-                </div>
+                }
+            />
 
-                {/* Truncation анхааруулга — 1000-аас олон лийдтэй бол самбар бүгдийг
-                    харуулахгүй тул forecast/тоо дутуу болохыг мэдэгдэнэ. */}
-                {total > leads.length && (
-                    <div className="flex items-center gap-1.5 mt-3 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-status-danger-soft text-status-danger">
-                        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                        Нийт {total} лийдээс эхний {leads.length} харагдаж байна — таамаг/тоо дутуу. Шүүлтүүрээр багасгана уу.
-                    </div>
-                )}
-
-                {/* Hygiene анхааруулга */}
-                {(stalledCount > 0 || noStepCount > 0) && (
-                    <div className="flex items-center gap-3 mt-3 flex-wrap">
-                        {stalledCount > 0 && (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-status-danger-soft text-status-danger">
-                                <AlertTriangle className="w-3.5 h-3.5" />
-                                {stalledCount} зогссон лийд
-                            </span>
-                        )}
-                        {noStepCount > 0 && (
-                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-status-pending-soft text-status-pending">
-                                <Clock className="w-3.5 h-3.5" />
-                                {noStepCount} дараагийн алхамгүй
-                            </span>
-                        )}
-                    </div>
-                )}
-            </div>
-
-            <div className="p-4 overflow-x-auto">
-                <div className="flex gap-3" style={{ minWidth: `${PIPELINE_STAGES.length * 260}px` }}>
-                    {PIPELINE_STAGES.map(stage => {
-                        const stageLeads = leads.filter(l => l.status === stage.key);
-                        const stageValue = stageLeads.reduce((s, l) => s + leadValue(l), 0);
-                        return (
-                            <div
-                                key={stage.key}
-                                onDrop={e => handleDrop(e, stage.key)}
-                                onDragOver={handleDragOver}
-                                className={`flex-1 min-w-[240px] rounded-xl border p-3 ${stage.bg} transition-all ${draggingId ? 'ring-2 ring-violet-300 ring-opacity-50' : ''}`}
-                            >
-                                <div className="flex items-center gap-2 mb-3">
-                                    <div className={`w-3 h-3 rounded-full ${stage.color}`} />
-                                    <span className="text-sm font-semibold text-foreground">{stage.label}</span>
-                                    <span className="text-xs text-muted-foreground/70 ml-auto">{stageLeads.length}</span>
-                                </div>
-                                {stageValue > 0 && (
-                                    <p className="text-[11px] text-muted-foreground -mt-2 mb-2 flex items-center gap-0.5">
-                                        <DollarSign className="w-3 h-3" />{fmtMoney(stageValue)}₮
-                                    </p>
-                                )}
-
-                                <div className="space-y-2 min-h-[100px]">
-                                    {stageLeads.map(lead => {
-                                        const stalled = isStalled(lead, now);
-                                        const overdue = isOverdue(lead, now);
-                                        const days = daysInStage(lead, now);
-                                        return (
-                                            <div
-                                                key={lead.id}
-                                                draggable
-                                                onDragStart={e => handleDragStart(e, lead.id)}
-                                                className={`bg-surface rounded-lg p-3 border cursor-grab active:cursor-grabbing hover:shadow-md transition-all ${draggingId === lead.id ? 'opacity-50 scale-95' : ''} ${stalled ? 'border-status-danger/50 ring-1 ring-status-danger/20' : 'border-border'}`}
-                                            >
-                                                <div className="flex items-start justify-between mb-1.5">
-                                                    <p className="text-sm font-medium text-foreground flex items-center gap-1">
-                                                        <User className="w-3.5 h-3.5 text-muted-foreground/70" />
-                                                        {lead.customer_name || 'Нэргүй'}
-                                                    </p>
-                                                    <GripVertical className="w-4 h-4 text-muted-foreground/60 flex-shrink-0" />
-                                                </div>
-
-                                                {lead.customer_phone && (
-                                                    <p className="text-xs text-muted-foreground flex items-center gap-1 mb-1">
-                                                        <Phone className="w-3 h-3" />
-                                                        {lead.customer_phone}
-                                                    </p>
-                                                )}
-
-                                                <div className="flex items-center gap-1.5 flex-wrap">
-                                                    {lead.urgency && (
-                                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${urgencyColors[lead.urgency] || urgencyColors.normal}`}>
-                                                            {lead.urgency === 'urgent' ? '🔥' : lead.urgency === 'flexible' ? '🟢' : '⚪'} {lead.urgency}
-                                                        </span>
-                                                    )}
-                                                    {(lead.budget_min || lead.budget_max) && (
-                                                        <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                                                            <DollarSign className="w-2.5 h-2.5" />
-                                                            {formatBudget(lead.budget_min, lead.budget_max)}
-                                                        </span>
-                                                    )}
-                                                    {/* Шатанд байсан хугацаа — зогссон бол улаан */}
-                                                    {!isClosed(lead.status) && (
-                                                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium inline-flex items-center gap-0.5 ${stalled ? 'bg-status-danger-soft text-status-danger' : 'bg-surface-2 text-muted-foreground/80'}`}>
-                                                            <Clock className="w-2.5 h-2.5" />{days}х
-                                                        </span>
-                                                    )}
-                                                </div>
-
-                                                {/* closed_lost дээр алдсан шалтгаан */}
-                                                {lead.status === 'closed_lost' && lead.lost_reason && (
-                                                    <p className="text-[10px] text-muted-foreground mt-1.5">❌ {lead.lost_reason}</p>
-                                                )}
-
-                                                {/* Дараагийн алхам / overdue / алхамгүй */}
-                                                {lead.next_followup_at ? (
-                                                    <p className={`text-[10px] mt-1.5 flex items-center gap-1 ${overdue ? 'text-status-danger font-medium' : 'text-brand-strong'}`}>
-                                                        <Calendar className="w-3 h-3" />
-                                                        {overdue ? 'Хугацаа хэтэрсэн: ' : 'Follow-up: '}{formatShortDate(lead.next_followup_at)}
-                                                    </p>
-                                                ) : !isClosed(lead.status) && (
-                                                    <p className="text-[10px] mt-1.5 flex items-center gap-1 text-status-pending">
-                                                        <AlertTriangle className="w-3 h-3" />
-                                                        Дараагийн алхамгүй
-                                                    </p>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-
-            {/* Алдсан шалтгааны modal */}
-            {lostModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setLostModal(null)}>
-                    <div className="bg-surface rounded-xl shadow-xl border border-border w-full max-w-sm p-5" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between mb-1">
-                            <h2 className="text-base font-semibold text-foreground">Яагаад алдсан бэ?</h2>
-                            <button onClick={() => setLostModal(null)} className="p-1 hover:bg-surface-2 rounded-lg">
-                                <X className="w-4 h-4 text-muted-foreground" />
-                            </button>
-                        </div>
-                        <p className="text-xs text-muted-foreground mb-4">{lostModal.name} — шалтгааныг сонгоно уу</p>
-                        <div className="space-y-1.5">
-                            {LOST_REASONS.map(reason => (
-                                <button
-                                    key={reason}
-                                    onClick={() => { moveToStage(lostModal.leadId, 'closed_lost', reason); setLostModal(null); }}
-                                    className="w-full text-left px-3 py-2 rounded-lg text-sm text-foreground hover:bg-surface-2 border border-border transition-colors"
-                                >
-                                    {reason}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
+            {/* Truncation анхааруулга — 1000-аас олон лийдтэй бол самбар бүгдийг
+                харуулахгүй тул forecast/тоо дутуу болохыг мэдэгдэнэ. */}
+            {total > leads.length && (
+                <div className="flex items-center gap-1.5 mb-3 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-status-danger-soft text-status-danger">
+                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+                    Нийт {total} лийдээс эхний {leads.length} харагдаж байна — таамаг/тоо дутуу. Шүүлтүүрээр багасгана уу.
                 </div>
             )}
+
+            {/* Hygiene анхааруулга */}
+            {(stalledCount > 0 || noStepCount > 0) && (
+                <div className="flex items-center gap-3 mb-4 flex-wrap">
+                    {stalledCount > 0 && (
+                        <StatusPill variant="danger" className="px-2.5 py-1">
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            {stalledCount} зогссон лийд
+                        </StatusPill>
+                    )}
+                    {noStepCount > 0 && (
+                        <StatusPill variant="pending" className="px-2.5 py-1">
+                            <Clock className="w-3.5 h-3.5" />
+                            {noStepCount} дараагийн алхамгүй
+                        </StatusPill>
+                    )}
+                </div>
+            )}
+
+            <DndContext
+                sensors={sensors}
+                collisionDetection={closestCorners}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
+                onDragCancel={() => setActiveDragId(null)}
+            >
+                <div className="overflow-x-auto -mx-1 px-1">
+                    <div className="flex gap-3" style={{ minWidth: `${PIPELINE_STAGES.length * 260}px` }}>
+                        {PIPELINE_STAGES.map(stage => {
+                            const stageLeads = leads.filter(l => l.status === stage.key);
+                            const stageValue = stageLeads.reduce((s, l) => s + leadValue(l), 0);
+                            return (
+                                <StageColumn
+                                    key={stage.key}
+                                    stage={stage}
+                                    stageLeads={stageLeads}
+                                    stageValue={stageValue}
+                                    now={now}
+                                    activeDragId={activeDragId}
+                                    reduced={reduced}
+                                />
+                            );
+                        })}
+                    </div>
+                </div>
+
+                <DragOverlay>
+                    {activeLead ? (
+                        <div className="bg-surface rounded-lg p-3 border border-border shadow-lg w-[232px] cursor-grabbing">
+                            <LeadCardBody lead={activeLead} now={now} />
+                        </div>
+                    ) : null}
+                </DragOverlay>
+            </DndContext>
+
+            {/* Алдсан шалтгааны хүснэгт (Sheet) */}
+            <Sheet open={!!lostModal} onOpenChange={(open) => { if (!open) setLostModal(null); }}>
+                <SheetContent side="right" className="sm:max-w-sm">
+                    <SheetHeader>
+                        <SheetTitle>Яагаад алдсан бэ?</SheetTitle>
+                        <SheetDescription>
+                            {lostModal?.name} — шалтгааныг сонгоно уу
+                        </SheetDescription>
+                    </SheetHeader>
+                    <div className="space-y-1.5 px-6 pb-6">
+                        {LOST_REASONS.map(reason => (
+                            <button
+                                key={reason}
+                                onClick={() => {
+                                    if (lostModal) moveToStage(lostModal.leadId, 'closed_lost', reason);
+                                    setLostModal(null);
+                                }}
+                                className="w-full text-left px-3 py-2 rounded-md text-sm text-foreground hover:bg-surface-2 border border-border transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                            >
+                                {reason}
+                            </button>
+                        ))}
+                    </div>
+                </SheetContent>
+            </Sheet>
         </div>
     );
 }

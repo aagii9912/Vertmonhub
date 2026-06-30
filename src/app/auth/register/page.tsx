@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 import Link from 'next/link';
+import { Building2 } from 'lucide-react';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
@@ -38,7 +38,7 @@ export default function RegisterPage() {
                 data: {
                     full_name: fullName,
                 },
-                emailRedirectTo: `${window.location.origin}/auth/callback?redirect_url=/setup`,
+                emailRedirectTo: `${window.location.origin}/auth/callback?redirect_url=/dashboard`,
             },
         });
 
@@ -57,7 +57,7 @@ export default function RegisterPage() {
         const { error } = await supabase.auth.signInWithOAuth({
             provider,
             options: {
-                redirectTo: `${window.location.origin}/auth/callback?redirect_url=/setup`,
+                redirectTo: `${window.location.origin}/auth/callback?redirect_url=/dashboard`,
                 ...(provider === 'facebook' && { scopes: 'public_profile' }),
             },
         });
@@ -66,17 +66,28 @@ export default function RegisterPage() {
         }
     };
 
+    const Wordmark = () => (
+        <div className="inline-flex items-center gap-3">
+            <span className="flex h-11 w-11 items-center justify-center rounded-md bg-brand text-brand-fg shadow-sm">
+                <Building2 className="h-6 w-6" strokeWidth={2.25} />
+            </span>
+            <span className="heading-display text-2xl text-foreground">Vertmon Hub</span>
+        </div>
+    );
+
     if (success) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/10 px-4">
+            <div className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
                 <div className="w-full max-w-md text-center">
-                    <div className="bg-card border border-border rounded-2xl shadow-xl p-8">
-                        <div className="text-5xl mb-4">📧</div>
-                        <h2 className="text-xl font-bold text-foreground mb-2">{t.auth.checkEmail}</h2>
+                    <div className="bg-surface border border-border rounded-2xl shadow-lg p-8">
+                        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-md bg-brand-soft text-brand-strong text-3xl">
+                            📧
+                        </div>
+                        <h2 className="heading-section text-xl text-foreground mb-2">{t.auth.checkEmail}</h2>
                         <p className="text-muted-foreground text-sm mb-4">
-                            <strong>{email}</strong> {t.auth.checkEmailDesc}
+                            <strong className="text-foreground">{email}</strong> {t.auth.checkEmailDesc}
                         </p>
-                        <Link href="/auth/login" className="text-primary hover:text-primary/80 font-medium text-sm">
+                        <Link href="/auth/login" className="text-brand-strong hover:text-brand font-medium text-sm">
                             {t.auth.backToLogin}
                         </Link>
                     </div>
@@ -86,7 +97,7 @@ export default function RegisterPage() {
     }
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/10 px-4">
+        <div className="min-h-screen flex items-center justify-center bg-background px-4 py-12">
             <div className="w-full max-w-md">
                 {/* Language Switcher */}
                 <div className="flex justify-end mb-4">
@@ -94,27 +105,23 @@ export default function RegisterPage() {
                 </div>
 
                 <div className="text-center mb-8">
-                    <Image
-                        src="/logo.png"
-                        alt="Syncly"
-                        width={64}
-                        height={64}
-                        className="rounded-lg mx-auto mb-4"
-                    />
-                    <h1 className="text-3xl font-bold text-foreground mb-2">
-                        Syncly
-                    </h1>
+                    <p className="font-mono text-2xs tracking-[0.24em] text-muted-foreground uppercase mb-4">
+                        Vertmon — Hub
+                    </p>
+                    <div className="mb-3 flex justify-center">
+                        <Wordmark />
+                    </div>
                     <p className="text-muted-foreground">
                         {t.auth.registerSubtitle}
                     </p>
                 </div>
 
-                <div className="bg-card border border-border rounded-2xl shadow-xl p-6 space-y-5">
+                <div className="bg-surface border border-border rounded-2xl shadow-lg p-6 space-y-5">
                     {/* OAuth Buttons */}
                     <div className="space-y-3">
                         <button
                             onClick={() => handleOAuthLogin('google')}
-                            className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl border border-border bg-background hover:bg-secondary transition-colors text-sm font-medium"
+                            className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-md border border-border bg-background hover:bg-surface-2 transition-colors text-sm font-medium text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         >
                             <svg className="w-5 h-5" viewBox="0 0 24 24">
                                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
@@ -127,7 +134,7 @@ export default function RegisterPage() {
 
                         <button
                             onClick={() => handleOAuthLogin('facebook')}
-                            className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl border border-border bg-[#1877F2] hover:bg-[#166FE5] transition-colors text-sm font-medium text-white"
+                            className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-md border border-transparent bg-[#1877F2] hover:bg-[#166FE5] transition-colors text-sm font-medium text-white outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         >
                             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                                 <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z" />
@@ -141,7 +148,7 @@ export default function RegisterPage() {
                             <div className="w-full border-t border-border"></div>
                         </div>
                         <div className="relative flex justify-center text-xs">
-                            <span className="px-2 bg-card text-muted-foreground">{t.common.or}</span>
+                            <span className="px-2 bg-surface text-muted-foreground">{t.common.or}</span>
                         </div>
                     </div>
 
@@ -155,7 +162,7 @@ export default function RegisterPage() {
                                 type="text"
                                 value={fullName}
                                 onChange={(e) => setFullName(e.target.value)}
-                                className="w-full px-4 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm"
+                                className="w-full px-4 py-2.5 rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus:border-border-strong transition-colors text-sm"
                                 placeholder={t.auth.fullNamePlaceholder}
                                 required
                             />
@@ -168,7 +175,7 @@ export default function RegisterPage() {
                                 type="email"
                                 value={email}
                                 onChange={(e) => setEmail(e.target.value)}
-                                className="w-full px-4 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm"
+                                className="w-full px-4 py-2.5 rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus:border-border-strong transition-colors text-sm"
                                 placeholder="name@example.com"
                                 required
                             />
@@ -181,7 +188,7 @@ export default function RegisterPage() {
                                 type="password"
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className="w-full px-4 py-2.5 rounded-xl border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 text-sm"
+                                className="w-full px-4 py-2.5 rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus:border-border-strong transition-colors text-sm"
                                 placeholder={t.auth.passwordPlaceholder}
                                 required
                                 minLength={6}
@@ -197,7 +204,7 @@ export default function RegisterPage() {
                         <button
                             type="submit"
                             disabled={loading}
-                            className="w-full py-2.5 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground font-medium text-sm transition-colors disabled:opacity-50"
+                            className="w-full py-2.5 rounded-md bg-brand hover:bg-brand-strong text-brand-fg font-medium text-sm transition-colors disabled:opacity-50 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         >
                             {loading ? t.auth.registering : t.auth.register}
                         </button>
@@ -205,7 +212,7 @@ export default function RegisterPage() {
 
                     <p className="text-center text-sm text-muted-foreground">
                         {t.auth.hasAccount}{' '}
-                        <Link href="/auth/login" className="text-primary hover:text-primary/80 font-medium">
+                        <Link href="/auth/login" className="text-brand-strong hover:text-brand font-medium">
                             {t.auth.login}
                         </Link>
                     </p>

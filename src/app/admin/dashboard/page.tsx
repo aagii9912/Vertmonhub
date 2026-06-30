@@ -54,7 +54,7 @@ export default function AdminDashboard() {
     if (loading) {
         return (
             <div className="flex items-center justify-center h-64">
-                <div className="animate-spin w-8 h-8 border-4 border-violet-600 border-t-transparent rounded-full"></div>
+                <div className="animate-spin w-8 h-8 border-4 border-brand border-t-transparent rounded-full"></div>
             </div>
         );
     }
@@ -62,7 +62,7 @@ export default function AdminDashboard() {
     if (!data) {
         return (
             <div className="text-center py-12">
-                <p className="text-muted-foreground">Failed to load dashboard</p>
+                <p className="text-muted-foreground">Хяналтын самбар ачаалахад алдаа гарлаа</p>
             </div>
         );
     }
@@ -75,8 +75,8 @@ export default function AdminDashboard() {
         <div className="space-y-8">
             {/* Header */}
             <div>
-                <h1 className="text-2xl font-bold text-foreground">Admin Dashboard</h1>
-                <p className="text-muted-foreground mt-1">Overview of your SaaS platform</p>
+                <h1 className="heading-display text-2xl text-foreground">Админ хяналт</h1>
+                <p className="text-muted-foreground mt-1">Платформын ерөнхий тойм</p>
             </div>
 
             {/* Stats Grid */}
@@ -86,7 +86,7 @@ export default function AdminDashboard() {
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-muted-foreground">Total Shops</p>
+                                <p className="text-sm text-muted-foreground">Нийт байгууллага</p>
                                 <p className="text-3xl font-bold text-foreground mt-1">
                                     {data.stats.total_shops}
                                 </p>
@@ -103,18 +103,18 @@ export default function AdminDashboard() {
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-muted-foreground">Active Subscriptions</p>
+                                <p className="text-sm text-muted-foreground">Идэвхтэй захиалга</p>
                                 <p className="text-3xl font-bold text-foreground mt-1">
                                     {data.stats.subscriptions.active}
                                 </p>
                                 {data.stats.subscriptions.past_due > 0 && (
                                     <p className="text-xs text-status-danger mt-1">
-                                        {data.stats.subscriptions.past_due} past due
+                                        {data.stats.subscriptions.past_due} хугацаа хэтэрсэн
                                     </p>
                                 )}
                             </div>
                             <div className="w-12 h-12 bg-brand-soft rounded-xl flex items-center justify-center">
-                                <CreditCard className="w-6 h-6 text-brand" />
+                                <CreditCard className="w-6 h-6 text-brand-strong" />
                             </div>
                         </div>
                     </CardContent>
@@ -125,16 +125,16 @@ export default function AdminDashboard() {
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-muted-foreground">Total Revenue</p>
+                                <p className="text-sm text-muted-foreground">Нийт орлого</p>
                                 <p className="text-3xl font-bold text-foreground mt-1">
                                     {formatMoney(data.stats.revenue.total_revenue)}
                                 </p>
-                                <p className="text-xs text-muted-foreground/70 mt-1">
-                                    {data.stats.revenue.paid_count} payments
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    {data.stats.revenue.paid_count} төлбөр
                                 </p>
                             </div>
                             <div className="w-12 h-12 bg-brand-soft rounded-xl flex items-center justify-center">
-                                <TrendingUp className="w-6 h-6 text-brand" />
+                                <TrendingUp className="w-6 h-6 text-brand-strong" />
                             </div>
                         </div>
                     </CardContent>
@@ -145,7 +145,7 @@ export default function AdminDashboard() {
                     <CardContent className="p-6">
                         <div className="flex items-center justify-between">
                             <div>
-                                <p className="text-sm text-muted-foreground">Active Plans</p>
+                                <p className="text-sm text-muted-foreground">Идэвхтэй багц</p>
                                 <p className="text-3xl font-bold text-foreground mt-1">
                                     {data.stats.plans_count}
                                 </p>
@@ -163,20 +163,20 @@ export default function AdminDashboard() {
                 {/* Recent Shops */}
                 <Card>
                     <CardContent className="p-6">
-                        <h2 className="text-lg font-semibold text-foreground mb-4">Recent Shops</h2>
+                        <h2 className="text-lg font-semibold text-foreground mb-4">Сүүлийн байгууллагууд</h2>
                         {data.recent_shops.length === 0 ? (
-                            <p className="text-muted-foreground text-center py-4">No recent shops</p>
+                            <p className="text-muted-foreground text-center py-4">Шинэ байгууллага алга</p>
                         ) : (
                             <div className="space-y-3">
                                 {data.recent_shops.map((shop) => (
-                                    <div key={shop.id} className="flex items-center justify-between py-2 border-b border-border/60 last:border-0">
+                                    <div key={shop.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                                         <div>
                                             <p className="font-medium text-foreground">{shop.name}</p>
                                             <p className="text-sm text-muted-foreground">
                                                 {new Date(shop.created_at).toLocaleDateString('mn-MN')}
                                             </p>
                                         </div>
-                                        <ArrowUpRight className="w-4 h-4 text-brand" />
+                                        <ArrowUpRight className="w-4 h-4 text-brand-strong" />
                                     </div>
                                 ))}
                             </div>
@@ -187,19 +187,19 @@ export default function AdminDashboard() {
                 {/* Recent Invoices */}
                 <Card>
                     <CardContent className="p-6">
-                        <h2 className="text-lg font-semibold text-foreground mb-4">Recent Invoices</h2>
+                        <h2 className="text-lg font-semibold text-foreground mb-4">Сүүлийн нэхэмжлэхүүд</h2>
                         {data.recent_invoices.length === 0 ? (
-                            <p className="text-muted-foreground text-center py-4">No invoices yet</p>
+                            <p className="text-muted-foreground text-center py-4">Нэхэмжлэх алга</p>
                         ) : (
                             <div className="space-y-3">
                                 {data.recent_invoices.map((invoice) => (
-                                    <div key={invoice.id} className="flex items-center justify-between py-2 border-b border-border/60 last:border-0">
+                                    <div key={invoice.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
                                         <div>
                                             <p className="font-medium text-foreground">{invoice.shops?.name}</p>
                                             <p className="text-sm text-muted-foreground">{formatMoney(invoice.amount)}</p>
                                         </div>
                                         <span className={`px-2 py-1 text-xs rounded-full font-medium ${invoice.status === 'paid'
-                                            ? 'bg-brand-soft text-brand-dark'
+                                            ? 'bg-brand-soft text-brand-strong'
                                             : invoice.status === 'pending'
                                                 ? 'bg-status-pending-soft text-status-pending'
                                                 : 'bg-status-danger-soft text-status-danger'
@@ -217,13 +217,13 @@ export default function AdminDashboard() {
             {/* Plans Overview */}
             <Card>
                 <CardContent className="p-6">
-                    <h2 className="text-lg font-semibold text-foreground mb-4">Plans Overview</h2>
+                    <h2 className="text-lg font-semibold text-foreground mb-4">Багцын тойм</h2>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         {data.plans.map((plan) => (
-                            <div key={plan.id} className="p-4 bg-surface-2/40 rounded-xl text-center">
+                            <div key={plan.id} className="p-4 bg-surface-2 rounded-xl text-center">
                                 <p className="font-medium text-foreground">{plan.name}</p>
                                 <p className="text-lg font-bold text-brand-strong mt-1">
-                                    {plan.price_monthly === 0 ? 'Free' : formatMoney(plan.price_monthly)}
+                                    {plan.price_monthly === 0 ? 'Үнэгүй' : formatMoney(plan.price_monthly)}
                                 </p>
                                 <p className="text-xs text-muted-foreground">/сар</p>
                             </div>

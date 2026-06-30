@@ -41,7 +41,7 @@ function SectionPanel({
         <div className="rounded-2xl border border-border/60 bg-surface shadow-sm mb-4 overflow-hidden">
             <button
                 onClick={() => setOpen(!open)}
-                className="w-full flex items-center gap-3 px-6 py-5 hover:bg-surface-2/40/50 transition-colors"
+                className="w-full flex items-center gap-3 px-6 py-5 hover:bg-surface-2 transition-colors"
             >
                 {open ? (
                     <ChevronDown className="w-4 h-4 text-muted-foreground/70 shrink-0" />
@@ -53,7 +53,7 @@ function SectionPanel({
                     <p className="text-sm text-muted-foreground mt-0.5">{description}</p>
                 </div>
                 {dirty && (
-                    <span className="text-[11px] font-bold text-status-pending bg-status-pending-soft border border-status-pending/30/50 px-2.5 py-1 rounded-full">
+                    <span className="text-[11px] font-bold text-status-pending bg-status-pending-soft border border-status-pending/30 px-2.5 py-1 rounded-full">
                         Өөрчлөгдсөн
                     </span>
                 )}
@@ -66,7 +66,7 @@ function SectionPanel({
                         <button
                             onClick={onSave}
                             disabled={saving || !dirty}
-                            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-brand text-white text-sm font-semibold shadow-sm shadow-violet-600/20 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-brand-strong transition-all"
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-brand text-brand-fg text-sm font-semibold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed hover:bg-brand-strong transition-all"
                         >
                             {saving ? (
                                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -191,11 +191,11 @@ export default function LandingCMSPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <div className="flex items-center gap-4">
-                        <div className="p-2 rounded-lg bg-surface rounded-2xl shadow-sm border border-border/60 flex items-center justify-center p-3">
+                        <div className="rounded-xl bg-surface shadow-sm border border-border flex items-center justify-center p-3">
                             <Globe className="w-5 h-5 text-brand-strong" />
                         </div>
                         <div>
-                            <h1 className="text-2xl font-bold text-foreground tracking-tight">Landing Page</h1>
+                            <h1 className="heading-display text-2xl text-foreground tracking-tight">Нүүр хуудас</h1>
                             <p className="text-sm text-muted-foreground mt-0.5">Контент удирдлага</p>
                         </div>
                     </div>
@@ -293,7 +293,7 @@ export default function LandingCMSPage() {
                 ))}
                 <button
                     onClick={() => updateContent('metrics', [...content.metrics, { value: '', label: '' }])}
-                    className="inline-flex items-center gap-1.5 text-[12px] text-brand-strong hover:text-indigo-300 transition-colors"
+                    className="inline-flex items-center gap-1.5 text-[12px] text-brand-strong hover:text-brand transition-colors"
                 >
                     <Plus className="w-3.5 h-3.5" /> Нэмэх
                 </button>
@@ -368,7 +368,7 @@ export default function LandingCMSPage() {
                                 items: [...content.features.items, { title: '', desc: '' }],
                             });
                         }}
-                        className="inline-flex items-center gap-1.5 text-[12px] text-brand-strong hover:text-indigo-300 transition-colors"
+                        className="inline-flex items-center gap-1.5 text-[12px] text-brand-strong hover:text-brand transition-colors"
                     >
                         <Plus className="w-3.5 h-3.5" /> Боломж нэмэх
                     </button>
@@ -537,7 +537,7 @@ export default function LandingCMSPage() {
                         <div>
                             <label className="block text-sm font-medium text-foreground mb-1.5">Боломжууд (мөр бүр нэг)</label>
                             <textarea
-                                className="w-full bg-surface/[0.04] border border-white/[0.08] rounded-lg px-3.5 py-2.5 text-[13px] text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/50 min-h-[100px] resize-y transition-all"
+                                className="w-full bg-surface-2 border border-border rounded-md px-3.5 py-2.5 text-[13px] text-foreground placeholder:text-muted-2 focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20 min-h-[100px] resize-y transition-all"
                                 value={content.pricing[plan].features.join('\n')}
                                 onChange={(e) => updateContent('pricing', {
                                     ...content.pricing,
@@ -597,7 +597,7 @@ export default function LandingCMSPage() {
                                                 </button>
                                             ) : (
                                                 <input
-                                                    className="w-full bg-surface border border-border rounded px-2 py-1.5 text-[12px] text-white text-center focus:outline-none focus:border-indigo-500/50"
+                                                    className="w-full bg-surface border border-border rounded px-2 py-1.5 text-[12px] text-foreground text-center focus:outline-none focus:border-brand focus:ring-2 focus:ring-brand/20"
                                                     value={row[plan] as string}
                                                     onChange={(e) => {
                                                         const updated = [...content.comparison];
@@ -623,7 +623,7 @@ export default function LandingCMSPage() {
                 </div>
                 <button
                     onClick={() => updateContent('comparison', [...content.comparison, { name: '', starter: '', pro: '', enterprise: '' }])}
-                    className="inline-flex items-center gap-1.5 text-[12px] text-brand-strong hover:text-indigo-300 transition-colors mt-2"
+                    className="inline-flex items-center gap-1.5 text-[12px] text-brand-strong hover:text-brand transition-colors mt-2"
                 >
                     <Plus className="w-3.5 h-3.5" /> Мөр нэмэх
                 </button>
@@ -683,7 +683,7 @@ export default function LandingCMSPage() {
                 ))}
                 <button
                     onClick={() => updateContent('faq', { ...content.faq, items: [...content.faq.items, { q: '', a: '' }] })}
-                    className="inline-flex items-center gap-1.5 text-[12px] text-brand-strong hover:text-indigo-300 transition-colors"
+                    className="inline-flex items-center gap-1.5 text-[12px] text-brand-strong hover:text-brand transition-colors"
                 >
                     <Plus className="w-3.5 h-3.5" /> Асуулт нэмэх
                 </button>

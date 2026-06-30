@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
     children: React.ReactNode;
     hover?: boolean;
+    interactive?: boolean;
     variant?: 'default' | 'elevated' | 'ghost' | 'muted';
 }
 
@@ -15,7 +16,7 @@ const variantClasses: Record<NonNullable<CardProps['variant']>, string> = {
 };
 
 export const Card = forwardRef<HTMLDivElement, CardProps>(
-    ({ children, className = '', hover = false, variant = 'default', ...props }, ref) => {
+    ({ children, className = '', hover = false, interactive = false, variant = 'default', ...props }, ref) => {
         return (
             <div
                 ref={ref}
@@ -23,6 +24,8 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
                     'rounded-xl',
                     variantClasses[variant],
                     hover && 'transition-colors duration-200 hover:border-border-strong',
+                    interactive &&
+                        'cursor-pointer transition-[transform,box-shadow,border-color] duration-200 hover:shadow-sm hover:border-border-strong active:scale-[0.99] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                     className,
                 )}
                 {...props}

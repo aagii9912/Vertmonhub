@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { StatusDot } from '@/components/ui/StatusDot';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/dashboard/PageHeader';
@@ -64,12 +65,14 @@ const CATEGORY_LABEL: Record<string, string> = {
 };
 const CATEGORY_ORDER = ['residential', 'parking', 'industry', 'commercial'];
 
-const STATUS_META: Record<string, { label: string; cell: string; dot: string; variant: 'success' | 'info' | 'warning' | 'default' | 'danger' }> = {
-    available:   { label: 'Чөлөөтэй',   cell: 'bg-status-success-soft border-status-success/40 text-status-success hover:bg-status-success/20', dot: 'bg-status-success', variant: 'success' },
-    sold:        { label: 'Зарагдсан',  cell: 'bg-surface-3 border-border text-muted-foreground hover:bg-surface-2', dot: 'bg-muted-foreground', variant: 'default' },
-    handed_over: { label: 'Хүлээлгэсэн', cell: 'bg-status-info-soft border-status-info/40 text-status-info hover:bg-status-info/20', dot: 'bg-status-info', variant: 'info' },
-    reserved:    { label: 'Хадгалсан',  cell: 'bg-status-pending-soft border-status-pending/40 text-status-pending hover:bg-status-pending/20', dot: 'bg-status-pending', variant: 'warning' },
-    ordered:     { label: 'Захиалсан',  cell: 'bg-status-pending-soft border-orange-400/50 text-status-pending hover:bg-status-pending/20', dot: 'bg-orange-400', variant: 'warning' },
+type DotVariant = 'success' | 'danger' | 'pending' | 'info' | 'active' | 'neutral' | 'brand';
+
+const STATUS_META: Record<string, { label: string; cell: string; dot: DotVariant; variant: 'success' | 'info' | 'warning' | 'default' | 'danger' }> = {
+    available:   { label: 'Чөлөөтэй',   cell: 'bg-status-success-soft border-status-success/40 text-status-success hover:bg-status-success/20', dot: 'success', variant: 'success' },
+    sold:        { label: 'Зарагдсан',  cell: 'bg-surface-3 border-border text-muted-foreground hover:bg-surface-2', dot: 'neutral', variant: 'default' },
+    handed_over: { label: 'Хүлээлгэсэн', cell: 'bg-status-info-soft border-status-info/40 text-status-info hover:bg-status-info/20', dot: 'info', variant: 'info' },
+    reserved:    { label: 'Хадгалсан',  cell: 'bg-status-pending-soft border-status-pending/40 text-status-pending hover:bg-status-pending/20', dot: 'pending', variant: 'warning' },
+    ordered:     { label: 'Захиалсан',  cell: 'bg-status-pending-soft border-status-pending/50 text-status-pending hover:bg-status-pending/20', dot: 'pending', variant: 'warning' },
 };
 const STATUS_ORDER = ['available', 'ordered', 'reserved', 'sold', 'handed_over'];
 
@@ -273,7 +276,7 @@ export default function BlocksPage() {
                                     const m = meta(s);
                                     return (
                                         <span key={s} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                                            <span className={cn('w-2.5 h-2.5 rounded-sm', m.dot)} /> {m.label} ({count})
+                                            <StatusDot variant={m.dot} /> {m.label} ({count})
                                         </span>
                                     );
                                 })}
@@ -332,7 +335,7 @@ function UnitGrid({ units, category, onSelect, selectedId }: {
                 <span className="text-[9px] opacity-75 leading-tight">
                     {u.rooms ? `${u.rooms}ө · ` : ''}{u.sale_area ? `${u.sale_area}м²` : ''}
                 </span>
-                {u.buyer_name && <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-brand" />}
+                {u.buyer_name && <StatusDot variant="brand" className="absolute top-1 right-1 size-1.5" />}
             </button>
         );
     };

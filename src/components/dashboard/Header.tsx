@@ -1,14 +1,23 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { LogOut, Settings, ChevronDown } from 'lucide-react';
+import { LogOut, Settings, ChevronDown, Search } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { NotificationButton } from '@/components/NotificationButton';
 import { ShopSwitcher } from '@/components/dashboard/ShopSwitcher';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
-import { WorkspaceSwitcher } from '@/components/dashboard/WorkspaceSwitcher';
-import { getNavTitle } from '@/lib/navigation/workspaces';
+import { getNavTitle, getBreadcrumb } from '@/lib/navigation/workspaces';
+import { OPEN_COMMAND_EVENT } from '@/components/dashboard/CommandPalette';
+import {
+    Breadcrumb,
+    BreadcrumbList,
+    BreadcrumbItem,
+    BreadcrumbLink,
+    BreadcrumbPage,
+    BreadcrumbSeparator,
+} from '@/components/ui/Breadcrumb';
 
 export function Header() {
     const router = useRouter();
@@ -31,41 +40,78 @@ export function Header() {
         }
     };
 
+    const openCommand = () => {
+        if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent(OPEN_COMMAND_EVENT));
+        }
+    };
+
     const fullName = user?.fullName || user?.email?.split('@')[0] || 'User';
     const firstName = fullName.split(' ')[0];
     const displayEmail = user?.email || '';
 
-    const renderTitle = () => {
-        const path = pathname || '';
-        if (path === '/dashboard' || path === '/dashboard/') {
-            return (
-                <>
-                    <h1 className="heading-display text-base md:text-lg text-foreground truncate">
-                        Сайн байна уу, {fullName}!
-                    </h1>
-                    {shop && (
-                        <p className="text-xs text-muted-foreground truncate">{shop.name}</p>
-                    )}
-                </>
-            );
-        }
-        return (
-            <h1 className="heading-section text-base md:text-lg text-foreground truncate">
-                {getNavTitle(path)}
-            </h1>
-        );
-    };
+    const path = pathname || '';
+    const isRoot = path === '/dashboard' || path === '/dashboard/';
+    const crumbs = getBreadcrumb(path);
 
     return (
         <header className="h-14 md:h-16 bg-surface border-b border-border sticky top-0 z-40 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 md:px-6">
-            {/* Зүүн: Гарчиг / мэндчилгээ (жижиг дэлгэцэд төв switcher-т зай гаргахаар нуугдана) */}
-            <div className="min-w-0 justify-self-start hidden sm:block">
-                {renderTitle()}
+            {/* Зүүн: breadcrumb / мэндчилгээ */}
+            <div className="min-w-0 justify-self-start">
+                {/* Том дэлгэц: breadcrumb эсвэл мэндчилгээ */}
+                <div className="hidden sm:block min-w-0">
+                    {isRoot ? (
+                        <>
+                            <h1 className="heading-display text-base md:text-lg text-foreground truncate">
+                                Сайн байна уу, {fullName}!
+                            </h1>
+                            {shop && <p className="text-xs text-muted-foreground truncate">{shop.name}</p>}
+                        </>
+                    ) : (
+                        <Breadcrumb>
+                            <BreadcrumbList>
+                                {crumbs.map((c, i) => {
+                                    const last = i === crumbs.length - 1;
+                                    return (
+                                        <React.Fragment key={i}>
+                                            <BreadcrumbItem>
+                                                {last || !c.href ? (
+                                                    <BreadcrumbPage className="truncate max-w-[40vw]">{c.label}</BreadcrumbPage>
+                                                ) : (
+                                                    <BreadcrumbLink asChild>
+                                                        <Link href={c.href}>{c.label}</Link>
+                                                    </BreadcrumbLink>
+                                                )}
+                                            </BreadcrumbItem>
+                                            {!last && <BreadcrumbSeparator />}
+                                        </React.Fragment>
+                                    );
+                                })}
+                            </BreadcrumbList>
+                        </Breadcrumb>
+                    )}
+                </div>
+                {/* Жижиг дэлгэц: одоогийн хуудасны нэр */}
+                <h1 className="sm:hidden heading-section text-base text-foreground truncate">
+                    {isRoot ? 'Нүүр' : getNavTitle(path)}
+                </h1>
             </div>
 
-            {/* Төв: Workspace switcher */}
+            {/* Төв: ⌘K хайлт */}
             <div className="justify-self-center">
-                <WorkspaceSwitcher />
+                <button
+                    onClick={openCommand}
+                    aria-label="Хайх (⌘K)"
+                    className="flex items-center gap-2 rounded-md border border-border bg-surface-2/60 hover:bg-surface-2 text-muted-foreground transition-colors px-2.5 h-9 md:w-64 md:justify-between focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                >
+                    <span className="flex items-center gap-2 min-w-0">
+                        <Search className="w-4 h-4 shrink-0" />
+                        <span className="hidden md:inline truncate text-sm">Хайх эсвэл командлах...</span>
+                    </span>
+                    <kbd className="hidden md:inline-flex items-center gap-0.5 rounded border border-border bg-surface px-1.5 font-mono text-2xs text-muted-foreground">
+                        ⌘K
+                    </kbd>
+                </button>
             </div>
 
             {/* Баруун: Үйлдлүүд */}
