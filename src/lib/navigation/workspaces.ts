@@ -128,7 +128,7 @@ export const WORKSPACES: Workspace[] = [
                     { name: 'Уулзалт', href: '/dashboard/viewings', icon: Eye, module: 'viewings' },
                     { name: 'Гэрээ', href: '/dashboard/contracts', icon: FileText, module: 'contracts' },
                     { name: 'Харилцагч', href: '/dashboard/customers', icon: Users, module: 'customers' },
-                    { name: 'Санал гомдол', href: '/dashboard/customer-service', icon: Headphones, badge: 'Шинэ', module: 'customer-service' },
+                    { name: 'Санал гомдол', href: '/dashboard/customer-service', icon: Headphones, module: 'customer-service' },
                 ],
             },
             {
@@ -136,7 +136,7 @@ export const WORKSPACES: Workspace[] = [
                 title: 'САНХҮҮ / ERP',
                 icon: Wallet,
                 items: [
-                    { name: 'Санхүү', href: '/dashboard/finance', icon: Wallet, badge: 'Шинэ', module: 'finance' },
+                    { name: 'Санхүү', href: '/dashboard/finance', icon: Wallet, module: 'finance' },
                     { name: 'Төслийн санхүү', href: '/dashboard/finance/projects', icon: TrendingUp, module: 'finance' },
                     { name: 'Санхүүгийн тайлан', href: '/dashboard/finance/reports', icon: BarChart3, module: 'finance' },
                     { name: 'Худалдан авалт', href: '/dashboard/procurement', icon: Building2, module: 'procurement' },
@@ -218,8 +218,8 @@ export const WORKSPACES: Workspace[] = [
                 items: [
                     { name: 'Хянах самбар', href: '/marketing', icon: LayoutDashboard, module: '' },
                     { name: 'Маркетинг ROI', href: '/dashboard/marketing-roi', icon: TrendingUp, module: 'marketing-roi' },
-                    { name: 'Өрсөлдөгч судалгаа', href: '/dashboard/competitor-research', icon: Building2, badge: 'Шинэ', module: 'marketing-roi' },
-                    { name: 'Судалгаа', href: '/dashboard/surveys', icon: ClipboardList, badge: 'Шинэ', module: 'surveys' },
+                    { name: 'Өрсөлдөгч судалгаа', href: '/dashboard/competitor-research', icon: Building2, module: 'marketing-roi' },
+                    { name: 'Судалгаа', href: '/dashboard/surveys', icon: ClipboardList, module: 'surveys' },
                 ],
             },
             {
