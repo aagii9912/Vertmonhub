@@ -7,7 +7,7 @@ import type { LandingContent } from './types';
 
 export const defaultLandingContent: LandingContent = {
     hero: {
-        badge: "Борлуулалтын шинэ стандарт Syncly",
+        badge: "Борлуулалтын шинэ стандарт Vertmon Hub",
         headingLine1: "0 ажилтан.",
         headingHighlight: "5х орлогын өсөлт.",
         sub: "Facebook, Instagram дээрх чат бүрд хариулж, захиалга, төлбөр тооцоог автоматаар хүлээн авч баталгаажуулна.",
@@ -72,7 +72,7 @@ export const defaultLandingContent: LandingContent = {
     },
 
     social_proof: {
-        sectionLabel: "Syncly-д нэгдсэнээр та…",
+        sectionLabel: "Vertmon Hub-д нэгдсэнээр та…",
         sectionTitle: "Тоо худлаа хэлдэггүй!",
         items: [
             {
@@ -145,7 +145,7 @@ export const defaultLandingContent: LandingContent = {
             },
             {
                 q: "Тусгай борлуулагч agent хэр оновчтой, зөв хариулт өгдөг вэ?",
-                a: "Syncly тусгайлан хөгжүүлсэн загвар ашиглаж байгаа тул 95%+ нарийвчлалтай хариулт өгөх болно. Монгол хэлийг бүрэн дэмждэг.",
+                a: "Vertmon Hub тусгайлан хөгжүүлсэн загвар ашиглаж байгаа тул 95%+ нарийвчлалтай хариулт өгөх болно. Монгол хэлийг бүрэн дэмждэг.",
             },
             {
                 q: "Төлбөрийн ямар сонголтууд байдаг вэ?",

@@ -85,6 +85,14 @@
   --font-display: var(--font-display-stack);
   --font-mono: var(--font-mono-stack);
 
+  /* --- Type scale (Wave 0: additive only — standard text-sm/base/... left at
+     Tailwind defaults and retuned per-surface in later waves to avoid a
+     700+ call-site shift on the live app). New, non-colliding sizes only: --- */
+  --text-2xs: 0.6875rem;            /* 11px — зөвхөн mono micro-eyebrow */
+  --text-2xs--line-height: 1.4;
+  --text-display: 2.875rem;         /* 46px — landing / empty-state hero */
+  --text-display--line-height: 1.05;
+
   /* --- Radius scale --- */
   --radius-xs: var(--r-xs);
   --radius-sm: var(--r-sm);
@@ -101,6 +109,15 @@
   --shadow-md: var(--shadow-md-val);
   --shadow-lg: var(--shadow-lg-val);
   --shadow-xl: var(--shadow-xl-val);
+  /* shadow-2xl was silently falling back to Tailwind's cool-gray shadow
+     (used 14×). Complete the warm-ink scale. */
+  --shadow-2xl: var(--shadow-2xl-val);
+
+  /* --- Motion easings (generates ease-emphasized / ease-spring utilities;
+     also available as var() for Framer Motion configs). Standard ease-out /
+     ease-in-out are intentionally NOT overridden. --- */
+  --ease-emphasized: cubic-bezier(0.16, 1, 0.3, 1);   /* matches .animate-fade-in-up */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);   /* press / pop */
 }
 
 /* ============================================================
@@ -170,17 +187,15 @@
   --r-2xl: 20px;
   --r-3xl: 28px;
 
-  /* Spacing scale (semantic) */
-  --s-1: 4px;
-  --s-2: 8px;
-  --s-3: 12px;
-  --s-4: 16px;
-  --s-5: 20px;
-  --s-6: 24px;
-  --s-8: 32px;
-  --s-10: 40px;
-  --s-12: 48px;
-  --s-16: 64px;
+  /* Motion tokens (durations; easings live in @theme above) */
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 260ms;
+
+  /* Layout tokens — single source of truth for the shell dimensions so the
+     AI-assistant full-height calc can't drift from the header. */
+  --sidebar-w: 16rem;   /* = ml-64 / w-64 */
+  --header-h: 3.5rem;   /* = h-14 (mobile); bumped to 4rem at md below */
 
   /* Shadows (warm-tinted ink) */
   --shadow-xs-val: 0 1px 2px rgba(20, 18, 12, 0.04);
@@ -188,6 +203,7 @@
   --shadow-md-val: 0 2px 4px rgba(20, 18, 12, 0.04), 0 4px 12px rgba(20, 18, 12, 0.06);
   --shadow-lg-val: 0 4px 8px rgba(20, 18, 12, 0.04), 0 12px 32px rgba(20, 18, 12, 0.08);
   --shadow-xl-val: 0 8px 16px rgba(20, 18, 12, 0.06), 0 24px 56px rgba(20, 18, 12, 0.10);
+  --shadow-2xl-val: 0 12px 24px rgba(20, 18, 12, 0.08), 0 40px 80px rgba(20, 18, 12, 0.14);
 
   /* Sidebar (uses surface tokens) */
   --sidebar: var(--surface);
@@ -198,6 +214,12 @@
   --sidebar-accent-foreground: var(--fg);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--brand);
+}
+
+/* Header grows to 4rem (h-16) from the md breakpoint — keep --header-h in sync
+   with Header.tsx (h-14 md:h-16) so the AI full-height calc stays exact. */
+@media (min-width: 768px) {
+  :root { --header-h: 4rem; }
 }
 
 /* ============================================================
@@ -405,16 +427,6 @@ body {
 .delay-100 { animation-delay: 100ms; }
 .delay-200 { animation-delay: 200ms; }
 .delay-300 { animation-delay: 300ms; }
-
-/* ============================================================
-   Status badge classes (legacy compat — Badge primitive preferred)
-   ============================================================ */
-.badge-shipping { background-color: var(--status-info); color: #fff; }
-.badge-delivered { background-color: var(--status-success); color: #fff; }
-.badge-pending { background-color: var(--status-pending); color: var(--fg); }
-.badge-cancelled { background-color: var(--status-danger); color: #fff; }
-.badge-paid { background-color: var(--status-success); color: #fff; }
-.badge-pickups { background-color: var(--brand); color: var(--brand-fg); }
 
 /* ============================================================
    Base layer

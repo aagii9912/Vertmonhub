@@ -7,7 +7,7 @@ import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 import { AnalyticsScripts } from "@/components/marketing/AnalyticsScripts";
 import { MarketingAttribution } from "@/components/marketing/MarketingAttribution";
-import { Toaster } from 'sonner';
+import { Toaster, ConfirmDialogHost } from '@/components/ui/Toast';
 
 // Editorial typography: Fraunces display + IBM Plex Sans body (Cyrillic-ready) + IBM Plex Mono
 const ibmPlexSans = IBM_Plex_Sans({
@@ -85,7 +85,8 @@ export default function RootLayout({
         <QueryProvider>
           <AuthProvider>
             {children}
-            <Toaster position="top-center" richColors />
+            <Toaster />
+            <ConfirmDialogHost />
           </AuthProvider>
         </QueryProvider>
       </body>

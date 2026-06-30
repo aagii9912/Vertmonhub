@@ -5,6 +5,16 @@ import Image from 'next/image';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { Textarea } from '@/components/ui/Textarea';
+import { Checkbox } from '@/components/ui/Checkbox';
+import { FormField } from '@/components/ui/FormField';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/Select';
 import {
   Building2,
   Upload,
@@ -229,10 +239,7 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <label htmlFor="property-name" className="block text-sm font-medium text-foreground mb-1">
-                Нэр <span className="text-status-danger">*</span>
-              </label>
+            <FormField label="Нэр" htmlFor="property-name" required>
               <Input
                 id="property-name"
                 value={formData.name}
@@ -240,38 +247,41 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
                 placeholder="Жишээ: 3 өрөө байр, Зайсан"
                 required
               />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="property-type" className="block text-sm font-medium text-foreground mb-1">Төрөл</label>
-                <select
-                  id="property-type"
+            </FormField>
+            <div className="grid gap-4 md:grid-cols-2">
+              <FormField label="Төрөл" htmlFor="property-type">
+                <Select
                   value={formData.type}
-                  onChange={(e) => handleField('type', e.target.value as PropertyType)}
-                  className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-ring/40 bg-background"
+                  onValueChange={(v) => handleField('type', v as PropertyType)}
                 >
-                  {TYPE_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="property-status" className="block text-sm font-medium text-foreground mb-1">Төлөв</label>
-                <select
-                  id="property-status"
+                  <SelectTrigger id="property-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TYPE_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormField>
+              <FormField label="Төлөв" htmlFor="property-status">
+                <Select
                   value={formData.status}
-                  onChange={(e) => handleField('status', e.target.value as PropertyStatus)}
-                  className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-ring/40 bg-background"
+                  onValueChange={(v) => handleField('status', v as PropertyStatus)}
                 >
-                  {STATUS_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </div>
+                  <SelectTrigger id="property-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormField>
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="property-price" className="block text-sm font-medium text-foreground mb-1">Үнэ (₮) <span className="text-status-danger">*</span></label>
+            <div className="grid gap-4 md:grid-cols-2">
+              <FormField label="Үнэ (₮)" htmlFor="property-price" required>
                 <Input
                   id="property-price"
                   type="number"
@@ -280,9 +290,8 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
                   placeholder="450000000"
                   required
                 />
-              </div>
-              <div>
-                <label htmlFor="property-price_per_sqm" className="block text-sm font-medium text-foreground mb-1">м²-ийн үнэ (₮)</label>
+              </FormField>
+              <FormField label="м²-ийн үнэ (₮)" htmlFor="property-price_per_sqm">
                 <Input
                   id="property-price_per_sqm"
                   type="number"
@@ -290,33 +299,31 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
                   onChange={(e) => handleField('price_per_sqm', e.target.value)}
                   placeholder="3500000"
                 />
-              </div>
+              </FormField>
             </div>
-            <div>
-              <label htmlFor="property-description" className="block text-sm font-medium text-foreground mb-1">Тайлбар</label>
-              <textarea
+            <FormField label="Тайлбар" htmlFor="property-description">
+              <Textarea
                 id="property-description"
                 value={formData.description}
                 onChange={(e) => handleField('description', e.target.value)}
                 rows={3}
-                className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-ring/40 bg-background"
                 placeholder="Үл хөдлөхийн дэлгэрэнгүй тайлбар..."
               />
-            </div>
-            <div className="flex flex-wrap gap-4 text-sm">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
+            </FormField>
+            <div className="flex flex-wrap gap-6 text-sm">
+              <label htmlFor="property-is_active" className="flex items-center gap-2 cursor-pointer select-none">
+                <Checkbox
+                  id="property-is_active"
                   checked={formData.is_active}
-                  onChange={(e) => handleField('is_active', e.target.checked)}
+                  onCheckedChange={(checked) => handleField('is_active', checked === true)}
                 />
                 Идэвхтэй
               </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
+              <label htmlFor="property-is_featured" className="flex items-center gap-2 cursor-pointer select-none">
+                <Checkbox
+                  id="property-is_featured"
                   checked={formData.is_featured}
-                  onChange={(e) => handleField('is_featured', e.target.checked)}
+                  onCheckedChange={(checked) => handleField('is_featured', checked === true)}
                 />
                 Онцлох
               </label>
@@ -334,8 +341,7 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-              <div>
-                <label htmlFor="property-size_sqm" className="block text-sm font-medium text-foreground mb-1">Хэмжээ (м²)</label>
+              <FormField label="Хэмжээ (м²)" htmlFor="property-size_sqm">
                 <Input
                   id="property-size_sqm"
                   type="number"
@@ -343,9 +349,8 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
                   onChange={(e) => handleField('size_sqm', e.target.value)}
                   placeholder="120"
                 />
-              </div>
-              <div>
-                <label htmlFor="property-rooms" className="block text-sm font-medium text-foreground mb-1">Өрөөний тоо</label>
+              </FormField>
+              <FormField label="Өрөөний тоо" htmlFor="property-rooms">
                 <Input
                   id="property-rooms"
                   type="number"
@@ -353,9 +358,8 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
                   onChange={(e) => handleField('rooms', e.target.value)}
                   placeholder="3"
                 />
-              </div>
-              <div>
-                <label htmlFor="property-bedrooms" className="block text-sm font-medium text-foreground mb-1">Унтлагын өрөө</label>
+              </FormField>
+              <FormField label="Унтлагын өрөө" htmlFor="property-bedrooms">
                 <Input
                   id="property-bedrooms"
                   type="number"
@@ -363,9 +367,8 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
                   onChange={(e) => handleField('bedrooms', e.target.value)}
                   placeholder="2"
                 />
-              </div>
-              <div>
-                <label htmlFor="property-bathrooms" className="block text-sm font-medium text-foreground mb-1">Угаалгын өрөө</label>
+              </FormField>
+              <FormField label="Угаалгын өрөө" htmlFor="property-bathrooms">
                 <Input
                   id="property-bathrooms"
                   type="number"
@@ -373,18 +376,16 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
                   onChange={(e) => handleField('bathrooms', e.target.value)}
                   placeholder="1"
                 />
-              </div>
-              <div>
-                <label htmlFor="property-floor" className="block text-sm font-medium text-foreground mb-1">Давхар</label>
+              </FormField>
+              <FormField label="Давхар" htmlFor="property-floor">
                 <Input
                   id="property-floor"
                   value={formData.floor}
                   onChange={(e) => handleField('floor', e.target.value)}
                   placeholder="5/12"
                 />
-              </div>
-              <div>
-                <label htmlFor="property-year_built" className="block text-sm font-medium text-foreground mb-1">Ашиглалтанд орсон он</label>
+              </FormField>
+              <FormField label="Ашиглалтанд орсон он" htmlFor="property-year_built">
                 <Input
                   id="property-year_built"
                   type="number"
@@ -392,7 +393,7 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
                   onChange={(e) => handleField('year_built', e.target.value)}
                   placeholder="2024"
                 />
-              </div>
+              </FormField>
             </div>
           </CardContent>
         </Card>
@@ -406,40 +407,39 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="property-district" className="block text-sm font-medium text-foreground mb-1">Дүүрэг</label>
-                <select
-                  id="property-district"
+            <div className="grid gap-4 md:grid-cols-2">
+              <FormField label="Дүүрэг" htmlFor="property-district">
+                <Select
                   value={formData.district}
-                  onChange={(e) => handleField('district', e.target.value)}
-                  className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-ring/40 bg-background"
+                  onValueChange={(v) => handleField('district', v)}
                 >
-                  <option value="">Сонгоно уу</option>
-                  {DISTRICT_OPTIONS.map((d) => (
-                    <option key={d} value={d}>{d}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label htmlFor="property-city" className="block text-sm font-medium text-foreground mb-1">Хот</label>
+                  <SelectTrigger id="property-district">
+                    <SelectValue placeholder="Сонгоно уу" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DISTRICT_OPTIONS.map((d) => (
+                      <SelectItem key={d} value={d}>{d}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormField>
+              <FormField label="Хот" htmlFor="property-city">
                 <Input
                   id="property-city"
                   value={formData.city}
                   onChange={(e) => handleField('city', e.target.value)}
                   placeholder="Ulaanbaatar"
                 />
-              </div>
+              </FormField>
             </div>
-            <div>
-              <label htmlFor="property-address" className="block text-sm font-medium text-foreground mb-1">Хаяг</label>
+            <FormField label="Хаяг" htmlFor="property-address">
               <Input
                 id="property-address"
                 value={formData.address}
                 onChange={(e) => handleField('address', e.target.value)}
                 placeholder="Зайсан, 12-р хороо"
               />
-            </div>
+            </FormField>
           </CardContent>
         </Card>
 
@@ -476,7 +476,7 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
               </div>
             )}
             <label className="cursor-pointer block">
-              <div className="border-2 border-dashed border-border-strong rounded-lg p-8 text-center hover:bg-surface-2/50 transition-colors">
+              <div className="border-2 border-dashed border-border-strong rounded-xl p-8 text-center hover:bg-surface-2/50 transition-colors">
                 {uploading ? (
                   <>
                     <Loader2 className="w-12 h-12 text-brand mx-auto mb-4 animate-spin" />

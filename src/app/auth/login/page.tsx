@@ -83,7 +83,7 @@ export default function LoginPage() {
                     <p className="font-mono text-[10px] tracking-[0.24em] text-muted-foreground/80 uppercase mb-2">
                         Vertmon — Hub
                     </p>
-                    <h1 className="heading-display text-3xl text-foreground">Хөдөлмөрт орох</h1>
+                    <h1 className="heading-display text-3xl text-foreground">Нэвтрэх</h1>
                     <p className="text-muted-foreground mt-2 text-sm">AI Борлуулагч Платформ</p>
                 </div>
 
@@ -169,7 +169,7 @@ export default function LoginPage() {
                     <button
                         onClick={handleFacebookLogin}
                         disabled={loading}
-                        className="w-full py-3 bg-status-info text-white font-medium rounded-md transition-opacity hover:opacity-90 flex items-center justify-center gap-3 disabled:opacity-50"
+                        className="w-full py-3 bg-[#1877F2] hover:bg-[#166FE5] text-white font-medium rounded-md transition-colors flex items-center justify-center gap-3 disabled:opacity-50 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                     >
                         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
                             <path

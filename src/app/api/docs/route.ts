@@ -8,8 +8,8 @@ import { NextResponse } from 'next/server';
 const OPENAPI_SPEC = {
     openapi: '3.0.3',
     info: {
-        title: 'Syncly API',
-        description: 'AI-powered e-commerce platform API',
+        title: 'Vertmon Hub API',
+        description: 'AI-powered real-estate sales & CRM platform API',
         version: '1.0.0',
         contact: {
             email: 'support@smarthub.mn'

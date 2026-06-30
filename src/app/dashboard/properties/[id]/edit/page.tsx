@@ -1,11 +1,12 @@
 'use client';
 
 import { useEffect, useState, use } from 'react';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { Spinner } from '@/components/ui/Spinner';
+import { PageHeader } from '@/components/dashboard/PageHeader';
+import { Button } from '@/components/ui/Button';
 import PropertyForm from '../../_components/PropertyForm';
 import type { Property } from '@/types/property';
 
@@ -72,18 +73,22 @@ export default function EditPropertyPage({ params }: EditPageProps) {
     }
 
     return (
-        <div className="min-h-screen bg-surface-2/40 p-6">
-            <div className="mb-6">
-                <Link
-                    href={`/dashboard/properties/${id}`}
-                    className="inline-flex items-center text-muted-foreground hover:text-foreground mb-4"
-                >
-                    <ArrowLeft className="w-4 h-4 mr-2" />
-                    Буцах
-                </Link>
-                <h1 className="text-2xl font-bold text-foreground">Үл хөдлөх засах</h1>
-                <p className="text-muted-foreground mt-1">{property.name}</p>
-            </div>
+        <div>
+            <PageHeader
+                title="Үл хөдлөх засах"
+                subtitle={property.name}
+                breadcrumbs={[
+                    { label: 'Үл хөдлөх', href: '/dashboard/properties' },
+                    { label: property.name, href: `/dashboard/properties/${id}` },
+                    { label: 'Засах' },
+                ]}
+                secondaryActions={
+                    <Button variant="outline" size="sm" href={`/dashboard/properties/${id}`}>
+                        <ArrowLeft className="w-4 h-4" />
+                        Буцах
+                    </Button>
+                }
+            />
 
             <PropertyForm
                 mode="edit"

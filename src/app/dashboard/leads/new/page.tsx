@@ -4,8 +4,17 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { ArrowLeft, Users, Phone, Mail, DollarSign, Building2, MessageSquare } from 'lucide-react';
-import Link from 'next/link';
+import { Textarea } from '@/components/ui/Textarea';
+import { FormField } from '@/components/ui/FormField';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/Select';
+import { PageHeader } from '@/components/dashboard/PageHeader';
+import { ArrowLeft, Users, Building2, MessageSquare } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
@@ -72,17 +81,30 @@ export default function NewLeadPage() {
         }));
     };
 
+    const handleSelect = (name: keyof typeof formData) => (value: string) => {
+        setFormData(prev => ({
+            ...prev,
+            [name]: value
+        }));
+    };
+
     return (
-        <div className="min-h-screen bg-surface-2/40 p-6">
-            {/* Header */}
-            <div className="mb-6">
-                <Link href="/dashboard/leads" className="inline-flex items-center text-muted-foreground hover:text-foreground mb-4">
-                    <ArrowLeft className="w-4 h-4 mr-2" />
-                    Буцах
-                </Link>
-                <h1 className="text-2xl font-bold text-foreground">Шинэ лийд нэмэх</h1>
-                <p className="text-muted-foreground mt-1">Боломжит худалдан авагчийн мэдээлэл оруулна уу</p>
-            </div>
+        <div className="p-6">
+            <PageHeader
+                eyebrow="Лийд"
+                title="Шинэ лийд нэмэх"
+                subtitle="Боломжит худалдан авагчийн мэдээлэл оруулна уу"
+                breadcrumbs={[
+                    { label: 'Лийдүүд', href: '/dashboard/leads' },
+                    { label: 'Шинэ лийд' },
+                ]}
+                secondaryActions={
+                    <Button variant="outline" href="/dashboard/leads">
+                        <ArrowLeft className="w-4 h-4" />
+                        Буцах
+                    </Button>
+                }
+            />
 
             <form onSubmit={handleSubmit} className="max-w-2xl">
                 <div className="grid gap-6">
@@ -95,8 +117,7 @@ export default function NewLeadPage() {
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <div>
-                                <label htmlFor="customer_name" className="block text-sm font-medium text-foreground mb-1">Нэр</label>
+                            <FormField label="Нэр" htmlFor="customer_name" required>
                                 <Input
                                     id="customer_name"
                                     name="customer_name"
@@ -105,10 +126,9 @@ export default function NewLeadPage() {
                                     placeholder="Батбаяр Ганбат"
                                     required
                                 />
-                            </div>
+                            </FormField>
                             <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label htmlFor="phone" className="block text-sm font-medium text-foreground mb-1">Утас</label>
+                                <FormField label="Утас" htmlFor="phone">
                                     <Input
                                         id="phone"
                                         name="phone"
@@ -116,9 +136,8 @@ export default function NewLeadPage() {
                                         onChange={handleChange}
                                         placeholder="99112233"
                                     />
-                                </div>
-                                <div>
-                                    <label htmlFor="email" className="block text-sm font-medium text-foreground mb-1">Имэйл</label>
+                                </FormField>
+                                <FormField label="Имэйл" htmlFor="email">
                                     <Input
                                         id="email"
                                         name="email"
@@ -127,25 +146,23 @@ export default function NewLeadPage() {
                                         onChange={handleChange}
                                         placeholder="email@example.com"
                                     />
-                                </div>
+                                </FormField>
                             </div>
-                            <div>
-                                <label htmlFor="source" className="block text-sm font-medium text-foreground mb-1">Эх үүсвэр</label>
-                                <select
-                                    id="source"
-                                    name="source"
-                                    value={formData.source}
-                                    onChange={handleChange}
-                                    className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand"
-                                >
-                                    <option value="messenger">Messenger</option>
-                                    <option value="instagram">Instagram</option>
-                                    <option value="website">Вэбсайт</option>
-                                    <option value="referral">Зөвлөмж</option>
-                                    <option value="phone">Утас</option>
-                                    <option value="other">Бусад</option>
-                                </select>
-                            </div>
+                            <FormField label="Эх үүсвэр" htmlFor="source">
+                                <Select value={formData.source} onValueChange={handleSelect('source')}>
+                                    <SelectTrigger id="source">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="messenger">Messenger</SelectItem>
+                                        <SelectItem value="instagram">Instagram</SelectItem>
+                                        <SelectItem value="website">Вэбсайт</SelectItem>
+                                        <SelectItem value="referral">Зөвлөмж</SelectItem>
+                                        <SelectItem value="phone">Утас</SelectItem>
+                                        <SelectItem value="other">Бусад</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </FormField>
                         </CardContent>
                     </Card>
 
@@ -158,42 +175,39 @@ export default function NewLeadPage() {
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <div>
-                                <label htmlFor="preferred_type" className="block text-sm font-medium text-foreground mb-1">Сонирхож буй төрөл</label>
-                                <select
-                                    id="preferred_type"
-                                    name="preferred_type"
-                                    value={formData.preferred_type}
-                                    onChange={handleChange}
-                                    className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand"
+                            <FormField label="Сонирхож буй төрөл" htmlFor="preferred_type">
+                                <Select value={formData.preferred_type} onValueChange={handleSelect('preferred_type')}>
+                                    <SelectTrigger id="preferred_type">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="apartment">Орон сууц</SelectItem>
+                                        <SelectItem value="house">Хувийн байшин</SelectItem>
+                                        <SelectItem value="office">Оффис</SelectItem>
+                                        <SelectItem value="commercial">Худалдааны</SelectItem>
+                                        <SelectItem value="land">Газар</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </FormField>
+                            <FormField label="Санхүүжилтийн суваг" htmlFor="financing_intent">
+                                <Select
+                                    value={formData.financing_intent || undefined}
+                                    onValueChange={handleSelect('financing_intent')}
                                 >
-                                    <option value="apartment">Орон сууц</option>
-                                    <option value="house">Хувийн байшин</option>
-                                    <option value="office">Оффис</option>
-                                    <option value="commercial">Худалдааны</option>
-                                    <option value="land">Газар</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label htmlFor="financing_intent" className="block text-sm font-medium text-foreground mb-1">Санхүүжилтийн суваг</label>
-                                <select
-                                    id="financing_intent"
-                                    name="financing_intent"
-                                    value={formData.financing_intent}
-                                    onChange={handleChange}
-                                    className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand"
-                                >
-                                    <option value="">— Сонгох —</option>
-                                    <option value="bank_loan">Банкны зээл</option>
-                                    <option value="cash">Бэлэн төлөлт</option>
-                                    <option value="mortgage">Ипотек</option>
-                                    <option value="leasing">Хувь лизинг</option>
-                                    <option value="barter">Бартер</option>
-                                </select>
-                            </div>
+                                    <SelectTrigger id="financing_intent">
+                                        <SelectValue placeholder="— Сонгох —" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="bank_loan">Банкны зээл</SelectItem>
+                                        <SelectItem value="cash">Бэлэн төлөлт</SelectItem>
+                                        <SelectItem value="mortgage">Ипотек</SelectItem>
+                                        <SelectItem value="leasing">Хувь лизинг</SelectItem>
+                                        <SelectItem value="barter">Бартер</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </FormField>
                             <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label htmlFor="budget_min" className="block text-sm font-medium text-foreground mb-1">Төсөв (доод)</label>
+                                <FormField label="Төсөв (доод)" htmlFor="budget_min">
                                     <Input
                                         id="budget_min"
                                         name="budget_min"
@@ -202,9 +216,8 @@ export default function NewLeadPage() {
                                         onChange={handleChange}
                                         placeholder="300000000"
                                     />
-                                </div>
-                                <div>
-                                    <label htmlFor="budget_max" className="block text-sm font-medium text-foreground mb-1">Төсөв (дээд)</label>
+                                </FormField>
+                                <FormField label="Төсөв (дээд)" htmlFor="budget_max">
                                     <Input
                                         id="budget_max"
                                         name="budget_max"
@@ -213,7 +226,7 @@ export default function NewLeadPage() {
                                         onChange={handleChange}
                                         placeholder="500000000"
                                     />
-                                </div>
+                                </FormField>
                             </div>
                         </CardContent>
                     </Card>
@@ -227,12 +240,11 @@ export default function NewLeadPage() {
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
-                            <textarea
+                            <Textarea
                                 name="notes"
                                 value={formData.notes}
                                 onChange={handleChange}
                                 rows={4}
-                                className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand"
                                 placeholder="Нэмэлт мэдээлэл, тайлбар..."
                             />
                         </CardContent>
@@ -242,14 +254,14 @@ export default function NewLeadPage() {
                     <div className="flex gap-4">
                         <Button
                             type="submit"
-                            disabled={loading}
-                            className="bg-status-success hover:opacity-90 text-white px-8"
+                            isLoading={loading}
+                            className="px-8"
                         >
                             {loading ? 'Хадгалж байна...' : 'Хадгалах'}
                         </Button>
-                        <Link href="/dashboard/leads">
-                            <Button variant="outline">Цуцлах</Button>
-                        </Link>
+                        <Button variant="outline" href="/dashboard/leads">
+                            Цуцлах
+                        </Button>
                     </div>
                 </div>
             </form>

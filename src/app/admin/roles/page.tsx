@@ -41,9 +41,9 @@ export default function RolesPage() {
             if (res.ok) {
                 setRoles(data.roles || []);
             } else {
-                setError(data.error || 'Failed to load roles');
+                setError(data.error || 'Дүрүүд ачаалахад алдаа гарлаа');
             }
-        } catch { setError('Network error'); }
+        } catch { setError('Сүлжээний алдаа'); }
         finally { setLoading(false); }
     }
 
@@ -70,7 +70,7 @@ export default function RolesPage() {
                 const data = await res.json();
                 setError(data.error);
             }
-        } catch { setError('Failed to update'); }
+        } catch { setError('Шинэчлэхэд алдаа гарлаа'); }
         finally { setSaving(null); }
     }
 
@@ -86,7 +86,7 @@ export default function RolesPage() {
                 const data = await res.json();
                 setRoles(prev => prev.map(r => r.id === roleId ? data.role : r));
             }
-        } catch { setError('Failed to update'); }
+        } catch { setError('Шинэчлэхэд алдаа гарлаа'); }
         finally { setSaving(null); }
     }
 
@@ -115,9 +115,9 @@ export default function RolesPage() {
                 setSuccess('Дүр амжилттай үүсгэлээ');
                 setTimeout(() => setSuccess(null), 3000);
             } else {
-                setError(data.error || 'Failed to create');
+                setError(data.error || 'Үүсгэхэд алдаа гарлаа');
             }
-        } catch { setError('Network error'); }
+        } catch { setError('Сүлжээний алдаа'); }
         finally { setSaving(null); }
     }
 
@@ -132,9 +132,9 @@ export default function RolesPage() {
                 setTimeout(() => setSuccess(null), 3000);
             } else {
                 const data = await res.json();
-                setError(data.error || 'Failed to delete');
+                setError(data.error || 'Устгахад алдаа гарлаа');
             }
-        } catch { setError('Network error'); }
+        } catch { setError('Сүлжээний алдаа'); }
         finally { setSaving(null); }
     }
 
@@ -161,7 +161,7 @@ export default function RolesPage() {
                 </div>
                 <button
                     onClick={() => setShowCreate(true)}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-brand text-white rounded-xl font-medium hover:bg-brand-strong transition-colors"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-brand text-brand-fg rounded-xl font-medium hover:bg-brand-strong transition-colors"
                 >
                     <Plus className="w-4 h-4" />
                     Шинэ дүр
@@ -207,7 +207,7 @@ export default function RolesPage() {
                                 ))}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-100">
+                        <tbody className="divide-y divide-border">
                             {ALL_MODULES.map(module => {
                                 const label = MODULE_LABELS[module];
                                 return (
@@ -228,8 +228,8 @@ export default function RolesPage() {
                                                         disabled={isSaving}
                                                         className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all ${
                                                             hasModule
-                                                                ? 'bg-status-success border-emerald-500 text-white'
-                                                                : 'bg-surface border-border text-muted-foreground/60 hover:border-gray-400'
+                                                                ? 'bg-status-success border-transparent text-background'
+                                                                : 'bg-surface border-border text-muted-2 hover:border-border-strong'
                                                         } ${isSaving ? 'opacity-50' : ''}`}
                                                     >
                                                         {isSaving ? (
@@ -265,8 +265,8 @@ export default function RolesPage() {
                                             onClick={() => updateRoleField(role.id, 'can_write', !role.can_write)}
                                             className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all ${
                                                 role.can_write
-                                                    ? 'bg-status-info border-blue-500 text-white'
-                                                    : 'bg-surface border-border text-muted-foreground/60 hover:border-gray-400'
+                                                    ? 'bg-status-info border-transparent text-background'
+                                                    : 'bg-surface border-border text-muted-2 hover:border-border-strong'
                                             }`}
                                         >
                                             {role.can_write && <Check className="w-4 h-4" />}
@@ -286,8 +286,8 @@ export default function RolesPage() {
                                             onClick={() => updateRoleField(role.id, 'can_delete', !role.can_delete)}
                                             className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all ${
                                                 role.can_delete
-                                                    ? 'bg-status-danger border-red-500 text-white'
-                                                    : 'bg-surface border-border text-muted-foreground/60 hover:border-gray-400'
+                                                    ? 'bg-status-danger border-transparent text-background'
+                                                    : 'bg-surface border-border text-muted-2 hover:border-border-strong'
                                             }`}
                                         >
                                             {role.can_delete && <Check className="w-4 h-4" />}
@@ -307,8 +307,8 @@ export default function RolesPage() {
                                             onClick={() => updateRoleField(role.id, 'can_access_admin', !role.can_access_admin)}
                                             className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all ${
                                                 role.can_access_admin
-                                                    ? 'bg-brand border-brand text-white'
-                                                    : 'bg-surface border-border text-muted-foreground/60 hover:border-gray-400'
+                                                    ? 'bg-brand border-transparent text-brand-fg'
+                                                    : 'bg-surface border-border text-muted-2 hover:border-border-strong'
                                             }`}
                                         >
                                             {role.can_access_admin && <Check className="w-4 h-4" />}
@@ -418,7 +418,7 @@ export default function RolesPage() {
                                                 className={`px-3 py-2 rounded-lg text-xs font-medium border transition-all text-left ${
                                                     checked
                                                         ? 'bg-status-success-soft border-status-success/40 text-status-success'
-                                                        : 'bg-surface border-border text-muted-foreground hover:border-gray-400'
+                                                        : 'bg-surface border-border text-muted-foreground hover:border-border-strong'
                                                 }`}
                                             >
                                                 {label?.mn || module}
@@ -444,7 +444,7 @@ export default function RolesPage() {
                                         type="checkbox"
                                         checked={newRole.can_delete}
                                         onChange={e => setNewRole(p => ({ ...p, can_delete: e.target.checked }))}
-                                        className="w-4 h-4 rounded border-border-strong text-status-danger focus:ring-red-500"
+                                        className="w-4 h-4 rounded border-border-strong text-status-danger focus:ring-ring"
                                     />
                                     <span className="text-sm text-foreground">Устгах</span>
                                 </label>
@@ -469,7 +469,7 @@ export default function RolesPage() {
                             <button
                                 onClick={createRole}
                                 disabled={saving === 'new'}
-                                className="flex items-center gap-2 px-4 py-2 text-sm bg-brand text-white rounded-lg hover:bg-brand-strong disabled:opacity-50"
+                                className="flex items-center gap-2 px-4 py-2 text-sm bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50"
                             >
                                 {saving === 'new' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                                 Үүсгэх

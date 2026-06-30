@@ -7,8 +7,13 @@ import { Menu, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccessModule, canAccessModuleDynamic } from '@/lib/rbac';
-import { BOTTOM_ITEMS, type NavItem } from '@/lib/navigation/workspaces';
+import { BOTTOM_ITEMS, isNavItemActive, type NavItem } from '@/lib/navigation/workspaces';
 import { useActiveWorkspace } from '@/lib/navigation/useActiveWorkspace';
+
+interface MoreGroup {
+    title: string;
+    items: NavItem[];
+}
 
 export function MobileNav() {
     const pathname = usePathname();
@@ -26,20 +31,24 @@ export function MobileNav() {
     const primaryItems = active.mobilePrimary.filter((i) => canSee(i.module));
     const primaryHrefs = new Set(active.mobilePrimary.map((i) => i.href));
 
-    // "Бусад" — тухайн workspace-ийн үлдсэн цэс + нийтлэг доод цэс
-    const sectionItems = active.sections.flatMap((s) => s.items);
-    const secondaryItems: NavItem[] = [
-        ...sectionItems.filter((i) => !primaryHrefs.has(i.href) && canSee(i.module)),
-        ...BOTTOM_ITEMS.filter((i) => canSee(i.module)),
+    // "Бусад" — хэсгээр бүлэглэсэн (БОРЛУУЛАЛТ / САНХҮҮ / АНАЛИТИК) + нийтлэг доод цэс
+    const moreGroups: MoreGroup[] = [
+        ...active.sections
+            .map((s) => ({
+                title: s.title,
+                items: s.items.filter((i) => !primaryHrefs.has(i.href) && canSee(i.module)),
+            }))
+            .filter((g) => g.items.length > 0),
+        ...(() => {
+            const bottom = BOTTOM_ITEMS.filter((i) => canSee(i.module));
+            return bottom.length ? [{ title: 'ЕРӨНХИЙ', items: bottom }] : [];
+        })(),
     ];
 
-    const isActiveItem = (href: string) => {
-        if (pathname === href) return true;
-        if (href === active.home) return false; // workspace нүүр зөвхөн яг таарвал
-        return !!pathname && pathname.startsWith(href + '/');
-    };
+    const isActiveItem = (href: string) =>
+        isNavItemActive(pathname || '', href, { home: active.home });
 
-    const isMoreActive = secondaryItems.some((item) => isActiveItem(item.href));
+    const isMoreActive = moreGroups.some((g) => g.items.some((item) => isActiveItem(item.href)));
 
     return (
         <>
@@ -47,37 +56,48 @@ export function MobileNav() {
                 <div className="fixed inset-0 z-40 md:hidden" onClick={() => setShowMore(false)}>
                     <div className="absolute inset-0 bg-foreground/40 backdrop-blur-sm" />
                     <div
-                        className="absolute bottom-[72px] left-4 right-4 bg-surface rounded-xl shadow-xl border border-border overflow-hidden"
+                        className="absolute bottom-[72px] left-4 right-4 max-h-[70vh] overflow-y-auto bg-surface rounded-2xl shadow-xl border border-border"
                         onClick={(e) => e.stopPropagation()}
+                        role="dialog"
+                        aria-label="Бусад цэс"
                     >
-                        <div className="p-2">
-                            <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
-                                <span className="heading-section text-sm text-foreground">Бусад</span>
-                                <button
-                                    onClick={() => setShowMore(false)}
-                                    className="p-2 rounded-full hover:bg-surface-2"
-                                >
-                                    <X className="w-5 h-5 text-muted-foreground" />
-                                </button>
-                            </div>
-                            <div className="grid grid-cols-3 gap-2 p-3">
-                                {secondaryItems.map((item) => (
-                                    <Link
-                                        key={item.href}
-                                        href={item.href}
-                                        onClick={() => setShowMore(false)}
-                                        className={cn(
-                                            'flex flex-col items-center gap-2 p-4 rounded-md transition-colors',
-                                            isActiveItem(item.href)
-                                                ? 'bg-brand-soft text-brand-strong'
-                                                : 'hover:bg-surface-2 text-muted-foreground',
-                                        )}
-                                    >
-                                        <item.icon className="w-6 h-6" />
-                                        <span className="text-xs font-medium text-center">{item.name}</span>
-                                    </Link>
-                                ))}
-                            </div>
+                        <div className="sticky top-0 flex items-center justify-between px-4 py-3 border-b border-border/60 bg-surface">
+                            <span className="heading-section text-sm text-foreground">Бусад</span>
+                            <button
+                                onClick={() => setShowMore(false)}
+                                aria-label="Хаах"
+                                className="p-2 rounded-full hover:bg-surface-2"
+                            >
+                                <X className="w-5 h-5 text-muted-foreground" />
+                            </button>
+                        </div>
+                        <div className="p-3 space-y-4">
+                            {moreGroups.map((group) => (
+                                <div key={group.title}>
+                                    <p className="font-mono text-2xs font-medium tracking-[0.2em] text-muted-foreground/70 px-1 mb-2">
+                                        {group.title}
+                                    </p>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {group.items.map((item) => (
+                                            <Link
+                                                key={item.href}
+                                                href={item.href}
+                                                onClick={() => setShowMore(false)}
+                                                aria-current={isActiveItem(item.href) ? 'page' : undefined}
+                                                className={cn(
+                                                    'flex flex-col items-center gap-2 p-3 rounded-md transition-colors',
+                                                    isActiveItem(item.href)
+                                                        ? 'bg-brand-soft text-brand-strong'
+                                                        : 'hover:bg-surface-2 text-muted-foreground',
+                                                )}
+                                            >
+                                                <item.icon className="w-6 h-6" />
+                                                <span className="text-xs font-medium text-center leading-tight">{item.name}</span>
+                                            </Link>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
                     </div>
                 </div>

@@ -2,16 +2,25 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import { motion } from 'motion/react';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { AskAIHero } from '@/components/dashboard/AskAIHero';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
+import { StatusPill } from '@/components/ui/StatusPill';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PullToRefresh } from '@/components/ui/PullToRefresh';
-import { DashboardSkeleton } from '@/components/ui/LoadingSkeleton';
+import { KpiGridSkeleton } from '@/components/ui/LoadingSkeleton';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/Select';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDashboard } from '@/hooks/useDashboard';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { formatTimeAgo, formatShortDate } from '@/lib/utils/date';
 import { cn } from '@/lib/utils';
 import {
@@ -22,7 +31,6 @@ import {
     ArrowRight,
     RefreshCw,
     Calendar,
-    ChevronDown,
     Eye,
     MapPin,
 } from 'lucide-react';
@@ -35,14 +43,18 @@ const TIME_FILTER_OPTIONS = [
 
 type TimeFilter = (typeof TIME_FILTER_OPTIONS)[number]['value'];
 
-const LEAD_STATUS_VARIANT: Record<string, { label: string; variant: 'info' | 'warning' | 'success' | 'default' }> = {
+const LEAD_STATUS_VARIANT: Record<
+    string,
+    { label: string; variant: 'info' | 'pending' | 'success' | 'neutral' }
+> = {
     new: { label: 'Шинэ', variant: 'info' },
-    contacted: { label: 'Холбогдсон', variant: 'warning' },
+    contacted: { label: 'Холбогдсон', variant: 'pending' },
     qualified: { label: 'Баталгаажсан', variant: 'success' },
 };
 
 export default function DashboardPage() {
     const { loading: authLoading } = useAuth();
+    const reduced = useReducedMotion();
     const [timeFilter, setTimeFilter] = useState<TimeFilter>('today');
 
     const { data, isLoading, isError, refetch, isRefetching } = useDashboard(timeFilter);
@@ -52,7 +64,7 @@ export default function DashboardPage() {
     const upcomingViewings = data?.upcomingViewings || [];
 
     if (isLoading || authLoading) {
-        return <DashboardSkeleton />;
+        return <KpiGridSkeleton />;
     }
 
     const handleRefresh = async () => {
@@ -76,46 +88,41 @@ export default function DashboardPage() {
         );
     }
 
+    const STAT_CARDS = [
+        { title: 'Нийт байр', value: stats.totalProperties.toString(), icon: Building2, iconColor: 'brand' as const },
+        { title: 'Нийт лийд', value: stats.totalLeads.toString(), icon: Users, iconColor: 'success' as const },
+        { title: 'Үзлэг (сар)', value: stats.monthlyViewings.toString(), icon: Eye, iconColor: 'info' as const },
+        {
+            title: 'Хүлээгдэж буй гэрээ',
+            value: stats.pendingContracts.toString(),
+            icon: FileText,
+            iconColor: 'warning' as const,
+        },
+    ];
+
     return (
         <PullToRefresh onRefresh={handleRefresh}>
-            <div className="space-y-6 md:space-y-8">
+            <div className="mx-auto w-full max-w-[1440px] space-y-6 md:space-y-8">
                 {/* AI Orchestrator launcher — нүүрэн дээрх гол хэрэгсэл */}
                 <AskAIHero />
 
                 {/* Toolbar */}
                 <div className="flex items-center justify-end gap-2">
-                    <div className="relative">
-                        <button
-                            onClick={() => document.getElementById('time-filter-dropdown')?.classList.toggle('hidden')}
-                            onBlur={() =>
-                                setTimeout(() => document.getElementById('time-filter-dropdown')?.classList.add('hidden'), 200)
-                            }
-                            className="flex items-center gap-2 px-3 py-2 bg-surface rounded-md border border-border text-sm font-medium text-foreground hover:bg-surface-2 transition-colors"
-                        >
-                            <Calendar className="w-4 h-4 text-muted-foreground/70" />
-                            {TIME_FILTER_OPTIONS.find((o) => o.value === timeFilter)?.label}
-                            <ChevronDown className="w-3 h-3 text-muted-foreground/70" />
-                        </button>
-                        <div
-                            id="time-filter-dropdown"
-                            className="hidden absolute right-0 mt-1 w-32 bg-surface rounded-md shadow-lg border border-border z-10 overflow-hidden"
-                        >
+                    <Select value={timeFilter} onValueChange={(v) => setTimeFilter(v as TimeFilter)}>
+                        <SelectTrigger className="h-9 w-36" aria-label="Хугацааны шүүлтүүр">
+                            <span className="flex items-center gap-2">
+                                <Calendar className="size-4 text-muted-foreground/70" />
+                                <SelectValue />
+                            </span>
+                        </SelectTrigger>
+                        <SelectContent>
                             {TIME_FILTER_OPTIONS.map((option) => (
-                                <button
-                                    key={option.value}
-                                    onClick={() => setTimeFilter(option.value)}
-                                    className={cn(
-                                        'w-full text-left px-4 py-2 text-sm hover:bg-surface-2 transition-colors',
-                                        timeFilter === option.value
-                                            ? 'text-brand-strong font-medium bg-brand-soft/40'
-                                            : 'text-foreground',
-                                    )}
-                                >
+                                <SelectItem key={option.value} value={option.value}>
                                     {option.label}
-                                </button>
+                                </SelectItem>
                             ))}
-                        </div>
-                    </div>
+                        </SelectContent>
+                    </Select>
 
                     <Button
                         onClick={() => refetch()}
@@ -131,15 +138,16 @@ export default function DashboardPage() {
 
                 {/* Stats Grid */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-                    <StatsCard title="Нийт байр" value={stats.totalProperties.toString()} icon={Building2} iconColor="brand" />
-                    <StatsCard title="Нийт лийд" value={stats.totalLeads.toString()} icon={Users} iconColor="success" />
-                    <StatsCard title="Үзлэг (сар)" value={stats.monthlyViewings.toString()} icon={Eye} iconColor="info" />
-                    <StatsCard
-                        title="Хүлээгдэж буй гэрээ"
-                        value={stats.pendingContracts.toString()}
-                        icon={FileText}
-                        iconColor="warning"
-                    />
+                    {STAT_CARDS.map((card, i) => (
+                        <motion.div
+                            key={card.title}
+                            initial={reduced ? false : { opacity: 0, y: 8 }}
+                            animate={reduced ? undefined : { opacity: 1, y: 0 }}
+                            transition={reduced ? undefined : { duration: 0.26, delay: i * 0.03, ease: 'easeOut' }}
+                        >
+                            <StatsCard title={card.title} value={card.value} icon={card.icon} iconColor={card.iconColor} />
+                        </motion.div>
+                    ))}
                 </div>
 
                 {/* Main Content Grid */}
@@ -161,34 +169,44 @@ export default function DashboardPage() {
                             <CardContent className="p-0">
                                 <div className="divide-y divide-border/60">
                                     {recentLeads.length > 0 ? (
-                                        recentLeads.slice(0, 5).map((lead: any) => {
+                                        recentLeads.slice(0, 5).map((lead: any, i: number) => {
                                             const status = LEAD_STATUS_VARIANT[lead.status] || {
                                                 label: lead.status || 'Шинэ',
-                                                variant: 'default' as const,
+                                                variant: 'neutral' as const,
                                             };
                                             return (
-                                                <Link
+                                                <motion.div
                                                     key={lead.id}
-                                                    href="/dashboard/leads"
-                                                    className="px-4 md:px-6 py-3 md:py-4 flex items-center justify-between hover:bg-surface-2/60 transition-colors block"
+                                                    initial={reduced ? false : { opacity: 0, y: 6 }}
+                                                    animate={reduced ? undefined : { opacity: 1, y: 0 }}
+                                                    transition={
+                                                        reduced
+                                                            ? undefined
+                                                            : { duration: 0.22, delay: i * 0.03, ease: 'easeOut' }
+                                                    }
                                                 >
-                                                    <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
-                                                        <div className="w-9 h-9 md:w-10 md:h-10 rounded-md bg-brand-soft flex items-center justify-center flex-shrink-0">
-                                                            <Users className="w-4 h-4 md:w-5 md:h-5 text-brand-strong" />
+                                                    <Link
+                                                        href="/dashboard/leads"
+                                                        className="px-4 md:px-6 py-3 md:py-4 flex items-center justify-between hover:bg-surface-2/60 transition-colors block"
+                                                    >
+                                                        <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
+                                                            <div className="w-9 h-9 md:w-10 md:h-10 rounded-md bg-brand-soft flex items-center justify-center flex-shrink-0">
+                                                                <Users className="w-4 h-4 md:w-5 md:h-5 text-brand-strong" />
+                                                            </div>
+                                                            <div className="min-w-0">
+                                                                <p className="font-medium text-sm md:text-base text-foreground truncate">
+                                                                    {lead.customer_name || 'Лийд'}
+                                                                </p>
+                                                                <p className="text-xs text-muted-foreground truncate">
+                                                                    {lead.customer_phone || lead.customer_email || 'Холбоо барих'} • {formatTimeAgo(lead.created_at)}
+                                                                </p>
+                                                            </div>
                                                         </div>
-                                                        <div className="min-w-0">
-                                                            <p className="font-medium text-sm md:text-base text-foreground truncate">
-                                                                {lead.customer_name || 'Лийд'}
-                                                            </p>
-                                                            <p className="text-xs text-muted-foreground truncate">
-                                                                {lead.customer_phone || lead.customer_email || 'Холбоо барих'} • {formatTimeAgo(lead.created_at)}
-                                                            </p>
+                                                        <div className="flex items-center gap-2 pl-2">
+                                                            <StatusPill variant={status.variant}>{status.label}</StatusPill>
                                                         </div>
-                                                    </div>
-                                                    <div className="flex items-center gap-2 pl-2">
-                                                        <Badge variant={status.variant}>{status.label}</Badge>
-                                                    </div>
-                                                </Link>
+                                                    </Link>
+                                                </motion.div>
                                             );
                                         })
                                     ) : (
@@ -215,19 +233,37 @@ export default function DashboardPage() {
                             <CardContent className="p-0">
                                 <div className="divide-y divide-border/60">
                                     {upcomingViewings.length > 0 ? (
-                                        upcomingViewings.slice(0, 3).map((v: any) => (
-                                            <div key={v.id} className="px-4 py-3 hover:bg-surface-2/60 transition-colors">
-                                                <div className="flex items-center gap-2">
-                                                    <Clock className="w-3.5 h-3.5 text-muted-foreground/70" />
-                                                    <span className="text-sm font-medium text-foreground tabular-nums">
-                                                        {v.scheduled_at ? formatShortDate(v.scheduled_at) : 'TBD'}
-                                                    </span>
-                                                </div>
-                                                <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                                                    <MapPin className="w-3 h-3" />
-                                                    {v.properties?.name || v.agent_notes || 'Үзлэг'}
-                                                </p>
-                                            </div>
+                                        upcomingViewings.slice(0, 3).map((v: any, i: number) => (
+                                            <motion.div
+                                                key={v.id}
+                                                initial={reduced ? false : { opacity: 0, y: 6 }}
+                                                animate={reduced ? undefined : { opacity: 1, y: 0 }}
+                                                transition={
+                                                    reduced
+                                                        ? undefined
+                                                        : { duration: 0.22, delay: i * 0.03, ease: 'easeOut' }
+                                                }
+                                            >
+                                                <Link
+                                                    href={
+                                                        v.property_id
+                                                            ? `/dashboard/properties/${v.property_id}`
+                                                            : '/dashboard/viewings'
+                                                    }
+                                                    className="block px-4 py-3 hover:bg-surface-2/60 transition-colors"
+                                                >
+                                                    <div className="flex items-center gap-2">
+                                                        <Clock className="w-3.5 h-3.5 text-muted-foreground/70" />
+                                                        <span className="text-sm font-medium text-foreground tabular-nums">
+                                                            {v.scheduled_at ? formatShortDate(v.scheduled_at) : 'TBD'}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                                                        <MapPin className="w-3 h-3" />
+                                                        {v.properties?.name || v.agent_notes || 'Үзлэг'}
+                                                    </p>
+                                                </Link>
+                                            </motion.div>
                                         ))
                                     ) : (
                                         <EmptyState

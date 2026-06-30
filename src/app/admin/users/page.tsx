@@ -260,7 +260,7 @@ export default function AdminUsersPage() {
                     </button>
                     <button
                         onClick={() => { setShowCreate(true); setCreateError(null); }}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-brand text-white rounded-xl font-medium hover:bg-brand-strong transition-colors"
+                        className="flex items-center gap-2 px-4 py-2.5 bg-brand text-brand-fg rounded-xl font-medium hover:bg-brand-strong transition-colors"
                     >
                         <UserPlus className="w-4 h-4" />
                         Хэрэглэгч нэмэх
@@ -295,7 +295,7 @@ export default function AdminUsersPage() {
                             <th className="text-right px-6 py-3 text-xs font-medium text-muted-foreground uppercase">Үйлдэл</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-border">
                         {loading ? (
                             <tr>
                                 <td colSpan={4} className="px-6 py-12 text-center text-muted-foreground">
@@ -456,7 +456,7 @@ export default function AdminUsersPage() {
                                         />
                                         <button
                                             onClick={copyInviteLink}
-                                            className="flex items-center gap-1.5 px-3 py-2.5 bg-brand text-white rounded-lg text-sm font-medium hover:bg-brand-strong"
+                                            className="flex items-center gap-1.5 px-3 py-2.5 bg-brand text-brand-fg rounded-lg text-sm font-medium hover:bg-brand-strong"
                                         >
                                             {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                                             {copied ? 'Хуулсан' : 'Хуулах'}
@@ -478,7 +478,7 @@ export default function AdminUsersPage() {
                                 <button
                                     onClick={sendInvite}
                                     disabled={inviting || !inviteForm.email}
-                                    className="flex items-center gap-2 px-5 py-2.5 text-sm bg-brand text-white rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                                    className="flex items-center gap-2 px-5 py-2.5 text-sm bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                                 >
                                     {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <LinkIcon className="w-4 h-4" />}
                                     Холбоос үүсгэх
@@ -617,7 +617,7 @@ export default function AdminUsersPage() {
                             <button
                                 onClick={createUser}
                                 disabled={creating || !newUser.email || !newUser.password}
-                                className="flex items-center gap-2 px-5 py-2.5 text-sm bg-brand text-white rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                                className="flex items-center gap-2 px-5 py-2.5 text-sm bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                             >
                                 {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
                                 Үүсгэх
@@ -655,7 +655,7 @@ export default function AdminUsersPage() {
                             <button
                                 onClick={() => deleteUser(deleteConfirm)}
                                 disabled={deleting}
-                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm bg-status-danger text-white rounded-lg hover:bg-status-danger disabled:opacity-50 font-medium"
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 text-sm bg-status-danger text-background rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 font-medium"
                             >
                                 {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
                                 Устгах

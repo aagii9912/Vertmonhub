@@ -3,13 +3,27 @@
 import React from 'react';
 
 import { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { Spinner } from '@/components/ui/Spinner';
+import { DataTable, type DataTableColumn, StatusPill } from '@/components/ui/DataTable';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/Select';
+import {
+    Sheet,
+    SheetContent,
+    SheetHeader,
+    SheetTitle,
+    SheetDescription,
+} from '@/components/ui/Sheet';
 import { PageHeader } from '@/components/dashboard/PageHeader';
-import { FilterBar, FilterSelect } from '@/components/dashboard/FilterBar';
+import { FilterBar } from '@/components/dashboard/FilterBar';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import {
     Users,
@@ -24,30 +38,30 @@ import {
     CheckCircle2,
     XCircle,
     AlertCircle,
-    ChevronDown,
-    ChevronUp,
+    ChevronRight,
     Sparkles,
     Zap,
     Star,
     FileText,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { toast } from 'sonner';
 import type { Lead, LeadStatus, LeadSource } from '@/types/property';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
 import { EntityAttachments } from '@/components/dashboard/EntityAttachments';
 
-type StatusVariant = 'info' | 'brand' | 'warning' | 'success' | 'danger' | 'default';
+type StatusPillVariant = 'success' | 'danger' | 'pending' | 'info' | 'active' | 'neutral' | 'brand';
 
-const statusConfig: Record<LeadStatus, { variant: StatusVariant; label: string; icon: React.ElementType }> = {
+const statusConfig: Record<LeadStatus, { variant: StatusPillVariant; label: string; icon: React.ElementType }> = {
     new: { variant: 'info', label: 'Шинэ', icon: AlertCircle },
     contacted: { variant: 'brand', label: 'Холбогдсон', icon: Phone },
-    viewing_scheduled: { variant: 'warning', label: 'Үзлэг товлосон', icon: Calendar },
+    viewing_scheduled: { variant: 'pending', label: 'Үзлэг товлосон', icon: Calendar },
     offered: { variant: 'info', label: 'Санал тавьсан', icon: DollarSign },
-    negotiating: { variant: 'warning', label: 'Хэлэлцэж байна', icon: MessageSquare },
+    negotiating: { variant: 'pending', label: 'Хэлэлцэж байна', icon: MessageSquare },
     closed_won: { variant: 'success', label: 'Амжилттай', icon: CheckCircle2 },
-    closed_lost: { variant: 'default', label: 'Алдсан', icon: XCircle },
+    closed_lost: { variant: 'neutral', label: 'Алдсан', icon: XCircle },
 };
 
 const sourceLabels: Record<LeadSource, string> = {
@@ -69,9 +83,24 @@ interface LeadStats {
     conversionRate: number;
 }
 
+/**
+ * Лийдийн API-аас ирдэг боловч `Lead` төрөлд тодорхойлогдоогүй
+ * runtime талбаруудыг typed байдлаар авах өргөтгөл (`as any` cast-ийг орлоно).
+ */
+type LeadRow = Omit<Lead, 'urgency'> & {
+    urgency?: string | null;
+    preferred_type?: string | null;
+    ai_summary?: string | null;
+    conversation_summary?: string | null;
+    talking_points?: string[] | null;
+    interests?: string[] | null;
+    last_contact_at?: string | null;
+};
+
 export default function LeadsPage() {
     const { shop, user } = useAuth();
     const canWrite = user?.permissions?.canWrite ?? false;
+    const reducedMotion = useReducedMotion();
     const [leads, setLeads] = useState<Lead[]>([]);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -130,7 +159,7 @@ export default function LeadsPage() {
             l.customer_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             l.customer_phone?.includes(searchQuery) ||
             l.customer_email?.toLowerCase().includes(searchQuery.toLowerCase()),
-    );
+    ) as LeadRow[];
 
     const updateStatus = async (id: string, newStatus: LeadStatus) => {
         try {
@@ -199,6 +228,157 @@ export default function LeadsPage() {
         return `${Math.floor(diffDays / 30)} сарын өмнө`;
     };
 
+    const preferredTypeLabel = (value?: string | null) =>
+        value === 'mandala_garden'
+            ? 'Mandala Garden'
+            : value === 'mandala_tower'
+              ? 'Mandala Tower'
+              : value === 'elysium'
+                ? 'Elysium Residence'
+                : value;
+
+    // Дэлгэрэнгүй самбарт харагдах идэвхтэй лийд (expandedLead-ээс гаргаж авна).
+    const activeLead = expandedLead ? filteredLeads.find((l) => l.id === expandedLead) ?? null : null;
+
+    const toggleExpanded = (id: string) => setExpandedLead((prev) => (prev === id ? null : id));
+
+    // Харилцагчийн нэрийн дугуй аватар (десктоп хүснэгт + мобайл карт хоёуланд).
+    const renderAvatar = (lead: LeadRow) => (
+        <div
+            className={cn(
+                'w-10 h-10 rounded-full flex items-center justify-center shrink-0',
+                lead.urgency === 'high' ? 'bg-status-danger-soft' : 'bg-brand-soft',
+            )}
+        >
+            <span
+                className={cn(
+                    'font-medium text-sm',
+                    lead.urgency === 'high' ? 'text-status-danger' : 'text-brand-strong',
+                )}
+            >
+                {lead.customer_name?.[0]?.toUpperCase() || '?'}
+            </span>
+        </div>
+    );
+
+    const columns: DataTableColumn<LeadRow>[] = [
+        {
+            key: 'customer',
+            header: 'Харилцагч',
+            sortable: true,
+            accessor: (lead) => lead.customer_name ?? '',
+            cell: (lead) => (
+                <div className="flex items-center gap-3">
+                    {renderAvatar(lead)}
+                    <div>
+                        <p className="font-medium text-foreground text-sm flex items-center gap-2">
+                            {lead.customer_name || 'Үл мэдэгдэх'}
+                            {lead.urgency === 'high' && (
+                                <Badge variant="danger" size="sm">
+                                    <Zap className="w-3 h-3 mr-1" /> Яаралтай
+                                </Badge>
+                            )}
+                        </p>
+                        {lead.preferred_type && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                <Building2 className="w-3 h-3" />
+                                {preferredTypeLabel(lead.preferred_type)}
+                            </p>
+                        )}
+                    </div>
+                </div>
+            ),
+        },
+        {
+            key: 'contact',
+            header: 'Холбоо барих',
+            cell: (lead) =>
+                lead.customer_phone ? (
+                    <a
+                        href={`tel:${lead.customer_phone}`}
+                        className="text-sm text-brand hover:underline flex items-center gap-1 tabular-nums"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <Phone className="w-3 h-3" />
+                        {lead.customer_phone}
+                    </a>
+                ) : null,
+        },
+        {
+            key: 'source',
+            header: 'Эх үүсвэр',
+            sortable: true,
+            accessor: (lead) => sourceLabels[lead.source] || lead.source,
+            cell: (lead) => (
+                <span className="text-sm text-muted-foreground">
+                    {sourceLabels[lead.source] || lead.source}
+                </span>
+            ),
+        },
+        {
+            key: 'budget',
+            header: 'Төсөв',
+            sortable: true,
+            accessor: (lead) => lead.budget_max ?? lead.budget_min ?? 0,
+            cell: (lead) => (
+                <p className="font-medium text-foreground text-sm tabular-nums">
+                    {formatBudget(lead.budget_min, lead.budget_max)}
+                </p>
+            ),
+        },
+        {
+            key: 'status',
+            header: 'Төлөв',
+            sortable: true,
+            accessor: (lead) => statusConfig[lead.status]?.label ?? lead.status,
+            cell: (lead) => (
+                <div onClick={(e) => e.stopPropagation()}>
+                    <Select
+                        value={lead.status}
+                        onValueChange={(value) => updateStatus(lead.id, value as LeadStatus)}
+                    >
+                        <SelectTrigger className="h-8 w-auto min-w-36 text-xs" aria-label="Төлөв солих">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {Object.entries(statusConfig).map(([key, { label }]) => (
+                                <SelectItem key={key} value={key}>
+                                    {label}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </div>
+            ),
+        },
+        {
+            key: 'created',
+            header: 'Үүссэн',
+            sortable: true,
+            accessor: (lead) => lead.last_contact_at ?? lead.created_at,
+            cell: (lead) => (
+                <p className="text-sm text-muted-foreground">
+                    {lead.last_contact_at ? getTimeAgo(lead.last_contact_at) : getTimeAgo(lead.created_at)}
+                </p>
+            ),
+        },
+        {
+            key: 'actions',
+            header: 'Үйлдэл',
+            align: 'right',
+            cell: (lead) => (
+                <span className="inline-flex items-center justify-end">
+                    <ChevronRight
+                        className={cn(
+                            'w-5 h-5 transition-colors',
+                            expandedLead === lead.id ? 'text-brand' : 'text-muted-foreground/60',
+                        )}
+                    />
+                </span>
+            ),
+        },
+    ];
+
     return (
         <div>
             <PageHeader
@@ -260,300 +440,297 @@ export default function LeadsPage() {
                     setStatusFilter('all');
                 }}
             >
-                <FilterSelect
-                    label="Төлөв"
-                    value={statusFilter}
-                    onChange={(e) => setStatusFilter(e.target.value as LeadStatus | 'all')}
-                >
-                    <option value="all">Бүх төлөв</option>
-                    {Object.entries(statusConfig).map(([key, { label }]) => (
-                        <option key={key} value={key}>
-                            {label}
-                        </option>
-                    ))}
-                </FilterSelect>
+                <label className="flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground/80 whitespace-nowrap">Төлөв</span>
+                    <Select
+                        value={statusFilter}
+                        onValueChange={(value) => setStatusFilter(value as LeadStatus | 'all')}
+                    >
+                        <SelectTrigger className="h-9 w-auto min-w-40 text-sm" aria-label="Төлөвөөр шүүх">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Бүх төлөв</SelectItem>
+                            {Object.entries(statusConfig).map(([key, { label }]) => (
+                                <SelectItem key={key} value={key}>
+                                    {label}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </label>
             </FilterBar>
 
-            {/* Lead Table */}
-            <Card>
-                <CardContent className="p-0">
-                    <div className="overflow-x-auto">
-                        <table className="w-full">
-                            <thead className="bg-surface-2/50 border-b border-border">
-                                <tr>
-                                    <th className="text-left px-4 py-3 text-[11px] font-medium text-muted-foreground/80 uppercase tracking-[0.08em]">
-                                        Харилцагч
-                                    </th>
-                                    <th className="text-left px-4 py-3 text-[11px] font-medium text-muted-foreground/80 uppercase tracking-[0.08em]">
-                                        Холбоо барих
-                                    </th>
-                                    <th className="text-left px-4 py-3 text-[11px] font-medium text-muted-foreground/80 uppercase tracking-[0.08em]">
-                                        Эх үүсвэр
-                                    </th>
-                                    <th className="text-left px-4 py-3 text-[11px] font-medium text-muted-foreground/80 uppercase tracking-[0.08em]">
-                                        Төсөв
-                                    </th>
-                                    <th className="text-left px-4 py-3 text-[11px] font-medium text-muted-foreground/80 uppercase tracking-[0.08em]">
-                                        Төлөв
-                                    </th>
-                                    <th className="text-left px-4 py-3 text-[11px] font-medium text-muted-foreground/80 uppercase tracking-[0.08em]">
-                                        Үүссэн
-                                    </th>
-                                    <th className="text-right px-4 py-3 text-[11px] font-medium text-muted-foreground/80 uppercase tracking-[0.08em]">
-                                        Үйлдэл
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border/60">
-                                {loading ? (
-                                    <tr>
-                                        <td colSpan={7} className="px-4 py-16 text-center">
-                                            <div className="flex flex-col items-center justify-center gap-3">
-                                                <Spinner size="lg" />
-                                                <span className="text-sm text-muted-foreground">Татаж байна...</span>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                ) : filteredLeads.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={7} className="px-4 py-12">
-                                            <EmptyState
-                                                icon={<Users className="w-7 h-7" />}
-                                                title="Лийд олдсонгүй"
-                                                description="Харилцагч Messenger-ээр холбогдоход энд харагдана"
-                                            />
-                                        </td>
-                                    </tr>
-                                ) : (
-                                    filteredLeads.map((lead) => {
-                                        const statusInfo = statusConfig[lead.status];
-                                        const isExpanded = expandedLead === lead.id;
-                                        const leadData = lead as any;
+            {/* Lead Table (md+) */}
+            <div className="hidden md:block">
+                <DataTable<LeadRow>
+                    columns={columns}
+                    data={filteredLeads}
+                    getRowId={(lead) => lead.id}
+                    caption="Лийдүүдийн жагсаалт — харилцагч, холбоо барих, эх үүсвэр, төсөв, төлөв, үүссэн огноо"
+                    loading={loading}
+                    emptyMessage="Лийд олдсонгүй. Харилцагч Messenger-ээр холбогдоход энд харагдана."
+                    onRowClick={(lead) => toggleExpanded(lead.id)}
+                    pageSize={20}
+                />
+            </div>
 
-                                        return (
-                                            <React.Fragment key={lead.id}>
-                                                <tr
-                                                    className={cn(
-                                                        'hover:bg-surface-2/40 transition-colors cursor-pointer',
-                                                        isExpanded && 'bg-brand-soft/30',
-                                                    )}
-                                                    onClick={() => setExpandedLead(isExpanded ? null : lead.id)}
-                                                >
-                                                    <td className="px-4 py-3">
-                                                        <div className="flex items-center gap-3">
-                                                            <div
-                                                                className={cn(
-                                                                    'w-10 h-10 rounded-full flex items-center justify-center shrink-0',
-                                                                    leadData.urgency === 'high'
-                                                                        ? 'bg-status-danger-soft'
-                                                                        : 'bg-brand-soft',
-                                                                )}
-                                                            >
-                                                                <span
-                                                                    className={cn(
-                                                                        'font-medium text-sm',
-                                                                        leadData.urgency === 'high'
-                                                                            ? 'text-status-danger'
-                                                                            : 'text-brand-strong',
-                                                                    )}
-                                                                >
-                                                                    {lead.customer_name?.[0]?.toUpperCase() || '?'}
-                                                                </span>
-                                                            </div>
-                                                            <div>
-                                                                <p className="font-medium text-foreground text-sm flex items-center gap-2">
-                                                                    {lead.customer_name || 'Үл мэдэгдэх'}
-                                                                    {leadData.urgency === 'high' && (
-                                                                        <Badge variant="danger" size="sm">
-                                                                            <Zap className="w-3 h-3 mr-1" /> Яаралтай
-                                                                        </Badge>
-                                                                    )}
-                                                                </p>
-                                                                {leadData.preferred_type && (
-                                                                    <p className="text-xs text-muted-foreground flex items-center gap-1">
-                                                                        <Building2 className="w-3 h-3" />
-                                                                        {leadData.preferred_type === 'mandala_garden'
-                                                                            ? 'Mandala Garden'
-                                                                            : leadData.preferred_type === 'mandala_tower'
-                                                                              ? 'Mandala Tower'
-                                                                              : leadData.preferred_type === 'elysium'
-                                                                                ? 'Elysium Residence'
-                                                                                : leadData.preferred_type}
-                                                                    </p>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        <div className="space-y-1">
-                                                            {lead.customer_phone && (
-                                                                <a
-                                                                    href={`tel:${lead.customer_phone}`}
-                                                                    className="text-sm text-brand hover:underline flex items-center gap-1 tabular-nums"
-                                                                    onClick={(e) => e.stopPropagation()}
-                                                                >
-                                                                    <Phone className="w-3 h-3" />
-                                                                    {lead.customer_phone}
-                                                                </a>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        <span className="text-sm text-muted-foreground">
-                                                            {sourceLabels[lead.source] || lead.source}
-                                                        </span>
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        <p className="font-medium text-foreground text-sm tabular-nums">
-                                                            {formatBudget(lead.budget_min, lead.budget_max)}
-                                                        </p>
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        <select
-                                                            value={lead.status}
-                                                            onChange={(e) => {
-                                                                e.stopPropagation();
-                                                                updateStatus(lead.id, e.target.value as LeadStatus);
-                                                            }}
-                                                            onClick={(e) => e.stopPropagation()}
-                                                            className="px-2 py-1 text-xs font-medium rounded-md border border-border bg-background text-foreground cursor-pointer focus:outline-none focus:ring-2 focus:ring-ring/40"
-                                                        >
-                                                            {Object.entries(statusConfig).map(([key, { label }]) => (
-                                                                <option key={key} value={key}>
-                                                                    {label}
-                                                                </option>
-                                                            ))}
-                                                        </select>
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        <p className="text-sm text-muted-foreground">
-                                                            {leadData.last_contact_at ? getTimeAgo(leadData.last_contact_at) : getTimeAgo(lead.created_at)}
-                                                        </p>
-                                                    </td>
-                                                    <td className="px-4 py-3 text-right">
-                                                        <div className="flex items-center justify-end gap-1">
-                                                            {isExpanded ? (
-                                                                <ChevronUp className="w-5 h-5 text-brand" />
-                                                            ) : (
-                                                                <ChevronDown className="w-5 h-5 text-muted-foreground/60" />
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                                {/* Expanded Details */}
-                                                {isExpanded && (
-                                                    <tr>
-                                                        <td colSpan={7} className="px-4 py-4 bg-surface-2/30 border-b-2 border-border">
-                                                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                                                                <div className="bg-surface rounded-md p-4 border border-border">
-                                                                    <h4 className="heading-section text-sm text-foreground flex items-center gap-2 mb-2">
-                                                                        <Sparkles className="w-4 h-4 text-brand" />
-                                                                        AI Тойм
-                                                                    </h4>
-                                                                    <p className="text-sm text-muted-foreground leading-relaxed">
-                                                                        {leadData.ai_summary || 'Дэлгэрэнгүй мэдээлэл байхгүй'}
-                                                                    </p>
-                                                                    {leadData.conversation_summary && (
-                                                                        <div className="mt-3 pt-3 border-t border-border/60">
-                                                                            <p className="text-xs text-muted-foreground/80 font-medium mb-1">
-                                                                                Сүүлийн харилцаа:
-                                                                            </p>
-                                                                            <p className="text-sm text-muted-foreground">
-                                                                                {leadData.conversation_summary}
-                                                                            </p>
-                                                                        </div>
-                                                                    )}
-                                                                </div>
-
-                                                                <div className="bg-surface rounded-md p-4 border border-border">
-                                                                    <h4 className="heading-section text-sm text-foreground flex items-center gap-2 mb-2">
-                                                                        <MessageSquare className="w-4 h-4 text-status-success" />
-                                                                        Яриа эхлэх санаа
-                                                                    </h4>
-                                                                    {leadData.talking_points && leadData.talking_points.length > 0 ? (
-                                                                        <ul className="space-y-2">
-                                                                            {leadData.talking_points.map((point: string, idx: number) => (
-                                                                                <li
-                                                                                    key={idx}
-                                                                                    className="text-sm text-foreground bg-status-success-soft px-3 py-2 rounded-md"
-                                                                                >
-                                                                                    {point}
-                                                                                </li>
-                                                                            ))}
-                                                                        </ul>
-                                                                    ) : (
-                                                                        <p className="text-sm text-muted-foreground">Санаа алга</p>
-                                                                    )}
-                                                                </div>
-
-                                                                <div className="space-y-4">
-                                                                    <div className="bg-surface rounded-md p-4 border border-border">
-                                                                        <h4 className="heading-section text-sm text-foreground flex items-center gap-2 mb-2">
-                                                                            <Star className="w-4 h-4 text-status-pending" />
-                                                                            Сонирхол
-                                                                        </h4>
-                                                                        {leadData.interests && leadData.interests.length > 0 ? (
-                                                                            <div className="flex flex-wrap gap-2">
-                                                                                {leadData.interests.map((interest: string, idx: number) => (
-                                                                                    <Badge key={idx} variant="default">
-                                                                                        {interest}
-                                                                                    </Badge>
-                                                                                ))}
-                                                                            </div>
-                                                                        ) : (
-                                                                            <p className="text-sm text-muted-foreground">Тодорхойгүй</p>
-                                                                        )}
-                                                                    </div>
-
-                                                                    <div className="flex gap-2">
-                                                                        <a
-                                                                            href={`tel:${lead.customer_phone}`}
-                                                                            className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-brand text-brand-fg rounded-md hover:bg-brand-strong transition-colors text-sm font-medium"
-                                                                            onClick={(e) => e.stopPropagation()}
-                                                                        >
-                                                                            <Phone className="w-4 h-4" />
-                                                                            Залгах
-                                                                        </a>
-                                                                        <button className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-surface border border-border text-foreground rounded-md hover:bg-surface-2 transition-colors text-sm font-medium">
-                                                                            <MessageSquare className="w-4 h-4" />
-                                                                            Мессеж
-                                                                        </button>
-                                                                    </div>
-                                                                    {lead.status === 'closed_won' ? (
-                                                                        <a
-                                                                            href="/dashboard/contracts"
-                                                                            onClick={(e) => e.stopPropagation()}
-                                                                            className="inline-flex items-center justify-center gap-2 px-4 py-2 w-full bg-status-success-soft text-status-success rounded-md hover:opacity-90 transition-colors text-sm font-medium"
-                                                                        >
-                                                                            <FileText className="w-4 h-4" />
-                                                                            Гэрээ үзэх
-                                                                        </a>
-                                                                    ) : (
-                                                                        <button
-                                                                            onClick={(e) => { e.stopPropagation(); convertLead(lead.id); }}
-                                                                            className="inline-flex items-center justify-center gap-2 px-4 py-2 w-full bg-brand-soft text-brand-strong rounded-md hover:bg-brand-soft/80 transition-colors text-sm font-medium"
-                                                                        >
-                                                                            <FileText className="w-4 h-4" />
-                                                                            Гэрээ болгох
-                                                                        </button>
-                                                                    )}
-                                                                </div>
-                                                            </div>
-                                                            <div className="mt-4">
-                                                                <EntityAttachments entityType="lead" entityId={lead.id} />
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                )}
-                                            </React.Fragment>
-                                        );
-                                    })
-                                )}
-                            </tbody>
-                        </table>
+            {/* Lead Cards (mobile, < md) */}
+            <div className="md:hidden">
+                {loading ? (
+                    <div className="flex flex-col items-center justify-center gap-3 py-16">
+                        <div className="h-8 w-8 animate-spin rounded-full border-2 border-border border-t-brand" />
+                        <span className="text-sm text-muted-foreground">Татаж байна...</span>
                     </div>
-                </CardContent>
-            </Card>
+                ) : filteredLeads.length === 0 ? (
+                    <Card>
+                        <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+                            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-2 text-muted-foreground">
+                                <Users className="w-7 h-7" />
+                            </div>
+                            <div>
+                                <p className="heading-section text-sm text-foreground">Лийд олдсонгүй</p>
+                                <p className="text-sm text-muted-foreground">
+                                    Харилцагч Messenger-ээр холбогдоход энд харагдана
+                                </p>
+                            </div>
+                        </CardContent>
+                    </Card>
+                ) : (
+                    <div className="flex flex-col gap-3">
+                        {filteredLeads.map((lead, idx) => {
+                            const statusInfo = statusConfig[lead.status];
+                            const card = (
+                                <Card
+                                    interactive
+                                    onClick={() => toggleExpanded(lead.id)}
+                                    className={cn(
+                                        'cursor-pointer',
+                                        expandedLead === lead.id && 'ring-1 ring-ring/40',
+                                    )}
+                                >
+                                    <CardContent className="flex flex-col gap-3 p-4">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="flex items-center gap-3">
+                                                {renderAvatar(lead)}
+                                                <div>
+                                                    <p className="font-medium text-foreground text-sm flex items-center gap-2">
+                                                        {lead.customer_name || 'Үл мэдэгдэх'}
+                                                        {lead.urgency === 'high' && (
+                                                            <Badge variant="danger" size="sm">
+                                                                <Zap className="w-3 h-3 mr-1" /> Яаралтай
+                                                            </Badge>
+                                                        )}
+                                                    </p>
+                                                    {lead.preferred_type && (
+                                                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                                            <Building2 className="w-3 h-3" />
+                                                            {preferredTypeLabel(lead.preferred_type)}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </div>
+                                            {statusInfo && (
+                                                <StatusPill variant={statusInfo.variant} dot>
+                                                    {statusInfo.label}
+                                                </StatusPill>
+                                            )}
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-3 text-sm">
+                                            <div>
+                                                <p className="text-2xs uppercase tracking-wide text-muted-2">Эх үүсвэр</p>
+                                                <p className="text-muted-foreground">
+                                                    {sourceLabels[lead.source] || lead.source}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-2xs uppercase tracking-wide text-muted-2">Төсөв</p>
+                                                <p className="font-medium text-foreground tabular-nums">
+                                                    {formatBudget(lead.budget_min, lead.budget_max)}
+                                                </p>
+                                            </div>
+                                            <div>
+                                                <p className="text-2xs uppercase tracking-wide text-muted-2">Үүссэн</p>
+                                                <p className="text-muted-foreground">
+                                                    {lead.last_contact_at
+                                                        ? getTimeAgo(lead.last_contact_at)
+                                                        : getTimeAgo(lead.created_at)}
+                                                </p>
+                                            </div>
+                                            {lead.customer_phone && (
+                                                <div>
+                                                    <p className="text-2xs uppercase tracking-wide text-muted-2">Утас</p>
+                                                    <a
+                                                        href={`tel:${lead.customer_phone}`}
+                                                        className="text-brand hover:underline flex items-center gap-1 tabular-nums"
+                                                        onClick={(e) => e.stopPropagation()}
+                                                    >
+                                                        <Phone className="w-3 h-3" />
+                                                        {lead.customer_phone}
+                                                    </a>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        <div onClick={(e) => e.stopPropagation()}>
+                                            <Select
+                                                value={lead.status}
+                                                onValueChange={(value) => updateStatus(lead.id, value as LeadStatus)}
+                                            >
+                                                <SelectTrigger className="h-9 w-full text-xs" aria-label="Төлөв солих">
+                                                    <SelectValue />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {Object.entries(statusConfig).map(([key, { label }]) => (
+                                                        <SelectItem key={key} value={key}>
+                                                            {label}
+                                                        </SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            );
+
+                            if (reducedMotion) return <div key={lead.id}>{card}</div>;
+                            return (
+                                <motion.div
+                                    key={lead.id}
+                                    initial={{ opacity: 0, y: 6 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ duration: 0.22, delay: Math.min(idx, 8) * 0.03 }}
+                                >
+                                    {card}
+                                </motion.div>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+
+            {/* Expanded lead details */}
+            <Sheet open={!!activeLead} onOpenChange={(open) => !open && setExpandedLead(null)}>
+                <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
+                    {activeLead && (
+                        <>
+                            <SheetHeader>
+                                <SheetTitle className="flex items-center gap-2">
+                                    {activeLead.customer_name || 'Үл мэдэгдэх'}
+                                    {activeLead.urgency === 'high' && (
+                                        <Badge variant="danger" size="sm">
+                                            <Zap className="w-3 h-3 mr-1" /> Яаралтай
+                                        </Badge>
+                                    )}
+                                </SheetTitle>
+                                <SheetDescription>
+                                    {sourceLabels[activeLead.source] || activeLead.source}
+                                    {activeLead.preferred_type
+                                        ? ` · ${preferredTypeLabel(activeLead.preferred_type)}`
+                                        : ''}
+                                </SheetDescription>
+                            </SheetHeader>
+
+                            <div className="flex flex-col gap-4 p-6">
+                                <div className="bg-surface rounded-md p-4 border border-border">
+                                    <h4 className="heading-section text-sm text-foreground flex items-center gap-2 mb-2">
+                                        <Sparkles className="w-4 h-4 text-brand" />
+                                        AI Тойм
+                                    </h4>
+                                    <p className="text-sm text-muted-foreground leading-relaxed">
+                                        {activeLead.ai_summary || 'Дэлгэрэнгүй мэдээлэл байхгүй'}
+                                    </p>
+                                    {activeLead.conversation_summary && (
+                                        <div className="mt-3 pt-3 border-t border-border/60">
+                                            <p className="text-xs text-muted-foreground/80 font-medium mb-1">
+                                                Сүүлийн харилцаа:
+                                            </p>
+                                            <p className="text-sm text-muted-foreground">
+                                                {activeLead.conversation_summary}
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="bg-surface rounded-md p-4 border border-border">
+                                    <h4 className="heading-section text-sm text-foreground flex items-center gap-2 mb-2">
+                                        <MessageSquare className="w-4 h-4 text-status-success" />
+                                        Яриа эхлэх санаа
+                                    </h4>
+                                    {activeLead.talking_points && activeLead.talking_points.length > 0 ? (
+                                        <ul className="space-y-2">
+                                            {activeLead.talking_points.map((point: string, idx: number) => (
+                                                <li
+                                                    key={idx}
+                                                    className="text-sm text-foreground bg-status-success-soft px-3 py-2 rounded-md"
+                                                >
+                                                    {point}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    ) : (
+                                        <p className="text-sm text-muted-foreground">Санаа алга</p>
+                                    )}
+                                </div>
+
+                                <div className="bg-surface rounded-md p-4 border border-border">
+                                    <h4 className="heading-section text-sm text-foreground flex items-center gap-2 mb-2">
+                                        <Star className="w-4 h-4 text-status-pending" />
+                                        Сонирхол
+                                    </h4>
+                                    {activeLead.interests && activeLead.interests.length > 0 ? (
+                                        <div className="flex flex-wrap gap-2">
+                                            {activeLead.interests.map((interest: string, idx: number) => (
+                                                <Badge key={idx} variant="default">
+                                                    {interest}
+                                                </Badge>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-sm text-muted-foreground">Тодорхойгүй</p>
+                                    )}
+                                </div>
+
+                                <div className="flex gap-2">
+                                    <a
+                                        href={`tel:${activeLead.customer_phone}`}
+                                        className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-brand text-brand-fg rounded-md hover:bg-brand-strong transition-colors text-sm font-medium"
+                                    >
+                                        <Phone className="w-4 h-4" />
+                                        Залгах
+                                    </a>
+                                    <button className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2 bg-surface border border-border text-foreground rounded-md hover:bg-surface-2 transition-colors text-sm font-medium">
+                                        <MessageSquare className="w-4 h-4" />
+                                        Мессеж
+                                    </button>
+                                </div>
+                                {activeLead.status === 'closed_won' ? (
+                                    <a
+                                        href="/dashboard/contracts"
+                                        className="inline-flex items-center justify-center gap-2 px-4 py-2 w-full bg-status-success-soft text-status-success rounded-md hover:opacity-90 transition-colors text-sm font-medium"
+                                    >
+                                        <FileText className="w-4 h-4" />
+                                        Гэрээ үзэх
+                                    </a>
+                                ) : (
+                                    <button
+                                        onClick={() => convertLead(activeLead.id)}
+                                        className="inline-flex items-center justify-center gap-2 px-4 py-2 w-full bg-brand-soft text-brand-strong rounded-md hover:bg-brand-soft/80 transition-colors text-sm font-medium"
+                                    >
+                                        <FileText className="w-4 h-4" />
+                                        Гэрээ болгох
+                                    </button>
+                                )}
+
+                                <div className="mt-2">
+                                    <EntityAttachments entityType="lead" entityId={activeLead.id} />
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </SheetContent>
+            </Sheet>
         </div>
     );
 }

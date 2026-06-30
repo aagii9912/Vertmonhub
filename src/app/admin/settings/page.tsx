@@ -202,7 +202,7 @@ export default function AdminSettingsPage() {
                             <button
                                 onClick={saveSettings}
                                 disabled={saving}
-                                className="flex items-center gap-2 px-6 py-2.5 bg-brand text-white rounded-lg hover:bg-brand-strong disabled:opacity-50 font-medium"
+                                className="flex items-center gap-2 px-6 py-2.5 bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50 font-medium"
                             >
                                 <Save className="w-4 h-4" />
                                 {saving ? 'Хадгалж байна...' : 'Хадгалах'}

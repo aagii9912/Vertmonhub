@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-    'inline-flex items-center justify-center font-medium rounded-md transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background tap-feedback disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none',
+    'inline-flex items-center justify-center font-medium rounded-md transition-[color,background-color,border-color,box-shadow,transform] duration-150 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98] tap-feedback disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none',
     {
         variants: {
             variant: {
@@ -27,8 +27,8 @@ const buttonVariants = cva(
                 sm: 'px-3 py-1.5 text-sm min-h-[36px] gap-1.5',
                 md: 'px-4 py-2 text-sm min-h-[40px] gap-2',
                 lg: 'px-5 py-2.5 text-base min-h-[44px] gap-2',
-                icon: 'h-10 w-10 p-0',
-                iconSm: 'h-8 w-8 p-0',
+                icon: 'h-10 w-10 p-0 touch-target',
+                iconSm: 'h-8 w-8 p-0 touch-target',
             },
         },
         defaultVariants: {

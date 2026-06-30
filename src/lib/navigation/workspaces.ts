@@ -268,6 +268,71 @@ export function getWorkspaceForPath(pathname: string): Workspace {
 }
 
 /**
+ * Цэсний идэвхтэй эсэхийг шалгах ГАНЦ эх сурвалж (Sidebar/MobileNav/Header
+ * хуучин гурван тус тусын хувилбарыг орлоно).
+ * - exact: яг таарвал л идэвхтэй.
+ * - home: workspace-ийн нүүр хаяг бол зөвхөн яг таарвал идэвхтэй (дэд хуудсаар тодрохгүй).
+ */
+export function isNavItemActive(
+    pathname: string,
+    href: string,
+    opts?: { exact?: boolean; home?: string },
+): boolean {
+    if (pathname === href) return true;
+    if (opts?.exact) return false;
+    if (opts?.home && href === opts.home) return false;
+    return pathname.startsWith(href + '/');
+}
+
+export interface Crumb {
+    label: string;
+    href?: string;
+}
+
+/**
+ * Route-аас breadcrumb мөр үүсгэнэ: [Workspace → (эх цэс) → одоогийн хуудас].
+ * Сүүлийн crumb нь href-гүй (одоо байгаа хуудас).
+ */
+export function getBreadcrumb(pathname: string): Crumb[] {
+    const ws = getWorkspaceForPath(pathname);
+    const crumbs: Crumb[] = [{ label: ws.label, href: ws.home }];
+
+    let item: { name: string; href: string } | null = null;
+    let child: { name: string; href: string } | null = null;
+    let bestLen = -1;
+    const matches = (href: string) => pathname === href || pathname.startsWith(href + '/');
+
+    for (const section of ws.sections) {
+        for (const it of section.items) {
+            if (matches(it.href) && it.href.length > bestLen) {
+                item = { name: it.name, href: it.href };
+                child = null;
+                bestLen = it.href.length;
+            }
+            for (const c of it.children ?? []) {
+                if (matches(c.href) && c.href.length > bestLen) {
+                    item = { name: it.name, href: it.href };
+                    child = { name: c.name, href: c.href };
+                    bestLen = c.href.length;
+                }
+            }
+        }
+    }
+    for (const b of BOTTOM_ITEMS) {
+        if (matches(b.href) && b.href.length > bestLen) {
+            item = { name: b.name, href: b.href };
+            child = null;
+            bestLen = b.href.length;
+        }
+    }
+
+    if (item && item.href !== ws.home) crumbs.push({ label: item.name, href: item.href });
+    if (child && (!item || child.href !== item.href)) crumbs.push({ label: child.name, href: child.href });
+    if (crumbs.length > 1) crumbs[crumbs.length - 1] = { label: crumbs[crumbs.length - 1].label };
+    return crumbs;
+}
+
+/**
  * Route-д тохирох хамгийн гүн цэсний нэрийг буцаана (header гарчигт).
  * Header-ийн хуучин path.includes(...) гинжийг орлоно.
  */

@@ -13,6 +13,14 @@ export interface ChartColors {
     axis: string;   // --muted
     line: string;   // --chart-1 (brand)
     track: string;  // --surface-2 (hover cursor)
+    /** --chart-1..5 — 5 өнгийн серийн палитр (олон цуваатай чарт) */
+    series: [string, string, string, string, string];
+    /** Чартын суурь surface (tooltip/легенд) */
+    surface: string;
+    /** Үндсэн текстийн өнгө (tooltip-ийн гарчиг) */
+    foreground: string;
+    /** Receivables aging бүлгүүдийн өнгө (0-30 / 31-60 / 61-90 / 90+) */
+    aging: [string, string, string, string];
 }
 
 const FALLBACK: ChartColors = {
@@ -20,6 +28,10 @@ const FALLBACK: ChartColors = {
     axis: '#6B6962',
     line: '#C2602F',
     track: '#F4F3EE',
+    series: ['#C2602F', '#5B7DA6', '#4FA07C', '#C9A24B', '#6B5E8C'],
+    surface: '#FFFFFF',
+    foreground: '#1A1A1A',
+    aging: ['#4FA07C', '#C9A24B', '#D98A3D', '#C0492F'],
 };
 
 export function useChartColors(): ChartColors {
@@ -34,6 +46,21 @@ export function useChartColors(): ChartColors {
                 axis: v('--muted', FALLBACK.axis),
                 line: v('--chart-1', FALLBACK.line),
                 track: v('--surface-2', FALLBACK.track),
+                series: [
+                    v('--chart-1', FALLBACK.series[0]),
+                    v('--chart-2', FALLBACK.series[1]),
+                    v('--chart-3', FALLBACK.series[2]),
+                    v('--chart-4', FALLBACK.series[3]),
+                    v('--chart-5', FALLBACK.series[4]),
+                ],
+                surface: v('--surface', FALLBACK.surface),
+                foreground: v('--fg', FALLBACK.foreground),
+                aging: [
+                    v('--status-success', FALLBACK.aging[0]),
+                    v('--status-pending', FALLBACK.aging[1]),
+                    v('--status-active', FALLBACK.aging[2]),
+                    v('--status-danger', FALLBACK.aging[3]),
+                ],
             });
         };
         read();

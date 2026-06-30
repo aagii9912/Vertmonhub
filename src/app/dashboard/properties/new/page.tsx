@@ -1,9 +1,10 @@
 'use client';
 
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
+import { PageHeader } from '@/components/dashboard/PageHeader';
+import { Button } from '@/components/ui/Button';
 import PropertyForm from '../_components/PropertyForm';
 
 export default function NewPropertyPage() {
@@ -27,15 +28,21 @@ export default function NewPropertyPage() {
     };
 
     return (
-        <div className="min-h-screen bg-surface-2/40 p-6">
-            <div className="mb-6">
-                <Link href="/dashboard/properties" className="inline-flex items-center text-muted-foreground hover:text-foreground mb-4">
-                    <ArrowLeft className="w-4 h-4 mr-2" />
-                    Буцах
-                </Link>
-                <h1 className="text-2xl font-bold text-foreground">Шинэ үл хөдлөх нэмэх</h1>
-                <p className="text-muted-foreground mt-1">Үл хөдлөх хөрөнгийн мэдээлэл оруулна уу</p>
-            </div>
+        <div>
+            <PageHeader
+                title="Шинэ үл хөдлөх нэмэх"
+                subtitle="Үл хөдлөх хөрөнгийн мэдээлэл оруулна уу"
+                breadcrumbs={[
+                    { label: 'Үл хөдлөх', href: '/dashboard/properties' },
+                    { label: 'Шинэ' },
+                ]}
+                secondaryActions={
+                    <Button variant="outline" size="sm" href="/dashboard/properties">
+                        <ArrowLeft className="w-4 h-4" />
+                        Буцах
+                    </Button>
+                }
+            />
 
             <PropertyForm mode="create" onSubmit={handleSubmit} submitLabel="Үүсгэх" />
         </div>

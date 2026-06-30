@@ -83,7 +83,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
     if (loading || !isLoaded) {
         return (
             <div className="min-h-screen bg-surface-2 flex items-center justify-center">
-                <div className="animate-spin w-8 h-8 border-4 border-violet-600 border-t-transparent rounded-full"></div>
+                <div className="animate-spin w-8 h-8 border-4 border-brand border-t-transparent rounded-full"></div>
             </div>
         );
     }
@@ -111,7 +111,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
             `}>
                 {/* Logo */}
                 <div className="h-16 flex items-center justify-between px-4 border-b border-background/10">
-                    <span className="heading-display text-lg text-background">Vertmon Admin</span>
+                    <span className="heading-display text-lg text-background">Vertmon Админ</span>
                     <button
                         className="lg:hidden p-2 hover:bg-background/10 rounded-md"
                         onClick={() => setSidebarOpen(false)}
@@ -157,7 +157,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                         className="flex items-center gap-3 px-4 py-2 mt-2 text-background/70 hover:text-background hover:bg-background/10 rounded-md transition-colors"
                     >
                         <LogOut className="w-5 h-5" />
-                        <span>Exit Admin</span>
+                        <span>Админаас гарах</span>
                     </Link>
                 </div>
             </aside>
@@ -174,10 +174,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                     </button>
 
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Link href="/admin" className="hover:text-foreground">Admin</Link>
+                        <Link href="/admin" className="hover:text-foreground">Админ</Link>
                         <ChevronRight className="w-4 h-4" />
                         <span className="text-foreground font-medium">
-                            {navItems.find(n => pathname?.startsWith(n.href))?.label || 'Dashboard'}
+                            {navItems.find(n => pathname?.startsWith(n.href))?.label || 'Хянах самбар'}
                         </span>
                     </div>
 
