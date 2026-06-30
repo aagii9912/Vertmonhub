@@ -6,13 +6,33 @@ import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
+import { DataTable, type DataTableColumn } from '@/components/ui/DataTable';
+import { Money } from '@/components/ui/Money';
+import { DateText } from '@/components/ui/DateText';
+import { StatusPill } from '@/components/ui/StatusPill';
+import { ChartCard } from '@/components/ui/ChartCard';
+import { BarChart } from '@/components/charts/BarChart';
+import {
+    Dialog,
+    DialogContent,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/Dialog';
+import { FormField, FieldGroup } from '@/components/ui/FormField';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/Select';
 import {
     Wallet,
     TrendingUp,
     TrendingDown,
     Banknote,
     Plus,
-    X,
     AlertCircle,
 } from 'lucide-react';
 import { formatMNT as formatMNTShared } from '@/lib/utils/currency';
@@ -147,6 +167,61 @@ export default function FinancePage() {
         }
     }
 
+    // Recent-transactions table columns — presentation only; data, ordering, and
+    // amount math are unchanged from the original list rendering.
+    const txnColumns: DataTableColumn<Txn>[] = [
+        {
+            key: 'note',
+            header: 'Гүйлгээ',
+            cell: (t) => (
+                <div className="flex items-center gap-3">
+                    <span
+                        className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                            t.type === 'receipt'
+                                ? 'bg-status-success-soft text-status-success'
+                                : 'bg-status-danger-soft text-status-danger'
+                        }`}
+                    >
+                        {t.type === 'receipt' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
+                    </span>
+                    <span className="text-sm font-medium text-foreground">
+                        {t.note || (t.type === 'receipt' ? 'Орлого' : 'Зарлага')}
+                    </span>
+                </div>
+            ),
+        },
+        {
+            key: 'method',
+            header: 'Хэлбэр',
+            cell: (t) =>
+                t.method ? (
+                    <StatusPill variant="neutral">{METHOD_LABELS[t.method] || t.method}</StatusPill>
+                ) : (
+                    <span className="text-muted-foreground">—</span>
+                ),
+        },
+        {
+            key: 'txn_date',
+            header: 'Огноо',
+            cell: (t) => <DateText value={t.txn_date} className="text-sm text-muted-foreground" />,
+        },
+        {
+            key: 'amount',
+            header: 'Дүн',
+            align: 'right',
+            cell: (t) => (
+                <span
+                    className={`text-sm font-semibold tabular-nums ${
+                        t.type === 'receipt' ? 'text-status-success' : 'text-status-danger'
+                    }`}
+                >
+                    {t.type === 'receipt' ? '+' : '−'}
+                    <Money value={Number(t.amount)} compact />
+                </span>
+            ),
+        },
+    ];
+
     return (
         <div>
             <PageHeader
@@ -210,144 +285,133 @@ export default function FinancePage() {
                         </StatBar>
                     )}
 
-                    {/* AR Aging */}
+                    {/* AR Aging — same five buckets, rendered as a horizontal bar chart. */}
                     {aging && (
-                        <Card className="mb-6">
-                            <div className="p-5">
-                                <h3 className="heading-section text-sm text-foreground mb-4">Авлагын насжилт (AR aging)</h3>
-                                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                                    {[
-                                        { label: 'Хугацаа болоогүй', val: aging.current, accent: 'text-status-success' },
-                                        { label: '1–30 хоног', val: aging.d1_30, accent: 'text-foreground' },
-                                        { label: '31–60 хоног', val: aging.d31_60, accent: 'text-status-pending' },
-                                        { label: '61–90 хоног', val: aging.d61_90, accent: 'text-status-pending' },
-                                        { label: '90+ хоног', val: aging.d90_plus, accent: 'text-status-danger' },
-                                    ].map((b) => (
-                                        <div key={b.label} className="rounded-lg border border-border bg-surface-2/30 p-3">
-                                            <p className="text-xs text-muted-foreground">{b.label}</p>
-                                            <p className={`mt-1 text-lg font-semibold tabular-nums ${b.accent}`}>{formatMNT(b.val)}</p>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </Card>
+                        <ChartCard
+                            title="Авлагын насжилт (AR aging)"
+                            height={220}
+                            className="mb-6"
+                        >
+                            <BarChart
+                                data={[
+                                    { bucket: 'Хугацаа болоогүй', value: aging.current },
+                                    { bucket: '1–30 хоног', value: aging.d1_30 },
+                                    { bucket: '31–60 хоног', value: aging.d31_60 },
+                                    { bucket: '61–90 хоног', value: aging.d61_90 },
+                                    { bucket: '90+ хоног', value: aging.d90_plus },
+                                ]}
+                                xKey="bucket"
+                                series={[{ key: 'value', name: 'Авлага' }]}
+                                horizontal
+                                colorByPoint
+                                valueFormatter={(v) => formatMNT(v)}
+                            />
+                        </ChartCard>
                     )}
 
                     {/* Recent transactions */}
                     <Card>
                         <div className="p-5">
                             <h3 className="heading-section text-sm text-foreground mb-4">Сүүлийн гүйлгээ</h3>
-                            {transactions.length === 0 ? (
-                                <p className="text-sm text-muted-foreground py-6 text-center">Гүйлгээ бүртгэгдээгүй байна</p>
-                            ) : (
-                                <div className="divide-y divide-border/60">
-                                    {transactions.map((t) => (
-                                        <div key={t.id} className="flex items-center justify-between py-3">
-                                            <div className="flex items-center gap-3">
-                                                <span className={`w-8 h-8 rounded-full flex items-center justify-center ${t.type === 'receipt' ? 'bg-status-success-soft text-status-success' : 'bg-status-danger-soft text-status-danger'}`}>
-                                                    {t.type === 'receipt' ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                                                </span>
-                                                <div>
-                                                    <p className="text-sm font-medium text-foreground">{t.note || (t.type === 'receipt' ? 'Орлого' : 'Зарлага')}</p>
-                                                    <p className="text-xs text-muted-foreground">
-                                                        {t.txn_date}{t.method ? ` · ${METHOD_LABELS[t.method] || t.method}` : ''}
-                                                    </p>
-                                                </div>
-                                            </div>
-                                            <span className={`text-sm font-semibold tabular-nums ${t.type === 'receipt' ? 'text-status-success' : 'text-status-danger'}`}>
-                                                {t.type === 'receipt' ? '+' : '−'}{formatMNT(Number(t.amount))}
-                                            </span>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                            <DataTable<Txn>
+                                columns={txnColumns}
+                                data={transactions}
+                                getRowId={(t) => t.id}
+                                caption="Сүүлийн гүйлгээ"
+                                emptyMessage="Гүйлгээ бүртгэгдээгүй байна"
+                                showDensityToggle={false}
+                                hidePagination
+                            />
                         </div>
                     </Card>
                 </>
             )}
 
             {/* Record transaction modal */}
-            {showForm && (
-                <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-surface rounded-xl border border-border w-full max-w-md shadow-xl">
-                        <div className="flex items-center justify-between p-5 border-b border-border">
-                            <h2 className="heading-section text-base text-foreground">Гүйлгээ бүртгэх</h2>
-                            <button onClick={() => setShowForm(false)} className="p-2 hover:bg-surface-2 rounded-md">
-                                <X className="w-5 h-5 text-muted-foreground" />
-                            </button>
-                        </div>
-                        <div className="p-5 space-y-4">
-                            {formError && (
-                                <div className="p-3 bg-status-danger-soft border border-status-danger/30 rounded-lg text-status-danger text-sm flex items-center gap-2">
-                                    <AlertCircle className="w-4 h-4" />{formError}
-                                </div>
-                            )}
-                            <div className="grid grid-cols-2 gap-2">
-                                <button
-                                    onClick={() => setForm(f => ({ ...f, type: 'receipt' }))}
-                                    className={`px-3 py-2 rounded-lg text-sm font-medium border-2 ${form.type === 'receipt' ? 'border-status-success bg-status-success-soft text-status-success' : 'border-border text-muted-foreground'}`}
-                                >Орлого</button>
-                                <button
-                                    onClick={() => setForm(f => ({ ...f, type: 'disbursement' }))}
-                                    className={`px-3 py-2 rounded-lg text-sm font-medium border-2 ${form.type === 'disbursement' ? 'border-status-danger bg-status-danger-soft text-status-danger' : 'border-border text-muted-foreground'}`}
-                                >Зарлага</button>
+            <Dialog open={showForm} onOpenChange={setShowForm}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Гүйлгээ бүртгэх</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        {formError && (
+                            <div className="p-3 bg-status-danger-soft border border-status-danger/30 rounded-lg text-status-danger text-sm flex items-center gap-2">
+                                <AlertCircle className="w-4 h-4" />{formError}
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-foreground mb-1">Дүн (₮)</label>
+                        )}
+                        <div className="grid grid-cols-2 gap-2">
+                            <button
+                                onClick={() => setForm(f => ({ ...f, type: 'receipt' }))}
+                                className={`px-3 py-2 rounded-lg text-sm font-medium border-2 ${form.type === 'receipt' ? 'border-status-success bg-status-success-soft text-status-success' : 'border-border text-muted-foreground'}`}
+                            >Орлого</button>
+                            <button
+                                onClick={() => setForm(f => ({ ...f, type: 'disbursement' }))}
+                                className={`px-3 py-2 rounded-lg text-sm font-medium border-2 ${form.type === 'disbursement' ? 'border-status-danger bg-status-danger-soft text-status-danger' : 'border-border text-muted-foreground'}`}
+                            >Зарлага</button>
+                        </div>
+                        <FieldGroup>
+                            <FormField label="Дүн (₮)" htmlFor="txn-amount">
                                 <input
+                                    id="txn-amount"
                                     type="number"
                                     value={form.amount}
                                     onChange={e => setForm(f => ({ ...f, amount: e.target.value }))}
                                     className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm"
                                     placeholder="0"
                                 />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-foreground mb-1">Хэлбэр</label>
-                                <select
+                            </FormField>
+                            <FormField label="Хэлбэр" htmlFor="txn-method">
+                                <Select
                                     value={form.method}
-                                    onChange={e => setForm(f => ({ ...f, method: e.target.value }))}
-                                    className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface"
+                                    onValueChange={(v) => setForm(f => ({ ...f, method: v }))}
                                 >
-                                    <option value="cash">Бэлэн</option>
-                                    <option value="bank">Банк</option>
-                                    <option value="barter">Бартер</option>
-                                    <option value="mortgage">Ипотек</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-foreground mb-1">Данс</label>
-                                <select
-                                    value={form.account_id}
-                                    onChange={e => setForm(f => ({ ...f, account_id: e.target.value }))}
-                                    className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface"
+                                    <SelectTrigger id="txn-method">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="cash">Бэлэн</SelectItem>
+                                        <SelectItem value="bank">Банк</SelectItem>
+                                        <SelectItem value="barter">Бартер</SelectItem>
+                                        <SelectItem value="mortgage">Ипотек</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </FormField>
+                            <FormField label="Данс" htmlFor="txn-account">
+                                <Select
+                                    value={form.account_id || '__none__'}
+                                    onValueChange={(v) => setForm(f => ({ ...f, account_id: v === '__none__' ? '' : v }))}
                                 >
-                                    <option value="">— Данс сонгох —</option>
-                                    {accounts.map(a => (
-                                        <option key={a.id} value={a.id}>{a.code} · {a.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-foreground mb-1">Тэмдэглэл</label>
+                                    <SelectTrigger id="txn-account">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="__none__">— Данс сонгох —</SelectItem>
+                                        {accounts.map(a => (
+                                            <SelectItem key={a.id} value={a.id}>{a.code} · {a.name}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                            </FormField>
+                            <FormField label="Тэмдэглэл" htmlFor="txn-note">
                                 <input
+                                    id="txn-note"
                                     type="text"
                                     value={form.note}
                                     onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
                                     className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm"
                                     placeholder="Тайлбар"
                                 />
-                            </div>
-                        </div>
-                        <div className="flex justify-end gap-3 p-5 border-t border-border">
-                            <Button variant="secondary" size="sm" onClick={() => setShowForm(false)}>Цуцлах</Button>
-                            <Button variant="primary" size="sm" onClick={submitTxn} isLoading={saving} disabled={saving}>
-                                Хадгалах
-                            </Button>
-                        </div>
+                            </FormField>
+                        </FieldGroup>
                     </div>
-                </div>
-            )}
+                    <DialogFooter>
+                        <Button variant="secondary" size="sm" onClick={() => setShowForm(false)}>Цуцлах</Button>
+                        <Button variant="primary" size="sm" onClick={submitTxn} isLoading={saving} disabled={saving}>
+                            Хадгалах
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

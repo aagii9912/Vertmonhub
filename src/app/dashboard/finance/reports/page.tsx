@@ -6,8 +6,10 @@ import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
+import { DataTable, type DataTableColumn } from '@/components/ui/DataTable';
+import { Money } from '@/components/ui/Money';
 import { Banknote, TrendingDown, TrendingUp, Percent, Download } from 'lucide-react';
-import { formatMNT as formatMNTShared } from '@/lib/utils/currency';
+import { cn } from '@/lib/utils';
 
 interface Reports {
     pnl: { totalIncome: number; totalExpense: number; netProfit: number; marginPct: number; byChannel: Array<{ channel: string; revenue: number }> };
@@ -17,9 +19,8 @@ interface Reports {
 }
 interface AgingB { current: number; d1_30: number; d31_60: number; d61_90: number; d90_plus: number; total: number; }
 
-function formatMNT(n: number): string {
-    return formatMNTShared(n, { compact: true });
-}
+interface CashflowMonth { month: string; receipts: number; disbursements: number; net: number; }
+interface AgingRowData { id: string; label: string; bucket: AgingB; }
 
 export default function FinanceReportsPage() {
     const [reports, setReports] = useState<Reports | null>(null);
@@ -52,17 +53,22 @@ export default function FinanceReportsPage() {
         } catch (e) { console.error(e); } finally { setExporting(false); }
     }
 
-    const agingRow = (label: string, b: AgingB) => (
-        <tr className="text-sm">
-            <td className="py-2 pr-4 font-medium text-foreground">{label}</td>
-            <td className="py-2 pr-4 text-right tabular-nums">{formatMNT(b.current)}</td>
-            <td className="py-2 pr-4 text-right tabular-nums">{formatMNT(b.d1_30)}</td>
-            <td className="py-2 pr-4 text-right tabular-nums">{formatMNT(b.d31_60)}</td>
-            <td className="py-2 pr-4 text-right tabular-nums">{formatMNT(b.d61_90)}</td>
-            <td className="py-2 pr-4 text-right tabular-nums text-status-danger">{formatMNT(b.d90_plus)}</td>
-            <td className="py-2 text-right tabular-nums font-semibold">{formatMNT(b.total)}</td>
-        </tr>
-    );
+    const cashflowColumns: DataTableColumn<CashflowMonth>[] = [
+        { key: 'month', header: 'Сар', accessor: (m) => m.month, cell: (m) => <span className="text-foreground">{m.month}</span> },
+        { key: 'receipts', header: 'Орлого', align: 'right', accessor: (m) => m.receipts, cell: (m) => <Money value={m.receipts} compact className="text-status-success" /> },
+        { key: 'disbursements', header: 'Зарлага', align: 'right', accessor: (m) => m.disbursements, cell: (m) => <Money value={m.disbursements} compact className="text-status-danger" /> },
+        { key: 'net', header: 'Цэвэр', align: 'right', accessor: (m) => m.net, cell: (m) => <Money value={m.net} compact className={cn('font-medium', m.net >= 0 ? 'text-status-success' : 'text-status-danger')} /> },
+    ];
+
+    const agingColumns: DataTableColumn<AgingRowData>[] = [
+        { key: 'label', header: '', accessor: (r) => r.label, cell: (r) => <span className="font-medium text-foreground">{r.label}</span> },
+        { key: 'current', header: 'Болоогүй', align: 'right', accessor: (r) => r.bucket.current, cell: (r) => <Money value={r.bucket.current} compact /> },
+        { key: 'd1_30', header: '1–30', align: 'right', accessor: (r) => r.bucket.d1_30, cell: (r) => <Money value={r.bucket.d1_30} compact /> },
+        { key: 'd31_60', header: '31–60', align: 'right', accessor: (r) => r.bucket.d31_60, cell: (r) => <Money value={r.bucket.d31_60} compact /> },
+        { key: 'd61_90', header: '61–90', align: 'right', accessor: (r) => r.bucket.d61_90, cell: (r) => <Money value={r.bucket.d61_90} compact /> },
+        { key: 'd90_plus', header: '90+', align: 'right', accessor: (r) => r.bucket.d90_plus, cell: (r) => <Money value={r.bucket.d90_plus} compact className="text-status-danger" /> },
+        { key: 'total', header: 'Нийт', align: 'right', accessor: (r) => r.bucket.total, cell: (r) => <Money value={r.bucket.total} compact className="font-semibold" /> },
+    ];
 
     return (
         <div>
@@ -85,9 +91,9 @@ export default function FinanceReportsPage() {
                 <>
                     {/* P&L */}
                     <StatBar columns={4}>
-                        <StatTile label="Нийт орлого" value={formatMNT(reports.pnl.totalIncome)} icon={<Banknote className="w-5 h-5" />} accent="brand" />
-                        <StatTile label="Нийт зардал" value={formatMNT(reports.pnl.totalExpense)} icon={<TrendingDown className="w-5 h-5" />} accent="warning" />
-                        <StatTile label="Цэвэр ашиг" value={formatMNT(reports.pnl.netProfit)} icon={<TrendingUp className="w-5 h-5" />} accent={reports.pnl.netProfit >= 0 ? 'success' : 'danger'} />
+                        <StatTile label="Нийт орлого" value={<Money value={reports.pnl.totalIncome} compact />} icon={<Banknote className="w-5 h-5" />} accent="brand" />
+                        <StatTile label="Нийт зардал" value={<Money value={reports.pnl.totalExpense} compact />} icon={<TrendingDown className="w-5 h-5" />} accent="warning" />
+                        <StatTile label="Цэвэр ашиг" value={<Money value={reports.pnl.netProfit} compact />} icon={<TrendingUp className="w-5 h-5" />} accent={reports.pnl.netProfit >= 0 ? 'success' : 'danger'} />
                         <StatTile label="Ашгийн хувь" value={`${reports.pnl.marginPct}%`} icon={<Percent className="w-5 h-5" />} accent="info" />
                     </StatBar>
 
@@ -103,7 +109,7 @@ export default function FinanceReportsPage() {
                                         {reports.pnl.byChannel.map(c => (
                                             <div key={c.channel} className="flex justify-between py-2 text-sm">
                                                 <span className="text-foreground">{c.channel}</span>
-                                                <span className="tabular-nums font-medium">{formatMNT(c.revenue)}</span>
+                                                <Money value={c.revenue} compact className="font-medium" />
                                             </div>
                                         ))}
                                     </div>
@@ -116,9 +122,9 @@ export default function FinanceReportsPage() {
                             <div className="p-5">
                                 <h3 className="heading-section text-sm text-foreground mb-4">НӨАТ</h3>
                                 <div className="space-y-2 text-sm">
-                                    <div className="flex justify-between py-1"><span className="text-muted-foreground">Борлуулалтын НӨАТ (output)</span><span className="tabular-nums">{formatMNT(reports.vat.outputVat)}</span></div>
-                                    <div className="flex justify-between py-1"><span className="text-muted-foreground">Худалдан авалтын НӨАТ (input)</span><span className="tabular-nums">{formatMNT(reports.vat.inputVat)}</span></div>
-                                    <div className="flex justify-between py-2 border-t border-border font-semibold"><span>Төлөх НӨАТ</span><span className="tabular-nums">{formatMNT(reports.vat.netVat)}</span></div>
+                                    <div className="flex justify-between py-1"><span className="text-muted-foreground">Борлуулалтын НӨАТ (output)</span><Money value={reports.vat.outputVat} compact /></div>
+                                    <div className="flex justify-between py-1"><span className="text-muted-foreground">Худалдан авалтын НӨАТ (input)</span><Money value={reports.vat.inputVat} compact /></div>
+                                    <div className="flex justify-between py-2 border-t border-border font-semibold"><span>Төлөх НӨАТ</span><Money value={reports.vat.netVat} compact /></div>
                                 </div>
                             </div>
                         </Card>
@@ -130,32 +136,18 @@ export default function FinanceReportsPage() {
                             <div className="flex items-center justify-between mb-4">
                                 <h3 className="heading-section text-sm text-foreground">Мөнгөн урсгал (6 сар)</h3>
                                 <div className="text-xs text-muted-foreground">
-                                    Ирэх авлага: <span className="text-status-success font-medium">{formatMNT(reports.cashflow.forecastAR)}</span>
-                                    {' · '}Ирэх өглөг: <span className="text-status-danger font-medium">{formatMNT(reports.cashflow.forecastAP)}</span>
+                                    Ирэх авлага: <Money value={reports.cashflow.forecastAR} compact className="text-status-success font-medium" />
+                                    {' · '}Ирэх өглөг: <Money value={reports.cashflow.forecastAP} compact className="text-status-danger font-medium" />
                                 </div>
                             </div>
-                            <div className="overflow-x-auto">
-                                <table className="w-full">
-                                    <thead className="border-b border-border">
-                                        <tr className="text-left text-[11px] uppercase tracking-[0.08em] text-muted-foreground/80">
-                                            <th className="py-2 pr-4">Сар</th>
-                                            <th className="py-2 pr-4 text-right">Орлого</th>
-                                            <th className="py-2 pr-4 text-right">Зарлага</th>
-                                            <th className="py-2 text-right">Цэвэр</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-border/60">
-                                        {reports.cashflow.months.map(m => (
-                                            <tr key={m.month} className="text-sm">
-                                                <td className="py-2 pr-4 text-foreground">{m.month}</td>
-                                                <td className="py-2 pr-4 text-right tabular-nums text-status-success">{formatMNT(m.receipts)}</td>
-                                                <td className="py-2 pr-4 text-right tabular-nums text-status-danger">{formatMNT(m.disbursements)}</td>
-                                                <td className={`py-2 text-right tabular-nums font-medium ${m.net >= 0 ? 'text-status-success' : 'text-status-danger'}`}>{formatMNT(m.net)}</td>
-                                            </tr>
-                                        ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                            <DataTable
+                                columns={cashflowColumns}
+                                data={reports.cashflow.months}
+                                getRowId={(m) => m.month}
+                                caption="Мөнгөн урсгал (6 сар)"
+                                showDensityToggle={false}
+                                hidePagination
+                            />
                         </div>
                     </Card>
 
@@ -163,25 +155,17 @@ export default function FinanceReportsPage() {
                     <Card>
                         <div className="p-5">
                             <h3 className="heading-section text-sm text-foreground mb-4">Насжилт (AR / AP)</h3>
-                            <div className="overflow-x-auto">
-                                <table className="w-full">
-                                    <thead className="border-b border-border">
-                                        <tr className="text-left text-[11px] uppercase tracking-[0.08em] text-muted-foreground/80">
-                                            <th className="py-2 pr-4"></th>
-                                            <th className="py-2 pr-4 text-right">Болоогүй</th>
-                                            <th className="py-2 pr-4 text-right">1–30</th>
-                                            <th className="py-2 pr-4 text-right">31–60</th>
-                                            <th className="py-2 pr-4 text-right">61–90</th>
-                                            <th className="py-2 pr-4 text-right">90+</th>
-                                            <th className="py-2 text-right">Нийт</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-border/60">
-                                        {agingRow('Авлага (AR)', reports.aging.ar)}
-                                        {agingRow('Өглөг (AP)', reports.aging.ap)}
-                                    </tbody>
-                                </table>
-                            </div>
+                            <DataTable
+                                columns={agingColumns}
+                                data={[
+                                    { id: 'ar', label: 'Авлага (AR)', bucket: reports.aging.ar },
+                                    { id: 'ap', label: 'Өглөг (AP)', bucket: reports.aging.ap },
+                                ]}
+                                getRowId={(r) => r.id}
+                                caption="Насжилт (AR / AP)"
+                                showDensityToggle={false}
+                                hidePagination
+                            />
                         </div>
                     </Card>
                 </>

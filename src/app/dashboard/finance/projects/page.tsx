@@ -6,8 +6,25 @@ import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
-import { Banknote, TrendingUp, TrendingDown, Target, Plus, X, AlertCircle, Link2 } from 'lucide-react';
-import { formatMNT as formatMNTShared } from '@/lib/utils/currency';
+import { DataTable, type DataTableColumn } from '@/components/ui/DataTable';
+import { Money } from '@/components/ui/Money';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogFooter,
+    DialogTitle,
+} from '@/components/ui/Dialog';
+import { FormField, FieldGroup } from '@/components/ui/FormField';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/Select';
+import { Banknote, TrendingUp, TrendingDown, Target, Plus, AlertCircle, Link2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface Pnl {
     project_id: string | null;
@@ -21,10 +38,6 @@ interface Pnl {
 }
 interface Project { id: string; name: string; }
 interface Account { id: string; code: string; name: string; }
-
-function formatMNT(n: number): string {
-    return formatMNTShared(n, { compact: true });
-}
 
 export default function ProjectFinancePage() {
     const [rows, setRows] = useState<Pnl[]>([]);
@@ -93,6 +106,77 @@ export default function ProjectFinancePage() {
         revenue: t.revenue + r.revenue, cost: t.cost + r.cost, margin: t.margin + r.margin, budget: t.budget + r.budget,
     }), { revenue: 0, cost: 0, margin: 0, budget: 0 });
 
+    const columns: DataTableColumn<Pnl>[] = [
+        {
+            key: 'name',
+            header: 'Төсөл',
+            accessor: (r) => r.name,
+            cell: (r) => <span className="font-medium text-foreground">{r.name}</span>,
+        },
+        {
+            key: 'revenue',
+            header: 'Орлого',
+            align: 'right',
+            accessor: (r) => r.revenue,
+            cell: (r) => <Money value={r.revenue} compact />,
+        },
+        {
+            key: 'collected',
+            header: 'Цугласан',
+            align: 'right',
+            accessor: (r) => r.collected,
+            cell: (r) => <Money value={r.collected} compact className="text-muted-foreground" />,
+        },
+        {
+            key: 'cost',
+            header: 'Өртөг',
+            align: 'right',
+            accessor: (r) => r.cost,
+            cell: (r) => <Money value={r.cost} compact />,
+        },
+        {
+            key: 'margin',
+            header: 'Ашиг',
+            align: 'right',
+            accessor: (r) => r.margin,
+            cell: (r) => (
+                <Money
+                    value={r.margin}
+                    compact
+                    className={cn('font-semibold', r.margin >= 0 ? 'text-status-success' : 'text-status-danger')}
+                />
+            ),
+        },
+        {
+            key: 'budget',
+            header: 'Төсөв',
+            align: 'right',
+            accessor: (r) => r.budget,
+            cell: (r) =>
+                r.budget > 0 ? (
+                    <Money value={r.budget} compact className="text-muted-foreground" />
+                ) : (
+                    <span className="text-muted-foreground">—</span>
+                ),
+        },
+        {
+            key: 'budgetVariance',
+            header: 'Зөрүү',
+            align: 'right',
+            accessor: (r) => r.budgetVariance,
+            cell: (r) =>
+                r.budget > 0 ? (
+                    <Money
+                        value={r.budgetVariance}
+                        compact
+                        className={r.budgetVariance >= 0 ? 'text-status-success' : 'text-status-danger'}
+                    />
+                ) : (
+                    <span className="text-muted-foreground">—</span>
+                ),
+        },
+    ];
+
     return (
         <div>
             <PageHeader
@@ -116,99 +200,75 @@ export default function ProjectFinancePage() {
             ) : (
                 <>
                     <StatBar columns={4}>
-                        <StatTile label="Нийт орлого" value={formatMNT(totals.revenue)} icon={<Banknote className="w-5 h-5" />} accent="brand" />
-                        <StatTile label="Нийт өртөг" value={formatMNT(totals.cost)} icon={<TrendingDown className="w-5 h-5" />} accent="warning" />
-                        <StatTile label="Ашиг (margin)" value={formatMNT(totals.margin)} helper={totals.revenue > 0 ? `${Math.round((totals.margin / totals.revenue) * 100)}%` : '—'} icon={<TrendingUp className="w-5 h-5" />} accent={totals.margin >= 0 ? 'success' : 'danger'} />
-                        <StatTile label="Нийт төсөв" value={formatMNT(totals.budget)} icon={<Target className="w-5 h-5" />} accent="info" />
+                        <StatTile label="Нийт орлого" value={<Money value={totals.revenue} compact />} icon={<Banknote className="w-5 h-5" />} accent="brand" />
+                        <StatTile label="Нийт өртөг" value={<Money value={totals.cost} compact />} icon={<TrendingDown className="w-5 h-5" />} accent="warning" />
+                        <StatTile label="Ашиг (margin)" value={<Money value={totals.margin} compact />} helper={totals.revenue > 0 ? `${Math.round((totals.margin / totals.revenue) * 100)}%` : '—'} icon={<TrendingUp className="w-5 h-5" />} accent={totals.margin >= 0 ? 'success' : 'danger'} />
+                        <StatTile label="Нийт төсөв" value={<Money value={totals.budget} compact />} icon={<Target className="w-5 h-5" />} accent="info" />
                     </StatBar>
 
                     <Card>
                         <div className="p-5">
                             <h3 className="heading-section text-sm text-foreground mb-4">Төслийн P&L</h3>
-                            {rows.length === 0 ? (
-                                <p className="text-sm text-muted-foreground py-6 text-center">
-                                    Өгөгдөл алга. Гэрээ/зардлыг төсөлд холбоно уу.
-                                </p>
-                            ) : (
-                                <div className="overflow-x-auto">
-                                    <table className="w-full">
-                                        <thead className="border-b border-border">
-                                            <tr className="text-left text-[11px] uppercase tracking-[0.08em] text-muted-foreground/80">
-                                                <th className="py-2 pr-4">Төсөл</th>
-                                                <th className="py-2 pr-4 text-right">Орлого</th>
-                                                <th className="py-2 pr-4 text-right">Цугласан</th>
-                                                <th className="py-2 pr-4 text-right">Өртөг</th>
-                                                <th className="py-2 pr-4 text-right">Ашиг</th>
-                                                <th className="py-2 pr-4 text-right">Төсөв</th>
-                                                <th className="py-2 text-right">Зөрүү</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-border/60">
-                                            {rows.map((r) => (
-                                                <tr key={r.project_id || 'none'} className="text-sm">
-                                                    <td className="py-3 pr-4 font-medium text-foreground">{r.name}</td>
-                                                    <td className="py-3 pr-4 text-right tabular-nums">{formatMNT(r.revenue)}</td>
-                                                    <td className="py-3 pr-4 text-right tabular-nums text-muted-foreground">{formatMNT(r.collected)}</td>
-                                                    <td className="py-3 pr-4 text-right tabular-nums">{formatMNT(r.cost)}</td>
-                                                    <td className={`py-3 pr-4 text-right tabular-nums font-semibold ${r.margin >= 0 ? 'text-status-success' : 'text-status-danger'}`}>{formatMNT(r.margin)}</td>
-                                                    <td className="py-3 pr-4 text-right tabular-nums text-muted-foreground">{r.budget > 0 ? formatMNT(r.budget) : '—'}</td>
-                                                    <td className={`py-3 text-right tabular-nums ${r.budget > 0 ? (r.budgetVariance >= 0 ? 'text-status-success' : 'text-status-danger') : 'text-muted-foreground'}`}>
-                                                        {r.budget > 0 ? formatMNT(r.budgetVariance) : '—'}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
+                            <DataTable
+                                columns={columns}
+                                data={rows}
+                                getRowId={(r) => r.project_id || 'none'}
+                                caption="Төслийн P&L"
+                                emptyMessage="Өгөгдөл алга. Гэрээ/зардлыг төсөлд холбоно уу."
+                                showDensityToggle={false}
+                                hidePagination
+                            />
                         </div>
                     </Card>
                 </>
             )}
 
-            {showBudget && (
-                <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-surface rounded-xl border border-border w-full max-w-md shadow-xl">
-                        <div className="flex items-center justify-between p-5 border-b border-border">
-                            <h2 className="heading-section text-base text-foreground">Төсвийн мөр нэмэх</h2>
-                            <button onClick={() => setShowBudget(false)} className="p-2 hover:bg-surface-2 rounded-md"><X className="w-5 h-5 text-muted-foreground" /></button>
-                        </div>
-                        <div className="p-5 space-y-4">
-                            {error && (
-                                <div className="p-3 bg-status-danger-soft border border-status-danger/30 rounded-lg text-status-danger text-sm flex items-center gap-2">
-                                    <AlertCircle className="w-4 h-4" />{error}
-                                </div>
-                            )}
-                            <div>
-                                <label className="block text-sm font-medium text-foreground mb-1">Төсөл</label>
-                                <select className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={budgetForm.project_id} onChange={e => setBudgetForm(f => ({ ...f, project_id: e.target.value }))}>
-                                    <option value="">— Сонгох —</option>
-                                    {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                                </select>
+            <Dialog open={showBudget} onOpenChange={setShowBudget}>
+                <DialogContent className="bg-surface sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="heading-section text-base text-foreground">Төсвийн мөр нэмэх</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        {error && (
+                            <div className="p-3 bg-status-danger-soft border border-status-danger/30 rounded-lg text-status-danger text-sm flex items-center gap-2">
+                                <AlertCircle className="w-4 h-4" />{error}
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-foreground mb-1">Ангилал (данс)</label>
-                                <select className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={budgetForm.account_id} onChange={e => setBudgetForm(f => ({ ...f, account_id: e.target.value }))}>
-                                    <option value="">— Сонгох —</option>
-                                    {accounts.filter(a => a.code >= '5000').map(a => <option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-foreground mb-1">Тайлбар</label>
-                                <input className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm" value={budgetForm.label} onChange={e => setBudgetForm(f => ({ ...f, label: e.target.value }))} placeholder="Жишээ: Материал" />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-foreground mb-1">Төлөвлөсөн дүн (₮)</label>
-                                <input type="number" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm" value={budgetForm.planned_amount} onChange={e => setBudgetForm(f => ({ ...f, planned_amount: e.target.value }))} placeholder="0" />
-                            </div>
-                        </div>
-                        <div className="flex justify-end gap-3 p-5 border-t border-border">
-                            <Button variant="secondary" size="sm" onClick={() => setShowBudget(false)}>Цуцлах</Button>
-                            <Button variant="primary" size="sm" onClick={addBudget} isLoading={saving} disabled={saving}>Хадгалах</Button>
-                        </div>
+                        )}
+                        <FieldGroup>
+                            <FormField label="Төсөл" htmlFor="budget-project">
+                                <Select value={budgetForm.project_id} onValueChange={v => setBudgetForm(f => ({ ...f, project_id: v }))}>
+                                    <SelectTrigger id="budget-project">
+                                        <SelectValue placeholder="— Сонгох —" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {projects.map(p => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </FormField>
+                            <FormField label="Ангилал (данс)" htmlFor="budget-account">
+                                <Select value={budgetForm.account_id} onValueChange={v => setBudgetForm(f => ({ ...f, account_id: v }))}>
+                                    <SelectTrigger id="budget-account">
+                                        <SelectValue placeholder="— Сонгох —" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {accounts.filter(a => a.code >= '5000').map(a => <SelectItem key={a.id} value={a.id}>{a.code} · {a.name}</SelectItem>)}
+                                    </SelectContent>
+                                </Select>
+                            </FormField>
+                            <FormField label="Тайлбар" htmlFor="budget-label">
+                                <input id="budget-label" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm" value={budgetForm.label} onChange={e => setBudgetForm(f => ({ ...f, label: e.target.value }))} placeholder="Жишээ: Материал" />
+                            </FormField>
+                            <FormField label="Төлөвлөсөн дүн (₮)" htmlFor="budget-amount">
+                                <input id="budget-amount" type="number" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm" value={budgetForm.planned_amount} onChange={e => setBudgetForm(f => ({ ...f, planned_amount: e.target.value }))} placeholder="0" />
+                            </FormField>
+                        </FieldGroup>
                     </div>
-                </div>
-            )}
+                    <DialogFooter>
+                        <Button variant="secondary" size="sm" onClick={() => setShowBudget(false)}>Цуцлах</Button>
+                        <Button variant="primary" size="sm" onClick={addBudget} isLoading={saving} disabled={saving}>Хадгалах</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
