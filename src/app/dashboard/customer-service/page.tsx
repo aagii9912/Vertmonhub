@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-    Headphones, AlertTriangle, CheckCircle2, Clock,
+    Headphones, AlertTriangle, CheckCircle2,
     DollarSign, Star, Loader2, Plus,
     Phone, User, FileText, MessageSquare, Wrench, ArrowRight,
-    ThumbsUp,
+    ThumbsUp, Wallet, Lightbulb, X,
 } from 'lucide-react';
+import Link from 'next/link';
 import { formatShortDate } from '@/lib/utils/date';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
@@ -47,6 +48,8 @@ interface KPI {
     open_requests: number;
     resolved_requests: number;
     total_requests: number;
+    open_complaints: number;
+    suggestions_count: number;
     avg_resolution_hours: number | null;
     avg_service_rating: number | null;
     nps: number | null;
@@ -59,6 +62,8 @@ interface KPI {
 interface ServiceLog {
     id: string;
     contract_id: string | null;
+    customer_id: string | null;
+    channel: string | null;
     customer_name: string | null;
     customer_phone: string | null;
     type: string;
@@ -75,6 +80,7 @@ interface ServiceLog {
 const TYPE_LABELS: Record<string, { text: string; icon: React.ReactNode; variant: StatusPillVariant }> = {
     inquiry: { text: 'Лавлагаа', icon: <MessageSquare className="w-3 h-3" />, variant: 'info' },
     complaint: { text: 'Гомдол', icon: <AlertTriangle className="w-3 h-3" />, variant: 'danger' },
+    suggestion: { text: 'Санал', icon: <Lightbulb className="w-3 h-3" />, variant: 'brand' },
     maintenance: { text: 'Засвар', icon: <Wrench className="w-3 h-3" />, variant: 'pending' },
     handover: { text: 'Хүлээлцэх', icon: <ArrowRight className="w-3 h-3" />, variant: 'success' },
     payment: { text: 'Төлбөр', icon: <DollarSign className="w-3 h-3" />, variant: 'brand' },
@@ -95,11 +101,26 @@ const STATUS_LABELS: Record<string, { text: string; variant: StatusPillVariant }
     closed: { text: 'Хаагдсан', variant: 'neutral' },
 };
 
-function formatMoney(n: number | null): string {
-    if (n === null || n === undefined) return '—';
-    if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1) + ' тэрбум₮';
-    if (n >= 1_000_000) return (n / 1_000_000).toFixed(0) + ' сая₮';
-    return new Intl.NumberFormat('mn-MN').format(Math.round(n)) + '₮';
+const CHANNEL_LABELS: Record<string, string> = {
+    facebook: 'Facebook',
+    instagram: 'Instagram',
+    phone: 'Утас',
+    in_person: 'Биечлэн',
+    app: 'Апп',
+    other: 'Бусад',
+};
+
+// Шийдвэрлэх зорилтот хугацаа (цаг) — чухлалаар (SLA).
+const SLA_TARGET_HOURS: Record<string, number> = { urgent: 24, high: 48, medium: 120, low: 240 };
+
+/** Нээлттэй бичлэгийн SLA төлөв — хугацаа хэтэрсэн эсвэл үлдсэн цаг. */
+function slaInfo(log: ServiceLog): { text: string; variant: StatusPillVariant } | null {
+    if (log.status === 'resolved' || log.status === 'closed') return null;
+    const target = SLA_TARGET_HOURS[log.priority] ?? 120;
+    const hoursOpen = (Date.now() - new Date(log.created_at).getTime()) / 3_600_000;
+    if (hoursOpen > target) return { text: 'Хугацаа хэтэрсэн', variant: 'danger' };
+    const remaining = Math.max(0, Math.round(target - hoursOpen));
+    return { text: `${remaining}ц үлдсэн`, variant: hoursOpen > target * 0.75 ? 'pending' : 'neutral' };
 }
 
 function formatDate(s: string | null): string {
@@ -126,6 +147,7 @@ export default function CustomerServicePage() {
     const [loading, setLoading] = useState(true);
     const [statusFilter, setStatusFilter] = useState('');
     const [typeFilter, setTypeFilter] = useState('');
+    const [channelFilter, setChannelFilter] = useState('');
     const [search, setSearch] = useState('');
     const [showNewForm, setShowNewForm] = useState(false);
 
@@ -137,6 +159,7 @@ export default function CustomerServicePage() {
                 fetch(`/api/dashboard/service-logs?${new URLSearchParams({
                     ...(statusFilter ? { status: statusFilter } : {}),
                     ...(typeFilter ? { type: typeFilter } : {}),
+                    ...(channelFilter ? { channel: channelFilter } : {}),
                     ...(search ? { search } : {}),
                 })}`, { headers: shopHeaders() }),
             ]);
@@ -151,7 +174,7 @@ export default function CustomerServicePage() {
         } finally {
             setLoading(false);
         }
-    }, [statusFilter, typeFilter, search]);
+    }, [statusFilter, typeFilter, channelFilter, search]);
 
     useEffect(() => {
         const t = setTimeout(fetchData, search ? 300 : 0);
@@ -196,9 +219,9 @@ export default function CustomerServicePage() {
     return (
         <div>
             <PageHeader
-                eyebrow="Үйлчилгээ"
-                title="Үйлчилгээний хяналт"
-                subtitle="Гэрээний хяналт, төлбөрийн хоцрогдол, хүсэлт/гомдлын удирдлага"
+                eyebrow="Санал гомдол"
+                title="Санал гомдлын хяналт"
+                subtitle="Санал, гомдол, хүсэлт болон харилцагчийн сэтгэл ханамжийн удирдлага"
                 primaryAction={
                     <Button onClick={() => setShowNewForm(true)} variant="primary" size="md">
                         <Plus className="w-4 h-4" /> Шинэ хүсэлт
@@ -206,66 +229,47 @@ export default function CustomerServicePage() {
                 }
             />
 
-            {/* KPI Cards - Row 1: Гэрээ & Төлбөр */}
+            {/* Санхүүгийн үзүүлэлт (гэрээ, цуглуулалт, хоцрогдол) Санхүү/ERP хэсэгт байрлана */}
+            <div className="mb-6">
+                <Link
+                    href="/dashboard/finance"
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
+                >
+                    <Wallet className="w-4 h-4 text-brand" />
+                    Санхүүгийн үзүүлэлт (гэрээ, цуглуулалт, хоцрогдол)
+                    <span className="font-medium text-brand">Санхүү хэсэгт →</span>
+                </Link>
+            </div>
+
+            {/* KPI Cards: Санал гомдол & Сэтгэл ханамж */}
             <StatBar columns={4}>
-                <StatTile
-                    icon={<FileText className="w-4 h-4" />}
-                    accent="info"
-                    label="Идэвхтэй гэрээ"
-                    value={String(k.active_contracts || 0)}
-                    helper={`Нийт ${k.total_contracts || 0} / ${k.closed_contracts || 0} хаагдсан`}
-                />
-                <StatTile
-                    icon={<DollarSign className="w-4 h-4" />}
-                    accent="success"
-                    label="Цуглуулалт"
-                    value={`${k.collection_rate || 0}%`}
-                    helper={formatMoney(k.total_collected || 0)}
-                />
                 <StatTile
                     icon={<AlertTriangle className="w-4 h-4" />}
                     accent="danger"
-                    label="Хоцорсон төлбөр"
-                    value={formatMoney(k.total_overdue_amount || 0)}
-                    helper={`${k.overdue_contract_count || 0} гэрээ`}
+                    label="Нээлттэй гомдол"
+                    value={String(k.open_complaints || 0)}
+                    helper={k.avg_resolution_hours ? `Дундаж шийдвэрлэх: ${k.avg_resolution_hours} цаг` : `Нийт ${k.total_requests || 0} бичлэг`}
                 />
                 <StatTile
-                    icon={<Clock className="w-4 h-4" />}
-                    accent="warning"
-                    label="Ирэх 7 хоногт"
-                    value={`${k.upcoming_payments_7d || 0} төлбөр`}
-                    helper={`${k.overdue_payments || 0} хоцорсон`}
-                />
-            </StatBar>
-
-            {/* KPI Cards - Row 2: Үйлчилгээ & Сэтгэл ханамж */}
-            <StatBar columns={4}>
-                <StatTile
-                    icon={<Headphones className="w-4 h-4" />}
+                    icon={<Lightbulb className="w-4 h-4" />}
                     accent="brand"
-                    label="Нээлттэй хүсэлт"
-                    value={String(k.open_requests || 0)}
-                    helper={`Нийт ${k.total_requests || 0} / ${k.resolved_requests || 0} шийдвэрлэсэн`}
-                />
-                <StatTile
-                    icon={<Clock className="w-4 h-4" />}
-                    accent="info"
-                    label="Дундаж шийдвэрлэх"
-                    value={k.avg_resolution_hours ? `${k.avg_resolution_hours} цаг` : '—'}
+                    label="Санал"
+                    value={String(k.suggestions_count || 0)}
+                    helper={`Нээлттэй ${k.open_requests || 0} хүсэлт`}
                 />
                 <StatTile
                     icon={<ThumbsUp className="w-4 h-4" />}
                     accent="success"
                     label="NPS"
                     value={k.nps !== null ? String(k.nps) : '—'}
-                    helper={k.total_surveys > 0 ? `${k.total_surveys} судалгаа` : 'Мэдээлэл алга'}
+                    helper={k.total_surveys > 0 ? `${k.total_surveys} судалгааны хариулт` : 'Судалгаа алга'}
                 />
                 <StatTile
                     icon={<Star className="w-4 h-4" />}
                     accent="warning"
                     label="CSAT"
                     value={k.avg_csat !== null ? `${k.avg_csat}/5` : '—'}
-                    helper={k.avg_service_rating ? `Үнэлгээ: ${k.avg_service_rating}/5` : undefined}
+                    helper={k.avg_service_rating ? `Гомдлын үнэлгээ: ${k.avg_service_rating}/5` : undefined}
                 />
             </StatBar>
 
@@ -306,11 +310,32 @@ export default function CustomerServicePage() {
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">Бүх төрөл</SelectItem>
-                            <SelectItem value="inquiry">Лавлагаа</SelectItem>
                             <SelectItem value="complaint">Гомдол</SelectItem>
+                            <SelectItem value="suggestion">Санал</SelectItem>
+                            <SelectItem value="inquiry">Лавлагаа</SelectItem>
                             <SelectItem value="maintenance">Засвар</SelectItem>
                             <SelectItem value="payment">Төлбөр</SelectItem>
                             <SelectItem value="handover">Хүлээлцэх</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </label>
+                <label className="flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground/80 whitespace-nowrap">Суваг</span>
+                    <Select
+                        value={channelFilter || 'all'}
+                        onValueChange={(value) => setChannelFilter(value === 'all' ? '' : value)}
+                    >
+                        <SelectTrigger className="h-9 w-auto min-w-36 text-sm" aria-label="Сувгаар шүүх">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Бүх суваг</SelectItem>
+                            <SelectItem value="facebook">Facebook</SelectItem>
+                            <SelectItem value="instagram">Instagram</SelectItem>
+                            <SelectItem value="phone">Утас</SelectItem>
+                            <SelectItem value="in_person">Биечлэн</SelectItem>
+                            <SelectItem value="app">Апп</SelectItem>
+                            <SelectItem value="other">Бусад</SelectItem>
                         </SelectContent>
                     </Select>
                 </label>
@@ -325,7 +350,7 @@ export default function CustomerServicePage() {
                 ) : logs.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-20 text-center">
                         <Headphones className="w-12 h-12 text-muted-foreground/60 mb-3" />
-                        <p className="text-muted-foreground mb-1">Үйлчилгээний бүртгэл хоосон</p>
+                        <p className="text-muted-foreground mb-1">Санал гомдлын бүртгэл хоосон</p>
                         <p className="text-muted-foreground/60 text-sm mb-4">
                             Шинэ хүсэлт эсвэл гомдол бүртгэлнэ үү
                         </p>
@@ -342,6 +367,7 @@ export default function CustomerServicePage() {
                                     <th className="px-4 py-3 font-medium">Харилцагч</th>
                                     <th className="px-4 py-3 font-medium">Төрөл</th>
                                     <th className="px-4 py-3 font-medium">Чухлал</th>
+                                    <th className="px-4 py-3 font-medium">Суваг</th>
                                     <th className="px-4 py-3 font-medium">Хариуцагч</th>
                                     <th className="px-4 py-3 font-medium">Огноо</th>
                                     <th className="px-4 py-3 font-medium">Төлөв</th>
@@ -388,6 +414,9 @@ export default function CustomerServicePage() {
                                                     {prioInfo.text}
                                                 </StatusPill>
                                             </td>
+                                            <td className="px-4 py-3 text-muted-foreground text-xs">
+                                                {log.channel ? CHANNEL_LABELS[log.channel] || log.channel : '—'}
+                                            </td>
                                             <td className="px-4 py-3 text-foreground text-xs">
                                                 {log.assigned_to || '—'}
                                             </td>
@@ -398,6 +427,14 @@ export default function CustomerServicePage() {
                                                 <StatusPill variant={statusInfo.variant}>
                                                     {statusInfo.text}
                                                 </StatusPill>
+                                                {(() => {
+                                                    const sla = slaInfo(log);
+                                                    return sla ? (
+                                                        <div className="mt-1">
+                                                            <StatusPill variant={sla.variant}>{sla.text}</StatusPill>
+                                                        </div>
+                                                    ) : null;
+                                                })()}
                                             </td>
                                             <td className="px-4 py-3">
                                                 {(log.status === 'open' || log.status === 'in_progress') && (
@@ -464,8 +501,10 @@ function NewServiceLogModal({ open, onClose, onSubmit }: {
     const [form, setForm] = useState({
         subject: '',
         description: '',
-        type: 'inquiry',
+        type: 'complaint',
         priority: 'medium',
+        channel: 'phone',
+        customer_id: '',
         customer_name: '',
         customer_phone: '',
         assigned_to: '',
@@ -516,8 +555,9 @@ function NewServiceLogModal({ open, onClose, onSubmit }: {
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="inquiry">Лавлагаа</SelectItem>
                                     <SelectItem value="complaint">Гомдол</SelectItem>
+                                    <SelectItem value="suggestion">Санал</SelectItem>
+                                    <SelectItem value="inquiry">Лавлагаа</SelectItem>
                                     <SelectItem value="maintenance">Засвар</SelectItem>
                                     <SelectItem value="payment">Төлбөр</SelectItem>
                                     <SelectItem value="handover">Хүлээлцэх</SelectItem>
@@ -542,6 +582,34 @@ function NewServiceLogModal({ open, onClose, onSubmit }: {
                             </Select>
                         </FormField>
                     </div>
+
+                    <FormField label="Суваг" htmlFor="cs-channel">
+                        <Select
+                            value={form.channel}
+                            onValueChange={(value) => setForm({ ...form, channel: value })}
+                        >
+                            <SelectTrigger id="cs-channel" className="text-sm">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="facebook">Facebook</SelectItem>
+                                <SelectItem value="instagram">Instagram</SelectItem>
+                                <SelectItem value="phone">Утас</SelectItem>
+                                <SelectItem value="in_person">Биечлэн</SelectItem>
+                                <SelectItem value="app">Апп</SelectItem>
+                                <SelectItem value="other">Бусад</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </FormField>
+
+                    <CustomerSearch
+                        onSelect={(cust) => setForm(f => ({
+                            ...f,
+                            customer_id: cust?.id || '',
+                            customer_name: cust?.name || f.customer_name,
+                            customer_phone: cust?.phone || f.customer_phone,
+                        }))}
+                    />
 
                     <div className="grid grid-cols-2 gap-3">
                         <FormField label="Харилцагчийн нэр" htmlFor="cs-customer-name">
@@ -603,5 +671,77 @@ function NewServiceLogModal({ open, onClose, onSubmit }: {
                 </form>
             </DialogContent>
         </Dialog>
+    );
+}
+
+// CRM харилцагч хайх typeahead — service_logs.customer_id-д холбоно (заавал биш).
+function CustomerSearch({ onSelect }: {
+    onSelect: (c: { id: string; name: string; phone: string | null } | null) => void;
+}) {
+    const [q, setQ] = useState('');
+    const [picked, setPicked] = useState('');
+    const [results, setResults] = useState<Array<{ id: string; name: string; phone: string | null }>>([]);
+    const [open, setOpen] = useState(false);
+
+    useEffect(() => {
+        if (picked) return;
+        const term = q.trim();
+        if (term.length < 2) { setResults([]); return; }
+        let cancel = false;
+        const t = setTimeout(async () => {
+            try {
+                const res = await fetch(`/api/dashboard/customers?search=${encodeURIComponent(term)}&limit=8`, { headers: shopHeaders() });
+                const d = await res.json();
+                const list = (d.customers || d.data || d.rows || []) as Array<{ id: string; name: string; phone: string | null }>;
+                if (!cancel) { setResults(list.slice(0, 8)); setOpen(true); }
+            } catch { /* ignore */ }
+        }, 300);
+        return () => { cancel = true; clearTimeout(t); };
+    }, [q, picked]);
+
+    if (picked) {
+        return (
+            <FormField label="Холбосон харилцагч" htmlFor="cs-cust-picked">
+                <div className="flex items-center justify-between rounded-md border border-border bg-surface-2 px-3 py-2">
+                    <span className="text-sm text-foreground truncate flex items-center gap-1.5">
+                        <User className="w-3.5 h-3.5 text-muted-foreground/70" /> {picked}
+                    </span>
+                    <button type="button" onClick={() => { setPicked(''); setQ(''); onSelect(null); }} className="text-muted-foreground hover:text-foreground p-1" title="Цэвэрлэх">
+                        <X className="w-3.5 h-3.5" />
+                    </button>
+                </div>
+            </FormField>
+        );
+    }
+
+    return (
+        <FormField label="Харилцагч холбох (заавал биш)" htmlFor="cs-cust-search">
+            <div className="relative">
+                <input
+                    id="cs-cust-search"
+                    type="text"
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    onFocus={() => results.length && setOpen(true)}
+                    placeholder="CRM харилцагчийг нэрээр хайх..."
+                    className="w-full px-3 py-2 bg-surface-2 border border-border rounded-md text-sm text-foreground placeholder:text-muted-foreground/60 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                />
+                {open && q.trim().length >= 2 && results.length > 0 && (
+                    <div className="absolute z-10 mt-1 w-full rounded-md border border-border bg-surface shadow-lg max-h-52 overflow-y-auto">
+                        {results.map((c) => (
+                            <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => { setPicked(c.name); setOpen(false); onSelect(c); }}
+                                className="w-full text-left px-3 py-2 text-sm text-foreground hover:bg-surface-2 flex items-center gap-2"
+                            >
+                                <User className="w-3.5 h-3.5 text-muted-foreground/70 shrink-0" />
+                                <span className="truncate">{c.name}{c.phone ? ` • ${c.phone}` : ''}</span>
+                            </button>
+                        ))}
+                    </div>
+                )}
+            </div>
+        </FormField>
     );
 }

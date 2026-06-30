@@ -8,7 +8,7 @@ const FEATURES = [
     {
         icon: MessageSquare,
         title: 'AI хариулагч',
-        desc: 'Facebook, Instagram Messenger дээр 24/7 хариулж, лийд цуглуулж, үзлэг товлоно.',
+        desc: 'Facebook, Instagram Messenger дээр 24/7 хариулж, лийд цуглуулж, уулзалт товлоно.',
     },
     {
         icon: Building2,

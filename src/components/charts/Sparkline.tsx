@@ -57,10 +57,11 @@ export function Sparkline({
         return data as Array<Record<string, number>>;
     }, [data, dataKey]);
 
-    if (chartData.length === 0) return null;
-
+    // Hook-уудыг early return-ээс ӨМНӨ дуудна (rules-of-hooks).
     const gradientId = React.useId();
     const margin = { top: 2, right: 1, bottom: 2, left: 1 };
+
+    if (chartData.length === 0) return null;
 
     return (
         <div

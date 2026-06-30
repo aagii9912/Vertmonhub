@@ -142,8 +142,8 @@ function getEventTitle(event: WebhookEvent): string {
         'lead.status_changed': '📋 Лийдийн статус солигдлоо',
         'contract.signed': '✍️ Гэрээ байгуулагдлаа',
         'contract.paid': '💰 Төлбөр хийгдлээ',
-        'viewing.scheduled': '📅 Үзлэг товлолоо',
-        'viewing.completed': '👁️ Үзлэг дуусгалаа',
+        'viewing.scheduled': '📅 Уулзалт товлолоо',
+        'viewing.completed': '👁️ Уулзалт дуусгалаа',
     };
     return titles[event] || event;
 }

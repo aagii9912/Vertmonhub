@@ -448,7 +448,7 @@ export default function MarketingROIPage() {
                 ),
             },
         ],
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
         [],
     );
 

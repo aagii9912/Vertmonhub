@@ -57,7 +57,7 @@ type StatusPillVariant = 'success' | 'danger' | 'pending' | 'info' | 'active' | 
 const statusConfig: Record<LeadStatus, { variant: StatusPillVariant; label: string; icon: React.ElementType }> = {
     new: { variant: 'info', label: 'Шинэ', icon: AlertCircle },
     contacted: { variant: 'brand', label: 'Холбогдсон', icon: Phone },
-    viewing_scheduled: { variant: 'pending', label: 'Үзлэг товлосон', icon: Calendar },
+    viewing_scheduled: { variant: 'pending', label: 'Уулзалт товлосон', icon: Calendar },
     offered: { variant: 'info', label: 'Санал тавьсан', icon: DollarSign },
     negotiating: { variant: 'pending', label: 'Хэлэлцэж байна', icon: MessageSquare },
     closed_won: { variant: 'success', label: 'Амжилттай', icon: CheckCircle2 },

@@ -66,7 +66,7 @@ export function EntityAttachments({ entityType, entityId }: Props) {
                 {items.map((a) => {
                     const isImg = (a.mime_type || '').startsWith('image/');
                     return isImg ? (
-                        // eslint-disable-next-line @next/next/no-img-element
+                         
                         <a key={a.id} href={a.url} target="_blank" rel="noreferrer" title={a.file_name || ''}>
                             <img src={a.url} alt={a.file_name || ''} className="h-24 w-24 object-cover rounded-lg border border-border/60 hover:opacity-90 transition" />
                         </a>

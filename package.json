@@ -9,7 +9,7 @@
     "dev": "PORT=3001 HOST=127.0.0.1 NODE_OPTIONS='--no-network-family-autoselection' next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint .",
+    "lint": "eslint .",
     "analyze": "ANALYZE=true next build",
     "test": "vitest run",
     "test:watch": "vitest",

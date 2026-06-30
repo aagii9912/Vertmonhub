@@ -102,7 +102,7 @@ export function DashboardMock() {
                         {/* Pipeline жижиг мөрүүд */}
                         <div className="space-y-2 border-t border-border pt-3">
                             {[
-                                { name: 'Б. Ариунаа · 2 өрөө', stage: 'Үзлэг', tone: 'pending' as const },
+                                { name: 'Б. Ариунаа · 2 өрөө', stage: 'Уулзалт', tone: 'pending' as const },
                                 { name: 'Г. Тэмүүлэн · 3 өрөө', stage: 'Гэрээ', tone: 'success' as const },
                             ].map((row) => (
                                 <div key={row.name} className="flex items-center gap-2">

@@ -125,10 +125,10 @@ export const WORKSPACES: Workspace[] = [
                             { name: 'Pipeline', href: '/dashboard/leads/pipeline' },
                         ],
                     },
-                    { name: 'Үзлэг', href: '/dashboard/viewings', icon: Eye, module: 'viewings' },
+                    { name: 'Уулзалт', href: '/dashboard/viewings', icon: Eye, module: 'viewings' },
                     { name: 'Гэрээ', href: '/dashboard/contracts', icon: FileText, module: 'contracts' },
                     { name: 'Харилцагч', href: '/dashboard/customers', icon: Users, module: 'customers' },
-                    { name: 'Үйлчилгээ', href: '/dashboard/customer-service', icon: Headphones, badge: 'Шинэ', module: 'customer-service' },
+                    { name: 'Санал гомдол', href: '/dashboard/customer-service', icon: Headphones, badge: 'Шинэ', module: 'customer-service' },
                 ],
             },
             {

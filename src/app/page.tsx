@@ -10,7 +10,7 @@ import { LandingFooter } from '@/components/landing/LandingFooter';
 
 const TITLE = 'Vertmon Hub — Үл хөдлөхийн AI борлуулалт ба CRM платформ';
 const DESCRIPTION =
-    'Facebook, Instagram Messenger дээр AI борлуулагч 24/7 хариулж, лийд цуглуулна. Үзлэг товлох, гэрээ хянах, санхүү, тайлан — бүгд нэг ухаалаг системд.';
+    'Facebook, Instagram Messenger дээр AI борлуулагч 24/7 хариулж, лийд цуглуулна. Уулзалт товлох, гэрээ хянах, санхүү, тайлан — бүгд нэг ухаалаг системд.';
 
 export const metadata: Metadata = {
     title: TITLE,

@@ -56,7 +56,7 @@ export default function ProjectFinancePage() {
         'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
     });
 
-    useEffect(() => { loadAll(); /* eslint-disable-next-line */ }, []);
+    useEffect(() => { loadAll();   }, []);
 
     async function loadAll() {
         setLoading(true);

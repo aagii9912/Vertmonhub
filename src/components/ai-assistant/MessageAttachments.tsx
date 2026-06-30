@@ -15,7 +15,7 @@ export function MessageAttachments({ attachments }: { attachments: Att[] }) {
                 const isImg = (a.mimeType || '').startsWith('image/');
                 if (isImg) {
                     return (
-                        // eslint-disable-next-line @next/next/no-img-element
+                         
                         <a key={i} href={a.url} target="_blank" rel="noreferrer" className="block">
                             <img src={a.url} alt={a.name} className="h-28 w-28 object-cover rounded-xl border border-border/60 shadow-sm hover:opacity-90 transition" />
                         </a>

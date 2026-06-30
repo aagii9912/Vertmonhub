@@ -67,7 +67,7 @@ const STAGE_LABELS: Record<LifecycleStage, string> = {
     prospect: 'Шинэ сонирхогч',
     engaged: 'Идэвхтэй',
     qualified: 'Шалгарсан',
-    viewing: 'Үзлэг',
+    viewing: 'Уулзалт',
     negotiating: 'Хэлэлцээр',
     won: 'Амжилттай',
     lost: 'Алдсан',
@@ -180,7 +180,7 @@ export default function CustomersPage() {
 
     useEffect(() => {
         fetchHealth();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+         
     }, []);
 
     async function fetchHealth() {

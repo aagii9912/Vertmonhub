@@ -509,7 +509,7 @@ function ContractDrawer({
     const tabs = [
         { id: 'info' as const, label: 'Мэдээлэл', icon: <FileText className="w-3.5 h-3.5" /> },
         { id: 'payments' as const, label: 'Төлбөр', icon: <DollarSign className="w-3.5 h-3.5" /> },
-        { id: 'service' as const, label: 'Үйлчилгээ', icon: <Phone className="w-3.5 h-3.5" /> },
+        { id: 'service' as const, label: 'Санал гомдол', icon: <Phone className="w-3.5 h-3.5" /> },
         { id: 'handover' as const, label: 'Хүлээлцэх', icon: <CheckCircle2 className="w-3.5 h-3.5" /> },
     ];
 

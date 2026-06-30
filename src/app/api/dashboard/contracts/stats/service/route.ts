@@ -43,6 +43,8 @@ export async function GET() {
         const sl = serviceLogs || [];
         const openRequests = sl.filter(x => x.status === 'open' || x.status === 'in_progress').length;
         const resolvedRequests = sl.filter(x => x.status === 'resolved' || x.status === 'closed').length;
+        const openComplaints = sl.filter(x => x.type === 'complaint' && (x.status === 'open' || x.status === 'in_progress')).length;
+        const suggestionsCount = sl.filter(x => x.type === 'suggestion').length;
 
         // Дундаж шийдвэрлэх хугацаа (цаг)
         const resolvedWithTime = sl.filter(x => x.resolved_at && x.created_at);
@@ -61,26 +63,40 @@ export async function GET() {
             ? Math.round((rated.reduce((s, x) => s + (x.satisfaction_rating || 0), 0) / rated.length) * 10) / 10
             : null;
 
-        // 3. NPS / CSAT
-        const { data: surveys } = await supabase
-            .from('satisfaction_surveys')
-            .select('nps_score, csat_score')
-            .eq('shop_id', shopId);
+        // 3. NPS / CSAT — бодит судалгааны хариултаас (surveys + survey_responses, 1-5 rating).
+        //    (Хуучин satisfaction_surveys хүснэгт хоосон тул үргэлж '—' гардаг байсан.)
+        const [{ data: surveyDefs }, { data: surveyResp }] = await Promise.all([
+            supabase.from('surveys').select('id, questions').eq('shop_id', shopId),
+            supabase.from('survey_responses').select('answers').eq('shop_id', shopId),
+        ]);
 
-        const sv = surveys || [];
-        const npsScores = sv.filter(x => x.nps_score !== null).map(x => x.nps_score!);
-        const csatScores = sv.filter(x => x.csat_score !== null).map(x => x.csat_score!);
-
-        let nps: number | null = null;
-        if (npsScores.length > 0) {
-            const promoters = npsScores.filter(s => s >= 9).length;
-            const detractors = npsScores.filter(s => s <= 6).length;
-            nps = Math.round(((promoters - detractors) / npsScores.length) * 100);
+        // rating төрлийн асуултын id-уудыг цуглуулна
+        const ratingQIds = new Set<string>();
+        for (const s of surveyDefs || []) {
+            const qs = (s.questions as Array<{ id?: string; type?: string }> | null) || [];
+            for (const q of qs) {
+                if (q?.type === 'rating' && q?.id) ratingQIds.add(String(q.id));
+            }
         }
-
-        const avgCsat = csatScores.length > 0
-            ? Math.round((csatScores.reduce((a, b) => a + b, 0) / csatScores.length) * 10) / 10
-            : null;
+        // бүх rating хариулт (1-5)
+        const ratings: number[] = [];
+        for (const r of surveyResp || []) {
+            const ans = (r.answers || {}) as Record<string, unknown>;
+            for (const qid of ratingQIds) {
+                const n = Number(ans[qid]);
+                if (Number.isFinite(n) && n >= 1 && n <= 5) ratings.push(n);
+            }
+        }
+        let nps: number | null = null;
+        let avgCsat: number | null = null;
+        if (ratings.length > 0) {
+            // 1-5 шатлалаас: 5 = сурталчлагч, 4 = идэвхгүй, ≤3 = шүүмжлэгч
+            const promoters = ratings.filter(n => n >= 5).length;
+            const detractors = ratings.filter(n => n <= 3).length;
+            nps = Math.round(((promoters - detractors) / ratings.length) * 100);
+            avgCsat = Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10;
+        }
+        const totalSurveys = (surveyResp || []).length;
 
         // 4. Төлбөрийн хуваарь
         const { data: payments } = await supabase
@@ -112,17 +128,19 @@ export async function GET() {
                 overdue_contract_count: overdueContracts.length,
                 total_overdue_amount: totalOverdueAmount,
 
-                // Үйлчилгээ
+                // Санал гомдол
                 open_requests: openRequests,
                 resolved_requests: resolvedRequests,
                 total_requests: sl.length,
+                open_complaints: openComplaints,
+                suggestions_count: suggestionsCount,
                 avg_resolution_hours: avgResolutionHours,
                 avg_service_rating: avgServiceRating,
 
                 // Сэтгэл ханамж
                 nps,
                 avg_csat: avgCsat,
-                total_surveys: sv.length,
+                total_surveys: totalSurveys,
 
                 // Төлбөрийн хуваарь
                 overdue_payments: overduePayments,
@@ -144,6 +162,7 @@ function emptyKPI() {
         total_sales: 0, total_collected: 0, collection_rate: 0,
         overdue_contract_count: 0, total_overdue_amount: 0,
         open_requests: 0, resolved_requests: 0, total_requests: 0,
+        open_complaints: 0, suggestions_count: 0,
         avg_resolution_hours: null, avg_service_rating: null,
         nps: null, avg_csat: null, total_surveys: 0,
         overdue_payments: 0, upcoming_payments_7d: 0,
