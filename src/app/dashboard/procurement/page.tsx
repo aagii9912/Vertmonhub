@@ -3,12 +3,22 @@
 import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
-import { Building2, Wallet, AlertCircle, TrendingDown, Plus, X, Banknote } from 'lucide-react';
-import { formatMNT as formatMNTShared } from '@/lib/utils/currency';
+import { DataTable, type DataTableColumn } from '@/components/ui/DataTable';
+import { Money } from '@/components/ui/Money';
+import { DateText } from '@/components/ui/DateText';
+import { StatusPill } from '@/components/ui/StatusPill';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogFooter,
+    DialogTitle,
+} from '@/components/ui/Dialog';
+import { FormField } from '@/components/ui/FormField';
+import { Building2, Wallet, AlertCircle, TrendingDown, Plus, Banknote } from 'lucide-react';
 
 interface Summary { totalBills: number; totalPayable: number; outstanding: number; overdueAmount: number; monthSpend: number; }
 interface Vendor { id: string; name: string; phone: string | null; }
@@ -20,16 +30,12 @@ interface Bill {
     vendors?: { name: string } | null; projects?: { name: string } | null;
 }
 
-function formatMNT(n: number): string {
-    return formatMNTShared(n, { compact: true });
-}
-
-const STATUS: Record<string, { label: string; variant: 'success' | 'warning' | 'danger' | 'default' | 'info' }> = {
-    draft: { label: 'Ноорог', variant: 'default' },
-    pending: { label: 'Хүлээгдэж буй', variant: 'warning' },
+const STATUS: Record<string, { label: string; variant: 'success' | 'danger' | 'pending' | 'info' | 'neutral' }> = {
+    draft: { label: 'Ноорог', variant: 'neutral' },
+    pending: { label: 'Хүлээгдэж буй', variant: 'pending' },
     partial: { label: 'Хэсэгчилсэн', variant: 'info' },
     paid: { label: 'Төлсөн', variant: 'success' },
-    cancelled: { label: 'Цуцалсан', variant: 'default' },
+    cancelled: { label: 'Цуцалсан', variant: 'neutral' },
 };
 
 export default function ProcurementPage() {
@@ -141,6 +147,55 @@ export default function ProcurementPage() {
         } catch (e) { setError(e instanceof Error ? e.message : 'Алдаа'); } finally { setSaving(false); }
     }
 
+    const billColumns: DataTableColumn<Bill>[] = [
+        {
+            key: 'vendor',
+            header: 'Нийлүүлэгч',
+            cell: (b) => <span className="font-medium text-foreground">{b.vendors?.name || '—'}</span>,
+        },
+        {
+            key: 'project',
+            header: 'Төсөл',
+            cell: (b) => <span className="text-muted-foreground">{b.projects?.name || '—'}</span>,
+        },
+        {
+            key: 'total',
+            header: 'Дүн',
+            cell: (b) => <Money value={Number(b.total_amount)} compact />,
+        },
+        {
+            key: 'outstanding',
+            header: 'Үлдэгдэл',
+            cell: (b) => <Money value={Number(b.total_amount) - Number(b.paid_amount)} compact />,
+        },
+        {
+            key: 'due',
+            header: 'Хугацаа',
+            cell: (b) => <DateText value={b.due_date} className="text-muted-foreground" />,
+        },
+        {
+            key: 'status',
+            header: 'Төлөв',
+            cell: (b) => {
+                const st = STATUS[b.status] || STATUS.pending;
+                return <StatusPill variant={st.variant}>{st.label}</StatusPill>;
+            },
+        },
+        {
+            key: 'action',
+            header: 'Үйлдэл',
+            align: 'right',
+            cell: (b) => {
+                const outstanding = Number(b.total_amount) - Number(b.paid_amount);
+                return b.status !== 'paid' && b.status !== 'cancelled' ? (
+                    <Button variant="secondary" size="sm" onClick={() => { setPayBill(b); setPayForm({ amount: String(outstanding), method: 'bank' }); setError(null); }}>
+                        Төлөх
+                    </Button>
+                ) : null;
+            },
+        },
+    ];
+
     return (
         <div>
             <PageHeader
@@ -173,58 +228,23 @@ export default function ProcurementPage() {
                 <>
                     {summary && (
                         <StatBar columns={4}>
-                            <StatTile label="Нийт өглөг" value={formatMNT(summary.totalPayable)} helper={`${summary.totalBills} нэхэмжлэх`} icon={<Banknote className="w-5 h-5" />} accent="brand" />
-                            <StatTile label="Үлдэгдэл өглөг" value={formatMNT(summary.outstanding)} helper="Төлөгдөөгүй" icon={<Wallet className="w-5 h-5" />} accent="warning" />
-                            <StatTile label="Хугацаа хэтэрсэн" value={formatMNT(summary.overdueAmount)} helper="Яаралтай төлөх" icon={<AlertCircle className="w-5 h-5" />} accent="danger" />
-                            <StatTile label="Энэ сарын зарлага" value={formatMNT(summary.monthSpend)} helper="Бодит төлөлт" icon={<TrendingDown className="w-5 h-5" />} accent="info" />
+                            <StatTile label="Нийт өглөг" value={<Money value={summary.totalPayable} compact />} helper={`${summary.totalBills} нэхэмжлэх`} icon={<Banknote className="w-5 h-5" />} accent="brand" />
+                            <StatTile label="Үлдэгдэл өглөг" value={<Money value={summary.outstanding} compact />} helper="Төлөгдөөгүй" icon={<Wallet className="w-5 h-5" />} accent="warning" />
+                            <StatTile label="Хугацаа хэтэрсэн" value={<Money value={summary.overdueAmount} compact />} helper="Яаралтай төлөх" icon={<AlertCircle className="w-5 h-5" />} accent="danger" />
+                            <StatTile label="Энэ сарын зарлага" value={<Money value={summary.monthSpend} compact />} helper="Бодит төлөлт" icon={<TrendingDown className="w-5 h-5" />} accent="info" />
                         </StatBar>
                     )}
 
                     <Card>
                         <div className="p-5">
                             <h3 className="heading-section text-sm text-foreground mb-4">Нэхэмжлэхүүд</h3>
-                            {bills.length === 0 ? (
-                                <p className="text-sm text-muted-foreground py-6 text-center">Нэхэмжлэх бүртгэгдээгүй байна</p>
-                            ) : (
-                                <div className="overflow-x-auto">
-                                    <table className="w-full">
-                                        <thead className="border-b border-border">
-                                            <tr className="text-left text-[11px] uppercase tracking-[0.08em] text-muted-foreground/80">
-                                                <th className="py-2 pr-4">Нийлүүлэгч</th>
-                                                <th className="py-2 pr-4">Төсөл</th>
-                                                <th className="py-2 pr-4">Дүн</th>
-                                                <th className="py-2 pr-4">Үлдэгдэл</th>
-                                                <th className="py-2 pr-4">Хугацаа</th>
-                                                <th className="py-2 pr-4">Төлөв</th>
-                                                <th className="py-2 text-right">Үйлдэл</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-border/60">
-                                            {bills.map((b) => {
-                                                const st = STATUS[b.status] || STATUS.pending;
-                                                const outstanding = Number(b.total_amount) - Number(b.paid_amount);
-                                                return (
-                                                    <tr key={b.id} className="text-sm">
-                                                        <td className="py-3 pr-4 font-medium text-foreground">{b.vendors?.name || '—'}</td>
-                                                        <td className="py-3 pr-4 text-muted-foreground">{b.projects?.name || '—'}</td>
-                                                        <td className="py-3 pr-4 tabular-nums">{formatMNT(Number(b.total_amount))}</td>
-                                                        <td className="py-3 pr-4 tabular-nums">{formatMNT(outstanding)}</td>
-                                                        <td className="py-3 pr-4 text-muted-foreground">{b.due_date || '—'}</td>
-                                                        <td className="py-3 pr-4"><Badge variant={st.variant} size="sm">{st.label}</Badge></td>
-                                                        <td className="py-3 text-right">
-                                                            {b.status !== 'paid' && b.status !== 'cancelled' && (
-                                                                <Button variant="secondary" size="sm" onClick={() => { setPayBill(b); setPayForm({ amount: String(outstanding), method: 'bank' }); setError(null); }}>
-                                                                    Төлөх
-                                                                </Button>
-                                                            )}
-                                                        </td>
-                                                    </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            )}
+                            <DataTable
+                                columns={billColumns}
+                                data={bills}
+                                getRowId={(b) => b.id}
+                                caption="Нэхэмжлэхүүд"
+                                emptyMessage="Нэхэмжлэх бүртгэгдээгүй байна"
+                            />
                         </div>
                     </Card>
 
@@ -246,109 +266,112 @@ export default function ProcurementPage() {
             )}
 
             {/* Vendor modal */}
-            {showVendor && (
-                <Modal title="Нийлүүлэгч нэмэх" onClose={() => setShowVendor(false)} error={error}
-                    footer={<Button variant="primary" size="sm" onClick={addVendor} isLoading={saving} disabled={saving}>Хадгалах</Button>}>
-                    <Field label="Нэр">
-                        <input className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={vendorForm.name} onChange={e => setVendorForm(f => ({ ...f, name: e.target.value }))} placeholder="Нийлүүлэгчийн нэр" />
-                    </Field>
-                    <Field label="Утас">
-                        <input className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={vendorForm.phone} onChange={e => setVendorForm(f => ({ ...f, phone: e.target.value }))} placeholder="99119911" />
-                    </Field>
-                </Modal>
-            )}
+            <Dialog open={showVendor} onOpenChange={(o) => { if (!o) setShowVendor(false); }}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Нийлүүлэгч нэмэх</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        {error && (
+                            <div className="p-3 bg-status-danger-soft border border-status-danger/30 rounded-lg text-status-danger text-sm flex items-center gap-2">
+                                <AlertCircle className="w-4 h-4" />{error}
+                            </div>
+                        )}
+                        <FormField label="Нэр" htmlFor="vendor-name">
+                            <input id="vendor-name" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={vendorForm.name} onChange={e => setVendorForm(f => ({ ...f, name: e.target.value }))} placeholder="Нийлүүлэгчийн нэр" />
+                        </FormField>
+                        <FormField label="Утас" htmlFor="vendor-phone">
+                            <input id="vendor-phone" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={vendorForm.phone} onChange={e => setVendorForm(f => ({ ...f, phone: e.target.value }))} placeholder="99119911" />
+                        </FormField>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="secondary" size="sm" onClick={() => setShowVendor(false)}>Цуцлах</Button>
+                        <Button variant="primary" size="sm" onClick={addVendor} isLoading={saving} disabled={saving}>Хадгалах</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* Bill modal */}
-            {showBill && (
-                <Modal title="Нэхэмжлэх үүсгэх" onClose={() => setShowBill(false)} error={error}
-                    footer={<Button variant="primary" size="sm" onClick={addBill} isLoading={saving} disabled={saving}>Хадгалах</Button>}>
-                    <Field label="Нийлүүлэгч">
-                        <select className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={billForm.vendor_id} onChange={e => setBillForm(f => ({ ...f, vendor_id: e.target.value }))}>
-                            <option value="">— Сонгох —</option>
-                            {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
-                        </select>
-                    </Field>
-                    <Field label="Төсөл">
-                        <select className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={billForm.project_id} onChange={e => setBillForm(f => ({ ...f, project_id: e.target.value }))}>
-                            <option value="">— Сонгох —</option>
-                            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                        </select>
-                    </Field>
-                    <Field label="Зардлын данс">
-                        <select className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={billForm.account_id} onChange={e => setBillForm(f => ({ ...f, account_id: e.target.value }))}>
-                            <option value="">— Сонгох —</option>
-                            {accounts.filter(a => a.code >= '5000').map(a => <option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}
-                        </select>
-                    </Field>
-                    <Field label="Тайлбар">
-                        <input className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={billForm.description} onChange={e => setBillForm(f => ({ ...f, description: e.target.value }))} placeholder="Барааны/үйлчилгээний тайлбар" />
-                    </Field>
-                    <div className="grid grid-cols-2 gap-3">
-                        <Field label="Дүн (₮)">
-                            <input type="number" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={billForm.amount} onChange={e => setBillForm(f => ({ ...f, amount: e.target.value }))} placeholder="0" />
-                        </Field>
-                        <Field label="НӨАТ (₮)">
-                            <input type="number" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={billForm.vat_amount} onChange={e => setBillForm(f => ({ ...f, vat_amount: e.target.value }))} placeholder="0" />
-                        </Field>
+            <Dialog open={showBill} onOpenChange={(o) => { if (!o) setShowBill(false); }}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Нэхэмжлэх үүсгэх</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        {error && (
+                            <div className="p-3 bg-status-danger-soft border border-status-danger/30 rounded-lg text-status-danger text-sm flex items-center gap-2">
+                                <AlertCircle className="w-4 h-4" />{error}
+                            </div>
+                        )}
+                        <FormField label="Нийлүүлэгч" htmlFor="bill-vendor">
+                            <select id="bill-vendor" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={billForm.vendor_id} onChange={e => setBillForm(f => ({ ...f, vendor_id: e.target.value }))}>
+                                <option value="">— Сонгох —</option>
+                                {vendors.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                            </select>
+                        </FormField>
+                        <FormField label="Төсөл" htmlFor="bill-project">
+                            <select id="bill-project" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={billForm.project_id} onChange={e => setBillForm(f => ({ ...f, project_id: e.target.value }))}>
+                                <option value="">— Сонгох —</option>
+                                {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                            </select>
+                        </FormField>
+                        <FormField label="Зардлын данс" htmlFor="bill-account">
+                            <select id="bill-account" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={billForm.account_id} onChange={e => setBillForm(f => ({ ...f, account_id: e.target.value }))}>
+                                <option value="">— Сонгох —</option>
+                                {accounts.filter(a => a.code >= '5000').map(a => <option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}
+                            </select>
+                        </FormField>
+                        <FormField label="Тайлбар" htmlFor="bill-description">
+                            <input id="bill-description" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={billForm.description} onChange={e => setBillForm(f => ({ ...f, description: e.target.value }))} placeholder="Барааны/үйлчилгээний тайлбар" />
+                        </FormField>
+                        <div className="grid grid-cols-2 gap-3">
+                            <FormField label="Дүн (₮)" htmlFor="bill-amount">
+                                <input id="bill-amount" type="number" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={billForm.amount} onChange={e => setBillForm(f => ({ ...f, amount: e.target.value }))} placeholder="0" />
+                            </FormField>
+                            <FormField label="НӨАТ (₮)" htmlFor="bill-vat">
+                                <input id="bill-vat" type="number" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={billForm.vat_amount} onChange={e => setBillForm(f => ({ ...f, vat_amount: e.target.value }))} placeholder="0" />
+                            </FormField>
+                        </div>
+                        <FormField label="Төлөх хугацаа" htmlFor="bill-due">
+                            <input id="bill-due" type="date" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={billForm.due_date} onChange={e => setBillForm(f => ({ ...f, due_date: e.target.value }))} />
+                        </FormField>
                     </div>
-                    <Field label="Төлөх хугацаа">
-                        <input type="date" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={billForm.due_date} onChange={e => setBillForm(f => ({ ...f, due_date: e.target.value }))} />
-                    </Field>
-                </Modal>
-            )}
+                    <DialogFooter>
+                        <Button variant="secondary" size="sm" onClick={() => setShowBill(false)}>Цуцлах</Button>
+                        <Button variant="primary" size="sm" onClick={addBill} isLoading={saving} disabled={saving}>Хадгалах</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             {/* Pay modal */}
-            {payBill && (
-                <Modal title="Нэхэмжлэх төлөх" onClose={() => setPayBill(null)} error={error}
-                    footer={<Button variant="primary" size="sm" onClick={submitPay} isLoading={saving} disabled={saving}>Төлөх</Button>}>
-                    <Field label="Дүн (₮)">
-                        <input type="number" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={payForm.amount} onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))} />
-                    </Field>
-                    <Field label="Хэлбэр">
-                        <select className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={payForm.method} onChange={e => setPayForm(f => ({ ...f, method: e.target.value }))}>
-                            <option value="bank">Банк</option>
-                            <option value="cash">Бэлэн</option>
-                            <option value="barter">Бартер</option>
-                        </select>
-                    </Field>
-                </Modal>
-            )}
-        </div>
-    );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-    return (
-        <div>
-            <label className="block text-sm font-medium text-foreground mb-1">{label}</label>
-            {children}
-        </div>
-    );
-}
-
-function Modal({ title, onClose, error, children, footer }: {
-    title: string; onClose: () => void; error: string | null; children: React.ReactNode; footer: React.ReactNode;
-}) {
-    return (
-        <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-surface rounded-xl border border-border w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto">
-                <div className="flex items-center justify-between p-5 border-b border-border">
-                    <h2 className="heading-section text-base text-foreground">{title}</h2>
-                    <button onClick={onClose} className="p-2 hover:bg-surface-2 rounded-md"><X className="w-5 h-5 text-muted-foreground" /></button>
-                </div>
-                <div className="p-5 space-y-4">
-                    {error && (
-                        <div className="p-3 bg-status-danger-soft border border-status-danger/30 rounded-lg text-status-danger text-sm flex items-center gap-2">
-                            <AlertCircle className="w-4 h-4" />{error}
-                        </div>
-                    )}
-                    {children}
-                </div>
-                <div className="flex justify-end gap-3 p-5 border-t border-border">
-                    <Button variant="secondary" size="sm" onClick={onClose}>Цуцлах</Button>
-                    {footer}
-                </div>
-            </div>
+            <Dialog open={!!payBill} onOpenChange={(o) => { if (!o) setPayBill(null); }}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Нэхэмжлэх төлөх</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        {error && (
+                            <div className="p-3 bg-status-danger-soft border border-status-danger/30 rounded-lg text-status-danger text-sm flex items-center gap-2">
+                                <AlertCircle className="w-4 h-4" />{error}
+                            </div>
+                        )}
+                        <FormField label="Дүн (₮)" htmlFor="pay-amount">
+                            <input id="pay-amount" type="number" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={payForm.amount} onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))} />
+                        </FormField>
+                        <FormField label="Хэлбэр" htmlFor="pay-method">
+                            <select id="pay-method" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={payForm.method} onChange={e => setPayForm(f => ({ ...f, method: e.target.value }))}>
+                                <option value="bank">Банк</option>
+                                <option value="cash">Бэлэн</option>
+                                <option value="barter">Бартер</option>
+                            </select>
+                        </FormField>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="secondary" size="sm" onClick={() => setPayBill(null)}>Цуцлах</Button>
+                        <Button variant="primary" size="sm" onClick={submitPay} isLoading={saving} disabled={saving}>Төлөх</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }

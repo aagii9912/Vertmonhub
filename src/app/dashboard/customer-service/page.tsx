@@ -2,14 +2,38 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import {
-    Headphones, AlertTriangle, CheckCircle2, Clock, TrendingUp,
-    DollarSign, Star, Loader2, Plus, Search, Filter,
+    Headphones, AlertTriangle, CheckCircle2, Clock,
+    DollarSign, Star, Loader2, Plus,
     Phone, User, FileText, MessageSquare, Wrench, ArrowRight,
-    BarChart3, ThumbsUp,
+    ThumbsUp,
 } from 'lucide-react';
 import { formatShortDate } from '@/lib/utils/date';
+import { PageHeader } from '@/components/dashboard/PageHeader';
+import { StatBar, StatTile } from '@/components/dashboard/StatBar';
+import { FilterBar } from '@/components/dashboard/FilterBar';
+import { Button } from '@/components/ui/Button';
+import { StatusPill } from '@/components/ui/StatusPill';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from '@/components/ui/Select';
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@/components/ui/Dialog';
+import { FormField } from '@/components/ui/FormField';
+import { PageSkeleton } from '@/components/ui/LoadingSkeleton';
 
 const SHOP_KEY = 'vertmonhub_active_shop_id';
+
+type StatusPillVariant = 'success' | 'danger' | 'pending' | 'info' | 'active' | 'neutral' | 'brand';
 
 interface KPI {
     total_contracts: number;
@@ -48,27 +72,27 @@ interface ServiceLog {
     resolved_at: string | null;
 }
 
-const TYPE_LABELS: Record<string, { text: string; icon: React.ReactNode; cls: string }> = {
-    inquiry: { text: 'Лавлагаа', icon: <MessageSquare className="w-3 h-3" />, cls: 'bg-status-info-soft text-status-info' },
-    complaint: { text: 'Гомдол', icon: <AlertTriangle className="w-3 h-3" />, cls: 'bg-status-danger-soft text-status-danger' },
-    maintenance: { text: 'Засвар', icon: <Wrench className="w-3 h-3" />, cls: 'bg-status-pending-soft text-status-pending' },
-    handover: { text: 'Хүлээлцэх', icon: <ArrowRight className="w-3 h-3" />, cls: 'bg-status-success-soft text-status-success' },
-    payment: { text: 'Төлбөр', icon: <DollarSign className="w-3 h-3" />, cls: 'bg-brand-soft text-brand' },
-    other: { text: 'Бусад', icon: <FileText className="w-3 h-3" />, cls: 'bg-surface-2/10 text-muted-foreground/70' },
+const TYPE_LABELS: Record<string, { text: string; icon: React.ReactNode; variant: StatusPillVariant }> = {
+    inquiry: { text: 'Лавлагаа', icon: <MessageSquare className="w-3 h-3" />, variant: 'info' },
+    complaint: { text: 'Гомдол', icon: <AlertTriangle className="w-3 h-3" />, variant: 'danger' },
+    maintenance: { text: 'Засвар', icon: <Wrench className="w-3 h-3" />, variant: 'pending' },
+    handover: { text: 'Хүлээлцэх', icon: <ArrowRight className="w-3 h-3" />, variant: 'success' },
+    payment: { text: 'Төлбөр', icon: <DollarSign className="w-3 h-3" />, variant: 'brand' },
+    other: { text: 'Бусад', icon: <FileText className="w-3 h-3" />, variant: 'neutral' },
 };
 
-const PRIORITY_LABELS: Record<string, { text: string; cls: string }> = {
-    low: { text: 'Бага', cls: 'bg-surface-2/10 text-muted-foreground/70' },
-    medium: { text: 'Дунд', cls: 'bg-status-info-soft text-status-info' },
-    high: { text: 'Өндөр', cls: 'bg-status-pending-soft text-status-pending' },
-    urgent: { text: 'Яаралтай', cls: 'bg-status-danger-soft text-status-danger' },
+const PRIORITY_LABELS: Record<string, { text: string; variant: StatusPillVariant }> = {
+    low: { text: 'Бага', variant: 'neutral' },
+    medium: { text: 'Дунд', variant: 'info' },
+    high: { text: 'Өндөр', variant: 'pending' },
+    urgent: { text: 'Яаралтай', variant: 'danger' },
 };
 
-const STATUS_LABELS: Record<string, { text: string; cls: string }> = {
-    open: { text: 'Нээлттэй', cls: 'bg-status-info-soft text-status-info border-status-info/30' },
-    in_progress: { text: 'Ажиллаж буй', cls: 'bg-status-pending-soft text-status-pending border-status-pending/30' },
-    resolved: { text: 'Шийдвэрлэсэн', cls: 'bg-status-success-soft text-status-success border-status-success/30' },
-    closed: { text: 'Хаагдсан', cls: 'bg-surface-2/10 text-muted-foreground/70 border-border/30' },
+const STATUS_LABELS: Record<string, { text: string; variant: StatusPillVariant }> = {
+    open: { text: 'Нээлттэй', variant: 'info' },
+    in_progress: { text: 'Ажиллаж буй', variant: 'pending' },
+    resolved: { text: 'Шийдвэрлэсэн', variant: 'success' },
+    closed: { text: 'Хаагдсан', variant: 'neutral' },
 };
 
 function formatMoney(n: number | null): string {
@@ -164,271 +188,266 @@ export default function CustomerServicePage() {
     }
 
     if (loading && !kpi) {
-        return (
-            <div className="min-h-screen bg-background flex items-center justify-center">
-                <Loader2 className="w-8 h-8 animate-spin text-brand" />
-            </div>
-        );
+        return <PageSkeleton rows={6} showStats />;
     }
 
     const k = kpi || {} as KPI;
 
     return (
-        <div className="min-h-screen bg-background p-6">
-            <div className="max-w-7xl mx-auto">
-                {/* Header */}
-                <div className="flex items-start justify-between mb-6">
-                    <div>
-                        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2.5">
-                            <Headphones className="w-6 h-6 text-brand" />
-                            Үйлчилгээний хяналт
-                        </h1>
-                        <p className="text-muted-foreground text-sm mt-1">
-                            Гэрээний хяналт, төлбөрийн хоцрогдол, хүсэлт/гомдлын удирдлага
-                        </p>
-                    </div>
-                    <button
-                        onClick={() => setShowNewForm(true)}
-                        className="px-4 py-2 rounded-lg bg-brand hover:bg-brand-strong text-brand-fg text-sm font-medium flex items-center gap-1.5"
-                    >
+        <div>
+            <PageHeader
+                eyebrow="Үйлчилгээ"
+                title="Үйлчилгээний хяналт"
+                subtitle="Гэрээний хяналт, төлбөрийн хоцрогдол, хүсэлт/гомдлын удирдлага"
+                primaryAction={
+                    <Button onClick={() => setShowNewForm(true)} variant="primary" size="md">
                         <Plus className="w-4 h-4" /> Шинэ хүсэлт
-                    </button>
-                </div>
+                    </Button>
+                }
+            />
 
-                {/* KPI Cards - Row 1: Гэрээ & Төлбөр */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                    <KPICard
-                        icon={<FileText className="w-4 h-4 text-status-info" />}
-                        label="Идэвхтэй гэрээ"
-                        value={String(k.active_contracts || 0)}
-                        sub={`Нийт ${k.total_contracts || 0} / ${k.closed_contracts || 0} хаагдсан`}
-                    />
-                    <KPICard
-                        icon={<DollarSign className="w-4 h-4 text-status-success" />}
-                        label="Цуглуулалт"
-                        value={`${k.collection_rate || 0}%`}
-                        sub={formatMoney(k.total_collected || 0)}
-                        accent="emerald"
-                    />
-                    <KPICard
-                        icon={<AlertTriangle className="w-4 h-4 text-status-danger" />}
-                        label="Хоцорсон төлбөр"
-                        value={formatMoney(k.total_overdue_amount || 0)}
-                        sub={`${k.overdue_contract_count || 0} гэрээ`}
-                        accent="red"
-                    />
-                    <KPICard
-                        icon={<Clock className="w-4 h-4 text-status-pending" />}
-                        label="Ирэх 7 хоногт"
-                        value={`${k.upcoming_payments_7d || 0} төлбөр`}
-                        sub={`${k.overdue_payments || 0} хоцорсон`}
-                        accent="amber"
-                    />
-                </div>
+            {/* KPI Cards - Row 1: Гэрээ & Төлбөр */}
+            <StatBar columns={4}>
+                <StatTile
+                    icon={<FileText className="w-4 h-4" />}
+                    accent="info"
+                    label="Идэвхтэй гэрээ"
+                    value={String(k.active_contracts || 0)}
+                    helper={`Нийт ${k.total_contracts || 0} / ${k.closed_contracts || 0} хаагдсан`}
+                />
+                <StatTile
+                    icon={<DollarSign className="w-4 h-4" />}
+                    accent="success"
+                    label="Цуглуулалт"
+                    value={`${k.collection_rate || 0}%`}
+                    helper={formatMoney(k.total_collected || 0)}
+                />
+                <StatTile
+                    icon={<AlertTriangle className="w-4 h-4" />}
+                    accent="danger"
+                    label="Хоцорсон төлбөр"
+                    value={formatMoney(k.total_overdue_amount || 0)}
+                    helper={`${k.overdue_contract_count || 0} гэрээ`}
+                />
+                <StatTile
+                    icon={<Clock className="w-4 h-4" />}
+                    accent="warning"
+                    label="Ирэх 7 хоногт"
+                    value={`${k.upcoming_payments_7d || 0} төлбөр`}
+                    helper={`${k.overdue_payments || 0} хоцорсон`}
+                />
+            </StatBar>
 
-                {/* KPI Cards - Row 2: Үйлчилгээ & Сэтгэл ханамж */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-                    <KPICard
-                        icon={<Headphones className="w-4 h-4 text-brand" />}
-                        label="Нээлттэй хүсэлт"
-                        value={String(k.open_requests || 0)}
-                        sub={`Нийт ${k.total_requests || 0} / ${k.resolved_requests || 0} шийдвэрлэсэн`}
-                        accent="violet"
-                    />
-                    <KPICard
-                        icon={<Clock className="w-4 h-4 text-status-info" />}
-                        label="Дундаж шийдвэрлэх"
-                        value={k.avg_resolution_hours ? `${k.avg_resolution_hours} цаг` : '—'}
-                        accent="sky"
-                    />
-                    <KPICard
-                        icon={<ThumbsUp className="w-4 h-4 text-status-success" />}
-                        label="NPS"
-                        value={k.nps !== null ? String(k.nps) : '—'}
-                        sub={k.total_surveys > 0 ? `${k.total_surveys} судалгаа` : 'Мэдээлэл алга'}
-                        accent="emerald"
-                    />
-                    <KPICard
-                        icon={<Star className="w-4 h-4 text-status-pending" />}
-                        label="CSAT"
-                        value={k.avg_csat !== null ? `${k.avg_csat}/5` : '—'}
-                        sub={k.avg_service_rating ? `Үнэлгээ: ${k.avg_service_rating}/5` : undefined}
-                        accent="amber"
-                    />
-                </div>
+            {/* KPI Cards - Row 2: Үйлчилгээ & Сэтгэл ханамж */}
+            <StatBar columns={4}>
+                <StatTile
+                    icon={<Headphones className="w-4 h-4" />}
+                    accent="brand"
+                    label="Нээлттэй хүсэлт"
+                    value={String(k.open_requests || 0)}
+                    helper={`Нийт ${k.total_requests || 0} / ${k.resolved_requests || 0} шийдвэрлэсэн`}
+                />
+                <StatTile
+                    icon={<Clock className="w-4 h-4" />}
+                    accent="info"
+                    label="Дундаж шийдвэрлэх"
+                    value={k.avg_resolution_hours ? `${k.avg_resolution_hours} цаг` : '—'}
+                />
+                <StatTile
+                    icon={<ThumbsUp className="w-4 h-4" />}
+                    accent="success"
+                    label="NPS"
+                    value={k.nps !== null ? String(k.nps) : '—'}
+                    helper={k.total_surveys > 0 ? `${k.total_surveys} судалгаа` : 'Мэдээлэл алга'}
+                />
+                <StatTile
+                    icon={<Star className="w-4 h-4" />}
+                    accent="warning"
+                    label="CSAT"
+                    value={k.avg_csat !== null ? `${k.avg_csat}/5` : '—'}
+                    helper={k.avg_service_rating ? `Үнэлгээ: ${k.avg_service_rating}/5` : undefined}
+                />
+            </StatBar>
 
-                {/* Filters */}
-                <div className="bg-surface rounded-xl border border-border p-3 mb-4">
-                    <div className="flex flex-wrap items-center gap-2">
-                        <div className="relative flex-1 min-w-[240px]">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/60" />
-                            <input
-                                type="text"
-                                placeholder="Хүсэлт, нэр, утас хайх..."
-                                value={search}
-                                onChange={e => setSearch(e.target.value)}
-                                className="w-full pl-9 pr-3 py-2 bg-surface-2 border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground/60 focus:border-brand/40 outline-none"
-                            />
-                        </div>
-                        <select
-                            value={statusFilter}
-                            onChange={e => setStatusFilter(e.target.value)}
-                            className="px-3 py-2 bg-surface-2 border border-border rounded-lg text-sm text-foreground outline-none"
-                        >
-                            <option value="">Бүх төлөв</option>
-                            <option value="open">Нээлттэй</option>
-                            <option value="in_progress">Ажиллаж буй</option>
-                            <option value="resolved">Шийдвэрлэсэн</option>
-                            <option value="closed">Хаагдсан</option>
-                        </select>
-                        <select
-                            value={typeFilter}
-                            onChange={e => setTypeFilter(e.target.value)}
-                            className="px-3 py-2 bg-surface-2 border border-border rounded-lg text-sm text-foreground outline-none"
-                        >
-                            <option value="">Бүх төрөл</option>
-                            <option value="inquiry">Лавлагаа</option>
-                            <option value="complaint">Гомдол</option>
-                            <option value="maintenance">Засвар</option>
-                            <option value="payment">Төлбөр</option>
-                            <option value="handover">Хүлээлцэх</option>
-                        </select>
+            {/* Filters */}
+            <FilterBar
+                search={{
+                    value: search,
+                    onChange: setSearch,
+                    placeholder: 'Хүсэлт, нэр, утас хайх...',
+                }}
+            >
+                <label className="flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground/80 whitespace-nowrap">Төлөв</span>
+                    <Select
+                        value={statusFilter || 'all'}
+                        onValueChange={(value) => setStatusFilter(value === 'all' ? '' : value)}
+                    >
+                        <SelectTrigger className="h-9 w-auto min-w-40 text-sm" aria-label="Төлөвөөр шүүх">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Бүх төлөв</SelectItem>
+                            <SelectItem value="open">Нээлттэй</SelectItem>
+                            <SelectItem value="in_progress">Ажиллаж буй</SelectItem>
+                            <SelectItem value="resolved">Шийдвэрлэсэн</SelectItem>
+                            <SelectItem value="closed">Хаагдсан</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </label>
+                <label className="flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground/80 whitespace-nowrap">Төрөл</span>
+                    <Select
+                        value={typeFilter || 'all'}
+                        onValueChange={(value) => setTypeFilter(value === 'all' ? '' : value)}
+                    >
+                        <SelectTrigger className="h-9 w-auto min-w-40 text-sm" aria-label="Төрлөөр шүүх">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Бүх төрөл</SelectItem>
+                            <SelectItem value="inquiry">Лавлагаа</SelectItem>
+                            <SelectItem value="complaint">Гомдол</SelectItem>
+                            <SelectItem value="maintenance">Засвар</SelectItem>
+                            <SelectItem value="payment">Төлбөр</SelectItem>
+                            <SelectItem value="handover">Хүлээлцэх</SelectItem>
+                        </SelectContent>
+                    </Select>
+                </label>
+            </FilterBar>
+
+            {/* Service Logs Table */}
+            <div className="bg-surface rounded-xl border border-border overflow-hidden">
+                {loading ? (
+                    <div className="flex items-center justify-center py-20">
+                        <Loader2 className="w-6 h-6 animate-spin text-brand" />
                     </div>
-                </div>
+                ) : logs.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 text-center">
+                        <Headphones className="w-12 h-12 text-muted-foreground/60 mb-3" />
+                        <p className="text-muted-foreground mb-1">Үйлчилгээний бүртгэл хоосон</p>
+                        <p className="text-muted-foreground/60 text-sm mb-4">
+                            Шинэ хүсэлт эсвэл гомдол бүртгэлнэ үү
+                        </p>
+                        <Button onClick={() => setShowNewForm(true)} variant="primary" size="sm">
+                            <Plus className="w-4 h-4" /> Шинэ хүсэлт
+                        </Button>
+                    </div>
+                ) : (
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="border-b border-border text-left text-2xs uppercase tracking-wider text-muted-foreground">
+                                    <th className="px-4 py-3 font-medium">Хүсэлт</th>
+                                    <th className="px-4 py-3 font-medium">Харилцагч</th>
+                                    <th className="px-4 py-3 font-medium">Төрөл</th>
+                                    <th className="px-4 py-3 font-medium">Чухлал</th>
+                                    <th className="px-4 py-3 font-medium">Хариуцагч</th>
+                                    <th className="px-4 py-3 font-medium">Огноо</th>
+                                    <th className="px-4 py-3 font-medium">Төлөв</th>
+                                    <th className="px-4 py-3 font-medium">Үйлдэл</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {logs.map(log => {
+                                    const typeInfo = TYPE_LABELS[log.type] || TYPE_LABELS.other;
+                                    const prioInfo = PRIORITY_LABELS[log.priority] || PRIORITY_LABELS.medium;
+                                    const statusInfo = STATUS_LABELS[log.status] || STATUS_LABELS.open;
 
-                {/* Service Logs Table */}
-                <div className="bg-surface rounded-xl border border-border overflow-hidden">
-                    {loading ? (
-                        <div className="flex items-center justify-center py-20">
-                            <Loader2 className="w-6 h-6 animate-spin text-brand" />
-                        </div>
-                    ) : logs.length === 0 ? (
-                        <div className="flex flex-col items-center justify-center py-20 text-center">
-                            <Headphones className="w-12 h-12 text-muted-foreground/60 mb-3" />
-                            <p className="text-muted-foreground mb-1">Үйлчилгээний бүртгэл хоосон</p>
-                            <p className="text-muted-foreground/60 text-sm mb-4">
-                                Шинэ хүсэлт эсвэл гомдол бүртгэлнэ үү
-                            </p>
-                            <button
-                                onClick={() => setShowNewForm(true)}
-                                className="px-4 py-2 bg-brand hover:bg-brand-strong text-brand-fg text-sm font-medium rounded-lg flex items-center gap-1.5"
-                            >
-                                <Plus className="w-4 h-4" /> Шинэ хүсэлт
-                            </button>
-                        </div>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="border-b border-border text-left text-[11px] uppercase tracking-wider text-muted-foreground">
-                                        <th className="px-4 py-3 font-medium">Хүсэлт</th>
-                                        <th className="px-4 py-3 font-medium">Харилцагч</th>
-                                        <th className="px-4 py-3 font-medium">Төрөл</th>
-                                        <th className="px-4 py-3 font-medium">Чухлал</th>
-                                        <th className="px-4 py-3 font-medium">Хариуцагч</th>
-                                        <th className="px-4 py-3 font-medium">Огноо</th>
-                                        <th className="px-4 py-3 font-medium">Төлөв</th>
-                                        <th className="px-4 py-3 font-medium">Үйлдэл</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {logs.map(log => {
-                                        const typeInfo = TYPE_LABELS[log.type] || TYPE_LABELS.other;
-                                        const prioInfo = PRIORITY_LABELS[log.priority] || PRIORITY_LABELS.medium;
-                                        const statusInfo = STATUS_LABELS[log.status] || STATUS_LABELS.open;
-
-                                        return (
-                                            <tr key={log.id} className="border-b border-border hover:bg-surface-2">
-                                                <td className="px-4 py-3">
-                                                    <div className="font-medium text-foreground max-w-[200px] truncate">
-                                                        {log.subject}
+                                    return (
+                                        <tr key={log.id} className="border-b border-border hover:bg-surface-2">
+                                            <td className="px-4 py-3">
+                                                <div className="font-medium text-foreground max-w-[200px] truncate">
+                                                    {log.subject}
+                                                </div>
+                                                {log.description && (
+                                                    <div className="text-2xs text-muted-foreground max-w-[200px] truncate">
+                                                        {log.description}
                                                     </div>
-                                                    {log.description && (
-                                                        <div className="text-[11px] text-muted-foreground max-w-[200px] truncate">
-                                                            {log.description}
-                                                        </div>
-                                                    )}
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <div className="text-foreground flex items-center gap-1.5">
-                                                        <User className="w-3 h-3 text-muted-foreground/60" />
-                                                        {log.customer_name || '—'}
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <div className="text-foreground flex items-center gap-1.5">
+                                                    <User className="w-3 h-3 text-muted-foreground/60" />
+                                                    {log.customer_name || '—'}
+                                                </div>
+                                                {log.customer_phone && (
+                                                    <div className="text-2xs text-muted-foreground flex items-center gap-1">
+                                                        <Phone className="w-2.5 h-2.5" />
+                                                        {log.customer_phone}
                                                     </div>
-                                                    {log.customer_phone && (
-                                                        <div className="text-[11px] text-muted-foreground flex items-center gap-1">
-                                                            <Phone className="w-2.5 h-2.5" />
-                                                            {log.customer_phone}
-                                                        </div>
-                                                    )}
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium ${typeInfo.cls}`}>
-                                                        {typeInfo.icon} {typeInfo.text}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium ${prioInfo.cls}`}>
-                                                        {prioInfo.text}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-3 text-foreground text-xs">
-                                                    {log.assigned_to || '—'}
-                                                </td>
-                                                <td className="px-4 py-3 text-muted-foreground text-xs">
-                                                    {formatDate(log.created_at)}
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-medium border ${statusInfo.cls}`}>
-                                                        {statusInfo.text}
-                                                    </span>
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    {(log.status === 'open' || log.status === 'in_progress') && (
-                                                        <div className="flex gap-1">
-                                                            {log.status === 'open' && (
-                                                                <button
-                                                                    onClick={() => updateLogStatus(log.id, 'in_progress')}
-                                                                    className="px-2 py-1 rounded text-[10px] bg-status-pending-soft text-status-pending hover:bg-status-pending/20"
-                                                                >
-                                                                    Эхлэх
-                                                                </button>
-                                                            )}
-                                                            <button
-                                                                onClick={() => updateLogStatus(log.id, 'resolved')}
-                                                                className="px-2 py-1 rounded text-[10px] bg-status-success-soft text-status-success hover:bg-status-success-soft"
+                                                )}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <StatusPill variant={typeInfo.variant}>
+                                                    {typeInfo.icon} {typeInfo.text}
+                                                </StatusPill>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <StatusPill variant={prioInfo.variant}>
+                                                    {prioInfo.text}
+                                                </StatusPill>
+                                            </td>
+                                            <td className="px-4 py-3 text-foreground text-xs">
+                                                {log.assigned_to || '—'}
+                                            </td>
+                                            <td className="px-4 py-3 text-muted-foreground text-xs">
+                                                {formatDate(log.created_at)}
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                <StatusPill variant={statusInfo.variant}>
+                                                    {statusInfo.text}
+                                                </StatusPill>
+                                            </td>
+                                            <td className="px-4 py-3">
+                                                {(log.status === 'open' || log.status === 'in_progress') && (
+                                                    <div className="flex gap-1">
+                                                        {log.status === 'open' && (
+                                                            <Button
+                                                                onClick={() => updateLogStatus(log.id, 'in_progress')}
+                                                                variant="tertiary"
+                                                                size="sm"
+                                                                className="min-h-0 px-2 py-1 text-2xs text-status-pending"
                                                             >
-                                                                Шийдсэн
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                    {log.satisfaction_rating && (
-                                                        <div className="flex items-center gap-0.5 mt-1">
-                                                            {[1, 2, 3, 4, 5].map(s => (
-                                                                <Star
-                                                                    key={s}
-                                                                    className={`w-3 h-3 ${s <= log.satisfaction_rating! ? 'text-status-pending fill-amber-400' : 'text-muted-foreground/60'}`}
-                                                                />
-                                                            ))}
-                                                        </div>
-                                                    )}
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </div>
+                                                                Эхлэх
+                                                            </Button>
+                                                        )}
+                                                        <Button
+                                                            onClick={() => updateLogStatus(log.id, 'resolved')}
+                                                            variant="tertiary"
+                                                            size="sm"
+                                                            className="min-h-0 px-2 py-1 text-2xs text-status-success"
+                                                        >
+                                                            Шийдсэн
+                                                        </Button>
+                                                    </div>
+                                                )}
+                                                {log.satisfaction_rating && (
+                                                    <div className="flex items-center gap-0.5 mt-1">
+                                                        {[1, 2, 3, 4, 5].map(s => (
+                                                            <Star
+                                                                key={s}
+                                                                className={`w-3 h-3 ${s <= log.satisfaction_rating! ? 'text-status-pending fill-current' : 'text-muted-foreground/60'}`}
+                                                            />
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </div>
 
             {/* New Service Log Modal */}
-            {showNewForm && (
-                <NewServiceLogModal
-                    onClose={() => setShowNewForm(false)}
-                    onSubmit={createServiceLog}
-                />
-            )}
+            <NewServiceLogModal
+                open={showNewForm}
+                onClose={() => setShowNewForm(false)}
+                onSubmit={createServiceLog}
+            />
         </div>
     );
 }
@@ -437,26 +456,8 @@ export default function CustomerServicePage() {
 // Sub-components
 // ============================================
 
-function KPICard({ icon, label, value, sub, accent }: {
-    icon: React.ReactNode;
-    label: string;
-    value: string;
-    sub?: string;
-    accent?: string;
-}) {
-    return (
-        <div className="bg-surface border border-border rounded-xl p-4">
-            <div className="flex items-center gap-2 text-muted-foreground text-[11px] uppercase tracking-wider mb-1.5">
-                {icon}
-                {label}
-            </div>
-            <div className="text-foreground text-lg font-semibold tabular-nums">{value}</div>
-            {sub && <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>}
-        </div>
-    );
-}
-
-function NewServiceLogModal({ onClose, onSubmit }: {
+function NewServiceLogModal({ open, onClose, onSubmit }: {
+    open: boolean;
     onClose: () => void;
     onSubmit: (data: Record<string, string>) => void;
 }) {
@@ -480,122 +481,127 @@ function NewServiceLogModal({ onClose, onSubmit }: {
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={onClose}>
-            <div className="absolute inset-0 bg-foreground/40 backdrop-blur-sm" />
-            <div
-                className="relative w-full max-w-lg bg-surface border border-border rounded-2xl p-6"
-                onClick={e => e.stopPropagation()}
-            >
-                <h2 className="text-foreground font-semibold text-lg mb-4 flex items-center gap-2">
-                    <Plus className="w-5 h-5 text-brand" />
-                    Шинэ хүсэлт бүртгэх
-                </h2>
+        <Dialog open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
+            <DialogContent className="rounded-2xl sm:max-w-lg">
+                <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                        <Plus className="w-5 h-5 text-brand" />
+                        Шинэ хүсэлт бүртгэх
+                    </DialogTitle>
+                    <DialogDescription className="sr-only">
+                        Шинэ үйлчилгээний хүсэлт бүртгэх форм
+                    </DialogDescription>
+                </DialogHeader>
 
                 <form onSubmit={handleSubmit} className="space-y-3">
-                    <div>
-                        <label className="block text-muted-foreground text-xs mb-1">Гарчиг *</label>
+                    <FormField label="Гарчиг" htmlFor="cs-subject" required>
                         <input
+                            id="cs-subject"
                             type="text"
                             value={form.subject}
                             onChange={e => setForm({ ...form, subject: e.target.value })}
                             placeholder="Хүсэлтийн товч тайлбар"
-                            className="w-full px-3 py-2 bg-surface-2 border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground/60 outline-none focus:border-brand/40"
+                            className="w-full px-3 py-2 bg-surface-2 border border-border rounded-md text-sm text-foreground placeholder:text-muted-foreground/60 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                             required
                         />
-                    </div>
+                    </FormField>
 
                     <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className="block text-muted-foreground text-xs mb-1">Төрөл</label>
-                            <select
+                        <FormField label="Төрөл" htmlFor="cs-type">
+                            <Select
                                 value={form.type}
-                                onChange={e => setForm({ ...form, type: e.target.value })}
-                                className="w-full px-3 py-2 bg-surface-2 border border-border rounded-lg text-sm text-foreground outline-none"
+                                onValueChange={(value) => setForm({ ...form, type: value })}
                             >
-                                <option value="inquiry">Лавлагаа</option>
-                                <option value="complaint">Гомдол</option>
-                                <option value="maintenance">Засвар</option>
-                                <option value="payment">Төлбөр</option>
-                                <option value="handover">Хүлээлцэх</option>
-                                <option value="other">Бусад</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label className="block text-muted-foreground text-xs mb-1">Чухлал</label>
-                            <select
+                                <SelectTrigger id="cs-type" className="text-sm">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="inquiry">Лавлагаа</SelectItem>
+                                    <SelectItem value="complaint">Гомдол</SelectItem>
+                                    <SelectItem value="maintenance">Засвар</SelectItem>
+                                    <SelectItem value="payment">Төлбөр</SelectItem>
+                                    <SelectItem value="handover">Хүлээлцэх</SelectItem>
+                                    <SelectItem value="other">Бусад</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </FormField>
+                        <FormField label="Чухлал" htmlFor="cs-priority">
+                            <Select
                                 value={form.priority}
-                                onChange={e => setForm({ ...form, priority: e.target.value })}
-                                className="w-full px-3 py-2 bg-surface-2 border border-border rounded-lg text-sm text-foreground outline-none"
+                                onValueChange={(value) => setForm({ ...form, priority: value })}
                             >
-                                <option value="low">Бага</option>
-                                <option value="medium">Дунд</option>
-                                <option value="high">Өндөр</option>
-                                <option value="urgent">Яаралтай</option>
-                            </select>
-                        </div>
+                                <SelectTrigger id="cs-priority" className="text-sm">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="low">Бага</SelectItem>
+                                    <SelectItem value="medium">Дунд</SelectItem>
+                                    <SelectItem value="high">Өндөр</SelectItem>
+                                    <SelectItem value="urgent">Яаралтай</SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </FormField>
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
-                        <div>
-                            <label className="block text-muted-foreground text-xs mb-1">Харилцагчийн нэр</label>
+                        <FormField label="Харилцагчийн нэр" htmlFor="cs-customer-name">
                             <input
+                                id="cs-customer-name"
                                 type="text"
                                 value={form.customer_name}
                                 onChange={e => setForm({ ...form, customer_name: e.target.value })}
-                                className="w-full px-3 py-2 bg-surface-2 border border-border rounded-lg text-sm text-foreground outline-none"
+                                className="w-full px-3 py-2 bg-surface-2 border border-border rounded-md text-sm text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                             />
-                        </div>
-                        <div>
-                            <label className="block text-muted-foreground text-xs mb-1">Утас</label>
+                        </FormField>
+                        <FormField label="Утас" htmlFor="cs-customer-phone">
                             <input
+                                id="cs-customer-phone"
                                 type="text"
                                 value={form.customer_phone}
                                 onChange={e => setForm({ ...form, customer_phone: e.target.value })}
-                                className="w-full px-3 py-2 bg-surface-2 border border-border rounded-lg text-sm text-foreground outline-none"
+                                className="w-full px-3 py-2 bg-surface-2 border border-border rounded-md text-sm text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                             />
-                        </div>
+                        </FormField>
                     </div>
 
-                    <div>
-                        <label className="block text-muted-foreground text-xs mb-1">Хариуцагч</label>
+                    <FormField label="Хариуцагч" htmlFor="cs-assigned-to">
                         <input
+                            id="cs-assigned-to"
                             type="text"
                             value={form.assigned_to}
                             onChange={e => setForm({ ...form, assigned_to: e.target.value })}
                             placeholder="Менежерийн нэр"
-                            className="w-full px-3 py-2 bg-surface-2 border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground/60 outline-none"
+                            className="w-full px-3 py-2 bg-surface-2 border border-border rounded-md text-sm text-foreground placeholder:text-muted-foreground/60 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         />
-                    </div>
+                    </FormField>
 
-                    <div>
-                        <label className="block text-muted-foreground text-xs mb-1">Дэлгэрэнгүй</label>
+                    <FormField label="Дэлгэрэнгүй" htmlFor="cs-description">
                         <textarea
+                            id="cs-description"
                             value={form.description}
                             onChange={e => setForm({ ...form, description: e.target.value })}
                             rows={3}
-                            className="w-full px-3 py-2 bg-surface-2 border border-border rounded-lg text-sm text-foreground outline-none resize-none"
+                            className="w-full px-3 py-2 bg-surface-2 border border-border rounded-md text-sm text-foreground outline-none resize-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         />
-                    </div>
+                    </FormField>
 
-                    <div className="flex justify-end gap-2 pt-2">
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="px-4 py-2 text-muted-foreground text-sm hover:text-foreground"
-                        >
+                    <DialogFooter className="pt-2">
+                        <Button type="button" onClick={onClose} variant="ghost" size="md">
                             Болих
-                        </button>
-                        <button
+                        </Button>
+                        <Button
                             type="submit"
                             disabled={submitting || !form.subject.trim()}
-                            className="px-4 py-2 bg-brand hover:bg-brand-strong text-brand-fg text-sm font-medium rounded-lg disabled:opacity-50 flex items-center gap-1.5"
+                            isLoading={submitting}
+                            variant="primary"
+                            size="md"
                         >
-                            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                            {!submitting && <CheckCircle2 className="w-4 h-4" />}
                             Бүртгэх
-                        </button>
-                    </div>
+                        </Button>
+                    </DialogFooter>
                 </form>
-            </div>
-        </div>
+            </DialogContent>
+        </Dialog>
     );
 }

@@ -2,6 +2,18 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { FileText, Download, Loader2, User, Building2, DollarSign, Search, Check } from 'lucide-react';
+import { PageHeader } from '@/components/dashboard/PageHeader';
+import { Card, CardContent } from '@/components/ui/Card';
+import { Button } from '@/components/ui/Button';
+import { FormField } from '@/components/ui/FormField';
+import { Input } from '@/components/ui/Input';
+import {
+    Select,
+    SelectTrigger,
+    SelectValue,
+    SelectContent,
+    SelectItem,
+} from '@/components/ui/Select';
 
 const SHOP_KEY = 'vertmonhub_active_shop_id';
 
@@ -124,15 +136,15 @@ export default function ContractGeneratePage() {
             <html><head><title>Гэрээ ${data.contractNumber || ''}</title>
             <style>
               @page { margin: 24mm 18mm; }
-              body{font-family:'Times New Roman',serif;color:#1a1a1a;line-height:1.7;font-size:13px}
+              body{font-family:'Times New Roman',serif;color:#000;line-height:1.7;font-size:13px}
               h1{text-align:center;font-size:18px;margin-bottom:4px}
               h2{font-size:14px;margin-top:18px;border-bottom:1px solid #999;padding-bottom:3px}
               table{width:100%;border-collapse:collapse;margin:8px 0}
               td{padding:5px 8px;border:1px solid #ccc;vertical-align:top}
               p{margin:6px 0}
-              .muted{color:#666;text-align:center;margin-bottom:18px}
+              .muted{color:#444;text-align:center;margin-bottom:18px}
               .sig{display:flex;justify-content:space-between;margin-top:56px}
-              .sig-box{width:45%;text-align:center;border-top:1px solid #333;padding-top:8px}
+              .sig-box{width:45%;text-align:center;border-top:1px solid #000;padding-top:8px}
             </style></head><body>${content.innerHTML}</body></html>
         `);
         win.document.close();
@@ -142,92 +154,133 @@ export default function ContractGeneratePage() {
     const balance = (Number(data.price) || 0) - (Number(data.downPayment) || 0);
 
     return (
-        <div className="min-h-screen bg-surface-2/40 p-6">
+        <div className="p-6">
             <div className="max-w-5xl mx-auto">
-                <h1 className="text-2xl font-bold text-foreground mb-1">Гэрээ үүсгэгч</h1>
-                <p className="text-muted-foreground text-sm mb-4">Үл хөдлөх хөрөнгө худалдах-худалдан авах гэрээ — Мандала Гарден</p>
+                <PageHeader
+                    eyebrow="Гэрээ"
+                    title="Гэрээ үүсгэгч"
+                    subtitle="Үл хөдлөх хөрөнгө худалдах-худалдан авах гэрээ — Мандала Гарден"
+                />
 
                 {/* Гэрээ хайж дуудах */}
-                <div className="bg-surface rounded-xl border border-border p-4 mb-6">
-                    <label className="text-sm font-medium text-foreground flex items-center gap-1.5 mb-2">
-                        <Search className="w-4 h-4 text-brand-strong" /> Одоо байгаа гэрээнээс дуудах
-                    </label>
-                    <div className="relative">
-                        <input
-                            value={search}
-                            onChange={(e) => setSearch(e.target.value)}
-                            placeholder="Худалдан авагчийн нэр, код (ж: 203-305), эсвэл регистрээр хайх..."
-                            className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-brand"
-                        />
-                        {searching && <Loader2 className="w-4 h-4 animate-spin absolute right-3 top-3 text-muted-foreground" />}
-                        {results.length > 0 && (
-                            <div className="absolute z-10 mt-1 w-full bg-surface border border-border rounded-lg shadow-lg max-h-72 overflow-y-auto">
-                                {results.map((c) => (
-                                    <button key={c.id} onClick={() => loadContract(c)} className="w-full text-left px-3 py-2.5 hover:bg-surface-2 border-b border-border/40 last:border-0">
-                                        <div className="text-sm font-medium text-foreground">{c.customer_name || '—'}</div>
-                                        <div className="text-[11px] text-muted-foreground">{c.unit_label || c.block_name} · {money(c.total_price)} · {c.contract_date || c.order_date || ''}</div>
-                                    </button>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                    {loadedId && <p className="text-[12px] text-status-success mt-2 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Гэрээний мэдээлэл дуудагдлаа — доороос засаж болно.</p>}
-                </div>
+                <Card className="mb-6">
+                    <CardContent className="p-4">
+                        <label className="text-sm font-medium text-foreground flex items-center gap-1.5 mb-2">
+                            <Search className="w-4 h-4 text-brand-strong" /> Одоо байгаа гэрээнээс дуудах
+                        </label>
+                        <div className="relative">
+                            <Input
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                placeholder="Худалдан авагчийн нэр, код (ж: 203-305), эсвэл регистрээр хайх..."
+                                className="h-auto py-2.5"
+                            />
+                            {searching && <Loader2 className="w-4 h-4 animate-spin absolute right-3 top-3 text-muted-foreground" />}
+                            {results.length > 0 && (
+                                <div className="absolute z-10 mt-1 w-full bg-surface border border-border rounded-lg shadow-lg max-h-72 overflow-y-auto">
+                                    {results.map((c) => (
+                                        <button key={c.id} onClick={() => loadContract(c)} className="w-full text-left px-3 py-2.5 hover:bg-surface-2 border-b border-border/40 last:border-0">
+                                            <div className="text-sm font-medium text-foreground">{c.customer_name || '—'}</div>
+                                            <div className="text-xs text-muted-foreground">{c.unit_label || c.block_name} · {money(c.total_price)} · {c.contract_date || c.order_date || ''}</div>
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        {loadedId && <p className="text-xs text-status-success mt-2 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Гэрээний мэдээлэл дуудагдлаа — доороос засаж болно.</p>}
+                    </CardContent>
+                </Card>
 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     {/* Form */}
-                    <div className="bg-surface rounded-xl border border-border p-6 space-y-5">
-                        <div>
-                            <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-3"><User className="w-4 h-4 text-brand-strong" /> Худалдан авагч</h3>
-                            <div className="grid grid-cols-2 gap-3">
-                                <input placeholder="Нэр *" value={data.buyerName} onChange={e => set('buyerName', e.target.value)} className="col-span-2 px-3 py-2 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-brand" />
-                                <input placeholder="Утас" value={data.buyerPhone} onChange={e => set('buyerPhone', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
-                                <input placeholder="Регистр" value={data.buyerRegister} onChange={e => set('buyerRegister', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
+                    <Card>
+                        <CardContent className="p-6 space-y-5">
+                            <div>
+                                <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-3"><User className="w-4 h-4 text-brand-strong" /> Худалдан авагч</h3>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <FormField className="col-span-2" label="Нэр" htmlFor="cg-buyer-name" required>
+                                        <Input id="cg-buyer-name" placeholder="Нэр" value={data.buyerName} onChange={e => set('buyerName', e.target.value)} />
+                                    </FormField>
+                                    <FormField label="Утас" htmlFor="cg-buyer-phone">
+                                        <Input id="cg-buyer-phone" placeholder="Утас" value={data.buyerPhone} onChange={e => set('buyerPhone', e.target.value)} />
+                                    </FormField>
+                                    <FormField label="Регистр" htmlFor="cg-buyer-register">
+                                        <Input id="cg-buyer-register" placeholder="Регистр" value={data.buyerRegister} onChange={e => set('buyerRegister', e.target.value)} />
+                                    </FormField>
+                                </div>
                             </div>
-                        </div>
-                        <div>
-                            <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-3"><Building2 className="w-4 h-4 text-status-success" /> Үл хөдлөх</h3>
-                            <div className="grid grid-cols-2 gap-3">
-                                <input placeholder="Код / нэр (203-305) *" value={data.propertyName} onChange={e => set('propertyName', e.target.value)} className="col-span-2 px-3 py-2 border border-border-strong rounded-lg text-sm" />
-                                <input placeholder="Талбай (м²)" value={data.propertySizeSqm} onChange={e => set('propertySizeSqm', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
-                                <input placeholder="Давхар" value={data.propertyFloor} onChange={e => set('propertyFloor', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
-                                <input placeholder="Өрөө" value={data.propertyRooms} onChange={e => set('propertyRooms', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
+                            <div>
+                                <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-3"><Building2 className="w-4 h-4 text-status-success" /> Үл хөдлөх</h3>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <FormField className="col-span-2" label="Код / нэр" htmlFor="cg-property-name" required>
+                                        <Input id="cg-property-name" placeholder="Код / нэр (203-305)" value={data.propertyName} onChange={e => set('propertyName', e.target.value)} />
+                                    </FormField>
+                                    <FormField label="Талбай (м²)" htmlFor="cg-property-size">
+                                        <Input id="cg-property-size" placeholder="Талбай (м²)" value={data.propertySizeSqm} onChange={e => set('propertySizeSqm', e.target.value)} />
+                                    </FormField>
+                                    <FormField label="Давхар" htmlFor="cg-property-floor">
+                                        <Input id="cg-property-floor" placeholder="Давхар" value={data.propertyFloor} onChange={e => set('propertyFloor', e.target.value)} />
+                                    </FormField>
+                                    <FormField label="Өрөө" htmlFor="cg-property-rooms">
+                                        <Input id="cg-property-rooms" placeholder="Өрөө" value={data.propertyRooms} onChange={e => set('propertyRooms', e.target.value)} />
+                                    </FormField>
+                                </div>
                             </div>
-                        </div>
-                        <div>
-                            <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-3"><DollarSign className="w-4 h-4 text-status-info" /> Төлбөр</h3>
-                            <div className="grid grid-cols-2 gap-3">
-                                <input placeholder="М.кв үнэ (₮)" value={data.pricePerSqm} onChange={e => set('pricePerSqm', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
-                                <input placeholder="Нийт үнэ (₮) *" value={data.price} onChange={e => set('price', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
-                                <input placeholder="Урьдчилгаа (₮)" value={data.downPayment} onChange={e => set('downPayment', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm" />
-                                <select value={data.paymentMethod} onChange={e => set('paymentMethod', e.target.value)} className="px-3 py-2 border border-border-strong rounded-lg text-sm">
-                                    <option value="cash">Бэлэн төлбөр</option>
-                                    <option value="mortgage">Банкны зээл</option>
-                                    <option value="installment">Хэсэгчилсэн</option>
-                                    <option value="leasing">Хувь лизинг</option>
-                                    <option value="barter">Бартер</option>
-                                </select>
-                                <input type="date" value={data.contractDate} onChange={e => set('contractDate', e.target.value)} className="col-span-2 px-3 py-2 border border-border-strong rounded-lg text-sm" />
+                            <div>
+                                <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-3"><DollarSign className="w-4 h-4 text-status-info" /> Төлбөр</h3>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <FormField label="М.кв үнэ (₮)" htmlFor="cg-price-per-sqm">
+                                        <Input id="cg-price-per-sqm" placeholder="М.кв үнэ (₮)" value={data.pricePerSqm} onChange={e => set('pricePerSqm', e.target.value)} />
+                                    </FormField>
+                                    <FormField label="Нийт үнэ (₮)" htmlFor="cg-price" required>
+                                        <Input id="cg-price" placeholder="Нийт үнэ (₮)" value={data.price} onChange={e => set('price', e.target.value)} />
+                                    </FormField>
+                                    <FormField label="Урьдчилгаа (₮)" htmlFor="cg-down-payment">
+                                        <Input id="cg-down-payment" placeholder="Урьдчилгаа (₮)" value={data.downPayment} onChange={e => set('downPayment', e.target.value)} />
+                                    </FormField>
+                                    <FormField label="Төлбөрийн хэлбэр">
+                                        <Select value={data.paymentMethod} onValueChange={v => set('paymentMethod', v)}>
+                                            <SelectTrigger>
+                                                <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="cash">Бэлэн төлбөр</SelectItem>
+                                                <SelectItem value="mortgage">Банкны зээл</SelectItem>
+                                                <SelectItem value="installment">Хэсэгчилсэн</SelectItem>
+                                                <SelectItem value="leasing">Хувь лизинг</SelectItem>
+                                                <SelectItem value="barter">Бартер</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    </FormField>
+                                    <FormField className="col-span-2" label="Гэрээний огноо" htmlFor="cg-contract-date">
+                                        <Input id="cg-contract-date" type="date" value={data.contractDate} onChange={e => set('contractDate', e.target.value)} />
+                                    </FormField>
+                                </div>
                             </div>
-                        </div>
-                        <button onClick={generateContract} disabled={!data.buyerName || !data.propertyName || !data.price} className="w-full py-3 bg-brand text-white font-semibold rounded-lg hover:bg-brand-strong disabled:opacity-50 transition-colors flex items-center justify-center gap-2">
-                            {generating ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5" />} Гэрээ шинэчлэх
-                        </button>
-                    </div>
+                            <Button
+                                onClick={generateContract}
+                                disabled={!data.buyerName || !data.propertyName || !data.price}
+                                size="lg"
+                                className="w-full"
+                            >
+                                {generating ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5" />} Гэрээ шинэчлэх
+                            </Button>
+                        </CardContent>
+                    </Card>
 
                     {/* Preview */}
-                    <div className="bg-surface rounded-xl border border-border overflow-hidden">
+                    <Card className="overflow-hidden">
                         <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
                             <span className="text-sm font-semibold text-foreground">Урьдчилж харах</span>
                             {data.buyerName && data.propertyName && (
-                                <button onClick={printContract} className="flex items-center gap-1.5 px-3 py-1.5 bg-status-success text-white rounded-lg text-xs font-medium hover:opacity-90">
+                                <Button onClick={printContract} variant="secondary" size="sm">
                                     <Download className="w-3.5 h-3.5" /> PDF / Хэвлэх
-                                </button>
+                                </Button>
                             )}
                         </div>
                         <div ref={previewRef} className="p-6 text-sm text-foreground leading-relaxed max-h-[700px] overflow-y-auto">
                             <h1 style={{ textAlign: 'center', fontSize: '17px', fontWeight: 'bold', marginBottom: '4px' }}>ҮЛ ХӨДЛӨХ ХӨРӨНГӨ ХУДАЛДАХ-ХУДАЛДАН АВАХ ГЭРЭЭ</h1>
-                            <p className="muted" style={{ textAlign: 'center', color: '#666', marginBottom: '20px' }}>
+                            <p className="muted" style={{ textAlign: 'center', color: '#444', marginBottom: '20px' }}>
                                 Гэрээ №: {data.contractNumber || '________'}<br />Огноо: {data.contractDate || '____'} · Улаанбаатар хот
                             </p>
 
@@ -268,15 +321,15 @@ export default function ContractGeneratePage() {
                             <p>5.2. Энэхүү гэрээ нь талууд гарын үсэг зурсан өдрөөс хүчин төгөлдөр болно. Хоёр хувь үйлдэж, тал тус бүр нэг хувийг хадгална.</p>
 
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '56px' }}>
-                                <div style={{ width: '45%', textAlign: 'center', borderTop: '1px solid #333', paddingTop: '8px' }}>
+                                <div style={{ width: '45%', textAlign: 'center', borderTop: '1px solid #000', paddingTop: '8px' }}>
                                     ХУДАЛДАГЧ<br /><small>{SELLER.company}</small>
                                 </div>
-                                <div style={{ width: '45%', textAlign: 'center', borderTop: '1px solid #333', paddingTop: '8px' }}>
+                                <div style={{ width: '45%', textAlign: 'center', borderTop: '1px solid #000', paddingTop: '8px' }}>
                                     ХУДАЛДАН АВАГЧ<br /><small>{data.buyerName || '___'}</small>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </Card>
                 </div>
             </div>
         </div>

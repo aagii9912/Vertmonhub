@@ -2,14 +2,12 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import {
-    Search,
     Upload,
     FileText,
     AlertCircle,
     TrendingUp,
     CheckCircle2,
     Clock,
-    X,
     Trash2,
     Phone,
     IdCard,
@@ -22,12 +20,20 @@ import {
 import type { PropertyContract, ContractStats } from '@/types/property';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Badge } from '@/components/ui/Badge';
-import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Spinner } from '@/components/ui/Spinner';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { FilterBar, FilterSelect } from '@/components/dashboard/FilterBar';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
+import { DataTable, type DataTableColumn, Money, DateText, StatusPill } from '@/components/ui/DataTable';
+import {
+    Sheet,
+    SheetContent,
+    SheetHeader,
+    SheetTitle,
+    SheetDescription,
+} from '@/components/ui/Sheet';
+import { toast, confirmToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 import { formatShortDate } from '@/lib/utils/date';
 
@@ -37,8 +43,6 @@ interface ApiResponse {
     contracts: PropertyContract[];
     stats: ContractStats;
 }
-
-type StatusKey = 'active' | 'closed' | 'cancelled';
 
 const STATUS_LABEL: Record<string, { text: string; variant: 'info' | 'success' | 'danger' }> = {
     active: { text: 'Идэвхтэй', variant: 'info' },
@@ -168,7 +172,11 @@ export default function ContractsPage() {
     }
 
     async function handleDelete(id: string) {
-        if (!confirm('Энэ гэрээг устгах уу?')) return;
+        const ok = await confirmToast({
+            title: 'Энэ гэрээг устгах уу?',
+            destructive: true,
+        });
+        if (!ok) return;
         try {
             const res = await fetch(`/api/dashboard/contracts/${id}`, {
                 method: 'DELETE',
@@ -178,9 +186,90 @@ export default function ContractsPage() {
             setSelected(null);
             fetchContracts();
         } catch (err) {
-            alert('Устгахад алдаа гарлаа: ' + (err as Error).message);
+            toast.error('Устгахад алдаа гарлаа: ' + (err as Error).message);
         }
     }
+
+    const columns: DataTableColumn<PropertyContract>[] = [
+        {
+            key: 'contract',
+            header: 'Гэрээ',
+            cell: (c) => (
+                <div>
+                    <div className="font-medium text-foreground">{c.contract_number || '—'}</div>
+                    <div className="text-[11px] text-muted-foreground">
+                        <DateText value={c.contract_date} />
+                    </div>
+                </div>
+            ),
+        },
+        {
+            key: 'customer',
+            header: 'Худалдан авагч',
+            cell: (c) => (
+                <div>
+                    <div className="text-foreground">{c.customer_name || '—'}</div>
+                    <div className="text-[11px] text-muted-foreground">{c.customer_phone || ''}</div>
+                </div>
+            ),
+        },
+        {
+            key: 'unit',
+            header: 'Байр',
+            cell: (c) => (
+                <div>
+                    <div className="text-foreground">
+                        Блок {c.block_name || '—'} / {c.unit_number || c.legacy_unit_number || '—'}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                        {c.floor || ''} {c.rooms ? `· ${c.rooms} өрөө` : ''}
+                        {c.contracted_area ? ` · ${c.contracted_area}м²` : ''}
+                    </div>
+                </div>
+            ),
+        },
+        {
+            key: 'price',
+            header: 'Үнэ',
+            align: 'right',
+            cell: (c) => <Money value={c.total_price} className="text-foreground" />,
+        },
+        {
+            key: 'paid',
+            header: 'Төлсөн',
+            align: 'right',
+            cell: (c) => {
+                const paidPct =
+                    c.total_price && c.total_price > 0
+                        ? Math.round(((c.paid_amount || 0) / c.total_price) * 100)
+                        : 0;
+                return (
+                    <div>
+                        <Money value={c.paid_amount} className="text-foreground" />
+                        <div className="text-[11px] text-muted-foreground tabular-nums">
+                            {paidPct}%
+                            {c.overdue_days && c.overdue_days > 0 ? (
+                                <span className="text-status-danger ml-1">· {c.overdue_days} хоног</span>
+                            ) : null}
+                        </div>
+                    </div>
+                );
+            },
+        },
+        {
+            key: 'manager',
+            header: 'Менежер',
+            cell: (c) => <span className="text-foreground">{c.sales_manager || '—'}</span>,
+        },
+        {
+            key: 'status',
+            header: 'Төлөв',
+            cell: (c) => {
+                const status = STATUS_LABEL[c.contract_status] || STATUS_LABEL.active;
+                return <StatusPill variant={status.variant}>{status.text}</StatusPill>;
+            },
+        },
+    ];
 
     return (
         <div>
@@ -324,13 +413,9 @@ export default function ContractsPage() {
             </FilterBar>
 
             {/* Table */}
-            <Card>
-                <CardContent className="p-0">
-                    {loading ? (
-                        <div className="flex items-center justify-center py-20">
-                            <Spinner size="lg" />
-                        </div>
-                    ) : contracts.length === 0 ? (
+            {!loading && contracts.length === 0 ? (
+                <Card>
+                    <CardContent className="p-0">
                         <div className="py-12">
                             <EmptyState
                                 icon={<FileText className="w-7 h-7" />}
@@ -343,86 +428,32 @@ export default function ContractsPage() {
                                 }
                             />
                         </div>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="border-b border-border bg-surface-2/40 text-left text-[11px] uppercase tracking-[0.08em] text-muted-foreground/80">
-                                        <th className="px-4 py-3 font-medium">Гэрээ</th>
-                                        <th className="px-4 py-3 font-medium">Худалдан авагч</th>
-                                        <th className="px-4 py-3 font-medium">Байр</th>
-                                        <th className="px-4 py-3 font-medium text-right">Үнэ</th>
-                                        <th className="px-4 py-3 font-medium text-right">Төлсөн</th>
-                                        <th className="px-4 py-3 font-medium">Менежер</th>
-                                        <th className="px-4 py-3 font-medium">Төлөв</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {contracts.map((c) => {
-                                        const status = STATUS_LABEL[c.contract_status] || STATUS_LABEL.active;
-                                        const paidPct =
-                                            c.total_price && c.total_price > 0
-                                                ? Math.round(((c.paid_amount || 0) / c.total_price) * 100)
-                                                : 0;
-                                        return (
-                                            <tr
-                                                key={c.id}
-                                                onClick={() => setSelected(c)}
-                                                className="border-b border-border/40 hover:bg-surface-2/40 cursor-pointer transition-colors"
-                                            >
-                                                <td className="px-4 py-3">
-                                                    <div className="font-medium text-foreground">{c.contract_number || '—'}</div>
-                                                    <div className="text-[11px] text-muted-foreground">{formatDate(c.contract_date)}</div>
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <div className="text-foreground">{c.customer_name || '—'}</div>
-                                                    <div className="text-[11px] text-muted-foreground">{c.customer_phone || ''}</div>
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <div className="text-foreground">
-                                                        Блок {c.block_name || '—'} / {c.unit_number || c.legacy_unit_number || '—'}
-                                                    </div>
-                                                    <div className="text-[11px] text-muted-foreground">
-                                                        {c.floor || ''} {c.rooms ? `· ${c.rooms} өрөө` : ''}
-                                                        {c.contracted_area ? ` · ${c.contracted_area}м²` : ''}
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 py-3 text-right text-foreground tabular-nums">
-                                                    {formatMoney(c.total_price)}
-                                                </td>
-                                                <td className="px-4 py-3 text-right">
-                                                    <div className="text-foreground tabular-nums">{formatMoney(c.paid_amount)}</div>
-                                                    <div className="text-[11px] text-muted-foreground tabular-nums">
-                                                        {paidPct}%
-                                                        {c.overdue_days && c.overdue_days > 0 ? (
-                                                            <span className="text-status-danger ml-1">· {c.overdue_days} хоног</span>
-                                                        ) : null}
-                                                    </div>
-                                                </td>
-                                                <td className="px-4 py-3 text-foreground">{c.sales_manager || '—'}</td>
-                                                <td className="px-4 py-3">
-                                                    <Badge variant={status.variant} size="sm">
-                                                        {status.text}
-                                                    </Badge>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </CardContent>
-            </Card>
-
-            {/* Detail drawer */}
-            {selected && (
-                <ContractDrawer
-                    contract={selected}
-                    onClose={() => setSelected(null)}
-                    onDelete={() => handleDelete(selected.id)}
+                    </CardContent>
+                </Card>
+            ) : (
+                <DataTable<PropertyContract>
+                    columns={columns}
+                    data={contracts}
+                    getRowId={(c) => c.id}
+                    caption="Гэрээний жагсаалт — гэрээ, худалдан авагч, байр, үнэ, төлсөн, менежер, төлөв"
+                    loading={loading}
+                    emptyMessage="Гэрээ олдсонгүй"
+                    onRowClick={(c) => setSelected(c)}
+                    pageSize={20}
                 />
             )}
+
+            {/* Detail drawer */}
+            <Sheet open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
+                <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-xl">
+                    {selected && (
+                        <ContractDrawer
+                            contract={selected}
+                            onDelete={() => handleDelete(selected.id)}
+                        />
+                    )}
+                </SheetContent>
+            </Sheet>
         </div>
     );
 }
@@ -433,11 +464,9 @@ export default function ContractsPage() {
 
 function ContractDrawer({
     contract: c,
-    onClose,
     onDelete,
 }: {
     contract: PropertyContract;
-    onClose: () => void;
     onDelete: () => void;
 }) {
     const [activeTab, setActiveTab] = useState<'info' | 'payments' | 'service' | 'handover'>('info');
@@ -485,57 +514,48 @@ function ContractDrawer({
     ];
 
     return (
-        <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
-            <div className="absolute inset-0 bg-foreground/40 backdrop-blur-sm" />
-            <div
-                className="relative w-full max-w-xl bg-surface border-l border-border overflow-y-auto"
-                onClick={(e) => e.stopPropagation()}
-            >
-                {/* Header */}
-                <div className="sticky top-0 bg-surface border-b border-border px-5 py-4 z-10">
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <div className="heading-section text-foreground">{c.contract_number || '—'}</div>
-                            <div className="text-[11px] text-muted-foreground mt-0.5">{formatDate(c.contract_date)}</div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <Badge variant={status.variant}>{status.text}</Badge>
-                            <button
-                                onClick={onDelete}
-                                className="p-1.5 hover:bg-status-danger-soft rounded-md text-muted-foreground hover:text-status-danger transition-colors"
-                                title="Устгах"
-                            >
-                                <Trash2 className="w-4 h-4" />
-                            </button>
-                            <button
-                                onClick={onClose}
-                                className="p-1.5 hover:bg-surface-2 rounded-md text-muted-foreground transition-colors"
-                            >
-                                <X className="w-4 h-4" />
-                            </button>
-                        </div>
+        <>
+            {/* Header */}
+            <SheetHeader>
+                <div className="flex items-start justify-between gap-3 pr-8">
+                    <div>
+                        <SheetTitle>{c.contract_number || '—'}</SheetTitle>
+                        <SheetDescription>
+                            <DateText value={c.contract_date} />
+                        </SheetDescription>
                     </div>
-
-                    {/* Tabs */}
-                    <div className="flex gap-1 mt-3 overflow-x-auto no-scrollbar">
-                        {tabs.map((tab) => (
-                            <button
-                                key={tab.id}
-                                onClick={() => setActiveTab(tab.id)}
-                                className={cn(
-                                    'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap',
-                                    activeTab === tab.id
-                                        ? 'bg-brand-soft text-brand-strong'
-                                        : 'text-muted-foreground hover:text-foreground hover:bg-surface-2',
-                                )}
-                            >
-                                {tab.icon} {tab.label}
-                            </button>
-                        ))}
+                    <div className="flex items-center gap-2">
+                        <StatusPill variant={status.variant}>{status.text}</StatusPill>
+                        <button
+                            onClick={onDelete}
+                            className="p-1.5 hover:bg-status-danger-soft rounded-md text-muted-foreground hover:text-status-danger transition-colors"
+                            title="Устгах"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                        </button>
                     </div>
                 </div>
 
-                <div className="p-5 space-y-5">
+                {/* Tabs */}
+                <div className="flex gap-1 mt-3 overflow-x-auto no-scrollbar">
+                    {tabs.map((tab) => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={cn(
+                                'flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap',
+                                activeTab === tab.id
+                                    ? 'bg-brand-soft text-brand-strong'
+                                    : 'text-muted-foreground hover:text-foreground hover:bg-surface-2',
+                            )}
+                        >
+                            {tab.icon} {tab.label}
+                        </button>
+                    ))}
+                </div>
+            </SheetHeader>
+
+            <div className="overflow-y-auto p-5 space-y-5">
                     {activeTab === 'info' && (
                         <>
                             <Section icon={<User className="w-4 h-4 text-brand" />} title="Худалдан авагч">
@@ -609,9 +629,8 @@ function ContractDrawer({
                     {activeTab === 'handover' && (
                         <HandoverTab records={handovers} loading={tabLoading} />
                     )}
-                </div>
             </div>
-        </div>
+        </>
     );
 }
 
@@ -623,12 +642,12 @@ function PaymentsTab({ payments, loading }: { payments: Array<Record<string, unk
             </div>
         );
 
-    const PAYMENT_STATUS: Record<string, { text: string; variant: 'info' | 'success' | 'danger' | 'warning' | 'default' }> = {
+    const PAYMENT_STATUS: Record<string, { text: string; variant: 'info' | 'success' | 'danger' | 'pending' | 'neutral' }> = {
         pending: { text: 'Хүлээгдэж буй', variant: 'info' },
         paid: { text: 'Төлөгдсөн', variant: 'success' },
         overdue: { text: 'Хоцорсон', variant: 'danger' },
-        partial: { text: 'Хэсэгчлэн', variant: 'warning' },
-        cancelled: { text: 'Цуцлагдсан', variant: 'default' },
+        partial: { text: 'Хэсэгчлэн', variant: 'pending' },
+        cancelled: { text: 'Цуцлагдсан', variant: 'neutral' },
     };
 
     return (
@@ -652,19 +671,21 @@ function PaymentsTab({ payments, loading }: { payments: Array<Record<string, unk
                                     <span className="text-foreground text-sm font-medium">
                                         {String(p.label || `#${p.installment_number || i + 1} төлбөр`)}
                                     </span>
-                                    <Badge variant={st.variant} size="sm">
-                                        {st.text}
-                                    </Badge>
+                                    <StatusPill variant={st.variant}>{st.text}</StatusPill>
                                 </div>
                                 <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[12px]">
                                     <div className="text-muted-foreground">Хугацаа:</div>
                                     <div className="text-foreground tabular-nums">
-                                        {p.due_date ? formatDate(String(p.due_date)) : '—'}
+                                        {p.due_date ? <DateText value={String(p.due_date)} /> : '—'}
                                     </div>
                                     <div className="text-muted-foreground">Дүн:</div>
-                                    <div className="text-foreground tabular-nums">{formatMoney(Number(p.amount) || 0)}</div>
+                                    <div className="text-foreground tabular-nums">
+                                        <Money value={Number(p.amount) || 0} />
+                                    </div>
                                     <div className="text-muted-foreground">Төлсөн:</div>
-                                    <div className="text-status-success tabular-nums">{formatMoney(Number(p.paid_amount) || 0)}</div>
+                                    <div className="text-status-success tabular-nums">
+                                        <Money value={Number(p.paid_amount) || 0} />
+                                    </div>
                                 </div>
                             </div>
                         );
@@ -744,11 +765,12 @@ function ServiceTab({ logs, loading, contract, onAdded }: {
                         return (
                             <div key={String(log.id) || i} className="bg-surface-2/40 border border-border rounded-md p-3">
                                 <div className="flex items-center justify-between mb-1">
-                                    <span className="text-foreground text-sm font-medium truncate max-w-[220px]">
-                                        {isNote ? '📝 Тэмдэглэл' : String(log.subject || '—')}
+                                    <span className="text-foreground text-sm font-medium truncate max-w-[220px] flex items-center gap-1.5">
+                                        {isNote ? <FileText className="w-3.5 h-3.5 text-brand shrink-0" /> : null}
+                                        {isNote ? 'Тэмдэглэл' : String(log.subject || '—')}
                                     </span>
                                     <span className="text-[11px] text-muted-foreground">
-                                        {log.created_at ? formatDate(String(log.created_at)) : ''}
+                                        {log.created_at ? <DateText value={String(log.created_at)} /> : ''}
                                     </span>
                                 </div>
                                 {log.description ? (
@@ -793,9 +815,9 @@ function HandoverTab({ records, loading }: { records: Array<Record<string, unkno
                             <div key={String(rec.id) || i} className="bg-surface-2/40 border border-border rounded-md p-3">
                                 <div className="flex items-center justify-between mb-1">
                                     <span className="text-foreground text-sm font-medium">
-                                        {rec.handover_date ? formatDate(String(rec.handover_date)) : 'Огноо тодорхойгүй'}
+                                        {rec.handover_date ? <DateText value={String(rec.handover_date)} /> : 'Огноо тодорхойгүй'}
                                     </span>
-                                    <Badge
+                                    <StatusPill
                                         variant={
                                             rec.status === 'completed'
                                                 ? 'success'
@@ -803,14 +825,13 @@ function HandoverTab({ records, loading }: { records: Array<Record<string, unkno
                                                   ? 'danger'
                                                   : 'info'
                                         }
-                                        size="sm"
                                     >
                                         {rec.status === 'completed'
                                             ? 'Дууссан'
                                             : rec.status === 'disputed'
                                               ? 'Маргаантай'
                                               : 'Хүлээгдэж буй'}
-                                    </Badge>
+                                    </StatusPill>
                                 </div>
                                 {checkCount > 0 && (
                                     <div className="text-[11px] text-muted-foreground">

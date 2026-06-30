@@ -7,20 +7,13 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { DataTable, type DataTableColumn } from '@/components/ui/DataTable';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { FilterBar, FilterSelect } from '@/components/dashboard/FilterBar';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import {
     User,
-    Phone,
-    Mail,
-    Tag,
-    X,
-    MessageSquare,
     Clock,
-    Edit2,
-    Save,
-    FileText,
     Plus,
     AlertCircle,
     Upload,
@@ -29,8 +22,11 @@ import {
     RefreshCw,
     Star,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { formatShortDate } from '@/lib/utils/date';
+import { CustomerDetailSheet } from './_components/CustomerDetailSheet';
+import { CreateCustomerModal } from './_components/CreateCustomerModal';
+import { HubSpotImportModal } from './_components/HubSpotImportModal';
+import { HubSpotSyncModal } from './_components/HubSpotSyncModal';
 
 type ServiceLogType = 'inquiry' | 'complaint' | 'maintenance' | 'handover' | 'payment' | 'other';
 type ServiceLogStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
@@ -93,31 +89,6 @@ const TIER_VARIANT: Record<'A' | 'B' | 'C', 'success' | 'warning' | 'default'> =
     A: 'success',
     B: 'warning',
     C: 'default',
-};
-
-const SERVICE_LOG_TYPE_LABELS: Record<ServiceLogType, string> = {
-    inquiry: 'Хүсэлт',
-    complaint: 'Гомдол',
-    maintenance: 'Засвар',
-    handover: 'Хүлээлгэн өгөлт',
-    payment: 'Төлбөр',
-    other: 'Бичиг / Бусад',
-};
-
-const SERVICE_LOG_TYPE_VARIANT: Record<ServiceLogType, 'info' | 'danger' | 'warning' | 'success' | 'brand' | 'default'> = {
-    inquiry: 'info',
-    complaint: 'danger',
-    maintenance: 'warning',
-    handover: 'success',
-    payment: 'brand',
-    other: 'default',
-};
-
-const SERVICE_LOG_STATUS_LABELS: Record<ServiceLogStatus, string> = {
-    open: 'Шинэ',
-    in_progress: 'Шийдэгдэж байгаа',
-    resolved: 'Шийдэгдсэн',
-    closed: 'Хаасан',
 };
 
 const PREDEFINED_TAGS = ['New', 'Lead', 'Inactive', 'Hot', 'Regular'];
@@ -597,6 +568,80 @@ export default function CustomersPage() {
         return formatDate(date);
     };
 
+    const columns: DataTableColumn<Customer>[] = [
+        {
+            key: 'customer',
+            header: 'Харилцагч',
+            cell: (customer) => (
+                <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-brand-soft flex items-center justify-center">
+                        <User className="w-5 h-5 text-brand-strong" />
+                    </div>
+                    <div>
+                        <p className="font-medium text-foreground">
+                            {customer.name || 'Харилцагч'}
+                        </p>
+                        <p className="text-sm text-muted-foreground">{customer.phone || '-'}</p>
+                    </div>
+                </div>
+            ),
+        },
+        {
+            key: 'quality',
+            header: 'Чанар',
+            cell: (customer) => (
+                <div className="flex items-center gap-2">
+                    {customer.quality_tier ? (
+                        <Badge variant={TIER_VARIANT[customer.quality_tier]} size="sm">
+                            <Star className="w-3 h-3" />
+                            {customer.quality_score ?? 0} · {customer.quality_tier}
+                        </Badge>
+                    ) : (
+                        <span className="text-xs text-muted-foreground/60">—</span>
+                    )}
+                    {customer.lifecycle_stage && (
+                        <Badge variant={STAGE_VARIANT[customer.lifecycle_stage]} size="sm">
+                            {STAGE_LABELS[customer.lifecycle_stage]}
+                        </Badge>
+                    )}
+                </div>
+            ),
+        },
+        {
+            key: 'tags',
+            header: 'Tags',
+            cell: (customer) => (
+                <div className="flex flex-wrap gap-1">
+                    {(customer.tags || []).map((tag) => (
+                        <Badge key={tag} variant="brand" size="sm">
+                            {tag}
+                        </Badge>
+                    ))}
+                </div>
+            ),
+        },
+        {
+            key: 'last_contact',
+            header: 'Сүүлд харьцсан',
+            cell: (customer) => (
+                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <Clock className="w-4 h-4 text-muted-foreground/70" />
+                    {formatTime(customer.last_contact_at || customer.created_at)}
+                </div>
+            ),
+        },
+        {
+            key: 'message_count',
+            header: 'Харилцсан',
+            align: 'right',
+            cell: (customer) => (
+                <span className="text-sm text-muted-foreground tabular-nums">
+                    {customer.message_count || 0} удаа
+                </span>
+            ),
+        },
+    ];
+
     return (
         <div>
             <PageHeader
@@ -730,838 +775,101 @@ export default function CustomersPage() {
                     </div>
                 </Card>
             ) : (
-                <Card>
-                    <div className="overflow-x-auto">
-                        <table className="w-full">
-                            <thead className="bg-surface-2/50 border-b border-border">
-                                <tr>
-                                    <th className="px-6 py-3 text-left text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
-                                        Харилцагч
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
-                                        Чанар
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
-                                        Tags
-                                    </th>
-                                    <th className="px-6 py-3 text-left text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
-                                        Сүүлд харьцсан
-                                    </th>
-                                    <th className="px-6 py-3 text-right text-[11px] font-medium uppercase tracking-[0.08em] text-muted-foreground/80">
-                                        Харилцсан
-                                    </th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border/60">
-                                {filteredCustomers.map((customer) => (
-                                    <tr
-                                        key={customer.id}
-                                        className="hover:bg-surface-2/40 cursor-pointer transition-colors"
-                                        onClick={() => fetchCustomerDetail(customer.id)}
-                                    >
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-full bg-brand-soft flex items-center justify-center">
-                                                    <User className="w-5 h-5 text-brand-strong" />
-                                                </div>
-                                                <div>
-                                                    <p className="font-medium text-foreground">
-                                                        {customer.name || 'Харилцагч'}
-                                                    </p>
-                                                    <p className="text-sm text-muted-foreground">{customer.phone || '-'}</p>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-2">
-                                                {customer.quality_tier ? (
-                                                    <Badge variant={TIER_VARIANT[customer.quality_tier]} size="sm">
-                                                        <Star className="w-3 h-3" />
-                                                        {customer.quality_score ?? 0} · {customer.quality_tier}
-                                                    </Badge>
-                                                ) : (
-                                                    <span className="text-xs text-muted-foreground/60">—</span>
-                                                )}
-                                                {customer.lifecycle_stage && (
-                                                    <Badge variant={STAGE_VARIANT[customer.lifecycle_stage]} size="sm">
-                                                        {STAGE_LABELS[customer.lifecycle_stage]}
-                                                    </Badge>
-                                                )}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex flex-wrap gap-1">
-                                                {(customer.tags || []).map((tag) => (
-                                                    <Badge key={tag} variant="brand" size="sm">
-                                                        {tag}
-                                                    </Badge>
-                                                ))}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4">
-                                            <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                                                <Clock className="w-4 h-4 text-muted-foreground/70" />
-                                                {formatTime(customer.last_contact_at || customer.created_at)}
-                                            </div>
-                                        </td>
-                                        <td className="px-6 py-4 text-right">
-                                            <span className="text-sm text-muted-foreground tabular-nums">
-                                                {customer.message_count || 0} удаа
-                                            </span>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                </Card>
+                <DataTable
+                    columns={columns}
+                    data={filteredCustomers}
+                    getRowId={(c) => c.id}
+                    caption="Харилцагчдын хүснэгт"
+                    onRowClick={(customer) => fetchCustomerDetail(customer.id)}
+                    pageSize={filteredCustomers.length || 1}
+                    hidePagination
+                    showDensityToggle={false}
+                />
             )}
 
             {/* HubSpot Direct Sync Modal */}
-            {isHubspotSyncOpen && (
-                <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-surface rounded-xl border border-border w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-xl">
-                        <div className="flex items-center justify-between p-6 border-b border-border">
-                            <h2 className="heading-section text-lg text-foreground">HubSpot-аас шууд татах</h2>
-                            <button onClick={resetHubspotSync} className="p-2 hover:bg-surface-2 rounded-md transition-colors">
-                                <X className="w-5 h-5 text-muted-foreground" />
-                            </button>
-                        </div>
-                        <div className="p-6 space-y-4">
-                            {!hubspotPreview && !hubspotResult && (
-                                <>
-                                    <div className="bg-status-info-soft p-3 rounded-md text-sm text-status-info space-y-1">
-                                        <p className="font-medium">HubSpot Private App token хэрхэн авах:</p>
-                                        <ol className="list-decimal pl-5 space-y-0.5 text-xs">
-                                            <li>HubSpot → Settings (⚙️) → Integrations → <strong>Private Apps</strong></li>
-                                            <li>"Create a private app" дарна</li>
-                                            <li>Scopes таб → <strong>crm.objects.contacts.read</strong> сонгох</li>
-                                            <li>Create → Access token-ийг хуулж энд буулгах</li>
-                                        </ol>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-1.5">
-                                            HubSpot Access Token
-                                        </label>
-                                        <input
-                                            type="password"
-                                            value={hubspotToken}
-                                            onChange={(e) => setHubspotToken(e.target.value)}
-                                            placeholder="pat-na1-xxxxxxxx-..."
-                                            className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm font-mono text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
-                                        />
-                                        <p className="mt-1 text-xs text-muted-foreground/70">
-                                            Token хадгалагдсан бол хоосон үлдээж болно — хадгалсан token-ыг автоматаар ашиглана.
-                                        </p>
-                                    </div>
-                                    <label className="flex items-center gap-2 text-sm">
-                                        <input
-                                            type="checkbox"
-                                            checked={hubspotSaveToken}
-                                            onChange={(e) => setHubspotSaveToken(e.target.checked)}
-                                        />
-                                        Token-ыг shop-д хадгалах (дараагийн удаа дахин оруулахгүй)
-                                    </label>
-                                    {hubspotError && (
-                                        <p className="flex items-center gap-1.5 text-sm text-status-danger">
-                                            <AlertCircle className="w-4 h-4" /> {hubspotError}
-                                        </p>
-                                    )}
-                                    <div className="flex justify-end gap-2 pt-2">
-                                        <Button variant="secondary" size="sm" onClick={resetHubspotSync}>Цуцлах</Button>
-                                        <Button
-                                            variant="primary"
-                                            size="sm"
-                                            onClick={previewHubspot}
-                                            disabled={hubspotSyncing}
-                                            isLoading={hubspotSyncing}
-                                        >
-                                            Урьдчилан харах
-                                        </Button>
-                                    </div>
-                                </>
-                            )}
-
-                            {hubspotPreview && !hubspotResult && (
-                                <>
-                                    <div className="bg-status-success-soft p-3 rounded-md text-sm text-status-success">
-                                        ✓ Token хүчинтэй. Эхний {hubspotPreview.sample.length} contact:
-                                    </div>
-                                    <div className="border border-border rounded-md overflow-hidden">
-                                        <table className="w-full text-sm">
-                                            <thead className="bg-surface-2/50">
-                                                <tr>
-                                                    <th className="px-3 py-2 text-left">Нэр</th>
-                                                    <th className="px-3 py-2 text-left">Email</th>
-                                                    <th className="px-3 py-2 text-left">Утас</th>
-                                                    <th className="px-3 py-2 text-left">Lifecycle</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-border/60">
-                                                {hubspotPreview.sample.map((c) => (
-                                                    <tr key={c.id}>
-                                                        <td className="px-3 py-2">{c.name}</td>
-                                                        <td className="px-3 py-2 text-muted-foreground">{c.email || '-'}</td>
-                                                        <td className="px-3 py-2 text-muted-foreground">{c.phone || '-'}</td>
-                                                        <td className="px-3 py-2 text-muted-foreground">{c.lifecycle || '-'}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    {hubspotPreview.has_more && (
-                                        <p className="text-xs text-muted-foreground">Илүү олон contact байгаа — sync дарвал бүгдийг (5000-аас бага) татна.</p>
-                                    )}
-                                    {hubspotError && (
-                                        <p className="flex items-center gap-1.5 text-sm text-status-danger">
-                                            <AlertCircle className="w-4 h-4" /> {hubspotError}
-                                        </p>
-                                    )}
-                                    <div className="flex justify-end gap-2 pt-2">
-                                        <Button variant="secondary" size="sm" onClick={() => setHubspotPreview(null)}>Буцах</Button>
-                                        <Button
-                                            variant="primary"
-                                            size="sm"
-                                            onClick={confirmHubspotSync}
-                                            disabled={hubspotSyncing}
-                                            isLoading={hubspotSyncing}
-                                        >
-                                            Бүх contact-ыг татаж импортлох
-                                        </Button>
-                                    </div>
-                                </>
-                            )}
-
-                            {hubspotResult && (
-                                <>
-                                    <div className="bg-status-success-soft p-4 rounded-md">
-                                        <p className="text-status-success font-medium">✓ HubSpot sync амжилттай боллоо</p>
-                                        <ul className="mt-2 text-sm text-foreground space-y-1">
-                                            <li>HubSpot-ээс татсан: <strong>{hubspotResult.total}</strong></li>
-                                            <li>Шинэ нэмэгдсэн: <strong>{hubspotResult.imported}</strong></li>
-                                            <li>Алгассан (давхардсан): <strong>{hubspotResult.skipped}</strong></li>
-                                            {hubspotResult.errors.length > 0 && (
-                                                <li className="text-status-danger">Алдаатай: <strong>{hubspotResult.errors.length}</strong></li>
-                                            )}
-                                        </ul>
-                                    </div>
-                                    {hubspotResult.errors.length > 0 && (
-                                        <div className="max-h-40 overflow-y-auto bg-status-danger-soft p-3 rounded-md text-xs">
-                                            {hubspotResult.errors.slice(0, 10).map((e, i) => (
-                                                <p key={i}>{e.name}: {e.reason}</p>
-                                            ))}
-                                        </div>
-                                    )}
-                                    <div className="flex justify-end pt-2">
-                                        <Button variant="primary" size="sm" onClick={resetHubspotSync}>Хаах</Button>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
+            <HubSpotSyncModal
+                open={isHubspotSyncOpen}
+                hubspotToken={hubspotToken}
+                setHubspotToken={setHubspotToken}
+                hubspotSaveToken={hubspotSaveToken}
+                setHubspotSaveToken={setHubspotSaveToken}
+                hubspotPreview={hubspotPreview}
+                setHubspotPreview={setHubspotPreview}
+                hubspotSyncing={hubspotSyncing}
+                hubspotError={hubspotError}
+                hubspotResult={hubspotResult}
+                onClose={resetHubspotSync}
+                onPreview={previewHubspot}
+                onConfirm={confirmHubspotSync}
+            />
 
             {/* HubSpot Import Modal */}
-            {isImportOpen && (
-                <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-surface rounded-xl border border-border w-full max-w-xl max-h-[90vh] overflow-y-auto shadow-xl">
-                        <div className="flex items-center justify-between p-6 border-b border-border">
-                            <h2 className="heading-section text-lg text-foreground">HubSpot CSV импорт</h2>
-                            <button onClick={resetImport} className="p-2 hover:bg-surface-2 rounded-md transition-colors">
-                                <X className="w-5 h-5 text-muted-foreground" />
-                            </button>
-                        </div>
-                        <div className="p-6 space-y-4">
-                            {!importPreview && !importResult && (
-                                <>
-                                    <p className="text-sm text-muted-foreground">
-                                        HubSpot Contacts хэсгээс экспортолсон CSV/XLSX файл сонгоно уу. Email эсвэл утсаар давхардлыг таниж хасна.
-                                    </p>
-                                    <input
-                                        type="file"
-                                        accept=".csv,.xlsx,.xls"
-                                        onChange={(e) => setImportFile(e.target.files?.[0] || null)}
-                                        className="block w-full text-sm text-foreground file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-brand file:text-brand-fg file:font-medium hover:file:bg-brand-strong"
-                                    />
-                                    {importError && (
-                                        <p className="flex items-center gap-1.5 text-sm text-status-danger">
-                                            <AlertCircle className="w-4 h-4" /> {importError}
-                                        </p>
-                                    )}
-                                    <div className="flex justify-end gap-2 pt-2">
-                                        <Button variant="secondary" size="sm" onClick={resetImport}>Цуцлах</Button>
-                                        <Button
-                                            variant="primary"
-                                            size="sm"
-                                            onClick={previewImport}
-                                            disabled={!importFile || importing}
-                                            isLoading={importing}
-                                        >
-                                            Урьдчилан харах
-                                        </Button>
-                                    </div>
-                                </>
-                            )}
-
-                            {importPreview && !importResult && (
-                                <>
-                                    <div className="bg-status-info-soft p-3 rounded-md text-sm text-status-info">
-                                        Нийт <strong>{importPreview.total}</strong> мөр танигдлаа. Эхний {importPreview.sample.length}-г харуулж байна:
-                                    </div>
-                                    <div className="border border-border rounded-md overflow-hidden">
-                                        <table className="w-full text-sm">
-                                            <thead className="bg-surface-2/50">
-                                                <tr>
-                                                    <th className="px-3 py-2 text-left">Нэр</th>
-                                                    <th className="px-3 py-2 text-left">Email</th>
-                                                    <th className="px-3 py-2 text-left">Утас</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-border/60">
-                                                {importPreview.sample.map((c, i) => (
-                                                    <tr key={i}>
-                                                        <td className="px-3 py-2">{c.name}</td>
-                                                        <td className="px-3 py-2 text-muted-foreground">{c.email || '-'}</td>
-                                                        <td className="px-3 py-2 text-muted-foreground">{c.phone || '-'}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-                                    {importError && (
-                                        <p className="flex items-center gap-1.5 text-sm text-status-danger">
-                                            <AlertCircle className="w-4 h-4" /> {importError}
-                                        </p>
-                                    )}
-                                    <div className="flex justify-end gap-2 pt-2">
-                                        <Button variant="secondary" size="sm" onClick={() => setImportPreview(null)}>Буцах</Button>
-                                        <Button
-                                            variant="primary"
-                                            size="sm"
-                                            onClick={confirmImport}
-                                            disabled={importing}
-                                            isLoading={importing}
-                                        >
-                                            Импорт хийх ({importPreview.total})
-                                        </Button>
-                                    </div>
-                                </>
-                            )}
-
-                            {importResult && (
-                                <>
-                                    <div className="bg-status-success-soft p-4 rounded-md">
-                                        <p className="text-status-success font-medium">
-                                            ✓ Импорт амжилттай боллоо
-                                        </p>
-                                        <ul className="mt-2 text-sm text-foreground space-y-1">
-                                            <li>Нэмэгдсэн: <strong>{importResult.imported}</strong></li>
-                                            <li>Алгассан (давхардсан): <strong>{importResult.skipped}</strong></li>
-                                            {importResult.errors.length > 0 && (
-                                                <li className="text-status-danger">Алдаатай: <strong>{importResult.errors.length}</strong></li>
-                                            )}
-                                        </ul>
-                                    </div>
-                                    {importResult.errors.length > 0 && (
-                                        <div className="max-h-40 overflow-y-auto bg-status-danger-soft p-3 rounded-md text-xs">
-                                            {importResult.errors.slice(0, 10).map((e, i) => (
-                                                <p key={i}>{e.name}: {e.reason}</p>
-                                            ))}
-                                        </div>
-                                    )}
-                                    <div className="flex justify-end pt-2">
-                                        <Button variant="primary" size="sm" onClick={resetImport}>Хаах</Button>
-                                    </div>
-                                </>
-                            )}
-                        </div>
-                    </div>
-                </div>
-            )}
+            <HubSpotImportModal
+                open={isImportOpen}
+                importFile={importFile}
+                setImportFile={setImportFile}
+                importPreview={importPreview}
+                setImportPreview={setImportPreview}
+                importing={importing}
+                importError={importError}
+                importResult={importResult}
+                onClose={resetImport}
+                onPreview={previewImport}
+                onConfirm={confirmImport}
+            />
 
             {/* Create Customer Modal */}
-            {isCreateOpen && (
-                <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-surface rounded-xl border border-border w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-xl">
-                        <div className="flex items-center justify-between p-6 border-b border-border">
-                            <h2 className="heading-section text-lg text-foreground">Шинэ харилцагч нэмэх</h2>
-                            <button
-                                onClick={() => {
-                                    setIsCreateOpen(false);
-                                    setCreateError(null);
-                                }}
-                                className="p-2 hover:bg-surface-2 rounded-md transition-colors"
-                            >
-                                <X className="w-5 h-5 text-muted-foreground" />
-                            </button>
-                        </div>
-                        <div className="p-6 space-y-4">
-                            <div>
-                                <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-1.5">
-                                    Нэр <span className="text-status-danger">*</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    value={createForm.name}
-                                    onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
-                                    placeholder="Б. Болд"
-                                    className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
-                                />
-                            </div>
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-1.5">
-                                        Утас
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={createForm.phone}
-                                        onChange={(e) => setCreateForm({ ...createForm, phone: e.target.value })}
-                                        placeholder="9999-9999"
-                                        className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-1.5">
-                                        И-мэйл
-                                    </label>
-                                    <input
-                                        type="email"
-                                        value={createForm.email}
-                                        onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
-                                        placeholder="bold@example.com"
-                                        className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-1.5">
-                                    Хаяг
-                                </label>
-                                <input
-                                    type="text"
-                                    value={createForm.address}
-                                    onChange={(e) => setCreateForm({ ...createForm, address: e.target.value })}
-                                    placeholder="УБ хот, СБД, ..."
-                                    className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-1.5">
-                                    Тэмдэглэл
-                                </label>
-                                <textarea
-                                    value={createForm.notes}
-                                    onChange={(e) => setCreateForm({ ...createForm, notes: e.target.value })}
-                                    rows={3}
-                                    placeholder="Хэрэгцээ, хүсэлт, бусад мэдээлэл..."
-                                    className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
-                                />
-                            </div>
-                            {createError && (
-                                <p className="flex items-center gap-1.5 text-sm text-status-danger">
-                                    <AlertCircle className="w-4 h-4" /> {createError}
-                                </p>
-                            )}
-                            <div className="flex justify-end gap-2 pt-2">
-                                <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={() => {
-                                        setIsCreateOpen(false);
-                                        setCreateError(null);
-                                    }}
-                                >
-                                    Цуцлах
-                                </Button>
-                                <Button
-                                    variant="primary"
-                                    size="sm"
-                                    onClick={createCustomer}
-                                    disabled={creating || !createForm.name.trim()}
-                                    isLoading={creating}
-                                >
-                                    {!creating && <Plus className="w-4 h-4" />}
-                                    Бүртгэх
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <CreateCustomerModal
+                open={isCreateOpen}
+                onOpenChange={setIsCreateOpen}
+                createForm={createForm}
+                setCreateForm={setCreateForm}
+                creating={creating}
+                createError={createError}
+                setCreateError={setCreateError}
+                onSubmit={createCustomer}
+            />
 
-            {/* Customer Detail Modal */}
+            {/* Customer Detail Sheet */}
             {isDetailOpen && selectedCustomer && (
-                <div className="fixed inset-0 bg-foreground/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="bg-surface rounded-xl border border-border w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl">
-                        {/* Header */}
-                        <div className="flex items-center justify-between p-6 border-b border-border">
-                            <div className="flex items-center gap-3">
-                                <div className="w-12 h-12 rounded-full bg-brand-soft flex items-center justify-center">
-                                    <User className="w-6 h-6 text-brand-strong" />
-                                </div>
-                                <div>
-                                    <h2 className="heading-section text-lg text-foreground">
-                                        {selectedCustomer.name || 'Харилцагч'}
-                                    </h2>
-                                    <p className="text-sm text-muted-foreground">
-                                        Бүртгэсэн: {formatDate(selectedCustomer.created_at)}
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                {editMode ? (
-                                    <Button
-                                        onClick={saveCustomer}
-                                        disabled={saving}
-                                        variant="primary"
-                                        size="sm"
-                                        isLoading={saving}
-                                    >
-                                        {!saving && <Save className="w-4 h-4" />}
-                                        Хадгалах
-                                    </Button>
-                                ) : (
-                                    <>
-                                        <Button onClick={() => setEditMode(true)} variant="secondary" size="sm">
-                                            <Edit2 className="w-4 h-4" />
-                                            Засах
-                                        </Button>
-                                        <Button
-                                            onClick={() => { setMergeMode(m => !m); setMergeError(null); setMergeTargetId(''); }}
-                                            variant="secondary"
-                                            size="sm"
-                                        >
-                                            <Users className="w-4 h-4" />
-                                            Нэгтгэх
-                                        </Button>
-                                    </>
-                                )}
-                                <button
-                                    onClick={() => {
-                                        setIsDetailOpen(false);
-                                        setEditMode(false);
-                                        setMergeMode(false);
-                                    }}
-                                    className="p-2 hover:bg-surface-2 rounded-md transition-colors"
-                                >
-                                    <X className="w-5 h-5 text-muted-foreground" />
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Content */}
-                        <div className="p-6 space-y-6">
-                            {/* Давхардал нэгтгэх panel */}
-                            {mergeMode && (
-                                <div className="rounded-lg border border-border bg-surface-2/40 p-4 space-y-3">
-                                    <div className="flex items-start gap-2">
-                                        <Users className="w-4 h-4 text-brand-strong mt-0.5" />
-                                        <div className="text-sm text-muted-foreground">
-                                            Энэ харилцагч руу нэгтгэх <span className="font-medium text-foreground">давхардсан</span> харилцагчийг сонгоно уу.
-                                            Сонгосон харилцагчийн бүх холбоо энд шилжээд устана.
-                                        </div>
-                                    </div>
-                                    {mergeError && (
-                                        <p className="text-sm text-status-danger flex items-center gap-1">
-                                            <AlertCircle className="w-4 h-4" />{mergeError}
-                                        </p>
-                                    )}
-                                    <div className="flex items-center gap-2">
-                                        <select
-                                            value={mergeTargetId}
-                                            onChange={e => setMergeTargetId(e.target.value)}
-                                            className="flex-1 px-3 py-2 border border-border-strong rounded-lg text-sm bg-surface"
-                                        >
-                                            <option value="">— Давхардсан харилцагч сонгох —</option>
-                                            {customers
-                                                .filter(c => c.id !== selectedCustomer.id)
-                                                .map(c => (
-                                                    <option key={c.id} value={c.id}>
-                                                        {(c.name || 'Нэргүй')}{c.phone ? ` · ${c.phone}` : ''}
-                                                    </option>
-                                                ))}
-                                        </select>
-                                        <Button
-                                            onClick={submitMerge}
-                                            disabled={!mergeTargetId || merging}
-                                            isLoading={merging}
-                                            variant="primary"
-                                            size="sm"
-                                        >
-                                            Нэгтгэх
-                                        </Button>
-                                    </div>
-                                </div>
-                            )}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-1.5">
-                                        Нэр
-                                    </label>
-                                    {editMode ? (
-                                        <input
-                                            type="text"
-                                            value={editForm.name}
-                                            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                                            className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-border-strong"
-                                        />
-                                    ) : (
-                                        <p className="text-foreground">{selectedCustomer.name || '-'}</p>
-                                    )}
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-1.5">
-                                        Утас
-                                    </label>
-                                    {editMode ? (
-                                        <input
-                                            type="text"
-                                            value={editForm.phone}
-                                            onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                                            className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-border-strong"
-                                        />
-                                    ) : (
-                                        <p className="flex items-center gap-2 text-foreground">
-                                            <Phone className="w-4 h-4 text-muted-foreground/70" />
-                                            {selectedCustomer.phone || '-'}
-                                        </p>
-                                    )}
-                                </div>
-                                <div className="col-span-2">
-                                    <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-1.5">
-                                        И-мэйл
-                                    </label>
-                                    {editMode ? (
-                                        <input
-                                            type="email"
-                                            value={editForm.email}
-                                            onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                                            className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-border-strong"
-                                        />
-                                    ) : (
-                                        <p className="flex items-center gap-2 text-foreground">
-                                            <Mail className="w-4 h-4 text-muted-foreground/70" />
-                                            {selectedCustomer.email || '-'}
-                                        </p>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Tags */}
-                            <div>
-                                <label className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-2">
-                                    <Tag className="w-3.5 h-3.5" /> Tags
-                                </label>
-                                <div className="flex flex-wrap gap-2">
-                                    {(selectedCustomer.tags || []).length > 0 ? (
-                                        selectedCustomer.tags!.map((tag) => (
-                                            <Badge key={tag} variant="brand" size="md">
-                                                {tag}
-                                            </Badge>
-                                        ))
-                                    ) : (
-                                        <span className="text-sm text-muted-foreground">Tag байхгүй</span>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Notes */}
-                            <div>
-                                <div className="flex items-center justify-between mb-2">
-                                    <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80">
-                                        Тэмдэглэл
-                                    </label>
-                                    {!notesEditing ? (
-                                        <button
-                                            onClick={() => {
-                                                setNotesDraft(selectedCustomer.notes || '');
-                                                setNotesEditing(true);
-                                            }}
-                                            className="text-xs text-brand hover:underline flex items-center gap-1"
-                                        >
-                                            <Edit2 className="w-3 h-3" />
-                                            Засах
-                                        </button>
-                                    ) : (
-                                        <div className="flex items-center gap-2">
-                                            <button
-                                                onClick={() => setNotesEditing(false)}
-                                                className="text-xs text-muted-foreground hover:underline"
-                                            >
-                                                Цуцлах
-                                            </button>
-                                            <button
-                                                onClick={saveNotesOnly}
-                                                disabled={notesSaving}
-                                                className="text-xs text-brand font-medium hover:underline flex items-center gap-1 disabled:opacity-50"
-                                            >
-                                                <Save className="w-3 h-3" />
-                                                {notesSaving ? 'Хадгалж байна...' : 'Хадгалах'}
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                                {notesEditing ? (
-                                    <textarea
-                                        value={notesDraft}
-                                        onChange={(e) => setNotesDraft(e.target.value)}
-                                        rows={5}
-                                        placeholder="Харилцагчийн талаар тэмдэглэл бичих..."
-                                        className="w-full px-3 py-2 bg-background border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-border-strong"
-                                    />
-                                ) : (
-                                    <p className="text-foreground bg-surface-2/40 border border-border p-3 rounded-md whitespace-pre-wrap min-h-[60px]">
-                                        {selectedCustomer.notes || 'Тэмдэглэл байхгүй'}
-                                    </p>
-                                )}
-                            </div>
-
-                            {/* Stats */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-status-success-soft p-4 rounded-md text-center">
-                                    <p className="heading-display text-2xl text-status-success tabular-nums">
-                                        {selectedCustomer.message_count || 0}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground mt-1">Харилцсан</p>
-                                </div>
-                                <div className="bg-status-info-soft p-4 rounded-md text-center">
-                                    <p className="heading-display text-2xl text-status-info tabular-nums">
-                                        {formatTime(selectedCustomer.created_at)}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground mt-1">Бүртгэсэн</p>
-                                </div>
-                            </div>
-
-                            {/* Service Logs */}
-                            <div>
-                                <label className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-3">
-                                    <FileText className="w-3.5 h-3.5" />
-                                    Хүсэлт / Гомдол / Бичиг
-                                    {selectedCustomer.service_logs && selectedCustomer.service_logs.length > 0 && (
-                                        <span className="normal-case tracking-normal text-muted-foreground/70">
-                                            ({selectedCustomer.service_logs.length})
-                                        </span>
-                                    )}
-                                </label>
-
-                                {/* New entry form */}
-                                <div className="bg-surface-2/40 border border-border rounded-md p-3 space-y-2 mb-3">
-                                    <div className="flex flex-wrap gap-2">
-                                        {(['complaint', 'inquiry', 'other'] as ServiceLogType[]).map((t) => (
-                                            <button
-                                                key={t}
-                                                type="button"
-                                                onClick={() => setLogForm((f) => ({ ...f, type: t }))}
-                                                className={cn(
-                                                    'px-3 py-1 rounded-md text-xs font-medium transition-colors border',
-                                                    logForm.type === t
-                                                        ? 'bg-brand text-brand-fg border-brand'
-                                                        : 'bg-surface text-muted-foreground border-border hover:bg-surface-2',
-                                                )}
-                                            >
-                                                {SERVICE_LOG_TYPE_LABELS[t]}
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <input
-                                        type="text"
-                                        value={logForm.subject}
-                                        onChange={(e) => setLogForm((f) => ({ ...f, subject: e.target.value }))}
-                                        placeholder="Гарчиг (заавал)"
-                                        className="w-full px-3 py-2 bg-surface border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-border-strong"
-                                    />
-                                    <textarea
-                                        value={logForm.description}
-                                        onChange={(e) => setLogForm((f) => ({ ...f, description: e.target.value }))}
-                                        placeholder="Дэлгэрэнгүй текст (хүсэлт / гомдол / бичгийн агуулга)"
-                                        rows={3}
-                                        className="w-full px-3 py-2 bg-surface border border-border rounded-md text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40 focus:border-border-strong"
-                                    />
-                                    {logError && (
-                                        <p className="flex items-center gap-1 text-xs text-status-danger">
-                                            <AlertCircle className="w-3 h-3" /> {logError}
-                                        </p>
-                                    )}
-                                    <Button
-                                        type="button"
-                                        onClick={submitServiceLog}
-                                        disabled={logSubmitting || !logForm.subject.trim()}
-                                        isLoading={logSubmitting}
-                                        variant="primary"
-                                        size="sm"
-                                    >
-                                        {!logSubmitting && <Plus className="w-4 h-4" />}
-                                        Бүртгэх
-                                    </Button>
-                                </div>
-
-                                {/* History */}
-                                {selectedCustomer.service_logs && selectedCustomer.service_logs.length > 0 ? (
-                                    <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
-                                        {selectedCustomer.service_logs.map((log) => (
-                                            <div
-                                                key={log.id}
-                                                className="border border-border rounded-md p-3 hover:border-border-strong transition-colors bg-surface"
-                                            >
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <div className="flex items-center gap-2">
-                                                        <Badge
-                                                            variant={SERVICE_LOG_TYPE_VARIANT[log.type] || 'default'}
-                                                            size="sm"
-                                                        >
-                                                            {SERVICE_LOG_TYPE_LABELS[log.type] || log.type}
-                                                        </Badge>
-                                                        <span className="text-xs text-muted-foreground">
-                                                            {SERVICE_LOG_STATUS_LABELS[log.status] || log.status}
-                                                        </span>
-                                                    </div>
-                                                    <span className="text-xs text-muted-foreground/70">
-                                                        {formatDate(log.created_at)}
-                                                    </span>
-                                                </div>
-                                                <p className="text-sm font-medium text-foreground">{log.subject}</p>
-                                                {log.description && (
-                                                    <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">
-                                                        {log.description}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        ))}
-                                    </div>
-                                ) : (
-                                    <p className="text-sm text-muted-foreground text-center py-4">
-                                        Бүртгэгдсэн хүсэлт / гомдол / бичиг байхгүй
-                                    </p>
-                                )}
-                            </div>
-
-                            {/* Recent Chat */}
-                            {selectedCustomer.chat_history && selectedCustomer.chat_history.length > 0 && (
-                                <div>
-                                    <label className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-2">
-                                        <MessageSquare className="w-3.5 h-3.5" />
-                                        Сүүлийн харилцаа
-                                    </label>
-                                    <div className="space-y-2 max-h-48 overflow-y-auto bg-surface-2/40 border border-border p-3 rounded-md">
-                                        {selectedCustomer.chat_history.slice(0, 5).map((chat, i) => (
-                                            <div key={i} className="text-sm">
-                                                <p className="text-muted-foreground">
-                                                    <span className="font-medium text-foreground">Хэрэглэгч:</span>{' '}
-                                                    {chat.message}
-                                                </p>
-                                                <p className="text-brand">
-                                                    <span className="font-medium">AI:</span> {chat.response}
-                                                </p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                </div>
+                <CustomerDetailSheet
+                    open={isDetailOpen}
+                    onClose={() => {
+                        setIsDetailOpen(false);
+                        setEditMode(false);
+                        setMergeMode(false);
+                    }}
+                    selectedCustomer={selectedCustomer}
+                    customers={customers}
+                    editMode={editMode}
+                    setEditMode={setEditMode}
+                    editForm={editForm}
+                    setEditForm={setEditForm}
+                    saving={saving}
+                    onSaveCustomer={saveCustomer}
+                    mergeMode={mergeMode}
+                    setMergeMode={setMergeMode}
+                    mergeTargetId={mergeTargetId}
+                    setMergeTargetId={setMergeTargetId}
+                    mergeError={mergeError}
+                    setMergeError={setMergeError}
+                    merging={merging}
+                    onSubmitMerge={submitMerge}
+                    notesEditing={notesEditing}
+                    setNotesEditing={setNotesEditing}
+                    notesDraft={notesDraft}
+                    setNotesDraft={setNotesDraft}
+                    notesSaving={notesSaving}
+                    onSaveNotesOnly={saveNotesOnly}
+                    logForm={logForm}
+                    setLogForm={setLogForm}
+                    logSubmitting={logSubmitting}
+                    logError={logError}
+                    onSubmitServiceLog={submitServiceLog}
+                    formatDate={formatDate}
+                    formatTime={formatTime}
+                />
             )}
         </div>
     );
