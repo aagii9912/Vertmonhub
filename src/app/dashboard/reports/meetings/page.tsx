@@ -1,12 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { CalendarDays, UserPlus, Repeat, KeyRound, CheckCircle2, Landmark, Banknote, Home, Receipt, ArrowLeftRight } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/Card';
-import { Spinner } from '@/components/ui/Spinner';
-import { EmptyState } from '@/components/ui/EmptyState';
+import { CalendarDays, UserPlus, Repeat, KeyRound, Landmark, Banknote, Home, Receipt, ArrowLeftRight } from 'lucide-react';
+import { Card } from '@/components/ui/Card';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
+import { DataTable, type DataTableColumn } from '@/components/ui/DataTable';
+import { ChartCard } from '@/components/ui/ChartCard';
+import { BarChart } from '@/components/charts/BarChart';
 
 const SHOP_KEY = 'vertmonhub_active_shop_id';
 
@@ -68,6 +69,25 @@ export default function MeetingsReportPage() {
 
     const t = totals;
 
+    // Financing channel breakdown — same totals, rendered as a bar chart instead of tiles.
+    const finData = FIN.map((f) => ({
+        channel: f.label,
+        value: t ? (t as unknown as Record<string, number>)[f.key] : 0,
+    }));
+
+    // Monthly breakdown — column renderers reuse the exact MonthRow numbers + monthLabel().
+    const columns: DataTableColumn<MonthRow>[] = [
+        { key: 'month', header: 'Сар', cell: (m) => <span className="text-foreground">{monthLabel(m.month)}</span> },
+        { key: 'total_meetings', header: 'Нийт', align: 'right', cell: (m) => <span className="tabular-nums font-medium text-foreground">{m.total_meetings}</span> },
+        { key: 'new_customer', header: 'Шинэ', align: 'right', cell: (m) => <span className="tabular-nums text-status-success">{m.new_customer}</span> },
+        { key: 'repeat_customer', header: 'Давтан', align: 'right', cell: (m) => <span className="tabular-nums text-foreground">{m.repeat_customer}</span> },
+        { key: 'existing_buyer', header: 'Худ. авагч', align: 'right', cell: (m) => <span className="tabular-nums text-foreground">{m.existing_buyer}</span> },
+        { key: 'completed', header: 'Дуусгасан', align: 'right', cell: (m) => <span className="tabular-nums text-muted-foreground">{m.completed}</span> },
+        { key: 'fin_bank_loan', header: 'Банк', align: 'right', cell: (m) => <span className="tabular-nums text-muted-foreground">{m.fin_bank_loan}</span> },
+        { key: 'fin_cash', header: 'Бэлэн', align: 'right', cell: (m) => <span className="tabular-nums text-muted-foreground">{m.fin_cash}</span> },
+        { key: 'fin_mortgage', header: 'Ипотек', align: 'right', cell: (m) => <span className="tabular-nums text-muted-foreground">{m.fin_mortgage}</span> },
+    ];
+
     return (
         <div>
             <PageHeader
@@ -84,70 +104,34 @@ export default function MeetingsReportPage() {
             </StatBar>
 
             {/* Financing channel breakdown */}
-            <Card className="mb-5">
-                <CardContent className="p-4">
-                    <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-                        <Landmark className="w-4 h-4 text-brand-strong" /> Санхүүжилтийн суваг
-                    </h3>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-                        {FIN.map((f) => (
-                            <div key={f.key} className="p-3 rounded-lg border border-border bg-surface-2/40">
-                                <div className="flex items-center gap-1.5 text-muted-foreground text-[12px] mb-1">{f.icon}{f.label}</div>
-                                <div className="text-xl font-semibold text-foreground tabular-nums">{t ? (t as unknown as Record<string, number>)[f.key] : 0}</div>
-                            </div>
-                        ))}
-                    </div>
-                </CardContent>
-            </Card>
+            <ChartCard
+                eyebrow="Санхүүжилт"
+                title="Санхүүжилтийн суваг"
+                height={240}
+                className="mb-5"
+            >
+                <BarChart
+                    data={finData}
+                    xKey="channel"
+                    series={[{ key: 'value', name: 'Уулзалт' }]}
+                    colorByPoint
+                />
+            </ChartCard>
 
             {/* Monthly table */}
             <Card>
-                <CardContent className="p-0">
-                    {loading ? (
-                        <div className="flex items-center justify-center py-20"><Spinner size="lg" /></div>
-                    ) : months.length === 0 ? (
-                        <div className="py-12">
-                            <EmptyState
-                                icon={<CalendarDays className="w-7 h-7" />}
-                                title="Уулзалтын бүртгэл алга"
-                                description="Менежерүүд уулзалт товлоход (лийдийн санхүүжилт, уулзалтын төрөл бүртгэснээр) сар бүрийн задаргаа энд хуримтлагдана."
-                            />
-                        </div>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="border-b border-border bg-surface-2/40 text-left text-[11px] uppercase tracking-[0.08em] text-muted-foreground/80">
-                                        <th className="px-4 py-3 font-medium">Сар</th>
-                                        <th className="px-4 py-3 font-medium text-right">Нийт</th>
-                                        <th className="px-4 py-3 font-medium text-right">Шинэ</th>
-                                        <th className="px-4 py-3 font-medium text-right">Давтан</th>
-                                        <th className="px-4 py-3 font-medium text-right">Худ. авагч</th>
-                                        <th className="px-4 py-3 font-medium text-right">Дуусгасан</th>
-                                        <th className="px-4 py-3 font-medium text-right">Банк</th>
-                                        <th className="px-4 py-3 font-medium text-right">Бэлэн</th>
-                                        <th className="px-4 py-3 font-medium text-right">Ипотек</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {months.map((m) => (
-                                        <tr key={m.month} className="border-b border-border/40 hover:bg-surface-2/40 transition-colors">
-                                            <td className="px-4 py-3 text-foreground">{monthLabel(m.month)}</td>
-                                            <td className="px-4 py-3 text-right tabular-nums font-medium text-foreground">{m.total_meetings}</td>
-                                            <td className="px-4 py-3 text-right tabular-nums text-status-success">{m.new_customer}</td>
-                                            <td className="px-4 py-3 text-right tabular-nums text-foreground">{m.repeat_customer}</td>
-                                            <td className="px-4 py-3 text-right tabular-nums text-foreground">{m.existing_buyer}</td>
-                                            <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{m.completed}</td>
-                                            <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{m.fin_bank_loan}</td>
-                                            <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{m.fin_cash}</td>
-                                            <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{m.fin_mortgage}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </CardContent>
+                <div className="p-4 md:p-5">
+                    <DataTable<MonthRow>
+                        columns={columns}
+                        data={months}
+                        getRowId={(m) => m.month}
+                        caption="Сар бүрийн уулзалтын задаргаа"
+                        loading={loading}
+                        emptyMessage="Менежерүүд уулзалт товлоход (лийдийн санхүүжилт, уулзалтын төрөл бүртгэснээр) сар бүрийн задаргаа энд хуримтлагдана."
+                        showDensityToggle={false}
+                        hidePagination
+                    />
+                </div>
             </Card>
         </div>
     );

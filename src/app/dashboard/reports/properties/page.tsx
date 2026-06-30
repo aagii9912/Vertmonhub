@@ -1,8 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/dashboard/PageHeader';
+import { StatsCard } from '@/components/dashboard/StatsCard';
+import { ChartCard } from '@/components/ui/ChartCard';
+import { BarChart } from '@/components/charts/BarChart';
+import { Spinner } from '@/components/ui/Spinner';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Building2, Download, CheckCircle2, Layers, Home } from 'lucide-react';
 
 const SHOP_KEY = 'vertmonhub_active_shop_id';
@@ -76,89 +81,80 @@ export default function PropertiesReportPage() {
     }
 
     if (loading) {
-        return <div className="flex items-center justify-center min-h-[400px]"><div className="w-6 h-6 border-2 border-status-success border-t-transparent rounded-full animate-spin" /></div>;
+        return (
+            <div className="flex items-center justify-center min-h-[400px]">
+                <Spinner size="md" />
+            </div>
+        );
     }
 
     const pctSold = stats.total > 0 ? Math.round((stats.sold / stats.total) * 100) : 0;
 
     return (
-        <div className="space-y-6">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div>
-                    <h1 className="text-xl md:text-2xl font-bold text-foreground flex items-center gap-2">
-                        <Building2 className="w-6 h-6 text-status-success" /> Үл хөдлөхийн тайлан
-                    </h1>
-                    <p className="text-sm text-muted-foreground mt-1">Нэгжийн нөөц: ээлж, ангилал, төлөвөөр</p>
-                </div>
-                <Button onClick={exportExcel} variant="secondary" size="sm" isLoading={exporting} disabled={exporting || stats.total === 0}>
-                    {!exporting && <Download className="w-4 h-4 mr-2" />} Татах
-                </Button>
-            </div>
+        <div>
+            <PageHeader
+                eyebrow="Аналитик"
+                title="Үл хөдлөхийн тайлан"
+                subtitle="Нэгжийн нөөц: ээлж, ангилал, төлөвөөр"
+                primaryAction={
+                    <Button onClick={exportExcel} variant="secondary" size="sm" isLoading={exporting} disabled={exporting || stats.total === 0}>
+                        {!exporting && <Download className="w-4 h-4" />} Татах
+                    </Button>
+                }
+            />
 
             {stats.total === 0 ? (
-                <div className="flex flex-col items-center justify-center min-h-[300px] text-center">
-                    <Building2 className="w-16 h-16 text-muted-foreground/60 mb-4" />
-                    <h2 className="text-xl font-semibold text-foreground mb-2">Мэдээлэл байхгүй</h2>
-                    <p className="text-muted-foreground max-w-md">Нэгжийн дата импортлоогүй байна.</p>
-                </div>
+                <EmptyState
+                    icon={<Building2 className="w-7 h-7" />}
+                    title="Мэдээлэл байхгүй"
+                    description="Нэгжийн дата импортлоогүй байна."
+                />
             ) : (
-                <>
+                <div className="space-y-6">
                     {/* Key stats */}
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                        <StatCard icon={<Building2 className="w-5 h-5 text-status-info" />} bg="bg-status-info-soft" value={stats.total.toLocaleString()} label="Нийт нэгж" />
-                        <StatCard icon={<Home className="w-5 h-5 text-status-success" />} bg="bg-status-success-soft" value={stats.available.toLocaleString()} label="Зарагдаагүй" />
-                        <StatCard icon={<CheckCircle2 className="w-5 h-5 text-brand-strong" />} bg="bg-brand-soft" value={stats.sold.toLocaleString()} label={`Зарагдсан (${pctSold}%)`} />
-                        <StatCard icon={<Layers className="w-5 h-5 text-status-pending" />} bg="bg-status-pending-soft" value={Math.round(stats.totalArea).toLocaleString() + ' м²'} label="Нийт талбай" />
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                        <StatsCard icon={Building2} iconColor="info" value={stats.total.toLocaleString()} title="Нийт нэгж" />
+                        <StatsCard icon={Home} iconColor="success" value={stats.available.toLocaleString()} title="Зарагдаагүй" />
+                        <StatsCard icon={CheckCircle2} iconColor="brand" value={stats.sold.toLocaleString()} title={`Зарагдсан (${pctSold}%)`} />
+                        <StatsCard icon={Layers} iconColor="warning" value={Math.round(stats.totalArea).toLocaleString() + ' м²'} title="Нийт талбай" />
                     </div>
 
                     {/* By phase + by category */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        <GroupCard title="Ээлжээр" rows={byPhase} />
-                        <GroupCard title="Ангиллаар" rows={byCategory} />
+                        <GroupChart title="Ээлжээр" categoryLabel="Ээлж" rows={byPhase} />
+                        <GroupChart title="Ангиллаар" categoryLabel="Ангилал" rows={byCategory} />
                     </div>
-                </>
+                </div>
             )}
         </div>
     );
 }
 
-function StatCard({ icon, bg, value, label }: { icon: React.ReactNode; bg: string; value: string; label: string }) {
-    return (
-        <Card className="bg-surface border-border"><CardContent className="p-4">
-            <div className={`p-2 ${bg} rounded-lg w-fit`}>{icon}</div>
-            <div className="mt-3"><p className="text-2xl font-bold text-foreground tabular-nums">{value}</p><p className="text-sm text-muted-foreground">{label}</p></div>
-        </CardContent></Card>
-    );
-}
-
-function GroupCard({ title, rows }: { title: string; rows: GroupRow[] }) {
-    return (
-        <Card className="bg-surface border-border"><CardContent className="p-4">
-            <h3 className="font-semibold text-foreground mb-4">{title}</h3>
-            {rows.length === 0 ? (
+function GroupChart({ title, categoryLabel, rows }: { title: string; categoryLabel: string; rows: GroupRow[] }) {
+    if (rows.length === 0) {
+        return (
+            <ChartCard title={title} subtitle={categoryLabel} raw height={200}>
                 <p className="text-sm text-muted-foreground text-center py-8">Мэдээлэл байхгүй</p>
-            ) : (
-                <table className="w-full text-sm">
-                    <thead>
-                        <tr className="border-b border-border/60 text-xs text-muted-foreground">
-                            <th className="text-left py-2 font-medium">{title === 'Ээлжээр' ? 'Ээлж' : 'Ангилал'}</th>
-                            <th className="text-center py-2 font-medium">Нийт</th>
-                            <th className="text-center py-2 font-medium">Зарагдаагүй</th>
-                            <th className="text-right py-2 font-medium">Зарагдсан %</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {rows.map((r) => (
-                            <tr key={r.key} className="border-b border-border/40 hover:bg-surface-2/40">
-                                <td className="py-3 font-medium text-foreground">{r.key}</td>
-                                <td className="py-3 text-center text-muted-foreground tabular-nums">{r.total}</td>
-                                <td className="py-3 text-center"><span className="px-2 py-1 bg-status-success-soft text-status-success rounded-full text-xs tabular-nums">{r.available}</span></td>
-                                <td className="py-3 text-right text-foreground tabular-nums">{r.total > 0 ? Math.round((r.sold / r.total) * 100) : 0}%</td>
-                            </tr>
-                        ))}
-                    </tbody>
-                </table>
-            )}
-        </CardContent></Card>
+            </ChartCard>
+        );
+    }
+
+    return (
+        <ChartCard
+            title={title}
+            subtitle={`${categoryLabel} тус бүрийн зарагдсан / зарагдаагүй нэгж`}
+            height={Math.max(220, rows.length * 56)}
+        >
+            <BarChart
+                data={rows.map((r) => ({ key: r.key, sold: r.sold, available: r.available }))}
+                xKey="key"
+                series={[
+                    { key: 'sold', name: 'Зарагдсан' },
+                    { key: 'available', name: 'Зарагдаагүй' },
+                ]}
+                horizontal
+                stacked
+            />
+        </ChartCard>
     );
 }

@@ -1,13 +1,12 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Users, FileText, CheckCircle2, TrendingUp, DollarSign, Award, Download } from 'lucide-react';
-import { Card, CardContent } from '@/components/ui/Card';
+import { Users, FileText, TrendingUp, DollarSign, Award, Download } from 'lucide-react';
+import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { Spinner } from '@/components/ui/Spinner';
-import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
+import { DataTable, type DataTableColumn, StatusPill } from '@/components/ui/DataTable';
 
 const SHOP_KEY = 'vertmonhub_active_shop_id';
 
@@ -79,6 +78,51 @@ export default function ManagerPerformancePage() {
 
     const topSales = managers[0]?.total_sales || 1;
 
+    // Presentation only — column renderers reuse the exact same numbers and ordering
+    // that the original <table> produced (managers array, topSales bar ratio).
+    const columns: DataTableColumn<ManagerRow>[] = [
+        {
+            key: 'sales_manager',
+            header: 'Менежер',
+            cell: (m) => {
+                const i = managers.indexOf(m);
+                return (
+                    <div className="flex items-center gap-2">
+                        {i < 3 && (
+                            <Award className={`w-4 h-4 ${i === 0 ? 'text-status-pending' : i === 1 ? 'text-muted-foreground' : 'text-status-pending/70'}`} />
+                        )}
+                        <span className="font-medium text-foreground">{m.sales_manager || '—'}</span>
+                    </div>
+                );
+            },
+        },
+        { key: 'contract_count', header: 'Гэрээ', align: 'right', cell: (m) => <span className="tabular-nums text-foreground">{m.contract_count}</span> },
+        {
+            key: 'closed_count',
+            header: 'Хаагдсан',
+            align: 'right',
+            cell: (m) => (
+                <StatusPill variant="success" className="tabular-nums">{m.closed_count}</StatusPill>
+            ),
+        },
+        {
+            key: 'total_sales',
+            header: 'Борлуулалт',
+            cell: (m) => (
+                <div className="min-w-[10rem]">
+                    <div className="text-foreground tabular-nums">{formatMoney(m.total_sales)}</div>
+                    <div className="h-1.5 mt-1 bg-surface-2 rounded-full overflow-hidden">
+                        <div className="h-full bg-status-success rounded-full" style={{ width: `${Math.max(3, Math.round((m.total_sales / topSales) * 100))}%` }} />
+                    </div>
+                </div>
+            ),
+        },
+        { key: 'total_collected', header: 'Цуглуулсан', align: 'right', cell: (m) => <span className="tabular-nums text-foreground">{formatMoney(m.total_collected)}</span> },
+        { key: 'total_outstanding', header: 'Үлдэгдэл', align: 'right', cell: (m) => <span className="tabular-nums text-muted-foreground">{formatMoney(m.total_outstanding)}</span> },
+        { key: 'collection_rate_pct', header: 'Цуглуулалт %', align: 'right', cell: (m) => <span className="tabular-nums text-foreground">{m.collection_rate_pct}%</span> },
+        { key: 'unique_customers', header: 'Харилцагч', align: 'right', cell: (m) => <span className="tabular-nums text-muted-foreground">{m.unique_customers}</span> },
+    ];
+
     return (
         <div>
             <PageHeader
@@ -100,56 +144,18 @@ export default function ManagerPerformancePage() {
             </StatBar>
 
             <Card>
-                <CardContent className="p-0">
-                    {loading ? (
-                        <div className="flex items-center justify-center py-20"><Spinner size="lg" /></div>
-                    ) : managers.length === 0 ? (
-                        <div className="py-12">
-                            <EmptyState icon={<Award className="w-7 h-7" />} title="Гүйцэтгэлийн мэдээлэл алга" description="Гэрээ импортолсны дараа менежерийн гүйцэтгэл энд харагдана" />
-                        </div>
-                    ) : (
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="border-b border-border bg-surface-2/40 text-left text-[11px] uppercase tracking-[0.08em] text-muted-foreground/80">
-                                        <th className="px-4 py-3 font-medium">Менежер</th>
-                                        <th className="px-4 py-3 font-medium text-right">Гэрээ</th>
-                                        <th className="px-4 py-3 font-medium text-right">Хаагдсан</th>
-                                        <th className="px-4 py-3 font-medium">Борлуулалт</th>
-                                        <th className="px-4 py-3 font-medium text-right">Цуглуулсан</th>
-                                        <th className="px-4 py-3 font-medium text-right">Үлдэгдэл</th>
-                                        <th className="px-4 py-3 font-medium text-right">Цуглуулалт %</th>
-                                        <th className="px-4 py-3 font-medium text-right">Харилцагч</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {managers.map((m, i) => (
-                                        <tr key={m.sales_manager || i} className="border-b border-border/40 hover:bg-surface-2/40 transition-colors">
-                                            <td className="px-4 py-3">
-                                                <div className="flex items-center gap-2">
-                                                    {i < 3 && <Award className={`w-4 h-4 ${i === 0 ? 'text-status-pending' : i === 1 ? 'text-muted-foreground' : 'text-status-warning'}`} />}
-                                                    <span className="font-medium text-foreground">{m.sales_manager || '—'}</span>
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-3 text-right tabular-nums text-foreground">{m.contract_count}</td>
-                                            <td className="px-4 py-3 text-right tabular-nums text-status-success">{m.closed_count}</td>
-                                            <td className="px-4 py-3">
-                                                <div className="text-foreground tabular-nums">{formatMoney(m.total_sales)}</div>
-                                                <div className="h-1.5 mt-1 bg-surface-2 rounded-full overflow-hidden">
-                                                    <div className="h-full bg-status-success rounded-full" style={{ width: `${Math.max(3, Math.round((m.total_sales / topSales) * 100))}%` }} />
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-3 text-right tabular-nums text-foreground">{formatMoney(m.total_collected)}</td>
-                                            <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{formatMoney(m.total_outstanding)}</td>
-                                            <td className="px-4 py-3 text-right tabular-nums text-foreground">{m.collection_rate_pct}%</td>
-                                            <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{m.unique_customers}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    )}
-                </CardContent>
+                <div className="p-4 md:p-5">
+                    <DataTable<ManagerRow>
+                        columns={columns}
+                        data={managers}
+                        getRowId={(m) => m.sales_manager || String(managers.indexOf(m))}
+                        caption="Менежерийн гүйцэтгэл"
+                        loading={loading}
+                        emptyMessage="Гэрээ импортолсны дараа менежерийн гүйцэтгэл энд харагдана"
+                        showDensityToggle={false}
+                        hidePagination
+                    />
+                </div>
             </Card>
         </div>
     );
