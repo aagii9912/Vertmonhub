@@ -7,7 +7,6 @@ import { LogOut, Settings, ChevronDown, Search } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { NotificationButton } from '@/components/NotificationButton';
 import { ShopSwitcher } from '@/components/dashboard/ShopSwitcher';
-import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { getNavTitle, getBreadcrumb } from '@/lib/navigation/workspaces';
 import { OPEN_COMMAND_EVENT } from '@/components/dashboard/CommandPalette';
 import {
@@ -117,10 +116,6 @@ export function Header() {
             {/* Баруун: Үйлдлүүд */}
             <div className="justify-self-end flex items-center gap-2 md:gap-3">
                 {shops.length > 1 && <ShopSwitcher />}
-
-                <div className="hidden sm:block">
-                    <LanguageSwitcher />
-                </div>
 
                 <NotificationButton />
 
