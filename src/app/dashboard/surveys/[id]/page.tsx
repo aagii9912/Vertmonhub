@@ -1,9 +1,12 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { ArrowLeft, Sparkles, Users, FileText, Plus, X, Loader2, Globe, ClipboardList, AlertCircle } from 'lucide-react';
+import { PageHeader } from '@/components/dashboard/PageHeader';
+import { StatusPill } from '@/components/ui/StatusPill';
+import { MarkdownMessage } from '@/components/ai-assistant/MarkdownMessage';
+import { ArrowLeft, Sparkles, Users, FileText, Plus, X, Loader2, Globe, ClipboardList, AlertCircle, BarChart3, MessageSquareText, Star } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
 
 type QuestionType = 'short_text' | 'long_text' | 'single_choice' | 'multiple_choice' | 'rating';
@@ -134,6 +137,148 @@ export default function SurveyReportPage() {
     const filteredResponses =
         filter === 'all' ? responses : responses.filter(r => (r.source ?? 'online') === filter);
 
+    // ── Per-question aggregation (pure presentation, derived from survey + responses) ──
+    type ChoiceStat = { type: 'choice'; counts: { option: string; count: number }[]; answered: number };
+    type RatingStat = { type: 'rating'; distribution: { score: number; count: number }[]; average: number | null; answered: number };
+    type TextStat = { type: 'text'; values: string[] };
+    type QuestionStat = ChoiceStat | RatingStat | TextStat;
+
+    const questionStats = useMemo<Array<{ q: SurveyQuestion; stat: QuestionStat }>>(() => {
+        if (!survey) return [];
+        return survey.questions.map(q => {
+            const raw = filteredResponses.map(r => (r.answers as Record<string, unknown>)?.[q.id]);
+
+            if (q.type === 'single_choice' || q.type === 'multiple_choice') {
+                const tally = new Map<string, number>();
+                (q.options || []).forEach(opt => tally.set(opt, 0));
+                let answered = 0;
+                raw.forEach(val => {
+                    const picks = Array.isArray(val) ? val : val != null && val !== '' ? [val] : [];
+                    if (picks.length) answered++;
+                    picks.forEach(p => {
+                        const key = String(p);
+                        tally.set(key, (tally.get(key) ?? 0) + 1);
+                    });
+                });
+                const counts = Array.from(tally.entries()).map(([option, count]) => ({ option, count }));
+                return { q, stat: { type: 'choice', counts, answered } as ChoiceStat };
+            }
+
+            if (q.type === 'rating') {
+                const dist = new Map<number, number>([[1, 0], [2, 0], [3, 0], [4, 0], [5, 0]]);
+                let sum = 0;
+                let answered = 0;
+                raw.forEach(val => {
+                    const n = typeof val === 'number' ? val : Number(val);
+                    if (Number.isFinite(n) && n >= 1 && n <= 5) {
+                        dist.set(n, (dist.get(n) ?? 0) + 1);
+                        sum += n;
+                        answered++;
+                    }
+                });
+                const distribution = [1, 2, 3, 4, 5].map(score => ({ score, count: dist.get(score) ?? 0 }));
+                return { q, stat: { type: 'rating', distribution, average: answered ? sum / answered : null, answered } as RatingStat };
+            }
+
+            const values = raw
+                .map(val => (typeof val === 'string' ? val.trim() : val != null ? String(val) : ''))
+                .filter(v => v.length > 0);
+            return { q, stat: { type: 'text', values } as TextStat };
+        });
+    }, [survey, filteredResponses]);
+
+    const renderQuestionStat = (q: SurveyQuestion, stat: QuestionStat) => {
+        if (stat.type === 'choice') {
+            const max = Math.max(1, ...stat.counts.map(c => c.count));
+            return (
+                <div className="space-y-2.5">
+                    {stat.counts.length === 0 ? (
+                        <p className="text-sm text-muted-2">Сонголт алга байна</p>
+                    ) : (
+                        stat.counts.map(c => {
+                            const pct = stat.answered ? Math.round((c.count / stat.answered) * 100) : 0;
+                            return (
+                                <div key={c.option}>
+                                    <div className="flex items-center justify-between text-sm mb-1">
+                                        <span className="text-foreground truncate pr-3">{c.option}</span>
+                                        <span className="text-muted-foreground tabular-nums shrink-0">
+                                            {c.count} <span className="text-muted-2">({pct}%)</span>
+                                        </span>
+                                    </div>
+                                    <div className="h-2 rounded-full bg-surface-2 overflow-hidden">
+                                        <div
+                                            className="h-full rounded-full bg-brand transition-all"
+                                            style={{ width: `${(c.count / max) * 100}%` }}
+                                        />
+                                    </div>
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            );
+        }
+
+        if (stat.type === 'rating') {
+            const max = Math.max(1, ...stat.distribution.map(d => d.count));
+            return (
+                <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                        <Star className="w-5 h-5 text-status-pending" />
+                        <span className="text-2xl font-semibold tabular-nums text-foreground">
+                            {stat.average != null ? stat.average.toFixed(1) : '—'}
+                        </span>
+                        <span className="text-sm text-muted-foreground">/ 5 дундаж · {stat.answered} хариулт</span>
+                    </div>
+                    <div className="space-y-2">
+                        {stat.distribution.map(d => {
+                            const pct = stat.answered ? Math.round((d.count / stat.answered) * 100) : 0;
+                            return (
+                                <div key={d.score} className="flex items-center gap-3">
+                                    <span className="w-10 text-sm text-muted-foreground tabular-nums shrink-0">{d.score} од</span>
+                                    <div className="flex-1 h-2 rounded-full bg-surface-2 overflow-hidden">
+                                        <div
+                                            className="h-full rounded-full bg-status-pending transition-all"
+                                            style={{ width: `${(d.count / max) * 100}%` }}
+                                        />
+                                    </div>
+                                    <span className="w-16 text-right text-sm text-muted-foreground tabular-nums shrink-0">
+                                        {d.count} <span className="text-muted-2">({pct}%)</span>
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            );
+        }
+
+        // text
+        if (stat.values.length === 0) {
+            return <p className="text-sm text-muted-2">Хариулт алга байна</p>;
+        }
+        return (
+            <ul className="space-y-2">
+                {stat.values.map((v, idx) => (
+                    <li
+                        key={idx}
+                        className="text-sm text-foreground bg-surface-2/50 border border-border/60 rounded-lg px-3 py-2 leading-relaxed"
+                    >
+                        {v}
+                    </li>
+                ))}
+            </ul>
+        );
+    };
+
+    // Format a single answer value for the raw responses table (empty → null = omit)
+    const formatAnswer = (val: unknown): string => {
+        if (val == null) return '';
+        if (Array.isArray(val)) return val.map(v => String(v)).filter(Boolean).join(', ');
+        if (typeof val === 'string') return val.trim();
+        return String(val);
+    };
+
     const renderQuestionInput = (q: SurveyQuestion) => {
         const value = offlineAnswers[q.id];
         const setVal = (v: AnswerValue) => setOfflineAnswers(prev => ({ ...prev, [q.id]: v }));
@@ -202,8 +347,8 @@ export default function SurveyReportPage() {
                                 onClick={() => setVal(n)}
                                 className={`w-10 h-10 rounded-full border-2 text-sm font-semibold transition-colors ${
                                     value === n
-                                        ? 'bg-brand border-violet-600 text-white'
-                                        : 'border-border text-muted-foreground hover:border-violet-400'
+                                        ? 'bg-brand border-brand text-brand-fg'
+                                        : 'border-border text-muted-foreground hover:border-brand/50'
                                 }`}
                             >
                                 {n}
@@ -218,20 +363,20 @@ export default function SurveyReportPage() {
 
     return (
         <div className="max-w-5xl mx-auto space-y-6">
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div className="flex items-center gap-4">
-                    <Button variant="ghost" onClick={() => router.back()} className="text-muted-foreground hover:text-foreground">
+            <PageHeader
+                title="Судалгааны Тайлан"
+                subtitle="Online + биеэр (offline) бүх хариултын нэгдсэн дүр зураг"
+                secondaryActions={
+                    <Button variant="ghost" onClick={() => router.back()}>
                         <ArrowLeft className="w-5 h-5 mr-1" /> Буцах
                     </Button>
-                    <div>
-                        <h1 className="text-2xl font-bold text-foreground">Судалгааны Тайлан</h1>
-                        <p className="text-muted-foreground text-sm">Online + биеэр (offline) бүх хариултын нэгдсэн дүр зураг</p>
-                    </div>
-                </div>
-                <Button onClick={openOfflineModal} disabled={!survey}>
-                    <Plus className="w-4 h-4 mr-2" /> Биеэр хариулт оруулах
-                </Button>
-            </div>
+                }
+                primaryAction={
+                    <Button onClick={openOfflineModal} disabled={!survey}>
+                        <Plus className="w-4 h-4 mr-2" /> Биеэр хариулт оруулах
+                    </Button>
+                }
+            />
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <Card>
@@ -239,24 +384,24 @@ export default function SurveyReportPage() {
                         <CardTitle className="text-sm font-medium text-muted-foreground">Нийт хариулт</CardTitle>
                     </CardHeader>
                     <CardContent>
-                        <div className="text-3xl font-bold flex items-center gap-2">
-                            <Users className="w-6 h-6 text-primary" />
+                        <div className="text-3xl font-bold flex items-center gap-2 tabular-nums">
+                            <Users className="w-6 h-6 text-brand-strong" />
                             {isLoading ? '...' : responseCount}
                         </div>
-                        <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-status-info-soft text-status-info">
+                        <div className="mt-3 flex items-center gap-2">
+                            <StatusPill variant="info">
                                 <Globe className="w-3 h-3" /> Online {onlineCount}
-                            </span>
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-status-pending-soft text-status-pending">
+                            </StatusPill>
+                            <StatusPill variant="pending">
                                 <ClipboardList className="w-3 h-3" /> Биеэр {offlineCount}
-                            </span>
+                            </StatusPill>
                         </div>
                     </CardContent>
                 </Card>
 
                 <Card className="md:col-span-2">
                     <CardHeader className="flex flex-row items-center gap-2">
-                        <Sparkles className="w-5 h-5 text-brand" />
+                        <Sparkles className="w-5 h-5 text-brand-strong" />
                         <div>
                             <CardTitle>AI Нэгтгэл</CardTitle>
                             <CardDescription>Online + биеэр бүх хариултыг нэгтгэн Gemini-ээр шинжилсэн</CardDescription>
@@ -270,24 +415,25 @@ export default function SurveyReportPage() {
                                 <div className="h-4 bg-surface-3 rounded w-5/6"></div>
                             </div>
                         ) : (
-                            <div className="prose prose-sm max-w-none text-foreground whitespace-pre-wrap">{summary}</div>
+                            <MarkdownMessage content={summary} />
                         )}
                     </CardContent>
                 </Card>
 
+                {/* Per-question summaries */}
                 <Card className="md:col-span-3">
                     <CardHeader className="flex flex-row items-center justify-between gap-2 flex-wrap">
                         <CardTitle className="flex items-center gap-2">
-                            <FileText className="w-5 h-5 text-muted-foreground/70" /> Сүүлийн хариултууд
+                            <BarChart3 className="w-5 h-5 text-muted-2" /> Асуулт тус бүрийн дүгнэлт
                         </CardTitle>
-                        <div className="flex gap-1 text-xs">
+                        <div className="flex gap-1">
                             {(['all', 'online', 'offline'] as const).map(f => (
                                 <button
                                     key={f}
                                     onClick={() => setFilter(f)}
-                                    className={`px-3 py-1 rounded-full font-medium transition-colors ${
+                                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background ${
                                         filter === f
-                                            ? 'bg-brand text-white'
+                                            ? 'bg-brand text-brand-fg'
                                             : 'bg-surface-2 text-muted-foreground hover:bg-surface-3'
                                     }`}
                                 >
@@ -295,6 +441,43 @@ export default function SurveyReportPage() {
                                 </button>
                             ))}
                         </div>
+                    </CardHeader>
+                    <CardContent>
+                        {isLoading ? (
+                            <div className="animate-pulse space-y-3">
+                                <div className="h-4 bg-surface-3 rounded w-2/3"></div>
+                                <div className="h-4 bg-surface-3 rounded w-full"></div>
+                                <div className="h-4 bg-surface-3 rounded w-5/6"></div>
+                            </div>
+                        ) : questionStats.length === 0 ? (
+                            <p className="py-6 text-center text-sm text-muted-2">Асуулт алга байна</p>
+                        ) : (
+                            <div className="space-y-6">
+                                {questionStats.map(({ q, stat }, idx) => (
+                                    <div key={q.id} className={idx > 0 ? 'pt-6 border-t border-border/60' : ''}>
+                                        <div className="flex items-start gap-2 mb-3">
+                                            <span className="shrink-0 mt-0.5 text-muted-2">
+                                                {stat.type === 'choice' ? <BarChart3 className="w-4 h-4" />
+                                                    : stat.type === 'rating' ? <Star className="w-4 h-4" />
+                                                    : <MessageSquareText className="w-4 h-4" />}
+                                            </span>
+                                            <h3 className="text-sm font-semibold text-foreground leading-snug">{q.text}</h3>
+                                        </div>
+                                        {renderQuestionStat(q, stat)}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+
+                {/* Raw responses */}
+                <Card className="md:col-span-3">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <FileText className="w-5 h-5 text-muted-2" /> Сүүлийн хариултууд
+                        </CardTitle>
+                        <CardDescription>Шүүлтүүр дээрх товчлуурууд энэ хэсэгт хамаарна</CardDescription>
                     </CardHeader>
                     <CardContent>
                         <div className="overflow-x-auto">
@@ -311,39 +494,44 @@ export default function SurveyReportPage() {
                                     {isLoading ? (
                                         <tr><td colSpan={4} className="text-center py-4">Уншиж байна...</td></tr>
                                     ) : filteredResponses.length === 0 ? (
-                                        <tr><td colSpan={4} className="text-center py-4 text-muted-foreground/70">Өгөгдөл алга байна</td></tr>
+                                        <tr><td colSpan={4} className="text-center py-4 text-muted-2">Өгөгдөл алга байна</td></tr>
                                     ) : (
                                         filteredResponses.map(resp => {
                                             const src = resp.source ?? 'online';
+                                            const answers = (resp.answers as Record<string, unknown>) || {};
                                             return (
-                                                <tr key={resp.id} className="bg-surface border-b">
-                                                    <td className="px-4 py-3 font-medium text-foreground whitespace-nowrap align-top">
+                                                <tr key={resp.id} className="bg-surface border-b border-border/60">
+                                                    <td className="px-4 py-3 font-medium text-foreground whitespace-nowrap align-top tabular-nums">
                                                         {new Date(resp.created_at).toLocaleString('mn-MN')}
                                                     </td>
                                                     <td className="px-4 py-3 align-top">
-                                                        <span
-                                                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                                                                src === 'online'
-                                                                    ? 'bg-status-info-soft text-status-info'
-                                                                    : 'bg-status-pending-soft text-status-pending'
-                                                            }`}
-                                                        >
+                                                        <StatusPill variant={src === 'online' ? 'info' : 'pending'}>
                                                             {src === 'online' ? <Globe className="w-3 h-3" /> : <ClipboardList className="w-3 h-3" />}
                                                             {src === 'online' ? 'Online' : 'Биеэр'}
-                                                        </span>
+                                                        </StatusPill>
                                                     </td>
                                                     <td className="px-4 py-3 align-top text-foreground">
                                                         {resp.respondent_name || resp.respondent_phone || '—'}
                                                         {resp.respondent_name && resp.respondent_phone && (
-                                                            <div className="text-xs text-muted-foreground/70">{resp.respondent_phone}</div>
+                                                            <div className="text-xs text-muted-2">{resp.respondent_phone}</div>
                                                         )}
                                                     </td>
                                                     <td className="px-4 py-3 align-top">
-                                                        <pre className="text-xs bg-surface-2/40 p-2 rounded max-w-md overflow-x-auto whitespace-pre-wrap">
-                                                            {JSON.stringify(resp.answers, null, 2)}
-                                                        </pre>
+                                                        <dl className="space-y-1.5 max-w-md">
+                                                            {(survey?.questions || []).map(q => {
+                                                                const val = answers[q.id];
+                                                                const display = formatAnswer(val);
+                                                                if (!display) return null;
+                                                                return (
+                                                                    <div key={q.id} className="text-xs">
+                                                                        <dt className="text-muted-2 truncate">{q.text}</dt>
+                                                                        <dd className="text-foreground">{display}</dd>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </dl>
                                                         {resp.notes && (
-                                                            <p className="mt-1 text-xs text-muted-foreground italic">Тэмдэглэл: {resp.notes}</p>
+                                                            <p className="mt-1.5 text-xs text-muted-foreground italic">Тэмдэглэл: {resp.notes}</p>
                                                         )}
                                                     </td>
                                                 </tr>

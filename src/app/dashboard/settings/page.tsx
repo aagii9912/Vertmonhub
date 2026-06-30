@@ -1,12 +1,17 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { PageHeader } from '@/components/dashboard/PageHeader';
+import { SectionCard } from '@/components/ui/SectionCard';
+import { SettingRow } from '@/components/ui/SettingRow';
 import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { FormField } from '@/components/ui/FormField';
+import { Switch } from '@/components/ui/Switch';
 import { useAuth } from '@/contexts/AuthContext';
 import {
     Building2, User, Bell, Save, LogOut, Loader2, Check,
-    Mail, Phone, MapPin, Globe, Shield
+    Mail, Phone, MapPin, Globe
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -81,171 +86,133 @@ export default function SettingsPage() {
 
     return (
         <div className="space-y-6 max-w-4xl">
-            {/* Header */}
-            <div>
-                <h1 className="text-2xl font-bold text-foreground">Тохиргоо</h1>
-                <p className="text-muted-foreground mt-1">Төсөл болон системийн тохиргоо</p>
-            </div>
+            <PageHeader
+                title="Тохиргоо"
+                subtitle="Төсөл болон системийн тохиргоо"
+            />
 
             {/* Company Information */}
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <Building2 className="w-5 h-5 text-brand-strong" />
-                        Төслийн мэдээлэл
-                    </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
+            <SectionCard title="Төслийн мэдээлэл" icon={Building2}>
+                <div className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label htmlFor="company-name" className="block text-sm font-medium text-foreground mb-1">
-                                Төслийн нэр
-                            </label>
-                            <input
+                        <FormField label="Төслийн нэр" htmlFor="company-name">
+                            <Input
                                 id="company-name"
                                 type="text"
                                 value={companyName}
                                 onChange={(e) => setCompanyName(e.target.value)}
-                                className="w-full px-4 py-2.5 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand"
                                 placeholder="Vertmon LLC"
                             />
-                        </div>
-                        <div>
-                            <label htmlFor="owner-name" className="block text-sm font-medium text-foreground mb-1">
-                                Удирдлагын нэр
-                            </label>
-                            <input
+                        </FormField>
+                        <FormField label="Удирдлагын нэр" htmlFor="owner-name">
+                            <Input
                                 id="owner-name"
                                 type="text"
                                 value={ownerName}
                                 onChange={(e) => setOwnerName(e.target.value)}
-                                className="w-full px-4 py-2.5 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand"
                                 placeholder="Б. Батбаяр"
                             />
-                        </div>
-                        <div>
-                            <label htmlFor="company-phone" className="block text-sm font-medium text-foreground mb-1">
-                                <Phone className="w-3.5 h-3.5 inline mr-1" />
-                                Утасны дугаар
-                            </label>
-                            <input
+                        </FormField>
+                        <FormField
+                            label={<span className="inline-flex items-center gap-1"><Phone className="w-3.5 h-3.5" /> Утасны дугаар</span>}
+                            htmlFor="company-phone"
+                        >
+                            <Input
                                 id="company-phone"
                                 type="tel"
                                 value={phone}
                                 onChange={(e) => setPhone(e.target.value)}
-                                className="w-full px-4 py-2.5 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand"
                                 placeholder="99112233"
                             />
-                        </div>
-                        <div>
-                            <label htmlFor="company-email" className="block text-sm font-medium text-foreground mb-1">
-                                <Mail className="w-3.5 h-3.5 inline mr-1" />
-                                Имэйл хаяг
-                            </label>
-                            <input
+                        </FormField>
+                        <FormField
+                            label={<span className="inline-flex items-center gap-1"><Mail className="w-3.5 h-3.5" /> Имэйл хаяг</span>}
+                            htmlFor="company-email"
+                        >
+                            <Input
                                 id="company-email"
                                 type="email"
                                 value={companyEmail}
                                 onChange={(e) => setCompanyEmail(e.target.value)}
-                                className="w-full px-4 py-2.5 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand"
                                 placeholder="info@vertmon.mn"
                             />
-                        </div>
-                        <div className="md:col-span-2">
-                            <label htmlFor="company-address" className="block text-sm font-medium text-foreground mb-1">
-                                <MapPin className="w-3.5 h-3.5 inline mr-1" />
-                                Хаяг
-                            </label>
-                            <input
+                        </FormField>
+                        <FormField
+                            label={<span className="inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> Хаяг</span>}
+                            htmlFor="company-address"
+                            className="md:col-span-2"
+                        >
+                            <Input
                                 id="company-address"
                                 type="text"
                                 value={address}
                                 onChange={(e) => setAddress(e.target.value)}
-                                className="w-full px-4 py-2.5 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand"
                                 placeholder="Улаанбаатар хот, Сүхбаатар дүүрэг"
                             />
-                        </div>
-                        <div className="md:col-span-2">
-                            <label htmlFor="company-website" className="block text-sm font-medium text-foreground mb-1">
-                                <Globe className="w-3.5 h-3.5 inline mr-1" />
-                                Вэб сайт
-                            </label>
-                            <input
+                        </FormField>
+                        <FormField
+                            label={<span className="inline-flex items-center gap-1"><Globe className="w-3.5 h-3.5" /> Вэб сайт</span>}
+                            htmlFor="company-website"
+                            className="md:col-span-2"
+                        >
+                            <Input
                                 id="company-website"
                                 type="url"
                                 value={website}
                                 onChange={(e) => setWebsite(e.target.value)}
-                                className="w-full px-4 py-2.5 border border-border rounded-xl focus:outline-none focus:ring-2 focus:ring-brand"
                                 placeholder="https://vertmon.mn"
                             />
-                        </div>
+                        </FormField>
                     </div>
 
                     <div className="flex justify-end">
                         <SaveButton />
                     </div>
-                </CardContent>
-            </Card>
+                </div>
+            </SectionCard>
 
             {/* Notification Settings */}
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <Bell className="w-5 h-5 text-brand-strong" />
-                        Мэдэгдлийн тохиргоо
-                    </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                    <div className="flex items-center justify-between p-4 bg-surface-2/40 rounded-xl">
-                        <div>
-                            <p className="font-medium text-foreground">Имэйл мэдэгдэл</p>
-                            <p className="text-sm text-muted-foreground">Чухал шинэчлэлтүүдийг имэйлээр авах</p>
-                        </div>
-                        <button
-                            onClick={() => setEmailNotif(!emailNotif)}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${emailNotif ? 'bg-brand' : 'bg-surface-3'}`}
-                        >
-                            <span className={`inline-block h-4 w-4 transform rounded-full bg-surface transition-transform ${emailNotif ? 'translate-x-6' : 'translate-x-1'}`} />
-                        </button>
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 bg-surface-2/40 rounded-xl">
-                        <div>
-                            <p className="font-medium text-foreground">Шинэ Lead мэдэгдэл</p>
-                            <p className="text-sm text-muted-foreground">Шинэ лийд ирсэн үед мэдэгдэл авах</p>
-                        </div>
-                        <button
-                            onClick={() => setLeadNotif(!leadNotif)}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${leadNotif ? 'bg-brand' : 'bg-surface-3'}`}
-                        >
-                            <span className={`inline-block h-4 w-4 transform rounded-full bg-surface transition-transform ${leadNotif ? 'translate-x-6' : 'translate-x-1'}`} />
-                        </button>
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 bg-surface-2/40 rounded-xl">
-                        <div>
-                            <p className="font-medium text-foreground">Долоо хоногийн тайлан</p>
-                            <p className="text-sm text-muted-foreground">Борлуулалтын тайланг долоо хоног бүр авах</p>
-                        </div>
-                        <button
-                            onClick={() => setReportNotif(!reportNotif)}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${reportNotif ? 'bg-brand' : 'bg-surface-3'}`}
-                        >
-                            <span className={`inline-block h-4 w-4 transform rounded-full bg-surface transition-transform ${reportNotif ? 'translate-x-6' : 'translate-x-1'}`} />
-                        </button>
-                    </div>
-                </CardContent>
-            </Card>
+            <SectionCard title="Мэдэгдлийн тохиргоо" icon={Bell}>
+                <div className="space-y-3">
+                    <SettingRow
+                        label="Имэйл мэдэгдэл"
+                        description="Чухал шинэчлэлтүүдийг имэйлээр авах"
+                        control={
+                            <Switch
+                                checked={emailNotif}
+                                onCheckedChange={setEmailNotif}
+                                aria-label="Имэйл мэдэгдэл"
+                            />
+                        }
+                    />
+                    <SettingRow
+                        label="Шинэ Lead мэдэгдэл"
+                        description="Шинэ лийд ирсэн үед мэдэгдэл авах"
+                        control={
+                            <Switch
+                                checked={leadNotif}
+                                onCheckedChange={setLeadNotif}
+                                aria-label="Шинэ Lead мэдэгдэл"
+                            />
+                        }
+                    />
+                    <SettingRow
+                        label="Долоо хоногийн тайлан"
+                        description="Борлуулалтын тайланг долоо хоног бүр авах"
+                        control={
+                            <Switch
+                                checked={reportNotif}
+                                onCheckedChange={setReportNotif}
+                                aria-label="Долоо хоногийн тайлан"
+                            />
+                        }
+                    />
+                </div>
+            </SectionCard>
 
             {/* Account */}
-            <Card>
-                <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <User className="w-5 h-5 text-brand-strong" />
-                        Хэрэглэгчийн хаяг
-                    </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
+            <SectionCard title="Хэрэглэгчийн хаяг" icon={User}>
+                <div className="space-y-4">
                     <div className="flex items-center justify-between p-4 bg-surface-2/40 rounded-xl">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 bg-brand-soft rounded-xl flex items-center justify-center text-brand-strong font-medium">
@@ -267,8 +234,8 @@ export default function SettingsPage() {
                             Системээс гарах
                         </button>
                     </div>
-                </CardContent>
-            </Card>
+                </div>
+            </SectionCard>
         </div>
     );
 }

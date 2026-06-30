@@ -3,12 +3,17 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/dashboard/PageHeader';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/Tabs';
+import { StatusPill } from '@/components/ui/StatusPill';
+import { toast } from '@/components/ui/Toast';
+import { MarkdownMessage } from '@/components/ai-assistant/MarkdownMessage';
 import {
     Plus, GripVertical, Trash2, Save, Link, MessageCircle, X,
-    ChevronRight, Activity, Calendar, ArrowLeft,
-    TrendingUp, Users, Globe, Search, BarChart2, Target,
-    Building2, Eye, Sparkles, Loader2, MapPin, DollarSign,
-    Share2, Heart, MessageSquare, Megaphone
+    ChevronRight, Calendar, ArrowLeft,
+    TrendingUp, Users, Globe, BarChart2, Target,
+    Building2, Sparkles, Loader2, MapPin, DollarSign,
+    Share2, Heart, Megaphone
 } from 'lucide-react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import NextLink from 'next/link';
@@ -48,19 +53,12 @@ interface ResearchResult {
 // TAB CONFIG
 // ==============================================
 
-const TABS: { id: TabType; label: string; icon: React.ElementType; color: string; desc: string }[] = [
-    { id: 'surveys', label: 'Судалгаа', icon: MessageCircle, color: 'emerald', desc: 'Харилцагчийн санал асуулга' },
-    { id: 'market', label: 'Зах зээл', icon: TrendingUp, color: 'blue', desc: 'Зах зээлийн судалгаа & тренд' },
-    { id: 'competitor', label: 'Өрсөлдөгч', icon: Building2, color: 'orange', desc: 'Өрсөлдөгчдийн шинжилгээ' },
-    { id: 'social', label: 'Social орчин', icon: Globe, color: 'violet', desc: 'Нийгмийн сүлжээний шинжилгээ' },
+const TABS: { id: TabType; label: string; icon: React.ElementType; desc: string }[] = [
+    { id: 'surveys', label: 'Судалгаа', icon: MessageCircle, desc: 'Харилцагчийн санал асуулга' },
+    { id: 'market', label: 'Зах зээл', icon: TrendingUp, desc: 'Зах зээлийн судалгаа & тренд' },
+    { id: 'competitor', label: 'Өрсөлдөгч', icon: Building2, desc: 'Өрсөлдөгчдийн шинжилгээ' },
+    { id: 'social', label: 'Social орчин', icon: Globe, desc: 'Нийгмийн сүлжээний шинжилгээ' },
 ];
-
-const TAB_COLORS: Record<string, { bg: string; text: string; border: string; light: string; btn: string }> = {
-    emerald: { bg: 'bg-status-success-soft', text: 'text-status-success', border: 'border-status-success', light: 'bg-status-success-soft', btn: 'bg-status-success hover:opacity-90' },
-    blue: { bg: 'bg-status-info-soft', text: 'text-status-info', border: 'border-status-info', light: 'bg-status-info-soft', btn: 'bg-status-info hover:bg-status-info' },
-    orange: { bg: 'bg-status-pending-soft', text: 'text-status-pending', border: 'border-orange-500', light: 'bg-status-pending-soft', btn: 'bg-status-pending hover:bg-status-pending' },
-    violet: { bg: 'bg-brand-soft', text: 'text-brand-strong', border: 'border-brand', light: 'bg-brand-soft', btn: 'bg-brand hover:bg-brand-strong' },
-};
 
 // ==============================================
 // MARKET RESEARCH PROMPTS
@@ -275,9 +273,9 @@ export default function SurveysPage() {
                 body: JSON.stringify(survey),
             });
             if (!res.ok) throw new Error('Failed');
-            alert('Судалгаа амжилттай хадгалагдлаа');
+            toast.success('Судалгаа амжилттай хадгалагдлаа');
             setView('list');
-        } catch { alert('Алдаа гарлаа'); }
+        } catch { toast.error('Алдаа гарлаа'); }
         finally { setIsSaving(false); }
     };
 
@@ -285,8 +283,7 @@ export default function SurveysPage() {
     // RENDER: RESEARCH TOOL GRID
     // ==============================================
 
-    const renderToolGrid = (tools: typeof MARKET_TOOLS, color: string) => {
-        const c = TAB_COLORS[color];
+    const renderToolGrid = (tools: typeof MARKET_TOOLS) => {
         return (
             <div className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -296,18 +293,18 @@ export default function SurveysPage() {
                             <button
                                 key={tool.id}
                                 onClick={() => runResearch(tool.title, tool.prompt)}
-                                className={`group text-left p-5 rounded-xl border-2 border-border hover:${c.border} hover:${c.bg} transition-all`}
+                                className="group text-left p-5 rounded-xl border border-border bg-surface hover:border-brand hover:bg-brand-soft/40 transition-all outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                             >
                                 <div className="flex items-start gap-4">
-                                    <div className={`w-11 h-11 ${c.light} rounded-xl flex items-center justify-center flex-shrink-0`}>
-                                        <Icon className={`w-5 h-5 ${c.text}`} />
+                                    <div className="w-11 h-11 bg-brand-soft rounded-xl flex items-center justify-center flex-shrink-0">
+                                        <Icon className="w-5 h-5 text-brand-strong" />
                                     </div>
                                     <div>
-                                        <h3 className="font-semibold text-foreground group-hover:text-foreground">{tool.title}</h3>
+                                        <h3 className="font-semibold text-foreground">{tool.title}</h3>
                                         <p className="text-sm text-muted-foreground mt-0.5">{tool.desc}</p>
                                     </div>
                                 </div>
-                                <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground/70 group-hover:text-muted-foreground">
+                                <div className="mt-3 flex items-center gap-2 text-xs text-muted-2 group-hover:text-muted-foreground">
                                     <Sparkles className="w-3 h-3" />
                                     AI Gemini шинжилгээ + DB мэдээлэл
                                 </div>
@@ -321,26 +318,24 @@ export default function SurveysPage() {
                     <Card className="relative">
                         <button
                             onClick={() => setResearchResult(null)}
-                            className="absolute top-4 right-4 text-muted-foreground/70 hover:text-muted-foreground"
+                            className="absolute top-4 right-4 text-muted-2 hover:text-muted-foreground rounded-md outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
                         >
                             <X className="w-5 h-5" />
                         </button>
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2 text-lg">
-                                <Sparkles className={`w-5 h-5 ${c.text}`} />
+                                <Sparkles className="w-5 h-5 text-brand-strong" />
                                 {researchResult.title}
                             </CardTitle>
                         </CardHeader>
                         <CardContent>
                             {researchResult.loading ? (
                                 <div className="flex items-center gap-3 py-12 justify-center">
-                                    <Loader2 className={`w-6 h-6 ${c.text} animate-spin`} />
+                                    <Loader2 className="w-6 h-6 text-brand-strong animate-spin" />
                                     <span className="text-muted-foreground">AI шинжилгээ хийж байна... (30-60 секунд)</span>
                                 </div>
                             ) : (
-                                <div className="prose prose-sm max-w-none text-foreground whitespace-pre-wrap leading-relaxed">
-                                    {researchResult.content}
-                                </div>
+                                <MarkdownMessage content={researchResult.content} />
                             )}
                         </CardContent>
                     </Card>
@@ -377,7 +372,7 @@ export default function SurveysPage() {
                     </div>
                 ) : (
                     surveyList.map((s) => (
-                        <Card key={s.id} className="group hover:border-primary/50 transition-colors">
+                        <Card key={s.id} className="group hover:border-brand/50 transition-colors">
                             <CardHeader>
                                 <div className="flex justify-between items-start">
                                     <div>
@@ -392,13 +387,10 @@ export default function SurveysPage() {
                                         <Calendar className="w-4 h-4" />
                                         {new Date(s.created_at || '').toLocaleDateString('mn-MN')}
                                     </div>
-                                    <div className="flex items-center gap-1.5">
-                                        <Activity className="w-4 h-4 text-status-success" />
-                                        Идэвхтэй
-                                    </div>
+                                    <StatusPill variant="success" dot>Идэвхтэй</StatusPill>
                                 </div>
                                 <NextLink href={`/dashboard/surveys/${s.id}`} className="mt-4 block w-full">
-                                    <Button variant="outline" className="w-full group-hover:bg-primary group-hover:text-white transition-colors">
+                                    <Button variant="outline" className="w-full group-hover:bg-brand group-hover:text-brand-fg group-hover:border-brand transition-colors">
                                         Үр дүн харах <ChevronRight className="w-4 h-4 ml-2" />
                                     </Button>
                                 </NextLink>
@@ -446,15 +438,15 @@ export default function SurveysPage() {
                 </div>
 
                 <div className="md:col-span-3 space-y-4">
-                    <Card className="border-t-4 border-t-primary">
+                    <Card className="border-t-4 border-t-brand">
                         <CardContent className="pt-6 space-y-4">
                             <input type="text" value={survey.title}
                                 onChange={(e) => setSurvey({ ...survey, title: e.target.value })}
-                                className="text-3xl font-bold w-full outline-none border-b border-transparent hover:border-border focus:border-primary transition-colors pb-1 bg-transparent"
+                                className="heading-display text-2xl w-full outline-none border-b border-transparent hover:border-border focus:border-brand transition-colors pb-1 bg-transparent"
                                 placeholder="Судалгааны гарчиг" />
                             <textarea value={survey.description}
                                 onChange={(e) => setSurvey({ ...survey, description: e.target.value })}
-                                className="w-full text-sm text-muted-foreground outline-none resize-none border-b border-transparent hover:border-border focus:border-primary transition-colors pb-1 bg-transparent"
+                                className="w-full text-sm text-muted-foreground outline-none resize-none border-b border-transparent hover:border-border focus:border-brand transition-colors pb-1 bg-transparent"
                                 placeholder="Судалгааны тайлбар" rows={2} />
                         </CardContent>
                     </Card>
@@ -477,11 +469,11 @@ export default function SurveysPage() {
                                                                 <div className="flex-1 space-y-4">
                                                                     <input type="text" value={q.text}
                                                                         onChange={(e) => updateQuestion(q.id, { text: e.target.value })}
-                                                                        className="w-full text-lg font-medium outline-none border-b bg-surface-2/40 px-3 py-2 rounded focus:bg-surface focus:border-primary focus:ring-1 focus:ring-primary transition-all"
+                                                                        className="w-full text-lg font-medium outline-none border-b border-border bg-surface-2/40 px-3 py-2 rounded-md focus:bg-surface focus:border-brand focus:ring-1 focus:ring-brand transition-all"
                                                                         placeholder="Асуултаа энд бичнэ үү" />
 
                                                                     <div className="ml-3 mt-4 text-sm text-muted-foreground">
-                                                                        {q.type === 'short_text' && <div className="border-b border-border-strong w-1/2 pb-1">Bogino khariу үлдээх зай...</div>}
+                                                                        {q.type === 'short_text' && <div className="border-b border-border-strong w-1/2 pb-1">Богино хариулт үлдээх зай...</div>}
                                                                         {q.type === 'long_text' && <div className="border border-border rounded p-2 h-20 bg-surface-2/40 flex items-center text-muted-foreground/70">Урт хариу үлдээх зай...</div>}
                                                                         {(q.type === 'single_choice' || q.type === 'multiple_choice') && (
                                                                             <div className="space-y-2">
@@ -490,13 +482,13 @@ export default function SurveysPage() {
                                                                                         {q.type === 'single_choice' ? <div className="w-4 h-4 rounded-full border border-border-strong" /> : <div className="w-4 h-4 rounded border border-border-strong" />}
                                                                                         <input type="text" value={opt}
                                                                                             onChange={(e) => { const newOpts = [...(q.options || [])]; newOpts[i] = e.target.value; updateQuestion(q.id, { options: newOpts }); }}
-                                                                                            className="outline-none border-b border-transparent hover:border-border focus:border-primary text-foreground bg-transparent px-1" />
-                                                                                        <button onClick={() => updateQuestion(q.id, { options: q.options?.filter((_, idx) => idx !== i) })} className="text-muted-foreground/60 hover:text-status-danger ml-2">
+                                                                                            className="outline-none border-b border-transparent hover:border-border focus:border-brand text-foreground bg-transparent px-1" />
+                                                                                        <button onClick={() => updateQuestion(q.id, { options: q.options?.filter((_, idx) => idx !== i) })} className="text-muted-2 hover:text-status-danger ml-2">
                                                                                             <X className="w-3 h-3" />
                                                                                         </button>
                                                                                     </div>
                                                                                 ))}
-                                                                                <Button variant="ghost" size="sm" className="text-primary mt-2 text-xs"
+                                                                                <Button variant="ghost" size="sm" className="text-brand-strong mt-2 text-xs"
                                                                                     onClick={() => updateQuestion(q.id, { options: [...(q.options || []), `Сонголт ${(q.options?.length || 0) + 1}`] })}>
                                                                                     Сонголт нэмэх
                                                                                 </Button>
@@ -513,14 +505,14 @@ export default function SurveysPage() {
                                                                 </div>
 
                                                                 <div className="flex flex-col items-center gap-4 pt-2 border-l border-border/60 pl-4">
-                                                                    <button onClick={() => removeQuestion(q.id)} className="text-muted-foreground/70 hover:text-status-danger p-2 rounded hover:bg-status-danger-soft transition-colors">
+                                                                    <button onClick={() => removeQuestion(q.id)} className="text-muted-2 hover:text-status-danger p-2 rounded-md hover:bg-status-danger-soft transition-colors">
                                                                         <Trash2 className="w-4 h-4" />
                                                                     </button>
                                                                     <div className="flex items-center gap-2 mt-4 text-xs font-medium text-muted-foreground">
                                                                         Шаардлагатай
                                                                         <label className="relative inline-flex items-center cursor-pointer">
                                                                             <input type="checkbox" checked={q.required} onChange={(e) => updateQuestion(q.id, { required: e.target.checked })} className="sr-only peer" />
-                                                                            <div className="w-7 h-4 bg-surface-3 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface after:border-border-strong after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-primary"></div>
+                                                                            <div className="w-7 h-4 bg-surface-3 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-surface after:border-border-strong after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-brand"></div>
                                                                         </label>
                                                                     </div>
                                                                 </div>
@@ -553,45 +545,43 @@ export default function SurveysPage() {
     // MAIN RENDER
     // ==============================================
 
-    const currentTab = TABS.find(t => t.id === activeTab)!;
-    const currentColor = TAB_COLORS[currentTab.color];
-
     return (
-        <div className="max-w-5xl mx-auto space-y-6">
-            {/* Page Header */}
-            <div>
-                <h1 className="text-2xl font-bold text-foreground">Судалгаа & Шинжилгээ</h1>
-                <p className="text-muted-foreground text-sm mt-1">Зах зээлийн судалгаа, өрсөлдөгчдийн шинжилгээ, social стратеги</p>
-            </div>
+        <div className="max-w-5xl mx-auto">
+            <PageHeader
+                title="Судалгаа & Шинжилгээ"
+                subtitle="Зах зээлийн судалгаа, өрсөлдөгчдийн шинжилгээ, social стратеги"
+            />
 
-            {/* Tab Navigation */}
-            <div className="flex gap-2 border-b border-border pb-0">
-                {TABS.map(tab => {
-                    const Icon = tab.icon;
-                    const isActive = activeTab === tab.id;
-                    const tc = TAB_COLORS[tab.color];
-                    return (
-                        <button
-                            key={tab.id}
-                            onClick={() => { setActiveTab(tab.id); setResearchResult(null); }}
-                            className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all -mb-[1px] ${
-                                isActive
-                                    ? `${tc.border} ${tc.text}`
-                                    : 'border-transparent text-muted-foreground hover:text-foreground'
-                            }`}
-                        >
-                            <Icon className="w-4 h-4" />
-                            {tab.label}
-                        </button>
-                    );
-                })}
-            </div>
+            <Tabs
+                value={activeTab}
+                onValueChange={(v) => { setActiveTab(v as TabType); setResearchResult(null); }}
+                className="space-y-6"
+            >
+                <TabsList variant="line" className="border-b border-border w-full justify-start">
+                    {TABS.map(tab => {
+                        const Icon = tab.icon;
+                        return (
+                            <TabsTrigger key={tab.id} value={tab.id} className="flex-none px-4 py-3">
+                                <Icon className="w-4 h-4" />
+                                {tab.label}
+                            </TabsTrigger>
+                        );
+                    })}
+                </TabsList>
 
-            {/* Tab Content */}
-            {activeTab === 'surveys' && (view === 'list' ? renderSurveyList() : renderSurveyCreate())}
-            {activeTab === 'market' && renderToolGrid(MARKET_TOOLS, 'blue')}
-            {activeTab === 'competitor' && renderToolGrid(COMPETITOR_TOOLS, 'orange')}
-            {activeTab === 'social' && renderToolGrid(SOCIAL_TOOLS, 'violet')}
+                <TabsContent value="surveys">
+                    {view === 'list' ? renderSurveyList() : renderSurveyCreate()}
+                </TabsContent>
+                <TabsContent value="market">
+                    {renderToolGrid(MARKET_TOOLS)}
+                </TabsContent>
+                <TabsContent value="competitor">
+                    {renderToolGrid(COMPETITOR_TOOLS)}
+                </TabsContent>
+                <TabsContent value="social">
+                    {renderToolGrid(SOCIAL_TOOLS)}
+                </TabsContent>
+            </Tabs>
         </div>
     );
 }

@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { toast } from 'sonner';
+import { confirmToast } from '@/components/ui/Toast';
 import { Loader2, Send, MessageSquare, User, Bot, PauseCircle, Search, Inbox as InboxIcon, Timer, Power, Trash2 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { formatTime as formatTimeShared, formatShortDate } from '@/lib/utils/date';
@@ -72,7 +73,13 @@ export default function InboxMessagesPage() {
 
     // Delete customer
     const handleDeleteCustomer = async (customerId: string, name: string) => {
-        if (!confirm(`"${name || 'Customer'}" хэрэглэгчийг устгах уу? Чат түүх бүгд устана.`)) return;
+        const ok = await confirmToast({
+            title: `"${name || 'Зочин'}" хэрэглэгчийг устгах уу?`,
+            description: 'Чат түүх бүгд устана. Энэ үйлдлийг буцаах боломжгүй.',
+            confirmLabel: 'Устгах',
+            destructive: true,
+        });
+        if (!ok) return;
         try {
             const res = await fetch(`/api/dashboard/customers?id=${customerId}`, {
                 method: 'DELETE',
@@ -130,13 +137,13 @@ export default function InboxMessagesPage() {
 
             toast.success(t.inbox.messageSent);
             if (aiPauseMode === 'off') {
-                toast('AI agent off', {
-                    icon: '⛔',
-                    description: 'AI is disabled for this customer until you turn it back on.',
+                toast('AI agent унтраалттай', {
+                    icon: <Power className="w-4 h-4 text-status-danger" />,
+                    description: 'Та дахин асаах хүртэл энэ хэрэглэгчид AI идэвхгүй болсон.',
                 });
             } else {
                 toast(t.inbox.aiPaused, {
-                    icon: '⏸️',
+                    icon: <PauseCircle className="w-4 h-4 text-status-pending" />,
                     description: t.inbox.aiPausedDesc,
                 });
             }
@@ -171,7 +178,7 @@ export default function InboxMessagesPage() {
             const now = new Date();
             const diff = now.getTime() - d.getTime();
             if (diff < 86400000) return formatTime(dateStr);
-            if (diff < 172800000) return 'Yesterday';
+            if (diff < 172800000) return 'Өчигдөр';
             return formatShortDate(dateStr);
         } catch {
             return '';
@@ -187,7 +194,7 @@ export default function InboxMessagesPage() {
     if (loading) {
         return (
             <div className="flex items-center justify-center h-[calc(100vh-80px)]">
-                <Loader2 className="w-6 h-6 animate-spin text-status-info" />
+                <Loader2 className="w-6 h-6 animate-spin text-brand" />
             </div>
         );
     }
@@ -205,7 +212,7 @@ export default function InboxMessagesPage() {
                             placeholder={t.common.search + '...'}
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2.5 bg-surface-2 rounded-lg text-sm text-foreground placeholder:text-muted-foreground/60 border border-border focus:border-status-info/40 outline-none"
+                            className="w-full pl-9 pr-3 py-2.5 bg-surface-2 rounded-lg text-sm text-foreground placeholder:text-muted-foreground/60 border border-border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:border-border-strong"
                         />
                     </div>
                 </div>
@@ -224,17 +231,17 @@ export default function InboxMessagesPage() {
                                 onClick={() => selectConversation(convo)}
                                 className={`w-full flex items-start gap-3 px-4 py-3.5 text-left transition-all border-b border-border ${
                                     activeId === convo.id
-                                        ? 'bg-status-info-soft border-l-2 border-l-blue-500'
+                                        ? 'bg-brand-soft border-l-2 border-l-brand'
                                         : 'hover:bg-surface-2'
                                 }`}
                             >
-                                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500/30 to-violet-500/30 flex items-center justify-center shrink-0 text-sm font-bold text-foreground">
+                                <div className="w-10 h-10 rounded-full bg-brand-soft flex items-center justify-center shrink-0 text-sm font-bold text-brand-strong">
                                     {convo.customer_name?.[0]?.toUpperCase() || '?'}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm font-medium text-foreground truncate">
-                                            {convo.customer_name || 'Guest'}
+                                            {convo.customer_name || 'Зочин'}
                                         </span>
                                         <span className="text-[10px] text-muted-foreground/60 shrink-0 ml-2">
                                             {formatDate(convo.last_message_at)}
@@ -261,12 +268,12 @@ export default function InboxMessagesPage() {
                     <>
                         {/* Chat header */}
                         <div className="px-5 py-3.5 border-b border-border flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500/30 to-violet-500/30 flex items-center justify-center text-sm font-bold text-foreground">
+                            <div className="w-9 h-9 rounded-full bg-brand-soft flex items-center justify-center text-sm font-bold text-brand-strong">
                                 {activeConvo.customer_name?.[0]?.toUpperCase() || '?'}
                             </div>
                             <div>
                                 <p className="text-sm font-semibold text-foreground">
-                                    {activeConvo.customer_name || 'Guest'}
+                                    {activeConvo.customer_name || 'Зочин'}
                                 </p>
                                 <p className="text-[11px] text-muted-foreground/60">
                                     {chatMessages.length} {t.inbox.messages}
@@ -296,25 +303,25 @@ export default function InboxMessagesPage() {
                                         className={`flex gap-2.5 ${msg.role === 'assistant' ? 'justify-end' : 'justify-start'}`}
                                     >
                                         {msg.role === 'user' && (
-                                            <div className="w-7 h-7 rounded-full bg-status-info/20 flex items-center justify-center shrink-0 mt-0.5">
-                                                <User className="w-3.5 h-3.5 text-status-info" />
+                                            <div className="w-7 h-7 rounded-full bg-surface-3 flex items-center justify-center shrink-0 mt-0.5">
+                                                <User className="w-3.5 h-3.5 text-muted-foreground" />
                                             </div>
                                         )}
                                         <div
                                             className={`max-w-[70%] px-3.5 py-2.5 rounded-2xl text-[13px] leading-relaxed ${
                                                 msg.role === 'assistant'
-                                                    ? 'bg-status-info/20 text-status-info rounded-br-md'
+                                                    ? 'bg-brand-soft text-brand-strong rounded-br-md'
                                                     : 'bg-surface-2 text-foreground rounded-bl-md'
                                             }`}
                                         >
                                             {msg.content}
-                                            <div className={`text-[10px] mt-1 ${msg.role === 'assistant' ? 'text-status-info/40' : 'text-muted-foreground/60'}`}>
+                                            <div className={`text-[10px] mt-1 ${msg.role === 'assistant' ? 'text-brand-strong/50' : 'text-muted-foreground/60'}`}>
                                                 {formatTime(msg.created_at)}
                                             </div>
                                         </div>
                                         {msg.role === 'assistant' && (
-                                            <div className="w-7 h-7 rounded-full bg-status-success-soft flex items-center justify-center shrink-0 mt-0.5">
-                                                <Bot className="w-3.5 h-3.5 text-status-success" />
+                                            <div className="w-7 h-7 rounded-full bg-brand-soft flex items-center justify-center shrink-0 mt-0.5">
+                                                <Bot className="w-3.5 h-3.5 text-brand-strong" />
                                             </div>
                                         )}
                                     </div>
@@ -326,28 +333,28 @@ export default function InboxMessagesPage() {
                         {/* Reply input */}
                         <div className="px-4 py-3 border-t border-border">
                             <div className="flex items-center gap-1.5 mb-2 px-1">
-                                <span className="text-[10px] text-muted-foreground/60 mr-1">AI mode:</span>
+                                <span className="text-[10px] text-muted-foreground/60 mr-1">AI горим:</span>
                                 <button
                                     onClick={() => setAiPauseMode('pause')}
                                     className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-all ${
                                         aiPauseMode === 'pause'
-                                            ? 'bg-status-pending/20 text-status-pending border border-status-pending/30'
+                                            ? 'bg-status-pending-soft text-status-pending border border-status-pending/30'
                                             : 'bg-surface-2 text-muted-foreground/60 border border-border hover:bg-surface-2'
                                     }`}
                                 >
                                     <Timer className="w-3 h-3" />
-                                    30 min pause
+                                    30 мин зогсоох
                                 </button>
                                 <button
                                     onClick={() => setAiPauseMode('off')}
                                     className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-all ${
                                         aiPauseMode === 'off'
-                                            ? 'bg-status-danger/20 text-status-danger border border-status-danger/30'
+                                            ? 'bg-status-danger-soft text-status-danger border border-status-danger/30'
                                             : 'bg-surface-2 text-muted-foreground/60 border border-border hover:bg-surface-2'
                                     }`}
                                 >
                                     <Power className="w-3 h-3" />
-                                    AI off
+                                    AI унтраах
                                 </button>
                             </div>
                             <div className="flex items-center gap-2">
@@ -359,12 +366,12 @@ export default function InboxMessagesPage() {
                                     onKeyDown={handleKeyDown}
                                     placeholder={t.inbox.messagePlaceholder}
                                     disabled={isSending}
-                                    className="flex-1 px-4 py-2.5 bg-surface-2 rounded-xl text-sm text-foreground placeholder:text-muted-foreground/60 border border-border focus:border-status-info/40 outline-none disabled:opacity-50"
+                                    className="flex-1 px-4 py-2.5 bg-surface-2 rounded-xl text-sm text-foreground placeholder:text-muted-foreground/60 border border-border outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:border-border-strong disabled:opacity-50"
                                 />
                                 <button
                                     onClick={handleSendReply}
                                     disabled={!replyMessage.trim() || isSending}
-                                    className="p-2.5 rounded-xl bg-status-info hover:bg-status-info disabled:bg-surface-2 disabled:text-muted-foreground/60 text-white transition-all"
+                                    className="p-2.5 rounded-xl bg-brand hover:bg-brand-strong disabled:bg-surface-2 disabled:text-muted-foreground/60 text-brand-fg transition-all"
                                 >
                                     {isSending ? (
                                         <Loader2 className="w-4 h-4 animate-spin" />

@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
+import { ChartCard } from '@/components/ui/ChartCard';
+import { BarChart } from '@/components/charts/BarChart';
 import {
     Users,
     Target,
@@ -261,39 +263,33 @@ export default function LeadsReport() {
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Source Analysis */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <PieChart className="w-5 h-5 text-brand" />
-                            Сувгийн анализ
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        {sourceData.length === 0 ? (
+                {sourceData.length === 0 ? (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <PieChart className="w-5 h-5 text-brand" />
+                                Сувгийн анализ
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
                             <p className="text-sm text-muted-foreground text-center py-8">Мэдээлэл байхгүй</p>
-                        ) : (
-                            <div className="space-y-6">
-                                {sourceData.map((item, i) => (
-                                    <div key={i}>
-                                        <div className="flex items-center justify-between mb-2">
-                                            <span className="font-medium text-foreground">{item.source}</span>
-                                            <div className="text-right tabular-nums">
-                                                <span className="font-semibold text-foreground">{item.count}</span>
-                                                <span className="text-sm text-muted-foreground ml-2">({item.percentage}%)</span>
-                                            </div>
-                                        </div>
-                                        <div className="w-full bg-surface-2 rounded-full h-2 overflow-hidden">
-                                            <div
-                                                className={cn('h-full rounded-full transition-all', item.barClass)}
-                                                style={{ width: `${item.percentage}%` }}
-                                            />
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
+                        </CardContent>
+                    </Card>
+                ) : (
+                    <ChartCard
+                        title="Сувгийн анализ"
+                        subtitle="Эх сурвалж тус бүрийн лийдийн тоо"
+                        height={Math.max(220, sourceData.length * 56)}
+                    >
+                        <BarChart
+                            data={sourceData.map((item) => ({ source: item.source, count: item.count }))}
+                            xKey="source"
+                            series={[{ key: 'count', name: 'Лийд' }]}
+                            horizontal
+                            colorByPoint
+                        />
+                    </ChartCard>
+                )}
 
                 {/* Performance by Project */}
                 <Card>
