@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logAdminAudit } from '@/lib/admin/audit';
+import { sendInviteEmail } from '@/lib/email/email';
 
 /**
- * POST /api/admin/users/invite — урих / нэвтрэх холбоос үүсгэх (super_admin).
+ * POST /api/admin/users/invite — урих / нэвтрэх холбоос үүсгэж имэйлээр илгээх (super_admin).
  *
- * Имэйл АВТОМАТААР явуулахгүй — `action_link`-ийг буцааж, админ өөрөө хуулж илгээнэ
- * (гадагш үйлдэл хийхгүй, аюулгүй). Шинэ имэйл бол урилга (хэрэглэгч үүснэ),
- * бүртгэлтэй бол нэвтрэх (magiclink) холбоос үүснэ.
+ * Холбоосыг Resend-ээр имэйлээр АВТОМАТААР илгээнэ (best-effort). Илгээж чадаагүй бол
+ * `action_link`-ийг буцаах тул админ гараар хуулж илгээж болно. Шинэ имэйл бол урилга
+ * (хэрэглэгч үүснэ), бүртгэлтэй бол нэвтрэх (magiclink) холбоос үүснэ.
  */
 export async function POST(request: NextRequest) {
     try {
@@ -76,12 +77,20 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        await logAdminAudit({ actorId: userId, action: 'user.invite', targetId: invitedUserId, meta: { email, role: role || 'viewer', mode } });
+        // Урилгыг Resend-ээр имэйлээр илгээх (best-effort — амжилтгүй бол action_link fallback).
+        let emailed = false;
+        if (actionLink) {
+            emailed = await sendInviteEmail({ to: email, actionLink, mode, fullName: full_name || undefined });
+            if (!emailed) warnings.push('Имэйл илгээгдсэнгүй (RESEND_API_KEY / илгээгчийн домэйн шалгана уу) — холбоосыг гараар илгээнэ үү.');
+        }
+
+        await logAdminAudit({ actorId: userId, action: 'user.invite', targetId: invitedUserId, meta: { email, role: role || 'viewer', mode, emailed } });
 
         return NextResponse.json({
             success: true,
             mode,
             email,
+            emailed,
             action_link: actionLink,
             warning: warnings.length ? warnings.join(' / ') : null,
         });

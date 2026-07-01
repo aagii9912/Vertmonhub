@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Shield, ChevronDown, Search, UserPlus, Check, X, Loader2, Eye, EyeOff, AlertCircle, Trash2, Link as LinkIcon, Copy } from 'lucide-react';
+import { Shield, ChevronDown, Search, UserPlus, Check, X, Loader2, Eye, EyeOff, AlertCircle, Trash2, Link as LinkIcon, Copy, Mail } from 'lucide-react';
 
 interface UserWithRole {
     id: string;
@@ -59,7 +59,7 @@ export default function AdminUsersPage() {
     const [inviting, setInviting] = useState(false);
     const [inviteForm, setInviteForm] = useState({ email: '', full_name: '', role: 'sales_manager' });
     const [inviteError, setInviteError] = useState<string | null>(null);
-    const [inviteResult, setInviteResult] = useState<{ link: string; mode: string } | null>(null);
+    const [inviteResult, setInviteResult] = useState<{ link: string; mode: string; emailed: boolean } | null>(null);
     const [copied, setCopied] = useState(false);
 
     useEffect(() => {
@@ -178,7 +178,7 @@ export default function AdminUsersPage() {
             });
             const data = await res.json();
             if (res.ok && data.success) {
-                setInviteResult({ link: data.action_link || '', mode: data.mode });
+                setInviteResult({ link: data.action_link || '', mode: data.mode, emailed: !!data.emailed });
                 fetchUsers();
             } else {
                 setInviteError(data.error || 'Холбоос үүсгэхэд алдаа гарлаа');
@@ -405,7 +405,7 @@ export default function AdminUsersPage() {
                             {!inviteResult ? (
                                 <>
                                     <p className="text-sm text-muted-foreground">
-                                        Имэйл оруулахад нэг удаагийн холбоос үүснэ. Холбоосыг хуулж ажилтанд илгээнэ үү — нэвтрэхэд нууц үг шаардахгүй.
+                                        Имэйл оруулахад ажилтанд урилга (нэвтрэх холбоос) <b>имэйлээр автоматаар илгээгдэнэ</b> — нэвтрэхэд нууц үг шаардахгүй. Шаардвал холбоосыг доор хуулж болно.
                                     </p>
                                     <div>
                                         <label className="block text-sm font-medium text-foreground mb-1">Нэр</label>
@@ -442,11 +442,13 @@ export default function AdminUsersPage() {
                                 </>
                             ) : (
                                 <div className="space-y-3">
-                                    <div className="p-3 bg-status-success-soft border border-status-success/30 rounded-lg text-status-success text-sm flex items-center gap-2">
-                                        <Check className="w-4 h-4 flex-shrink-0" />
-                                        {inviteResult.mode === 'invite' ? 'Урилгын холбоос үүслээ' : 'Нэвтрэх холбоос үүслээ (бүртгэлтэй)'}
+                                    <div className={`p-3 rounded-lg text-sm flex items-center gap-2 border ${inviteResult.emailed ? 'bg-status-success-soft border-status-success/30 text-status-success' : 'bg-status-pending-soft border-status-pending/30 text-status-pending'}`}>
+                                        {inviteResult.emailed ? <Check className="w-4 h-4 flex-shrink-0" /> : <AlertCircle className="w-4 h-4 flex-shrink-0" />}
+                                        {inviteResult.emailed
+                                            ? (inviteResult.mode === 'invite' ? `Урилга ${inviteForm.email} руу имэйлээр илгээгдлээ` : 'Нэвтрэх холбоос имэйлээр илгээгдлээ')
+                                            : 'Имэйл илгээгдсэнгүй — доорх холбоосыг гараар илгээнэ үү'}
                                     </div>
-                                    <label className="block text-sm font-medium text-foreground">Холбоос (ажилтанд илгээнэ үү)</label>
+                                    <label className="block text-sm font-medium text-foreground">Холбоос (нөөц — шаардвал гараар илгээнэ)</label>
                                     <div className="flex items-center gap-2">
                                         <input
                                             readOnly
@@ -480,8 +482,8 @@ export default function AdminUsersPage() {
                                     disabled={inviting || !inviteForm.email}
                                     className="flex items-center gap-2 px-5 py-2.5 text-sm bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                                 >
-                                    {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <LinkIcon className="w-4 h-4" />}
-                                    Холбоос үүсгэх
+                                    {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                                    Урилга илгээх
                                 </button>
                             )}
                         </div>

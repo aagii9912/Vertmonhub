@@ -11,7 +11,9 @@ const resend = process.env.RESEND_API_KEY
     ? new Resend(process.env.RESEND_API_KEY)
     : null;
 
-const FROM_EMAIL = process.env.EMAIL_FROM || 'orders@vertmon.mn';
+// Домэйн verify хийгдээгүй үед Resend-ийн туршилтын илгээгч ашиглана.
+// (Домэйн verify хийсний дараа EMAIL_FROM-оор дарна, ж: "Vertmon Hub <noreply@vertmon.mn>".)
+const FROM_EMAIL = process.env.EMAIL_FROM || 'Vertmon Hub <onboarding@resend.dev>';
 
 interface EmailParams {
     to: string;
@@ -104,6 +106,53 @@ export async function sendDirectorDigestEmail(to: string, d: DirectorDigestData)
 </body></html>`;
 
     return sendEmail({ to, subject: `${d.shopName} — Өдрийн тайлан (${d.date})`, html });
+}
+
+/**
+ * Ажилтныг урих / нэвтрэх холбоосыг имэйлээр илгээх (Resend).
+ * mode='invite' — шинэ ажилтны урилга; mode='magiclink' — бүртгэлтэй хэрэглэгчийн нэвтрэх холбоос.
+ */
+export async function sendInviteEmail(params: {
+    to: string;
+    actionLink: string;
+    mode: 'invite' | 'magiclink';
+    fullName?: string;
+    inviterName?: string;
+}): Promise<boolean> {
+    const { to, actionLink, mode, fullName, inviterName } = params;
+    const isInvite = mode === 'invite';
+    const title = isInvite ? 'Vertmon Hub-д урьж байна' : 'Vertmon Hub — нэвтрэх холбоос';
+    const greeting = fullName ? `Сайн байна уу, ${fullName}!` : 'Сайн байна уу!';
+    const intro = isInvite
+        ? `${inviterName ? inviterName + ' таныг' : 'Таныг'} Vertmon Hub — үл хөдлөхийн борлуулалт &amp; CRM платформд урьж байна. Доорх товчийг дарж бүртгэлээ баталгаажуулна уу (нууц үг шаардахгүй).`
+        : 'Vertmon Hub-д нэвтрэх нэг удаагийн холбоос доор байна. Товчийг дарж нэвтэрнэ үү.';
+    const cta = isInvite ? 'Урилгыг баталгаажуулах' : 'Нэвтрэх';
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="font-family:Arial,Helvetica,sans-serif;color:#333;background:#f3f4f6;padding:24px;margin:0">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #eee">
+    <div style="background:#C2613A;color:#fff;padding:24px">
+      <div style="font-size:19px;font-weight:700">${title}</div>
+    </div>
+    <div style="padding:28px 24px">
+      <p style="margin:0 0 10px;font-size:15px;font-weight:600;color:#111">${greeting}</p>
+      <p style="margin:0 0 22px;font-size:14px;line-height:1.6;color:#444">${intro}</p>
+      <div style="text-align:center;margin:0 0 22px">
+        <a href="${actionLink}" style="display:inline-block;background:#C2613A;color:#fff;text-decoration:none;font-weight:600;font-size:15px;padding:13px 30px;border-radius:8px">${cta}</a>
+      </div>
+      <p style="margin:0 0 6px;font-size:12px;color:#6b7280">Товч ажиллахгүй бол доорх холбоосыг хуулж хөтөч дээрээ нээнэ үү:</p>
+      <p style="margin:0 0 20px;font-size:12px;word-break:break-all"><a href="${actionLink}" style="color:#C2613A">${actionLink}</a></p>
+      <p style="margin:0;font-size:12px;color:#9ca3af">Энэ холбоос нэг удаа, хязгаарлагдмал хугацаанд хүчинтэй. Хэрэв та энэ урилгыг хүлээгээгүй бол үл тоомсорлоно уу.</p>
+    </div>
+    <div style="padding:16px 24px;border-top:1px solid #f0f0f0;text-align:center;font-size:11px;color:#9ca3af">Vertmon Hub</div>
+  </div>
+</body></html>`;
+
+    return sendEmail({
+        to,
+        subject: isInvite ? 'Vertmon Hub — урилга' : 'Vertmon Hub — нэвтрэх холбоос',
+        html,
+    });
 }
 
 /**
