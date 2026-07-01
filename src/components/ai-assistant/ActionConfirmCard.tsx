@@ -9,7 +9,8 @@
  */
 
 import React from 'react';
-import { Loader2, ShieldAlert, CheckCircle2, XCircle, ChevronRight, Clock } from 'lucide-react';
+import { Loader2, ShieldAlert, ShieldCheck, CheckCircle2, XCircle, ChevronRight, Clock } from 'lucide-react';
+import { getRiskTier } from '@/lib/ai/riskTiers';
 
 export interface PendingActionUI {
     id: string;
@@ -21,6 +22,8 @@ export interface PendingActionUI {
     emoji: string;
     status?: 'pending' | 'running' | 'done' | 'cancelled' | 'error';
     resultMessage?: string;
+    /** "Энэ session-д үргэлж зөвшөөрөх"-ээр попапгүйгээр автоматаар гүйцэтгэсэн эсэх. */
+    autoApproved?: boolean;
 }
 
 interface Props {
@@ -29,17 +32,30 @@ interface Props {
     onReopen: (action: PendingActionUI) => void;
 }
 
-const DELETE_TOOLS = ['delete_property', 'delete_lead', 'delete_viewing', 'delete_contract', 'delete_customer'];
-const ADMIN_TOOLS = ['invite_user', 'assign_role', 'create_role'];
-
 export function ActionConfirmCard({ action, onReopen }: Props) {
     const status = action.status || 'pending';
+
+    // Авто-зөвшөөрсөн үйлдэл: баталгаажуулах товч огт харуулахгүй — шууд гүйцэтгэлийн индикатор.
+    if (action.autoApproved && (status === 'pending' || status === 'running')) {
+        return (
+            <div className="mt-2 flex items-center gap-2 text-sm text-foreground/80 bg-surface-2/60 border border-border/60 rounded-xl px-3 py-2">
+                <Loader2 className="w-4 h-4 flex-shrink-0 animate-spin text-brand" />
+                <span>Автоматаар гүйцэтгэж байна: {action.label}</span>
+                <ShieldCheck className="w-3.5 h-3.5 ml-auto text-muted-foreground flex-shrink-0" />
+            </div>
+        );
+    }
 
     if (status === 'done') {
         return (
             <div className="mt-2 flex items-center gap-2 text-sm text-status-success bg-status-success-soft border border-status-success/30 rounded-xl px-3 py-2">
                 <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
                 <span>{action.resultMessage || `Гүйцэтгэлээ: ${action.label}`}</span>
+                {action.autoApproved && (
+                    <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-muted-foreground bg-surface-2 rounded-full px-2 py-0.5 flex-shrink-0">
+                        <ShieldCheck className="w-3 h-3" /> Автоматаар зөвшөөрсөн
+                    </span>
+                )}
             </div>
         );
     }
@@ -69,8 +85,9 @@ export function ActionConfirmCard({ action, onReopen }: Props) {
     }
 
     // pending → дарахад баталгаажуулах попап нээгдэнэ
-    const isDelete = DELETE_TOOLS.includes(action.tool);
-    const isAdmin = ADMIN_TOOLS.includes(action.tool);
+    const tier = getRiskTier(action.tool);
+    const isDelete = tier === 'danger';
+    const isAdmin = tier === 'admin';
     const accentCls = isDelete
         ? 'border-status-danger/30 bg-status-danger-soft'
         : isAdmin

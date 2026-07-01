@@ -14,6 +14,7 @@ import { Alert, AlertTitle, AlertDescription } from '@/components/ui/Alert';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import ImportTab from './components/ImportTab';
+import { SessionApprovalsReset } from '@/components/ai-assistant/SessionApprovalsReset';
 
 // ============================================
 // TYPES
@@ -246,6 +247,9 @@ function GeneralSection({ isAiActive, setIsAiActive, aiEmotion, setAiEmotion, sh
                     </div>
                 </CardContent>
             </Card>
+
+            {/* AI Orchestrator-ийн session-ийн автомат зөвшөөрлүүд */}
+            <SessionApprovalsReset />
 
             {/* AI Emotion */}
             <SectionCard title="AI Зан байдал" icon={MessageSquareHeart}>
