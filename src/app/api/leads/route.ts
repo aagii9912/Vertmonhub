@@ -92,7 +92,7 @@ export async function POST(request: NextRequest) {
 
         let aiResponse = '';
         try {
-            const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+            const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
 
             const prompt = `Чи Vertmon компанийн найрсаг менежер шүү! 😊
 
