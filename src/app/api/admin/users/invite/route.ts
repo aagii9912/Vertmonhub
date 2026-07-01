@@ -28,7 +28,10 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Имэйл шаардлагатай' }, { status: 400 });
         }
 
-        const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL || ''}/auth/callback`;
+        // NEXT_PUBLIC_APP_URL тохируулаагүй бол хүсэлт ирсэн жинхэнэ origin-ийг (host:port) ашиглана —
+        // ингэснээр dev (localhost:3001) болон production дээр зөв руу чиглүүлнэ.
+        const origin = (process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin).replace(/\/$/, '');
+        const redirectTo = `${origin}/auth/callback`;
 
         // Эхлээд урилга (шинэ хэрэглэгч үүсгэнэ). Бүртгэлтэй бол magiclink руу шилжинэ.
         let mode: 'invite' | 'magiclink' = 'invite';

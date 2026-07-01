@@ -120,7 +120,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Return the confirmation URL as required by Meta
-        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://vertmonhub.vercel.app';
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://vertmonhub-umber.vercel.app';
 
         return NextResponse.json({
             url: `${baseUrl}/deletion-status?id=${confirmationCode}`,
