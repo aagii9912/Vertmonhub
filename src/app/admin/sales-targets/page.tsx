@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Target, Loader2, Save, TrendingUp, Users, Check } from 'lucide-react';
+import { Target, Loader2, Save, TrendingUp, Users, Check, Plus } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import {
@@ -32,6 +32,8 @@ export default function SalesTargetsAdminPage() {
     const [teamTarget, setTeamTarget] = useState<number[]>(Array(12).fill(0));
     const [teamActual, setTeamActual] = useState<number[]>(Array(12).fill(0));
     const [managers, setManagers] = useState<ManagerRow[]>([]);
+    const [teamMembers, setTeamMembers] = useState<Array<{ id: string; full_name: string }>>([]);
+    const [newManagerName, setNewManagerName] = useState('');
 
     const [loading, setLoading] = useState(false);
     const [savingTarget, setSavingTarget] = useState(false);
@@ -63,6 +65,7 @@ export default function SalesTargetsAdminPage() {
             setTeamTarget(d.teamTarget || Array(12).fill(0));
             setTeamActual(d.teamActual || Array(12).fill(0));
             setManagers(d.managers || []);
+            setTeamMembers(d.teamMembers || []);
         } catch {
             setManagers([]);
         } finally {
@@ -96,18 +99,44 @@ export default function SalesTargetsAdminPage() {
         setManagers((prev) => prev.map((m) => (m.name === name ? { ...m, is_active: !m.is_active } : m)));
     }
 
+    async function persistRoster(list: ManagerRow[]) {
+        await fetch('/api/admin/sales-targets', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                shopId,
+                managers: list.map((m) => ({ name: m.name, is_active: m.is_active, user_id: m.user_id })),
+            }),
+        });
+        await loadData();
+    }
+
     async function saveRoster() {
         setSavingRoster(true);
         try {
-            await fetch('/api/admin/sales-targets', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    shopId,
-                    managers: managers.map((m) => ({ name: m.name, is_active: m.is_active, user_id: m.user_id })),
-                }),
-            });
-            await loadData();
+            await persistRoster(managers);
+        } finally {
+            setSavingRoster(false);
+        }
+    }
+
+    // Шинэ борлуулалтын менежер нэмэх (ростерт шингээж шууд хадгална)
+    async function addManager(name: string, userId: string | null) {
+        const trimmed = name.trim();
+        if (!trimmed) return;
+        if (managers.some((m) => m.name === trimmed)) {
+            setNewManagerName('');
+            return; // аль хэдийн жагсаалтад бий
+        }
+        const next = [
+            ...managers,
+            { name: trimmed, is_active: true, user_id: userId, year_actual: 0 },
+        ].sort((a, b) => a.name.localeCompare(b.name, 'mn'));
+        setManagers(next);
+        setNewManagerName('');
+        setSavingRoster(true);
+        try {
+            await persistRoster(next);
         } finally {
             setSavingRoster(false);
         }
@@ -117,6 +146,11 @@ export default function SalesTargetsAdminPage() {
     const yearActual = sum(teamActual);
     const yearP = yearTarget > 0 ? Math.round((yearActual / yearTarget) * 100) : 0;
     const activeCount = managers.filter((m) => m.is_active).length;
+
+    // Жагсаалтад ороогүй акаунттай гишүүд (шууд менежер болгож нэмэх)
+    const unlistedMembers = teamMembers.filter(
+        (t) => !managers.some((m) => m.name === t.full_name || (m.user_id && m.user_id === t.id)),
+    );
 
     return (
         <div className="space-y-6">
@@ -268,11 +302,51 @@ export default function SalesTargetsAdminPage() {
                                 </div>
                             )}
 
-                            <div className="flex justify-end">
-                                <Button onClick={saveRoster} isLoading={savingRoster} variant="secondary" size="sm" disabled={managers.length === 0}>
-                                    {!savingRoster && <Save className="h-4 w-4" />} Идэвхтэй жагсаалт хадгалах
-                                </Button>
+                            {/* Шинэ борлуулалтын менежер нэмэх */}
+                            <div className="space-y-2 rounded-lg border border-dashed border-border p-3">
+                                <p className="text-xs font-medium text-muted-foreground">Шинэ менежер нэмэх</p>
+                                {unlistedMembers.length > 0 && (
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {unlistedMembers.map((t) => (
+                                            <button
+                                                key={t.id}
+                                                onClick={() => addManager(t.full_name, t.id)}
+                                                disabled={savingRoster}
+                                                className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-xs text-foreground hover:border-brand hover:text-brand disabled:opacity-50"
+                                            >
+                                                <Plus className="h-3 w-3" /> {t.full_name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={newManagerName}
+                                        onChange={(e) => setNewManagerName(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') addManager(newManagerName, null); }}
+                                        placeholder="Менежерийн нэр бичих..."
+                                        className="flex-1 rounded-md border border-border bg-surface-2 px-3 py-2 text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:ring-[3px] focus-visible:ring-ring/40"
+                                    />
+                                    <Button
+                                        onClick={() => addManager(newManagerName, null)}
+                                        isLoading={savingRoster}
+                                        variant="secondary"
+                                        size="sm"
+                                        disabled={!newManagerName.trim() || savingRoster}
+                                    >
+                                        {!savingRoster && <Plus className="h-4 w-4" />} Нэмэх
+                                    </Button>
+                                </div>
                             </div>
+
+                            {managers.length > 0 && (
+                                <div className="flex justify-end">
+                                    <Button onClick={saveRoster} isLoading={savingRoster} variant="secondary" size="sm">
+                                        {!savingRoster && <Save className="h-4 w-4" />} Идэвхтэй жагсаалт хадгалах
+                                    </Button>
+                                </div>
+                            )}
                         </CardContent>
                     </Card>
                 </div>
