@@ -54,7 +54,7 @@ export function Header() {
     const crumbs = getBreadcrumb(path);
 
     return (
-        <header className="h-14 md:h-16 bg-surface border-b border-border sticky top-0 z-40 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 md:px-6">
+        <header className="h-14 md:h-16 bg-surface border-b border-border sticky top-0 z-40 grid grid-cols-[1fr_auto] md:grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 md:px-6">
             {/* Зүүн: breadcrumb / мэндчилгээ */}
             <div className="min-w-0 justify-self-start">
                 {/* Том дэлгэц: breadcrumb эсвэл мэндчилгээ */}
@@ -96,8 +96,8 @@ export function Header() {
                 </h1>
             </div>
 
-            {/* Төв: ⌘K хайлт */}
-            <div className="justify-self-center">
+            {/* Төв: ⌘K хайлт — зөвхөн desktop (mobile-д зай хэмнэж нуана) */}
+            <div className="hidden md:flex justify-self-center">
                 <button
                     onClick={openCommand}
                     aria-label="Хайх (⌘K)"
@@ -114,7 +114,7 @@ export function Header() {
             </div>
 
             {/* Баруун: Үйлдлүүд */}
-            <div className="justify-self-end flex items-center gap-2 md:gap-3">
+            <div className="justify-self-end flex items-center gap-1.5 md:gap-3 min-w-0">
                 {shops.length > 1 && <ShopSwitcher />}
 
                 <NotificationButton />
