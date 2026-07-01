@@ -79,32 +79,44 @@ export async function getAdminUser(): Promise<AdminUser | null> {
 
         logger.debug('Admin auth: User found', { userId: resolved.userId });
 
-        // Check if user is in admins table (using service role — bypasses RLS)
         const adminDb = supabaseAdmin();
-        const { data: admin, error } = await adminDb
+
+        // 1) admins хүснэгт (legacy платформ-админ) — эхэлж шалгана
+        const { data: admin } = await adminDb
             .from('admins')
             .select('id, email, role')
             .eq('user_id', resolved.userId)
             .eq('is_active', true)
-            .single();
+            .maybeSingle();
 
-        if (error) {
-            logger.debug('Admin auth: Error checking admins table', { error: error.message });
-            return null;
+        if (admin) {
+            logger.debug('Admin auth: Admin found (admins table)', { email: admin.email, role: admin.role });
+            return {
+                id: admin.id,
+                email: admin.email,
+                role: admin.role as AdminUser['role'],
+            };
         }
 
-        if (!admin) {
-            logger.debug('Admin auth: User not in admins table');
-            return null;
+        // 2) RBAC super_admin — dashboard-ийн эрхтэй НЭГТГЭСЭН зам.
+        //    user_roles.role === 'super_admin' бол admins хүснэгтэд байхгүй ч /admin-д нэвтэрнэ.
+        const { data: roleRow } = await adminDb
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', resolved.userId)
+            .maybeSingle();
+
+        if (roleRow?.role === 'super_admin') {
+            logger.debug('Admin auth: Granted via RBAC super_admin', { userId: resolved.userId });
+            return {
+                id: resolved.userId,
+                email: resolved.email || '',
+                role: 'super_admin',
+            };
         }
 
-        logger.debug('Admin auth: Admin found', { email: admin.email, role: admin.role });
-
-        return {
-            id: admin.id,
-            email: admin.email,
-            role: admin.role as AdminUser['role']
-        };
+        logger.debug('Admin auth: Not in admins table and not RBAC super_admin');
+        return null;
     } catch (error) {
         logger.error('Admin auth error', { error });
         return null;

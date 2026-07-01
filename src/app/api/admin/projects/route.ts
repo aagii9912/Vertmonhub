@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
+import { getAdminUser } from '@/lib/admin/auth';
 
 /**
  * GET /api/admin/projects — List all projects
@@ -12,7 +13,7 @@ export async function GET() {
 
         const supabase = supabaseAdmin();
 
-        const { data: admin } = await supabase.from('admins').select('role').eq('user_id', userId).single();
+        const admin = await getAdminUser();
         if (!admin) return NextResponse.json({ error: 'Admin required' }, { status: 403 });
 
         const { data: projects, error } = await supabase
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
 
         const supabase = supabaseAdmin();
 
-        const { data: admin } = await supabase.from('admins').select('role').eq('user_id', userId).single();
+        const admin = await getAdminUser();
         if (!admin) return NextResponse.json({ error: 'Admin required' }, { status: 403 });
 
         const body = await request.json();

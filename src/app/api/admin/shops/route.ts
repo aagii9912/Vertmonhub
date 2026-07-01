@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
+import { getAdminUser } from '@/lib/admin/auth';
 
 /**
  * GET /api/admin/shops — Бүх shop-ийн жагсаалт (admin only)
@@ -13,7 +14,7 @@ export async function GET() {
 
         const supabase = supabaseAdmin();
 
-        const { data: admin } = await supabase.from('admins').select('role').eq('user_id', userId).single();
+        const admin = await getAdminUser();
         if (!admin) return NextResponse.json({ error: 'Admin required' }, { status: 403 });
 
         const { data: shops, error } = await supabase
