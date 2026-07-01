@@ -20,7 +20,7 @@ import type {
 } from './types';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const SYNTH_MODEL = 'gemini-2.5-flash';
+const SYNTH_MODEL = 'gemini-3.5-flash';
 
 /** Олон agent-ийн хариуг нэг цэгцтэй монгол хариу болгон нэгтгэнэ. */
 async function synthesize(

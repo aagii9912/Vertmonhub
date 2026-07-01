@@ -145,7 +145,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         }
 
         const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
 
         const prompt = `
 Та бол өгөгдлийн шинжээч AI байна. Дараах судалгааны асуултууд болон өгөгдсөн хариултуудад дүн шинжилгээ хийж, удирдлагын багт зориулсан товч бөгөөд ойлгомжтой тайлан (summary) гаргаж өгнө үү. Тайланг Монгол хэлээр гаргах хэрэгтэй.

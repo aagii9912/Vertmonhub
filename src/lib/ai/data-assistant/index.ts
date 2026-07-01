@@ -172,7 +172,7 @@ export async function handleDataAssistantQuery(
         const activeTools = perms.canWrite ? [...readTools, ...writeTools] : readTools;
 
         const model = genAI.getGenerativeModel({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-3.5-flash',
             systemInstruction: getSystemInstruction(perms.canWrite, shopKnowledge),
             tools: [{ functionDeclarations: activeTools }],
             generationConfig: { temperature: 0.3, topP: 0.8, maxOutputTokens: 2048 },

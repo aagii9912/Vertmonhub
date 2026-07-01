@@ -12,7 +12,7 @@ import { withRetry } from './retry';
 import type { AgentId, OrchestrationPlan, OrchestratorContext } from './types';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const PLANNER_MODEL = 'gemini-2.5-flash';
+const PLANNER_MODEL = 'gemini-3.5-flash';
 const MAX_STEPS = 3;
 
 const VALID_IDS = new Set<string>(AGENT_LIST.map((a) => a.id));
