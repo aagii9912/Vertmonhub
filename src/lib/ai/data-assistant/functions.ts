@@ -545,6 +545,53 @@ export async function updatePropertyPrice(shopId: string, args: any) {
     return { success: true, property: prop.name, oldPrice: `${Number(oldPrice).toLocaleString()}₮`, newPrice: `${Number(args.new_price).toLocaleString()}₮` };
 }
 
+// property_units.status enum (Мандала Гарден маягийн бодит нөөцийн грид)
+const UNIT_STATUSES = ['available', 'reserved', 'ordered', 'sold', 'handed_over'];
+
+/**
+ * Нэгжийн (property_units) төлөвийг өөрчилнө — "байр зарагдсан" гэх мэт.
+ * property_units бол Мандала Гарден маягийн ээлж→блок→нэгж бүтэцтэй бодит нөөц;
+ * `properties` (зурагтай listing) хүснэгтээс тусдаа тул энэ tool-оор шинэчилнэ.
+ */
+export async function updateUnitStatus(shopId: string, args: any) {
+    const newStatus = args.new_status;
+    if (!UNIT_STATUSES.includes(newStatus)) {
+        return { error: `Төлөв буруу. Боломжтой: ${UNIT_STATUSES.join(', ')}` };
+    }
+
+    let query = supabaseAdmin
+        .from('property_units')
+        .select('id, code, unit_number, block, phase, status')
+        .eq('shop_id', shopId);
+
+    if (args.unit_id) query = query.eq('id', args.unit_id);
+    else if (args.code) query = query.ilike('code', `%${args.code}%`);
+    else if (args.unit_number) query = query.ilike('unit_number', `%${args.unit_number}%`);
+    else return { error: 'code, unit_number эсвэл unit_id шаардлагатай' };
+
+    if (args.block) query = query.eq('block', args.block);
+    if (args.phase) query = query.ilike('phase', `%${args.phase}%`);
+
+    const { data: units } = await query.limit(50);
+    if (!units || units.length === 0) return { error: 'Нэгж олдсонгүй' };
+    if (units.length > 1) {
+        return {
+            error: `${units.length} нэгж олдлоо, код/блокоор тодруулна уу`,
+            options: units.slice(0, 10).map(u => ({ id: u.id, code: u.code, unit_number: u.unit_number, block: u.block, phase: u.phase, status: u.status })),
+        };
+    }
+
+    const unit = units[0];
+    const oldStatus = unit.status;
+    const { error } = await supabaseAdmin
+        .from('property_units')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', unit.id);
+    if (error) return { error: `Алдаа: ${error.message}` };
+
+    return { success: true, unit: unit.code || unit.unit_number, block: unit.block, oldStatus, newStatus };
+}
+
 export async function updateLeadStatus(shopId: string, args: any) {
     let query = supabaseAdmin.from('leads').select('id, customer_name, status').eq('shop_id', shopId);
     if (args.lead_id) query = query.eq('id', args.lead_id);

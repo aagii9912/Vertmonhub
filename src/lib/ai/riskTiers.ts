@@ -11,7 +11,7 @@ export type RiskTier = 'safe' | 'danger' | 'admin';
 
 /** Бичих (WRITE) — шинэ бичлэг үүсгэх, шинэчлэх. tools.ts → WRITE_TOOL_NAMES-ийн хуулбар. */
 export const WRITE_TOOLS: string[] = [
-    'update_property_status', 'update_property_price', 'update_lead_status', 'add_lead_note',
+    'update_property_status', 'update_unit_status', 'update_property_price', 'update_lead_status', 'add_lead_note',
     'process_contract_action', 'create_property', 'create_lead', 'create_customer',
     'schedule_viewing', 'create_contract', 'attach_file', 'bulk_update_leads',
     'create_social_post', 'remember_fact',
