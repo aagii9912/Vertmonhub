@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
+import { getAdminUser } from '@/lib/admin/auth';
 import * as XLSX from 'xlsx';
 
 // ============================================
@@ -41,22 +42,24 @@ export async function POST(request: NextRequest) {
 
         const supabase = supabaseAdmin();
 
-        // Check if user is super_admin or has import permission
-        const { data: admin } = await supabase
-            .from('admins')
-            .select('role, permissions')
-            .eq('user_id', userId)
-            .eq('is_active', true)
-            .single();
-
+        // super_admin (admins хүснэгт эсвэл RBAC) → зөвшөөрнө; бусад бол admins.permissions.can_import_data шалгана.
+        const admin = await getAdminUser();
         if (!admin) {
             return NextResponse.json({ error: 'Админ эрх шаардлагатай' }, { status: 403 });
         }
 
-        const isSuperAdmin = admin.role === 'super_admin';
-        const hasImportPerm = admin.permissions?.can_import_data === true;
+        let allowed = admin.role === 'super_admin';
+        if (!allowed) {
+            const { data: permRow } = await supabase
+                .from('admins')
+                .select('permissions')
+                .eq('user_id', userId)
+                .eq('is_active', true)
+                .maybeSingle();
+            allowed = permRow?.permissions?.can_import_data === true;
+        }
 
-        if (!isSuperAdmin && !hasImportPerm) {
+        if (!allowed) {
             return NextResponse.json({ error: 'Import хийх эрх байхгүй. Super Admin-д хандана уу.' }, { status: 403 });
         }
 

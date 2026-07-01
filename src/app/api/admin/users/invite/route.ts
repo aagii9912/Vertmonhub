@@ -3,6 +3,7 @@ import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logAdminAudit } from '@/lib/admin/audit';
 import { sendInviteEmail } from '@/lib/email/email';
+import { getAdminUser } from '@/lib/admin/auth';
 
 /**
  * POST /api/admin/users/invite — урих / нэвтрэх холбоос үүсгэж имэйлээр илгээх (super_admin).
@@ -17,7 +18,7 @@ export async function POST(request: NextRequest) {
         if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const supabase = supabaseAdmin();
-        const { data: admin } = await supabase.from('admins').select('role').eq('user_id', userId).single();
+        const admin = await getAdminUser();
         if (!admin || admin.role !== 'super_admin') {
             return NextResponse.json({ error: 'Super admin эрх шаардлагатай' }, { status: 403 });
         }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logAdminAudit } from '@/lib/admin/audit';
+import { getAdminUser } from '@/lib/admin/auth';
 
 /**
  * GET /api/admin/users — List all users with roles
@@ -15,7 +16,7 @@ export async function GET() {
         const supabase = supabaseAdmin();
 
         // Check admin
-        const { data: admin } = await supabase.from('admins').select('role').eq('user_id', userId).single();
+        const admin = await getAdminUser();
         if (!admin) return NextResponse.json({ error: 'Admin required' }, { status: 403 });
 
         // Get all users via Supabase Admin API
@@ -64,7 +65,7 @@ export async function PATCH(request: NextRequest) {
         const supabase = supabaseAdmin();
 
         // Check admin
-        const { data: admin } = await supabase.from('admins').select('role').eq('user_id', userId).single();
+        const admin = await getAdminUser();
         if (!admin) return NextResponse.json({ error: 'Admin required' }, { status: 403 });
 
         const { userId: targetUserId, role } = await request.json();
@@ -100,7 +101,7 @@ export async function POST(request: NextRequest) {
         const supabase = supabaseAdmin();
 
         // Check admin
-        const { data: admin } = await supabase.from('admins').select('role').eq('user_id', userId).single();
+        const admin = await getAdminUser();
         if (!admin || admin.role !== 'super_admin') {
             return NextResponse.json({ error: 'Super admin required' }, { status: 403 });
         }
@@ -209,7 +210,7 @@ export async function DELETE(request: NextRequest) {
         const supabase = supabaseAdmin();
 
         // Check super_admin
-        const { data: admin } = await supabase.from('admins').select('role').eq('user_id', userId).single();
+        const admin = await getAdminUser();
         if (!admin || admin.role !== 'super_admin') {
             return NextResponse.json({ error: 'Super admin эрх шаардлагатай' }, { status: 403 });
         }
