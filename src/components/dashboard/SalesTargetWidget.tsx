@@ -16,7 +16,6 @@ interface PeriodStat {
 
 interface MyTarget {
     hasTarget: boolean;
-    sales_manager?: string;
     month?: number;
     quarter?: number;
     periods?: {
@@ -24,6 +23,7 @@ interface MyTarget {
         quarter: PeriodStat;
         year: PeriodStat;
     };
+    myContribution?: { month: number; year: number } | null;
 }
 
 function pct(actual: number, target: number): number {
@@ -112,7 +112,7 @@ export function SalesTargetWidget() {
             <CardHeader className="flex flex-row items-center justify-between py-3 md:py-4">
                 <CardTitle className="flex items-center gap-2 text-base md:text-lg">
                     <Target className="h-4 w-4 text-brand md:h-5 md:w-5" />
-                    Миний борлуулалтын төлөвлөгөө
+                    Багийн борлуулалтын төлөвлөгөө
                 </CardTitle>
                 <span className="flex items-center gap-1 text-xs text-muted-foreground">
                     <TrendingUp className="h-3.5 w-3.5" />
@@ -123,6 +123,15 @@ export function SalesTargetWidget() {
                 <ProgressRow label="Энэ сар" stat={data.periods.month} />
                 <ProgressRow label="Энэ улирал" stat={data.periods.quarter} />
                 <ProgressRow label="Энэ жил" stat={data.periods.year} />
+
+                {data.myContribution && (
+                    <div className="flex items-center justify-between border-t border-border/60 pt-3 text-xs">
+                        <span className="text-muted-foreground">Миний хувь нэмэр (энэ сар)</span>
+                        <span className="font-medium text-foreground tabular-nums">
+                            {formatMNT(data.myContribution.month, { compact: true })}
+                        </span>
+                    </div>
+                )}
             </CardContent>
         </Card>
     );

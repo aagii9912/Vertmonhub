@@ -12,6 +12,7 @@ const SHOP_KEY = 'vertmonhub_active_shop_id';
 
 interface ManagerRow {
     sales_manager: string;
+    is_active?: boolean;
     contract_count: number;
     closed_count: number;
     total_sales: number;
@@ -19,9 +20,6 @@ interface ManagerRow {
     total_outstanding: number;
     collection_rate_pct: number;
     unique_customers: number;
-    year_target?: number;
-    year_actual?: number;
-    year_attainment_pct?: number;
 }
 interface Totals {
     managers: number;
@@ -29,6 +27,9 @@ interface Totals {
     closed: number;
     sales: number;
     collected: number;
+    teamTarget: number;
+    teamActual: number;
+    teamAttainmentPct: number;
 }
 
 function formatMoney(n: number): string {
@@ -43,7 +44,7 @@ function shopHeaders(): HeadersInit {
 
 export default function ManagerPerformancePage() {
     const [managers, setManagers] = useState<ManagerRow[]>([]);
-    const [totals, setTotals] = useState<Totals>({ managers: 0, contracts: 0, closed: 0, sales: 0, collected: 0 });
+    const [totals, setTotals] = useState<Totals>({ managers: 0, contracts: 0, closed: 0, sales: 0, collected: 0, teamTarget: 0, teamActual: 0, teamAttainmentPct: 0 });
     const [loading, setLoading] = useState(true);
     const [exporting, setExporting] = useState(false);
 
@@ -95,6 +96,9 @@ export default function ManagerPerformancePage() {
                             <Award className={`w-4 h-4 ${i === 0 ? 'text-status-pending' : i === 1 ? 'text-muted-foreground' : 'text-status-pending/70'}`} />
                         )}
                         <span className="font-medium text-foreground">{m.sales_manager || '—'}</span>
+                        {m.is_active === false && (
+                            <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-2xs text-muted-foreground">Идэвхгүй</span>
+                        )}
                     </div>
                 );
             },
@@ -119,27 +123,6 @@ export default function ManagerPerformancePage() {
                     </div>
                 </div>
             ),
-        },
-        {
-            key: 'year_target',
-            header: `Төлөвлөгөө (${new Date().getFullYear()})`,
-            cell: (m) => {
-                const target = m.year_target || 0;
-                if (target <= 0) return <span className="text-xs text-muted-foreground">—</span>;
-                const p = m.year_attainment_pct || 0;
-                const color = p >= 100 ? 'bg-status-success' : p >= 60 ? 'bg-brand' : p >= 30 ? 'bg-status-pending' : 'bg-status-danger';
-                return (
-                    <div className="min-w-[9rem]">
-                        <div className="flex items-baseline justify-between gap-2">
-                            <span className="text-foreground tabular-nums">{formatMoney(target)}</span>
-                            <span className={`text-xs font-semibold tabular-nums ${p >= 100 ? 'text-status-success' : 'text-muted-foreground'}`}>{p}%</span>
-                        </div>
-                        <div className="h-1.5 mt-1 bg-surface-2 rounded-full overflow-hidden">
-                            <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(100, p)}%` }} />
-                        </div>
-                    </div>
-                );
-            },
         },
         { key: 'total_collected', header: 'Цуглуулсан', align: 'right', cell: (m) => <span className="tabular-nums text-foreground">{formatMoney(m.total_collected)}</span> },
         { key: 'total_outstanding', header: 'Үлдэгдэл', align: 'right', cell: (m) => <span className="tabular-nums text-muted-foreground">{formatMoney(m.total_outstanding)}</span> },
@@ -166,6 +149,36 @@ export default function ManagerPerformancePage() {
                 <StatTile label="Нийт борлуулалт" value={formatMoney(totals.sales)} icon={<TrendingUp className="w-4 h-4" />} accent="success" />
                 <StatTile label="Цуглуулсан" value={formatMoney(totals.collected)} icon={<DollarSign className="w-4 h-4" />} accent="warning" helper={totals.sales > 0 ? `${Math.round((totals.collected / totals.sales) * 100)}%` : undefined} />
             </StatBar>
+
+            {/* Багийн жилийн төлөвлөгөө (admin-аас тохируулсан үед) */}
+            {totals.teamTarget > 0 && (
+                <Card className="mb-4 border-brand/30 bg-gradient-to-br from-brand-soft/40 to-transparent">
+                    <div className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between md:p-5">
+                        <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-soft">
+                                <TrendingUp className="h-5 w-5 text-brand" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-semibold text-foreground">Багийн {new Date().getFullYear()} оны төлөвлөгөө</p>
+                                <p className="text-xs text-muted-foreground">
+                                    Гүйцэтгэл {formatMoney(totals.teamActual)} / {formatMoney(totals.teamTarget)} (идэвхтэй менежерүүд)
+                                </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-3 md:w-64">
+                            <div className="h-2 flex-1 overflow-hidden rounded-full bg-surface-3">
+                                <div
+                                    className={`h-full rounded-full ${totals.teamAttainmentPct >= 100 ? 'bg-status-success' : totals.teamAttainmentPct >= 60 ? 'bg-brand' : 'bg-status-pending'}`}
+                                    style={{ width: `${Math.min(100, totals.teamAttainmentPct)}%` }}
+                                />
+                            </div>
+                            <span className={`text-lg font-bold tabular-nums ${totals.teamAttainmentPct >= 100 ? 'text-status-success' : 'text-brand'}`}>
+                                {totals.teamAttainmentPct}%
+                            </span>
+                        </div>
+                    </div>
+                </Card>
+            )}
 
             <Card>
                 <div className="p-4 md:p-5">

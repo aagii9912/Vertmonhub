@@ -2,17 +2,13 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * Борлуулалтын төлөвлөгөө (target) ба гүйцэтгэл (actual) тооцооны туслах модуль.
- * Төлөвлөгөө нь САРААР хадгалагдана (sales_targets); улирал/жил = сарын нийлбэр.
- * Гүйцэтгэл нь manager_monthly_sales view (property_contracts)-оос ирнэ.
+ *
+ * • Төлөвлөгөө нь БАГААР (shop) сараар хадгалагдана (team_sales_targets);
+ *   улирал/жил = сарын нийлбэр.
+ * • Гүйцэтгэл нь manager_monthly_sales view (property_contracts)-оос ирнэ.
+ * • Багийн гүйцэтгэл = ИДЭВХТЭЙ менежерүүдийн (sales_managers.is_active)
+ *   борлуулалтын нийлбэр. Идэвхтэй жагсаалт өгөгдөөгүй бол бүх менежерийг авна.
  */
-
-export interface ManagerYearData {
-    sales_manager: string;
-    user_id: string | null;
-    targets: number[]; // [12] сарын төлөвлөгөө (₮), index 0 = 1-р сар
-    actuals: number[]; // [12] сарын бодит борлуулалт (₮)
-    counts: number[];  // [12] сарын гэрээний тоо
-}
 
 /** Тухайн сар (1-12) аль улиралд (1-4) хамаарахыг буцаана. */
 export function quarterOfMonth(month: number): number {
@@ -30,63 +26,86 @@ export function sumYear(months: number[]): number {
     return months.reduce((acc, v) => acc + (v || 0), 0);
 }
 
-/**
- * Тухайн shop-ийн жилийн менежер бүрийн төлөвлөгөө + гүйцэтгэлийг цуглуулна.
- * managerFilter өгвөл зөвхөн тухайн менежерийн мөрийг татна.
- */
-export async function getManagerYearData(
+/** Багийн 12 сарын төлөвлөгөө (₮). */
+export async function getTeamTargets(
     supabase: SupabaseClient,
     shopId: string,
     year: number,
-    managerFilter?: string,
-): Promise<ManagerYearData[]> {
-    let targetQuery = supabase
-        .from('sales_targets')
-        .select('sales_manager, user_id, month, target_amount')
+): Promise<number[]> {
+    const { data } = await supabase
+        .from('team_sales_targets')
+        .select('month, target_amount')
         .eq('shop_id', shopId)
         .eq('year', year);
-    if (managerFilter) targetQuery = targetQuery.eq('sales_manager', managerFilter);
 
-    let actualQuery = supabase
+    const targets = Array(12).fill(0);
+    for (const r of data || []) {
+        if (r.month >= 1 && r.month <= 12) targets[r.month - 1] = Number(r.target_amount) || 0;
+    }
+    return targets;
+}
+
+/** Менежер бүрийн 12 сарын бодит борлуулалт (₮) + гэрээний тоо. */
+export async function getMonthlyActualsByManager(
+    supabase: SupabaseClient,
+    shopId: string,
+    year: number,
+): Promise<Map<string, { actuals: number[]; counts: number[] }>> {
+    const { data } = await supabase
         .from('manager_monthly_sales')
         .select('sales_manager, month, actual_amount, contract_count')
         .eq('shop_id', shopId)
         .eq('year', year);
-    if (managerFilter) actualQuery = actualQuery.eq('sales_manager', managerFilter);
 
-    const [{ data: targetRows }, { data: actualRows }] = await Promise.all([
-        targetQuery,
-        actualQuery,
-    ]);
-
-    const map = new Map<string, ManagerYearData>();
-    const ensure = (name: string): ManagerYearData => {
-        let m = map.get(name);
+    const map = new Map<string, { actuals: number[]; counts: number[] }>();
+    for (const r of data || []) {
+        if (!r.sales_manager) continue;
+        let m = map.get(r.sales_manager);
         if (!m) {
-            m = {
-                sales_manager: name,
-                user_id: null,
-                targets: Array(12).fill(0),
-                actuals: Array(12).fill(0),
-                counts: Array(12).fill(0),
-            };
-            map.set(name, m);
+            m = { actuals: Array(12).fill(0), counts: Array(12).fill(0) };
+            map.set(r.sales_manager, m);
         }
-        return m;
-    };
-
-    for (const r of targetRows || []) {
-        const m = ensure(r.sales_manager);
-        if (r.user_id) m.user_id = r.user_id;
-        if (r.month >= 1 && r.month <= 12) m.targets[r.month - 1] = Number(r.target_amount) || 0;
-    }
-    for (const r of actualRows || []) {
-        const m = ensure(r.sales_manager);
         if (r.month >= 1 && r.month <= 12) {
             m.actuals[r.month - 1] = Number(r.actual_amount) || 0;
             m.counts[r.month - 1] = Number(r.contract_count) || 0;
         }
     }
+    return map;
+}
 
-    return Array.from(map.values());
+export interface TeamYearData {
+    targets: number[]; // [12] багийн сарын төлөвлөгөө
+    actuals: number[]; // [12] идэвхтэй менежерүүдийн борлуулалтын нийлбэр
+    counts: number[];  // [12] гэрээний тоо
+}
+
+/**
+ * Багийн жилийн төлөвлөгөө + гүйцэтгэл.
+ * activeNames өгвөл (хоосон биш) зөвхөн тэдгээр менежерийн борлуулалтыг нийлбэрлэнэ.
+ */
+export async function getTeamYearData(
+    supabase: SupabaseClient,
+    shopId: string,
+    year: number,
+    activeNames?: string[],
+): Promise<TeamYearData> {
+    const [targets, byManager] = await Promise.all([
+        getTeamTargets(supabase, shopId, year),
+        getMonthlyActualsByManager(supabase, shopId, year),
+    ]);
+
+    const useFilter = Array.isArray(activeNames) && activeNames.length > 0;
+    const allow = useFilter ? new Set(activeNames) : null;
+
+    const actuals = Array(12).fill(0);
+    const counts = Array(12).fill(0);
+    for (const [name, m] of byManager) {
+        if (allow && !allow.has(name)) continue;
+        for (let i = 0; i < 12; i++) {
+            actuals[i] += m.actuals[i];
+            counts[i] += m.counts[i];
+        }
+    }
+
+    return { targets, actuals, counts };
 }
