@@ -17,7 +17,7 @@ import {
     fetchProperties, fetchLeads, fetchLeadDetails, fetchCustomerInsights,
     fetchContracts, fetchContractDetails, fetchContractsSummary,
     fetchSalesSummary, fetchSalesForecast, compareProperties,
-    updatePropertyStatus, updatePropertyPrice, updateLeadStatus,
+    updatePropertyStatus, updateUnitStatus, updatePropertyPrice, updateLeadStatus,
     addLeadNote, processContractAction,
     createProperty, deleteProperty, createLead, deleteLead, createCustomer,
     scheduleViewing, deleteViewing, createContract, deleteContract, deleteCustomer,
@@ -79,6 +79,7 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'get_sales_forecast': result = await fetchSalesForecast(shopId, args); break;
         case 'compare_properties': result = await compareProperties(shopId, args); break;
         case 'update_property_status': result = await updatePropertyStatus(shopId, args); break;
+        case 'update_unit_status': result = await updateUnitStatus(shopId, args); break;
         case 'update_property_price': result = await updatePropertyPrice(shopId, args); break;
         case 'update_lead_status': result = await updateLeadStatus(shopId, args); break;
         case 'add_lead_note': result = await addLeadNote(shopId, args); break;

@@ -43,11 +43,12 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         description: 'Үл хөдлөх хөрөнгийн жагсаалт, үнэ, статус, м², өрөө, дүүрэг, байр харьцуулах, борлуулалтын прогноз. Шинэ байр НЭМЭХ, байр УСТГАХ. Байр/орон сууцтай холбоотой бүх асуулт, үйлдэл.',
         temperature: 0.3,
         readToolNames: ['list_properties', 'compare_properties', 'get_product_stats', 'get_sales_summary', 'get_sales_forecast'],
-        writeToolNames: ['update_property_status', 'update_property_price', 'create_property', 'attach_file'],
+        writeToolNames: ['update_property_status', 'update_unit_status', 'update_property_price', 'create_property', 'attach_file'],
         deleteToolNames: ['delete_property'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн БАЙРНЫ МЭРГЭЖИЛТЭН agent. Таны үүрэг: үл хөдлөх хөрөнгийн дэлгэрэнгүй (үнэ, статус, м², өрөө, байршил), байр харьцуулах, эрэлт/прогноз, шинэ байр нэмэх, байр устгах.
-Хэрэв танд бичих/устгах эрх олгогдсон бол байр нэмэх, статус/үнэ шинэчлэх, устгаж болно. БҮХ өөрчлөлт/устгалыг гүйцэтгэхээс өмнө систем хэрэглэгчээс баталгаажуулалт авна — чи зүгээр л зөв tool-оо дуудаж, юу хийхээ тодорхой хэл.${COMMON_RULES}`, k),
+Хэрэв танд бичих/устгах эрх олгогдсон бол байр нэмэх, статус/үнэ шинэчлэх, устгаж болно.
+ЧУХАЛ: Мандала Гарден маягийн ээлж→блок→нэгж бүтэцтэй бодит нөөц (кодтой нэгжүүд) нь property_units хүснэгтэд байдаг. Тухайн НЭГЖийг зарагдсан/захиалсан/баталгаажсан болгоход update_unit_status tool-ыг (код/блокоор) ашигла. update_property_status нь зөвхөн зурагтай listing (properties) хүснэгтэд зориулагдсан. Нэгжийн код тодорхойгүй бол эхлээд асуу эсвэл олдсон хувилбаруудаас тодруул.${COMMON_RULES}`, k),
     },
     'crm-specialist': {
         id: 'crm-specialist',

@@ -192,6 +192,22 @@ export const writeTools: any[] = [
         }
     },
     {
+        name: 'update_unit_status',
+        description: 'Нэгжийн (property_units — Мандала Гарден маягийн бодит нөөц: ээлж→блок→нэгж) төлөвийг өөрчлөх. Байр/нэгжийг зарагдсан (sold), захиалсан (ordered), баталгаажсан (reserved), хүлээлгэн өгсөн (handed_over) болгоно. Мандала Гарден-ий байрны төлөв өөрчлөхөд ЭНЭ tool-ыг ашиглана (update_property_status биш).',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                unit_id: { type: SchemaType.STRING, description: 'Нэгжийн ID' },
+                code: { type: SchemaType.STRING, description: 'Нэгжийн код (жишээ: 201-440, 1489-1)' },
+                unit_number: { type: SchemaType.STRING, description: 'Шинэ тоот' },
+                block: { type: SchemaType.STRING, description: 'Блок/цамхаг (301, 302...) — олон нэгж олдвол тодруулахад' },
+                phase: { type: SchemaType.STRING, description: 'Ээлж (Zoo Garden, Water Garden...)' },
+                new_status: { type: SchemaType.STRING, enum: ['available', 'reserved', 'ordered', 'sold', 'handed_over'], description: 'Шинэ төлөв' }
+            },
+            required: ['new_status']
+        }
+    },
+    {
         name: 'update_property_price',
         description: 'Байрны үнийг өөрчлөх. ЗӨВХӨН Super Admin.',
         parameters: {
@@ -508,7 +524,7 @@ export const adminTools: any[] = [
     }
 ];
 
-export const WRITE_TOOL_NAMES = ['update_property_status', 'update_property_price', 'update_lead_status', 'add_lead_note', 'process_contract_action', 'create_property', 'create_lead', 'create_customer', 'schedule_viewing', 'create_contract', 'attach_file', 'bulk_update_leads', 'create_social_post', 'remember_fact'];
+export const WRITE_TOOL_NAMES = ['update_property_status', 'update_unit_status', 'update_property_price', 'update_lead_status', 'add_lead_note', 'process_contract_action', 'create_property', 'create_lead', 'create_customer', 'schedule_viewing', 'create_contract', 'attach_file', 'bulk_update_leads', 'create_social_post', 'remember_fact'];
 export const DELETE_TOOL_NAMES = ['delete_property', 'delete_lead', 'delete_viewing', 'delete_contract', 'delete_customer'];
 export const ADMIN_TOOL_NAMES = ['invite_user', 'assign_role', 'create_role'];
 
