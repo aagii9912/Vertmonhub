@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { toast } from 'sonner';
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -85,7 +86,7 @@ export function usePushNotifications(): UsePushNotificationsReturn {
             // Get VAPID public key
             const vapidRes = await fetch('/api/push/vapid');
             if (!vapidRes.ok) {
-                throw new Error('Failed to get VAPID key');
+                throw new Error('VAPID_NOT_CONFIGURED');
             }
             const { publicKey } = await vapidRes.json();
 
@@ -115,7 +116,11 @@ export function usePushNotifications(): UsePushNotificationsReturn {
             return true;
         } catch (err: any) {
             if (isDev) console.error('Subscribe error:', err);
-            alert('Notification error: ' + (err.message || 'Failed to subscribe'));
+            toast.error('Мэдэгдэл идэвхжүүлж чадсангүй', {
+                description: err?.message === 'VAPID_NOT_CONFIGURED'
+                    ? 'Серверт мэдэгдлийн тохиргоо (VAPID) дутуу байна. Админд хандана уу.'
+                    : (err?.message || 'Дахин оролдоно уу.'),
+            });
             setIsLoading(false);
             return false;
         }
