@@ -8,6 +8,7 @@ import {
     ThumbsUp, Wallet, Lightbulb, X,
 } from 'lucide-react';
 import Link from 'next/link';
+import { toast } from 'sonner';
 import { formatShortDate } from '@/lib/utils/date';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
@@ -181,7 +182,7 @@ export default function CustomerServicePage() {
         return () => clearTimeout(t);
     }, [fetchData, search]);
 
-    async function createServiceLog(formData: Record<string, string>) {
+    async function createServiceLog(formData: Record<string, string>): Promise<boolean> {
         try {
             const res = await fetch('/api/dashboard/service-logs', {
                 method: 'POST',
@@ -190,10 +191,16 @@ export default function CustomerServicePage() {
             });
             if (res.ok) {
                 setShowNewForm(false);
-                fetchData();
+                await fetchData();
+                toast.success('Хүсэлт бүртгэгдлээ');
+                return true;
             }
+            toast.error('Хүсэлт бүртгэхэд алдаа гарлаа');
+            return false;
         } catch (err) {
             console.error('[CustomerService] create error:', err);
+            toast.error('Хүсэлт бүртгэхэд алдаа гарлаа');
+            return false;
         }
     }
 
@@ -496,9 +503,9 @@ export default function CustomerServicePage() {
 function NewServiceLogModal({ open, onClose, onSubmit }: {
     open: boolean;
     onClose: () => void;
-    onSubmit: (data: Record<string, string>) => void;
+    onSubmit: (data: Record<string, string>) => Promise<boolean>;
 }) {
-    const [form, setForm] = useState({
+    const EMPTY_FORM = {
         subject: '',
         description: '',
         type: 'complaint',
@@ -508,15 +515,32 @@ function NewServiceLogModal({ open, onClose, onSubmit }: {
         customer_name: '',
         customer_phone: '',
         assigned_to: '',
-    });
+    };
+    const [form, setForm] = useState(EMPTY_FORM);
     const [submitting, setSubmitting] = useState(false);
+    const [team, setTeam] = useState<Array<{ id: string; full_name: string; role: string }>>([]);
+
+    // Форм нээгдэх бүрд багийн гишүүдийг татах (Хариуцагч сонголтод)
+    useEffect(() => {
+        if (!open) return;
+        let cancel = false;
+        (async () => {
+            try {
+                const res = await fetch('/api/dashboard/team', { headers: shopHeaders() });
+                const d = await res.json();
+                if (!cancel) setTeam(d.members || []);
+            } catch { /* ignore */ }
+        })();
+        return () => { cancel = true; };
+    }, [open]);
 
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
         if (!form.subject.trim()) return;
         setSubmitting(true);
-        await onSubmit(form);
+        const ok = await onSubmit(form);
         setSubmitting(false);
+        if (ok) setForm(EMPTY_FORM);
     }
 
     return (
@@ -633,14 +657,33 @@ function NewServiceLogModal({ open, onClose, onSubmit }: {
                     </div>
 
                     <FormField label="Хариуцагч" htmlFor="cs-assigned-to">
-                        <input
-                            id="cs-assigned-to"
-                            type="text"
-                            value={form.assigned_to}
-                            onChange={e => setForm({ ...form, assigned_to: e.target.value })}
-                            placeholder="Менежерийн нэр"
-                            className="w-full px-3 py-2 bg-surface-2 border border-border rounded-md text-sm text-foreground placeholder:text-muted-foreground/60 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                        />
+                        {team.length > 0 ? (
+                            <Select
+                                value={form.assigned_to || 'unassigned'}
+                                onValueChange={(value) => setForm({ ...form, assigned_to: value === 'unassigned' ? '' : value })}
+                            >
+                                <SelectTrigger id="cs-assigned-to" className="text-sm">
+                                    <SelectValue placeholder="Менежер сонгох" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="unassigned">Хариуцагчгүй</SelectItem>
+                                    {team.map((m) => (
+                                        <SelectItem key={m.id} value={m.full_name}>
+                                            {m.full_name}{m.role === 'owner' ? ' (эзэн)' : ''}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        ) : (
+                            <input
+                                id="cs-assigned-to"
+                                type="text"
+                                value={form.assigned_to}
+                                onChange={e => setForm({ ...form, assigned_to: e.target.value })}
+                                placeholder="Менежерийн нэр"
+                                className="w-full px-3 py-2 bg-surface-2 border border-border rounded-md text-sm text-foreground placeholder:text-muted-foreground/60 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                            />
+                        )}
                     </FormField>
 
                     <FormField label="Дэлгэрэнгүй" htmlFor="cs-description">

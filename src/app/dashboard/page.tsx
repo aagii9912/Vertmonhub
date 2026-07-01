@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { motion } from 'motion/react';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { AskAIHero } from '@/components/dashboard/AskAIHero';
+import { SalesTargetWidget } from '@/components/dashboard/SalesTargetWidget';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { StatusPill } from '@/components/ui/StatusPill';
@@ -221,8 +222,11 @@ export default function DashboardPage() {
                         </Card>
                     </div>
 
-                    {/* Upcoming Viewings */}
+                    {/* Upcoming Viewings + My Sales Target */}
                     <div className="space-y-6">
+                        {/* Менежерийн борлуулалтын төлөвлөгөө (тохируулсан үед л харагдана) */}
+                        <SalesTargetWidget />
+
                         <Card>
                             <CardHeader className="py-3">
                                 <CardTitle className="flex items-center gap-2 text-base">

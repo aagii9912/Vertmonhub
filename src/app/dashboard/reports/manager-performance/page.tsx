@@ -19,6 +19,9 @@ interface ManagerRow {
     total_outstanding: number;
     collection_rate_pct: number;
     unique_customers: number;
+    year_target?: number;
+    year_actual?: number;
+    year_attainment_pct?: number;
 }
 interface Totals {
     managers: number;
@@ -116,6 +119,27 @@ export default function ManagerPerformancePage() {
                     </div>
                 </div>
             ),
+        },
+        {
+            key: 'year_target',
+            header: `Төлөвлөгөө (${new Date().getFullYear()})`,
+            cell: (m) => {
+                const target = m.year_target || 0;
+                if (target <= 0) return <span className="text-xs text-muted-foreground">—</span>;
+                const p = m.year_attainment_pct || 0;
+                const color = p >= 100 ? 'bg-status-success' : p >= 60 ? 'bg-brand' : p >= 30 ? 'bg-status-pending' : 'bg-status-danger';
+                return (
+                    <div className="min-w-[9rem]">
+                        <div className="flex items-baseline justify-between gap-2">
+                            <span className="text-foreground tabular-nums">{formatMoney(target)}</span>
+                            <span className={`text-xs font-semibold tabular-nums ${p >= 100 ? 'text-status-success' : 'text-muted-foreground'}`}>{p}%</span>
+                        </div>
+                        <div className="h-1.5 mt-1 bg-surface-2 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(100, p)}%` }} />
+                        </div>
+                    </div>
+                );
+            },
         },
         { key: 'total_collected', header: 'Цуглуулсан', align: 'right', cell: (m) => <span className="tabular-nums text-foreground">{formatMoney(m.total_collected)}</span> },
         { key: 'total_outstanding', header: 'Үлдэгдэл', align: 'right', cell: (m) => <span className="tabular-nums text-muted-foreground">{formatMoney(m.total_outstanding)}</span> },

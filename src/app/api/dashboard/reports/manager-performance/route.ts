@@ -3,6 +3,7 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { getManagerYearData, sumYear } from '@/lib/sales/targets';
 
 // ============================================
 // GET /api/dashboard/reports/manager-performance
@@ -26,16 +27,34 @@ export async function GET() {
             .order('total_sales', { ascending: false, nullsFirst: false });
         if (error) throw error;
 
-        const managers = (data || []).map((m) => ({
-            sales_manager: m.sales_manager,
-            contract_count: Number(m.contract_count) || 0,
-            closed_count: Number(m.closed_count) || 0,
-            total_sales: Number(m.total_sales) || 0,
-            total_collected: Number(m.total_collected) || 0,
-            total_outstanding: Number(m.total_outstanding) || 0,
-            collection_rate_pct: Number(m.collection_rate_pct) || 0,
-            unique_customers: Number(m.unique_customers) || 0,
-        }));
+        // Тухайн жилийн төлөвлөгөө + гүйцэтгэлийг менежерийн нэрээр индекслэнэ
+        const year = new Date().getFullYear();
+        const yearData = await getManagerYearData(supabase, authShop.id, year);
+        const targetByName = new Map(
+            yearData.map((m) => [
+                m.sales_manager,
+                { target: sumYear(m.targets), actual: sumYear(m.actuals) },
+            ]),
+        );
+
+        const managers = (data || []).map((m) => {
+            const yt = targetByName.get(m.sales_manager);
+            const yearTarget = yt?.target || 0;
+            const yearActual = yt?.actual || 0;
+            return {
+                sales_manager: m.sales_manager,
+                contract_count: Number(m.contract_count) || 0,
+                closed_count: Number(m.closed_count) || 0,
+                total_sales: Number(m.total_sales) || 0,
+                total_collected: Number(m.total_collected) || 0,
+                total_outstanding: Number(m.total_outstanding) || 0,
+                collection_rate_pct: Number(m.collection_rate_pct) || 0,
+                unique_customers: Number(m.unique_customers) || 0,
+                year_target: yearTarget,
+                year_actual: yearActual,
+                year_attainment_pct: yearTarget > 0 ? Math.round((yearActual / yearTarget) * 100) : 0,
+            };
+        });
 
         const totals = managers.reduce(
             (acc, m) => {
