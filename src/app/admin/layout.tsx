@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import {
     LayoutDashboard, Users, Upload, Shield,
-    Settings, LogOut, ChevronRight, Menu, X
+    Settings, LogOut, ChevronRight, Menu, X, Target
 } from 'lucide-react';
 
 const isDev = process.env.NODE_ENV === 'development';
@@ -18,6 +18,7 @@ interface AdminLayoutProps {
 const navItems = [
     { href: '/admin', label: 'Хянах самбар', icon: LayoutDashboard },
     { href: '/admin/users', label: 'Хэрэглэгчид', icon: Users },
+    { href: '/admin/sales-targets', label: 'Борлуулалтын төлөвлөгөө', icon: Target },
     { href: '/admin/roles', label: 'Дүрүүд', icon: Shield },
     { href: '/admin/import', label: 'Дата импорт', icon: Upload },
     { href: '/admin/settings', label: 'Тохиргоо', icon: Settings },
