@@ -11,6 +11,8 @@ import { ChatComposer, type ChatAttachment } from '@/components/ai-assistant/Cha
 import { MessageAttachments } from '@/components/ai-assistant/MessageAttachments';
 import { MarkdownMessage } from '@/components/ai-assistant/MarkdownMessage';
 import { MessageActions } from '@/components/ai-assistant/MessageActions';
+import { addAllowedTool, isToolAllowed } from '@/lib/ai/allowedTools';
+import { toast } from 'sonner';
 import type { AIConversationMessage } from '@/hooks/useAIConversations';
 import {
     Bot, User, Sparkles, Loader2, MessageSquare, Network,
@@ -71,6 +73,8 @@ export default function AIAssistantPage() {
     const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const autoSentRef = useRef(false);
+    // Автоматаар зөвшөөрсөн үйлдлийг зөвхөн НЭГ удаа гүйцэтгэхийн тулд firing хийсэн id-нуудыг барина.
+    const firedRef = useRef<Set<string>>(new Set());
 
     const isEmpty = messages.length <= 1 && messages[0]?.id === 'init';
 
@@ -120,7 +124,11 @@ export default function AIAssistantPage() {
                 id: (Date.now() + 1).toString(), role: 'assistant',
                 content: data.response, chartConfig: data.chartConfig, data: data.data,
                 agentsUsed: data.agentsUsed, trace: data.trace,
-                pendingActions: (data.pendingActions || []).map((a: any) => ({ ...a, status: 'pending' as const })),
+                pendingActions: (data.pendingActions || []).map((a: any) => ({
+                    ...a,
+                    status: 'pending' as const,
+                    autoApproved: shop?.id ? isToolAllowed(shop.id, a.tool) : false,
+                })),
             }]);
 
             if (data.conversationId) {
@@ -181,6 +189,18 @@ export default function AIAssistantPage() {
         setMessages(prev => prev.map(m => m.pendingActions ? { ...m, pendingActions: m.pendingActions.map(a => a.id === actionId ? { ...a, ...patch } : a) } : m));
     };
 
+    // Үйлдэл амжилтгүй болоход: авто-гүйцэтгэсэн бол чимээгүй үлдээхгүй — toast гаргаж,
+    // гараар баталгаажуулахаар модал руу буцаана. Гараар хийсэн бол энгийн error төлөв.
+    const failAction = (action: PendingActionUI, msg: string) => {
+        if (action.autoApproved) {
+            firedRef.current.delete(action.id);
+            updatePendingAction(action.id, { status: 'pending', autoApproved: false, resultMessage: undefined });
+            toast.error(`Автоматаар гүйцэтгэх амжилтгүй: ${action.label}. Гараар баталгаажуулна уу.`);
+        } else {
+            updatePendingAction(action.id, { status: 'error', resultMessage: msg });
+        }
+    };
+
     const handleApproveAction = async (action: PendingActionUI) => {
         updatePendingAction(action.id, { status: 'running' });
         try {
@@ -194,14 +214,41 @@ export default function AIAssistantPage() {
                 updatePendingAction(action.id, { status: 'done', resultMessage: data.message });
                 if (currentConversationId) touchConversation(currentConversationId);
             } else {
-                updatePendingAction(action.id, { status: 'error', resultMessage: data.message || data.error || 'Алдаа гарлаа' });
+                failAction(action, data.message || data.error || 'Алдаа гарлаа');
             }
         } catch {
-            updatePendingAction(action.id, { status: 'error', resultMessage: 'Сүлжээний алдаа гарлаа' });
+            failAction(action, 'Сүлжээний алдаа гарлаа');
         }
     };
 
     const handleCancelAction = (action: PendingActionUI) => updatePendingAction(action.id, { status: 'cancelled' });
+
+    // "Энэ session-д үргэлж зөвшөөрөх" — tool-ыг цээжилж, одоогийн үйлдлийг гүйцэтгэнэ.
+    // Мөн ижил tool-той хүлээгдэж буй бусад үйлдлийг autoApproved болгож дахин асуухгүй.
+    const handleAllowAlways = (action: PendingActionUI) => {
+        if (shop?.id) addAllowedTool(shop.id, action.tool);
+        setMessages(prev => prev.map(m => m.pendingActions ? {
+            ...m,
+            pendingActions: m.pendingActions.map(a =>
+                a.id !== action.id && a.status === 'pending' && a.tool === action.tool
+                    ? { ...a, autoApproved: true } : a),
+        } : m));
+        void handleApproveAction(action);
+    };
+
+    // Цээжилсэн (autoApproved) үйлдлүүдийг попапгүйгээр нэг удаа автоматаар гүйцэтгэнэ.
+    // firedRef нь re-render дээр давхар firing хийхээс сэргийлнэ.
+    useEffect(() => {
+        if (!shop?.id) return;
+        for (const a of messages.flatMap(m => m.pendingActions || [])) {
+            if (a.status === 'pending' && a.autoApproved && !firedRef.current.has(a.id)) {
+                firedRef.current.add(a.id);
+                void handleApproveAction(a);
+            }
+        }
+        // handleApproveAction нь тогтвортой хамаарлуудыг ашигладаг тул deps-д оруулаагүй.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [messages, shop?.id]);
 
     const reopenAction = (action: PendingActionUI) =>
         setDismissedIds(prev => { const n = new Set(prev); n.delete(action.id); return n; });
@@ -210,7 +257,7 @@ export default function AIAssistantPage() {
 
     // Баталгаажуулалт хүлээж буй үйлдлүүд — попапаар нэг нэгээр нь (queue) гаргана.
     // 'running'-г эхэнд барьж байж гүйцэтгэл дуустал попапыг тогтвортой байлгана.
-    const pendingQueue = messages.flatMap(m => m.pendingActions || []).filter(a => a.status === 'pending' || a.status === 'running');
+    const pendingQueue = messages.flatMap(m => m.pendingActions || []).filter(a => !a.autoApproved && (a.status === 'pending' || a.status === 'running'));
     const activePending = pendingQueue.find(a => a.status === 'running')
         || pendingQueue.find(a => !dismissedIds.has(a.id))
         || null;
@@ -391,6 +438,7 @@ export default function AIAssistantPage() {
                 queueIndex={activeIndex}
                 queueTotal={pendingQueue.length}
                 onApprove={handleApproveAction}
+                onAllowAlways={handleAllowAlways}
                 onCancel={handleCancelAction}
                 onDismiss={dismissAction}
             />
