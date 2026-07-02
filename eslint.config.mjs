@@ -41,6 +41,21 @@ const eslintConfig = [
       "react-hooks/refs": "warn",
     },
   },
+  {
+    // Server код (API route, auth helper, middleware) cookie-д итгэдэг getSession()-ийг
+    // ашиглаж БОЛОХГҮЙ — Auth сервертэй тулгадаг getUser()-ийг хэрэглэнэ.
+    // (Client тал: contexts/, components/, hooks/ — энэ дүрэмд хамаарахгүй.)
+    files: ["src/app/api/**/*.ts", "src/lib/auth/**/*.ts", "src/middleware.ts"],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "CallExpression[callee.property.name='getSession']",
+          message: "Server-side код getSession() ашиглаж болохгүй — supabase.auth.getUser() хэрэглэнэ (cookie-д шууд итгэхгүй, Auth сервертэй тулгана).",
+        },
+      ],
+    },
+  },
 ];
 
 export default eslintConfig;
