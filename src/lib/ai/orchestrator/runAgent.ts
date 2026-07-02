@@ -112,17 +112,32 @@ export async function runAgent(
 
         const chat = model.startChat({ history: geminiHistory });
         const messageParts = await buildMessageParts(task, ctx.attachments);
-        const result = await withRetry(() => chat.sendMessage(messageParts));
-        tokens += tokensFrom(result.response);
-        const functionCalls = result.response.functionCalls();
 
-        if (functionCalls && functionCalls.length > 0) {
+        // MULTI-ROUND function-calling давталт. "Шалгаад → шинэчлэх" маягийн даалгаварт
+        // Gemini эхний раундад унших tool (list_contracts), үр дүнг нь хараад ДАРААГИЙН
+        // раундад бичих tool (process_contract_action) дууддаг. Өмнө нь ганц раунд
+        // дэмждэг байсан тул 2 дахь раундын бодит үйлдэл хэзээ ч хийгддэггүй байв.
+        const MAX_TOOL_ROUNDS = 4;
+        let data: any = null;
+        let chartConfig: any = null;
+        let response = await withRetry(() => chat.sendMessage(messageParts));
+        tokens += tokensFrom(response.response);
+
+        for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+            const functionCalls = response.response.functionCalls();
+            if (!functionCalls || functionCalls.length === 0) break;
+
             const toolResponses: any[] = [];
-            let data: any = null;
-            let chartConfig: any = null;
-
             for (const fc of functionCalls) {
                 toolsUsed.push(fc.name);
+
+                // Model ижил confirm-үйлдлийг дахин дуудвал давхар pending үүсгэхгүй.
+                const dupKey = `${fc.name}:${JSON.stringify(fc.args || {})}`;
+                if (pendingActions.some((p) => `${p.tool}:${JSON.stringify(p.args)}` === dupKey)) {
+                    toolResponses.push({ functionResponse: { name: fc.name, response: { result: { status: 'awaiting_user_confirmation', note: 'Аль хэдийн баталгаажуулалт хүлээж байна. Энэ tool-ыг ДАХИН БҮҮ ДУУД — хэрэглэгчид товч мэдэгд.' } } } });
+                    continue;
+                }
+
                 // Mutating tool-уудыг confirm=false-ээр дуудна → preview буцаана (гүйцэтгэхгүй).
                 const toolResult = await executeDataTool(fc.name, fc.args || {}, ctx.shopId, ctx.perms, ctx.userId, false, ctx.userName || '');
 
@@ -139,7 +154,7 @@ export async function runAgent(
                         emoji: agent.emoji,
                     });
                     // Gemini-д "хэрэглэгчийн баталгаажуулалт хүлээж байна" гэж мэдэгдэнэ.
-                    toolResponses.push({ functionResponse: { name: fc.name, response: { result: { status: 'awaiting_user_confirmation', label: toolResult.label, preview: toolResult.preview } } } });
+                    toolResponses.push({ functionResponse: { name: fc.name, response: { result: { status: 'awaiting_user_confirmation', label: toolResult.label, preview: toolResult.preview, note: 'Хэрэглэгч UI дээрх картаас батлана — энэ tool-ыг ДАХИН БҮҮ ДУУД, хэрэглэгчид "баталгаажуулалт хүлээж байна" гэж товч мэдэгд.' } } } });
                 } else {
                     toolResponses.push({ functionResponse: { name: fc.name, response: { result: toolResult } } });
                     data = toolResult;
@@ -147,29 +162,19 @@ export async function runAgent(
                 }
             }
 
-            // Tool-ийн үр дүнг Gemini-ээр тайлбарлуулна. Энэ 2 дахь дуудлага (429/503 г.м.)
-            // унасан ч tool өгөгдөл аль хэдийн гартаа байгаа тул бүрэн унахын оронд
-            // хэсэгчилсэн хариу буцаана — data/chart UI дээр хэвийн харагдана.
+            // Tool-ийн үр дүнг Gemini руу буцааж дараагийн алхмыг (дахин tool эсвэл эцсийн
+            // текст) авна. Түр ачаалалд (429/503) унасан ч үр дүн гартаа бол бүрэн унахгүй.
             try {
-                const synthesis = await withRetry(() => chat.sendMessage(toolResponses.map((tr) => ({ functionResponse: tr.functionResponse }))));
-                tokens += tokensFrom(synthesis.response);
-
-                return {
-                    text: synthesis.response.text(),
-                    data,
-                    chartConfig,
-                    toolsUsed,
-                    tokens,
-                    latencyMs: Date.now() - started,
-                    ok: true,
-                    pendingActions,
-                };
-            } catch (synthError) {
-                const msg = synthError instanceof Error ? synthError.message : 'Unknown error';
-                logger.error('[Orchestrator] Post-tool synthesis failed, returning partial result', { agent: agent.id, error: msg });
+                response = await withRetry(() => chat.sendMessage(toolResponses.map((tr) => ({ functionResponse: tr.functionResponse }))));
+                tokens += tokensFrom(response.response);
+            } catch (roundError) {
+                const msg = roundError instanceof Error ? roundError.message : 'Unknown error';
+                logger.error('[Orchestrator] Tool-round call failed, returning partial result', { agent: agent.id, round, error: msg });
                 if (data || pendingActions.length > 0) {
                     return {
-                        text: `${agent.emoji} ${agent.name} шаардлагатай мэдээллийг (${toolsUsed.join(', ')}) олж авлаа, гэвч AI түр ачаалалтай тул дэлгэрэнгүй тайлбар бэлдэж чадсангүй. Доорх өгөгдлийг шууд харна уу — эсвэл дахин асуувал тайлбартай хариу өгнө.`,
+                        text: pendingActions.length > 0
+                            ? `${pendingActions.length} үйлдэл таны баталгаажуулалтыг хүлээж байна — доорх картаас зөвшөөрнө үү.`
+                            : `${agent.emoji} ${agent.name} шаардлагатай мэдээллийг (${toolsUsed.join(', ')}) олж авлаа, гэвч AI түр ачаалалтай тул дэлгэрэнгүй тайлбар бэлдэж чадсангүй. Доорх өгөгдлийг шууд харна уу.`,
                         data,
                         chartConfig,
                         toolsUsed,
@@ -179,14 +184,28 @@ export async function runAgent(
                         pendingActions,
                     };
                 }
-                throw synthError;
+                throw roundError;
+            }
+        }
+
+        // Эцсийн текстийг аюулгүй задлана — model MAX_TOOL_ROUNDS-ийн дараа ч function
+        // call буцаасан бол text() шидэж болзошгүй тул fallback текст бэлдэнэ.
+        let finalText = '';
+        try { finalText = response.response.text(); } catch { finalText = ''; }
+        if (!finalText.trim()) {
+            if (pendingActions.length > 0) {
+                finalText = `${pendingActions.length} үйлдэл таны баталгаажуулалтыг хүлээж байна — доорх картаас зөвшөөрнө үү.`;
+            } else if (data) {
+                finalText = `${agent.emoji} ${agent.name} мэдээллийг олж авлаа — доорх өгөгдлийг харна уу.`;
+            } else {
+                throw new Error('Empty model response');
             }
         }
 
         return {
-            text: result.response.text(),
-            data: null,
-            chartConfig: null,
+            text: finalText,
+            data,
+            chartConfig,
             toolsUsed,
             tokens,
             latencyMs: Date.now() - started,
