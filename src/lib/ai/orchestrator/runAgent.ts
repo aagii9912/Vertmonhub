@@ -40,6 +40,21 @@ function tokensFrom(response: any): number {
     return response?.usageMetadata?.totalTokenCount ?? 0;
 }
 
+/**
+ * Gemini chat түүх бэлдэнэ: сүүлийн MAX_HISTORY мессеж, заавал 'user'-ээр эхэлнэ.
+ * SDK-ийн validateChatHistory нь эхний мессеж 'user' биш бол startChat дээр ШУУД
+ * шиддэг — slice() урт яриаг таслахдаа 'model'-оор эхлүүлбэл бүх хүсэлт 1ms-д
+ * унадаг байсныг энэ trim засна.
+ */
+export function buildGeminiHistory(history?: { role: string; content: string }[]): Content[] {
+    const mapped: Content[] = (history || [])
+        .filter((m) => m.role && m.content)
+        .slice(-MAX_HISTORY)
+        .map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
+    while (mapped.length > 0 && mapped[0].role !== 'user') mapped.shift();
+    return mapped;
+}
+
 /** Gemini inlineData-аар дамжуулж болох MIME (зураг + PDF). */
 function isInlineSupported(mime?: string): boolean {
     if (!mime) return false;
@@ -105,12 +120,7 @@ export async function runAgent(
             generationConfig: { temperature: agent.temperature, topP: 0.85, maxOutputTokens: 2048 },
         });
 
-        const geminiHistory: Content[] = (ctx.history || [])
-            .filter((m) => m.role && m.content)
-            .slice(-MAX_HISTORY)
-            .map((m) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
-
-        const chat = model.startChat({ history: geminiHistory });
+        const chat = model.startChat({ history: buildGeminiHistory(ctx.history) });
         const messageParts = await buildMessageParts(task, ctx.attachments);
 
         // MULTI-ROUND function-calling давталт. "Шалгаад → шинэчлэх" маягийн даалгаварт

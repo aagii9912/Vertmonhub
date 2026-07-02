@@ -79,3 +79,39 @@ describe('MarkdownMessage rendering', () => {
         expect(container.querySelectorAll('ul li').length).toBe(3);
     });
 });
+
+describe('buildGeminiHistory — SDK-ийн "эхнийх нь user" шаардлага', () => {
+    let buildGeminiHistory: (typeof import('@/lib/ai/orchestrator/runAgent'))['buildGeminiHistory'];
+    beforeAll(async () => {
+        process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-key';
+        ({ buildGeminiHistory } = await import('@/lib/ai/orchestrator/runAgent'));
+    });
+
+    const msg = (role: string, i: number) => ({ role, content: `msg-${i}` });
+
+    it('сондгой урттай яриаг таслахад model-оор эхлэхгүй (1ms crash regression)', () => {
+        // 11 мессеж: slice(-10) нь assistant-аар эхэлдэг байсан → SDK шууд шиддэг байв
+        const history = Array.from({ length: 11 }, (_, i) => msg(i % 2 === 0 ? 'user' : 'assistant', i));
+        const out = buildGeminiHistory(history);
+        expect(out.length).toBeGreaterThan(0);
+        expect(out[0].role).toBe('user');
+    });
+
+    it('бүх түүх model-ээр эхэлж байвал бүгдийг нь хасаж хоосон буцаана', () => {
+        const out = buildGeminiHistory([msg('assistant', 0)]);
+        expect(out).toEqual([]);
+    });
+
+    it('хоосон/undefined түүхэд хоосон буцаана', () => {
+        expect(buildGeminiHistory(undefined)).toEqual([]);
+        expect(buildGeminiHistory([])).toEqual([]);
+    });
+
+    it('MAX_HISTORY(10)-аас илүүг тайрч, user/model role зөв хөрвүүлнэ', () => {
+        const history = Array.from({ length: 24 }, (_, i) => msg(i % 2 === 0 ? 'user' : 'assistant', i));
+        const out = buildGeminiHistory(history);
+        expect(out.length).toBeLessThanOrEqual(10);
+        expect(out[0].role).toBe('user');
+        expect(out.every((c) => c.role === 'user' || c.role === 'model')).toBe(true);
+    });
+});
