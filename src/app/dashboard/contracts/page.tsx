@@ -16,6 +16,11 @@ import {
     Calendar,
     DollarSign,
     Download,
+    Pencil,
+    Plus,
+    Save,
+    X,
+    Loader2,
 } from 'lucide-react';
 import type { PropertyContract, ContractStats } from '@/types/property';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -450,6 +455,10 @@ export default function ContractsPage() {
                         <ContractDrawer
                             contract={selected}
                             onDelete={() => handleDelete(selected.id)}
+                            onUpdated={(patch) => {
+                                if (patch) setSelected((s) => (s ? { ...s, ...patch } : s));
+                                fetchContracts();
+                            }}
                         />
                     )}
                 </SheetContent>
@@ -465,9 +474,11 @@ export default function ContractsPage() {
 function ContractDrawer({
     contract: c,
     onDelete,
+    onUpdated,
 }: {
     contract: PropertyContract;
     onDelete: () => void;
+    onUpdated: (patch?: Partial<PropertyContract>) => void;
 }) {
     const [activeTab, setActiveTab] = useState<'info' | 'payments' | 'service' | 'handover'>('info');
     const [payments, setPayments] = useState<Array<Record<string, unknown>>>([]);
@@ -475,6 +486,8 @@ function ContractDrawer({
     const [handovers, setHandovers] = useState<Array<Record<string, unknown>>>([]);
     const [tabLoading, setTabLoading] = useState(false);
     const [serviceRefresh, setServiceRefresh] = useState(0);
+    const [editing, setEditing] = useState(false);
+    const [paymentsRefresh, setPaymentsRefresh] = useState(0);
 
     const status = STATUS_LABEL[c.contract_status] || STATUS_LABEL.active;
     const paidPct =
@@ -504,7 +517,7 @@ function ContractDrawer({
                 .then((d) => setHandovers(d.records || []))
                 .finally(() => setTabLoading(false));
         }
-    }, [activeTab, c.id, c.customer_phone, c.customer_name, serviceRefresh]);
+    }, [activeTab, c.id, c.customer_phone, c.customer_name, serviceRefresh, paymentsRefresh]);
 
     const tabs = [
         { id: 'info' as const, label: 'Мэдээлэл', icon: <FileText className="w-3.5 h-3.5" /> },
@@ -526,6 +539,18 @@ function ContractDrawer({
                     </div>
                     <div className="flex items-center gap-2">
                         <StatusPill variant={status.variant}>{status.text}</StatusPill>
+                        <button
+                            onClick={() => setEditing((e) => !e)}
+                            className={cn(
+                                'p-1.5 rounded-md transition-colors',
+                                editing
+                                    ? 'bg-brand-soft text-brand-strong'
+                                    : 'hover:bg-surface-2 text-muted-foreground hover:text-foreground',
+                            )}
+                            title="Засах"
+                        >
+                            <Pencil className="w-4 h-4" />
+                        </button>
                         <button
                             onClick={onDelete}
                             className="p-1.5 hover:bg-status-danger-soft rounded-md text-muted-foreground hover:text-status-danger transition-colors"
@@ -556,7 +581,15 @@ function ContractDrawer({
             </SheetHeader>
 
             <div className="overflow-y-auto p-5 space-y-5">
-                    {activeTab === 'info' && (
+                    {editing && (
+                        <ContractEditForm
+                            contract={c}
+                            onClose={() => setEditing(false)}
+                            onSaved={(patch) => { setEditing(false); onUpdated(patch); }}
+                        />
+                    )}
+
+                    {!editing && activeTab === 'info' && (
                         <>
                             <Section icon={<User className="w-4 h-4 text-brand" />} title="Худалдан авагч">
                                 <Field label="Нэр" value={c.customer_name} />
@@ -618,15 +651,20 @@ function ContractDrawer({
                         </>
                     )}
 
-                    {activeTab === 'payments' && (
-                        <PaymentsTab payments={payments} loading={tabLoading} />
+                    {!editing && activeTab === 'payments' && (
+                        <PaymentsTab
+                            payments={payments}
+                            loading={tabLoading}
+                            contractId={c.id}
+                            onAdded={() => { setPaymentsRefresh((n) => n + 1); onUpdated(); }}
+                        />
                     )}
 
-                    {activeTab === 'service' && (
+                    {!editing && activeTab === 'service' && (
                         <ServiceTab logs={serviceLogs} loading={tabLoading} contract={c} onAdded={() => setServiceRefresh((n) => n + 1)} />
                     )}
 
-                    {activeTab === 'handover' && (
+                    {!editing && activeTab === 'handover' && (
                         <HandoverTab records={handovers} loading={tabLoading} />
                     )}
             </div>
@@ -634,13 +672,216 @@ function ContractDrawer({
     );
 }
 
-function PaymentsTab({ payments, loading }: { payments: Array<Record<string, unknown>>; loading: boolean }) {
-    if (loading)
-        return (
-            <div className="flex justify-center py-10">
-                <Spinner size="md" />
+const INPUT_CLS = 'w-full px-3 py-2 bg-surface-2 border border-border rounded-md text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:ring-[3px] focus-visible:ring-ring/40';
+
+function EditField({ label, children }: { label: string; children: React.ReactNode }) {
+    return (
+        <label className="block">
+            <span className="mb-1 block text-2xs text-muted-foreground">{label}</span>
+            {children}
+        </label>
+    );
+}
+
+// Гэрээ гараар засах форм — PATCH /api/dashboard/contracts/[id]
+function ContractEditForm({ contract: c, onClose, onSaved }: {
+    contract: PropertyContract;
+    onClose: () => void;
+    onSaved: (patch: Partial<PropertyContract>) => void;
+}) {
+    const numOrEmpty = (n: number | null | undefined) => (n === null || n === undefined ? '' : String(n));
+    const [form, setForm] = useState({
+        contract_status: c.contract_status || 'active',
+        sales_manager: c.sales_manager || '',
+        sales_channel: c.sales_channel || '',
+        customer_name: c.customer_name || '',
+        customer_phone: c.customer_phone || '',
+        paid_amount: numOrEmpty(c.paid_amount),
+        balance: numOrEmpty(c.balance),
+        penalty_amount: numOrEmpty(c.penalty_amount),
+        overdue_days: numOrEmpty(c.overdue_days),
+        balance_payment_method: c.balance_payment_method || '',
+    });
+    const [saving, setSaving] = useState(false);
+    const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+    async function save() {
+        setSaving(true);
+        try {
+            const patch: Record<string, unknown> = {
+                contract_status: form.contract_status,
+                sales_manager: form.sales_manager || null,
+                sales_channel: form.sales_channel || null,
+                customer_name: form.customer_name || null,
+                customer_phone: form.customer_phone || null,
+                balance_payment_method: form.balance_payment_method || null,
+                paid_amount: form.paid_amount === '' ? null : Number(form.paid_amount),
+                balance: form.balance === '' ? null : Number(form.balance),
+                penalty_amount: form.penalty_amount === '' ? null : Number(form.penalty_amount),
+                overdue_days: form.overdue_days === '' ? null : Number(form.overdue_days),
+            };
+            const res = await fetch(`/api/dashboard/contracts/${c.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', ...shopHeaders() },
+                body: JSON.stringify(patch),
+            });
+            if (res.ok) {
+                toast.success('Гэрээ шинэчлэгдлээ');
+                onSaved(patch as Partial<PropertyContract>);
+            } else {
+                const d = await res.json().catch(() => ({}));
+                toast.error(d.error || 'Хадгалахад алдаа гарлаа');
+            }
+        } catch {
+            toast.error('Сүлжээний алдаа');
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    return (
+        <div className="space-y-3">
+            <div className="flex items-center justify-between">
+                <h3 className="heading-section text-sm text-foreground flex items-center gap-2">
+                    <Pencil className="w-4 h-4 text-brand" /> Гэрээ засах
+                </h3>
             </div>
-        );
+
+            <EditField label="Төлөв">
+                <select value={form.contract_status} onChange={(e) => set('contract_status', e.target.value)} className={INPUT_CLS}>
+                    <option value="active">Идэвхтэй</option>
+                    <option value="closed">Хаагдсан</option>
+                    <option value="cancelled">Цуцалсан</option>
+                </select>
+            </EditField>
+
+            <div className="grid grid-cols-2 gap-3">
+                <EditField label="Худалдан авагч">
+                    <input value={form.customer_name} onChange={(e) => set('customer_name', e.target.value)} className={INPUT_CLS} />
+                </EditField>
+                <EditField label="Утас">
+                    <input value={form.customer_phone} onChange={(e) => set('customer_phone', e.target.value)} className={INPUT_CLS} />
+                </EditField>
+                <EditField label="Борлуулалтын менежер">
+                    <input value={form.sales_manager} onChange={(e) => set('sales_manager', e.target.value)} className={INPUT_CLS} />
+                </EditField>
+                <EditField label="Суваг">
+                    <input value={form.sales_channel} onChange={(e) => set('sales_channel', e.target.value)} className={INPUT_CLS} />
+                </EditField>
+                <EditField label="Төлсөн дүн (₮)">
+                    <input type="text" inputMode="numeric" value={form.paid_amount} onChange={(e) => set('paid_amount', e.target.value.replace(/[^0-9]/g, ''))} className={cn(INPUT_CLS, 'text-right tabular-nums')} />
+                </EditField>
+                <EditField label="Үлдэгдэл (₮)">
+                    <input type="text" inputMode="numeric" value={form.balance} onChange={(e) => set('balance', e.target.value.replace(/[^0-9]/g, ''))} className={cn(INPUT_CLS, 'text-right tabular-nums')} />
+                </EditField>
+                <EditField label="Торгууль (₮)">
+                    <input type="text" inputMode="numeric" value={form.penalty_amount} onChange={(e) => set('penalty_amount', e.target.value.replace(/[^0-9]/g, ''))} className={cn(INPUT_CLS, 'text-right tabular-nums')} />
+                </EditField>
+                <EditField label="Хоцролт (хоног)">
+                    <input type="text" inputMode="numeric" value={form.overdue_days} onChange={(e) => set('overdue_days', e.target.value.replace(/[^0-9]/g, ''))} className={cn(INPUT_CLS, 'text-right tabular-nums')} />
+                </EditField>
+            </div>
+            <EditField label="Үлдэгдэл төлбөрийн нөхцөл">
+                <input value={form.balance_payment_method} onChange={(e) => set('balance_payment_method', e.target.value)} className={INPUT_CLS} />
+            </EditField>
+
+            <div className="flex justify-end gap-2 pt-1">
+                <Button onClick={onClose} variant="ghost" size="sm">Болих</Button>
+                <Button onClick={save} isLoading={saving} variant="primary" size="sm">
+                    {!saving && <Save className="w-4 h-4" />} Хадгалах
+                </Button>
+            </div>
+        </div>
+    );
+}
+
+// Гэрээнд төлбөр нэмэх форм — POST /api/dashboard/contracts/[id]/payments
+function PaymentForm({ contractId, nextInstallment, onSaved }: {
+    contractId: string;
+    nextInstallment: number;
+    onSaved: () => void;
+}) {
+    const [form, setForm] = useState({
+        label: '',
+        due_date: '',
+        amount: '',
+        paid_amount: '',
+        paid_date: '',
+        payment_method: '',
+    });
+    const [saving, setSaving] = useState(false);
+    const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+    async function save() {
+        if (!form.due_date) { toast.error('Төлөх огноо оруулна уу'); return; }
+        if (!form.amount) { toast.error('Дүн оруулна уу'); return; }
+        setSaving(true);
+        try {
+            const res = await fetch(`/api/dashboard/contracts/${contractId}/payments`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...shopHeaders() },
+                body: JSON.stringify({
+                    installment_number: nextInstallment,
+                    label: form.label || null,
+                    due_date: form.due_date,
+                    amount: Number(form.amount),
+                    paid_amount: form.paid_amount ? Number(form.paid_amount) : 0,
+                    paid_date: form.paid_date || null,
+                    payment_method: form.payment_method || null,
+                }),
+            });
+            if (res.ok) {
+                toast.success('Төлбөр бүртгэгдлээ');
+                onSaved();
+            } else {
+                const d = await res.json().catch(() => ({}));
+                toast.error(d.error || 'Төлбөр бүртгэхэд алдаа гарлаа');
+            }
+        } catch {
+            toast.error('Сүлжээний алдаа');
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    return (
+        <div className="mb-3 space-y-3 rounded-md border border-dashed border-border bg-surface-2/40 p-3">
+            <div className="grid grid-cols-2 gap-3">
+                <EditField label="Нэр/тайлбар">
+                    <input value={form.label} onChange={(e) => set('label', e.target.value)} placeholder={`#${nextInstallment} төлбөр`} className={INPUT_CLS} />
+                </EditField>
+                <EditField label="Төлөх огноо *">
+                    <input type="date" value={form.due_date} onChange={(e) => set('due_date', e.target.value)} className={INPUT_CLS} />
+                </EditField>
+                <EditField label="Дүн (₮) *">
+                    <input type="text" inputMode="numeric" value={form.amount} onChange={(e) => set('amount', e.target.value.replace(/[^0-9]/g, ''))} className={cn(INPUT_CLS, 'text-right tabular-nums')} />
+                </EditField>
+                <EditField label="Төлсөн дүн (₮)">
+                    <input type="text" inputMode="numeric" value={form.paid_amount} onChange={(e) => set('paid_amount', e.target.value.replace(/[^0-9]/g, ''))} className={cn(INPUT_CLS, 'text-right tabular-nums')} />
+                </EditField>
+                <EditField label="Төлсөн огноо">
+                    <input type="date" value={form.paid_date} onChange={(e) => set('paid_date', e.target.value)} className={INPUT_CLS} />
+                </EditField>
+                <EditField label="Төлбөрийн хэлбэр">
+                    <input value={form.payment_method} onChange={(e) => set('payment_method', e.target.value)} placeholder="Бэлэн / Банк..." className={INPUT_CLS} />
+                </EditField>
+            </div>
+            <div className="flex justify-end">
+                <Button onClick={save} isLoading={saving} variant="primary" size="sm">
+                    {!saving && <Plus className="w-4 h-4" />} Бүртгэх
+                </Button>
+            </div>
+        </div>
+    );
+}
+
+function PaymentsTab({ payments, loading, contractId, onAdded }: {
+    payments: Array<Record<string, unknown>>;
+    loading: boolean;
+    contractId: string;
+    onAdded: () => void;
+}) {
+    const [showForm, setShowForm] = useState(false);
 
     const PAYMENT_STATUS: Record<string, { text: string; variant: 'info' | 'success' | 'danger' | 'pending' | 'neutral' }> = {
         pending: { text: 'Хүлээгдэж буй', variant: 'info' },
@@ -656,10 +897,28 @@ function PaymentsTab({ payments, loading }: { payments: Array<Record<string, unk
                 <h3 className="heading-section text-sm text-foreground flex items-center gap-2">
                     <DollarSign className="w-4 h-4 text-status-pending" /> Төлбөрийн хуваарь
                 </h3>
-                <span className="text-[11px] text-muted-foreground">{payments.length} бүртгэл</span>
+                <div className="flex items-center gap-2">
+                    <span className="text-[11px] text-muted-foreground">{payments.length} бүртгэл</span>
+                    <Button onClick={() => setShowForm((s) => !s)} variant={showForm ? 'ghost' : 'secondary'} size="sm">
+                        {showForm ? <X className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                        {showForm ? 'Болих' : 'Төлбөр нэмэх'}
+                    </Button>
+                </div>
             </div>
 
-            {payments.length === 0 ? (
+            {showForm && (
+                <PaymentForm
+                    contractId={contractId}
+                    nextInstallment={payments.length + 1}
+                    onSaved={() => { setShowForm(false); onAdded(); }}
+                />
+            )}
+
+            {loading ? (
+                <div className="flex justify-center py-10">
+                    <Spinner size="md" />
+                </div>
+            ) : payments.length === 0 ? (
                 <EmptyState icon={<DollarSign className="w-7 h-7" />} title="Төлбөрийн хуваарь бүртгэгдээгүй" />
             ) : (
                 <div className="space-y-2">

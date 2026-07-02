@@ -11,13 +11,17 @@ import {
     DoorOpen,
     TrendingUp,
     Eye,
+    Pencil,
+    Save,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { StatusDot } from '@/components/ui/StatusDot';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/dashboard/PageHeader';
+import { toast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 
 const SHOP_KEY = 'vertmonhub_active_shop_id';
@@ -294,7 +298,16 @@ export default function BlocksPage() {
                 </Card>
             )}
 
-            {selectedUnit && <UnitDrawer unit={selectedUnit} onClose={() => setSelectedUnit(null)} />}
+            {selectedUnit && (
+                <UnitDrawer
+                    unit={selectedUnit}
+                    onClose={() => setSelectedUnit(null)}
+                    onUpdated={(patch) => {
+                        setSelectedUnit((u) => (u ? { ...u, ...patch } : u));
+                        if (selectedBlock) loadBlock(selectedBlock);
+                    }}
+                />
+            )}
         </div>
     );
 }
@@ -373,9 +386,24 @@ function UnitGrid({ units, category, onSelect, selectedId }: {
 // ============================================
 // Unit detail drawer
 // ============================================
-function UnitDrawer({ unit: u, onClose }: { unit: UnitRow; onClose: () => void }) {
+const UNIT_INPUT_CLS = 'w-full px-3 py-2 bg-surface-2 border border-border rounded-md text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:ring-[3px] focus-visible:ring-ring/40';
+const UNIT_STATUS_OPTIONS = [
+    { value: 'available', label: 'Чөлөөтэй' },
+    { value: 'reserved', label: 'Хадгалсан' },
+    { value: 'ordered', label: 'Захиалсан' },
+    { value: 'sold', label: 'Зарагдсан' },
+    { value: 'handed_over', label: 'Хүлээлгэсэн' },
+];
+
+function UnitDrawer({ unit: u, onClose, onUpdated }: {
+    unit: UnitRow;
+    onClose: () => void;
+    onUpdated: (patch: Partial<UnitRow>) => void;
+}) {
     const m = meta(u.status);
     const isSold = u.status === 'sold' || u.status === 'handed_over';
+    const [editing, setEditing] = useState(false);
+
     return (
         <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
             <div className="absolute inset-0 bg-foreground/40 backdrop-blur-sm" />
@@ -389,6 +417,16 @@ function UnitDrawer({ unit: u, onClose }: { unit: UnitRow; onClose: () => void }
                     </div>
                     <div className="flex items-center gap-2">
                         <Badge variant={m.variant}>{m.label}</Badge>
+                        <button
+                            onClick={() => setEditing((e) => !e)}
+                            className={cn(
+                                'p-1.5 rounded-md transition-colors',
+                                editing ? 'bg-brand-soft text-brand-strong' : 'hover:bg-surface-2 text-muted-foreground hover:text-foreground',
+                            )}
+                            title="Засах"
+                        >
+                            <Pencil className="w-4 h-4" />
+                        </button>
                         <button onClick={onClose} className="p-1.5 hover:bg-surface-2 rounded-md text-muted-foreground transition-colors">
                             <X className="w-4 h-4" />
                         </button>
@@ -396,34 +434,126 @@ function UnitDrawer({ unit: u, onClose }: { unit: UnitRow; onClose: () => void }
                 </div>
 
                 <div className="p-5 space-y-5">
-                    <Section icon={<DoorOpen className="w-4 h-4 text-status-success" />} title="Нэгж">
-                        <Field label="Ангилал" value={CATEGORY_LABEL[u.category] || u.category} />
-                        <Field label="Айлын төрөл / Загвар" value={`${u.unit_type || '—'} / ${u.model || '—'}`} />
-                        <Field label="Өрөөний тоо" value={u.rooms ? `${u.rooms} өрөө` : null} icon={<DoorOpen className="w-3 h-3" />} />
-                        <Field label="Талбай" value={u.sale_area ? `${u.sale_area} м²` : null} icon={<Ruler className="w-3 h-3" />} />
-                        <Field label="Цонхны харагдац" value={u.window_view} icon={<Eye className="w-3 h-3" />} />
-                    </Section>
+                    {editing ? (
+                        <UnitEditForm unit={u} onCancel={() => setEditing(false)} onSaved={(patch) => { setEditing(false); onUpdated(patch); }} />
+                    ) : (
+                        <>
+                            <Section icon={<DoorOpen className="w-4 h-4 text-status-success" />} title="Нэгж">
+                                <Field label="Ангилал" value={CATEGORY_LABEL[u.category] || u.category} />
+                                <Field label="Айлын төрөл / Загвар" value={`${u.unit_type || '—'} / ${u.model || '—'}`} />
+                                <Field label="Өрөөний тоо" value={u.rooms ? `${u.rooms} өрөө` : null} icon={<DoorOpen className="w-3 h-3" />} />
+                                <Field label="Талбай" value={u.sale_area ? `${u.sale_area} м²` : null} icon={<Ruler className="w-3 h-3" />} />
+                                <Field label="Цонхны харагдац" value={u.window_view} icon={<Eye className="w-3 h-3" />} />
+                            </Section>
 
-                    {isSold && (
-                        <Section icon={<User className="w-4 h-4 text-brand" />} title="Худалдан авагч">
-                            {u.buyer_name ? (
-                                <>
-                                    <Field label="Нэр" value={u.buyer_name} />
-                                    <Field label="Регистр" value={u.buyer_registration} icon={<IdCard className="w-3 h-3" />} />
-                                    <Field label="Гэрээний дүн" value={formatMoney(u.contract_total_price)} highlight />
-                                </>
-                            ) : (
-                                <p className="text-[12px] text-muted-foreground">Гэрээтэй холбогдсон худалдан авагч олдсонгүй.</p>
+                            {isSold && (
+                                <Section icon={<User className="w-4 h-4 text-brand" />} title="Худалдан авагч">
+                                    {u.buyer_name ? (
+                                        <>
+                                            <Field label="Нэр" value={u.buyer_name} />
+                                            <Field label="Регистр" value={u.buyer_registration} icon={<IdCard className="w-3 h-3" />} />
+                                            <Field label="Гэрээний дүн" value={formatMoney(u.contract_total_price)} highlight />
+                                        </>
+                                    ) : (
+                                        <p className="text-[12px] text-muted-foreground">Гэрээтэй холбогдсон худалдан авагч олдсонгүй.</p>
+                                    )}
+                                </Section>
                             )}
-                        </Section>
-                    )}
 
-                    <Section icon={<TrendingUp className="w-4 h-4 text-status-info" />} title="Борлуулалт">
-                        <Field label="Менежер" value={u.sales_manager} />
-                        <Field label="Суваг" value={u.sales_channel} />
-                        <Field label="Эх төлөв" value={u.raw_status} />
-                    </Section>
+                            <Section icon={<TrendingUp className="w-4 h-4 text-status-info" />} title="Борлуулалт">
+                                <Field label="Менежер" value={u.sales_manager} />
+                                <Field label="Суваг" value={u.sales_channel} />
+                                <Field label="Эх төлөв" value={u.raw_status} />
+                            </Section>
+                        </>
+                    )}
                 </div>
+            </div>
+        </div>
+    );
+}
+
+// Нэгж гараар засах форм — PATCH /api/dashboard/units
+function UnitEditForm({ unit: u, onCancel, onSaved }: {
+    unit: UnitRow;
+    onCancel: () => void;
+    onSaved: (patch: Partial<UnitRow>) => void;
+}) {
+    const [form, setForm] = useState({
+        status: u.status,
+        sales_manager: u.sales_manager || '',
+        sales_channel: u.sales_channel || '',
+        unit_type: u.unit_type || '',
+        model: u.model || '',
+        window_view: u.window_view || '',
+        rooms: u.rooms != null ? String(u.rooms) : '',
+        sale_area: u.sale_area != null ? String(u.sale_area) : '',
+    });
+    const [saving, setSaving] = useState(false);
+    const set = (k: keyof typeof form, v: string) => setForm((f) => ({ ...f, [k]: v }));
+
+    async function save() {
+        setSaving(true);
+        try {
+            const patch: Record<string, unknown> = {
+                status: form.status,
+                sales_manager: form.sales_manager || null,
+                sales_channel: form.sales_channel || null,
+                unit_type: form.unit_type || null,
+                model: form.model || null,
+                window_view: form.window_view || null,
+                rooms: form.rooms === '' ? null : Number(form.rooms),
+                sale_area: form.sale_area === '' ? null : Number(form.sale_area),
+            };
+            const res = await fetch('/api/dashboard/units', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'x-shop-id': typeof window !== 'undefined' ? localStorage.getItem(SHOP_KEY) || '' : '' },
+                body: JSON.stringify({ id: u.id, ...patch }),
+            });
+            if (res.ok) {
+                toast.success('Нэгж шинэчлэгдлээ');
+                onSaved(patch as Partial<UnitRow>);
+            } else {
+                const d = await res.json().catch(() => ({}));
+                toast.error(d.error || 'Хадгалахад алдаа гарлаа');
+            }
+        } catch {
+            toast.error('Сүлжээний алдаа');
+        } finally {
+            setSaving(false);
+        }
+    }
+
+    const label = (t: string) => <span className="mb-1 block text-2xs text-muted-foreground">{t}</span>;
+
+    return (
+        <div className="space-y-3">
+            <h3 className="heading-section text-sm text-foreground flex items-center gap-2">
+                <Pencil className="w-4 h-4 text-brand" /> Нэгж засах
+            </h3>
+
+            <label className="block">
+                {label('Төлөв')}
+                <select value={form.status} onChange={(e) => set('status', e.target.value)} className={UNIT_INPUT_CLS}>
+                    {UNIT_STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+            </label>
+
+            <div className="grid grid-cols-2 gap-3">
+                <label className="block">{label('Айлын төрөл')}<input value={form.unit_type} onChange={(e) => set('unit_type', e.target.value)} className={UNIT_INPUT_CLS} /></label>
+                <label className="block">{label('Загвар')}<input value={form.model} onChange={(e) => set('model', e.target.value)} className={UNIT_INPUT_CLS} /></label>
+                <label className="block">{label('Өрөөний тоо')}<input type="text" inputMode="numeric" value={form.rooms} onChange={(e) => set('rooms', e.target.value.replace(/[^0-9]/g, ''))} className={UNIT_INPUT_CLS} /></label>
+                <label className="block">{label('Талбай (м²)')}<input type="text" inputMode="decimal" value={form.sale_area} onChange={(e) => set('sale_area', e.target.value.replace(/[^0-9.]/g, ''))} className={UNIT_INPUT_CLS} /></label>
+                <label className="block">{label('Менежер')}<input value={form.sales_manager} onChange={(e) => set('sales_manager', e.target.value)} className={UNIT_INPUT_CLS} /></label>
+                <label className="block">{label('Суваг')}<input value={form.sales_channel} onChange={(e) => set('sales_channel', e.target.value)} className={UNIT_INPUT_CLS} /></label>
+            </div>
+            <label className="block">{label('Цонхны харагдац')}<input value={form.window_view} onChange={(e) => set('window_view', e.target.value)} className={UNIT_INPUT_CLS} /></label>
+
+            <div className="flex justify-end gap-2 pt-1">
+                <Button onClick={onCancel} variant="ghost" size="sm">Болих</Button>
+                <Button onClick={save} isLoading={saving} variant="primary" size="sm">
+                    {!saving && <Save className="w-4 h-4" />} Хадгалах
+                </Button>
             </div>
         </div>
     );
