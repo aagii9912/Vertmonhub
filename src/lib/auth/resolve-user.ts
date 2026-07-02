@@ -51,9 +51,9 @@ export async function resolveApiUser(): Promise<ResolvedUser | null> {
                 },
             }
         );
-        const { data: { session } } = await supabase.auth.getSession();
-        if (session?.user) {
-            return { id: session.user.id, email: session.user.email || '' };
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+            return { id: user.id, email: user.email || '' };
         }
     } catch {}
 

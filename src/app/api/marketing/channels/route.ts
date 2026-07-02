@@ -24,8 +24,8 @@ export async function GET(req: NextRequest) {
             }
         );
 
-        const { data: { session }, error: authError } = await supabase.auth.getSession();
-        if (authError || !session) {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
 
@@ -60,8 +60,8 @@ export async function POST(req: NextRequest) {
             }
         );
 
-        const { data: { session }, error: authError } = await supabase.auth.getSession();
-        if (authError || !session) {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
 

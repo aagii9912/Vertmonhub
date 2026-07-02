@@ -19,10 +19,10 @@ export async function GET(req: NextRequest) {
             { cookies: { get(name: string) { return cookieStore.get(name)?.value; } } }
         );
 
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { user } } = await supabase.auth.getUser();
 
         // Also check custom session
-        let userId: string | null = session?.user?.id || null;
+        let userId: string | null = user?.id || null;
         if (!userId) {
             const sessionCookie = cookieStore.get('vertmon-session');
             if (sessionCookie) {
