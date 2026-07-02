@@ -530,6 +530,7 @@ export default function AdminUsersPage() {
                                 <label className="block text-sm font-medium text-foreground mb-1">Имэйл <span className="text-status-danger">*</span></label>
                                 <input
                                     type="email"
+                                    autoComplete="off"
                                     value={newUser.email}
                                     onChange={e => setNewUser(p => ({ ...p, email: e.target.value }))}
                                     className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-brand focus:border-brand"
@@ -544,6 +545,7 @@ export default function AdminUsersPage() {
                                 <div className="relative">
                                     <input
                                         type={showPassword ? 'text' : 'password'}
+                                        autoComplete="new-password"
                                         value={newUser.password}
                                         onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))}
                                         className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm pr-10 focus:ring-2 focus:ring-brand focus:border-brand"

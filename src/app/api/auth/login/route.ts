@@ -12,7 +12,10 @@ import { createClient } from '@supabase/supabase-js';
  */
 export async function POST(request: NextRequest) {
     try {
-        const { email, password } = await request.json();
+        const body = await request.json();
+        // Имэйлийн үл үзэгдэх хоосон зай нэвтрэлтийг санамсаргүй унагадаг
+        const email = typeof body.email === 'string' ? body.email.trim() : body.email;
+        const password = body.password;
 
         if (!email || !password) {
             return NextResponse.json(
@@ -50,6 +53,9 @@ export async function POST(request: NextRequest) {
         });
 
         if (error || !data.user) {
+            // Хэрэглэгчид ерөнхий мессеж харуулна, харин жинхэнэ шалтгааныг
+            // (rate limit, provider disabled г.м) серверийн логт үлдээнэ
+            console.error('signInWithPassword failed:', error?.code, error?.message);
             return NextResponse.json(
                 { error: 'Имэйл эсвэл нууц үг буруу байна' },
                 { status: 401 },
