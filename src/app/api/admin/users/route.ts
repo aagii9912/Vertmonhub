@@ -106,7 +106,12 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Super admin required' }, { status: 403 });
         }
 
-        const { email, password, full_name, role, shop_id } = await request.json();
+        const body = await request.json();
+        const { full_name, role, shop_id } = body;
+        // Автомат бөглөлт/хуулбарлалтын үл үзэгдэх хоосон зайг арилгана —
+        // эс бөгөөс хэрэглэгч мэдэгдсэнээс өөр нууц үгтэй үүсдэг
+        const email = typeof body.email === 'string' ? body.email.trim() : body.email;
+        const password = typeof body.password === 'string' ? body.password.trim() : body.password;
 
         if (!email || !password) {
             return NextResponse.json({ error: 'Имэйл болон нууц үг шаардлагатай' }, { status: 400 });
