@@ -105,7 +105,11 @@ export async function runOrchestrator(
 
     const okResults = runResults.filter((r) => r.result.ok && r.result.text);
     if (okResults.length === 0) {
-        finalText = 'Уучлаарай, хариу бэлдэх үед алдаа гарлаа. Дахин оролдоно уу.';
+        // Бүх agent унасан — шалтгааныг ялгаж ойлгомжтой мессеж өгнө.
+        const rateLimited = runResults.some((r) => /429|rate.?limit|quota|overloaded|503/i.test(r.result.error || ''));
+        finalText = rateLimited
+            ? '⏳ AI систем түр ачаалалтай байна. 30 секунд орчим хүлээгээд дахин асуугаарай.'
+            : 'Уучлаарай, хариу бэлдэх үед алдаа гарлаа. Дахин оролдоно уу.';
     } else if (okResults.length === 1) {
         finalText = okResults[0].result.text;
     } else {

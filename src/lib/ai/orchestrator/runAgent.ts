@@ -147,19 +147,40 @@ export async function runAgent(
                 }
             }
 
-            const synthesis = await withRetry(() => chat.sendMessage(toolResponses.map((tr) => ({ functionResponse: tr.functionResponse }))));
-            tokens += tokensFrom(synthesis.response);
+            // Tool-ийн үр дүнг Gemini-ээр тайлбарлуулна. Энэ 2 дахь дуудлага (429/503 г.м.)
+            // унасан ч tool өгөгдөл аль хэдийн гартаа байгаа тул бүрэн унахын оронд
+            // хэсэгчилсэн хариу буцаана — data/chart UI дээр хэвийн харагдана.
+            try {
+                const synthesis = await withRetry(() => chat.sendMessage(toolResponses.map((tr) => ({ functionResponse: tr.functionResponse }))));
+                tokens += tokensFrom(synthesis.response);
 
-            return {
-                text: synthesis.response.text(),
-                data,
-                chartConfig,
-                toolsUsed,
-                tokens,
-                latencyMs: Date.now() - started,
-                ok: true,
-                pendingActions,
-            };
+                return {
+                    text: synthesis.response.text(),
+                    data,
+                    chartConfig,
+                    toolsUsed,
+                    tokens,
+                    latencyMs: Date.now() - started,
+                    ok: true,
+                    pendingActions,
+                };
+            } catch (synthError) {
+                const msg = synthError instanceof Error ? synthError.message : 'Unknown error';
+                logger.error('[Orchestrator] Post-tool synthesis failed, returning partial result', { agent: agent.id, error: msg });
+                if (data || pendingActions.length > 0) {
+                    return {
+                        text: `${agent.emoji} ${agent.name} шаардлагатай мэдээллийг (${toolsUsed.join(', ')}) олж авлаа, гэвч AI түр ачаалалтай тул дэлгэрэнгүй тайлбар бэлдэж чадсангүй. Доорх өгөгдлийг шууд харна уу — эсвэл дахин асуувал тайлбартай хариу өгнө.`,
+                        data,
+                        chartConfig,
+                        toolsUsed,
+                        tokens,
+                        latencyMs: Date.now() - started,
+                        ok: true,
+                        pendingActions,
+                    };
+                }
+                throw synthError;
+            }
         }
 
         return {
