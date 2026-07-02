@@ -248,13 +248,19 @@ export const writeTools: any[] = [
     },
     {
         name: 'process_contract_action',
-        description: 'Гэрээний процесс: гарын үсэг, төлбөр, цуцлалт. Байр болон лийдийн статусыг автоматаар шинэчилнэ. ЗӨВХӨН Super Admin.',
+        description: 'Гэрээний процесс: гарын үсэг (sign), бүрэн төлбөр (paid), цуцлалт (cancel). Нэгж/байр, гэрээ болон лийдийн статусыг автоматаар шинэчилнэ. Мандала Гарден-д НЭГЖийг код/блокоор (unit), гэрээг дугаараар (contract_number) заана. ЗӨВХӨН Super Admin.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 action: { type: SchemaType.STRING, enum: ['sign', 'paid', 'cancel'], description: 'sign=гэрээ гарын үсэг, paid=бүрэн төлбөр, cancel=цуцлах' },
-                property_id: { type: SchemaType.STRING, description: 'Байрны ID' },
-                property_name: { type: SchemaType.STRING, description: 'Байрны нэрээр хайх' },
+                code: { type: SchemaType.STRING, description: 'Нэгжийн код (property_units, жишээ: 201-440)' },
+                unit_number: { type: SchemaType.STRING, description: 'Нэгжийн шинэ тоот' },
+                block: { type: SchemaType.STRING, description: 'Блок/цамхаг — олон нэгж олдвол тодруулахад' },
+                phase: { type: SchemaType.STRING, description: 'Ээлж (Zoo Garden...)' },
+                contract_id: { type: SchemaType.STRING, description: 'Гэрээний ID' },
+                contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар' },
+                property_id: { type: SchemaType.STRING, description: 'Listing байрны ID (property_units биш үед)' },
+                property_name: { type: SchemaType.STRING, description: 'Listing байрны нэр' },
                 lead_id: { type: SchemaType.STRING, description: 'Лийдийн ID (байвал)' },
                 customer_name: { type: SchemaType.STRING, description: 'Хэрэглэгчийн нэрээр хайх' }
             },

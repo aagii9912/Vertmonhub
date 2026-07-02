@@ -628,11 +628,40 @@ export async function addLeadNote(shopId: string, args: any) {
     return { success: true, lead: lead.customer_name, note: args.note };
 }
 
+/** Гэрээний (property_contracts) статусыг код/дугаараар өөрчилнө. */
+export async function updateContractStatus(shopId: string, args: any) {
+    let query = supabaseAdmin
+        .from('property_contracts')
+        .select('id, contract_number, contract_status')
+        .eq('shop_id', shopId);
+    if (args.contract_id) query = query.eq('id', args.contract_id);
+    else if (args.contract_number) query = query.ilike('contract_number', `%${args.contract_number}%`);
+    else return { error: 'contract_id эсвэл contract_number шаардлагатай' };
+
+    const { data: rows } = await query.limit(20);
+    if (!rows || rows.length === 0) return { error: 'Гэрээ олдсонгүй' };
+    if (rows.length > 1) {
+        return {
+            error: `${rows.length} гэрээ олдлоо, дугаараар тодруулна уу`,
+            options: rows.slice(0, 10).map(r => ({ id: r.id, contract_number: r.contract_number, status: r.contract_status })),
+        };
+    }
+    const c = rows[0];
+    const { error } = await supabaseAdmin
+        .from('property_contracts')
+        .update({ contract_status: args.new_status, updated_at: new Date().toISOString() })
+        .eq('id', c.id);
+    if (error) return { error: `Алдаа: ${error.message}` };
+    return { success: true, contract: c.contract_number, oldStatus: c.contract_status, newStatus: args.new_status };
+}
+
 export async function processContractAction(shopId: string, args: any) {
-    const statusMap: Record<string, { property: string; lead: string }> = {
-        sign: { property: 'reserved', lead: 'negotiating' },
-        paid: { property: 'sold', lead: 'closed_won' },
-        cancel: { property: 'available', lead: 'closed_lost' },
+    // Мандала маягийн нэгж (property_units), listing байр (properties), лийд, гэрээний
+    // статусыг action-оор нэгтгэж шинэчилнэ. Аль нэг нь олдоогүй ч бусад нь ажиллана.
+    const statusMap: Record<string, { property: string; unit: string; lead: string; contract: string }> = {
+        sign:   { property: 'reserved',  unit: 'reserved',  lead: 'negotiating', contract: 'active' },
+        paid:   { property: 'sold',      unit: 'sold',      lead: 'closed_won',  contract: 'closed' },
+        cancel: { property: 'available', unit: 'available', lead: 'closed_lost', contract: 'cancelled' },
     };
 
     const mapping = statusMap[args.action];
@@ -640,16 +669,33 @@ export async function processContractAction(shopId: string, args: any) {
 
     const results: any = { action: args.action, changes: [] };
 
-    if (args.property_id || args.property_name) {
+    // Нэгж (property_units) → байхгүй бол listing property руу шилжинэ
+    if (args.code || args.unit_number || args.unit_id) {
+        const unitResult = await updateUnitStatus(shopId, { unit_id: args.unit_id, code: args.code, unit_number: args.unit_number, block: args.block, phase: args.phase, new_status: mapping.unit });
+        results.unit = unitResult;
+        if (!unitResult.error) results.changes.push(`Нэгж → ${mapping.unit}`);
+    } else if (args.property_id || args.property_name) {
         const propResult = await updatePropertyStatus(shopId, { property_id: args.property_id, property_name: args.property_name, new_status: mapping.property });
         results.property = propResult;
-        results.changes.push(`Байр → ${mapping.property}`);
+        if (!propResult.error) results.changes.push(`Байр → ${mapping.property}`);
     }
 
+    // Гэрээний статус (property_contracts)
+    if (args.contract_id || args.contract_number) {
+        const contractResult = await updateContractStatus(shopId, { contract_id: args.contract_id, contract_number: args.contract_number, new_status: mapping.contract });
+        results.contract = contractResult;
+        if (!contractResult.error) results.changes.push(`Гэрээ → ${mapping.contract}`);
+    }
+
+    // Лийд
     if (args.lead_id || args.customer_name) {
         const leadResult = await updateLeadStatus(shopId, { lead_id: args.lead_id, customer_name: args.customer_name, new_status: mapping.lead });
         results.lead = leadResult;
-        results.changes.push(`Лийд → ${mapping.lead}`);
+        if (!leadResult.error) results.changes.push(`Лийд → ${mapping.lead}`);
+    }
+
+    if (results.changes.length === 0) {
+        return { error: 'Нэгж/гэрээ/лийд олдсонгүй. Нэгжийн код, гэрээний дугаар эсвэл харилцагчийн нэрийг тодорхой өгнө үү.' };
     }
 
     return results;

@@ -1,8 +1,17 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireModule } from '@/lib/auth/require-permission';
+import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+
+const UNIT_STATUSES = ['available', 'reserved', 'ordered', 'sold', 'handed_over'];
+// Гараар засаж болох талбарууд (property_units)
+const EDITABLE_UNIT_FIELDS = [
+    'status', 'raw_status', 'sales_channel', 'sales_manager',
+    'unit_type', 'model', 'window_view', 'rooms',
+    'sale_area', 'updated_sale_area', 'contracted_area',
+    'unit_number', 'legacy_unit_number', 'floor', 'block', 'phase', 'category',
+];
 
 // ============================================
 // GET /api/dashboard/units
@@ -75,6 +84,59 @@ export async function GET(request: NextRequest) {
             { error: 'Нэгжийн мэдээлэл татахад алдаа гарлаа', mode: 'summary', phases: [], summary: [] },
             { status: 500 }
         );
+    }
+}
+
+// ============================================
+// PATCH /api/dashboard/units — нэгжийг гараар засах
+// body: { id, <editable fields...> }
+// ============================================
+export async function PATCH(request: NextRequest) {
+    try {
+        const denied = await requireModuleWrite('properties');
+        if (denied) return denied;
+
+        const authShop = await getUserShop();
+        if (!authShop) {
+            return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
+        }
+
+        const body = await request.json();
+        const id: string | undefined = body.id;
+        if (!id) return NextResponse.json({ error: 'id шаардлагатай' }, { status: 400 });
+
+        if (body.status !== undefined && !UNIT_STATUSES.includes(body.status)) {
+            return NextResponse.json(
+                { error: `Төлөв буруу. Боломжтой: ${UNIT_STATUSES.join(', ')}` },
+                { status: 400 },
+            );
+        }
+
+        const updateData: Record<string, unknown> = {};
+        for (const key of EDITABLE_UNIT_FIELDS) {
+            if (body[key] !== undefined) updateData[key] = body[key] === '' ? null : body[key];
+        }
+        if (Object.keys(updateData).length === 0) {
+            return NextResponse.json({ error: 'Засах талбар алга' }, { status: 400 });
+        }
+        updateData.updated_at = new Date().toISOString();
+
+        const supabase = supabaseAdmin();
+        const { data, error } = await supabase
+            .from('property_units')
+            .update(updateData)
+            .eq('id', id)
+            .eq('shop_id', authShop.id)
+            .select()
+            .single();
+
+        if (error) throw error;
+        if (!data) return NextResponse.json({ error: 'Нэгж олдсонгүй' }, { status: 404 });
+
+        return NextResponse.json({ unit: data, message: 'Нэгж шинэчлэгдлээ' });
+    } catch (error) {
+        logger.error('[Units API] PATCH error:', { error });
+        return NextResponse.json({ error: 'Нэгж засахад алдаа гарлаа' }, { status: 500 });
     }
 }
 
