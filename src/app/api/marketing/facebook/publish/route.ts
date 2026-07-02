@@ -18,8 +18,8 @@ export async function POST(req: NextRequest) {
             { cookies: { get(name: string) { return cookieStore.get(name)?.value; } } }
         );
 
-        const { data: { session } } = await supabase.auth.getSession();
-        let userId: string | null = session?.user?.id || null;
+        const { data: { user } } = await supabase.auth.getUser();
+        let userId: string | null = user?.id || null;
         if (!userId) {
             const sessionCookie = cookieStore.get('vertmon-session');
             if (sessionCookie) {

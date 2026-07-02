@@ -50,8 +50,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         // Offline responses must be authenticated (sales manager entry).
         // Online responses can be submitted anonymously by survey takers.
         if (source === 'offline') {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (!user) {
                 return NextResponse.json(
                     { error: 'Биеэр оруулсан хариулт нэвтэрсэн ажилтан шаардана' },
                     { status: 401 }
@@ -105,8 +105,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         );
 
         // Verify authentication (Admin only)
-        const { data: { session }, error: authError } = await supabase.auth.getSession();
-        if (authError || !session) {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
 

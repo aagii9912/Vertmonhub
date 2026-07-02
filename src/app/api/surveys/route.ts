@@ -34,8 +34,8 @@ export async function POST(req: NextRequest) {
         );
 
         // Verify authentication
-        const { data: { session }, error: authError } = await supabase.auth.getSession();
-        if (authError || !session) {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
 
@@ -97,8 +97,8 @@ export async function GET(req: NextRequest) {
         );
 
         // Verify authentication
-        const { data: { session }, error: authError } = await supabase.auth.getSession();
-        if (authError || !session) {
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (authError || !user) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
 
