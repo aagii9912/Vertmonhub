@@ -112,7 +112,10 @@ export async function runAgent(
             (ctx.userName ? `, Нэр: ${ctx.userName}` : '') +
             `. Чамд энэ ярианд өгөгдсөн tool бүрийг систем энэ хэрэглэгчийн эрхээр аль хэдийн зөвшөөрсөн. ` +
             `Тиймээс хэрэглэгчээс эрх/эрхийн зэрэглэлээ (super_admin эсэх гэх мэт) НОТЛОХЫГ БҮҮ АСУУ — ` +
-            `зөвхөн үйлдэлд шаардлагатай оролтыг (жишээ нь: имэйл хаяг, оноох дүр) асуу.`;
+            `зөвхөн үйлдэлд шаардлагатай оролтыг (жишээ нь: имэйл хаяг, оноох дүр) асуу.` +
+            `\n\n[TOOL ХЭРЭГЛЭЭ] Tool дуудлага хязгаартай тул ҮР АШИГТАЙ ажилла: хайлт хоосон буцвал ` +
+            `богино түлхүүр үгээр (нэрийн эхний хэсэг г.м.) ДЭЭД ТАЛ НЬ 1-2 удаа дахин хайгаад, ` +
+            `олдсон даруйд үндсэн үйлдлээ (шинэчлэх/үүсгэх г.м.) ШУУД хий. Ижил хайлтыг бүү давт.`;
         const model = genAI.getGenerativeModel({
             model: AGENT_MODEL,
             systemInstruction: agent.buildInstruction(ctx.shopKnowledge) + userContext,
@@ -127,7 +130,7 @@ export async function runAgent(
         // Gemini эхний раундад унших tool (list_contracts), үр дүнг нь хараад ДАРААГИЙН
         // раундад бичих tool (process_contract_action) дууддаг. Өмнө нь ганц раунд
         // дэмждэг байсан тул 2 дахь раундын бодит үйлдэл хэзээ ч хийгддэггүй байв.
-        const MAX_TOOL_ROUNDS = 4;
+        const MAX_TOOL_ROUNDS = 6;
         let data: any = null;
         let chartConfig: any = null;
         let response = await withRetry(() => chat.sendMessage(messageParts));
@@ -198,15 +201,34 @@ export async function runAgent(
             }
         }
 
-        // Эцсийн текстийг аюулгүй задлана — model MAX_TOOL_ROUNDS-ийн дараа ч function
-        // call буцаасан бол text() шидэж болзошгүй тул fallback текст бэлдэнэ.
+        // Раундын хязгаарт тулахад model tool дуудсаар үлдсэн бол — үлдсэн дуудлагад нь
+        // "хязгаар хүрлээ" гэсэн functionResponse өгч, эцсийн ТЕКСТ хариугаа бичүүлнэ.
+        // (Gemini functionCall-ийн дараа заавал functionResponse шаарддаг тул энгийн
+        // текст мессеж илгээж болохгүй.)
+        let leftover: any[] = [];
+        try { leftover = response.response.functionCalls() || []; } catch { leftover = []; }
+        if (leftover.length > 0) {
+            try {
+                const stopResponses = leftover.map((fc: any) => ({
+                    functionResponse: {
+                        name: fc.name,
+                        response: { result: { error: 'Tool дуудлагын хязгаарт хүрлээ. Өөр tool БҮҮ дууд — одоо цуглуулсан мэдээлэлдээ үндэслэн хэрэглэгчид эцсийн хариугаа МОНГОЛООР товч бич. Хийж амжаагүй үйлдэл байвал юу хийх гэж байснаа хэл.' } },
+                    },
+                }));
+                response = await withRetry(() => chat.sendMessage(stopResponses));
+                tokens += tokensFrom(response.response);
+            } catch { /* доорх fallback текст ажиллана */ }
+        }
+
+        // Эцсийн текстийг аюулгүй задлана — model эцсээ хүртэл function call буцаасан
+        // бол text() шидэж болзошгүй тул fallback текст бэлдэнэ.
         let finalText = '';
         try { finalText = response.response.text(); } catch { finalText = ''; }
         if (!finalText.trim()) {
             if (pendingActions.length > 0) {
                 finalText = `${pendingActions.length} үйлдэл таны баталгаажуулалтыг хүлээж байна — доорх картаас зөвшөөрнө үү.`;
             } else if (data) {
-                finalText = `${agent.emoji} ${agent.name} мэдээллийг олж авлаа — доорх өгөгдлийг харна уу.`;
+                finalText = `${agent.emoji} ${agent.name} мэдээлэл цуглуулсан боловч эцсийн хариугаа бэлдэж амжсангүй. Асуултаа арай тодорхой болгоод (жишээ нь гэрээний дугаар нэмээд) дахин илгээнэ үү.`;
             } else {
                 throw new Error('Empty model response');
             }
