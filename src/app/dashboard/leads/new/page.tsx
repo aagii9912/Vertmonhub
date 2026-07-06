@@ -159,6 +159,9 @@ export default function NewLeadPage() {
                                         <SelectItem value="website">Вэбсайт</SelectItem>
                                         <SelectItem value="referral">Зөвлөмж</SelectItem>
                                         <SelectItem value="phone">Утас</SelectItem>
+                                        <SelectItem value="tv">ТВ</SelectItem>
+                                        <SelectItem value="meeting">Уулзалт</SelectItem>
+                                        <SelectItem value="event">Өдөрлөг</SelectItem>
                                         <SelectItem value="other">Бусад</SelectItem>
                                     </SelectContent>
                                 </Select>

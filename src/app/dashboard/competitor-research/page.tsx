@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Building2, Plus, Trash2, MapPin, Layers, CreditCard, DollarSign, Facebook, Pencil, BarChart3, ExternalLink } from 'lucide-react';
+import { Building2, Plus, Trash2, MapPin, Layers, CreditCard, DollarSign, Facebook, Pencil, BarChart3, ExternalLink, Sparkles, X } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
+import { MarkdownMessage } from '@/components/ai-assistant/MarkdownMessage';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -56,6 +58,8 @@ export default function CompetitorResearchPage() {
     const [showForm, setShowForm] = useState(false);
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState<Record<string, string>>({ ...EMPTY });
+    const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+    const [aiLoading, setAiLoading] = useState(false);
 
     const fetchData = useCallback(async () => {
         try {
@@ -98,6 +102,23 @@ export default function CompetitorResearchPage() {
             const res = await fetch(`/api/dashboard/competitors?id=${id}`, { method: 'DELETE', headers: shopHeaders() });
             if (res.ok) fetchData();
         } catch (e) { console.error(e); }
+    }
+
+    async function runAiAnalysis() {
+        setAiLoading(true);
+        try {
+            const res = await fetch('/api/dashboard/competitors/analyze', {
+                method: 'POST',
+                headers: shopHeaders(),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data?.error || 'AI анализ хийхэд алдаа гарлаа');
+            setAiAnalysis(data.analysis || '');
+        } catch (e) {
+            toast.error(e instanceof Error ? e.message : 'AI анализ хийхэд алдаа гарлаа');
+        } finally {
+            setAiLoading(false);
+        }
     }
 
     const MANDALA_PRICE = 4850000;
@@ -205,7 +226,42 @@ export default function CompetitorResearchPage() {
                 title="Өрсөлдөгчийн судалгаа"
                 subtitle="Зах зээл дэх өрсөлдөгчдийн үнэ, байршил, блок, төлбөрийн нөхцөл"
                 primaryAction={<Button onClick={openNew} variant="primary" size="md"><Plus className="w-4 h-4" /> Өрсөлдөгч нэмэх</Button>}
+                secondaryActions={
+                    competitors.length > 0 ? (
+                        <Button
+                            onClick={runAiAnalysis}
+                            variant="secondary"
+                            size="md"
+                            isLoading={aiLoading}
+                            disabled={aiLoading}
+                        >
+                            {!aiLoading && <Sparkles className="w-4 h-4" />}
+                            AI анализ
+                        </Button>
+                    ) : undefined
+                }
             />
+
+            {/* AI харьцуулсан анализ */}
+            {aiAnalysis !== null && (
+                <Card className="mb-5">
+                    <CardContent className="p-4">
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                                <Sparkles className="w-4 h-4 text-brand-strong" /> AI харьцуулсан анализ
+                            </h3>
+                            <button
+                                onClick={() => setAiAnalysis(null)}
+                                className="p-1.5 rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground"
+                                aria-label="Анализыг хаах"
+                            >
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
+                        <MarkdownMessage content={aiAnalysis} />
+                    </CardContent>
+                </Card>
+            )}
 
             {/* Зах зээл дэх байршуулалт (Мандала vs өрсөлдөгчид) */}
             {avgComp > 0 && (

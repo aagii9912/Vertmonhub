@@ -19,8 +19,11 @@ export interface ChartTooltipProps {
         payload?: Record<string, unknown>;
     }>;
     label?: React.ReactNode;
-    /** Утга форматлагч (жишээ: (v) => formatMNT(v)) */
-    formatter?: (value: number) => string;
+    /**
+     * Утга форматлагч (жишээ: (v) => formatMNT(v)). Хоёр дахь аргумент нь цувааны
+     * нэр — өөр масштабтай цуваануудыг (ComboChart) ялгаж форматлахад ашиглана.
+     */
+    formatter?: (value: number, name?: string) => string;
     /** Серийн нэр харуулах эсэх (1-ээс олон цуваатай үед хэрэгтэй). default true */
     showName?: boolean;
     /** Гарчгийн (label) дээр харагдах текст форматлагч */
@@ -71,7 +74,10 @@ export function ChartTooltip({
                         </span>
                         <span className="font-semibold tabular-nums text-foreground">
                             {formatter && typeof entry.value === 'number'
-                                ? formatter(entry.value)
+                                ? formatter(
+                                      entry.value,
+                                      typeof entry.name === 'string' ? entry.name : undefined,
+                                  )
                                 : defaultFormat(entry.value)}
                         </span>
                     </div>

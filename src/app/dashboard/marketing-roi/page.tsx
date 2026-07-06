@@ -15,6 +15,7 @@ import { Progress } from '@/components/ui/Progress';
 import { DataTable, Money, StatusPill, type DataTableColumn } from '@/components/ui/DataTable';
 import { ChartCard } from '@/components/ui/ChartCard';
 import { BarChart } from '@/components/charts/BarChart';
+import { ComboChart } from '@/components/charts/ComboChart';
 import {
     Select,
     SelectContent,
@@ -81,6 +82,18 @@ interface RoiData { campaigns: CampaignRoi[]; sources: unknown[]; totals: RoiTot
 
 interface SocialPost { id: string; content: string | null; likes: number; comments: number; shares: number; published_at: string | null; }
 interface SocialInsight { captured_at: string; reach: number; impressions: number; followers: number; }
+
+/** Маркетингийн нөлөөллийн сар бүрийн цуваа (/api/dashboard/marketing-roi/timeline) */
+interface TimelineMonth {
+    month: string;
+    label: string;
+    leads: number;
+    meetings: number;
+    activity: number;
+    spend: number;
+    /** ComboChart-ын Record<string, ...> өгөгдлийн шаардлагад нийцүүлнэ */
+    [key: string]: string | number;
+}
 
 const fmtMNT = (n: number): string => formatMNT(n, { compact: true });
 
@@ -160,6 +173,7 @@ export default function MarketingROIPage() {
     const [campaignsError, setCampaignsError] = useState<string | null>(null);
     const [roi, setRoi] = useState<RoiData | null>(null);
     const [social, setSocial] = useState<{ posts: SocialPost[]; insights: SocialInsight[] } | null>(null);
+    const [timeline, setTimeline] = useState<TimelineMonth[]>([]);
     const [syncingSocial, setSyncingSocial] = useState(false);
 
     useEffect(() => {
@@ -209,6 +223,19 @@ export default function MarketingROIPage() {
                 if (res.ok) {
                     const socialJson = await res.json();
                     setSocial({ posts: socialJson.posts || [], insights: socialJson.insights || [] });
+                }
+            } catch {
+                // best-effort
+            }
+
+            // Маркетингийн нөлөөллийн сар бүрийн цуваа — best-effort
+            try {
+                const res = await fetch('/api/dashboard/marketing-roi/timeline', {
+                    headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
+                });
+                if (res.ok) {
+                    const json = await res.json();
+                    setTimeline(json.months || []);
                 }
             } catch {
                 // best-effort
@@ -674,6 +701,27 @@ export default function MarketingROIPage() {
                             </div>
                         )}
                     </Card>
+
+                    {/* Marketing impact: идэвхжүүлэлт vs лид/уулзалт */}
+                    {timeline.length > 0 && (
+                        <ChartCard
+                            title="Маркетингийн нөлөөлөл"
+                            subtitle="Идэвхжүүлэлт (пост, кампанит ажил) лид ба уулзалтын тоонд хэрхэн нөлөөлж буй харьцуулалт"
+                            height={300}
+                        >
+                            <ComboChart
+                                data={timeline}
+                                xKey="label"
+                                bars={[
+                                    { key: 'leads', name: 'Лийд' },
+                                    { key: 'meetings', name: 'Уулзалт' },
+                                    { key: 'activity', name: 'Идэвхжүүлэлт' },
+                                ]}
+                                line={{ key: 'spend', name: 'Зарын зардал' }}
+                                lineFormatter={fmtMNT}
+                            />
+                        </ChartCard>
+                    )}
 
                     {/* Monthly Trend */}
                     <ChartCard title="Сар бүрийн лийд" height={240}>

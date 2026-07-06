@@ -304,6 +304,15 @@ NEXT_PUBLIC_VAPID_PUBLIC_KEY=
 VAPID_PRIVATE_KEY=
 VAPID_EMAIL=
 
+# Email (Resend) — EMAIL_FROM нь verify хийсэн домэйн (ж: mandala-garden.mn) байх ёстой
+RESEND_API_KEY=
+EMAIL_FROM=
+DIGEST_EMAIL=
+
+# Гадаад landing page-ээс лид хүлээн авах (/api/leads CORS)
+LEAD_ALLOWED_ORIGINS=
+LEAD_WELCOME_SITE_URL=
+
 # Sentry (optional)
 SENTRY_DSN=
 SENTRY_AUTH_TOKEN=

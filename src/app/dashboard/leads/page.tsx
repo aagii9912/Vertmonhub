@@ -72,7 +72,19 @@ const sourceLabels: Record<LeadSource, string> = {
     phone: 'Утас',
     facebook_ads: 'Facebook Ads',
     google_ads: 'Google Ads',
+    tv: 'ТВ',
+    meeting: 'Уулзалт',
+    event: 'Өдөрлөг',
     other: 'Бусад',
+};
+
+/** Хугацааны шүүлтүүр — API-ийн ?period= утгуудтай тааруулна. */
+const periodLabels: Record<string, string> = {
+    all: 'Бүх хугацаа',
+    week: 'Сүүлийн 7 хоног',
+    month: 'Сүүлийн сар',
+    quarter: 'Сүүлийн улирал',
+    year: 'Сүүлийн жил',
 };
 
 interface LeadStats {
@@ -105,6 +117,8 @@ export default function LeadsPage() {
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState<LeadStatus | 'all'>('all');
+    const [sourceFilter, setSourceFilter] = useState<LeadSource | 'all'>('all');
+    const [periodFilter, setPeriodFilter] = useState<string>('all');
     const [stats, setStats] = useState<LeadStats>({
         total: 0,
         new: 0,
@@ -120,7 +134,10 @@ export default function LeadsPage() {
         const fetchLeads = async () => {
             setLoading(true);
             try {
-                const res = await fetch(`/api/dashboard/leads?status=${statusFilter}`, {
+                const params = new URLSearchParams({ status: statusFilter });
+                if (sourceFilter !== 'all') params.set('source', sourceFilter);
+                if (periodFilter !== 'all') params.set('period', periodFilter);
+                const res = await fetch(`/api/dashboard/leads?${params.toString()}`, {
                     headers: { 'x-shop-id': shop.id },
                 });
                 if (!res.ok) throw new Error('Failed to fetch leads');
@@ -152,7 +169,7 @@ export default function LeadsPage() {
         };
 
         fetchLeads();
-    }, [shop?.id, statusFilter]);
+    }, [shop?.id, statusFilter, sourceFilter, periodFilter]);
 
     const filteredLeads = leads.filter(
         (l) =>
@@ -434,10 +451,17 @@ export default function LeadsPage() {
                     onChange: setSearchQuery,
                     placeholder: 'Нэр, утас, имэйлээр хайх...',
                 }}
-                showClear={searchQuery !== '' || statusFilter !== 'all'}
+                showClear={
+                    searchQuery !== '' ||
+                    statusFilter !== 'all' ||
+                    sourceFilter !== 'all' ||
+                    periodFilter !== 'all'
+                }
                 onClear={() => {
                     setSearchQuery('');
                     setStatusFilter('all');
+                    setSourceFilter('all');
+                    setPeriodFilter('all');
                 }}
             >
                 <label className="flex items-center gap-2 text-xs">
@@ -452,6 +476,46 @@ export default function LeadsPage() {
                         <SelectContent>
                             <SelectItem value="all">Бүх төлөв</SelectItem>
                             {Object.entries(statusConfig).map(([key, { label }]) => (
+                                <SelectItem key={key} value={key}>
+                                    {label}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </label>
+                <label className="flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground/80 whitespace-nowrap">Эх үүсвэр</span>
+                    <Select
+                        value={sourceFilter}
+                        onValueChange={(value) => setSourceFilter(value as LeadSource | 'all')}
+                    >
+                        <SelectTrigger
+                            className="h-9 w-auto min-w-36 text-sm"
+                            aria-label="Эх үүсвэрээр шүүх"
+                        >
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectItem value="all">Бүх эх үүсвэр</SelectItem>
+                            {Object.entries(sourceLabels).map(([key, label]) => (
+                                <SelectItem key={key} value={key}>
+                                    {label}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+                </label>
+                <label className="flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground/80 whitespace-nowrap">Хугацаа</span>
+                    <Select value={periodFilter} onValueChange={setPeriodFilter}>
+                        <SelectTrigger
+                            className="h-9 w-auto min-w-36 text-sm"
+                            aria-label="Хугацаагаар шүүх"
+                        >
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {Object.entries(periodLabels).map(([key, label]) => (
                                 <SelectItem key={key} value={key}>
                                     {label}
                                 </SelectItem>
