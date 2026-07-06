@@ -10,6 +10,7 @@ import {
 import { logger } from '@/lib/utils/logger';
 import { sendMetaCapiEvent, buildFbc } from '@/lib/marketing/meta-capi';
 import { sendLeadWelcomeEmail } from '@/lib/email/email';
+import { getUserId } from '@/lib/auth/supabase-auth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -122,10 +123,22 @@ async function handleLeadPost(request: NextRequest): Promise<NextResponse> {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
         }
 
+        // Нэвтэрсэн ажилтан уу? (таблет дээр газар дээр нь бүртгэж буй менежер)
+        // Байвал rate limit + captcha алгасна — нэг IP-ээс олон харилцагч
+        // дараалан бүртгэхэд 5/цаг хязгаар саад болдог байсан.
+        let staffUserId: string | null = null;
+        try {
+            staffUserId = await getUserId();
+        } catch {
+            staffUserId = null;
+        }
+
         const clientIp = getClientIdentifier(request);
-        const rl = await checkRateLimit(`leads:${clientIp}`, LEAD_RATE_LIMIT);
-        if (!rl.allowed) {
-            return createRateLimitResponse(rl.resetAt);
+        if (!staffUserId) {
+            const rl = await checkRateLimit(`leads:${clientIp}`, LEAD_RATE_LIMIT);
+            if (!rl.allowed) {
+                return createRateLimitResponse(rl.resetAt);
+            }
         }
 
         const { supabaseAdmin } = await import('@/lib/supabase');
@@ -147,16 +160,21 @@ async function handleLeadPost(request: NextRequest): Promise<NextResponse> {
             return NextResponse.json({ success: true });
         }
 
-        const captchaOk = await verifyTurnstile(turnstileToken, clientIp);
-        if (!captchaOk) {
-            return NextResponse.json({ error: 'Captcha verification failed' }, { status: 400 });
+        if (!staffUserId) {
+            const captchaOk = await verifyTurnstile(turnstileToken, clientIp);
+            if (!captchaOk) {
+                return NextResponse.json({ error: 'Captcha verification failed' }, { status: 400 });
+            }
         }
 
+        // Менежерийн түргэн бүртгэлд (staffUserId) AI хариу шаардлагагүй —
+        // дараалсан бүртгэлийн хурдыг хадгална.
         let aiResponse = '';
-        try {
-            const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
+        if (!staffUserId) {
+            try {
+                const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
 
-            const prompt = `Чи Vertmon компанийн найрсаг менежер шүү! 😊
+                const prompt = `Чи Vertmon компанийн найрсаг менежер шүү! 😊
 
 Одоо ${name}${company ? ` (${company}-с)` : ''} Vertmon-ий шийдлийн талаар сонирхож байна. Түүнд ээлтэй, хүн шиг хариулт өг.
 
@@ -174,15 +192,16 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
 
 Хариулт:`;
 
-            const result = await model.generateContent(prompt);
-            aiResponse = result.response.text();
-        } catch (aiError) {
-            logger.error('AI response error', { error: aiError });
-            aiResponse = `Сайн байна уу ${name}! 😊
+                const result = await model.generateContent(prompt);
+                aiResponse = result.response.text();
+            } catch (aiError) {
+                logger.error('AI response error', { error: aiError });
+                aiResponse = `Сайн байна уу ${name}! 😊
 
 Таны хүсэлтийг хүлээн авлаа. Бид тантай удахгүй холбогдоно.
 
 Яаралтай байвал ${phone} руу залгаарай!`;
+            }
         }
 
         const inferredSource = source
@@ -251,6 +270,30 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
                 { error: 'Хүсэлт илгээхэд алдаа гарлаа' },
                 { status: 500 }
             );
+        }
+
+        // Нэвтэрсэн менежер бүртгэсэн бол нэрийг нь лидэд тэмдэглэнэ (best-effort —
+        // sales_manager_name багана байхгүй орчинд бүртгэлийг унагахгүй).
+        if (staffUserId && data?.id) {
+            try {
+                const { data: profile } = await supabase
+                    .from('user_profiles')
+                    .select('full_name, email')
+                    .eq('id', staffUserId)
+                    .maybeSingle();
+                const managerName = profile?.full_name || profile?.email || null;
+                if (managerName) {
+                    const { error: stampErr } = await supabase
+                        .from('leads')
+                        .update({ sales_manager_name: managerName })
+                        .eq('id', data.id);
+                    if (stampErr) {
+                        logger.warn('sales_manager_name stamp skipped', { error: stampErr.message });
+                    }
+                }
+            } catch (stampError) {
+                logger.warn('sales_manager_name stamp failed', { error: stampError });
+            }
         }
 
         // Угталтын имэйл (Resend, EMAIL_FROM домэйнээс) — best-effort,

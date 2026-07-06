@@ -57,8 +57,14 @@ const sourceLabels: Record<string, string> = {
     website: 'Вебсайт',
     referral: 'Танилын',
     phone: 'Утас',
-    facebook: 'Facebook Ads',
+    facebook: 'Facebook',
     google: 'Google Ads',
+    facebook_ads: 'Facebook Ads',
+    google_ads: 'Google Ads',
+    tv: 'ТВ',
+    meeting: 'Уулзалт',
+    event: 'Өдөрлөг',
+    board: 'Самбар',
     other: 'Бусад',
 };
 

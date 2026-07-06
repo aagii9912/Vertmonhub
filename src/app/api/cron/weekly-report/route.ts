@@ -12,7 +12,8 @@ import { logger } from '@/lib/utils/logger';
  */
 
 const SOURCE_LABELS: Record<string, string> = {
-    messenger: 'Facebook',
+    messenger: 'Messenger',
+    facebook: 'Facebook',
     instagram: 'Instagram',
     website: 'Вэбсайт',
     referral: 'Зөвлөмж',
@@ -22,6 +23,7 @@ const SOURCE_LABELS: Record<string, string> = {
     tv: 'ТВ',
     meeting: 'Уулзалт',
     event: 'Өдөрлөг',
+    board: 'Самбар',
     other: 'Бусад',
 };
 

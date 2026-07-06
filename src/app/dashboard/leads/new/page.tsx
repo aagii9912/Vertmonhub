@@ -155,6 +155,7 @@ export default function NewLeadPage() {
                                     </SelectTrigger>
                                     <SelectContent>
                                         <SelectItem value="messenger">Messenger</SelectItem>
+                                        <SelectItem value="facebook">Facebook</SelectItem>
                                         <SelectItem value="instagram">Instagram</SelectItem>
                                         <SelectItem value="website">Вэбсайт</SelectItem>
                                         <SelectItem value="referral">Зөвлөмж</SelectItem>
@@ -162,6 +163,7 @@ export default function NewLeadPage() {
                                         <SelectItem value="tv">ТВ</SelectItem>
                                         <SelectItem value="meeting">Уулзалт</SelectItem>
                                         <SelectItem value="event">Өдөрлөг</SelectItem>
+                                        <SelectItem value="board">Самбар</SelectItem>
                                         <SelectItem value="other">Бусад</SelectItem>
                                     </SelectContent>
                                 </Select>

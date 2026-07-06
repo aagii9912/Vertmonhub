@@ -66,6 +66,7 @@ const statusConfig: Record<LeadStatus, { variant: StatusPillVariant; label: stri
 
 const sourceLabels: Record<LeadSource, string> = {
     messenger: 'Messenger',
+    facebook: 'Facebook',
     instagram: 'Instagram',
     website: 'Вэбсайт',
     referral: 'Зөвлөмж',
@@ -75,6 +76,7 @@ const sourceLabels: Record<LeadSource, string> = {
     tv: 'ТВ',
     meeting: 'Уулзалт',
     event: 'Өдөрлөг',
+    board: 'Самбар',
     other: 'Бусад',
 };
 
