@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Shield, ChevronDown, Search, UserPlus, Check, X, Loader2, Eye, EyeOff, AlertCircle, Trash2, Link as LinkIcon, Copy, Mail } from 'lucide-react';
+import { Shield, ChevronDown, Search, UserPlus, Check, X, Loader2, Eye, EyeOff, AlertCircle, Trash2, Link as LinkIcon, Copy, Mail, KeyRound } from 'lucide-react';
 
 interface UserWithRole {
     id: string;
@@ -53,6 +53,13 @@ export default function AdminUsersPage() {
         role: 'viewer',
         shop_id: '',
     });
+
+    // Password reset modal
+    const [pwUser, setPwUser] = useState<UserWithRole | null>(null);
+    const [pwValue, setPwValue] = useState('');
+    const [pwShow, setPwShow] = useState(false);
+    const [pwSaving, setPwSaving] = useState(false);
+    const [pwError, setPwError] = useState<string | null>(null);
 
     // Invite link modal
     const [showInvite, setShowInvite] = useState(false);
@@ -150,8 +157,13 @@ export default function AdminUsersPage() {
                 setUsers(prev => [...prev, data.user]);
                 setShowCreate(false);
                 setNewUser({ email: '', password: '', full_name: '', role: 'viewer', shop_id: '' });
-                setCreateSuccess(data.warning ? `Хэрэглэгч үүслээ (анхааруулга: ${data.warning})` : 'Хэрэглэгч амжилттай үүсгэлээ');
-                setTimeout(() => setCreateSuccess(null), 5000);
+                const verifyNote = data.login_verified ? ' Нэвтрэлт шалгагдлаа ✓' : '';
+                setCreateSuccess(
+                    data.warning
+                        ? `Хэрэглэгч үүслээ (анхааруулга: ${data.warning})`
+                        : `Хэрэглэгч амжилттай үүсгэлээ.${verifyNote}`,
+                );
+                setTimeout(() => setCreateSuccess(null), 8000);
             } else {
                 setCreateError(data.error || 'Алдаа гарлаа');
             }
@@ -198,6 +210,40 @@ export default function AdminUsersPage() {
             setTimeout(() => setCopied(false), 2000);
         } catch {
             // clipboard блоклогдсон бол input-ыг сонгох
+        }
+    }
+
+    async function resetPassword() {
+        if (!pwUser) return;
+        if (pwValue.trim().length < 8) {
+            setPwError('Нууц үг хамгийн багадаа 8 тэмдэгт');
+            return;
+        }
+        setPwSaving(true);
+        setPwError(null);
+        try {
+            const res = await fetch('/api/admin/users', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: pwUser.id, password: pwValue }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setPwUser(null);
+                setPwValue('');
+                setCreateSuccess(
+                    data.warning
+                        ? `Нууц үг шинэчлэгдлээ (анхааруулга: ${data.warning})`
+                        : 'Нууц үг шинэчлэгдлээ. Нэвтрэлт шалгагдлаа ✓',
+                );
+                setTimeout(() => setCreateSuccess(null), 8000);
+            } else {
+                setPwError(data.error || 'Алдаа гарлаа');
+            }
+        } catch {
+            setPwError('Сүлжээний алдаа');
+        } finally {
+            setPwSaving(false);
         }
     }
 
@@ -364,6 +410,14 @@ export default function AdminUsersPage() {
                                                         Дүр солих
                                                     </button>
                                                 )}
+                                                <button
+                                                    onClick={() => { setPwUser(user); setPwValue(''); setPwError(null); setPwShow(false); }}
+                                                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-surface-2 rounded-lg transition-colors"
+                                                    title="Нууц үг тавих / шинэчлэх"
+                                                >
+                                                    <KeyRound className="w-3.5 h-3.5" />
+                                                    Нууц үг
+                                                </button>
                                                 <button
                                                     onClick={() => setDeleteConfirm(user)}
                                                     className="p-1.5 text-muted-foreground/70 hover:text-status-danger hover:bg-status-danger-soft rounded-lg transition-colors"
@@ -625,6 +679,83 @@ export default function AdminUsersPage() {
                             >
                                 {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
                                 Үүсгэх
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Password Reset Modal */}
+            {pwUser && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-surface rounded-2xl w-full max-w-md shadow-2xl">
+                        <div className="flex items-center justify-between p-6 border-b border-border/60">
+                            <div className="flex items-center gap-2">
+                                <KeyRound className="w-5 h-5 text-brand-strong" />
+                                <h2 className="text-lg font-bold text-foreground">Нууц үг тавих / шинэчлэх</h2>
+                            </div>
+                            <button onClick={() => setPwUser(null)} className="p-2 hover:bg-surface-2 rounded-xl">
+                                <X className="w-5 h-5 text-muted-foreground" />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            {pwError && (
+                                <div className="p-3 bg-status-danger-soft border border-status-danger/30 rounded-lg text-status-danger text-sm flex items-center gap-2">
+                                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                                    {pwError}
+                                </div>
+                            )}
+
+                            <p className="text-sm text-muted-foreground">
+                                <span className="font-medium text-foreground">{pwUser.full_name || pwUser.email}</span>{' '}
+                                ({pwUser.email}) хэрэглэгчид шинэ нууц үг тавина. Урилгаар үүссэн
+                                (нууц үггүй) бүртгэлд нэвтрэх нууц үг өгөхөд мөн энэ хэсгийг ашиглана.
+                            </p>
+
+                            <div>
+                                <label className="block text-sm font-medium text-foreground mb-1">
+                                    Шинэ нууц үг <span className="text-status-danger">*</span>
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type={pwShow ? 'text' : 'password'}
+                                        autoComplete="new-password"
+                                        value={pwValue}
+                                        onChange={e => setPwValue(e.target.value)}
+                                        className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm pr-10 focus:ring-2 focus:ring-brand focus:border-brand"
+                                        placeholder="Хамгийн багадаа 8 тэмдэгт"
+                                        minLength={8}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setPwShow(p => !p)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground/70 hover:text-muted-foreground"
+                                    >
+                                        {pwShow ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                    </button>
+                                </div>
+                                <p className="text-xs text-muted-foreground/70 mt-1">
+                                    Хадгалсны дараа систем нэвтрэлтийг автоматаар шалгаж баталгаажуулна.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end gap-3 p-6 border-t border-border/60">
+                            <button
+                                onClick={() => setPwUser(null)}
+                                disabled={pwSaving}
+                                className="px-4 py-2.5 text-sm text-foreground bg-surface-2 rounded-lg hover:bg-surface-3 disabled:opacity-50"
+                            >
+                                Цуцлах
+                            </button>
+                            <button
+                                onClick={resetPassword}
+                                disabled={pwSaving || pwValue.trim().length < 8}
+                                className="flex items-center gap-2 px-5 py-2.5 text-sm bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                            >
+                                {pwSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
+                                Хадгалах
                             </button>
                         </div>
                     </div>

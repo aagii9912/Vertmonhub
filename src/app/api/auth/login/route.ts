@@ -13,9 +13,11 @@ import { createClient } from '@supabase/supabase-js';
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
-        // Имэйлийн үл үзэгдэх хоосон зай нэвтрэлтийг санамсаргүй унагадаг
+        // Имэйл/нууц үгийн үл үзэгдэх хоосон зай нэвтрэлтийг санамсаргүй унагадаг.
+        // Нууц үгийг үүсгэх тал (POST /api/admin/users) trim хийдэг тул энд trim
+        // хийх нь аюулгүй — чатаар хуулахад ордог сүүлчийн зай/мөрийг арилгана.
         const email = typeof body.email === 'string' ? body.email.trim() : body.email;
-        const password = body.password;
+        const password = typeof body.password === 'string' ? body.password.trim() : body.password;
 
         if (!email || !password) {
             return NextResponse.json(
@@ -53,13 +55,22 @@ export async function POST(request: NextRequest) {
         });
 
         if (error || !data.user) {
-            // Хэрэглэгчид ерөнхий мессеж харуулна, харин жинхэнэ шалтгааныг
-            // (rate limit, provider disabled г.м) серверийн логт үлдээнэ
             console.error('signInWithPassword failed:', error?.code, error?.message);
-            return NextResponse.json(
-                { error: 'Имэйл эсвэл нууц үг буруу байна' },
-                { status: 401 },
-            );
+            // Оношлогдохуйц тохиолдлуудыг ялгаж мэдээлнэ — бүгдийг "нууц үг буруу"
+            // болгож нугалснаас админ жинхэнэ шалтгааныг олж чаддаггүй байв.
+            const code = error?.code || '';
+            const message = error?.message || '';
+            let userError = 'Имэйл эсвэл нууц үг буруу байна';
+            if (code === 'email_not_confirmed') {
+                userError = 'Имэйл баталгаажаагүй байна — админд хандаж нууц үгээ шинэчлүүлнэ үү';
+            } else if (code === 'over_request_rate_limit' || error?.status === 429) {
+                userError = 'Хэт олон оролдлого хийгдлээ — хэсэг хүлээгээд дахин оролдоно уу';
+            } else if (code === 'email_provider_disabled' || /logins are disabled/i.test(message)) {
+                userError = 'Имэйл/нууц үгээр нэвтрэх идэвхгүй байна — админ Supabase Auth тохиргоог шалгана уу';
+            } else if (code === 'user_banned') {
+                userError = 'Энэ бүртгэл түр хаагдсан байна — админд хандана уу';
+            }
+            return NextResponse.json({ error: userError, code: code || undefined }, { status: 401 });
         }
 
         const user = data.user;

@@ -1,8 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logAdminAudit } from '@/lib/admin/audit';
 import { getAdminUser } from '@/lib/admin/auth';
+
+/**
+ * Үүсгэсэн/шинэчилсэн нууц үгээр нэвтрэлт БОДИТООР ажиллаж буйг сервер талд
+ * шалгана (anon key, session хадгалахгүй). Ингэснээр "нууц үг өгсөн ч орохгүй"
+ * асуудал үүсгэх үед нь шууд илэрч, админд жинхэнэ шалтгаан нь харагдана.
+ */
+async function verifyLoginWorks(
+    email: string,
+    password: string,
+): Promise<{ ok: boolean; reason?: string }> {
+    try {
+        const anon = createClient(
+            process.env.NEXT_PUBLIC_SUPABASE_URL!.trim(),
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!.trim(),
+            { auth: { persistSession: false, autoRefreshToken: false } },
+        );
+        const { data, error } = await anon.auth.signInWithPassword({ email, password });
+        if (error || !data?.user) {
+            return { ok: false, reason: error?.code || error?.message || 'unknown' };
+        }
+        return { ok: true };
+    } catch (e) {
+        return { ok: false, reason: e instanceof Error ? e.message : 'network' };
+    }
+}
 
 /**
  * GET /api/admin/users — List all users with roles
@@ -133,7 +159,12 @@ export async function POST(request: NextRequest) {
 
         if (createError) {
             if (createError.message?.includes('already been registered') || createError.message?.includes('already exists')) {
-                return NextResponse.json({ error: 'Энэ имэйл хаягаар бүртгэл үүссэн байна' }, { status: 409 });
+                // Урилгаар үүссэн (нууц үггүй) бүртгэл байх магадлалтай — админ
+                // жагсаалтаас "Нууц үг" товчоор нууц үг тавьж өгч болно.
+                return NextResponse.json(
+                    { error: 'Энэ имэйл хаягаар бүртгэл үүссэн байна. Жагсаалтаас тухайн хэрэглэгчийн "Нууц үг" товчийг ашиглан нууц үг тавьж өгнө үү.' },
+                    { status: 409 },
+                );
             }
             console.error('Create user error:', createError);
             return NextResponse.json({ error: 'Хэрэглэгч үүсгэх үед алдаа: ' + createError.message }, { status: 500 });
@@ -184,10 +215,18 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        await logAdminAudit({ actorId: userId, action: 'user.create', targetId: newUserId, meta: { email, role: role || 'viewer' } });
+        // Нэвтрэлт бодитоор ажиллаж буйг шууд шалгана — асуудал байвал үүсгэх
+        // мөчид нь админд харагдана (хэрэглэгч рүү очиж унахаас өмнө).
+        const verify = await verifyLoginWorks(email, password);
+        if (!verify.ok) {
+            warnings.push(`Нэвтрэлтийн шалгалт амжилтгүй (${verify.reason}) — Supabase Auth тохиргоог шалгана уу`);
+        }
+
+        await logAdminAudit({ actorId: userId, action: 'user.create', targetId: newUserId, meta: { email, role: role || 'viewer', login_verified: verify.ok } });
 
         return NextResponse.json({
             success: true,
+            login_verified: verify.ok,
             warning: warnings.length > 0 ? warnings.join(' / ') : null,
             user: {
                 id: newUserId,
@@ -200,6 +239,75 @@ export async function POST(request: NextRequest) {
     } catch (error) {
         console.error('POST /api/admin/users full error:', error);
         return safeErrorResponse(error, 'Хэрэглэгч үүсгэх үед алдаа гарлаа');
+    }
+}
+
+/**
+ * PUT /api/admin/users — Одоо байгаа хэрэглэгчийн нууц үгийг шинэчлэх (super_admin).
+ *
+ * "Нууц үг өгсөн ч орохгүй" гацааны гол шийдэл: урилгаар үүссэн (нууц үггүй)
+ * эсвэл нууц үгээ мартсан хэрэглэгчид админ шинэ нууц үг тавьж өгнө.
+ * email_confirm: true давхар тавигдана — баталгаажаагүй имэйл нэвтрэлтийг
+ * блоклохоос сэргийлнэ. Дараа нь нэвтрэлт бодитоор ажиллаж буйг шалгана.
+ */
+export async function PUT(request: NextRequest) {
+    try {
+        const userId = await getUserId();
+        if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        const supabase = supabaseAdmin();
+
+        const admin = await getAdminUser();
+        if (!admin || admin.role !== 'super_admin') {
+            return NextResponse.json({ error: 'Super admin эрх шаардлагатай' }, { status: 403 });
+        }
+
+        const body = await request.json();
+        const targetUserId = body.userId;
+        // Үл үзэгдэх хоосон зайг арилгана (үүсгэх талтай ижил дүрэм)
+        const password = typeof body.password === 'string' ? body.password.trim() : body.password;
+
+        if (!targetUserId || !password) {
+            return NextResponse.json({ error: 'userId болон нууц үг шаардлагатай' }, { status: 400 });
+        }
+        if (password.length < 8) {
+            return NextResponse.json({ error: 'Нууц үг хамгийн багадаа 8 тэмдэгт байх ёстой' }, { status: 400 });
+        }
+
+        const { data: updated, error: updateError } = await supabase.auth.admin.updateUserById(
+            targetUserId,
+            { password, email_confirm: true },
+        );
+        if (updateError || !updated?.user) {
+            console.error('Password reset error:', updateError);
+            return NextResponse.json(
+                { error: 'Нууц үг шинэчлэх үед алдаа: ' + (updateError?.message || 'тодорхойгүй') },
+                { status: 500 },
+            );
+        }
+
+        const email = updated.user.email || '';
+        const verify = email
+            ? await verifyLoginWorks(email, password)
+            : { ok: false, reason: 'no-email' };
+
+        await logAdminAudit({
+            actorId: userId,
+            action: 'user.password_reset',
+            targetId: targetUserId,
+            meta: { email, login_verified: verify.ok },
+        });
+
+        return NextResponse.json({
+            success: true,
+            login_verified: verify.ok,
+            warning: verify.ok
+                ? null
+                : `Нэвтрэлтийн шалгалт амжилтгүй (${verify.reason}) — Supabase Auth тохиргоог шалгана уу`,
+        });
+    } catch (error) {
+        console.error('PUT /api/admin/users error:', error);
+        return safeErrorResponse(error, 'Нууц үг шинэчлэх үед алдаа гарлаа');
     }
 }
 
