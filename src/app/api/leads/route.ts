@@ -9,6 +9,7 @@ import {
 } from '@/lib/utils/rate-limiter';
 import { logger } from '@/lib/utils/logger';
 import { sendMetaCapiEvent, buildFbc } from '@/lib/marketing/meta-capi';
+import { sendLeadWelcomeEmail } from '@/lib/email/email';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -17,22 +18,75 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 const LEAD_RATE_LIMIT = { windowMs: 60 * 60 * 1000, maxRequests: 5 };
 
-function isAllowedOrigin(request: NextRequest): boolean {
-    const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL;
-    if (!allowedOrigin) return true;
+/**
+ * Зөвшөөрөгдсөн origin-ы host-ууд: NEXT_PUBLIC_APP_URL дээр нэмээд
+ * LEAD_ALLOWED_ORIGINS (таслалаар тусгаарлагдсан, ж:
+ * "https://mandala-garden.mn,https://www.mandala-garden.mn") — гадаад landing
+ * page-ээс лид хүлээн авахад ашиглана. Аль нь ч тохируулагдаагүй бол бүгдийг
+ * зөвшөөрнө (dev горим).
+ */
+function allowedHosts(): string[] {
+    const raw = [process.env.NEXT_PUBLIC_APP_URL, process.env.LEAD_ALLOWED_ORIGINS]
+        .filter(Boolean)
+        .join(',');
+    return raw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((u) => {
+            try {
+                return new URL(u).host;
+            } catch {
+                return '';
+            }
+        })
+        .filter(Boolean);
+}
 
-    const origin = request.headers.get('origin');
-    const referer = request.headers.get('referer');
-    const source = origin || referer;
+function isAllowedOrigin(request: NextRequest): boolean {
+    const hosts = allowedHosts();
+    if (hosts.length === 0) return true;
+
+    const source = request.headers.get('origin') || request.headers.get('referer');
     if (!source) return false;
 
     try {
-        const sourceHost = new URL(source).host;
-        const allowedHost = new URL(allowedOrigin).host;
-        return sourceHost === allowedHost;
+        return hosts.includes(new URL(source).host);
     } catch {
         return false;
     }
+}
+
+/**
+ * CORS толгойнууд — зөвшөөрөгдсөн гадаад origin-д (mandala-garden.mn г.м)
+ * браузерын preflight/fetch хариуг нээнэ.
+ */
+function corsHeaders(request: NextRequest): Record<string, string> {
+    const origin = request.headers.get('origin');
+    if (!origin) return {};
+
+    const hosts = allowedHosts();
+    let allowed = hosts.length === 0;
+    if (!allowed) {
+        try {
+            allowed = hosts.includes(new URL(origin).host);
+        } catch {
+            allowed = false;
+        }
+    }
+    if (!allowed) return {};
+
+    return {
+        'Access-Control-Allow-Origin': origin,
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        Vary: 'Origin',
+    };
+}
+
+/** Гадаад landing page-ийн fetch preflight (Content-Type: application/json). */
+export async function OPTIONS(request: NextRequest) {
+    return new NextResponse(null, { status: 204, headers: corsHeaders(request) });
 }
 
 async function verifyTurnstile(token: string | null | undefined, clientIp: string): Promise<boolean> {
@@ -55,6 +109,14 @@ async function verifyTurnstile(token: string | null | undefined, clientIp: strin
 }
 
 export async function POST(request: NextRequest) {
+    const res = await handleLeadPost(request);
+    for (const [key, value] of Object.entries(corsHeaders(request))) {
+        res.headers.set(key, value);
+    }
+    return res;
+}
+
+async function handleLeadPost(request: NextRequest): Promise<NextResponse> {
     try {
         if (!isAllowedOrigin(request)) {
             return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -138,7 +200,7 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
         // Public form — эзэн shop-ийг тодорхойлох (одоогоор нэг tenant: хамгийн эртний shop)
         const { data: primaryShop, error: shopError } = await supabase
             .from('shops')
-            .select('id')
+            .select('id, name, phone')
             .order('created_at', { ascending: true })
             .limit(1)
             .maybeSingle();
@@ -189,6 +251,22 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
                 { error: 'Хүсэлт илгээхэд алдаа гарлаа' },
                 { status: 500 }
             );
+        }
+
+        // Угталтын имэйл (Resend, EMAIL_FROM домэйнээс) — best-effort,
+        // алдаа гарсан ч лидийн бүртгэлийг унагахгүй.
+        if (email) {
+            try {
+                await sendLeadWelcomeEmail({
+                    to: email,
+                    name,
+                    shopName: primaryShop.name || undefined,
+                    phone: primaryShop.phone || null,
+                    websiteUrl: process.env.LEAD_WELCOME_SITE_URL || null,
+                });
+            } catch (emailError) {
+                logger.warn('Lead welcome email failed', { error: emailError });
+            }
         }
 
         // Meta Conversions API — сервер талаас Lead event (best-effort)

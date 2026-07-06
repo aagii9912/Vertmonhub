@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -8,6 +8,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { ChartCard } from '@/components/ui/ChartCard';
 import { BarChart } from '@/components/charts/BarChart';
+import { DonutChart } from '@/components/charts/DonutChart';
+import { ChartExportButton } from '@/components/charts/ChartExportButton';
 import {
     Users,
     Target,
@@ -58,13 +60,20 @@ const sourceLabels: Record<string, string> = {
     website: 'Вэбсайт',
     referral: 'Зөвлөмж',
     phone: 'Утас',
+    facebook_ads: 'Facebook Ads',
+    google_ads: 'Google Ads',
+    tv: 'ТВ',
+    meeting: 'Уулзалт',
+    event: 'Өдөрлөг',
     other: 'Бусад',
 };
 
 export default function LeadsReport() {
     const { shop } = useAuth();
-    type Period = 'today' | 'week' | 'month' | 'year';
+    type Period = 'today' | 'week' | 'month' | 'quarter' | 'year';
     const [period, setPeriod] = useState<Period>('month');
+    const sourceChartRef = useRef<HTMLDivElement>(null);
+    const sourceBarChartRef = useRef<HTMLDivElement>(null);
     const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState<LeadStats>({ total: 0, won: 0, inProgress: 0, conversionRate: 0 });
     const [sourceData, setSourceData] = useState<SourceData[]>([]);
@@ -98,6 +107,7 @@ export default function LeadsReport() {
                 if (period === 'today') start.setHours(0, 0, 0, 0);
                 else if (period === 'week') start.setDate(now.getDate() - 7);
                 else if (period === 'month') start.setMonth(now.getMonth() - 1);
+                else if (period === 'quarter') start.setMonth(now.getMonth() - 3);
                 else start.setFullYear(now.getFullYear() - 1);
 
                 const { data: leads, error } = await supabase
@@ -221,6 +231,7 @@ export default function LeadsReport() {
                     { value: 'today', label: 'Өнөөдөр' },
                     { value: 'week', label: '7 хоног' },
                     { value: 'month', label: 'Сар' },
+                    { value: 'quarter', label: 'Улирал' },
                     { value: 'year', label: 'Жил' },
                 ].map((option) => (
                     <button
@@ -262,7 +273,44 @@ export default function LeadsReport() {
             </StatBar>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Source Analysis */}
+                {/* Source Analysis — pie */}
+                {sourceData.length === 0 ? (
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <PieChart className="w-5 h-5 text-brand" />
+                                Сувгийн задаргаа
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="text-sm text-muted-foreground text-center py-8">Мэдээлэл байхгүй</p>
+                        </CardContent>
+                    </Card>
+                ) : (
+                    <div ref={sourceChartRef}>
+                        <ChartCard
+                            title="Сувгийн задаргаа"
+                            subtitle="Эх сурвалж тус бүрийн эзлэх хувь"
+                            height={300}
+                            actions={
+                                <ChartExportButton
+                                    targetRef={sourceChartRef}
+                                    fileName={`сувгийн_задаргаа_${period}`}
+                                />
+                            }
+                        >
+                            <DonutChart
+                                data={sourceData.map((item) => ({
+                                    name: item.source,
+                                    value: item.count,
+                                }))}
+                                centerLabel="Нийт"
+                            />
+                        </ChartCard>
+                    </div>
+                )}
+
+                {/* Source Analysis — bar */}
                 {sourceData.length === 0 ? (
                     <Card>
                         <CardHeader>
@@ -276,60 +324,68 @@ export default function LeadsReport() {
                         </CardContent>
                     </Card>
                 ) : (
-                    <ChartCard
-                        title="Сувгийн анализ"
-                        subtitle="Эх сурвалж тус бүрийн лийдийн тоо"
-                        height={Math.max(220, sourceData.length * 56)}
-                    >
-                        <BarChart
-                            data={sourceData.map((item) => ({ source: item.source, count: item.count }))}
-                            xKey="source"
-                            series={[{ key: 'count', name: 'Лийд' }]}
-                            horizontal
-                            colorByPoint
-                        />
-                    </ChartCard>
+                    <div ref={sourceBarChartRef}>
+                        <ChartCard
+                            title="Сувгийн анализ"
+                            subtitle="Эх сурвалж тус бүрийн лийдийн тоо"
+                            height={300}
+                            actions={
+                                <ChartExportButton
+                                    targetRef={sourceBarChartRef}
+                                    fileName={`сувгийн_анализ_${period}`}
+                                />
+                            }
+                        >
+                            <BarChart
+                                data={sourceData.map((item) => ({ source: item.source, count: item.count }))}
+                                xKey="source"
+                                series={[{ key: 'count', name: 'Лийд' }]}
+                                horizontal
+                                colorByPoint
+                            />
+                        </ChartCard>
+                    </div>
                 )}
-
-                {/* Performance by Project */}
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <Building2 className="w-5 h-5 text-brand" />
-                            Төслөөр
-                        </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                        {projectData.length === 0 ? (
-                            <p className="text-sm text-muted-foreground text-center py-8">Мэдээлэл байхгүй</p>
-                        ) : (
-                            <div className="space-y-3">
-                                {projectData.map((item, i) => (
-                                    <div
-                                        key={i}
-                                        className="flex items-center justify-between p-4 bg-surface-2/40 border border-border rounded-md"
-                                    >
-                                        <div>
-                                            <p className="font-medium text-foreground">{item.project}</p>
-                                            <div className="flex gap-4 mt-1">
-                                                <p className="text-xs text-muted-foreground tabular-nums">Сэжим: {item.leads}</p>
-                                                <p className="text-xs text-status-success tabular-nums">Амжилттай: {item.won}</p>
-                                            </div>
-                                        </div>
-                                        {item.value > 0 && (
-                                            <div className="text-right">
-                                                <p className="font-semibold text-brand tabular-nums">
-                                                    {formatCurrency(item.value)}
-                                                </p>
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
             </div>
+
+            {/* Performance by Project */}
+            <Card>
+                <CardHeader>
+                    <CardTitle className="flex items-center gap-2">
+                        <Building2 className="w-5 h-5 text-brand" />
+                        Төслөөр
+                    </CardTitle>
+                </CardHeader>
+                <CardContent>
+                    {projectData.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-8">Мэдээлэл байхгүй</p>
+                    ) : (
+                        <div className="space-y-3">
+                            {projectData.map((item, i) => (
+                                <div
+                                    key={i}
+                                    className="flex items-center justify-between p-4 bg-surface-2/40 border border-border rounded-md"
+                                >
+                                    <div>
+                                        <p className="font-medium text-foreground">{item.project}</p>
+                                        <div className="flex gap-4 mt-1">
+                                            <p className="text-xs text-muted-foreground tabular-nums">Сэжим: {item.leads}</p>
+                                            <p className="text-xs text-status-success tabular-nums">Амжилттай: {item.won}</p>
+                                        </div>
+                                    </div>
+                                    {item.value > 0 && (
+                                        <div className="text-right">
+                                            <p className="font-semibold text-brand tabular-nums">
+                                                {formatCurrency(item.value)}
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
         </div>
     );
 }

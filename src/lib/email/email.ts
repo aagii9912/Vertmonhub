@@ -109,6 +109,108 @@ export async function sendDirectorDigestEmail(to: string, d: DirectorDigestData)
 }
 
 /**
+ * Долоо хоногийн тайлан — өнгөрсөн 7 хоногийн лийд, уулзалт, гэрээний нэгтгэл.
+ * Даваа гараг бүр /api/cron/weekly-report-оос илгээгдэнэ.
+ */
+export interface WeeklyReportData {
+    shopName: string;
+    weekStart: string;
+    weekEnd: string;
+    newLeads: number;
+    meetings: number;
+    wonLeads: number;
+    newContracts: number;
+    topSources: Array<{ source: string; count: number }>;
+}
+export async function sendWeeklyReportEmail(to: string, d: WeeklyReportData): Promise<boolean> {
+    const tile = (label: string, value: string) =>
+        `<td style="padding:12px;background:#f9fafb;border-radius:8px;text-align:center;width:25%">
+            <div style="font-size:22px;font-weight:700;color:#111">${value}</div>
+            <div style="font-size:12px;color:#6b7280">${label}</div>
+        </td>`;
+    const sourceRows = d.topSources.length
+        ? d.topSources.map((s, i) =>
+            `<tr><td style="padding:8px;border-bottom:1px solid #eee">${i + 1}. ${s.source}</td>
+             <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${s.count} лийд</td></tr>`).join('')
+        : `<tr><td colspan="2" style="padding:8px;color:#6b7280">Мэдээлэл алга</td></tr>`;
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
+<body style="font-family:Arial,sans-serif;color:#333;background:#f3f4f6;padding:20px">
+  <div style="max-width:640px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden">
+    <div style="background:#C2613A;color:#fff;padding:22px 24px">
+      <div style="font-size:18px;font-weight:700">${d.shopName} — Долоо хоногийн тайлан</div>
+      <div style="font-size:13px;opacity:.9">${d.weekStart} — ${d.weekEnd}</div>
+    </div>
+    <div style="padding:24px">
+      <table style="width:100%;border-collapse:separate;border-spacing:8px"><tr>
+        ${tile('Шинэ лийд', String(d.newLeads))}
+        ${tile('Уулзалт', String(d.meetings))}
+        ${tile('Хожсон лийд', String(d.wonLeads))}
+        ${tile('Шинэ гэрээ', String(d.newContracts))}
+      </tr></table>
+      <h3 style="margin:24px 0 8px;font-size:15px;color:#111">📣 Лийдийн топ эх үүсвэрүүд</h3>
+      <table style="width:100%;border-collapse:collapse;font-size:13px">${sourceRows}</table>
+      <p style="margin-top:24px;font-size:12px;color:#9ca3af">Энэ тайланг Vertmon Hub автоматаар илгээв.</p>
+    </div>
+  </div>
+</body></html>`;
+
+    return sendEmail({
+        to,
+        subject: `${d.shopName} — Долоо хоногийн тайлан (${d.weekStart} — ${d.weekEnd})`,
+        html,
+    });
+}
+
+/**
+ * Лийдийн угталтын имэйл — landing page/вэбээс хүсэлт үлдээсэн харилцагчид
+ * илгээх брэндлэг баталгаажуулалт. EMAIL_FROM (ж: mandala-garden.mn домэйн)
+ * тохируулснаар байгууллагын нэрээс илгээгдэнэ.
+ */
+export async function sendLeadWelcomeEmail(params: {
+    to: string;
+    name?: string | null;
+    shopName?: string;
+    phone?: string | null;
+    websiteUrl?: string | null;
+}): Promise<boolean> {
+    const { to, name, phone, websiteUrl } = params;
+    const shopName = params.shopName || 'Mandala Garden';
+    const greeting = name ? `Сайн байна уу, ${name}!` : 'Сайн байна уу!';
+    const site = websiteUrl || process.env.NEXT_PUBLIC_APP_URL || '';
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="font-family:Arial,Helvetica,sans-serif;color:#333;background:#f3f4f6;padding:24px;margin:0">
+  <div style="max-width:520px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #eee">
+    <div style="background:#C2613A;color:#fff;padding:24px">
+      <div style="font-size:19px;font-weight:700">${shopName}</div>
+      <div style="font-size:13px;opacity:.9">Таны хүсэлтийг хүлээн авлаа</div>
+    </div>
+    <div style="padding:28px 24px">
+      <p style="margin:0 0 10px;font-size:15px;font-weight:600;color:#111">${greeting}</p>
+      <p style="margin:0 0 18px;font-size:14px;line-height:1.6;color:#444">
+        ${shopName} төслийг сонирхон хүсэлт үлдээсэнд баярлалаа. Манай борлуулалтын
+        менежер тун удахгүй тантай холбогдож, дэлгэрэнгүй мэдээлэл өгөх болно.
+      </p>
+      <ul style="margin:0 0 22px;padding-left:18px;font-size:14px;line-height:1.8;color:#444">
+        <li>Байршил, давхар, өрөөний сонголтын танилцуулга</li>
+        <li>Үнэ, төлбөрийн уян хатан нөхцөл</li>
+        <li>Танд тохирсон үзүүлэх уулзалтын цаг</li>
+      </ul>
+      ${site ? `<div style="text-align:center;margin:0 0 22px">
+        <a href="${site}" style="display:inline-block;background:#C2613A;color:#fff;text-decoration:none;font-weight:600;font-size:15px;padding:13px 30px;border-radius:8px">Төслийн танилцуулга үзэх</a>
+      </div>` : ''}
+      ${phone ? `<p style="margin:0 0 6px;font-size:13px;color:#6b7280">Яаралтай бол шууд залгаарай: <a href="tel:${phone}" style="color:#C2613A;font-weight:600">${phone}</a></p>` : ''}
+      <p style="margin:0;font-size:12px;color:#9ca3af">Хэрэв та энэ хүсэлтийг илгээгээгүй бол үл тоомсорлоно уу.</p>
+    </div>
+    <div style="padding:16px 24px;border-top:1px solid #f0f0f0;text-align:center;font-size:11px;color:#9ca3af">${shopName}</div>
+  </div>
+</body></html>`;
+
+    return sendEmail({ to, subject: `${shopName} — Таны хүсэлтийг хүлээн авлаа`, html });
+}
+
+/**
  * Ажилтныг урих / нэвтрэх холбоосыг имэйлээр илгээх (Resend).
  * mode='invite' — шинэ ажилтны урилга; mode='magiclink' — бүртгэлтэй хэрэглэгчийн нэвтрэх холбоос.
  */

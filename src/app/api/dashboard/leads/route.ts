@@ -4,8 +4,16 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { parsePagination, buildPageMeta } from '@/lib/utils/pagination';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 
+/** Хугацааны шүүлтүүр — гүйдэг цонх (өнөөдрөөс хойш N хоног). */
+const PERIOD_DAYS: Record<string, number> = {
+    week: 7,
+    month: 30,
+    quarter: 90,
+    year: 365,
+};
+
 /**
- * GET /api/dashboard/leads?status=<status>
+ * GET /api/dashboard/leads?status=<status>&source=<source>&period=<week|month|quarter|year>
  * Лийдийн жагсаалт (shop-scoped, сервер cookie auth + service role).
  * Soft-delete хийгдсэн лийдийг (deleted_at) хасна.
  */
@@ -18,6 +26,8 @@ export async function GET(request: NextRequest) {
 
         const { searchParams } = new URL(request.url);
         const status = searchParams.get('status');
+        const source = searchParams.get('source');
+        const period = searchParams.get('period');
 
         // Хуудаслалт: их өгөгдөлд бүгдийг татаж ~1000 мөрөнд чимээгүй тасрахаас
         // сэргийлнэ. ?page&pageSize эсвэл ?limit&offset өгөөгүй бол аюулгүйн таг.
@@ -34,6 +44,13 @@ export async function GET(request: NextRequest) {
 
         if (status && status !== 'all') {
             query = query.eq('status', status);
+        }
+        if (source && source !== 'all') {
+            query = query.eq('source', source);
+        }
+        if (period && PERIOD_DAYS[period]) {
+            const start = new Date(Date.now() - PERIOD_DAYS[period] * 24 * 60 * 60 * 1000);
+            query = query.gte('created_at', start.toISOString());
         }
 
         const { data, error, count } = await query;
