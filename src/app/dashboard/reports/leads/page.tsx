@@ -55,7 +55,8 @@ const sourceBarClass: Record<string, string> = {
 };
 
 const sourceLabels: Record<string, string> = {
-    messenger: 'Facebook',
+    messenger: 'Messenger',
+    facebook: 'Facebook',
     instagram: 'Instagram',
     website: 'Вэбсайт',
     referral: 'Зөвлөмж',
@@ -65,6 +66,7 @@ const sourceLabels: Record<string, string> = {
     tv: 'ТВ',
     meeting: 'Уулзалт',
     event: 'Өдөрлөг',
+    board: 'Самбар',
     other: 'Бусад',
 };
 
