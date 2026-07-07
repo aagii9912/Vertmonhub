@@ -83,7 +83,9 @@ CREATE TRIGGER property_units_updated_at
     EXECUTE FUNCTION update_property_timestamp();
 
 -- Блокийн нэгдсэн харагдац (зарагдсан/зарагдаагүй тоо)
-CREATE OR REPLACE VIEW property_block_summary AS
+-- security_invoker = on: CREATE OR REPLACE VIEW нь заагаагүй option-ыг устгадаг тул
+-- энд тавихгүй бол 20260630130000-ийн SECURITY DEFINER засвар арчигдана.
+CREATE OR REPLACE VIEW property_block_summary WITH (security_invoker = on) AS
 SELECT
     shop_id, phase, block, category,
     COUNT(*) AS total_units,
@@ -95,7 +97,7 @@ FROM property_units
 GROUP BY shop_id, phase, block, category;
 
 -- Нэгж + худалдан авагч (гэрээнээс кодоор холбоно)
-CREATE OR REPLACE VIEW property_units_with_buyer AS
+CREATE OR REPLACE VIEW property_units_with_buyer WITH (security_invoker = on) AS
 SELECT
     pu.*,
     pc.customer_name         AS buyer_name,
@@ -150,7 +152,7 @@ ALTER TABLE leads
 CREATE INDEX IF NOT EXISTS idx_leads_financing_intent ON leads(financing_intent);
 
 -- Сарын уулзалтын нэгтгэл
-CREATE OR REPLACE VIEW meeting_monthly_summary AS
+CREATE OR REPLACE VIEW meeting_monthly_summary WITH (security_invoker = on) AS
 SELECT
     v.shop_id,
     date_trunc('month', v.scheduled_at)::date AS month,
