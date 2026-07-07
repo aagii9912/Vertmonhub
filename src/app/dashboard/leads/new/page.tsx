@@ -17,7 +17,6 @@ import { PageHeader } from '@/components/dashboard/PageHeader';
 import { ArrowLeft, Users, Building2, MessageSquare } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 
 export default function NewLeadPage() {
@@ -50,23 +49,31 @@ export default function NewLeadPage() {
 
         setLoading(true);
 
-        const { error } = await supabase.from('leads').insert({
-            shop_id: shop.id,
-            customer_name: formData.customer_name.trim(),
-            customer_phone: formData.phone.trim() || null,
-            customer_email: formData.email.trim() || null,
-            source: formData.source,
-            preferred_type: formData.preferred_type,
-            financing_intent: formData.financing_intent || null,
-            budget_min: formData.budget_min ? Number(formData.budget_min) : null,
-            budget_max: formData.budget_max ? Number(formData.budget_max) : null,
-            notes: formData.notes.trim() || null,
-            status: 'new',
-        });
-
-        if (error) {
+        // Сервер талд үүсгэнэ — хариуцагч менежер (sales_manager_name) автоматаар тамгалагдана
+        try {
+            const res = await fetch('/api/dashboard/leads', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'x-shop-id': shop.id },
+                body: JSON.stringify({
+                    customer_name: formData.customer_name.trim(),
+                    customer_phone: formData.phone.trim() || null,
+                    customer_email: formData.email.trim() || null,
+                    source: formData.source,
+                    preferred_type: formData.preferred_type,
+                    financing_intent: formData.financing_intent || null,
+                    budget_min: formData.budget_min ? Number(formData.budget_min) : null,
+                    budget_max: formData.budget_max ? Number(formData.budget_max) : null,
+                    notes: formData.notes.trim() || null,
+                    status: 'new',
+                }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err?.error || 'Лийд хадгалахад алдаа гарлаа');
+            }
+        } catch (error) {
             setLoading(false);
-            toast.error('Лийд хадгалахад алдаа гарлаа');
+            toast.error(error instanceof Error ? error.message : 'Лийд хадгалахад алдаа гарлаа');
             return;
         }
 

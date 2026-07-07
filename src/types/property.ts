@@ -126,6 +126,8 @@ export interface Lead {
 
     // Assignment
     assigned_to: string | null;
+    /** Хариуцагч борлуулалтын менежерийн нэр (миграци 20260617120000) */
+    sales_manager_name?: string | null;
 
     // Conversion
     converted_at: string | null;
