@@ -36,6 +36,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         }
         if (typeof body.notes === 'string') updates.notes = body.notes;
         if (typeof body.lost_reason === 'string') updates.lost_reason = body.lost_reason.slice(0, 300) || null;
+        // Хариуцагч менежер хуваарилах/чөлөөлөх (null = хуваарилаагүй)
+        if (body.sales_manager_name !== undefined) {
+            const name = body.sales_manager_name;
+            if (name !== null && typeof name !== 'string') {
+                return NextResponse.json({ error: 'Буруу менежерийн нэр' }, { status: 400 });
+            }
+            const trimmed = typeof name === 'string' ? name.trim().slice(0, 120) : null;
+            updates.sales_manager_name = trimmed || null;
+        }
 
         const db = supabaseAdmin();
 

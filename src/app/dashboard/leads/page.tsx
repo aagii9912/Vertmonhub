@@ -43,6 +43,7 @@ import {
     Zap,
     Star,
     FileText,
+    UserRound,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
@@ -121,6 +122,9 @@ export default function LeadsPage() {
     const [statusFilter, setStatusFilter] = useState<LeadStatus | 'all'>('all');
     const [sourceFilter, setSourceFilter] = useState<LeadSource | 'all'>('all');
     const [periodFilter, setPeriodFilter] = useState<string>('all');
+    const [managerFilter, setManagerFilter] = useState<string>('all');
+    // Менежерийн жагсаалт (шүүлт + хуваарилах dropdown) — reports эрхгүй бол хоосон
+    const [managers, setManagers] = useState<{ name: string; is_active: boolean }[]>([]);
     const [stats, setStats] = useState<LeadStats>({
         total: 0,
         new: 0,
@@ -139,6 +143,7 @@ export default function LeadsPage() {
                 const params = new URLSearchParams({ status: statusFilter });
                 if (sourceFilter !== 'all') params.set('source', sourceFilter);
                 if (periodFilter !== 'all') params.set('period', periodFilter);
+                if (managerFilter !== 'all') params.set('manager', managerFilter);
                 const res = await fetch(`/api/dashboard/leads?${params.toString()}`, {
                     headers: { 'x-shop-id': shop.id },
                 });
@@ -171,7 +176,24 @@ export default function LeadsPage() {
         };
 
         fetchLeads();
-    }, [shop?.id, statusFilter, sourceFilter, periodFilter]);
+    }, [shop?.id, statusFilter, sourceFilter, periodFilter, managerFilter]);
+
+    // Менежерийн жагсаалт (нэг удаа) — шүүлт + хуваарилах Select-д
+    useEffect(() => {
+        if (!shop?.id) return;
+        (async () => {
+            try {
+                const res = await fetch('/api/dashboard/managers', {
+                    headers: { 'x-shop-id': shop.id },
+                });
+                if (!res.ok) return;
+                const json = await res.json();
+                setManagers(json.managers || []);
+            } catch {
+                // reports эрхгүй / сүлжээний алдаа — менежерийн шүүлт харагдахгүй
+            }
+        })();
+    }, [shop?.id]);
 
     const filteredLeads = leads.filter(
         (l) =>
@@ -200,6 +222,29 @@ export default function LeadsPage() {
         } catch (error) {
             console.error('Error updating lead:', error);
             toast.error(error instanceof Error ? error.message : 'Шинэчлэхэд алдаа гарлаа');
+        }
+    };
+
+    /** Лийдийг менежерт хуваарилах / чөлөөлөх (null). */
+    const assignManager = async (id: string, name: string | null) => {
+        try {
+            const res = await fetch(`/api/dashboard/leads/${id}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || shop?.id || '',
+                },
+                body: JSON.stringify({ sales_manager_name: name }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err?.error || 'Хуваарилахад алдаа гарлаа');
+            }
+            setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, sales_manager_name: name } : l)));
+            toast.success(name ? `«${name}»-д хуваарилагдлаа` : 'Хуваарилалт цуцлагдлаа');
+        } catch (error) {
+            console.error('Error assigning lead:', error);
+            toast.error(error instanceof Error ? error.message : 'Хуваарилахад алдаа гарлаа');
         }
     };
 
@@ -457,13 +502,15 @@ export default function LeadsPage() {
                     searchQuery !== '' ||
                     statusFilter !== 'all' ||
                     sourceFilter !== 'all' ||
-                    periodFilter !== 'all'
+                    periodFilter !== 'all' ||
+                    managerFilter !== 'all'
                 }
                 onClear={() => {
                     setSearchQuery('');
                     setStatusFilter('all');
                     setSourceFilter('all');
                     setPeriodFilter('all');
+                    setManagerFilter('all');
                 }}
             >
                 <label className="flex items-center gap-2 text-xs">
@@ -525,6 +572,27 @@ export default function LeadsPage() {
                         </SelectContent>
                     </Select>
                 </label>
+                {managers.length > 0 && (
+                    <label className="flex items-center gap-2 text-xs">
+                        <span className="text-muted-foreground/80 whitespace-nowrap">Менежер</span>
+                        <Select value={managerFilter} onValueChange={setManagerFilter}>
+                            <SelectTrigger
+                                className="h-9 w-auto min-w-36 text-sm"
+                                aria-label="Менежерээр шүүх"
+                            >
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">Бүх менежер</SelectItem>
+                                {managers.map((m) => (
+                                    <SelectItem key={m.name} value={m.name}>
+                                        {m.name}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </label>
+                )}
             </FilterBar>
 
             {/* Lead Table (md+) */}
@@ -757,6 +825,43 @@ export default function LeadsPage() {
                                         <p className="text-sm text-muted-foreground">Тодорхойгүй</p>
                                     )}
                                 </div>
+
+                                {canWrite && managers.length > 0 && (
+                                    <div className="bg-surface rounded-md p-4 border border-border">
+                                        <h4 className="heading-section text-sm text-foreground flex items-center gap-2 mb-2">
+                                            <UserRound className="w-4 h-4 text-brand" />
+                                            Хариуцагч менежер
+                                        </h4>
+                                        <Select
+                                            value={activeLead.sales_manager_name || '__none__'}
+                                            onValueChange={(v) =>
+                                                assignManager(activeLead.id, v === '__none__' ? null : v)
+                                            }
+                                        >
+                                            <SelectTrigger
+                                                className="h-9 w-full text-sm"
+                                                aria-label="Хариуцагч менежер"
+                                            >
+                                                <SelectValue placeholder="Хуваарилаагүй" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="__none__">Хуваарилаагүй</SelectItem>
+                                                {/* Одоо оноогдсон нэр бүртгэлд байхгүй бол сонголтод хадгална */}
+                                                {activeLead.sales_manager_name &&
+                                                    !managers.some((m) => m.name === activeLead.sales_manager_name) && (
+                                                        <SelectItem value={activeLead.sales_manager_name}>
+                                                            {activeLead.sales_manager_name}
+                                                        </SelectItem>
+                                                    )}
+                                                {managers.map((m) => (
+                                                    <SelectItem key={m.name} value={m.name}>
+                                                        {m.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
+                                )}
 
                                 <div className="flex gap-2">
                                     <a

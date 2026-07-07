@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDashboardMode } from '@/hooks/useDashboardMode';
 import { supabase } from '@/lib/supabase';
 import {
     Calendar, MapPin, Phone, User, X, CheckCircle2, Plus, Star, Search,
@@ -83,6 +84,10 @@ function toLocalInput(d: Date): string {
 
 export default function ViewingsPage() {
     const { shop, user } = useAuth();
+    // Хариуцагч менежерийн КАНОН нэр (сервер user_profiles/roster-оос) —
+    // client user_metadata-тай зөрөхөөс сэргийлж attribution-д үүнийг тамгална.
+    const { data: dashMode } = useDashboardMode();
+    const managerName = dashMode?.managerName || user?.fullName || null;
     const [viewings, setViewings] = useState<Viewing[]>([]);
     const [loading, setLoading] = useState(true);
     const [filter, setFilter] = useState<string>('all');
@@ -185,6 +190,7 @@ export default function ViewingsPage() {
                         customer_phone: form.customerPhone.trim() || null,
                         status: form.walkIn ? 'contacted' : 'viewing_scheduled',
                         source: 'other',
+                        sales_manager_name: managerName,
                     })
                     .select('id')
                     .single();
@@ -210,7 +216,7 @@ export default function ViewingsPage() {
             status: form.walkIn ? 'completed' : 'scheduled',
             meeting_type: form.meetingType,
             agent_notes: form.notes.trim() || null,
-            sales_manager_name: user?.fullName || null,
+            sales_manager_name: managerName,
             completed_at: form.walkIn ? nowIso : null,
             interest_level: form.walkIn && form.interest ? form.interest : null,
             customer_feedback: form.walkIn ? (form.feedback.trim() || null) : null,
