@@ -3,6 +3,23 @@ import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { getAdminUser } from '@/lib/admin/auth';
 import * as XLSX from 'xlsx';
+import {
+    ImportRow,
+    mapPropertyRow,
+    mapLeadRow,
+    mapContractRow,
+    mapFaqRow,
+    buildCompanyKnowledge,
+    buildProjectKnowledge,
+    buildPaymentPolicyKnowledge,
+    buildLoanKnowledge,
+    buildAmenitiesKnowledge,
+    buildAiExtraEntries,
+    knowledgeKey,
+    normalizePhoneKey,
+    slugifyKey,
+    findStaleKnowledgeKeys,
+} from '@/lib/admin/import/mappers';
 
 // ============================================
 // TYPES
@@ -20,18 +37,40 @@ type ImportType =
     | 'leads'
     | 'contracts';
 
+const IMPORT_TYPES: ImportType[] = [
+    'properties', 'faq', 'company', 'project', 'payment_policy',
+    'loan_info', 'amenities', 'ai_extra', 'leads', 'contracts',
+];
+
 interface ImportResult {
     success: boolean;
     imported?: number;
     updated?: number;
+    skipped?: number;
     errors?: string[];
     message: string;
 }
 
+interface ImportContext {
+    shopId: string;
+    projectId: string | null;
+    projectName: string;
+}
+
+const MAX_ROWS = 5000;
+
 // ============================================
 // POST /api/admin/import
-// Bulk import data from CSV/Excel
-// Super Admin + зөвшөөрөгдсөн хүмүүс
+// CSV/Excel файлаас бөөнөөр импортлох.
+//
+// Өгөгдлийн зам (архитектурын гол шийдвэр):
+//   - properties / leads / contracts → тухайн CRM хүснэгтүүд рүү (жинхэнэ багануудаар)
+//   - FAQ → shop_faqs (WebhookService.getAIFeatures → DM AI уншдаг)
+//   - Мэдлэгийн категориуд → shops.custom_knowledge JSONB (PromptService.buildDynamicKnowledge
+//     → DM AI-ийн prompt-д ордог) + ai_knowledge_base (бүтэцлэгдсэн архив, query хийхэд)
+//   - projectId → properties/leads/contracts дээр best-effort тамгална,
+//     мэдлэгийн түлхүүрүүдийг төслийн нэрээр угтварлана (нэг shop дотор
+//     олон төслийн мэдээлэл холилдохгүй)
 // ============================================
 export async function POST(request: NextRequest) {
     try {
@@ -67,52 +106,102 @@ export async function POST(request: NextRequest) {
         const file = formData.get('file') as File;
         const shopId = formData.get('shopId') as string;
         const importType = formData.get('type') as ImportType;
+        const projectIdRaw = (formData.get('projectId') as string) || '';
+        const projectNameRaw = (formData.get('projectName') as string) || '';
 
         if (!file || !shopId) {
             return NextResponse.json({ error: 'Файл болон shopId шаардлагатай' }, { status: 400 });
         }
 
-        if (!importType) {
-            return NextResponse.json({ error: 'Import төрөл сонгоно уу' }, { status: 400 });
+        if (!importType || !IMPORT_TYPES.includes(importType)) {
+            return NextResponse.json({ error: 'Буруу import төрөл' }, { status: 400 });
+        }
+
+        // shop бодитой эсэхийг шалгана (projects/shops зөрөх, устсан shop руу бичихээс сэргийлнэ)
+        const { data: shop, error: shopErr } = await supabase
+            .from('shops')
+            .select('id')
+            .eq('id', shopId)
+            .maybeSingle();
+        if (shopErr || !shop) {
+            return NextResponse.json({ error: 'Shop олдсонгүй' }, { status: 400 });
+        }
+
+        // Төслийг сервер талд баталгаажуулна — нэр нь клиентээс биш projects хүснэгтээс.
+        let projectId: string | null = null;
+        let projectName = projectNameRaw.trim();
+        if (projectIdRaw) {
+            try {
+                const { data: project } = await supabase
+                    .from('projects')
+                    .select('id, name, shop_id')
+                    .eq('id', projectIdRaw)
+                    .maybeSingle();
+                if (project) {
+                    if (project.shop_id !== shopId) {
+                        return NextResponse.json(
+                            { error: 'Сонгосон төсөл өөр shop-д харьяалагдаж байна' },
+                            { status: 400 }
+                        );
+                    }
+                    projectId = project.id;
+                    projectName = project.name;
+                }
+            } catch {
+                // projects хүснэгт байхгүй орчинд импортыг унагахгүй — клиентийн нэрээр үргэлжилнэ
+            }
         }
 
         const buffer = Buffer.from(await file.arrayBuffer());
+        const rows = parseExcel(buffer);
+
+        if (rows.length === 0) {
+            return NextResponse.json(
+                { success: false, message: 'Файл хоосон байна. Формат шалгана уу.' } satisfies ImportResult,
+                { status: 400 }
+            );
+        }
+        if (rows.length > MAX_ROWS) {
+            return NextResponse.json(
+                { success: false, message: `Хэт олон мөр (${rows.length}). Нэг файлд дээд тал нь ${MAX_ROWS} мөр.` } satisfies ImportResult,
+                { status: 400 }
+            );
+        }
+
+        const ctx: ImportContext = { shopId, projectId, projectName };
 
         let result: ImportResult;
-
         switch (importType) {
             case 'properties':
-                result = await importProperties(supabase, buffer, shopId);
+                result = await importProperties(supabase, rows, ctx);
                 break;
             case 'faq':
-                result = await importFAQ(supabase, buffer, shopId);
+                result = await importFAQ(supabase, rows, ctx);
                 break;
             case 'company':
-                result = await importCompany(supabase, buffer, shopId);
+                result = await importCompany(supabase, rows, ctx);
                 break;
             case 'project':
-                result = await importProject(supabase, buffer, shopId);
+                result = await importProject(supabase, rows, ctx);
                 break;
             case 'payment_policy':
-                result = await importPaymentPolicy(supabase, buffer, shopId);
+                result = await importPaymentPolicy(supabase, rows, ctx);
                 break;
             case 'loan_info':
-                result = await importLoanInfo(supabase, buffer, shopId);
+                result = await importLoanInfo(supabase, rows, ctx);
                 break;
             case 'amenities':
-                result = await importAmenities(supabase, buffer, shopId);
+                result = await importAmenities(supabase, rows, ctx);
                 break;
             case 'ai_extra':
-                result = await importAIExtra(supabase, buffer, shopId);
+                result = await importAIExtra(supabase, rows, ctx);
                 break;
             case 'leads':
-                result = await importLeads(supabase, buffer, shopId);
+                result = await importLeads(supabase, rows, ctx);
                 break;
             case 'contracts':
-                result = await importContracts(supabase, buffer, shopId);
+                result = await importContracts(supabase, rows, ctx);
                 break;
-            default:
-                return NextResponse.json({ error: 'Буруу import төрөл' }, { status: 400 });
         }
 
         return NextResponse.json(result, { status: result.success ? 200 : 400 });
@@ -122,45 +211,197 @@ export async function POST(request: NextRequest) {
 }
 
 // ============================================
-// HELPERS
+// PARSE / DB ТУСЛАХУУД
 // ============================================
 
-function parseExcel(buffer: Buffer): Record<string, any>[] {
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
+function parseExcel(buffer: Buffer): ImportRow[] {
+    // cellDates: огнооны нүдийг serial тоо биш Date болгож уншина (mappers.toDateStr боловсруулна)
+    const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    return XLSX.utils.sheet_to_json<Record<string, any>>(sheet);
+    return XLSX.utils.sheet_to_json<ImportRow>(sheet);
 }
 
-function getVal(row: Record<string, any>, ...keys: string[]): string {
-    for (const key of keys) {
-        if (row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== '') {
-            return String(row[key]).trim();
-        }
-    }
-    return '';
-}
-
-function getNum(row: Record<string, any>, ...keys: string[]): number | null {
-    const val = getVal(row, ...keys);
-    if (!val) return null;
-    const num = parseFloat(val.replace(/[,₮%]/g, ''));
-    return isNaN(num) ? null : num;
+function errMessage(error: unknown): string {
+    return error instanceof Error
+        ? error.message
+        : String((error as { message?: string })?.message ?? error);
 }
 
 /**
- * Batch upsert to ai_knowledge_base
- * Replaces sequential select-then-insert/update with batch operations.
- * Reduces DB calls from O(n*2) → O(3).
+ * Batch insert — migration хараахан хийгдээгүй орчинд optional багана
+ * (project_id, notes г.м.) байхгүй бол тухайн баганыг хасаад дахин оролдоно.
+ * PostgREST-ийн алдааны мэдэгдэлд байхгүй баганын нэр ордог тул түүгээр таньдаг.
+ */
+async function insertWithOptionalColumns(
+    supabase: ReturnType<typeof supabaseAdmin>,
+    table: string,
+    rows: Record<string, unknown>[],
+    optionalColumns: string[]
+): Promise<{ count: number; error?: string }> {
+    let currentRows = rows;
+    let remaining = [...optionalColumns];
+
+    for (let attempt = 0; attempt <= optionalColumns.length; attempt++) {
+        const { data, error } = await supabase.from(table).insert(currentRows).select('id');
+        if (!error) return { count: data?.length ?? currentRows.length };
+
+        const msg = errMessage(error);
+        const missing = remaining.find(col => msg.includes(`'${col}'`) || msg.includes(`"${col}"`));
+        if (!missing) return { count: 0, error: msg };
+
+        remaining = remaining.filter(c => c !== missing);
+        currentRows = currentRows.map(r => {
+            const { [missing]: _omit, ...rest } = r;
+            return rest;
+        });
+    }
+
+    return { count: 0, error: 'Insert бүтсэнгүй' };
+}
+
+/**
+ * Давхардал шалгахад одоо байгаа утгуудыг татна. Soft-delete багана
+ * байгаа орчинд устгагдсан мөрийг хасна; байхгүй бол энгийнээр татна.
+ * PostgREST default 1000 мөрөөр хязгаарладаг тул page-лэн бүрэн татна —
+ * эс бөгөөс 1000+ бичлэгтэй shop дээр давхардлын шалгалт дутуу болно.
+ */
+async function fetchExistingValues(
+    supabase: ReturnType<typeof supabaseAdmin>,
+    table: string,
+    column: string,
+    shopId: string
+): Promise<Set<string>> {
+    const PAGE = 1000;
+
+    async function fetchAll(withSoftDelete: boolean): Promise<string[] | null> {
+        const values: string[] = [];
+        for (let from = 0; ; from += PAGE) {
+            let query = supabase
+                .from(table)
+                .select(column)
+                .eq('shop_id', shopId);
+            if (withSoftDelete) query = query.is('deleted_at', null);
+
+            const { data, error } = await query.range(from, from + PAGE - 1);
+            if (error) {
+                if (withSoftDelete) return null; // deleted_at байхгүй хүснэгт — fallback
+                throw new Error(errMessage(error));
+            }
+            const rows = (data || []) as unknown as Record<string, unknown>[];
+            for (const row of rows) {
+                const v = row[column];
+                if (v !== null && v !== undefined && String(v).trim() !== '') {
+                    values.push(String(v).trim());
+                }
+            }
+            if (rows.length < PAGE) break;
+        }
+        return values;
+    }
+
+    const withSoft = await fetchAll(true);
+    const all = withSoft ?? await fetchAll(false);
+    return new Set(all ?? []);
+}
+
+/** Update-уудыг хязгаарлагдсан зэрэгцээгээр гүйцэтгэнэ (Vercel timeout-оос сэргийлнэ) */
+async function runChunked<T>(items: T[], size: number, fn: (item: T) => Promise<void>): Promise<void> {
+    for (let i = 0; i < items.length; i += size) {
+        await Promise.all(items.slice(i, i + size).map(fn));
+    }
+}
+
+/** Migration хийгдсэн эсэхийг нэг probe-оор шалгана (update замд баганыг оруулах эсэхийг шийднэ) */
+async function columnExists(
+    supabase: ReturnType<typeof supabaseAdmin>,
+    table: string,
+    column: string
+): Promise<boolean> {
+    const { error } = await supabase.from(table).select(column).limit(1);
+    return !error;
+}
+
+/** data-гаас зөвхөн заасан түлхүүрүүдийг түүнэ (update = файлд байсан баганууд л) */
+function pickFields(
+    data: Record<string, unknown>,
+    keys: string[] | undefined,
+    exclude: string[]
+): Record<string, unknown> {
+    const out: Record<string, unknown> = {};
+    for (const key of keys || Object.keys(data)) {
+        if (exclude.includes(key)) continue;
+        if (key in data) out[key] = data[key];
+    }
+    return out;
+}
+
+/**
+ * shops.custom_knowledge (JSONB) дээр түлхүүрүүдийг merge хийнэ.
+ * Энэ бол DM AI-ийн prompt-д ордог ЖИНХЭНЭ мэдлэгийн сан
+ * (PromptService.buildDynamicKnowledge). Хуучин string хэлбэрийг хадгална.
+ *
+ * reconcile: нэг сэдвийн (ижил suffix) хуучин түлхүүрүүдийг илрүүлж устгана —
+ * логик, хамгаалалтууд нь findStaleKnowledgeKeys (mappers.ts)-д.
+ */
+async function mergeShopCustomKnowledge(
+    supabase: ReturnType<typeof supabaseAdmin>,
+    shopId: string,
+    patch: Record<string, string>,
+    reconcile: Array<{ key: string; suffix: string }> = [],
+    protectedPrefixes: Set<string> = new Set()
+): Promise<string[]> {
+    if (Object.keys(patch).length === 0) return [];
+
+    const { data, error } = await supabase
+        .from('shops')
+        .select('custom_knowledge')
+        .eq('id', shopId)
+        .maybeSingle();
+    if (error) throw new Error(errMessage(error));
+
+    let existing: Record<string, unknown> = {};
+    const raw = data?.custom_knowledge;
+    if (raw) {
+        if (typeof raw === 'string') {
+            try {
+                const parsed = JSON.parse(raw);
+                existing = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+                    ? parsed
+                    : { knowledge_legacy: raw };
+            } catch {
+                existing = { knowledge_legacy: raw };
+            }
+        } else if (typeof raw === 'object' && !Array.isArray(raw)) {
+            existing = raw as Record<string, unknown>;
+        }
+    }
+
+    const merged: Record<string, unknown> = { ...existing, ...patch };
+
+    const replaced = findStaleKnowledgeKeys(Object.keys(existing), patch, reconcile, protectedPrefixes);
+    for (const staleKey of replaced) delete merged[staleKey];
+
+    const { error: upErr } = await supabase
+        .from('shops')
+        .update({ custom_knowledge: merged })
+        .eq('id', shopId);
+    if (upErr) throw new Error(errMessage(upErr));
+
+    return replaced;
+}
+
+/**
+ * ai_knowledge_base руу бүтэцлэгдсэн хуулбар upsert хийнэ (архив/қuery зориулалт).
+ * UNIQUE(shop_id, category, key) constraint дээр тулгуурлана.
  */
 async function batchUpsertKnowledge(
-    supabase: any,
+    supabase: ReturnType<typeof supabaseAdmin>,
     entries: Array<{ shop_id: string; category: string; key: string; value: string; description?: string }>,
     shopId: string,
     category: string
 ): Promise<{ imported: number; updated: number }> {
     if (entries.length === 0) return { imported: 0, updated: 0 };
 
-    // 1. Одоо байгаа key-үүдийг ганц query-гээр татна (imported/updated тоо гаргахад).
     const { data: existingRecords } = await supabase
         .from('ai_knowledge_base')
         .select('key')
@@ -171,574 +412,610 @@ async function batchUpsertKnowledge(
     const updated = entries.filter(e => existingKeys.has(e.key)).length;
     const imported = entries.length - updated;
 
-    // 2. Ганц upsert (UNIQUE(shop_id, category, key)) — өмнөх N parallel update-ийг
-    //    орлоно. Аюулгүйн үүднээс chunk-аар.
     const CHUNK = 500;
     for (let i = 0; i < entries.length; i += CHUNK) {
         const { error } = await supabase
             .from('ai_knowledge_base')
             .upsert(entries.slice(i, i + CHUNK), { onConflict: 'shop_id,category,key' });
-        if (error) throw error;
+        if (error) throw new Error(errMessage(error));
     }
 
     return { imported, updated };
 }
 
-function mapPropertyType(input: string): string {
-    const lower = String(input).toLowerCase().trim();
-    const map: Record<string, string> = {
-        'apartment': 'apartment', 'орон сууц': 'apartment', 'байр': 'apartment',
-        'house': 'house', 'хаус': 'house', 'хашаа байшин': 'house',
-        'office': 'office', 'оффис': 'office',
-        'land': 'land', 'газар': 'land',
-        'commercial': 'commercial', 'худалдааны': 'commercial',
-    };
-    return map[lower] || 'apartment';
-}
+/** Мэдлэгийг хоёр сан руу зэрэг бичнэ: custom_knowledge (AI уншдаг) + ai_knowledge_base (архив) */
+async function saveKnowledge(
+    supabase: ReturnType<typeof supabaseAdmin>,
+    ctx: ImportContext,
+    category: string,
+    rawItems: Array<{ key: string; text: string; description: string; suffix?: string }>
+): Promise<{ imported: number; updated: number; replaced: string[] }> {
+    // Нэг batch дотор давхар key байвал upsert "cannot affect row a second time"
+    // алдаа өгдөг тул key-ээр dedupe хийнэ (сүүлийн мөр ялна).
+    const byKey = new Map<string, { key: string; text: string; description: string; suffix?: string }>();
+    for (const item of rawItems) byKey.set(item.key, item);
+    const items = [...byKey.values()];
 
-function mapPropertyStatus(input: string): string {
-    const lower = String(input).toLowerCase().trim();
-    const map: Record<string, string> = {
-        'available': 'available', 'боломжтой': 'available', 'чөлөөтэй': 'available', 'зарагдаж байна': 'available',
-        'reserved': 'reserved', 'захиалсан': 'reserved', 'захиалагдсан': 'reserved',
-        'sold': 'sold', 'зарагдсан': 'sold',
-        'rented': 'rented', 'түрээслэсэн': 'rented', 'түрээслэгдсэн': 'rented',
-        'barter': 'barter', 'бартер': 'barter', 'солилцоо': 'barter',
-    };
-    return map[lower] || 'available';
-}
+    const patch: Record<string, string> = {};
+    for (const item of items) patch[item.key] = item.text;
 
-// ============================================
-// 1. PROPERTIES IMPORT (Enhanced)
-// ============================================
+    const reconcile = items
+        .filter(item => item.suffix)
+        .map(item => ({ key: item.key, suffix: item.suffix as string }));
 
-async function importProperties(supabase: any, buffer: Buffer, shopId: string): Promise<ImportResult> {
-    const rows = parseExcel(buffer);
-    if (rows.length === 0) return { success: false, message: 'Файл хоосон байна' };
-
-    const properties = [];
-    const errors: string[] = [];
-
-    for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        const rowNum = i + 2;
-
-        const name = getVal(row, 'Нэр', 'name', 'Name', 'Байрны нэр', 'Байрны нэр/код');
-        const price = getNum(row, 'Үнэ', 'price', 'Price', 'Үнэ (₮)');
-
-        if (!name) { errors.push(`Мөр ${rowNum}: Нэр хоосон`); continue; }
-        if (!price || price <= 0) { errors.push(`Мөр ${rowNum}: Үнэ буруу (${name})`); continue; }
-
-        // Build features array from additional fields
-        const features: string[] = [];
-        const block = getVal(row, 'Блок', 'block', 'Block');
-        const direction = getVal(row, 'Чиглэл', 'direction', 'Зүг', 'Чиглэл (зүг)');
-        const balcony = getVal(row, 'Тагт', 'Балкон', 'Тагт/Балкон', 'balcony');
-
-        if (block) features.push(`Блок: ${block}`);
-        if (direction) features.push(`Чиглэл: ${direction}`);
-        if (balcony && balcony.toLowerCase() !== 'үгүй' && balcony.toLowerCase() !== 'no') {
-            features.push(`Тагт/Балкон: ${balcony}`);
+    // Жинхэнэ төслүүдийн slug-ууд — тэдгээрийн түлхүүрийг stale гэж андуурч устгахгүй
+    let protectedPrefixes = new Set<string>();
+    if (reconcile.length > 0) {
+        try {
+            const { data: projects } = await supabase
+                .from('projects')
+                .select('name')
+                .eq('shop_id', ctx.shopId);
+            protectedPrefixes = new Set((projects || []).map(p => slugifyKey(String(p.name))));
+        } catch {
+            // projects хүснэгтгүй орчинд хамгаалалтгүйгээр (хуучин зан) үргэлжилнэ
         }
-
-        const type = mapPropertyType(getVal(row, 'Төрөл', 'type', 'Type') || 'apartment');
-        const status = mapPropertyStatus(getVal(row, 'Статус', 'status', 'Status') || 'available');
-
-        properties.push({
-            shop_id: shopId,
-            name,
-            description: getVal(row, 'Тайлбар', 'description', 'Description') || null,
-            type,
-            price,
-            price_per_sqm: getNum(row, '1м² үнэ', '1м²-ийн үнэ', 'price_per_sqm'),
-            size_sqm: getNum(row, 'Талбай', 'size_sqm', 'м²', 'Нийт талбай', 'Нийт талбай (м²)'),
-            rooms: getNum(row, 'Өрөө', 'rooms', 'Rooms', 'Өрөөний тоо'),
-            bedrooms: getNum(row, 'Унтлагын өрөө', 'bedrooms', 'Унтлагын өрөө'),
-            bathrooms: getNum(row, 'Угаалгын өрөө', 'bathrooms', 'Угаалгын өрөө'),
-            floor: getVal(row, 'Давхар', 'floor', 'Floor') || null,
-            address: getVal(row, 'Хаяг', 'address', 'Address') || null,
-            district: getVal(row, 'Дүүрэг', 'district', 'District') || null,
-            status,
-            features,
-            is_active: true,
-        });
     }
 
-    if (properties.length === 0) {
+    const replaced = await mergeShopCustomKnowledge(supabase, ctx.shopId, patch, reconcile, protectedPrefixes);
+
+    const { imported, updated } = await batchUpsertKnowledge(
+        supabase,
+        items.map(item => ({
+            shop_id: ctx.shopId,
+            category,
+            key: item.key,
+            value: JSON.stringify(item.text),
+            description: item.description,
+        })),
+        ctx.shopId,
+        category
+    );
+
+    return { imported, updated, replaced };
+}
+
+/** Хуучирсан давхар түлхүүр устгасныг мессежид хавсаргана */
+function withReplaced(message: string, replaced: string[]): string {
+    if (replaced.length === 0) return message;
+    return `${message} — хуучирсан давхар түлхүүр устгав: ${replaced.join(', ')}`;
+}
+
+function summarize(
+    label: string,
+    imported: number,
+    updated: number,
+    skipped: number,
+    errors: string[]
+): ImportResult {
+    const parts = [`${imported} шинэ`];
+    if (updated > 0) parts.push(`${updated} шинэчлэгдсэн`);
+    if (skipped > 0) parts.push(`${skipped} давхардсан (алгассан)`);
+    if (errors.length > 0) parts.push(`${errors.length} алдаа`);
+    return {
+        success: true,
+        imported,
+        updated,
+        skipped,
+        errors: errors.length > 0 ? errors : undefined,
+        message: `${label}: ${parts.join(', ')}`,
+    };
+}
+
+// ============================================
+// 1. PROPERTIES — insert + нэрээр дахин импортод update
+// ============================================
+
+async function importProperties(
+    supabase: ReturnType<typeof supabaseAdmin>,
+    rows: ImportRow[],
+    ctx: ImportContext
+): Promise<ImportResult> {
+    const errors: string[] = [];
+    const seen = new Set<string>();
+    const fresh: Array<Record<string, unknown>> = [];
+    const toUpdate: Array<{ name: string; fields: Record<string, unknown> }> = [];
+
+    const [existingNames, hasProjectId, hasDeletedAt] = await Promise.all([
+        fetchExistingValues(supabase, 'properties', 'name', ctx.shopId),
+        ctx.projectId ? columnExists(supabase, 'properties', 'project_id') : Promise.resolve(false),
+        columnExists(supabase, 'properties', 'deleted_at'),
+    ]);
+
+    for (let i = 0; i < rows.length; i++) {
+        const { data, error, provided } = mapPropertyRow(rows[i], i + 2);
+        if (error) { errors.push(error); continue; }
+        if (!data) continue;
+
+        if (seen.has(data.name)) {
+            errors.push(`Мөр ${i + 2}: "${data.name}" файл дотор давхардсан — эхний мөрийг ашиглав`);
+            continue;
+        }
+        seen.add(data.name);
+
+        if (existingNames.has(data.name)) {
+            // Update = зөвхөн файлд байсан баганууд. Бусад талбарыг default-оор
+            // дарж устгахгүй (ж: Нэр+Үнэ бүхий үнийн файл зөвхөн үнэ шинэчилнэ).
+            const fields = pickFields(data as unknown as Record<string, unknown>, provided, ['name']);
+            if (hasProjectId) fields.project_id = ctx.projectId;
+            toUpdate.push({ name: data.name, fields });
+        } else {
+            const record: Record<string, unknown> = { shop_id: ctx.shopId, ...data };
+            if (ctx.projectId) record.project_id = ctx.projectId;
+            fresh.push(record);
+        }
+    }
+
+    if (fresh.length === 0 && toUpdate.length === 0) {
         return { success: false, message: 'Оруулах өгөгдөл олдсонгүй', errors };
     }
 
-    const { data, error } = await supabase.from('properties').insert(properties).select('id, name');
-    if (error) return { success: false, message: error.message, errors };
-
-    return {
-        success: true,
-        imported: data.length,
-        errors: errors.length > 0 ? errors : undefined,
-        message: `${data.length} байр амжилттай оруулсан${errors.length > 0 ? `, ${errors.length} алдаа` : ''}`,
-    };
-}
-
-// ============================================
-// 2. FAQ IMPORT
-// ============================================
-
-async function importFAQ(supabase: any, buffer: Buffer, shopId: string): Promise<ImportResult> {
-    const rows = parseExcel(buffer);
-    const entries = [];
-    const errors: string[] = [];
-
-    for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        const rowNum = i + 2;
-
-        const title = getVal(row, 'Асуулт', 'question', 'Question', 'Гарчиг');
-        const content = getVal(row, 'Хариулт', 'answer', 'Answer', 'Агуулга');
-
-        if (!title || !content) { errors.push(`Мөр ${rowNum}: Асуулт эсвэл хариулт хоосон`); continue; }
-
-        entries.push({
-            shop_id: shopId,
-            title,
-            content,
-            type: 'faq',
-            is_active: true,
-        });
+    let imported = 0;
+    if (fresh.length > 0) {
+        const { count, error } = await insertWithOptionalColumns(supabase, 'properties', fresh, ['project_id']);
+        if (error) return { success: false, message: error, errors };
+        imported = count;
     }
 
-    if (entries.length === 0) return { success: false, message: 'FAQ олдсонгүй', errors };
-
-    const { data, error } = await supabase.from('custom_knowledge').insert(entries).select('id, title');
-    if (error) return { success: false, message: error.message };
-
-    return {
-        success: true,
-        imported: data.length,
-        errors: errors.length > 0 ? errors : undefined,
-        message: `${data.length} FAQ амжилттай оруулсан`,
-    };
-}
-
-// ============================================
-// 3. COMPANY IMPORT
-// ============================================
-
-async function importCompany(supabase: any, buffer: Buffer, shopId: string): Promise<ImportResult> {
-    const rows = parseExcel(buffer);
-    if (rows.length === 0) return { success: false, message: 'Файл хоосон байна' };
-
-    const entries = [];
-
-    // Each row is a key-value or we take the first row as a single company
-    const row = rows[0];
-    const mappings: [string, string[], string][] = [
-        ['company_name', ['Төслийн бүтэн нэр', 'Компанийн бүтэн нэр', 'Нэр', 'Company Name', 'name'], 'Төслийн нэр'],
-        ['founded_year', ['Үүсгэн байгуулагдсан он', 'Founded', 'Он'], 'Үүсгэн байгуулагдсан'],
-        ['phone', ['Утас', 'Phone', 'Утас (төсөл)', 'Утас (компани)'], 'Утас'],
-        ['email', ['Имэйл', 'Email'], 'Имэйл'],
-        ['website', ['Вэбсайт', 'Website'], 'Вэбсайт'],
-        ['address', ['Хаяг', 'Address', 'Хаяг (оффис)'], 'Хаяг'],
-        ['facebook', ['Facebook хуудас', 'Facebook', 'FB'], 'Facebook'],
-        ['instagram', ['Instagram хуудас', 'Instagram', 'IG'], 'Instagram'],
-        ['description', ['Төслийн товч танилцуулга', 'Компанийн товч танилцуулга', 'Description', 'Тайлбар'], 'Танилцуулга'],
-        ['total_projects', ['Нийт барьсан төслийн тоо', 'Projects', 'Төслийн тоо'], 'Нийт төслийн тоо'],
-    ];
-
-    for (const [key, cols, desc] of mappings) {
-        const value = getVal(row, ...cols);
-        if (value) {
-            entries.push({
-                shop_id: shopId,
-                category: 'company',
-                key,
-                value: JSON.stringify(value),
-                description: desc,
-            });
+    // Дахин импорт = үнэ/статус шинэчлэлт (нэрээр тааруулж update — идемпотент)
+    let updated = 0;
+    await runChunked(toUpdate, 20, async ({ name, fields }) => {
+        let query = supabase
+            .from('properties')
+            .update(fields)
+            .eq('shop_id', ctx.shopId)
+            .eq('name', name);
+        if (hasDeletedAt) query = query.is('deleted_at', null);
+        const { error } = await query;
+        if (error) {
+            errors.push(`"${name}": шинэчлэхэд алдаа — ${errMessage(error)}`);
+        } else {
+            updated++;
         }
-    }
-
-    if (entries.length === 0) return { success: false, message: 'Төслийн мэдээлэл олдсонгүй' };
-
-    const { imported, updated } = await batchUpsertKnowledge(supabase, entries, shopId, 'company');
-
-    return {
-        success: true,
-        imported,
-        updated,
-        message: `Төслийн мэдээлэл: ${imported} шинэ, ${updated} шинэчлэгдсэн`,
-    };
-}
-
-// ============================================
-// 4. PROJECT IMPORT
-// ============================================
-
-async function importProject(supabase: any, buffer: Buffer, shopId: string): Promise<ImportResult> {
-    const rows = parseExcel(buffer);
-    if (rows.length === 0) return { success: false, message: 'Файл хоосон байна' };
-
-    const entries = [];
-    const errors: string[] = [];
-
-    for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        const rowNum = i + 2;
-
-        const projectName = getVal(row, 'Төслийн нэр', 'Нэр', 'Project Name', 'name');
-        if (!projectName) { errors.push(`Мөр ${rowNum}: Төслийн нэр хоосон`); continue; }
-
-        const projectData: Record<string, any> = {
-            name: projectName,
-            location: getVal(row, 'Байршил', 'Location', 'Хаяг'),
-            district: getVal(row, 'Дүүрэг', 'District'),
-            gps: getVal(row, 'GPS координат', 'GPS', 'GPS координат (lat, lng)'),
-            total_blocks: getNum(row, 'Нийт блокийн тоо', 'Blocks', 'Нийт блок'),
-            total_floors: getVal(row, 'Нийт давхарын тоо', 'Floors', 'Давхарын тоо'),
-            total_units: getNum(row, 'Нийт байрны тоо', 'Units', 'Нийт байр'),
-            construction_start: getVal(row, 'Баригдаж эхэлсэн огноо', 'Start Date', 'Барилга эхэлсэн'),
-            delivery_date: getVal(row, 'Хүлээлгэж өгөх огноо', 'Delivery Date', 'Хүлээлгэх огноо'),
-            progress_pct: getNum(row, 'Барилгын явц', 'Барилгын явц (%)', 'Progress'),
-            description: getVal(row, 'Төслийн тайлбар', 'Description', 'Тайлбар'),
-        };
-
-        // Remove null values
-        Object.keys(projectData).forEach(k => {
-            if (projectData[k] === null || projectData[k] === '') delete projectData[k];
-        });
-
-        entries.push({
-            shop_id: shopId,
-            category: 'projects',
-            key: projectName.toLowerCase().replace(/\s+/g, '_'),
-            value: JSON.stringify(projectData),
-            description: `Төсөл: ${projectName}`,
-        });
-    }
-
-    if (entries.length === 0) return { success: false, message: 'Төслийн мэдээлэл олдсонгүй', errors };
-
-    const { imported, updated } = await batchUpsertKnowledge(supabase, entries, shopId, 'projects');
-
-    return {
-        success: true,
-        imported,
-        updated,
-        errors: errors.length > 0 ? errors : undefined,
-        message: `Төслийн мэдээлэл: ${imported} шинэ, ${updated} шинэчлэгдсэн`,
-    };
-}
-
-// ============================================
-// 5. PAYMENT POLICY IMPORT
-// ============================================
-
-async function importPaymentPolicy(supabase: any, buffer: Buffer, shopId: string): Promise<ImportResult> {
-    const rows = parseExcel(buffer);
-    if (rows.length === 0) return { success: false, message: 'Файл хоосон байна' };
-
-    // Each row represents a project's payment policy
-    const entries = [];
-    for (const row of rows) {
-        const projectName = getVal(row, 'Төсөл', 'Project', 'Нэр') || 'default';
-        const policyData: Record<string, any> = {
-            project: projectName,
-            down_payment_pct: getNum(row, 'Урьдчилгаа', 'Урьдчилгаа (%)', 'Down Payment'),
-            installment_available: getVal(row, 'Хөсөчилсөн төлбөр', 'Installment') || null,
-            installment_months: getNum(row, 'Хасагчлэх хугацаа', 'Хөсөчлөх хугацаа', 'Months'),
-            discount_pct: getNum(row, 'Бэлнээр хөнгөлөлт', 'Бэлнээр хөнгөлөлт (%)', 'Cash Discount'),
-            vip_discount_pct: getNum(row, 'VIP хөнгөлөлт', 'VIP хөнгөлөлт (%)', 'VIP Discount'),
-            early_booking_discount: getVal(row, 'Эрт захиалгын хөнгөлөлт', 'Early Booking') || null,
-        };
-
-        Object.keys(policyData).forEach(k => {
-            if (policyData[k] === null || policyData[k] === '') delete policyData[k];
-        });
-
-        entries.push({
-            shop_id: shopId,
-            category: 'payment',
-            key: `policy_${projectName.toLowerCase().replace(/\s+/g, '_')}`,
-            value: JSON.stringify(policyData),
-            description: `Төлбөрийн бодлого: ${projectName}`,
-        });
-    }
-
-    if (entries.length === 0) return { success: false, message: 'Төлбөрийн мэдээлэл олдсонгүй' };
-
-    const { imported, updated } = await batchUpsertKnowledge(supabase, entries, shopId, 'payment');
-
-    return {
-        success: true,
-        imported,
-        updated,
-        message: `Төлбөрийн бодлого: ${imported} шинэ, ${updated} шинэчлэгдсэн`,
-    };
-}
-
-// ============================================
-// 6. LOAN INFO IMPORT
-// ============================================
-
-async function importLoanInfo(supabase: any, buffer: Buffer, shopId: string): Promise<ImportResult> {
-    const rows = parseExcel(buffer);
-    if (rows.length === 0) return { success: false, message: 'Файл хоосон байна' };
-
-    const row = rows[0];
-    const loanData: Record<string, any> = {
-        partner_banks: getVal(row, 'Хамтрагч банкууд', 'Banks', 'Банк'),
-        interest_rate: getVal(row, 'Зээлийн хүү', 'Зээлийн хүү (жилийн)', 'Interest Rate'),
-        loan_term: getVal(row, 'Зээлийн хугацаа', 'Зээлийн хугацаа (жил)', 'Loan Term'),
-        has_8pct_program: getVal(row, '"8% зээл" хөтөлбөр', '8% зээл', '8% Program'),
-        apartment_subsidy: getVal(row, 'Ажоны байр хөтөлбөр', 'Apartment Subsidy'),
-        required_documents: getVal(row, 'Шаардлагатай бичиг баримт', 'Documents', 'Бичиг баримт'),
-    };
-
-    Object.keys(loanData).forEach(k => {
-        if (!loanData[k]) delete loanData[k];
     });
 
-    const entry = {
-        shop_id: shopId,
-        category: 'loan',
-        key: 'loan_info',
-        value: JSON.stringify(loanData),
-        description: 'Зээлийн мэдээлэл',
-    };
-
-    const { data: existing } = await supabase
-        .from('ai_knowledge_base')
-        .select('id')
-        .eq('shop_id', shopId)
-        .eq('category', 'loan')
-        .eq('key', 'loan_info')
-        .single();
-
-    if (existing) {
-        await supabase.from('ai_knowledge_base').update({ value: entry.value }).eq('id', existing.id);
-        return { success: true, updated: 1, message: 'Зээлийн мэдээлэл шинэчлэгдсэн' };
-    }
-
-    await supabase.from('ai_knowledge_base').insert(entry);
-    return { success: true, imported: 1, message: 'Зээлийн мэдээлэл оруулсан' };
+    return summarize('Үл хөдлөх', imported, updated, 0, errors);
 }
 
 // ============================================
-// 7. AMENITIES IMPORT
+// 2. FAQ — shop_faqs руу (DM AI-ийн уншдаг жинхэнэ FAQ сан)
 // ============================================
 
-async function importAmenities(supabase: any, buffer: Buffer, shopId: string): Promise<ImportResult> {
-    const rows = parseExcel(buffer);
-    if (rows.length === 0) return { success: false, message: 'Файл хоосон байна' };
+async function importFAQ(
+    supabase: ReturnType<typeof supabaseAdmin>,
+    rows: ImportRow[],
+    ctx: ImportContext
+): Promise<ImportResult> {
+    const errors: string[] = [];
+    const parsed: Array<{ question: string; answer: string }> = [];
+    const seen = new Set<string>();
 
-    // Format: Project Name, Amenity1=Yes, Amenity2=No, ...
-    // Or: Онцлог, Тийм/Үгүй, Дэлгэрэнгүй
-    const amenitiesByProject: Record<string, string[]> = {};
-
-    for (const row of rows) {
-        const projectName = getVal(row, 'Төсөл', 'Project', 'Нэр') || 'default';
-        if (!amenitiesByProject[projectName]) amenitiesByProject[projectName] = [];
-
-        // Check each possible amenity column
-        const amenityName = getVal(row, 'Онцлог', 'Amenity', 'Онцлог бий юу?');
-        const available = getVal(row, 'Тийм/Үгүй', 'Available', 'Тийм', 'Байгаа эсэх');
-        const detail = getVal(row, 'Дэлгэрэнгүй', 'Detail', 'Тайлбар');
-
-        if (amenityName && available.toLowerCase() !== 'үгүй' && available.toLowerCase() !== 'no') {
-            amenitiesByProject[projectName].push(detail ? `${amenityName} (${detail})` : amenityName);
-        }
+    for (let i = 0; i < rows.length; i++) {
+        const { data, error } = mapFaqRow(rows[i], i + 2);
+        if (error) { errors.push(error); continue; }
+        if (!data) continue;
+        if (seen.has(data.question)) continue;
+        seen.add(data.question);
+        parsed.push(data);
     }
 
-    const entries = Object.entries(amenitiesByProject).map(([project, amenities]) => ({
-        shop_id: shopId,
-        category: 'projects',
-        key: `amenities_${project.toLowerCase().replace(/\s+/g, '_')}`,
-        value: JSON.stringify(amenities),
-        description: `${project} — Тохилог/Онцлог`,
-    }));
+    if (parsed.length === 0) return { success: false, message: 'FAQ олдсонгүй', errors };
 
-    const { imported, updated } = await batchUpsertKnowledge(supabase, entries, shopId, 'projects');
+    // Одоо байгаа асуултуудтай тааруулж update, шинийг insert (давхар FAQ үүсгэхгүй).
+    // PostgREST 1000 мөрөөр хязгаарладаг тул page-лэн бүрэн татна.
+    const byQuestion = new Map<string, string>();
+    const PAGE = 1000;
+    for (let from = 0; ; from += PAGE) {
+        const { data: existingFaqs, error: exErr } = await supabase
+            .from('shop_faqs')
+            .select('id, question')
+            .eq('shop_id', ctx.shopId)
+            .range(from, from + PAGE - 1);
+        if (exErr) return { success: false, message: errMessage(exErr), errors };
+        for (const f of existingFaqs || []) byQuestion.set(String(f.question).trim(), f.id);
+        if (!existingFaqs || existingFaqs.length < PAGE) break;
+    }
+
+    const fresh = parsed.filter(p => !byQuestion.has(p.question));
+    const toUpdate = parsed.filter(p => byQuestion.has(p.question));
+
+    let imported = 0;
+    if (fresh.length > 0) {
+        const { data, error } = await supabase
+            .from('shop_faqs')
+            .insert(fresh.map(p => ({
+                shop_id: ctx.shopId,
+                question: p.question,
+                answer: p.answer,
+                is_active: true,
+            })))
+            .select('id');
+        if (error) return { success: false, message: errMessage(error), errors };
+        imported = data?.length ?? 0;
+    }
+
+    let updated = 0;
+    await runChunked(toUpdate, 20, async (p) => {
+        const { error } = await supabase
+            .from('shop_faqs')
+            .update({ answer: p.answer, is_active: true })
+            .eq('id', byQuestion.get(p.question)!);
+        if (error) {
+            errors.push(`"${p.question}": шинэчлэхэд алдаа — ${errMessage(error)}`);
+        } else {
+            updated++;
+        }
+    });
+
+    return summarize('FAQ', imported, updated, 0, errors);
+}
+
+// ============================================
+// 3. КОМПАНИ — custom_knowledge (+ архив)
+// ============================================
+
+async function importCompany(
+    supabase: ReturnType<typeof supabaseAdmin>,
+    rows: ImportRow[],
+    ctx: ImportContext
+): Promise<ImportResult> {
+    const text = buildCompanyKnowledge(rows[0]);
+    if (!text) return { success: false, message: 'Компанийн мэдээлэл олдсонгүй' };
+
+    const { imported, updated, replaced } = await saveKnowledge(supabase, ctx, 'company', [{
+        key: knowledgeKey(ctx.projectName, 'company_info'),
+        text,
+        description: 'Компанийн ерөнхий мэдээлэл',
+        suffix: 'company_info',
+    }]);
 
     return {
         success: true,
         imported,
         updated,
-        message: `Тохилог мэдээлэл: ${imported} шинэ, ${updated} шинэчлэгдсэн`,
+        message: withReplaced(`Компанийн мэдээлэл AI мэдлэгийн санд орлоо (${imported} шинэ, ${updated} шинэчлэгдсэн)`, replaced),
     };
 }
 
 // ============================================
-// 8. AI EXTRA INFO IMPORT
+// 4. ТӨСӨЛ — projects хүснэгт (dropdown) + custom_knowledge (+ архив)
 // ============================================
 
-async function importAIExtra(supabase: any, buffer: Buffer, shopId: string): Promise<ImportResult> {
-    const rows = parseExcel(buffer);
-    if (rows.length === 0) return { success: false, message: 'Файл хоосон байна' };
-
-    const entries = [];
+async function importProject(
+    supabase: ReturnType<typeof supabaseAdmin>,
+    rows: ImportRow[],
+    ctx: ImportContext
+): Promise<ImportResult> {
     const errors: string[] = [];
+    const items: Array<{ key: string; text: string; description: string; suffix?: string }> = [];
+    let projectRowsUpserted = 0;
 
     for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        const rowNum = i + 2;
+        const { data, error } = buildProjectKnowledge(rows[i], i + 2);
+        if (error) { errors.push(error); continue; }
+        if (!data) continue;
 
-        const key = getVal(row, 'Мэдээлэл', 'Түлхүүр', 'Key', 'key');
-        const value = getVal(row, 'Утга', 'Бөглөх', 'Value', 'value');
-
-        if (!key) { errors.push(`Мөр ${rowNum}: Мэдээллийн нэр хоосон`); continue; }
-        if (!value) { errors.push(`Мөр ${rowNum}: Утга хоосон (${key})`); continue; }
-
-        entries.push({
-            shop_id: shopId,
-            category: 'ai_extra',
-            key: key.toLowerCase().replace(/\s+/g, '_'),
-            value: JSON.stringify(value),
-            description: key,
+        items.push({
+            key: knowledgeKey(data.name, 'overview'),
+            text: data.text,
+            description: `Төсөл: ${data.name}`,
+            suffix: 'overview',
         });
+
+        // projects хүснэгтэд upsert — импортолсон төсөл сонголтын жагсаалтад шууд гарна
+        try {
+            const { data: existing } = await supabase
+                .from('projects')
+                .select('id')
+                .eq('shop_id', ctx.shopId)
+                .eq('name', data.name)
+                .maybeSingle();
+
+            if (existing) {
+                const { error: upErr } = await supabase
+                    .from('projects')
+                    .update(data.projectFields)
+                    .eq('id', existing.id);
+                if (!upErr) projectRowsUpserted++;
+            } else {
+                const { error: insErr } = await supabase
+                    .from('projects')
+                    .insert({ shop_id: ctx.shopId, ...data.projectFields });
+                if (!insErr) projectRowsUpserted++;
+            }
+        } catch {
+            // projects хүснэгтгүй орчинд мэдлэгийн импортыг унагахгүй
+        }
     }
 
-    if (entries.length === 0) return { success: false, message: 'AI мэдээлэл олдсонгүй', errors };
+    if (items.length === 0) return { success: false, message: 'Төслийн мэдээлэл олдсонгүй', errors };
 
-    const { imported, updated } = await batchUpsertKnowledge(supabase, entries, shopId, 'ai_extra');
+    const { imported, updated, replaced } = await saveKnowledge(supabase, ctx, 'projects', items);
 
     return {
         success: true,
         imported,
         updated,
         errors: errors.length > 0 ? errors : undefined,
-        message: `AI мэдээлэл: ${imported} шинэ, ${updated} шинэчлэгдсэн`,
+        message: withReplaced(`Төслийн мэдээлэл: ${imported} шинэ, ${updated} шинэчлэгдсэн (${projectRowsUpserted} төсөл бүртгэлд орсон)`, replaced),
     };
 }
 
 // ============================================
-// 9. LEADS IMPORT
+// 5. ТӨЛБӨРИЙН БОДЛОГО — custom_knowledge (+ архив)
 // ============================================
 
-function mapLeadStatus(input: string): string {
-    const lower = String(input).toLowerCase().trim();
-    const map: Record<string, string> = {
-        'new': 'new', 'шинэ': 'new',
-        'contacted': 'contacted', 'холбогдсон': 'contacted',
-        'qualified': 'qualified', 'шалгарсан': 'qualified',
-        'negotiation': 'negotiation', 'хэлэлцэж буй': 'negotiation', 'хэлэлцээр': 'negotiation',
-        'won': 'won', 'амжилттай': 'won', 'гэрээ хийсэн': 'won',
-        'lost': 'lost', 'алдсан': 'lost', 'буцсан': 'lost',
-    };
-    return map[lower] || 'new';
-}
+async function importPaymentPolicy(
+    supabase: ReturnType<typeof supabaseAdmin>,
+    rows: ImportRow[],
+    ctx: ImportContext
+): Promise<ImportResult> {
+    const items: Array<{ key: string; text: string; description: string; suffix?: string }> = [];
 
-async function importLeads(supabase: any, buffer: Buffer, shopId: string): Promise<ImportResult> {
-    const rows = parseExcel(buffer);
-    if (rows.length === 0) return { success: false, message: 'Файл хоосон байна' };
-
-    const leads = [];
-    const errors: string[] = [];
-
-    for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        const rowNum = i + 2;
-
-        const name = getVal(row, 'Нэр', 'name', 'Name', 'Өчигдрийн нэр');
-        const phone = getVal(row, 'Утас', 'phone', 'Phone', 'Утасны дугаар');
-
-        if (!name) { errors.push(`Мөр ${rowNum}: Нэр хоосон`); continue; }
-        if (!phone) { errors.push(`Мөр ${rowNum}: Утас хоосон (${name})`); continue; }
-
-        const status = mapLeadStatus(getVal(row, 'Статус', 'status', 'Status') || 'new');
-
-        leads.push({
-            shop_id: shopId,
-            name,
-            phone,
-            email: getVal(row, 'Имэйл', 'email', 'Email') || null,
-            interested_in: getVal(row, 'Сонирхож буй', 'interested_in', 'Interested In', 'Сонирхол') || null,
-            budget: getNum(row, 'Төсөв', 'budget', 'Budget'),
-            source: getVal(row, 'Эх сурвалж', 'source', 'Source') || null,
-            notes: getVal(row, 'Тэмдэглэл', 'notes', 'Notes', 'Нэмэлт') || null,
-            status,
+    for (const row of rows) {
+        const { project, text } = buildPaymentPolicyKnowledge(row);
+        if (!text) continue;
+        const name = project || ctx.projectName;
+        items.push({
+            key: knowledgeKey(name, 'payment'),
+            text,
+            description: `Төлбөрийн бодлого${name ? `: ${name}` : ''}`,
+            suffix: 'payment',
         });
     }
 
-    if (leads.length === 0) {
+    if (items.length === 0) return { success: false, message: 'Төлбөрийн мэдээлэл олдсонгүй' };
+
+    const { imported, updated, replaced } = await saveKnowledge(supabase, ctx, 'payment', items);
+
+    return {
+        success: true,
+        imported,
+        updated,
+        message: withReplaced(`Төлбөрийн бодлого AI мэдлэгийн санд орлоо (${imported} шинэ, ${updated} шинэчлэгдсэн)`, replaced),
+    };
+}
+
+// ============================================
+// 6. ЗЭЭЛИЙН МЭДЭЭЛЭЛ — custom_knowledge (+ архив)
+// ============================================
+
+async function importLoanInfo(
+    supabase: ReturnType<typeof supabaseAdmin>,
+    rows: ImportRow[],
+    ctx: ImportContext
+): Promise<ImportResult> {
+    const text = buildLoanKnowledge(rows[0]);
+    if (!text) return { success: false, message: 'Зээлийн мэдээлэл олдсонгүй' };
+
+    const { imported, updated, replaced } = await saveKnowledge(supabase, ctx, 'loan', [{
+        key: knowledgeKey(ctx.projectName, 'loan'),
+        text,
+        description: 'Зээлийн мэдээлэл',
+        suffix: 'loan',
+    }]);
+
+    return {
+        success: true,
+        imported,
+        updated,
+        message: withReplaced(`Зээлийн мэдээлэл AI мэдлэгийн санд орлоо (${imported} шинэ, ${updated} шинэчлэгдсэн)`, replaced),
+    };
+}
+
+// ============================================
+// 7. ТОХИЛОГ/ОНЦЛОГ — custom_knowledge (+ архив)
+// ============================================
+
+async function importAmenities(
+    supabase: ReturnType<typeof supabaseAdmin>,
+    rows: ImportRow[],
+    ctx: ImportContext
+): Promise<ImportResult> {
+    const byProject = buildAmenitiesKnowledge(rows);
+    if (byProject.size === 0) return { success: false, message: 'Тохилог мэдээлэл олдсонгүй' };
+
+    const items: Array<{ key: string; text: string; description: string; suffix?: string }> = [];
+    for (const [project, amenities] of byProject) {
+        const name = project || ctx.projectName;
+        items.push({
+            key: knowledgeKey(name, 'amenities'),
+            text: amenities.map(a => `- ${a}`).join('\n'),
+            description: `Тохилог/Онцлог${name ? `: ${name}` : ''}`,
+            suffix: 'amenities',
+        });
+    }
+
+    const { imported, updated, replaced } = await saveKnowledge(supabase, ctx, 'projects', items);
+
+    return {
+        success: true,
+        imported,
+        updated,
+        message: withReplaced(`Тохилог мэдээлэл AI мэдлэгийн санд орлоо (${imported} шинэ, ${updated} шинэчлэгдсэн)`, replaced),
+    };
+}
+
+// ============================================
+// 8. AI НЭМЭЛТ — custom_knowledge (+ архив)
+// ============================================
+
+async function importAIExtra(
+    supabase: ReturnType<typeof supabaseAdmin>,
+    rows: ImportRow[],
+    ctx: ImportContext
+): Promise<ImportResult> {
+    const { entries, errors } = buildAiExtraEntries(rows);
+    if (entries.length === 0) return { success: false, message: 'AI мэдээлэл олдсонгүй', errors };
+
+    const { imported, updated, replaced } = await saveKnowledge(
+        supabase,
+        ctx,
+        'ai_extra',
+        entries.map(e => ({
+            key: knowledgeKey(ctx.projectName, e.key),
+            text: e.value,
+            description: e.label,
+            suffix: e.key,
+        }))
+    );
+
+    return {
+        success: true,
+        imported,
+        updated,
+        errors: errors.length > 0 ? errors : undefined,
+        message: withReplaced(`AI мэдээлэл мэдлэгийн санд орлоо (${imported} шинэ, ${updated} шинэчлэгдсэн)`, replaced),
+    };
+}
+
+// ============================================
+// 9. LEADS — leads хүснэгтийн жинхэнэ баганууд, утсаар давхардал шалгана
+// ============================================
+
+async function importLeads(
+    supabase: ReturnType<typeof supabaseAdmin>,
+    rows: ImportRow[],
+    ctx: ImportContext
+): Promise<ImportResult> {
+    const errors: string[] = [];
+    const fresh: Array<Record<string, unknown>> = [];
+    const seenPhones = new Set<string>();
+    let skipped = 0;
+
+    const existingPhonesRaw = await fetchExistingValues(supabase, 'leads', 'customer_phone', ctx.shopId);
+    const existingPhones = new Set([...existingPhonesRaw].map(normalizePhoneKey));
+
+    for (let i = 0; i < rows.length; i++) {
+        const { data, error } = mapLeadRow(rows[i], i + 2);
+        if (error) { errors.push(error); continue; }
+        if (!data) continue;
+
+        const phoneKey = normalizePhoneKey(data.customer_phone);
+
+        // CRM-д аль хэдийн байгаа лидийг дарж бичихгүй — pipeline статус нь үнэ цэнтэй.
+        // Цифргүй "утас" (хоосон түлхүүр) давхардлын шалгалтад орохгүй — шууд оруулна.
+        if (phoneKey) {
+            if (existingPhones.has(phoneKey)) { skipped++; continue; }
+            if (seenPhones.has(phoneKey)) { skipped++; continue; }
+            seenPhones.add(phoneKey);
+        }
+
+        const record: Record<string, unknown> = { shop_id: ctx.shopId, ...data };
+        if (ctx.projectId) record.project_id = ctx.projectId;
+        fresh.push(record);
+    }
+
+    if (fresh.length === 0) {
+        if (skipped > 0) {
+            return summarize('Lead', 0, 0, skipped, errors);
+        }
         return { success: false, message: 'Lead олдсонгүй', errors };
     }
 
-    const { data, error } = await supabase.from('leads').insert(leads).select('id');
-    if (error) return { success: false, message: error.message, errors };
+    const { count, error } = await insertWithOptionalColumns(supabase, 'leads', fresh, ['project_id']);
+    if (error) return { success: false, message: error, errors };
 
-    return {
-        success: true,
-        imported: data.length,
-        errors: errors.length > 0 ? errors : undefined,
-        message: `${data.length} lead амжилттай оруулсан${errors.length > 0 ? `, ${errors.length} алдаа` : ''}`,
-    };
+    return summarize('Lead', count, 0, skipped, errors);
 }
 
 // ============================================
-// 10. CONTRACTS IMPORT
+// 10. CONTRACTS — property_contracts-ийн жинхэнэ баганууд,
+//     гэрээний дугаараар давхардал шалгаж, дахин импортод update
 // ============================================
 
-function mapContractStatus(input: string): string {
-    const lower = String(input).toLowerCase().trim();
-    const map: Record<string, string> = {
-        'active': 'active', 'идэвхтэй': 'active', 'хүчинтэй': 'active',
-        'completed': 'completed', 'дууссан': 'completed', 'биелүүлсэн': 'completed',
-        'cancelled': 'cancelled', 'цуцалсан': 'cancelled',
-        'pending': 'pending', 'хүлээгдэж буй': 'pending',
-    };
-    return map[lower] || 'active';
-}
-
-async function importContracts(supabase: any, buffer: Buffer, shopId: string): Promise<ImportResult> {
-    const rows = parseExcel(buffer);
-    if (rows.length === 0) return { success: false, message: 'Файл хоосон байна' };
-
-    const contracts = [];
+async function importContracts(
+    supabase: ReturnType<typeof supabaseAdmin>,
+    rows: ImportRow[],
+    ctx: ImportContext
+): Promise<ImportResult> {
     const errors: string[] = [];
+    const fresh: Array<Record<string, unknown>> = [];
+    const toUpdate: Array<{ contract_number: string; fields: Record<string, unknown> }> = [];
+    const seen = new Set<string>();
+
+    const [existingNumbers, hasProjectId, hasNotes] = await Promise.all([
+        fetchExistingValues(supabase, 'property_contracts', 'contract_number', ctx.shopId),
+        ctx.projectId ? columnExists(supabase, 'property_contracts', 'project_id') : Promise.resolve(false),
+        columnExists(supabase, 'property_contracts', 'notes'),
+    ]);
 
     for (let i = 0; i < rows.length; i++) {
-        const row = rows[i];
-        const rowNum = i + 2;
+        const { data, error, provided } = mapContractRow(rows[i], i + 2);
+        if (error) { errors.push(error); continue; }
+        if (!data) continue;
 
-        const contractNumber = getVal(row, 'Гэрээний дугаар', 'contract_number', 'Contract Number', 'Дугаар');
-        const buyerName = getVal(row, 'Худалдан авагч', 'buyer_name', 'Buyer', 'Авагч');
-        const propertyName = getVal(row, 'Байрны нэр', 'property_name', 'Property', 'Байр');
-        const totalPrice = getNum(row, 'Нийт үнэ', 'total_price', 'Price', 'Үнэ');
+        if (seen.has(data.contract_number)) {
+            errors.push(`Мөр ${i + 2}: Гэрээний дугаар "${data.contract_number}" файл дотор давхардсан`);
+            continue;
+        }
+        seen.add(data.contract_number);
 
-        if (!contractNumber) { errors.push(`Мөр ${rowNum}: Гэрээний дугаар хоосон`); continue; }
-        if (!buyerName) { errors.push(`Мөр ${rowNum}: Худалдан авагч хоосон (${contractNumber})`); continue; }
-        if (!propertyName) { errors.push(`Мөр ${rowNum}: Байрны нэр хоосон (${contractNumber})`); continue; }
-        if (!totalPrice) { errors.push(`Мөр ${rowNum}: Нийт үнэ буруу (${contractNumber})`); continue; }
-
-        const status = mapContractStatus(getVal(row, 'Статус', 'status', 'Status') || 'active');
-        const downPayment = getNum(row, 'Урьдчилгаа', 'down_payment', 'Down Payment');
-
-        contracts.push({
-            shop_id: shopId,
-            contract_number: contractNumber,
-            buyer_name: buyerName,
-            buyer_phone: getVal(row, 'Худалдан авагч утас', 'buyer_phone', 'Phone') || null,
-            buyer_email: getVal(row, 'Худалдан авагч имэйл', 'buyer_email', 'Email') || null,
-            property_name: propertyName,
-            total_price: totalPrice,
-            down_payment: downPayment,
-            remaining_balance: downPayment ? totalPrice - downPayment : totalPrice,
-            contract_date: getVal(row, 'Гэрээний огноо', 'contract_date', 'Date') || null,
-            status,
-            notes: getVal(row, 'Тэмдэглэл', 'notes', 'Notes') || null,
-        });
+        if (existingNumbers.has(data.contract_number)) {
+            // Update = зөвхөн файлд байсан баганууд — Урьдчилгаа багана байхгүй
+            // файл одоо байгаа гэрээний төлбөрийн явцыг 0 болгож дарахгүй.
+            const fields = pickFields(data as unknown as Record<string, unknown>, provided, ['contract_number']);
+            if (!hasNotes) delete fields.notes;
+            if (hasProjectId) fields.project_id = ctx.projectId;
+            toUpdate.push({ contract_number: data.contract_number, fields });
+        } else {
+            const record: Record<string, unknown> = { shop_id: ctx.shopId, ...data };
+            if (ctx.projectId) record.project_id = ctx.projectId;
+            fresh.push(record);
+        }
     }
 
-    if (contracts.length === 0) {
+    if (fresh.length === 0 && toUpdate.length === 0) {
         return { success: false, message: 'Гэрээ олдсонгүй', errors };
     }
 
-    const { data, error } = await supabase.from('property_contracts').insert(contracts).select('id');
-    if (error) return { success: false, message: error.message, errors };
+    let imported = 0;
+    if (fresh.length > 0) {
+        const { count, error } = await insertWithOptionalColumns(
+            supabase, 'property_contracts', fresh, ['project_id', 'notes']
+        );
+        if (error) return { success: false, message: error, errors };
+        imported = count;
+    }
 
-    return {
-        success: true,
-        imported: data.length,
-        errors: errors.length > 0 ? errors : undefined,
-        message: `${data.length} гэрээ амжилттай оруулсан${errors.length > 0 ? `, ${errors.length} алдаа` : ''}`,
-    };
+    // Урьдчилгаа баганагүй файл үнэ өөрчилбөл balance хуучин үнээр үлдэхгүй —
+    // одоогийн paid_amount-аас дахин тооцно (үнэ ба үлдэгдэл зөрөхөөс сэргийлнэ).
+    const needBalance = toUpdate.filter(
+        u => u.fields.total_price !== undefined && u.fields.balance === undefined
+    );
+    if (needBalance.length > 0) {
+        const paidByNumber = new Map<string, number>();
+        for (let i = 0; i < needBalance.length; i += 200) {
+            const nums = needBalance.slice(i, i + 200).map(u => u.contract_number);
+            const { data } = await supabase
+                .from('property_contracts')
+                .select('contract_number, paid_amount')
+                .eq('shop_id', ctx.shopId)
+                .in('contract_number', nums);
+            for (const r of data || []) {
+                paidByNumber.set(String(r.contract_number), Number(r.paid_amount) || 0);
+            }
+        }
+        for (const u of needBalance) {
+            const paid = paidByNumber.get(u.contract_number) ?? 0;
+            u.fields.balance = (u.fields.total_price as number) - paid;
+        }
+    }
+
+    // Дахин импорт = төлбөрийн явц шинэчлэлт (дугаараар тааруулж update)
+    let updated = 0;
+    await runChunked(toUpdate, 20, async ({ contract_number, fields }) => {
+        const { error } = await supabase
+            .from('property_contracts')
+            .update(fields)
+            .eq('shop_id', ctx.shopId)
+            .eq('contract_number', contract_number);
+        if (error) {
+            errors.push(`"${contract_number}": шинэчлэхэд алдаа — ${errMessage(error)}`);
+        } else {
+            updated++;
+        }
+    });
+
+    return summarize('Гэрээ', imported, updated, 0, errors);
 }
