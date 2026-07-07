@@ -226,6 +226,29 @@ Defined in [src/lib/ai/tools/definitions.ts](src/lib/ai/tools/definitions.ts), e
 
 ---
 
+## Admin Data Import (`/admin/import`)
+
+Bulk CSV/Excel import for onboarding a new project's data. UI: `src/app/admin/import/page.tsx`; API: `POST /api/admin/import`; pure row-mappers (unit-tested) in `src/lib/admin/import/mappers.ts`.
+
+**Where each category lands (this is the load-bearing part):**
+
+| Category | Destination | Read by |
+|----------|-------------|---------|
+| `properties` | `properties` table (insert; re-import updates by `shop_id`+`name`) | DM AI `search_properties`, dashboard |
+| `leads` | `leads` table — real columns (`customer_name`/`customer_phone`/`customer_email`/`budget_max`, `status` = `lead_status` enum). Existing phones are skipped, never overwritten | CRM |
+| `contracts` | `property_contracts` — real columns (`customer_name`/`unit_number`/`prepayment_paid`/`paid_amount`/`balance`, `contract_status` = `active\|closed\|cancelled`). Re-import updates by `contract_number` | dashboard/contracts |
+| `faq` | `shop_faqs` (upsert by question) | `WebhookService.getAIFeatures` → DM AI |
+| `company`, `project`, `payment_policy`, `loan_info`, `amenities`, `ai_extra` | `shops.custom_knowledge` JSONB (merge, keys prefixed by project slug e.g. `mandala_garden_payment`) + `ai_knowledge_base` as structured archive | `PromptService.buildDynamicKnowledge` → DM AI prompt |
+
+Rules that must not regress:
+- **`shops.custom_knowledge` + `shop_faqs` + `properties` are the ONLY sources the FB/IG DM AI reads.** `ai_knowledge_base` is an archive (only competitors routes read it) — never write AI-facing knowledge only there.
+- `projectId` is validated server-side against `projects` (must belong to the posted `shopId`) and stamped best-effort onto `properties`/`leads`/`property_contracts` (`project_id`, migration `20260707120000`); inserts retry without optional columns when a migration hasn't been applied yet.
+- The `project` import category also upserts into the `projects` table (by `shop_id`+`name`) so imported projects appear in the project dropdown.
+- `POST /api/admin/projects` requires an explicit `shop_id` when more than one shop exists (never silently attaches to the first shop).
+- Excel date cells arrive as `Date` objects (`cellDates: true`) or serials — always go through `toDateStr`.
+
+---
+
 ## Database (Supabase PostgreSQL)
 
 Active migrations live in `supabase/migrations/`. Old e-commerce migrations are archived in `supabase/skipped_migrations/` for audit.

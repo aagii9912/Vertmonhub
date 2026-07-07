@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import {
     Upload, Building2, MessageSquare, CheckCircle2, AlertCircle,
     Download, Loader2, Users, FileText, CreditCard, MapPin,
@@ -93,15 +93,16 @@ const IMPORT_CATEGORIES: ImportCategory[] = [
             { name: 'Худалдан авагч', required: true },
             { name: 'Байрны нэр', required: true },
             { name: 'Нийт үнэ', required: true },
+            { name: 'Блок' },
             { name: 'Урьдчилгаа' },
             { name: 'Гэрээний огноо' },
             { name: 'Статус' },
             { name: 'Тэмдэглэл' },
         ],
         templateFn: () =>
-            'Гэрээний дугаар,Худалдан авагч,Худалдан авагч утас,Байрны нэр,Нийт үнэ,Урьдчилгаа,Гэрээний огноо,Статус,Тэмдэглэл\n' +
-            'MG-2026-001,Бат Болд,99112233,A-301,380000000,114000000,2026-01-15,active,Зээлээр\n' +
-            'MG-2026-002,Сараа,88001122,B-501,280000000,84000000,2026-02-01,active,Бэлнээр\n',
+            'Гэрээний дугаар,Худалдан авагч,Худалдан авагч утас,Блок,Байрны нэр,Нийт үнэ,Урьдчилгаа,Гэрээний огноо,Статус,Тэмдэглэл\n' +
+            'MG-2026-001,Бат Болд,99112233,A,A-301,380000000,114000000,2026-01-15,active,Зээлээр\n' +
+            'MG-2026-002,Сараа,88001122,B,B-501,280000000,84000000,2026-02-01,closed,Бэлнээр\n',
     },
     {
         type: 'faq',
@@ -120,12 +121,12 @@ const IMPORT_CATEGORIES: ImportCategory[] = [
     },
     {
         type: 'company',
-        label: 'Төсөл',
-        desc: 'Төслийн ерөнхий мэдээлэл',
+        label: 'Компани',
+        desc: 'Компанийн ерөнхий мэдээлэл',
         icon: Package,
         color: 'indigo',
         columns: [
-            { name: 'Төслийн бүтэн нэр', required: true },
+            { name: 'Компанийн бүтэн нэр', required: true },
             { name: 'Утас' },
             { name: 'Имэйл' },
             { name: 'Хаяг' },
@@ -133,8 +134,8 @@ const IMPORT_CATEGORIES: ImportCategory[] = [
             { name: 'Facebook хуудас' },
         ],
         templateFn: () =>
-            'Төслийн бүтэн нэр,Үүсгэн байгуулагдсан он,Утас,Имэйл,Вэбсайт,Хаяг,Facebook хуудас,Instagram хуудас,Төслийн товч танилцуулга\n' +
-            'Vertmon LLC,2020,77001122,info@vertmon.mn,vertmon.mn,Улаанбаатар Сүхбаатар дүүрэг,facebook.com/vertmon,instagram.com/vertmon,Үл хөдлөх хөрөнгийн төсөл\n',
+            'Компанийн бүтэн нэр,Үүсгэн байгуулагдсан он,Утас,Имэйл,Вэбсайт,Хаяг,Facebook хуудас,Instagram хуудас,Компанийн товч танилцуулга\n' +
+            'Vertmon LLC,2020,77001122,info@vertmon.mn,vertmon.mn,Улаанбаатар Сүхбаатар дүүрэг,facebook.com/vertmon,instagram.com/vertmon,Үл хөдлөх хөрөнгийн компани\n',
     },
     {
         type: 'payment_policy',
@@ -145,12 +146,12 @@ const IMPORT_CATEGORIES: ImportCategory[] = [
         columns: [
             { name: 'Төсөл', required: true },
             { name: 'Урьдчилгаа (%)' },
-            { name: 'Хөсөчилсөн төлбөр' },
-            { name: 'Хөсөчлөх хугацаа' },
+            { name: 'Хэсэгчилсэн төлбөр' },
+            { name: 'Хэсэгчлэх хугацаа' },
             { name: 'Бэлнээр хөнгөлөлт (%)' },
         ],
         templateFn: () =>
-            'Төсөл,Урьдчилгаа,Хөсөчилсөн төлбөр,Хасагчлэх хугацаа,Бэлнээр хөнгөлөлт,VIP хөнгөлөлт\n' +
+            'Төсөл,Урьдчилгаа,Хэсэгчилсэн төлбөр,Хэсэгчлэх хугацаа,Бэлнээр хөнгөлөлт,VIP хөнгөлөлт\n' +
             'Mandala Garden,30%,Тийм,12 сар,5%,2%\n',
     },
     {
@@ -220,8 +221,21 @@ interface ImportResult {
     success: boolean;
     imported?: number;
     updated?: number;
+    skipped?: number;
     errors?: string[];
     message: string;
+}
+
+interface AdminProject {
+    id: string;
+    name: string;
+    shop_id: string;
+    shops?: { name: string } | null;
+}
+
+interface AdminShop {
+    id: string;
+    name: string;
 }
 
 export default function AdminImportPage() {
@@ -232,16 +246,20 @@ export default function AdminImportPage() {
     const fileRef = useRef<HTMLInputElement>(null);
 
     // Project state
-    const [projects, setProjects] = useState<{ id: string; name: string; shop_id: string }[]>([]);
+    const [projects, setProjects] = useState<AdminProject[]>([]);
     const [selectedProject, setSelectedProject] = useState<string>('');
     const [projectsLoading, setProjectsLoading] = useState(true);
     const [showNewProject, setShowNewProject] = useState(false);
     const [newProjectName, setNewProjectName] = useState('');
     const [newProjectLocation, setNewProjectLocation] = useState('');
+    const [newProjectShopId, setNewProjectShopId] = useState('');
     const [creatingProject, setCreatingProject] = useState(false);
+    const [createError, setCreateError] = useState<string | null>(null);
 
-    // Fetch projects on mount
-    useState(() => {
+    // Shop state (шинэ төслийг аль shop-д харьяалуулахыг ил сонгоно)
+    const [shops, setShops] = useState<AdminShop[]>([]);
+
+    useEffect(() => {
         fetch('/api/admin/projects')
             .then(res => res.json())
             .then(data => {
@@ -249,10 +267,20 @@ export default function AdminImportPage() {
                     setProjects(data.projects);
                     if (data.projects.length > 0) setSelectedProject(data.projects[0].id);
                 }
-                setProjectsLoading(false);
             })
-            .catch(() => setProjectsLoading(false));
-    });
+            .catch(() => { })
+            .finally(() => setProjectsLoading(false));
+
+        fetch('/api/admin/shops')
+            .then(res => res.json())
+            .then(data => {
+                if (data.shops) {
+                    setShops(data.shops);
+                    if (data.shops.length > 0) setNewProjectShopId(data.shops[0].id);
+                }
+            })
+            .catch(() => { });
+    }, []);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const f = e.target.files?.[0];
@@ -275,7 +303,12 @@ export default function AdminImportPage() {
 
             const res = await fetch('/api/admin/import', { method: 'POST', body: formData });
             const data = await res.json();
-            setResult(data);
+            // Auth/validation алдаа {error} хэлбэрээр ирдэг — үр дүнгийн картад ойлгомжтой харуулна
+            if (!res.ok && data && !data.message && data.error) {
+                setResult({ success: false, message: data.error });
+            } else {
+                setResult(data);
+            }
         } catch (error: any) {
             setResult({ success: false, imported: 0, message: error.message });
         } finally {
@@ -286,6 +319,7 @@ export default function AdminImportPage() {
     const createProject = async () => {
         if (!newProjectName.trim()) return;
         setCreatingProject(true);
+        setCreateError(null);
         try {
             const res = await fetch('/api/admin/projects', {
                 method: 'POST',
@@ -293,6 +327,7 @@ export default function AdminImportPage() {
                 body: JSON.stringify({
                     name: newProjectName.trim(),
                     location: newProjectLocation.trim() || null,
+                    shop_id: newProjectShopId || null,
                 }),
             });
             const data = await res.json();
@@ -302,9 +337,12 @@ export default function AdminImportPage() {
                 setNewProjectName('');
                 setNewProjectLocation('');
                 setShowNewProject(false);
+            } else {
+                setCreateError(data.error || 'Төсөл үүсгэхэд алдаа гарлаа');
             }
         } catch (e) {
             console.error('Create project error:', e);
+            setCreateError('Төсөл үүсгэхэд алдаа гарлаа');
         } finally {
             setCreatingProject(false);
         }
@@ -394,9 +432,31 @@ export default function AdminImportPage() {
                                 onChange={(e) => setNewProjectLocation(e.target.value)}
                                 className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand focus:border-transparent text-sm"
                             />
+                            {shops.length > 1 && (
+                                <div>
+                                    <label className="block text-xs font-medium text-muted-foreground mb-1">
+                                        Харьяалагдах shop *
+                                    </label>
+                                    <select
+                                        value={newProjectShopId}
+                                        onChange={(e) => setNewProjectShopId(e.target.value)}
+                                        className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand focus:border-transparent text-sm"
+                                    >
+                                        {shops.map(s => (
+                                            <option key={s.id} value={s.id}>{s.name}</option>
+                                        ))}
+                                    </select>
+                                    <p className="text-[11px] text-muted-foreground mt-1">
+                                        Импортолсон бүх өгөгдөл энэ shop-ийн AI/CRM-д харьяалагдана
+                                    </p>
+                                </div>
+                            )}
+                            {createError && (
+                                <p className="text-xs text-status-danger">{createError}</p>
+                            )}
                             <button
                                 onClick={createProject}
-                                disabled={!newProjectName.trim() || creatingProject}
+                                disabled={!newProjectName.trim() || creatingProject || (shops.length > 1 && !newProjectShopId)}
                                 className="w-full py-2 bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2"
                             >
                                 {creatingProject ? (
@@ -427,7 +487,9 @@ export default function AdminImportPage() {
                             className="w-full px-3 py-2.5 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand focus:border-brand"
                         >
                             {projects.map(p => (
-                                <option key={p.id} value={p.id}>{p.name}</option>
+                                <option key={p.id} value={p.id}>
+                                    {p.name}{shops.length > 1 && p.shops?.name ? ` — ${p.shops.name}` : ''}
+                                </option>
                             ))}
                         </select>
                     )}
@@ -527,6 +589,9 @@ export default function AdminImportPage() {
                     )}
                     {result.success && (result.updated || 0) > 0 && (
                         <p className="text-sm text-status-success">🔄 {result.updated} мөр шинэчлэгдсэн</p>
+                    )}
+                    {result.success && (result.skipped || 0) > 0 && (
+                        <p className="text-sm text-status-success">⏭️ {result.skipped} давхардсан мөрийг алгассан</p>
                     )}
                     {result.errors && result.errors.length > 0 && (
                         <div className="mt-3 p-3 bg-surface rounded-lg border">
