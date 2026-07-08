@@ -20,12 +20,12 @@ export function MyKpiCards({ kpis, period }: { kpis: MyStatsData['kpis']; period
     const cards = [
         { title: 'Идэвхтэй лид', value: String(kpis.activeLeads), icon: Users, iconColor: 'brand' as const },
         {
-            title: `Шинэ лид (${PERIOD_LABEL[period]})`,
+            title: `Шинэ лид · ${PERIOD_LABEL[period]}`,
             value: String(kpis.newLeads),
             icon: UserPlus,
             iconColor: 'success' as const,
         },
-        { title: 'Уулзалт (өнөөдөр)', value: String(kpis.viewingsToday), icon: Eye, iconColor: 'info' as const },
+        { title: 'Өнөөдрийн уулзалт', value: String(kpis.viewingsToday), icon: Eye, iconColor: 'info' as const },
         { title: 'Идэвхтэй гэрээ', value: String(kpis.activeContracts), icon: FileText, iconColor: 'warning' as const },
         {
             title: 'Хугацаа хэтэрсэн',
@@ -34,7 +34,7 @@ export function MyKpiCards({ kpis, period }: { kpis: MyStatsData['kpis']; period
             iconColor: (kpis.overdueContracts > 0 ? 'danger' : 'neutral') as 'danger' | 'neutral',
         },
         {
-            title: 'Энэ сарын борлуулалт',
+            title: 'Сарын борлуулалт',
             value: formatMNT(kpis.salesThisMonth, { compact: true }),
             icon: Banknote,
             iconColor: 'brand' as const,
@@ -42,7 +42,8 @@ export function MyKpiCards({ kpis, period }: { kpis: MyStatsData['kpis']; period
     ];
 
     return (
-        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 md:gap-4">
+        /* Container query — Sheet (нарийн) дотор 2-3, бүтэн дэлгэцэд 6 багана */
+        <div className="grid grid-cols-2 @xl:grid-cols-3 @5xl:grid-cols-6 gap-3 md:gap-4">
             {cards.map((card, i) => (
                 <motion.div
                     key={card.title}

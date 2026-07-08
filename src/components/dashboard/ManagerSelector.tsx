@@ -79,15 +79,17 @@ export function ManagerSelector({ selected, onSelect }: ManagerSelectorProps) {
             )}
 
             <Sheet open={!!selected} onOpenChange={(open) => !open && onSelect(null)}>
-                <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-3xl">
+                <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-4xl">
                     <SheetHeader>
                         <SheetTitle className="flex items-center gap-2">
-                            <UserRound className="w-5 h-5 text-brand" />
+                            <span className="w-8 h-8 rounded-md bg-brand-soft flex items-center justify-center flex-shrink-0">
+                                <UserRound className="w-4 h-4 text-brand-strong" />
+                            </span>
                             {selected}
                         </SheetTitle>
                         <SheetDescription>Менежерийн хувийн самбар</SheetDescription>
                     </SheetHeader>
-                    <div className="px-4 pb-8 pt-2">
+                    <div className="px-4 pb-8 pt-2 md:px-6">
                         {selected && <ManagerDashboard managerName={selected} embedded />}
                     </div>
                 </SheetContent>

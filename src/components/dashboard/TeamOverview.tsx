@@ -9,7 +9,7 @@ import { StatusPill } from '@/components/ui/StatusPill';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatMNT } from '@/lib/utils/currency';
 import { cn } from '@/lib/utils';
-import { Trophy, ArrowRight, Users } from 'lucide-react';
+import { Trophy, ArrowRight, ChevronRight, Users } from 'lucide-react';
 
 interface ManagerRow {
     sales_manager: string;
@@ -145,6 +145,7 @@ export function TeamOverview({ onSelectManager, actions }: TeamOverviewProps) {
                                             />
                                         </div>
                                     </div>
+                                    <ChevronRight className="w-4 h-4 text-muted-foreground/50 flex-shrink-0" />
                                 </button>
                             );
                         })
