@@ -34,14 +34,18 @@ const TIME_FILTER_OPTIONS = [
     { value: 'month', label: 'Сар' },
 ] as const;
 
-/** Виджет бүрийн grid эзлэхүүн (3 баганат тор). */
+/**
+ * Виджет бүрийн grid эзлэхүүн — container query (@4xl = 56rem контейнер).
+ * Viewport биш КОНТЕЙНЕРИЙН өргөнөөс хамаардаг тул Sheet (админы drill-in)
+ * дотор автоматаар нэг баганад эвхэгдэнэ.
+ */
 const WIDGET_SPAN: Record<string, string> = {
-    kpis: 'lg:col-span-3',
-    tasks: 'lg:col-span-2',
-    target: 'lg:col-span-1',
-    leads: 'lg:col-span-2',
-    viewings: 'lg:col-span-1',
-    revenueTrend: 'lg:col-span-3',
+    kpis: '@4xl:col-span-3',
+    tasks: '@4xl:col-span-2',
+    target: '@4xl:col-span-1',
+    leads: '@4xl:col-span-2',
+    viewings: '@4xl:col-span-1',
+    revenueTrend: '@4xl:col-span-3',
 };
 
 interface ManagerDashboardProps {
@@ -99,27 +103,29 @@ export function ManagerDashboard({ managerName, embedded = false }: ManagerDashb
     };
 
     const content = (
-        <div className={cn('w-full space-y-6', !embedded && 'mx-auto max-w-[1440px] md:space-y-8')}>
+        <div className={cn('@container w-full space-y-6', !embedded && 'mx-auto max-w-[1440px] md:space-y-8')}>
             {/* AI Orchestrator — зөвхөн өөрийн бүтэн самбарт */}
             {isSelf && !embedded && <AskAIHero />}
 
-            {/* Гарчиг + хэрэгслүүд */}
-            <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-9 h-9 rounded-md bg-brand-soft flex items-center justify-center flex-shrink-0">
-                        <UserRound className="w-5 h-5 text-brand-strong" />
+            {/* Гарчиг + хэрэгслүүд (embedded үед Sheet-ийн толгой нэрийг үзүүлдэг тул давхардуулахгүй) */}
+            <div className={cn('flex flex-wrap items-center gap-2', embedded ? 'justify-end' : 'justify-between')}>
+                {!embedded && (
+                    <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-9 h-9 rounded-md bg-brand-soft flex items-center justify-center flex-shrink-0">
+                            <UserRound className="w-5 h-5 text-brand-strong" />
+                        </div>
+                        <div className="min-w-0">
+                            <h1 className="heading-section text-lg md:text-xl text-foreground truncate">
+                                {isSelf ? 'Миний самбар' : data.manager.name}
+                            </h1>
+                            <p className="text-xs text-muted-foreground truncate">
+                                {isSelf
+                                    ? data.manager.name || 'Борлуулалтын менежер'
+                                    : 'Менежерийн хувийн самбар'}
+                            </p>
+                        </div>
                     </div>
-                    <div className="min-w-0">
-                        <h1 className="heading-section text-lg md:text-xl text-foreground truncate">
-                            {isSelf ? 'Миний самбар' : data.manager.name}
-                        </h1>
-                        <p className="text-xs text-muted-foreground truncate">
-                            {isSelf
-                                ? data.manager.name || 'Борлуулалтын менежер'
-                                : 'Менежерийн хувийн самбар'}
-                        </p>
-                    </div>
-                </div>
+                )}
 
                 <div className="flex items-center gap-2">
                     <Select value={period} onValueChange={(v) => setPeriod(v as MyStatsPeriod)}>
@@ -171,14 +177,14 @@ export function ManagerDashboard({ managerName, embedded = false }: ManagerDashb
                 </Card>
             )}
 
-            {/* Виджетүүд — хэрэглэгчийн дараалал/харагдацаар */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            {/* Виджетүүд — хэрэглэгчийн дараалал/харагдацаар (контейнерийн өргөнд тохирно) */}
+            <div className="grid grid-cols-1 @4xl:grid-cols-3 gap-4 @4xl:gap-6 items-start">
                 {activePrefs
                     .filter((p) => !p.hidden && widgetRender[p.id])
                     .map((p, i) => (
                         <motion.div
                             key={p.id}
-                            className={cn('min-w-0', WIDGET_SPAN[p.id] || 'lg:col-span-3')}
+                            className={cn('min-w-0', WIDGET_SPAN[p.id] || '@4xl:col-span-3')}
                             initial={reduced ? false : { opacity: 0, y: 8 }}
                             animate={reduced ? undefined : { opacity: 1, y: 0 }}
                             transition={reduced ? undefined : { duration: 0.26, delay: i * 0.04, ease: 'easeOut' }}
