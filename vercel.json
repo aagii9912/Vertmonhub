@@ -37,6 +37,10 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/cron/channel-expiry",
+      "schedule": "15 1 * * *"
+    },
+    {
       "path": "/api/cron/ai-digest",
       "schedule": "0 1 * * *"
     },

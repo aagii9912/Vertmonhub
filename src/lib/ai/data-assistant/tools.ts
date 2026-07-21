@@ -173,6 +173,21 @@ export const readTools: any[] = [
         name: 'get_marketing_summary',
         description: 'Маркетингийн нэгтгэл: зар сурталчилгааны кампанит ажил (зарцуулалт, харагдалт, клик, хөрвүүлэлт, CTR, CPA) ба сошиал постын гүйцэтгэл.',
         parameters: { type: SchemaType.OBJECT, properties: {} }
+    },
+    {
+        name: 'get_marketing_budget_status',
+        description: 'Маркетингийн ТӨСВИЙН байдал: сар бүрийн төсөв vs бодит зарцуулалт vs борлуулалтын орлого (гэрээний дүн), төлөв (ok=ногоон <80%, warn=шар 80-100%, over=улаан >100%), сувгийн зарцуулалтын задаргаа, өгөөж (ROI). Төсөв хэтэрсэн үү, хэр зарцуулсан бэ гэх асуултад.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                year: { type: SchemaType.NUMBER, description: 'Он (default: энэ он)' }
+            }
+        }
+    },
+    {
+        name: 'get_market_indicators',
+        description: 'Зах зээлийн үзүүлэлт: ипотекийн зээлийн хүү, банкны нөхцөл, макро мэдээлэл (судалгааны хэсэгт бүртгэсэн). Ипотек, банк, зээлийн нөхцөлтэй холбоотой асуултад.',
+        parameters: { type: SchemaType.OBJECT, properties: {} }
     }
 ];
 

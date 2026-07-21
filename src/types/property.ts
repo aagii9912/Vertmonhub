@@ -12,7 +12,7 @@ export type PropertyStatus = 'available' | 'reserved' | 'sold' | 'rented' | 'bar
 export type LeadStatus = 'new' | 'contacted' | 'viewing_scheduled' | 'offered' | 'negotiating' | 'closed_won' | 'closed_lost';
 
 // Lead source
-export type LeadSource = 'messenger' | 'facebook' | 'instagram' | 'website' | 'referral' | 'phone' | 'facebook_ads' | 'google_ads' | 'tv' | 'meeting' | 'event' | 'board' | 'other';
+export type LeadSource = 'messenger' | 'facebook' | 'instagram' | 'website' | 'referral' | 'phone' | 'facebook_ads' | 'google_ads' | 'tv' | 'radio' | 'meeting' | 'event' | 'board' | 'other';
 
 /**
  * Property Interface
