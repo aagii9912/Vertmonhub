@@ -21,6 +21,7 @@ import {
     buildTaskList,
     type LeadLite,
     type ViewingLite,
+    type PersonalTaskLite,
 } from '@/lib/dashboard/my-stats';
 
 /**
@@ -134,7 +135,7 @@ export async function GET(request: NextRequest) {
         const monthIdx = now.getMonth();
         const quarter = quarterOfMonth(monthIdx + 1);
 
-        const [leadRowsRaw, viewingRowsRaw, contractRows, targets, byManager] = await Promise.all([
+        const [leadRowsRaw, viewingRowsRaw, contractRows, targets, byManager, personalTaskRows] = await Promise.all([
             // Миний лидүүд (сүүлийн 500 — KPI/таск/жагсаалт бүгд эндээс)
             safeManagerRows(({ excludeDeleted }) => {
                 let q = db
@@ -173,6 +174,23 @@ export async function GET(request: NextRequest) {
             }),
             getTeamTargets(db, authShop.id, year),
             getMonthlyActualsByManager(db, authShop.id, year),
+            // Хувийн ажлууд (user_tasks) — зөвхөн ӨӨРИЙН самбарт «Хийх ажлууд»-д
+            // нэгтгэгдэнэ; миграци ороогүй орчинд хоосон (safeManagerRows)
+            isSelf
+                ? safeManagerRows(() =>
+                      db
+                          .from('user_tasks')
+                          .select('id, title, note, due_at')
+                          .eq('shop_id', authShop.id)
+                          .eq('user_id', uid)
+                          .eq('status', 'pending')
+                          .is('deleted_at', null)
+                          .not('due_at', 'is', null)
+                          .lt('due_at', dayEnd.toISOString())
+                          .order('due_at', { ascending: true })
+                          .limit(50),
+                  )
+                : Promise.resolve([] as Record<string, unknown>[]),
         ]);
 
         const leads = leadRowsRaw as unknown as LeadLite[];
@@ -256,7 +274,12 @@ export async function GET(request: NextRequest) {
                 contractCountThisYear,
             },
             target,
-            tasks: buildTaskList(leads, viewings, now).slice(0, 10),
+            tasks: buildTaskList(
+                leads,
+                viewings,
+                now,
+                personalTaskRows as unknown as PersonalTaskLite[],
+            ).slice(0, 10),
             recentLeads: leads.slice(0, 5),
             upcomingViewings: viewings
                 .filter((v) => (!v.status || v.status === 'scheduled') && new Date(v.scheduled_at) >= now)

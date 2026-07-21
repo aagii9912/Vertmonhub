@@ -39,46 +39,19 @@ export interface NotificationPayload {
     actions?: Array<{ action: string; title: string }>;
 }
 
-/**
- * Send push notification to all subscriptions for a shop
- */
-export async function sendPushNotification(
-    shopId: string,
-    payload: NotificationPayload
+interface PushSubscriptionRow {
+    id: string;
+    endpoint: string;
+    p256dh: string;
+    auth: string;
+}
+
+/** Өгсөн бүртгэлүүд рүү payload илгээж, хүчингүй болсныг нь устгана. */
+async function sendToSubscriptions(
+    subscriptions: PushSubscriptionRow[],
+    payload: NotificationPayload,
 ): Promise<{ success: number; failed: number }> {
-    // Ensure VAPID is configured before sending
-    if (!ensureVapidConfigured()) {
-        logger.warn('Push notification skipped: VAPID not configured');
-        return { success: 0, failed: 0 };
-    }
-
     const supabase = supabaseAdmin();
-
-    logger.debug('sendPushNotification called', { shopId, payload });
-
-    // Get all subscriptions for this shop
-    const { data: subscriptions, error } = await supabase
-        .from('push_subscriptions')
-        .select('*')
-        .eq('shop_id', shopId);
-
-    logger.debug('Push subscriptions query result', { count: subscriptions?.length || 0, error: error?.message });
-
-    if (error) {
-        logger.error('Push notification database error', { error });
-        return { success: 0, failed: 0 };
-    }
-
-    if (!subscriptions || subscriptions.length === 0) {
-        logger.debug('No push subscriptions found', { shopId });
-        // Debug: check sample subscriptions
-        const { data: allSubs } = await supabase.from('push_subscriptions').select('shop_id').limit(5);
-        logger.debug('Sample subscriptions in DB', { samples: allSubs });
-        return { success: 0, failed: 0 };
-    }
-
-    logger.debug('Found subscriptions', { count: subscriptions.length });
-
     let success = 0;
     let failed = 0;
 
@@ -114,6 +87,78 @@ export async function sendPushNotification(
     }
 
     return { success, failed };
+}
+
+/**
+ * Send push notification to all subscriptions for a shop
+ */
+export async function sendPushNotification(
+    shopId: string,
+    payload: NotificationPayload
+): Promise<{ success: number; failed: number }> {
+    // Ensure VAPID is configured before sending
+    if (!ensureVapidConfigured()) {
+        logger.warn('Push notification skipped: VAPID not configured');
+        return { success: 0, failed: 0 };
+    }
+
+    const supabase = supabaseAdmin();
+
+    logger.debug('sendPushNotification called', { shopId, payload });
+
+    // Get all subscriptions for this shop
+    const { data: subscriptions, error } = await supabase
+        .from('push_subscriptions')
+        .select('*')
+        .eq('shop_id', shopId);
+
+    logger.debug('Push subscriptions query result', { count: subscriptions?.length || 0, error: error?.message });
+
+    if (error) {
+        logger.error('Push notification database error', { error });
+        return { success: 0, failed: 0 };
+    }
+
+    if (!subscriptions || subscriptions.length === 0) {
+        logger.debug('No push subscriptions found', { shopId });
+        return { success: 0, failed: 0 };
+    }
+
+    return sendToSubscriptions(subscriptions, payload);
+}
+
+/**
+ * Зөвхөн НЭГ хэрэглэгчийн бүртгэлүүд рүү push илгээнэ (хувийн сануулга г.м).
+ * push_subscriptions.user_id нь /api/push/subscribe дээр тамгалагддаг;
+ * user_id-гүй хуучин бүртгэлүүд дараагийн нэвтрэлтээр автоматаар холбогдоно.
+ */
+export async function sendPushNotificationToUser(
+    shopId: string,
+    userId: string,
+    payload: NotificationPayload,
+): Promise<{ success: number; failed: number }> {
+    if (!ensureVapidConfigured()) {
+        logger.warn('Push notification skipped: VAPID not configured');
+        return { success: 0, failed: 0 };
+    }
+
+    const supabase = supabaseAdmin();
+    const { data: subscriptions, error } = await supabase
+        .from('push_subscriptions')
+        .select('*')
+        .eq('shop_id', shopId)
+        .eq('user_id', userId);
+
+    if (error) {
+        logger.error('Push notification database error', { error });
+        return { success: 0, failed: 0 };
+    }
+    if (!subscriptions || subscriptions.length === 0) {
+        logger.debug('No user push subscriptions found', { shopId, userId });
+        return { success: 0, failed: 0 };
+    }
+
+    return sendToSubscriptions(subscriptions, payload);
 }
 
 /**

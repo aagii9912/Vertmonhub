@@ -33,6 +33,10 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/cron/task-reminders",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/cron/ai-digest",
       "schedule": "0 1 * * *"
     },
