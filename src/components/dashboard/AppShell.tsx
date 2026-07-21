@@ -22,20 +22,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     return (
         <div className="min-h-screen bg-background text-foreground">
-            <Sidebar />
-            <div className="md:ml-[var(--sidebar-w)] transition-all duration-300 min-h-screen flex flex-col">
-                <Header />
-                <main className="flex-1 p-4 md:p-6 lg:p-8 pb-24 md:pb-8">
+            {/* print:hidden — Сарын KPI тайлан г.м хуудсыг хэвлэхэд chrome-гүй цэвэр гарна */}
+            <div className="print:hidden">
+                <Sidebar />
+            </div>
+            <div className="md:ml-[var(--sidebar-w)] print:ml-0 transition-all duration-300 min-h-screen flex flex-col">
+                <div className="print:hidden">
+                    <Header />
+                </div>
+                <main className="flex-1 p-4 md:p-6 lg:p-8 pb-24 md:pb-8 print:p-0">
                     {children}
                 </main>
             </div>
-            <MobileNav />
+            <div className="print:hidden">
+                <MobileNav />
 
-            {/* Глобал ⌘K команд хайлт */}
-            <CommandPalette />
+                {/* Глобал ⌘K команд хайлт */}
+                <CommandPalette />
 
-            {/* Санал хүсэлт */}
-            <FeedbackWidget />
+                {/* Санал хүсэлт */}
+                <FeedbackWidget />
+            </div>
         </div>
     );
 }

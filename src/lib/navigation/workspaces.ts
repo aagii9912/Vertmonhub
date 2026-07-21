@@ -22,6 +22,7 @@ import {
     MessageSquare,
     Megaphone,
     ClipboardList,
+    ListChecks,
     Calendar,
     Globe,
     Share2,
@@ -110,6 +111,7 @@ export const WORKSPACES: Workspace[] = [
                 icon: Building2,
                 items: [
                     { name: 'Хянах самбар', href: '/dashboard', icon: LayoutDashboard, module: 'dashboard' },
+                    { name: 'Миний ажлууд', href: '/dashboard/tasks', icon: ListChecks, module: 'dashboard' },
                     {
                         name: 'Үл хөдлөх', href: '/dashboard/properties', icon: Building2, module: 'properties',
                         children: [
@@ -151,6 +153,7 @@ export const WORKSPACES: Workspace[] = [
                         name: 'Аналитик', href: '/dashboard/reports', icon: BarChart3, module: 'reports',
                         children: [
                             { name: 'Тойм', href: '/dashboard/reports' },
+                            { name: 'Сарын KPI тайлан', href: '/dashboard/reports/kpi' },
                             { name: 'Лийд шинжилгээ', href: '/dashboard/reports/leads' },
                             { name: 'Үл хөдлөх шинжилгээ', href: '/dashboard/reports/properties' },
                             { name: 'Менежерийн гүйцэтгэл', href: '/dashboard/reports/manager-performance' },

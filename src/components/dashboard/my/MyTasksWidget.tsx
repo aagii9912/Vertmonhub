@@ -1,18 +1,49 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
+import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '@/contexts/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { formatTime, formatShortDate } from '@/lib/utils/date';
 import type { MyStatsTask } from '@/hooks/useMyStats';
-import { CheckCircle2, ListTodo, Phone, Eye } from 'lucide-react';
+import { ArrowUpRight, Check, CheckCircle2, ListChecks, ListTodo, Phone, Eye } from 'lucide-react';
 
 /**
- * «Хийх ажлууд» — өнөөдөр/хоцорсон follow-up + өнөөдрийн уулзалтууд
- * (dueAt-аар эрэмбэлэгдсэн, my-stats API бэлтгэнэ).
+ * «Хийх ажлууд» — өнөөдөр/хоцорсон follow-up + өнөөдрийн уулзалт + хувийн
+ * ажлууд (user_tasks), dueAt-аар эрэмбэлэгдсэн (my-stats API бэлтгэнэ).
+ * Хувийн ажлыг виджетээс шууд ✓ дарж дуусгаж болно.
  */
 export function MyTasksWidget({ tasks }: { tasks: MyStatsTask[] }) {
+    const { shop } = useAuth();
+    const queryClient = useQueryClient();
+    const [completingId, setCompletingId] = useState<string | null>(null);
+
+    const completePersonal = async (e: React.MouseEvent, task: MyStatsTask) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (completingId) return;
+        setCompletingId(task.id);
+        try {
+            const res = await fetch(`/api/dashboard/tasks/${task.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json', 'x-shop-id': shop?.id || '' },
+                body: JSON.stringify({ status: 'done' }),
+            });
+            if (!res.ok) throw new Error();
+            toast.success('Ажил дууслаа — сарын тайланд орно 🎉');
+            queryClient.invalidateQueries({ queryKey: ['my-stats'] });
+            queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
+        } catch {
+            toast.error('Дуусгаж чадсангүй');
+        } finally {
+            setCompletingId(null);
+        }
+    };
+
     return (
         <Card>
             <CardHeader className="flex flex-row items-center justify-between py-3 md:py-4">
@@ -20,15 +51,25 @@ export function MyTasksWidget({ tasks }: { tasks: MyStatsTask[] }) {
                     <ListTodo className="w-4 h-4 md:w-5 md:h-5 text-brand" />
                     Хийх ажлууд
                 </CardTitle>
-                {tasks.length > 0 && (
-                    <span className="text-xs text-muted-foreground tabular-nums">{tasks.length} ажил</span>
-                )}
+                <div className="flex items-center gap-3">
+                    {tasks.length > 0 && (
+                        <span className="text-xs text-muted-foreground tabular-nums">{tasks.length} ажил</span>
+                    )}
+                    <Link
+                        href="/dashboard/tasks"
+                        className="text-xs text-brand hover:text-brand-strong inline-flex items-center gap-0.5"
+                    >
+                        Бүгд
+                        <ArrowUpRight className="w-3.5 h-3.5" />
+                    </Link>
+                </div>
             </CardHeader>
             <CardContent className="p-0">
                 <div className="divide-y divide-border/60">
                     {tasks.length > 0 ? (
                         tasks.map((task) => {
-                            const Icon = task.type === 'viewing' ? Eye : Phone;
+                            const Icon =
+                                task.type === 'viewing' ? Eye : task.type === 'personal' ? ListChecks : Phone;
                             const isToday = !task.overdue || task.type === 'viewing';
                             return (
                                 <Link
@@ -43,7 +84,9 @@ export function MyTasksWidget({ tasks }: { tasks: MyStatsTask[] }) {
                                                     ? 'bg-status-danger-soft text-status-danger'
                                                     : task.type === 'viewing'
                                                       ? 'bg-status-info-soft text-status-info'
-                                                      : 'bg-brand-soft text-brand-strong'
+                                                      : task.type === 'personal'
+                                                        ? 'bg-status-success-soft text-status-success'
+                                                        : 'bg-brand-soft text-brand-strong'
                                             }`}
                                         >
                                             <Icon className="w-4 h-4" />
@@ -58,6 +101,17 @@ export function MyTasksWidget({ tasks }: { tasks: MyStatsTask[] }) {
                                             {isToday ? formatTime(task.dueAt) : formatShortDate(task.dueAt)}
                                         </span>
                                         {task.overdue && <StatusPill variant="danger">Хоцорсон</StatusPill>}
+                                        {task.type === 'personal' && (
+                                            <button
+                                                onClick={(e) => completePersonal(e, task)}
+                                                disabled={completingId === task.id}
+                                                title="Дуусгах"
+                                                aria-label={`«${task.title}» ажлыг дуусгах`}
+                                                className="w-7 h-7 rounded-md border border-border-strong flex items-center justify-center text-muted-foreground hover:border-brand hover:text-brand hover:bg-brand-soft transition-colors disabled:opacity-50"
+                                            >
+                                                <Check className="w-4 h-4" />
+                                            </button>
+                                        )}
                                     </div>
                                 </Link>
                             );
@@ -66,7 +120,7 @@ export function MyTasksWidget({ tasks }: { tasks: MyStatsTask[] }) {
                         <EmptyState
                             icon={<CheckCircle2 className="w-7 h-7" />}
                             title="Өнөөдөр хийх ажил алга"
-                            description="Follow-up болон өнөөдрийн уулзалтууд энд харагдана"
+                            description="Follow-up, уулзалт болон хувийн ажлууд энд харагдана"
                         />
                     )}
                 </div>

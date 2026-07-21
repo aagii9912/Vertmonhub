@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserShop } from '@/lib/auth/supabase-auth';
+import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 
 // POST - Subscribe to push notifications
 export async function POST(request: NextRequest) {
     try {
-        const authShop = await getUserShop();
+        const [authShop, userId] = await Promise.all([getUserShop(), getUserId()]);
 
         if (!authShop) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -26,6 +26,9 @@ export async function POST(request: NextRequest) {
             .from('push_subscriptions')
             .upsert({
                 shop_id: shopId,
+                // Хувийн сануулга (user_tasks reminder) энэ холбоосоор тухайн
+                // хэрэглэгчийн төхөөрөмж рүү л очно
+                user_id: userId,
                 endpoint: subscription.endpoint,
                 p256dh: subscription.keys.p256dh,
                 auth: subscription.keys.auth,

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/Card';
 import { PageHeader } from '@/components/dashboard/PageHeader';
-import { Users, Building2, UserCheck, CalendarClock, ArrowUpRight, type LucideIcon } from 'lucide-react';
+import { Users, Building2, UserCheck, CalendarClock, FileBarChart, ArrowUpRight, type LucideIcon } from 'lucide-react';
 
 interface ReportTile {
     href: string;
@@ -21,6 +21,13 @@ const TILE_ACCENT: Record<ReportTile['accent'], string> = {
 };
 
 const REPORTS: ReportTile[] = [
+    {
+        href: '/dashboard/reports/kpi',
+        title: 'Сарын KPI тайлан',
+        description: 'Менежерийн сарын лид, уулзалт, гэрээ, борлуулалт, хийсэн ажлыг автоматаар нэгтгэсэн тайлан',
+        icon: FileBarChart,
+        accent: 'brand',
+    },
     {
         href: '/dashboard/reports/leads',
         title: 'Лийд шинжилгээ',

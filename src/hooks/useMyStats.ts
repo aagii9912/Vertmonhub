@@ -19,7 +19,7 @@ export interface MyStatsTarget {
 }
 
 export interface MyStatsTask {
-    type: 'followup' | 'viewing';
+    type: 'followup' | 'viewing' | 'personal';
     id: string;
     title: string;
     subtitle: string;

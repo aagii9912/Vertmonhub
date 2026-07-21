@@ -154,4 +154,25 @@ describe('buildTaskList', () => {
         expect(tasks.find((t) => t.id === 'past-hour')?.overdue).toBe(true);
         expect(tasks.find((t) => t.id === 'future-hour')?.overdue).toBe(false);
     });
+
+    it('хувийн ажлууд (user_tasks) нэгтгэгдэж, дараалалдаа орно', () => {
+        const tasks = buildTaskList(
+            [lead({ id: 'f1', next_followup_at: new Date(2026, 6, 7, 16, 0).toISOString() })],
+            [],
+            NOW,
+            [
+                { id: 'p-today', title: 'Танилцуулга бэлтгэх', due_at: new Date(2026, 6, 7, 11, 0).toISOString() },
+                { id: 'p-late', title: 'Гэрээ хэвлүүлэх', due_at: new Date(2026, 6, 6, 10, 0).toISOString(), note: 'МG-101' },
+                { id: 'p-tomorrow', title: 'Маргааш', due_at: new Date(2026, 6, 8, 10, 0).toISOString() },
+                { id: 'p-nodue', title: 'Хугацаагүй', due_at: null },
+            ],
+        );
+        expect(tasks.map((t) => t.id)).toEqual(['p-late', 'p-today', 'f1']);
+        const late = tasks.find((t) => t.id === 'p-late');
+        expect(late?.type).toBe('personal');
+        expect(late?.overdue).toBe(true);
+        expect(late?.subtitle).toContain('МG-101');
+        expect(tasks.find((t) => t.id === 'p-today')?.overdue).toBe(false);
+        expect(tasks.find((t) => t.id === 'p-today')?.href).toBe('/dashboard/tasks');
+    });
 });

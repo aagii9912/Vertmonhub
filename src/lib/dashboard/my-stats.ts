@@ -45,8 +45,15 @@ export function countLeadsCreatedSince(leads: LeadLite[], since: Date): number {
     return leads.filter((l) => l.created_at && new Date(l.created_at).getTime() >= t).length;
 }
 
+export interface PersonalTaskLite {
+    id: string;
+    title: string;
+    due_at?: string | null;
+    note?: string | null;
+}
+
 export interface DashTask {
-    type: 'followup' | 'viewing';
+    type: 'followup' | 'viewing' | 'personal';
     id: string;
     title: string;
     subtitle: string;
@@ -68,13 +75,20 @@ function endOfDay(d: Date): Date {
 }
 
 /**
- * Менежерийн «Хийх ажлууд»: өнөөдөр/хоцорсон follow-up-ууд + өнөөдрийн уулзалтууд,
- * dueAt-аар өсөхөөр эрэмбэлэгдсэн.
+ * Менежерийн «Хийх ажлууд»: өнөөдөр/хоцорсон follow-up-ууд + өнөөдрийн уулзалтууд
+ * + хувийн ажлууд (user_tasks), dueAt-аар өсөхөөр эрэмбэлэгдсэн.
  * • followup: next_followup_at нь өнөөдрийн эцсээс өмнөх, хаагдаагүй лид;
  *   overdue = өнөөдрөөс өмнөх өдөр байсан.
  * • viewing: өнөөдөр товлогдсон, цуцлагдаагүй уулзалт; overdue = цаг нь өнгөрсөн.
+ * • personal: due_at нь өнөөдрийн эцсээс өмнөх, дуусаагүй хувийн ажил;
+ *   overdue = followup-тэй ижил (өдрийн түвшинд).
  */
-export function buildTaskList(leads: LeadLite[], viewings: ViewingLite[], now: Date): DashTask[] {
+export function buildTaskList(
+    leads: LeadLite[],
+    viewings: ViewingLite[],
+    now: Date,
+    personalTasks: PersonalTaskLite[] = [],
+): DashTask[] {
     const dayStart = startOfDay(now);
     const dayEnd = endOfDay(now);
     const tasks: DashTask[] = [];
@@ -108,6 +122,21 @@ export function buildTaskList(leads: LeadLite[], viewings: ViewingLite[], now: D
             dueAt: at.toISOString(),
             overdue: at.getTime() < now.getTime(),
             href: '/dashboard/viewings',
+        });
+    }
+
+    for (const task of personalTasks) {
+        if (!task.due_at) continue;
+        const due = new Date(task.due_at);
+        if (due.getTime() >= dayEnd.getTime()) continue;
+        tasks.push({
+            type: 'personal',
+            id: task.id,
+            title: task.title,
+            subtitle: task.note ? `Миний ажил · ${task.note}` : 'Миний ажил',
+            dueAt: due.toISOString(),
+            overdue: due.getTime() < dayStart.getTime(),
+            href: '/dashboard/tasks',
         });
     }
 
