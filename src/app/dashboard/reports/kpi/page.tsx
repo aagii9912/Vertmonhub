@@ -12,7 +12,7 @@ import { Money } from '@/components/ui/Money';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
-import { Progress } from '@/components/ui/Progress';
+import { ProgressRing } from '@/components/ui/ProgressRing';
 import { KpiGridSkeleton } from '@/components/ui/LoadingSkeleton';
 import {
     Select,
@@ -70,13 +70,20 @@ interface ManagerOption {
     is_active: boolean;
 }
 
-function DeltaPill({ value }: { value: number | null | undefined }) {
-    if (value === null || value === undefined) return null;
+/** Medium/Stripe маягийн намуухан өөрчлөлтийн мөр («+12% өмнөх сараас»). */
+function DeltaLine({ value }: { value: number | null | undefined }) {
+    if (value === null || value === undefined) {
+        return <p className="text-2xs text-muted-foreground mt-1">өмнөх сард дүнгүй</p>;
+    }
     return (
-        <StatusPill variant={value >= 0 ? 'success' : 'danger'}>
-            {value >= 0 ? '+' : ''}
-            {value}%
-        </StatusPill>
+        <p
+            className={`text-2xs mt-1 tabular-nums ${
+                value > 0 ? 'text-status-success' : value < 0 ? 'text-status-danger' : 'text-muted-foreground'
+            }`}
+        >
+            {value > 0 ? '↑' : value < 0 ? '↓' : ''} {value >= 0 ? '+' : ''}
+            {value}% өмнөх сараас
+        </p>
     );
 }
 
@@ -233,83 +240,88 @@ export default function KpiReportPage() {
                 </Alert>
             ) : (
                 <div className="space-y-4 md:space-y-6">
-                    {/* Тайлангийн толгой (хэвлэлтэд гарна) */}
+                    {/* Тайлангийн editorial толгой (хэвлэлтэд гарна) */}
                     <div>
-                        <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                        <p className="text-2xs font-mono uppercase tracking-[0.16em] text-muted-foreground/80">
                             {data.shopName || 'Vertmon Hub'} · Сарын KPI тайлан
                         </p>
-                        <h2 className="heading-section text-xl text-foreground mt-1">
+                        <h2 className="heading-display text-2xl md:text-3xl text-foreground mt-1.5">
                             {data.manager.name} — {data.year} оны {data.month}-р сар
                         </h2>
-                        <p className="text-xs text-muted-foreground mt-1">
+                        <p className="text-xs text-muted-foreground mt-1.5">
                             Гаргасан: {formatShortDate(new Date())} · Vertmon Hub автоматаар нэгтгэв
                         </p>
                     </div>
 
-                    {/* Нэгдсэн үзүүлэлт */}
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    {/* Нэгдсэн үзүүлэлт — hairline metric band (Stripe/Medium жишиг) */}
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-px bg-border/60 border border-border/60 rounded-lg overflow-hidden">
                         {[
-                            { label: 'Шинэ лид', value: summary.newLeads, delta: summary.deltas.leads },
+                            { label: 'Шинэ лид', value: String(summary.newLeads), delta: summary.deltas.leads },
                             {
                                 label: 'Уулзалт',
-                                value: summary.viewings,
+                                value: String(summary.viewings),
                                 delta: summary.deltas.viewings,
                                 hint: `болсон: ${summary.viewingsDone}`,
                             },
-                            { label: 'Гэрээ', value: summary.contracts, delta: summary.deltas.contracts },
-                            { label: 'Дууссан ажил', value: summary.tasksDone, delta: null },
+                            { label: 'Гэрээ', value: String(summary.contracts), delta: summary.deltas.contracts },
+                            { label: 'Дууссан ажил', value: String(summary.tasksDone), delta: undefined },
                         ].map((kpi) => (
-                            <Card key={kpi.label}>
-                                <CardContent className="py-4">
-                                    <p className="text-xs text-muted-foreground">{kpi.label}</p>
-                                    <div className="flex items-center gap-2 mt-1">
-                                        <span className="text-2xl font-semibold tabular-nums text-foreground">
-                                            {kpi.value}
-                                        </span>
-                                        <DeltaPill value={kpi.delta} />
-                                    </div>
-                                    {kpi.hint && (
-                                        <p className="text-[11px] text-muted-foreground mt-0.5">{kpi.hint}</p>
-                                    )}
-                                </CardContent>
-                            </Card>
+                            <div key={kpi.label} className="bg-surface px-4 py-4">
+                                <p className="text-2xs font-mono uppercase tracking-[0.14em] text-muted-foreground/80">
+                                    {kpi.label}
+                                </p>
+                                <p className="heading-display text-3xl tabular-nums text-foreground mt-1.5">
+                                    {kpi.value}
+                                </p>
+                                {kpi.delta !== undefined ? (
+                                    <DeltaLine value={kpi.delta} />
+                                ) : kpi.hint ? null : (
+                                    <p className="text-2xs text-muted-foreground mt-1">энэ сард</p>
+                                )}
+                                {kpi.hint && <p className="text-2xs text-muted-foreground mt-0.5">{kpi.hint}</p>}
+                            </div>
                         ))}
-                        <Card className="col-span-2 md:col-span-1">
-                            <CardContent className="py-4">
-                                <p className="text-xs text-muted-foreground">Борлуулалт</p>
-                                <div className="flex items-center gap-2 mt-1">
-                                    <Money
-                                        value={summary.revenue}
-                                        compact
-                                        className="text-2xl font-semibold text-foreground"
-                                    />
-                                    <DeltaPill value={summary.deltas.revenue} />
-                                </div>
-                            </CardContent>
-                        </Card>
+                        <div className="bg-surface px-4 py-4 col-span-2 md:col-span-1">
+                            <p className="text-2xs font-mono uppercase tracking-[0.14em] text-muted-foreground/80">
+                                Борлуулалт
+                            </p>
+                            <Money
+                                value={summary.revenue}
+                                compact
+                                className="heading-display text-3xl text-foreground mt-1.5 block"
+                            />
+                            <DeltaLine value={summary.deltas.revenue} />
+                        </div>
                     </div>
 
-                    {/* Багийн зорилт */}
+                    {/* Багийн зорилт — ring + тоонууд (Origin жишиг) */}
                     {data.target && targetPct !== null && (
                         <Card>
-                            <CardHeader className="py-3">
-                                <CardTitle className="text-base">Багийн сарын зорилт</CardTitle>
-                            </CardHeader>
-                            <CardContent className="space-y-2">
-                                <div className="flex items-center justify-between text-sm">
-                                    <span className="text-muted-foreground">
-                                        <Money value={data.target.teamActual} compact /> /{' '}
-                                        <Money value={data.target.teamTarget} compact />
-                                    </span>
-                                    <span className="font-medium tabular-nums">{targetPct}%</span>
-                                </div>
-                                <Progress value={targetPct} />
-                                {data.target.myShare !== null && (
-                                    <p className="text-xs text-muted-foreground">
-                                        Багийн гүйцэтгэлд {data.manager.isSelf ? 'миний' : `${data.manager.name}-ийн`} хувь:{' '}
-                                        <span className="font-medium text-foreground">{data.target.myShare}%</span>
+                            <CardContent className="flex items-center gap-5 py-4">
+                                <ProgressRing
+                                    value={targetPct}
+                                    size={84}
+                                    strokeWidth={8}
+                                    tone={targetPct >= 100 ? 'success' : targetPct >= 60 ? 'brand' : 'pending'}
+                                    aria-label={`Багийн зорилтын биелэлт ${targetPct}%`}
+                                >
+                                    <span className="heading-display text-lg tabular-nums">{targetPct}%</span>
+                                </ProgressRing>
+                                <div className="min-w-0">
+                                    <p className="text-2xs font-mono uppercase tracking-[0.14em] text-muted-foreground/80">
+                                        Багийн сарын зорилт
                                     </p>
-                                )}
+                                    <p className="text-sm text-foreground mt-1">
+                                        <Money value={data.target.teamActual} compact className="font-medium" /> /{' '}
+                                        <Money value={data.target.teamTarget} compact className="text-muted-foreground" />
+                                    </p>
+                                    {data.target.myShare !== null && (
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                            Багийн гүйцэтгэлд {data.manager.isSelf ? 'миний' : `${data.manager.name}-ийн`} хувь:{' '}
+                                            <span className="font-medium text-foreground">{data.target.myShare}%</span>
+                                        </p>
+                                    )}
+                                </div>
                             </CardContent>
                         </Card>
                     )}

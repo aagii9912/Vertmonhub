@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Money } from '@/components/ui/Money';
+import { ProgressRing } from '@/components/ui/ProgressRing';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
 import { Spinner } from '@/components/ui/Spinner';
@@ -220,47 +221,72 @@ export default function MarketingBudgetPage() {
                 </Alert>
             ) : (
                 <div className="space-y-6">
-                    {/* Нэгдсэн үзүүлэлт */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        <Card>
-                            <CardContent className="py-4">
-                                <p className="text-xs text-muted-foreground">Жилийн төсөв</p>
-                                <Money value={overview?.totals.budget} compact className="text-xl font-semibold" />
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="py-4">
-                                <p className="text-xs text-muted-foreground">Зарцуулалт</p>
-                                <div className="flex items-center gap-2">
-                                    <Money value={overview?.totals.spend} compact className="text-xl font-semibold" />
-                                    {overview && overview.totals.pct !== null && (
-                                        <StatusPill variant={STATUS_PILL[overview.totals.status]}>
-                                            {overview.totals.pct}%
-                                        </StatusPill>
-                                    )}
-                                </div>
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="py-4">
-                                <p className="text-xs text-muted-foreground">Борлуулалтын орлого</p>
-                                <Money value={overview?.totals.revenue} compact className="text-xl font-semibold" />
-                            </CardContent>
-                        </Card>
-                        <Card>
-                            <CardContent className="py-4">
-                                <p className="text-xs text-muted-foreground">Өгөөж (орлого/зардал)</p>
-                                <div className="flex items-center gap-1.5">
-                                    <TrendingUp className="w-4 h-4 text-status-success" />
-                                    <span className="text-xl font-semibold tabular-nums">
-                                        {overview?.totals.roi !== null && overview?.totals.roi !== undefined
-                                            ? `${overview.totals.roi}x`
+                    {/* Жилийн тойм — ring hero + stat мөрүүд (Origin/Monarch жишиг) */}
+                    <Card>
+                        <CardContent className="grid grid-cols-1 sm:grid-cols-[auto_1fr] items-center gap-6 py-5">
+                            <div className="flex flex-col items-center gap-2 justify-self-center">
+                                <ProgressRing
+                                    value={overview?.totals.pct ?? 0}
+                                    size={132}
+                                    strokeWidth={10}
+                                    tone={
+                                        overview
+                                            ? overview.totals.status === 'over'
+                                                ? 'danger'
+                                                : overview.totals.status === 'warn'
+                                                  ? 'pending'
+                                                  : overview.totals.status === 'ok'
+                                                    ? 'success'
+                                                    : 'neutral'
+                                            : 'neutral'
+                                    }
+                                    aria-label={`Жилийн төсвийн зарцуулалт ${overview?.totals.pct ?? 0}%`}
+                                >
+                                    <span className="heading-display text-2xl tabular-nums">
+                                        {overview?.totals.pct !== null && overview?.totals.pct !== undefined
+                                            ? `${overview.totals.pct}%`
                                             : '—'}
                                     </span>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    </div>
+                                    <span className="text-2xs text-muted-foreground">зарцуулсан</span>
+                                </ProgressRing>
+                                {overview && (
+                                    <StatusPill variant={STATUS_PILL[overview.totals.status]}>
+                                        {STATUS_LABEL[overview.totals.status]}
+                                    </StatusPill>
+                                )}
+                            </div>
+                            <div className="divide-y divide-border/50">
+                                {[
+                                    { label: 'Жилийн төсөв', node: <Money value={overview?.totals.budget} compact /> },
+                                    { label: 'Зарцуулалт', node: <Money value={overview?.totals.spend} compact /> },
+                                    {
+                                        label: 'Борлуулалтын орлого',
+                                        node: <Money value={overview?.totals.revenue} compact />,
+                                    },
+                                    {
+                                        label: 'Өгөөж (орлого/зардал)',
+                                        node: (
+                                            <span className="inline-flex items-center gap-1.5">
+                                                <TrendingUp className="w-3.5 h-3.5 text-status-success" />
+                                                {overview?.totals.roi !== null && overview?.totals.roi !== undefined
+                                                    ? `${overview.totals.roi}x`
+                                                    : '—'}
+                                            </span>
+                                        ),
+                                    },
+                                ].map((row) => (
+                                    <div key={row.label} className="flex items-baseline justify-between gap-3 py-2.5">
+                                        <span className="text-2xs font-mono uppercase tracking-[0.14em] text-muted-foreground/80">
+                                            {row.label}
+                                        </span>
+                                        <span className="heading-display text-xl tabular-nums text-foreground">
+                                            {row.node}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+                        </CardContent>
+                    </Card>
 
                     {(data.metaAdsTotalSpend || 0) > 0 && (
                         <p className="text-xs text-muted-foreground">
@@ -327,9 +353,9 @@ export default function MarketingBudgetPage() {
                                                     <Money value={m.spend || null} />
                                                 </td>
                                                 <td className="px-2 py-2.5">
-                                                    <div className="h-2 rounded-full bg-surface-2 overflow-hidden">
+                                                    <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
                                                         <div
-                                                            className={`h-full rounded-full ${STATUS_BAR[m.status]}`}
+                                                            className={`h-full rounded-full transition-[width] duration-500 ${STATUS_BAR[m.status]}`}
                                                             style={{ width: `${Math.min(100, m.pct ?? 0)}%` }}
                                                         />
                                                     </div>
@@ -407,12 +433,27 @@ export default function MarketingBudgetPage() {
                             </div>
 
                             {(data.byChannel || []).length > 0 && (
-                                <div className="flex flex-wrap gap-2">
-                                    {(data.byChannel || []).map((c) => (
-                                        <StatusPill key={c.channel} variant="brand">
-                                            {channelLabels[c.channel] || c.channel}: <Money value={c.amount} compact />
-                                        </StatusPill>
-                                    ))}
+                                <div className="space-y-2">
+                                    <p className="text-2xs font-mono uppercase tracking-[0.14em] text-muted-foreground/80">
+                                        Сувгаар
+                                    </p>
+                                    {(() => {
+                                        const max = Math.max(...(data.byChannel || []).map((c) => c.amount), 1);
+                                        return (data.byChannel || []).map((c) => (
+                                            <div key={c.channel} className="grid grid-cols-[10rem_1fr_auto] items-center gap-3">
+                                                <span className="text-xs text-muted-foreground truncate">
+                                                    {channelLabels[c.channel] || c.channel}
+                                                </span>
+                                                <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
+                                                    <div
+                                                        className="h-full rounded-full bg-brand"
+                                                        style={{ width: `${Math.max(2, (c.amount / max) * 100)}%` }}
+                                                    />
+                                                </div>
+                                                <Money value={c.amount} compact className="text-xs font-medium" />
+                                            </div>
+                                        ));
+                                    })()}
                                 </div>
                             )}
 
