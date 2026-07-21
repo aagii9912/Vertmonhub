@@ -22,6 +22,7 @@ import {
     SheetDescription,
 } from '@/components/ui/Sheet';
 import { cn } from '@/lib/utils';
+import { MarketIndicators } from '@/components/marketing/MarketIndicators';
 
 const SHOP_KEY = 'vertmonhub_active_shop_id';
 
@@ -241,6 +242,9 @@ export default function CompetitorResearchPage() {
                     ) : undefined
                 }
             />
+
+            {/* Зах зээлийн үзүүлэлт — ипотек, банкны нөхцөл (судалгааны хэсэг) */}
+            <MarketIndicators />
 
             {/* AI харьцуулсан анализ */}
             {aiAnalysis !== null && (

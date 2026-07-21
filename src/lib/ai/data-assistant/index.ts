@@ -22,7 +22,8 @@ import {
     createProperty, deleteProperty, createLead, deleteLead, createCustomer,
     scheduleViewing, deleteViewing, createContract, deleteContract, deleteCustomer,
     attachFile, bulkUpdateLeads,
-    fetchMarketingSummary, createSocialPost, rememberFact,
+    fetchMarketingSummary, fetchMarketingBudgetStatus, fetchMarketIndicators,
+    createSocialPost, rememberFact,
     generateChartConfig,
 } from './functions';
 import { inviteUser, assignRole, createRole } from './admin-functions';
@@ -98,6 +99,8 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'attach_file': result = await attachFile(shopId, args, confirm, userName); break;
         case 'bulk_update_leads': result = await bulkUpdateLeads(shopId, args, confirm); break;
         case 'get_marketing_summary': result = await fetchMarketingSummary(shopId, args); break;
+        case 'get_marketing_budget_status': result = await fetchMarketingBudgetStatus(shopId, args); break;
+        case 'get_market_indicators': result = await fetchMarketIndicators(shopId); break;
         case 'create_social_post': result = await createSocialPost(shopId, args, confirm, userName); break;
         case 'remember_fact': result = await rememberFact(shopId, args, confirm, userName); break;
         case 'invite_user': result = await inviteUser(shopId, args, confirm, userId); break;

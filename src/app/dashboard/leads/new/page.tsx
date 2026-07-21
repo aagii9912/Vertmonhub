@@ -168,9 +168,10 @@ export default function NewLeadPage() {
                                         <SelectItem value="referral">Зөвлөмж</SelectItem>
                                         <SelectItem value="phone">Утас</SelectItem>
                                         <SelectItem value="tv">ТВ</SelectItem>
+                                        <SelectItem value="radio">Радио</SelectItem>
                                         <SelectItem value="meeting">Уулзалт</SelectItem>
                                         <SelectItem value="event">Өдөрлөг</SelectItem>
-                                        <SelectItem value="board">Самбар</SelectItem>
+                                        <SelectItem value="board">Билборд / Самбар</SelectItem>
                                         <SelectItem value="other">Бусад</SelectItem>
                                     </SelectContent>
                                 </Select>

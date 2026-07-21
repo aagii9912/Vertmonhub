@@ -5,6 +5,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '@/lib/utils/logger';
 import { fetchAllRows } from '@/lib/utils/pagination';
+import { buildBudgetOverview, monthlySpendSeries, spendByChannel, SPEND_CHANNELS } from '@/lib/marketing/budget';
 
 // Lazy admin client — built on first property access so missing env at
 // module-evaluation time (e.g. Next.js page-data collection) does not
@@ -1095,6 +1096,94 @@ export async function fetchMarketingSummary(shopId: string, args: any) {
         },
         campaigns: camps.slice(0, 10),
         recentPosts: (posts || []).map((p: any) => ({ platform: p.platform, status: p.status, likes: p.likes, comments: p.comments, reach: p.reach, engagement_rate: p.engagement_rate })),
+    };
+}
+
+export async function fetchMarketingBudgetStatus(shopId: string, args: any) {
+    const year = Number(args?.year) || new Date().getFullYear();
+    const [budgetRes, spendRes, revenueRes] = await Promise.all([
+        supabaseAdmin.from('marketing_budgets').select('month, amount').eq('shop_id', shopId).eq('year', year),
+        supabaseAdmin
+            .from('marketing_spend_entries')
+            .select('spent_at, amount, channel')
+            .eq('shop_id', shopId)
+            .is('deleted_at', null)
+            .gte('spent_at', `${year}-01-01`)
+            .lte('spent_at', `${year}-12-31`),
+        supabaseAdmin.from('manager_monthly_sales').select('month, actual_amount').eq('shop_id', shopId).eq('year', year),
+    ]);
+
+    if (budgetRes.error && /42P01|marketing_budgets/i.test(budgetRes.error.message || budgetRes.error.code || '')) {
+        return { error: 'Төсвийн хүснэгт үүсээгүй байна (20260721140000 миграци хийгдээгүй)' };
+    }
+
+    const budgets = Array(12).fill(0);
+    for (const r of budgetRes.data || []) {
+        if (r.month >= 1 && r.month <= 12) budgets[r.month - 1] = Number(r.amount) || 0;
+    }
+    const entries = spendRes.error ? [] : spendRes.data || [];
+    const revenue = Array(12).fill(0);
+    for (const r of revenueRes.error ? [] : revenueRes.data || []) {
+        if (r.month >= 1 && r.month <= 12) revenue[r.month - 1] += Number(r.actual_amount) || 0;
+    }
+
+    const overview = buildBudgetOverview(budgets, monthlySpendSeries(entries, year), revenue);
+    const fmt = (v: number) => `${Math.round(v).toLocaleString()}₮`;
+    return {
+        year,
+        months: overview.months
+            .filter((m) => m.budget > 0 || m.spend > 0 || m.revenue > 0)
+            .map((m) => ({
+                month: `${m.month}-р сар`,
+                budget: fmt(m.budget),
+                spend: fmt(m.spend),
+                revenue: fmt(m.revenue),
+                utilization: m.pct !== null ? `${m.pct}%` : '-',
+                status: m.status,
+            })),
+        totals: {
+            budget: fmt(overview.totals.budget),
+            spend: fmt(overview.totals.spend),
+            revenue: fmt(overview.totals.revenue),
+            utilization: overview.totals.pct !== null ? `${overview.totals.pct}%` : '-',
+            status: overview.totals.status,
+            roi: overview.totals.roi !== null ? `${overview.totals.roi}x` : '-',
+        },
+        byChannel: spendByChannel(entries).map((c) => ({
+            channel: SPEND_CHANNELS[c.channel] || c.channel,
+            amount: fmt(c.amount),
+        })),
+        statusLegend: 'ok = хэвийн (<80%), warn = анхаарах (80-100%), over = төсөв хэтэрсэн (>100%), none = төсөвгүй',
+    };
+}
+
+export async function fetchMarketIndicators(shopId: string) {
+    const { data, error } = await supabaseAdmin
+        .from('market_indicators')
+        .select('category, name, value, note, recorded_at')
+        .eq('shop_id', shopId)
+        .is('deleted_at', null)
+        .order('recorded_at', { ascending: false })
+        .limit(100);
+
+    if (error) {
+        return { indicators: [], note: 'Зах зээлийн үзүүлэлт бүртгэгдээгүй эсвэл миграци хийгдээгүй байна' };
+    }
+    const categoryLabels: Record<string, string> = {
+        mortgage: 'Ипотекийн зээл',
+        bank: 'Банкны нөхцөл',
+        macro: 'Макро',
+        other: 'Бусад',
+    };
+    return {
+        count: (data || []).length,
+        indicators: (data || []).map((r) => ({
+            category: categoryLabels[r.category] || r.category,
+            name: r.name,
+            value: r.value,
+            note: r.note || undefined,
+            recorded_at: r.recorded_at,
+        })),
     };
 }
 

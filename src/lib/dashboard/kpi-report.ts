@@ -80,9 +80,10 @@ export const LEAD_SOURCE_LABELS: Record<string, string> = {
     facebook_ads: 'Facebook Ads',
     google_ads: 'Google Ads',
     tv: 'ТВ',
+    radio: 'Радио',
     meeting: 'Уулзалт',
     event: 'Өдөрлөг',
-    board: 'Самбар',
+    board: 'Билборд / Самбар',
     other: 'Бусад',
 };
 

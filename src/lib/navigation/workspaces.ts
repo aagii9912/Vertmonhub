@@ -220,6 +220,7 @@ export const WORKSPACES: Workspace[] = [
                 icon: Megaphone,
                 items: [
                     { name: 'Хянах самбар', href: '/marketing', icon: LayoutDashboard, module: '' },
+                    { name: 'Төсвийн хяналт', href: '/marketing/budget', icon: Wallet, module: '' },
                     { name: 'Маркетинг ROI', href: '/dashboard/marketing-roi', icon: TrendingUp, module: 'marketing-roi' },
                     { name: 'Өрсөлдөгч судалгаа', href: '/dashboard/competitor-research', icon: Building2, module: 'marketing-roi' },
                     { name: 'Судалгаа', href: '/dashboard/surveys', icon: ClipboardList, module: 'surveys' },
