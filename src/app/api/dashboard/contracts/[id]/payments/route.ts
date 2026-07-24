@@ -72,6 +72,7 @@ export async function POST(
             .select('id')
             .eq('id', contractId)
             .eq('shop_id', authShop.id)
+            .is('deleted_at', null)
             .single();
 
         if (!contract) {

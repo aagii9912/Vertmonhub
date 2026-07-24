@@ -102,8 +102,17 @@ export async function GET(request: NextRequest) {
             return NextResponse.redirect(`${origin}/marketing/social?ig_error=pages_error`);
         }
 
-        // Debug: Log all pages data
-        console.log('Facebook Pages data:', JSON.stringify(pagesData.data, null, 2));
+        // Debug: хуудсуудын мэдээлэл. ЗӨВХӨН нууц биш талбарыг хэвлэнэ —
+        // Graph API-ийн /me/accounts хариу нь хуудас бүрийн `access_token`-ыг
+        // агуулдаг тул бүтнээр нь логдвол Page token production лог руу задарна.
+        console.log('Facebook Pages data:', JSON.stringify(
+            (pagesData.data || []).map((p: PageWithInstagram) => ({
+                id: p.id,
+                name: p.name,
+                hasInstagram: !!p.instagram_business_account,
+            })),
+            null, 2,
+        ));
 
         // Filter pages that have Instagram Business Account connected
         const pagesWithInstagram: PageWithInstagram[] = (pagesData.data || [])

@@ -172,14 +172,14 @@ export const GEMINI_TOOLS: any[] = [
     // ============================================
     {
         name: 'check_payment_status',
-        description: 'Худалдан авагчийн гэрээний төлбөрийн байдлыг шалгах. Төлсөн дүн, үлдэгдэл, хоцрогдлыг мэдээлнэ.',
+        description: 'Худалдан авагчийн гэрээний төлбөрийн байдлыг шалгах. Төлсөн дүн, үлдэгдэл, хоцрогдлыг мэдээлнэ. ЗААВАЛ гэрээнд бүртгэлтэй утасны дугаараар баталгаажуулна — нэрээр хайх боломжгүй.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
-                customer_phone: { type: SchemaType.STRING, description: 'Худалдан авагчийн утасны дугаар' },
-                customer_name: { type: SchemaType.STRING, description: 'Худалдан авагчийн нэр (утас байхгүй бол)' },
-                contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар (тодорхой бол)' }
-            }
+                customer_phone: { type: SchemaType.STRING, description: 'Худалдан авагчийн утасны дугаар (ЗААВАЛ — үүнгүйгээр мэдээлэл өгөхгүй)' },
+                contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар (нэмэлт нарийсгалт)' }
+            },
+            required: ['customer_phone']
         }
     },
     {

@@ -37,7 +37,8 @@ export async function GET(request: NextRequest) {
             let q = supabase
                 .from('property_contracts')
                 .select('*')
-                .eq('shop_id', shopId);
+                .eq('shop_id', shopId)
+                .is('deleted_at', null);
 
             if (status) q = q.eq('contract_status', status);
             if (manager) q = q.eq('sales_manager', manager);

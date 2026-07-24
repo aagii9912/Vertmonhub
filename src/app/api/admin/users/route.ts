@@ -4,6 +4,7 @@ import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logAdminAudit } from '@/lib/admin/audit';
 import { getAdminUser } from '@/lib/admin/auth';
+import { ROLE_PERMISSIONS } from '@/lib/rbac';
 
 /**
  * Үүсгэсэн/шинэчилсэн нууц үгээр нэвтрэлт БОДИТООР ажиллаж буйг сервер талд
@@ -90,14 +91,28 @@ export async function PATCH(request: NextRequest) {
 
         const supabase = supabaseAdmin();
 
-        // Check admin
+        // Дүр өөрчлөх нь эрх нэмэгдүүлэх үйлдэл тул POST-той адил super_admin
+        // шаардана. Өмнө нь дурын админ (тэр дундаа 'support') дүр оноож,
+        // өөрийгөө super_admin болгох боломжтой байв.
         const admin = await getAdminUser();
-        if (!admin) return NextResponse.json({ error: 'Admin required' }, { status: 403 });
+        if (!admin || admin.role !== 'super_admin') {
+            return NextResponse.json({ error: 'Super admin required' }, { status: 403 });
+        }
 
         const { userId: targetUserId, role } = await request.json();
 
-        if (!targetUserId || !role) {
+        if (!targetUserId || typeof role !== 'string' || !role) {
             return NextResponse.json({ error: 'userId and role required' }, { status: 400 });
+        }
+
+        // Дүрийг мэдэгдэж буй дүрүүдтэй тулгана (DB roles → статик fallback).
+        // Эс бөгөөс дурын мөр user_roles-д орж, эрхийн систем таамаглашгүй болно.
+        const { data: dbRoles } = await supabase.from('roles').select('name');
+        const allowedRoles = new Set<string>(
+            (dbRoles || []).map((r: { name: string }) => r.name).concat(Object.keys(ROLE_PERMISSIONS)),
+        );
+        if (!allowedRoles.has(role)) {
+            return NextResponse.json({ error: `Тодорхойгүй дүр: ${role}` }, { status: 400 });
         }
 
         // Upsert role

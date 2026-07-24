@@ -116,6 +116,7 @@ export async function GET(request: NextRequest) {
                     .from('property_contracts')
                     .select('*')
                     .eq('shop_id', shopId)
+                    .is('deleted_at', null)
                     .order('contract_date', { ascending: false, nullsFirst: false })
                     .range(from, from + PAGE - 1);
                 if (!data || data.length === 0) break;

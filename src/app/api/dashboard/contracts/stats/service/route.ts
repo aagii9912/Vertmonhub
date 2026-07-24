@@ -24,7 +24,8 @@ export async function GET() {
         const { data: contracts } = await supabase
             .from('property_contracts')
             .select('id, contract_status, balance, overdue_days, total_price, paid_amount')
-            .eq('shop_id', shopId);
+            .eq('shop_id', shopId)
+            .is('deleted_at', null);
 
         const c = contracts || [];
         const activeContracts = c.filter(x => x.contract_status === 'active').length;

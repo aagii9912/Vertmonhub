@@ -40,9 +40,9 @@ async function handler(request: Request) {
 
             const [{ count: newLeads }, { count: newContracts }, { count: activeContracts }, { count: overdueCount }] = await Promise.all([
                 supabase.from('leads').select('*', { count: 'exact', head: true }).eq('shop_id', shop.id).gte('created_at', since),
-                supabase.from('property_contracts').select('*', { count: 'exact', head: true }).eq('shop_id', shop.id).gte('order_date', since.slice(0, 10)),
-                supabase.from('property_contracts').select('*', { count: 'exact', head: true }).eq('shop_id', shop.id).eq('contract_status', 'active'),
-                supabase.from('property_contracts').select('*', { count: 'exact', head: true }).eq('shop_id', shop.id).gt('overdue_days', 0),
+                supabase.from('property_contracts').select('*', { count: 'exact', head: true }).eq('shop_id', shop.id).is('deleted_at', null).gte('order_date', since.slice(0, 10)),
+                supabase.from('property_contracts').select('*', { count: 'exact', head: true }).eq('shop_id', shop.id).is('deleted_at', null).eq('contract_status', 'active'),
+                supabase.from('property_contracts').select('*', { count: 'exact', head: true }).eq('shop_id', shop.id).is('deleted_at', null).gt('overdue_days', 0),
             ]);
 
             const digest = {

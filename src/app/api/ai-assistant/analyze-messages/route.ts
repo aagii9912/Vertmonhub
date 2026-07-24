@@ -2,15 +2,40 @@ import { NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
+import { resolveApiUser } from '@/lib/auth/resolve-user';
+import { assertShopAccess } from '@/lib/auth/supabase-auth';
+import { fetchRolePermissions } from '@/lib/rbac';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 export async function POST(req: Request) {
     try {
+        // Нэвтрэлт — өмнө нь энэ route огт хамгаалалтгүй байсан тул гаднаас
+        // дурын shopId илгээж өөр төслийн харилцагчийн чатыг уншиж болдог байв.
+        const authUser = await resolveApiUser();
+        if (!authUser) {
+            return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
+        }
+
         const { shopId } = await req.json();
 
         if (!shopId) {
             return NextResponse.json({ error: 'Төслийн ID шаардлагатай' }, { status: 400 });
+        }
+
+        // Модулийн эрх
+        const db = supabaseAdmin();
+        const { data: roleRow } = await db
+            .from('user_roles').select('role').eq('user_id', authUser.id).maybeSingle();
+        const permissions = await fetchRolePermissions(roleRow?.role || 'viewer');
+        if (!permissions.modules.includes('ai-assistant')) {
+            return NextResponse.json({ error: 'AI Assistant ашиглах эрх танд алга' }, { status: 403 });
+        }
+
+        // Гараас ирсэн shopId-д итгэхгүй — гишүүнчлэлээр баталгаажуулна
+        const allowedShopId = await assertShopAccess(shopId);
+        if (!allowedShopId) {
+            return NextResponse.json({ error: 'Энэ төсөлд хандах эрхгүй' }, { status: 403 });
         }
 
         const supabase = supabaseAdmin();
@@ -19,7 +44,7 @@ export async function POST(req: Request) {
         const { data: recentChats, error } = await supabase
             .from('chat_history')
             .select('role, content')
-            .eq('shop_id', shopId)
+            .eq('shop_id', allowedShopId)
             .order('created_at', { ascending: false })
             .limit(100);
 

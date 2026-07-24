@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, getAccessibleShopIds } from '@/lib/auth/supabase-auth';
 import { publishTextPost, publishPhotoPost } from '@/lib/facebook/marketing-api';
 import { decryptToken } from '@/lib/crypto/tokens';
-import { cookies } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
+import { resolveApiUser } from '@/lib/auth/resolve-user';
 
 /**
  * POST /api/marketing/facebook/publish
@@ -11,28 +10,11 @@ import { createServerClient } from '@supabase/ssr';
  */
 export async function POST(req: NextRequest) {
     try {
-        const cookieStore = await cookies();
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            { cookies: { get(name: string) { return cookieStore.get(name)?.value; } } }
-        );
-
-        const { data: { user } } = await supabase.auth.getUser();
-        let userId: string | null = user?.id || null;
-        if (!userId) {
-            const sessionCookie = cookieStore.get('vertmon-session');
-            if (sessionCookie) {
-                try {
-                    const parsed = JSON.parse(Buffer.from(sessionCookie.value, 'base64').toString('utf-8'));
-                    userId = parsed.user_id;
-                } catch { /* ignore */ }
-            }
-        }
-
-        if (!userId) {
+        const authUser = await resolveApiUser();
+        if (!authUser) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
+        const userId = authUser.id;
 
         const body = await req.json();
         const { message, imageUrl, shop_id: shopId } = body;

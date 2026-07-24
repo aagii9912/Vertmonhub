@@ -27,7 +27,7 @@ async function run(request: Request) {
         try {
             const [leadsRes, overdueRes, viewingsRes] = await Promise.all([
                 db.from('leads').select('id', { count: 'exact', head: true }).eq('shop_id', shopId).gte('created_at', todayStart.toISOString()),
-                db.from('property_contracts').select('id', { count: 'exact', head: true }).eq('shop_id', shopId).gt('overdue_days', 0),
+                db.from('property_contracts').select('id', { count: 'exact', head: true }).eq('shop_id', shopId).is('deleted_at', null).gt('overdue_days', 0),
                 db.from('property_viewings').select('id', { count: 'exact', head: true }).eq('shop_id', shopId).gte('scheduled_at', nowIso),
             ]);
             const newLeads = leadsRes.count || 0;

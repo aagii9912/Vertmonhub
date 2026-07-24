@@ -21,7 +21,7 @@ export async function POST() {
 
         const [{ data: projects }, { data: contracts }] = await Promise.all([
             supabase.from('projects').select('id, name').eq('shop_id', shopId),
-            supabase.from('property_contracts').select('id, block_name').eq('shop_id', shopId).is('project_id', null),
+            supabase.from('property_contracts').select('id, block_name').eq('shop_id', shopId).is('deleted_at', null).is('project_id', null),
         ]);
 
         const norm = (s: string) => s.trim().toLowerCase();

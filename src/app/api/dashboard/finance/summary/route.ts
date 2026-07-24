@@ -30,7 +30,8 @@ export async function GET() {
             supabase
                 .from('property_contracts')
                 .select('total_price, paid_amount, balance, vat_amount, contract_status')
-                .eq('shop_id', shopId),
+                .eq('shop_id', shopId)
+                .is('deleted_at', null),
             supabase
                 .from('finance_transactions')
                 .select('type, amount, txn_date')
