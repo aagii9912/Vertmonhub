@@ -19,7 +19,11 @@
       "Bash(./node_modules/.bin/supabase --version)",
       "Bash(SUPABASE_DB_PASSWORD='Vertmon123!' ./node_modules/.bin/supabase link --project-ref gwwzfrffwiiniqwqkgnq)",
       "Bash(xargs ls -la)",
-      "Bash(python3)"
+      "Bash(python3)",
+      "Bash(xargs rg -l \"export async function requireModule|export function requireModule\")",
+      "Bash(cd /home/user/Vertmonhub/supabase/migrations *)",
+      "Bash(rg -rn \"requireModule|canAccessModule|redirect\\\\\\('/dashboard'\\\\\\)\" src/app/dashboard --glob 'page.tsx' --glob 'layout.tsx' -l)",
+      "Bash(rg -n \"POLICY|GRANT|ENABLE ROW LEVEL\" supabase/migrations/*rbac* supabase/migrations/*role*)"
     ]
   }
 }
