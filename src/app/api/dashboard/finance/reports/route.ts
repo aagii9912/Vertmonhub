@@ -59,6 +59,7 @@ export async function GET() {
                 (from, to) => supabase.from('property_contracts')
                     .select('total_price, vat_amount, sales_channel, contract_date, contract_status')
                     .eq('shop_id', shopId)
+                    .is('deleted_at', null)
                     .range(from, to)),
             fetchAllRows<{ total_amount: number | null; paid_amount: number | null; vat_amount: number | null; bill_date: string | null; due_date: string | null; status: string | null }>(
                 (from, to) => supabase.from('vendor_bills')

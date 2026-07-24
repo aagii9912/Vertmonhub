@@ -32,7 +32,7 @@ export async function GET() {
 
         const [{ data: projects }, { data: contracts }, { data: bills }, { data: budgets }] = await Promise.all([
             supabase.from('projects').select('id, name').eq('shop_id', shopId),
-            supabase.from('property_contracts').select('project_id, total_price, paid_amount, contract_status').eq('shop_id', shopId),
+            supabase.from('property_contracts').select('project_id, total_price, paid_amount, contract_status').eq('shop_id', shopId).is('deleted_at', null),
             supabase.from('vendor_bills').select('project_id, total_amount, paid_amount, status').eq('shop_id', shopId),
             supabase.from('project_budgets').select('project_id, planned_amount').eq('shop_id', shopId),
         ]);

@@ -48,6 +48,7 @@ export async function POST() {
                 .from('property_contracts')
                 .select('price_per_sqm')
                 .eq('shop_id', authShop.id)
+                .is('deleted_at', null)
                 .not('price_per_sqm', 'is', null)
                 .limit(1000),
             // Нөөцийн байдал (нийт/боломжит нэгж)

@@ -44,3 +44,6 @@ yarn-error.log*
 next-env.d.ts
 debug.log
 .env*.local
+
+# Claude Code local settings (агуулгад нууц утга орох эрсдэлтэй)
+.claude/settings.local.json

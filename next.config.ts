@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import withBundleAnalyzer from '@next/bundle-analyzer';
+import { withSentryConfig } from '@sentry/nextjs';
 
 const analyze = withBundleAnalyzer({
   enabled: process.env.ANALYZE === 'true',
@@ -71,7 +72,9 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://vercel.live",
               "font-src 'self' https://fonts.gstatic.com https://vercel.live",
               "img-src 'self' data: blob: https://*.supabase.co https://*.fbcdn.net https://*.cdninstagram.com https://vercel.live",
-              "connect-src 'self' https://*.supabase.co https://*.supabase.in wss://*.supabase.co https://generativelanguage.googleapis.com https://graph.facebook.com https://graph.instagram.com https://vercel.live wss://*.pusher.com https://*.pusher.com",
+              // Sentry ingest-ийг оруулсан — эс бөгөөс CSP клиентийн алдааны
+              // илгээлтийг блоклож, Sentry дахин чимээгүй унана
+              "connect-src 'self' https://*.supabase.co https://*.supabase.in wss://*.supabase.co https://generativelanguage.googleapis.com https://graph.facebook.com https://graph.instagram.com https://vercel.live wss://*.pusher.com https://*.pusher.com https://*.ingest.sentry.io https://*.ingest.de.sentry.io https://*.ingest.us.sentry.io",
               "frame-src 'self' https://vercel.live",
               "frame-ancestors 'none'",
             ].join('; '),
@@ -82,4 +85,12 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default analyze(nextConfig);
+export default withSentryConfig(analyze(nextConfig), {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  // Build log-ийг цэвэр байлгана; SENTRY_AUTH_TOKEN байхгүй бол source map
+  // upload-ыг чимээгүй алгасаад build унахгүй
+  silent: true,
+  widenClientFileUpload: true,
+  disableLogger: true,
+});

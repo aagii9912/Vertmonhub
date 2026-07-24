@@ -3,6 +3,8 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule, requireModuleWrite, requireModuleDelete } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { recordAudit } from '@/lib/services/AuditService';
+import { resolveApiUser } from '@/lib/auth/resolve-user';
 
 interface RouteContext {
     params: Promise<{ id: string }>;
@@ -48,13 +50,39 @@ export async function DELETE(_request: NextRequest, ctx: RouteContext) {
         }
 
         const supabase = supabaseAdmin();
+
+        // Устгахын өмнөх төлөвийг аудитад үлдээхээр уншина
+        const { data: before } = await supabase
+            .from('property_contracts')
+            .select('*')
+            .eq('id', id)
+            .eq('shop_id', authShop.id)
+            .maybeSingle();
+
+        if (!before) {
+            return NextResponse.json({ error: 'Гэрээ олдсонгүй' }, { status: 404 });
+        }
+
+        // ЗӨӨЛӨН устгал. Өмнө нь hard delete (.delete()) байсан тул төлбөрийн
+        // хуваарь, хүлээлцэх акт каскадаар бүрмөсөн устаж, кассын гүйлгээ
+        // өнчирдөг байв — сэргээх боломжгүй.
         const { error } = await supabase
             .from('property_contracts')
-            .delete()
+            .update({ deleted_at: new Date().toISOString() })
             .eq('id', id)
             .eq('shop_id', authShop.id);
 
         if (error) throw error;
+
+        await recordAudit({
+            shopId: authShop.id,
+            actorId: (await resolveApiUser())?.id ?? null,
+            entity: 'contract',
+            entityId: id,
+            action: 'delete',
+            changes: { before },
+        });
+
         return NextResponse.json({ success: true });
     } catch (error) {
         logger.error('[Contract Detail API] DELETE error:', { error });

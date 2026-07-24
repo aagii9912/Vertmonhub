@@ -357,6 +357,7 @@ export async function executeScheduleViewing(
             .from('property_contracts')
             .select('*', { count: 'exact', head: true })
             .eq('shop_id', context.shopId)
+            .is('deleted_at', null)
             .ilike('customer_name', `%${context.customerName}%`);
         if (contractCount && contractCount > 0) meetingType = 'existing_buyer';
     }
@@ -701,19 +702,31 @@ export async function executeCheckPaymentStatus(
 ): Promise<ToolExecutionResult> {
     const supabase = supabaseAdmin();
 
+    // DM суваг нь баталгаажаагүй — бичсэн хүн өөрийгөө хэн ч гэж нэрлэж болно.
+    // Өмнө нь нэрээр (ilike '%нэр%') хайх боломжтой байсан тул гаднаас бичсэн
+    // хэн ч бусад худалдан авагчийн гэрээ, төлсөн дүн, үлдэгдлийг гаргуулж
+    // авдаг байв. Иймд ЗӨВХӨН утасны дугаараар таниулна: утас нь тухайн
+    // худалдан авагчийн мэддэг хувийн танигч бөгөөд гэрээн дээрхтэй яг таарах
+    // ёстой. Нэрээр хайхыг бүрмөсөн хаав.
+    const phone = (args.customer_phone || '').replace(/\D/g, '');
+
+    if (!phone || phone.length < 8) {
+        return {
+            success: true,
+            message: 'Төлбөрийн мэдээлэл өгөхийн тулд гэрээнд бүртгэлтэй утасны дугаараа бүтнээр илгээнэ үү. Аюулгүй байдлын үүднээс зөвхөн гэрээн дээрх утсаар баталгаажуулж мэдээлэл өгнө.',
+        };
+    }
+
     let query = supabase
         .from('property_contracts')
-        .select('contract_number, customer_name, customer_phone, total_price, paid_amount, balance, overdue_days, contract_status, paid_percent')
-        .eq('shop_id', context.shopId);
+        .select('contract_number, customer_name, total_price, paid_amount, balance, overdue_days, contract_status, paid_percent')
+        .eq('shop_id', context.shopId)
+        .is('deleted_at', null)
+        .ilike('customer_phone', `%${phone}%`);
 
+    // Гэрээний дугаар нэмж өгсөн бол давхар нарийсгана (утастай хамт таарах ёстой)
     if (args.contract_number) {
         query = query.ilike('contract_number', `%${args.contract_number}%`);
-    } else if (args.customer_phone) {
-        query = query.ilike('customer_phone', `%${args.customer_phone}%`);
-    } else if (args.customer_name) {
-        query = query.ilike('customer_name', `%${args.customer_name}%`);
-    } else {
-        return { success: false, error: 'Утас, нэр эсвэл гэрээний дугаар шаардлагатай.' };
     }
 
     const { data: contracts, error } = await query.limit(3);
