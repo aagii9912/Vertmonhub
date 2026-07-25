@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
@@ -129,6 +130,12 @@ export async function POST(request: NextRequest) {
         if (body.channel) {
             await supabase.from('service_logs').update({ channel: body.channel }).eq('id', data.id);
         }
+
+        await auditFor(request, authShop.id, {
+            entity: 'service_log', entityId: data?.id ?? null, action: 'create',
+            summary: `${data?.subject ?? 'Хүсэлт'} бүртгэв`,
+            after: data as Record<string, unknown>,
+        });
 
         return NextResponse.json(
             { log: data, message: 'Хүсэлт амжилттай бүртгэлээ' },

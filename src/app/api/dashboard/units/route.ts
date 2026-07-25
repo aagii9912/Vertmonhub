@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -132,6 +133,12 @@ export async function PATCH(request: NextRequest) {
 
         if (error) throw error;
         if (!data) return NextResponse.json({ error: 'Нэгж олдсонгүй' }, { status: 404 });
+
+        await auditFor(request, authShop.id, {
+            entity: 'unit', entityId: String(id), action: 'update',
+            summary: `${data?.unit_label ?? id} нэгжийг шинэчлэв`,
+            after: updateData as Record<string, unknown>,
+        });
 
         return NextResponse.json({ unit: data, message: 'Нэгж шинэчлэгдлээ' });
     } catch (error) {

@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -82,6 +83,11 @@ export async function POST(request: NextRequest) {
         if (linesError) {
             logger.warn('[Bills] lines insert failed', { error: linesError });
         }
+
+        await auditFor(request, authShop.id, {
+            entity: 'bill', entityId: bill?.id ?? null, action: 'create',
+            summary: `Нэхэмжлэх үүсгэв`, after: bill as Record<string, unknown>,
+        });
 
         return NextResponse.json({ bill, message: 'Нэхэмжлэх үүсгэлээ' }, { status: 201 });
     } catch (error) {

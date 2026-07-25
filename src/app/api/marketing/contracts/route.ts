@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { getUserShop } from '@/lib/auth/supabase-auth';
@@ -93,6 +94,11 @@ export async function POST(req: NextRequest) {
             .single();
 
         if (error) throw error;
+
+        await auditFor(req, authShop.id, {
+            entity: 'channel_contract', entityId: data?.id ?? null, action: 'create',
+            summary: 'Сувгийн гэрээ бүртгэв', after: data as Record<string, unknown>,
+        });
 
         return NextResponse.json({ message: 'Гэрээ амжилттай бүртгэгдлээ', contract: data }, { status: 201 });
 

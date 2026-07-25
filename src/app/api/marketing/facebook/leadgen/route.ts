@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { verifyWebhookSignature } from '@/lib/utils/verify-webhook-signature';
@@ -115,6 +116,12 @@ export async function POST(request: NextRequest) {
         }
 
         logger.info('[Leadgen] ingested', { ingested });
+        await auditFor(request, null, {
+            entity: 'lead', action: 'create',
+            summary: `Facebook Lead Ads-аас ${ingested} лид хүлээн авав`,
+            after: { ingested },
+        }, 'webhook');
+
         return NextResponse.json({ success: true, ingested });
     } catch (error) {
         logger.error('[Leadgen] error', { error });

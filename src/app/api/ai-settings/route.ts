@@ -4,6 +4,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
@@ -175,6 +176,12 @@ export async function POST(request: NextRequest) {
 
         if (error) throw error;
 
+        await auditFor(request, shop.id, {
+            entity: 'ai_settings', action: 'create',
+            summary: 'AI тохиргоо үүсгэв',
+            after: created as Record<string, unknown>,
+        });
+
         return NextResponse.json({ success: true, data: created });
     } catch (error) {
         return safeErrorResponse(error, 'AI тохиргоо нэмэх үед алдаа гарлаа');
@@ -227,6 +234,12 @@ export async function PATCH(request: NextRequest) {
             .single();
 
         if (error) throw error;
+
+        await auditFor(request, shop.id, {
+            entity: 'ai_settings', action: 'update',
+            summary: 'AI тохиргоо шинэчлэв',
+            after: updated as Record<string, unknown>,
+        });
 
         return NextResponse.json({ success: true, data: updated });
     } catch (error) {

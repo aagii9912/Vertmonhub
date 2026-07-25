@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 
@@ -57,6 +58,12 @@ export async function POST(request: Request) {
         const { data: { publicUrl } } = supabase.storage
             .from('products')
             .getPublicUrl(fileName);
+
+        await auditFor(request, authShop.id, {
+            entity: 'file', action: 'upload',
+            summary: `Файл байршуулав: ${file.name}`,
+            after: { name: file.name, type: file.type, size: file.size },
+        });
 
         return NextResponse.json({ url: publicUrl });
     } catch (error) {

@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireWrite, requireDelete } from '@/lib/auth/require-permission';
+import { requireModuleDelete, requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
@@ -13,7 +14,7 @@ export async function PATCH(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('customer-service');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
@@ -47,6 +48,12 @@ export async function PATCH(
 
         if (error) throw error;
 
+        await auditFor(request, authShop.id, {
+            entity: 'service_log', action: 'update',
+            summary: `${data?.subject ?? id} хүсэлтийг шинэчлэв`,
+            after: data as Record<string, unknown>,
+        });
+
         return NextResponse.json({ log: data, message: 'Хүсэлт шинэчлэгдлээ' });
     } catch (error) {
         logger.error('[ServiceLogs API] PATCH error:', { error });
@@ -66,7 +73,7 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const denied = await requireDelete();
+        const denied = await requireModuleDelete('customer-service');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {

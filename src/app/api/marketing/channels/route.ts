@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { getUserShop } from '@/lib/auth/supabase-auth';
@@ -78,6 +79,12 @@ export async function POST(req: NextRequest) {
             .single();
 
         if (error) throw error;
+
+        await auditFor(req, authShop.id, {
+            entity: 'marketing_channel', action: 'create',
+            summary: `${data?.name ?? 'Суваг'} нэмэв`,
+            after: data as Record<string, unknown>,
+        });
 
         return NextResponse.json({ message: 'Суваг амжилттай нэмэгдлээ', channel: data }, { status: 201 });
 

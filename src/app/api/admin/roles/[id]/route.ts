@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { requireAdmin } from '@/lib/admin/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
@@ -85,6 +86,12 @@ export async function PATCH(
             .eq('id', id)
             .single();
 
+        await auditFor(request, null, {
+            entity: 'role', entityId: id, action: 'update',
+            summary: `«${freshRole?.name ?? id}» дүрийн эрхийг өөрчлөв`,
+            after: freshRole as Record<string, unknown>,
+        });
+
         return NextResponse.json({ role: freshRole });
     } catch (error) {
         return safeErrorResponse(error, 'Role шинэчлэхэд алдаа гарлаа');
@@ -146,6 +153,11 @@ export async function DELETE(
         if (deleteError) {
             return safeErrorResponse(deleteError, 'Role устгахад алдаа гарлаа');
         }
+
+        await auditFor(_request, null, {
+            entity: 'role', entityId: id, action: 'delete',
+            summary: 'Дүр устгав',
+        });
 
         return NextResponse.json({ success: true });
     } catch (error) {

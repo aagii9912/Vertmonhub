@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireWrite } from '@/lib/auth/require-permission';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { sendTextMessage } from '@/lib/facebook/messenger';
 import { decryptToken } from '@/lib/crypto/tokens';
 
 export async function POST(request: NextRequest) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('inbox');
         if (denied) return denied;
 
         const authShop = await getUserShop();
@@ -77,6 +78,12 @@ export async function POST(request: NextRequest) {
             .eq('id', customerId);
 
 
+
+        await auditFor(request, authShop.id, {
+            entity: 'message', action: 'send',
+            summary: 'Харилцагчид мессеж илгээв',
+            after: { customer_id: customerId ?? null, ai_pause_mode: aiPauseMode },
+        });
 
         return NextResponse.json({ success: true, message: 'Message sent successfully' });
     } catch (error) {

@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireWrite } from '@/lib/auth/require-permission';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { MergeCustomersSchema, validateBody } from '@/lib/validations/schemas';
@@ -27,7 +28,7 @@ const CHILD_TABLES = [
  */
 export async function POST(request: NextRequest) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('customers');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
@@ -142,6 +143,13 @@ export async function POST(request: NextRequest) {
             primaryId,
             duplicateId,
             repointWarnings: repointWarnings.length,
+        });
+
+        await auditFor(request, authShop.id, {
+            entity: 'customer', entityId: String(primaryId), action: 'merge',
+            summary: `Харилцагч нэгтгэв (давхардсан ${duplicateId} устгагдав)`,
+            before: { duplicate_id: duplicateId },
+            after: merged as Record<string, unknown>,
         });
 
         return NextResponse.json({

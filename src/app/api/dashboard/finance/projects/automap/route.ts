@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -40,6 +41,12 @@ export async function POST() {
                 if (!error) mapped++;
             }
         }
+
+        await auditFor(null, authShop.id, {
+            entity: 'project_mapping', action: 'update',
+            summary: `${mapped} гэрээг төсөлд автоматаар холбов`,
+            after: { mapped },
+        });
 
         return NextResponse.json({ success: true, mapped, message: `${mapped} гэрээг төсөлд холболоо` });
     } catch (error) {

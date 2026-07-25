@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserId, supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { CreateShopSchema, UpdateShopSchema, validateBody } from '@/lib/validations/schemas';
@@ -199,6 +200,12 @@ export async function PATCH(request: NextRequest) {
         webhookSubscribed = sub.success;
       }
     }
+
+    await auditFor(request, updatedShop?.id ?? null, {
+        entity: 'shop', action: 'update',
+        summary: 'Төслийн тохиргоо шинэчлэв',
+        after: { webhookSubscribed },
+    });
 
     return NextResponse.json({ shop: updatedShop, webhookSubscribed });
   } catch (error) {

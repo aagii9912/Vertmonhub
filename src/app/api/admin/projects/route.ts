@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { getAdminUser } from '@/lib/admin/auth';
@@ -108,6 +109,12 @@ export async function POST(request: NextRequest) {
             .single();
 
         if (error) return safeErrorResponse(error, 'Төсөл үүсгэхэд алдаа');
+
+        await auditFor(request, project?.shop_id ?? null, {
+            entity: 'project', entityId: project?.id ?? null, action: 'create',
+            summary: `${project?.name ?? 'Нэргүй'} төсөл үүсгэв`,
+            after: project as Record<string, unknown>,
+        });
 
         return NextResponse.json({ project }, { status: 201 });
     } catch (error) {

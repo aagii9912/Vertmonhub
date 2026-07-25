@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -60,6 +61,12 @@ export async function POST(request: NextRequest) {
             .single();
 
         if (error) throw error;
+        await auditFor(request, authShop.id, {
+            entity: 'vendor', entityId: vendor?.id ?? null, action: 'create',
+            summary: `${vendor?.name ?? 'Нэргүй'} нийлүүлэгч нэмэв`,
+            after: vendor as Record<string, unknown>,
+        });
+
         return NextResponse.json({ vendor, message: 'Нийлүүлэгч нэмлээ' }, { status: 201 });
     } catch (error) {
         logger.error('[Vendors] POST error', { error });

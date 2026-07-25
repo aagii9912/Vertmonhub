@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { z } from 'zod';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
-import { requireWrite } from '@/lib/auth/require-permission';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logger } from '@/lib/utils/logger';
@@ -113,7 +114,7 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('marketing-roi');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
@@ -157,7 +158,7 @@ export async function PUT(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('marketing-roi');
         if (denied) return denied;
         const [authShop, uid] = await Promise.all([getUserShop(), getUserId()]);
         if (!authShop) {
@@ -195,6 +196,12 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Зарцуулалт бүртгэх алдаа' }, { status: 500 });
         }
 
+        await auditFor(request, authShop.id, {
+            entity: 'spend_entry', action: 'create',
+            summary: 'Маркетингийн зарцуулалт нэмэв',
+            after: data as Record<string, unknown>,
+        });
+
         return NextResponse.json({ entry: data });
     } catch (error) {
         return safeErrorResponse(error, 'Зарцуулалт бүртгэх алдаа');
@@ -203,7 +210,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('marketing-roi');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {

@@ -1,6 +1,8 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { auditFor } from '@/lib/api/context';
+import { diffFields } from '@/lib/audit/log';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireWrite, requireDelete } from '@/lib/auth/require-permission';
+import { requireModuleWrite, requireModuleDelete } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { UpdatePropertySchema, validateBody } from '@/lib/validations/schemas';
@@ -36,7 +38,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
 export async function PATCH(request: NextRequest, { params }: Params) {
   try {
-    const denied = await requireWrite();
+    const denied = await requireModuleWrite('properties');
     if (denied) return denied;
     const { id } = await params;
     const authShop = await getUserShop();
@@ -75,6 +77,12 @@ export async function PATCH(request: NextRequest, { params }: Params) {
       return NextResponse.json({ error: 'Failed to update property' }, { status: 500 });
     }
 
+    await auditFor(request, authShop.id, {
+      entity: 'property', entityId: id, action: 'update',
+      summary: `${data?.name ?? id} үл хөдлөхийг шинэчлэв`,
+      ...diffFields(existing as Record<string, unknown>, data as Record<string, unknown>),
+    });
+
     return NextResponse.json({ property: data, message: 'Property updated' });
   } catch (error) {
     logger.error('[Properties [id] PATCH] error:', { error });
@@ -84,7 +92,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
 export async function DELETE(_request: NextRequest, { params }: Params) {
   try {
-    const denied = await requireDelete();
+    const denied = await requireModuleDelete('properties');
     if (denied) return denied;
     const { id } = await params;
     const authShop = await getUserShop();
@@ -96,7 +104,7 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
 
     const { data: existing } = await supabase
       .from('properties')
-      .select('id')
+      .select('*')
       .eq('id', id)
       .eq('shop_id', authShop.id)
       .single();
@@ -115,6 +123,12 @@ export async function DELETE(_request: NextRequest, { params }: Params) {
       logger.error('[Properties [id] DELETE] error:', { error });
       return NextResponse.json({ error: 'Failed to delete property' }, { status: 500 });
     }
+
+    await auditFor(_request, authShop.id, {
+      entity: 'property', entityId: id, action: 'delete',
+      summary: `${(existing as Record<string, unknown>)?.name ?? id} үл хөдлөхийг устгав`,
+      before: existing as Record<string, unknown>, after: null,
+    });
 
     return NextResponse.json({ message: 'Property deleted' });
   } catch (error) {

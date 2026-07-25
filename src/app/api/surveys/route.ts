@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireWrite } from '@/lib/auth/require-permission';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import * as z from 'zod';
 
 const createSurveySchema = z.object({
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
 
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('surveys');
         if (denied) return denied;
 
         const authShop = await getUserShop();
@@ -69,6 +70,12 @@ export async function POST(req: NextRequest) {
             console.error('Create survey error:', error);
             return NextResponse.json({ error: 'Судалгаа үүсгэхэд алдаа гарлаа' }, { status: 500 });
         }
+
+        await auditFor(req, authShop.id, {
+            entity: 'survey', entityId: data?.id ?? null, action: 'create',
+            summary: `${data?.title ?? 'Нэргүй'} судалгаа үүсгэв`,
+            after: data as Record<string, unknown>,
+        });
 
         return NextResponse.json({ message: 'Амжилттай үүсгэлээ', survey: data }, { status: 201 });
 

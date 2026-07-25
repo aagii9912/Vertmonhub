@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule, requireModuleWrite, requireModuleDelete } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -61,6 +62,11 @@ export async function POST(request: NextRequest) {
             .single();
 
         if (error) throw error;
+        await auditFor(request, authShop.id, {
+            entity: 'budget', entityId: budget?.id ?? null, action: 'create',
+            summary: 'Төсвийн мөр нэмэв', after: budget as Record<string, unknown>,
+        });
+
         return NextResponse.json({ budget, message: 'Төсөв нэмлээ' }, { status: 201 });
     } catch (error) {
         logger.error('[Budgets] POST error', { error });
@@ -87,6 +93,12 @@ export async function DELETE(request: NextRequest) {
             .eq('shop_id', authShop.id);
 
         if (error) throw error;
+
+        await auditFor(request, authShop.id, {
+            entity: 'budget', entityId: id, action: 'delete',
+            summary: 'Төсвийн мөр устгав',
+        });
+
         return NextResponse.json({ success: true });
     } catch (error) {
         logger.error('[Budgets] DELETE error', { error });

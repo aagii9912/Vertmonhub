@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { requireAdmin } from '@/lib/admin/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
@@ -98,6 +99,12 @@ export async function POST(request: Request) {
             .select('*, role_permissions(id, module)')
             .eq('id', role.id)
             .single();
+
+        await auditFor(request, null, {
+            entity: 'role', entityId: role.id, action: 'create',
+            summary: `«${freshRole?.name ?? role.id}» дүр үүсгэв`,
+            after: freshRole as Record<string, unknown>,
+        });
 
         return NextResponse.json({ role: freshRole }, { status: 201 });
     } catch (error) {

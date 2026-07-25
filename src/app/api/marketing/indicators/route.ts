@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { z } from 'zod';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireWrite } from '@/lib/auth/require-permission';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logger } from '@/lib/utils/logger';
@@ -58,7 +59,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('marketing-roi');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
@@ -100,6 +101,12 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Үзүүлэлт нэмэх алдаа' }, { status: 500 });
         }
 
+        await auditFor(request, authShop.id, {
+            entity: 'market_indicator', action: 'create',
+            summary: 'Зах зээлийн үзүүлэлт нэмэв',
+            after: data as Record<string, unknown>,
+        });
+
         return NextResponse.json({ indicator: data });
     } catch (error) {
         return safeErrorResponse(error, 'Үзүүлэлт нэмэх алдаа');
@@ -108,7 +115,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('marketing-roi');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {

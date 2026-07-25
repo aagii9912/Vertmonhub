@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { logActivity } from '@/lib/audit/log';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
@@ -70,6 +71,14 @@ export async function POST(request: NextRequest) {
             } else if (code === 'user_banned') {
                 userError = 'Энэ бүртгэл түр хаагдсан байна — админд хандана уу';
             }
+            // Амжилтгүй нэвтрэлт нь халдлага мөрдөх гол дохио — заавал бүртгэнэ
+            await logActivity({
+                entity: 'session', action: 'login',
+                summary: `Амжилтгүй нэвтрэлт: ${email}`,
+                status: 'denied', errorMessage: code || message || 'invalid_credentials',
+                after: { email }, request, source: 'ui',
+            });
+
             return NextResponse.json({ error: userError, code: code || undefined }, { status: 401 });
         }
 
@@ -88,6 +97,12 @@ export async function POST(request: NextRequest) {
             .single();
 
         const role = roleData?.role || 'viewer';
+
+        await logActivity({
+            actor: { id: user.id, name: user.user_metadata?.full_name || null, role },
+            entity: 'session', entityId: user.id, action: 'login',
+            summary: `${user.email} нэвтэрлээ`, request, source: 'ui',
+        });
 
         return NextResponse.json({
             success: true,
