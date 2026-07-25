@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getAdminUser } from '@/lib/admin/auth';
 import * as XLSX from 'xlsx';
 
 /**
@@ -6,6 +7,12 @@ import * as XLSX from 'xlsx';
  * Download Excel template for a specific import type
  */
 export async function GET(request: NextRequest) {
+    // Админы зам — эрхгүй хүн импортын бүтцийг харах шаардлагагүй
+    const admin = await getAdminUser();
+    if (!admin) {
+        return NextResponse.json({ error: 'Admin required' }, { status: 403 });
+    }
+
     const { searchParams } = new URL(request.url);
     const type = searchParams.get('type') || 'properties';
 

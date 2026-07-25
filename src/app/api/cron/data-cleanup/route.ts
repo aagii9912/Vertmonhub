@@ -55,6 +55,17 @@ export async function POST(request: Request) {
             results.memory_cleaned = 'skipped';
         }
 
+        // 3b. Аудитын архивыг хадгалах хугацааны дагуу цэвэрлэх (24 сар).
+        //     activity_log нь append-only тул зөвхөн энэ SECURITY DEFINER
+        //     функцээр дамжуулан цэвэрлэгдэнэ.
+        try {
+            const { data: pruned } = await supabase.rpc('prune_activity_log', { p_months: 24 });
+            results.activity_log_pruned = pruned ?? 0;
+        } catch (e) {
+            logger.warn('[Cron] prune_activity_log RPC not available:', { error: e });
+            results.activity_log_pruned = 'skipped';
+        }
+
         // 4. Webhook idempotency бүртгэлийг цэвэрлэх (> 7 хоног)
         try {
             const cutoff = new Date();
