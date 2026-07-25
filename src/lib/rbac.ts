@@ -174,13 +174,24 @@ export async function fetchRolePermissions(roleName: string, supabaseClient?: an
 
         if (!supabase) {
             const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-            const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+
+            // Серверт (SUPABASE_SERVICE_ROLE_KEY боломжтой үед) service-role-оор
+            // уншина. Өмнө нь ҮРГЭЛЖ anon key ашигладаг байсан тул `roles` /
+            // `role_permissions` хүснэгтийн RLS уншилтыг хааж, дуудалт бүр
+            // static fallback руу унадаг байв — өөрөөр хэлбэл админ UI-аас
+            // тохируулсан эрх сервер дээр ХЭЗЭЭ Ч мөрдөгддөггүй байсан.
+            const serviceKey = typeof window === 'undefined'
+                ? process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+                : undefined;
+            const supabaseKey = serviceKey || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
 
             if (!supabaseUrl || !supabaseKey) {
                 return getStaticPermissions(roleName);
             }
 
-            supabase = createClient(supabaseUrl, supabaseKey);
+            supabase = createClient(supabaseUrl, supabaseKey, {
+                auth: { persistSession: false, autoRefreshToken: false },
+            });
         }
 
         // Fetch role details + permissions in one go.
