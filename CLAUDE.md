@@ -43,6 +43,10 @@ npm run build          # production build
 npm run lint           # eslint . (flat config; Next 16 removed `next lint`)
 npm run typecheck      # tsc --noEmit
 npm run test           # vitest run
+
+# Auth + audit coverage gate (also runs in CI; fails on an unguarded or
+# unaudited new route)
+node scripts/check-audit-coverage.mjs
 ```
 
 ---
@@ -146,7 +150,9 @@ src/
 ## Key Architecture Decisions
 
 ### Authentication
-Supabase Auth (Email/Password, Google, Facebook). `src/middleware.ts` protects `/dashboard` and `/admin`. Unauthenticated users are bounced to `/auth/login`.
+**Supabase Auth only.** `src/middleware.ts` protects `/dashboard` and `/admin`; unauthenticated users are bounced to `/auth/login`.
+
+> The legacy `vertmon-session` cookie was **removed entirely** during the internal security audit. The login flow had stopped issuing it (it was only being cleared) while eight files still *accepted* it — five of them parsing it as unsigned base64 JSON, and `middleware.ts` reading a JWT payload without verifying the signature. That was an authentication bypass. Do not reintroduce a second session mechanism: `resolveApiUser()` ([src/lib/auth/resolve-user.ts](src/lib/auth/resolve-user.ts)) is the only supported path.
 
 ### Per-manager dashboards («Миний самбар»)
 `/dashboard` is **role-aware**: `src/app/dashboard/page.tsx` is a thin router driven by `GET /api/dashboard/mode` (server-side decision — never client role-guessing).
@@ -220,15 +226,57 @@ Dashboard API routes accept the active shop via `x-shop-id` header. The browser 
 
 ## RBAC
 
-Defined in [src/lib/rbac.ts](src/lib/rbac.ts). Modules:
+Defined in [src/lib/rbac.ts](src/lib/rbac.ts). Modules (17 — `ALL_MODULES`):
 
 ```
 dashboard, properties, leads, viewings, contracts, customers,
-inbox, reports, reports-leads, marketing-roi, surveys,
-ai-assistant, ai-settings, settings
+customer-service, finance, procurement, inbox, reports, reports-leads,
+marketing-roi, surveys, ai-assistant, ai-settings, settings
 ```
 
-Static fallback roles: `super_admin`, `admin`, `sales_manager`, `marketing`, `viewer`. The runtime first tries to load permissions from the `roles` / `role_permissions` / `user_roles` tables and falls back to the static map if Supabase is unreachable.
+Static fallback roles: `super_admin`, `admin`, `sales_manager`, `marketing`, `finance_manager`, `accountant`, `viewer`. The runtime first tries to load permissions from the `roles` / `role_permissions` / `user_roles` tables and falls back to the static map if Supabase is unreachable. **On the server `fetchRolePermissions` uses the service-role key** — it previously always used the anon key, so RLS blocked the read and every call silently fell through to the static map (DB-configured permissions were never enforced server-side).
+
+### Enforcing it (do not regress)
+
+**`apiContext()` — [src/lib/api/context.ts](src/lib/api/context.ts) — is the single entry point for new API routes.** One call resolves the user, checks the module + write/delete permission, validates the target `shop_id` against membership, and returns an audit writer pre-bound with actor/shop/IP/user-agent. On denial it writes a `status:'denied'` audit row automatically, so privilege-escalation attempts are traceable for free.
+
+```ts
+const r = await apiContext(req, { module: 'contracts', action: 'write' });
+if ('error' in r) return r.error;
+const { ctx } = r;
+// ... mutate ...
+await ctx.audit({ entity: 'contract', entityId: id, action: 'update', ...diffFields(before, after) });
+```
+
+Routes that already carry a correct `requireModule*` guard use the shorter `auditFor(req, shopId, event)` instead of being rewritten.
+
+Rules:
+- Never use bare `requireWrite()` / `requireDelete()` — they skip the module boundary. Use `requireModuleWrite(module)` / `requireModuleDelete(module)`.
+- `getUserShop()` already validates the `x-shop-id` header against the user's owned + member shops. Never read `shop_id` from a request body/query without passing it through `getUserShop()`, `assertShopAccess()`, or `apiContext()`.
+- Page-level guard for sensitive sections: `requirePageModule(module)` in a server `layout.tsx` ([src/lib/auth/page-guard.ts](src/lib/auth/page-guard.ts)). Applied to `finance`, `procurement`, `contracts`, `audit`. This is defense-in-depth — the API layer is the real protection.
+- **`scripts/check-audit-coverage.mjs` runs in CI** and fails the build when a new route lands without auth, or a new mutating route lands without audit. Genuine exceptions go in that script's allowlists **with a stated reason**.
+
+---
+
+## Audit trail (`activity_log`)
+
+Single unified, **append-only** audit channel — migration `20260725140000`. Serves three purposes at once: management oversight (`actor_name`/`actor_role` snapshots + Mongolian `summary`), data recovery (`before`/`after` holding only the changed fields), and security forensics (`request_ip`, `user_agent`, `status='denied'`).
+
+| Piece | Location |
+|-------|----------|
+| Writer + `diffFields` + secret redaction | [src/lib/audit/log.ts](src/lib/audit/log.ts) |
+| Route helper (`apiContext` / `auditFor`) | [src/lib/api/context.ts](src/lib/api/context.ts) |
+| Management view | `/dashboard/audit` + `GET /api/dashboard/audit` |
+| Per-record history | `EntityHistory` component + `GET /api/dashboard/audit/entity` |
+| Unified view over legacy channels | `audit_unified` view (migration `20260725150000`) |
+| Retention (24 months) | `prune_activity_log()`, called from `cron/data-cleanup` |
+
+Rules that must not regress:
+- **`UPDATE`/`DELETE` on `activity_log` raise an exception** (trigger `trg_activity_log_immutable`) — even for service-role. Retention runs only through `prune_activity_log()`, which disables the trigger inside a `SECURITY DEFINER` function and logs its own pruning.
+- Writes go through `logActivity` (service-role); `anon`/`authenticated` have `INSERT/UPDATE/DELETE` revoked. Reads are RLS-scoped to the caller's shops.
+- Audit writes are best-effort (never break the main operation) but **not silent** — failures go to `logger.error`, which now actually reaches Sentry.
+- `diffFields` strips unchanged fields and `redact` masks password/token-shaped keys. Audit must be evidence, never a secret-leaking channel.
+- The four legacy channels (`data_audit_log`, `admin_audit_log`, `ai_audit_log`, `finance_audit_log`) are **read-only archives** now. Do not add new writes to them — use `activity_log`.
 
 ---
 

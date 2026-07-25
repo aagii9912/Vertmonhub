@@ -24,9 +24,16 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # `continue-on-error: true` байсан тул lint хэзээ ч build-ыг блоклодоггүй,
+      # улмаас аюулгүй байдлын eslint дүрмүүд (жишээ нь getSession хориглох)
+      # утгагүй болсон байв. Одоо lint нь бодит хаалга.
       - name: Lint
         run: npm run lint
-        continue-on-error: true
+
+      # Аудит ба эрхийн хамрах хүрээний регрессийн хаалга — шинэ mutating
+      # route хамгаалалт эсвэл аудитгүйгээр нэмэгдвэл CI унана.
+      - name: Audit coverage gate
+        run: node scripts/check-audit-coverage.mjs
 
       - name: Unit tests
         run: npm run test
