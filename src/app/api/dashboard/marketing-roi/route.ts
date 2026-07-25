@@ -19,7 +19,8 @@ export async function GET() {
         const [{ data: leads }, { data: campaigns }] = await Promise.all([
             supabase.from('leads')
                 .select('source, status, conversion_value, facebook_campaign_id')
-                .eq('shop_id', shopId),
+                .eq('shop_id', shopId)
+                .is('deleted_at', null),
             supabase.from('ad_campaigns')
                 .select('external_id, name, spend, status')
                 .eq('shop_id', shopId)

@@ -50,6 +50,24 @@ export const CreatePaymentScheduleSchema = z.object({
     notes: z.string().max(2000).optional().nullable(),
 });
 
+/**
+ * Төлбөр ШИНЭЧЛЭХ схем. Өмнө нь PATCH нь `const { payment_id, ...updates } = body`
+ * гэж бүх талбарыг шууд `.update()` рүү дамжуулдаг байсан тул дуудагч `shop_id`,
+ * `contract_id` зэрэг дурын баганыг өөрчлөх боломжтой байв (mass assignment).
+ * Иймд зөвшөөрөгдөх талбаруудыг ЗӨВХӨН энд тодорхойлсноор хязгаарлана.
+ */
+export const UpdatePaymentScheduleSchema = z.object({
+    payment_id: z.string().uuid('payment_id буруу байна'),
+    installment_number: z.coerce.number().int().positive().max(1000).optional(),
+    label: z.string().max(255).optional().nullable(),
+    due_date: z.string().max(40).optional(),
+    amount: z.coerce.number().nonnegative().max(1e15).optional(),
+    paid_amount: z.coerce.number().nonnegative().max(1e15).optional(),
+    paid_date: z.string().max(40).optional().nullable(),
+    payment_method: z.string().max(50).optional().nullable(),
+    notes: z.string().max(2000).optional().nullable(),
+});
+
 // ============================================
 // Property Schemas
 // ============================================

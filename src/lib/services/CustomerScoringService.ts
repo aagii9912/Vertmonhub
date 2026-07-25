@@ -224,11 +224,13 @@ export async function recomputeShopScores(shopId: string): Promise<{ updated: nu
         supabase
             .from('customers')
             .select('id, created_at, last_contact_at, message_count, ai_memory, tags')
-            .eq('shop_id', shopId),
+            .eq('shop_id', shopId)
+            .is('deleted_at', null),
         supabase
             .from('leads')
             .select('id, customer_id, status, budget_max, urgency')
-            .eq('shop_id', shopId),
+            .eq('shop_id', shopId)
+            .is('deleted_at', null),
     ]);
 
     const customerRows = (customers || []) as CustomerRow[];

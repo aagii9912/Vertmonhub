@@ -27,11 +27,13 @@ export async function GET() {
             supabase
                 .from('customers')
                 .select('created_at, lifecycle_stage, quality_score, quality_tier, next_followup_at')
-                .eq('shop_id', shopId),
+                .eq('shop_id', shopId)
+                .is('deleted_at', null),
             supabase
                 .from('leads')
                 .select('created_at, converted_at')
                 .eq('shop_id', shopId)
+                .is('deleted_at', null)
                 .not('converted_at', 'is', null),
         ]);
 
