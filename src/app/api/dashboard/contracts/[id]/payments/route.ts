@@ -3,7 +3,9 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
-import { CreatePaymentScheduleSchema, validateBody } from '@/lib/validations/schemas';
+import { CreatePaymentScheduleSchema, UpdatePaymentScheduleSchema, validateBody } from '@/lib/validations/schemas';
+import { recordAudit } from '@/lib/services/AuditService';
+import { resolveApiUser } from '@/lib/auth/resolve-user';
 
 // ============================================
 // GET /api/dashboard/contracts/[id]/payments
@@ -118,6 +120,15 @@ export async function POST(
             }
         }
 
+        await recordAudit({
+            shopId: authShop.id,
+            actorId: (await resolveApiUser())?.id ?? null,
+            entity: 'contract',
+            entityId: contractId,
+            action: 'update',
+            changes: { payment_created: { id: data.id, amount: d.amount, paid_amount: d.paid_amount } },
+        });
+
         return NextResponse.json({ payment: data, message: 'Төлбөр амжилттай бүртгэлээ' }, { status: 201 });
     } catch (error) {
         logger.error('[Payments API] POST error:', { error });
@@ -144,38 +155,64 @@ export async function PATCH(
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
 
-        await params; // contractId validation
-        const body = await request.json();
-        const { payment_id, ...updates } = body;
-
-        if (!payment_id) {
-            return NextResponse.json({ error: 'payment_id шаардлагатай' }, { status: 400 });
-        }
+        const { id: contractId } = await params;
+        const rawBody = await request.json();
+        const validation = validateBody(UpdatePaymentScheduleSchema, rawBody);
+        if (!validation.success) return validation.response;
+        const { payment_id, ...updates } = validation.data;
 
         const supabase = supabaseAdmin();
 
-        // Автомат status тодорхойлох (тоон утгаар найдвартай харьцуулна)
-        if (updates.paid_amount !== undefined && updates.amount !== undefined) {
-            const paid = Number(updates.paid_amount);
-            const total = Number(updates.amount);
-            if (Number.isFinite(paid) && Number.isFinite(total)) {
-                if (paid >= total) {
-                    updates.status = 'paid';
-                } else if (paid > 0) {
-                    updates.status = 'partial';
-                }
-            }
+        // Өмнөх төлөвийг аудитад үлдээх + status-ыг зөв бодоход хэрэглэнэ.
+        // Мөн тухайн төлбөр ЭНЭ гэрээнийх мөн эсэхийг баталгаажуулна —
+        // өмнө нь зөвхөн shop_id-аар шүүдэг байсан тул нэг дэлгүүрийн
+        // өөр гэрээний төлбөрийг засах боломжтой байв.
+        const { data: before } = await supabase
+            .from('payment_schedules')
+            .select('*')
+            .eq('id', payment_id)
+            .eq('contract_id', contractId)
+            .eq('shop_id', authShop.id)
+            .maybeSingle();
+
+        if (!before) {
+            return NextResponse.json({ error: 'Төлбөр олдсонгүй' }, { status: 404 });
+        }
+
+        // Автомат status — шинэчлэлд ирээгүй талбарыг өмнөх утгаас нөхнө
+        const patch: Record<string, unknown> = { ...updates };
+        const paid = Number(patch.paid_amount ?? before.paid_amount);
+        const total = Number(patch.amount ?? before.amount);
+        if (Number.isFinite(paid) && Number.isFinite(total)) {
+            patch.status = paid >= total ? 'paid' : paid > 0 ? 'partial' : 'pending';
         }
 
         const { data, error } = await supabase
             .from('payment_schedules')
-            .update(updates)
+            .update(patch)
             .eq('id', payment_id)
+            .eq('contract_id', contractId)
             .eq('shop_id', authShop.id)
             .select()
             .single();
 
         if (error) throw error;
+
+        // Гэрээний нийлбэрийг DB trigger (trg_sync_contract_paid_amount)
+        // атомаар тэнцүүлнэ — энд гараар тооцохгүй.
+
+        await recordAudit({
+            shopId: authShop.id,
+            actorId: (await resolveApiUser())?.id ?? null,
+            entity: 'contract',
+            entityId: contractId,
+            action: 'update',
+            changes: {
+                payment_id,
+                before: { amount: before.amount, paid_amount: before.paid_amount, status: before.status },
+                after: { amount: data.amount, paid_amount: data.paid_amount, status: data.status },
+            },
+        });
 
         return NextResponse.json({ payment: data, message: 'Төлбөр шинэчлэгдлээ' });
     } catch (error) {

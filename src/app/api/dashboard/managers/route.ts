@@ -30,6 +30,7 @@ export async function GET() {
                 .from('leads')
                 .select('sales_manager_name')
                 .eq('shop_id', authShop.id)
+                .is('deleted_at', null)
                 .not('sales_manager_name', 'is', null)
                 .limit(2000),
         ]);

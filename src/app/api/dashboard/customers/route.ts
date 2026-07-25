@@ -43,7 +43,8 @@ export async function GET(request: NextRequest) {
     let query = supabase
       .from('customers')
       .select('id, name, facebook_id, phone, email, address, notes, tags, message_count, last_contact_at, created_at, quality_score, quality_tier, lifecycle_stage, score_breakdown, next_followup_at', { count: 'exact' })
-      .eq('shop_id', shopId);
+      .eq('shop_id', shopId)
+      .is('deleted_at', null);
 
     // Search by name or phone
     if (search) {
@@ -118,6 +119,7 @@ export async function POST(request: NextRequest) {
         .from('customers')
         .select('id, name, phone, email')
         .eq('shop_id', authShop.id)
+        .is('deleted_at', null)
         .or(orParts.join(','))
         .limit(1)
         .maybeSingle();
@@ -204,6 +206,7 @@ export async function PATCH(request: NextRequest) {
       .select('id')
       .eq('id', id)
       .eq('shop_id', authShop.id)
+      .is('deleted_at', null)
       .single();
 
     if (!existingCustomer) {

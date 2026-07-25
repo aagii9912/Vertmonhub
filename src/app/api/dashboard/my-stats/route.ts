@@ -6,6 +6,7 @@ import { getStartOfPeriod } from '@/lib/utils/date';
 import { checkRateLimit, createRateLimitResponse, getClientIdentifier } from '@/lib/utils/rate-limiter';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
+import { fetchAllRows } from '@/lib/utils/pagination';
 import {
     getTeamTargets,
     getMonthlyActualsByManager,
@@ -56,6 +57,39 @@ async function safeManagerRows(
     }
     if (res.error) return [];
     return (res.data || []) as Record<string, unknown>[];
+}
+
+/**
+ * Дээрхтэй адил боловч БҮХ мөрийг хуудас хуудсаар цуглуулна.
+ *
+ * `.limit(1000)` нь Supabase-ийн нэг хүсэлтийн дээд хэмжээ бөгөөд түүнээс
+ * олон мөртэй үед өгөгдлийг ЧИМЭЭГҮЙ тасалдаг. Гэрээ шиг мөнгөний
+ * нэгтгэлд энэ нь бодитоос БАГА дүн харуулна (жишээ нь 1600 гэрээтэй
+ * төсөлд 600 нь тоологдохгүй). Иймд нэгтгэлд `fetchAllRows`-ыг хэрэглэнэ.
+ */
+async function safeManagerAllRows(
+    run: (opts: { excludeDeleted: boolean }, from: number, to: number) => PromiseLike<QueryResult>,
+): Promise<Record<string, unknown>[]> {
+    const page = (excludeDeleted: boolean) => async (from: number, to: number) => {
+        const res = await run({ excludeDeleted }, from, to);
+        return {
+            data: (res.data || []) as Record<string, unknown>[],
+            error: res.error ? { message: res.error.message || '' } : null,
+        };
+    };
+
+    try {
+        return await fetchAllRows<Record<string, unknown>>(page(true));
+    } catch (err) {
+        if (/deleted_at/i.test(String(err))) {
+            try {
+                return await fetchAllRows<Record<string, unknown>>(page(false));
+            } catch {
+                return [];
+            }
+        }
+        return [];
+    }
 }
 
 function emptyPayload(period: Period, name: string | null, onboarding: boolean) {
@@ -161,14 +195,15 @@ export async function GET(request: NextRequest) {
                 if (excludeDeleted) q = q.is('deleted_at', null);
                 return q;
             }),
-            // Миний гэрээнүүд (идэвхтэй/хугацаа хэтэрсэн KPI)
-            safeManagerRows(({ excludeDeleted }) => {
+            // Миний гэрээнүүд (идэвхтэй/хугацаа хэтэрсэн KPI) — БҮХ мөрийг
+            // хуудаслаж татна, эс бөгөөс олон гэрээтэй менежерийн KPI дутуу гарна
+            safeManagerAllRows(({ excludeDeleted }, from, to) => {
                 let q = db
                     .from('property_contracts')
                     .select('id, contract_status, overdue_days')
                     .eq('shop_id', authShop.id)
                     .eq('sales_manager', targetName)
-                    .limit(1000);
+                    .range(from, to);
                 if (excludeDeleted) q = q.is('deleted_at', null);
                 return q;
             }),
