@@ -35,7 +35,45 @@ export interface AssistantPerms {
     canWrite: boolean;
     canDelete: boolean;
     role: string;
+    /**
+     * Хэрэглэгчийн нээлттэй RBAC модулиуд. Өмнө нь executeDataTool нь зөвхөн
+     * canWrite/canDelete/super_admin-ыг шалгаж, МОДУЛИЙН хилийг огт
+     * харгалздаггүй байсан тул жишээ нь `marketing` дүр (ai-assistant-тай ч
+     * contracts-гүй) AI-аар дамжуулан гэрээний өгөгдөл унших/өөрчлөх
+     * боломжтой байв. Өгөөгүй бол (хуучин дуудалт) шалгалт алгасагдана.
+     */
+    modules?: string[];
 }
+
+/**
+ * Tool → шаардлагатай RBAC модуль. Энд байхгүй tool нь модулийн шалгалтгүй
+ * (ерөнхий/системийн tool, жишээ нь remember_fact).
+ */
+const TOOL_MODULE: Record<string, string> = {
+    list_properties: 'properties', compare_properties: 'properties',
+    create_property: 'properties', delete_property: 'properties',
+    update_property_status: 'properties', update_property_price: 'properties',
+    update_unit_status: 'properties',
+
+    list_leads: 'leads', get_lead_details: 'leads', create_lead: 'leads',
+    delete_lead: 'leads', update_lead_status: 'leads', add_lead_note: 'leads',
+    bulk_update_leads: 'leads',
+
+    get_customer_insights: 'customers', create_customer: 'customers',
+    delete_customer: 'customers',
+
+    schedule_viewing: 'viewings', delete_viewing: 'viewings',
+
+    list_contracts: 'contracts', get_contract_details: 'contracts',
+    get_contracts_summary: 'contracts', create_contract: 'contracts',
+    delete_contract: 'contracts', process_contract_action: 'contracts',
+
+    get_sales_summary: 'reports', get_sales_forecast: 'reports',
+    get_dashboard_stats: 'dashboard',
+
+    get_marketing_summary: 'marketing-roi', create_social_post: 'marketing-roi',
+    get_marketing_budget_status: 'marketing-roi', get_market_indicators: 'marketing-roi',
+};
 
 // ============================================
 // TOOL EXECUTOR
@@ -62,6 +100,13 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
     }
     if (isAdmin && perms.role !== 'super_admin') {
         return { error: 'Энэ үйлдлийг зөвхөн super_admin хийх боломжтой.' };
+    }
+
+    // Модулийн хил — super_admin давна
+    const requiredModule = TOOL_MODULE[toolName];
+    if (requiredModule && perms.role !== 'super_admin' && perms.modules
+        && !perms.modules.includes(requiredModule)) {
+        return { error: `«${requiredModule}» хэсэгт хандах эрх танд алга.` };
     }
 
     let result: any;

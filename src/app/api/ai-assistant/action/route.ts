@@ -71,6 +71,7 @@ export async function POST(req: Request) {
             canWrite: permissions.canWrite,
             canDelete: permissions.canDelete,
             role: roleName,
+            modules: permissions.modules,
         };
 
         // RBAC-г executeDataTool дотор дахин шалгана. confirm=true → бодит үйлдэл.
@@ -84,6 +85,23 @@ export async function POST(req: Request) {
 
         // Гүйцэтгэлийн үр дүнг харилцан ярианд тэмдэглэнэ (best-effort).
         if (conversationId) {
+            // Ярианы эзэмшлийг шалгана — өмнө нь шалгалтгүй байсан тул
+            // клиент дурын conversationId илгээж ӨӨР хэрэглэгчийн AI
+            // ярианд мессеж шигтгэх боломжтой байв.
+            const { data: convo } = await adminDb
+                .from('ai_conversations')
+                .select('id')
+                .eq('id', conversationId)
+                .eq('user_id', resolvedUser.id)
+                .eq('shop_id', effectiveShopId)
+                .maybeSingle();
+
+            if (!convo) {
+                return NextResponse.json(
+                    { success: ok, message, result, warning: 'Ярианд бичих эрхгүй' },
+                );
+            }
+
             try {
                 await adminDb.from('ai_messages').insert({
                     conversation_id: conversationId,

@@ -86,6 +86,7 @@ export async function POST(req: Request) {
             canWrite: permissions.canWrite,
             canDelete: permissions.canDelete,
             role: roleName,
+            modules: permissions.modules,
         };
 
         const shopKnowledge = await loadShopKnowledge(effectiveShopId);
