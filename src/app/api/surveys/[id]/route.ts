@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import * as z from 'zod';
@@ -78,6 +79,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             console.error('Submit response error:', error);
             return NextResponse.json({ error: 'Хариу илгээхэд алдаа гарлаа' }, { status: 500 });
         }
+
+        await auditFor(req, survey?.shop_id ?? null, {
+            entity: 'survey_response', action: 'create',
+            summary: 'Судалгааны хариулт хүлээн авав',
+            after: { survey_id: surveyId },
+        });
 
         return NextResponse.json({ message: 'Амжилттай илгээлээ', response: data }, { status: 201 });
 

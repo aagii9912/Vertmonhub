@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -109,6 +110,14 @@ export async function POST(request: NextRequest) {
 
         const buffer = Buffer.from(await file.arrayBuffer());
         const result = await importContracts(authShop.id, buffer);
+
+        await auditFor(request, authShop.id, {
+            entity: 'contract', action: 'import',
+            summary: `Гэрээний импорт: ${result.imported} мөр орлоо${result.errors.length ? `, ${result.errors.length} алдаатай` : ''}`,
+            after: { imported: result.imported, errors: result.errors.length, file: file.name },
+            status: result.success ? 'success' : 'error',
+        }, 'import');
+
         return NextResponse.json(result, { status: result.success ? 200 : 400 });
     } catch (error) {
         logger.error('[Contracts API] POST error:', { error });
@@ -311,11 +320,47 @@ async function importContracts(
         });
 
     if (error) {
-        // contract_number дээр UNIQUE байхгүй бол энгийн insert хийе
-        logger.warn('[Contracts API] upsert failed, trying plain insert:', { error: error.message });
+        // contract_number дээр UNIQUE байхгүй орчинд upsert ажиллахгүй.
+        // Өмнө нь энд ЧИМЭЭГҮЙ энгийн insert хийдэг байсан тул дахин
+        // импортлох бүрд ижил гэрээ давхардаж, борлуулалтын дүн
+        // хиймэлээр өсдөг байв. Одоо аль хэдийн байгаа гэрээний дугаарыг
+        // урьдчилан хасаж, алгассаныг тайланд мэдээлнэ.
+        logger.warn('[Contracts API] upsert failed, deduping before insert:', { error: error.message });
+
+        const numbers = records
+            .map(r => (r as { contract_number?: string }).contract_number)
+            .filter((n): n is string => !!n);
+
+        const existing = new Set<string>();
+        if (numbers.length > 0) {
+            const { data: found } = await supabase
+                .from('property_contracts')
+                .select('contract_number')
+                .eq('shop_id', shopId)
+                .in('contract_number', numbers);
+            for (const row of found || []) {
+                if (row.contract_number) existing.add(row.contract_number);
+            }
+        }
+
+        const fresh = records.filter(r => {
+            const n = (r as { contract_number?: string }).contract_number;
+            return !n || !existing.has(n);
+        });
+        const skipped = records.length - fresh.length;
+
+        if (fresh.length === 0) {
+            return {
+                success: true,
+                imported: 0,
+                errors: [...errors, `${skipped} гэрээ аль хэдийн бүртгэлтэй тул алгаслаа`],
+                message: `Шинэ гэрээ олдсонгүй (${skipped} давхардсаныг алгаслаа)`,
+            };
+        }
+
         const { data: inserted, error: insertErr } = await supabase
             .from('property_contracts')
-            .insert(records)
+            .insert(fresh)
             .select('id');
 
         if (insertErr) {

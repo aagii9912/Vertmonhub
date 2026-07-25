@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { getAdminUser } from '@/lib/admin/auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
@@ -120,6 +121,12 @@ export async function POST(request: NextRequest) {
             .upsert(rows, { onConflict: 'shop_id,year,month' });
 
         if (error) return safeErrorResponse(error, 'Төлөвлөгөө хадгалахад алдаа гарлаа');
+        await auditFor(request, null, {
+            entity: 'sales_target', action: 'update',
+            summary: 'Борлуулалтын төлөвлөгөө шинэчлэв',
+            after: { rows: rows.length },
+        });
+
         return NextResponse.json({ success: true });
     } catch (error) {
         return safeErrorResponse(error, 'Төлөвлөгөө хадгалахад алдаа гарлаа');

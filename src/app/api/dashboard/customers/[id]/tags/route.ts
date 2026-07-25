@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireWrite } from '@/lib/auth/require-permission';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 
 // Add tag to customer
@@ -9,7 +10,7 @@ export async function POST(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('customers');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
@@ -55,6 +56,12 @@ export async function POST(
 
         if (error) throw error;
 
+        await auditFor(request, authShop.id, {
+            entity: 'customer', action: 'update',
+            summary: 'Харилцагчид таг нэмэв',
+            after: { tags: data.tags },
+        });
+
         return NextResponse.json({ message: 'Tag added', tags: data.tags });
     } catch (error) {
         console.error('Add tag error:', error);
@@ -68,7 +75,7 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('customers');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
@@ -107,6 +114,12 @@ export async function DELETE(
             .single();
 
         if (error) throw error;
+
+        await auditFor(request, authShop.id, {
+            entity: 'customer', action: 'update',
+            summary: 'Харилцагчийн таг хаслаа',
+            after: { tags: data.tags },
+        });
 
         return NextResponse.json({ message: 'Tag removed', tags: data.tags });
     } catch (error) {

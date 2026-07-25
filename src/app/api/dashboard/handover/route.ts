@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
@@ -89,6 +90,11 @@ export async function POST(request: NextRequest) {
             .single();
 
         if (error) throw error;
+
+        await auditFor(request, authShop.id, {
+            entity: 'handover', entityId: data?.id ?? null, action: 'create',
+            summary: 'Хүлээлгэн өгөх акт үүсгэв', after: data as Record<string, unknown>,
+        });
 
         return NextResponse.json(
             { record: data, message: 'Хүлээлгэн өгөх акт үүсгэлээ' },

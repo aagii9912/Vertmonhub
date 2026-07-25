@@ -8,6 +8,8 @@
  */
 
 import { NextResponse } from 'next/server';
+import { logActivity } from '@/lib/audit/log';
+import { isAuthorizedCron } from '@/lib/auth/cron';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
@@ -15,9 +17,10 @@ export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
 export async function POST(request: Request) {
-    // Verify cron secret
-    const authHeader = request.headers.get('authorization');
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    // Өмнө нь `if (process.env.CRON_SECRET && ...)` байсан тул CRON_SECRET
+    // тохируулаагүй үед шалгалт БҮРЭН алгасагдаж, интернэтээс дуудагдвал
+    // өгөгдөл цэвэрлэгддэг байв.
+    if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
@@ -67,6 +70,14 @@ export async function POST(request: Request) {
         }
 
         logger.info('[Cron] Data cleanup completed', results);
+
+        // Өгөгдөл устгадаг ажил тул ул мөр заавал үлдээнэ
+        await logActivity({
+            entity: 'data_cleanup', action: 'delete',
+            summary: 'Автомат өгөгдөл цэвэрлэгээ ажиллав',
+            after: results as Record<string, unknown>,
+            source: 'cron', request,
+        });
 
         return NextResponse.json({
             success: true,

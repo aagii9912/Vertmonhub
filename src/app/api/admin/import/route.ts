@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { getAdminUser } from '@/lib/admin/auth';
@@ -203,6 +204,12 @@ export async function POST(request: NextRequest) {
                 result = await importContracts(supabase, rows, ctx);
                 break;
         }
+
+        await auditFor(request, shopId, {
+            entity: 'import', action: 'import',
+            summary: `Админ импорт: ${importType}`,
+            after: { type: importType, project_id: projectIdRaw || null, success: result.success, file: file?.name ?? null },
+        }, 'import');
 
         return NextResponse.json(result, { status: result.success ? 200 : 400 });
     } catch (error) {

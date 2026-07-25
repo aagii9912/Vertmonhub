@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
@@ -81,6 +82,12 @@ export async function POST(
                 logger.warn('[Lead Convert] scoring failed', { error: scoreErr });
             }
         }
+
+        await auditFor(request, authShop.id, {
+            entity: 'lead', action: 'convert',
+            summary: `Лийдийг гэрээ болгон хөрвүүлэв${contract ? ` (гэрээ ${contract.id})` : ''}`,
+            after: { contract_id: contract?.id ?? null, conversion_value: conversionValue ?? null },
+        });
 
         return NextResponse.json({
             success: true,

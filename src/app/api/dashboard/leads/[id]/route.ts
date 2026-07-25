@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { diffFields } from '@/lib/audit/log';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireModuleWrite } from '@/lib/auth/require-permission';
@@ -64,6 +66,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         if (error) {
             return NextResponse.json({ error: 'Шинэчлэхэд алдаа гарлаа' }, { status: 500 });
         }
+
+        await auditFor(request, authShop.id, {
+            entity: 'lead', entityId: id, action: 'update',
+            summary: `${(lead as Record<string, unknown>)?.customer_name ?? id} лийдийг шинэчлэв`,
+            ...diffFields(lead as Record<string, unknown>, { ...(lead as Record<string, unknown>), ...updates }),
+        });
 
         return NextResponse.json({ success: true });
     } catch (error) {

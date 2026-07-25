@@ -3,6 +3,7 @@
  */
 
 import { NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getAuthUser, supabaseAdmin } from '@/lib/auth/auth';
 import { logger } from '@/lib/utils/logger';
 
@@ -57,6 +58,12 @@ export async function POST(request: Request) {
             // If table doesn't exist, just log the feedback
             logger.info('Feedback received (table may not exist)', { type });
         }
+
+        await auditFor(request, null, {
+            entity: 'feedback', action: 'create',
+            summary: 'Хэрэглэгчийн санал хүлээн авав',
+            status: 'success',
+        }, 'ui');
 
         return NextResponse.json({ success: true });
 

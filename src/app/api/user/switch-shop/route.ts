@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserId, supabaseAdmin } from '@/lib/auth/supabase-auth';
 
 // POST /api/user/switch-shop - Switch active shop
@@ -47,6 +48,12 @@ export async function POST(request: Request) {
 
         // The actual switching is handled client-side via localStorage + context
         // This endpoint just validates and returns the shop data
+        await auditFor(request, shop.id, {
+            entity: 'session', entityId: userId, action: 'switch_shop',
+            summary: `«${shop.name}» төсөл рүү шилжлээ`,
+            after: { shop_id: shop.id, shop_name: shop.name },
+        }, 'ui');
+
         return NextResponse.json({
             success: true,
             shop,

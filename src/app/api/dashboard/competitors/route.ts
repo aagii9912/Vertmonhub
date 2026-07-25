@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -86,6 +87,13 @@ export async function POST(request: NextRequest) {
                 { onConflict: 'shop_id,category,key' }
             );
         if (error) throw error;
+
+        await auditFor(request, authShop.id, {
+            entity: 'competitor', action: 'create',
+            entityId: name,
+            summary: `${name} өрсөлдөгчийг бүртгэв`,
+            after: value as unknown as Record<string, unknown>,
+        });
 
         return NextResponse.json({ success: true });
     } catch (error) {

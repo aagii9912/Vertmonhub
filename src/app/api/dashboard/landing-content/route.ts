@@ -5,6 +5,7 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { supabaseAdmin } from '@/lib/supabase';
 import { defaultLandingContent } from '@/lib/landing/defaults';
 import type { LandingContent } from '@/lib/landing/types';
@@ -107,6 +108,12 @@ export async function PUT(request: NextRequest) {
 
             if (error) throw error;
         }
+
+        await auditFor(request, null, {
+            entity: 'landing_content', action: 'update',
+            summary: `«${section}» хэсгийг шинэчлэв`,
+            after: { section },
+        });
 
         return NextResponse.json({ success: true, section });
     } catch (error: unknown) {

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
@@ -27,6 +28,12 @@ export async function POST() {
         }
 
         const { postsStored } = await syncShopSocial(supabase, shop);
+        await auditFor(null, authShop.id, {
+            entity: 'social_sync', action: 'sync',
+            summary: `${postsStored} нийтлэл синк хийв`,
+            after: { postsStored },
+        });
+
         return NextResponse.json({ success: true, postsStored, message: `${postsStored} нийтлэл хадгаллаа` });
     } catch (error) {
         logger.error('[Sync Social] error', { error });

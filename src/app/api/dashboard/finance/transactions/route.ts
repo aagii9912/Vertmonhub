@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -92,6 +93,12 @@ export async function POST(request: NextRequest) {
             entityId: txn.id,
             amount: d.amount,
             meta: { type: d.type, method: d.method || null },
+        });
+
+        await auditFor(request, authShop.id, {
+            entity: 'transaction', entityId: txn?.id ?? null, action: 'create',
+            summary: `${txn?.type ?? 'Гүйлгээ'} ${Number(txn?.amount ?? 0).toLocaleString()}₮ бүртгэв`,
+            after: txn as Record<string, unknown>,
         });
 
         return NextResponse.json({ transaction: txn, message: 'Гүйлгээ бүртгэлээ' }, { status: 201 });

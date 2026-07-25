@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { CreateLeadSchema, validateBody } from '@/lib/validations/schemas';
@@ -157,6 +158,12 @@ async function handleLeadPost(request: NextRequest): Promise<NextResponse> {
 
         if (website && website.length > 0) {
             logger.warn('Honeypot triggered on /api/leads', { clientIp });
+            await auditFor(request, null, {
+                entity: 'lead', action: 'create',
+                summary: 'Гадаад landing page-ээс лид хүлээн авав',
+                status: 'success',
+            });
+
             return NextResponse.json({ success: true });
         }
 

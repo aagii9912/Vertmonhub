@@ -1,6 +1,7 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireWrite } from '@/lib/auth/require-permission';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { CreatePropertySchema, validateBody } from '@/lib/validations/schemas';
@@ -55,7 +56,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const denied = await requireWrite();
+    const denied = await requireModuleWrite('properties');
     if (denied) return denied;
     const authShop = await getUserShop();
     if (!authShop) {
@@ -84,6 +85,12 @@ export async function POST(request: NextRequest) {
       logger.error('[Properties POST] insert error:', { error });
       return NextResponse.json({ error: 'Failed to create property' }, { status: 500 });
     }
+
+    await auditFor(request, authShop.id, {
+      entity: 'property', entityId: data?.id ?? null, action: 'create',
+      summary: `${data?.name ?? 'Нэргүй'} үл хөдлөх үүсгэв`,
+      after: data as Record<string, unknown>,
+    });
 
     return NextResponse.json({ property: data, message: 'Property created' }, { status: 201 });
   } catch (error) {

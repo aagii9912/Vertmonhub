@@ -28,7 +28,7 @@ import { NextResponse } from 'next/server';
 import { resolveApiUser } from '@/lib/auth/resolve-user';
 import { supabaseAdmin, getAccessibleShopIds } from '@/lib/auth/supabase-auth';
 import { fetchRolePermissions, type RolePermissions } from '@/lib/rbac';
-import { logActivity, type AuditEvent, type AuditSource } from '@/lib/audit/log';
+import { logActivity, type AuditActor, type AuditEvent, type AuditSource } from '@/lib/audit/log';
 import { logger } from '@/lib/utils/logger';
 
 export type ApiAction = 'read' | 'write' | 'delete';
@@ -192,6 +192,37 @@ export async function apiContext(
     };
 
     return { ctx };
+}
+
+/**
+ * Аудит бичих БОГИНО зам — эрхийн шалгалтаа аль хэдийн хийсэн route-д.
+ *
+ * `apiContext`-ыг бүрэн нэвтрүүлэх нь зөв боловч аль хэдийн зөв guard-тай
+ * (`requireModuleWrite` г.м) route-уудыг бүтнээр дахин бичих нь дэмий
+ * регрессийн эрсдэл дагуулна. Тэдгээрт энэ туслахаар аудитыг нэг мөрөөр
+ * нэмнэ — actor (id/нэр/дүр), IP, user-agent автоматаар бөглөгдөнө.
+ *
+ *   await auditFor(request, authShop.id, {
+ *       entity: 'contract', entityId: id, action: 'create',
+ *       summary: `${row.contract_number} гэрээ үүсгэв`, after: row,
+ *   });
+ */
+export async function auditFor(
+    req: Request | null,
+    shopId: string | null,
+    event: ScopedAuditEvent,
+    source: AuditSource = 'api',
+): Promise<void> {
+    try {
+        const user = await resolveApiUser();
+        const actor: AuditActor = user
+            ? { id: user.id, name: await resolveUserName(user.id), role: await resolveRole(user.id) }
+            : {};
+
+        await logActivity({ ...event, shopId, actor, source, request: req });
+    } catch (err) {
+        logger.warn('[auditFor] бичилт амжилтгүй', { error: String(err) });
+    }
 }
 
 /**

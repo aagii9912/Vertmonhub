@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { z } from 'zod';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { requireModuleWrite, resolvePermissions } from '@/lib/auth/require-permission';
@@ -155,6 +156,12 @@ export async function POST(request: NextRequest) {
         if (error) {
             return NextResponse.json({ error: 'Лийд үүсгэхэд алдаа гарлаа' }, { status: 500 });
         }
+
+        await auditFor(request, authShop.id, {
+            entity: 'lead', entityId: data?.id ?? null, action: 'create',
+            summary: `${data?.customer_name ?? 'Нэргүй'} лийд үүсгэв`,
+            after: data as Record<string, unknown>,
+        });
 
         return NextResponse.json({ lead: data });
     } catch (error) {

@@ -1,10 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
+import { requireModule } from '@/lib/auth/require-permission';
+import { auditFor } from '@/lib/api/context';
 import { supabaseAdmin } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 
+/** Экспортын төрөл бүр өөрийн модулийн эрхийг шаардана. */
+const TYPE_MODULE: Record<string, string> = {
+    properties: 'properties',
+    leads: 'leads',
+    customers: 'customers',
+    contracts: 'contracts',
+    managers: 'reports',
+};
+
 export async function GET(request: NextRequest) {
     try {
+        const { searchParams } = new URL(request.url);
+        const type = searchParams.get('type') || 'properties'; // properties | leads | customers
+
+        // Экспорт бол өгөгдөл гадагш гарах ГОЛ суваг. Өмнө нь энэ route
+        // ямар ч модулийн эрх шалгадаггүй байсан тул зөвхөн нэвтэрсэн
+        // хэрэглэгч бүх лийд, харилцагчийн мэдээллийг Excel болгон
+        // татаж чаддаг байв.
+        const denied = await requireModule(TYPE_MODULE[type] ?? 'reports');
+        if (denied) return denied;
+
         const authShop = await getUserShop();
 
         if (!authShop) {
@@ -13,9 +34,6 @@ export async function GET(request: NextRequest) {
 
         const supabase = supabaseAdmin();
         const shopId = authShop.id;
-
-        const { searchParams } = new URL(request.url);
-        const type = searchParams.get('type') || 'properties'; // properties | leads | customers
 
         let workbook;
         let filename;
@@ -176,6 +194,14 @@ export async function GET(request: NextRequest) {
         }
 
         const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+        // Хэн ямар өгөгдлийг татсаныг заавал бүртгэнэ — өгөгдөл алдагдлыг
+        // хожим мөрдөх цорын ганц ул мөр нь энэ.
+        await auditFor(request, shopId, {
+            entity: 'export', entityId: type, action: 'export',
+            summary: `${type} төрлийн өгөгдлийг Excel-ээр татав (${filename})`,
+            after: { type, filename, bytes: buffer.length },
+        });
 
         return new NextResponse(buffer, {
             headers: {

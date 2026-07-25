@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { auditFor } from '@/lib/api/context';
 import { z } from 'zod';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -104,6 +105,12 @@ export async function POST(request: NextRequest) {
             logger.error('[Tasks] create error', { error: error.message });
             return NextResponse.json({ error: 'Ажил нэмэх алдаа' }, { status: 500 });
         }
+
+        await auditFor(request, authShop.id, {
+            entity: 'task', action: 'create',
+            summary: `${data?.title ?? 'Ажил'} үүсгэв`,
+            after: data as Record<string, unknown>,
+        });
 
         return NextResponse.json({ task: data });
     } catch (error) {
