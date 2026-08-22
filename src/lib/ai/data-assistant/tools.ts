@@ -201,6 +201,41 @@ export const readTools: any[] = [
                 mine: { type: SchemaType.BOOLEAN, description: 'false өгвөл бүх менежерийн уулзалт (default: true)' }
             }
         }
+    },
+    {
+        name: 'get_team_activity',
+        description: 'УДИРДЛАГЫН ХЯНАЛТ: багийн ҮЙЛ АЖИЛЛАГАА — хэн хэдэн дуудлага, уулзалт, мессеж хийсэн, хамгийн сүүлд хэзээ идэвхтэй байсан. «Өнөөдөр хэн юу хийсэн бэ?», «Энэ долоо хоногт баг яаж ажилласан бэ?» гэсэн асуултад. Үр дүн (гэрээ) БИШ, ЯВЦЫГ хэмжинэ.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                days: { type: SchemaType.NUMBER, description: 'Сүүлийн хэдэн хоног (default: 1 = өнөөдөр)' },
+                manager: { type: SchemaType.STRING, description: 'Зөвхөн нэг менежерээр шүүх' }
+            }
+        }
+    },
+    {
+        name: 'get_manager_progress',
+        description: 'УДИРДЛАГЫН ХЯНАЛТ: нэг менежерийн сарын ЯВЦ — үйл ажиллагаа, юүлүүр (лийдийн төлөв), уулзалт, борлуулалт нэг дор. «Батбаяр энэ сар яаж байна?» гэсэн асуултад.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                manager: { type: SchemaType.STRING, description: 'Менежерийн нэр' },
+                year: { type: SchemaType.NUMBER, description: 'Он (default: энэ он)' },
+                month: { type: SchemaType.NUMBER, description: 'Сар 1-12 (default: энэ сар)' }
+            },
+            required: ['manager']
+        }
+    },
+    {
+        name: 'get_anomalies',
+        description: 'УДИРДЛАГЫН ХЯНАЛТ: анхаарал татаж буй зүйлс — идэвхгүй менежер, хугацаа хэтэрсэн дагалт, удаан хөндөөгүй хүйтэн лийд, эзэнгүй лийд. «Юу буруу явж байна?», «Хэнд анхаарах вэ?» гэсэн асуултад.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                stale_days: { type: SchemaType.NUMBER, description: 'Хэдэн хоног хөндөөгүй лийдийг хүйтэн гэж үзэх (default: 5)' },
+                inactive_days: { type: SchemaType.NUMBER, description: 'Хэдэн хоног үйл ажиллагаагүй менежерийг тэмдэглэх (default: 2)' }
+            }
+        }
     }
 ];
 
@@ -737,4 +772,9 @@ export const TOOL_MODULE_MAP: Record<string, string[]> = {
 
     // Файл хавсаргалт — зорилтот entity-ийн эрхийг функц дотор дахин шалгана
     attach_file: ['properties', 'leads', 'customers', 'contracts'],
+
+    // Удирдлагын хяналт — багийн явцыг харах эрх (reports)
+    get_team_activity: ['reports'],
+    get_manager_progress: ['reports'],
+    get_anomalies: ['reports'],
 };

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserShop } from '@/lib/auth/supabase-auth';
+import { recordActivity } from '@/lib/services/ActivityService';
+import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
+import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
@@ -83,6 +85,33 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         if (error) {
             return NextResponse.json({ error: 'Шинэчлэхэд алдаа гарлаа' }, { status: 500 });
         }
+
+        // Үйл ажиллагааны бүртгэл — юуг өөрчилснөөр нь төрлийг ялгана,
+        // ингэснээр удирдлагын урсгалд «төлөв солив» ба «хуваарилав» тусдаа
+        // харагдана.
+        const uid = await getUserId();
+        const identity = uid ? await resolveManagerIdentity(db, authShop.id, uid) : null;
+        const kind = updates.sales_manager_name !== undefined
+            ? 'assign'
+            : updates.status !== undefined
+                ? 'status_change'
+                : 'update';
+        await recordActivity({
+            shopId: authShop.id,
+            actorId: uid,
+            actorName: identity?.managerName || null,
+            entityType: 'lead',
+            entityId: id,
+            kind,
+            source: 'ui',
+            body:
+                kind === 'assign'
+                    ? `Хариуцагч: ${updates.sales_manager_name || '(чөлөөлөв)'}`
+                    : kind === 'status_change'
+                        ? `Төлөв → ${updates.status}`
+                        : 'Лийд шинэчлэв',
+            payload: updates as Record<string, unknown>,
+        });
 
         return NextResponse.json({ success: true });
     } catch (error) {

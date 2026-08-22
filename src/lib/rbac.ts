@@ -122,6 +122,23 @@ export const ROLE_PERMISSIONS: Record<string, RolePermissions> = {
         displayName: 'Marketing',
         displayNameMN: 'Маркетинг',
     },
+    /**
+     * Гүйцэтгэх удирдлага — багийн ЯВЦЫГ хянана, өдөр тутмын өгөгдөл засахгүй.
+     * canWrite=false: удирдлага тайлан хардаг, CRM-ийн бичлэг гараар засдаггүй
+     * (шаардлагатай бол admin роль ашиглана).
+     */
+    executive: {
+        modules: [
+            'dashboard', 'tasks', 'reports', 'reports-leads', 'marketing-roi',
+            'contracts', 'finance', 'properties', 'leads', 'viewings', 'customers',
+            'ai-assistant',
+        ],
+        canWrite: false,
+        canDelete: false,
+        canAccessAdmin: false,
+        displayName: 'Executive',
+        displayNameMN: 'Гүйцэтгэх удирдлага',
+    },
     finance_manager: {
         modules: [
             'dashboard', 'tasks', 'finance', 'procurement', 'contracts', 'reports', 'ai-assistant',
@@ -288,7 +305,7 @@ export function getAllowedModules(role: string): string[] {
 
 /** Validate if a string is a known system role */
 export function isValidRole(role: string): boolean {
-    return ['super_admin', 'admin', 'sales_manager', 'marketing', 'viewer'].includes(role);
+    return ['super_admin', 'admin', 'executive', 'sales_manager', 'marketing', 'viewer'].includes(role);
 }
 
 /** Check if role exists in static mapping (for backwards compat) */

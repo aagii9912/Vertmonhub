@@ -11,6 +11,7 @@ import type { AssistantPerms } from '@/lib/ai/data-assistant';
 /** Бүртгэлтэй agent-уудын тогтмол ID-ууд. */
 export type AgentId =
     | 'my-work'
+    | 'executive-overseer'
     | 'data-analyst'
     | 'property-expert'
     | 'crm-specialist'
