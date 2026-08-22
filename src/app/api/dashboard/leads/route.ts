@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { recordActivity } from '@/lib/services/ActivityService';
 import { z } from 'zod';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { requireModuleWrite, resolvePermissions } from '@/lib/auth/require-permission';
@@ -155,6 +156,19 @@ export async function POST(request: NextRequest) {
         if (error) {
             return NextResponse.json({ error: 'Лийд үүсгэхэд алдаа гарлаа' }, { status: 500 });
         }
+
+        // Үйл ажиллагааны бүртгэл — удирдлагын хяналтын давхаргын өгөгдлийн эх
+        // сурвалж. Best-effort: бүтэлгүйтвэл лийд үүсгэлтийг унагаахгүй.
+        await recordActivity({
+            shopId: authShop.id,
+            actorId: uid,
+            actorName: salesManagerName,
+            entityType: 'lead',
+            entityId: data?.id,
+            kind: 'create',
+            source: 'ui',
+            body: `Шинэ лийд: ${data?.customer_name || ''}`.trim(),
+        });
 
         return NextResponse.json({ lead: data });
     } catch (error) {

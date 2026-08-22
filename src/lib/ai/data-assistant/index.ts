@@ -32,6 +32,7 @@ import {
     updateViewing, completeViewing, logActivity,
     setLeadFollowup, reassignLead, createTask, completeTask,
 } from './manager-functions';
+import { getTeamActivity, getManagerProgress, getAnomalies } from './oversight-functions';
 
 /** AI Assistant-ийн RBAC эрхүүд (route-аас тооцоолж дамжуулна). */
 export interface AssistantPerms {
@@ -115,6 +116,10 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'get_my_day': result = await getMyDay(shopId, userName, userId); break;
         case 'list_my_leads': result = await listMyLeads(shopId, userName, args); break;
         case 'list_viewings': result = await listViewings(shopId, userName, args); break;
+        // ---- Удирдлагын хяналт (зөвхөн унших) ----
+        case 'get_team_activity': result = await getTeamActivity(shopId, args); break;
+        case 'get_manager_progress': result = await getManagerProgress(shopId, args); break;
+        case 'get_anomalies': result = await getAnomalies(shopId, args); break;
         case 'update_property_status': result = await updatePropertyStatus(shopId, args); break;
         case 'update_unit_status': result = await updateUnitStatus(shopId, args); break;
         case 'update_property_price': result = await updatePropertyPrice(shopId, args); break;
