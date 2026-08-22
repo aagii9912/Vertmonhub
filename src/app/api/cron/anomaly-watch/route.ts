@@ -72,8 +72,11 @@ async function handler(request: Request) {
                 .filter((a) => a.kind === 'no_activity' || a.severity === 'critical')
                 .map((a) => ({
                     shop_id: shop.id,
-                    manager_name: a.manager,
-                    kind: a.kind === 'overdue_followup' ? 'cold_lead' : a.kind,
+                    // '' = менежерт хамаарахгүй. NULL бол SQL-д давхардал
+                    // зогсоохгүй (NULL-ууд хоорондоо ялгаатай) тул unique index
+                    // ажиллахгүй болно.
+                    manager_name: a.manager ?? '',
+                    kind: a.kind,
                     severity: a.severity,
                     detail: { message: a.message, ...a.detail },
                     detected_on: now.toISOString().slice(0, 10),
