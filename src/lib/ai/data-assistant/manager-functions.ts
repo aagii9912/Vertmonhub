@@ -296,7 +296,7 @@ export async function listViewings(shopId: string, managerName: string, args: an
 // ============================================================
 
 /** Уулзалтын цаг/тэмдэглэлийг өөрчлөх (хойшлуулах). */
-export async function updateViewing(shopId: string, args: any, confirm = false, managerName = '') {
+export async function updateViewing(shopId: string, args: any, confirm = false, managerName = '', userId = '') {
     if (!args?.viewing_id) return { error: 'viewing_id шаардлагатай.' };
 
     const res = await db()
@@ -338,7 +338,10 @@ export async function updateViewing(shopId: string, args: any, confirm = false, 
 
     await recordActivity({
         shopId,
-        actorName: managerName || viewing.sales_manager_name,
+        actorId: userId || null,
+        // Нэр тодорхойгүй бол уулзалтын ЭЗНИЙ нэрийг бичихгүй — эс бөгөөс
+        // өөр хүний хийсэн ажил тухайн менежерийн гүйцэтгэлд нэмэгдэнэ.
+        actorName: managerName || null,
         entityType: 'viewing',
         entityId: args.viewing_id,
         kind: 'update',
@@ -356,7 +359,7 @@ export async function updateViewing(shopId: string, args: any, confirm = false, 
  * customer_feedback, agent_notes, interest_level) — дутуу байсан зүйл нь
  * зөвхөн эдгээрийг бөглөх ЗАМ байв.
  */
-export async function completeViewing(shopId: string, args: any, confirm = false, managerName = '') {
+export async function completeViewing(shopId: string, args: any, confirm = false, managerName = '', userId = '') {
     if (!args?.viewing_id) return { error: 'viewing_id шаардлагатай.' };
 
     const outcome = String(args.outcome || 'attended');
@@ -408,7 +411,8 @@ export async function completeViewing(shopId: string, args: any, confirm = false
 
     await recordActivity({
         shopId,
-        actorName: managerName || viewing.sales_manager_name,
+        actorId: userId || null,
+        actorName: managerName || null,
         entityType: 'viewing',
         entityId: args.viewing_id,
         kind: 'viewing',
@@ -447,9 +451,22 @@ export async function logActivity(
         return { error: `outcome нь ${validOutcomes.join(' / ')} байх ёстой.` };
     }
 
-    // Лийдийг ID эсвэл харилцагчийн нэрээр олно
+    // Лийдийг ID эсвэл харилцагчийн нэрээр олно.
+    // ЧУХАЛ: lead_id өгсөн ч ЗААВАЛ shop-д харьяалагдахыг шалгана. supabaseAdmin
+    // нь RLS-ийг тойрдог тул шалгалтгүй бол (а) өөр shop-ийн лийдийг өөрчилж,
+    // (б) байхгүй ID дээр 0 мөр шинэчлээд «амжилттай» гэж худал мэдээлнэ.
     let leadId: string | null = args?.lead_id || null;
     let leadName: string | null = null;
+    if (leadId) {
+        const owned = await db()
+            .from('leads')
+            .select('id, customer_name')
+            .eq('id', leadId)
+            .eq('shop_id', shopId)
+            .maybeSingle();
+        if (!owned.data) return { error: 'Лийд олдсонгүй.' };
+        leadName = (owned.data as any).customer_name || null;
+    }
     if (!leadId && args?.customer_name) {
         const found = await runExcludingDeleted((excl) => {
             let q = db()
@@ -484,7 +501,11 @@ export async function logActivity(
         });
     }
 
-    await recordActivity({
+    // Энэ tool-ын ЦОРЫН ГАНЦ бодит үр дүн нь энэ бичилт учраас бусад дуудагчаас
+    // ялгаатай нь алдааг НУУХГҮЙ — эс бөгөөс менежер «бүртгэгдлээ» гэж итгээд
+    // ажил нь хаана ч үлдэхгүй.
+    const duration = Number(args.duration_sec);
+    const logged = await recordActivity({
         shopId,
         actorId: userId || null,
         actorName: managerName,
@@ -494,9 +515,17 @@ export async function logActivity(
         direction: kind === 'note' ? null : 'out',
         outcome,
         body: args.note || null,
-        durationSec: args.duration_sec != null ? Number(args.duration_sec) : null,
+        durationSec: Number.isFinite(duration) ? Math.round(duration) : null,
         source: 'ai',
     });
+    if (!logged.ok) {
+        return {
+            error:
+                'Үйл ажиллагааны бүртгэлд хадгалж чадсангүй' +
+                (logged.error ? ` (${logged.error})` : '') +
+                '. 20260822120000 миграци ороогүй байж болзошгүй — админд хандана уу.',
+        };
+    }
 
     // Лийдийг «хөндсөн» гэж тэмдэглэнэ — stale шүүлт зөв ажиллана
     const touch: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -506,7 +535,11 @@ export async function logActivity(
         when.setHours(10, 0, 0, 0);
         touch.next_followup_at = when.toISOString();
     }
-    const { error } = await db().from('leads').update(touch).eq('id', leadId);
+    const { error } = await db()
+        .from('leads')
+        .update(touch)
+        .eq('id', leadId)
+        .eq('shop_id', shopId);
     if (error) logger.warn('[logActivity] лийд шинэчлэхэд алдаа', { error: error.message });
 
     return {
@@ -682,12 +715,22 @@ export async function createTask(shopId: string, args: any, confirm = false, use
         row.entity_id = args.entity_id;
     }
 
-    let insert = await db().from('user_tasks').insert(row).select('id').single();
-    if (insert.error && /assignee_id|priority|source|entity_/i.test(insert.error.message)) {
-        // Миграци ороогүй орчинд шинэ багануудгүйгээр дахин оролдоно
-        const { assignee_id, priority: _p, source, entity_type, entity_id, ...base } = row as any;
-        void assignee_id; void _p; void source; void entity_type; void entity_id;
-        insert = await db().from('user_tasks').insert(base).select('id').single();
+    // Миграци ороогүй орчинд шинэ багануудыг НЭГ НЭГЭЭР нь хасаж дахин оролдоно.
+    // Өмнө нь алдааны мессежид дурдсан НЭГ баганаас болж БҮХ нэмэлт талбарыг
+    // (priority, assignee_id, entity_*) зэрэг хаядаг байсан тул хэрэглэгчийн
+    // баталсан «өндөр ач холбогдол» чимээгүйхэн 'normal' болдог байв.
+    const OPTIONAL_COLUMNS = ['source', 'priority', 'assignee_id', 'entity_type', 'entity_id'] as const;
+    let payload: Record<string, unknown> = row;
+    let insert = await db().from('user_tasks').insert(payload).select('id').single();
+    for (let i = 0; i < OPTIONAL_COLUMNS.length && insert.error; i++) {
+        const missing = OPTIONAL_COLUMNS.find(
+            (c) => c in payload && new RegExp(`\\b${c}\\b`, 'i').test(insert.error!.message),
+        );
+        if (!missing) break;
+        logger.warn(`[createTask] '${missing}' багана алга — түүнгүйгээр дахин оролдоно`);
+        payload = { ...payload };
+        delete payload[missing];
+        insert = await db().from('user_tasks').insert(payload).select('id').single();
     }
     if (insert.error) return { error: `Ажил үүсгэхэд алдаа: ${insert.error.message}` };
 
@@ -736,12 +779,25 @@ export async function completeTask(shopId: string, args: any, confirm = false, u
         return confirmNeeded('complete_task', args, label, { Ажил: title || taskId });
     }
 
-    const { error } = await db()
-        .from('user_tasks')
-        .update({ status: 'done', completed_at: new Date().toISOString() })
-        .eq('id', taskId)
-        .eq('shop_id', shopId);
-    if (error) return { error: `Дуусгахад алдаа: ${error.message}` };
+    // Эзэмшлийн шалгалт: shop-ийн ДУРЫН ажлыг биш, ЗӨВХӨН өөрийнхөө (эсвэл
+    // өөрт оноогдсон) ажлыг дуусгана. Мөн 0 мөр шинэчлэгдвэл «амжилттай» гэж
+    // худал мэдээлэхгүйн тулд .select() хийж шалгана.
+    const done = await runTaskQuery((owner) => () => {
+        let q = db()
+            .from('user_tasks')
+            .update({ status: 'done', completed_at: new Date().toISOString() })
+            .eq('id', taskId)
+            .eq('shop_id', shopId);
+        q = owner === 'both'
+            ? q.or(`assignee_id.eq.${userId},user_id.eq.${userId}`)
+            : q.eq('user_id', userId);
+        return q.select('id');
+    });
+
+    if (done?.error) return { error: `Дуусгахад алдаа: ${done.error.message}` };
+    if (!done?.data || done.data.length === 0) {
+        return { error: 'Ажил олдсонгүй (эсвэл таны ажил биш байна).' };
+    }
 
     return { success: true, message: `${label} — амжилттай.` };
 }

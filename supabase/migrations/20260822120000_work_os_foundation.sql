@@ -21,8 +21,8 @@
 -- sales_manager-ээр бүлэглэдэг) бүрмөсөн унадаг байв. Үүний улмаас менежер
 -- өөрийн хаасан борлуулалтаа «Миний самбар» дээрээ ч, удирдлага нь багийн
 -- харагдац дээрээ ч харж чаддаггүй байсан.
--- Мөн total_price := conversion_value нь ихэвчлэн NULL байдаг тул budget_max
--- руу уналаа (0 биш — тайлангийн дүн худал өсгөхгүй).
+-- total_price нь ЗӨВХӨН lead.conversion_value-ээс ирнэ. Харилцагчийн ТӨСӨВ
+-- (budget_max) нь гэрээний үнэ БИШ тул түүнийг орлого болгож бичихгүй.
 
 CREATE OR REPLACE FUNCTION create_contract_on_lead_won()
 RETURNS TRIGGER AS $$
@@ -40,7 +40,13 @@ BEGIN
             ) VALUES (
                 NEW.shop_id, NEW.id, NEW.customer_id, 'residential', 'active',
                 NEW.customer_name, NEW.customer_phone,
-                COALESCE(NEW.conversion_value, NEW.budget_max),
+                -- ЗӨВХӨН бодит хөрвүүлэлтийн дүн. budget_max нь ХАРИЛЦАГЧИЙН
+                -- ТӨСӨВ (тэр хэдийг зарцуулж чадах вэ) болохоос гэрээний үнэ
+                -- БИШ — түүнийг total_price болгон бичвэл manager_monthly_sales,
+                -- manager_performance, KPI тайлан, төсвийн ROI бүгд хуурамч
+                -- орлого харуулна. Дүн тодорхойгүй бол NULL үлдээж, гэрээг
+                -- гараар бөглөх нь илүү аюулгүй.
+                NEW.conversion_value,
                 CURRENT_DATE, 'ПРОПЕРТИС',
                 NULLIF(TRIM(COALESCE(NEW.sales_manager_name, '')), '')
             );
@@ -66,12 +72,16 @@ UPDATE property_contracts c
    AND NULLIF(TRIM(COALESCE(c.sales_manager, '')), '') IS NULL
    AND NULLIF(TRIM(COALESCE(l.sales_manager_name, '')), '') IS NOT NULL;
 
+-- Үнийн backfill: ЗӨВХӨН lead.conversion_value (бодит хөрвүүлэлтийн дүн).
+-- budget_max-ыг ХЭЗЭЭ Ч үнэ болгож бичихгүй (дээрх тайлбарыг үз).
+-- Нөхцөл нь `IS NULL` — зориудаар тавьсан 0 (жишээ: урамшууллын гэрээ)
+-- дарагдахгүй.
 UPDATE property_contracts c
-   SET total_price = COALESCE(l.conversion_value, l.budget_max)
+   SET total_price = l.conversion_value
   FROM leads l
  WHERE c.lead_id = l.id
-   AND COALESCE(c.total_price, 0) = 0
-   AND COALESCE(l.conversion_value, l.budget_max) IS NOT NULL;
+   AND c.total_price IS NULL
+   AND l.conversion_value IS NOT NULL;
 
 
 -- ============================================================
@@ -158,6 +168,9 @@ ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS assigned_by uuid;
 ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS priority    text DEFAULT 'normal';
 ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS entity_type text;
 ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS entity_id   uuid;
+-- Ажил хаанаас үүссэн бэ (self = өөрөө, manager = удирдлага оноосон,
+-- ai = чатаар үүсгэсэн). AI-аар үүсгэсэн ажлыг ялгахад хэрэгтэй.
+ALTER TABLE user_tasks ADD COLUMN IF NOT EXISTS source      text DEFAULT 'self';
 
 -- Хуучин мөрүүд: эзэн нь өөрөө
 UPDATE user_tasks SET assignee_id = user_id WHERE assignee_id IS NULL;
@@ -202,15 +215,17 @@ CREATE POLICY user_tasks_access ON user_tasks FOR ALL
 -- ============================================================
 -- 5) ai_audit_log — RLS асаалттай мөртлөө policy БАЙХГҮЙ байсан
 -- ============================================================
--- Ингэснээр хэрэглэгчийн клиентээс огт уншигдахгүй байв (зөвхөн service_role).
+-- ЧУХАЛ: энэ бол АДМИНЫ аудит лог (хэн AI-аар юу өөрчилсөн). Түүнийг shop-ийн
+-- БҮХ гишүүнд нээх нь эрхийн доройтол болно — /dashboard/ai-assistant/audit нь
+-- зориуд super_admin-д хаалттай. Тиймээс зөвхөн:
+--   • өөрийн бичсэн мөр, ЭСВЭЛ
+--   • тухайн shop-ийн ЭЗЭН
+-- уншина. Админы харагдац нь supabaseAdmin()-ээр (service role) уншсаар байна.
 DROP POLICY IF EXISTS ai_audit_log_read ON ai_audit_log;
 CREATE POLICY ai_audit_log_read ON ai_audit_log FOR SELECT
     USING (
-        shop_id IN (
-            SELECT id FROM shops WHERE user_id = auth.uid()
-            UNION
-            SELECT shop_id FROM shop_members WHERE user_id = auth.uid()
-        )
+        user_id = auth.uid()
+        OR shop_id IN (SELECT id FROM shops WHERE user_id = auth.uid())
     );
 
 DROP POLICY IF EXISTS ai_audit_log_service_write ON ai_audit_log;
@@ -275,3 +290,52 @@ COMMENT ON TABLE work_anomalies IS
 CREATE INDEX IF NOT EXISTS idx_leads_next_followup
     ON leads (shop_id, next_followup_at)
     WHERE next_followup_at IS NOT NULL;
+
+
+-- ============================================================
+-- 8) Шинэ модулиудыг DB-ийн дүрүүдэд тарааx (marketing, tasks)
+-- ============================================================
+-- `rbac.ts`-ийн ALL_MODULES-д `marketing` ба `tasks` нэмэгдсэн боловч
+-- `fetchRolePermissions` нь DB-д дүр олдвол ЗӨВХӨН role_permissions-ийн
+-- жагсаалтыг ашигладаг (static fallback руу унахгүй). Тиймээс seed хийхгүй
+-- бол DB-д бүртгэлтэй дүр бүхий хэрэглэгчдэд:
+--   • маркетингийн 13 цэс бүгд АЛГА болно (өмнө нь module:'' байсан тул
+--     үргэлж харагддаг байсан — одоо 'marketing' эрх шаардана),
+--   • «Миний ажлууд» цэс алга болно ('tasks').
+-- Идэмхий: UNIQUE(role_id, module) + ON CONFLICT DO NOTHING.
+
+-- tasks — бүх дүрд (хувийн ажлын жагсаалт нь эрхийн асуудал биш)
+INSERT INTO role_permissions (role_id, module)
+SELECT r.id, 'tasks' FROM roles r
+ON CONFLICT (role_id, module) DO NOTHING;
+
+-- marketing — маркетингтай холбоотой дүрүүдэд
+INSERT INTO role_permissions (role_id, module)
+SELECT r.id, 'marketing' FROM roles r
+ WHERE r.name IN ('super_admin', 'admin', 'marketing', 'executive')
+ON CONFLICT (role_id, module) DO NOTHING;
+
+-- ai-assistant — санхүүгийн менежерт нээв (rbac.ts-ийн static жагсаалттай нийцүүлэв)
+INSERT INTO role_permissions (role_id, module)
+SELECT r.id, 'ai-assistant' FROM roles r
+ WHERE r.name = 'finance_manager'
+ON CONFLICT (role_id, module) DO NOTHING;
+
+-- executive дүрийг DB-д бүртгэх (байхгүй бол). Хардаг боловч бичихгүй.
+INSERT INTO roles (name, display_name, display_name_mn, description,
+                   can_write, can_delete, can_access_admin, is_system)
+VALUES ('executive', 'Executive', 'Гүйцэтгэх удирдлага',
+        'Багийн ажлын явцыг хянана. Өгөгдөл засахгүй (зөвхөн унших).',
+        false, false, false, true)
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO role_permissions (role_id, module)
+SELECT r.id, m.module
+  FROM roles r
+  CROSS JOIN (VALUES
+      ('dashboard'), ('tasks'), ('reports'), ('reports-leads'),
+      ('marketing'), ('marketing-roi'), ('contracts'), ('finance'),
+      ('properties'), ('leads'), ('viewings'), ('customers'), ('ai-assistant')
+  ) AS m(module)
+ WHERE r.name = 'executive'
+ON CONFLICT (role_id, module) DO NOTHING;

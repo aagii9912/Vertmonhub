@@ -101,7 +101,10 @@ async function handler(request: Request) {
             // Удирдлагад мэдэгдэнэ (зөвхөн ноцтой зүйл байвал — өдөр бүр
             // «бүх зүйл хэвийн» гэж түгших нь мэдэгдлийн ядаргаа үүсгэнэ).
             const summary = summarizeAnomalies(anomalies);
-            if (summary.critical > 0 || summary.warn > 0) {
+            // Зөвхөн ЯАРАЛТАЙ зүйл эсвэл шинээр бүртгэгдсэн асуудал байвал
+            // мэдэгдэнэ. Өдөр бүр давтагдах «анхаарах» төлөвт түгшүүлбэл
+            // мэдэгдлийн ядаргаа үүсч, хүмүүс бүгдийг нь үл тоомсорлоно.
+            if (summary.critical > 0 || stored > 0) {
                 const top = summary.byManager.slice(0, 3)
                     .map((m) => `${m.manager} (${m.count})`)
                     .join(', ');
@@ -110,7 +113,9 @@ async function handler(request: Request) {
                     body:
                         `${summary.critical} яаралтай, ${summary.warn} анхаарах асуудал` +
                         (top ? ` — ${top}` : ''),
-                    url: '/dashboard/reports/activity',
+                    // Одоогоор менежерийн гүйцэтгэлийн хуудас руу — идэвхийн
+                    // тусдаа хуудас хараахан байхгүй (API нь /api/dashboard/activity).
+                    url: '/dashboard/reports/manager-performance',
                     tag: 'anomaly-watch',
                 });
             }

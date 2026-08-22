@@ -187,18 +187,31 @@ export async function POST(req: Request) {
 
         if (wantsStream) {
             const encoder = new TextEncoder();
+            // Хэрэглэгч холболтоо таслахад цаашид бичихгүй бөгөөд ярианы
+            // мөрийг ч хадгалахгүй (эс бөгөөс хэрэглэгчийн харахгүй, хоосон
+            // яриа DB-д хуримтлагдана).
+            let clientGone = false;
             const stream = new ReadableStream<Uint8Array>({
                 async start(controller) {
                     const send = (event: Record<string, unknown>) => {
+                        if (clientGone) return;
                         try {
                             controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
                         } catch {
-                            /* хэрэглэгч холболтоо тасалсан — үлдсэнийг чимээгүй алгасна */
+                            clientGone = true;
                         }
                     };
 
                     try {
                         const result = await runWith((e) => send({ ...e, phase: 'progress' }));
+
+                        // Таслагдсан бол шинэ яриа үүсгэхгүй. Одоо байгаа
+                        // ярианд бол хадгална — хэрэглэгч буцаж ирэхэд түүх
+                        // бүрэн байх нь зөв.
+                        if (clientGone && !conversationId) {
+                            return;
+                        }
+
                         const convId = await persistExchange(result, {
                             adminDb, conversationId, effectiveShopId, message, userId: resolvedUser.id,
                         });
@@ -220,6 +233,11 @@ export async function POST(req: Request) {
                     } finally {
                         try { controller.close(); } catch { /* аль хэдийн хаагдсан */ }
                     }
+                },
+                cancel() {
+                    // Хөтөч урсгалыг таслав (хэрэглэгч «Зогсоох» дарсан эсвэл
+                    // хуудсаас гарсан).
+                    clientGone = true;
                 },
             });
 

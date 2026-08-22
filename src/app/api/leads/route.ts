@@ -6,6 +6,7 @@ import { CreateLeadSchema, validateBody } from '@/lib/validations/schemas';
 import {
     checkRateLimit,
     getClientIdentifier,
+    getClientIp,
     createRateLimitResponse,
 } from '@/lib/utils/rate-limiter';
 import { logger } from '@/lib/utils/logger';
@@ -134,9 +135,12 @@ async function handleLeadPost(request: NextRequest): Promise<NextResponse> {
             staffUserId = null;
         }
 
-        const clientIp = getClientIdentifier(request);
+        // Turnstile-д ЖИНХЭНЭ IP хэрэгтэй (getClientIdentifier нь нэвтэрсэн
+        // хэрэглэгчид `ip:session` нийлмэл түлхүүр буцаадаг тул тохирохгүй).
+        const clientIp = getClientIp(request);
+        const rateKey = getClientIdentifier(request);
         if (!staffUserId) {
-            const rl = await checkRateLimit(`leads:${clientIp}`, LEAD_RATE_LIMIT);
+            const rl = await checkRateLimit(`leads:${rateKey}`, LEAD_RATE_LIMIT);
             if (!rl.allowed) {
                 return createRateLimitResponse(rl.resetAt);
             }

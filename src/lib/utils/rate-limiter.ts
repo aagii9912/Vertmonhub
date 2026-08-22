@@ -257,50 +257,59 @@ export function checkRateLimitSync(
     return result;
 }
 
-/**
- * Get client identifier from request
- */
-export function getClientIdentifier(req: Request): string {
+/** Хүсэлтээс IP хаягийг гаргана (прокси header-үүдийг харгалзана). */
+export function getClientIp(req: Request): string {
     const forwarded = req.headers.get('x-forwarded-for');
     const realIp = req.headers.get('x-real-ip');
     const cfConnecting = req.headers.get('cf-connecting-ip');
 
-    const ip = forwarded?.split(',')[0]?.trim()
+    return forwarded?.split(',')[0]?.trim()
         || realIp
         || cfConnecting
         || 'unknown';
+}
 
-    // ЗАСВАР (2026-08-22): түлхүүр нь ЗӨВХӨН IP байсан тул нэг оффисын NAT-аар
-    // ажилладаг 5 менежер минутад нийт 20 AI хүсэлтийг хуваадаг байв — чат
-    // үндсэн ажлын гадаргуу болоход энэ нь шууд хана. Нэвтэрсэн хэрэглэгчийг
-    // session cookie-гоор нь ялгаж, хувь хүн бүрт өөрийн квот өгнө.
-    // (Cookie-г ЗАДЛАХГҮЙ — зөвхөн тогтвортой ялгагч болгож хэшлэнэ.)
+/**
+ * Хүсэлтийн ялгагч — IP + (нэвтэрсэн бол) session.
+ *
+ * ⚠️ Session хэсэг нь КЛИЕНТИЙН ХЯНАЛТАД байдаг cookie-гоос гардаг тул үүнийг
+ * ГАНЦААР хязгаарлалтын түлхүүр болгож БОЛОХГҮЙ — халдагч cookie-гоо сольж
+ * хязгааргүй шинэ хувин үүсгэнэ. Тиймээс `checkMiddlewareRateLimit` нь ХОЁР
+ * хувинг зэрэг шалгана: хувь хүний (энэ түлхүүр) ба IP-ийн ТААЗ (доор).
+ */
+export function getClientIdentifier(req: Request): string {
+    const ip = getClientIp(req);
     const session = sessionDiscriminator(req);
     return session ? `${ip}:${session}` : ip;
 }
 
 /**
  * Supabase auth cookie-оос тогтвортой, богино ялгагч гаргана.
- * Cookie байхгүй (нэвтрээгүй) бол null — тэр үед IP-д суурилсан хязгаар үлдэнэ.
+ * Cookie байхгүй (нэвтрээгүй) бол null.
+ *
+ * Cookie нь `sb-<project>-auth-token.0/.1` гэж хуваагдаж болох ба хөтөч тэдгээрийг
+ * ямар ч дарааллаар илгээж болно — тиймээс НЭРЭЭР нь эрэмбэлж тогтвортой болгоно
+ * (эс бөгөөс нэг хэрэглэгч хүсэлт бүрд өөр хувин авч, хязгаарлалт утгагүй болно).
  */
 function sessionDiscriminator(req: Request): string | null {
     const cookie = req.headers.get('cookie');
     if (!cookie) return null;
 
-    // sb-<project>-auth-token[.0] хэлбэрийн Supabase session cookie-нуудыг цуглуулна
-    const parts: string[] = [];
+    const parts: Array<{ name: string; value: string }> = [];
     for (const raw of cookie.split(';')) {
         const [name, ...rest] = raw.split('=');
         const key = name?.trim();
         if (key && /^sb-.*-auth-token(\.\d+)?$/.test(key)) {
-            parts.push(rest.join('='));
+            parts.push({ name: key, value: rest.join('=') });
         }
     }
     if (parts.length === 0) return null;
 
+    parts.sort((a, b) => a.name.localeCompare(b.name));
+    const value = parts.map((p) => `${p.name}=${p.value}`).join('|');
+
     // Хямд, тогтвортой 32-бит хэш (FNV-1a) — криптографийн зорилгогүй, зөвхөн
     // хэрэглэгчдийг хооронд нь ялгах түлхүүр.
-    const value = parts.join('|');
     let hash = 0x811c9dc5;
     for (let i = 0; i < value.length; i++) {
         hash ^= value.charCodeAt(i);
@@ -308,6 +317,13 @@ function sessionDiscriminator(req: Request): string | null {
     }
     return hash.toString(36);
 }
+
+/**
+ * Нэг IP-ээс гарах НИЙТ хүсэлтийн тааз — хувь хүний хязгаарын үржвэрээр.
+ * Нэг оффисын NAT-аар ажиллах багийг багтаах хэрээр өгөөмөр боловч
+ * cookie сольж хязгаар тойрох оролдлогыг зогсооно.
+ */
+const IP_CEILING_MULTIPLIER = 6;
 
 /**
  * Create rate limit response
@@ -367,22 +383,42 @@ export async function checkMiddlewareRateLimit(
     req: Request,
     routeType: keyof typeof RATE_LIMIT_CONFIGS = 'standard'
 ): Promise<{ allowed: boolean; response?: NextResponse }> {
+    const ip = getClientIp(req);
     const clientId = getClientIdentifier(req);
     const url = new URL(req.url);
-    const key = `${clientId}:${routeType}`;
-
     const config = RATE_LIMIT_CONFIGS[routeType];
-    const { allowed, resetAt } = await checkRateLimit(key, config);
 
-    if (!allowed) {
+    // ХОЁР хувин:
+    //  1) хувь хүний хувин — нэг оффисын NAT-аар ажиллах менежерүүд бие биенийхээ
+    //     квотыг идэхгүй байх (session cookie-гоор ялгагдана);
+    //  2) IP-ийн ТААЗ — session нь клиентийн хяналтад байдаг тул cookie сольж
+    //     хязгааргүй хувин үүсгэх оролдлогыг зогсооно.
+    // Аль нэг нь хэтэрвэл хүсэлтийг татгалзана.
+    const checks: Array<Promise<{ allowed: boolean; resetAt: number }>> = [
+        checkRateLimit(`${clientId}:${routeType}`, config),
+    ];
+    if (clientId !== ip) {
+        checks.push(
+            checkRateLimit(`ipcap:${ip}:${routeType}`, {
+                ...config,
+                maxRequests: config.maxRequests * IP_CEILING_MULTIPLIER,
+            }),
+        );
+    }
+
+    const results = await Promise.all(checks);
+    const blocked = results.find((r) => !r.allowed);
+
+    if (blocked) {
         logger.warn('Rate limit exceeded in middleware', {
             clientId,
             path: url.pathname,
-            routeType
+            routeType,
+            reason: results[0].allowed ? 'ip-ceiling' : 'per-user',
         });
         return {
             allowed: false,
-            response: createRateLimitResponse(resetAt)
+            response: createRateLimitResponse(blocked.resetAt)
         };
     }
 

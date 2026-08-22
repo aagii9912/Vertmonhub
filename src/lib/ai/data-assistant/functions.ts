@@ -70,7 +70,17 @@ export async function fetchDashboardStats(shopId: string, timeRange: string = 'm
                 .range(from, to),
         ).catch(() => [] as Array<Record<string, unknown>>),
         supabaseAdmin.from('customers').select('*', { count: 'exact', head: true }).eq('shop_id', shopId),
-        supabaseAdmin.from('leads').select('status').eq('shop_id', shopId).gte('created_at', isoDate),
+        // count: 'exact' — PostgREST-ийн мөрийн хязгаар (~1000) нь тоог
+        // таслахгүй. Түүнгүйгээр «энэ сар 1000 лийд» гэж таазанд тулсан
+        // тоо мэдээлэгдэнэ.
+        fetchAllRows((from, to) =>
+            supabaseAdmin
+                .from('leads')
+                .select('status', { count: 'exact' })
+                .eq('shop_id', shopId)
+                .gte('created_at', isoDate)
+                .range(from, to),
+        ).catch(() => [] as Array<Record<string, unknown>>),
         supabaseAdmin.from('properties').select('*', { count: 'exact', head: true }).eq('shop_id', shopId).eq('is_active', true),
         supabaseAdmin.from('property_viewings').select('*', { count: 'exact', head: true }).eq('shop_id', shopId).gte('scheduled_at', isoDate),
     ]);
@@ -92,7 +102,7 @@ export async function fetchDashboardStats(shopId: string, timeRange: string = 'm
         { contracted: 0, collected: 0, balance: 0, count: 0 },
     );
 
-    const leadsAll = (leadsRes.data || []) as Array<{ status: string | null }>;
+    const leadsAll = (leadsRes || []) as Array<{ status: string | null }>;
     const countStatus = (s: string) => leadsAll.filter((l) => l.status === s).length;
 
     return {

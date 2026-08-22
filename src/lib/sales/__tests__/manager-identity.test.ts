@@ -109,3 +109,42 @@ describe('matchRosterEntry — нормчлол', () => {
         expect(matchRosterEntry(r, 'x', null)).toBeNull();
     });
 });
+
+// ============================================================
+// Буруу хүнд холбогдохоос сэргийлэх (2026-08-22 review засвар)
+// ============================================================
+
+describe('matchRosterEntry — буруу холбоосоос сэргийлэх', () => {
+    it('ӨӨР дансанд холбогдсон бүртгэлд нэрээр таарахгүй', () => {
+        // «Батаа» гэсэн бүртгэл аль хэдийн OTHER_UID дансанд холбогдсон.
+        // Ижил нэртэй өөр хүн түүн рүү холбогдвол нөгөөгийнх нь гүйцэтгэл,
+        // зорилт, лийдийг өөрийн болгож харна.
+        const claimed: RosterEntry[] = [{ name: 'Батаа', user_id: OTHER_UID, is_active: true }];
+        expect(matchRosterEntry(claimed, UID, 'Батаа')).toBeNull();
+    });
+
+    it('өөрийн дансанд холбогдсон бүртгэлд нэрээр таарна', () => {
+        const mine: RosterEntry[] = [{ name: 'Батаа', user_id: UID, is_active: true }];
+        expect(matchRosterEntry(mine, UID, 'Батаа')?.name).toBe('Батаа');
+    });
+
+    it('ХОЁУЛАА товчлолтой, өөр эхний үсэгтэй бол таарахгүй', () => {
+        // «Б.Батбаяр» ба «Д.Батбаяр» бол ӨӨР ХОЁР ХҮН. Товчлолыг хоёр талаас
+        // нь хасвал хоёулаа «батбаяр» болж, буруу хүнд холбогдоно.
+        const r: RosterEntry[] = [{ name: 'Д.Батбаяр', user_id: null, is_active: true }];
+        expect(matchRosterEntry(r, 'x', 'Б.Батбаяр')).toBeNull();
+    });
+
+    it('ХОЁУЛАА товчлолтой, ижил эхний үсэгтэй бол яг таарцаар таарна', () => {
+        const r: RosterEntry[] = [{ name: 'Б.Батбаяр', user_id: null, is_active: true }];
+        expect(matchRosterEntry(r, 'x', 'Б. Батбаяр')?.name).toBe('Б.Батбаяр');
+    });
+
+    it('нэг талд л товчлол байвал таарна (хоёр чиглэлд)', () => {
+        const withInitial: RosterEntry[] = [{ name: 'Б.Батбаяр', user_id: null, is_active: true }];
+        expect(matchRosterEntry(withInitial, 'x', 'Батбаяр')?.name).toBe('Б.Батбаяр');
+
+        const plain: RosterEntry[] = [{ name: 'Батбаяр', user_id: null, is_active: true }];
+        expect(matchRosterEntry(plain, 'x', 'Б.Батбаяр')?.name).toBe('Батбаяр');
+    });
+});

@@ -64,7 +64,7 @@ export default function AdminUsersPage() {
     // Invite link modal
     const [showInvite, setShowInvite] = useState(false);
     const [inviting, setInviting] = useState(false);
-    const [inviteForm, setInviteForm] = useState({ email: '', full_name: '', role: 'sales_manager' });
+    const [inviteForm, setInviteForm] = useState({ email: '', full_name: '', role: 'sales_manager', shop_id: '' });
     const [inviteError, setInviteError] = useState<string | null>(null);
     const [inviteResult, setInviteResult] = useState<{ link: string; mode: string; emailed: boolean } | null>(null);
     const [copied, setCopied] = useState(false);
@@ -175,6 +175,16 @@ export default function AdminUsersPage() {
     }
 
     async function sendInvite() {
+        if (!inviteForm.full_name.trim()) {
+            // Сервер тал ч мөн адил шаарддаг: нэргүй бол user_profiles.full_name
+            // хоосон үлдэж, борлуулалтын бүртгэлтэй хэзээ ч таарахгүй.
+            setInviteError('Нэр оруулна уу — борлуулалтын бүртгэлтэй ижил бичлэгээр');
+            return;
+        }
+        if (shops.length > 1 && !inviteForm.shop_id) {
+            setInviteError('Төсөл сонгоно уу');
+            return;
+        }
         if (!inviteForm.email) {
             setInviteError('Имэйл оруулна уу');
             return;
@@ -186,7 +196,12 @@ export default function AdminUsersPage() {
             const res = await fetch('/api/admin/users/invite', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: inviteForm.email, full_name: inviteForm.full_name, role: inviteForm.role }),
+                body: JSON.stringify({
+                    email: inviteForm.email,
+                    full_name: inviteForm.full_name,
+                    role: inviteForm.role,
+                    shop_id: inviteForm.shop_id || undefined,
+                }),
             });
             const data = await res.json();
             if (res.ok && data.success) {
@@ -462,14 +477,20 @@ export default function AdminUsersPage() {
                                         Имэйл оруулахад ажилтанд урилга (нэвтрэх холбоос) <b>имэйлээр автоматаар илгээгдэнэ</b> — нэвтрэхэд нууц үг шаардахгүй. Шаардвал холбоосыг доор хуулж болно.
                                     </p>
                                     <div>
-                                        <label className="block text-sm font-medium text-foreground mb-1">Нэр</label>
+                                        <label className="block text-sm font-medium text-foreground mb-1">
+                                            Нэр <span className="text-status-danger">*</span>
+                                        </label>
                                         <input
                                             type="text"
                                             value={inviteForm.full_name}
                                             onChange={e => setInviteForm(p => ({ ...p, full_name: e.target.value }))}
                                             className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-brand focus:border-brand"
-                                            placeholder="Борлуулалтын менежер"
+                                            placeholder="Б.Батбаяр"
                                         />
+                                        <p className="mt-1 text-xs text-muted-foreground">
+                                            Борлуулалтын бүртгэл дэх нэртэй ижил бичих нь чухал — эс бөгөөс
+                                            менежерийн самбар хоосон харагдана.
+                                        </p>
                                     </div>
                                     <div>
                                         <label className="block text-sm font-medium text-foreground mb-1">Имэйл <span className="text-status-danger">*</span></label>
@@ -493,6 +514,27 @@ export default function AdminUsersPage() {
                                             ))}
                                         </select>
                                     </div>
+                                    {shops.length > 1 && (
+                                        <div>
+                                            <label className="block text-sm font-medium text-foreground mb-1">
+                                                Төсөл <span className="text-status-danger">*</span>
+                                            </label>
+                                            <select
+                                                value={inviteForm.shop_id}
+                                                onChange={e => setInviteForm(p => ({ ...p, shop_id: e.target.value }))}
+                                                className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface focus:ring-2 focus:ring-brand focus:border-brand"
+                                            >
+                                                <option value="">— сонгоно уу —</option>
+                                                {shops.map(sh => (
+                                                    <option key={sh.id} value={sh.id}>{sh.name}</option>
+                                                ))}
+                                            </select>
+                                            <p className="mt-1 text-xs text-muted-foreground">
+                                                Олон төсөлтэй тул автоматаар оноох боломжгүй — сонгоогүй бол
+                                                уригдсан хүн ямар ч төсөлд холбогдохгүй.
+                                            </p>
+                                        </div>
+                                    )}
                                 </>
                             ) : (
                                 <div className="space-y-3">

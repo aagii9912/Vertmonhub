@@ -98,6 +98,22 @@ function chatErrorMessage(status: number): string {
  *   phase=done     → эцсийн хариу
  *   phase=error    → серверийн алдаа
  */
+/** Сервер тодорхой шалтгаан бүхий алдаа буцаасан. */
+class ServerReportedError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'ServerReportedError';
+    }
+}
+
+/** Урсгал эцсийн хариугүйгээр тасарсан (ихэвчлэн хугацаа хэтэрсэн). */
+class StreamTruncatedError extends Error {
+    constructor() {
+        super('Stream ended before a final result');
+        this.name = 'StreamTruncatedError';
+    }
+}
+
 async function consumeStream(
     response: Response,
     onProgress: (updater: (prev: string[]) => string[]) => void,
@@ -131,7 +147,8 @@ async function consumeStream(
             if (event.phase === 'done') {
                 final = event;
             } else if (event.phase === 'error') {
-                throw new Error(event.message || 'AI-д алдаа гарлаа');
+                // Сервер тодорхой шалтгаан хэлсэн — түүнийг нь харуулна
+                throw new ServerReportedError(event.message || 'AI-д алдаа гарлаа');
             } else if (event.phase === 'progress') {
                 const label = describeProgress(event);
                 if (label) onProgress((prev) => [...prev, label]);
@@ -139,7 +156,10 @@ async function consumeStream(
         }
     }
 
-    if (!final) throw new ChatRequestError(0);
+    // Урсгал `done` үйл явдалгүйгээр тасарсан — ихэвчлэн хугацаа хэтэрсэн
+    // эсвэл серверийн процесс тасалдсан. Үүнийг «сүлжээ алга» гэж хэлэх нь
+    // хэрэглэгчийг буруу зүг рүү чиглүүлнэ.
+    if (!final) throw new StreamTruncatedError();
     return final;
 }
 
@@ -279,11 +299,20 @@ export default function AIAssistantPage() {
         } catch (err) {
             // Хэрэглэгч өөрөө цуцалсан — алдааны мессеж харуулахгүй
             if (err instanceof DOMException && err.name === 'AbortError') return;
-            const status = err instanceof ChatRequestError ? err.status : 0;
+
+            let content: string;
+            if (err instanceof ServerReportedError) {
+                content = err.message;
+            } else if (err instanceof StreamTruncatedError) {
+                content = chatErrorMessage(504);
+            } else {
+                content = chatErrorMessage(err instanceof ChatRequestError ? err.status : 0);
+            }
+
             setMessages(prev => [...prev, {
                 id: (Date.now() + 1).toString(),
                 role: 'assistant',
-                content: chatErrorMessage(status),
+                content,
             }]);
         } finally {
             abortRef.current = null;

@@ -134,7 +134,13 @@ export async function runOrchestrator(
     let synthesisLatencyMs = 0;
 
     const okResults = runResults.filter((r) => r.result.ok && r.result.text);
-    if (okResults.length === 0) {
+    if (steps.length === 0) {
+        // Хэрэглэгчийн эрхэд тохирох agent олдсонгүй — «алдаа гарлаа» гэхийн
+        // оронд шалтгааныг нь хэлнэ (planner.ts allowedAgentsFor-оор шүүдэг).
+        finalText =
+            'Таны эрхээр ажиллах AI мэргэжилтэн тохируулагдаагүй байна. ' +
+            'Админаас модулийн эрхээ шалгуулна уу.';
+    } else if (okResults.length === 0) {
         // Бүх agent унасан — шалтгааныг ялгаж ойлгомжтой мессеж өгнө.
         const rateLimited = runResults.some((r) => /429|rate.?limit|quota|overloaded|503/i.test(r.result.error || ''));
         finalText = rateLimited
@@ -166,7 +172,19 @@ export async function runOrchestrator(
     const withData = runResults.find((r) => r.result.ok && r.result.data);
 
     // Бүх алхмаас баталгаажуулалт хүлээж буй үйлдлүүдийг цуглуулна.
-    const pendingActions: PendingAction[] = runResults.flatMap((r) => r.result.pendingActions || []);
+    // Зэрэгцээ ажилласан хоёр agent ижил үйлдлийг санал болговол (жишээ:
+    // my-work ба crm-specialist хоёулаа нэг лийдэд дагалт товлох) хэрэглэгчид
+    // ХОЁР ижил баталгаажуулалтын карт харагдана — tool+args-аар давхардлыг
+    // арилгана.
+    const seenActions = new Set<string>();
+    const pendingActions: PendingAction[] = runResults
+        .flatMap((r) => r.result.pendingActions || [])
+        .filter((a) => {
+            const key = `${a.tool}:${JSON.stringify(a.args, Object.keys(a.args || {}).sort())}`;
+            if (seenActions.has(key)) return false;
+            seenActions.add(key);
+            return true;
+        });
 
     const agentsUsed: AgentBadge[] = runResults
         .filter((r) => r.result.ok)
