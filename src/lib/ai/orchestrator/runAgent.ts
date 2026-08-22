@@ -7,6 +7,7 @@
  */
 
 import { GoogleGenerativeAI, Content } from '@google/generative-ai';
+import { GEMINI_FLASH } from '@/lib/ai/config/models';
 import { logger } from '@/lib/utils/logger';
 import { readTools, writeTools, deleteTools, adminTools } from '@/lib/ai/data-assistant/tools';
 import { executeDataTool } from '@/lib/ai/data-assistant';
@@ -19,7 +20,7 @@ import type { AgentDefinition, AgentRunResult, OrchestratorContext, PendingActio
 const MAX_HISTORY = 10;
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const AGENT_MODEL = 'gemini-3.5-flash';
+const AGENT_MODEL = GEMINI_FLASH;
 
 /** Agent-ийн зөвшөөрөгдсөн tool тодорхойлолтуудыг бэлдэнэ (perms-ийг харгалзана). */
 function resolveAgentTools(agent: AgentDefinition, perms: OrchestratorContext['perms']) {

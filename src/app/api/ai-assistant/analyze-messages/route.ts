@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { GEMINI_FLASH } from '@/lib/ai/config/models';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
@@ -62,7 +63,7 @@ ${userMessages}
 `;
 
         const model = genAI.getGenerativeModel({
-            model: 'gemini-3.5-flash',
+            model: GEMINI_FLASH,
             generationConfig: {
                 temperature: 0.3,
                 responseMimeType: 'application/json',

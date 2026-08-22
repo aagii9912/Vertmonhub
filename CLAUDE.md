@@ -175,10 +175,31 @@ Meeting-driven marketing analytics layer (migration `20260721140000`):
 The internal staff assistant is a **multi-agent orchestrator** (`src/lib/ai/orchestrator/`), not a manual dual-mode chat anymore. Reliability: all Gemini calls (planner, agents, synthesizer) use `withRetry` (`orchestrator/retry.ts`, backoff on 429/503); agent history is capped to the last 10 messages for token control. Markdown answers render via a dependency-free renderer (`components/ai-assistant/MarkdownMessage.tsx`). An admin-only audit view lives at `/dashboard/ai-assistant/audit` (`GET /api/dashboard/ai-audit`, reads `ai_audit_log`). Orchestrator unit tests: `src/lib/ai/orchestrator/__tests__`. Flow:
 1. `POST /api/ai-assistant` (RBAC `ai-assistant`, shop-scoped) calls `runOrchestrator()`.
 2. **Planner** (`planner.ts`) analyzes the request → JSON plan selecting 1–3 specialized agents.
-3. **Agents** (`agents.ts`): `data-analyst`, `property-expert`, `crm-specialist`, `finance-analyst`, `advisor`, `operations-admin` (super_admin), `marketing-specialist`. Each has a focused Mongolian system prompt + a curated subset of the shared data-assistant tools. They run via the generic `runAgent.ts` (reuses `executeDataTool` from `lib/ai/data-assistant`; write tools gated by `perms.canWrite`).
+   **Role-aware:** the planner only ever sees agents the user is entitled to —
+   `allowedAgentsFor(perms)` (`agents.ts`) filters `AGENT_LIST` by each agent's
+   `requiredModules`. Never reintroduce an unfiltered roster.
+3. **Agents** (`agents.ts`): `my-work`, `executive-overseer`, `data-analyst`, `property-expert`, `crm-specialist`, `finance-analyst`, `advisor`, `operations-admin` (super_admin), `marketing-specialist`.
+   - **`my-work` («Миний ажил»)** is the manager's daily-work surface: `get_my_day`,
+     `list_my_leads`, `list_viewings`, `log_activity`, `update_viewing`,
+     `complete_viewing`, `set_lead_followup`, `reassign_lead`, `create_task`,
+     `complete_task` (impl in `data-assistant/manager-functions.ts`). These are
+     scoped to the acting manager's canonical name — `list_leads` (shop-wide) is
+     NOT a substitute for `list_my_leads`.
+   - **`executive-overseer` («Хяналтын зөвлөх»)** answers management's progress
+     questions: `get_team_activity`, `get_manager_progress`, `get_anomalies`
+     (impl in `data-assistant/oversight-functions.ts`, pure logic in
+     `lib/dashboard/oversight.ts`). Each has a focused Mongolian system prompt + a curated subset of the shared data-assistant tools. They run via the generic `runAgent.ts` (reuses `executeDataTool` from `lib/ai/data-assistant`; write tools gated by `perms.canWrite`).
    - Marketing: `get_marketing_summary` (read), `create_social_post` (confirm-gated draft/scheduled into `social_posts`).
    - **Long-term shop memory**: `ai_shop_memory` table (migration `20260617180000`); `remember_fact` tool (executes directly, `canWrite`) stores key→value; `getShopMemory`/`formatShopMemory` inject it into every run's context. Attachments shown on detail pages via `EntityAttachments` + `GET /api/dashboard/ai-attachments`. Proactive daily push digest: `GET/POST /api/cron/ai-digest` (vercel.json cron, `CRON_SECRET`).
 4. **Synthesizer** merges multi-agent output into one answer (skipped for single-agent).
+   **Agents run in parallel** (`Promise.all` in `orchestrator/index.ts`) — they are
+   independent domain specialists and the synthesizer does the merging, so total
+   latency is the slowest agent, not the sum. Do not reintroduce the sequential
+   `for` loop; it made a 3-agent request exceed the function timeout.
+   **Streaming:** `POST /api/ai-assistant` with `{ stream: true }` returns SSE
+   (`phase: progress|done|error`), driven by `OrchestratorContext.onProgress`.
+   The chat UI consumes it (`consumeStream`) to show live progress and offers a
+   cancel button (`AbortController`). `maxDuration = 300`.
 5. Returns `{ text, data, chartConfig, agentsUsed, trace, pendingActions }`. The **trace** (planner reasoning, per-step latency/tokens/tools) is shown in the UI (`components/ai-assistant/OrchestrationTrace.tsx`) and persisted to `ai_messages.agents_used` / `ai_messages.trace` (migration `20260616150000`). The old `data`/`general` mode toggle was removed — routing is automatic. Persistence and trace reads are migration-resilient (best-effort update + fallback select).
 
 **Write / actions (confirm-gated).** Agents can perform real CRM/sales/admin actions, not just read:
@@ -190,6 +211,68 @@ The internal staff assistant is a **multi-agent orchestrator** (`src/lib/ai/orch
 - **Sales-manager attribution:** create/schedule tools stamp the acting user's name (resolved from `user_profiles.full_name` via `resolveSalesManagerName`, passed as `OrchestratorContext.userName` → `executeDataTool(..., userName)`). Contracts use the existing `property_contracts.sales_manager` column; leads/viewings/customers use `sales_manager_name` (migration `20260617120000`, best-effort stamp so creates don't regress pre-migration).
 - **File attachments (read + attach).** The chat composer (`components/ai-assistant/ChatComposer.tsx`) uploads files/images to `POST /api/dashboard/upload` (bucket `products`, returns `{ url }`) and sends them as `attachments: [{url,name,mimeType}]`. `runAgent` passes image/PDF attachments to Gemini as `inlineData` (vision: AI reads/analyzes) and lists their URLs in the prompt. The confirm-gated `attach_file` tool links a file to a property/lead/customer/contract via the `ai_attachments` table (migration `20260617140000`); for property images it also appends to `properties.images[]`. Rendered via `components/ai-assistant/MessageAttachments.tsx`. The chat UI was redesigned (gradient header, agent legend, suggestion cards, animated bubbles, composer with drag-drop).
 - **Confirmation flow:** mutating tools are `confirm`-gated. During an agent run they are called with `confirm=false`, which returns a **preview** (no mutation) and is surfaced as a `pendingAction`. The UI (`components/ai-assistant/ActionConfirmCard.tsx`) renders an approve/cancel card; on approve the browser calls `POST /api/ai-assistant/action`, which re-checks RBAC + shop scope and re-runs the tool with `confirm=true` to actually mutate. Deletes are **soft** (`deleted_at`); migrations `20260617100000` (leads), `20260617120000` (viewings/contracts/customers + `sales_manager_name`). Reads hide soft-deleted rows via `runExcludingDeleted` (resilient to the column not existing yet). Audit via `logAiAudit` fires on real execution only. Tool name sets live in `lib/ai/data-assistant/tools.ts` (`WRITE_TOOL_NAMES`, `DELETE_TOOL_NAMES`, `ADMIN_TOOL_NAMES`, `MUTATING_TOOL_NAMES`).
+
+### Identity chain — how a user becomes a "manager" (do not regress)
+
+This chain is the single most common source of "the dashboard shows zeros":
+
+1. **Provisioning.** `handle_new_user` was dropped (`20260322_drop_auth_triggers.sql`),
+   so `src/lib/auth/ensure-provisioned.ts` (`ensureUserProvisioned`) creates
+   `user_profiles` + `shop_members` on every login — both the OAuth callback
+   (`app/auth/callback/route.ts`) and the password route call it. It **never**
+   grants a role (that is an admin action) and **never** writes the e-mail into
+   `full_name` (that silently breaks roster matching).
+2. **Name matching.** `resolveManagerIdentity` → `matchRosterEntry`
+   (`lib/sales/manager-identity.ts`) resolves the canonical name:
+   `sales_managers.user_id` link wins, then a *normalized* name match
+   (`normalizeName`: trim/collapse/lowercase), then an initials-stripped match
+   (`stripInitials`, e.g. «Б.Батбаяр» → «Батбаяр») **only when unique**.
+   Never go back to `===` string equality.
+3. **One resolver for AI and dashboard.** `resolveSalesManagerName(shopId, userId)`
+   (`data-assistant/functions.ts`) delegates to `resolveManagerIdentity`. Returning
+   an e-mail fallback is what previously made AI-created records invisible.
+4. **Explain empty states.** `/api/dashboard/my-stats` returns
+   `onboarding` + `onboardingReason` (`no_session` / `no_name` / `not_in_roster`)
+   and `ManagerDashboard` renders the reason. Never hardcode `onboarding: false`.
+
+### Activity log — the oversight data source
+
+`activity_log` (migration `20260822120000`, append-only, service-role writes) is
+what makes "management inspects work progress" real. Before it, the system only
+recorded **outcomes** (contracts/revenue), so an active manager with no closed
+deal was invisible.
+
+- Write through `recordActivity` (`lib/services/ActivityService.ts`) — never
+  insert directly. It is best-effort and must never fail the primary action.
+- Wired into lead create/update/assign (UI) and every mutating manager tool (AI).
+  When adding a new write path, add a `recordActivity` call.
+- Read via `GET /api/dashboard/activity` (module `reports`) and the AI oversight
+  tools. Missing-migration environments degrade to `available: false`, never 500.
+- `computeAnomalies` (`lib/dashboard/oversight.ts`, unit-tested) is shared by the
+  AI tool, the API and `/api/cron/anomaly-watch`. **Invariant:** an empty
+  `activity_log` must never be read as "everyone is inactive".
+
+### AI permission model (module-level, not just write/delete)
+
+`executeDataTool` enforces four layers: write→`canWrite`, delete→`canDelete`,
+admin→`super_admin`, **and module→`TOOL_MODULE_MAP`** (`data-assistant/tools.ts`).
+The module layer was missing, which let a marketing user read contracts through
+chat. Two drift guards protect this:
+`src/lib/ai/__tests__/riskTiers.test.ts` (tool-name copies stay in sync) and
+`src/lib/ai/orchestrator/__tests__/agent-permissions.test.ts` (every tool is
+mapped; role↔agent expectations hold). **Adding a tool means touching
+`tools.ts` (definition + `WRITE_TOOL_NAMES` + `TOOL_MODULE_MAP`),
+`riskTiers.ts`, the dispatch in `data-assistant/index.ts`, and an agent's
+tool list** — the guards will fail otherwise.
+
+### Gemini model IDs
+
+All API call sites import from `src/lib/ai/config/models.ts` (`GEMINI_FLASH`,
+`GEMINI_PRO`), overridable via `GEMINI_MODEL` / `GEMINI_MODEL_PRO`. Previously
+five different IDs were hardcoded in 16 places; if the one used by the
+orchestrator were invalid, the whole chat would fail with no obvious cause.
+(`config/plans.ts` and `types/ai.ts` keep literal names — they are display
+metadata and a settings union, not call sites.)
 
 ### Inbound message flow (lead generation)
 1. Customer DMs the shop's Facebook Page or Instagram account.
@@ -211,7 +294,17 @@ The internal staff assistant is a **multi-agent orchestrator** (`src/lib/ai/orch
 ### Dashboard auth header
 Dashboard API routes accept the active shop via `x-shop-id` header. The browser reads `localStorage.getItem('vertmonhub_active_shop_id')` and attaches it to fetches.
 
+### Cron jobs (`vercel.json`)
+
+13 crons; the newest is `/api/cron/anomaly-watch` (daily 07:30 UTC) — it runs
+`computeAnomalies` per shop, upserts into `work_anomalies` (unique per
+shop+manager+kind+day) and pushes only when something needs attention.
+
 ### Rate limiting (middleware)
+Keys are **per user**, not per IP — `getClientIdentifier` hashes the Supabase
+session cookie alongside the IP, because an office behind one NAT used to share
+a single 20 req/min AI quota.
+
 - **Strict:** `/api/chat`, `/api/ai*`
 - **Webhook:** `/api/webhook`
 - **Standard:** everything else under `/api/`
@@ -223,12 +316,23 @@ Dashboard API routes accept the active shop via `x-shop-id` header. The browser 
 Defined in [src/lib/rbac.ts](src/lib/rbac.ts). Modules:
 
 ```
-dashboard, properties, leads, viewings, contracts, customers,
-inbox, reports, reports-leads, marketing-roi, surveys,
-ai-assistant, ai-settings, settings
+dashboard, tasks, properties, leads, viewings, contracts, customers,
+customer-service, finance, procurement, inbox, reports, reports-leads,
+marketing, marketing-roi, surveys, ai-assistant, ai-settings, settings
 ```
 
-Static fallback roles: `super_admin`, `admin`, `sales_manager`, `marketing`, `viewer`. The runtime first tries to load permissions from the `roles` / `role_permissions` / `user_roles` tables and falls back to the static map if Supabase is unreachable.
+Static fallback roles: `super_admin`, `admin`, `executive`, `sales_manager`,
+`marketing`, `finance_manager`, `accountant`, `viewer`.
+
+`executive` (Гүйцэтгэх удирдлага) is read-only by design — it sees the whole
+picture (`reports`, `contracts`, `finance`, …) but `canWrite: false`, because
+management inspects progress rather than editing CRM records.
+
+**Nav gating invariant:** every item in `src/lib/navigation/workspaces.ts` must
+carry a real `module`. `module: ''` means "always visible" (`Sidebar.tsx:64`) and
+is reserved for Help only — a nav test enforces this. The same applies to
+`WorkspaceSwitcher`: an empty `accessModules` array means *ungated*, so it must
+never be empty for a workspace holding real data. The runtime first tries to load permissions from the `roles` / `role_permissions` / `user_roles` tables and falls back to the static map if Supabase is unreachable.
 
 ---
 
@@ -332,6 +436,9 @@ SUPABASE_SERVICE_ROLE_KEY=
 
 # Gemini
 GEMINI_API_KEY=
+# Загварын ID-г кодгүйгээр солих (заавал биш — анхдагч нь config/models.ts)
+GEMINI_MODEL=
+GEMINI_MODEL_PRO=
 
 # Facebook / Instagram
 FACEBOOK_APP_ID=
@@ -375,4 +482,10 @@ SENTRY_AUTH_TOKEN=
 5. **All user-facing copy is in Mongolian** — keep that consistent.
 6. **`@/` path alias** maps to `src/`.
 7. **Vercel deploys only `main`** to the `sin1` region.
-8. The `shops` table is intentionally still load-bearing — a full multi-tenant rework is a planned follow-up, not in scope for routine changes.
+8. **Adding an AI tool touches 5 files** — `data-assistant/tools.ts` (definition,
+   `WRITE_TOOL_NAMES`, `TOOL_MODULE_MAP`), `riskTiers.ts`, the dispatch in
+   `data-assistant/index.ts`, the implementation, and an agent's tool list in
+   `orchestrator/agents.ts`. Two drift-guard test suites fail if you miss one.
+9. **Every new write path needs a `recordActivity` call** — otherwise the work is
+   invisible to the oversight layer.
+10. The `shops` table is intentionally still load-bearing — a full multi-tenant rework is a planned follow-up, not in scope for routine changes.

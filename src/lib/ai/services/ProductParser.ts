@@ -4,6 +4,7 @@
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GEMINI_FLASH } from '@/lib/ai/config/models';
 import { logger } from '@/lib/utils/logger';
 
 export interface AIExtractedProduct {
@@ -35,7 +36,7 @@ export async function parseProductDataWithAI(
 
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({
-            model: 'gemini-3.5-flash',
+            model: GEMINI_FLASH,
             generationConfig: {
                 responseMimeType: 'application/json',
             },

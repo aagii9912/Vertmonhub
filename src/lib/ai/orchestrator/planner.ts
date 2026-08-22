@@ -6,13 +6,14 @@
  */
 
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
+import { GEMINI_FLASH } from '@/lib/ai/config/models';
 import { logger } from '@/lib/utils/logger';
 import { AGENTS, AGENT_LIST, allowedAgentsFor } from './agents';
 import { withRetry } from './retry';
 import type { AgentId, OrchestrationPlan, OrchestratorContext } from './types';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const PLANNER_MODEL = 'gemini-3.5-flash';
+const PLANNER_MODEL = GEMINI_FLASH;
 const MAX_STEPS = 3;
 
 function buildPlannerInstruction(roster: string): string {

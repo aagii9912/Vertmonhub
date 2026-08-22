@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { GEMINI_FLASH } from '@/lib/ai/config/models';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import * as z from 'zod';
@@ -145,7 +146,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         }
 
         const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
+        const model = genAI.getGenerativeModel({ model: GEMINI_FLASH });
 
         const prompt = `
 Та бол өгөгдлийн шинжээч AI байна. Дараах судалгааны асуултууд болон өгөгдсөн хариултуудад дүн шинжилгээ хийж, удирдлагын багт зориулсан товч бөгөөд ойлгомжтой тайлан (summary) гаргаж өгнө үү. Тайланг Монгол хэлээр гаргах хэрэгтэй.

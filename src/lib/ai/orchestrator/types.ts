@@ -75,7 +75,21 @@ export interface OrchestratorContext {
     userName?: string;
     /** Чатад хавсаргасан файлууд (AI унших/шинжлэх + бичлэгт хавсаргах). */
     attachments?: OrchestratorAttachment[];
+    /**
+     * Явцын мэдээллийг клиент рүү дамжуулах callback (SSE streaming).
+     * Тодорхойгүй бол орчестратор урьдын адил зөвхөн эцсийн үр дүн буцаана.
+     */
+    onProgress?: (event: OrchestratorProgress) => void;
 }
+
+/**
+ * Гүйцэтгэлийн ЯВЦЫН үйл явдал (streaming).
+ * Хэрэглэгч 30-60 секунд хоосон спиннер ширтэхийн оронд юу болж байгааг харна.
+ */
+export type OrchestratorProgress =
+    | { type: 'planned'; agents: Array<{ id: string; name: string; emoji: string }>; reasoning: string }
+    | { type: 'agent_done'; agentId: string; name: string; emoji: string; ok: boolean; latencyMs: number }
+    | { type: 'synthesizing' };
 
 /** Чатын хавсралт — /api/dashboard/upload-аас ирсэн URL. */
 export interface OrchestratorAttachment {

@@ -8,6 +8,7 @@
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GEMINI_FLASH } from '@/lib/ai/config/models';
 import { logger } from '@/lib/utils/logger';
 import { AGENTS } from './agents';
 import { runAgent } from './runAgent';
@@ -20,7 +21,7 @@ import type {
 } from './types';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const SYNTH_MODEL = 'gemini-3.5-flash';
+const SYNTH_MODEL = GEMINI_FLASH;
 
 /** Олон agent-ийн хариуг нэг цэгцтэй монгол хариу болгон нэгтгэнэ. */
 async function synthesize(
@@ -65,24 +66,53 @@ export async function runOrchestrator(
     const { plan, latencyMs: plannerLatencyMs, model: plannerModel } = await planRequest(message, ctx);
     logger.info('[Orchestrator] Plan', { steps: plan.steps.map((s) => s.agentId) });
 
-    // 2. Execute steps sequentially; feed prior outputs as context to later steps
+    // 2. Agent-уудыг ЗЭРЭГЦЭЭ ажиллуулна.
+    //
+    // ЗАСВАР (2026-08-22): өмнө нь `for` гогцоогоор ДАРААЛАН ажиллуулж, өмнөх
+    // алхмын хариуг дараагийнх руу дамжуулдаг байв. Гэвч planner нь ӨӨР ӨӨР
+    // ДОМЭЙНЫ мэргэжилтнүүдийг (байр / CRM / санхүү) сонгодог тул тэдгээр нь
+    // бие биенээсээ хамаардаггүй — нэгтгэлийг synthesizer аль хэдийн хийдэг.
+    // Дарааллын үр дүнд planner + 3 agent (тус бүр 6 хүртэл tool round) +
+    // synthesizer = 5+ дараалсан Gemini дуудлага болж, Vercel-ийн хугацааны
+    // хязгаарт амархан унадаг байв. Одоо нийт хугацаа = ХАМГИЙН УДААН agent.
+    const steps = plan.steps.filter((s) => AGENTS[s.agentId]);
+
+    ctx.onProgress?.({
+        type: 'planned',
+        reasoning: plan.reasoning,
+        agents: steps.map((s) => ({
+            id: s.agentId,
+            name: AGENTS[s.agentId].name,
+            emoji: AGENTS[s.agentId].emoji,
+        })),
+    });
+
+    const settled = await Promise.all(
+        steps.map(async (step) => {
+            const agent = AGENTS[step.agentId];
+            const result = await runAgent(agent, step.task, ctx);
+            // Agent бүр дуусмагц клиентэд шууд мэдэгдэнэ (зэрэгцээ дуусна).
+            ctx.onProgress?.({
+                type: 'agent_done',
+                agentId: agent.id,
+                name: agent.name,
+                emoji: agent.emoji,
+                ok: result.ok,
+                latencyMs: result.latencyMs,
+            });
+            return result;
+        }),
+    );
+
     const traceSteps: TraceStep[] = [];
     const runResults: Array<{ agentId: string; name: string; emoji: string; result: AgentRunResult }> = [];
-    const priorOutputs: string[] = [];
     let totalTokens = 0;
 
-    for (const step of plan.steps) {
+    steps.forEach((step, i) => {
         const agent = AGENTS[step.agentId];
-        if (!agent) continue;
-
-        const task = priorOutputs.length > 0
-            ? `${step.task}\n\n[Өмнөх мэргэжилтнүүдийн олж тогтоосон зүйл — давхардуулахгүйгээр ашигла]:\n${priorOutputs.join('\n---\n')}`
-            : step.task;
-
-        const result = await runAgent(agent, task, ctx);
+        const result = settled[i];
         totalTokens += result.tokens;
         runResults.push({ agentId: agent.id, name: agent.name, emoji: agent.emoji, result });
-        if (result.ok && result.text) priorOutputs.push(`${agent.name}: ${result.text}`);
 
         traceSteps.push({
             agentId: agent.id,
@@ -96,7 +126,7 @@ export async function runOrchestrator(
             ok: result.ok,
             error: result.error,
         });
-    }
+    });
 
     // 3. Compose the final answer
     let finalText: string;
@@ -114,6 +144,7 @@ export async function runOrchestrator(
         finalText = okResults[0].result.text;
     } else {
         try {
+            ctx.onProgress?.({ type: 'synthesizing' });
             const synth = await synthesize(
                 message,
                 okResults.map((r) => ({ name: r.name, emoji: r.emoji, text: r.result.text })),

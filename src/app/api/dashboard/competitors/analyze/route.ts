@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { GEMINI_FLASH } from '@/lib/ai/config/models';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule } from '@/lib/auth/require-permission';
@@ -12,7 +13,7 @@ import { logger } from '@/lib/utils/logger';
 // харьцуулж монгол хэлээр стратегийн дүгнэлт (markdown) гаргана.
 // ============================================
 
-const MODEL = 'gemini-3.5-flash';
+const MODEL = GEMINI_FLASH;
 const CATEGORY = 'competitor';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
