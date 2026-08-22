@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
             password,
             email_confirm: true,
             user_metadata: {
-                full_name: full_name || email,
+                full_name: (typeof full_name === 'string' && full_name.trim()) || null,
             },
         });
 
@@ -176,7 +176,7 @@ export async function POST(request: NextRequest) {
         await supabase.from('user_profiles').upsert({
             id: newUserId,
             email,
-            full_name: full_name || email,
+            full_name: (typeof full_name === 'string' && full_name.trim()) || null,
         }, { onConflict: 'id' });
 
         // Assign role if provided

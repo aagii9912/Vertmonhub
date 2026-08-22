@@ -159,18 +159,44 @@ export function ManagerDashboard({ managerName, embedded = false }: ManagerDashb
                 </div>
             </div>
 
-            {/* Бүртгэлд таараагүй менежерийн онбординг зөвлөмж */}
+            {/* Хоосон самбарын ШАЛТГААНЫГ тайлбарлах баннер.
+                Өмнө нь энэ нөхцөл серверээс `onboarding: false` гэж хатуу
+                бичигдсэн ирдэг байсан тул ХЭЗЭЭ Ч гарч байгаагүй — менежер
+                зүгээр л тэг харж, шалтгааныг нь мэдэхгүй байв. */}
             {data.onboarding && (
                 <Card className="border-status-info/40 bg-status-info-soft/30">
                     <CardContent className="flex items-start gap-3 py-4">
                         <Info className="w-5 h-5 text-status-info flex-shrink-0 mt-0.5" />
                         <div>
                             <p className="text-sm font-medium text-foreground">
-                                Таны нэр менежерийн бүртгэлд алга
+                                {data.onboardingReason === 'no_name'
+                                    ? 'Таны нэр бүртгэгдээгүй байна'
+                                    : data.onboardingReason === 'no_session'
+                                        ? 'Төсөл (shop) холбогдоогүй байна'
+                                        : 'Таны нэр менежерийн бүртгэлд алга'}
                             </p>
                             <p className="text-xs text-muted-foreground mt-1">
-                                Хувийн үзүүлэлтүүд харагдахын тулд админ таныг борлуулалтын менежерийн
-                                бүртгэлд (нэр + акаунт холбоос) нэмэх шаардлагатай.
+                                {data.onboardingReason === 'no_name' ? (
+                                    <>
+                                        Профайлд бүтэн нэр тохируулаагүй тул таны үүсгэсэн лид, уулзалт,
+                                        гэрээ хэн дээр ч бүртгэгдэхгүй байна. Админаас профайлын нэрээ
+                                        (борлуулалтын бүртгэлтэй ижил бичлэгээр) тохируулж өгөхийг хүснэ үү.
+                                    </>
+                                ) : data.onboardingReason === 'no_session' ? (
+                                    <>
+                                        Таны бүртгэл ямар ч төсөлд холбогдоогүй байна. Админ таныг төсөлд
+                                        (shop) гишүүнээр нэмсний дараа өгөгдөл харагдана.
+                                    </>
+                                ) : (
+                                    <>
+                                        {data.manager?.name ? (
+                                            <>«{data.manager.name}» гэсэн нэрээр хайлаа — </>
+                                        ) : null}
+                                        борлуулалтын менежерийн бүртгэлээс олдсонгүй. Хувийн үзүүлэлт
+                                        харагдахын тулд админ таныг бүртгэлд (нэр + акаунт холбоос)
+                                        нэмэх шаардлагатай.
+                                    </>
+                                )}
                             </p>
                         </div>
                     </CardContent>

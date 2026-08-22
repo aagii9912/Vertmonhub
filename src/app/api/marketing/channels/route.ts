@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { getUserShop } from '@/lib/auth/supabase-auth';
@@ -64,6 +65,12 @@ export async function POST(req: NextRequest) {
         if (authError || !user) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
+
+        // ЗАСВАР (2026-08-22): энэ POST-д БИЧИХ эрхийн шалгалт огт байгаагүй тул
+        // `viewer` роль ч маркетингийн бүртгэл үүсгэж чаддаг байв (хажуугийн цэс
+        // нуудаг байсан ч API нээлттэй байсан).
+        const denied = await requireModuleWrite('marketing');
+        if (denied) return denied;
 
         const authShop = await getUserShop();
         if (!authShop) return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 401 });

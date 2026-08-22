@@ -265,10 +265,48 @@ export function getClientIdentifier(req: Request): string {
     const realIp = req.headers.get('x-real-ip');
     const cfConnecting = req.headers.get('cf-connecting-ip');
 
-    return forwarded?.split(',')[0]?.trim()
+    const ip = forwarded?.split(',')[0]?.trim()
         || realIp
         || cfConnecting
         || 'unknown';
+
+    // ЗАСВАР (2026-08-22): түлхүүр нь ЗӨВХӨН IP байсан тул нэг оффисын NAT-аар
+    // ажилладаг 5 менежер минутад нийт 20 AI хүсэлтийг хуваадаг байв — чат
+    // үндсэн ажлын гадаргуу болоход энэ нь шууд хана. Нэвтэрсэн хэрэглэгчийг
+    // session cookie-гоор нь ялгаж, хувь хүн бүрт өөрийн квот өгнө.
+    // (Cookie-г ЗАДЛАХГҮЙ — зөвхөн тогтвортой ялгагч болгож хэшлэнэ.)
+    const session = sessionDiscriminator(req);
+    return session ? `${ip}:${session}` : ip;
+}
+
+/**
+ * Supabase auth cookie-оос тогтвортой, богино ялгагч гаргана.
+ * Cookie байхгүй (нэвтрээгүй) бол null — тэр үед IP-д суурилсан хязгаар үлдэнэ.
+ */
+function sessionDiscriminator(req: Request): string | null {
+    const cookie = req.headers.get('cookie');
+    if (!cookie) return null;
+
+    // sb-<project>-auth-token[.0] хэлбэрийн Supabase session cookie-нуудыг цуглуулна
+    const parts: string[] = [];
+    for (const raw of cookie.split(';')) {
+        const [name, ...rest] = raw.split('=');
+        const key = name?.trim();
+        if (key && /^sb-.*-auth-token(\.\d+)?$/.test(key)) {
+            parts.push(rest.join('='));
+        }
+    }
+    if (parts.length === 0) return null;
+
+    // Хямд, тогтвортой 32-бит хэш (FNV-1a) — криптографийн зорилгогүй, зөвхөн
+    // хэрэглэгчдийг хооронд нь ялгах түлхүүр.
+    const value = parts.join('|');
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < value.length; i++) {
+        hash ^= value.charCodeAt(i);
+        hash = Math.imul(hash, 0x01000193) >>> 0;
+    }
+    return hash.toString(36);
 }
 
 /**
@@ -279,8 +317,8 @@ export function createRateLimitResponse(resetAt: number): NextResponse {
 
     return NextResponse.json(
         {
-            error: 'Too Many Requests',
-            message: 'Rate limit exceeded. Please try again later.',
+            error: 'Хэт олон хүсэлт',
+            message: 'Хязгаараас хэтэрлээ. Хэсэг хүлээгээд дахин оролдоно уу.',
             retryAfter,
         },
         {

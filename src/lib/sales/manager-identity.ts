@@ -34,8 +34,37 @@ export interface ManagerIdentity {
 }
 
 /**
+ * PURE: нэрийг харьцуулахад тохирсон хэлбэрт оруулна.
+ * • урд/хойд зай, давхар зайг цэгцэлнэ
+ * • жижиг үсэг рүү (Кирилл ч мөн адил)
+ * Цэг, таслалыг ЭНД хасахгүй — эхний үеийн товчлолыг (Б.) тусад нь боловсруулна.
+ */
+export function normalizeName(value: string | null | undefined): string {
+    if (!value) return '';
+    return value.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * PURE: «Б.Батбаяр», «Б. Батбаяр» гэх мэт эхний үеийн товчлолыг хасна.
+ * Товчлол олдоогүй бол хоосон мөр буцаана (давхар таарцаас сэргийлж).
+ */
+export function stripInitials(value: string | null | undefined): string {
+    const norm = normalizeName(value);
+    const m = norm.match(/^[^\s.]{1,2}\.\s*(.+)$/);
+    return m ? m[1].trim() : '';
+}
+
+/**
  * PURE: roster-оос хэрэглэгчид таарах бүртгэлийг олно.
- * user_id таарц нэрийн таарцаас давамгайлна.
+ *
+ * Дараалал (эхний олдсоноор зогсоно):
+ *   1. sales_managers.user_id — данс линк (нэр солигдсон ч хадгалагдана)
+ *   2. Нормчилсон яг таарц — зай/том-жижиг үсгийн зөрүүг тэсвэрлэнэ
+ *   3. Эхний үеийн товчлолыг хассан таарц — ЗӨВХӨН ГАНЦ нэр олдвол
+ *      («Б.Батбаяр» ба «Д.Батбаяр» хоёул «батбаяр» болвол аль нь ч сонгогдохгүй)
+ *
+ * Өмнө нь энэ нь `r.name === fullName` гэсэн яг тэмдэгтийн харьцуулалт байсан тул
+ * «Б.Батбаяр» ≠ «Батбаяр» болж, менежерийн самбар чимээгүйхэн хоосон буцдаг байв.
  */
 export function matchRosterEntry(
     roster: RosterEntry[],
@@ -44,10 +73,27 @@ export function matchRosterEntry(
 ): RosterEntry | null {
     const byUserId = roster.find((r) => !!r.user_id && r.user_id === userId);
     if (byUserId) return byUserId;
-    if (fullName) {
-        const byName = roster.find((r) => r.name === fullName);
-        if (byName) return byName;
+
+    if (!fullName) return null;
+
+    const target = normalizeName(fullName);
+    if (!target) return null;
+
+    const exact = roster.filter((r) => normalizeName(r.name) === target);
+    if (exact.length === 1) return exact[0];
+    if (exact.length > 1) {
+        // Ижил нэртэй хэд хэдэн бүртгэл — идэвхтэйг нь эрхэмлэнэ
+        return exact.find((r) => r.is_active) || exact[0];
     }
+
+    // Товчлолыг хассан таарц — зөвхөн ганцаараа олдвол
+    const targetBare = stripInitials(fullName) || target;
+    const loose = roster.filter((r) => {
+        const bare = stripInitials(r.name) || normalizeName(r.name);
+        return bare === targetBare;
+    });
+    if (loose.length === 1) return loose[0];
+
     return null;
 }
 

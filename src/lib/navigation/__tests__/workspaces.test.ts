@@ -58,7 +58,20 @@ describe('workspace order / hero', () => {
         expect(WORKSPACES.find((w) => w.id === 'marketing')?.emphasis).toBeFalsy();
     });
 
-    it('keeps marketing ungated (always reachable, mirrors legacy shell)', () => {
-        expect(WORKSPACES.find((w) => w.id === 'marketing')?.accessModules).toEqual([]);
+    it('gates the marketing workspace behind marketing modules', () => {
+        // 2026-08-22: өмнө нь `[]` байсан тул WorkspaceSwitcher-ийн
+        // «эрхгүй = үргэлж нээлттэй» дүрмээр viewer хүртэл хардаг байв.
+        expect(WORKSPACES.find((w) => w.id === 'marketing')?.accessModules).toEqual([
+            'marketing',
+            'marketing-roi',
+            'surveys',
+        ]);
+    });
+
+    it('leaves no navigation item ungated except Help', () => {
+        const ungated = WORKSPACES.flatMap((w) =>
+            w.sections.flatMap((sec) => sec.items.filter((i) => i.module === '')),
+        );
+        expect(ungated).toEqual([]);
     });
 });

@@ -5,7 +5,10 @@ import { checkMiddlewareRateLimit } from '@/lib/utils/rate-limiter';
 import { logApiRequest } from '@/lib/utils/request-logger';
 
 // Protected routes requiring authentication
-const protectedRoutes = ['/dashboard', '/admin'];
+// ЗАСВАР (2026-08-22): `/marketing` энд байгаагүй тул маркетингийн 11 хуудас
+// нэвтрээгүй хүнд нээгдэж, (API нь 401 буцаадаг тул) эвдэрсэн хоосон бүрхүүл
+// харагддаг байв. Одоо бусад дашбоардын нэгэн адил нэвтрэлт шаардана.
+const protectedRoutes = ['/dashboard', '/admin', '/marketing'];
 
 // Public routes that bypass auth
 const publicRoutes = [

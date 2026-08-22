@@ -89,7 +89,7 @@ export async function POST(req: Request) {
         };
 
         const shopKnowledge = await loadShopKnowledge(effectiveShopId);
-        const userName = await resolveSalesManagerName(resolvedUser.id, resolvedUser.email);
+        const userName = await resolveSalesManagerName(effectiveShopId, resolvedUser.id);
 
         const response = await runOrchestrator(message, {
             shopId: effectiveShopId,

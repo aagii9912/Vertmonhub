@@ -48,12 +48,19 @@ describe('WorkspaceSwitcher', () => {
         expect(push).toHaveBeenCalledWith('/dashboard/ai-assistant');
     });
 
-    it('disables a workspace the user cannot access, keeps ungated marketing enabled', () => {
+    it('disables every workspace the user cannot access', () => {
         mockUser = { role: 'viewer' };
         render(<WorkspaceSwitcher />);
         // viewer has no ai-assistant/inbox/ai-settings module → AI disabled
         expect(screen.getByRole('tab', { name: 'AI Туслах' })).toBeDisabled();
-        // marketing is ungated (accessModules: []) → always enabled
+        // 2026-08-22: marketing is no longer ungated — viewer lacks
+        // marketing/marketing-roi/surveys, so the tab must be disabled too.
+        expect(screen.getByRole('tab', { name: 'Маркетинг' })).toBeDisabled();
+    });
+
+    it('enables the marketing workspace for a user holding a marketing module', () => {
+        mockUser = { role: 'marketing' };
+        render(<WorkspaceSwitcher />);
         expect(screen.getByRole('tab', { name: 'Маркетинг' })).not.toBeDisabled();
     });
 });

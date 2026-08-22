@@ -44,6 +44,7 @@ import {
     Star,
     FileText,
     UserRound,
+    CalendarClock,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
@@ -223,6 +224,45 @@ export default function LeadsPage() {
         } catch (error) {
             console.error('Error updating lead:', error);
             toast.error(error instanceof Error ? error.message : 'Шинэчлэхэд алдаа гарлаа');
+        }
+    };
+
+    /**
+     * Дараагийн дагалтын огноог тавих / цуцлах.
+     * `days === null` → цуцална. Эс бөгөөс өнөөдрөөс N хоногийн дараа, өглөө 10:00.
+     * Энэ нь morning-leads cron болон pipeline-ийн «Дараагийн алхамгүй» badge-ийг
+     * бодит болгодог цорын ганц бичих зам (өмнө нь огт байгаагүй).
+     */
+    const setFollowup = async (id: string, days: number | null) => {
+        let nextAt: string | null = null;
+        if (days !== null) {
+            const when = new Date();
+            when.setDate(when.getDate() + days);
+            when.setHours(10, 0, 0, 0);
+            nextAt = when.toISOString();
+        }
+        try {
+            const res = await fetch(`/api/dashboard/leads/${id}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || shop?.id || '',
+                },
+                body: JSON.stringify({ next_followup_at: nextAt }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err?.error || 'Дагалт тавихад алдаа гарлаа');
+            }
+            setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, next_followup_at: nextAt } : l)));
+            toast.success(
+                nextAt
+                    ? `Дагалт: ${new Date(nextAt).toLocaleDateString('mn-MN')} 10:00`
+                    : 'Дагалт цуцлагдлаа',
+            );
+        } catch (error) {
+            console.error('Error setting followup:', error);
+            toast.error(error instanceof Error ? error.message : 'Дагалт тавихад алдаа гарлаа');
         }
     };
 
@@ -826,6 +866,50 @@ export default function LeadsPage() {
                                         <p className="text-sm text-muted-foreground">Тодорхойгүй</p>
                                     )}
                                 </div>
+
+                                {canWrite && (
+                                    <div className="bg-surface rounded-md p-4 border border-border">
+                                        <h4 className="heading-section text-sm text-foreground flex items-center gap-2 mb-2">
+                                            <CalendarClock className="w-4 h-4 text-brand" />
+                                            Дараагийн дагалт
+                                        </h4>
+                                        {activeLead.next_followup_at ? (
+                                            <p className="text-xs text-muted-foreground mb-2">
+                                                Товлосон:{' '}
+                                                <span className="font-medium text-foreground">
+                                                    {new Date(activeLead.next_followup_at).toLocaleDateString('mn-MN')} 10:00
+                                                </span>
+                                            </p>
+                                        ) : (
+                                            <p className="text-xs text-muted-foreground mb-2">Товлоогүй байна</p>
+                                        )}
+                                        <div className="flex flex-wrap gap-2">
+                                            {[
+                                                { label: 'Маргааш', days: 1 },
+                                                { label: '3 хоног', days: 3 },
+                                                { label: '7 хоног', days: 7 },
+                                            ].map((c) => (
+                                                <button
+                                                    key={c.days}
+                                                    type="button"
+                                                    onClick={() => setFollowup(activeLead.id, c.days)}
+                                                    className="px-3 py-1.5 rounded-full border border-border text-xs font-medium text-foreground hover:bg-surface-2 transition-colors"
+                                                >
+                                                    {c.label}
+                                                </button>
+                                            ))}
+                                            {activeLead.next_followup_at && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFollowup(activeLead.id, null)}
+                                                    className="px-3 py-1.5 rounded-full border border-border text-xs font-medium text-muted-foreground hover:bg-surface-2 transition-colors"
+                                                >
+                                                    Цуцлах
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
 
                                 {canWrite && managers.length > 0 && (
                                     <div className="bg-surface rounded-md p-4 border border-border">

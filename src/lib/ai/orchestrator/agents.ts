@@ -42,7 +42,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         color: 'sky',
         description: 'Үл хөдлөх хөрөнгийн жагсаалт, үнэ, статус, м², өрөө, дүүрэг, байр харьцуулах, борлуулалтын прогноз. Шинэ байр НЭМЭХ, байр УСТГАХ. Байр/орон сууцтай холбоотой бүх асуулт, үйлдэл.',
         temperature: 0.3,
-        readToolNames: ['list_properties', 'compare_properties', 'get_product_stats', 'get_sales_summary', 'get_sales_forecast'],
+        readToolNames: ['list_properties', 'compare_properties', 'get_sales_summary', 'get_sales_forecast'],
         writeToolNames: ['update_property_status', 'update_unit_status', 'update_property_price', 'create_property', 'attach_file'],
         deleteToolNames: ['delete_property'],
         buildInstruction: (k) => withKnowledge(

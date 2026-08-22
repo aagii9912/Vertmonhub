@@ -6,6 +6,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { logger } from '@/lib/utils/logger';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { buildBudgetOverview, monthlySpendSeries, spendByChannel, SPEND_CHANNELS } from '@/lib/marketing/budget';
+import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
 
 // Lazy admin client — built on first property access so missing env at
 // module-evaluation time (e.g. Next.js page-data collection) does not
@@ -50,53 +51,73 @@ function getDateFilter(timeRange: string): string {
 // ============================================
 
 export async function fetchDashboardStats(shopId: string, timeRange: string = 'month') {
+    // ЗАСВАР (2026-08-22): энэ функц өмнө нь устгагдсан e-commerce-ийн `orders`
+    // хүснэгтээс орлогыг уншдаг байсан. Үл хөдлөхийн апп тэр хүснэгт рүү хэзээ ч
+    // бичдэггүй тул `totalRevenue` ҮРГЭЛЖ 0 буцаж, AI «энэ сарын орлого 0₮»
+    // гэж итгэлтэйгээр хариулдаг байв. get_dashboard_stats нь 7 agent-ийн 5-д
+    // залгаастай тул энэ нь AI-д итгэх итгэлийг эвдэх гол шалтгаан байсан.
+    // Одоо бодит эх сурвалж — property_contracts (дашбоардтай ижил).
     const isoDate = getDateFilter(timeRange);
-    const [ordersRes, revenueRes, customersRes, leadsRes, propertiesRes] = await Promise.all([
-        supabaseAdmin.from('orders').select('*', { count: 'exact' }).eq('shop_id', shopId).gte('created_at', isoDate),
-        supabaseAdmin.from('orders').select('total_amount').eq('shop_id', shopId).gte('created_at', isoDate),
-        supabaseAdmin.from('customers').select('*', { count: 'exact' }).eq('shop_id', shopId),
-        supabaseAdmin.from('leads').select('*', { count: 'exact' }).eq('shop_id', shopId).gte('created_at', isoDate),
-        supabaseAdmin.from('properties').select('*', { count: 'exact' }).eq('shop_id', shopId).eq('is_active', true),
+    const dayFilter = isoDate.slice(0, 10);
+
+    const [contracts, customersRes, leadsRes, propertiesRes, viewingsRes] = await Promise.all([
+        fetchAllRows((from, to) =>
+            supabaseAdmin
+                .from('property_contracts')
+                .select('total_price, paid_amount, balance, contract_status, contract_date')
+                .eq('shop_id', shopId)
+                .gte('contract_date', dayFilter)
+                .range(from, to),
+        ).catch(() => [] as Array<Record<string, unknown>>),
+        supabaseAdmin.from('customers').select('*', { count: 'exact', head: true }).eq('shop_id', shopId),
+        supabaseAdmin.from('leads').select('status').eq('shop_id', shopId).gte('created_at', isoDate),
+        supabaseAdmin.from('properties').select('*', { count: 'exact', head: true }).eq('shop_id', shopId).eq('is_active', true),
+        supabaseAdmin.from('property_viewings').select('*', { count: 'exact', head: true }).eq('shop_id', shopId).gte('scheduled_at', isoDate),
     ]);
 
-    const totalRevenue = revenueRes.data?.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0) || 0;
-    const leadsAll = leadsRes.data || [];
-    const leadsByStatus = {
-        new: leadsAll.filter(l => l.status === 'new').length,
-        contacted: leadsAll.filter(l => l.status === 'contacted').length,
-        viewing_scheduled: leadsAll.filter(l => l.status === 'viewing_scheduled').length,
-        offered: leadsAll.filter(l => l.status === 'offered').length,
-        negotiating: leadsAll.filter(l => l.status === 'negotiating').length,
-        closed_won: leadsAll.filter(l => l.status === 'closed_won').length,
-        closed_lost: leadsAll.filter(l => l.status === 'closed_lost').length,
+    const rows = (contracts || []) as Array<{
+        total_price: number | null; paid_amount: number | null;
+        balance: number | null; contract_status: string | null;
+    }>;
+
+    const totals = rows.reduce(
+        (acc, c) => {
+            if (c.contract_status === 'cancelled') return acc;
+            acc.contracted += Number(c.total_price) || 0;
+            acc.collected += Number(c.paid_amount) || 0;
+            acc.balance += Number(c.balance) || 0;
+            acc.count += 1;
+            return acc;
+        },
+        { contracted: 0, collected: 0, balance: 0, count: 0 },
+    );
+
+    const leadsAll = (leadsRes.data || []) as Array<{ status: string | null }>;
+    const countStatus = (s: string) => leadsAll.filter((l) => l.status === s).length;
+
+    return {
+        timeRange,
+        // Гэрээний нийт дүн — «борлуулалт» гэж ойлгоно
+        totalRevenue: totals.contracted,
+        // Бодитоор цугларсан мөнгө
+        totalCollected: totals.collected,
+        outstandingBalance: totals.balance,
+        totalContracts: totals.count,
+        totalCustomers: customersRes.count || 0,
+        totalLeads: leadsAll.length,
+        totalViewings: viewingsRes.count || 0,
+        leadsByStatus: {
+            new: countStatus('new'),
+            contacted: countStatus('contacted'),
+            viewing_scheduled: countStatus('viewing_scheduled'),
+            offered: countStatus('offered'),
+            negotiating: countStatus('negotiating'),
+            closed_won: countStatus('closed_won'),
+            closed_lost: countStatus('closed_lost'),
+        },
+        totalProperties: propertiesRes.count || 0,
+        currency: 'MNT',
     };
-
-    return { timeRange, totalOrders: ordersRes.count || 0, totalRevenue, totalCustomers: customersRes.count || 0, totalLeads: leadsRes.count || 0, leadsByStatus, totalProperties: propertiesRes.count || 0 };
-}
-
-export async function fetchOrders(shopId: string, status?: string, limit: number = 10) {
-    let query = supabaseAdmin.from('orders').select('id, total_amount, status, created_at, customers(name, phone)').eq('shop_id', shopId).order('created_at', { ascending: false }).limit(limit);
-    if (status) query = query.eq('status', status);
-    const { data } = await query;
-    return data?.map(o => ({
-        id: o.id.substring(0, 8), amount: o.total_amount, status: o.status,
-        date: new Date(o.created_at).toLocaleDateString('mn-MN'),
-        customerName: (o.customers as any)?.name || 'Тодорхойгүй',
-        customerPhone: (o.customers as any)?.phone || '',
-    })) || [];
-}
-
-export async function fetchProductStats(shopId: string, type: string = 'all', limit: number = 10) {
-    if (type === 'low_stock') {
-        const { data } = await supabaseAdmin.from('products').select('id, name, stock, price').eq('shop_id', shopId).lt('stock', 10).order('stock', { ascending: true }).limit(limit);
-        return data || [];
-    } else if (type === 'top_selling') {
-        const { data } = await supabaseAdmin.from('products').select('id, name, stock, price').eq('shop_id', shopId).order('stock', { ascending: true }).limit(limit);
-        return data || [];
-    } else {
-        const { data } = await supabaseAdmin.from('products').select('id, name, stock, price, description, type').eq('shop_id', shopId).limit(limit);
-        return data || [];
-    }
 }
 
 export async function fetchProperties(shopId: string, args: any) {
@@ -712,11 +733,29 @@ function confirmNeeded(tool: string, args: any, label: string, preview: Record<s
     return { requiresConfirmation: true, action: { tool, args }, label, preview };
 }
 
-/** Нэвтэрсэн хэрэглэгчийн (борлуулалтын менежер) харагдах нэрийг тодорхойлно. */
-export async function resolveSalesManagerName(userId?: string, fallback?: string): Promise<string> {
-    if (!userId) return fallback || '';
-    const { data } = await supabaseAdmin.from('user_profiles').select('full_name, email').eq('id', userId).maybeSingle();
-    return data?.full_name || data?.email || fallback || '';
+/**
+ * Нэвтэрсэн хэрэглэгчийн КАНОНИК борлуулалтын менежерийн нэрийг тодорхойлно.
+ *
+ * ЗАСВАР (2026-08-22): өмнө нь энэ функц `full_name || email` буцаадаг байсан
+ * тул нэр тохируулаагүй хэрэглэгчийн үүсгэсэн лид/уулзалт/гэрээ нь ИМЭЙЛ нэр
+ * дээр бүртгэгдэж, дашбоард (roster-ийн каноник нэрээр шүүдэг) дээр хэзээ ч
+ * харагддаггүй байв — AI ба дашбоард хоёр өөр «хэн бэ»-г ашиглаж байсан.
+ * Одоо дашбоардтай ЯГ ИЖИЛ эх сурвалж — resolveManagerIdentity.
+ *
+ * Нэр тодорхойлогдоогүй бол ХООСОН мөр буцаана (имэйл БИШ). Дуудагч тал
+ * үүнийг «эзэнгүй бичилт» гэж үзэж, шаардлагатай бол татгалзана.
+ */
+export async function resolveSalesManagerName(shopId: string, userId?: string): Promise<string> {
+    if (!userId || !shopId) return '';
+    try {
+        const identity = await resolveManagerIdentity(supabaseAdmin, shopId, userId);
+        return identity.managerName || '';
+    } catch (e) {
+        logger.warn('[resolveSalesManagerName] identity тодорхойлж чадсангүй', {
+            error: e instanceof Error ? e.message : String(e),
+        });
+        return '';
+    }
 }
 
 /** Best-effort: sales_manager_name баганад нэр бичнэ. Багана байхгүй (миграци ороогүй) бол алгасна. */
@@ -1347,16 +1386,6 @@ export function generateChartConfig(toolName: string, args: any, data: any): any
                 data.forEach((l: any) => { statusCounts[l.status] = (statusCounts[l.status] || 0) + 1; });
                 const statusLabels: Record<string, string> = { new: 'Шинэ', contacted: 'Холбогдсон', viewing_scheduled: 'Уулзалт', offered: 'Санал', negotiating: 'Хэлэлцээр', closed_won: 'Амжилттай', closed_lost: 'Алдсан' };
                 return { type: 'bar', data: Object.entries(statusCounts).map(([status, count]) => ({ name: statusLabels[status] || status, value: count })) };
-            }
-            return null;
-        case 'list_orders':
-            if (Array.isArray(data) && data.length > 0) {
-                return { type: 'bar', data: data.slice(0, 8).map((o: any) => ({ name: o.customerName?.substring(0, 10) || o.id, value: Number(o.amount) || 0 })) };
-            }
-            return null;
-        case 'get_product_stats':
-            if (Array.isArray(data) && data.length > 0) {
-                return { type: 'bar', data: data.slice(0, 8).map((p: any) => ({ name: p.name?.substring(0, 15) || 'Бүтээгдэхүүн', value: args.type === 'low_stock' ? (p.stock || 0) : (p.price || 0) })) };
             }
             return null;
         default: return null;

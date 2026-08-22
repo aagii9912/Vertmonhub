@@ -1,8 +1,12 @@
 /**
  * Data Assistant Tool Definitions (Gemini Function Calling)
  * 
- * Read tools: Available to all admins
- * Write tools: Super Admin only
+ * Эрхийн загвар (executeDataTool дээр хэрэгждэг — src/lib/ai/data-assistant/index.ts):
+ *   • read   — тухайн модулийн эрхтэй БҮХ хэрэглэгч (TOOL_MODULE_MAP-аар шалгагдана)
+ *   • write  — perms.canWrite + модулийн эрх
+ *   • delete — perms.canDelete + модулийн эрх (зөөлөн устгал)
+ *   • admin  — зөвхөн role === 'super_admin'
+ * Мутац хийх tool бүр confirm-gate дамжина (confirm=false үед зөвхөн урьдчилан харах).
  */
 
 import { SchemaType } from '@google/generative-ai';
@@ -16,28 +20,6 @@ export const readTools: any[] = [
             type: SchemaType.OBJECT,
             properties: {
                 timeRange: { type: SchemaType.STRING, enum: ['today', 'week', 'month', 'year', 'all_time'], description: 'Хугацааны эрээлт' }
-            }
-        }
-    },
-    {
-        name: 'list_orders',
-        description: 'Захиалгын жагсаалт авах. Статус, тоогоор шүүж болно.',
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                status: { type: SchemaType.STRING, enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'], description: 'Захиалгын статус' },
-                limit: { type: SchemaType.NUMBER, description: 'Хэдэн захиалга авах (default: 10)' }
-            }
-        }
-    },
-    {
-        name: 'get_product_stats',
-        description: 'Бүтээгдэхүүний статистик: хамгийн их борлуулсан, нөөц бага, үнэ гэх мэт.',
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                type: { type: SchemaType.STRING, enum: ['top_selling', 'low_stock', 'all'], description: 'Ямар төрлийн статистик авах' },
-                limit: { type: SchemaType.NUMBER, description: 'Хэдэн бүтээгдэхүүн авах' }
             }
         }
     },

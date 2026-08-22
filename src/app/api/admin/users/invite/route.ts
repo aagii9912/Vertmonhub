@@ -28,6 +28,28 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Имэйл шаардлагатай' }, { status: 400 });
         }
 
+        // Бүтэн нэр ЗААВАЛ. Өмнө нь `full_name || email` гэж уналт хийдэг байсан тул
+        // user_profiles.full_name нь имэйл болж, sales_managers бүртгэлийн нэртэй
+        // хэзээ ч таарахгүй → менежерийн самбар чимээгүйхэн хоосон буцдаг байв.
+        const fullName = typeof full_name === 'string' ? full_name.trim() : '';
+        if (!fullName) {
+            return NextResponse.json(
+                { error: 'Бүтэн нэр шаардлагатай (борлуулалтын бүртгэлтэй нэрээр таарна)' },
+                { status: 400 },
+            );
+        }
+
+        // Олон төсөлтэй орчинд shop-ыг ТААХГҮЙ. Өмнө нь shop нэгээс олон байхад
+        // урьсан хэрэглэгч ямар ч shop-д холбогдохгүй үлдэж, нэвтэрсэн ч бүх API
+        // 401 буцаадаг байв.
+        const { data: allShops } = await supabase.from('shops').select('id').limit(2);
+        if (!shop_id && (allShops?.length || 0) > 1) {
+            return NextResponse.json(
+                { error: 'Төсөл (shop) сонгоно уу — олон төсөл байгаа тул автоматаар оноох боломжгүй' },
+                { status: 400 },
+            );
+        }
+
         // NEXT_PUBLIC_APP_URL тохируулаагүй бол хүсэлт ирсэн жинхэнэ origin-ийг (host:port) ашиглана —
         // ингэснээр dev (localhost:3001) болон production дээр зөв руу чиглүүлнэ.
         const origin = (process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin).replace(/\/$/, '');
@@ -38,7 +60,7 @@ export async function POST(request: NextRequest) {
         let linkRes = await supabase.auth.admin.generateLink({
             type: 'invite',
             email,
-            options: { redirectTo, data: { full_name: full_name || email } },
+            options: { redirectTo, data: { full_name: fullName } },
         });
 
         if (linkRes.error && /already|registered|exists/i.test(linkRes.error.message)) {
@@ -57,7 +79,7 @@ export async function POST(request: NextRequest) {
         // Профайл + дүр + shop холболт (best-effort)
         if (invitedUserId) {
             await supabase.from('user_profiles').upsert(
-                { id: invitedUserId, email, full_name: full_name || email },
+                { id: invitedUserId, email, full_name: fullName },
                 { onConflict: 'id' }
             );
 
@@ -69,9 +91,8 @@ export async function POST(request: NextRequest) {
             }
 
             let targetShopId: string | null = shop_id || null;
-            if (!targetShopId) {
-                const { data: shopRows } = await supabase.from('shops').select('id').limit(2);
-                if (shopRows && shopRows.length === 1) targetShopId = shopRows[0].id;
+            if (!targetShopId && allShops && allShops.length === 1) {
+                targetShopId = allShops[0].id;
             }
             if (targetShopId) {
                 const { error: memberErr } = await supabase
