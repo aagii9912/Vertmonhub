@@ -7,7 +7,7 @@
 
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 import { logger } from '@/lib/utils/logger';
-import { AGENTS, AGENT_LIST } from './agents';
+import { AGENTS, AGENT_LIST, allowedAgentsFor } from './agents';
 import { withRetry } from './retry';
 import type { AgentId, OrchestrationPlan, OrchestratorContext } from './types';
 
@@ -15,12 +15,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 const PLANNER_MODEL = 'gemini-3.5-flash';
 const MAX_STEPS = 3;
 
-const VALID_IDS = new Set<string>(AGENT_LIST.map((a) => a.id));
-
-function buildPlannerInstruction(): string {
-    const roster = AGENT_LIST
-        .map((a) => `- ${a.id}: ${a.name} ${a.emoji} — ${a.description}`)
-        .join('\n');
+function buildPlannerInstruction(roster: string): string {
 
     return `Та бол Vertmon Hub-ийн ОРЧЕСТРАТОР замчилагч. Хэрэглэгчийн хүсэлтийг доорх мэргэшсэн agent-уудад хуваарилах төлөвлөгөө гарга.
 
@@ -34,7 +29,8 @@ ${roster}
 4. Тодорхой домэйн (байр / лийд+харилцагч / гэрээ+санхүү) бол тухайн мэргэжилтнийг сонго.
 5. step бүрд тухайн agent-д өгөх тодорхой дэд даалгаврыг (монголоор) бич.
 6. reasoning талбарт сонголтоо 1 өгүүлбэрээр товч тайлбарла.
-7. ЗӨВХӨН дээрх жагсаалтын agent id-г ашигла.`;
+7. ЗӨВХӨН дээрх жагсаалтын agent id-г ашигла. Жагсаалтад байхгүй agent-ыг санал болгож БОЛОХГҮЙ — тухайн хэрэглэгчид эрх нь алга.
+8. Хүсэлт нь ХУВИЙН (\"би\", \"миний\", \"надад\", \"өнөөдөр юу хийх\", \"миний лийд\", \"миний уулзалт\", дуудлага бүртгэх, өөрийн ажил/сануулга) бол 'my-work'-ыг сонго. Дэлгүүр даяарх/багийн статистикт бол data-analyst эсвэл тухайн мэргэжилтнийг сонго.`;
 }
 
 const PLAN_SCHEMA = {
@@ -63,15 +59,29 @@ export async function planRequest(
     ctx: OrchestratorContext,
 ): Promise<{ plan: OrchestrationPlan; latencyMs: number; model: string }> {
     const started = Date.now();
-    const fallback: OrchestrationPlan = {
-        reasoning: 'Ерөнхий зөвлөх рүү шилжүүлэв (default).',
-        steps: [{ agentId: 'advisor', task: message }],
-    };
+
+    // Эрхээр шүүсэн agent-ууд. Planner зөвшөөрөгдөөгүй agent-ыг ОГТ харахгүй.
+    const allowed = allowedAgentsFor(ctx.perms);
+    const allowedIds = new Set<string>(allowed.map((a) => a.id));
+
+    // Fallback: advisor эрхгүй бол зөвшөөрөгдсөн эхнийхийг ав.
+    const fallbackAgent = (allowedIds.has('advisor') ? 'advisor' : allowed[0]?.id) as AgentId | undefined;
+    const fallback: OrchestrationPlan = fallbackAgent
+        ? { reasoning: 'Ерөнхий зөвлөх рүү шилжүүлэв (default).', steps: [{ agentId: fallbackAgent, task: message }] }
+        : { reasoning: 'Хандах эрхтэй agent олдсонгүй.', steps: [] };
+
+    if (allowed.length === 0) {
+        return { plan: fallback, latencyMs: Date.now() - started, model: PLANNER_MODEL };
+    }
+
+    const roster = allowed
+        .map((a) => `- ${a.id}: ${a.name} ${a.emoji} — ${a.description}`)
+        .join('\n');
 
     try {
         const model = genAI.getGenerativeModel({
             model: PLANNER_MODEL,
-            systemInstruction: buildPlannerInstruction(),
+            systemInstruction: buildPlannerInstruction(roster),
             generationConfig: {
                 temperature: 0.1,
                 maxOutputTokens: 1024,
@@ -93,7 +103,7 @@ export async function planRequest(
         const raw = JSON.parse(result.response.text()) as OrchestrationPlan;
 
         const steps = (raw.steps || [])
-            .filter((s) => s && VALID_IDS.has(s.agentId))
+            .filter((s) => s && allowedIds.has(s.agentId))
             .slice(0, MAX_STEPS)
             .map((s) => ({ agentId: s.agentId as AgentId, task: (s.task || message).trim() }));
 

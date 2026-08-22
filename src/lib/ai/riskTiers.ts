@@ -15,6 +15,9 @@ export const WRITE_TOOLS: string[] = [
     'process_contract_action', 'create_property', 'create_lead', 'create_customer',
     'schedule_viewing', 'create_contract', 'attach_file', 'bulk_update_leads',
     'create_social_post', 'remember_fact',
+    // Менежерийн өдрийн ажлын tool-ууд (2026-08-22)
+    'log_activity', 'update_viewing', 'complete_viewing', 'set_lead_followup',
+    'reassign_lead', 'create_task', 'complete_task',
 ];
 
 /** Устгах (soft delete). tools.ts → DELETE_TOOL_NAMES-ийн хуулбар. */
@@ -29,7 +32,12 @@ export const ADMIN_TOOLS: string[] = ['invite_user', 'assign_role', 'create_role
  * "Энэ session-д үргэлж зөвшөөрөх" боломжгүй WRITE tool-ууд — олон бичлэг/санхүүд
  * өндөр нөлөөтэй тул тэдгээрийг үргэлж гараар баталгаажуулна.
  */
-const NON_REMEMBERABLE = new Set<string>(['bulk_update_leads', 'process_contract_action']);
+const NON_REMEMBERABLE = new Set<string>([
+    'bulk_update_leads', 'process_contract_action',
+    // Лийдийг өөр эзэнд шилжүүлэх нь атрибуци (мөн урамшуулал)-д шууд нөлөөтэй
+    // тул «үргэлж зөвшөөрөх» болгож болохгүй — үргэлж гараар батална.
+    'reassign_lead',
+]);
 
 const DELETE_SET = new Set<string>(DELETE_TOOLS);
 const ADMIN_SET = new Set<string>(ADMIN_TOOLS);

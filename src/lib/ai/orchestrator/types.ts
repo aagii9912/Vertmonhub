@@ -10,6 +10,7 @@ import type { AssistantPerms } from '@/lib/ai/data-assistant';
 
 /** Бүртгэлтэй agent-уудын тогтмол ID-ууд. */
 export type AgentId =
+    | 'my-work'
     | 'data-analyst'
     | 'property-expert'
     | 'crm-specialist'
@@ -37,6 +38,13 @@ export interface AgentDefinition {
     deleteToolNames?: string[];
     /** ЗӨВХӨН super_admin-д нээгдэх admin tool-уудын нэрс. */
     adminToolNames?: string[];
+    /**
+     * Энэ agent-ийг ашиглахад шаардлагатай модулийн эрхүүд (аль нэг хангалттай).
+     * Хоосон/тодорхойгүй бол бүх нэвтэрсэн ажилтанд нээлттэй.
+     * Planner-т ЗӨВХӨН зөвшөөрөгдсөн agent-уудыг харуулна — өмнө нь planner
+     * рольд үл хамааран дурын agent сонгодог байв.
+     */
+    requiredModules?: string[];
     /** Тухайн agent-д зориулсан фокустай систем заавар. */
     buildInstruction: (shopKnowledge?: string) => string;
 }
