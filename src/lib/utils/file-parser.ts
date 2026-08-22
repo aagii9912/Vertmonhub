@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import { GEMINI_FLASH } from '@/lib/ai/config/models';
 import mammoth from 'mammoth';
 import { logger } from '@/lib/utils/logger';
 
@@ -204,7 +205,7 @@ export async function parseProductFile(buffer: Buffer, fileName: string): Promis
         const { GoogleGenerativeAI } = await import('@google/generative-ai');
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
         const model = genAI.getGenerativeModel({
-            model: 'gemini-3.5-flash',
+            model: GEMINI_FLASH,
             generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
         });
 

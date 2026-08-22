@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { GEMINI_FLASH } from '@/lib/ai/config/models';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { CreateLeadSchema, validateBody } from '@/lib/validations/schemas';
@@ -172,7 +173,7 @@ async function handleLeadPost(request: NextRequest): Promise<NextResponse> {
         let aiResponse = '';
         if (!staffUserId) {
             try {
-                const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash' });
+                const model = genAI.getGenerativeModel({ model: GEMINI_FLASH });
 
                 const prompt = `Чи Vertmon компанийн найрсаг менежер шүү! 😊
 

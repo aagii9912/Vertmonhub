@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { runOrchestrator } from '@/lib/ai/orchestrator';
+import type { OrchestratorProgress } from '@/lib/ai/orchestrator/types';
 import { resolveSalesManagerName } from '@/lib/ai/data-assistant/functions';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
@@ -24,7 +25,11 @@ async function loadShopKnowledge(shopId: string | undefined): Promise<string> {
     return parts.join('\n');
 }
 
-export const maxDuration = 60;
+// Planner + agent-ууд (зэрэгцээ) + synthesizer. Зэрэгцүүлснээр нийт хугацаа
+// хамгийн удаан agent-аар тодорхойлогдох боловч tool дуудлага олонтой үед
+// 60 секунд хүрэлцэхгүй байв. 300с нь Vercel-ийн Pro багцын дээд хязгаар;
+// Hobby багцад платформ өөрөө 60с болгож дарна (алдаа өгөхгүй).
+export const maxDuration = 300;
 
 /**
  * AI Orchestrator API Route
@@ -33,6 +38,78 @@ export const maxDuration = 60;
  * мэргэжилтэн, CRM, Санхүү, Зөвлөх) замчилж, үр дүнг нэгтгэн, мөшгилттэй буцаана.
  * (Хуучин гар mode сонголтыг халж, orchestrator өөрөө шийднэ.)
  */
+
+/**
+ * Ярианы солилцоог хадгална (яриа авто-үүсгэх + мессеж + orchestrator мета).
+ * Streaming ба энгийн хоёр зам ЭНЭ ЛОГИКИЙГ хуваалцана — өмнө нь зөвхөн
+ * энгийн замд байсан тул streaming нэмэхэд хоёр хувилбар салах эрсдэлтэй байв.
+ *
+ * Best-effort: хадгалалт бүтэлгүйтсэн ч AI-ийн хариуг хэрэглэгчид буцаана.
+ */
+async function persistExchange(
+    response: { text: string; chartConfig?: unknown; data?: unknown; agentsUsed?: unknown; trace?: unknown },
+    opts: {
+        adminDb: any;
+        conversationId?: string | null;
+        effectiveShopId: string;
+        message: string;
+        userId: string;
+    },
+): Promise<string | null> {
+    const { adminDb, effectiveShopId, message, userId } = opts;
+    let activeConversationId = opts.conversationId || null;
+
+    try {
+        if (!activeConversationId && effectiveShopId) {
+            const autoTitle = message.length > 40 ? message.substring(0, 40) + '...' : message;
+            const base = { user_id: userId, shop_id: effectiveShopId, title: autoTitle };
+            // 'orchestrator'-оор оролдоно; хуучин mode CHECK constraint (data/general)
+            // байвал зөрчигдөж амжилтгүй болох тул 'data'-аар найдвартай fallback хийнэ.
+            let conv = (await adminDb.from('ai_conversations').insert({ ...base, mode: 'orchestrator' }).select('id').single()).data;
+            if (!conv) {
+                conv = (await adminDb.from('ai_conversations').insert({ ...base, mode: 'data' }).select('id').single()).data;
+            }
+            if (conv) activeConversationId = conv.id;
+        }
+
+        if (activeConversationId) {
+            const { data: inserted } = await adminDb.from('ai_messages').insert([
+                { conversation_id: activeConversationId, role: 'user', content: message },
+                {
+                    conversation_id: activeConversationId,
+                    role: 'assistant',
+                    content: response.text,
+                    chart_config: response.chartConfig || null,
+                    data: response.data || null,
+                },
+            ]).select('id, role');
+
+            // Best-effort: orchestrator мета (agents_used / trace). Тусдаа update —
+            // миграци ороогүй бол энэ алхам алдаа өгнө ч мессеж хадгалагдсан хэвээр.
+            const assistantRow = (inserted || []).find((r: any) => r.role === 'assistant');
+            if (assistantRow) {
+                const { error: metaError } = await adminDb
+                    .from('ai_messages')
+                    .update({ agents_used: response.agentsUsed, trace: response.trace })
+                    .eq('id', assistantRow.id);
+                if (metaError) {
+                    console.warn('Orchestrator metadata not persisted (migration pending?):', metaError.message);
+                }
+            }
+
+            await adminDb
+                .from('ai_conversations')
+                .update({ updated_at: new Date().toISOString() })
+                .eq('id', activeConversationId);
+        }
+    } catch (dbError) {
+        console.error('Failed to persist chat messages:', dbError);
+        // Non-blocking: still return the AI response even if DB save fails
+    }
+
+    return activeConversationId;
+}
+
 export async function POST(req: Request) {
     try {
         // Resolve user from Supabase or custom session
@@ -61,7 +138,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'AI Orchestrator ашиглах эрх танд алга' }, { status: 403 });
         }
 
-        const { message, shopId, history = [], conversationId, attachments = [] } = await req.json();
+        const { message, shopId, history = [], conversationId, attachments = [], stream: wantsStream = false } = await req.json();
         if (!message) return NextResponse.json({ error: 'Message is required' }, { status: 400 });
         if (!process.env.GEMINI_API_KEY) return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 });
 
@@ -94,69 +171,74 @@ export async function POST(req: Request) {
         const shopKnowledge = await loadShopKnowledge(effectiveShopId);
         const userName = await resolveSalesManagerName(effectiveShopId, resolvedUser.id);
 
-        const response = await runOrchestrator(message, {
-            shopId: effectiveShopId,
-            userId: resolvedUser.id,
-            perms,
-            shopKnowledge,
-            history,
-            userName,
-            attachments: Array.isArray(attachments) ? attachments : [],
-        });
+        // Streaming горим (wantsStream) — хэрэглэгч 30-60 секунд хоосон спиннер
+        // ширтэхийн оронд планчлал ба agent бүрийн дуусахыг шууд харна.
+        const runWith = (onProgress?: (e: OrchestratorProgress) => void) =>
+            runOrchestrator(message, {
+                shopId: effectiveShopId,
+                userId: resolvedUser.id,
+                perms,
+                shopKnowledge,
+                history,
+                userName,
+                attachments: Array.isArray(attachments) ? attachments : [],
+                onProgress,
+            });
 
-        // Persist messages to database
-        let activeConversationId = conversationId;
-        try {
-            // Auto-create conversation if none provided
-            if (!activeConversationId && effectiveShopId) {
-                const autoTitle = message.length > 40 ? message.substring(0, 40) + '...' : message;
-                const base = { user_id: resolvedUser.id, shop_id: effectiveShopId, title: autoTitle };
-                // 'orchestrator'-оор оролдоно; хуучин mode CHECK constraint (data/general)
-                // байвал зөрчигдөж амжилтгүй болох тул 'data'-аар найдвартай fallback хийнэ.
-                let conv = (await adminDb.from('ai_conversations').insert({ ...base, mode: 'orchestrator' }).select('id').single()).data;
-                if (!conv) {
-                    conv = (await adminDb.from('ai_conversations').insert({ ...base, mode: 'data' }).select('id').single()).data;
-                }
-                if (conv) activeConversationId = conv.id;
-            }
+        if (wantsStream) {
+            const encoder = new TextEncoder();
+            const stream = new ReadableStream<Uint8Array>({
+                async start(controller) {
+                    const send = (event: Record<string, unknown>) => {
+                        try {
+                            controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+                        } catch {
+                            /* хэрэглэгч холболтоо тасалсан — үлдсэнийг чимээгүй алгасна */
+                        }
+                    };
 
-            if (activeConversationId) {
-                // Save user message + assistant response (core columns — always present)
-                const { data: inserted } = await adminDb.from('ai_messages').insert([
-                    { conversation_id: activeConversationId, role: 'user', content: message },
-                    {
-                        conversation_id: activeConversationId,
-                        role: 'assistant',
-                        content: response.text,
-                        chart_config: response.chartConfig || null,
-                        data: response.data || null,
-                    },
-                ]).select('id, role');
-
-                // Best-effort: attach orchestrator metadata (agents_used / trace).
-                // Тусдаа update — миграци ороогүй бол энэ алхам алдаа өгнө ч үндсэн
-                // мессеж хадгалагдсан хэвээр (regression-гүй).
-                const assistantRow = (inserted || []).find((r: any) => r.role === 'assistant');
-                if (assistantRow) {
-                    const { error: metaError } = await adminDb
-                        .from('ai_messages')
-                        .update({ agents_used: response.agentsUsed, trace: response.trace })
-                        .eq('id', assistantRow.id);
-                    if (metaError) {
-                        console.warn('Orchestrator metadata not persisted (migration pending?):', metaError.message);
+                    try {
+                        const result = await runWith((e) => send({ ...e, phase: 'progress' }));
+                        const convId = await persistExchange(result, {
+                            adminDb, conversationId, effectiveShopId, message, userId: resolvedUser.id,
+                        });
+                        send({
+                            phase: 'done',
+                            response: result.text,
+                            data: result.data,
+                            chartConfig: result.chartConfig,
+                            agentsUsed: result.agentsUsed,
+                            trace: result.trace,
+                            pendingActions: result.pendingActions,
+                            conversationId: convId,
+                        });
+                    } catch (err) {
+                        send({
+                            phase: 'error',
+                            message: err instanceof Error ? err.message : 'AI Orchestrator-т алдаа гарлаа',
+                        });
+                    } finally {
+                        try { controller.close(); } catch { /* аль хэдийн хаагдсан */ }
                     }
-                }
+                },
+            });
 
-                // Touch conversation updated_at
-                await adminDb
-                    .from('ai_conversations')
-                    .update({ updated_at: new Date().toISOString() })
-                    .eq('id', activeConversationId);
-            }
-        } catch (dbError) {
-            console.error('Failed to persist chat messages:', dbError);
-            // Non-blocking: still return the AI response even if DB save fails
+            return new Response(stream, {
+                headers: {
+                    'Content-Type': 'text/event-stream; charset=utf-8',
+                    'Cache-Control': 'no-cache, no-transform',
+                    Connection: 'keep-alive',
+                    // Прокси/CDN буфферлэхээс сэргийлнэ — эс бөгөөс явц бөөнөөрөө ирнэ
+                    'X-Accel-Buffering': 'no',
+                },
+            });
         }
+
+        const response = await runWith();
+
+        const activeConversationId = await persistExchange(response, {
+            adminDb, conversationId, effectiveShopId, message, userId: resolvedUser.id,
+        });
 
         return NextResponse.json({
             response: response.text,

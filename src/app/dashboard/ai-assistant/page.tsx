@@ -90,6 +90,73 @@ function chatErrorMessage(status: number): string {
     }
 }
 
+/**
+ * SSE урсгалыг уншиж, явцын мөрүүдийг гаргаад эцсийн үр дүнг буцаана.
+ *
+ * Формат: `data: {...}\n\n` мөр бүр нэг үйл явдал.
+ *   phase=progress → планчлал / agent дуусалт (хэрэглэгчид харагдана)
+ *   phase=done     → эцсийн хариу
+ *   phase=error    → серверийн алдаа
+ */
+async function consumeStream(
+    response: Response,
+    onProgress: (updater: (prev: string[]) => string[]) => void,
+): Promise<any> {
+    const reader = response.body?.getReader();
+    if (!reader) throw new ChatRequestError(0);
+
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let final: any = null;
+
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // Бүрэн ирсэн үйл явдлуудыг тасалж авна (сүүлийн хэсэг бүрэн бус байж болно)
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() || '';
+
+        for (const part of parts) {
+            const line = part.split('\n').find((l) => l.startsWith('data: '));
+            if (!line) continue;
+            let event: any;
+            try {
+                event = JSON.parse(line.slice(6));
+            } catch {
+                continue; // бүрэн бус JSON — алгасна
+            }
+
+            if (event.phase === 'done') {
+                final = event;
+            } else if (event.phase === 'error') {
+                throw new Error(event.message || 'AI-д алдаа гарлаа');
+            } else if (event.phase === 'progress') {
+                const label = describeProgress(event);
+                if (label) onProgress((prev) => [...prev, label]);
+            }
+        }
+    }
+
+    if (!final) throw new ChatRequestError(0);
+    return final;
+}
+
+/** Явцын үйл явдлыг монгол мөр болгоно. */
+function describeProgress(event: any): string | null {
+    if (event.type === 'planned') {
+        const names = (event.agents || []).map((a: any) => `${a.emoji} ${a.name}`).join(', ');
+        return names ? `Замчлав: ${names}` : null;
+    }
+    if (event.type === 'agent_done') {
+        const secs = Math.round((event.latencyMs || 0) / 100) / 10;
+        return `${event.emoji} ${event.name} ${event.ok ? 'дууслаа' : 'амжилтгүй'} (${secs}с)`;
+    }
+    if (event.type === 'synthesizing') return 'Хариуг нэгтгэж байна...';
+    return null;
+}
+
 export default function AIAssistantPage() {
     const { shop } = useAuth();
     const chartColors = useChartColors();
@@ -102,6 +169,10 @@ export default function AIAssistantPage() {
 
     const [messages, setMessages] = useState<Message[]>([{ id: 'init', role: 'assistant', content: WELCOME_MSG }]);
     const [isLoading, setIsLoading] = useState(false);
+    /** Streaming-ээр ирж буй явцын мөрүүд (планчлал, agent бүрийн дуусалт). */
+    const [progress, setProgress] = useState<string[]>([]);
+    /** Идэвхтэй хүсэлтийг цуцлах — хэрэглэгч гацсан мэт мэдрэхээс сэргийлнэ. */
+    const abortRef = useRef<AbortController | null>(null);
     // ЗАСВАР: анхдагчаар НЭЭЛТТЭЙ байсан тул мобайл дээр 288px-ийн ярианы панел
     // чатыг дардаг байв. Одоо хумиастай эхэлж, зөвхөн desktop (md≥768px) дээр
     // автоматаар нээгдэнэ. Мобайлд толгойн товчоор drawer болж нээгдэнэ.
@@ -154,15 +225,23 @@ export default function AIAssistantPage() {
     ) => {
         setIsLoading(true);
         try {
+            const controller = new AbortController();
+            abortRef.current = controller;
+            setProgress([]);
+
             const response = await fetch('/api/ai-assistant', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal: controller.signal,
                 body: JSON.stringify({
                     message: userMessage || 'Хавсаргасан файлыг шинжилж туслаач.',
                     shopId: shop?.id,
                     conversationId: currentConversationId,
                     attachments,
                     history,
+                    // Явцыг шууд харуулна — өмнө нь 30-60 секунд хоосон спиннер
+                    // ширтэж, «эвдэрсэн» мэт мэдрэгддэг байв.
+                    stream: true,
                 }),
             });
             if (!response.ok) {
@@ -172,7 +251,9 @@ export default function AIAssistantPage() {
                 // байв.
                 throw new ChatRequestError(response.status);
             }
-            const data = await response.json();
+            const data = response.headers.get('content-type')?.includes('text/event-stream')
+                ? await consumeStream(response, setProgress)
+                : await response.json();
 
             setMessages(prev => [...prev, {
                 id: (Date.now() + 1).toString(), role: 'assistant',
@@ -196,6 +277,8 @@ export default function AIAssistantPage() {
                 }
             }
         } catch (err) {
+            // Хэрэглэгч өөрөө цуцалсан — алдааны мессеж харуулахгүй
+            if (err instanceof DOMException && err.name === 'AbortError') return;
             const status = err instanceof ChatRequestError ? err.status : 0;
             setMessages(prev => [...prev, {
                 id: (Date.now() + 1).toString(),
@@ -203,8 +286,18 @@ export default function AIAssistantPage() {
                 content: chatErrorMessage(status),
             }]);
         } finally {
+            abortRef.current = null;
+            setProgress([]);
             setIsLoading(false);
         }
+    };
+
+    /** Идэвхтэй AI хүсэлтийг зогсооно. */
+    const cancelRequest = () => {
+        abortRef.current?.abort();
+        abortRef.current = null;
+        setIsLoading(false);
+        setProgress([]);
     };
 
     const sendMessage = async (text: string, attachments: ChatAttachment[]) => {
@@ -467,13 +560,35 @@ export default function AIAssistantPage() {
                                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand to-brand-strong flex items-center justify-center flex-shrink-0 mt-1 shadow-sm">
                                         <Bot className="w-5 h-5 text-white" />
                                     </div>
-                                    <div className="bg-surface border border-border/60 shadow-sm rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-2">
-                                        <span className="flex gap-1">
-                                            <span className="w-2 h-2 rounded-full bg-brand/60 animate-bounce" style={{ animationDelay: '0ms' }} />
-                                            <span className="w-2 h-2 rounded-full bg-brand/60 animate-bounce" style={{ animationDelay: '150ms' }} />
-                                            <span className="w-2 h-2 rounded-full bg-brand/60 animate-bounce" style={{ animationDelay: '300ms' }} />
-                                        </span>
-                                        <span className="text-sm text-muted-foreground">Замчилж, мэргэжилтнүүдээр боловсруулж байна...</span>
+                                    <div className="bg-surface border border-border/60 shadow-sm rounded-2xl rounded-tl-sm px-4 py-3 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                            <span className="flex gap-1">
+                                                <span className="w-2 h-2 rounded-full bg-brand/60 animate-bounce" style={{ animationDelay: '0ms' }} />
+                                                <span className="w-2 h-2 rounded-full bg-brand/60 animate-bounce" style={{ animationDelay: '150ms' }} />
+                                                <span className="w-2 h-2 rounded-full bg-brand/60 animate-bounce" style={{ animationDelay: '300ms' }} />
+                                            </span>
+                                            <span className="text-sm text-muted-foreground">
+                                                {progress.length === 0 ? 'Замчилж байна...' : 'Боловсруулж байна...'}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={cancelRequest}
+                                                className="ml-auto text-xs font-medium text-muted-foreground hover:text-foreground underline underline-offset-2"
+                                            >
+                                                Зогсоох
+                                            </button>
+                                        </div>
+                                        {/* Явцын мөрүүд — хэрэглэгч юу болж байгааг харна */}
+                                        {progress.length > 0 && (
+                                            <ul className="mt-2 space-y-1 border-t border-border/50 pt-2">
+                                                {progress.map((line, i) => (
+                                                    <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                                                        <span className="text-status-success mt-px">✓</span>
+                                                        <span className="min-w-0 break-words">{line}</span>
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
                                     </div>
                                 </div>
                             )}

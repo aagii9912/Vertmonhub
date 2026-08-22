@@ -7,6 +7,7 @@
  */
 
 import { GoogleGenerativeAI, Content, SchemaType, Part } from '@google/generative-ai';
+import { GEMINI_FLASH } from '@/lib/ai/config/models';
 import { logger } from '@/lib/utils/logger';
 import type { ChatContext, ChatMessage, ChatResponse, ImageAction } from '@/types/ai';
 import { buildSystemPrompt } from './services/PromptService';
@@ -29,7 +30,7 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
  * Model mapping - Gemini models per plan tier
  */
 const MODEL_MAPPING: Record<AIModel, string> = {
-    'gemini-3-pro': 'gemini-3.5-flash',
+    'gemini-3-pro': GEMINI_FLASH,
 };
 
 /**
