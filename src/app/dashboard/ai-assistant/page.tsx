@@ -55,6 +55,41 @@ const AGENT_LEGEND = [
     { emoji: '🧭', name: 'Зөвлөх' },
 ];
 
+/** Хүсэлтийн HTTP статусыг барьж авах жижиг алдааны төрөл. */
+class ChatRequestError extends Error {
+    constructor(public status: number) {
+        super(`AI request failed with status ${status}`);
+        this.name = 'ChatRequestError';
+    }
+}
+
+/**
+ * HTTP статусыг хэрэглэгчид ойлгомжтой МОНГОЛ тайлбар болгоно.
+ * Зорилго: «алдаа гарлаа» гэсэн ерөнхий мессежийн оронд юу болсныг, юу хийхийг
+ * хэлэх — ингэснээр хэрэглэгч бууж өгөхийн оронд зөв алхам хийнэ.
+ */
+function chatErrorMessage(status: number): string {
+    switch (status) {
+        case 401:
+            return 'Таны нэвтрэлт дууссан байна. Хуудсыг сэргээж дахин нэвтэрнэ үү.';
+        case 403:
+            return 'Танд энэ үйлдлийг хийх эрх алга. Админаас эрхээ шалгуулна уу.';
+        case 429:
+            return 'Хэт олон хүсэлт илгээгдлээ. Нэг минут хүлээгээд дахин оролдоно уу.';
+        case 504:
+        case 408:
+            return 'Хариу боловсруулах хугацаа хэтэрлээ. Асуултаа богиносгож эсвэл хэсэг хэсгээр нь асууж үзнэ үү.';
+        case 500:
+        case 502:
+        case 503:
+            return 'Сервер түр ачаалалтай байна. Хэсэг хүлээгээд дахин оролдоно уу.';
+        default:
+            return status === 0
+                ? 'Сүлжээнд холбогдож чадсангүй. Интернэт холболтоо шалгаад дахин оролдоно уу.'
+                : 'Уучлаарай, алдаа гарлаа. Дахин оролдоно уу.';
+    }
+}
+
 export default function AIAssistantPage() {
     const { shop } = useAuth();
     const chartColors = useChartColors();
@@ -67,7 +102,20 @@ export default function AIAssistantPage() {
 
     const [messages, setMessages] = useState<Message[]>([{ id: 'init', role: 'assistant', content: WELCOME_MSG }]);
     const [isLoading, setIsLoading] = useState(false);
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    // ЗАСВАР: анхдагчаар НЭЭЛТТЭЙ байсан тул мобайл дээр 288px-ийн ярианы панел
+    // чатыг дардаг байв. Одоо хумиастай эхэлж, зөвхөн desktop (md≥768px) дээр
+    // автоматаар нээгдэнэ. Мобайлд толгойн товчоор drawer болж нээгдэнэ.
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || !window.matchMedia) return;
+        const mq = window.matchMedia('(min-width: 768px)');
+        const apply = (matches: boolean) => setSidebarCollapsed(!matches);
+        apply(mq.matches);
+        const onChange = (e: MediaQueryListEvent) => apply(e.matches);
+        mq.addEventListener('change', onChange);
+        return () => mq.removeEventListener('change', onChange);
+    }, []);
     const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
     // Баталгаажуулах попапаас түр хаасан (шийдээгүй) үйлдлүүдийн id-нууд
     const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
@@ -117,7 +165,13 @@ export default function AIAssistantPage() {
                     history,
                 }),
             });
-            if (!response.ok) throw new Error('Failed to fetch');
+            if (!response.ok) {
+                // ЗАСВАР: өмнө нь бүх алдаа «Уучлаарай, алдаа гарлаа» болж
+                // нугардаг байсан тул хэрэглэгч эрхгүй / квот дууссан / хугацаа
+                // хэтэрсэн эсэхийг ялгаж чадахгүй, админд юу гэж хэлэхээ мэдэхгүй
+                // байв.
+                throw new ChatRequestError(response.status);
+            }
             const data = await response.json();
 
             setMessages(prev => [...prev, {
@@ -141,8 +195,13 @@ export default function AIAssistantPage() {
                     touchConversation(data.conversationId);
                 }
             }
-        } catch {
-            setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'assistant', content: 'Уучлаарай, алдаа гарлаа. Дахин оролдоно уу.' }]);
+        } catch (err) {
+            const status = err instanceof ChatRequestError ? err.status : 0;
+            setMessages(prev => [...prev, {
+                id: (Date.now() + 1).toString(),
+                role: 'assistant',
+                content: chatErrorMessage(status),
+            }]);
         } finally {
             setIsLoading(false);
         }

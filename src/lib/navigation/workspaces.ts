@@ -101,8 +101,11 @@ export const WORKSPACES: Workspace[] = [
         match: ['/dashboard'],
         mobilePrimary: [
             { name: 'Нүүр', href: '/dashboard', icon: LayoutDashboard, module: 'dashboard' },
-            { name: 'Үл хөдлөх', href: '/dashboard/properties', icon: Building2, module: 'properties' },
             { name: 'Лийд', href: '/dashboard/leads', icon: Users, module: 'leads' },
+            // AI чат бол зарлагдсан үндсэн ажлын гадаргуу — гэтэл утсан дээр
+            // түүн рүү орох цэг байгаагүй (зөвхөн самбарын AskAIHero).
+            { name: 'AI', href: '/dashboard/ai-assistant', icon: Sparkles, module: 'ai-assistant' },
+            { name: 'Үл хөдлөх', href: '/dashboard/properties', icon: Building2, module: 'properties' },
         ],
         sections: [
             {
@@ -174,6 +177,9 @@ export const WORKSPACES: Workspace[] = [
         accessModules: ['ai-assistant', 'inbox', 'ai-settings'],
         match: ['/dashboard/ai-assistant', '/dashboard/inbox', '/dashboard/ai-settings'],
         mobilePrimary: [
+            // Гарах зам: PWA (standalone) горимд хөтчийн «буцах» товч байхгүй тул
+            // AI талбарт орсон хэрэглэгч гацдаг байв.
+            { name: 'Нүүр', href: '/dashboard', icon: LayoutDashboard, module: 'dashboard' },
             { name: 'AI Туслах', href: '/dashboard/ai-assistant', icon: Sparkles, module: 'ai-assistant' },
             { name: 'Агентууд', href: '/dashboard/ai-assistant/agents', icon: Bot, module: 'ai-assistant' },
             { name: 'Мессеж', href: '/dashboard/inbox', icon: MessageSquare, module: 'inbox' },
@@ -205,13 +211,15 @@ export const WORKSPACES: Workspace[] = [
         shortLabel: 'Маркетинг',
         icon: Megaphone,
         home: '/marketing',
-        // Одоогийн /marketing/* shell-д RBAC байхгүй тул үргэлж нээлттэй.
-        accessModules: [],
+        // ЗАСВАР (2026-08-22): өмнө нь `[]` байсан тул WorkspaceSwitcher-ийн
+        // «эрхгүй = үргэлж нээлттэй» дүрмээр (WorkspaceSwitcher.tsx:44) БҮХ
+        // хэрэглэгч — viewer хүртэл — маркетингийн талбарыг хардаг байв.
+        accessModules: ['marketing', 'marketing-roi', 'surveys'],
         match: ['/marketing', '/dashboard/marketing-roi', '/dashboard/surveys', '/dashboard/competitor-research'],
         mobilePrimary: [
-            { name: 'Самбар', href: '/marketing', icon: LayoutDashboard, module: '' },
-            { name: 'Кампейн', href: '/marketing/campaigns', icon: Megaphone, module: '' },
-            { name: 'Социал', href: '/marketing/social', icon: Share2, module: '' },
+            { name: 'Самбар', href: '/marketing', icon: LayoutDashboard, module: 'marketing' },
+            { name: 'Кампейн', href: '/marketing/campaigns', icon: Megaphone, module: 'marketing' },
+            { name: 'Социал', href: '/marketing/social', icon: Share2, module: 'marketing' },
         ],
         sections: [
             {
@@ -219,8 +227,8 @@ export const WORKSPACES: Workspace[] = [
                 title: 'МАРКЕТИНГ',
                 icon: Megaphone,
                 items: [
-                    { name: 'Хянах самбар', href: '/marketing', icon: LayoutDashboard, module: '' },
-                    { name: 'Төсвийн хяналт', href: '/marketing/budget', icon: Wallet, module: '' },
+                    { name: 'Хянах самбар', href: '/marketing', icon: LayoutDashboard, module: 'marketing' },
+                    { name: 'Төсвийн хяналт', href: '/marketing/budget', icon: Wallet, module: 'marketing' },
                     { name: 'Маркетинг ROI', href: '/dashboard/marketing-roi', icon: TrendingUp, module: 'marketing-roi' },
                     { name: 'Өрсөлдөгч судалгаа', href: '/dashboard/competitor-research', icon: Building2, module: 'marketing-roi' },
                     { name: 'Судалгаа', href: '/dashboard/surveys', icon: ClipboardList, module: 'surveys' },
@@ -231,14 +239,14 @@ export const WORKSPACES: Workspace[] = [
                 title: 'СУВГУУД',
                 icon: Share2,
                 items: [
-                    { name: 'Кампейнүүд', href: '/marketing/campaigns', icon: Megaphone, module: '' },
-                    { name: 'Зар сурталчилгаа', href: '/marketing/ads', icon: BarChart3, module: '' },
-                    { name: 'Контент календарь', href: '/marketing/calendar', icon: Calendar, module: '' },
-                    { name: 'Вэб аналитик', href: '/marketing/analytics', icon: Globe, module: '' },
-                    { name: 'Социал медиа', href: '/marketing/social', icon: Share2, module: '' },
-                    { name: 'Email & SMS', href: '/marketing/messaging', icon: Mail, module: '' },
-                    { name: 'Lead эх үүсвэр', href: '/marketing/sources', icon: Target, module: '' },
-                    { name: 'Брэнд мэдрэмж', href: '/marketing/brand', icon: Award, module: '' },
+                    { name: 'Кампейнүүд', href: '/marketing/campaigns', icon: Megaphone, module: 'marketing' },
+                    { name: 'Зар сурталчилгаа', href: '/marketing/ads', icon: BarChart3, module: 'marketing' },
+                    { name: 'Контент календарь', href: '/marketing/calendar', icon: Calendar, module: 'marketing' },
+                    { name: 'Вэб аналитик', href: '/marketing/analytics', icon: Globe, module: 'marketing' },
+                    { name: 'Социал медиа', href: '/marketing/social', icon: Share2, module: 'marketing' },
+                    { name: 'Email & SMS', href: '/marketing/messaging', icon: Mail, module: 'marketing' },
+                    { name: 'Lead эх үүсвэр', href: '/marketing/sources', icon: Target, module: 'marketing' },
+                    { name: 'Брэнд мэдрэмж', href: '/marketing/brand', icon: Award, module: 'marketing' },
                 ],
             },
         ],

@@ -142,8 +142,19 @@ export function ConversationSidebar({
         );
     }
 
+    // ЗАСВАР (2026-08-22): өмнө нь энэ панел `w-72` (288px) байж, мобайл дээр
+    // flex мөрөнд байрлан чатанд ~100px үлдээдэг байсан тул AI чат утсан дээр
+    // ашиглах боломжгүй байв. Одоо мобайл дээр ДЭЛГЭЦ ДАРАХ ХУУДАС (drawer),
+    // md-ээс дээш урьдын адил хажуугийн багана.
     return (
-        <div className="w-72 flex-shrink-0 bg-surface border-r border-border flex flex-col h-full">
+        <>
+            {/* Мобайл дэвсгэр — гадуур дарахад хаагдана */}
+            <div
+                className="fixed inset-0 z-30 bg-black/40 md:hidden"
+                onClick={onToggleCollapse}
+                aria-hidden="true"
+            />
+            <div className="fixed left-0 top-[var(--header-h)] bottom-[var(--mobilenav-h)] z-40 w-72 max-w-[85vw] shadow-2xl md:static md:z-auto md:max-w-none md:shadow-none flex-shrink-0 bg-surface border-r border-border flex flex-col md:h-full">
             {/* Header */}
             <div className="p-3 border-b border-border/60">
                 <div className="flex items-center justify-between mb-3">
@@ -317,5 +328,6 @@ export function ConversationSidebar({
                 </p>
             </div>
         </div>
+        </>
     );
 }

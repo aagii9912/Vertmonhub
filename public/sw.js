@@ -79,7 +79,10 @@ self.addEventListener('fetch', (event) => {
 
 // Push notifications
 self.addEventListener('push', (event) => {
-    let data = { title: 'Vertmon Hub', body: 'Шинэ мэдэгдэл', icon: '/icons/icon-192x192.png' };
+    // ЗАСВАР (2026-08-22): icon зам `/icons/...` байсан ч public/icons/ фолдер
+    // огт байхгүй (жинхэнэ файлууд `/icon-192.png`, `/icon-512.png`) тул
+    // мэдэгдлийн зураг үргэлж 404 болдог байв.
+    let data = { title: 'Vertmon Hub', body: 'Шинэ мэдэгдэл', icon: '/icon-192.png' };
 
     if (event.data) {
         try {
@@ -92,10 +95,14 @@ self.addEventListener('push', (event) => {
     event.waitUntil(
         self.registration.showNotification(data.title, {
             body: data.body,
-            icon: data.icon,
-            badge: '/icons/icon-72x72.png',
+            icon: data.icon || '/icon-192.png',
+            badge: '/icon-192.png',
             vibrate: [100, 50, 100],
-            data: { url: '/' },
+            // ЗАСВАР: өмнө нь `{ url: '/' }` гэж ХАТУУ бичигдсэн байсан тул
+            // илгээгчийн (task-reminders, channel-expiry, ai-digest cron-ууд)
+            // зааж өгсөн хаяг хаягдаж, мэдэгдэл дарахад ҮРГЭЛЖ нүүр хуудас
+            // нээгддэг байв — сануулга дээр дарж холбогдох ажил руу очих боломжгүй.
+            data: { url: data.url || '/dashboard' },
         })
     );
 });
@@ -103,7 +110,7 @@ self.addEventListener('push', (event) => {
 // Notification click — open app
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
-    const url = event.notification.data?.url || '/';
+    const url = event.notification.data?.url || '/dashboard';
     event.waitUntil(
         self.clients.matchAll({ type: 'window' }).then(clients => {
             const existing = clients.find(c => c.url.includes(self.location.origin));

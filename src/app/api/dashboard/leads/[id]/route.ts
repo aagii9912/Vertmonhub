@@ -46,6 +46,25 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             updates.sales_manager_name = trimmed || null;
         }
 
+        // Дараагийн дагалтын огноо. ЗАСВАР (2026-08-22): `leads.next_followup_at`
+        // багана 2026-01-28-наас хойш байсан ба morning-leads cron, my-stats,
+        // pipeline badge бүгд УНШДАГ байсан ч түүнд БИЧИХ зам огт байгаагүй —
+        // тул «маргааш эргэж залгах» гэдэг систем дотор хэзээ ч үүсдэггүй байв.
+        if (body.next_followup_at !== undefined) {
+            const raw = body.next_followup_at;
+            if (raw === null || raw === '') {
+                updates.next_followup_at = null;
+            } else if (typeof raw === 'string') {
+                const when = new Date(raw);
+                if (Number.isNaN(when.getTime())) {
+                    return NextResponse.json({ error: 'Дагалтын огноо буруу байна' }, { status: 400 });
+                }
+                updates.next_followup_at = when.toISOString();
+            } else {
+                return NextResponse.json({ error: 'Дагалтын огноо буруу байна' }, { status: 400 });
+            }
+        }
+
         const db = supabaseAdmin();
 
         // Лийд энэ shop-д харьяалагдаж байгааг шалгана

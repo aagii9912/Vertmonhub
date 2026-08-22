@@ -58,10 +58,26 @@ async function safeManagerRows(
     return (res.data || []) as Record<string, unknown>[];
 }
 
-function emptyPayload(period: Period, name: string | null, onboarding: boolean) {
+/**
+ * Хоосон самбарын ШАЛТГААН. Өмнө нь хэрэглэгч зөвхөн «дата алга» гэж хардаг
+ * байсан тул жинхэнэ шалтгаан (профайлд нэр алга / бүртгэлд таараагүй) нь
+ * хаана ч харагддаггүй байв.
+ *   no_session — нэвтрэлт/төсөл тодорхойгүй
+ *   no_name    — user_profiles.full_name хоосон (нэр тодорхойгүй)
+ *   not_in_roster — нэр бий ч sales_managers бүртгэлд таараагүй
+ */
+export type OnboardingReason = 'no_session' | 'no_name' | 'not_in_roster' | null;
+
+function emptyPayload(
+    period: Period,
+    name: string | null,
+    onboarding: boolean,
+    onboardingReason: OnboardingReason = null,
+) {
     return {
         manager: { name, isSelf: true, inRoster: false, hasAccount: false },
         onboarding,
+        onboardingReason,
         period,
         kpis: {
             activeLeads: 0,
@@ -102,7 +118,7 @@ export async function GET(request: NextRequest) {
 
         const uid = await getUserId();
         if (!authShop || !uid) {
-            return NextResponse.json(emptyPayload(period, null, true));
+            return NextResponse.json(emptyPayload(period, null, true, 'no_session'));
         }
 
         const db = supabaseAdmin();
@@ -120,7 +136,9 @@ export async function GET(request: NextRequest) {
         const targetName =
             managerParam && canViewOthers ? managerParam : identity.managerName;
         if (!targetName) {
-            return NextResponse.json(emptyPayload(period, null, true));
+            // Ихэнхдээ user_profiles.full_name хоосон байгаагийн шинж — нэвтэрсэн ч
+            // «хэн бэ» тодорхойгүй тул аливаа attribution хийгдэхгүй.
+            return NextResponse.json(emptyPayload(period, null, true, 'no_name'));
         }
         const isSelf = targetName === identity.managerName;
 
@@ -259,7 +277,10 @@ export async function GET(request: NextRequest) {
                 inRoster: !!targetRoster,
                 hasAccount: !!targetRoster?.user_id,
             },
-            onboarding: false,
+            // ЗАСВАР: өмнө нь `false` гэж ХАТУУ бичигдсэн байсан тул бүртгэлд
+            // таараагүй менежерт зориулсан тайлбар баннер хэзээ ч гарахгүй байв.
+            onboarding: isSelf && !targetRoster,
+            onboardingReason: (isSelf && !targetRoster ? 'not_in_roster' : null) as OnboardingReason,
             period,
             kpis: {
                 activeLeads: countActiveLeads(leads),

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ensureUserProvisioned } from '@/lib/auth/ensure-provisioned';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
@@ -74,6 +75,9 @@ export async function POST(request: NextRequest) {
         }
 
         const user = data.user;
+
+        // Хуучин үүссэн, профайл/shop холбоосгүй үлдсэн бүртгэлүүдийг нөхнө.
+        await ensureUserProvisioned(user.id);
 
         // Look up role with service-role client (bypasses RLS)
         const adminSupabase = createClient(

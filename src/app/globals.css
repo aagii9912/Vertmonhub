@@ -196,6 +196,10 @@
      AI-assistant full-height calc can't drift from the header. */
   --sidebar-w: 16rem;   /* = ml-64 / w-64 */
   --header-h: 3.5rem;   /* = h-14 (mobile); bumped to 4rem at md below */
+  /* Мобайл доод навигаци: MobileNav.tsx-ийн h-[72px] + pb-safe. AI чатын
+     бүтэн өндрийн тооцоо үүнээс хамаарна — эс бөгөөс бичих талбар
+     навигацийн ард дарагдана (md-ээс дээш 0). */
+  --mobilenav-h: calc(72px + max(env(safe-area-inset-bottom), 1rem));
 
   /* Shadows (warm-tinted ink) */
   --shadow-xs-val: 0 1px 2px rgba(20, 18, 12, 0.04);
@@ -219,7 +223,10 @@
 /* Header grows to 4rem (h-16) from the md breakpoint — keep --header-h in sync
    with Header.tsx (h-14 md:h-16) so the AI full-height calc stays exact. */
 @media (min-width: 768px) {
-  :root { --header-h: 4rem; }
+  :root {
+    --header-h: 4rem;
+    --mobilenav-h: 0px;   /* доод навигаци md-ээс дээш харагдахгүй */
+  }
 }
 
 /* ============================================================

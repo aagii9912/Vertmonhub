@@ -8,12 +8,11 @@
  * Handler + Executor only. Tool definitions in ./tools.ts, data functions in ./functions.ts
  */
 
-import { GoogleGenerativeAI, Content } from '@google/generative-ai';
 import { logger } from '@/lib/utils/logger';
-import { readTools, writeTools, WRITE_TOOL_NAMES, DELETE_TOOL_NAMES, ADMIN_TOOL_NAMES } from './tools';
+import { WRITE_TOOL_NAMES, DELETE_TOOL_NAMES, ADMIN_TOOL_NAMES } from './tools';
 import { logAiAudit } from './audit';
 import {
-    fetchDashboardStats, fetchOrders, fetchProductStats,
+    fetchDashboardStats,
     fetchProperties, fetchLeads, fetchLeadDetails, fetchCustomerInsights,
     fetchContracts, fetchContractDetails, fetchContractsSummary,
     fetchSalesSummary, fetchSalesForecast, compareProperties,
@@ -27,8 +26,6 @@ import {
     generateChartConfig,
 } from './functions';
 import { inviteUser, assignRole, createRole } from './admin-functions';
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 /** AI Assistant-ийн RBAC эрхүүд (route-аас тооцоолж дамжуулна). */
 export interface AssistantPerms {
@@ -67,8 +64,6 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
     let result: any;
     switch (toolName) {
         case 'get_dashboard_stats': result = await fetchDashboardStats(shopId, args.timeRange || 'month'); break;
-        case 'list_orders': result = await fetchOrders(shopId, args.status, args.limit || 10); break;
-        case 'get_product_stats': result = await fetchProductStats(shopId, args.type || 'all', args.limit || 10); break;
         case 'list_properties': result = await fetchProperties(shopId, args); break;
         case 'list_leads': result = await fetchLeads(shopId, args); break;
         case 'get_lead_details': result = await fetchLeadDetails(shopId, args); break;
@@ -120,101 +115,3 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
 // ============================================
 // SYSTEM INSTRUCTIONS
 // ============================================
-
-const BASE_INSTRUCTION = `Та бол Vertmon Hub-ийн AI Дата Туслах. Та зөвхөн Vertmon-ий ажилтан, менежерүүдэд дотоод мэдээллээр үйлчилнэ.
-
-ТАНЫ ЧАДВАРУУД:
-- Байрны мэдээлэл (properties): жагсаалт, үнэ, статус, м², өрөө тоо, дүүрэг
-- Лийд/сонирхогч (leads): жагсаалт, статус, яаралтай, төсөв, сонирхол
-- Лийдийн дэлгэрэнгүй: холбогдох байр, уулзалтын түүх, зөвлөмж
-- Харилцагч (customers): мэдээлэл, тагууд, тэмдэглэл, мессеж тоо, холбогдох лийд+гэрээ
-- Гэрээ (property_contracts): жагсаалт, дэлгэрэнгүй (үнэ, төлсөн, үлдэгдэл, овердуэйс, менежер, банк), нэгтгэл (нийт борлуулалт, цуглуулалтын %, ТОП менежер)
-- Dashboard статистик: орлого, лийд тоо, харилцагч тоо, гэрээ тоо
-
-ДҮРЭМ:
-1. ЗААВАЛ монгол хэлээр хариулна
-2. Тоон мэдээллийг ₮ форматаар бичнэ (жишээ: 380,000,000₮)
-3. Хүснэгт, жагсаалт ашиглан цэгцтэй хариулна
-4. Хэрэглэгч тодорхой зүйл асуувал зөв tool дуудаж бодит мэдээлэл өгнө
-5. Tool дуудалтын үр дүнг хүн ойлгохоор тайлбарлана
-6. Хэрэглэгчийн асуултад шууд хариулна, илүү юм бичихгүй
-7. Ямар нэг data олдохгүй бол шударгаар хэлнэ`;
-
-const ADMIN_WRITE_INSTRUCTION = `
-
-Танд өгөгдөл өөрчлөх (бичих) эрх бий. Нэмэлт чадварууд:
-- Байрны статус солих (available/reserved/sold/rented/barter)
-- Байрны үнэ өөрчлөх
-- Лийд статус солих
-- Лийдэд тэмдэглэл нэмэх
-- Гэрээний процесс (sign=гэрээ→байр reserved+лийд negotiating, paid=төлбөр→sold+closed_won, cancel=цуцлах→available+closed_lost)
-
-ӨӨРЧЛӨЛТ хийхэд юу хийснийг тодорхой хэлж өгнө: "[Байрны нэр] статусыг [хуучин] → [шинэ] болгож солилоо."`;
-
-const READ_ONLY_INSTRUCTION = `
-
-Та УНШИЖ ЗӨВХӨН чадна. Мэдээлэл өөрчлөх, статус солих боломжгүй. Хэрэв хэрэглэгч өөрчлөлт хийхийг хүсвэл "Танд энэ үйлдлийг хийх эрх алга" гэж хариулна.`;
-
-function getSystemInstruction(canWrite: boolean, shopKnowledge?: string): string {
-    const base = canWrite ? BASE_INSTRUCTION + ADMIN_WRITE_INSTRUCTION : BASE_INSTRUCTION + READ_ONLY_INSTRUCTION;
-    return shopKnowledge ? base + '\n\n' + shopKnowledge : base;
-}
-
-// ============================================
-// MAIN HANDLER
-// ============================================
-
-export async function handleDataAssistantQuery(
-    message: string,
-    shopId: string,
-    userId: string,
-    history: any[] = [],
-    perms: AssistantPerms = { canWrite: false, canDelete: false, role: 'viewer' },
-    shopKnowledge?: string
-) {
-    try {
-        const activeTools = perms.canWrite ? [...readTools, ...writeTools] : readTools;
-
-        const model = genAI.getGenerativeModel({
-            model: 'gemini-3.5-flash',
-            systemInstruction: getSystemInstruction(perms.canWrite, shopKnowledge),
-            tools: [{ functionDeclarations: activeTools }],
-            generationConfig: { temperature: 0.3, topP: 0.8, maxOutputTokens: 2048 },
-        });
-
-        const geminiHistory: Content[] = history
-            .filter((m: any) => m.role && m.content)
-            .map((m: any) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
-
-        const chat = model.startChat({ history: geminiHistory });
-        const result = await chat.sendMessage(message);
-        const response = result.response;
-        const functionCalls = response.functionCalls();
-
-        if (functionCalls && functionCalls.length > 0) {
-            const toolResults = [];
-            let allData: any = null;
-            let chartConfig: any = null;
-
-            for (const fc of functionCalls) {
-                const toolResult = await executeDataTool(fc.name, fc.args || {}, shopId, perms, userId);
-                toolResults.push({ functionResponse: { name: fc.name, response: { result: toolResult } } });
-                allData = toolResult;
-                chartConfig = generateChartConfig(fc.name, fc.args || {}, toolResult);
-            }
-
-            const synthesisResult = await chat.sendMessage(toolResults.map(tr => ({ functionResponse: tr.functionResponse })));
-            return { text: synthesisResult.response.text(), data: allData, chartConfig };
-        }
-
-        return { text: response.text(), data: null, chartConfig: null };
-    } catch (error) {
-        logger.error('[AI Data Assistant] Error:', { error });
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
-        if (errorMessage.includes('API key')) {
-            return { text: 'Gemini API key тохируулаагүй байна. Админд хандана уу.', data: null, chartConfig: null };
-        }
-        return { text: `Уучлаарай, алдаа гарлаа: ${errorMessage}. Дахин оролдоно уу.`, data: null, chartConfig: null };
-    }
-}

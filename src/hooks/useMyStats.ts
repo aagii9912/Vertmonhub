@@ -50,6 +50,8 @@ export interface MyStatsLead {
 export interface MyStatsData {
     manager: { name: string | null; isSelf: boolean; inRoster: boolean; hasAccount: boolean };
     onboarding: boolean;
+    /** Хоосон/бүртгэлгүй байдлын шалтгаан — самбар дээр тайлбарлахад ашиглана. */
+    onboardingReason?: 'no_session' | 'no_name' | 'not_in_roster' | null;
     period: MyStatsPeriod;
     kpis: {
         activeLeads: number;

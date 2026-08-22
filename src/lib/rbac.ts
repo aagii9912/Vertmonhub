@@ -45,8 +45,10 @@ export const ALL_MODULES = [
     'inbox',
     'reports',
     'reports-leads',
+    'marketing',
     'marketing-roi',
     'surveys',
+    'tasks',
     'ai-assistant',
     'ai-settings',
     'settings',
@@ -68,7 +70,9 @@ export const MODULE_LABELS: Record<string, { en: string; mn: string }> = {
     'inbox': { en: 'Inbox', mn: 'Мессэж' },
     'reports': { en: 'Reports', mn: 'Аналитик' },
     'reports-leads': { en: 'Leads Report', mn: 'Лийд тайлан' },
+    'marketing': { en: 'Marketing workspace', mn: 'Маркетингийн талбар' },
     'marketing-roi': { en: 'Marketing ROI', mn: 'Маркетинг ROI' },
+    'tasks': { en: 'My tasks', mn: 'Миний ажлууд' },
     'surveys': { en: 'Surveys', mn: 'Судалгаа' },
     'ai-assistant': { en: 'AI Orchestrator', mn: 'AI Orchestrator' },
     'ai-settings': { en: 'AI Settings', mn: 'AI Тохируулга' },
@@ -98,7 +102,7 @@ export const ROLE_PERMISSIONS: Record<string, RolePermissions> = {
     },
     sales_manager: {
         modules: [
-            'dashboard', 'properties', 'leads', 'viewings', 'contracts',
+            'dashboard', 'tasks', 'properties', 'leads', 'viewings', 'contracts',
             'customers', 'customer-service', 'inbox', 'reports', 'reports-leads', 'ai-assistant',
         ],
         canWrite: true,
@@ -109,7 +113,7 @@ export const ROLE_PERMISSIONS: Record<string, RolePermissions> = {
     },
     marketing: {
         modules: [
-            'dashboard', 'marketing-roi', 'reports', 'reports-leads',
+            'dashboard', 'tasks', 'marketing', 'marketing-roi', 'reports', 'reports-leads',
             'surveys', 'ai-assistant', 'ai-settings', 'leads', 'customers',
         ],
         canWrite: true,
@@ -120,7 +124,7 @@ export const ROLE_PERMISSIONS: Record<string, RolePermissions> = {
     },
     finance_manager: {
         modules: [
-            'dashboard', 'finance', 'procurement', 'contracts', 'reports',
+            'dashboard', 'tasks', 'finance', 'procurement', 'contracts', 'reports', 'ai-assistant',
         ],
         canWrite: true,
         canDelete: true,
@@ -130,7 +134,7 @@ export const ROLE_PERMISSIONS: Record<string, RolePermissions> = {
     },
     accountant: {
         modules: [
-            'dashboard', 'finance', 'procurement', 'contracts', 'reports',
+            'dashboard', 'tasks', 'finance', 'procurement', 'contracts', 'reports',
         ],
         canWrite: true,
         canDelete: false,
@@ -139,7 +143,7 @@ export const ROLE_PERMISSIONS: Record<string, RolePermissions> = {
         displayNameMN: 'Нягтлан бодогч',
     },
     viewer: {
-        modules: ['dashboard', 'reports'],
+        modules: ['dashboard', 'tasks', 'reports'],
         canWrite: false,
         canDelete: false,
         canAccessAdmin: false,
