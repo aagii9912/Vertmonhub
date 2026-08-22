@@ -224,9 +224,17 @@ CREATE POLICY ai_audit_log_service_write ON ai_audit_log FOR INSERT
 CREATE TABLE IF NOT EXISTS work_anomalies (
     id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     shop_id      uuid NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-    manager_name text,
+    -- NOT NULL DEFAULT '': давхардлаас сэргийлэх unique index нь ЖИРИЙН
+    -- баганууд дээр байх ёстой. Илэрхийлэлт (COALESCE(...)) индекстэй бол
+    -- PostgREST-ийн `onConflict: 'shop_id,manager_name,...'` таарахгүй бөгөөд
+    -- "no unique or exclusion constraint matching the ON CONFLICT
+    -- specification" алдаа өгч upsert бүр унана. Мөн SQL-д NULL-ууд хоорондоо
+    -- ялгаатай тул NULL manager_name давхардлыг зогсоохгүй.
+    -- '' = «менежерт хамаарахгүй» (жишээ: эзэнгүй лийд).
+    manager_name text NOT NULL DEFAULT '',
     kind         text NOT NULL CHECK (kind IN
-                    ('no_activity','cold_lead','target_risk','overdue_contract','stale_viewing')),
+                    ('no_activity','cold_lead','overdue_followup','unassigned_lead',
+                     'target_risk','overdue_contract','stale_viewing')),
     severity     text NOT NULL DEFAULT 'warn' CHECK (severity IN ('info','warn','critical')),
     detail       jsonb NOT NULL DEFAULT '{}'::jsonb,
     detected_on  date NOT NULL DEFAULT CURRENT_DATE,
@@ -236,7 +244,7 @@ CREATE TABLE IF NOT EXISTS work_anomalies (
 
 -- Нэг өдөрт нэг менежерийн нэг төрлийн аномали НЭГ л удаа
 CREATE UNIQUE INDEX IF NOT EXISTS uq_work_anomalies_daily
-    ON work_anomalies (shop_id, COALESCE(manager_name, ''), kind, detected_on);
+    ON work_anomalies (shop_id, manager_name, kind, detected_on);
 CREATE INDEX IF NOT EXISTS idx_work_anomalies_open
     ON work_anomalies (shop_id, detected_on DESC) WHERE resolved_at IS NULL;
 

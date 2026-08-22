@@ -42,6 +42,23 @@ async function runExcludingDeleted<T>(build: (excludeDeleted: boolean) => T): Pr
     return res;
 }
 
+/**
+ * `user_tasks`-ийн эзний шүүлт. `assignee_id` багана нь 20260822120000
+ * миграциар нэмэгддэг тул түүнгүй орчинд query унана — тэр үед зөвхөн
+ * `user_id`-гаар шүүнэ (хуучин, хатуу хувийн зан төлөв).
+ */
+async function runTaskQuery(
+    build: (ownerFilter: 'both' | 'user_only') => (excludeDeleted: boolean) => any,
+): Promise<any> {
+    const res = await runExcludingDeleted((excl) => build('both')(excl));
+    // 20260822120000 миграци ороогүй орчинд assignee_id / priority багана
+    // байхгүй тул query унана — хуучин, хатуу хувийн хэлбэр рүү уналаа.
+    if (res?.error && /assignee_id|priority/i.test(res.error.message || '')) {
+        return await runExcludingDeleted((excl) => build('user_only')(excl));
+    }
+    return res;
+}
+
 function startOfToday(): Date {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -96,15 +113,17 @@ export async function getMyDay(shopId: string, managerName: string, userId: stri
             if (excl) q = q.is('deleted_at', null);
             return q;
         }),
-        runExcludingDeleted((excl) => {
+        runTaskQuery((owner) => (excl: boolean) => {
             let q = db()
                 .from('user_tasks')
-                .select('id, title, due_at, priority')
+                .select(owner === 'both' ? 'id, title, due_at, priority' : 'id, title, due_at')
                 .eq('shop_id', shopId)
                 .eq('status', 'pending')
-                .or(`assignee_id.eq.${userId},user_id.eq.${userId}`)
                 .order('due_at', { ascending: true, nullsFirst: false })
                 .limit(50);
+            q = owner === 'both'
+                ? q.or(`assignee_id.eq.${userId},user_id.eq.${userId}`)
+                : q.eq('user_id', userId);
             if (excl) q = q.is('deleted_at', null);
             return q;
         }),
@@ -690,15 +709,17 @@ export async function completeTask(shopId: string, args: any, confirm = false, u
     let title: string | null = null;
 
     if (!taskId && args?.title) {
-        const found = await runExcludingDeleted((excl) => {
+        const found = await runTaskQuery((owner) => (excl: boolean) => {
             let q = db()
                 .from('user_tasks')
                 .select('id, title')
                 .eq('shop_id', shopId)
                 .eq('status', 'pending')
-                .or(`assignee_id.eq.${userId},user_id.eq.${userId}`)
                 .ilike('title', `%${args.title}%`)
                 .limit(2);
+            q = owner === 'both'
+                ? q.or(`assignee_id.eq.${userId},user_id.eq.${userId}`)
+                : q.eq('user_id', userId);
             if (excl) q = q.is('deleted_at', null);
             return q;
         });
