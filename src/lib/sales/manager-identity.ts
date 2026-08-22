@@ -41,7 +41,15 @@ export interface ManagerIdentity {
  */
 export function normalizeName(value: string | null | undefined): string {
     if (!value) return '';
-    return value.replace(/\s+/g, ' ').trim().toLowerCase();
+    return value
+        .replace(/\s+/g, ' ')
+        .trim()
+        // Цэгийн ДАРААХ зайг хасна: «Б. Батбаяр» ба «Б.Батбаяр» нь нэг хүн.
+        // Үүнгүйгээр эдгээр нь яг таарцаар таарахгүй бөгөөд хоёулаа
+        // товчлолтой тул сул таарц ч ажиллахгүй (санаатайгаар — өөр эхний
+        // үсэгтэй хүмүүсийг нэгтгэхээс сэргийлдэг).
+        .replace(/\.\s+/g, '.')
+        .toLowerCase();
 }
 
 /**
@@ -79,18 +87,29 @@ export function matchRosterEntry(
     const target = normalizeName(fullName);
     if (!target) return null;
 
-    const exact = roster.filter((r) => normalizeName(r.name) === target);
+    // ӨӨР дансанд аль хэдийн холбогдсон бүртгэлүүдийг нэрээр таарахаас ХАСНА.
+    // Эс бөгөөс «Батбаяр» гэсэн нэртэй хоёр хүний нэг нь нөгөөгийнхөө
+    // бүртгэл (мөн гүйцэтгэл, зорилт) рүү холбогдоно.
+    const candidates = roster.filter((r) => !r.user_id || r.user_id === userId);
+    if (candidates.length === 0) return null;
+
+    const exact = candidates.filter((r) => normalizeName(r.name) === target);
     if (exact.length === 1) return exact[0];
     if (exact.length > 1) {
         // Ижил нэртэй хэд хэдэн бүртгэл — идэвхтэйг нь эрхэмлэнэ
         return exact.find((r) => r.is_active) || exact[0];
     }
 
-    // Товчлолыг хассан таарц — зөвхөн ганцаараа олдвол
-    const targetBare = stripInitials(fullName) || target;
-    const loose = roster.filter((r) => {
-        const bare = stripInitials(r.name) || normalizeName(r.name);
-        return bare === targetBare;
+    // Товчлолын таарц — ЗӨВХӨН НЭГ ТАЛД товчлол байх үед.
+    // Хоёр тал хоёулаа товчлолтой бол («Б.Батбаяр» vs «Д.Батбаяр») товчлолыг
+    // хасах нь ӨӨР ХҮНИЙГ нэг болгож харуулна — тэр тохиолдолд зөвхөн яг
+    // таарц (дээр аль хэдийн шалгагдсан) хүчинтэй.
+    const targetBare = stripInitials(fullName);
+    const loose = candidates.filter((r) => {
+        const rosterBare = stripInitials(r.name);
+        if (targetBare && rosterBare) return false;      // хоёулаа товчлолтой → үгүй
+        if (!targetBare && !rosterBare) return false;    // аль нь ч биш → яг таарц л
+        return (targetBare || target) === (rosterBare || normalizeName(r.name));
     });
     if (loose.length === 1) return loose[0];
 

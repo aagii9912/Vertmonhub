@@ -44,9 +44,22 @@ export interface ActivityEntry {
     occurredAt?: string | null;
 }
 
-/** Нэг үйл ажиллагааг бүртгэнэ. Алдааг залгиж лог бичнэ. */
-export async function recordActivity(entry: ActivityEntry): Promise<void> {
-    if (!entry.shopId) return;
+/** Бичилтийн үр дүн — дуудагч шаардлагатай бол шалгаж чадна. */
+export interface ActivityWriteResult {
+    ok: boolean;
+    error?: string;
+}
+
+/**
+ * Нэг үйл ажиллагааг бүртгэнэ.
+ *
+ * ХЭЗЭЭ Ч throw хийхгүй — үндсэн үйлдлийг унагаахгүй. Гэхдээ үр дүнг БУЦААНА:
+ * ихэнх дуудагчид үүнийг үл тоомсорлож болно (тэдний жинхэнэ бичилт тусад нь
+ * шалгагддаг), харин бүртгэл нь ЦОРЫН ГАНЦ үр дүн болох дуудагч (log_activity)
+ * үүнийг шалгаж, хэрэглэгчид худал «амжилттай» гэж хэлэхээс сэргийлнэ.
+ */
+export async function recordActivity(entry: ActivityEntry): Promise<ActivityWriteResult> {
+    if (!entry.shopId) return { ok: false, error: 'shopId байхгүй' };
     try {
         const { error } = await supabaseAdmin()
             .from('activity_log')
@@ -71,9 +84,12 @@ export async function recordActivity(entry: ActivityEntry): Promise<void> {
             logger.warn('[Activity] бичилт амжилтгүй', {
                 error: error.message, kind: entry.kind, entity: entry.entityType,
             });
+            return { ok: false, error: error.message };
         }
+        return { ok: true };
     } catch (err) {
         logger.warn('[Activity] гэнэтийн алдаа', { error: String(err) });
+        return { ok: false, error: String(err) };
     }
 }
 

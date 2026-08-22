@@ -141,8 +141,8 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'bulk_update_leads': result = await bulkUpdateLeads(shopId, args, confirm); break;
         // ---- Менежерийн өдрийн ажил (бичих, confirm-gated) ----
         case 'log_activity': result = await logActivity(shopId, args, confirm, userId, userName); break;
-        case 'update_viewing': result = await updateViewing(shopId, args, confirm, userName); break;
-        case 'complete_viewing': result = await completeViewing(shopId, args, confirm, userName); break;
+        case 'update_viewing': result = await updateViewing(shopId, args, confirm, userName, userId); break;
+        case 'complete_viewing': result = await completeViewing(shopId, args, confirm, userName, userId); break;
         case 'set_lead_followup': result = await setLeadFollowup(shopId, args, confirm, userName); break;
         case 'reassign_lead': result = await reassignLead(shopId, args, confirm, userName); break;
         case 'create_task': result = await createTask(shopId, args, confirm, userId); break;

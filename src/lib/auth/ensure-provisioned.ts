@@ -44,6 +44,29 @@ function displayNameFrom(meta: Record<string, unknown> | null | undefined): stri
 }
 
 /**
+ * Хэрэглэгч борлуулалтын бүртгэлд (данс эсвэл имэйлээр) байгаа эсэх.
+ * Энэ нь «админ энэ хүнийг хүлээж байсан» гэсэн нотолгоо.
+ */
+async function isOnSalesRoster(
+    db: ReturnType<typeof supabaseAdmin>,
+    userId: string,
+): Promise<boolean> {
+    try {
+        // sales_managers-д имэйл багана БАЙХГҮЙ (20260701140000) — зөвхөн
+        // админ гараар холбосон user_id-гаар шалгана.
+        const { data, error } = await db
+            .from('sales_managers')
+            .select('user_id')
+            .eq('user_id', userId)
+            .limit(1);
+        if (error) return false;
+        return !!data && data.length > 0;
+    } catch {
+        return false;
+    }
+}
+
+/**
  * Нэвтэрсэн хэрэглэгчийн профайл + shop гишүүнчлэлийг баталгаажуулна.
  * Best-effort: алдаа гарвал нэвтрэлтийг ЗОГСООХГҮЙ, зөвхөн лог бичнэ.
  */
@@ -56,11 +79,21 @@ export async function ensureUserProvisioned(userId: string): Promise<ProvisionRe
     try {
         const db = supabaseAdmin();
 
-        const [{ data: authUser }, { data: profile }, { data: roleRow }] = await Promise.all([
+        const [{ data: authUser }, profileRes, { data: roleRow }] = await Promise.all([
             db.auth.admin.getUserById(userId),
             db.from('user_profiles').select('id, full_name').eq('id', userId).maybeSingle(),
             db.from('user_roles').select('user_id').eq('user_id', userId).maybeSingle(),
         ]);
+
+        // Уншилт АМЖИЛТГҮЙ болсныг «профайл байхгүй» гэж ойлговол дараа нь
+        // upsert хийж, админы тохируулсан нэрийг дарж бичих эрсдэлтэй.
+        if (profileRes.error) {
+            logger.warn('[ensureUserProvisioned] профайл уншиж чадсангүй — алгасав', {
+                error: profileRes.error.message,
+            });
+            return result;
+        }
+        const profile = profileRes.data;
 
         result.hasRole = !!roleRow;
 
@@ -102,10 +135,18 @@ export async function ensureUserProvisioned(userId: string): Promise<ProvisionRe
 
         if ((owned && owned.length) || (member && member.length)) {
             result.hasShop = true;
-        } else {
-            // Зөвхөн НЭГ shop байгаа тохиолдолд автоматаар холбоно. Олон төсөлтэй
-            // орчинд аль нь болохыг таах нь буруу — админ гараар оноох ёстой
-            // (эс бөгөөс хэрэглэгч өөр төслийн өгөгдөл харах эрсдэлтэй).
+        } else if (result.hasRole || (await isOnSalesRoster(db, userId))) {
+            // ⚠️ АЮУЛГҮЙ БАЙДАЛ: shop гишүүнчлэлийг зөвхөн админ АЛЬ ХЭДИЙН
+            // баталгаажуулсан хүнд олгоно.
+            //
+            // Google/Facebook нэвтрэлт нь ДУРЫН хүнд данс үүсгэж чадна. Хэрэв
+            // бид нэвтэрсэн бүрийг цорын ганц shop-д автоматаар нэмбэл
+            // танихгүй хүн `viewer` эрхээр самбар, тайлан рүү орно. Тиймээс
+            // нотолгоо шаардана:
+            //   • user_roles мөр  — админ дүр оноосон (урилга үүнийг үүсгэдэг), эсвэл
+            //   • sales_managers  — борлуулалтын бүртгэлд имэйл/данс нь бий.
+            // Нотолгоогүй бол профайл нь үүснэ (нэр нь харагдана) ч shop-д
+            // холбогдохгүй — дашбоард нь «Төсөл холбогдоогүй» гэж ТАЙЛБАРЛАНА.
             const { data: shops } = await db.from('shops').select('id').limit(2);
             if (shops && shops.length === 1) {
                 const { error } = await db
