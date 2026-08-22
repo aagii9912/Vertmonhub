@@ -86,6 +86,9 @@ export async function POST(req: Request) {
             canWrite: permissions.canWrite,
             canDelete: permissions.canDelete,
             role: roleName,
+            // Модулийн эрхийг AI зам руу ЗААВАЛ дамжуулна — эс бөгөөс чат нь
+            // хажуугийн цэсээр хаагдсан хэсгүүдийг тойрч гарна.
+            modules: permissions.modules,
         };
 
         const shopKnowledge = await loadShopKnowledge(effectiveShopId);

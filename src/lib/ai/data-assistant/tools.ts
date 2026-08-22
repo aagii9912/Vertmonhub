@@ -170,6 +170,37 @@ export const readTools: any[] = [
         name: 'get_market_indicators',
         description: 'Зах зээлийн үзүүлэлт: ипотекийн зээлийн хүү, банкны нөхцөл, макро мэдээлэл (судалгааны хэсэгт бүртгэсэн). Ипотек, банк, зээлийн нөхцөлтэй холбоотой асуултад.',
         parameters: { type: SchemaType.OBJECT, properties: {} }
+    },
+    {
+        name: 'get_my_day',
+        description: 'МЕНЕЖЕРИЙН ӨДРИЙН ТӨЛӨВЛӨГӨӨ: өнөөдрийн уулзалтууд, эргэж холбогдох ёстой (хугацаа хэтэрсэн ба өнөөдрийн) лийдүүд, дуусаагүй ажлууд, хараахан хөндөөгүй шинэ лийдүүд. «Өнөөдөр юу хийх вэ?», «Юунаас эхлэх вэ?», «Маргааш юу байна?» гэсэн асуултад ЭНЭ tool-ыг ашигла.',
+        parameters: { type: SchemaType.OBJECT, properties: {} }
+    },
+    {
+        name: 'list_my_leads',
+        description: 'ЗӨВХӨН нэвтэрсэн менежерийн лийдүүд. «Миний лийдүүд», «би хэдэн лийдтэй вэ», «хэнд удаан залгаагүй байна» гэсэн асуултад. list_leads нь дэлгүүр даяарх лийдийг буцаадаг тул хувийн асуултад ЭНЭ tool-ыг ашигла.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                status: { type: SchemaType.STRING, enum: ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'], description: 'Төлөвөөр шүүх' },
+                source: { type: SchemaType.STRING, description: 'Эх үүсвэрээр шүүх' },
+                stale_days: { type: SchemaType.NUMBER, description: 'Хэдэн хоног хөндөөгүй лийдүүдийг шүүх (ж: 5 = 5 хоног хөндөөгүй)' },
+                limit: { type: SchemaType.NUMBER, description: 'Хэдэн лийд авах (default: 20)' }
+            }
+        }
+    },
+    {
+        name: 'list_viewings',
+        description: 'УУЛЗАЛТЫН ХУВААРЬ. «Маргааш хэдэн уулзалттай вэ», «энэ долоо хоногийн үзлэгүүд», «өнөөдрийн уулзалт» гэсэн асуултад. Анхдагчаар зөвхөн өөрийн уулзалт (mine=false өгвөл бүх менежерийнх).',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                from: { type: SchemaType.STRING, description: 'Эхлэх огноо YYYY-MM-DD (default: өнөөдөр)' },
+                days: { type: SchemaType.NUMBER, description: 'Хэдэн хоногийн хуваарь (default: 7)' },
+                status: { type: SchemaType.STRING, enum: ['scheduled', 'completed', 'cancelled', 'no_show'], description: 'Төлөвөөр шүүх' },
+                mine: { type: SchemaType.BOOLEAN, description: 'false өгвөл бүх менежерийн уулзалт (default: true)' }
+            }
+        }
     }
 ];
 
@@ -410,6 +441,103 @@ export const writeTools: any[] = [
             },
             required: ['entity_type', 'file_url']
         }
+    },
+    {
+        name: 'log_activity',
+        description: 'ДУУДЛАГА / уулзалт / мессеж / тэмдэглэлийг бүртгэх — менежерийн өдрийн ажлын гол үйлдэл. «Болдод залгасан, авсангүй», «Сараатай уулзлаа», «маргааш эргэж залгана» гэх мэт ярианаас энэ tool-ыг дуудна. next_followup_days өгвөл дараагийн дагалтыг мөн товлоно.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                lead_id: { type: SchemaType.STRING, description: 'Лийдийн ID' },
+                customer_name: { type: SchemaType.STRING, description: 'Харилцагчийн нэрээр лийд хайх (lead_id мэдэхгүй үед)' },
+                kind: { type: SchemaType.STRING, enum: ['call', 'sms', 'messenger', 'meeting', 'note'], description: 'Үйлдлийн төрөл (default: call)' },
+                outcome: { type: SchemaType.STRING, enum: ['connected', 'no_answer', 'busy', 'wrong_number', 'scheduled', 'n/a'], description: 'Үр дүн — холбогдсон эсэх' },
+                note: { type: SchemaType.STRING, description: 'Чөлөөт тэмдэглэл' },
+                duration_sec: { type: SchemaType.NUMBER, description: 'Дуудлагын үргэлжлэх хугацаа (секунд)' },
+                next_followup_days: { type: SchemaType.NUMBER, description: 'Хэдэн хоногийн дараа эргэж холбогдох (ж: 1 = маргааш)' }
+            }
+        }
+    },
+    {
+        name: 'update_viewing',
+        description: 'Уулзалтын ЦАГ/тэмдэглэл/төлөвийг өөрчлөх (хойшлуулах). «Уулзалтыг маргааш 3 цаг болгоё» гэх мэт. Уулзалт устгаад дахин үүсгэхийн оронд ЭНЭ tool-ыг ашигла.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                viewing_id: { type: SchemaType.STRING, description: 'Уулзалтын ID (list_viewings-ээс)' },
+                scheduled_at: { type: SchemaType.STRING, description: 'Шинэ огноо/цаг ISO форматаар' },
+                notes: { type: SchemaType.STRING, description: 'Тэмдэглэл' },
+                status: { type: SchemaType.STRING, enum: ['scheduled', 'completed', 'cancelled', 'no_show'], description: 'Төлөв' }
+            },
+            required: ['viewing_id']
+        }
+    },
+    {
+        name: 'complete_viewing',
+        description: 'Уулзалтыг ДҮГНЭЖ хаах: ирсэн эсэх, сонирхлын түвшин (1-5), тэмдэглэл. «Үзлэг боллоо, их сонирхсон», «ирсэнгүй» гэх мэт.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                viewing_id: { type: SchemaType.STRING, description: 'Уулзалтын ID' },
+                outcome: { type: SchemaType.STRING, enum: ['attended', 'no_show', 'cancelled'], description: 'Үр дүн (default: attended)' },
+                interest_level: { type: SchemaType.NUMBER, description: 'Сонирхлын түвшин 1-5' },
+                notes: { type: SchemaType.STRING, description: 'Харилцагчийн санал/тэмдэглэл' }
+            },
+            required: ['viewing_id']
+        }
+    },
+    {
+        name: 'set_lead_followup',
+        description: 'Лийд дээр ДАРААГИЙН ДАГАЛТЫН огноо тавих эсвэл цуцлах. «Батыг 3 хоногийн дараа эргэж хараарай» гэх мэт. days эсвэл at-ын аль нэгийг өг; аль нь ч байхгүй бол цуцална.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                lead_id: { type: SchemaType.STRING, description: 'Лийдийн ID' },
+                days: { type: SchemaType.NUMBER, description: 'Хэдэн хоногийн дараа (ж: 1 = маргааш 10:00)' },
+                at: { type: SchemaType.STRING, description: 'Тодорхой огноо/цаг ISO форматаар' }
+            },
+            required: ['lead_id']
+        }
+    },
+    {
+        name: 'reassign_lead',
+        description: 'Лийдийг ӨӨР МЕНЕЖЕРТ шилжүүлэх. «Энэ харилцагчийг Болдод өгье» гэх мэт. Хүлээн авагчийг борлуулалтын бүртгэлээс баталгаажуулна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                lead_id: { type: SchemaType.STRING, description: 'Лийдийн ID' },
+                to_manager: { type: SchemaType.STRING, description: 'Хүлээн авах менежерийн нэр (бүртгэлд байгаа нэр)' }
+            },
+            required: ['lead_id', 'to_manager']
+        }
+    },
+    {
+        name: 'create_task',
+        description: 'Өөртөө ХИЙХ АЖИЛ нэмэх (+ push сануулга). «Маргааш гэрээ бэлдэхээ санууллаа», «жагсаалтдаа нэмээрэй» гэх мэт. remind=true өгвөл хугацаанаас 2 цагийн өмнө сануулна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                title: { type: SchemaType.STRING, description: 'Ажлын нэр' },
+                note: { type: SchemaType.STRING, description: 'Дэлгэрэнгүй тэмдэглэл' },
+                due_in_days: { type: SchemaType.NUMBER, description: 'Хэдэн хоногийн дараа дуусах (ж: 1 = маргааш 18:00)' },
+                due_at: { type: SchemaType.STRING, description: 'Дуусах хугацаа ISO форматаар' },
+                remind: { type: SchemaType.BOOLEAN, description: 'true = хугацаанаас 2 цагийн өмнө сануулга' },
+                remind_at: { type: SchemaType.STRING, description: 'Сануулах тодорхой цаг ISO форматаар' },
+                priority: { type: SchemaType.STRING, enum: ['low', 'normal', 'high'], description: 'Ач холбогдол' }
+            },
+            required: ['title']
+        }
+    },
+    {
+        name: 'complete_task',
+        description: 'Хийх ажлыг ДУУССАН болгох. «Гэрээ бэлдэх ажлыг хийчихлээ» гэх мэт. task_id мэдэхгүй бол нэрээр нь хай.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                task_id: { type: SchemaType.STRING, description: 'Ажлын ID' },
+                title: { type: SchemaType.STRING, description: 'Ажлын нэрээр хайх' }
+            }
+        }
     }
 ];
 
@@ -527,9 +655,86 @@ export const adminTools: any[] = [
     }
 ];
 
-export const WRITE_TOOL_NAMES = ['update_property_status', 'update_unit_status', 'update_property_price', 'update_lead_status', 'add_lead_note', 'process_contract_action', 'create_property', 'create_lead', 'create_customer', 'schedule_viewing', 'create_contract', 'attach_file', 'bulk_update_leads', 'create_social_post', 'remember_fact'];
+export const WRITE_TOOL_NAMES = ['update_property_status', 'update_unit_status', 'update_property_price', 'update_lead_status', 'add_lead_note', 'process_contract_action', 'create_property', 'create_lead', 'create_customer', 'schedule_viewing', 'create_contract', 'attach_file', 'bulk_update_leads', 'create_social_post', 'remember_fact',
+    // Менежерийн өдрийн ажлын tool-ууд (2026-08-22)
+    'log_activity', 'update_viewing', 'complete_viewing', 'set_lead_followup',
+    'reassign_lead', 'create_task', 'complete_task'];
 export const DELETE_TOOL_NAMES = ['delete_property', 'delete_lead', 'delete_viewing', 'delete_contract', 'delete_customer'];
 export const ADMIN_TOOL_NAMES = ['invite_user', 'assign_role', 'create_role'];
 
 /** Бодит өгөгдөл өөрчилдөг (баталгаажуулалт шаардах) бүх tool. */
 export const MUTATING_TOOL_NAMES = [...WRITE_TOOL_NAMES, ...DELETE_TOOL_NAMES, ...ADMIN_TOOL_NAMES];
+
+/**
+ * Tool → шаардлагатай МОДУЛИЙН эрхүүд (аль нэгийг нь эзэмшсэн байхад хангалттай).
+ *
+ * ЯАГААД: өмнө нь AI зам зөвхөн canWrite/canDelete/super_admin-ыг шалгаж,
+ * `permissions.modules`-ыг ОГТ хардаггүй байсан тул хажуугийн цэсэнд нуугдсан
+ * хэсгүүдийн өгөгдлийг чатаар чөлөөтэй уншиж болдог байв (жишээ: маркетингийн
+ * ролийн хэрэглэгч бүх гэрээний жагсаалт).
+ *
+ * Энд БАЙХГҮЙ tool нь модулийн хязгаargүй гэсэн үг (ж: remember_fact).
+ * ADMIN_TOOL_NAMES нь тусад нь super_admin-аар хаагдана.
+ */
+export const TOOL_MODULE_MAP: Record<string, string[]> = {
+    // Байр / үл хөдлөх
+    list_properties: ['properties'],
+    compare_properties: ['properties'],
+    create_property: ['properties'],
+    update_property_status: ['properties'],
+    update_property_price: ['properties'],
+    update_unit_status: ['properties'],
+    delete_property: ['properties'],
+
+    // Лийд
+    list_leads: ['leads'],
+    list_my_leads: ['leads'],
+    get_lead_details: ['leads'],
+    create_lead: ['leads'],
+    update_lead_status: ['leads'],
+    add_lead_note: ['leads'],
+    bulk_update_leads: ['leads'],
+    delete_lead: ['leads'],
+    set_lead_followup: ['leads'],
+    reassign_lead: ['leads'],
+    log_activity: ['leads', 'customers'],
+
+    // Харилцагч
+    get_customer_insights: ['customers'],
+    create_customer: ['customers'],
+    delete_customer: ['customers'],
+
+    // Уулзалт
+    list_viewings: ['viewings'],
+    schedule_viewing: ['viewings'],
+    update_viewing: ['viewings'],
+    complete_viewing: ['viewings'],
+    delete_viewing: ['viewings'],
+
+    // Гэрээ / санхүү
+    list_contracts: ['contracts', 'finance'],
+    get_contract_details: ['contracts', 'finance'],
+    get_contracts_summary: ['contracts', 'finance'],
+    create_contract: ['contracts', 'finance'],
+    process_contract_action: ['contracts', 'finance'],
+    delete_contract: ['contracts', 'finance'],
+
+    // Аналитик
+    get_dashboard_stats: ['dashboard', 'reports'],
+    get_sales_summary: ['reports', 'contracts', 'finance'],
+    get_sales_forecast: ['reports', 'contracts', 'finance'],
+
+    // Маркетинг
+    get_marketing_summary: ['marketing', 'marketing-roi'],
+    get_marketing_budget_status: ['marketing', 'marketing-roi'],
+    get_market_indicators: ['marketing', 'marketing-roi'],
+    create_social_post: ['marketing', 'marketing-roi'],
+
+    // Хувийн ажлын талбар — бүх нэвтэрсэн ажилтанд нээлттэй (dashboard/tasks)
+    get_my_day: ['dashboard', 'tasks'],
+    create_task: ['dashboard', 'tasks'],
+    complete_task: ['dashboard', 'tasks'],
+
+    // Файл хавсаргалт — зорилтот entity-ийн эрхийг функц дотор дахин шалгана
+    attach_file: ['properties', 'leads', 'customers', 'contracts'],
+};

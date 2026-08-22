@@ -22,6 +22,36 @@ function withKnowledge(base: string, shopKnowledge?: string): string {
 }
 
 export const AGENTS: Record<AgentId, AgentDefinition> = {
+    // Борлуулалтын менежерийн ӨДРИЙН АЖЛЫН agent. Энэ бол «AI-тай ярилцаад
+    // өөрийн ажлаа хийх» хэрэглээний гол цэг — өмнө нь ийм agent байгаагүй тул
+    // чат нь зөвхөн дэлгүүрийн аналитик хариулдаг байв.
+    'my-work': {
+        id: 'my-work',
+        name: 'Миний ажил',
+        emoji: '🗓️',
+        color: 'emerald',
+        description: 'Нэвтэрсэн менежерийн ХУВИЙН өдрийн ажил: өнөөдөр юу хийх, миний лийдүүд, миний уулзалтын хуваарь, дуудлага бүртгэх, уулзалт хойшлуулах/дүгнэх, дагалт товлох, өөрийн ажил/сануулга. «Би», «миний», «өнөөдөр», «маргааш» гэсэн ХУВИЙН асуулт, үйлдэлд.',
+        temperature: 0.3,
+        requiredModules: ['dashboard', 'tasks'],
+        readToolNames: ['get_my_day', 'list_my_leads', 'list_viewings', 'get_lead_details'],
+        writeToolNames: [
+            'log_activity', 'update_viewing', 'complete_viewing', 'set_lead_followup',
+            'reassign_lead', 'create_task', 'complete_task', 'schedule_viewing',
+            'create_lead', 'update_lead_status', 'add_lead_note',
+        ],
+        buildInstruction: (k) => withKnowledge(
+            `Та бол Vertmon Hub-ийн МИНИЙ АЖИЛ agent. Таны хэрэглэгч бол борлуулалтын менежер бөгөөд та түүний ӨДРИЙН АЖЛЫН туслах.
+
+ЗАРЧИМ:
+• «Өнөөдөр юу хийх вэ?», «Юунаас эхлэх вэ?» гэвэл ЭХЛЭЭД get_my_day дуудаж бодит зургийг ав, дараа нь ТЭРГҮҮЛЭХ ДАРААЛЛААР 3-5 алхам санал болго (хугацаа хэтэрсэн дагалт → өнөөдрийн уулзалт → хөндөөгүй шинэ лийд → дуусах ажил).
+• «Миний лийд», «би хэдэн...» гэсэн ХУВИЙН асуултад list_my_leads ашигла (list_leads биш — тэр нь дэлгүүр даяарх).
+• Уулзалтын талаар асуувал list_viewings ашигла.
+• Хэрэглэгч ярианы хэлбэрээр ажлаа хэлэхэд (жишээ: «Болдод залгасан, авсангүй, маргааш эргэж залгана») ҮҮНИЙГ log_activity болгож хөрвүүл — kind=call, outcome=no_answer, next_followup_days=1.
+• Уулзалт хойшлуулахыг update_viewing-ээр (устгаад дахин үүсгэхгүй), дүгнэхийг complete_viewing-ээр хий.
+• «Санууллаа», «жагсаалтдаа нэм» гэвэл create_task (шаардлагатай бол remind=true).
+• Хариултаа ТОВЧ, ажил хэрэгч бич. Урт тайлбар биш, дараагийн алхмуудыг жагсаа.
+• Бүх бичих үйлдэл баталгаажуулалт дамжина — чи зөв tool-оо дуудаж, юу хийхээ тодорхой хэл.${COMMON_RULES}`, k),
+    },
     'data-analyst': {
         id: 'data-analyst',
         name: 'Дата аналист',
@@ -29,6 +59,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         color: 'emerald',
         description: 'Ерөнхий dashboard статистик, олон төрлийн өгөгдөл нэгтгэсэн шинжилгээ, KPI, график. Хэд хэдэн домэйн хамарсан өргөн асуултад тохиромжтой.',
         temperature: 0.3,
+        requiredModules: ['dashboard', 'reports'],
         readToolNames: ['get_dashboard_stats', 'list_properties', 'list_leads', 'get_sales_summary', 'get_contracts_summary', 'get_customer_insights', 'compare_properties'],
         writeToolNames: [],
         buildInstruction: (k) => withKnowledge(
@@ -42,6 +73,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         color: 'sky',
         description: 'Үл хөдлөх хөрөнгийн жагсаалт, үнэ, статус, м², өрөө, дүүрэг, байр харьцуулах, борлуулалтын прогноз. Шинэ байр НЭМЭХ, байр УСТГАХ. Байр/орон сууцтай холбоотой бүх асуулт, үйлдэл.',
         temperature: 0.3,
+        requiredModules: ['properties'],
         readToolNames: ['list_properties', 'compare_properties', 'get_sales_summary', 'get_sales_forecast'],
         writeToolNames: ['update_property_status', 'update_unit_status', 'update_property_price', 'create_property', 'attach_file'],
         deleteToolNames: ['delete_property'],
@@ -57,8 +89,9 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         color: 'violet',
         description: 'Лийд/сонирхогчид, харилцагч, УУЛЗАЛТ (meeting) товлох/цуцлах, тагууд, тэмдэглэл. Шинэ лийд/харилцагч ҮҮСГЭХ, лийд/харилцагч/уулзалт УСТГАХ, статус шинэчлэх. Худалдан авагч, лийд, харилцагч, уулзалттай холбоотой бүх асуулт, үйлдэл.',
         temperature: 0.35,
-        readToolNames: ['list_leads', 'get_lead_details', 'get_customer_insights', 'list_properties'],
-        writeToolNames: ['update_lead_status', 'add_lead_note', 'create_lead', 'create_customer', 'schedule_viewing', 'attach_file', 'bulk_update_leads'],
+        requiredModules: ['leads', 'customers', 'viewings'],
+        readToolNames: ['list_leads', 'get_lead_details', 'get_customer_insights', 'list_properties', 'list_viewings'],
+        writeToolNames: ['update_lead_status', 'add_lead_note', 'create_lead', 'create_customer', 'schedule_viewing', 'attach_file', 'bulk_update_leads', 'log_activity', 'update_viewing', 'complete_viewing', 'set_lead_followup', 'reassign_lead'],
         deleteToolNames: ['delete_lead', 'delete_customer', 'delete_viewing'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн CRM МЭРГЭЖИЛТЭН agent. Таны үүрэг: лийд/харилцагчийн менежмент — жагсаалт, дэлгэрэнгүй, төсөв, сонирхол, тагууд, тэмдэглэл, шинэ лийд/харилцагч үүсгэх, лийд/харилцагч устгах, УУЛЗАЛТ (meeting) товлох болон цуцлах.
@@ -71,6 +104,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         color: 'amber',
         description: 'Гэрээ (property_contracts), төлбөр, үлдэгдэл, цуглуулалтын хувь, овердуэйс, борлуулалтын нэгтгэл, прогноз, гэрээний процесс (sign/paid/cancel). Шинэ гэрээ ҮҮСГЭХ, гэрээ УСТГАХ.',
         temperature: 0.25,
+        requiredModules: ['contracts', 'finance'],
         readToolNames: ['list_contracts', 'get_contract_details', 'get_contracts_summary', 'get_sales_summary', 'get_sales_forecast', 'get_dashboard_stats'],
         writeToolNames: ['process_contract_action', 'create_contract', 'attach_file'],
         deleteToolNames: ['delete_contract'],
@@ -86,6 +120,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         color: 'rose',
         description: 'Маркетингийн төлөвлөгөө, борлуулалтын стратеги, контент, ROI, зах зээлийн чиг хандлага, ерөнхий бизнес зөвлөгөө. Тоон үндэслэл хэрэгтэй бол DB-ээс татаж болно. Бүтээлч/нээлттэй асуултад.',
         temperature: 0.7,
+        requiredModules: ['dashboard', 'reports'],
         readToolNames: ['get_dashboard_stats', 'get_sales_summary', 'get_contracts_summary', 'list_properties', 'get_marketing_summary', 'get_marketing_budget_status', 'get_market_indicators'],
         writeToolNames: ['remember_fact'],
         buildInstruction: (k) => withKnowledge(
@@ -99,6 +134,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         color: 'rose',
         description: 'Хэрэглэгч урих, дүр (role) оноох/үүсгэх, эрх удирдах зэрэг өндөр эрхийн админ үйлдлүүд. ЗӨВХӨН super_admin-д зориулсан. Хэрэглэгч/баг/эрхтэй холбоотой асуултад.',
         temperature: 0.2,
+        requiredModules: ['settings'],
         readToolNames: ['get_dashboard_stats'],
         writeToolNames: [],
         deleteToolNames: [],
@@ -122,6 +158,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         color: 'violet',
         description: 'Маркетингийн гүйцэтгэл (кампанит ажил, ROI, сошиал постын метрик), контент бичих, сошиал постын ноорог/товлосон пост ҮҮСГЭХ. Сурталчилгаа, пост, кампанит ажилтай холбоотой асуулт, үйлдэл.',
         temperature: 0.6,
+        requiredModules: ['marketing', 'marketing-roi'],
         readToolNames: ['get_marketing_summary', 'get_marketing_budget_status', 'get_market_indicators', 'get_dashboard_stats', 'list_leads'],
         writeToolNames: ['create_social_post', 'remember_fact'],
         buildInstruction: (k) => withKnowledge(
@@ -134,4 +171,28 @@ export const AGENT_LIST: AgentDefinition[] = Object.values(AGENTS);
 
 export function getAgent(id: string): AgentDefinition | undefined {
     return AGENTS[id as AgentId];
+}
+
+/**
+ * Хэрэглэгчийн эрхэд тохирох agent-уудыг шүүнэ.
+ *
+ * ЯАГААД: planner өмнө нь рольд үл хамааран ДУРЫН agent сонгож болдог байсан
+ * (жишээ: борлуулалтын менежерийг finance-analyst руу замчилна). Модулийн
+ * шалгалт зөвхөн tool-ын түвшинд байсан тул agent ажиллаад «эрх алга» гэсэн
+ * алдаа цуглуулж, хэрэглэгчид ойлгомжгүй хариу өгдөг байв. Одоо planner
+ * зөвшөөрөгдөөгүй agent-ыг ОГТ харахгүй.
+ */
+export function allowedAgentsFor(perms: {
+    role: string;
+    modules?: string[];
+}): AgentDefinition[] {
+    if (perms.role === 'super_admin') return AGENT_LIST;
+
+    return AGENT_LIST.filter((agent) => {
+        // operations-admin нь зөвхөн super_admin-д (дээр аль хэдийн буцсан)
+        if (agent.id === 'operations-admin') return false;
+        if (!agent.requiredModules || agent.requiredModules.length === 0) return true;
+        if (!perms.modules) return true; // эрх тодорхойгүй — хуучин зан төлөв
+        return agent.requiredModules.some((m) => perms.modules!.includes(m));
+    });
 }

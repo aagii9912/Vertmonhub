@@ -9,7 +9,8 @@
  */
 
 import { logger } from '@/lib/utils/logger';
-import { WRITE_TOOL_NAMES, DELETE_TOOL_NAMES, ADMIN_TOOL_NAMES } from './tools';
+import { WRITE_TOOL_NAMES, DELETE_TOOL_NAMES, ADMIN_TOOL_NAMES, TOOL_MODULE_MAP } from './tools';
+import { MODULE_LABELS } from '@/lib/rbac';
 import { logAiAudit } from './audit';
 import {
     fetchDashboardStats,
@@ -26,12 +27,44 @@ import {
     generateChartConfig,
 } from './functions';
 import { inviteUser, assignRole, createRole } from './admin-functions';
+import {
+    getMyDay, listMyLeads, listViewings,
+    updateViewing, completeViewing, logActivity,
+    setLeadFollowup, reassignLead, createTask, completeTask,
+} from './manager-functions';
 
 /** AI Assistant-ийн RBAC эрхүүд (route-аас тооцоолж дамжуулна). */
 export interface AssistantPerms {
     canWrite: boolean;
     canDelete: boolean;
     role: string;
+    /**
+     * Хэрэглэгчийн модулийн эрхүүд (rbac.ts). ЗААВАЛ дамжуулна —
+     * өмнө нь AI зам `permissions.modules`-ыг ОГТ шалгадаггүй байсан тул
+     * маркетингийн ролийн хэрэглэгч чатаар гэрээ/санхүүгийн дата уншиж чаддаг
+     * байв (хажуугийн цэс нуудаг ч AI нээлттэй байсан).
+     * Тодорхойгүй (undefined) бол хуучин зан төлөв — шалгахгүй өнгөрүүлнэ.
+     */
+    modules?: string[];
+}
+
+/**
+ * Tool-д шаардлагатай модулийн эрхийг шалгана.
+ * super_admin бүх зүйлд хандана. `modules` дамжуулаагүй (хуучин дуудагч) бол
+ * шалгалт хийхгүй — регресс үүсгэхгүйн тулд.
+ */
+function checkToolModule(toolName: string, perms: AssistantPerms): { error: string } | null {
+    if (perms.role === 'super_admin') return null;
+    if (!perms.modules) return null;
+
+    const required = TOOL_MODULE_MAP[toolName];
+    if (!required || required.length === 0) return null;
+
+    const has = required.some((m) => perms.modules!.includes(m));
+    if (has) return null;
+
+    const labels = required.map((m) => MODULE_LABELS[m]?.mn || m).join(' / ');
+    return { error: `Энэ мэдээлэлд хандах эрх танд алга (${labels}). Админаас эрхээ шалгуулна уу.` };
 }
 
 // ============================================
@@ -61,6 +94,10 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         return { error: 'Энэ үйлдлийг зөвхөн super_admin хийх боломжтой.' };
     }
 
+    // Модулийн эрх — хажуугийн цэстэй ИЖИЛ дүрэм AI зам дээр ч мөрдөгдөнө.
+    const moduleDenial = checkToolModule(toolName, perms);
+    if (moduleDenial) return moduleDenial;
+
     let result: any;
     switch (toolName) {
         case 'get_dashboard_stats': result = await fetchDashboardStats(shopId, args.timeRange || 'month'); break;
@@ -74,6 +111,10 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'get_sales_summary': result = await fetchSalesSummary(shopId, args); break;
         case 'get_sales_forecast': result = await fetchSalesForecast(shopId, args); break;
         case 'compare_properties': result = await compareProperties(shopId, args); break;
+        // ---- Менежерийн өдрийн ажил (унших) — userName = каноник менежерийн нэр ----
+        case 'get_my_day': result = await getMyDay(shopId, userName, userId); break;
+        case 'list_my_leads': result = await listMyLeads(shopId, userName, args); break;
+        case 'list_viewings': result = await listViewings(shopId, userName, args); break;
         case 'update_property_status': result = await updatePropertyStatus(shopId, args); break;
         case 'update_unit_status': result = await updateUnitStatus(shopId, args); break;
         case 'update_property_price': result = await updatePropertyPrice(shopId, args); break;
@@ -93,6 +134,14 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'delete_customer': result = await deleteCustomer(shopId, args, confirm); break;
         case 'attach_file': result = await attachFile(shopId, args, confirm, userName); break;
         case 'bulk_update_leads': result = await bulkUpdateLeads(shopId, args, confirm); break;
+        // ---- Менежерийн өдрийн ажил (бичих, confirm-gated) ----
+        case 'log_activity': result = await logActivity(shopId, args, confirm, userId, userName); break;
+        case 'update_viewing': result = await updateViewing(shopId, args, confirm, userName); break;
+        case 'complete_viewing': result = await completeViewing(shopId, args, confirm, userName); break;
+        case 'set_lead_followup': result = await setLeadFollowup(shopId, args, confirm, userName); break;
+        case 'reassign_lead': result = await reassignLead(shopId, args, confirm, userName); break;
+        case 'create_task': result = await createTask(shopId, args, confirm, userId); break;
+        case 'complete_task': result = await completeTask(shopId, args, confirm, userId); break;
         case 'get_marketing_summary': result = await fetchMarketingSummary(shopId, args); break;
         case 'get_marketing_budget_status': result = await fetchMarketingBudgetStatus(shopId, args); break;
         case 'get_market_indicators': result = await fetchMarketIndicators(shopId); break;
