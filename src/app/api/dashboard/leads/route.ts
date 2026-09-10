@@ -17,8 +17,10 @@ const PERIOD_DAYS: Record<string, number> = {
 };
 
 /**
- * GET /api/dashboard/leads?status=<status>&source=<source>&period=<week|month|quarter|year>&manager=<нэр>
+ * GET /api/dashboard/leads?status=<status>&source=<source>&period=<week|month|quarter|year>&manager=<нэр>&phone=<дугаар>&q=<хайлт>
  * Лийдийн жагсаалт (shop-scoped, сервер cookie auth + service role).
+ * phone — утасны давхардал шалгах (форматаас үл хамааран: «9911 2233» / «99112233» / «9911-2233»).
+ * q — нэр, утас, и-мэйлээр хайлт.
  * Soft-delete хийгдсэн лийдийг (deleted_at) хасна.
  * manager — хариуцагч менежерээр шүүнэ (sales_manager_name, contracts API-ийн жишиг).
  */
@@ -60,6 +62,25 @@ export async function GET(request: NextRequest) {
         if (period && PERIOD_DAYS[period]) {
             const start = new Date(Date.now() - PERIOD_DAYS[period] * 24 * 60 * 60 * 1000);
             query = query.gte('created_at', start.toISOString());
+        }
+        // Давхардлын шалгалт: цифрүүдийг 4-өөр хувааж хооронд нь дурын тэмдэгт зөвшөөрнө,
+        // ингэснээр хадгалсан формат (зай, зураас) ямар ч байсан таарна.
+        const phone = searchParams.get('phone');
+        if (phone) {
+            const digits = phone.replace(/\D/g, '');
+            if (digits.length >= 6) {
+                const chunks = digits.match(/.{1,4}/g) ?? [digits];
+                query = query.ilike('customer_phone', `%${chunks.join('%')}%`);
+            }
+        }
+        const q = searchParams.get('q')?.trim();
+        if (q) {
+            const safe = q.replace(/[%_,()]/g, ' ').trim();
+            if (safe) {
+                query = query.or(
+                    `customer_name.ilike.%${safe}%,customer_phone.ilike.%${safe}%,customer_email.ilike.%${safe}%`,
+                );
+            }
         }
 
         const { data, error, count } = await query;

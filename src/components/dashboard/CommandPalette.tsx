@@ -1,218 +1,155 @@
-"use client"
+'use client';
 
-import * as React from "react"
-import { useRouter } from "next/navigation"
-import {
-  LayoutDashboard,
-  Building2,
-  Users,
-  CalendarCheck,
-  FileText,
-  Contact,
-  Inbox,
-  Wallet,
-  BarChart3,
-  Settings,
-} from "lucide-react"
+import * as React from 'react';
+import { useRouter } from 'next/navigation';
+import { Plus, CalendarPlus, FilePlus2 } from 'lucide-react';
 
 import {
-  CommandDialog,
-  CommandInput,
-  CommandList,
-  CommandEmpty,
-  CommandGroup,
-  CommandItem,
-  CommandShortcut,
-} from "@/components/ui/Command"
+    CommandDialog,
+    CommandInput,
+    CommandList,
+    CommandEmpty,
+    CommandGroup,
+    CommandItem,
+    CommandShortcut,
+} from '@/components/ui/Command';
+import { useAuth } from '@/contexts/AuthContext';
+import { canAccessModule, canAccessModuleDynamic } from '@/lib/rbac';
+import { PRIMARY_NAV, BOTTOM_NAV, SECONDARY_ROUTES } from '@/lib/navigation/nav';
+import { onCommandPaletteOpen, openQuickCreate } from '@/lib/navigation/commandPalette';
 
-type RouteEntry = {
-  label: string
-  href: string
-  icon: React.ComponentType<{ className?: string }>
-  keywords?: string[]
-}
+/**
+ * ⌘K командын самбар — v2-т цэснээс хасагдсан бүх хуудсыг олох гол зам.
+ *
+ * Гурван эх сурвалж: түргэн үйлдэл, үндсэн цэс, хоёрдогч замууд.
+ * Эрхгүй хуудсууд огт харагдахгүй.
+ */
+export function CommandPalette() {
+    const [open, setOpen] = React.useState(false);
+    const router = useRouter();
+    const { user } = useAuth();
 
-type RouteSection = {
-  heading: string
-  items: RouteEntry[]
-}
+    const userRole = user?.role || 'viewer';
+    const userPermissions = user?.permissions;
 
-const ROUTE_SECTIONS: RouteSection[] = [
-  {
-    heading: "Үндсэн",
-    items: [
-      {
-        label: "Хяналт",
-        href: "/dashboard",
-        icon: LayoutDashboard,
-        keywords: ["dashboard", "home", "нүүр", "хяналтын самбар"],
-      },
-      {
-        label: "Inbox",
-        href: "/dashboard/inbox",
-        icon: Inbox,
-        keywords: ["inbox", "чат", "мессеж", "захидал"],
-      },
-    ],
-  },
-  {
-    heading: "Борлуулалт",
-    items: [
-      {
-        label: "Үл хөдлөх",
-        href: "/dashboard/properties",
-        icon: Building2,
-        keywords: ["properties", "байр", "орон сууц", "хөрөнгө"],
-      },
-      {
-        label: "Лидүүд",
-        href: "/dashboard/leads",
-        icon: Users,
-        keywords: ["leads", "лид", "сонирхогч"],
-      },
-      {
-        label: "Уулзалт",
-        href: "/dashboard/viewings",
-        icon: CalendarCheck,
-        keywords: ["viewings", "уулзалт", "үзлэг", "захиалга"],
-      },
-      {
-        label: "Гэрээ",
-        href: "/dashboard/contracts",
-        icon: FileText,
-        keywords: ["contracts", "гэрээ", "хэлцэл"],
-      },
-      {
-        label: "Харилцагч",
-        href: "/dashboard/customers",
-        icon: Contact,
-        keywords: ["customers", "харилцагч", "хэрэглэгч", "crm"],
-      },
-    ],
-  },
-  {
-    heading: "Тайлан & Тохиргоо",
-    items: [
-      {
-        label: "Санхүү",
-        href: "/dashboard/finance",
-        icon: Wallet,
-        keywords: ["finance", "санхүү", "төлбөр", "орлого"],
-      },
-      {
-        label: "Тайлан",
-        href: "/dashboard/reports",
-        icon: BarChart3,
-        keywords: ["reports", "тайлан", "статистик", "аналитик"],
-      },
-      {
-        label: "Тохиргоо",
-        href: "/dashboard/settings",
-        icon: Settings,
-        keywords: ["settings", "тохиргоо", "тохируулга"],
-      },
-    ],
-  },
-]
+    const can = React.useCallback(
+        (module: string) => {
+            if (!module) return true;
+            return userPermissions
+                ? canAccessModuleDynamic(userPermissions, module)
+                : canAccessModule(userRole, module);
+        },
+        [userRole, userPermissions],
+    );
 
-/** Custom window event that opens the palette (dispatched by the header search button). */
-export const OPEN_COMMAND_EVENT = "vertmon:open-command"
+    // ⌘K / Ctrl+K, болон бусад газраас ирэх нээх дохио.
+    React.useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key.toLowerCase() === 'k' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                setOpen((o) => !o);
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        const off = onCommandPaletteOpen(() => setOpen(true));
+        return () => {
+            window.removeEventListener('keydown', onKey);
+            off();
+        };
+    }, []);
 
-export interface CommandPaletteProps {
-  /** Also open the palette when the user presses "/" outside an input. Default false. */
-  enableSlashKey?: boolean
-}
+    const go = React.useCallback(
+        (href: string) => {
+            setOpen(false);
+            router.push(href);
+        },
+        [router],
+    );
 
-function isEditableTarget(target: EventTarget | null): boolean {
-  const el = target as HTMLElement | null
-  if (!el) return false
-  const tag = el.tagName
-  return (
-    tag === "INPUT" ||
-    tag === "TEXTAREA" ||
-    tag === "SELECT" ||
-    el.isContentEditable === true
-  )
-}
+    const primary = PRIMARY_NAV.filter((i) => can(i.module));
+    const bottom = BOTTOM_NAV.filter((i) => can(i.module));
 
-export function CommandPalette({ enableSlashKey = false }: CommandPaletteProps) {
-  const router = useRouter()
-  const [open, setOpen] = React.useState(false)
+    const grouped = React.useMemo(() => {
+        const map = new Map<string, typeof SECONDARY_ROUTES>();
+        for (const r of SECONDARY_ROUTES) {
+            if (!can(r.module)) continue;
+            const list = map.get(r.group) ?? [];
+            list.push(r);
+            map.set(r.group, list);
+        }
+        return [...map.entries()];
+    }, [can]);
 
-  React.useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      // ⌘K / Ctrl+K — toggle from anywhere
-      if (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault()
-        setOpen((prev) => !prev)
-        return
-      }
-      // "/" — open only when not typing in a field
-      if (
-        enableSlashKey &&
-        e.key === "/" &&
-        !e.metaKey &&
-        !e.ctrlKey &&
-        !e.altKey &&
-        !isEditableTarget(e.target)
-      ) {
-        e.preventDefault()
-        setOpen(true)
-      }
-    }
+    return (
+        <CommandDialog open={open} onOpenChange={setOpen}>
+            <CommandInput placeholder="Хуудас, үйлдэл хайх…" />
+            <CommandList>
+                <CommandEmpty>Илэрц олдсонгүй.</CommandEmpty>
 
-    function onOpenEvent() {
-      setOpen(true)
-    }
+                <CommandGroup heading="Түргэн үйлдэл">
+                    {can('leads') && (
+                        <CommandItem
+                            value="шинэ лид бүртгэх new lead"
+                            onSelect={() => {
+                                setOpen(false);
+                                openQuickCreate('lead');
+                            }}
+                        >
+                            <Plus className="mr-2 h-4 w-4" />
+                            Шинэ лид
+                            <CommandShortcut>N</CommandShortcut>
+                        </CommandItem>
+                    )}
+                    {can('viewings') && (
+                        <CommandItem
+                            value="уулзалт товлох meeting"
+                            onSelect={() => {
+                                setOpen(false);
+                                openQuickCreate('meeting');
+                            }}
+                        >
+                            <CalendarPlus className="mr-2 h-4 w-4" />
+                            Уулзалт товлох
+                        </CommandItem>
+                    )}
+                    {can('contracts') && (
+                        <CommandItem value="гэрээ үүсгэх contract" onSelect={() => go('/dashboard/contracts/generate')}>
+                            <FilePlus2 className="mr-2 h-4 w-4" />
+                            Гэрээ үүсгэх
+                        </CommandItem>
+                    )}
+                </CommandGroup>
 
-    document.addEventListener("keydown", onKeyDown)
-    window.addEventListener(OPEN_COMMAND_EVENT, onOpenEvent)
-    return () => {
-      document.removeEventListener("keydown", onKeyDown)
-      window.removeEventListener(OPEN_COMMAND_EVENT, onOpenEvent)
-    }
-  }, [enableSlashKey])
+                <CommandGroup heading="Цэс">
+                    {[...primary, ...bottom].map((item) => {
+                        const Icon = item.icon;
+                        return (
+                            <CommandItem key={item.href} value={`${item.name} ${item.href}`} onSelect={() => go(item.href)}>
+                                <Icon className="mr-2 h-4 w-4" />
+                                {item.name}
+                            </CommandItem>
+                        );
+                    })}
+                </CommandGroup>
 
-  const handleSelect = React.useCallback(
-    (href: string) => {
-      setOpen(false)
-      router.push(href)
-    },
-    [router]
-  )
-
-  return (
-    <CommandDialog
-      open={open}
-      onOpenChange={setOpen}
-      title="Команд хайлт"
-      description="Хуудас руу шилжих эсвэл команд ажиллуулах"
-    >
-      <CommandInput />
-      <CommandList>
-        <CommandEmpty />
-        {ROUTE_SECTIONS.map((section, sectionIndex) => (
-          <CommandGroup key={section.heading} heading={section.heading}>
-            {section.items.map((item) => {
-              const Icon = item.icon
-              return (
-                <CommandItem
-                  key={item.href}
-                  value={item.label}
-                  keywords={item.keywords}
-                  onSelect={() => handleSelect(item.href)}
-                >
-                  <Icon className="size-4 shrink-0" />
-                  <span>{item.label}</span>
-                  {sectionIndex === 0 && item.href === "/dashboard" ? (
-                    <CommandShortcut>⌘K</CommandShortcut>
-                  ) : null}
-                </CommandItem>
-              )
-            })}
-          </CommandGroup>
-        ))}
-      </CommandList>
-    </CommandDialog>
-  )
+                {grouped.map(([group, routes]) => (
+                    <CommandGroup key={group} heading={group}>
+                        {routes.map((r) => {
+                            const Icon = r.icon;
+                            return (
+                                <CommandItem
+                                    key={r.href + r.name}
+                                    value={`${r.name} ${r.href} ${(r.keywords ?? []).join(' ')}`}
+                                    onSelect={() => go(r.href)}
+                                >
+                                    <Icon className="mr-2 h-4 w-4" />
+                                    {r.name}
+                                </CommandItem>
+                            );
+                        })}
+                    </CommandGroup>
+                ))}
+            </CommandList>
+        </CommandDialog>
+    );
 }

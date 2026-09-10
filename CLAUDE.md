@@ -211,6 +211,18 @@ The internal staff assistant is a **multi-agent orchestrator** (`src/lib/ai/orch
 ### Dashboard auth header
 Dashboard API routes accept the active shop via `x-shop-id` header. The browser reads `localStorage.getItem('vertmonhub_active_shop_id')` and attaches it to fetches.
 
+### Design system v2 (2026-09, branch `feat/redesign-v2`)
+The «Editorial Terracotta» direction (docs/UI-REDESIGN-PLAN.md) is **superseded**. v2 = Linear/Notion-style: cool neutral ground, **Vertmon blue `#2D6FE6` as the only accent**, borders over shadows, dense rows. Everything is driven from the primitive tokens in `src/app/globals.css` (`:root` light + `.dark`/`[data-theme=dark]` + `prefers-color-scheme` fallback) through the unchanged `@theme inline` semantic layer — so the 900+ `text-muted-foreground` / `bg-surface` call sites repaint without edits. Rules:
+- Fonts: **Golos Text** (UI, Cyrillic) + **JetBrains Mono** (numbers/dates/IDs) via `next/font` in `src/app/layout.tsx`. The serif display face is retired; `font-display`/`.heading-display` now resolve to the UI face.
+- Density ladder lives in tokens: `--control-h-xs 26 / --control-h-sm 30 / --control-h 34 / --control-h-lg 44`, `--row-h 36`, `--row-h-head 32`, `--header-h 3.25rem` (constant at every breakpoint — `ai-assistant/layout.tsx` depends on it), `--sidebar-w 14.5rem` (driven at runtime by `useSidebarCollapsed`, rail = 3.75rem). Radii compressed to 4/5/6/8/10/12/16.
+- New utilities: `.num` (tabular figures), `.mono-label`, `.focus-ring` (the one focus style). Never introduce raw Tailwind palette colors or gradients; status colors come from `--status-*` only.
+
+### Navigation v2 — one sidebar, 8 items
+`src/lib/navigation/nav.ts` is the single source of truth (the three-workspace `workspaces.ts` + `WorkspaceSwitcher` were deleted). `PRIMARY_NAV` = Өнөөдөр · Лид · Уулзалт · Гэрээ · Байр · Inbox · Тайлан · Маркетинг; `BOTTOM_NAV` = AI туслах · Тохиргоо; `MOBILE_TABS` = first three + a centre «+» FAB + «Бусад» sheet. Rarely used pages (finance/ERP, procurement, surveys, competitor research, customer-service, marketing sub-pages, AI settings, tasks) are **not in the sidebar** — they live in `SECONDARY_ROUTES` and are reachable via ⌘K (`CommandPalette`), the mobile «Бусад» sheet, or direct URL. RBAC filtering happens in `Sidebar`/`MobileNav`/`CommandPalette` via `canAccessModule(Dynamic)`. Helpers: `isNavItemActive`, `findNavItem`, `getBreadcrumb` (max 3 crumbs, rendered in `Header` on every breakpoint), `getNavTitle`. Unit tests: `src/lib/navigation/__tests__/nav.test.ts`.
+- Live sidebar counts come from `GET /api/dashboard/nav-counts` (`useNavCounts`, react-query, 60s stale): new leads, today's scheduled viewings, customers with `ai_paused_until > now` (= human handling inbox).
+- **Quick create**: `openQuickCreate('lead'|'meeting'|…)` (`src/lib/navigation/commandPalette.ts`, window events) is fired by the header «Шинэ» button, the `N` key, the mobile FAB and ⌘K. `QuickCreateSheet` (mounted once in `AppShell`) posts to `POST /api/dashboard/leads` and checks duplicates with `GET /api/dashboard/leads?phone=…` (format-agnostic match) before saving. `?q=` is a name/phone/email search on the same endpoint.
+- All browser → dashboard API calls should go through `src/lib/api/dashboardFetch.ts` (`dashboardFetch` / `dashboardJson` / `dashboardMutate`), which attaches `x-shop-id` automatically — stop hand-writing the header.
+
 ### Rate limiting (middleware)
 - **Strict:** `/api/chat`, `/api/ai*`
 - **Webhook:** `/api/webhook`

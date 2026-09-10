@@ -5,42 +5,40 @@ import { Sidebar } from '@/components/dashboard/Sidebar';
 import { Header } from '@/components/dashboard/Header';
 import { MobileNav } from '@/components/dashboard/MobileNav';
 import { CommandPalette } from '@/components/dashboard/CommandPalette';
+import { QuickCreateSheet } from '@/components/dashboard/QuickCreateSheet';
 import { FeedbackWidget } from '@/components/feedback/FeedbackWidget';
 import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications';
 
 /**
- * Бүх workspace (Борлуулалт / AI / Маркетинг)-д нийтлэг shell.
- * /dashboard/* болон /marketing/* хоёул үүнийг ашиглана — sidebar нь
- * идэвхтэй workspace-аар автоматаар солигдоно.
+ * Бүх dashboard / marketing хуудасны нийтлэг shell (v2).
  *
- * ЧУХАЛ: <main>-ийн padding (p-4 md:p-6 lg:p-8) болон header өндөр (--header-h:
- * 3.5rem mobile / 4rem md) хэвээр байх ёстой — ai-assistant/layout.tsx сөрөг
- * margin-аар бүтэн өндөр болохдоо --header-h token-аас хамаардаг (globals.css).
+ * v1-д гурван workspace-ийн switcher sidebar-ыг бүхэлд нь сольдог байсан.
+ * v2-т НЭГ sidebar, 52px тогтмол толгой, гар утсанд доод таб + голын «+».
+ *
+ * ЧУХАЛ: header өндөр `--header-h` токеноос уншигдана — ai-assistant/layout.tsx
+ * бүтэн өндрийн тооцоондоо мөн үүнийг ашигладаг тул зөрж болохгүй.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
     useRealtimeNotifications();
 
     return (
         <div className="min-h-screen bg-background text-foreground">
-            {/* print:hidden — Сарын KPI тайлан г.м хуудсыг хэвлэхэд chrome-гүй цэвэр гарна */}
+            {/* print:hidden — KPI тайлан г.м хуудсыг хэвлэхэд chrome-гүй цэвэр гарна */}
             <div className="print:hidden">
                 <Sidebar />
             </div>
-            <div className="md:ml-[var(--sidebar-w)] print:ml-0 transition-all duration-300 min-h-screen flex flex-col">
+
+            <div className="flex min-h-screen flex-col transition-[margin] duration-200 ease-out md:ml-[var(--sidebar-w)] print:ml-0">
                 <div className="print:hidden">
                     <Header />
                 </div>
-                <main className="flex-1 p-4 md:p-6 lg:p-8 pb-24 md:pb-8 print:p-0">
-                    {children}
-                </main>
+                <main className="flex-1 p-4 pb-24 md:p-6 md:pb-6 print:p-0">{children}</main>
             </div>
+
             <div className="print:hidden">
                 <MobileNav />
-
-                {/* Глобал ⌘K команд хайлт */}
                 <CommandPalette />
-
-                {/* Санал хүсэлт */}
+                <QuickCreateSheet />
                 <FeedbackWidget />
             </div>
         </div>
