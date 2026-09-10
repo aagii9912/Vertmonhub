@@ -11,6 +11,7 @@ import { useLeadDetail, useUpdateLead, useAddLeadActivity, type ManagerOption } 
 import { INTEREST_CHIPS, ACTIVITY_LABEL, sourceLabel, interestLabel } from '@/lib/leads/labels';
 import { Pill, Skeleton, GhostButton } from '@/components/dashboard/v2/primitives';
 import { StatusPicker, ManagerPicker } from './pickers';
+import { useRegisterAiContext } from '@/lib/ai/context';
 
 /**
  * Лидийн хажуугийн панел — жагсаалтаас гаралгүй бүх ажлыг хийнэ:
@@ -40,6 +41,7 @@ export function LeadPanel({
     const [budgetDraft, setBudgetDraft] = useState<string | null>(null);
 
     const lead = data?.lead;
+    useRegisterAiContext(lead ? { type: 'lead', id: lead.id, label: lead.customer_name || 'Нэргүй лид' } : null);
 
     const timeline = useMemo(() => {
         if (!data) return [];

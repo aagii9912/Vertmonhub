@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { formatMNTShort } from '@/lib/utils/currency';
 import { useDirector } from '@/hooks/useDirector';
 import { usePageTitle } from '@/lib/navigation/pageTitle';
+import { useRegisterAiContext } from '@/lib/ai/context';
 import type { FunnelRow, LeaderboardRow, BlockRemaining } from '@/lib/dashboard/director';
 import { Panel, Progress, Avatar, Pill, EmptyRow, Skeleton, Rank } from '@/components/dashboard/v2/primitives';
 
@@ -25,6 +26,7 @@ const SOURCE_LABEL: Record<string, string> = {
 
 export function DirectorDashboard({ actions }: { actions?: React.ReactNode }) {
     usePageTitle('Самбар');
+    useRegisterAiContext({ type: 'dashboard' });
     const now = new Date();
     const [ym, setYm] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 });
     const { data, isLoading, isFetching, refetch } = useDirector(ym.year, ym.month);

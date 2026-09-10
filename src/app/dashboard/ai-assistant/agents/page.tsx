@@ -1,114 +1,84 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent } from '@/components/ui/Card';
-import { Button } from '@/components/ui/Button';
-import { Bot, Plus, Settings, MessageSquare, Zap, Activity } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import React from 'react';
+import Link from 'next/link';
+import { useQuery } from '@tanstack/react-query';
+import { BarChart3, Building2, Handshake, Wallet, Compass, ShieldCheck, Megaphone, Bot, ArrowLeft, Eye, PenLine, Trash2, KeyRound } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { usePageTitle } from '@/lib/navigation/pageTitle';
+import { Panel, Pill, Skeleton } from '@/components/dashboard/v2/primitives';
 
-interface AIAgent {
-    id: string;
-    name: string;
-    description: string;
-    type: string;
-    status: string;
-    model: string;
-    total_conversations: number;
-    avg_response_time_ms: number;
-    satisfaction_rate: number;
+interface AgentInfo {
+    id: string; name: string; description: string; temperature: number;
+    readTools: string[]; writeTools: string[]; deleteTools: string[]; adminTools: string[]; adminOnly: boolean;
 }
 
+const ICON: Record<string, React.ElementType> = {
+    'data-analyst': BarChart3, 'property-expert': Building2, 'crm-specialist': Handshake, 'finance-analyst': Wallet,
+    advisor: Compass, 'operations-admin': ShieldCheck, 'marketing-specialist': Megaphone,
+};
+
+/**
+ * AI агентууд — orchestrator-ын мэргэжилтнүүд, тэдний эрх (tool) тодорхой харагдана.
+ * Бичих/устгах tool бүр хэрэглэгчийн баталгаажуулалтаар л гүйцэтгэгдэнэ.
+ */
 export default function AgentsPage() {
-    const { shop } = useAuth();
-    const [agents, setAgents] = useState<AIAgent[]>([]);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        if (!shop?.id) return;
-        const fetch = async () => {
-            setLoading(true);
-            try {
-                const { data, error } = await supabase
-                    .from('ai_agents')
-                    .select('*')
-                    .eq('shop_id', shop.id)
-                    .order('created_at', { ascending: false });
-                if (error) throw error;
-                setAgents(data || []);
-            } catch (error) {
-                console.error('Error:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetch();
-    }, [shop?.id]);
-
-    if (loading) {
-        return (<div className="flex items-center justify-center min-h-[400px]"><div className="flex items-center gap-3"><div className="w-6 h-6 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" /><span className="text-muted-foreground">Татаж байна...</span></div></div>);
-    }
+    usePageTitle('AI агентууд');
+    const { data, isLoading } = useQuery<{ agents: AgentInfo[]; model: string }>({
+        queryKey: ['ai-agents'],
+        queryFn: async () => { const r = await fetch('/api/ai-assistant/agents'); if (!r.ok) throw new Error('failed'); return r.json(); },
+        staleTime: 5 * 60_000,
+    });
 
     return (
-        <div className="space-y-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-xl md:text-2xl font-bold text-foreground flex items-center gap-2">
-                        <Bot className="w-6 h-6 text-status-success" />
-                        AI Агентууд
-                    </h1>
-                    <p className="text-sm text-muted-foreground mt-1">AI туслагчдын тохиргоо</p>
-                </div>
-                <Button className="bg-status-success hover:opacity-90 text-white"><Plus className="w-4 h-4 mr-2" />Шинэ агент</Button>
+        <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center gap-2">
+                <Link href="/dashboard/ai-assistant" className="inline-flex h-[30px] items-center gap-1 rounded-md px-2 text-[12.5px] text-muted-foreground hover:bg-surface-2 hover:text-foreground"><ArrowLeft className="h-4 w-4" /> AI туслах</Link>
+                <p className="text-[13px] text-muted-foreground">Асуулт бүрийг төлөвлөгч шинжилж 1–3 мэргэжилтэнд хуваарилна. Мэргэжилтэн бүр зөвхөн өөрийн tool-уудыг ашиглана.</p>
+                {data?.model && <span className="mono-label ml-auto rounded-md border border-border bg-surface px-2 py-0.5 text-[11px] text-muted-foreground">модел · {data.model}</span>}
             </div>
 
-            {agents.length === 0 ? (
-                <Card>
-                    <CardContent className="flex flex-col items-center justify-center py-16">
-                        <Bot className="w-16 h-16 text-muted-foreground/60 mb-4" />
-                        <h2 className="text-xl font-semibold text-foreground mb-2">Мэдээлэл байхгүй</h2>
-                        <p className="text-muted-foreground mb-4">AI агент нэмэхийн тулд "Шинэ агент" товчийг дарна уу.</p>
-                    </CardContent>
-                </Card>
+            {isLoading ? (
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-40" />)}</div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {agents.map(agent => (
-                        <Card key={agent.id} className="hover:shadow-md transition-all">
-                            <CardContent className="p-5">
-                                <div className="flex items-start justify-between mb-3">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${agent.status === 'active' ? 'bg-status-success-soft' : 'bg-surface-2'}`}>
-                                            <Bot className={`w-5 h-5 ${agent.status === 'active' ? 'text-status-success' : 'text-muted-foreground/70'}`} />
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                    {(data?.agents ?? []).map((a) => {
+                        const Icon = ICON[a.id] ?? Bot;
+                        return (
+                            <Panel key={a.id} bodyClassName="flex flex-col gap-3 p-4">
+                                <div className="flex items-start gap-3">
+                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand-soft text-brand"><Icon className="h-4 w-4" strokeWidth={1.75} /></span>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="truncate text-[13.5px] font-semibold text-foreground">{a.name}</h3>
+                                            {a.adminOnly && <Pill tone="pending"><KeyRound className="h-3 w-3" /> super_admin</Pill>}
                                         </div>
-                                        <div>
-                                            <h3 className="font-semibold text-foreground">{agent.name}</h3>
-                                            <span className="text-xs text-muted-foreground">{agent.model}</span>
-                                        </div>
-                                    </div>
-                                    <span className={`px-2 py-1 text-xs rounded-full ${agent.status === 'active' ? 'bg-status-success-soft text-status-success' : agent.status === 'error' ? 'bg-status-danger-soft text-status-danger' : 'bg-surface-2 text-muted-foreground'}`}>
-                                        {agent.status === 'active' ? 'Идэвхтэй' : agent.status === 'error' ? 'Алдаа' : 'Идэвхгүй'}
-                                    </span>
-                                </div>
-                                {agent.description && <p className="text-sm text-muted-foreground mb-4 line-clamp-2">{agent.description}</p>}
-                                <div className="grid grid-cols-3 gap-2 pt-3 border-t border-border/60">
-                                    <div className="text-center">
-                                        <p className="text-lg font-bold text-foreground">{agent.total_conversations}</p>
-                                        <p className="text-xs text-muted-foreground">Харилцан яриа</p>
-                                    </div>
-                                    <div className="text-center">
-                                        <p className="text-lg font-bold text-foreground">{agent.avg_response_time_ms ? `${(agent.avg_response_time_ms / 1000).toFixed(1)}s` : '-'}</p>
-                                        <p className="text-xs text-muted-foreground">Хариу хугацаа</p>
-                                    </div>
-                                    <div className="text-center">
-                                        <p className="text-lg font-bold text-foreground">{agent.satisfaction_rate ? `${agent.satisfaction_rate}%` : '-'}</p>
-                                        <p className="text-xs text-muted-foreground">Сэтгэл ханамж</p>
+                                        <p className="mt-0.5 text-[12.5px] leading-snug text-muted-foreground">{a.description}</p>
                                     </div>
                                 </div>
-                            </CardContent>
-                        </Card>
-                    ))}
+                                <ToolRow icon={Eye} label="Унших" tools={a.readTools} />
+                                <ToolRow icon={PenLine} label="Бичих (баталгаажуулалттай)" tools={a.writeTools} tone="brand" />
+                                {a.deleteTools.length > 0 && <ToolRow icon={Trash2} label="Устгах (баталгаажуулалттай)" tools={a.deleteTools} tone="danger" />}
+                                {a.adminTools.length > 0 && <ToolRow icon={KeyRound} label="Админ" tools={a.adminTools} tone="pending" />}
+                            </Panel>
+                        );
+                    })}
                 </div>
             )}
+        </div>
+    );
+}
+
+function ToolRow({ icon: Icon, label, tools, tone }: { icon: React.ElementType; label: string; tools: string[]; tone?: 'brand' | 'danger' | 'pending' }) {
+    if (!tools.length) return null;
+    return (
+        <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground"><Icon className="h-3 w-3" /> {label} <span className="mono-label normal-case tracking-normal">{tools.length}</span></div>
+            <div className="flex flex-wrap gap-1">
+                {tools.map((t) => (
+                    <span key={t} className={cn('mono-label rounded border px-1.5 py-0.5 text-[10.5px]', tone === 'brand' ? 'border-brand/30 bg-brand-soft text-brand' : tone === 'danger' ? 'border-status-danger/30 bg-status-danger-soft text-status-danger' : tone === 'pending' ? 'border-status-pending/30 bg-status-pending-soft text-status-pending' : 'border-border bg-surface-2 text-fg-2')}>{t}</span>
+                ))}
+            </div>
         </div>
     );
 }

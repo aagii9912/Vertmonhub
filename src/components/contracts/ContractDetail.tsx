@@ -13,6 +13,7 @@ import { useLeadDetail } from '@/hooks/useLeads';
 import { parseLocalDate } from '@/lib/dashboard/director';
 import { Panel, Pill, Progress, Skeleton, Avatar, GhostButton } from '@/components/dashboard/v2/primitives';
 import { EntityAttachments } from '@/components/dashboard/EntityAttachments';
+import { useRegisterAiContext } from '@/lib/ai/context';
 
 /**
  * Гэрээний дэлгэрэнгүй — бүтэн хуудас (мокап 5).
@@ -22,6 +23,7 @@ export function ContractDetail({ id }: { id: string }) {
     const { data, isLoading } = useContract(id);
     const c = data?.contract;
     usePageTitle(c?.contract_number ? c.contract_number : 'Гэрээ');
+    useRegisterAiContext(c ? { type: 'contract', id: c.id, label: c.contract_number || c.unit_label || c.customer_name || 'Гэрээ' } : null);
     const { data: pay } = usePayments(id);
     const payments = useMemo(() => (pay?.payments ?? []).slice().sort((a, b) => a.installment_number - b.installment_number), [pay]);
     const { data: leadDetail } = useLeadDetail(c?.lead_id ?? null);

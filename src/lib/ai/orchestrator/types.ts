@@ -56,12 +56,30 @@ export interface PendingAction {
 }
 
 /** Orchestrator гүйцэтгэлд дамжуулах контекст. */
+/**
+ * Streaming үйл явдлууд — UI алхам бүрийн явцыг бодит цагт харуулна.
+ * token — эцсийн хариуны хэсэг; token_reset — өмнө илгээсэн урьдчилсан текстийг
+ * хаях (model дунд нь tool дуудсан үед).
+ */
+export type OrchestratorEvent =
+    | { type: 'plan'; reasoning: string; steps: Array<{ agentId: AgentId; agentName: string; task: string }>; latencyMs: number }
+    | { type: 'step_start'; agentId: AgentId; agentName: string; index: number }
+    | { type: 'tool'; agentId: AgentId; tool: string }
+    | { type: 'step_done'; agentId: AgentId; agentName: string; index: number; ok: boolean; latencyMs: number; toolsUsed: string[]; error?: string }
+    | { type: 'synthesis_start' }
+    | { type: 'token'; text: string }
+    | { type: 'token_reset' };
+
 export interface OrchestratorContext {
     shopId: string;
     userId: string;
     perms: AssistantPerms;
     shopKnowledge?: string;
     history?: Array<{ role: string; content: string }>;
+    /** Streaming: алхам/токен бүрийг хүлээн авагч (заавал биш). */
+    onEvent?: (event: OrchestratorEvent) => void;
+    /** Ганц агенттай төлөвлөгөөнд эцсийн текстийг токеноор урсгах эсэх (orchestrator тавина). */
+    streamFinal?: boolean;
     /** Нэвтэрсэн хэрэглэгчийн (борлуулалтын менежер) нэр — үүсгэх үйлдэлд хадгална. */
     userName?: string;
     /** Чатад хавсаргасан файлууд (AI унших/шинжлэх + бичлэгт хавсаргах). */

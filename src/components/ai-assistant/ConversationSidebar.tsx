@@ -126,14 +126,14 @@ export function ConversationSidebar({
             <div className="w-12 flex-shrink-0 bg-surface border-r border-border flex flex-col items-center py-4 gap-3">
                 <button
                     onClick={onToggleCollapse}
-                    className="w-9 h-9 rounded-xl bg-status-info-soft hover:bg-status-info-soft flex items-center justify-center text-status-info transition-colors"
+                    className="w-9 h-9 rounded-md bg-status-info-soft hover:bg-status-info-soft flex items-center justify-center text-status-info transition-colors"
                     title="Ярианы жагсаалт нээх"
                 >
                     <MessageSquare className="w-4 h-4" />
                 </button>
                 <button
                     onClick={onNewChat}
-                    className="w-9 h-9 rounded-xl bg-foreground hover:bg-fg-2 flex items-center justify-center text-white transition-colors shadow-lg shadow-indigo-500/20"
+                    className="w-9 h-9 rounded-md bg-brand hover:bg-brand-strong flex items-center justify-center text-brand-fg transition-colors"
                     title="Шинэ чат"
                 >
                     <Plus className="w-4 h-4" />
@@ -162,9 +162,7 @@ export function ConversationSidebar({
                 {/* New Chat Button */}
                 <button
                     onClick={onNewChat}
-                    className="w-full flex items-center justify-center gap-2 px-3 py-2.5 bg-foreground hover:bg-fg-2 
-                             text-white rounded-xl text-sm font-medium transition-all shadow-lg shadow-indigo-500/20
-                             hover:shadow-indigo-500/30 active:scale-[0.98]"
+                    className="flex h-[34px] w-full items-center justify-center gap-2 rounded-md bg-brand px-3 text-[13px] font-medium text-brand-fg transition-colors hover:bg-brand-strong active:scale-[0.98]"
                 >
                     <Plus className="w-4 h-4" />
                     Шинэ чат
@@ -179,7 +177,7 @@ export function ConversationSidebar({
                         onChange={e => setSearch(e.target.value)}
                         placeholder="Хайх..."
                         className="w-full pl-8 pr-3 py-2 bg-surface-2/40 border border-border/60 rounded-lg text-xs 
-                                 placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-indigo-500/30 
+                                 placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-brand/40 
                                  focus:border-brand transition-all"
                     />
                 </div>
@@ -218,7 +216,7 @@ export function ConversationSidebar({
                                             key={conv.id}
                                             className={`group relative flex items-center gap-2 px-2.5 py-2 rounded-lg cursor-pointer transition-all ${
                                                 isActive
-                                                    ? 'bg-status-info-soft ring-1 ring-indigo-200'
+                                                    ? 'bg-brand-soft ring-1 ring-brand/30'
                                                     : 'hover:bg-surface-2/40'
                                             }`}
                                             onClick={() => !isRenaming && onSelect(conv.id)}
@@ -237,7 +235,7 @@ export function ConversationSidebar({
                                                                 if (e.key === 'Escape') setRenamingId(null);
                                                             }}
                                                             className="w-full text-xs bg-surface border border-brand rounded px-1.5 py-0.5 
-                                                                     focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                                                     focus:outline-none focus:ring-1 focus:ring-brand"
                                                         />
                                                         <button onClick={() => handleRenameSubmit(conv.id)} className="p-0.5 text-status-success hover:text-status-success">
                                                             <Check className="w-3 h-3" />

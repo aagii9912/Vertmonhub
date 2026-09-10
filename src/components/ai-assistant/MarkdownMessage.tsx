@@ -18,8 +18,8 @@ function renderInline(text: string, kp: string): React.ReactNode[] {
     while ((m = regex.exec(text)) !== null) {
         if (m.index > last) nodes.push(text.slice(last, m.index));
         if (m[2] !== undefined) nodes.push(<strong key={`${kp}-b${i}`} className="font-semibold text-foreground">{m[2]}</strong>);
-        else if (m[3] !== undefined) nodes.push(<code key={`${kp}-c${i}`} className="px-1.5 py-0.5 rounded-md bg-surface-2 text-[13px] font-mono text-brand-strong">{m[3]}</code>);
-        else if (m[4] !== undefined) nodes.push(<a key={`${kp}-a${i}`} href={m[5]} target="_blank" rel="noreferrer" className="text-brand-strong underline underline-offset-2 hover:opacity-80">{m[4]}</a>);
+        else if (m[3] !== undefined) nodes.push(<code key={`${kp}-c${i}`} className="px-1.5 py-0.5 rounded-md bg-surface-2 text-[13px] font-mono text-brand">{m[3]}</code>);
+        else if (m[4] !== undefined) nodes.push(<a key={`${kp}-a${i}`} href={m[5]} target="_blank" rel="noreferrer" className="text-brand underline underline-offset-2 hover:opacity-80">{m[4]}</a>);
         else if (m[6] !== undefined) nodes.push(<em key={`${kp}-i${i}`} className="italic">{m[6]}</em>);
         else if (m[7] !== undefined) nodes.push(<strong key={`${kp}-u${i}`} className="font-semibold text-foreground">{m[7]}</strong>);
         last = m.index + m[0].length;
@@ -57,7 +57,7 @@ export function MarkdownMessage({ content }: { content: string }) {
             while (i < lines.length && !lines[i].trim().startsWith('```')) { code.push(lines[i]); i++; }
             i++; // хаах ```-ийг алгасна
             blocks.push(
-                <pre key={key++} className="bg-surface-2/70 border border-border/60 rounded-xl p-3 overflow-x-auto text-[13px] font-mono text-foreground">
+                <pre key={key++} className="bg-surface-2/70 border border-border/60 rounded-md p-3 overflow-x-auto text-[13px] font-mono text-foreground">
                     <code>{code.join('\n')}</code>
                 </pre>
             );
@@ -71,7 +71,7 @@ export function MarkdownMessage({ content }: { content: string }) {
             const rows: string[][] = [];
             while (i < lines.length && lines[i].includes('|') && lines[i].trim()) { rows.push(splitRow(lines[i])); i++; }
             blocks.push(
-                <div key={key++} className="overflow-x-auto my-2 rounded-xl border border-border/60">
+                <div key={key++} className="overflow-x-auto my-2 rounded-md border border-border/60">
                     <table className="w-full text-sm border-collapse">
                         <thead className="bg-surface-2">
                             <tr>{header.map((h, hi) => <th key={hi} className="text-left font-semibold text-foreground px-3 py-2 border-b border-border/60 whitespace-nowrap">{renderInline(h, `th${key}-${hi}`)}</th>)}</tr>

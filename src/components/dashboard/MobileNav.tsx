@@ -17,6 +17,7 @@ import {
 } from '@/lib/navigation/nav';
 import { useNavCounts } from '@/hooks/useNavCounts';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
+import { openAiPanel } from '@/lib/ai/context';
 
 /**
  * Гар утасны доод таб: Өнөөдөр · Лид · [+] · Уулзалт · Бусад.
@@ -126,7 +127,7 @@ export function MobileNav() {
                                     <Link
                                         key={item.href}
                                         href={item.href}
-                                        onClick={() => setSheetOpen(false)}
+                                        onClick={(e) => { setSheetOpen(false); if (item.href === '/dashboard/ai-assistant') { e.preventDefault(); openAiPanel(); } }}
                                         className={cn(
                                             'flex min-h-11 items-center gap-3 rounded-md px-3 text-[14px] font-medium transition-colors',
                                             active ? 'bg-brand-soft text-brand' : 'text-fg-2 active:bg-surface-2',

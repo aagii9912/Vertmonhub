@@ -11,6 +11,7 @@ import { dashboardMutate } from '@/lib/api/dashboardFetch';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
 import { useMyStats, type MyStatsTask, type MyStatsLead } from '@/hooks/useMyStats';
 import { Panel, Progress, Avatar, Pill, GhostButton, EmptyRow, Skeleton } from '@/components/dashboard/v2/primitives';
+import { useRegisterAiContext } from '@/lib/ai/context';
 
 /**
  * «Өнөөдөр» — менежерийн эхний дэлгэц.
@@ -29,6 +30,7 @@ type Filter = 'all' | 'followup' | 'viewing' | 'personal';
 
 export function TodayDashboard({ managerName, embedded = false }: { managerName?: string | null; embedded?: boolean }) {
     const { data, isLoading, refetch } = useMyStats('today', managerName ?? undefined);
+    useRegisterAiContext(embedded ? null : { type: 'today' });
     const qc = useQueryClient();
     const [filter, setFilter] = useState<Filter>('all');
     const [busy, setBusy] = useState<string | null>(null);

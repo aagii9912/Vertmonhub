@@ -7,6 +7,7 @@ import { MobileNav } from '@/components/dashboard/MobileNav';
 import { CommandPalette } from '@/components/dashboard/CommandPalette';
 import { QuickCreateSheet } from '@/components/dashboard/QuickCreateSheet';
 import { OutboxSync } from '@/components/dashboard/OutboxSync';
+import { AiPanel } from '@/components/ai/AiPanel';
 import { FeedbackWidget } from '@/components/feedback/FeedbackWidget';
 import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications';
 
@@ -41,6 +42,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <CommandPalette />
                 <QuickCreateSheet />
                 <OutboxSync />
+                <AiPanel />
                 <FeedbackWidget />
             </div>
         </div>

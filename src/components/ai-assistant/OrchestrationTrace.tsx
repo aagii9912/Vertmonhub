@@ -44,7 +44,7 @@ interface Trace {
 // Agent өнгөний түлхүүр → Tailwind классууд (theme tokens)
 const COLOR_MAP: Record<string, { chip: string; dot: string }> = {
     emerald: { chip: 'bg-status-success-soft text-status-success border-status-success/30', dot: 'bg-status-success' },
-    violet: { chip: 'bg-brand-soft text-brand-strong border-brand/30', dot: 'bg-brand' },
+    violet: { chip: 'bg-brand-soft text-brand border-brand/30', dot: 'bg-brand' },
     sky: { chip: 'bg-status-info-soft text-status-info border-status-info/30', dot: 'bg-status-info' },
     amber: { chip: 'bg-status-pending-soft text-status-pending border-status-pending/30', dot: 'bg-status-pending' },
     rose: { chip: 'bg-status-danger-soft text-status-danger border-status-danger/30', dot: 'bg-status-danger' },
@@ -98,7 +98,7 @@ export function OrchestrationTrace({ trace }: { trace: Trace }) {
             </button>
 
             {open && (
-                <div className="mt-2 rounded-xl border border-border/60 bg-surface-2/40 p-3 space-y-3">
+                <div className="mt-2 rounded-md border border-border/60 bg-surface-2/40 p-3 space-y-3">
                     {/* Planner */}
                     {trace.plannerReasoning && (
                         <div className="text-xs text-muted-foreground">
