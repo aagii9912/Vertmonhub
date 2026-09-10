@@ -1,14 +1,85 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserShop } from '@/lib/auth/supabase-auth';
+import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireModuleWrite } from '@/lib/auth/require-permission';
+import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
+import { logLeadActivity, listLeadActivities } from '@/lib/leads/activities';
+import { statusLabel } from '@/lib/leads/labels';
 
 const VALID_STATUS = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'];
 
 /**
+ * GET /api/dashboard/leads/[id]
+ * Хажуугийн панелд хэрэгтэй бүх зүйл нэг дуудлагаар: лид, уулзалтууд, гэрээнүүд,
+ * үйл ажиллагааны түүх, сонирхсон байр. Дэд хэсэг бүр тусдаа уналтад тэсвэртэй.
+ */
+export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+    try {
+        const authShop = await getUserShop();
+        if (!authShop) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+        const { id } = await params;
+        const db = supabaseAdmin();
+
+        const { data: lead, error } = await db
+            .from('leads')
+            .select('*')
+            .eq('id', id)
+            .eq('shop_id', authShop.id)
+            .is('deleted_at', null)
+            .maybeSingle();
+        if (error) return NextResponse.json({ error: 'Лид татахад алдаа гарлаа' }, { status: 500 });
+        if (!lead) return NextResponse.json({ error: 'Лид олдсонгүй' }, { status: 404 });
+
+        const [viewings, contracts, activities, property] = await Promise.all([
+            db
+                .from('property_viewings')
+                .select('id, scheduled_at, status, meeting_type, property_id, agent_notes, customer_feedback, interest_level, sales_manager_name')
+                .eq('lead_id', id)
+                .order('scheduled_at', { ascending: false })
+                .limit(20)
+                .then((r) => (r.error ? [] : r.data || [])),
+            db
+                .from('property_contracts')
+                .select('id, contract_number, contract_status, contract_date, total_price, paid_amount, balance, unit_number, block_name')
+                .eq('lead_id', id)
+                .order('contract_date', { ascending: false })
+                .limit(10)
+                .then((r) => (r.error ? [] : r.data || [])),
+            listLeadActivities(db, authShop.id, id),
+            lead.property_id
+                ? db
+                      .from('properties')
+                      .select('id, name, price, rooms, size_sqm, status, images')
+                      .eq('id', lead.property_id)
+                      .maybeSingle()
+                      .then((r) => (r.error ? null : r.data))
+                : Promise.resolve(null),
+        ]);
+
+        // Уулзалтын байрны нэрийг нэг удаа татна
+        const propIds = [...new Set((viewings as { property_id: string | null }[]).map((v) => v.property_id).filter((x): x is string => !!x))];
+        const propNames = new Map<string, string>();
+        if (propIds.length) {
+            const { data } = await db.from('properties').select('id, name').in('id', propIds);
+            for (const p of data || []) propNames.set(p.id, p.name);
+        }
+        const viewingsOut = (viewings as Record<string, unknown>[]).map((v) => ({
+            ...v,
+            property_name: v.property_id ? propNames.get(v.property_id as string) ?? null : null,
+        }));
+
+        return NextResponse.json({ lead, viewings: viewingsOut, contracts, activities, property });
+    } catch (error) {
+        return safeErrorResponse(error, 'Лид татахад алдаа гарлаа');
+    }
+}
+
+/**
  * PATCH /api/dashboard/leads/[id]
- * Лийдийн төлөв/тэмдэглэлийг шинэчилнэ (leads модулийн бичих эрх шаардана).
+ * Лийдийн төлөв/тэмдэглэл/менежер/дараагийн холбоог шинэчилнэ (leads модулийн
+ * бичих эрх). Статус ба менежерийн өөрчлөлтийг lead_activities-д автоматаар бичнэ.
  */
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
@@ -59,13 +130,29 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             const trimmed = typeof name === 'string' ? name.trim().slice(0, 120) : null;
             updates.sales_manager_name = trimmed || null;
         }
+        // Сонирхол (inline засвар)
+        if (body.preferred_rooms !== undefined) {
+            const n = body.preferred_rooms === null ? null : Number(body.preferred_rooms);
+            if (n !== null && (!Number.isInteger(n) || n < 1 || n > 20)) {
+                return NextResponse.json({ error: 'Буруу өрөөний тоо' }, { status: 400 });
+            }
+            updates.preferred_rooms = n;
+        }
+        if (body.preferred_type !== undefined) {
+            updates.preferred_type = typeof body.preferred_type === 'string' ? body.preferred_type.slice(0, 30) || null : null;
+        }
+        if (body.budget_max !== undefined) {
+            const n = body.budget_max === null ? null : Number(body.budget_max);
+            if (n !== null && (!Number.isFinite(n) || n < 0)) return NextResponse.json({ error: 'Буруу төсөв' }, { status: 400 });
+            updates.budget_max = n;
+        }
 
         const db = supabaseAdmin();
 
-        // Лийд энэ shop-д харьяалагдаж байгааг шалгана
+        // Лийд энэ shop-д харьяалагдаж байгааг шалгана (өмнөх утгуудыг түүхэнд бичихэд ашиглана)
         const { data: lead } = await db
             .from('leads')
-            .select('id')
+            .select('id, status, sales_manager_name')
             .eq('id', id)
             .eq('shop_id', authShop.id)
             .is('deleted_at', null)
@@ -77,6 +164,29 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const { error } = await db.from('leads').update(updates).eq('id', id);
         if (error) {
             return NextResponse.json({ error: 'Шинэчлэхэд алдаа гарлаа' }, { status: 500 });
+        }
+
+        // Түүх: статус / менежерийн өөрчлөлт (best-effort)
+        const changedStatus = updates.status !== undefined && updates.status !== lead.status;
+        const changedManager = updates.sales_manager_name !== undefined && updates.sales_manager_name !== lead.sales_manager_name;
+        if (changedStatus || changedManager) {
+            const uid = await getUserId();
+            const identity = uid ? await resolveManagerIdentity(db, authShop.id, uid) : null;
+            const by = identity?.managerName ?? null;
+            if (changedStatus) {
+                await logLeadActivity(db, {
+                    shopId: authShop.id, leadId: id, type: 'status', createdBy: uid, createdByName: by,
+                    content: `${statusLabel(lead.status)} → ${statusLabel(updates.status as string)}${updates.lost_reason ? ` · ${updates.lost_reason}` : ''}`,
+                    meta: { from: lead.status, to: updates.status, lost_reason: updates.lost_reason ?? null },
+                });
+            }
+            if (changedManager) {
+                await logLeadActivity(db, {
+                    shopId: authShop.id, leadId: id, type: 'manager', createdBy: uid, createdByName: by,
+                    content: `${lead.sales_manager_name || '—'} → ${(updates.sales_manager_name as string | null) || '—'}`,
+                    meta: { from: lead.sales_manager_name, to: updates.sales_manager_name },
+                });
+            }
         }
 
         return NextResponse.json({ success: true });

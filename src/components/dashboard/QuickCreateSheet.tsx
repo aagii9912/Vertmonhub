@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { dashboardFetch, dashboardMutate } from '@/lib/api/dashboardFetch';
 import { onQuickCreate, type QuickCreateKind } from '@/lib/navigation/commandPalette';
+import { INTEREST_CHIPS, SOURCES, SOURCE_LABEL } from '@/lib/leads/labels';
 
 /**
  * Түргэн бүртгэл — «Шинэ» товч, N товчлуур, гар утасны «+» бүгд үүнийг нээнэ.
@@ -16,25 +17,6 @@ import { onQuickCreate, type QuickCreateKind } from '@/lib/navigation/commandPal
  * бусад нь «Нэмэлт мэдээлэл» доор хумигдана. Утас давхцвал ХАДГАЛАХААС ӨМНӨ
  * анхааруулна — v1-д давхардсан лид чимээгүй үүсдэг байсан.
  */
-
-const INTERESTS = ['1 өрөө', '2 өрөө', '3 өрөө', '4 өрөө', 'Оффис'] as const;
-
-const SOURCES: { value: string; label: string }[] = [
-    { value: 'phone', label: 'Утас' },
-    { value: 'facebook', label: 'Facebook' },
-    { value: 'instagram', label: 'Instagram' },
-    { value: 'messenger', label: 'Messenger' },
-    { value: 'referral', label: 'Зөвлөмж' },
-    { value: 'board', label: 'Билборд / Самбар' },
-    { value: 'radio', label: 'Радио' },
-    { value: 'tv', label: 'ТВ' },
-    { value: 'website', label: 'Вэбсайт' },
-    { value: 'facebook_ads', label: 'Facebook Ads' },
-    { value: 'google_ads', label: 'Google Ads' },
-    { value: 'meeting', label: 'Уулзалт' },
-    { value: 'event', label: 'Өдөрлөг' },
-    { value: 'other', label: 'Бусад' },
-];
 
 interface DuplicateLead {
     id: string;
@@ -152,7 +134,8 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                     customer_phone: phone.trim() || null,
                     customer_email: email.trim() || null,
                     source,
-                    preferred_type: interest || null,
+                    preferred_rooms: INTEREST_CHIPS.find((c) => c.label === interest)?.rooms ?? null,
+                    preferred_type: INTEREST_CHIPS.find((c) => c.label === interest)?.type ?? null,
                     budget_max: budgetMax && budgetMax > 0 ? budgetMax : null,
                     notes: notes.trim() || null,
                 });
@@ -250,7 +233,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
 
                 <Field label="Сонирхол">
                     <div className="flex flex-wrap gap-1.5">
-                        {INTERESTS.map((v) => (
+                        {INTEREST_CHIPS.map(({ label: v }) => (
                             <button
                                 key={v}
                                 type="button"
@@ -274,9 +257,9 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                         onChange={(e) => setSource(e.target.value)}
                         className="h-[34px] w-full rounded-md border border-border-strong bg-surface px-2 text-[13px] text-foreground outline-none focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]"
                     >
-                        {SOURCES.map((s) => (
-                            <option key={s.value} value={s.value}>
-                                {s.label}
+                        {SOURCES.map((v) => (
+                            <option key={v} value={v}>
+                                {SOURCE_LABEL[v]}
                             </option>
                         ))}
                     </select>

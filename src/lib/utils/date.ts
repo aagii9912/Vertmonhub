@@ -54,6 +54,23 @@ export function formatShortDate(date: string | Date): string {
 /**
  * Get start of today (midnight)
  */
+/**
+ * v2 хүснэгтийн «Сүүлд холбогдсон» багана: өнөөдөр / өчигдөр / 4 хоног / 3 сар.
+ * Богино, mono баганад багтахаар.
+ */
+export function formatRelativeDays(date: string | Date | null | undefined): string {
+    if (!date) return '—';
+    const d = new Date(date);
+    if (Number.isNaN(d.getTime())) return '—';
+    const start = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+    const days = Math.round((start(new Date()) - start(d)) / 86_400_000);
+    if (days <= 0) return 'өнөөдөр';
+    if (days === 1) return 'өчигдөр';
+    if (days < 30) return `${days} хоног`;
+    if (days < 365) return `${Math.floor(days / 30)} сар`;
+    return `${Math.floor(days / 365)} жил`;
+}
+
 export function getStartOfToday(): Date {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
