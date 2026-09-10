@@ -1,13 +1,13 @@
 {
-    "name": "SmartHub",
-    "short_name": "SmartHub",
-    "description": "AI Чатбот Dashboard - Таны бизнесийг автоматжуулна",
+    "name": "Vertmon Hub",
+    "short_name": "Vertmon",
+    "description": "Үл хөдлөх хөрөнгийн борлуулалтын CRM — лид, уулзалт, гэрээ, төлбөр нэг дор",
     "start_url": "/dashboard",
     "scope": "/",
     "display": "standalone",
     "orientation": "portrait",
-    "theme_color": "#3B82F6",
-    "background_color": "#0F172A",
+    "theme_color": "#2D6FE6",
+    "background_color": "#F6F7F9",
     "icons": [
         {
             "src": "/icon-192.png",
@@ -22,9 +22,26 @@
             "purpose": "any maskable"
         }
     ],
-    "categories": [
-        "business",
-        "productivity"
+    "shortcuts": [
+        {
+            "name": "Шинэ лид",
+            "short_name": "Лид",
+            "url": "/dashboard/leads?new=1",
+            "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+        },
+        {
+            "name": "Уулзалт товлох",
+            "short_name": "Уулзалт",
+            "url": "/dashboard/viewings?new=1",
+            "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+        },
+        {
+            "name": "Өнөөдөр",
+            "short_name": "Өнөөдөр",
+            "url": "/dashboard",
+            "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+        }
     ],
+    "categories": ["business", "productivity"],
     "lang": "mn"
 }

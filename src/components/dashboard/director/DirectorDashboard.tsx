@@ -137,7 +137,7 @@ function TrendChart({ actual, target, current }: { actual: number[]; target: num
     useEffect(() => {
         const el = ref.current;
         if (!el) return;
-        const ro = new ResizeObserver(([e]) => setW(Math.max(420, Math.floor(e.contentRect.width))));
+        const ro = new ResizeObserver(([e]) => setW(Math.max(280, Math.floor(e.contentRect.width))));
         ro.observe(el);
         return () => ro.disconnect();
     }, []);
@@ -150,6 +150,7 @@ function TrendChart({ actual, target, current }: { actual: number[]; target: num
     const innerW = W - padL - padR, innerH = H - padT - padB;
     const slot = innerW / 12;
     const barW = Math.min(26, slot * 0.42);
+    const compact = slot < 46; // утас: «9» гэж богино, тэгш сар бүрийг л харуулна
     const y = (v: number) => padT + innerH - (v / nice) * innerH;
     const ticks = [0, nice / 3, (nice * 2) / 3, nice];
     const tick = (v: number) => {
@@ -167,6 +168,7 @@ function TrendChart({ actual, target, current }: { actual: number[]; target: num
                     </g>
                 ))}
                 <text x={padL - 8} y={padT - 6} textAnchor="end" fontSize={10} fill="var(--muted)">{unitLabel}</text>
+                {compact && <text x={W - padR} y={H - 7} textAnchor="end" fontSize={10} fill="var(--muted)">сар</text>}
                 {Array.from({ length: 12 }).map((_, i) => {
                     const cx = padL + slot * i + slot / 2;
                     const isCur = i === current - 1;
@@ -182,7 +184,9 @@ function TrendChart({ actual, target, current }: { actual: number[]; target: num
                             {isCur && actual[i] > 0 && (
                                 <text x={cx} y={y(actual[i]) - 5} textAnchor="middle" fontSize={10.5} fill="var(--fg)" fontFamily="var(--font-mono-stack)">{tick(actual[i])}</text>
                             )}
-                            <text x={cx} y={H - 7} textAnchor="middle" fontSize={10.5} fill={isCur ? 'var(--fg)' : 'var(--muted)'} fontWeight={isCur ? 600 : 400}>{i + 1}-р сар</text>
+                            {(!compact || isCur || i % 2 === 0) && (
+                                <text x={cx} y={H - 7} textAnchor="middle" fontSize={10.5} fill={isCur ? 'var(--fg)' : 'var(--muted)'} fontWeight={isCur ? 600 : 400}>{compact ? `${i + 1}` : `${i + 1}-р сар`}</text>
+                            )}
                         </g>
                     );
                 })}

@@ -153,7 +153,7 @@ function Kpi({ label, value, sub, tone }: { label: string; value: string | null;
     return (
         <div className="flex flex-col gap-0.5 rounded-md border border-border bg-surface px-3.5 py-2.5">
             <span className="text-[11.5px] font-medium text-muted-foreground">{label}</span>
-            {value === null ? <Skeleton className="h-6 w-24" /> : <span className="num text-[20px] font-semibold tracking-[-0.02em] text-foreground">{value}</span>}
+            {value === null ? <Skeleton className="h-6 w-24" /> : <span className="num text-[17px] font-semibold tracking-[-0.02em] text-foreground sm:text-[20px]">{value}</span>}
             {sub && <span className={cn('text-[11.5px]', tone === 'danger' ? 'font-medium text-status-danger' : 'text-muted-foreground')}>{sub}</span>}
         </div>
     );

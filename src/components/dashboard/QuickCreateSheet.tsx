@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { dashboardFetch, dashboardMutate } from '@/lib/api/dashboardFetch';
 import { onQuickCreate, type QuickCreateKind } from '@/lib/navigation/commandPalette';
 import { INTEREST_CHIPS, SOURCES, SOURCE_LABEL } from '@/lib/leads/labels';
+import { enqueue, isNetworkError } from '@/lib/offline/outbox';
 
 /**
  * Түргэн бүртгэл — «Шинэ» товч, N товчлуур, гар утасны «+» бүгд үүнийг нээнэ.
@@ -127,18 +128,19 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                 return;
             }
             setSaving(true);
+            const budgetMax = budget ? Number(budget.replace(/\D/g, '')) : null;
+            const payload = {
+                customer_name: name.trim(),
+                customer_phone: phone.trim() || null,
+                customer_email: email.trim() || null,
+                source,
+                preferred_rooms: INTEREST_CHIPS.find((c) => c.label === interest)?.rooms ?? null,
+                preferred_type: INTEREST_CHIPS.find((c) => c.label === interest)?.type ?? null,
+                budget_max: budgetMax && budgetMax > 0 ? budgetMax : null,
+                notes: notes.trim() || null,
+            };
             try {
-                const budgetMax = budget ? Number(budget.replace(/\D/g, '')) : null;
-                const created = await dashboardMutate<{ lead?: { id: string } }>('/api/dashboard/leads', 'POST', {
-                    customer_name: name.trim(),
-                    customer_phone: phone.trim() || null,
-                    customer_email: email.trim() || null,
-                    source,
-                    preferred_rooms: INTEREST_CHIPS.find((c) => c.label === interest)?.rooms ?? null,
-                    preferred_type: INTEREST_CHIPS.find((c) => c.label === interest)?.type ?? null,
-                    budget_max: budgetMax && budgetMax > 0 ? budgetMax : null,
-                    notes: notes.trim() || null,
-                });
+                const created = await dashboardMutate<{ lead?: { id: string } }>('/api/dashboard/leads', 'POST', payload);
                 toast.success('Лид бүртгэгдлээ');
                 void qc.invalidateQueries({ queryKey: ['leads'] });
                 void qc.invalidateQueries({ queryKey: ['nav-counts'] });
@@ -149,7 +151,14 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                     router.push(id ? `/dashboard/viewings?lead=${id}` : '/dashboard/viewings');
                 }
             } catch (e) {
-                toast.error(e instanceof Error ? e.message : 'Хадгалж чадсангүй');
+                if (isNetworkError(e)) {
+                    // Талбай дээр интернэтгүй: алдахгүй, холбогдмогц илгээнэ.
+                    enqueue({ url: '/api/dashboard/leads', method: 'POST', body: payload, label: `Лид · ${payload.customer_name}` });
+                    toast.success('Интернэтгүй байна — лид хадгалагдлаа, холбогдмогц илгээнэ');
+                    onClose();
+                } else {
+                    toast.error(e instanceof Error ? e.message : 'Хадгалж чадсангүй');
+                }
             } finally {
                 setSaving(false);
             }

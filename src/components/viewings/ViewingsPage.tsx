@@ -94,7 +94,7 @@ export function ViewingsPage() {
                 })}
                 {canWrite && (
                     <button type="button" onClick={() => { setPrefillLead(null); setCreateOpen(true); }} className="ml-auto mb-1 inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-md bg-brand px-2.5 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring">
-                        <CalendarPlus className="h-4 w-4" /> Уулзалт товлох
+                        <CalendarPlus className="h-4 w-4" /> <span className="hidden sm:inline">Уулзалт товлох</span>
                     </button>
                 )}
             </div>
