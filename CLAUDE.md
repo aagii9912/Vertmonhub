@@ -344,6 +344,8 @@ The following Syncly e-commerce surface was removed during the earlier `chore/re
 
 If you need to bring any of this back, do it intentionally — these were removed as a deliberate cleanup, not an oversight.
 
+**Removed in the v2 redesign (2026-09-10, branch `feat/redesign-v2`):** the three-workspace navigation (`lib/navigation/workspaces.ts`, `useActiveWorkspace.ts`, `WorkspaceSwitcher`), the v1 dashboards (`OrgDashboard`, `components/dashboard/my/*`, `AskAIHero`, `TeamOverview`, `SalesChart`, `AIMonitor`, `SalesTargetWidget`, `useDashboardPrefs`), dead primitives (`ui/Avatar`, `BottomSheet`, `Breadcrumb`, `Label`, `LiveIndicator`, `PullToRefresh`, `RadioGroup`, `Separator`, `Tooltip`), dead dashboard/chat components (`ActionCenter`, `ConversationList`, `FloorPlan`, `MessageThread`, `ShopSwitcher`, `chat/ChatContainer`), and the `src/app/test/*` playground routes. The `user_dashboard_prefs` table + `/api/dashboard/prefs` still exist but have no UI.
+
 ---
 
 ## Environment Variables
