@@ -126,6 +126,28 @@ export async function runAgent(
         const chat = model.startChat({ history: buildGeminiHistory(ctx.history) });
         const messageParts = await buildMessageParts(task, ctx.attachments);
 
+        // Streaming: ганц агенттай төлөвлөгөөнд эцсийн текстийг токеноор UI руу урсгана.
+        // Дунд нь tool дуудагдвал (эсвэл retry болбол) урьдчилсан текстийг token_reset-ээр хаяна.
+        const streaming = !!(ctx.streamFinal && ctx.onEvent);
+        let anyTokenEmitted = false;
+        const send = async (parts: any[]): Promise<{ response: any }> => {
+            if (!streaming) return withRetry(() => chat.sendMessage(parts));
+            return withRetry(async () => {
+                if (anyTokenEmitted) { ctx.onEvent!({ type: 'token_reset' }); anyTokenEmitted = false; }
+                const result = await chat.sendMessageStream(parts);
+                for await (const chunk of result.stream) {
+                    let t = '';
+                    try { t = chunk.text(); } catch { t = ''; }
+                    if (t) { anyTokenEmitted = true; ctx.onEvent!({ type: 'token', text: t }); }
+                }
+                const resp = await result.response;
+                let calls: any[] = [];
+                try { calls = resp.functionCalls() || []; } catch { calls = []; }
+                if (calls.length > 0 && anyTokenEmitted) { ctx.onEvent!({ type: 'token_reset' }); anyTokenEmitted = false; }
+                return { response: resp };
+            });
+        };
+
         // MULTI-ROUND function-calling давталт. "Шалгаад → шинэчлэх" маягийн даалгаварт
         // Gemini эхний раундад унших tool (list_contracts), үр дүнг нь хараад ДАРААГИЙН
         // раундад бичих tool (process_contract_action) дууддаг. Өмнө нь ганц раунд
@@ -133,7 +155,7 @@ export async function runAgent(
         const MAX_TOOL_ROUNDS = 6;
         let data: any = null;
         let chartConfig: any = null;
-        let response = await withRetry(() => chat.sendMessage(messageParts));
+        let response = await send(messageParts);
         tokens += tokensFrom(response.response);
 
         for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -143,6 +165,7 @@ export async function runAgent(
             const toolResponses: any[] = [];
             for (const fc of functionCalls) {
                 toolsUsed.push(fc.name);
+                ctx.onEvent?.({ type: 'tool', agentId: agent.id, tool: fc.name });
 
                 // Model ижил confirm-үйлдлийг дахин дуудвал давхар pending үүсгэхгүй.
                 const dupKey = `${fc.name}:${JSON.stringify(fc.args || {})}`;
@@ -178,7 +201,7 @@ export async function runAgent(
             // Tool-ийн үр дүнг Gemini руу буцааж дараагийн алхмыг (дахин tool эсвэл эцсийн
             // текст) авна. Түр ачаалалд (429/503) унасан ч үр дүн гартаа бол бүрэн унахгүй.
             try {
-                response = await withRetry(() => chat.sendMessage(toolResponses.map((tr) => ({ functionResponse: tr.functionResponse }))));
+                response = await send(toolResponses.map((tr) => ({ functionResponse: tr.functionResponse })));
                 tokens += tokensFrom(response.response);
             } catch (roundError) {
                 const msg = roundError instanceof Error ? roundError.message : 'Unknown error';
@@ -215,7 +238,7 @@ export async function runAgent(
                         response: { result: { error: 'Tool дуудлагын хязгаарт хүрлээ. Өөр tool БҮҮ дууд — одоо цуглуулсан мэдээлэлдээ үндэслэн хэрэглэгчид эцсийн хариугаа МОНГОЛООР товч бич. Хийж амжаагүй үйлдэл байвал юу хийх гэж байснаа хэл.' } },
                     },
                 }));
-                response = await withRetry(() => chat.sendMessage(stopResponses));
+                response = await send(stopResponses);
                 tokens += tokensFrom(response.response);
             } catch { /* доорх fallback текст ажиллана */ }
         }

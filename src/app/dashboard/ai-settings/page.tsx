@@ -1,4 +1,5 @@
 'use client';
+import { Smile, Briefcase, Leaf, Gamepad2 } from 'lucide-react';
 
 import { useState, useEffect } from 'react';
 import { Bot, HelpCircle, BookOpen, Bell, Upload, Database, X, Save, Zap, Plus, Trash2, Edit2, Check, MessageSquareHeart, Building2, FileText, BellRing } from 'lucide-react';
@@ -32,11 +33,11 @@ interface FAQ {
 }
 
 const emotionOptions: Array<{ value: AiEmotion; label: string; emoji: string; example: string }> = [
-    { value: 'friendly', label: 'Найрсаг', emoji: '😊', example: 'Сайн байна уу! 😊 Mandala Garden-ий талаар мэдээлэл хэрэгтэй юу? Би танд туслахдаа баяртай!' },
-    { value: 'professional', label: 'Мэргэжлийн', emoji: '👔', example: 'Сайн байна уу. Vertmon Hub-д тавтай морил. Ямар байрны мэдээлэл хэрэгтэй байна вэ?' },
-    { value: 'enthusiastic', label: 'Урам зоригтой', emoji: '🎉', example: 'Сайн уу!! 🎉 Та үнэхээр зөв газар ирлээ! Mandala Garden — хотын төв дээрх шилдэг сонголт!' },
-    { value: 'calm', label: 'Тайван', emoji: '🧘', example: 'Сайн байна уу. Та тайван сонголтоо хийгээрэй. Асуух зүйл байвал би энд байна.' },
-    { value: 'playful', label: 'Тоглоомтой', emoji: '🎮', example: 'Хөөх, сайн уу! 🏠 Шинэ байр хайж байна гэж үү? Гоё юмнууд их байгаа шүү!' },
+    { value: 'friendly', label: 'Найрсаг', emoji: 'smile', example: 'Сайн байна уу! 😊 Mandala Garden-ий талаар мэдээлэл хэрэгтэй юу? Би танд туслахдаа баяртай!' },
+    { value: 'professional', label: 'Мэргэжлийн', emoji: 'briefcase', example: 'Сайн байна уу. Vertmon Hub-д тавтай морил. Ямар байрны мэдээлэл хэрэгтэй байна вэ?' },
+    { value: 'enthusiastic', label: 'Урам зоригтой', emoji: 'zap', example: 'Сайн уу!! 🎉 Та үнэхээр зөв газар ирлээ! Mandala Garden — хотын төв дээрх шилдэг сонголт!' },
+    { value: 'calm', label: 'Тайван', emoji: 'leaf', example: 'Сайн байна уу. Та тайван сонголтоо хийгээрэй. Асуух зүйл байвал би энд байна.' },
+    { value: 'playful', label: 'Тоглоомтой', emoji: 'gamepad', example: 'Хөөх, сайн уу! 🏠 Шинэ байр хайж байна гэж үү? Гоё юмнууд их байгаа шүү!' },
 ];
 
 // ============================================
@@ -261,7 +262,7 @@ function GeneralSection({ isAiActive, setIsAiActive, aiEmotion, setAiEmotion, sh
                                 'outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
                                 aiEmotion === opt.value ? 'border-brand bg-brand-soft shadow-sm' : 'border-border hover:border-border-strong'
                             )}>
-                            <div className="text-2xl mb-1">{opt.emoji}</div>
+                            <div className="text-2xl mb-1"><ToneIcon name={opt.emoji} /></div>
                             <p className={cn('text-xs font-medium', aiEmotion === opt.value ? 'text-brand-strong' : 'text-muted-foreground')}>{opt.label}</p>
                         </button>
                     ))}
@@ -587,4 +588,11 @@ function NotificationsSection({ notifyOnContact, setNotifyOnContact, notifyOnSup
             </SectionCard>
         </div>
     );
+}
+
+
+/** v2: зан байдлын сонголт — emoji-гүй, lucide дүрс. */
+function ToneIcon({ name }: { name: string }) {
+    const Icon = { smile: Smile, briefcase: Briefcase, zap: Zap, leaf: Leaf, gamepad: Gamepad2 }[name] ?? Smile;
+    return <Icon className="mx-auto h-5 w-5 text-brand" strokeWidth={1.75} />;
 }

@@ -26,6 +26,7 @@ const SYNTH_MODEL = 'gemini-3.5-flash';
 async function synthesize(
     message: string,
     parts: Array<{ name: string; emoji: string; text: string }>,
+    onToken?: (text: string) => void,
 ): Promise<{ text: string; latencyMs: number; tokens: number }> {
     const started = Date.now();
     const model = genAI.getGenerativeModel({
@@ -36,9 +37,25 @@ async function synthesize(
     });
 
     const composed = parts.map((p) => `### ${p.emoji} ${p.name}\n${p.text}`).join('\n\n');
-    const result = await withRetry(() => model.generateContent(
-        `Хэрэглэгчийн асуулт: ${message}\n\nМэргэжилтнүүдийн хариу:\n${composed}\n\nДээрхийг нэгтгэн эцсийн хариу бэлдэнэ үү.`,
-    ));
+    const prompt = `Хэрэглэгчийн асуулт: ${message}\n\nМэргэжилтнүүдийн хариу:\n${composed}\n\nДээрхийг нэгтгэн эцсийн хариу бэлдэнэ үү.`;
+
+    if (onToken) {
+        // Streaming нэгтгэл — хэрэглэгч хариуг бичигдэж байхад нь харна.
+        const result = await withRetry(async () => {
+            const r = await model.generateContentStream(prompt);
+            let text = '';
+            for await (const chunk of r.stream) {
+                let t = '';
+                try { t = chunk.text(); } catch { t = ''; }
+                if (t) { text += t; onToken(t); }
+            }
+            const resp = await r.response;
+            return { text: text || resp.text(), tokens: resp?.usageMetadata?.totalTokenCount ?? 0 };
+        });
+        return { text: result.text, latencyMs: Date.now() - started, tokens: result.tokens };
+    }
+
+    const result = await withRetry(() => model.generateContent(prompt));
     return {
         text: result.response.text(),
         latencyMs: Date.now() - started,
@@ -64,6 +81,14 @@ export async function runOrchestrator(
     // 1. Plan
     const { plan, latencyMs: plannerLatencyMs, model: plannerModel } = await planRequest(message, ctx);
     logger.info('[Orchestrator] Plan', { steps: plan.steps.map((s) => s.agentId) });
+    ctx.onEvent?.({
+        type: 'plan',
+        reasoning: plan.reasoning,
+        steps: plan.steps.map((s) => ({ agentId: s.agentId, agentName: AGENTS[s.agentId]?.name ?? s.agentId, task: s.task })),
+        latencyMs: plannerLatencyMs,
+    });
+    // Ганц агент → түүний эцсийн текстийг шууд урсгана; олон агент → нэгтгэлийг урсгана.
+    const stepCtx: OrchestratorContext = { ...ctx, streamFinal: plan.steps.length === 1 };
 
     // 2. Execute steps sequentially; feed prior outputs as context to later steps
     const traceSteps: TraceStep[] = [];
@@ -71,7 +96,7 @@ export async function runOrchestrator(
     const priorOutputs: string[] = [];
     let totalTokens = 0;
 
-    for (const step of plan.steps) {
+    for (const [index, step] of plan.steps.entries()) {
         const agent = AGENTS[step.agentId];
         if (!agent) continue;
 
@@ -79,7 +104,9 @@ export async function runOrchestrator(
             ? `${step.task}\n\n[Өмнөх мэргэжилтнүүдийн олж тогтоосон зүйл — давхардуулахгүйгээр ашигла]:\n${priorOutputs.join('\n---\n')}`
             : step.task;
 
-        const result = await runAgent(agent, task, ctx);
+        ctx.onEvent?.({ type: 'step_start', agentId: agent.id, agentName: agent.name, index });
+        const result = await runAgent(agent, task, stepCtx);
+        ctx.onEvent?.({ type: 'step_done', agentId: agent.id, agentName: agent.name, index, ok: result.ok, latencyMs: result.latencyMs, toolsUsed: result.toolsUsed, error: result.error });
         totalTokens += result.tokens;
         runResults.push({ agentId: agent.id, name: agent.name, emoji: agent.emoji, result });
         if (result.ok && result.text) priorOutputs.push(`${agent.name}: ${result.text}`);
@@ -106,17 +133,23 @@ export async function runOrchestrator(
     const okResults = runResults.filter((r) => r.result.ok && r.result.text);
     if (okResults.length === 0) {
         // Бүх agent унасан — шалтгааныг ялгаж ойлгомжтой мессеж өгнө.
-        const rateLimited = runResults.some((r) => /429|rate.?limit|quota|overloaded|503/i.test(r.result.error || ''));
-        finalText = rateLimited
-            ? '⏳ AI систем түр ачаалалтай байна. 30 секунд орчим хүлээгээд дахин асуугаарай.'
-            : 'Уучлаарай, хариу бэлдэх үед алдаа гарлаа. Дахин оролдоно уу.';
+        const errs = runResults.map((r) => r.result.error || '').join(' | ');
+        const rateLimited = /429|rate.?limit|quota|overloaded|503/i.test(errs);
+        const denied = /403|denied access|PERMISSION_DENIED|API key not valid|API_KEY_INVALID/i.test(errs);
+        finalText = denied
+            ? 'AI үйлчилгээний түлхүүр/төслийн эрх хаагдсан байна (Google 403). Админ Тохиргоо → AI хэсэгт GEMINI_API_KEY-г шинэ төслийн түлхүүрээр солино уу.'
+            : rateLimited
+                ? 'AI систем түр ачаалалтай байна. 30 секунд орчим хүлээгээд дахин асуугаарай.'
+                : 'Уучлаарай, хариу бэлдэх үед алдаа гарлаа. Дахин оролдоно уу.';
     } else if (okResults.length === 1) {
         finalText = okResults[0].result.text;
     } else {
         try {
+            ctx.onEvent?.({ type: 'synthesis_start' });
             const synth = await synthesize(
                 message,
                 okResults.map((r) => ({ name: r.name, emoji: r.emoji, text: r.result.text })),
+                ctx.onEvent ? (t) => ctx.onEvent!({ type: 'token', text: t }) : undefined,
             );
             finalText = synth.text;
             synthesisUsed = true;

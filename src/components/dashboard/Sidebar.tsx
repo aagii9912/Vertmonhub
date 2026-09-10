@@ -11,6 +11,7 @@ import { PRIMARY_NAV, BOTTOM_NAV, isNavItemActive, type NavItem } from '@/lib/na
 import { useSidebarCollapsed } from '@/hooks/useSidebarCollapsed';
 import { useNavCounts } from '@/hooks/useNavCounts';
 import { openCommandPalette } from '@/lib/navigation/commandPalette';
+import { openAiPanel } from '@/lib/ai/context';
 import {
     DropdownMenu,
     DropdownMenuTrigger,
@@ -195,7 +196,11 @@ function NavRow({
         <Link
             href={item.href}
             aria-current={active ? 'page' : undefined}
-            title={collapsed ? item.name : undefined}
+            title={collapsed ? item.name : item.href === '/dashboard/ai-assistant' ? 'AI туслах (⌘J)' : undefined}
+            onClick={(e) => {
+                // AI туслах — хуудас солихгүй, хажуугийн панел нээнэ (⌘/ctrl+click → бүтэн хуудас)
+                if (item.href === '/dashboard/ai-assistant' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); openAiPanel(); }
+            }}
             className={cn(
                 'flex h-[30px] items-center gap-2.5 rounded-md px-2 text-[13px] font-medium transition-colors focus-ring',
                 collapsed && 'justify-center px-0',

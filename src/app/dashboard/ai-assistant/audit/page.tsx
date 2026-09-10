@@ -68,21 +68,21 @@ export default function AiAuditPage() {
                     ) : (
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
-                                <thead className="bg-surface-2/50 border-b border-border">
+                                <thead className="bg-surface-2 border-b border-border">
                                     <tr>
-                                        <th className="text-left px-4 py-3 text-[11px] font-medium text-muted-foreground/80 uppercase tracking-wide">Огноо</th>
-                                        <th className="text-left px-4 py-3 text-[11px] font-medium text-muted-foreground/80 uppercase tracking-wide">Менежер</th>
-                                        <th className="text-left px-4 py-3 text-[11px] font-medium text-muted-foreground/80 uppercase tracking-wide">Үйлдэл</th>
-                                        <th className="text-left px-4 py-3 text-[11px] font-medium text-muted-foreground/80 uppercase tracking-wide">Үр дүн</th>
+                                        <th className="h-8 px-3 text-left text-[11px] font-medium tracking-[0.03em] text-muted-foreground">Огноо</th>
+                                        <th className="h-8 px-3 text-left text-[11px] font-medium tracking-[0.03em] text-muted-foreground">Менежер</th>
+                                        <th className="h-8 px-3 text-left text-[11px] font-medium tracking-[0.03em] text-muted-foreground">Үйлдэл</th>
+                                        <th className="h-8 px-3 text-left text-[11px] font-medium tracking-[0.03em] text-muted-foreground">Үр дүн</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-border/60">
                                     {entries.map((e) => (
                                         <tr key={e.id} className="hover:bg-surface-2/40">
-                                            <td className="px-4 py-3 text-muted-foreground whitespace-nowrap">{fmt(e.created_at)}</td>
-                                            <td className="px-4 py-3 text-foreground">{e.user}</td>
-                                            <td className="px-4 py-3 text-foreground">{TOOL_LABEL[e.tool] || e.tool}</td>
-                                            <td className="px-4 py-3">
+                                            <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{fmt(e.created_at)}</td>
+                                            <td className="px-3 py-2 text-foreground">{e.user}</td>
+                                            <td className="px-3 py-2 text-foreground">{TOOL_LABEL[e.tool] || e.tool}</td>
+                                            <td className="px-3 py-2">
                                                 {e.success
                                                     ? <span className="inline-flex items-center gap-1 text-status-success text-xs"><CheckCircle2 className="w-4 h-4" /> Амжилттай</span>
                                                     : <span className="inline-flex items-center gap-1 text-status-danger text-xs"><XCircle className="w-4 h-4" /> Алдаа</span>}
