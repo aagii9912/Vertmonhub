@@ -48,7 +48,7 @@ function resolveTone(value: StatsCardProps['iconColor']): IconTone {
 export function StatsCard({ title, value, change, icon: Icon, iconColor }: StatsCardProps) {
     const tone = resolveTone(iconColor);
     return (
-        <div className="flex min-w-0 flex-col gap-0.5 rounded-md border border-border bg-surface px-3.5 py-2.5">
+        <div className="flex min-w-0 flex-col gap-0.5 rounded-md border border-border bg-surface px-3.5 py-2.5 transition-colors hover:border-border-strong">
             <div className="flex items-center justify-between gap-2">
                 <span className="truncate text-[11.5px] font-medium text-muted-foreground">{title}</span>
                 <Icon className={cn('h-4 w-4 shrink-0', TONE_TEXT[tone])} strokeWidth={1.75} />

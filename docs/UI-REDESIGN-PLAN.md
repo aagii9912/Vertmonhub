@@ -1,3 +1,5 @@
+> **ХҮЧИНГҮЙ / SUPERSEDED (2026-09-10).** Энэ «Editorial Terracotta» төлөвлөгөөг эзэмшигч 2026-09-08-нд хүчингүй болгож, Linear/Notion-маягийн **v2** чиглэлийг (Vertmon цэнхэр #2D6FE6, Golos Text + JetBrains Mono, нэг sidebar 8 цэс) сонгосон. v2-ийн шийдвэр, дүгнэлт, мокап: `CLAUDE.md` → «Design system v2», «Navigation v2»; дүгнэлт https://claude.ai/code/artifact/fde32d48-8221-457e-80d8-0edd8b0b5483 ; мокап https://claude.ai/code/artifact/6cce1176-cd92-4d1f-bf72-83ea7e9f6496 . Доорх бичвэр зөвхөн түүхэн лавлагаа.
+
 # Vertmon Hub — UI/UX Redesign Master Plan
 ### "Editorial Terracotta, Fully Committed" — a 100% front-end overhaul that keeps every feature
 

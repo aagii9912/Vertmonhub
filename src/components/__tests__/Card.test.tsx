@@ -16,7 +16,7 @@ describe('Card', () => {
             const { container } = render(<Card>Test</Card>);
             const card = container.firstChild as HTMLElement;
             expect(card.className).toContain('bg-surface');
-            expect(card.className).toContain('rounded-xl');
+            expect(card.className).toContain('rounded-md');
             expect(card.className).toContain('border');
         });
 
@@ -54,8 +54,8 @@ describe('Card', () => {
         it('applies default padding styles', () => {
             const { container } = render(<CardHeader>Header</CardHeader>);
             const header = container.firstChild as HTMLElement;
-            expect(header.className).toContain('px-4');
-            expect(header.className).toContain('py-4');
+            expect(header.className).toContain('px-3.5');
+            expect(header.className).toContain('py-2');
         });
 
         it('has border-bottom style', () => {
@@ -80,8 +80,8 @@ describe('Card', () => {
         it('applies default padding styles', () => {
             const { container } = render(<CardContent>Content</CardContent>);
             const content = container.firstChild as HTMLElement;
-            expect(content.className).toContain('px-4');
-            expect(content.className).toContain('py-4');
+            expect(content.className).toContain('px-3.5');
+            expect(content.className).toContain('py-3');
         });
 
         it('accepts custom className', () => {
@@ -105,7 +105,7 @@ describe('Card', () => {
         it('applies font styles', () => {
             render(<CardTitle>Title</CardTitle>);
             const title = screen.getByText('Title');
-            expect(title.className).toContain('heading-section');
+            expect(title.className).toContain('font-semibold');
             expect(title.className).toContain('text-foreground');
         });
 
