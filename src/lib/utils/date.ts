@@ -24,11 +24,11 @@ export function formatTimeAgo(date: string | Date): string {
  * Format time for display (HH:MM format) using Mongolian timezone
  */
 export function formatTime(date: string | Date): string {
-  return new Date(date).toLocaleTimeString('mn-MN', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'Asia/Ulaanbaatar'
-  });
+    const d = typeof date === 'string' ? new Date(date) : date;
+    if (Number.isNaN(d.getTime())) return '—';
+    // v2: 24 цагийн формат (10:00, 17:41) — Монголд AM/PM хэрэглэдэггүй, mono баганад тэгш.
+    // Улаанбаатарын цагийн бүсээр (серверийн/хөтчийн бүсээс үл хамааран ижил).
+    return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Ulaanbaatar' }).format(d);
 }
 
 /**
@@ -48,7 +48,12 @@ export function formatDate(date: string | Date): string {
  * Format a date to short date string (e.g., "2024.01.15")
  */
 export function formatShortDate(date: string | Date): string {
-  return new Date(date).toLocaleDateString('mn-MN');
+    const d = typeof date === 'string' ? (/^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T00:00:00`) : new Date(date)) : date;
+    if (Number.isNaN(d.getTime())) return '—';
+    // v2: ISO хэлбэр (2026-07-30) — mono баганад тэгш, монголчуудын бичдэг дараалал (он-сар-өдөр).
+    // Огноо-л мөрийг (DATE багана) локал өдрөөр, timestamp-ийг Улаанбаатарын бүсээр.
+    if (typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
+    return new Intl.DateTimeFormat('sv-SE', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'Asia/Ulaanbaatar' }).format(d);
 }
 
 /**
