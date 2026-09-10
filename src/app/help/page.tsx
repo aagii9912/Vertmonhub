@@ -33,7 +33,7 @@ export default function HelpPage() {
   return (
     <div className="min-h-screen bg-surface-2/40">
       {/* Hero Section */}
-      <div className="bg-gradient-to-br from-brand to-brand-strong text-white">
+      <div className="bg-brand text-white">
         <div className="max-w-4xl mx-auto px-6 py-16 text-center">
           <div className="w-20 h-20 bg-surface/20 rounded-2xl flex items-center justify-center mx-auto mb-6">
             <HelpCircle className="w-10 h-10" />

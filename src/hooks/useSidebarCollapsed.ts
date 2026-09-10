@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 
 const KEY = 'vertmonhub_sidebar_collapsed';
-const EXPANDED = '16rem';
-const COLLAPSED = '4rem';
+const EXPANDED = '14.5rem';
+const COLLAPSED = '3.75rem';
 
 /**
  * Sidebar-ийг icon-rail болгож хумих төлөв.

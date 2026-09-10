@@ -4,6 +4,7 @@ import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { requireModuleWrite, resolvePermissions } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
+import { ACTIVE_STATUSES } from '@/lib/leads/labels';
 import { parsePagination, buildPageMeta } from '@/lib/utils/pagination';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logger } from '@/lib/utils/logger';
@@ -17,8 +18,12 @@ const PERIOD_DAYS: Record<string, number> = {
 };
 
 /**
- * GET /api/dashboard/leads?status=<status>&source=<source>&period=<week|month|quarter|year>&manager=<нэр>
+ * GET /api/dashboard/leads?status=<status>&source=<source>&period=<week|month|quarter|year>&manager=<нэр>&phone=<дугаар>&q=<хайлт>
  * Лийдийн жагсаалт (shop-scoped, сервер cookie auth + service role).
+ * phone — утасны давхардал шалгах (форматаас үл хамааран: «9911 2233» / «99112233» / «9911-2233»).
+ * q — нэр, утас, и-мэйлээр хайлт.
+ * view — хадгалсан харагдац: all | mine (миний лид) | new | meetings (уулзалт товлосон) | active (хаагдаагүй).
+ * sort — created_at (анхдагч) | last_contact_at | customer_name | next_followup_at; dir — asc | desc.
  * Soft-delete хийгдсэн лийдийг (deleted_at) хасна.
  * manager — хариуцагч менежерээр шүүнэ (sales_manager_name, contracts API-ийн жишиг).
  */
@@ -38,14 +43,35 @@ export async function GET(request: NextRequest) {
         // сэргийлнэ. ?page&pageSize эсвэл ?limit&offset өгөөгүй бол аюулгүйн таг.
         const pagination = parsePagination(searchParams);
 
+        const SORTABLE = ['created_at', 'last_contact_at', 'customer_name', 'next_followup_at', 'status'] as const;
+        const sortRaw = searchParams.get('sort');
+        const sort = (SORTABLE as readonly string[]).includes(sortRaw || '') ? (sortRaw as string) : 'created_at';
+        const ascending = searchParams.get('dir') === 'asc';
+
         const db = supabaseAdmin();
         let query = db
             .from('leads')
             .select('*', { count: 'exact' })
             .eq('shop_id', authShop.id)
             .is('deleted_at', null)
+            .order(sort, { ascending, nullsFirst: false })
             .order('created_at', { ascending: false })
             .range(pagination.from, pagination.to);
+
+        // Хадгалсан харагдац
+        const view = searchParams.get('view');
+        if (view === 'mine') {
+            const uid = await getUserId();
+            const identity = uid ? await resolveManagerIdentity(db, authShop.id, uid) : null;
+            if (identity?.managerName) query = query.eq('sales_manager_name', identity.managerName);
+            else query = query.eq('sales_manager_name', '__none__'); // менежер биш → хоосон
+        } else if (view === 'new') {
+            query = query.eq('status', 'new');
+        } else if (view === 'meetings') {
+            query = query.eq('status', 'viewing_scheduled');
+        } else if (view === 'active') {
+            query = query.in('status', ACTIVE_STATUSES);
+        }
 
         if (status && status !== 'all') {
             query = query.eq('status', status);
@@ -60,6 +86,25 @@ export async function GET(request: NextRequest) {
         if (period && PERIOD_DAYS[period]) {
             const start = new Date(Date.now() - PERIOD_DAYS[period] * 24 * 60 * 60 * 1000);
             query = query.gte('created_at', start.toISOString());
+        }
+        // Давхардлын шалгалт: цифрүүдийг 4-өөр хувааж хооронд нь дурын тэмдэгт зөвшөөрнө,
+        // ингэснээр хадгалсан формат (зай, зураас) ямар ч байсан таарна.
+        const phone = searchParams.get('phone');
+        if (phone) {
+            const digits = phone.replace(/\D/g, '');
+            if (digits.length >= 6) {
+                const chunks = digits.match(/.{1,4}/g) ?? [digits];
+                query = query.ilike('customer_phone', `%${chunks.join('%')}%`);
+            }
+        }
+        const q = searchParams.get('q')?.trim();
+        if (q) {
+            const safe = q.replace(/[%_,()]/g, ' ').trim();
+            if (safe) {
+                query = query.or(
+                    `customer_name.ilike.%${safe}%,customer_phone.ilike.%${safe}%,customer_email.ilike.%${safe}%`,
+                );
+            }
         }
 
         const { data, error, count } = await query;
@@ -81,6 +126,7 @@ const CreateLeadSchema = z.object({
     customer_email: z.string().trim().max(200).nullish(),
     source: z.string().trim().max(50).optional(),
     preferred_type: z.string().trim().max(30).nullish(),
+    preferred_rooms: z.number().int().min(1).max(20).nullish(),
     financing_intent: z.string().trim().max(30).nullish(),
     budget_min: z.number().nonnegative().nullish(),
     budget_max: z.number().nonnegative().nullish(),
@@ -135,6 +181,7 @@ export async function POST(request: NextRequest) {
             customer_email: input.customer_email || null,
             source: input.source || 'other',
             preferred_type: input.preferred_type || null,
+            preferred_rooms: input.preferred_rooms ?? null,
             financing_intent: input.financing_intent || null,
             budget_min: input.budget_min ?? null,
             budget_max: input.budget_max ?? null,

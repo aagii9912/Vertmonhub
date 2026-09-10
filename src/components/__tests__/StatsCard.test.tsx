@@ -37,8 +37,7 @@ describe('StatsCard', () => {
             const { container } = render(
                 <StatsCard title="Users" value={50} icon={Users} />
             );
-            const iconContainer = container.querySelector('.rounded-xl');
-            expect(iconContainer).toBeInTheDocument();
+            // v2: дүрс хавтангүй, шууд 16px svg
             expect(container.querySelector('svg')).toBeInTheDocument();
         });
     });
@@ -124,8 +123,8 @@ describe('StatsCard', () => {
                 <StatsCard title="Test" value={100} icon={Package} />
             );
             // Default iconColor 'bg-brand' → brand-soft tile tone.
-            const iconContainer = container.querySelector('.bg-brand-soft');
-            expect(iconContainer).toBeInTheDocument();
+            // v2 анхдагч өнгө: төвийг сахисан (muted) дүрс
+            expect(container.querySelector('svg.text-muted-foreground')).toBeInTheDocument();
         });
 
         it('applies the requested gradient when iconColor is set', () => {
@@ -137,8 +136,8 @@ describe('StatsCard', () => {
                     iconColor="bg-blue"
                 />
             );
-            const iconContainer = container.querySelector('.bg-status-info-soft');
-            expect(iconContainer).toBeInTheDocument();
+            // v2: 'bg-blue' legacy alias → info өнгөт дүрс
+            expect(container.querySelector('svg.text-status-info')).toBeInTheDocument();
         });
     });
 
@@ -148,7 +147,7 @@ describe('StatsCard', () => {
                 <StatsCard title="Test" value={100} icon={Package} />
             );
             const card = container.firstChild as HTMLElement;
-            expect(card.className).toContain('rounded-xl');
+            expect(card.className).toContain('rounded-md');
             expect(card.className).toContain('border');
             expect(card.className).toContain('bg-surface');
         });

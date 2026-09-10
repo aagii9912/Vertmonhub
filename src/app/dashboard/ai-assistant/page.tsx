@@ -291,7 +291,7 @@ export default function AIAssistantPage() {
     };
 
     return (
-        <div className="flex h-full bg-gradient-to-b from-surface-2/30 to-surface">
+        <div className="flex h-full bg-surface">
             <ConversationSidebar
                 conversations={conversations}
                 activeId={activeConversationId}
@@ -306,13 +306,13 @@ export default function AIAssistantPage() {
 
             <div className="flex-1 flex flex-col min-w-0">
                 {/* Header */}
-                <div className="relative px-4 md:px-6 py-3 bg-gradient-to-r from-brand-soft/50 via-surface to-surface border-b border-border/60">
+                <div className="relative px-4 md:px-6 py-3 bg-surface border-b border-border/60">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                             <button onClick={() => setSidebarCollapsed(!sidebarCollapsed)} className="md:hidden p-2 rounded-lg hover:bg-surface-2 text-muted-foreground">
                                 <MessageSquare className="w-5 h-5" />
                             </button>
-                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-brand to-brand-strong flex items-center justify-center shadow-sm">
+                            <div className="w-9 h-9 rounded-xl bg-brand flex items-center justify-center shadow-sm">
                                 <Sparkles className="w-5 h-5 text-white" />
                             </div>
                             <div>
@@ -334,7 +334,7 @@ export default function AIAssistantPage() {
                         </div>
                     ) : isEmpty ? (
                         <div className="max-w-2xl mx-auto h-full flex flex-col items-center justify-center text-center gap-6 animate-in fade-in duration-500">
-                            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand to-brand-strong flex items-center justify-center shadow-lg">
+                            <div className="w-16 h-16 rounded-2xl bg-brand flex items-center justify-center shadow-lg">
                                 <Sparkles className="w-8 h-8 text-white" />
                             </div>
                             <div>
@@ -365,7 +365,7 @@ export default function AIAssistantPage() {
                             {messages.map((message) => (
                                 <div key={message.id} className={`flex gap-3 md:gap-4 max-w-4xl mx-auto animate-in fade-in slide-in-from-bottom-2 duration-300 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                                     {message.role === 'assistant' && (
-                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand to-brand-strong flex items-center justify-center flex-shrink-0 mt-1 shadow-sm">
+                                        <div className="w-8 h-8 rounded-full bg-brand flex items-center justify-center flex-shrink-0 mt-1 shadow-sm">
                                             <Bot className="w-5 h-5 text-white" />
                                         </div>
                                     )}
@@ -380,7 +380,7 @@ export default function AIAssistantPage() {
                                         )}
                                         {message.content && (
                                             <div className={`px-4 py-3 rounded-2xl ${message.role === 'user'
-                                                ? 'bg-gradient-to-br from-brand to-brand-strong text-white rounded-tr-sm shadow-sm'
+                                                ? 'bg-brand text-white rounded-tr-sm shadow-sm'
                                                 : 'bg-surface border border-border/60 shadow-sm rounded-tl-sm text-foreground'}`}>
                                                 {message.role === 'assistant'
                                                     ? <MarkdownMessage content={message.content} />
@@ -405,7 +405,7 @@ export default function AIAssistantPage() {
                             ))}
                             {isLoading && (
                                 <div className="flex gap-4 justify-start max-w-4xl mx-auto animate-in fade-in duration-200">
-                                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brand to-brand-strong flex items-center justify-center flex-shrink-0 mt-1 shadow-sm">
+                                    <div className="w-8 h-8 rounded-full bg-brand flex items-center justify-center flex-shrink-0 mt-1 shadow-sm">
                                         <Bot className="w-5 h-5 text-white" />
                                     </div>
                                     <div className="bg-surface border border-border/60 shadow-sm rounded-2xl rounded-tl-sm px-4 py-3 flex items-center gap-2">

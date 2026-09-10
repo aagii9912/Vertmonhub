@@ -150,7 +150,7 @@ export function ChatComposer({ disabled, shopId, onSend, showSuggestions, sugges
                         />
 
                         <button type="button" onClick={submit} disabled={!canSend}
-                            className="p-2.5 rounded-xl bg-gradient-to-br from-brand to-brand-strong text-white shadow-sm hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+                            className="p-2.5 rounded-xl bg-brand text-white shadow-sm hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
                             <Send className="w-5 h-5" />
                         </button>
                     </div>

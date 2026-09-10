@@ -37,7 +37,7 @@ const IMPORT_OPTIONS: ImportOption[] = [
         labelMN: 'Байрны мэдээлэл',
         description: 'Байрны нэр, блок, давхар, өрөө, талбай, үнэ, статус',
         icon: Home,
-        color: 'from-blue-500 to-cyan-500',
+        color: 'bg-brand-soft text-brand',
     },
     {
         value: 'company',
@@ -53,7 +53,7 @@ const IMPORT_OPTIONS: ImportOption[] = [
         labelMN: 'Төслийн мэдээлэл',
         description: 'Төслийн нэр, байршил, блок, давхар, барилгын явц',
         icon: TreePine,
-        color: 'from-emerald-500 to-green-500',
+        color: 'bg-status-success-soft text-status-success',
     },
     {
         value: 'faq',
@@ -61,7 +61,7 @@ const IMPORT_OPTIONS: ImportOption[] = [
         labelMN: 'Түгээмэл асуулт',
         description: 'Асуулт-хариулт (AI chatbot-д зориулсан)',
         icon: HelpCircle,
-        color: 'from-orange-500 to-amber-500',
+        color: 'bg-status-pending-soft text-status-pending',
     },
     {
         value: 'payment_policy',
@@ -69,7 +69,7 @@ const IMPORT_OPTIONS: ImportOption[] = [
         labelMN: 'Төлбөрийн бодлого',
         description: 'Урьдчилгаа, хөнгөлөлт, хасагчлах хугацаа',
         icon: CreditCard,
-        color: 'from-pink-500 to-rose-500',
+        color: 'bg-status-danger-soft text-status-danger',
     },
     {
         value: 'loan_info',
@@ -85,7 +85,7 @@ const IMPORT_OPTIONS: ImportOption[] = [
         labelMN: 'Тохилог / Онцлог',
         description: 'Лифт, паркинг, хамгаалалт, gym гэх мэт',
         icon: Sparkles,
-        color: 'from-indigo-500 to-blue-500',
+        color: 'bg-status-info-soft text-status-info',
     },
     {
         value: 'ai_extra',
@@ -216,7 +216,7 @@ export default function ImportTab() {
                                         : 'border-border hover:border-border-strong hover:shadow-sm bg-surface'
                                     }`}
                             >
-                                <div className={`w-9 h-9 rounded-lg bg-gradient-to-br ${option.color} flex items-center justify-center mb-2`}>
+                                <div className={`w-9 h-9 rounded-md ${option.color} flex items-center justify-center mb-2`}>
                                     <Icon className="w-5 h-5 text-white" />
                                 </div>
                                 <div className="font-medium text-foreground text-sm">{option.labelMN}</div>
@@ -245,7 +245,7 @@ export default function ImportTab() {
                         <button
                             onClick={() => downloadTemplate(selectedType)}
                             disabled={downloading}
-                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-emerald-500 to-green-500 text-white rounded-xl font-medium hover:from-emerald-600 hover:to-green-600 transition-all shadow-sm hover:shadow disabled:opacity-50"
+                            className="inline-flex items-center gap-2 px-4 py-2.5 bg-status-success text-white rounded-xl font-medium hover:from-emerald-600 hover:to-green-600 transition-all shadow-sm hover:shadow disabled:opacity-50"
                         >
                             {downloading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                             {selectedOption?.labelMN} Template татах
@@ -313,7 +313,7 @@ export default function ImportTab() {
                         <div className="flex-1 bg-surface-2/40 rounded-xl p-4">
                             <div className="flex items-center gap-3">
                                 {selectedOption && (
-                                    <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${selectedOption.color} flex items-center justify-center`}>
+                                    <div className={`w-8 h-8 rounded-md ${selectedOption.color} flex items-center justify-center`}>
                                         <selectedOption.icon className="w-4 h-4 text-white" />
                                     </div>
                                 )}
@@ -399,7 +399,7 @@ export default function ImportTab() {
             )}
 
             {/* Info box */}
-            <div className="bg-gradient-to-br from-slate-50 to-gray-50 rounded-2xl border border-border p-5">
+            <div className="bg-surface-2 rounded-md border border-border p-5">
                 <div className="flex items-start gap-3">
                     <div className="w-8 h-8 bg-brand-soft rounded-lg flex items-center justify-center flex-shrink-0">
                         <Info className="w-4 h-4 text-brand-strong" />

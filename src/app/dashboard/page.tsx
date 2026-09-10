@@ -4,18 +4,17 @@ import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDashboardMode } from '@/hooks/useDashboardMode';
 import { KpiGridSkeleton } from '@/components/ui/LoadingSkeleton';
-import { OrgDashboard } from '@/components/dashboard/OrgDashboard';
-import { ManagerDashboard } from '@/components/dashboard/my/ManagerDashboard';
-import { TeamOverview } from '@/components/dashboard/TeamOverview';
+import { TodayDashboard } from '@/components/dashboard/today/TodayDashboard';
+import { DirectorDashboard } from '@/components/dashboard/director/DirectorDashboard';
 import { ManagerSelector } from '@/components/dashboard/ManagerSelector';
 
 /**
  * Дашбоардын нүүр — role-aware router (сервер /api/dashboard/mode шийднэ):
- * • personal — борлуулалтын менежер «Миний самбар»-аа харна (өөрийн лид,
- *   уулзалт, гэрээ, зорилт, хийх ажлууд; виджетээ тохируулах боломжтой).
- * • org — админ болон бусад role нэгдсэн самбараа хэвээр харна; reports
- *   эрхтэй бол доор нь «Багийн гүйцэтгэл» + менежер сонгогч нэмэгдэнэ
- *   (мөр/сонголтоор аль ч менежерийн хувийн самбарыг нээнэ).
+ * • personal — борлуулалтын менежер «Өнөөдөр»-өө харна: уулзалт, залгах лид,
+ *   сануулга нэг жагсаалтаар + сарын зорилт.
+ * • org — захирал/админ «Захирлын самбар»: борлуулалт vs зорилт, leaderboard,
+ *   funnel, авлага. reports эрхтэй бол менежер сонгогчоор аль ч менежерийн
+ *   «Өнөөдөр»-ийг Sheet дотор нээнэ.
  */
 export default function DashboardPage() {
     const { loading: authLoading } = useAuth();
@@ -27,21 +26,12 @@ export default function DashboardPage() {
     }
 
     if (mode?.mode === 'personal') {
-        return <ManagerDashboard />;
+        return <TodayDashboard />;
     }
 
     return (
-        <OrgDashboard
-            extra={
-                mode?.canViewTeam ? (
-                    <TeamOverview
-                        onSelectManager={setSelectedManager}
-                        actions={
-                            <ManagerSelector selected={selectedManager} onSelect={setSelectedManager} />
-                        }
-                    />
-                ) : undefined
-            }
+        <DirectorDashboard
+            actions={mode?.canViewTeam ? <ManagerSelector selected={selectedManager} onSelect={setSelectedManager} /> : undefined}
         />
     );
 }

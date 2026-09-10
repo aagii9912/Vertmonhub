@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { IBM_Plex_Sans, IBM_Plex_Mono, Fraunces } from "next/font/google";
+import { Golos_Text, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
@@ -9,32 +9,25 @@ import { AnalyticsScripts } from "@/components/marketing/AnalyticsScripts";
 import { MarketingAttribution } from "@/components/marketing/MarketingAttribution";
 import { Toaster, ConfirmDialogHost } from '@/components/ui/Toast';
 
-// Editorial typography: Fraunces display + IBM Plex Sans body (Cyrillic-ready) + IBM Plex Mono
-const ibmPlexSans = IBM_Plex_Sans({
+// Vertmon Hub typography: Golos Text (UI, Cyrillic-ready) + JetBrains Mono (тоо, огноо, ID)
+const golosText = Golos_Text({
   variable: "--font-sans-google",
   subsets: ["latin", "cyrillic"],
-  weight: ["300", "400", "500", "600", "700"],
-  display: "swap",
-});
-
-const fraunces = Fraunces({
-  variable: "--font-display-google",
-  subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 
-const ibmPlexMono = IBM_Plex_Mono({
+const jetbrainsMono = JetBrains_Mono({
   variable: "--font-mono-google",
-  subsets: ["latin"],
+  subsets: ["latin", "cyrillic"],
   weight: ["400", "500"],
   display: "swap",
 });
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#FAFAF7' },
-    { media: '(prefers-color-scheme: dark)', color: '#0E0E10' },
+    { media: '(prefers-color-scheme: light)', color: '#F6F7F9' },
+    { media: '(prefers-color-scheme: dark)', color: '#0F1216' },
   ],
   width: "device-width",
   initialScale: 1,
@@ -70,7 +63,7 @@ export default function RootLayout({
     <html lang="mn" suppressHydrationWarning>
       <body
         suppressHydrationWarning
-        className={`${ibmPlexSans.variable} ${fraunces.variable} ${ibmPlexMono.variable} antialiased`}
+        className={`${golosText.variable} ${jetbrainsMono.variable} antialiased`}
       >
         {/* Theme-ийг будахаас өмнө тавьж flash-аас сэргийлнэ (хадгалсан сонголт эсвэл OS) */}
         <script

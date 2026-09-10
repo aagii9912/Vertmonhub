@@ -1,5 +1,8 @@
+'use client';
+
 import { type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import { usePageTitle } from '@/lib/navigation/pageTitle';
 
 interface BreadcrumbItem {
     label: string;
@@ -9,61 +12,33 @@ interface BreadcrumbItem {
 interface PageHeaderProps {
     title: string;
     subtitle?: string;
+    /** @deprecated v2: apron толгой (Header) breadcrumb-ыг өөрөө харуулна */
     eyebrow?: string;
     primaryAction?: ReactNode;
     secondaryActions?: ReactNode;
+    /** @deprecated v2: Header breadcrumb-ыг nav.ts-ээс өөрөө гаргана */
     breadcrumbs?: BreadcrumbItem[];
     className?: string;
 }
 
-export function PageHeader({
-    title,
-    subtitle,
-    eyebrow,
-    primaryAction,
-    secondaryActions,
-    breadcrumbs,
-    className,
-}: PageHeaderProps) {
+/**
+ * v2 хуудасны толгой.
+ *
+ * v1-д хуудас бүр 2xl–4xl серифэн гарчгаа давтан харуулдаг байсан бол v2-т
+ * гарчиг АППЫН 52px толгойд (Header) нэг л газар гарна — энэ компонент
+ * `usePageTitle`-аар тэр гарчгийг тохируулаад, зөвхөн тайлбар + үйлдлийн
+ * товчнуудыг нэг нягт мөрөнд харуулна. 35 хуудас өөрчлөлтгүй ашиглана.
+ */
+export function PageHeader({ title, subtitle, primaryAction, secondaryActions, className }: PageHeaderProps) {
+    usePageTitle(title);
+    const hasActions = !!(primaryAction || secondaryActions);
+    if (!subtitle && !hasActions) return null;
+
     return (
-        <header
-            className={cn(
-                'flex flex-col gap-3 mb-6 md:mb-8',
-                'md:flex-row md:items-end md:justify-between md:gap-6',
-                className,
-            )}
-        >
-            <div className="flex-1 min-w-0">
-                {breadcrumbs && breadcrumbs.length > 0 && (
-                    <nav className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground/80">
-                        {breadcrumbs.map((b, i) => (
-                            <span key={i} className="flex items-center gap-1.5">
-                                {b.href ? (
-                                    <a href={b.href} className="hover:text-foreground transition-colors">
-                                        {b.label}
-                                    </a>
-                                ) : (
-                                    <span>{b.label}</span>
-                                )}
-                                {i < breadcrumbs.length - 1 && <span className="text-muted-foreground/50">/</span>}
-                            </span>
-                        ))}
-                    </nav>
-                )}
-                {eyebrow && (
-                    <p className="text-xs font-mono uppercase tracking-[0.16em] text-muted-foreground/80 mb-2">
-                        {eyebrow}
-                    </p>
-                )}
-                <h1 className="heading-display text-2xl md:text-3xl lg:text-4xl text-foreground">
-                    {title}
-                </h1>
-                {subtitle && (
-                    <p className="mt-2 text-sm md:text-base text-muted-foreground max-w-2xl">{subtitle}</p>
-                )}
-            </div>
-            {(primaryAction || secondaryActions) && (
-                <div className="flex flex-wrap items-center gap-2 md:flex-nowrap md:gap-3 shrink-0">
+        <header className={cn('mb-4 flex flex-wrap items-center gap-2', className)}>
+            {subtitle && <p className="min-w-0 flex-1 text-[13px] text-muted-foreground">{subtitle}</p>}
+            {hasActions && (
+                <div className={cn('flex flex-wrap items-center gap-2', !subtitle && 'ml-auto')}>
                     {secondaryActions}
                     {primaryAction}
                 </div>

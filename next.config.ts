@@ -35,13 +35,16 @@ const nextConfig: NextConfig = {
     ],
   },
   async headers() {
+    const isDev = process.env.NODE_ENV === 'development';
     return [
       {
         source: '/(.*)',
         headers: [
           {
+            // Хөгжүүлэлтэд SAMEORIGIN: нэвтэрсэн Chrome дээр same-origin iframe-ээр
+            // утасны өргөнөөр (390px) шалгах боломж. Production-д DENY хэвээр.
             key: 'X-Frame-Options',
-            value: 'DENY',
+            value: isDev ? 'SAMEORIGIN' : 'DENY',
           },
           {
             key: 'X-Content-Type-Options',
@@ -73,7 +76,7 @@ const nextConfig: NextConfig = {
               "img-src 'self' data: blob: https://*.supabase.co https://*.fbcdn.net https://*.cdninstagram.com https://vercel.live",
               "connect-src 'self' https://*.supabase.co https://*.supabase.in wss://*.supabase.co https://generativelanguage.googleapis.com https://graph.facebook.com https://graph.instagram.com https://vercel.live wss://*.pusher.com https://*.pusher.com",
               "frame-src 'self' https://vercel.live",
-              "frame-ancestors 'none'",
+              isDev ? "frame-ancestors 'self'" : "frame-ancestors 'none'",
             ].join('; '),
           },
         ],

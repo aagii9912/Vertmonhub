@@ -1,30 +1,16 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import {
-    Building2,
-    ChevronDown,
-    ChevronUp,
-    ChevronRight,
-    LogOut,
-    Settings,
-    PanelLeftClose,
-    PanelLeftOpen,
-    UserCircle,
-} from 'lucide-react';
+import { ChevronsLeft, ChevronsRight, LogOut, UserCircle, Settings } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccessModule, canAccessModuleDynamic, getRoleDisplayName } from '@/lib/rbac';
 import { cn } from '@/lib/utils';
-import {
-    BOTTOM_ITEMS,
-    isNavItemActive,
-    type NavItem,
-} from '@/lib/navigation/workspaces';
-import { useActiveWorkspace, rememberSubroute } from '@/lib/navigation/useActiveWorkspace';
+import { PRIMARY_NAV, BOTTOM_NAV, isNavItemActive, type NavItem } from '@/lib/navigation/nav';
 import { useSidebarCollapsed } from '@/hooks/useSidebarCollapsed';
-import { WorkspaceSwitcher } from '@/components/dashboard/WorkspaceSwitcher';
+import { useNavCounts } from '@/hooks/useNavCounts';
+import { openCommandPalette } from '@/lib/navigation/commandPalette';
 import {
     DropdownMenu,
     DropdownMenuTrigger,
@@ -34,297 +20,201 @@ import {
     DropdownMenuSeparator,
 } from '@/components/ui/Dropdown';
 
-const SECTIONS_KEY = 'vertmonhub_sidebar_sections';
+/** Хүний нэрнээс 2 үсэгтэй товчлол: «Д. Номин» → «ДН». */
+export function initialsOf(name?: string | null): string {
+    if (!name) return '—';
+    const parts = name.replace(/\./g, ' ').split(/\s+/).filter(Boolean);
+    if (!parts.length) return '—';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+}
 
 export function Sidebar() {
-    const [collapsedSections, setCollapsedSections] = useState<string[]>([]);
-    const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
-    const pathname = usePathname();
+    const pathname = usePathname() || '';
     const { shop, user, signOut } = useAuth();
+    const { collapsed, toggle } = useSidebarCollapsed();
+    const counts = useNavCounts();
+
     const userRole = user?.role || 'viewer';
     const userPermissions = user?.permissions;
-    const { collapsed, toggle } = useSidebarCollapsed();
 
-    const active = useActiveWorkspace();
+    const allowed = useMemo(() => {
+        const can = (module: string) => {
+            if (!module) return true;
+            return userPermissions
+                ? canAccessModuleDynamic(userPermissions, module)
+                : canAccessModule(userRole, module);
+        };
+        return {
+            primary: PRIMARY_NAV.filter((i) => can(i.module)),
+            bottom: BOTTOM_NAV.filter((i) => can(i.module)),
+        };
+    }, [userRole, userPermissions]);
 
-    // Switcher-т буцах байрлал санахын тулд сүүлийн дэд хуудсыг хадгална.
-    useEffect(() => {
-        if (pathname) rememberSubroute(active.id, pathname);
-    }, [active.id, pathname]);
-
-    // Хэсгийн хумилтын төлөвийг сэргээх / хадгалах.
-    useEffect(() => {
-        try {
-            const raw = localStorage.getItem(SECTIONS_KEY);
-            if (raw) setCollapsedSections(JSON.parse(raw));
-        } catch { /* алгасна */ }
-    }, []);
-
-    const checkModuleAccess = (module: string): boolean => {
-        if (module === '') return true; // эрхгүй цэс — үргэлж харагдана
-        if (userPermissions) return canAccessModuleDynamic(userPermissions, module);
-        return canAccessModule(userRole, module);
-    };
-
-    const toggleSection = (id: string) => {
-        setCollapsedSections((prev) => {
-            const next = prev.includes(id) ? prev.filter((s) => s !== id) : [...prev, id];
-            try { localStorage.setItem(SECTIONS_KEY, JSON.stringify(next)); } catch { /* алгасна */ }
-            return next;
-        });
-    };
-
-    const toggleMenu = (name: string) => {
-        setExpandedMenus((prev) =>
-            prev.includes(name) ? prev.filter((m) => m !== name) : [...prev, name],
-        );
-    };
-
-    const isActive = (href: string) => pathname === href;
-    const isParentActive = (item: NavItem) => {
-        if (pathname === item.href) return true;
-        // Дэд хуудас (жишээ: /properties/[id], /leads/pipeline) дээр эх цэс тодорно
-        if (item.children?.length) {
-            if (item.children.some((child) => isActive(child.href))) return true;
-            if (pathname?.startsWith(item.href + '/')) return true;
-        }
-        return false;
-    };
-
-    // Эрхээр шүүсэн харагдах хэсгүүд
-    const visibleSections = active.sections
-        .map((section) => ({
-            ...section,
-            items: section.items.filter((item) => checkModuleAccess(item.module)),
-        }))
-        .filter((section) => section.items.length > 0);
-
-    const filteredBottomItems = BOTTOM_ITEMS.filter((item) => checkModuleAccess(item.module));
-
-    /** Идэвхтэй цэсний зүүн талын terracotta заагч (хүчтэй active төлөв). */
-    const activeBar = 'before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[3px] before:rounded-full before:bg-brand';
-
-    // Нэг цэсний мөр (leaf) — collapsed үед icon-only + title.
-    const renderLeaf = (item: NavItem, opts?: { bottom?: boolean }) => {
-        const itemActive = opts?.bottom ? isNavItemActive(pathname || '', item.href, { exact: true }) : isParentActive(item);
-        return (
-            <Link
-                href={item.href}
-                title={collapsed ? item.name : undefined}
-                aria-current={itemActive ? 'page' : undefined}
-                className={cn(
-                    'relative flex items-center rounded-md transition-colors text-sm group',
-                    collapsed ? 'justify-center h-10 w-10 mx-auto' : 'gap-2.5 px-2.5 py-2',
-                    itemActive
-                        ? cn('bg-surface-2 text-foreground font-medium', activeBar)
-                        : 'text-muted-foreground hover:bg-surface-2 hover:text-foreground',
-                )}
-            >
-                <item.icon
-                    className={cn(
-                        'w-4 h-4 shrink-0',
-                        itemActive ? 'text-brand' : 'text-muted-foreground/70 group-hover:text-foreground',
-                    )}
-                />
-                {!collapsed && <span className="font-medium truncate">{item.name}</span>}
-                {!collapsed && item.badge && (
-                    <span className="px-1.5 py-0.5 bg-brand-soft text-brand-strong text-2xs font-semibold rounded uppercase tracking-wider">
-                        {item.badge}
-                    </span>
-                )}
-            </Link>
-        );
-    };
+    const displayName = user?.fullName || user?.email?.split('@')[0] || 'Хэрэглэгч';
 
     return (
-        <aside className="fixed left-0 top-0 h-screen w-[var(--sidebar-w)] bg-surface border-r border-border flex flex-col z-50 hidden md:flex transition-[width] duration-200">
-            {/* Брэнд + хумих товч */}
-            <div className={cn('flex items-center h-14 border-b border-border/60', collapsed ? 'justify-center px-2' : 'justify-between px-4')}>
+        <aside
+            className={cn(
+                'fixed inset-y-0 left-0 z-40 hidden md:flex flex-col',
+                'border-r border-border bg-sidebar',
+                'w-[var(--sidebar-w)] transition-[width] duration-200 ease-out',
+            )}
+        >
+            {/* Брэнд */}
+            <div className={cn('flex items-center gap-2.5 px-3 pt-3 pb-2.5', collapsed && 'justify-center px-0')}>
+                <Link
+                    href="/dashboard"
+                    className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md bg-brand text-[14px] font-bold text-brand-fg"
+                    aria-label="Vertmon Hub"
+                >
+                    V
+                </Link>
                 {!collapsed && (
-                    <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-md bg-brand text-brand-fg flex items-center justify-center shrink-0">
-                            <Building2 className="w-4 h-4" />
-                        </div>
-                        <div className="flex flex-col leading-tight min-w-0">
-                            <span className="heading-display text-sm text-foreground truncate">Vertmon Hub</span>
-                            <span className="font-mono text-2xs tracking-[0.16em] text-muted-foreground/70">CRM</span>
-                        </div>
+                    <div className="min-w-0 flex-1 leading-tight">
+                        <div className="truncate text-[13.5px] font-semibold text-foreground">Vertmon Hub</div>
+                        <div className="truncate text-[11.5px] text-muted-foreground">{shop?.name || 'Mandala Garden'}</div>
                     </div>
                 )}
+            </div>
+
+            {/* Хайлт (⌘K) */}
+            <div className={cn('px-2.5 pb-2', collapsed && 'px-2')}>
                 <button
-                    onClick={toggle}
-                    aria-label={collapsed ? 'Цэсийг дэлгэх' : 'Цэсийг хумих'}
-                    title={collapsed ? 'Дэлгэх' : 'Хумих'}
-                    className="p-1.5 rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground transition-colors shrink-0"
+                    type="button"
+                    onClick={openCommandPalette}
+                    className={cn(
+                        'flex w-full items-center gap-2 rounded-md border border-border-strong bg-surface text-muted-foreground',
+                        'transition-colors hover:border-brand/40 hover:text-foreground focus-ring',
+                        collapsed ? 'h-[30px] justify-center px-0' : 'h-[30px] px-2.5',
+                    )}
+                    aria-label="Хайх"
                 >
-                    {collapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+                    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 stroke-current" fill="none" strokeWidth={1.75} strokeLinecap="round">
+                        <circle cx="11" cy="11" r="7" />
+                        <path d="M20 20l-3.5-3.5" />
+                    </svg>
+                    {!collapsed && (
+                        <>
+                            <span className="text-[12.5px]">Хайх…</span>
+                            <kbd className="mono-label ml-auto rounded border border-border bg-surface-2 px-1.5 text-[10.5px] leading-4 text-muted-foreground">
+                                ⌘K
+                            </kbd>
+                        </>
+                    )}
                 </button>
             </div>
 
-            {/* Workspace switcher (Workspace → Section → Item шатлалын эхлэл) */}
-            <div className={cn('border-b border-border/60', collapsed ? 'px-2 py-2' : 'px-2.5 py-2.5')}>
-                <WorkspaceSwitcher variant="sidebar" collapsed={collapsed} />
-            </div>
-
-            {/* Үндсэн навигаци */}
-            <nav className="flex-1 overflow-y-auto py-3 px-2.5">
-                {visibleSections.length === 0 ? (
-                    !collapsed && <p className="px-2.5 py-4 text-sm text-muted-foreground">Хандах эрхгүй</p>
-                ) : (
-                    visibleSections.map((section) => {
-                        const isCollapsed = collapsedSections.includes(section.id);
-
-                        return (
-                            <div key={section.id} className="mb-3">
-                                {/* Хэсгийн гарчиг (rail горимд нуугдана) */}
-                                {!collapsed && (
-                                    <button
-                                        onClick={() => toggleSection(section.id)}
-                                        className="w-full flex items-center justify-between px-2.5 py-1.5 group"
-                                    >
-                                        <span className="font-mono text-2xs font-medium tracking-[0.2em] text-muted-foreground/70 group-hover:text-muted-foreground transition-colors">
-                                            {section.title}
-                                        </span>
-                                        <ChevronRight
-                                            className={cn(
-                                                'w-3 h-3 text-muted-foreground/60 transition-transform duration-200',
-                                                !isCollapsed && 'rotate-90',
-                                            )}
-                                        />
-                                    </button>
-                                )}
-
-                                {/* Хэсгийн цэснүүд */}
-                                {(collapsed || !isCollapsed) && (
-                                    <ul className="space-y-0.5 mt-1">
-                                        {section.items.map((item) => {
-                                            const itemActive = isParentActive(item);
-                                            const isExpanded = expandedMenus.includes(item.name);
-                                            const hasChildren = !collapsed && item.children && item.children.length > 0;
-
-                                            return (
-                                                <li key={item.name}>
-                                                    {hasChildren ? (
-                                                        <>
-                                                            <button
-                                                                onClick={() => toggleMenu(item.name)}
-                                                                className={cn(
-                                                                    'relative w-full flex items-center justify-between px-2.5 py-2 rounded-md transition-colors text-sm group',
-                                                                    itemActive
-                                                                        ? cn('bg-surface-2 text-foreground', activeBar)
-                                                                        : 'text-muted-foreground hover:bg-surface-2 hover:text-foreground',
-                                                                )}
-                                                            >
-                                                                <div className="flex items-center gap-2.5 min-w-0">
-                                                                    <item.icon
-                                                                        className={cn(
-                                                                            'w-4 h-4 shrink-0',
-                                                                            itemActive ? 'text-brand' : 'text-muted-foreground/70 group-hover:text-foreground',
-                                                                        )}
-                                                                    />
-                                                                    <span className="font-medium truncate">{item.name}</span>
-                                                                    {item.badge && (
-                                                                        <span className="px-1.5 py-0.5 bg-brand-soft text-brand-strong text-2xs font-semibold rounded uppercase tracking-wider">
-                                                                            {item.badge}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                                {isExpanded ? (
-                                                                    <ChevronUp className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                                                                ) : (
-                                                                    <ChevronDown className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                                                                )}
-                                                            </button>
-                                                            {isExpanded && (
-                                                                <ul className="mt-0.5 ml-4 pl-3 border-l border-border space-y-0.5">
-                                                                    {item.children?.map((child) => (
-                                                                        <li key={child.name}>
-                                                                            <Link
-                                                                                href={child.href}
-                                                                                aria-current={isActive(child.href) ? 'page' : undefined}
-                                                                                className={cn(
-                                                                                    'block px-2.5 py-1.5 rounded-md text-sm transition-colors',
-                                                                                    isActive(child.href)
-                                                                                        ? 'text-foreground bg-surface-2 font-medium'
-                                                                                        : 'text-muted-foreground hover:text-foreground hover:bg-surface-2',
-                                                                                )}
-                                                                            >
-                                                                                {child.name}
-                                                                            </Link>
-                                                                        </li>
-                                                                    ))}
-                                                                </ul>
-                                                            )}
-                                                        </>
-                                                    ) : (
-                                                        renderLeaf(item)
-                                                    )}
-                                                </li>
-                                            );
-                                        })}
-                                    </ul>
-                                )}
-                            </div>
-                        );
-                    })
-                )}
+            {/* Үндсэн цэс */}
+            <nav className="flex flex-col gap-0.5 px-2.5" aria-label="Үндсэн цэс">
+                {allowed.primary.map((item) => (
+                    <NavRow key={item.href} item={item} pathname={pathname} collapsed={collapsed} count={item.countKey ? counts[item.countKey] : undefined} />
+                ))}
             </nav>
 
-            {/* Доод цэс */}
-            <div className="px-2.5 py-2 border-t border-border/60">
-                <ul className="space-y-0.5">
-                    {filteredBottomItems.map((item) => (
-                        <li key={item.name}>{renderLeaf(item, { bottom: true })}</li>
-                    ))}
-                </ul>
-            </div>
+            <div className="flex-1" />
 
-            {/* Хэрэглэгчийн профайл — нэгдсэн цэс (Тохиргоо + Гарах) */}
-            <div className="px-2.5 pb-3 border-t border-border/60 pt-2">
+            {/* Доод цэс */}
+            <nav className="flex flex-col gap-0.5 px-2.5 pb-1" aria-label="Нэмэлт цэс">
+                {allowed.bottom.map((item) => (
+                    <NavRow key={item.href} item={item} pathname={pathname} collapsed={collapsed} />
+                ))}
+            </nav>
+
+            {/* Хэрэглэгч */}
+            <div className="mx-2.5 mt-1.5 border-t border-border pt-2 pb-2">
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <button
-                            title={collapsed ? (shop?.name || 'Профайл') : undefined}
-                            aria-label="Профайл цэс"
+                            type="button"
                             className={cn(
-                                'w-full flex items-center rounded-md hover:bg-surface-2 transition-colors',
-                                collapsed ? 'justify-center p-1.5' : 'gap-2.5 px-2.5 py-2',
+                                'flex w-full items-center gap-2.5 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-surface-2 focus-ring',
+                                collapsed && 'justify-center px-0',
                             )}
                         >
-                            <div className="w-7 h-7 rounded-full bg-brand-soft flex items-center justify-center shrink-0">
-                                <UserCircle className="w-4 h-4 text-brand-strong" />
-                            </div>
+                            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border-strong bg-surface-2 text-[10.5px] font-semibold text-fg-2">
+                                {initialsOf(displayName)}
+                            </span>
                             {!collapsed && (
-                                <>
-                                    <div className="flex-1 text-left min-w-0">
-                                        <p className="text-sm font-medium text-foreground truncate">{shop?.name || 'Агент'}</p>
-                                        <p className="text-xs text-muted-foreground/80 truncate">{getRoleDisplayName(userRole)}</p>
-                                    </div>
-                                    <ChevronUp className="w-3.5 h-3.5 text-muted-foreground/60 shrink-0" />
-                                </>
+                                <span className="min-w-0 flex-1 leading-tight">
+                                    <span className="block truncate text-[12.5px] font-semibold text-foreground">{displayName}</span>
+                                    <span className="block truncate text-[11px] text-muted-foreground">{getRoleDisplayName(userRole)}</span>
+                                </span>
                             )}
                         </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent side="top" align="start" className="w-56">
-                        <DropdownMenuLabel>
-                            <p className="text-sm font-medium text-foreground truncate">{shop?.name || 'Агент'}</p>
-                            <p className="text-xs text-muted-foreground/80 truncate font-normal">{getRoleDisplayName(userRole)}</p>
-                        </DropdownMenuLabel>
+                    <DropdownMenuContent align="start" side="top" className="w-56">
+                        <DropdownMenuLabel className="truncate">{user?.email}</DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem asChild>
-                            <Link href="/dashboard/settings">
-                                <Settings className="w-4 h-4 text-muted-foreground/70" />
-                                Тохиргоо
+                            <Link href="/dashboard/settings" className="flex items-center gap-2">
+                                <UserCircle className="h-4 w-4" /> Профайл
+                            </Link>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem asChild>
+                            <Link href="/dashboard/settings" className="flex items-center gap-2">
+                                <Settings className="h-4 w-4" /> Тохиргоо
                             </Link>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem variant="danger" onSelect={() => signOut()}>
-                            <LogOut className="w-4 h-4" />
-                            Гарах
+                        <DropdownMenuItem onClick={() => void signOut()} className="flex items-center gap-2 text-status-danger">
+                            <LogOut className="h-4 w-4" /> Гарах
                         </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>
             </div>
+
+            {/* Хумих товч */}
+            <button
+                type="button"
+                onClick={toggle}
+                className="mx-2.5 mb-2.5 flex h-7 items-center justify-center gap-1.5 rounded-md text-[11.5px] text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground focus-ring"
+                aria-label={collapsed ? 'Цэсийг дэлгэх' : 'Цэсийг хумих'}
+            >
+                {collapsed ? <ChevronsRight className="h-4 w-4" /> : (<><ChevronsLeft className="h-4 w-4" /> Хумих</>)}
+            </button>
         </aside>
+    );
+}
+
+function NavRow({
+    item,
+    pathname,
+    collapsed,
+    count,
+}: {
+    item: NavItem;
+    pathname: string;
+    collapsed: boolean;
+    count?: number;
+}) {
+    const active = isNavItemActive(item, pathname);
+    const Icon = item.icon;
+
+    return (
+        <Link
+            href={item.href}
+            aria-current={active ? 'page' : undefined}
+            title={collapsed ? item.name : undefined}
+            className={cn(
+                'flex h-[30px] items-center gap-2.5 rounded-md px-2 text-[13px] font-medium transition-colors focus-ring',
+                collapsed && 'justify-center px-0',
+                active
+                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                    : 'text-fg-2 hover:bg-surface-2 hover:text-foreground',
+            )}
+        >
+            <Icon className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+            {!collapsed && (
+                <>
+                    <span className="truncate">{item.name}</span>
+                    {typeof count === 'number' && count > 0 && (
+                        <span className={cn('mono-label ml-auto text-[11px]', active ? 'text-brand' : 'text-muted-foreground')}>
+                            {count}
+                        </span>
+                    )}
+                </>
+            )}
+        </Link>
     );
 }

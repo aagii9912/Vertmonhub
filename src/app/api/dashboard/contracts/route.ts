@@ -74,8 +74,23 @@ export async function GET(request: NextRequest) {
             if (data.length < PAGE) break;
         }
 
-        // Статистик
+        // Статистик (бүх мөр дээр)
         const stats = computeStats(contracts || []);
+
+        // v2 хуудаслалт: ?page&pageSize өгвөл зөвхөн тухайн хуудсыг буцаана
+        // (статистик бүтэн хэвээр). Өгөөгүй бол v1-тэй адил бүгдийг буцаана.
+        const pageRaw = sp.get('page');
+        if (pageRaw !== null) {
+            const pageSize = Math.min(200, Math.max(1, Number(sp.get('pageSize')) || 25));
+            const page = Math.max(1, Number(pageRaw) || 1);
+            const total = contracts.length;
+            const slice = contracts.slice((page - 1) * pageSize, page * pageSize);
+            return NextResponse.json({
+                contracts: slice,
+                stats,
+                pagination: { total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)), hasMore: page * pageSize < total },
+            });
+        }
 
         return NextResponse.json({ contracts: contracts || [], stats });
     } catch (error) {

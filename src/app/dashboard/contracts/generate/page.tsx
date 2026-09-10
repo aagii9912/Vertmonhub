@@ -114,6 +114,24 @@ function ContractGenerateInner() {
         const next: Partial<ContractData> = {};
         for (const k of keys) { const val = searchParams.get(k); if (val) next[k] = val; }
         if (Object.keys(next).length) setData(prev => ({ ...prev, ...next }));
+
+        // v2: лидийн панелаас «Гэрээ үүсгэх» → ?lead=<id> — нэр, утсыг серверээс авна
+        const leadId = searchParams.get('lead');
+        if (leadId) {
+            fetch(`/api/dashboard/leads/${leadId}`, { headers: shopHeaders() })
+                .then((r) => (r.ok ? r.json() : null))
+                .then((j) => {
+                    const l = j?.lead;
+                    if (!l) return;
+                    setData((prev) => ({
+                        ...prev,
+                        buyerName: prev.buyerName || l.customer_name || '',
+                        buyerPhone: prev.buyerPhone || l.customer_phone || '',
+                        buyerEmail: prev.buyerEmail || l.customer_email || '',
+                    }));
+                })
+                .catch(() => { /* урьдчилан бөглөлт заавал биш */ });
+        }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 

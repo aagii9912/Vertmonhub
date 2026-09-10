@@ -59,12 +59,12 @@ export function FeedbackWidget() {
     ];
 
     return (
-        <div className="fixed bottom-6 right-6 z-50">
+        <div className="fixed right-4 z-40 bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.75rem)] md:bottom-6 md:right-6">
             {/* Expanded Form */}
             {isExpanded && (
                 <div className="absolute bottom-16 right-0 w-80 bg-surface rounded-2xl shadow-2xl border border-border/60 overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
                     {/* Header */}
-                    <div className="bg-gradient-to-r from-brand to-purple-600 px-4 py-3 flex items-center justify-between">
+                    <div className="bg-brand px-4 py-3 flex items-center justify-between">
                         <span className="text-white font-medium">Санал хүсэлт</span>
                         <button
                             onClick={() => setIsExpanded(false)}
@@ -145,7 +145,7 @@ export function FeedbackWidget() {
                 }}
                 className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all ${isOpen
                         ? 'bg-foreground rotate-45'
-                        : 'bg-gradient-to-r from-brand to-purple-600 hover:shadow-xl hover:scale-105'
+                        : 'bg-brand hover:bg-brand-strong hover:shadow-lg'
                     }`}
             >
                 {isOpen ? (

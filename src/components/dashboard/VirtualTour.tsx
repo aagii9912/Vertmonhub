@@ -63,9 +63,9 @@ export function VirtualTour({ tourUrl, propertyName, posterImage, aspectRatio = 
                     {posterImage ? (
                         <img src={posterImage} alt={propertyName || 'Virtual Tour'} className="w-full h-full object-cover" />
                     ) : (
-                        <div className="w-full h-full bg-gradient-to-br from-violet-900 to-indigo-900 flex items-center justify-center">
+                        <div className="w-full h-full bg-surface-3 flex items-center justify-center">
                             <div className="text-center">
-                                <div className="text-5xl mb-2">🏠</div>
+                                <div className="mb-2 text-[13px] font-medium text-muted-foreground">3D тур</div>
                                 <p className="text-white/60 text-sm">360° Virtual Tour</p>
                             </div>
                         </div>

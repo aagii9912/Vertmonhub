@@ -75,13 +75,13 @@ interface Stage {
 }
 
 const PIPELINE_STAGES: Stage[] = [
-    { key: 'new', label: 'Шинэ', dot: 'bg-status-info', bg: 'bg-status-info-soft border-status-info/30', probability: 0.1, stalledDays: 3 },
-    { key: 'contacted', label: 'Холбогдсон', dot: 'bg-status-pending', bg: 'bg-status-pending-soft border-status-pending/30', probability: 0.2, stalledDays: 5 },
+    { key: 'new', label: 'Шинэ', dot: 'bg-status-info', bg: 'bg-surface-2/50 border-border', probability: 0.1, stalledDays: 3 },
+    { key: 'contacted', label: 'Холбогдсон', dot: 'bg-status-pending', bg: 'bg-surface-2/50 border-border', probability: 0.2, stalledDays: 5 },
     { key: 'viewing_scheduled', label: 'Уулзалт товлосон', dot: 'bg-brand', bg: 'bg-brand-soft border-brand/30', probability: 0.4, stalledDays: 7 },
-    { key: 'offered', label: 'Санал илгээсэн', dot: 'bg-status-pending', bg: 'bg-status-pending-soft border-status-pending/30', probability: 0.6, stalledDays: 7 },
-    { key: 'negotiating', label: 'Хэлэлцэж байна', dot: 'bg-status-info', bg: 'bg-status-info-soft border-status-info/30', probability: 0.8, stalledDays: 10 },
-    { key: 'closed_won', label: 'Амжилттай', dot: 'bg-status-success', bg: 'bg-status-success-soft border-status-success/30', probability: 1, stalledDays: 0 },
-    { key: 'closed_lost', label: 'Алдсан', dot: 'bg-status-neutral-soft', bg: 'bg-surface-2/40 border-border', probability: 0, stalledDays: 0 },
+    { key: 'offered', label: 'Санал илгээсэн', dot: 'bg-status-pending', bg: 'bg-surface-2/50 border-border', probability: 0.6, stalledDays: 7 },
+    { key: 'negotiating', label: 'Хэлэлцэж байна', dot: 'bg-status-info', bg: 'bg-surface-2/50 border-border', probability: 0.8, stalledDays: 10 },
+    { key: 'closed_won', label: 'Амжилттай', dot: 'bg-status-success', bg: 'bg-surface-2/50 border-border', probability: 1, stalledDays: 0 },
+    { key: 'closed_lost', label: 'Алдсан', dot: 'bg-status-neutral-soft', bg: 'bg-surface-2/50 border-border', probability: 0, stalledDays: 0 },
 ];
 
 const STAGE_MAP: Record<string, Stage> = Object.fromEntries(PIPELINE_STAGES.map(s => [s.key, s]));
