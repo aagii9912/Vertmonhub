@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Bell, ChevronRight, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getBreadcrumb, getNavTitle } from '@/lib/navigation/nav';
 import { openCommandPalette, openQuickCreate } from '@/lib/navigation/commandPalette';
+import { onPageTitle } from '@/lib/navigation/pageTitle';
 import { useNavCounts } from '@/hooks/useNavCounts';
 
 /**
@@ -17,8 +18,12 @@ import { useNavCounts } from '@/hooks/useNavCounts';
  */
 export function Header() {
     const pathname = usePathname() || '';
-    const crumbs = getBreadcrumb(pathname);
-    const title = getNavTitle(pathname);
+    const [override, setOverride] = useState<string | null>(null);
+    useEffect(() => onPageTitle(setOverride), []);
+    useEffect(() => setOverride(null), [pathname]);
+
+    const crumbs = override ? [] : getBreadcrumb(pathname);
+    const title = override ?? getNavTitle(pathname);
 
     // N товчлуур — түргэн бүртгэл. Оролтод бичиж байхад ажиллахгүй.
     useEffect(() => {

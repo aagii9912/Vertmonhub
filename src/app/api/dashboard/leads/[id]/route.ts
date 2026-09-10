@@ -35,6 +35,20 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             }
         }
         if (typeof body.notes === 'string') updates.notes = body.notes;
+        // «Өнөөдөр» дэлгэц: дараагийн холбоо барих цагийг хойшлуулах / дуусгах (null).
+        if (body.next_followup_at !== undefined) {
+            if (body.next_followup_at === null) updates.next_followup_at = null;
+            else if (typeof body.next_followup_at === 'string' && !Number.isNaN(Date.parse(body.next_followup_at))) {
+                updates.next_followup_at = new Date(body.next_followup_at).toISOString();
+            } else {
+                return NextResponse.json({ error: 'Буруу огноо' }, { status: 400 });
+            }
+        }
+        if (body.last_contact_at !== undefined) {
+            if (typeof body.last_contact_at === 'string' && !Number.isNaN(Date.parse(body.last_contact_at))) {
+                updates.last_contact_at = new Date(body.last_contact_at).toISOString();
+            }
+        }
         if (typeof body.lost_reason === 'string') updates.lost_reason = body.lost_reason.slice(0, 300) || null;
         // Хариуцагч менежер хуваарилах/чөлөөлөх (null = хуваарилаагүй)
         if (body.sales_manager_name !== undefined) {

@@ -15,7 +15,7 @@ import {
     SheetHeader,
     SheetTitle,
 } from '@/components/ui/Sheet';
-import { ManagerDashboard } from '@/components/dashboard/my/ManagerDashboard';
+import { TodayDashboard } from '@/components/dashboard/today/TodayDashboard';
 import { useAuth } from '@/contexts/AuthContext';
 import { UserRound } from 'lucide-react';
 
@@ -34,7 +34,7 @@ interface ManagerSelectorProps {
 /**
  * «Менежер сонгогч» — админ аль ч менежерийн хувийн самбарыг нээж үзнэ.
  * Select нь /api/dashboard/managers (бүртгэл ∪ гэрээ ∪ лидийн нэрс)-ээс,
- * сонгоход баруун талын Sheet дотор ManagerDashboard drill-in нээгдэнэ.
+ * сонгоход баруун талын Sheet дотор тухайн менежерийн «Өнөөдөр» нээгдэнэ.
  */
 export function ManagerSelector({ selected, onSelect }: ManagerSelectorProps) {
     const { shop } = useAuth();
@@ -87,10 +87,10 @@ export function ManagerSelector({ selected, onSelect }: ManagerSelectorProps) {
                             </span>
                             {selected}
                         </SheetTitle>
-                        <SheetDescription>Менежерийн хувийн самбар</SheetDescription>
+                        <SheetDescription>Менежерийн «Өнөөдөр» ба сарын гүйцэтгэл</SheetDescription>
                     </SheetHeader>
                     <div className="px-4 pb-8 pt-2 md:px-6">
-                        {selected && <ManagerDashboard managerName={selected} embedded />}
+                        {selected && <TodayDashboard managerName={selected} embedded />}
                     </div>
                 </SheetContent>
             </Sheet>
