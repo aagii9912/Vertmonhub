@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
 
 const statusPillVariants = cva(
-  "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap",
+  "inline-flex h-5 items-center gap-1.5 rounded-full px-2 text-[11.5px] font-medium whitespace-nowrap",
   {
     variants: {
       variant: {
@@ -14,7 +14,7 @@ const statusPillVariants = cva(
         info: "bg-status-info-soft text-status-info",
         active: "bg-status-active-soft text-status-active",
         neutral: "bg-status-neutral-soft text-muted-foreground",
-        brand: "bg-brand-soft text-brand-strong",
+        brand: "bg-brand-soft text-brand",
       },
     },
     defaultVariants: {

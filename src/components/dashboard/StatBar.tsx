@@ -13,12 +13,9 @@ const colsMap: Record<NonNullable<StatBarProps['columns']>, string> = {
     4: 'grid-cols-2 md:grid-cols-4',
 };
 
+/** v2 KPI мөр — нягт, хил хязгаартай, 20px тоо. */
 export function StatBar({ children, columns = 4, className }: StatBarProps) {
-    return (
-        <div className={cn('grid gap-3 md:gap-4 mb-6', colsMap[columns], className)}>
-            {children}
-        </div>
-    );
+    return <div className={cn('mb-4 grid gap-2', colsMap[columns], className)}>{children}</div>;
 }
 
 interface StatTileProps {
@@ -41,20 +38,13 @@ const accentMap: Record<NonNullable<StatTileProps['accent']>, string> = {
 
 export function StatTile({ label, value, helper, icon, accent = 'neutral', className }: StatTileProps) {
     return (
-        <div
-            className={cn(
-                'rounded-xl border border-border bg-surface p-4 md:p-5 transition-colors hover:border-border-strong',
-                className,
-            )}
-        >
-            <div className="flex items-start justify-between gap-3">
-                <p className="text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80">
-                    {label}
-                </p>
-                {icon && <span className={cn('shrink-0', accentMap[accent])}>{icon}</span>}
+        <div className={cn('flex min-w-0 flex-col gap-0.5 rounded-md border border-border bg-surface px-3.5 py-2.5', className)}>
+            <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-[11.5px] font-medium text-muted-foreground">{label}</span>
+                {icon && <span className={cn('shrink-0 [&>svg]:h-4 [&>svg]:w-4', accentMap[accent])}>{icon}</span>}
             </div>
-            <p className="mt-3 heading-display text-2xl md:text-3xl text-foreground tabular-nums">{value}</p>
-            {helper && <div className="mt-2 text-xs text-muted-foreground">{helper}</div>}
+            <div className="num truncate text-[17px] font-semibold tracking-[-0.02em] text-foreground sm:text-[20px]">{value}</div>
+            {helper && <div className="truncate text-[11.5px] text-muted-foreground">{helper}</div>}
         </div>
     );
 }

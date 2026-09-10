@@ -81,7 +81,7 @@ export function PWAInstallPrompt() {
 
     return (
         <div className="fixed bottom-20 left-4 right-4 md:bottom-6 md:left-auto md:right-6 md:w-80 z-50 animate-slide-up">
-            <div className="bg-gradient-to-r from-blue-600 to-brand-strong rounded-2xl p-4 shadow-2xl shadow-blue-500/25">
+            <div className="bg-brand rounded-md p-4 shadow-lg">
                 <button
                     onClick={handleDismiss}
                     className="absolute top-2 right-2 p-1 text-white/70 hover:text-white transition-colors"

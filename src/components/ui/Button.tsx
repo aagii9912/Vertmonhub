@@ -4,14 +4,14 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-    'inline-flex items-center justify-center font-medium rounded-md transition-[color,background-color,border-color,box-shadow,transform] duration-150 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.98] tap-feedback disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none',
+    'inline-flex items-center justify-center font-medium rounded-md transition-[color,background-color,border-color,box-shadow,transform] duration-150 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 disabled:pointer-events-none',
     {
         variants: {
             variant: {
                 primary:
                     'bg-brand text-brand-fg hover:bg-brand-strong active:bg-brand-strong',
                 secondary:
-                    'bg-surface text-foreground border border-border hover:bg-surface-2 active:bg-surface-3',
+                    'bg-surface text-foreground border border-border-strong hover:bg-surface-2 active:bg-surface-3',
                 tertiary:
                     'bg-surface-2 text-foreground hover:bg-surface-3 active:bg-surface-3',
                 danger:
@@ -24,11 +24,12 @@ const buttonVariants = cva(
                     'text-brand underline-offset-4 hover:underline px-0 min-h-0',
             },
             size: {
-                sm: 'px-3 py-1.5 text-sm min-h-[36px] gap-1.5',
-                md: 'px-4 py-2 text-sm min-h-[40px] gap-2',
-                lg: 'px-5 py-2.5 text-base min-h-[44px] gap-2',
-                icon: 'h-10 w-10 p-0 touch-target',
-                iconSm: 'h-8 w-8 p-0 touch-target',
+                // v2 density ladder: 30 / 34 / 40 (mobile primary 44 = lg)
+                sm: 'h-[30px] px-2.5 text-[12.5px] gap-1.5 [&_svg]:h-4 [&_svg]:w-4',
+                md: 'h-[34px] px-3 text-[13px] gap-2 [&_svg]:h-4 [&_svg]:w-4',
+                lg: 'h-[40px] px-4 text-[14px] gap-2 [&_svg]:h-4 [&_svg]:w-4 md:h-[44px]',
+                icon: 'h-[30px] w-[30px] p-0 [&_svg]:h-4 [&_svg]:w-4',
+                iconSm: 'h-7 w-7 p-0 [&_svg]:h-3.5 [&_svg]:w-3.5',
             },
         },
         defaultVariants: {

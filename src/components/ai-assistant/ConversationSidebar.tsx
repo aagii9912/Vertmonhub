@@ -180,7 +180,7 @@ export function ConversationSidebar({
                         placeholder="Хайх..."
                         className="w-full pl-8 pr-3 py-2 bg-surface-2/40 border border-border/60 rounded-lg text-xs 
                                  placeholder:text-muted-foreground/70 focus:outline-none focus:ring-1 focus:ring-indigo-500/30 
-                                 focus:border-indigo-300 transition-all"
+                                 focus:border-brand transition-all"
                     />
                 </div>
             </div>
@@ -189,7 +189,7 @@ export function ConversationSidebar({
             <div className="flex-1 overflow-y-auto py-1.5 px-1.5 space-y-3 scrollbar-thin">
                 {loading ? (
                     <div className="flex items-center justify-center py-12">
-                        <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                        <div className="w-5 h-5 border-2 border-brand border-t-transparent rounded-full animate-spin" />
                     </div>
                 ) : grouped.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
@@ -236,7 +236,7 @@ export function ConversationSidebar({
                                                                 if (e.key === 'Enter') handleRenameSubmit(conv.id);
                                                                 if (e.key === 'Escape') setRenamingId(null);
                                                             }}
-                                                            className="w-full text-xs bg-surface border border-indigo-300 rounded px-1.5 py-0.5 
+                                                            className="w-full text-xs bg-surface border border-brand rounded px-1.5 py-0.5 
                                                                      focus:outline-none focus:ring-1 focus:ring-indigo-500"
                                                         />
                                                         <button onClick={() => handleRenameSubmit(conv.id)} className="p-0.5 text-status-success hover:text-status-success">

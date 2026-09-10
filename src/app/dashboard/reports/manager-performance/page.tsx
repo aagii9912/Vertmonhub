@@ -152,7 +152,7 @@ export default function ManagerPerformancePage() {
 
             {/* Багийн жилийн төлөвлөгөө (admin-аас тохируулсан үед) */}
             {totals.teamTarget > 0 && (
-                <Card className="mb-4 border-brand/30 bg-gradient-to-br from-brand-soft/40 to-transparent">
+                <Card className="mb-4 border-brand/30 bg-brand-soft/40">
                     <div className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between md:p-5">
                         <div className="flex items-center gap-3">
                             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-soft">

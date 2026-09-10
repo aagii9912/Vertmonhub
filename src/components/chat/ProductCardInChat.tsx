@@ -110,7 +110,7 @@ export function ProductCardInChat({ product, onAddToCart }: ProductCardInChatPro
                                             onClick={() => handleOptionSelect(name, val)}
                                             className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors
                                                 ${selectedOptions[name] === val
-                                                    ? 'bg-brand text-white border-violet-600'
+                                                    ? 'bg-brand text-white border-brand'
                                                     : 'bg-surface text-muted-foreground border-border hover:border-brand/40'}`}
                                         >
                                             {val}

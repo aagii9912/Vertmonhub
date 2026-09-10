@@ -48,7 +48,7 @@ export function ConversationItem({ conversation, isActive, onClick }: Conversati
             {/* Content */}
             <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between mb-0.5">
-                    <h4 className={`text-sm font-semibold truncate ${isActive ? 'text-violet-900' : 'text-foreground'}`}>
+                    <h4 className={`text-sm font-semibold truncate ${isActive ? 'text-brand' : 'text-foreground'}`}>
                         {conversation.customer_name}
                     </h4>
                     <span className="text-[10px] text-muted-foreground/70 flex-shrink-0 ml-2">

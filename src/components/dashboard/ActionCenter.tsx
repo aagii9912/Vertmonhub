@@ -81,7 +81,7 @@ export function ActionCenter({
                                     >
                                         <div className="flex items-start justify-between gap-2">
                                             <div className="flex items-center gap-2 min-w-0">
-                                                <div className="w-8 h-8 rounded-full bg-gradient-to-br from-emerald-100 to-teal-100 flex items-center justify-center flex-shrink-0">
+                                                <div className="w-8 h-8 rounded-full bg-status-success-soft flex items-center justify-center flex-shrink-0">
                                                     <span className="text-xs font-medium text-status-success">
                                                         {conv.customerName.charAt(0).toUpperCase()}
                                                     </span>

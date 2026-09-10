@@ -99,13 +99,13 @@ const alignClass: Record<Align, string> = {
 }
 
 const densityCell: Record<Density, string> = {
-  comfortable: "px-4 py-3",
-  compact: "px-4 py-2",
+  comfortable: "px-3 py-2.5",
+  compact: "px-3 py-1.5",
 }
 
 const densityHead: Record<Density, string> = {
-  comfortable: "px-4 py-3",
-  compact: "px-4 py-2.5",
+  comfortable: "px-3 h-9",
+  compact: "px-3 h-8",
 }
 
 function ariaSort(
@@ -148,8 +148,8 @@ export function DataTable<T>({
   selectedIds,
   onSelectionChange,
   bulkActions,
-  defaultDensity = "comfortable",
-  showDensityToggle = true,
+  defaultDensity = "compact",
+  showDensityToggle = false,
   page,
   pageSize = 20,
   total,
@@ -258,9 +258,9 @@ export function DataTable<T>({
           {selectable && selected.length > 0 ? (
             <div
               role="status"
-              className="flex flex-1 items-center justify-between gap-3 rounded-xl border border-brand/30 bg-brand-soft px-3 py-2"
+              className="flex flex-1 items-center justify-between gap-3 rounded-md border border-brand/30 bg-brand-soft px-3 py-1.5"
             >
-              <span className="text-sm font-medium text-brand-strong tabular-nums">
+              <span className="num text-[12.5px] font-medium text-brand">
                 {selected.length} сонгогдсон
               </span>
               <div className="flex items-center gap-2">
@@ -306,17 +306,17 @@ export function DataTable<T>({
       ) : null}
 
       {/* Table shell */}
-      <div className="overflow-x-auto rounded-xl border border-border bg-surface">
-        <table className="w-full border-collapse text-sm">
+      <div className="overflow-x-auto rounded-md border border-border bg-surface">
+        <table className="w-full border-collapse text-[12.5px]">
           <caption className="sr-only">{caption}</caption>
 
-          <thead className="sticky top-0 z-10 bg-surface">
+          <thead className="sticky top-0 z-10 bg-surface-2">
             <tr className="border-b border-border">
               {selectable && (
                 <th
                   scope="col"
                   className={cn(
-                    "w-px bg-surface text-fg-2",
+                    "w-px bg-surface-2 text-fg-2",
                     densityHead[density]
                   )}
                 >
@@ -350,7 +350,7 @@ export function DataTable<T>({
                     }
                     style={col.width ? { width: col.width } : undefined}
                     className={cn(
-                      "bg-surface text-2xs font-semibold uppercase tracking-wide text-muted-2 whitespace-nowrap",
+                      "bg-surface-2 text-[11px] font-medium tracking-[0.03em] text-muted-foreground whitespace-nowrap",
                       alignClass[align],
                       densityHead[density],
                       col.className
@@ -361,9 +361,9 @@ export function DataTable<T>({
                         type="button"
                         onClick={() => handleSort(col.key)}
                         className={cn(
-                          "group inline-flex items-center gap-1.5 rounded-md text-2xs font-semibold uppercase tracking-wide transition-colors hover:text-foreground",
+                          "group inline-flex items-center gap-1 rounded-md text-[11px] font-medium tracking-[0.03em] transition-colors hover:text-foreground",
                           "outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                          isActive ? "text-foreground" : "text-muted-2",
+                          isActive ? "text-foreground" : "text-muted-foreground",
                           align === "right" && "flex-row-reverse"
                         )}
                       >
@@ -371,18 +371,18 @@ export function DataTable<T>({
                         {isActive ? (
                           direction === "asc" ? (
                             <ArrowUpIcon
-                              className="size-3.5 text-brand-strong"
+                              className="size-3 text-brand"
                               aria-hidden="true"
                             />
                           ) : (
                             <ArrowDownIcon
-                              className="size-3.5 text-brand-strong"
+                              className="size-3 text-brand"
                               aria-hidden="true"
                             />
                           )
                         ) : (
                           <ArrowUpDownIcon
-                            className="size-3.5 opacity-50 transition-opacity group-hover:opacity-80"
+                            className="size-3 opacity-40 transition-opacity group-hover:opacity-80"
                             aria-hidden="true"
                           />
                         )}
