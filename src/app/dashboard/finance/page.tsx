@@ -10,6 +10,7 @@ import { DataTable, type DataTableColumn } from '@/components/ui/DataTable';
 import { Money } from '@/components/ui/Money';
 import { DateText } from '@/components/ui/DateText';
 import { StatusPill } from '@/components/ui/StatusPill';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { ChartCard } from '@/components/ui/ChartCard';
 import { BarChart } from '@/components/charts/BarChart';
 import {
@@ -96,14 +97,8 @@ export default function FinancePage() {
         note: '',
     });
 
-    const headers = () => ({
-        'Content-Type': 'application/json',
-        'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-    });
-
     useEffect(() => {
         loadAll();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     async function loadAll() {
@@ -111,16 +106,16 @@ export default function FinancePage() {
         setLoadError(false);
         try {
             // Primary data fetch — its failure marks the whole page as errored.
-            const summaryRes = await fetch('/api/dashboard/finance/summary', { headers: headers() });
+            const summaryRes = await dashboardFetch('/api/dashboard/finance/summary');
             if (!summaryRes.ok) throw new Error('Санхүүгийн мэдээлэл татаж чадсангүй');
             const s = await summaryRes.json();
             setSummary(s.summary || null);
 
             // Secondary / best-effort fetches — still check res.ok before parsing.
             const [a, t, ac] = await Promise.all([
-                fetch('/api/dashboard/finance/ar-aging', { headers: headers() }),
-                fetch('/api/dashboard/finance/transactions?limit=20', { headers: headers() }),
-                fetch('/api/dashboard/finance/accounts', { headers: headers() }),
+                dashboardFetch('/api/dashboard/finance/ar-aging'),
+                dashboardFetch('/api/dashboard/finance/transactions?limit=20'),
+                dashboardFetch('/api/dashboard/finance/accounts'),
             ]);
             setAging(a.ok ? (await a.json()).aging || null : null);
             setTransactions(t.ok ? (await t.json()).transactions || [] : []);
@@ -142,9 +137,8 @@ export default function FinancePage() {
         setSaving(true);
         setFormError(null);
         try {
-            const res = await fetch('/api/dashboard/finance/transactions', {
+            const res = await dashboardFetch('/api/dashboard/finance/transactions', {
                 method: 'POST',
-                headers: headers(),
                 body: JSON.stringify({
                     type: form.type,
                     amount,

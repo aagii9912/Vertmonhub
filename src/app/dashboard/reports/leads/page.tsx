@@ -20,6 +20,7 @@ import {
     Building2,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
@@ -86,9 +87,7 @@ export default function LeadsReport() {
     async function exportExcel() {
         setExporting(true);
         try {
-            const res = await fetch('/api/dashboard/export/excel?type=leads', {
-                headers: { 'x-shop-id': typeof window !== 'undefined' ? localStorage.getItem('vertmonhub_active_shop_id') || '' : '' },
-            });
+            const res = await dashboardFetch('/api/dashboard/export/excel?type=leads');
             if (!res.ok) throw new Error('export failed');
             const blob = await res.blob();
             const url = URL.createObjectURL(blob);

@@ -15,8 +15,7 @@ import {
     SelectContent,
     SelectItem,
 } from '@/components/ui/Select';
-
-const SHOP_KEY = 'vertmonhub_active_shop_id';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 interface ContractData {
     contractNumber: string;
@@ -58,9 +57,6 @@ interface ContractRow {
     customer_name?: string; customer_phone?: string; customer_registration?: string;
 }
 
-function shopHeaders(): HeadersInit {
-    return { 'x-shop-id': typeof window !== 'undefined' ? localStorage.getItem(SHOP_KEY) || '' : '' };
-}
 function money(n: string | number | undefined | null): string {
     const v = Number(n);
     return Number.isFinite(v) && v ? v.toLocaleString('mn-MN') + '₮' : '___';
@@ -99,7 +95,7 @@ function ContractGenerateInner() {
         const t = setTimeout(async () => {
             setSearching(true);
             try {
-                const res = await fetch(`/api/dashboard/contracts?search=${encodeURIComponent(search.trim())}`, { headers: shopHeaders() });
+                const res = await dashboardFetch(`/api/dashboard/contracts?search=${encodeURIComponent(search.trim())}`);
                 const d = await res.json();
                 setResults((d.contracts || []).slice(0, 6));
             } catch { /* ignore */ } finally { setSearching(false); }
@@ -118,7 +114,7 @@ function ContractGenerateInner() {
         // v2: лидийн панелаас «Гэрээ үүсгэх» → ?lead=<id> — нэр, утсыг серверээс авна
         const leadId = searchParams.get('lead');
         if (leadId) {
-            fetch(`/api/dashboard/leads/${leadId}`, { headers: shopHeaders() })
+            dashboardFetch(`/api/dashboard/leads/${leadId}`)
                 .then((r) => (r.ok ? r.json() : null))
                 .then((j) => {
                     const l = j?.lead;

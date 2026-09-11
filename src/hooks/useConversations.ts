@@ -1,6 +1,7 @@
 'use client';
 
 import { useQuery } from '@tanstack/react-query';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 interface Message {
     id: string;
@@ -20,7 +21,7 @@ interface Conversation {
 }
 
 async function fetchConversations(): Promise<Conversation[]> {
-    const res = await fetch('/api/dashboard/conversations');
+    const res = await dashboardFetch('/api/dashboard/conversations');
     if (!res.ok) {
         throw new Error('Failed to fetch conversations');
     }

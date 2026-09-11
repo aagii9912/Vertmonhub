@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowUp, Paperclip, X, FileText, ImageIcon, Loader2, AlertCircle, Square } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getActiveShopId } from '@/lib/api/dashboardFetch';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 export interface AiAttachment {
     id: string;
@@ -57,7 +57,7 @@ export function AiComposer({ busy, onSend, onStop, prefill, onPrefillConsumed, p
         try {
             const fd = new FormData();
             fd.append('file', file);
-            const res = await fetch('/api/dashboard/upload', { method: 'POST', headers: { 'x-shop-id': getActiveShopId() || '' }, body: fd });
+            const res = await dashboardFetch('/api/dashboard/upload', { method: 'POST', body: fd });
             if (!res.ok) throw new Error('upload failed');
             const data = await res.json();
             setAttachments((p) => p.map((a) => (a.id === id ? { ...a, uploading: false, url: data.url } : a)));

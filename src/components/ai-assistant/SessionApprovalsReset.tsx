@@ -3,7 +3,7 @@
 /**
  * AI Orchestrator-ийн "Энэ session-д үргэлж зөвшөөрсөн" tool-уудыг цэвэрлэх жижиг хяналт.
  * sessionStorage таб хаагдмагц өөрөө арилдаг ч, хэрэглэгч гараар цуцлах боломжтой байх ёстой.
- * Идэвхтэй shop-ийн id-г localStorage-оос (vertmonhub_active_shop_id) уншина.
+ * Идэвхтэй shop-ийн id-г getActiveShopId() (localStorage)-оос уншина.
  */
 
 import React, { useEffect, useState } from 'react';

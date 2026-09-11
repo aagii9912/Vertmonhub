@@ -56,6 +56,31 @@ const eslintConfig = [
       ],
     },
   },
+  {
+    // Браузерын код `x-shop-id` толгойг гараар бичихгүй, идэвхтэй дэлгүүрийн id-г
+    // localStorage-оос шууд уншихгүй — бүх dashboard fetch `@/lib/api/dashboardFetch`
+    // (dashboardFetch / dashboardJson / dashboardMutate / getActiveShopId)-ээр явна.
+    // Хамаарахгүй: src/app/api/** (сервер толгойг УНШДАГ), src/contexts/** (эх сурвалж),
+    files: ["src/app/**/*.{ts,tsx}", "src/components/**/*.{ts,tsx}", "src/hooks/**/*.{ts,tsx}"],
+    ignores: [
+      "src/app/api/**",
+      "src/contexts/**",
+      "src/lib/api/dashboardFetch.ts",
+    ],
+    rules: {
+      "no-restricted-syntax": [
+        "error",
+        {
+          selector: "Literal[value='x-shop-id']",
+          message: "`x-shop-id` толгойг гараар бичихгүй — `@/lib/api/dashboardFetch`-ийн dashboardFetch / dashboardJson / dashboardMutate ашиглана (толгой автоматаар нэмэгдэнэ).",
+        },
+        {
+          selector: "CallExpression[callee.object.name='localStorage'][callee.property.name='getItem'] > Literal[value='vertmonhub_active_shop_id']",
+          message: "Идэвхтэй дэлгүүрийн id-г localStorage-оос шууд уншихгүй — `@/lib/api/dashboardFetch`-ийн getActiveShopId() (эсвэл dashboardFetch) ашиглана.",
+        },
+      ],
+    },
+  },
 ];
 
 export default eslintConfig;

@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/ui/FormField';
 import { Switch } from '@/components/ui/Switch';
 import { useAuth } from '@/contexts/AuthContext';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import {
     Building2, User, Bell, Save, LogOut, Loader2, Check,
     Mail, Phone, MapPin, Globe
@@ -46,9 +47,8 @@ export default function SettingsPage() {
         setSaveStatus('saving');
 
         try {
-            const res = await fetch('/api/shop', {
+            const res = await dashboardFetch('/api/shop', {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name: companyName,
                     owner_name: ownerName,

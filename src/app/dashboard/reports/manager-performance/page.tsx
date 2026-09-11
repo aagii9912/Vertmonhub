@@ -7,8 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { DataTable, type DataTableColumn, StatusPill } from '@/components/ui/DataTable';
-
-const SHOP_KEY = 'vertmonhub_active_shop_id';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 interface ManagerRow {
     sales_manager: string;
@@ -38,9 +37,6 @@ function formatMoney(n: number): string {
     if (n >= 1e6) return (n / 1e6).toFixed(0) + ' сая₮';
     return new Intl.NumberFormat('mn-MN').format(Math.round(n)) + '₮';
 }
-function shopHeaders(): HeadersInit {
-    return { 'x-shop-id': typeof window !== 'undefined' ? localStorage.getItem(SHOP_KEY) || '' : '' };
-}
 
 export default function ManagerPerformancePage() {
     const [managers, setManagers] = useState<ManagerRow[]>([]);
@@ -51,7 +47,7 @@ export default function ManagerPerformancePage() {
     async function exportExcel() {
         setExporting(true);
         try {
-            const res = await fetch('/api/dashboard/export/excel?type=manager', { headers: shopHeaders() });
+            const res = await dashboardFetch('/api/dashboard/export/excel?type=manager');
             if (!res.ok) throw new Error('export failed');
             const blob = await res.blob();
             const url = URL.createObjectURL(blob);
@@ -67,7 +63,7 @@ export default function ManagerPerformancePage() {
         (async () => {
             try {
                 setLoading(true);
-                const res = await fetch('/api/dashboard/reports/manager-performance', { headers: shopHeaders() });
+                const res = await dashboardFetch('/api/dashboard/reports/manager-performance');
                 const data = await res.json();
                 setManagers(data.managers || []);
                 setTotals(data.totals || totals);

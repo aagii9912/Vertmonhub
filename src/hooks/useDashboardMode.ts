@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 export interface DashboardMode {
     mode: 'personal' | 'org';
@@ -31,9 +32,7 @@ export function useDashboardMode() {
         queryFn: async () => {
             if (!shopId) return FALLBACK;
             try {
-                const res = await fetch('/api/dashboard/mode', {
-                    headers: { 'x-shop-id': shopId },
-                });
+                const res = await dashboardFetch('/api/dashboard/mode');
                 if (!res.ok) return FALLBACK;
                 return await res.json();
             } catch {

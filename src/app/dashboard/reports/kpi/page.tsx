@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { useDashboardMode } from '@/hooks/useDashboardMode';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -101,7 +102,7 @@ export default function KpiReportPage() {
     const { data: managerList } = useQuery<{ managers: ManagerOption[] }>({
         queryKey: ['managers', shopId],
         queryFn: async () => {
-            const res = await fetch('/api/dashboard/managers', { headers: { 'x-shop-id': shopId! } });
+            const res = await dashboardFetch('/api/dashboard/managers');
             if (!res.ok) return { managers: [] };
             return res.json();
         },
@@ -117,9 +118,7 @@ export default function KpiReportPage() {
         queryFn: async () => {
             const params = new URLSearchParams({ year: String(year), month: String(month) });
             if (manager) params.set('manager', manager);
-            const res = await fetch(`/api/dashboard/kpi-report?${params.toString()}`, {
-                headers: { 'x-shop-id': shopId! },
-            });
+            const res = await dashboardFetch(`/api/dashboard/kpi-report?${params.toString()}`);
             if (!res.ok) throw new Error(`KPI report failed: ${res.status}`);
             return res.json();
         },

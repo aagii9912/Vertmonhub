@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import { MessageCircle, Bug, HelpCircle, X, Send, Loader2, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 type FeedbackType = 'bug' | 'feature' | 'support';
 
@@ -33,9 +34,8 @@ export function FeedbackWidget() {
 
         try {
             // Send feedback to API
-            await fetch('/api/feedback', {
+            await dashboardFetch('/api/feedback', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(feedback)
             });
 

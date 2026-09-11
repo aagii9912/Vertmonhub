@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { useAuth } from '@/contexts/AuthContext';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { ShieldCheck, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 
 interface AuditEntry {
@@ -34,7 +35,7 @@ export default function AiAuditPage() {
         (async () => {
             setLoading(true); setError(null);
             try {
-                const res = await fetch('/api/dashboard/ai-audit', { headers: { 'x-shop-id': shop.id } });
+                const res = await dashboardFetch('/api/dashboard/ai-audit');
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error || 'Алдаа');
                 setEntries(data.entries || []);

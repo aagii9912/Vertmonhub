@@ -6,6 +6,7 @@ import { confirmToast } from '@/components/ui/Toast';
 import { Loader2, Send, MessageSquare, User, Bot, PauseCircle, Search, Inbox as InboxIcon, Timer, Power, Trash2 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { formatTime as formatTimeShared, formatShortDate } from '@/lib/utils/date';
+import { dashboardFetch, getActiveShopId } from '@/lib/api/dashboardFetch';
 
 interface ChatMessage {
     id: string;
@@ -37,15 +38,13 @@ export default function InboxMessagesPage() {
     const chatEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    const shopId = typeof window !== 'undefined' ? localStorage.getItem('vertmonhub_active_shop_id') || '' : '';
+    const shopId = getActiveShopId() || '';
 
     // Fetch all conversations
     const fetchConversations = useCallback(async () => {
         try {
             setLoading(true);
-            const res = await fetch('/api/dashboard/conversations', {
-                headers: { 'x-shop-id': shopId },
-            });
+            const res = await dashboardFetch('/api/dashboard/conversations');
             if (res.ok) {
                 const data = await res.json();
                 setConversations(data.conversations || []);
@@ -81,10 +80,7 @@ export default function InboxMessagesPage() {
         });
         if (!ok) return;
         try {
-            const res = await fetch(`/api/dashboard/customers?id=${customerId}`, {
-                method: 'DELETE',
-                headers: { 'x-shop-id': shopId },
-            });
+            const res = await dashboardFetch(`/api/dashboard/customers?id=${customerId}`, { method: 'DELETE' });
             if (!res.ok) throw new Error('Failed');
             setActiveId(null);
             setChatMessages([]);
@@ -117,12 +113,8 @@ export default function InboxMessagesPage() {
         setChatMessages(prev => [...prev, optimisticMsg]);
 
         try {
-            const res = await fetch('/api/dashboard/conversations/reply', {
+            const res = await dashboardFetch('/api/dashboard/conversations/reply', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-shop-id': shopId,
-                },
                 body: JSON.stringify({
                     customerId: activeId,
                     message: messageText,

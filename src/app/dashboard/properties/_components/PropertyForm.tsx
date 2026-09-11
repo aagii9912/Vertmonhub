@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { FormField } from '@/components/ui/FormField';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import {
   Select,
   SelectContent,
@@ -181,12 +182,9 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
         const fd = new FormData();
         fd.append('file', file);
         fd.append('property_id', propertyId || 'unassigned');
-        const res = await fetch('/api/properties/upload', {
+        const res = await dashboardFetch('/api/properties/upload', {
           method: 'POST',
           body: fd,
-          headers: {
-            'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-          },
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({}));

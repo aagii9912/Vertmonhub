@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 /**
  * Хувийн ажлын жагсаалт (/api/dashboard/tasks) — унших + нэмэх/засах/устгах.
@@ -51,12 +52,10 @@ export function useMyTasks() {
     const shopId = shop?.id;
     const queryClient = useQueryClient();
 
-    const headers = { 'Content-Type': 'application/json', 'x-shop-id': shopId || '' };
-
     const query = useQuery<MyTasksData>({
         queryKey: ['my-tasks', shopId],
         queryFn: async () => {
-            const res = await fetch('/api/dashboard/tasks', { headers: { 'x-shop-id': shopId! } });
+            const res = await dashboardFetch('/api/dashboard/tasks');
             if (!res.ok) throw new Error(await parseError(res));
             return res.json();
         },
@@ -71,9 +70,8 @@ export function useMyTasks() {
 
     const createTask = useMutation({
         mutationFn: async (input: CreateTaskInput) => {
-            const res = await fetch('/api/dashboard/tasks', {
+            const res = await dashboardFetch('/api/dashboard/tasks', {
                 method: 'POST',
-                headers,
                 body: JSON.stringify(input),
             });
             if (!res.ok) throw new Error(await parseError(res));
@@ -84,9 +82,8 @@ export function useMyTasks() {
 
     const updateTask = useMutation({
         mutationFn: async ({ id, ...input }: UpdateTaskInput) => {
-            const res = await fetch(`/api/dashboard/tasks/${id}`, {
+            const res = await dashboardFetch(`/api/dashboard/tasks/${id}`, {
                 method: 'PATCH',
-                headers,
                 body: JSON.stringify(input),
             });
             if (!res.ok) throw new Error(await parseError(res));
@@ -97,10 +94,7 @@ export function useMyTasks() {
 
     const deleteTask = useMutation({
         mutationFn: async (id: string) => {
-            const res = await fetch(`/api/dashboard/tasks/${id}`, {
-                method: 'DELETE',
-                headers,
-            });
+            const res = await dashboardFetch(`/api/dashboard/tasks/${id}`, { method: 'DELETE' });
             if (!res.ok) throw new Error(await parseError(res));
             return res.json();
         },

@@ -10,6 +10,7 @@ import { DataTable, type DataTableColumn } from '@/components/ui/DataTable';
 import { Money } from '@/components/ui/Money';
 import { DateText } from '@/components/ui/DateText';
 import { StatusPill } from '@/components/ui/StatusPill';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import {
     Dialog,
     DialogContent,
@@ -59,11 +60,6 @@ export default function ProcurementPage() {
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const headers = () => ({
-        'Content-Type': 'application/json',
-        'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-    });
-
     useEffect(() => { loadAll();   }, []);
 
     async function loadAll() {
@@ -71,17 +67,17 @@ export default function ProcurementPage() {
         setLoadError(false);
         try {
             // Primary data fetch — its failure marks the whole page as errored.
-            const summaryRes = await fetch('/api/dashboard/procurement/summary', { headers: headers() });
+            const summaryRes = await dashboardFetch('/api/dashboard/procurement/summary');
             if (!summaryRes.ok) throw new Error('Худалдан авалтын мэдээлэл татаж чадсангүй');
             const s = await summaryRes.json();
             setSummary(s.summary || null);
 
             // Secondary / best-effort fetches — still check res.ok before parsing.
             const [v, b, ac, pr] = await Promise.all([
-                fetch('/api/dashboard/procurement/vendors', { headers: headers() }),
-                fetch('/api/dashboard/procurement/bills', { headers: headers() }),
-                fetch('/api/dashboard/finance/accounts', { headers: headers() }),
-                fetch('/api/dashboard/projects', { headers: headers() }),
+                dashboardFetch('/api/dashboard/procurement/vendors'),
+                dashboardFetch('/api/dashboard/procurement/bills'),
+                dashboardFetch('/api/dashboard/finance/accounts'),
+                dashboardFetch('/api/dashboard/projects'),
             ]);
             setVendors(v.ok ? (await v.json()).vendors || [] : []);
             setBills(b.ok ? (await b.json()).bills || [] : []);
@@ -99,8 +95,8 @@ export default function ProcurementPage() {
         if (!vendorForm.name.trim()) { setError('Нэр оруулна уу'); return; }
         setSaving(true); setError(null);
         try {
-            const res = await fetch('/api/dashboard/procurement/vendors', {
-                method: 'POST', headers: headers(), body: JSON.stringify(vendorForm),
+            const res = await dashboardFetch('/api/dashboard/procurement/vendors', {
+                method: 'POST', body: JSON.stringify(vendorForm),
             });
             if (!res.ok) throw new Error((await res.json())?.error || 'Алдаа');
             setShowVendor(false); setVendorForm({ name: '', phone: '' });
@@ -113,8 +109,8 @@ export default function ProcurementPage() {
         if (!amount || amount <= 0) { setError('Дүн оруулна уу'); return; }
         setSaving(true); setError(null);
         try {
-            const res = await fetch('/api/dashboard/procurement/bills', {
-                method: 'POST', headers: headers(),
+            const res = await dashboardFetch('/api/dashboard/procurement/bills', {
+                method: 'POST',
                 body: JSON.stringify({
                     vendor_id: billForm.vendor_id || null,
                     project_id: billForm.project_id || null,
@@ -137,8 +133,8 @@ export default function ProcurementPage() {
         if (!amount || amount <= 0) { setError('Дүн оруулна уу'); return; }
         setSaving(true); setError(null);
         try {
-            const res = await fetch(`/api/dashboard/procurement/bills/${payBill.id}/pay`, {
-                method: 'POST', headers: headers(),
+            const res = await dashboardFetch(`/api/dashboard/procurement/bills/${payBill.id}/pay`, {
+                method: 'POST',
                 body: JSON.stringify({ amount, method: payForm.method }),
             });
             if (!res.ok) throw new Error((await res.json())?.error || 'Алдаа');

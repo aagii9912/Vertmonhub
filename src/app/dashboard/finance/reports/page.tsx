@@ -10,6 +10,7 @@ import { DataTable, type DataTableColumn } from '@/components/ui/DataTable';
 import { Money } from '@/components/ui/Money';
 import { Banknote, TrendingDown, TrendingUp, Percent, Download } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 interface Reports {
     pnl: { totalIncome: number; totalExpense: number; netProfit: number; marginPct: number; byChannel: Array<{ channel: string; revenue: number }> };
@@ -27,12 +28,10 @@ export default function FinanceReportsPage() {
     const [loading, setLoading] = useState(true);
     const [exporting, setExporting] = useState(false);
 
-    const headers = () => ({ 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' });
-
     useEffect(() => {
         (async () => {
             try {
-                const r = await fetch('/api/dashboard/finance/reports', { headers: headers() }).then(r => r.json());
+                const r = await dashboardFetch('/api/dashboard/finance/reports').then(r => r.json());
                 setReports(r.reports || null);
             } catch (e) { console.error(e); } finally { setLoading(false); }
         })();
@@ -41,7 +40,7 @@ export default function FinanceReportsPage() {
     async function exportExcel() {
         setExporting(true);
         try {
-            const res = await fetch('/api/dashboard/finance/reports/export', { headers: headers() });
+            const res = await dashboardFetch('/api/dashboard/finance/reports/export');
             if (!res.ok) throw new Error('export failed');
             const blob = await res.blob();
             const url = URL.createObjectURL(blob);

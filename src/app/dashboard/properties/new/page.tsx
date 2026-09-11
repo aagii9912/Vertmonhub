@@ -5,18 +5,15 @@ import { ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Button } from '@/components/ui/Button';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import PropertyForm from '../_components/PropertyForm';
 
 export default function NewPropertyPage() {
     const router = useRouter();
 
     const handleSubmit = async (payload: Record<string, unknown>) => {
-        const res = await fetch('/api/properties', {
+        const res = await dashboardFetch('/api/properties', {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-            },
             body: JSON.stringify(payload),
         });
         if (!res.ok) {

@@ -23,8 +23,7 @@ import {
 } from '@/components/ui/Sheet';
 import { cn } from '@/lib/utils';
 import { MarketIndicators } from '@/components/marketing/MarketIndicators';
-
-const SHOP_KEY = 'vertmonhub_active_shop_id';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 interface Competitor {
     id: string;
@@ -40,12 +39,6 @@ interface Competitor {
     updated_at?: string;
 }
 
-function shopHeaders(): HeadersInit {
-    return {
-        'Content-Type': 'application/json',
-        'x-shop-id': typeof window !== 'undefined' ? localStorage.getItem(SHOP_KEY) || '' : '',
-    };
-}
 function formatMoney(n?: number | null): string {
     if (!n) return '—';
     return new Intl.NumberFormat('mn-MN').format(Math.round(n)) + '₮';
@@ -65,7 +58,7 @@ export default function CompetitorResearchPage() {
     const fetchData = useCallback(async () => {
         try {
             setLoading(true);
-            const res = await fetch('/api/dashboard/competitors', { headers: shopHeaders() });
+            const res = await dashboardFetch('/api/dashboard/competitors');
             const data = await res.json();
             setCompetitors(data.competitors || []);
         } catch (e) {
@@ -92,7 +85,7 @@ export default function CompetitorResearchPage() {
         if (!form.name.trim()) return;
         setSaving(true);
         try {
-            const res = await fetch('/api/dashboard/competitors', { method: 'POST', headers: shopHeaders(), body: JSON.stringify(form) });
+            const res = await dashboardFetch('/api/dashboard/competitors', { method: 'POST', body: JSON.stringify(form) });
             if (res.ok) { setShowForm(false); fetchData(); }
         } catch (e) { console.error(e); } finally { setSaving(false); }
     }
@@ -100,7 +93,7 @@ export default function CompetitorResearchPage() {
     async function remove(id: string) {
         if (!confirm('Энэ өрсөлдөгчийг устгах уу?')) return;
         try {
-            const res = await fetch(`/api/dashboard/competitors?id=${id}`, { method: 'DELETE', headers: shopHeaders() });
+            const res = await dashboardFetch(`/api/dashboard/competitors?id=${id}`, { method: 'DELETE' });
             if (res.ok) fetchData();
         } catch (e) { console.error(e); }
     }
@@ -108,10 +101,7 @@ export default function CompetitorResearchPage() {
     async function runAiAnalysis() {
         setAiLoading(true);
         try {
-            const res = await fetch('/api/dashboard/competitors/analyze', {
-                method: 'POST',
-                headers: shopHeaders(),
-            });
+            const res = await dashboardFetch('/api/dashboard/competitors/analyze', { method: 'POST' });
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || 'AI анализ хийхэд алдаа гарлаа');
             setAiAnalysis(data.analysis || '');

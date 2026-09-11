@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { Upload, Download, FileSpreadsheet, CheckCircle, AlertCircle, Loader2, X, Building2, Home, CreditCard, Landmark, Sparkles, HelpCircle, TreePine, Info } from 'lucide-react';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 // ============================================
 // TYPES
@@ -138,7 +139,7 @@ export default function ImportTab() {
     const downloadTemplate = async (type: ImportType) => {
         setDownloading(true);
         try {
-            const res = await fetch(`/api/admin/import/templates?type=${type}`);
+            const res = await dashboardFetch(`/api/admin/import/templates?type=${type}`);
             if (!res.ok) throw new Error('Template татах алдаа');
             const blob = await res.blob();
             const url = URL.createObjectURL(blob);
@@ -162,7 +163,7 @@ export default function ImportTab() {
 
         try {
             // Get shopId
-            const shopRes = await fetch('/api/shop');
+            const shopRes = await dashboardFetch('/api/shop');
             const shopData = await shopRes.json();
             const shopId = shopData.shop?.id;
             if (!shopId) throw new Error('Төсөл олдсонгүй');
@@ -172,7 +173,7 @@ export default function ImportTab() {
             formData.append('shopId', shopId);
             formData.append('type', selectedType);
 
-            const res = await fetch('/api/admin/import', { method: 'POST', body: formData });
+            const res = await dashboardFetch('/api/admin/import', { method: 'POST', body: formData });
             const data = await res.json();
 
             if (!res.ok) {

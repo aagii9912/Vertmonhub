@@ -8,6 +8,7 @@ import { StatusPill } from '@/components/ui/StatusPill';
 import { MarkdownMessage } from '@/components/ai-assistant/MarkdownMessage';
 import { ArrowLeft, Sparkles, Users, FileText, Plus, X, Loader2, Globe, ClipboardList, AlertCircle, BarChart3, MessageSquareText, Star } from 'lucide-react';
 import { useParams, useRouter } from 'next/navigation';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 type QuestionType = 'short_text' | 'long_text' | 'single_choice' | 'multiple_choice' | 'rating';
 
@@ -61,7 +62,7 @@ export default function SurveyReportPage() {
 
     const loadSummary = async () => {
         try {
-            const res = await fetch(`/api/surveys/${surveyId}`);
+            const res = await dashboardFetch(`/api/surveys/${surveyId}`);
             if (!res.ok) throw new Error('Failed to fetch summary');
             const data = await res.json();
             setSummary(data.summary || '');
@@ -109,9 +110,8 @@ export default function SurveyReportPage() {
         setOfflineSubmitting(true);
         setOfflineError(null);
         try {
-            const res = await fetch(`/api/surveys/${surveyId}`, {
+            const res = await dashboardFetch(`/api/surveys/${surveyId}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     answers: offlineAnswers,
                     source: 'offline',

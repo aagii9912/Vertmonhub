@@ -7,6 +7,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { Paperclip, FileText, Loader2 } from 'lucide-react';
 
 interface Attachment {
@@ -34,9 +35,7 @@ export function EntityAttachments({ entityType, entityId }: Props) {
         (async () => {
             setLoading(true);
             try {
-                const res = await fetch(`/api/dashboard/ai-attachments?entity_type=${entityType}&entity_id=${entityId}`, {
-                    headers: { 'x-shop-id': shop.id },
-                });
+                const res = await dashboardFetch(`/api/dashboard/ai-attachments?entity_type=${entityType}&entity_id=${entityId}`);
                 const data = await res.json();
                 if (active) setItems(data.attachments || []);
             } catch {

@@ -32,8 +32,7 @@ import {
 } from '@/components/ui/Dialog';
 import { FormField } from '@/components/ui/FormField';
 import { PageSkeleton } from '@/components/ui/LoadingSkeleton';
-
-const SHOP_KEY = 'vertmonhub_active_shop_id';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 type StatusPillVariant = 'success' | 'danger' | 'pending' | 'info' | 'active' | 'neutral' | 'brand';
 
@@ -136,12 +135,6 @@ function formatDate(s: string | null): string {
     return formatShortDate(s);
 }
 
-function shopHeaders(): HeadersInit {
-    return {
-        'x-shop-id': typeof window !== 'undefined' ? localStorage.getItem(SHOP_KEY) || '' : '',
-    };
-}
-
 export default function CustomerServicePage() {
     const [kpi, setKpi] = useState<KPI | null>(null);
     const [logs, setLogs] = useState<ServiceLog[]>([]);
@@ -156,13 +149,13 @@ export default function CustomerServicePage() {
         try {
             setLoading(true);
             const [kpiRes, logsRes] = await Promise.all([
-                fetch('/api/dashboard/contracts/stats/service', { headers: shopHeaders() }),
-                fetch(`/api/dashboard/service-logs?${new URLSearchParams({
+                dashboardFetch('/api/dashboard/contracts/stats/service'),
+                dashboardFetch(`/api/dashboard/service-logs?${new URLSearchParams({
                     ...(statusFilter ? { status: statusFilter } : {}),
                     ...(typeFilter ? { type: typeFilter } : {}),
                     ...(channelFilter ? { channel: channelFilter } : {}),
                     ...(search ? { search } : {}),
-                })}`, { headers: shopHeaders() }),
+                })}`),
             ]);
 
             const kpiData = await kpiRes.json();
@@ -184,9 +177,8 @@ export default function CustomerServicePage() {
 
     async function createServiceLog(formData: Record<string, string>): Promise<boolean> {
         try {
-            const res = await fetch('/api/dashboard/service-logs', {
+            const res = await dashboardFetch('/api/dashboard/service-logs', {
                 method: 'POST',
-                headers: { ...shopHeaders(), 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData),
             });
             if (res.ok) {
@@ -206,9 +198,8 @@ export default function CustomerServicePage() {
 
     async function updateLogStatus(id: string, status: string) {
         try {
-            await fetch(`/api/dashboard/service-logs/${id}`, {
+            await dashboardFetch(`/api/dashboard/service-logs/${id}`, {
                 method: 'PATCH',
-                headers: { ...shopHeaders(), 'Content-Type': 'application/json' },
                 body: JSON.stringify({ status }),
             });
             fetchData();
@@ -526,7 +517,7 @@ function NewServiceLogModal({ open, onClose, onSubmit }: {
         let cancel = false;
         (async () => {
             try {
-                const res = await fetch('/api/dashboard/team', { headers: shopHeaders() });
+                const res = await dashboardFetch('/api/dashboard/team');
                 const d = await res.json();
                 if (!cancel) setTeam(d.members || []);
             } catch { /* ignore */ }
@@ -733,7 +724,7 @@ function CustomerSearch({ onSelect }: {
         let cancel = false;
         const t = setTimeout(async () => {
             try {
-                const res = await fetch(`/api/dashboard/customers?search=${encodeURIComponent(term)}&limit=8`, { headers: shopHeaders() });
+                const res = await dashboardFetch(`/api/dashboard/customers?search=${encodeURIComponent(term)}&limit=8`);
                 const d = await res.json();
                 const list = (d.customers || d.data || d.rows || []) as Array<{ id: string; name: string; phone: string | null }>;
                 if (!cancel) { setResults(list.slice(0, 8)); setOpen(true); }
