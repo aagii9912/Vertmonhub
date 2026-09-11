@@ -11,6 +11,20 @@ import * as Sentry from '@sentry/nextjs';
 export async function register() {
     if (process.env.NEXT_RUNTIME === 'nodejs') {
         await import('../sentry.server.config');
+
+        // Production env шалгалт — дутуу нууцыг серверийн эхлэлд ил гаргана (deploy-г унагахгүй)
+        if (process.env.NODE_ENV === 'production' && process.env.VERCEL_ENV === 'production') {
+            const { missingProdEnv } = await import('./lib/env');
+            const { required, recommended } = missingProdEnv();
+            if (required.length) {
+                const msg = `[env] PRODUCTION-д ЗААВАЛ байх ёстой env дутуу: ${required.join(', ')}`;
+                console.error(msg);
+                Sentry.captureMessage(msg, 'error');
+            }
+            if (recommended.length) {
+                console.warn(`[env] Зөвлөмжтэй env дутуу (тухайн боломж унтарсан): ${recommended.join(', ')}`);
+            }
+        }
     }
     if (process.env.NEXT_RUNTIME === 'edge') {
         await import('../sentry.edge.config');
