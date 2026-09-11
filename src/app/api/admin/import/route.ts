@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { getAdminUser } from '@/lib/admin/auth';
-import * as XLSX from 'xlsx';
+import { readSheetRows, XlsxUnsupportedFormatError } from '@/lib/utils/xlsx';
 import {
     ImportRow,
     mapPropertyRow,
@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
         }
 
         const buffer = Buffer.from(await file.arrayBuffer());
-        const rows = parseExcel(buffer);
+        const rows = await parseExcel(buffer);
 
         if (rows.length === 0) {
             return NextResponse.json(
@@ -198,6 +198,13 @@ export async function POST(request: NextRequest) {
 
         return NextResponse.json(result, { status: result.success ? 200 : 400 });
     } catch (error) {
+        if (error instanceof XlsxUnsupportedFormatError) {
+            // .xls (Excel 97-2003) — exceljs уншдаггүй; ойлгомжтой 400 (өмнө нь SheetJS уншдаг байсан)
+            return NextResponse.json(
+                { success: false, message: error.message } satisfies ImportResult,
+                { status: 400 }
+            );
+        }
         return safeErrorResponse(error, 'Import алдаа');
     }
 }
@@ -206,11 +213,9 @@ export async function POST(request: NextRequest) {
 // PARSE / DB ТУСЛАХУУД
 // ============================================
 
-function parseExcel(buffer: Buffer): ImportRow[] {
-    // cellDates: огнооны нүдийг serial тоо биш Date болгож уншина (mappers.toDateStr боловсруулна)
-    const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    return XLSX.utils.sheet_to_json<ImportRow>(sheet);
+function parseExcel(buffer: Buffer): Promise<ImportRow[]> {
+    // Эхний лист; огнооны нүд serial тоо биш Date болж ирнэ (mappers.toDateStr боловсруулна)
+    return readSheetRows(buffer, 0);
 }
 
 function errMessage(error: unknown): string {

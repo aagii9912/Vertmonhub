@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUserShop, supabaseAdmin } from '@/lib/auth/auth';
 import { parseProductFile, ParsedProduct } from '@/lib/utils/file-parser';
+import { XlsxUnsupportedFormatError } from '@/lib/utils/xlsx';
 import { logger } from '@/lib/utils/logger';
 
 // POST - Import products from Excel/DOCX file
@@ -75,6 +76,10 @@ export async function POST(request: NextRequest) {
         });
 
     } catch (error: unknown) {
+        if (error instanceof XlsxUnsupportedFormatError) {
+            // .xls (Excel 97-2003) — exceljs уншдаггүй; ойлгомжтой 400
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
         logger.error('Import error:', { error: error });
         return NextResponse.json({
             error: error instanceof Error ? error.message : 'Import failed',

@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import { readSheetRows, readSheetCsv, XlsxSheetNotFoundError } from '@/lib/utils/xlsx';
 import mammoth from 'mammoth';
 import { logger } from '@/lib/utils/logger';
 
@@ -13,16 +13,11 @@ export interface ParsedProduct {
 }
 
 /**
- * Parse Excel file (xlsx, xls, csv)
+ * Parse Excel file (xlsx, csv — .xls/BIFF дэмжигдэхгүй, XlsxUnsupportedFormatError)
  */
 export async function parseExcel(buffer: Buffer): Promise<ParsedProduct[]> {
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-
-    // Convert to JSON
-
-    const data = XLSX.utils.sheet_to_json<Record<string, any>>(sheet);
+    // Эхний листийг JSON мөрүүд болгоно (огнооны нүд Date болж ирнэ)
+    const data = (await readSheetRows(buffer, 0)) as Record<string, any>[];
 
     // Try to detect column names
     const products: ParsedProduct[] = [];
@@ -119,13 +114,14 @@ function pick(row: Record<string, any>, keys: string[]): string {
  * Parse a HubSpot contacts CSV/XLSX export.
  * Tolerant to common column-name variations (English + Mongolian).
  */
-export function parseHubspotContacts(buffer: Buffer): ParsedHubspotContact[] {
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
-    const sheetName = workbook.SheetNames[0];
-    if (!sheetName) return [];
-
-    const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: '' });
+export async function parseHubspotContacts(buffer: Buffer): Promise<ParsedHubspotContact[]> {
+    let rows: Record<string, any>[];
+    try {
+        rows = await readSheetRows(buffer, 0, { defval: '' });
+    } catch (error) {
+        if (error instanceof XlsxSheetNotFoundError) return [];
+        throw error;
+    }
 
     const contacts: ParsedHubspotContact[] = [];
 
@@ -179,10 +175,8 @@ export function parseHubspotContacts(buffer: Buffer): ParsedHubspotContact[] {
  */
 async function getFileContent(buffer: Buffer, extension: string): Promise<string> {
     if (['xlsx', 'xls', 'csv'].includes(extension)) {
-        const workbook = XLSX.read(buffer, { type: 'buffer' });
-        const sheetName = workbook.SheetNames[0];
-        // Use CSV format for better token efficiency with LLMs
-        return XLSX.utils.sheet_to_csv(workbook.Sheets[sheetName]);
+        // Use CSV format for better token efficiency with LLMs (эхний лист)
+        return readSheetCsv(buffer, 0);
     } else if (extension === 'docx') {
         const result = await mammoth.extractRawText({ buffer });
         return result.value;

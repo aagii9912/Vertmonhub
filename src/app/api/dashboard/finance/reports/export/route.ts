@@ -3,7 +3,7 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
-import * as XLSX from 'xlsx';
+import { buildWorkbookBuffer } from '@/lib/utils/xlsx';
 
 /**
  * GET /api/dashboard/finance/reports/export — Санхүүгийн өгөгдлийг Excel-ээр (нягтланд)
@@ -53,11 +53,10 @@ export async function GET() {
             'Хугацаа': b.due_date || '',
         }));
 
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(txnRows.length ? txnRows : [{}]), 'Гүйлгээ');
-        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(billRows.length ? billRows : [{}]), 'Нэхэмжлэх');
-
-        const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+        const buffer = await buildWorkbookBuffer([
+            { name: 'Гүйлгээ', rows: txnRows },
+            { name: 'Нэхэмжлэх', rows: billRows },
+        ]);
         const filename = `finance-${new Date().toISOString().slice(0, 10)}.xlsx`;
 
         return new NextResponse(buffer, {
