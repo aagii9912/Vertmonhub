@@ -54,6 +54,20 @@ export async function requireModule(module: string): Promise<NextResponse | null
     return null;
 }
 
+/**
+ * Жагсаалтын АЛЬ НЭГ модульд хандах эрх шаардана (унших) — ж: байрны хайлт нь
+ * properties, viewings, leads аль ч модультай хэрэглэгчид хэрэгтэй.
+ */
+export async function requireAnyModule(modules: string[]): Promise<NextResponse | null> {
+    const p = await resolvePermissions();
+    if (!p) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
+    if (p.role === 'super_admin') return null;
+    if (!modules.some((m) => p.permissions.modules.includes(m))) {
+        return NextResponse.json({ error: 'Энэ хэсэгт хандах эрх танд алга' }, { status: 403 });
+    }
+    return null;
+}
+
 /** Модулийн хандалт + бичих эрх шаардана. */
 export async function requireModuleWrite(module: string): Promise<NextResponse | null> {
     const p = await resolvePermissions();

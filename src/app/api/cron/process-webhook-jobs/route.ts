@@ -9,6 +9,7 @@
  */
 
 import { NextResponse } from 'next/server';
+import { isAuthorizedCron } from '@/lib/auth/cron';
 import { logger } from '@/lib/utils/logger';
 import {
     getPendingJobs,
@@ -40,8 +41,7 @@ async function runJob(payload: Record<string, unknown>): Promise<void> {
 }
 
 export async function POST(request: Request) {
-    const authHeader = request.headers.get('authorization');
-    if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+    if (!isAuthorizedCron(request)) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

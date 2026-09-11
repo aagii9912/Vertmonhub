@@ -45,5 +45,8 @@ describe('canRememberTool', () => {
     it('excludes high-impact write tools', () => {
         expect(canRememberTool('bulk_update_leads')).toBe(false);
         expect(canRememberTool('process_contract_action')).toBe(false);
+        expect(canRememberTool('update_property_price')).toBe(false);
+        expect(canRememberTool('create_contract')).toBe(false);
+        expect(canRememberTool('create_property')).toBe(false);
     });
 });

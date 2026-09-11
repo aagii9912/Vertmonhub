@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { recomputeShopScores } from '@/lib/services/CustomerScoringService';
 import { logger } from '@/lib/utils/logger';
@@ -9,6 +10,8 @@ import { logger } from '@/lib/utils/logger';
  */
 export async function POST() {
     try {
+        const denied = await requireModuleWrite('customers');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

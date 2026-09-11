@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireModule } from '@/lib/auth/require-permission';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 
 export async function GET(request: NextRequest) {
     try {
+        const denied = await requireModule('inbox');
+        if (denied) return denied;
         const authShop = await getUserShop();
 
         if (!authShop) {

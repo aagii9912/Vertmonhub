@@ -172,14 +172,14 @@ export const GEMINI_TOOLS: any[] = [
     // ============================================
     {
         name: 'check_payment_status',
-        description: 'Худалдан авагчийн гэрээний төлбөрийн байдлыг шалгах. Төлсөн дүн, үлдэгдэл, хоцрогдлыг мэдээлнэ.',
+        description: 'Худалдан авагчийн ӨӨРИЙН гэрээний төлбөрийн байдлыг шалгах (төлсөн дүн, үлдэгдэл, хоцрогдол). Аюулгүй байдлын үүднээс гэрээний дугаар БОЛОН гэрээнд бүртгэлтэй утасны дугаар хоёулаа заавал шаардлагатай — аль нэг нь байхгүй бол эхлээд хэрэглэгчээс асуу. Бусад хүний гэрээний мэдээллийг хэзээ ч бүү хэл.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
-                customer_phone: { type: SchemaType.STRING, description: 'Худалдан авагчийн утасны дугаар' },
-                customer_name: { type: SchemaType.STRING, description: 'Худалдан авагчийн нэр (утас байхгүй бол)' },
-                contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар (тодорхой бол)' }
-            }
+                contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар (заавал)' },
+                customer_phone: { type: SchemaType.STRING, description: 'Гэрээнд бүртгэлтэй утасны дугаар (заавал)' }
+            },
+            required: ['contract_number', 'customer_phone']
         }
     },
     {
@@ -279,8 +279,9 @@ export interface AppendCustomerNoteArgs {
 }
 
 export interface CheckPaymentStatusArgs {
+    /** Гэрээнд бүртгэлтэй утас — заавал (хоёр дахь хүчин зүйл) */
     customer_phone?: string;
-    customer_name?: string;
+    /** Гэрээний дугаар — заавал */
     contract_number?: string;
 }
 

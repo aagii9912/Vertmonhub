@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
-import { requireModuleWrite, resolvePermissions } from '@/lib/auth/require-permission';
+import { requireModuleWrite, resolvePermissions, requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { ACTIVE_STATUSES } from '@/lib/leads/labels';
@@ -29,6 +29,8 @@ const PERIOD_DAYS: Record<string, number> = {
  */
 export async function GET(request: NextRequest) {
     try {
+        const denied = await requireModule('leads');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

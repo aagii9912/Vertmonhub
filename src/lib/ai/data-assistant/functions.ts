@@ -152,12 +152,12 @@ export async function fetchLeads(shopId: string, args: any) {
 }
 
 export async function fetchLeadDetails(shopId: string, args: any) {
-    let query = supabaseAdmin.from('leads').select('*, properties(id, name, price, type, size_sqm, rooms, district, status)').eq('shop_id', shopId);
+    let query = supabaseAdmin.from('leads').select('*, properties(id, name, price, type, size_sqm, rooms, district, status)').eq('shop_id', shopId).is('deleted_at', null);
     if (args.lead_id) query = query.eq('id', args.lead_id);
     else if (args.customer_name) query = query.ilike('customer_name', `%${args.customer_name}%`);
     else return { error: 'lead_id эсвэл customer_name шаардлагатай' };
 
-    const { data, error } = await query.single();
+    const { data, error } = await query.limit(1).maybeSingle();
     if (error || !data) return { error: 'Лийд олдсонгүй' };
 
     let matchingProperties: any[] = [];
@@ -172,9 +172,13 @@ export async function fetchLeadDetails(shopId: string, args: any) {
         matchingProperties = props || [];
     }
 
-    const { data: viewings } = await supabaseAdmin.from('property_viewings')
-        .select('id, scheduled_at, status, property_id, customer_feedback, agent_notes')
-        .eq('lead_id', data.id).order('scheduled_at', { ascending: false }).limit(5);
+    const { data: viewings } = await runExcludingDeleted((excludeDeleted) => {
+        let q = supabaseAdmin.from('property_viewings')
+            .select('id, scheduled_at, status, property_id, customer_feedback, agent_notes')
+            .eq('lead_id', data.id).order('scheduled_at', { ascending: false }).limit(5);
+        if (excludeDeleted) q = q.is('deleted_at', null);
+        return q;
+    });
 
     return {
         lead: {
@@ -197,9 +201,15 @@ export async function fetchCustomerInsights(shopId: string, args: any) {
 
     // ---- Single-customer details ----
     if (args.customer_id) {
-        const { data: customer } = await supabaseAdmin.from('customers')
-            .select(customerSelect)
-            .eq('id', args.customer_id).single();
+        // shop_id шүүлт заавал — өмнө нь ID мэдэж байвал өөр shop-ийн харилцагчийг уншдаг байв.
+        const { data: customer } = await runExcludingDeleted((excludeDeleted) => {
+            let q = supabaseAdmin.from('customers')
+                .select(customerSelect)
+                .eq('id', args.customer_id)
+                .eq('shop_id', shopId);
+            if (excludeDeleted) q = q.is('deleted_at', null);
+            return q.maybeSingle();
+        });
         if (!customer) return { error: 'Харилцагч олдсонгүй' };
 
         const { data: leads } = await supabaseAdmin.from('leads')
@@ -271,17 +281,20 @@ export async function fetchContracts(shopId: string, args: any) {
 }
 
 export async function fetchContractDetails(shopId: string, args: any) {
-    let query = supabaseAdmin.from('property_contracts')
-        .select(CONTRACT_DETAIL_FIELDS)
-        .eq('shop_id', shopId)
-        .limit(1);
-
-    if (args.contract_id) query = query.eq('id', args.contract_id);
-    else if (args.contract_number) query = query.eq('contract_number', args.contract_number);
-    else if (args.customer_phone) query = query.eq('customer_phone', args.customer_phone);
-    else return { error: 'contract_id, contract_number эсвэл customer_phone шаардлагатай' };
-
-    const { data, error } = await query.maybeSingle();
+    if (!args.contract_id && !args.contract_number && !args.customer_phone) {
+        return { error: 'contract_id, contract_number эсвэл customer_phone шаардлагатай' };
+    }
+    const { data, error } = await runExcludingDeleted((excludeDeleted) => {
+        let query = supabaseAdmin.from('property_contracts')
+            .select(CONTRACT_DETAIL_FIELDS)
+            .eq('shop_id', shopId)
+            .limit(1);
+        if (excludeDeleted) query = query.is('deleted_at', null);
+        if (args.contract_id) query = query.eq('id', args.contract_id);
+        else if (args.contract_number) query = query.eq('contract_number', args.contract_number);
+        else query = query.eq('customer_phone', args.customer_phone);
+        return query.maybeSingle();
+    });
     if (error) return { error: `Алдаа: ${error.message}` };
     if (!data) return { error: 'Гэрээ олдсонгүй' };
 
@@ -310,7 +323,8 @@ export async function fetchContractsSummary(shopId: string, args: any) {
         data = await fetchAllRows((from, to) => {
             let query = supabaseAdmin.from('property_contracts')
                 .select('contract_status, total_price, paid_amount, balance, overdue_days, sales_manager, sales_channel, block_name, product_type')
-                .eq('shop_id', shopId);
+                .eq('shop_id', shopId)
+                .is('deleted_at', null); // устгасан гэрээ нийт дүнд орохгүй (dashboards-тай нэг тоо)
             if (args.block_name) query = query.ilike('block_name', `%${args.block_name}%`);
             if (args.sales_channel) query = query.eq('sales_channel', args.sales_channel);
             return query.range(from, to);
@@ -509,41 +523,65 @@ export async function compareProperties(shopId: string, args: any) {
 }
 
 // ============================================
-// WRITE FUNCTIONS (Super Admin Only)
+// WRITE FUNCTIONS — UPDATE (confirm-gated)
 // ============================================
+// Бүх өөрчлөлт хийх tool confirm=false үед зөвхөн preview буцаана; confirm=true үед
+// (action endpoint-оос, RBAC дахин шалгасны дараа) л бодит update хийнэ. Өмнө нь эдгээр
+// 6 tool confirm-гүй шууд ажиллаж, audit-д ч бүртгэгддэггүй байсан (2026-09 review H1).
 
-export async function updatePropertyStatus(shopId: string, args: any) {
-    let query = supabaseAdmin.from('properties').select('id, name, status').eq('shop_id', shopId);
+const PROPERTY_STATUSES = ['available', 'reserved', 'sold', 'rented', 'barter'];
+const LEAD_STATUSES_FOR_AI = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'];
+const CONTRACT_STATUSES = ['active', 'closed', 'cancelled'];
+
+export async function updatePropertyStatus(shopId: string, args: any, confirm = false) {
+    if (!PROPERTY_STATUSES.includes(args.new_status)) {
+        return { error: `Төлөв буруу. Боломжтой: ${PROPERTY_STATUSES.join(', ')}` };
+    }
+    let query = supabaseAdmin.from('properties').select('id, name, status').eq('shop_id', shopId).is('deleted_at', null);
     if (args.property_id) query = query.eq('id', args.property_id);
     else if (args.property_name) query = query.ilike('name', `%${args.property_name}%`);
     else return { error: 'property_id эсвэл property_name шаардлагатай' };
 
-    const { data: properties } = await query;
+    const { data: properties } = await query.limit(20);
     if (!properties || properties.length === 0) return { error: 'Байр олдсонгүй' };
     if (properties.length > 1) return { error: `${properties.length} байр олдлоо, ID-г тодруулна уу`, options: properties.map(p => ({ id: p.id, name: p.name, status: p.status })) };
 
     const prop = properties[0];
     const oldStatus = prop.status;
-    const { error } = await supabaseAdmin.from('properties').update({ status: args.new_status }).eq('id', prop.id);
+    if (!confirm) {
+        return confirmNeeded('update_property_status',
+            { property_id: prop.id, new_status: args.new_status },
+            `Байрны төлөв өөрчлөх: ${prop.name}`,
+            { Байр: prop.name, 'Одоогийн төлөв': oldStatus, 'Шинэ төлөв': args.new_status });
+    }
+    const { error } = await supabaseAdmin.from('properties').update({ status: args.new_status }).eq('id', prop.id).eq('shop_id', shopId);
     if (error) return { error: `Алдаа: ${error.message}` };
     return { success: true, property: prop.name, oldStatus, newStatus: args.new_status };
 }
 
-export async function updatePropertyPrice(shopId: string, args: any) {
-    let query = supabaseAdmin.from('properties').select('id, name, price').eq('shop_id', shopId);
+export async function updatePropertyPrice(shopId: string, args: any, confirm = false) {
+    const newPrice = Number(args.new_price);
+    if (!Number.isFinite(newPrice) || newPrice <= 0) return { error: 'new_price эерэг тоо байх ёстой' };
+    let query = supabaseAdmin.from('properties').select('id, name, price').eq('shop_id', shopId).is('deleted_at', null);
     if (args.property_id) query = query.eq('id', args.property_id);
     else if (args.property_name) query = query.ilike('name', `%${args.property_name}%`);
     else return { error: 'property_id эсвэл property_name шаардлагатай' };
 
-    const { data: properties } = await query;
+    const { data: properties } = await query.limit(20);
     if (!properties || properties.length === 0) return { error: 'Байр олдсонгүй' };
     if (properties.length > 1) return { error: `${properties.length} байр олдлоо, ID-г тодруулна уу`, options: properties.map(p => ({ id: p.id, name: p.name, price: p.price })) };
 
     const prop = properties[0];
     const oldPrice = prop.price;
-    const { error } = await supabaseAdmin.from('properties').update({ price: args.new_price }).eq('id', prop.id);
+    if (!confirm) {
+        return confirmNeeded('update_property_price',
+            { property_id: prop.id, new_price: newPrice },
+            `Байрны үнэ өөрчлөх: ${prop.name}`,
+            { Байр: prop.name, 'Одоогийн үнэ': `${Number(oldPrice).toLocaleString()}₮`, 'Шинэ үнэ': `${newPrice.toLocaleString()}₮` });
+    }
+    const { error } = await supabaseAdmin.from('properties').update({ price: newPrice }).eq('id', prop.id).eq('shop_id', shopId);
     if (error) return { error: `Алдаа: ${error.message}` };
-    return { success: true, property: prop.name, oldPrice: `${Number(oldPrice).toLocaleString()}₮`, newPrice: `${Number(args.new_price).toLocaleString()}₮` };
+    return { success: true, property: prop.name, oldPrice: `${Number(oldPrice).toLocaleString()}₮`, newPrice: `${newPrice.toLocaleString()}₮` };
 }
 
 // property_units.status enum (Мандала Гарден маягийн бодит нөөцийн грид)
@@ -554,7 +592,7 @@ const UNIT_STATUSES = ['available', 'reserved', 'ordered', 'sold', 'handed_over'
  * property_units бол Мандала Гарден маягийн ээлж→блок→нэгж бүтэцтэй бодит нөөц;
  * `properties` (зурагтай listing) хүснэгтээс тусдаа тул энэ tool-оор шинэчилнэ.
  */
-export async function updateUnitStatus(shopId: string, args: any) {
+export async function updateUnitStatus(shopId: string, args: any, confirm = false) {
     const newStatus = args.new_status;
     if (!UNIT_STATUSES.includes(newStatus)) {
         return { error: `Төлөв буруу. Боломжтой: ${UNIT_STATUSES.join(', ')}` };
@@ -584,57 +622,94 @@ export async function updateUnitStatus(shopId: string, args: any) {
 
     const unit = units[0];
     const oldStatus = unit.status;
+    const label = unit.code || unit.unit_number;
+    if (!confirm) {
+        return confirmNeeded('update_unit_status',
+            { unit_id: unit.id, new_status: newStatus },
+            `Нэгжийн төлөв өөрчлөх: ${label}`,
+            { Нэгж: label, Блок: unit.block || '-', 'Одоогийн төлөв': oldStatus, 'Шинэ төлөв': newStatus });
+    }
     const { error } = await supabaseAdmin
         .from('property_units')
         .update({ status: newStatus, updated_at: new Date().toISOString() })
-        .eq('id', unit.id);
+        .eq('id', unit.id)
+        .eq('shop_id', shopId);
     if (error) return { error: `Алдаа: ${error.message}` };
 
-    return { success: true, unit: unit.code || unit.unit_number, block: unit.block, oldStatus, newStatus };
+    return { success: true, unit: label, block: unit.block, oldStatus, newStatus };
 }
 
-export async function updateLeadStatus(shopId: string, args: any) {
-    let query = supabaseAdmin.from('leads').select('id, customer_name, status').eq('shop_id', shopId);
+export async function updateLeadStatus(shopId: string, args: any, confirm = false) {
+    if (!LEAD_STATUSES_FOR_AI.includes(args.new_status)) {
+        return { error: `Төлөв буруу. Боломжтой: ${LEAD_STATUSES_FOR_AI.join(', ')}` };
+    }
+    let query = supabaseAdmin.from('leads').select('id, customer_name, status').eq('shop_id', shopId).is('deleted_at', null);
     if (args.lead_id) query = query.eq('id', args.lead_id);
     else if (args.customer_name) query = query.ilike('customer_name', `%${args.customer_name}%`);
     else return { error: 'lead_id эсвэл customer_name шаардлагатай' };
 
-    const { data: leads } = await query;
+    const { data: leads } = await query.limit(20);
     if (!leads || leads.length === 0) return { error: 'Лийд олдсонгүй' };
     if (leads.length > 1) return { error: `${leads.length} лийд олдлоо, тодруулна уу`, options: leads.map(l => ({ id: l.id, name: l.customer_name, status: l.status })) };
 
     const lead = leads[0];
     const oldStatus = lead.status;
-    const { error } = await supabaseAdmin.from('leads').update({ status: args.new_status, updated_at: new Date().toISOString() }).eq('id', lead.id);
+    if (!confirm) {
+        return confirmNeeded('update_lead_status',
+            { lead_id: lead.id, new_status: args.new_status },
+            `Лийдийн төлөв өөрчлөх: ${lead.customer_name}`,
+            { Лийд: lead.customer_name, 'Одоогийн төлөв': oldStatus, 'Шинэ төлөв': args.new_status });
+    }
+    const { error } = await supabaseAdmin.from('leads')
+        .update({ status: args.new_status, updated_at: new Date().toISOString() })
+        .eq('id', lead.id)
+        .eq('shop_id', shopId);
     if (error) return { error: `Алдаа: ${error.message}` };
     return { success: true, lead: lead.customer_name, oldStatus, newStatus: args.new_status };
 }
 
-export async function addLeadNote(shopId: string, args: any) {
-    let query = supabaseAdmin.from('leads').select('id, customer_name, notes').eq('shop_id', shopId);
+export async function addLeadNote(shopId: string, args: any, confirm = false) {
+    const note = typeof args.note === 'string' ? args.note.trim() : '';
+    if (!note) return { error: 'note (тэмдэглэлийн текст) шаардлагатай' };
+    let query = supabaseAdmin.from('leads').select('id, customer_name, notes').eq('shop_id', shopId).is('deleted_at', null);
     if (args.lead_id) query = query.eq('id', args.lead_id);
     else if (args.customer_name) query = query.ilike('customer_name', `%${args.customer_name}%`);
     else return { error: 'lead_id эсвэл customer_name шаардлагатай' };
 
-    const { data: leads } = await query;
+    const { data: leads } = await query.limit(20);
     if (!leads || leads.length === 0) return { error: 'Лийд олдсонгүй' };
+    // Өмнө нь нэр давхцвал чимээгүй эхний лийдэд бичдэг байсан — одоо тодруулна.
+    if (leads.length > 1) return { error: `${leads.length} лийд олдлоо, тодруулна уу`, options: leads.map(l => ({ id: l.id, name: l.customer_name })) };
 
     const lead = leads[0];
+    if (!confirm) {
+        return confirmNeeded('add_lead_note',
+            { lead_id: lead.id, note },
+            `Лийдэд тэмдэглэл нэмэх: ${lead.customer_name}`,
+            { Лийд: lead.customer_name, Тэмдэглэл: note.slice(0, 200) });
+    }
     const timestamp = new Date().toLocaleString('mn-MN');
     const existingNotes = lead.notes || '';
-    const updatedNotes = existingNotes ? `${existingNotes}\n[${timestamp}] ${args.note}` : `[${timestamp}] ${args.note}`;
+    const updatedNotes = existingNotes ? `${existingNotes}\n[${timestamp}] ${note}` : `[${timestamp}] ${note}`;
 
-    const { error } = await supabaseAdmin.from('leads').update({ notes: updatedNotes, updated_at: new Date().toISOString() }).eq('id', lead.id);
+    const { error } = await supabaseAdmin.from('leads')
+        .update({ notes: updatedNotes, updated_at: new Date().toISOString() })
+        .eq('id', lead.id)
+        .eq('shop_id', shopId);
     if (error) return { error: `Алдаа: ${error.message}` };
-    return { success: true, lead: lead.customer_name, note: args.note };
+    return { success: true, lead: lead.customer_name, note };
 }
 
-/** Гэрээний (property_contracts) статусыг код/дугаараар өөрчилнө. */
-export async function updateContractStatus(shopId: string, args: any) {
+/** Гэрээний (property_contracts) статусыг код/дугаараар өөрчилнө (confirm-gated). */
+export async function updateContractStatus(shopId: string, args: any, confirm = false) {
+    if (!CONTRACT_STATUSES.includes(args.new_status)) {
+        return { error: `Төлөв буруу. Боломжтой: ${CONTRACT_STATUSES.join(', ')}` };
+    }
     let query = supabaseAdmin
         .from('property_contracts')
-        .select('id, contract_number, contract_status')
-        .eq('shop_id', shopId);
+        .select('id, contract_number, contract_status, customer_name')
+        .eq('shop_id', shopId)
+        .is('deleted_at', null);
     if (args.contract_id) query = query.eq('id', args.contract_id);
     else if (args.contract_number) query = query.ilike('contract_number', `%${args.contract_number}%`);
     else return { error: 'contract_id эсвэл contract_number шаардлагатай' };
@@ -648,17 +723,27 @@ export async function updateContractStatus(shopId: string, args: any) {
         };
     }
     const c = rows[0];
+    if (!confirm) {
+        return confirmNeeded('update_contract_status',
+            { contract_id: c.id, new_status: args.new_status },
+            `Гэрээний төлөв өөрчлөх: ${c.contract_number || c.customer_name}`,
+            { Гэрээ: c.contract_number || '-', Харилцагч: c.customer_name || '-', 'Одоогийн төлөв': c.contract_status, 'Шинэ төлөв': args.new_status });
+    }
     const { error } = await supabaseAdmin
         .from('property_contracts')
         .update({ contract_status: args.new_status, updated_at: new Date().toISOString() })
-        .eq('id', c.id);
+        .eq('id', c.id)
+        .eq('shop_id', shopId);
     if (error) return { error: `Алдаа: ${error.message}` };
     return { success: true, contract: c.contract_number, oldStatus: c.contract_status, newStatus: args.new_status };
 }
 
-export async function processContractAction(shopId: string, args: any) {
-    // Мандала маягийн нэгж (property_units), listing байр (properties), лийд, гэрээний
-    // статусыг action-оор нэгтгэж шинэчилнэ. Аль нэг нь олдоогүй ч бусад нь ажиллана.
+/**
+ * Мандала маягийн нэгж (property_units), listing байр (properties), лийд, гэрээний
+ * статусыг action-оор нэгтгэж шинэчилнэ. confirm=false үед бүх зорилтыг олж НЭГ
+ * нэгдсэн preview буцаана; confirm=true үед preview-д тогтсон ID-уудаар бодитоор шинэчилнэ.
+ */
+export async function processContractAction(shopId: string, args: any, confirm = false) {
     const statusMap: Record<string, { property: string; unit: string; lead: string; contract: string }> = {
         sign:   { property: 'reserved',  unit: 'reserved',  lead: 'negotiating', contract: 'active' },
         paid:   { property: 'sold',      unit: 'sold',      lead: 'closed_won',  contract: 'closed' },
@@ -669,30 +754,58 @@ export async function processContractAction(shopId: string, args: any) {
     if (!mapping) return { error: 'action буруу: sign, paid, cancel байх ёстой' };
 
     const results: any = { action: args.action, changes: [] };
+    const resolvedArgs: Record<string, unknown> = { action: args.action };
+    const preview: Record<string, unknown> = { Үйлдэл: args.action };
+    const labels: string[] = [];
 
     // Нэгж (property_units) → байхгүй бол listing property руу шилжинэ
     if (args.code || args.unit_number || args.unit_id) {
-        const unitResult = await updateUnitStatus(shopId, { unit_id: args.unit_id, code: args.code, unit_number: args.unit_number, block: args.block, phase: args.phase, new_status: mapping.unit });
+        const unitResult: any = await updateUnitStatus(shopId, { unit_id: args.unit_id, code: args.code, unit_number: args.unit_number, block: args.block, phase: args.phase, new_status: mapping.unit }, confirm);
         results.unit = unitResult;
-        if (!unitResult.error) results.changes.push(`Нэгж → ${mapping.unit}`);
+        if (unitResult.requiresConfirmation) {
+            resolvedArgs.unit_id = unitResult.action.args.unit_id;
+            preview['Нэгж'] = `${unitResult.preview['Нэгж']} → ${mapping.unit}`;
+            labels.push(String(unitResult.preview['Нэгж']));
+        } else if (!unitResult.error) results.changes.push(`Нэгж → ${mapping.unit}`);
     } else if (args.property_id || args.property_name) {
-        const propResult = await updatePropertyStatus(shopId, { property_id: args.property_id, property_name: args.property_name, new_status: mapping.property });
+        const propResult: any = await updatePropertyStatus(shopId, { property_id: args.property_id, property_name: args.property_name, new_status: mapping.property }, confirm);
         results.property = propResult;
-        if (!propResult.error) results.changes.push(`Байр → ${mapping.property}`);
+        if (propResult.requiresConfirmation) {
+            resolvedArgs.property_id = propResult.action.args.property_id;
+            preview['Байр'] = `${propResult.preview['Байр']} → ${mapping.property}`;
+            labels.push(String(propResult.preview['Байр']));
+        } else if (!propResult.error) results.changes.push(`Байр → ${mapping.property}`);
     }
 
     // Гэрээний статус (property_contracts)
     if (args.contract_id || args.contract_number) {
-        const contractResult = await updateContractStatus(shopId, { contract_id: args.contract_id, contract_number: args.contract_number, new_status: mapping.contract });
+        const contractResult: any = await updateContractStatus(shopId, { contract_id: args.contract_id, contract_number: args.contract_number, new_status: mapping.contract }, confirm);
         results.contract = contractResult;
-        if (!contractResult.error) results.changes.push(`Гэрээ → ${mapping.contract}`);
+        if (contractResult.requiresConfirmation) {
+            resolvedArgs.contract_id = contractResult.action.args.contract_id;
+            preview['Гэрээ'] = `${contractResult.preview['Гэрээ']} → ${mapping.contract}`;
+            labels.push(`гэрээ ${contractResult.preview['Гэрээ']}`);
+        } else if (!contractResult.error) results.changes.push(`Гэрээ → ${mapping.contract}`);
     }
 
     // Лийд
     if (args.lead_id || args.customer_name) {
-        const leadResult = await updateLeadStatus(shopId, { lead_id: args.lead_id, customer_name: args.customer_name, new_status: mapping.lead });
+        const leadResult: any = await updateLeadStatus(shopId, { lead_id: args.lead_id, customer_name: args.customer_name, new_status: mapping.lead }, confirm);
         results.lead = leadResult;
-        if (!leadResult.error) results.changes.push(`Лийд → ${mapping.lead}`);
+        if (leadResult.requiresConfirmation) {
+            resolvedArgs.lead_id = leadResult.action.args.lead_id;
+            preview['Лийд'] = `${leadResult.preview['Лийд']} → ${mapping.lead}`;
+            labels.push(String(leadResult.preview['Лийд']));
+        } else if (!leadResult.error) results.changes.push(`Лийд → ${mapping.lead}`);
+    }
+
+    if (!confirm) {
+        if (labels.length === 0) {
+            // Зорилт олдоогүй — sub-tool-уудын алдааг (options-тэй) хэвээр буцаана
+            const firstErr = [results.unit, results.property, results.contract, results.lead].find((r: any) => r?.error);
+            return firstErr || { error: 'Нэгж/гэрээ/лийд олдсонгүй. Нэгжийн код, гэрээний дугаар эсвэл харилцагчийн нэрийг тодорхой өгнө үү.' };
+        }
+        return confirmNeeded('process_contract_action', resolvedArgs, `Гэрээний үйлдэл (${args.action}): ${labels.join(', ')}`, preview);
     }
 
     if (results.changes.length === 0) {

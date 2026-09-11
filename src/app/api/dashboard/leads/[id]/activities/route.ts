@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
-import { requireModuleWrite } from '@/lib/auth/require-permission';
+import { requireModuleWrite, requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
@@ -17,6 +17,8 @@ const CreateSchema = z.object({
 /** GET /api/dashboard/leads/[id]/activities — сүүлийн 100 үйлдэл, шинэ нь дээр. */
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
+        const denied = await requireModule('leads');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         const { id } = await params;

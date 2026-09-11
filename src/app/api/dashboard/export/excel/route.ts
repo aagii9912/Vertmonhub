@@ -1,10 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
+import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 
+/** Export төрөл бүр өөрийн модулийн унших эрх шаардана (өмнө нь зөвхөн auth). */
+const EXPORT_MODULE: Record<string, string> = {
+    properties: 'properties',
+    leads: 'leads',
+    customers: 'customers',
+    contracts: 'contracts',
+    manager: 'reports',
+};
+
 export async function GET(request: NextRequest) {
     try {
+        const { searchParams } = new URL(request.url);
+        const type = searchParams.get('type') || 'properties'; // properties | leads | customers | contracts | manager
+
+        const denied = await requireModule(EXPORT_MODULE[type] || 'reports');
+        if (denied) return denied;
+
         const authShop = await getUserShop();
 
         if (!authShop) {
@@ -13,9 +29,6 @@ export async function GET(request: NextRequest) {
 
         const supabase = supabaseAdmin();
         const shopId = authShop.id;
-
-        const { searchParams } = new URL(request.url);
-        const type = searchParams.get('type') || 'properties'; // properties | leads | customers
 
         let workbook;
         let filename;

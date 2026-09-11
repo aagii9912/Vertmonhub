@@ -62,6 +62,25 @@ function isInlineSupported(mime?: string): boolean {
 }
 
 /**
+ * SSRF хамгаалалт: хавсралтын URL нь ЗӨВХӨН манай Supabase storage-ийн public bucket
+ * (upload route-ийн буцаадаг хаяг) байх ёстой. Өмнө нь client-ээс ирсэн дурын URL-ийг
+ * сервер татаж Gemini-д өгдөг байсан (дотоод сүлжээ/metadata хаяг унших боломжтой).
+ */
+export function isAllowedAttachmentUrl(url: string): boolean {
+    const base = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
+    if (!base || typeof url !== 'string') return false;
+    try {
+        const u = new URL(url);
+        const b = new URL(base);
+        if (u.protocol !== b.protocol || u.host !== b.host) return false;
+        return u.pathname.startsWith('/storage/v1/object/public/products/')
+            || u.pathname.startsWith('/storage/v1/object/public/property-images/');
+    } catch {
+        return false;
+    }
+}
+
+/**
  * Хавсралтуудаас Gemini-д илгээх parts (текст даалгавар + inline зураг/PDF) бэлдэнэ.
  * Мөн файлын URL-ийг текстэд оруулж AI attach_file tool-д ашиглах боломжтой болгоно.
  */
@@ -73,9 +92,9 @@ async function buildMessageParts(task: string, attachments?: { url: string; name
     const parts: any[] = [{ text: note }];
 
     for (const att of attachments) {
-        if (!isInlineSupported(att.mimeType)) continue;
+        if (!isInlineSupported(att.mimeType) || !isAllowedAttachmentUrl(att.url)) continue;
         try {
-            const res = await fetch(att.url);
+            const res = await fetch(att.url, { signal: AbortSignal.timeout(10_000), redirect: 'error' });
             if (!res.ok) continue;
             const buf = await res.arrayBuffer();
             // Хэт том файлыг алгасна (~8MB)

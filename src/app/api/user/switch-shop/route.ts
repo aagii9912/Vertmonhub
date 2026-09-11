@@ -19,10 +19,12 @@ export async function POST(request: Request) {
 
         const supabase = supabaseAdmin();
 
-        // Shop-ыг авч, хэрэглэгч эзэн ЭСВЭЛ гишүүн эсэхийг шалгана
+        // Shop-ыг авч, хэрэглэгч эзэн ЭСВЭЛ гишүүн эсэхийг шалгана.
+        // Зөвхөн аюулгүй багануудыг буцаана — `select('*')` нь HubSpot/FB/IG токенуудыг
+        // бүх гишүүнд (viewer ч) задруулдаг байв (2026-09 review).
         const { data: shop, error } = await supabase
             .from('shops')
-            .select('*')
+            .select('id, name, user_id, owner_name, phone, facebook_page_id, facebook_page_name, is_active, created_at')
             .eq('id', shopId)
             .single();
 

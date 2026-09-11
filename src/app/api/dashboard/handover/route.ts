@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
@@ -9,6 +10,8 @@ import { logger } from '@/lib/utils/logger';
 // ============================================
 export async function GET(request: NextRequest) {
     try {
+        const denied = await requireModule('customers');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ records: [] });
@@ -60,6 +63,8 @@ export async function GET(request: NextRequest) {
 // ============================================
 export async function POST(request: NextRequest) {
     try {
+        const denied = await requireModuleWrite('customers');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });

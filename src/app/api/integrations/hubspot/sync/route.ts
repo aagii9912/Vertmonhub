@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { fetchAllContacts, fetchContactsPage, verifyHubspotToken, HubspotApiError } from '@/lib/hubspot/client';
+import { encryptToken, decryptToken } from '@/lib/crypto/tokens';
 
 const MAX_CONTACTS = 5000;
 
@@ -45,6 +47,8 @@ function buildNotes(c: { properties: { company?: string; notes_last_contacted?: 
  */
 export async function GET(req: NextRequest) {
     try {
+        const denied = await requireModule('customers');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -57,7 +61,7 @@ export async function GET(req: NextRequest) {
             .eq('id', authShop.id)
             .single();
 
-        const token = getToken(req, shop?.hubspot_access_token);
+        const token = getToken(req, decryptToken(shop?.hubspot_access_token));
         if (!token) {
             return NextResponse.json({
                 error: 'HubSpot token шаардлагатай. POST /api/integrations/hubspot/sync эсвэл `x-hubspot-token` header-ээр илгээнэ үү.',
@@ -100,6 +104,8 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
     try {
+        const denied = await requireModuleWrite('customers');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -116,7 +122,8 @@ export async function POST(req: NextRequest) {
             await supabase
                 .from('shops')
                 .update({
-                    hubspot_access_token: saveToken,
+                    // Шифрлэж хадгална (FB/IG токентой адил) — өмнө нь plaintext байв.
+                    hubspot_access_token: encryptToken(saveToken),
                     hubspot_connected_at: new Date().toISOString(),
                 })
                 .eq('id', authShop.id);
@@ -128,7 +135,7 @@ export async function POST(req: NextRequest) {
             .eq('id', authShop.id)
             .single();
 
-        const token = getToken(req, saveToken || shop?.hubspot_access_token);
+        const token = getToken(req, saveToken || decryptToken(shop?.hubspot_access_token));
         if (!token) {
             return NextResponse.json({ error: 'HubSpot token байхгүй' }, { status: 400 });
         }

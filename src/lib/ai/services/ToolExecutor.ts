@@ -695,38 +695,64 @@ export async function executeAppendCustomerNote(
 /**
  * Execute check_payment_status tool
  */
+/** Утасны дугаарыг зөвхөн цифр болгож, Монголын 8 оронтой хэлбэрт (улсын код хасаж) авчирна. */
+function normalizePhoneDigits(raw: unknown): string {
+    const digits = String(raw ?? '').replace(/\D/g, '');
+    return digits.length > 8 ? digits.slice(-8) : digits;
+}
+
+/**
+ * Аюулгүй байдал (2026-09 review C3): DM-ээр бичиж буй хүний таних тэмдэг зөвхөн FB/IG
+ * PSID тул гэрээний санхүүг **гэрээний дугаар + гэрээнд бүртгэлтэй утас хоёулаа таарсан**
+ * үед л мэдээлнэ. Утасны дугаарыг args-аас, байхгүй бол харилцагчийн бүртгэлтэй утаснаас
+ * авна. Өмнө нь зөвхөн нэрээр хайж дурын хүний үлдэгдлийг хэлдэг байсан (1600+ гэрээ ил).
+ */
 export async function executeCheckPaymentStatus(
     args: CheckPaymentStatusArgs,
     context: ToolExecutionContext
 ): Promise<ToolExecutionResult> {
     const supabase = supabaseAdmin();
 
-    let query = supabase
-        .from('property_contracts')
-        .select('contract_number, customer_name, customer_phone, total_price, paid_amount, balance, overdue_days, contract_status, paid_percent')
-        .eq('shop_id', context.shopId);
-
-    if (args.contract_number) {
-        query = query.ilike('contract_number', `%${args.contract_number}%`);
-    } else if (args.customer_phone) {
-        query = query.ilike('customer_phone', `%${args.customer_phone}%`);
-    } else if (args.customer_name) {
-        query = query.ilike('customer_name', `%${args.customer_name}%`);
-    } else {
-        return { success: false, error: 'Утас, нэр эсвэл гэрээний дугаар шаардлагатай.' };
+    const contractNumber = String(args.contract_number ?? '').trim().replace(/[%_]/g, '');
+    let phone = normalizePhoneDigits(args.customer_phone);
+    if (!phone && context.customerId) {
+        const { data: cust } = await supabase
+            .from('customers')
+            .select('phone')
+            .eq('id', context.customerId)
+            .eq('shop_id', context.shopId)
+            .maybeSingle();
+        phone = normalizePhoneDigits(cust?.phone);
     }
 
-    const { data: contracts, error } = await query.limit(3);
+    if (!contractNumber || phone.length < 8) {
+        return {
+            success: true,
+            message: 'Төлбөрийн мэдээллийг аюулгүй байдлын үүднээс зөвхөн гэрээний дугаар болон гэрээнд бүртгэлтэй утасны дугаар хоёулангаар нь баталгаажуулж мэдээлнэ. Гэрээний дугаар болон утасны дугаараа бичнэ үү.'
+        };
+    }
+
+    const { data: candidates, error } = await supabase
+        .from('property_contracts')
+        .select('contract_number, customer_name, customer_phone, total_price, paid_amount, balance, overdue_days, contract_status, paid_percent')
+        .eq('shop_id', context.shopId)
+        .is('deleted_at', null)
+        .ilike('contract_number', contractNumber)
+        .limit(5);
 
     if (error) {
         logger.error('[AI] Payment status check error:', { error });
         return { success: false, error: 'Төлбөрийн мэдээлэл шалгахад алдаа гарлаа.' };
     }
 
-    if (!contracts || contracts.length === 0) {
+    // Хоёр дахь хүчин зүйл: гэрээнд бүртгэлтэй утас таарах ёстой. Гэрээ байгаа эсэхийг
+    // задруулахгүйн тулд хоёр тохиолдолд ижил хариу өгнө.
+    const contracts = (candidates || []).filter(c => normalizePhoneDigits(c.customer_phone) === phone).slice(0, 1);
+
+    if (contracts.length === 0) {
         return {
             success: true,
-            message: 'Таны мэдээллээр гэрээ олдсонгүй. Гэрээний дугаар эсвэл утасны дугаараа дахин шалгана уу.'
+            message: 'Гэрээний дугаар болон утасны дугаар таарсангүй. Гэрээний дугаар, гэрээнд бүртгүүлсэн утасны дугаараа дахин шалгана уу. Асуудал байвал борлуулалтын менежертэй холбогдоно уу.'
         };
     }
 
@@ -744,7 +770,8 @@ ${c.overdue_days && c.overdue_days > 0 ? `⚠️ Хоцрогдол: ${c.overdue
     return {
         success: true,
         message: `💳 **Төлбөрийн мэдээлэл:**\n\n${formatted}`,
-        data: { contracts }
+        // customer_phone-ыг модельд буцаахгүй (хариунд цацагдахаас сэргийлнэ)
+        data: { contracts: contracts.map(({ customer_phone: _phone, ...rest }) => rest) }
     };
 }
 

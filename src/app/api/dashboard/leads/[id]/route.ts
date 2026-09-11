@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
-import { requireModuleWrite } from '@/lib/auth/require-permission';
+import { requireModuleWrite, requireModule } from '@/lib/auth/require-permission';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logLeadActivity, listLeadActivities } from '@/lib/leads/activities';
@@ -16,6 +16,8 @@ const VALID_STATUS = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negot
  */
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
+        const denied = await requireModule('leads');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -139,7 +141,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             updates.preferred_rooms = n;
         }
         if (body.preferred_type !== undefined) {
-            updates.preferred_type = typeof body.preferred_type === 'string' ? body.preferred_type.slice(0, 30) || null : null;
+            // `property_type` enum — дурын string 500 өгдөг байсан.
+            const PROPERTY_TYPES = ['apartment', 'house', 'office', 'land', 'commercial'];
+            if (body.preferred_type !== null && !PROPERTY_TYPES.includes(body.preferred_type)) {
+                return NextResponse.json({ error: 'Буруу байрны төрөл' }, { status: 400 });
+            }
+            updates.preferred_type = body.preferred_type;
         }
         if (body.budget_max !== undefined) {
             const n = body.budget_max === null ? null : Number(body.budget_max);

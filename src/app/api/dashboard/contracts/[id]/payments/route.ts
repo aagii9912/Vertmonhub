@@ -3,7 +3,7 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
-import { CreatePaymentScheduleSchema, validateBody } from '@/lib/validations/schemas';
+import { CreatePaymentScheduleSchema, UpdatePaymentScheduleSchema, validateBody } from '@/lib/validations/schemas';
 
 // ============================================
 // GET /api/dashboard/contracts/[id]/payments
@@ -143,13 +143,12 @@ export async function PATCH(
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
 
-        await params; // contractId validation
-        const body = await request.json();
-        const { payment_id, ...updates } = body;
-
-        if (!payment_id) {
-            return NextResponse.json({ error: 'payment_id шаардлагатай' }, { status: 400 });
-        }
+        const { id: contractId } = await params;
+        const rawBody = await request.json().catch(() => ({}));
+        // Allow-list schema — body-г шууд update-д өгөхгүй (shop_id/contract_id дарж бичихээс сэргийлнэ)
+        const validation = validateBody(UpdatePaymentScheduleSchema, rawBody);
+        if (!validation.success) return validation.response;
+        const { payment_id, ...updates } = validation.data as typeof validation.data & Record<string, unknown>;
 
         const supabase = supabaseAdmin();
 
@@ -170,9 +169,14 @@ export async function PATCH(
             .from('payment_schedules')
             .update(updates)
             .eq('id', payment_id)
+            .eq('contract_id', contractId)
             .eq('shop_id', authShop.id)
             .select()
-            .single();
+            .maybeSingle();
+
+        if (!error && !data) {
+            return NextResponse.json({ error: 'Төлбөрийн мөр олдсонгүй' }, { status: 404 });
+        }
 
         if (error) throw error;
 

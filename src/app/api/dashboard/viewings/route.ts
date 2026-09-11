@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
-import { requireModuleWrite } from '@/lib/auth/require-permission';
+import { requireModuleWrite, requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
@@ -14,6 +14,8 @@ import { logLeadActivity } from '@/lib/leads/activities';
  */
 export async function GET(request: NextRequest) {
     try {
+        const denied = await requireModule('viewings');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

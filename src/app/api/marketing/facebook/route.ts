@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin, getAccessibleShopIds } from '@/lib/auth/supabase-auth';
+import { supabaseAdmin, getAccessibleShopIds, getUserId } from '@/lib/auth/supabase-auth';
+import { requireModule } from '@/lib/auth/require-permission';
 import { getPageInfo } from '@/lib/facebook/marketing-api';
 import { decryptToken } from '@/lib/crypto/tokens';
-import { cookies } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
 
 /**
  * GET /api/marketing/facebook
@@ -12,26 +11,11 @@ import { createServerClient } from '@supabase/ssr';
 export async function GET(req: NextRequest) {
     try {
         // Auth check
-        const cookieStore = await cookies();
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            { cookies: { get(name: string) { return cookieStore.get(name)?.value; } } }
-        );
-
-        const { data: { user } } = await supabase.auth.getUser();
-
-        // Also check custom session
-        let userId: string | null = user?.id || null;
-        if (!userId) {
-            const sessionCookie = cookieStore.get('vertmon-session');
-            if (sessionCookie) {
-                try {
-                    const parsed = JSON.parse(Buffer.from(sessionCookie.value, 'base64').toString('utf-8'));
-                    userId = parsed.user_id;
-                } catch { /* ignore */ }
-            }
-        }
+        // Зөвхөн Supabase session (GoTrue). Хуучин `vertmon-session` fallback нь гарын үсэггүй
+        // base64 JSON байсан тул устгав (дурын user_id-аар impersonation хийх боломжтой байв).
+        const denied = await requireModule('marketing-roi');
+        if (denied) return denied;
+        const userId = await getUserId();
 
         if (!userId) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });

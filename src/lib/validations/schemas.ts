@@ -50,6 +50,24 @@ export const CreatePaymentScheduleSchema = z.object({
     notes: z.string().max(2000).optional().nullable(),
 });
 
+/**
+ * PATCH /api/dashboard/contracts/[id]/payments — зөвхөн зөвшөөрөгдсөн талбарууд.
+ * (2026-09 review H4: өмнө нь body-г шууд `.update()`-д өгч shop_id/contract_id дарж
+ * бичих боломжтой байв.)
+ */
+export const UpdatePaymentScheduleSchema = z.object({
+    payment_id: z.string().uuid('payment_id UUID байх ёстой'),
+    installment_number: z.coerce.number().int().positive().max(1000).optional(),
+    label: z.string().max(255).optional().nullable(),
+    due_date: z.string().min(1).max(40).optional(),
+    amount: z.coerce.number().nonnegative().max(1e15).optional(),
+    paid_amount: z.coerce.number().nonnegative().max(1e15).optional(),
+    paid_date: z.string().max(40).optional().nullable(),
+    payment_method: z.string().max(50).optional().nullable(),
+    notes: z.string().max(2000).optional().nullable(),
+    status: z.enum(['pending', 'paid', 'overdue', 'partial', 'cancelled']).optional(),
+}).strict();
+
 // ============================================
 // Property Schemas
 // ============================================

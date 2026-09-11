@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { getUserShop } from '@/lib/auth/supabase-auth';
@@ -17,6 +18,8 @@ const contractSchema = z.object({
 
 export async function GET(req: NextRequest) {
     try {
+        const denied = await requireModule('marketing-roi');
+        if (denied) return denied;
         const cookieStore = await cookies();
         const supabase = createServerClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -62,6 +65,8 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
     try {
+        const denied = await requireModuleWrite('marketing-roi');
+        if (denied) return denied;
         const cookieStore = await cookies();
         const supabase = createServerClient(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,

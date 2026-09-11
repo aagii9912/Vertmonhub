@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { requireModule } from '@/lib/auth/require-permission';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 
@@ -8,6 +9,8 @@ export async function GET(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
+        const denied = await requireModule('customers');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

@@ -1,4 +1,5 @@
 import { NextResponse, NextRequest } from 'next/server';
+import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
@@ -9,6 +10,8 @@ import { logger } from '@/lib/utils/logger';
 // ============================================
 export async function GET(request: NextRequest) {
     try {
+        const denied = await requireModule('customer-service');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ logs: [], stats: emptyStats() });
@@ -78,16 +81,31 @@ export async function GET(request: NextRequest) {
 // ============================================
 export async function POST(request: NextRequest) {
     try {
+        const denied = await requireModuleWrite('customer-service');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
 
-        const body = await request.json();
+        const body = await request.json().catch(() => ({}));
         const supabase = supabaseAdmin();
 
-        if (!body.subject) {
-            return NextResponse.json({ error: 'Гарчиг (subject) шаардлагатай' }, { status: 400 });
+        if (!body.subject || typeof body.subject !== 'string' || body.subject.length > 255) {
+            return NextResponse.json({ error: 'Гарчиг (subject) шаардлагатай (255 хүртэл тэмдэгт)' }, { status: 400 });
+        }
+        // DB CHECK constraint-тай таарахгүй утга 500 өгдөг байсан — урьдчилан шалгана.
+        const SL_TYPES = ['inquiry', 'complaint', 'maintenance', 'handover', 'payment', 'other'];
+        const SL_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
+        const SL_STATUSES = ['open', 'in_progress', 'resolved', 'closed'];
+        if (body.type !== undefined && !SL_TYPES.includes(body.type)) {
+            return NextResponse.json({ error: `Буруу төрөл. Боломжтой: ${SL_TYPES.join(', ')}` }, { status: 400 });
+        }
+        if (body.priority !== undefined && !SL_PRIORITIES.includes(body.priority)) {
+            return NextResponse.json({ error: `Буруу чухлал. Боломжтой: ${SL_PRIORITIES.join(', ')}` }, { status: 400 });
+        }
+        if (body.status !== undefined && !SL_STATUSES.includes(body.status)) {
+            return NextResponse.json({ error: `Буруу төлөв. Боломжтой: ${SL_STATUSES.join(', ')}` }, { status: 400 });
         }
 
         // Тэмдэглэгчийн нэрийг автоматаар тогтоох (assigned_to өгөгдөөгүй бол)

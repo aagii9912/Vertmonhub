@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { getUserShop, supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { getAdAccounts } from '@/lib/facebook/marketing-api';
 import { decryptToken } from '@/lib/crypto/tokens';
@@ -10,6 +11,8 @@ import { logger } from '@/lib/utils/logger';
  */
 export async function GET(_req: NextRequest) {
     try {
+        const denied = await requireModule('marketing-roi');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -55,6 +58,8 @@ export async function GET(_req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
     try {
+        const denied = await requireModuleWrite('marketing-roi');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

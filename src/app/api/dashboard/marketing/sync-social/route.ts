@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
@@ -12,6 +13,8 @@ import { syncShopSocial } from '@/lib/marketing/socialSync';
  */
 export async function POST() {
     try {
+        const denied = await requireModuleWrite('marketing-roi');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

@@ -71,32 +71,9 @@ export async function middleware(request: NextRequest) {
 
     // Check auth for protected routes
     if (matchesRoute(pathname, protectedRoutes)) {
-        // Check custom session cookie first (GoTrue bypass)
-        const sessionCookie = request.cookies.get('vertmon-session');
-        if (sessionCookie?.value) {
-            // Verify JWT signature before trusting the cookie
-            const jwtSecret = process.env.SESSION_JWT_SECRET;
-            if (jwtSecret) {
-                try {
-                    // Decode and verify structure (Edge-compatible check)
-                    const parts = sessionCookie.value.split('.');
-                    if (parts.length === 3) {
-                        const payload = JSON.parse(atob(parts[1]));
-                        // Check expiry
-                        if (payload.exp && payload.exp * 1000 > Date.now() && payload.sub) {
-                            return NextResponse.next();
-                        }
-                    }
-                } catch {
-                    // Invalid JWT — fall through to Supabase check
-                }
-            } else {
-                // No JWT secret configured — trust cookie existence (dev mode)
-                return NextResponse.next();
-            }
-        }
-
-        // Fallback: check Supabase session
+        // Supabase session (GoTrue) — цорын ганц эх сурвалж. Хуучин `vertmon-session`
+        // cookie шалгалт гарын үсэг баталгаажуулдаггүй (зөвхөн base64 decode) байсан тул
+        // устгав — хуурамч cookie-оор хамгаалалттай хуудас руу орох боломжтой байв.
         try {
             const { supabase, response } = createSupabaseMiddlewareClient(request);
             const { data: { user } } = await supabase.auth.getUser();

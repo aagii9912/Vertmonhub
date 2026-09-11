@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { calculateBackoffDelay } from '@/lib/webhook/retryService';
+import { safeEqual } from '@/lib/crypto/safe-equal';
 
 const GRAPH_API_URL = 'https://graph.facebook.com/v21.0';
 
@@ -281,7 +282,7 @@ export function verifyWebhook(
     challenge: string | null,
     verifyToken: string
 ): string | null {
-    if (mode === 'subscribe' && token === verifyToken) {
+    if (mode === 'subscribe' && safeEqual(token, verifyToken)) {
         return challenge;
     }
     return null;

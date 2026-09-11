@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { safeEqual } from '@/lib/crypto/safe-equal';
 import crypto from 'crypto';
 
 const APP_SECRET = process.env.FACEBOOK_APP_SECRET || '';
@@ -45,7 +46,7 @@ function parseSignedRequest(signedRequest: string): SignedRequestData | null {
             .replace(/\//g, '_')
             .replace(/=+$/, '');
 
-        if (encodedSig !== expectedSig) {
+        if (!safeEqual(encodedSig, expectedSig)) {
             console.warn('Invalid signature for data deletion request');
             return null;
         }

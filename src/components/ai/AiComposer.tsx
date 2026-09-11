@@ -26,7 +26,8 @@ interface Props {
     compact?: boolean;
 }
 
-const MAX_SIZE = 10 * 1024 * 1024;
+// Vercel serverless body хязгаар 4.5MB тул серверийн /api/dashboard/upload-тай адил 4MB.
+const MAX_SIZE = 4 * 1024 * 1024;
 
 /** v2 composer: нэг хүрээ, хавсралт чип, Enter илгээнэ, Shift+Enter мөр. */
 export function AiComposer({ busy, onSend, onStop, prefill, onPrefillConsumed, placeholder, autoFocus, compact }: Props) {
@@ -50,7 +51,7 @@ export function AiComposer({ busy, onSend, onStop, prefill, onPrefillConsumed, p
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         setAttachments((p) => [...p, { id, name: file.name, mimeType: file.type || 'application/octet-stream', uploading: true }]);
         if (file.size > MAX_SIZE) {
-            setAttachments((p) => p.map((a) => (a.id === id ? { ...a, uploading: false, error: true, name: `${file.name} (10MB-с том)` } : a)));
+            setAttachments((p) => p.map((a) => (a.id === id ? { ...a, uploading: false, error: true, name: `${file.name} (4MB-с том)` } : a)));
             return;
         }
         try {

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { isAuthorizedCron } from '@/lib/auth/cron';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { sendPushNotification } from '@/lib/notifications';
@@ -12,8 +13,7 @@ import { sendPushNotification } from '@/lib/notifications';
 // ============================================
 export async function POST(request: Request) {
     try {
-        const authHeader = request.headers.get('authorization');
-        if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
+        if (!isAuthorizedCron(request)) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 

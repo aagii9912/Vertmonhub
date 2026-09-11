@@ -44,3 +44,9 @@ yarn-error.log*
 next-env.d.ts
 debug.log
 .env*.local
+
+# Бодит хэрэглэгчийн өгөгдөл (HubSpot export, гэрээний жагсаалт) — хэзээ ч commit хийхгүй
+*.csv
+!data/**/*.csv
+REPORTS/*.csv
+REPORTS/*.xlsx

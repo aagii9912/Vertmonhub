@@ -29,7 +29,11 @@ export const ADMIN_TOOLS: string[] = ['invite_user', 'assign_role', 'create_role
  * "Энэ session-д үргэлж зөвшөөрөх" боломжгүй WRITE tool-ууд — олон бичлэг/санхүүд
  * өндөр нөлөөтэй тул тэдгээрийг үргэлж гараар баталгаажуулна.
  */
-const NON_REMEMBERABLE = new Set<string>(['bulk_update_leads', 'process_contract_action']);
+const NON_REMEMBERABLE = new Set<string>([
+    'bulk_update_leads', 'process_contract_action',
+    // Санхүү/нөөцөд шууд нөлөөлдөг тул үргэлж гараар баталгаажуулна (2026-09 review).
+    'update_property_price', 'create_contract', 'create_property',
+]);
 
 const DELETE_SET = new Set<string>(DELETE_TOOLS);
 const ADMIN_SET = new Set<string>(ADMIN_TOOLS);
