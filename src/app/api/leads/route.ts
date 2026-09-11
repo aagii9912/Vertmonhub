@@ -92,9 +92,11 @@ export async function OPTIONS(request: NextRequest) {
 
 async function verifyTurnstile(token: string | null | undefined, clientIp: string): Promise<boolean> {
     const secret = process.env.TURNSTILE_SECRET_KEY;
-    // Production-д captcha заавал: secret тохируулаагүй бол нээлттэй имэйл relay + Gemini
-    // зардал болдог байсан (review M11). Dev/preview-д л secret-гүй өнгөрнө.
-    if (!secret) return process.env.VERCEL_ENV !== 'production';
+    // TURNSTILE_SECRET_KEY тохируулаагүй бол captcha-гүй өнгөрнө (origin allowlist + rate limit +
+    // honeypot л хамгаална). 2026-09-11: prod Vercel env-д энэ түлхүүр байхгүй тул заавал болговол
+    // mandala-garden.mn-ийн лид маягт бүхэлдээ тасрах байсан — тохируулмагц автоматаар заавал болно.
+    // instrumentation.ts дутуу env-ийг серверийн эхлэлд анхааруулна.
+    if (!secret) return true;
     if (!token) return false;
 
     try {

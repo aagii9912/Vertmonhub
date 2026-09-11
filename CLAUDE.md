@@ -415,7 +415,7 @@ DIGEST_EMAIL=
 LEAD_ALLOWED_ORIGINS=
 LEAD_WELCOME_SITE_URL=
 LEAD_SHOP_ID=              # олон shop-той үед public лидийн эзэн shop (байхгүй бол хамгийн эртний shop)
-TURNSTILE_SECRET_KEY=      # prod-д ЗААВАЛ (байхгүй бол public /api/leads 400 буцаана)
+TURNSTILE_SECRET_KEY=      # зөвлөмжтэй: тохируулмагц public /api/leads captcha шаардана (байхгүй бол origin allowlist + rate limit + honeypot л)
 
 # Cron (Vercel Cron → Authorization: Bearer $CRON_SECRET) — prod-д ЗААВАЛ, байхгүй бол cron 401
 CRON_SECRET=
