@@ -551,7 +551,7 @@ export default function AdminImportPage() {
                     <input
                         ref={fileRef}
                         type="file"
-                        accept=".csv,.xlsx,.xls"
+                        accept=".csv,.xlsx"
                         onChange={handleFileChange}
                         className="hidden"
                     />

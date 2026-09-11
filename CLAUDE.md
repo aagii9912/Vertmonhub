@@ -314,7 +314,8 @@ Rules that must not regress:
 - `projectId` is validated server-side against `projects` (must belong to the posted `shopId`) and stamped best-effort onto `properties`/`leads`/`property_contracts` (`project_id`, migration `20260707120000`); inserts retry without optional columns when a migration hasn't been applied yet.
 - The `project` import category also upserts into the `projects` table (by `shop_id`+`name`) so imported projects appear in the project dropdown.
 - `POST /api/admin/projects` requires an explicit `shop_id` when more than one shop exists (never silently attaches to the first shop).
-- Excel date cells arrive as `Date` objects (`cellDates: true`) or serials — always go through `toDateStr`.
+- Excel date cells arrive as `Date` objects or serials — always go through `toDateStr`.
+- **Excel I/O goes through `src/lib/utils/xlsx.ts`** (`readSheetRows`, `readSheetCsv`, `buildWorkbookBuffer`, built on `exceljs`; SheetJS `xlsx` was removed for an unfixable prototype-pollution/ReDoS advisory). `.xls` (Excel 97-2003) is **not** readable — upload routes return 400 asking for `.xlsx`/`.csv`; CSV/TSV is parsed via `csv-parse`.
 
 ---
 

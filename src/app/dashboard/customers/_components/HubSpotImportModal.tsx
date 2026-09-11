@@ -66,7 +66,7 @@ export function HubSpotImportModal({
                             </p>
                             <input
                                 type="file"
-                                accept=".csv,.xlsx,.xls"
+                                accept=".csv,.xlsx"
                                 onChange={(e) => setImportFile(e.target.files?.[0] || null)}
                                 className="block w-full text-sm text-foreground file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-brand file:text-brand-fg file:font-medium hover:file:bg-brand-strong"
                             />
