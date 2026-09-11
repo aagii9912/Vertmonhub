@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { toast } from 'sonner';
 import Image from 'next/image';
 import {
@@ -51,19 +51,16 @@ export default function PropertyDetailPage() {
     }, [shop?.id, params.id]);
 
     async function fetchProperty() {
-        const { data, error } = await supabase
-            .from('properties')
-            .select('*')
-            .eq('id', params.id)
-            .eq('shop_id', shop!.id)
-            .single();
+        // API-аар (RBAC + shop scope сервер талд) — өмнө нь browser Supabase, зөвхөн RLS
+        const res = await dashboardFetch(`/api/properties/${params.id}`);
+        const data = res.ok ? ((await res.json().catch(() => null)) as { property?: Property } | null)?.property : null;
 
-        if (error || !data) {
+        if (!data) {
             toast.error('Байр олдсонгүй');
             router.push('/dashboard/properties');
             return;
         }
-        setProperty(data as Property);
+        setProperty(data);
         setLoading(false);
     }
 

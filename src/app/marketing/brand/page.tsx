@@ -11,7 +11,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { Sparkles, ThumbsUp, ThumbsDown, Minus, Globe, Megaphone } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { dashboardJson } from '@/lib/api/dashboardFetch';
 
 interface BrandMention {
     id: string;
@@ -34,14 +34,8 @@ export default function BrandPage() {
         const fetch = async () => {
             setLoading(true);
             try {
-                const { data, error } = await supabase
-                    .from('brand_mentions')
-                    .select('*')
-                    .eq('shop_id', shop.id)
-                    .order('mentioned_at', { ascending: false })
-                    .limit(50);
-                if (error) throw error;
-                setMentions(data || []);
+                const { rows } = await dashboardJson<{ rows: BrandMention[] }>('/api/marketing/data/brand_mentions?order=mentioned_at.desc&limit=50');
+                setMentions(rows || []);
             } catch (error) {
                 console.error('Error:', error);
             } finally {

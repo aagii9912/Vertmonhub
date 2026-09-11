@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { CalendarDays, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
@@ -59,13 +59,12 @@ export default function CalendarPage() {
         if (!shop?.id || !newItem.title.trim()) return;
         setCreating(true);
         try {
-            const { data, error } = await supabase.from('content_calendar').insert([{
-                shop_id: shop.id, title: newItem.title.trim(), type: newItem.type,
+            const { row } = await dashboardMutate<{ row: CalendarItem }>('/api/marketing/data/content_calendar', 'POST', {
+                title: newItem.title.trim(), type: newItem.type,
                 platform: newItem.platform, scheduled_date: newItem.scheduled_date,
                 status: 'planned', color: newItem.color,
-            }]).select().single();
-            if (error) throw error;
-            setItems(prev => [...prev, data].sort((a: CalendarItem, b: CalendarItem) => a.scheduled_date.localeCompare(b.scheduled_date)));
+            });
+            setItems(prev => [...prev, row].sort((a: CalendarItem, b: CalendarItem) => a.scheduled_date.localeCompare(b.scheduled_date)));
             setShowCreateModal(false);
             setNewItem({ title: '', type: 'post', platform: 'facebook', scheduled_date: new Date().toISOString().split('T')[0], color: '#3B82F6' });
         } catch (err) { console.error('Create error:', err); }
@@ -80,15 +79,10 @@ export default function CalendarPage() {
                 const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString().split('T')[0];
                 const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).toISOString().split('T')[0];
 
-                const { data, error } = await supabase
-                    .from('content_calendar')
-                    .select('*')
-                    .eq('shop_id', shop.id)
-                    .gte('scheduled_date', startOfMonth)
-                    .lte('scheduled_date', endOfMonth)
-                    .order('scheduled_date', { ascending: true });
-                if (error) throw error;
-                setItems(data || []);
+                const { rows } = await dashboardJson<{ rows: CalendarItem[] }>(
+                    `/api/marketing/data/content_calendar?gte.scheduled_date=${startOfMonth}&lte.scheduled_date=${endOfMonth}&order=scheduled_date.asc`,
+                );
+                setItems(rows || []);
             } catch (error) {
                 console.error('Error:', error);
             } finally {

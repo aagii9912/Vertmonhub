@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Megaphone, Plus, Search, Play, DollarSign } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -73,13 +73,12 @@ export default function CampaignsPage() {
         if (!shop?.id || !newCampaign.name.trim()) return;
         setCreating(true);
         try {
-            const { data, error } = await supabase.from('marketing_campaigns').insert([{
-                shop_id: shop.id, name: newCampaign.name.trim(), type: newCampaign.type,
+            const { row } = await dashboardMutate<{ row: Campaign }>('/api/marketing/data/marketing_campaigns', 'POST', {
+                name: newCampaign.name.trim(), type: newCampaign.type,
                 status: 'draft', budget: newCampaign.budget, spend: 0,
                 start_date: newCampaign.start_date || null, end_date: newCampaign.end_date || null, metrics: {},
-            }]).select().single();
-            if (error) throw error;
-            setCampaigns(prev => [data, ...prev]);
+            });
+            setCampaigns(prev => [row, ...prev]);
             setShowCreateModal(false);
             setNewCampaign({ name: '', type: 'social', budget: 0, start_date: new Date().toISOString().split('T')[0], end_date: '' });
         } catch (err) { console.error('Create error:', err); }
@@ -92,14 +91,8 @@ export default function CampaignsPage() {
         const fetchCampaigns = async () => {
             setLoading(true);
             try {
-                const { data, error } = await supabase
-                    .from('marketing_campaigns')
-                    .select('*')
-                    .eq('shop_id', shop.id)
-                    .order('created_at', { ascending: false });
-
-                if (error) throw error;
-                setCampaigns(data || []);
+                const { rows } = await dashboardJson<{ rows: Campaign[] }>('/api/marketing/data/marketing_campaigns?order=created_at.desc');
+                setCampaigns(rows || []);
             } catch (error) {
                 console.error('Error fetching campaigns:', error);
             } finally {

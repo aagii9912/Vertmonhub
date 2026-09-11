@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/Select';
 import { BarChart3, Plus, DollarSign, Target, TrendingUp, MousePointer } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
 
 interface AdCampaign {
     id: string;
@@ -58,12 +58,11 @@ export default function AdsPage() {
         if (!shop?.id || !newAd.name.trim()) return;
         setCreating(true);
         try {
-            const { data, error } = await supabase.from('ad_campaigns').insert([{
-                shop_id: shop.id, name: newAd.name.trim(), platform: newAd.platform,
+            const { row } = await dashboardMutate<{ row: AdCampaign }>('/api/marketing/data/ad_campaigns', 'POST', {
+                name: newAd.name.trim(), platform: newAd.platform,
                 status: 'draft', budget: newAd.budget, spend: 0, impressions: 0, clicks: 0, conversions: 0, ctr: 0, cpc: 0,
-            }]).select().single();
-            if (error) throw error;
-            setAds(prev => [data, ...prev]);
+            });
+            setAds(prev => [row, ...prev]);
             setShowCreateModal(false);
             setNewAd({ name: '', platform: 'facebook', budget: 0 });
         } catch (err) { console.error('Create error:', err); }
@@ -75,13 +74,8 @@ export default function AdsPage() {
         const fetch = async () => {
             setLoading(true);
             try {
-                const { data, error } = await supabase
-                    .from('ad_campaigns')
-                    .select('*')
-                    .eq('shop_id', shop.id)
-                    .order('created_at', { ascending: false });
-                if (error) throw error;
-                setAds(data || []);
+                const { rows } = await dashboardJson<{ rows: AdCampaign[] }>('/api/marketing/data/ad_campaigns?order=created_at.desc');
+                setAds(rows || []);
             } catch (error) {
                 console.error('Error:', error);
             } finally {

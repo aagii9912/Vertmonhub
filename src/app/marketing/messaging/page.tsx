@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, Plus, MessageSquare, Send, Eye, MousePointer } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -51,12 +51,11 @@ export default function MessagingPage() {
         if (!shop?.id || !newCamp.name.trim()) return;
         setCreating(true);
         try {
-            const { data, error } = await supabase.from('message_campaigns').insert([{
-                shop_id: shop.id, name: newCamp.name.trim(), subject: newCamp.subject || null,
+            const { row } = await dashboardMutate<{ row: MessageCampaign }>('/api/marketing/data/message_campaigns', 'POST', {
+                name: newCamp.name.trim(), subject: newCamp.subject || null,
                 type: tab, status: 'draft', recipients: 0, delivered: 0, opened: 0, clicked: 0,
-            }]).select().single();
-            if (error) throw error;
-            setCampaigns(prev => [data, ...prev]);
+            });
+            setCampaigns(prev => [row, ...prev]);
             setShowCreateModal(false);
             setNewCamp({ name: '', subject: '' });
         } catch (err) { console.error('Create error:', err); }
@@ -68,14 +67,8 @@ export default function MessagingPage() {
         const fetch = async () => {
             setLoading(true);
             try {
-                const { data, error } = await supabase
-                    .from('message_campaigns')
-                    .select('*')
-                    .eq('shop_id', shop.id)
-                    .eq('type', tab)
-                    .order('created_at', { ascending: false });
-                if (error) throw error;
-                setCampaigns(data || []);
+                const { rows } = await dashboardJson<{ rows: MessageCampaign[] }>(`/api/marketing/data/message_campaigns?eq.type=${tab}&order=created_at.desc`);
+                setCampaigns(rows || []);
             } catch (error) {
                 console.error('Error:', error);
             } finally {

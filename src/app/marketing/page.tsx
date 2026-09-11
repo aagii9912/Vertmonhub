@@ -13,7 +13,7 @@ import {
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
+import { dashboardJson } from '@/lib/api/dashboardFetch';
 
 interface MarketingOverview {
     campaigns: number;
@@ -37,17 +37,19 @@ export default function MarketingPage() {
         const fetch = async () => {
             setLoading(true);
             try {
+                type Rows<T> = { rows: T[] };
+                const today = new Date().toISOString().split('T')[0];
                 const [campaignsRes, socialRes, adsRes, calendarRes] = await Promise.all([
-                    supabase.from('marketing_campaigns').select('id, status').eq('shop_id', shop.id),
-                    supabase.from('social_posts').select('id, reach').eq('shop_id', shop.id),
-                    supabase.from('ad_campaigns').select('id, spend').eq('shop_id', shop.id),
-                    supabase.from('content_calendar').select('id').eq('shop_id', shop.id).gte('scheduled_date', new Date().toISOString().split('T')[0]),
+                    dashboardJson<Rows<{ id: string; status: string }>>('/api/marketing/data/marketing_campaigns?select=id,status&limit=500'),
+                    dashboardJson<Rows<{ id: string; reach?: number }>>('/api/marketing/data/social_posts?select=id,reach&limit=500'),
+                    dashboardJson<Rows<{ id: string; spend?: number }>>('/api/marketing/data/ad_campaigns?select=id,spend&limit=500'),
+                    dashboardJson<Rows<{ id: string }>>(`/api/marketing/data/content_calendar?select=id&gte.scheduled_date=${today}&limit=500`),
                 ]);
 
-                const campaigns = campaignsRes.data || [];
-                const social = socialRes.data || [];
-                const ads = adsRes.data || [];
-                const calendar = calendarRes.data || [];
+                const campaigns = campaignsRes.rows || [];
+                const social = socialRes.rows || [];
+                const ads = adsRes.rows || [];
+                const calendar = calendarRes.rows || [];
 
                 setOverview({
                     campaigns: campaigns.length,
