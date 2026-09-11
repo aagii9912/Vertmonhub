@@ -30,7 +30,7 @@ function matchesRoute(pathname: string, routes: string[]): boolean {
     return routes.some(route => pathname === route || pathname.startsWith(route + '/'));
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
     const { pathname } = request.nextUrl;
 
     // Redirect old register page to login

@@ -45,7 +45,7 @@ const eslintConfig = [
     // Server код (API route, auth helper, middleware) cookie-д итгэдэг getSession()-ийг
     // ашиглаж БОЛОХГҮЙ — Auth сервертэй тулгадаг getUser()-ийг хэрэглэнэ.
     // (Client тал: contexts/, components/, hooks/ — энэ дүрэмд хамаарахгүй.)
-    files: ["src/app/api/**/*.ts", "src/lib/auth/**/*.ts", "src/middleware.ts"],
+    files: ["src/app/api/**/*.ts", "src/lib/auth/**/*.ts", "src/proxy.ts"],
     rules: {
       "no-restricted-syntax": [
         "error",
