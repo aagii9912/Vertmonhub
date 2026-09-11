@@ -50,3 +50,6 @@ debug.log
 !data/**/*.csv
 REPORTS/*.csv
 REPORTS/*.xlsx
+
+# DB backup dump-ууд (legacy хүснэгт устгахын өмнөх) — commit хийхгүй
+supabase/backups/

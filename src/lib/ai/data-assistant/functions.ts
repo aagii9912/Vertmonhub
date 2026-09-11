@@ -3,6 +3,7 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { ubStartOfDay } from '@/lib/utils/date';
 import { logger } from '@/lib/utils/logger';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { buildBudgetOverview, monthlySpendSeries, spendByChannel, SPEND_CHANNELS } from '@/lib/marketing/budget';
@@ -35,13 +36,14 @@ const supabaseAdmin: SupabaseClient = new Proxy({} as SupabaseClient, {
 // ============================================
 
 function getDateFilter(timeRange: string): string {
-    const now = new Date();
+    // УБ-ийн өдрийн хилээр (сервер UTC)
+    const start = ubStartOfDay();
     switch (timeRange) {
-        case 'today': now.setHours(0, 0, 0, 0); return now.toISOString();
-        case 'week': now.setDate(now.getDate() - 7); return now.toISOString();
-        case 'month': now.setMonth(now.getMonth() - 1); return now.toISOString();
-        case 'year': now.setFullYear(now.getFullYear() - 1); return now.toISOString();
-        default: return new Date(2000, 0, 1).toISOString();
+        case 'today': return start.toISOString();
+        case 'week': return new Date(start.getTime() - 7 * 86_400_000).toISOString();
+        case 'month': return new Date(start.getTime() - 30 * 86_400_000).toISOString();
+        case 'year': return new Date(start.getTime() - 365 * 86_400_000).toISOString();
+        default: return new Date(Date.UTC(2000, 0, 1)).toISOString();
     }
 }
 
@@ -51,15 +53,17 @@ function getDateFilter(timeRange: string): string {
 
 export async function fetchDashboardStats(shopId: string, timeRange: string = 'month') {
     const isoDate = getDateFilter(timeRange);
-    const [ordersRes, revenueRes, customersRes, leadsRes, propertiesRes] = await Promise.all([
-        supabaseAdmin.from('orders').select('*', { count: 'exact' }).eq('shop_id', shopId).gte('created_at', isoDate),
-        supabaseAdmin.from('orders').select('total_amount').eq('shop_id', shopId).gte('created_at', isoDate),
-        supabaseAdmin.from('customers').select('*', { count: 'exact' }).eq('shop_id', shopId),
-        supabaseAdmin.from('leads').select('*', { count: 'exact' }).eq('shop_id', shopId).gte('created_at', isoDate),
-        supabaseAdmin.from('properties').select('*', { count: 'exact' }).eq('shop_id', shopId).eq('is_active', true),
+    const dateOnly = isoDate.slice(0, 10);
+    // Үл хөдлөхийн систем: «захиалга/орлого» = гэрээ (property_contracts). Хуучин e-commerce
+    // `orders` хүснэгт 2026-09 Wave 2-т устгагдсан.
+    const [contractsRes, customersRes, leadsRes, propertiesRes] = await Promise.all([
+        supabaseAdmin.from('property_contracts').select('total_price', { count: 'exact' }).eq('shop_id', shopId).is('deleted_at', null).gte('contract_date', dateOnly),
+        supabaseAdmin.from('customers').select('id', { count: 'exact', head: true }).eq('shop_id', shopId).is('deleted_at', null),
+        supabaseAdmin.from('leads').select('status').eq('shop_id', shopId).is('deleted_at', null).gte('created_at', isoDate).limit(5000),
+        supabaseAdmin.from('properties').select('id', { count: 'exact', head: true }).eq('shop_id', shopId).eq('is_active', true),
     ]);
 
-    const totalRevenue = revenueRes.data?.reduce((sum, o) => sum + (Number(o.total_amount) || 0), 0) || 0;
+    const totalRevenue = contractsRes.data?.reduce((sum, c) => sum + (Number(c.total_price) || 0), 0) || 0;
     const leadsAll = leadsRes.data || [];
     const leadsByStatus = {
         new: leadsAll.filter(l => l.status === 'new').length,
@@ -71,7 +75,7 @@ export async function fetchDashboardStats(shopId: string, timeRange: string = 'm
         closed_lost: leadsAll.filter(l => l.status === 'closed_lost').length,
     };
 
-    return { timeRange, totalOrders: ordersRes.count || 0, totalRevenue, totalCustomers: customersRes.count || 0, totalLeads: leadsRes.count || 0, leadsByStatus, totalProperties: propertiesRes.count || 0 };
+    return { timeRange, totalContracts: contractsRes.count || 0, totalRevenue, totalCustomers: customersRes.count || 0, totalLeads: leadsAll.length, leadsByStatus, totalProperties: propertiesRes.count || 0 };
 }
 
 // (Хуучин e-commerce fetchOrders / fetchProductStats — 2026-09 Wave 2-т устгав; CLAUDE.md «буцааж оруулахгүй»)
@@ -1427,7 +1431,7 @@ export function generateChartConfig(toolName: string, args: any, data: any): any
         case 'get_dashboard_stats':
             return {
                 type: 'bar', data: [
-                    { name: 'Захиалга', value: data.totalOrders || 0 },
+                    { name: 'Гэрээ', value: data.totalContracts || 0 },
                     { name: 'Харилцагч', value: data.totalCustomers || 0 },
                     { name: 'Лийд', value: data.totalLeads || 0 },
                     { name: 'Байр', value: data.totalProperties || 0 },
