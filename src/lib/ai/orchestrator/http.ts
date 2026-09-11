@@ -133,6 +133,18 @@ export async function persistAssistantExchange(
 ): Promise<string | null> {
     let activeConversationId = p.conversationId;
     try {
+        // Client-ийн өгсөн conversation_id зөвхөн ӨӨРИЙН + энэ shop-ийнх байх ёстой —
+        // өмнө нь дурын яриа руу мессеж нэмэх боломжтой байв (review M18).
+        if (activeConversationId) {
+            const { data: owned } = await p.adminDb
+                .from('ai_conversations')
+                .select('id')
+                .eq('id', activeConversationId)
+                .eq('user_id', p.userId)
+                .eq('shop_id', p.effectiveShopId)
+                .maybeSingle();
+            if (!owned) activeConversationId = null;
+        }
         if (!activeConversationId) {
             const autoTitle = p.message.length > 40 ? p.message.substring(0, 40) + '…' : p.message;
             const base = { user_id: p.userId, shop_id: p.effectiveShopId, title: autoTitle };

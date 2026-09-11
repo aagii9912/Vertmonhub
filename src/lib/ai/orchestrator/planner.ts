@@ -89,7 +89,8 @@ export async function planRequest(
             ? `Сүүлийн харилцаа:\n${recent}\n\nШинэ хүсэлт: ${message}${attachNote}`
             : `${message}${attachNote}`;
 
-        const result = await withRetry(() => model.generateContent(prompt));
+        // Client цуцалбал planner-ийн Gemini дуудлагыг ч таслана
+        const result = await withRetry(() => model.generateContent(prompt, ctx.signal ? { signal: ctx.signal } : undefined));
         const raw = JSON.parse(result.response.text()) as OrchestrationPlan;
 
         const steps = (raw.steps || [])

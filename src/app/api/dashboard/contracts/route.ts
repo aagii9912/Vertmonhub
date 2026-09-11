@@ -41,11 +41,13 @@ export async function GET(request: NextRequest) {
         const sortBy = SORTABLE.has(sp.get('sortBy') || '') ? (sp.get('sortBy') as string) : 'contract_date';
         const sortOrder = sp.get('sortOrder') === 'asc';
 
-        // Шүүлттэй query-г дахин барих туслах (хуудаслалт бүрт шинээр)
-        const buildQuery = () => {
+        // Шүүлттэй query-г дахин барих туслах (хуудаслалт бүрт шинээр).
+        // `select` — статистикт зөвхөн 5 тоон багана татна (бүх баганыг 1600+ мөрөөр
+        // хуудас бүрт татдаг байсан — review M16).
+        const buildQuery = (select = '*', withCount = false) => {
             let q = supabase
                 .from('property_contracts')
-                .select('*')
+                .select(select, withCount ? { count: 'exact' } : undefined)
                 .eq('shop_id', shopId)
                 .is('deleted_at', null);
 
@@ -75,34 +77,40 @@ export async function GET(request: NextRequest) {
         // Supabase 1000-мөрийн default хязгаарыг хуудаслалтаар давах
         // (Мандала гэрээ 1600+ тул жагсаалт ба статистик бүрэн байх ёстой).
         const PAGE = 1000;
-        const contracts: Array<Record<string, unknown>> = [];
-        for (let from = 0; ; from += PAGE) {
-            const { data, error } = await buildQuery().range(from, from + PAGE - 1);
-            if (error) throw error;
-            if (!data || data.length === 0) break;
-            contracts.push(...data);
-            if (data.length < PAGE) break;
-        }
+        const fetchAll = async (select: string) => {
+            const rows: Array<Record<string, unknown>> = [];
+            for (let from = 0; ; from += PAGE) {
+                const { data, error } = await buildQuery(select).range(from, from + PAGE - 1);
+                if (error) throw error;
+                if (!data || data.length === 0) break;
+                rows.push(...(data as unknown as Array<Record<string, unknown>>));
+                if (data.length < PAGE) break;
+            }
+            return rows;
+        };
 
-        // Статистик (бүх мөр дээр)
-        const stats = computeStats(contracts || []);
-
-        // v2 хуудаслалт: ?page&pageSize өгвөл зөвхөн тухайн хуудсыг буцаана
-        // (статистик бүтэн хэвээр). Өгөөгүй бол v1-тэй адил бүгдийг буцаана.
+        // v2 хуудаслалт: ?page&pageSize өгвөл зөвхөн тухайн хуудсыг серверээс (range) буцаана;
+        // статистикийг зөвхөн тоон баганаар тооцно. Өгөөгүй бол v1-тэй адил бүгдийг буцаана.
         const pageRaw = sp.get('page');
         if (pageRaw !== null) {
             const pageSize = Math.min(200, Math.max(1, Number(sp.get('pageSize')) || 25));
             const page = Math.max(1, Number(pageRaw) || 1);
-            const total = contracts.length;
-            const slice = contracts.slice((page - 1) * pageSize, page * pageSize);
+            const from = (page - 1) * pageSize;
+            const [{ data: slice, count, error: pageErr }, statRows] = await Promise.all([
+                buildQuery('*', true).range(from, from + pageSize - 1),
+                fetchAll('contract_status, total_price, paid_amount, balance, overdue_days'),
+            ]);
+            if (pageErr) throw pageErr;
+            const total = count ?? statRows.length;
             return NextResponse.json({
-                contracts: slice,
-                stats,
+                contracts: slice || [],
+                stats: computeStats(statRows),
                 pagination: { total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)), hasMore: page * pageSize < total },
             });
         }
 
-        return NextResponse.json({ contracts: contracts || [], stats });
+        const contracts = await fetchAll('*');
+        return NextResponse.json({ contracts, stats: computeStats(contracts) });
     } catch (error) {
         logger.error('[Contracts API] GET error:', { error });
         return NextResponse.json(

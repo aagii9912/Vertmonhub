@@ -9,21 +9,25 @@
 import React, { useEffect, useState } from 'react';
 import { ShieldCheck, RotateCcw } from 'lucide-react';
 import { getAllowedTools, clearAllowedTools } from '@/lib/ai/allowedTools';
+import { useAuth } from '@/contexts/AuthContext';
+import { getActiveShopId } from '@/lib/api/dashboardFetch';
 
 export function SessionApprovalsReset() {
+    const { user } = useAuth();
     const [info, setInfo] = useState<{ shopId: string | null; count: number }>({ shopId: null, count: 0 });
     const [cleared, setCleared] = useState(false);
     const count = info.count;
+    const userId = user?.id ?? null;
 
     useEffect(() => {
-        const id = typeof window !== 'undefined' ? localStorage.getItem('vertmonhub_active_shop_id') : null;
+        const id = getActiveShopId();
         // localStorage зөвхөн client дээр байдаг тул mount дээр л уншина (SSR hydration-д аюулгүй).
         // eslint-disable-next-line react-hooks/set-state-in-effect
-        setInfo({ shopId: id, count: id ? getAllowedTools(id).length : 0 });
-    }, []);
+        setInfo({ shopId: id, count: id ? getAllowedTools(id, userId).length : 0 });
+    }, [userId]);
 
     const handleClear = () => {
-        if (info.shopId) clearAllowedTools(info.shopId);
+        if (info.shopId) clearAllowedTools(info.shopId, userId);
         setInfo(prev => ({ ...prev, count: 0 }));
         setCleared(true);
     };

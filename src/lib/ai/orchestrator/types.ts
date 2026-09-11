@@ -84,6 +84,10 @@ export interface OrchestratorContext {
     userName?: string;
     /** Чатад хавсаргасан файлууд (AI унших/шинжлэх + бичлэгт хавсаргах). */
     attachments?: OrchestratorAttachment[];
+    /** Client холболт таслахад (Зогсоох / таб хаах) Gemini дуудлагыг зогсооно. */
+    signal?: AbortSignal;
+    /** Энэ мөчөөс хойш шинэ агент эхлүүлэхгүй (Vercel maxDuration-аас өмнө partial хариу өгнө). */
+    deadlineAt?: number;
 }
 
 /** Чатын хавсралт — /api/dashboard/upload-аас ирсэн URL. */

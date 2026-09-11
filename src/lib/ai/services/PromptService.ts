@@ -89,8 +89,13 @@ Emoji-г зохистой ашигла. Хэрэглэгчийн сэтгэл х
 /**
  * Build properties information for prompt
  */
-export function buildPropertiesInfo(properties: ChatContext['properties']): string {
+export function buildPropertiesInfo(properties: ChatContext['properties'], inventorySummary?: string | null): string {
     if (!properties || properties.length === 0) {
+        // Listing (properties) хоосон ч бодит нөөц (property_units) байвал түүний хураангуйг өгнө —
+        // prod-д properties 0 мөр, 2500+ нэгж property_units-д (review H9).
+        if (inventorySummary) {
+            return `НӨӨЦИЙН ХУРААНГУЙ (ээлж → блок, худалдаанд байгаа нэгжийн тоо):\n${inventorySummary}\n- Нэгжийн дэлгэрэнгүйг (өрөө, талбай, давхар) search_properties tool-ээр хай; үнийг менежер хэлнэ.`;
+        }
         return '- Одоогоор үл хөдлөх хөрөнгө бүртгэгдээгүй байна';
     }
 
@@ -153,7 +158,7 @@ export function buildFAQs(faqs?: ChatContext['faqs']): string {
  */
 export function buildSystemPrompt(context: ChatContext): string {
     const emotionStyle = EMOTION_PROMPTS[context.aiEmotion || 'friendly'];
-    const propertiesInfo = clampSection(buildPropertiesInfo(context.properties), SECTION_CHAR_LIMITS.properties, 'үл хөдлөхийн жагсаалт');
+    const propertiesInfo = clampSection(buildPropertiesInfo(context.properties, context.inventorySummary), SECTION_CHAR_LIMITS.properties, 'үл хөдлөхийн жагсаалт');
     const customInstructions = buildCustomInstructions(context.aiInstructions);
     const dynamicKnowledge = clampSection(buildDynamicKnowledge(context.customKnowledge), SECTION_CHAR_LIMITS.knowledge, 'тусгай мэдээлэл');
     const faqsBlock = clampSection(buildFAQs(context.faqs), SECTION_CHAR_LIMITS.faqs, 'түгээмэл асуулт');

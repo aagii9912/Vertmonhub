@@ -10,7 +10,9 @@ export async function withRetry<T>(fn: () => Promise<T>, tries = 4): Promise<T> 
         } catch (e: unknown) {
             lastErr = e;
             const msg = String((e as { message?: string })?.message || e);
-            const retryable = /429|503|overloaded|rate.?limit|unavailable|timeout/i.test(msg);
+            // Client цуцалсан (AbortSignal) — дахин оролдох утгагүй, шууд шиднэ
+            const aborted = (e as { name?: string })?.name === 'AbortError' || /abort/i.test(msg);
+            const retryable = !aborted && /429|503|overloaded|rate.?limit|unavailable|timeout/i.test(msg);
             if (!retryable || attempt === tries - 1) throw e;
             // 429 (квот) удаан сэргэдэг тул урт, 503 (түр ачаалал) богино хүлээнэ.
             const base = /429|rate.?limit/i.test(msg) ? 1500 : 600;

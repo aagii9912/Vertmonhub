@@ -29,6 +29,8 @@ export interface ShopWithProducts {
     instagram_access_token?: string | null;
     instagram_username?: string | null;
     properties?: any[];
+    /** property_units нөөцийн хураангуй (properties хоосон үед) */
+    inventorySummary?: string | null;
     notify_on_lead?: boolean | null;
     notify_on_viewing?: boolean | null;
     notify_on_contact?: boolean | null;
@@ -71,6 +73,41 @@ interface ChatHistoryEntry {
 }
 
 /**
+ * Бодит нөөцийн (property_units) хураангуй — ээлж/блок бүрээр худалдаанд байгаа нэгжийн
+ * тоо. `property_block_summary` view-ээс (security_invoker; service role уншина).
+ * Listing (properties) хоосон үед л prompt-д орно; алдаа гарвал null (prompt-д нөлөөлөхгүй).
+ */
+async function buildInventorySummary(
+    supabase: ReturnType<typeof supabaseAdmin>,
+    shopId: string,
+    properties: unknown[] | null | undefined,
+): Promise<string | null> {
+    if (properties && properties.length > 0) return null;
+    try {
+        const { data, error } = await supabase
+            .from('property_block_summary')
+            .select('phase, block, available_units')
+            .eq('shop_id', shopId)
+            .gt('available_units', 0)
+            .limit(200);
+        if (error || !data || data.length === 0) return null;
+        const byPhase = new Map<string, { total: number; blocks: string[] }>();
+        for (const row of data as Array<{ phase: string | null; block: string | null; available_units: number }>) {
+            const phase = row.phase || 'Бусад';
+            const cur = byPhase.get(phase) || { total: 0, blocks: [] };
+            cur.total += Number(row.available_units) || 0;
+            if (row.block) cur.blocks.push(`${row.block}×${row.available_units}`);
+            byPhase.set(phase, cur);
+        }
+        return [...byPhase.entries()]
+            .map(([phase, v]) => `- ${phase}: ${v.total} нэгж худалдаанд${v.blocks.length ? ` (блок: ${v.blocks.slice(0, 12).join(', ')})` : ''}`)
+            .join('\n');
+    } catch {
+        return null;
+    }
+}
+
+/**
  * Fetch shop data by Facebook page ID
  */
 export async function getShopByPageId(pageId: string): Promise<ShopWithProducts | null> {
@@ -95,6 +132,7 @@ export async function getShopByPageId(pageId: string): Promise<ShopWithProducts 
         facebook_page_username: data.facebook_page_username,
         facebook_page_access_token: decryptToken(data.facebook_page_access_token),
         properties: data.properties || [],
+        inventorySummary: await buildInventorySummary(supabase, data.id, data.properties),
         notify_on_lead: data.notify_on_lead,
         notify_on_viewing: data.notify_on_viewing,
         notify_on_contact: data.notify_on_contact,
@@ -136,6 +174,7 @@ export async function getShopByInstagramId(instagramId: string): Promise<ShopWit
         instagram_access_token: decryptToken(data.instagram_access_token),
         instagram_username: data.instagram_username,
         properties: data.properties || [],
+        inventorySummary: await buildInventorySummary(supabase, data.id, data.properties),
         notify_on_lead: data.notify_on_lead,
         notify_on_viewing: data.notify_on_viewing,
         notify_on_contact: data.notify_on_contact,

@@ -51,6 +51,43 @@ export interface ToolExecutionContext {
 // REAL ESTATE TOOLS
 // ============================================
 
+interface AvailableUnit {
+    id: string; phase: string | null; block: string | null; floor: string | null; code: string;
+    unit_number: string | null; category: string; unit_type: string | null; rooms: number | null;
+    sale_area: number | null; window_view: string | null; status: string;
+}
+
+/**
+ * Бодит нөөц (property_units, Мандала маягийн ээлж→блок→нэгж) — худалдаанд байгаа нэгжүүд.
+ * search_properties-ийн `properties` хоосон үеийн fallback.
+ */
+async function searchAvailableUnits(shopId: string, args: SearchPropertiesArgs, limit: number): Promise<AvailableUnit[]> {
+    const supabase = supabaseAdmin();
+    let query = supabase
+        .from('property_units')
+        .select('id, phase, block, floor, code, unit_number, category, unit_type, rooms, sale_area, window_view, status')
+        .eq('shop_id', shopId)
+        .eq('status', 'available')
+        .eq('category', args.type === 'commercial' || args.type === 'office' ? 'commercial' : 'residential')
+        .order('phase', { ascending: true })
+        .order('block', { ascending: true })
+        .order('unit_number', { ascending: true })
+        .limit(limit);
+    if (args.rooms) query = query.eq('rooms', args.rooms);
+    if (args.min_size) query = query.gte('sale_area', args.min_size);
+    if (args.max_size) query = query.lte('sale_area', args.max_size);
+    if (args.district) {
+        const safe = String(args.district).replace(/[%_,()]/g, ' ').trim();
+        if (safe) query = query.or(`phase.ilike.%${safe}%,block.ilike.%${safe}%`);
+    }
+    const { data, error } = await query;
+    if (error) {
+        logger.warn('[AI] property_units search error:', { error: error.message });
+        return [];
+    }
+    return (data || []) as AvailableUnit[];
+}
+
 /**
  * Execute search_properties tool
  */
@@ -101,6 +138,26 @@ export async function executeSearchProperties(
     }
 
     if (!properties || properties.length === 0) {
+        // `properties` (зурагтай listing) хоосон бол бодит нөөц property_units-аас хайна —
+        // prod-д properties 0 мөр, property_units 2500+ нэгж (review H9).
+        const units = await searchAvailableUnits(context.shopId, args, limit);
+        if (units.length > 0) {
+            const lines = units.map((u, i) => {
+                const label = [u.phase, [u.block, u.unit_number || u.code].filter(Boolean).join('-')].filter(Boolean).join(' · ');
+                const parts = [
+                    u.rooms ? `${u.rooms} өрөө` : null,
+                    u.sale_area ? `${Number(u.sale_area)}м²` : null,
+                    u.floor ? `${u.floor} давхар` : null,
+                    u.window_view || null,
+                ].filter(Boolean).join(' | ');
+                return `${i + 1}. **${label}**\n   🏢 ${parts}`;
+            }).join('\n\n');
+            return {
+                success: true,
+                message: `${units.length} нэгж худалдаанд байна:\n\n${lines}\n\nҮнэ, төлбөрийн нөхцөлийг борлуулалтын менежер тодруулж өгнө — уулзалт товлох уу? 📅`,
+                data: { properties: [], units },
+            };
+        }
         return {
             success: true,
             message: 'Таны хайсан шалгуурт тохирох үл хөдлөх олдсонгүй. Өөр шалгуураар хайж үзнэ үү.',
@@ -261,23 +318,38 @@ export async function executeScheduleViewing(
         return { success: false, error: 'Хэрэглэгчийн мэдээлэл олдсонгүй.' };
     }
 
-    // Find property
+    // Find property (listing) — олдохгүй бол бодит нөөц property_units-аас код/тоотоор хайна
     let propertyId = args.property_id;
+    let unitLabel: string | null = null;
     if (!propertyId && args.property_name) {
+        const safeName = String(args.property_name).replace(/[%_,()]/g, ' ').trim();
         const { data: property } = await supabase
             .from('properties')
             .select('id, name')
             .eq('shop_id', context.shopId)
-            .ilike('name', `%${args.property_name}%`)
-            .single();
+            .is('deleted_at', null)
+            .ilike('name', `%${safeName}%`)
+            .limit(1)
+            .maybeSingle();
 
         if (property) {
             propertyId = property.id;
+        } else if (safeName) {
+            const { data: unit } = await supabase
+                .from('property_units')
+                .select('id, phase, block, code, unit_number')
+                .eq('shop_id', context.shopId)
+                .or(`code.ilike.%${safeName}%,unit_number.ilike.%${safeName}%`)
+                .limit(1)
+                .maybeSingle();
+            if (unit) {
+                unitLabel = [unit.phase, [unit.block, unit.unit_number || unit.code].filter(Boolean).join('-')].filter(Boolean).join(' · ');
+            }
         }
     }
 
-    if (!propertyId) {
-        return { success: false, error: 'Үл хөдлөх олдсонгүй. Нэрийг тодорхой бичнэ үү.' };
+    if (!propertyId && !unitLabel) {
+        return { success: false, error: 'Үл хөдлөх олдсонгүй. Нэр эсвэл нэгжийн кодыг тодорхой бичнэ үү.' };
     }
 
     // Parse preferred date/time
@@ -370,7 +442,9 @@ export async function executeScheduleViewing(
             property_id: propertyId,
             scheduled_at: scheduledAt.toISOString(),
             status: 'scheduled',
-            meeting_type: meetingType
+            meeting_type: meetingType,
+            // property_units-ийн нэгж (FK properties биш) — тэмдэглэлд хадгална
+            agent_notes: unitLabel ? `Нэгж: ${unitLabel}` : null,
         });
 
     if (viewingError) {
@@ -560,12 +634,23 @@ export async function executeRequestSupport(
     args: RequestHumanSupportArgs,
     context: ToolExecutionContext
 ): Promise<ToolExecutionResult> {
-    const { reason } = args;
+    // Модель-ээс ирсэн текст (reason) — push payload-ын хязгаар (4KB)-аас сэргийлж тайрна
+    const reason = String(args.reason ?? '').replace(/\s+/g, ' ').trim().slice(0, 200);
+
+    // Хүн хариулах хүртэл бот дахин хариулахгүй (өмнө нь менежер хариулах хүртэл AI үргэлжлүүлдэг байв)
+    if (context.customerId) {
+        const pausedUntil = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+        await supabaseAdmin()
+            .from('customers')
+            .update({ ai_paused_until: pausedUntil })
+            .eq('id', context.customerId)
+            .eq('shop_id', context.shopId);
+    }
 
     await sendPushNotification(context.shopId, {
         title: '📞 Холбогдох хүсэлт',
-        body: `${context.customerName || 'Хэрэглэгч'}: ${reason || 'Оператортой холбогдохыг хүсч байна'}`,
-        url: `/dashboard/chat?customer=${context.customerId}`,
+        body: `${(context.customerName || 'Хэрэглэгч').slice(0, 60)}: ${reason || 'Оператортой холбогдохыг хүсч байна'}`,
+        url: `/dashboard/inbox/messages?customer=${context.customerId}`,
         tag: `support-${context.customerId}`
     });
 

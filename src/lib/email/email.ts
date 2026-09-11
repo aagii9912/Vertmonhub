@@ -167,6 +167,11 @@ export async function sendWeeklyReportEmail(to: string, d: WeeklyReportData): Pr
  * илгээх брэндлэг баталгаажуулалт. EMAIL_FROM (ж: mandala-garden.mn домэйн)
  * тохируулснаар байгууллагын нэрээс илгээгдэнэ.
  */
+/** HTML-д оруулах хэрэглэгчийн текстийг escape хийнэ (нэрээр HTML injection — review M11). */
+function escapeHtml(s: string): string {
+    return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
+}
+
 export async function sendLeadWelcomeEmail(params: {
     to: string;
     name?: string | null;
@@ -176,7 +181,7 @@ export async function sendLeadWelcomeEmail(params: {
 }): Promise<boolean> {
     const { to, name, phone, websiteUrl } = params;
     const shopName = params.shopName || 'Mandala Garden';
-    const greeting = name ? `Сайн байна уу, ${name}!` : 'Сайн байна уу!';
+    const greeting = name ? `Сайн байна уу, ${escapeHtml(name)}!` : 'Сайн байна уу!';
     const site = websiteUrl || process.env.NEXT_PUBLIC_APP_URL || '';
 
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>

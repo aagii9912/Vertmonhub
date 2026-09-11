@@ -43,6 +43,8 @@ export interface ChatContext {
     aiInstructions?: string;
     aiEmotion?: AIEmotion;
     properties: Property[];
+    /** property_units-ийн хураангуй (listing хоосон үед prompt-д орно) */
+    inventorySummary?: string | null;
     customerName?: string;
     faqs?: AIFAQ[];
     quickReplies?: AIQuickReply[];

@@ -21,7 +21,17 @@ export async function POST(req: Request) {
     const mock = process.env.NODE_ENV !== 'production' ? req.headers.get('x-ai-mock') : null;
 
     const encoder = new TextEncoder();
+    // Client холболт таслахад (Зогсоох / таб хаах) orchestrator-ийг зогсооно; Vercel
+    // maxDuration (60с)-аас өмнө partial хариу өгөхийн тулд 50с-ийн deadline тавина.
+    const abort = new AbortController();
+    const onClientAbort = () => abort.abort();
+    req.signal?.addEventListener('abort', onClientAbort);
+    const deadlineAt = Date.now() + 50_000;
+
     const stream = new ReadableStream<Uint8Array>({
+        cancel() {
+            abort.abort();
+        },
         async start(controller) {
             let closed = false;
             const push = (obj: unknown) => {
@@ -38,6 +48,8 @@ export async function POST(req: Request) {
                 }
                 const response = await runOrchestrator(prep.modelMessage, {
                     ...prep.ctx,
+                    signal: abort.signal,
+                    deadlineAt,
                     onEvent: (e: OrchestratorEvent) => push(e),
                 });
                 const conversationId = await persistAssistantExchange(prep, response);
@@ -65,6 +77,7 @@ export async function POST(req: Request) {
             } finally {
                 clearInterval(ping);
                 closed = true;
+                req.signal?.removeEventListener('abort', onClientAbort);
                 try { controller.close(); } catch { /* аль хэдийн хаагдсан */ }
             }
         },

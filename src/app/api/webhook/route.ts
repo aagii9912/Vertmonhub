@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
+
+/**
+ * Meta 20с дотор 200 хүлээдэг; Gemini + Messenger retry нийлээд 60с давж болно.
+ * after()-ээр ACK-ийн дараа боловсруулах тул функцийн дээд хугацааг тогтооно.
+ */
+export const maxDuration = 60;
 import { verifyWebhook, sendTextMessage, sendSenderAction, sendMessageWithQuickReplies } from '@/lib/facebook/messenger';
 import { routeToAI, analyzeProductImageWithPlan } from '@/lib/ai/AIRouter';
 import { detectIntent } from '@/lib/ai/intent-detector';
@@ -125,7 +131,11 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ ok: true, mode: 'data_only' });
         }
 
-        // Process each entry
+        // Meta-д ШУУД 200 өгч, боловсруулалтыг after()-д (ижил invocation, maxDuration хүртэл)
+        // үргэлжлүүлнэ. Өмнө нь Gemini дуусах хүртэл хүлээж 200 өгдөг тул Meta timeout →
+        // дахин илгээлт → dedup-д алгасагдаж мессеж бүрмөсөн алдагддаг байв (review H7).
+        after(async () => {
+        try {
         for (const entry of body.entry as WebhookEntry[]) {
             const accountId = entry.id; // Page ID for Messenger, or Instagram Business Account ID
 
@@ -166,6 +176,8 @@ export async function POST(request: NextRequest) {
 
                         // Don't reply to own comments (from page)
                         if (senderId === accountId || !commentId) continue;
+                        // Meta дахин илгээлт → давхар нийтийн хариу бичихгүй
+                        if (await isDuplicateWebhookEvent(`comment:${commentId}`)) continue;
 
                         logger.info(`[${shop.name}] New comment received`, {
                             commentMessage,
@@ -193,6 +205,9 @@ export async function POST(request: NextRequest) {
             // Process messaging events (works for both Messenger and Instagram)
             for (const event of entry.messaging || []) {
                 const senderId = event.sender.id;
+
+                // Өөрийн (page-ийн) илгээсэн мессежийн echo — харилцагчийн мессеж биш
+                if ((event.message as { is_echo?: boolean } | undefined)?.is_echo || senderId === accountId) continue;
 
                 // Idempotency: Meta нэг мессежийг давхар илгээж болзошгүй тул
                 // message ID (mid)-аар давхардлыг таслана (давхар AI хариунаас сэргийлнэ)
@@ -261,6 +276,7 @@ export async function POST(request: NextRequest) {
                                     aiEmotion: shop.ai_emotion || 'friendly',
                                     customKnowledge: shop.custom_knowledge || undefined,
                                     properties: shop.properties || [],
+                                    inventorySummary: shop.inventorySummary ?? null,
                                     customerName: customer.name || undefined,
                                     faqs: aiFeatures.faqs,
                                     quickReplies: aiFeatures.quickReplies,
@@ -401,21 +417,17 @@ export async function POST(request: NextRequest) {
                     }
                 }
 
-                // Handle postback (button clicks)
+                // Postback (товч дарах) — хуучин e-commerce `ORDER_` зан төлөвийг хасав; одоогоор
+                // зөвхөн бүртгэнэ (үл хөдлөхөд тусгай postback байхгүй).
                 if (event.postback?.payload) {
-                    const payload = event.postback.payload;
-
-                    if (payload.startsWith('ORDER_')) {
-                        const productName = payload.replace('ORDER_', '');
-                        await sendTextMessage({
-                            recipientId: senderId,
-                            message: `"${productName}" захиалахыг хүсч байна уу? Хэдэн ширхэг авах вэ? 🛒`,
-                            pageAccessToken: accessToken,
-                        });
-                    }
+                    logger.info(`[${shop.name}] Postback received`, { payload: event.postback.payload });
                 }
             }
         }
+        } catch (error) {
+            logger.error('[Webhook] background processing error', { requestId, error: error instanceof Error ? error.message : String(error) });
+        }
+        });
 
         return NextResponse.json({ status: 'ok' });
     } catch (error) {

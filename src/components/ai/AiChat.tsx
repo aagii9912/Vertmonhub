@@ -89,7 +89,7 @@ interface Props {
 }
 
 export function AiChat({ compact, className, prefill, onPrefillConsumed, active, conversationId: convProp, onConversationId, initialMessages, messagesLoading }: Props) {
-    const { shop } = useAuth();
+    const { shop, user } = useAuth();
     const ctx = useAiContext();
     const [messages, setMessages] = useState<AiMessage[]>(initialMessages ?? []);
     const [conversationId, setConversationId] = useState<string | null>(convProp ?? null);
@@ -111,11 +111,12 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
         setMessages((prev) => prev.map((m) => (m.id === id ? (typeof patch === 'function' ? patch(m) : { ...m, ...patch }) : m)));
     }, []);
 
-    const send = async (text: string, attachments: AiAttachment[] | PendingRequest['attachments']) => {
+    const send = async (text: string, attachments: AiAttachment[] | PendingRequest['attachments'], baseMessages?: AiMessage[]) => {
         const atts = attachments.map((a) => ({ url: a.url!, name: a.name, mimeType: a.mimeType })).filter((a) => a.url);
         const content = text || (atts.length ? 'Хавсаргасан файлыг шинжилж туслаач.' : '');
         if (!content) return;
-        const history = messages.filter((m) => !m.error && m.content).slice(-20).map((m) => ({ role: m.role, content: m.content }));
+        // retry() шүүсэн жагсаалтаа дамжуулна — state closure хоцорч алдсан user turn 2 удаа явдаг байв
+        const history = (baseMessages ?? messages).filter((m) => !m.error && m.content).slice(-20).map((m) => ({ role: m.role, content: m.content }));
         const userMsg: AiMessage = { id: uid(), role: 'user', content, attachments: atts };
         const asstId = uid();
         setMessages((prev) => [...prev, userMsg, { id: asstId, role: 'assistant', content: '', streaming: true, progress: { phase: 'planning', steps: [] } }]);
@@ -151,7 +152,7 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
                             update(asstId, { content: '' });
                             break;
                         case 'done': {
-                            const actions: PendingAction[] = (e.pendingActions || []).map((a) => ({ ...a, status: 'pending', autoApproved: shop?.id ? isToolAllowed(shop.id, a.tool) : false }));
+                            const actions: PendingAction[] = (e.pendingActions || []).map((a) => ({ ...a, status: 'pending', autoApproved: shop?.id ? isToolAllowed(shop.id, a.tool, user?.id) : false }));
                             update(asstId, (m) => ({ ...m, content: e.response || m.content, streaming: false, progress: m.progress && { ...m.progress, phase: 'done' }, chartConfig: e.chartConfig as AiMessage['chartConfig'], data: e.data, agentsUsed: e.agentsUsed, trace: e.trace, pendingActions: actions }));
                             if (e.conversationId && e.conversationId !== conversationId) { setConversationId(e.conversationId); onConversationId?.(e.conversationId); }
                             break;
@@ -172,8 +173,10 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
     const retry = (m: AiMessage) => {
         const req = m.error?.request;
         if (!req) return;
-        setMessages((prev) => prev.filter((x) => x.id !== m.id && !(x.role === 'user' && x.content === req.text && prev.indexOf(x) === prev.indexOf(m) - 1)));
-        void send(req.text, req.attachments);
+        const idx = messages.indexOf(m);
+        const next = messages.filter((x, i) => x.id !== m.id && !(x.role === 'user' && x.content === req.text && i === idx - 1));
+        setMessages(next);
+        void send(req.text, req.attachments, next);
     };
 
     /* ---------- үйлдэл ---------- */
@@ -188,7 +191,7 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
     }, [shop?.id, conversationId]);
 
     const allowAlways = (a: PendingAction) => {
-        if (shop?.id) addAllowedTool(shop.id, a.tool);
+        if (shop?.id) addAllowedTool(shop.id, a.tool, user?.id);
         setMessages((prev) => prev.map((m) => (m.pendingActions ? { ...m, pendingActions: m.pendingActions.map((x) => (x.id !== a.id && x.status === 'pending' && x.tool === a.tool ? { ...x, autoApproved: true } : x)) } : m)));
         void approve(a);
     };

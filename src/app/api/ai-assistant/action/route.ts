@@ -76,12 +76,24 @@ export async function POST(req: Request) {
             : (result.error || 'Үйлдэл амжилтгүй боллоо.');
 
         // Гүйцэтгэлийн үр дүнг харилцан ярианд тэмдэглэнэ (best-effort).
-        if (conversationId) {
+        // Зөвхөн ӨӨРИЙН (user_id) + энэ shop-ийн харилцан яриа руу — өмнө нь дурын
+        // conversation_id-д бичих боломжтой байв (review M18).
+        if (conversationId && typeof conversationId === 'string') {
             try {
+                const { data: conv } = await adminDb
+                    .from('ai_conversations')
+                    .select('id')
+                    .eq('id', conversationId)
+                    .eq('user_id', resolvedUser.id)
+                    .eq('shop_id', effectiveShopId)
+                    .maybeSingle();
+                if (!conv) throw new Error('conversation not owned by user');
+                // Түр нууц үг (invite_user) чат түүхэнд үлдэхгүй
+                const persisted = message.replace(/(Түр нууц үг:\*\*\s*)`[^`]+`/g, '$1(нуусан)');
                 await adminDb.from('ai_messages').insert({
                     conversation_id: conversationId,
                     role: 'assistant',
-                    content: ok ? `✅ ${message}` : `⚠️ ${message}`,
+                    content: ok ? `✅ ${persisted}` : `⚠️ ${persisted}`,
                 });
                 await adminDb.from('ai_conversations')
                     .update({ updated_at: new Date().toISOString() })

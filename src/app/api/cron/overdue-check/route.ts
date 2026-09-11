@@ -35,12 +35,23 @@ export async function POST(request: Request) {
 
         const updatedCount = overduePayments?.length || 0;
 
-        // 2. property_contracts: overdue_days шинэчлэх (bulk update)
-        const { data: contracts } = await supabase
-            .from('property_contracts')
-            .select('id, contract_date, balance')
-            .eq('contract_status', 'active')
-            .gt('balance', 0);
+        // 2. property_contracts: overdue_days шинэчлэх (bulk update).
+        //    PostgREST 1000-мөрийн хязгаар — 1600+ гэрээтэй тул хуудаслаж татна (review M21).
+        const contracts: Array<{ id: string; contract_date: string; balance: number }> = [];
+        for (let from = 0; ; from += 1000) {
+            const { data: page, error: pageErr } = await supabase
+                .from('property_contracts')
+                .select('id, contract_date, balance')
+                .eq('contract_status', 'active')
+                .is('deleted_at', null)
+                .gt('balance', 0)
+                .order('id', { ascending: true })
+                .range(from, from + 999);
+            if (pageErr) { logger.error('[Cron] contracts page error:', { error: pageErr }); break; }
+            if (!page || page.length === 0) break;
+            contracts.push(...page);
+            if (page.length < 1000) break;
+        }
 
         let contractsUpdated = 0;
         if (contracts && contracts.length > 0) {

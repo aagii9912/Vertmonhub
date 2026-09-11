@@ -27,6 +27,7 @@ async function synthesize(
     message: string,
     parts: Array<{ name: string; emoji: string; text: string }>,
     onToken?: (text: string) => void,
+    onReset?: () => void,
 ): Promise<{ text: string; latencyMs: number; tokens: number }> {
     const started = Date.now();
     const model = genAI.getGenerativeModel({
@@ -41,7 +42,10 @@ async function synthesize(
 
     if (onToken) {
         // Streaming нэгтгэл — хэрэглэгч хариуг бичигдэж байхад нь харна.
+        let tries = 0;
         const result = await withRetry(async () => {
+            // Дахин оролдлого: client-д аль хэдийн явуулсан токенуудыг цэвэрлүүлнэ (давхар текст)
+            if (tries++ > 0) onReset?.();
             const r = await model.generateContentStream(prompt);
             let text = '';
             for await (const chunk of r.stream) {
@@ -100,6 +104,20 @@ export async function runOrchestrator(
         const agent = AGENTS[step.agentId];
         if (!agent) continue;
 
+        // Client цуцалсан → цааш Gemini/DB дуудахгүй (өмнө нь «Зогсоох» дарсан ч сервер 60с ажилладаг байв)
+        if (ctx.signal?.aborted) throw new Error('Хүсэлт цуцлагдлаа (abort)');
+        // Хугацааны хязгаар: Vercel функц таслагдахаас өмнө байгаа хариугаа өгнө
+        if (ctx.deadlineAt && Date.now() > ctx.deadlineAt) {
+            logger.warn('[Orchestrator] deadline reached, skipping remaining agents', { skipped: plan.steps.length - index });
+            traceSteps.push({
+                agentId: agent.id, agentName: agent.name, emoji: agent.emoji, color: agent.color,
+                task: step.task, toolsUsed: [], latencyMs: 0, tokens: 0, ok: false,
+                error: 'Хугацаа хэтэрсэн тул энэ агентыг алгаслаа',
+            });
+            ctx.onEvent?.({ type: 'step_done', agentId: agent.id, agentName: agent.name, index, ok: false, latencyMs: 0, toolsUsed: [], error: 'Хугацаа хэтэрсэн' });
+            continue;
+        }
+
         const task = priorOutputs.length > 0
             ? `${step.task}\n\n[Өмнөх мэргэжилтнүүдийн олж тогтоосон зүйл — давхардуулахгүйгээр ашигла]:\n${priorOutputs.join('\n---\n')}`
             : step.task;
@@ -143,6 +161,9 @@ export async function runOrchestrator(
                 : 'Уучлаарай, хариу бэлдэх үед алдаа гарлаа. Дахин оролдоно уу.';
     } else if (okResults.length === 1) {
         finalText = okResults[0].result.text;
+    } else if (ctx.deadlineAt && Date.now() > ctx.deadlineAt) {
+        // Хугацаа дууссан — нэгтгэх Gemini дуудлага хийхгүй, шууд залгана
+        finalText = okResults.map((r) => `${r.emoji} **${r.name}**\n${r.result.text}`).join('\n\n');
     } else {
         try {
             ctx.onEvent?.({ type: 'synthesis_start' });
@@ -150,6 +171,7 @@ export async function runOrchestrator(
                 message,
                 okResults.map((r) => ({ name: r.name, emoji: r.emoji, text: r.result.text })),
                 ctx.onEvent ? (t) => ctx.onEvent!({ type: 'token', text: t }) : undefined,
+                ctx.onEvent ? () => ctx.onEvent!({ type: 'token_reset' }) : undefined,
             );
             finalText = synth.text;
             synthesisUsed = true;

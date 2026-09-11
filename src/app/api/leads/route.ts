@@ -92,7 +92,9 @@ export async function OPTIONS(request: NextRequest) {
 
 async function verifyTurnstile(token: string | null | undefined, clientIp: string): Promise<boolean> {
     const secret = process.env.TURNSTILE_SECRET_KEY;
-    if (!secret) return true;
+    // Production-д captcha заавал: secret тохируулаагүй бол нээлттэй имэйл relay + Gemini
+    // зардал болдог байсан (review M11). Dev/preview-д л secret-гүй өнгөрнө.
+    if (!secret) return process.env.VERCEL_ENV !== 'production';
     if (!token) return false;
 
     try {
@@ -216,13 +218,14 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
             advance_percent != null ? `Урьдчилгаа: ${advance_percent}%` : null,
         ].filter(Boolean).join('\n') || null;
 
-        // Public form — эзэн shop-ийг тодорхойлох (одоогоор нэг tenant: хамгийн эртний shop)
-        const { data: primaryShop, error: shopError } = await supabase
-            .from('shops')
-            .select('id, name, phone')
-            .order('created_at', { ascending: true })
-            .limit(1)
-            .maybeSingle();
+        // Public form — эзэн shop: LEAD_SHOP_ID env (олон shop-той үед заавал), эс бөгөөс
+        // хамгийн эртний shop (нэг tenant-ийн таамаг).
+        const configuredShopId = (process.env.LEAD_SHOP_ID || '').trim();
+        let shopQuery = supabase.from('shops').select('id, name, phone');
+        shopQuery = configuredShopId
+            ? shopQuery.eq('id', configuredShopId)
+            : shopQuery.order('created_at', { ascending: true });
+        const { data: primaryShop, error: shopError } = await shopQuery.limit(1).maybeSingle();
 
         if (shopError || !primaryShop) {
             logger.error('Lead insert: primary shop not found', { error: shopError });

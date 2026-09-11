@@ -149,11 +149,13 @@ export async function runAgent(
         // Дунд нь tool дуудагдвал (эсвэл retry болбол) урьдчилсан текстийг token_reset-ээр хаяна.
         const streaming = !!(ctx.streamFinal && ctx.onEvent);
         let anyTokenEmitted = false;
+        // Client цуцалбал Gemini HTTP дуудлагыг ч таслана (AbortSignal → fetch)
+        const reqOpts = ctx.signal ? { signal: ctx.signal } : undefined;
         const send = async (parts: any[]): Promise<{ response: any }> => {
-            if (!streaming) return withRetry(() => chat.sendMessage(parts));
+            if (!streaming) return withRetry(() => chat.sendMessage(parts, reqOpts));
             return withRetry(async () => {
                 if (anyTokenEmitted) { ctx.onEvent!({ type: 'token_reset' }); anyTokenEmitted = false; }
-                const result = await chat.sendMessageStream(parts);
+                const result = await chat.sendMessageStream(parts, reqOpts);
                 for await (const chunk of result.stream) {
                     let t = '';
                     try { t = chunk.text(); } catch { t = ''; }
