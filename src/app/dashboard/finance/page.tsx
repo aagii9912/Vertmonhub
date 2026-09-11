@@ -36,7 +36,7 @@ import {
     Plus,
     AlertCircle,
 } from 'lucide-react';
-import { formatMNT as formatMNTShared } from '@/lib/utils/currency';
+import { formatMNTShort } from '@/lib/utils/currency';
 
 interface Summary {
     totalRevenue: number;
@@ -68,10 +68,6 @@ interface Txn {
     amount: number;
     method: string | null;
     note: string | null;
-}
-
-function formatMNT(n: number): string {
-    return formatMNTShared(n, { compact: true });
 }
 
 const METHOD_LABELS: Record<string, string> = {
@@ -250,29 +246,29 @@ export default function FinancePage() {
                         <StatBar columns={4}>
                             <StatTile
                                 label="Нийт орлого (гэрээ)"
-                                value={formatMNT(summary.totalRevenue)}
-                                helper={`${summary.contractCount} гэрээ · НӨАТ ${formatMNT(summary.totalVat)}`}
+                                value={formatMNTShort(summary.totalRevenue)}
+                                helper={`${summary.contractCount} гэрээ · НӨАТ ${formatMNTShort(summary.totalVat)}`}
                                 icon={<Banknote className="w-5 h-5" />}
                                 accent="brand"
                             />
                             <StatTile
                                 label="Цугласан"
-                                value={formatMNT(summary.totalCollected)}
+                                value={formatMNTShort(summary.totalCollected)}
                                 helper={`Цуглуулалт ${summary.collectionRate}%`}
                                 icon={<TrendingUp className="w-5 h-5" />}
                                 accent="success"
                             />
                             <StatTile
                                 label="Авлага (үлдэгдэл)"
-                                value={formatMNT(summary.totalReceivable)}
+                                value={formatMNTShort(summary.totalReceivable)}
                                 helper="Хүлээгдэж буй төлбөр"
                                 icon={<Wallet className="w-5 h-5" />}
                                 accent="warning"
                             />
                             <StatTile
                                 label="Энэ сарын цэвэр урсгал"
-                                value={formatMNT(summary.monthNetCash)}
-                                helper={`Орлого ${formatMNT(summary.monthReceipts)} · Зарлага ${formatMNT(summary.monthDisbursements)}`}
+                                value={formatMNTShort(summary.monthNetCash)}
+                                helper={`Орлого ${formatMNTShort(summary.monthReceipts)} · Зарлага ${formatMNTShort(summary.monthDisbursements)}`}
                                 icon={summary.monthNetCash >= 0 ? <TrendingUp className="w-5 h-5" /> : <TrendingDown className="w-5 h-5" />}
                                 accent={summary.monthNetCash >= 0 ? 'info' : 'danger'}
                             />
@@ -298,7 +294,7 @@ export default function FinancePage() {
                                 series={[{ key: 'value', name: 'Авлага' }]}
                                 horizontal
                                 colorByPoint
-                                valueFormatter={(v) => formatMNT(v)}
+                                valueFormatter={(v) => formatMNTShort(v)}
                             />
                         </ChartCard>
                     )}

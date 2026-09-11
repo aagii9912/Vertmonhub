@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ChevronLeft, ChevronRight, AlertCircle, ArrowRight, RefreshCw } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatMNTShort } from '@/lib/utils/currency';
+import { sourceLabel } from '@/lib/leads/labels';
 import { useDirector } from '@/hooks/useDirector';
 import { usePageTitle } from '@/lib/navigation/pageTitle';
 import { useRegisterAiContext } from '@/lib/ai/context';
@@ -17,12 +18,6 @@ import { Panel, Progress, Avatar, Pill, EmptyRow, Skeleton, Rank } from '@/compo
  * Бүх өгөгдөл /api/dashboard/director нэг дуудлагаар; сар солиход өмнөх
  * өгөгдөл хэвээр (spinner-гүй).
  */
-
-const SOURCE_LABEL: Record<string, string> = {
-    messenger: 'Messenger', facebook: 'Facebook', instagram: 'Instagram', website: 'Вэбсайт', referral: 'Зөвлөмж',
-    phone: 'Утас', facebook_ads: 'Facebook Ads', google_ads: 'Google Ads', tv: 'ТВ', radio: 'Радио', meeting: 'Уулзалт',
-    event: 'Өдөрлөг', board: 'Билборд / Самбар', other: 'Бусад',
-};
 
 export function DirectorDashboard({ actions }: { actions?: React.ReactNode }) {
     usePageTitle('Самбар');
@@ -369,7 +364,7 @@ function Funnel({ data, loading }: { data?: { rows: FunnelRow[]; totals: { leads
                         {data.rows.map((r) => (
                             <div key={r.source} className="flex flex-col gap-1.5">
                                 <div className="flex items-center gap-2 text-[12.5px]">
-                                    <span className="font-medium text-foreground">{SOURCE_LABEL[r.source] ?? r.source}</span>
+                                    <span className="font-medium text-foreground">{sourceLabel(r.source)}</span>
                                     <span className="mono-label ml-auto text-[12px] text-fg-2">{r.leads} → {r.viewings} → {r.contracts}</span>
                                     <span className={cn('num w-12 text-right text-[12px] font-medium', r.conversionPct > 0 ? 'text-foreground' : 'text-muted-foreground')}>{r.conversionPct}%</span>
                                 </div>

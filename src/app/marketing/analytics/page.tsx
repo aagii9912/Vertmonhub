@@ -120,7 +120,7 @@ export default function AnalyticsPage() {
                     <StatsCard
                         icon={ArrowUpRight}
                         iconColor="warning"
-                        title="Bounce rate"
+                        title="Буцах хувь"
                         value={`${avgBounce.toFixed(1)}%`}
                     />
                     <StatsCard

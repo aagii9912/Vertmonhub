@@ -172,7 +172,7 @@ export default function AdminSettingsPage() {
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-foreground mb-1">Max Tokens</label>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Хариултын дээд урт (токен)</label>
                                     <input
                                         type="number"
                                         value={settings.ai.max_tokens}
@@ -181,7 +181,7 @@ export default function AdminSettingsPage() {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-foreground mb-1">Temperature</label>
+                                    <label className="block text-sm font-medium text-foreground mb-1">Temperature (санамсаргүй байдал)</label>
                                     <input
                                         type="number"
                                         step="0.1"

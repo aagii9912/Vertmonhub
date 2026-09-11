@@ -16,6 +16,7 @@ import {
     SelectItem,
 } from '@/components/ui/Select';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { formatMNT } from '@/lib/utils/currency';
 
 interface ContractData {
     contractNumber: string;
@@ -59,7 +60,7 @@ interface ContractRow {
 
 function money(n: string | number | undefined | null): string {
     const v = Number(n);
-    return Number.isFinite(v) && v ? v.toLocaleString('mn-MN') + '₮' : '___';
+    return Number.isFinite(v) && v ? formatMNT(v) : '___';
 }
 function derivePaymentMethod(c: ContractRow): ContractData['paymentMethod'] {
     const cond = (c.prepayment_condition || '').toLowerCase();

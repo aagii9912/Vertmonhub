@@ -426,7 +426,7 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
                   id="property-city"
                   value={formData.city}
                   onChange={(e) => handleField('city', e.target.value)}
-                  placeholder="Ulaanbaatar"
+                  placeholder="Улаанбаатар"
                 />
               </FormField>
             </div>

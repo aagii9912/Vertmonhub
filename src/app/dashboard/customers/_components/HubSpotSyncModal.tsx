@@ -81,7 +81,7 @@ export function HubSpotSyncModal({
                             </div>
                             <div>
                                 <label className="block text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground/80 mb-1.5">
-                                    HubSpot Access Token
+                                    HubSpot хандалтын token
                                 </label>
                                 <input
                                     type="password"
@@ -125,16 +125,16 @@ export function HubSpotSyncModal({
                     {hubspotPreview && !hubspotResult && (
                         <>
                             <div className="flex items-center gap-1.5 bg-status-success-soft p-3 rounded-md text-sm text-status-success">
-                                <CheckCircle2 className="w-4 h-4 shrink-0" /> Token хүчинтэй. Эхний {hubspotPreview.sample.length} contact:
+                                <CheckCircle2 className="w-4 h-4 shrink-0" /> Token хүчинтэй. Эхний {hubspotPreview.sample.length} харилцагч:
                             </div>
                             <div className="border border-border rounded-md overflow-hidden">
                                 <table className="w-full text-sm">
                                     <thead className="bg-surface-2/50">
                                         <tr>
                                             <th className="px-3 py-2 text-left">Нэр</th>
-                                            <th className="px-3 py-2 text-left">Email</th>
+                                            <th className="px-3 py-2 text-left">Имэйл</th>
                                             <th className="px-3 py-2 text-left">Утас</th>
-                                            <th className="px-3 py-2 text-left">Lifecycle</th>
+                                            <th className="px-3 py-2 text-left">Үе шат</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-border/60">
@@ -150,7 +150,7 @@ export function HubSpotSyncModal({
                                 </table>
                             </div>
                             {hubspotPreview.has_more && (
-                                <p className="text-xs text-muted-foreground">Илүү олон contact байгаа — sync дарвал бүгдийг (5000-аас бага) татна.</p>
+                                <p className="text-xs text-muted-foreground">Илүү олон харилцагч байгаа — татах дарвал бүгдийг (5000-аас бага) татна.</p>
                             )}
                             {hubspotError && (
                                 <p className="flex items-center gap-1.5 text-sm text-status-danger">
@@ -166,7 +166,7 @@ export function HubSpotSyncModal({
                                     disabled={hubspotSyncing}
                                     isLoading={hubspotSyncing}
                                 >
-                                    Бүх contact-ыг татаж импортлох
+                                    Бүх харилцагчийг татаж импортлох
                                 </Button>
                             </div>
                         </>
@@ -176,7 +176,7 @@ export function HubSpotSyncModal({
                         <>
                             <div className="bg-status-success-soft p-4 rounded-md">
                                 <p className="flex items-center gap-1.5 text-status-success font-medium">
-                                    <CheckCircle2 className="w-4 h-4 shrink-0" /> HubSpot sync амжилттай боллоо
+                                    <CheckCircle2 className="w-4 h-4 shrink-0" /> HubSpot-оос татах амжилттай боллоо
                                 </p>
                                 <ul className="mt-2 text-sm text-foreground space-y-1">
                                     <li>HubSpot-ээс татсан: <strong>{hubspotResult.total}</strong></li>

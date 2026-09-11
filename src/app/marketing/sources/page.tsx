@@ -21,6 +21,7 @@ import { DataTable, StatusPill, type DataTableColumn } from '@/components/ui/Dat
 import { Money } from '@/components/ui/Money';
 import { daysUntil } from '@/lib/marketing/budget';
 import { formatShortDate } from '@/lib/utils/date';
+import { formatMNTShort } from '@/lib/utils/currency';
 import {
     Sheet,
     SheetContent,
@@ -240,8 +241,6 @@ export default function SourcesPage() {
         return d !== null && d >= 0 && d <= 30;
     }).length;
 
-    const formatCurrency = (v: number) => v >= 1000000 ? `${(v / 1000000).toFixed(1)}M₮` : v >= 1000 ? `${(v / 1000).toFixed(0)}K₮` : v.toLocaleString() + '₮';
-
     const getContractsForChannel = (channelId: string) => contracts.filter(c => c.channel_id === channelId);
     const channelName = (channelId: string) => channels.find((c) => c.id === channelId)?.name || 'Суваг';
 
@@ -301,7 +300,7 @@ export default function SourcesPage() {
             cell: (c) => {
                 const b = channelBudget(c.id);
                 return b > 0
-                    ? <span className="font-medium text-foreground tabular-nums">{formatCurrency(b)}</span>
+                    ? <span className="font-medium text-foreground tabular-nums">{formatMNTShort(b)}</span>
                     : <span className="text-muted-foreground">—</span>;
             },
         },
@@ -349,7 +348,7 @@ export default function SourcesPage() {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                         <StatsCard title="Нийт суваг" value={channels.length} icon={Layers} iconColor="brand" />
                         <StatsCard title="Идэвхтэй" value={activeChannels} icon={CheckCircle2} iconColor="success" />
-                        <StatsCard title="Идэвхтэй төсөв" value={formatCurrency(totalBudget)} icon={Wallet} iconColor="info" />
+                        <StatsCard title="Идэвхтэй төсөв" value={formatMNTShort(totalBudget)} icon={Wallet} iconColor="info" />
                         <StatsCard title="30 хоногт дуусах гэрээ" value={endingSoon} icon={CalendarClock} iconColor={endingSoon > 0 ? 'warning' : 'success'} />
                     </div>
 

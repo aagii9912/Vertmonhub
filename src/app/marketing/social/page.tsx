@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { formatTimeAgo } from '@/lib/utils/date';
+import { confirmToast } from '@/components/ui/Toast';
 import { supabase } from '@/lib/supabase';
 
 // ======= Types =======
@@ -324,7 +326,13 @@ function SocialPageContent() {
     // ======= Disconnect platform =======
     const handleDisconnect = useCallback(async (platform: 'facebook' | 'instagram') => {
         const label = platform === 'facebook' ? 'Facebook' : 'Instagram';
-        if (!window.confirm(`${label} холболтыг салгах уу? Дараа нь дахин холбож болно.`)) return;
+        const ok = await confirmToast({
+            title: `${label} холболтыг салгах уу?`,
+            description: 'Дараа нь дахин холбож болно.',
+            confirmLabel: 'Салгах',
+            destructive: true,
+        });
+        if (!ok) return;
         try {
             await dashboardFetch('/api/shop/disconnect', {
                 method: 'POST',
@@ -374,11 +382,6 @@ function SocialPageContent() {
         if (v >= 1000000) return `${(v / 1000000).toFixed(1)}M`;
         if (v >= 1000) return `${(v / 1000).toFixed(1)}K`;
         return String(v);
-    };
-
-    const formatDate = (dateStr: string) => {
-        const date = new Date(dateStr);
-        return date.toLocaleDateString('mn-MN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
     };
 
     const totalLikes = posts.reduce((s, p) => s + (p.likes || 0), 0);
@@ -443,7 +446,7 @@ function SocialPageContent() {
                         error={fbError}
                         tokenExpired={tokenExpired}
                         formatNumber={formatNumber}
-                        formatDate={formatDate}
+                        formatDate={formatTimeAgo}
                         onConnect={() => window.location.href = '/api/auth/facebook'}
                         onRefresh={fetchFacebookData}
                         onDisconnect={() => handleDisconnect('facebook')}
@@ -459,7 +462,7 @@ function SocialPageContent() {
                         posts={igPosts}
                         error={igError}
                         formatNumber={formatNumber}
-                        formatDate={formatDate}
+                        formatDate={formatTimeAgo}
                         onConnect={() => window.location.href = '/api/auth/instagram'}
                     />
                 </TabsContent>
@@ -472,7 +475,7 @@ function SocialPageContent() {
                         totalLikes={totalLikes}
                         totalReach={totalReach}
                         formatNumber={formatNumber}
-                        formatDate={formatDate}
+                        formatDate={formatTimeAgo}
                     />
                 </TabsContent>
             </Tabs>
@@ -499,6 +502,8 @@ function SocialPageContent() {
                 <div className="fixed top-4 right-4 z-50 max-w-md bg-surface border border-border rounded-xl shadow-lg p-4 flex items-start gap-3">
                     <div className="flex-1 text-sm text-foreground">{oauthBanner}</div>
                     <button
+                        type="button"
+                        aria-label="Хаах"
                         onClick={() => setOauthBanner(null)}
                         className="text-muted-foreground hover:text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-md"
                     >
@@ -555,6 +560,8 @@ function PageSelectorModal({
                         Facebook Page сонгох
                     </DialogTitle>
                     <button
+                        type="button"
+                        aria-label="Хаах"
                         onClick={onClose}
                         disabled={saving}
                         className="text-muted-foreground hover:text-foreground disabled:opacity-50 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background rounded-md"
@@ -720,7 +727,7 @@ function FacebookTabContent({
                     <div className="h-32 bg-status-info-soft relative">
                         <img
                             src={page.cover.source}
-                            alt="Cover"
+                            alt="Хавтасны зураг"
                             className="w-full h-full object-cover opacity-80"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent" />
@@ -807,30 +814,30 @@ function FacebookTabContent({
                     <CardContent className="p-5">
                         <h3 className="heading-section text-foreground mb-4 flex items-center gap-2">
                             <BarChart3 className="w-5 h-5 text-brand-strong" />
-                            Page Insights
+                            Хуудасны үзүүлэлт
                         </h3>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                             {insights.page_impressions && (
                                 <div className="bg-surface-2 rounded-md p-3">
-                                    <p className="text-xs text-muted-foreground">Impressions</p>
+                                    <p className="text-xs text-muted-foreground">Харагдалт</p>
                                     <p className="text-lg font-bold text-foreground tabular-nums">{formatNumber(insights.page_impressions.value as number)}</p>
                                 </div>
                             )}
                             {insights.page_impressions_unique && (
                                 <div className="bg-surface-2 rounded-md p-3">
-                                    <p className="text-xs text-muted-foreground">Reach</p>
+                                    <p className="text-xs text-muted-foreground">Хамрах хүрээ</p>
                                     <p className="text-lg font-bold text-foreground tabular-nums">{formatNumber(insights.page_impressions_unique.value as number)}</p>
                                 </div>
                             )}
                             {insights.page_engaged_users && (
                                 <div className="bg-surface-2 rounded-md p-3">
-                                    <p className="text-xs text-muted-foreground">Engaged Users</p>
+                                    <p className="text-xs text-muted-foreground">Идэвхтэй хэрэглэгч</p>
                                     <p className="text-lg font-bold text-foreground tabular-nums">{formatNumber(insights.page_engaged_users.value as number)}</p>
                                 </div>
                             )}
                             {insights.page_views_total && (
                                 <div className="bg-surface-2 rounded-md p-3">
-                                    <p className="text-xs text-muted-foreground">Page Views</p>
+                                    <p className="text-xs text-muted-foreground">Хуудас үзэлт</p>
                                     <p className="text-lg font-bold text-foreground tabular-nums">{formatNumber(insights.page_views_total.value as number)}</p>
                                 </div>
                             )}
@@ -859,7 +866,7 @@ function FacebookTabContent({
                                         {post.image && (
                                             <img
                                                 src={post.image}
-                                                alt=""
+                                                alt="Нийтлэлийн зураг"
                                                 className="w-20 h-20 rounded-lg object-cover flex-shrink-0"
                                             />
                                         )}
@@ -1033,7 +1040,7 @@ function PublishModal({
                             <DialogDescription className="text-xs text-muted-foreground">{pageName} • Facebook</DialogDescription>
                         </div>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-surface-2 rounded-lg transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background">
+                    <button type="button" onClick={onClose} aria-label="Хаах" className="p-2 hover:bg-surface-2 rounded-lg transition-colors outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background">
                         <X className="w-5 h-5 text-muted-foreground" />
                     </button>
                 </DialogHeader>
@@ -1254,7 +1261,7 @@ function InstagramTabContent({
                                     {post.media_url ? (
                                         <img
                                             src={post.media_url}
-                                            alt=""
+                                            alt="Нийтлэлийн зураг"
                                             className="w-full h-full object-cover"
                                         />
                                     ) : (

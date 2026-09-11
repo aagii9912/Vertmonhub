@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import { toast } from 'sonner';
+import { confirmToast } from '@/components/ui/Toast';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -204,8 +205,9 @@ export default function TasksPage() {
         );
     };
 
-    const removeTask = (task: UserTask) => {
-        if (!window.confirm(`«${task.title}» ажлыг устгах уу?`)) return;
+    const removeTask = async (task: UserTask) => {
+        const ok = await confirmToast({ title: `«${task.title}» ажлыг устгах уу?`, confirmLabel: 'Устгах', destructive: true });
+        if (!ok) return;
         deleteTask.mutate(task.id, {
             onSuccess: () => toast.success('Ажил устгагдлаа'),
             onError: (e) => toast.error(e.message),

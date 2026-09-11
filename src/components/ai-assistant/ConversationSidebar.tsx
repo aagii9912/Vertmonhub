@@ -7,6 +7,7 @@ import {
     Sparkles, ChevronLeft, Network,
 } from 'lucide-react';
 import type { AIConversation } from '@/hooks/useAIConversations';
+import { confirmToast } from '@/components/ui/Toast';
 
 interface ConversationSidebarProps {
     conversations: AIConversation[];
@@ -126,6 +127,7 @@ export function ConversationSidebar({
             <div className="w-12 flex-shrink-0 bg-surface border-r border-border flex flex-col items-center py-4 gap-3">
                 <button
                     onClick={onToggleCollapse}
+                    aria-label="Ярианы жагсаалт нээх"
                     className="w-9 h-9 rounded-md bg-status-info-soft hover:bg-status-info-soft flex items-center justify-center text-status-info transition-colors"
                     title="Ярианы жагсаалт нээх"
                 >
@@ -133,6 +135,7 @@ export function ConversationSidebar({
                 </button>
                 <button
                     onClick={onNewChat}
+                    aria-label="Шинэ чат"
                     className="w-9 h-9 rounded-md bg-brand hover:bg-brand-strong flex items-center justify-center text-brand-fg transition-colors"
                     title="Шинэ чат"
                 >
@@ -153,6 +156,7 @@ export function ConversationSidebar({
                     </div>
                     <button
                         onClick={onToggleCollapse}
+                        aria-label="Ярианы жагсаалт хаах"
                         className="p-1.5 rounded-lg hover:bg-surface-2 text-muted-foreground/70 hover:text-muted-foreground transition-colors"
                     >
                         <ChevronLeft className="w-4 h-4" />
@@ -237,10 +241,10 @@ export function ConversationSidebar({
                                                             className="w-full text-xs bg-surface border border-brand rounded px-1.5 py-0.5 
                                                                      focus:outline-none focus:ring-1 focus:ring-brand"
                                                         />
-                                                        <button onClick={() => handleRenameSubmit(conv.id)} className="p-0.5 text-status-success hover:text-status-success">
+                                                        <button type="button" aria-label="Нэр хадгалах" onClick={() => handleRenameSubmit(conv.id)} className="p-0.5 text-status-success hover:text-status-success">
                                                             <Check className="w-3 h-3" />
                                                         </button>
-                                                        <button onClick={() => setRenamingId(null)} className="p-0.5 text-muted-foreground/70 hover:text-muted-foreground">
+                                                        <button type="button" aria-label="Болих" onClick={() => setRenamingId(null)} className="p-0.5 text-muted-foreground/70 hover:text-muted-foreground">
                                                             <X className="w-3 h-3" />
                                                         </button>
                                                     </div>
@@ -259,6 +263,9 @@ export function ConversationSidebar({
                                             {/* Three-dot menu */}
                                             {!isRenaming && (
                                                 <button
+                                                    aria-label="Цэс"
+                                                    aria-haspopup="menu"
+                                                    aria-expanded={menuOpenId === conv.id}
                                                     onClick={e => { e.stopPropagation(); setMenuOpenId(menuOpenId === conv.id ? null : conv.id); }}
                                                     className={`p-1 rounded-md transition-all ${
                                                         menuOpenId === conv.id
@@ -286,10 +293,11 @@ export function ConversationSidebar({
                                                         Нэр солих
                                                     </button>
                                                     <button
-                                                        onClick={e => {
+                                                        onClick={async e => {
                                                             e.stopPropagation();
                                                             setMenuOpenId(null);
-                                                            if (confirm('Энэ харилцан яриаг устгах уу?')) onDelete(conv.id);
+                                                            const ok = await confirmToast({ title: 'Энэ харилцан яриаг устгах уу?', confirmLabel: 'Устгах', destructive: true });
+                                                            if (ok) onDelete(conv.id);
                                                         }}
                                                         className="w-full flex items-center gap-2 px-3 py-2 text-xs text-status-danger 
                                                                  hover:bg-status-danger-soft transition-colors"

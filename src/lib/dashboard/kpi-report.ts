@@ -1,4 +1,6 @@
 import { ubMonthRange } from '@/lib/utils/date';
+import { STATUS_META, SOURCE_LABEL } from '@/lib/leads/labels';
+import { VIEWING_STATUS_META } from '@/lib/viewings/labels';
 
 /**
  * Сарын KPI тайлангийн PURE туслахууд — DB-гүй, unit-тестэд шууд ордог.
@@ -62,39 +64,19 @@ export interface KpiSummary {
     };
 }
 
-export const LEAD_STATUS_LABELS: Record<string, string> = {
-    new: 'Шинэ',
-    contacted: 'Холбогдсон',
-    viewing_scheduled: 'Уулзалт товлосон',
-    offered: 'Санал тавьсан',
-    negotiating: 'Тохиролцож буй',
-    closed_won: 'Амжилттай',
-    closed_lost: 'Амжилтгүй',
-};
+/**
+ * Нэр томьёо — `lib/leads/labels` / `lib/viewings/labels` (нэг эх сурвалж)-аас гаргасан.
+ * Хуучин export нэрүүд хэвээр (reports/kpi хуудас ашигладаг); шинэ утга нэмбэл зөвхөн тэнд нэмнэ.
+ */
+export const LEAD_STATUS_LABELS: Record<string, string> = Object.fromEntries(
+    Object.entries(STATUS_META).map(([key, meta]) => [key, meta.label]),
+);
 
-export const LEAD_SOURCE_LABELS: Record<string, string> = {
-    messenger: 'Messenger',
-    facebook: 'Facebook',
-    instagram: 'Instagram',
-    website: 'Вэбсайт',
-    referral: 'Зөвлөмж',
-    phone: 'Утас',
-    facebook_ads: 'Facebook Ads',
-    google_ads: 'Google Ads',
-    tv: 'ТВ',
-    radio: 'Радио',
-    meeting: 'Уулзалт',
-    event: 'Өдөрлөг',
-    board: 'Билборд / Самбар',
-    other: 'Бусад',
-};
+export const LEAD_SOURCE_LABELS: Record<string, string> = { ...SOURCE_LABEL };
 
-export const VIEWING_STATUS_LABELS: Record<string, string> = {
-    scheduled: 'Товлогдсон',
-    completed: 'Болсон',
-    cancelled: 'Цуцлагдсан',
-    no_show: 'Ирээгүй',
-};
+export const VIEWING_STATUS_LABELS: Record<string, string> = Object.fromEntries(
+    Object.entries(VIEWING_STATUS_META).map(([key, meta]) => [key, meta.label]),
+);
 
 /** Тухайн сарын [эхлэл, дараа сарын эхлэл) цонх (локал цагаар). */
 export function monthRange(year: number, month: number): { start: Date; end: Date } {

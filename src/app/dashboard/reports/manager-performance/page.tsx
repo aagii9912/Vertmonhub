@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { DataTable, type DataTableColumn, StatusPill } from '@/components/ui/DataTable';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { formatMNTShort } from '@/lib/utils/currency';
 
 interface ManagerRow {
     sales_manager: string;
@@ -29,13 +30,6 @@ interface Totals {
     teamTarget: number;
     teamActual: number;
     teamAttainmentPct: number;
-}
-
-function formatMoney(n: number): string {
-    if (!n) return '0₮';
-    if (n >= 1e9) return (n / 1e9).toFixed(1) + ' тэрбум₮';
-    if (n >= 1e6) return (n / 1e6).toFixed(0) + ' сая₮';
-    return new Intl.NumberFormat('mn-MN').format(Math.round(n)) + '₮';
 }
 
 export default function ManagerPerformancePage() {
@@ -113,15 +107,15 @@ export default function ManagerPerformancePage() {
             header: 'Борлуулалт',
             cell: (m) => (
                 <div className="min-w-[10rem]">
-                    <div className="text-foreground tabular-nums">{formatMoney(m.total_sales)}</div>
+                    <div className="text-foreground tabular-nums">{formatMNTShort(m.total_sales)}</div>
                     <div className="h-1.5 mt-1 bg-surface-2 rounded-full overflow-hidden">
                         <div className="h-full bg-status-success rounded-full" style={{ width: `${Math.max(3, Math.round((m.total_sales / topSales) * 100))}%` }} />
                     </div>
                 </div>
             ),
         },
-        { key: 'total_collected', header: 'Цуглуулсан', align: 'right', cell: (m) => <span className="tabular-nums text-foreground">{formatMoney(m.total_collected)}</span> },
-        { key: 'total_outstanding', header: 'Үлдэгдэл', align: 'right', cell: (m) => <span className="tabular-nums text-muted-foreground">{formatMoney(m.total_outstanding)}</span> },
+        { key: 'total_collected', header: 'Цуглуулсан', align: 'right', cell: (m) => <span className="tabular-nums text-foreground">{formatMNTShort(m.total_collected)}</span> },
+        { key: 'total_outstanding', header: 'Үлдэгдэл', align: 'right', cell: (m) => <span className="tabular-nums text-muted-foreground">{formatMNTShort(m.total_outstanding)}</span> },
         { key: 'collection_rate_pct', header: 'Цуглуулалт %', align: 'right', cell: (m) => <span className="tabular-nums text-foreground">{m.collection_rate_pct}%</span> },
         { key: 'unique_customers', header: 'Харилцагч', align: 'right', cell: (m) => <span className="tabular-nums text-muted-foreground">{m.unique_customers}</span> },
     ];
@@ -142,8 +136,8 @@ export default function ManagerPerformancePage() {
             <StatBar columns={4}>
                 <StatTile label="Менежер" value={totals.managers} icon={<Users className="w-4 h-4" />} accent="info" />
                 <StatTile label="Нийт гэрээ" value={totals.contracts} icon={<FileText className="w-4 h-4" />} accent="brand" helper={`${totals.closed} хаагдсан`} />
-                <StatTile label="Нийт борлуулалт" value={formatMoney(totals.sales)} icon={<TrendingUp className="w-4 h-4" />} accent="success" />
-                <StatTile label="Цуглуулсан" value={formatMoney(totals.collected)} icon={<DollarSign className="w-4 h-4" />} accent="warning" helper={totals.sales > 0 ? `${Math.round((totals.collected / totals.sales) * 100)}%` : undefined} />
+                <StatTile label="Нийт борлуулалт" value={formatMNTShort(totals.sales)} icon={<TrendingUp className="w-4 h-4" />} accent="success" />
+                <StatTile label="Цуглуулсан" value={formatMNTShort(totals.collected)} icon={<DollarSign className="w-4 h-4" />} accent="warning" helper={totals.sales > 0 ? `${Math.round((totals.collected / totals.sales) * 100)}%` : undefined} />
             </StatBar>
 
             {/* Багийн жилийн төлөвлөгөө (admin-аас тохируулсан үед) */}
@@ -157,7 +151,7 @@ export default function ManagerPerformancePage() {
                             <div>
                                 <p className="text-sm font-semibold text-foreground">Багийн {new Date().getFullYear()} оны төлөвлөгөө</p>
                                 <p className="text-xs text-muted-foreground">
-                                    Гүйцэтгэл {formatMoney(totals.teamActual)} / {formatMoney(totals.teamTarget)} (идэвхтэй менежерүүд)
+                                    Гүйцэтгэл {formatMNTShort(totals.teamActual)} / {formatMNTShort(totals.teamTarget)} (идэвхтэй менежерүүд)
                                 </p>
                             </div>
                         </div>
