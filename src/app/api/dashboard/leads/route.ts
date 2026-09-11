@@ -89,6 +89,11 @@ export async function GET(request: NextRequest) {
             const start = new Date(Date.now() - PERIOD_DAYS[period] * 24 * 60 * 60 * 1000);
             query = query.gte('created_at', start.toISOString());
         }
+        // Тодорхой хугацааны цонх (ISO) — тайлангийн хуудсууд browser Supabase-гүйгээр ашиглана
+        const fromIso = searchParams.get('from');
+        const toIso = searchParams.get('to');
+        if (fromIso && !Number.isNaN(Date.parse(fromIso))) query = query.gte('created_at', new Date(fromIso).toISOString());
+        if (toIso && !Number.isNaN(Date.parse(toIso))) query = query.lt('created_at', new Date(toIso).toISOString());
         // Давхардлын шалгалт: цифрүүдийг 4-өөр хувааж хооронд нь дурын тэмдэгт зөвшөөрнө,
         // ингэснээр хадгалсан формат (зай, зураас) ямар ч байсан таарна.
         const phone = searchParams.get('phone');

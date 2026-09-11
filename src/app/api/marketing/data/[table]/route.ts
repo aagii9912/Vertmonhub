@@ -22,6 +22,9 @@ const TABLES = new Set([
     'message_campaigns',
     'brand_mentions',
     'social_posts',
+    'web_analytics',
+    'marketing_channels',
+    'channel_contracts',
 ]);
 const COL = /^[a-z_][a-z0-9_]{0,60}$/;
 const SELECT = /^(\*|[a-z_][a-z0-9_]*)(,[a-z_][a-z0-9_]*)*$/;
