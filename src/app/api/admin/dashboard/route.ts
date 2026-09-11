@@ -1,6 +1,10 @@
 /**
- * Admin Dashboard API
- * Returns overall statistics for admin dashboard
+ * Admin Dashboard API — платформын ерөнхий статистик.
+ *
+ * 2026-09 review (M6): өмнө нь `subscriptions` / `plans` / `invoices` (prod DB-д БАЙХГҮЙ
+ * SaaS-billing хүснэгтүүд) уншиж бүх Promise алдаа өгдөг байв. Одоо бодит CRM тоонууд
+ * (`crm`) + хуучин UI-ийн талбаруудыг тэгээр (хоосноор) буцаана — admin/dashboard хуудас
+ * `crm`-д шилжтэл эвдрэхгүй.
  */
 
 import { NextResponse } from 'next/server';
@@ -17,74 +21,38 @@ export async function GET() {
         }
 
         const supabase = supabaseAdmin();
+        const count = (table: string, filter?: (q: any) => any) => {
+            let q = supabase.from(table).select('id', { count: 'exact', head: true });
+            if (filter) q = filter(q);
+            return q.then((r: { count: number | null; error: unknown }) => (r.error ? 0 : r.count ?? 0));
+        };
 
-        // Get all stats in parallel
-        const [
-            shopsResult,
-            subscriptionsResult,
-            plansResult,
-            invoicesResult,
-            recentShopsResult,
-            recentInvoicesResult
-        ] = await Promise.all([
-            // Total shops
-            supabase.from('shops').select('id', { count: 'exact', head: true }),
-
-            // Active subscriptions by status
-            supabase.from('subscriptions').select('status'),
-
-            // Plans count
-            supabase.from('plans').select('id, name, price_monthly').eq('is_active', true),
-
-            // Invoice stats
-            supabase.from('invoices').select('status, amount'),
-
-            // Recent shops (last 7 days)
+        const [totalShops, users, leads, contracts, customers, viewings, recentShopsResult] = await Promise.all([
+            count('shops'),
+            count('user_profiles'),
+            count('leads', (q) => q.is('deleted_at', null)),
+            count('property_contracts', (q) => q.is('deleted_at', null)),
+            count('customers', (q) => q.is('deleted_at', null)),
+            count('property_viewings', (q) => q.is('deleted_at', null)),
             supabase.from('shops')
                 .select('id, name, created_at')
                 .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
                 .order('created_at', { ascending: false })
                 .limit(5),
-
-            // Recent invoices
-            supabase.from('invoices')
-                .select('id, amount, status, created_at, shops(name)')
-                .order('created_at', { ascending: false })
-                .limit(5)
         ]);
-
-        // Calculate MRR (Monthly Recurring Revenue)
-        const activeSubscriptions = subscriptionsResult.data?.filter(s => s.status === 'active') || [];
-
-        // Calculate subscription stats
-        const subscriptionStats = {
-            active: activeSubscriptions.length,
-            canceled: subscriptionsResult.data?.filter(s => s.status === 'canceled').length || 0,
-            past_due: subscriptionsResult.data?.filter(s => s.status === 'past_due').length || 0,
-            total: subscriptionsResult.data?.length || 0
-        };
-
-        // Calculate revenue stats
-        const paidInvoices = invoicesResult.data?.filter(i => i.status === 'paid') || [];
-        const pendingInvoices = invoicesResult.data?.filter(i => i.status === 'pending') || [];
-
-        const revenueStats = {
-            total_revenue: paidInvoices.reduce((sum, i) => sum + i.amount, 0),
-            pending_revenue: pendingInvoices.reduce((sum, i) => sum + i.amount, 0),
-            paid_count: paidInvoices.length,
-            pending_count: pendingInvoices.length
-        };
 
         return NextResponse.json({
             stats: {
-                total_shops: shopsResult.count || 0,
-                subscriptions: subscriptionStats,
-                revenue: revenueStats,
-                plans_count: plansResult.data?.length || 0
+                total_shops: totalShops,
+                // Хуучин SaaS талбарууд — хүснэгт байхгүй тул тэг (UI-г crm руу шилжүүлэх хүртэл)
+                subscriptions: { active: 0, canceled: 0, past_due: 0, total: 0 },
+                revenue: { total_revenue: 0, pending_revenue: 0, paid_count: 0, pending_count: 0 },
+                plans_count: 0,
             },
-            plans: plansResult.data || [],
+            crm: { users, leads, contracts, customers, viewings },
+            plans: [],
             recent_shops: recentShopsResult.data || [],
-            recent_invoices: recentInvoicesResult.data || [],
+            recent_invoices: [],
             admin: {
                 email: admin.email,
                 role: admin.role

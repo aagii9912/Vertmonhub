@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import type { User, Session } from '@supabase/supabase-js';
 import type { UserRole, RolePermissions } from '@/lib/rbac';
-import { fetchRolePermissions, ROLE_PERMISSIONS } from '@/lib/rbac';
+import { ROLE_PERMISSIONS } from '@/lib/rbac';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
 
 const isDev = process.env.NODE_ENV === 'development';
@@ -84,35 +84,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [session]);
 
-  // Fetch user role and permissions from DB
-  const fetchUserRoleAndPermissions = useCallback(async (userId: string): Promise<{ role: UserRole; permissions: RolePermissions }> => {
+  // Дүр + эрх + shop-ууд — /api/me нэг хүсэлтээр (сервер user_roles-оос тооцно).
+  // Өмнө нь browser-оос user_roles → roles/role_permissions → /api/user/shops гэж
+  // 4–5 дараалсан хүсэлт явдаг байв (review M3/M24).
+  const fetchMe = useCallback(async (): Promise<{ role: UserRole; permissions: RolePermissions; fullName: string | null; shops: Shop[] } | null> => {
     try {
-      // Step 1: Try user_roles table
-      const { data, error } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userId)
-        .single();
-
-      let roleName: string;
-
-      // user_roles — ганц эх сурвалж. (Хуучин `admins` хүснэгт prod-д байхгүй; browser-оос
-      // user_roles-д upsert хийх оролдлого RLS-д унадаг no-op байсан — хоёуланг нь хасав.)
-      roleName = error || !data ? 'viewer' : (data.role as string);
-
-      // Fetch dynamic permissions
-      let permissions: RolePermissions;
-      try {
-        permissions = await fetchRolePermissions(roleName, supabase);
-      } catch {
-        permissions = ROLE_PERMISSIONS[roleName] || ROLE_PERMISSIONS['viewer'];
-      }
-
-      return { role: roleName, permissions };
+      const res = await fetch('/api/me', { cache: 'no-store' });
+      if (!res.ok) return null;
+      const data = await res.json();
+      const roleName = (data.role as string) || 'viewer';
+      return {
+        role: roleName as UserRole,
+        permissions: (data.permissions as RolePermissions) || ROLE_PERMISSIONS[roleName] || ROLE_PERMISSIONS['viewer'],
+        fullName: (data.user?.fullName as string | null) ?? null,
+        shops: Array.isArray(data.shops) ? (data.shops as Shop[]) : [],
+      };
     } catch {
-      return { role: 'viewer', permissions: ROLE_PERMISSIONS['viewer'] };
+      return null;
     }
-  }, [supabase]);
+  }, []);
 
   // Set active shop (with localStorage persistence)
   const setActiveShop = useCallback((shopData: Shop | null) => {
@@ -180,51 +170,51 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Listen for auth state changes
   useEffect(() => {
+    let lastUserId: string | null = null;
+
+    const applyMe = async (s: Session) => {
+      const me = await fetchMe();
+      setUser({
+        id: s.user.id,
+        email: s.user.email || '',
+        fullName: me?.fullName ?? (s.user.user_metadata?.full_name || null),
+        role: me?.role ?? 'viewer',
+        permissions: me?.permissions ?? ROLE_PERMISSIONS['viewer'],
+      });
+      if (me) {
+        setShops(me.shops);
+        initializeActiveShop(me.shops);
+      }
+    };
+
     // Get initial session
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       setSession(session);
       if (session?.user) {
-        const { role, permissions } = await fetchUserRoleAndPermissions(session.user.id);
-        setUser({
-          id: session.user.id,
-          email: session.user.email || '',
-          fullName: session.user.user_metadata?.full_name || null,
-          role,
-          permissions,
-        });
+        lastUserId = session.user.id;
+        await applyMe(session);
       }
       setLoading(false);
     });
 
-    // Listen for auth changes
+    // Listen for auth changes (TOKEN_REFRESHED зэрэгт ижил хэрэглэгчийн хувьд дахин татахгүй)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         setSession(session);
         if (session?.user) {
-          fetchUserRoleAndPermissions(session.user.id).then(({ role, permissions }) => {
-            setUser({
-              id: session.user.id,
-              email: session.user.email || '',
-              fullName: session.user.user_metadata?.full_name || null,
-              role,
-              permissions,
-            });
-          });
+          if (session.user.id !== lastUserId) {
+            lastUserId = session.user.id;
+            void applyMe(session);
+          }
         } else {
+          lastUserId = null;
           setUser(null);
         }
       }
     );
 
     return () => subscription.unsubscribe();
-  }, [supabase, fetchUserRoleAndPermissions]);
-
-  // Fetch shops when session changes
-  useEffect(() => {
-    if (session) {
-      fetchShops().then(initializeActiveShop);
-    }
-  }, [session, fetchShops, initializeActiveShop]);
+  }, [supabase, fetchMe, initializeActiveShop]);
 
   return (
     <AuthContext.Provider value={{
