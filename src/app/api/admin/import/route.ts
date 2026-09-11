@@ -87,16 +87,8 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Админ эрх шаардлагатай' }, { status: 403 });
         }
 
-        let allowed = admin.role === 'super_admin';
-        if (!allowed) {
-            const { data: permRow } = await supabase
-                .from('admins')
-                .select('permissions')
-                .eq('user_id', userId)
-                .eq('is_active', true)
-                .maybeSingle();
-            allowed = permRow?.permissions?.can_import_data === true;
-        }
+        // Зөвхөн super_admin (хуучин `admins.permissions.can_import_data` — хүснэгт prod-д байхгүй)
+        const allowed = admin.role === 'super_admin';
 
         if (!allowed) {
             return NextResponse.json({ error: 'Import хийх эрх байхгүй. Super Admin-д хандана уу.' }, { status: 403 });

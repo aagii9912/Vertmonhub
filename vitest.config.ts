@@ -1,3 +1,7 @@
+// Тестүүд Улаанбаатарын цагийн бүсээр ажиллана (CI = UTC): local == Asia/Ulaanbaatar,
+// ингэснээр `new Date(y, m, d)` fixture-ууд серверийн УБ-ийн өдрийн хилтэй тохирно.
+process.env.TZ = 'Asia/Ulaanbaatar';
+
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import path from 'path';

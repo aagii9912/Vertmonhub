@@ -43,13 +43,20 @@ export async function POST(request: Request) {
             results.chat_purged = 'skipped';
         }
 
-        // 3. Clean expired AI memory (> 365 days)
+        // 3. Rate limiter-ийн хуучирсан мөрүүд (> 1 цаг). pg_cron `cleanup_rate_limits`
+        //    prod-д ажиллаагүй тул хүснэгт 40k+ мөр болтлоо өссөн байсан (2026-09 review M10).
+        //    (Өмнөх `cleanup_expired_ai_memory` RPC нь байхгүй `ai_memory` хүснэгт рүү заадаг байсан тул хасав.)
         try {
-            const { data: memoryResult } = await supabase.rpc('cleanup_expired_ai_memory', { days_old: 365 });
-            results.memory_cleaned = memoryResult || 0;
+            const cutoff = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+            const { error: rlError } = await supabase
+                .from('rate_limits')
+                .delete()
+                .lt('reset_at', cutoff);
+            results.rate_limits_cleaned = rlError ? 'skipped' : 'ok';
+            if (rlError) logger.warn('[Cron] rate_limits cleanup failed:', { error: rlError.message });
         } catch (e) {
-            logger.warn('[Cron] cleanup_expired_ai_memory RPC not available:', { error: e });
-            results.memory_cleaned = 'skipped';
+            logger.warn('[Cron] rate_limits cleanup failed:', { error: e });
+            results.rate_limits_cleaned = 'skipped';
         }
 
         // 4. Webhook idempotency бүртгэлийг цэвэрлэх (> 7 хоног)

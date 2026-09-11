@@ -76,30 +76,65 @@ export function formatRelativeDays(date: string | Date | null | undefined): stri
     return `${Math.floor(days / 365)} жил`;
 }
 
+// ============================================
+// Улаанбаатарын цагийн бүс (Asia/Ulaanbaatar, UTC+8, DST-гүй)
+// ============================================
+// Сервер (Vercel) UTC-ээр ажилладаг тул `setHours(0,0,0,0)` нь УБ-ийн 08:00 болдог —
+// «өнөөдөр» 00:00–08:00 УБ-д буруу өдөр гардаг байсан (2026-09 review H6).
+// Бүх «өнөөдөр / энэ сар» хилийг серверт эдгээр helper-ээр л тооцно.
+
+export const UB_OFFSET_MS = 8 * 60 * 60 * 1000;
+
+/** УБ-ийн он/сар/өдөр (сар 1–12). */
+export function ubParts(d: Date = new Date()): { year: number; month: number; day: number } {
+    const s = new Date(d.getTime() + UB_OFFSET_MS);
+    return { year: s.getUTCFullYear(), month: s.getUTCMonth() + 1, day: s.getUTCDate() };
+}
+
+/** УБ-ийн `YYYY-MM-DD` (DATE баганатай харьцуулахад). */
+export function ubDateStr(d: Date = new Date()): string {
+    return new Date(d.getTime() + UB_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/** Тухайн мөчийн УБ-ийн шөнө дунд (UTC instant-аар). */
+export function ubStartOfDay(d: Date = new Date()): Date {
+    const s = new Date(d.getTime() + UB_OFFSET_MS);
+    s.setUTCHours(0, 0, 0, 0);
+    return new Date(s.getTime() - UB_OFFSET_MS);
+}
+
+/** УБ-ийн өдрийн хил: [start, end) — end = маргаашийн шөнө дунд. */
+export function ubDayRange(d: Date = new Date()): { start: Date; end: Date } {
+    const start = ubStartOfDay(d);
+    return { start, end: new Date(start.getTime() + 24 * 60 * 60 * 1000) };
+}
+
+/** УБ-ийн сарын хил: [start, end) (monthIdx 0–11). */
+export function ubMonthRange(year: number, monthIdx: number): { start: Date; end: Date } {
+    return {
+        start: new Date(Date.UTC(year, monthIdx, 1) - UB_OFFSET_MS),
+        end: new Date(Date.UTC(year, monthIdx + 1, 1) - UB_OFFSET_MS),
+    };
+}
+
+/** УБ-ийн өнөөдрийн эхлэл (хуучин нэр — хэвээр ашиглагдана). */
 export function getStartOfToday(): Date {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return today;
+    return ubStartOfDay();
 }
 
 /**
- * Get start of period for filtering
+ * Get start of period for filtering (УБ-ийн өдрийн хилээр)
  * @param period - 'today', 'week', or 'month'
  */
 export function getStartOfPeriod(period: 'today' | 'week' | 'month'): Date {
-  const date = new Date();
-  date.setHours(0, 0, 0, 0);
-
-  switch (period) {
-    case 'today':
-      return date;
-    case 'week':
-      date.setDate(date.getDate() - 7);
-      return date;
-    case 'month':
-      date.setDate(date.getDate() - 30);
-      return date;
-    default:
-      return date;
-  }
+    const start = ubStartOfDay();
+    switch (period) {
+        case 'week':
+            return new Date(start.getTime() - 7 * 24 * 60 * 60 * 1000);
+        case 'month':
+            return new Date(start.getTime() - 30 * 24 * 60 * 60 * 1000);
+        case 'today':
+        default:
+            return start;
+    }
 }

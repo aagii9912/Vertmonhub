@@ -343,7 +343,6 @@ export async function DELETE(request: NextRequest) {
         // Delete from public tables first
         await supabase.from('user_roles').delete().eq('user_id', targetUserId);
         await supabase.from('user_profiles').delete().eq('id', targetUserId);
-        await supabase.from('admins').delete().eq('user_id', targetUserId);
 
         // Delete from auth via Admin API
         const { error: deleteError } = await supabase.auth.admin.deleteUser(targetUserId);

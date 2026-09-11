@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
             .select('id, name, district, price, rooms, size_sqm, status, type')
             .eq('shop_id', authShop.id)
             .eq('is_active', true)
+            .is('deleted_at', null)
             .limit(limit);
         if (q) query = query.or(`name.ilike.%${q}%,district.ilike.%${q}%,address.ilike.%${q}%`).order('name', { ascending: true });
         else query = query.order('created_at', { ascending: false });

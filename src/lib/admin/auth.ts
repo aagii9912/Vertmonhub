@@ -45,25 +45,7 @@ export async function getAdminUser(): Promise<AdminUser | null> {
 
         const adminDb = supabaseAdmin();
 
-        // 1) admins хүснэгт (legacy платформ-админ) — эхэлж шалгана
-        const { data: admin } = await adminDb
-            .from('admins')
-            .select('id, email, role')
-            .eq('user_id', resolved.userId)
-            .eq('is_active', true)
-            .maybeSingle();
-
-        if (admin) {
-            logger.debug('Admin auth: Admin found (admins table)', { email: admin.email, role: admin.role });
-            return {
-                id: admin.id,
-                email: admin.email,
-                role: admin.role as AdminUser['role'],
-            };
-        }
-
-        // 2) RBAC super_admin — dashboard-ийн эрхтэй НЭГТГЭСЭН зам.
-        //    user_roles.role === 'super_admin' бол admins хүснэгтэд байхгүй ч /admin-д нэвтэрнэ.
+        // RBAC super_admin — ганц зам (хуучин `admins` хүснэгт prod DB-д байхгүй тул хасав).
         const { data: roleRow } = await adminDb
             .from('user_roles')
             .select('role')

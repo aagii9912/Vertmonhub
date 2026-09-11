@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ubParts } from '@/lib/utils/date';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { resolvePermissions } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -131,8 +132,9 @@ export async function GET(request: NextRequest) {
         const weekEnd = new Date(dayStart);
         weekEnd.setDate(weekEnd.getDate() + 7);
         const periodStart = getStartOfPeriod(period);
-        const year = now.getFullYear();
-        const monthIdx = now.getMonth();
+        const ubNow = ubParts(now); // УБ-ийн он/сар (сервер UTC)
+        const year = ubNow.year;
+        const monthIdx = ubNow.month - 1;
         const quarter = quarterOfMonth(monthIdx + 1);
 
         const [leadRowsRaw, viewingRowsRaw, contractRows, targets, byManager, personalTaskRows] = await Promise.all([

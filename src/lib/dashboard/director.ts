@@ -1,3 +1,5 @@
+import { ubStartOfDay } from '@/lib/utils/date';
+
 /**
  * Захирлын самбарын цэвэр тооцооллууд (DB-гүй, unit-test хийгдэнэ).
  *
@@ -191,8 +193,7 @@ export function buildOverdue(
     today: Date,
     limit = 5,
 ): OverdueResult {
-    const dayStart = new Date(today);
-    dayStart.setHours(0, 0, 0, 0);
+    const dayStart = ubStartOfDay(today); // УБ-ийн шөнө дунд (сервер UTC)
 
     const byContract = new Map<string, { amount: number; oldestDue: Date }>();
     for (const s of schedules) {

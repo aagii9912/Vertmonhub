@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
+import { ubDayRange } from '@/lib/utils/date';
 
 /**
  * GET /api/dashboard/nav-counts
@@ -24,10 +25,8 @@ export async function GET() {
         const db = supabaseAdmin();
         const shopId = authShop.id;
 
-        const dayStart = new Date();
-        dayStart.setHours(0, 0, 0, 0);
-        const dayEnd = new Date(dayStart);
-        dayEnd.setDate(dayEnd.getDate() + 1);
+        // «Өнөөдөр» — Улаанбаатарын өдрийн хилээр (сервер UTC)
+        const { start: dayStart, end: dayEnd } = ubDayRange();
         const nowIso = new Date().toISOString();
 
         const [leads, meetings, inbox] = await Promise.all([
@@ -43,6 +42,7 @@ export async function GET() {
                 .select('id', { count: 'exact', head: true })
                 .eq('shop_id', shopId)
                 .eq('status', 'scheduled')
+                .is('deleted_at', null)
                 .gte('scheduled_at', dayStart.toISOString())
                 .lt('scheduled_at', dayEnd.toISOString())
                 .then((r) => (r.error ? undefined : r.count ?? 0)),
@@ -54,9 +54,11 @@ export async function GET() {
                 .then((r) => (r.error ? undefined : r.count ?? 0)),
         ]);
 
+        // no-store: react-query өөрөө cache-лэнэ; browser HTTP cache нь invalidation-ийг
+        // хүчингүй болгож, shop сольсны дараа өмнөх shop-ийн тоог харуулдаг байв.
         return NextResponse.json(
             { leads, meetings, inbox },
-            { headers: { 'Cache-Control': 'private, max-age=30' } },
+            { headers: { 'Cache-Control': 'private, no-store' } },
         );
     } catch (error) {
         return safeErrorResponse(error, 'Тоолол татахад алдаа гарлаа');

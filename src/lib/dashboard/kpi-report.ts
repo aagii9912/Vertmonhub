@@ -1,3 +1,5 @@
+import { ubMonthRange } from '@/lib/utils/date';
+
 /**
  * Сарын KPI тайлангийн PURE туслахууд — DB-гүй, unit-тестэд шууд ордог.
  * /api/dashboard/kpi-report route татсан мөрүүд дээрээ эдгээрийг ажиллуулж,
@@ -96,7 +98,8 @@ export const VIEWING_STATUS_LABELS: Record<string, string> = {
 
 /** Тухайн сарын [эхлэл, дараа сарын эхлэл) цонх (локал цагаар). */
 export function monthRange(year: number, month: number): { start: Date; end: Date } {
-    return { start: new Date(year, month - 1, 1), end: new Date(year, month, 1) };
+    // Улаанбаатарын сарын хил (сервер UTC дээр `new Date(y, m, 1)` нь УБ 08:00 болдог байв)
+    return ubMonthRange(year, month - 1);
 }
 
 /** Өмнөх сар (оны хил давахыг зохицуулна). */

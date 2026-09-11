@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { ubDateStr } from '@/lib/utils/date';
 import { isAuthorizedCron } from '@/lib/auth/cron';
 import { supabaseAdmin } from '@/lib/supabase';
 import { sendPushNotification } from '@/lib/notifications';
@@ -19,8 +20,8 @@ async function run(request: Request) {
 
     const db = supabaseAdmin();
     const now = new Date();
-    const horizon = new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const today = now.toISOString().slice(0, 10);
+    const horizon = ubDateStr(new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000));
+    const today = ubDateStr(now); // УБ-ийн огноо (сервер UTC)
     const tag = `channel-expiry-${today}`;
 
     const { data: contracts, error } = await db

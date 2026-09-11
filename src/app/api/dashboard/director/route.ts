@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ubParts, ubMonthRange, ubDateStr } from '@/lib/utils/date';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { resolvePermissions } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -42,16 +43,17 @@ export async function GET(request: NextRequest) {
 
         const { searchParams } = new URL(request.url);
         const now = new Date();
-        const year = clampInt(searchParams.get('year'), now.getFullYear(), 2020, 2100);
-        const month = clampInt(searchParams.get('month'), now.getMonth() + 1, 1, 12);
+        // Улаанбаатарын он/сар (сервер UTC — сарын 1-ний 00:00–08:00 УБ өмнөх сард ордог байв)
+        const ubNow = ubParts(now);
+        const year = clampInt(searchParams.get('year'), ubNow.year, 2020, 2100);
+        const month = clampInt(searchParams.get('month'), ubNow.month, 1, 12);
         const monthIdx = month - 1;
 
-        const monthStart = new Date(year, monthIdx, 1);
-        const monthEnd = new Date(year, monthIdx + 1, 1);
+        const { start: monthStart, end: monthEnd } = ubMonthRange(year, monthIdx);
         const ms = monthStart.toISOString();
         const me = monthEnd.toISOString();
-        const msDate = toDateStr(monthStart);
-        const meDate = toDateStr(monthEnd);
+        const msDate = `${year}-${String(month).padStart(2, '0')}-01`;
+        const meDate = monthIdx === 11 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`;
 
         const db = supabaseAdmin();
         const shopId = authShop.id;
@@ -111,7 +113,7 @@ export async function GET(request: NextRequest) {
                     .select('contract_id, due_date, amount, paid_amount, status')
                     .eq('shop_id', shopId)
                     .in('status', ['pending', 'partial', 'overdue'])
-                    .lt('due_date', toDateStr(now))
+                    .lt('due_date', ubDateStr(now))
                     .order('due_date', { ascending: true })
                     .limit(1000);
                 if (error) throw error;
@@ -211,7 +213,7 @@ export async function GET(request: NextRequest) {
             missing,
         };
 
-        return NextResponse.json(payload, { headers: { 'Cache-Control': 'private, max-age=30' } });
+        return NextResponse.json(payload, { headers: { 'Cache-Control': 'private, no-store' } });
     } catch (error) {
         return safeErrorResponse(error, 'Захирлын самбар татахад алдаа гарлаа');
     }

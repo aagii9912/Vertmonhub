@@ -96,48 +96,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       let roleName: string;
 
-      if (error || !data) {
-        // Step 2: Check admins table as fallback
-        const { data: adminData } = await supabase
-          .from('admins')
-          .select('role')
-          .eq('user_id', userId)
-          .eq('is_active', true)
-          .single();
+      // user_roles — ганц эх сурвалж. (Хуучин `admins` хүснэгт prod-д байхгүй; browser-оос
+      // user_roles-д upsert хийх оролдлого RLS-д унадаг no-op байсан — хоёуланг нь хасав.)
+      roleName = error || !data ? 'viewer' : (data.role as string);
 
-        if (adminData) {
-          // User is admin but has no user_roles entry — use actual admin role
-          roleName = adminData.role || 'admin';
-          console.log('[RBAC] No user_roles entry, but found in admins table. Using role:', roleName);
-          
-          // Auto-create user_roles entry with correct role
-          await supabase.from('user_roles').upsert(
-            { user_id: userId, role: roleName },
-            { onConflict: 'user_id' }
-          );
-        } else {
-          roleName = 'viewer';
-          console.log('[RBAC] No user_roles entry and not admin. Defaulting to viewer.');
-        }
-      } else {
-        roleName = data.role as string;
-      }
-
-      console.log('[RBAC] Resolved role:', roleName, 'for user:', userId);
-
-      // Step 3: Fetch dynamic permissions
+      // Fetch dynamic permissions
       let permissions: RolePermissions;
       try {
         permissions = await fetchRolePermissions(roleName, supabase);
-        console.log('[RBAC] Dynamic permissions loaded:', { roleName, moduleCount: permissions.modules.length });
-      } catch (e) {
-        console.log('[RBAC] Dynamic permissions failed, using static:', e);
+      } catch {
         permissions = ROLE_PERMISSIONS[roleName] || ROLE_PERMISSIONS['viewer'];
       }
 
       return { role: roleName, permissions };
-    } catch (e) {
-      console.log('[RBAC] fetchUserRoleAndPermissions error:', e);
+    } catch {
       return { role: 'viewer', permissions: ROLE_PERMISSIONS['viewer'] };
     }
   }, [supabase]);

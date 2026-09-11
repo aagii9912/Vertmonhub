@@ -79,6 +79,8 @@ function LeadForm({ onClose }: { onClose: () => void }) {
     const router = useRouter();
     const qc = useQueryClient();
     const nameRef = useRef<HTMLInputElement>(null);
+    /** Давхар submit хамгаалалт (state биш ref — ⌘↵ хоёр дарахад closure хоцордог) */
+    const submittingRef = useRef(false);
 
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
@@ -127,9 +129,14 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                 nameRef.current?.focus();
                 return;
             }
+            // ⌘↵-г хоёр дарахад давхар POST явдаг байсан (state-ийн `saving` closure хоцордог)
+            if (submittingRef.current) return;
+            submittingRef.current = true;
             setSaving(true);
             const budgetMax = budget ? Number(budget.replace(/\D/g, '')) : null;
             const payload = {
+                // Idempotency: timeout-ын дараа outbox дахин илгээхэд сервер давхар лид үүсгэхгүй
+                client_request_id: crypto.randomUUID(),
                 customer_name: name.trim(),
                 customer_phone: phone.trim() || null,
                 customer_email: email.trim() || null,
@@ -160,6 +167,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                     toast.error(e instanceof Error ? e.message : 'Хадгалж чадсангүй');
                 }
             } finally {
+                submittingRef.current = false;
                 setSaving(false);
             }
         },

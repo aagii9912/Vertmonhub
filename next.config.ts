@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import withBundleAnalyzer from '@next/bundle-analyzer';
+import { withSentryConfig } from '@sentry/nextjs';
 
 const analyze = withBundleAnalyzer({
   enabled: process.env.ANALYZE === 'true',
@@ -85,4 +86,14 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default analyze(nextConfig);
+// Sentry: src/instrumentation.ts + src/instrumentation-client.ts-тэй хамт ажиллана.
+// SENTRY_AUTH_TOKEN байхгүй (CI/локал) бол source map upload-ыг алгасна, build унахгүй.
+export default withSentryConfig(analyze(nextConfig), {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
+  silent: !process.env.CI,
+  sourcemaps: { disable: !process.env.SENTRY_AUTH_TOKEN },
+  disableLogger: true,
+  widenClientFileUpload: true,
+});

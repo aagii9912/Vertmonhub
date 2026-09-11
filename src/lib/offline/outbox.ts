@@ -6,7 +6,7 @@
  * илгээнэ. Серверийн алдаа (4xx/5xx) дараалалд ОРОХГҮЙ — тэр нь хэрэглэгчид
  * шууд харагдах ёстой.
  */
-import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { dashboardFetch, getActiveShopId } from '@/lib/api/dashboardFetch';
 
 const KEY = 'vertmonhub_outbox_v1';
 const EVENT = 'vertmon:outbox:changed';
@@ -20,7 +20,15 @@ export interface OutboxItem {
     label: string;
     createdAt: string;
     attempts: number;
+    /**
+     * Бүртгэх үеийн идэвхтэй shop — flush хийхэд localStorage-ийн ОДООГИЙН shop биш
+     * энэ shop руу явна (shop сольсон/өөр хүн нэвтэрсэн бол буруу tenant-д орохгүй).
+     */
+    shopId?: string | null;
 }
+
+/** Үүнээс олон удаа сүлжээний алдаа авсан мөрийг «амжилтгүй» болгож дараалалаас хасна. */
+const MAX_ATTEMPTS = 30;
 
 function read(): OutboxItem[] {
     if (typeof window === 'undefined') return [];
@@ -57,7 +65,13 @@ export function isNetworkError(e: unknown): boolean {
 }
 
 export function enqueue(item: Omit<OutboxItem, 'id' | 'createdAt' | 'attempts'>): OutboxItem {
-    const full: OutboxItem = { ...item, id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, createdAt: new Date().toISOString(), attempts: 0 };
+    const full: OutboxItem = {
+        ...item,
+        shopId: item.shopId ?? getActiveShopId(),
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        createdAt: new Date().toISOString(),
+        attempts: 0,
+    };
     write([...read(), full]);
     return full;
 }
@@ -79,8 +93,18 @@ export async function flushOutbox(): Promise<{ sent: OutboxItem[]; failed: { ite
     flushing = true;
     try {
         for (const item of read()) {
+            if (item.attempts >= MAX_ATTEMPTS) {
+                failed.push({ item, error: 'Олон удаа илгээж чадсангүй — дахин бүртгэнэ үү' });
+                remove(item.id);
+                continue;
+            }
             try {
-                const res = await dashboardFetch(item.url, { method: item.method, body: JSON.stringify(item.body) });
+                // Бүртгэх үеийн shop руу (dashboardFetch shopId override); байхгүй бол одоогийнх.
+                const res = await dashboardFetch(item.url, {
+                    method: item.method,
+                    body: JSON.stringify(item.body),
+                    ...(item.shopId ? { shopId: item.shopId } : {}),
+                });
                 if (res.ok) {
                     sent.push(item);
                     remove(item.id);

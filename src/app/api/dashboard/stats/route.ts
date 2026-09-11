@@ -106,7 +106,7 @@ export async function GET(request: NextRequest) {
     const { data: recentChats } = await supabase
       .from('chat_history')
       .select(`
-        id, message, response, intent, role, created_at, customer_id,
+        id, message, response, intent, created_at, customer_id,
         customers (name)
       `)
       .eq('shop_id', shopId)
@@ -129,7 +129,8 @@ export async function GET(request: NextRequest) {
       if (!customerId) return;
 
       const existing = conversationMap.get(customerId);
-      const isUserMessage = chat.role === 'user';
+      // chat_history: message = харилцагч, response = бот (role багана байхгүй)
+      const isUserMessage = !chat.response;
       const customerObj = chat.customers as unknown as { name: string } | null;
       const customerName = customerObj?.name || 'Харилцагч';
 

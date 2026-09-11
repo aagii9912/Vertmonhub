@@ -94,16 +94,26 @@ export async function POST(request: NextRequest) {
         const userId = data.user_id;
         const confirmationCode = generateConfirmationCode();
 
-        // Delete user data from customers table
-        // Find all customers with this Facebook/Instagram user ID
-        const { error: deleteError } = await supabaseAdmin()
+        // Delete user data from customers table (customers.facebook_id / instagram_id —
+        // өмнө нь байхгүй `facebook_user_id` баганаар шүүж юу ч устгадаггүй байв).
+        const db = supabaseAdmin();
+        const safeId = String(userId).replace(/[^A-Za-z0-9_.-]/g, '');
+        const { data: victims, error: findError } = await db
             .from('customers')
-            .delete()
-            .or(`facebook_user_id.eq.${userId},instagram_user_id.eq.${userId}`);
+            .select('id')
+            .or(`facebook_id.eq.${safeId},instagram_id.eq.${safeId}`);
+        let deleteError: { message: string } | null = findError ? { message: findError.message } : null;
+        const ids = (victims || []).map((v) => v.id);
+        if (!deleteError && ids.length > 0) {
+            // Харилцагчийн чат түүхийг ч устгана (Meta-ийн шаардлага: хэрэглэгчийн өгөгдөл)
+            const { error: chatErr } = await db.from('chat_history').delete().in('customer_id', ids);
+            const { error: custErr } = await db.from('customers').delete().in('id', ids);
+            deleteError = chatErr || custErr ? { message: (chatErr || custErr)!.message } : null;
+        }
 
         if (deleteError) {
-            console.error('Error deleting customer data:', deleteError);
-            // Still return success to Meta - we'll handle cleanup later
+            console.error('Error deleting customer data:', deleteError.message);
+            // Still return a confirmation to Meta; status below is 'pending' for follow-up
         }
 
         // Store deletion request for audit trail (optional - table might not exist)

@@ -5,6 +5,13 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import * as XLSX from 'xlsx';
 
+/** `?sortBy=` — зөвхөн эдгээр багана (өмнө нь дурын нэр `.order()`-т орж 500 өгдөг байв). */
+const SORTABLE = new Set([
+    'contract_date', 'created_at', 'updated_at', 'total_price', 'paid_amount', 'balance',
+    'overdue_days', 'customer_name', 'contract_number', 'contract_status', 'sales_manager',
+    'block_name', 'unit_number', 'unit_label', 'sales_channel', 'product_type',
+]);
+
 // ============================================
 // GET /api/dashboard/contracts
 // Жагсаалт + статистик
@@ -22,14 +29,16 @@ export async function GET(request: NextRequest) {
         const shopId = authShop.id;
         const sp = request.nextUrl.searchParams;
 
-        const search = sp.get('search')?.trim() || '';
+        // PostgREST `.or()` filter-ийн тусгай тэмдэгтүүдийг (таслал, хаалт, %/_) хасна —
+        // «Болд, 9911» гэх мэт хайлт 400→500 болдог байв.
+        const search = (sp.get('search') || '').trim().replace(/[%_,()]/g, ' ').replace(/\s+/g, ' ').trim();
         const status = sp.get('status'); // active | closed | cancelled | null
         const manager = sp.get('manager');
         const channel = sp.get('channel');
         const overdueOnly = sp.get('overdue') === '1';
         const dateFrom = sp.get('from'); // YYYY-MM-DD
         const dateTo = sp.get('to');     // YYYY-MM-DD
-        const sortBy = sp.get('sortBy') || 'contract_date';
+        const sortBy = SORTABLE.has(sp.get('sortBy') || '') ? (sp.get('sortBy') as string) : 'contract_date';
         const sortOrder = sp.get('sortOrder') === 'asc';
 
         // Шүүлттэй query-г дахин барих туслах (хуудаслалт бүрт шинээр)
@@ -37,7 +46,8 @@ export async function GET(request: NextRequest) {
             let q = supabase
                 .from('property_contracts')
                 .select('*')
-                .eq('shop_id', shopId);
+                .eq('shop_id', shopId)
+                .is('deleted_at', null);
 
             if (status) q = q.eq('contract_status', status);
             if (manager) q = q.eq('sales_manager', manager);

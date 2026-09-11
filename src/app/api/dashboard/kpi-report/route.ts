@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ubParts } from '@/lib/utils/date';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { resolvePermissions } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -79,8 +80,8 @@ export async function GET(request: NextRequest) {
 
         const { searchParams } = new URL(request.url);
         const now = new Date();
-        const year = Math.min(2100, Math.max(2020, parseInt(searchParams.get('year') || '', 10) || now.getFullYear()));
-        const month = Math.min(12, Math.max(1, parseInt(searchParams.get('month') || '', 10) || now.getMonth() + 1));
+        const year = Math.min(2100, Math.max(2020, parseInt(searchParams.get('year') || '', 10) || ubParts(now).year));
+        const month = Math.min(12, Math.max(1, parseInt(searchParams.get('month') || '', 10) || ubParts(now).month));
         const managerParam = searchParams.get('manager');
 
         const db = supabaseAdmin();

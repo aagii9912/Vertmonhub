@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { ubDayRange } from '@/lib/utils/date';
 import { z } from 'zod';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { requireModuleWrite, requireModule } from '@/lib/auth/require-permission';
@@ -27,8 +28,8 @@ export async function GET(request: NextRequest) {
         const limit = Math.min(500, Math.max(1, Number(sp.get('limit')) || 300));
 
         const db = supabaseAdmin();
-        const dayStart = new Date(); dayStart.setHours(0, 0, 0, 0);
-        const dayEnd = new Date(dayStart); dayEnd.setDate(dayEnd.getDate() + 1);
+        // «Өнөөдөр» — Улаанбаатарын өдрийн хилээр (сервер UTC)
+        const { start: dayStart, end: dayEnd } = ubDayRange();
 
         let q = db
             .from('property_viewings')
@@ -111,7 +112,9 @@ export async function POST(request: NextRequest) {
             const { data: l } = await db.from('leads').select('id').eq('id', leadId).eq('shop_id', authShop.id).is('deleted_at', null).maybeSingle();
             if (!l) return NextResponse.json({ error: 'Лид олдсонгүй' }, { status: 404 });
         } else if (p.customer_name) {
-            const digits = (p.customer_phone || '').replace(/\D/g, '');
+            // Сүүлийн 8 орон (улсын код +976-г хасна) — өмнө нь бүх цифрийг 4-өөр хувааж
+            // «+97699112233» нь «99 11 22 33» хэлбэртэй таардаггүй байв.
+            const digits = (p.customer_phone || '').replace(/\D/g, '').slice(-8);
             let found: { id: string } | null = null;
             if (digits.length >= 6) {
                 const chunks = digits.match(/.{1,4}/g) ?? [digits];
@@ -168,6 +171,8 @@ export async function POST(request: NextRequest) {
             if (!p.walk_in) leadUpdates.viewing_scheduled_at = scheduledIso;
             if (p.walk_in) leadUpdates.last_contact_at = nowIso;
             if (!closed && !p.walk_in && lead && ['new', 'contacted'].includes(lead.status)) leadUpdates.status = 'viewing_scheduled';
+            // Ирсэн уулзалт = бодит холбоо: «Шинэ» лид «Холбогдсон» болно
+            if (!closed && p.walk_in && lead && lead.status === 'new') leadUpdates.status = 'contacted';
             await db.from('leads').update(leadUpdates).eq('id', leadId);
 
             let propName: string | null = null;

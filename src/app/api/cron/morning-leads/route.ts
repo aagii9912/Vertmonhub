@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { ubDateStr, ubDayRange } from '@/lib/utils/date';
 import { isAuthorizedCron } from '@/lib/auth/cron';
 import { supabaseAdmin } from '@/lib/supabase';
 import { sendPushNotification } from '@/lib/notifications';
@@ -17,9 +18,8 @@ async function run(request: Request) {
     const { data: subs } = await db.from('push_subscriptions').select('shop_id');
     const shopIds = [...new Set((subs || []).map((s) => s.shop_id).filter(Boolean))] as string[];
 
-    const todayEnd = new Date();
-    todayEnd.setHours(23, 59, 59, 999);
-    const tag = `morning-leads-${new Date().toISOString().slice(0, 10)}`;
+    const todayEnd = ubDayRange().end; // УБ-ийн өнөөдрийн эцэс (сервер UTC)
+    const tag = `morning-leads-${ubDateStr()}`;
 
     let sent = 0;
     for (const shopId of shopIds) {

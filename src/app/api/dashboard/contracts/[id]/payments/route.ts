@@ -5,6 +5,36 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { CreatePaymentScheduleSchema, UpdatePaymentScheduleSchema, validateBody } from '@/lib/validations/schemas';
 
+/**
+ * Хуваарийн төлбөр өөрчлөгдөхөд гэрээний толгойн `paid_amount` / `balance`-ийг
+ * нэмэгдлээр (delta) шинэчилнэ. Импортоор орсон гэрээний төлсөн дүнг (хуваарийн
+ * мөргүй) дарж бичихгүйн тулд хуваарийн нийлбэрээр биш delta-аар тооцно.
+ * (2026-09 review M15: «Төлсөн» дарахад толгой шинэчлэгдэхгүй, 2 зөрүүтэй үлдэгдэл харагддаг байв.)
+ */
+async function applyContractPaymentDelta(
+    supabase: ReturnType<typeof supabaseAdmin>,
+    shopId: string,
+    contractId: string,
+    delta: number,
+) {
+    if (!Number.isFinite(delta) || delta === 0) return;
+    const { data: c } = await supabase
+        .from('property_contracts')
+        .select('total_price, paid_amount')
+        .eq('id', contractId)
+        .eq('shop_id', shopId)
+        .maybeSingle();
+    if (!c) return;
+    const paid = Math.max(0, (Number(c.paid_amount) || 0) + delta);
+    const total = Number(c.total_price) || 0;
+    const { error } = await supabase
+        .from('property_contracts')
+        .update({ paid_amount: paid, balance: Math.max(0, total - paid), updated_at: new Date().toISOString() })
+        .eq('id', contractId)
+        .eq('shop_id', shopId);
+    if (error) logger.warn('[Payments API] contract totals update failed', { error: error.message });
+}
+
 // ============================================
 // GET /api/dashboard/contracts/[id]/payments
 // Гэрээний төлбөрийн хуваарь татах
@@ -98,6 +128,9 @@ export async function POST(
 
         if (error) throw error;
 
+        // Гэрээний толгой: төлсөн дүн / үлдэгдэл
+        if (d.paid_amount > 0) await applyContractPaymentDelta(supabase, authShop.id, contractId, d.paid_amount);
+
         // ERP: бодит төлбөр төлөгдсөн бол кассын дэвтэрт орлого (receipt) бичнэ
         if (d.paid_amount > 0) {
             const { error: txnError } = await supabase
@@ -152,6 +185,22 @@ export async function PATCH(
 
         const supabase = supabaseAdmin();
 
+        // Өмнөх төлсөн дүн — гэрээний толгойг delta-аар шинэчлэхэд
+        const { data: before } = await supabase
+            .from('payment_schedules')
+            .select('paid_amount, amount')
+            .eq('id', payment_id)
+            .eq('contract_id', contractId)
+            .eq('shop_id', authShop.id)
+            .maybeSingle();
+        if (!before) {
+            return NextResponse.json({ error: 'Төлбөрийн мөр олдсонгүй' }, { status: 404 });
+        }
+        // paid_amount л ирсэн бол amount-ыг өмнөх мөрөөс авч статус тооцно
+        if (updates.paid_amount !== undefined && updates.amount === undefined) {
+            updates.amount = before.amount;
+        }
+
         // Автомат status тодорхойлох (тоон утгаар найдвартай харьцуулна)
         if (updates.paid_amount !== undefined && updates.amount !== undefined) {
             const paid = Number(updates.paid_amount);
@@ -176,6 +225,10 @@ export async function PATCH(
 
         if (!error && !data) {
             return NextResponse.json({ error: 'Төлбөрийн мөр олдсонгүй' }, { status: 404 });
+        }
+        if (!error && data && updates.paid_amount !== undefined) {
+            const delta = (Number(updates.paid_amount) || 0) - (Number(before.paid_amount) || 0);
+            await applyContractPaymentDelta(supabase, authShop.id, contractId, delta);
         }
 
         if (error) throw error;

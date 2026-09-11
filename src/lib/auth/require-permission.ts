@@ -10,15 +10,10 @@ export async function resolvePermissions(): Promise<{ role: string; permissions:
     if (!userId) return null;
 
     const db = supabaseAdmin();
-    let role = 'viewer';
-    const { data: roleRow } = await db.from('user_roles').select('role').eq('user_id', userId).single();
-    if (roleRow?.role) {
-        role = roleRow.role;
-    } else {
-        const { data: adminRow } = await db
-            .from('admins').select('role').eq('user_id', userId).eq('is_active', true).single();
-        if (adminRow?.role) role = adminRow.role;
-    }
+    // Ганц эх сурвалж: user_roles. (Хуучин `admins` хүснэгт prod DB-д байхгүй тул
+    // fallback query бүр алдаа залгидаг байсан — 2026-09 review M2/M6.)
+    const { data: roleRow } = await db.from('user_roles').select('role').eq('user_id', userId).maybeSingle();
+    const role = roleRow?.role || 'viewer';
     const permissions = await fetchRolePermissions(role);
     return { role, permissions };
 }

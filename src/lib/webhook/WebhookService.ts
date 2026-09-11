@@ -195,7 +195,7 @@ export async function getOrCreateCustomer(
     // Try to get Facebook profile
     const userName = await fetchFacebookUserName(facebookId, pageAccessToken);
 
-    const { data: newCustomer } = await supabase
+    let { data: newCustomer } = await supabase
         .from('customers')
         .insert({
             shop_id: shopId,
@@ -206,12 +206,26 @@ export async function getOrCreateCustomer(
         .select()
         .single();
 
+    // Race: зэрэг ирсэн 2 мессеж — UNIQUE(shop_id, facebook_id) ялагдсан insert-ийн дараа
+    // дахин уншина (өмнө нь id:'' буцааж тухайн ээлж түүх/санах ойгүй явдаг байв).
+    if (!newCustomer?.id) {
+        const { data: again } = await supabase
+            .from('customers')
+            .select('*')
+            .eq('facebook_id', facebookId)
+            .eq('shop_id', shopId)
+            .limit(1)
+            .maybeSingle();
+        newCustomer = again ?? null;
+    }
+
     return {
         id: newCustomer?.id || '',
-        name: userName,
-        phone: null,
-        message_count: 0,
-        message_count_reset_at: null,
+        name: newCustomer?.name || userName,
+        phone: newCustomer?.phone ?? null,
+        ai_paused_until: newCustomer?.ai_paused_until,
+        message_count: newCustomer?.message_count || 0,
+        message_count_reset_at: newCustomer?.message_count_reset_at ?? null,
         platform: 'messenger',
     };
 }
@@ -226,13 +240,16 @@ export async function getOrCreateInstagramCustomer(
 ): Promise<CustomerData> {
     const supabase = supabaseAdmin();
 
-    // First check by instagram_id
+    // First check by instagram_id (.limit(1).maybeSingle — давхар мөр байсан ч `.single()`
+    // шиг алдаа өгч мессеж бүрд шинэ харилцагч үүсгэхгүй)
     const { data: existingCustomer } = await supabase
         .from('customers')
         .select('*')
         .eq('instagram_id', instagramId)
         .eq('shop_id', shopId)
-        .single();
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
 
     if (existingCustomer) {
         return {
@@ -250,7 +267,7 @@ export async function getOrCreateInstagramCustomer(
     // Try to get Instagram username
     const userName = await fetchInstagramUserName(instagramId, accessToken);
 
-    const { data: newCustomer } = await supabase
+    let { data: newCustomer } = await supabase
         .from('customers')
         .insert({
             shop_id: shopId,
@@ -261,6 +278,20 @@ export async function getOrCreateInstagramCustomer(
         })
         .select()
         .single();
+
+    // Race (зэрэг 2 мессеж): unique index (migration 20260911130000) ялагдсан insert-ийн
+    // дараа дахин уншина — давхар харилцагч үүсэхгүй, id хоосон буцахгүй.
+    if (!newCustomer?.id) {
+        const { data: again } = await supabase
+            .from('customers')
+            .select('*')
+            .eq('instagram_id', instagramId)
+            .eq('shop_id', shopId)
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+        newCustomer = again ?? null;
+    }
 
     return {
         id: newCustomer?.id || '',

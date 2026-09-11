@@ -6,6 +6,7 @@ import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logLeadActivity, listLeadActivities } from '@/lib/leads/activities';
 import { statusLabel } from '@/lib/leads/labels';
+import { logger } from '@/lib/utils/logger';
 
 const VALID_STATUS = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'];
 
@@ -34,21 +35,29 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         if (error) return NextResponse.json({ error: 'Лид татахад алдаа гарлаа' }, { status: 500 });
         if (!lead) return NextResponse.json({ error: 'Лид олдсонгүй' }, { status: 404 });
 
+        // Дэд хэсэг унавал хоосон буцаах ч `partial`-д нэрийг нь тэмдэглэнэ (нуухгүй).
+        const partial: string[] = [];
+        const soft = <T,>(name: string, r: { error: unknown; data: T | null }, fallback: T): T => {
+            if (r.error) { partial.push(name); return fallback; }
+            return r.data ?? fallback;
+        };
         const [viewings, contracts, activities, property] = await Promise.all([
             db
                 .from('property_viewings')
                 .select('id, scheduled_at, status, meeting_type, property_id, agent_notes, customer_feedback, interest_level, sales_manager_name')
                 .eq('lead_id', id)
+                .is('deleted_at', null)
                 .order('scheduled_at', { ascending: false })
                 .limit(20)
-                .then((r) => (r.error ? [] : r.data || [])),
+                .then((r) => soft('viewings', r, [] as Record<string, unknown>[])),
             db
                 .from('property_contracts')
                 .select('id, contract_number, contract_status, contract_date, total_price, paid_amount, balance, unit_number, block_name')
                 .eq('lead_id', id)
+                .is('deleted_at', null)
                 .order('contract_date', { ascending: false })
                 .limit(10)
-                .then((r) => (r.error ? [] : r.data || [])),
+                .then((r) => soft('contracts', r, [] as Record<string, unknown>[])),
             listLeadActivities(db, authShop.id, id),
             lead.property_id
                 ? db
@@ -72,7 +81,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
             property_name: v.property_id ? propNames.get(v.property_id as string) ?? null : null,
         }));
 
-        return NextResponse.json({ lead, viewings: viewingsOut, contracts, activities, property });
+        if (partial.length) logger.warn('[leads/[id]] partial sub-queries failed', { id, partial });
+        return NextResponse.json({ lead, viewings: viewingsOut, contracts, activities, property, partial });
     } catch (error) {
         return safeErrorResponse(error, 'Лид татахад алдаа гарлаа');
     }
@@ -159,7 +169,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         // Лийд энэ shop-д харьяалагдаж байгааг шалгана (өмнөх утгуудыг түүхэнд бичихэд ашиглана)
         const { data: lead } = await db
             .from('leads')
-            .select('id, status, sales_manager_name')
+            .select('id, status, sales_manager_name, lost_reason')
             .eq('id', id)
             .eq('shop_id', authShop.id)
             .is('deleted_at', null)
@@ -168,7 +178,28 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             return NextResponse.json({ error: 'Лийд олдсонгүй' }, { status: 404 });
         }
 
-        const { error } = await db.from('leads').update(updates).eq('id', id);
+        // «Амжилттай» — зөвхөн бодит гэрээтэй лид. DB trigger (create_contract_on_lead_won)
+        // гэрээгүй closed_won-д үнэгүй stub гэрээ үүсгэж статистикийг өсгөдөг байв (review H5).
+        if (updates.status === 'closed_won' && lead.status !== 'closed_won') {
+            const { count } = await db
+                .from('property_contracts')
+                .select('id', { count: 'exact', head: true })
+                .eq('lead_id', id)
+                .eq('shop_id', authShop.id)
+                .is('deleted_at', null);
+            if (!count) {
+                return NextResponse.json(
+                    { error: 'Гэрээгүй лидийг «Амжилттай» болгох боломжгүй. Эхлээд «Гэрээ үүсгэх»-ээр гэрээ бүртгэнэ үү.' },
+                    { status: 400 },
+                );
+            }
+        }
+        // «Алдсан» — шалтгаан заавал (UI StatusPicker асуудаг ч API талд шаардаагүй байв).
+        if (updates.status === 'closed_lost' && lead.status !== 'closed_lost' && !updates.lost_reason && !lead.lost_reason) {
+            return NextResponse.json({ error: 'Алдсан шалтгаанаа (lost_reason) заана уу' }, { status: 400 });
+        }
+
+        const { error } = await db.from('leads').update(updates).eq('id', id).eq('shop_id', authShop.id);
         if (error) {
             return NextResponse.json({ error: 'Шинэчлэхэд алдаа гарлаа' }, { status: 500 });
         }

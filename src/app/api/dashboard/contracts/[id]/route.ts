@@ -24,7 +24,8 @@ export async function GET(_request: NextRequest, ctx: RouteContext) {
             .select('*')
             .eq('id', id)
             .eq('shop_id', authShop.id)
-            .single();
+            .is('deleted_at', null)
+            .maybeSingle();
 
         if (error || !data) {
             return NextResponse.json({ error: 'Гэрээ олдсонгүй' }, { status: 404 });
@@ -47,14 +48,20 @@ export async function DELETE(_request: NextRequest, ctx: RouteContext) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        // Soft delete — AI туслахын delete_contract-тай нэг зан төлөв (сэргээх боломжтой,
+        // manager_monthly_sales/статистик deleted_at-аар шүүдэг). Өмнө нь hard delete байв.
         const supabase = supabaseAdmin();
-        const { error } = await supabase
+        const { data, error } = await supabase
             .from('property_contracts')
-            .delete()
+            .update({ deleted_at: new Date().toISOString() })
             .eq('id', id)
-            .eq('shop_id', authShop.id);
+            .eq('shop_id', authShop.id)
+            .is('deleted_at', null)
+            .select('id')
+            .maybeSingle();
 
         if (error) throw error;
+        if (!data) return NextResponse.json({ error: 'Гэрээ олдсонгүй' }, { status: 404 });
         return NextResponse.json({ success: true });
     } catch (error) {
         logger.error('[Contract Detail API] DELETE error:', { error });

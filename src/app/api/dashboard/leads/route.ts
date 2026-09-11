@@ -93,7 +93,8 @@ export async function GET(request: NextRequest) {
         // ингэснээр хадгалсан формат (зай, зураас) ямар ч байсан таарна.
         const phone = searchParams.get('phone');
         if (phone) {
-            const digits = phone.replace(/\D/g, '');
+            // Сүүлийн 8 орон — улсын код (+976) орсон ч хадгалсан «99 11 22 33»-тай таарна
+            const digits = phone.replace(/\D/g, '').slice(-8);
             if (digits.length >= 6) {
                 const chunks = digits.match(/.{1,4}/g) ?? [digits];
                 query = query.ilike('customer_phone', `%${chunks.join('%')}%`);
@@ -136,6 +137,8 @@ const CreateLeadSchema = z.object({
     status: z.enum(VALID_STATUSES).optional(),
     /** Админ өөр менежерт шууд хуваарилах бол (бусдад үл хэрэгсэнэ). */
     assignManager: z.string().trim().min(1).max(120).nullish(),
+    /** Client-ийн idempotency түлхүүр (offline outbox / давхар submit-ээс хамгаална). */
+    client_request_id: z.string().uuid().nullish(),
 });
 
 /**
@@ -176,8 +179,21 @@ export async function POST(request: NextRequest) {
         const salesManagerName =
             (isAdmin && input.assignManager) || identity.managerName || null;
 
+        // Idempotency: ижил client_request_id-тай лид аль хэдийн байвал түүнийг буцаана
+        // (сүлжээ тасарч outbox дахин илгээсэн / ⌘↵ давхар дарсан тохиолдол).
+        if (input.client_request_id) {
+            const { data: existing } = await db
+                .from('leads')
+                .select('*')
+                .eq('shop_id', authShop.id)
+                .eq('client_request_id', input.client_request_id)
+                .maybeSingle();
+            if (existing) return NextResponse.json({ lead: existing, deduplicated: true });
+        }
+
         const insert: Record<string, unknown> = {
             shop_id: authShop.id,
+            client_request_id: input.client_request_id || null,
             customer_name: input.customer_name,
             customer_phone: input.customer_phone || null,
             customer_email: input.customer_email || null,
@@ -194,10 +210,17 @@ export async function POST(request: NextRequest) {
 
         let { data, error } = await db.from('leads').insert(insert).select('*').single();
 
-        // Миграци ороогүй орчинд (sales_manager_name багана байхгүй) тамгагүйгээр дахин оролдоно
-        if (error && /sales_manager_name/i.test(error.message || '')) {
-            logger.warn(`[Leads API] sales_manager_name stamp skipped: ${error.message}`);
-            delete insert.sales_manager_name;
+        // Unique (shop_id, client_request_id) зөрчил = давхар илгээлт → байгааг буцаана
+        if (error && error.code === '23505' && input.client_request_id) {
+            const { data: existing } = await db.from('leads').select('*')
+                .eq('shop_id', authShop.id).eq('client_request_id', input.client_request_id).maybeSingle();
+            if (existing) return NextResponse.json({ lead: existing, deduplicated: true });
+        }
+        // Миграци ороогүй орчинд (sales_manager_name / client_request_id багана байхгүй) тамгагүйгээр дахин оролдоно
+        if (error && /sales_manager_name|client_request_id/i.test(error.message || '')) {
+            logger.warn(`[Leads API] optional column skipped: ${error.message}`);
+            if (/sales_manager_name/i.test(error.message || '')) delete insert.sales_manager_name;
+            if (/client_request_id/i.test(error.message || '')) delete insert.client_request_id;
             ({ data, error } = await db.from('leads').insert(insert).select('*').single());
         }
 

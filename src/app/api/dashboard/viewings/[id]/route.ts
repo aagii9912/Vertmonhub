@@ -55,6 +55,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             .update(updates)
             .eq('id', id)
             .eq('shop_id', authShop.id)
+            .is('deleted_at', null)
             .select('id, status, scheduled_at, completed_at, lead_id, property_id')
             .maybeSingle();
         if (error) return NextResponse.json({ error: 'Шинэчлэхэд алдаа гарлаа' }, { status: 500 });
@@ -68,7 +69,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             if (p.status === 'completed') leadUpdates.last_contact_at = new Date().toISOString();
             if (p.next_followup_at !== undefined) leadUpdates.next_followup_at = p.next_followup_at;
             if (p.scheduled_at !== undefined) leadUpdates.viewing_scheduled_at = p.scheduled_at;
-            await db.from('leads').update(leadUpdates).eq('id', data.lead_id);
+            // Цуцлагдсан / ирээгүй уулзалт: лид «Уулзалт товлосон»-д гацахгүй — товлосон цагийг
+            // цэвэрлэж, статусыг «Холбогдсон» руу буцаана (хаагдсан лидэд хүрэхгүй).
+            if (p.status === 'cancelled' || p.status === 'no_show' || p.status === 'completed') {
+                const { data: leadRow } = await db.from('leads').select('status').eq('id', data.lead_id).maybeSingle();
+                if (p.status !== 'completed') leadUpdates.viewing_scheduled_at = null;
+                if (leadRow?.status === 'viewing_scheduled' && p.status !== 'completed') leadUpdates.status = 'contacted';
+            }
+            await db.from('leads').update(leadUpdates).eq('id', data.lead_id).eq('shop_id', authShop.id);
 
             if (p.status !== undefined || p.scheduled_at !== undefined) {
                 const outcome =

@@ -93,7 +93,7 @@ export async function GET(request: NextRequest) {
                     .from('ai_conversations')
                     .select('*', { count: 'exact', head: true })
                     .eq('shop_id', shop.id)
-                    .gte('started_at', weekAgo);
+                    .gte('created_at', weekAgo); // ai_conversations-д started_at байхгүй (created_at)
                 recentConversations = count || 0;
             } catch (e) {
                 // Table might not exist yet

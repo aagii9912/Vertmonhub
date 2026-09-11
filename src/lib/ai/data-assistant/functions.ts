@@ -654,6 +654,13 @@ export async function updateLeadStatus(shopId: string, args: any, confirm = fals
 
     const lead = leads[0];
     const oldStatus = lead.status;
+    // «Амжилттай» — зөвхөн гэрээтэй лид (гэрээгүй closed_won → DB trigger хоосон stub гэрээ үүсгэдэг)
+    if (args.new_status === 'closed_won' && oldStatus !== 'closed_won') {
+        const { count } = await supabaseAdmin.from('property_contracts')
+            .select('id', { count: 'exact', head: true })
+            .eq('lead_id', lead.id).eq('shop_id', shopId).is('deleted_at', null);
+        if (!count) return { error: `"${lead.customer_name}" лидэд гэрээ бүртгэгдээгүй байна. Эхлээд create_contract-оор гэрээ үүсгэ, дараа нь статусыг closed_won болго.` };
+    }
     if (!confirm) {
         return confirmNeeded('update_lead_status',
             { lead_id: lead.id, new_status: args.new_status },

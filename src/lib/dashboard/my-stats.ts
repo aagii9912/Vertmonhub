@@ -1,3 +1,5 @@
+import { ubStartOfDay } from '@/lib/utils/date';
+
 /**
  * «Миний самбар» (менежерийн хувийн дашбоард)-ын цэвэр aggregation туслахууд.
  * DB-гүй PURE функцууд — unit-тестэд шууд ордог; /api/dashboard/my-stats route
@@ -62,16 +64,13 @@ export interface DashTask {
     href: string;
 }
 
+// Улаанбаатарын өдрийн хил (сервер UTC дээр `setHours(0)` = УБ 08:00 болдог байв)
 function startOfDay(d: Date): Date {
-    const out = new Date(d);
-    out.setHours(0, 0, 0, 0);
-    return out;
+    return ubStartOfDay(d);
 }
 
 function endOfDay(d: Date): Date {
-    const out = startOfDay(d);
-    out.setDate(out.getDate() + 1);
-    return out;
+    return new Date(ubStartOfDay(d).getTime() + 24 * 60 * 60 * 1000);
 }
 
 /**

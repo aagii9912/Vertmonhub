@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import * as Sentry from '@sentry/nextjs';
 import { logger } from '@/lib/utils/logger';
 
 export default function GlobalError({
@@ -12,6 +13,7 @@ export default function GlobalError({
 }) {
     useEffect(() => {
         logger.error('[Global Error Boundary]', { message: error.message, digest: error.digest });
+        Sentry.captureException(error);
     }, [error]);
 
     return (
@@ -27,7 +29,7 @@ export default function GlobalError({
                         gap: 16,
                         padding: 24,
                         textAlign: 'center',
-                        background: '#FAFAF7',
+                        background: '#F7F8FA',
                         color: '#1a1a1a',
                     }}
                 >
@@ -41,7 +43,7 @@ export default function GlobalError({
                             padding: '8px 16px',
                             borderRadius: 6,
                             border: 'none',
-                            background: '#C2613F',
+                            background: '#2D6FE6',
                             color: '#fff',
                             fontSize: 14,
                             cursor: 'pointer',

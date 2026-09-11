@@ -27,7 +27,8 @@ export async function GET() {
         const base = () => db.from('leads').select('id', { count: 'exact', head: true }).eq('shop_id', shopId).is('deleted_at', null);
         const count = async (q: ReturnType<typeof base>) => {
             const { count: c, error } = await q;
-            return error ? 0 : c ?? 0;
+            if (error) throw error; // 0 гэж нуухгүй — бодит алдааг 500-аар мэдэгдэнэ
+            return c ?? 0;
         };
 
         const [all, mine, fresh, meetings, active] = await Promise.all([
@@ -40,7 +41,7 @@ export async function GET() {
 
         return NextResponse.json(
             { all, mine, new: fresh, meetings, active, mineName },
-            { headers: { 'Cache-Control': 'private, max-age=15' } },
+            { headers: { 'Cache-Control': 'private, no-store' } },
         );
     } catch (error) {
         return safeErrorResponse(error, 'Лидийн тоолол татахад алдаа гарлаа');

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { ubDateStr } from '@/lib/utils/date';
 import { isAuthorizedCron } from '@/lib/auth/cron';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
@@ -18,7 +19,7 @@ export async function POST(request: Request) {
         }
 
         const supabase = supabaseAdmin();
-        const today = new Date().toISOString().split('T')[0];
+        const today = ubDateStr(); // УБ-ийн огноо (сервер UTC)
 
         // 1. payment_schedules: pending → overdue (хугацаа өнгөрсөн)
         const { data: overduePayments, error: overdueErr } = await supabase

@@ -1,4 +1,8 @@
-import * as Sentry from "@sentry/nextjs";
+/**
+ * Sentry client init (Next.js `instrumentation-client` convention).
+ * Хуучин root-ийн sentry.client.config.ts-ийг орлоно — тэр файл ачаалагддаггүй байв.
+ */
+import * as Sentry from '@sentry/nextjs';
 
 Sentry.init({
     dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
@@ -14,10 +18,7 @@ Sentry.init({
     replaysOnErrorSampleRate: 1.0, // 100% on error
 
     // Environment
-    environment: process.env.VERCEL_ENV || process.env.NODE_ENV || 'development',
-
-    // Release tracking (optional)
-    release: process.env.VERCEL_GIT_COMMIT_SHA,
+    environment: process.env.NEXT_PUBLIC_VERCEL_ENV || process.env.NODE_ENV || 'development',
 
     // Filter out non-critical errors
     ignoreErrors: [
@@ -28,14 +29,7 @@ Sentry.init({
         // Facebook API errors (handled separately)
         'Facebook API Error',
     ],
-
-    // Before sending to Sentry
-    beforeSend(event, hint) {
-        // Don't send events in development
-        if (process.env.NODE_ENV === 'development') {
-            console.error('[Sentry Debug]', hint.originalException);
-            return null;
-        }
-        return event;
-    },
 });
+
+/** App Router навигацийн trace. */
+export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;

@@ -63,6 +63,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
             createdBy: uid,
             createdByName: identity?.managerName ?? null,
         });
+        // Хэрэглэгчийн гараар бичсэн тэмдэглэл хадгалагдаагүй бол 201 биш 500 —
+        // өмнө нь null activity-тэй «хадгалагдлаа» гэж хариулдаг байв.
+        if (!activity) {
+            return NextResponse.json({ error: 'Тэмдэглэл хадгалагдсангүй (lead_activities). Дахин оролдоно уу.' }, { status: 500 });
+        }
 
         const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
         if (p.type === 'call') updates.last_contact_at = new Date().toISOString();
