@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { dashboardJson } from '@/lib/api/dashboardFetch';
 import { Card, CardContent } from '@/components/ui/Card';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatsCard } from '@/components/dashboard/StatsCard';
@@ -10,7 +11,6 @@ import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { BarChart3, Globe, Monitor, Smartphone, Tablet, Eye, Clock, ArrowUpRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/lib/supabase';
 
 interface AnalyticsEntry {
     id: string;
@@ -35,13 +35,7 @@ export default function AnalyticsPage() {
         const fetch = async () => {
             setLoading(true);
             try {
-                const { data: rows, error } = await supabase
-                    .from('web_analytics')
-                    .select('*')
-                    .eq('shop_id', shop.id)
-                    .order('date', { ascending: false })
-                    .limit(100);
-                if (error) throw error;
+                const { rows } = await dashboardJson<{ rows: AnalyticsEntry[] }>('/api/marketing/data/web_analytics?order=date.desc&limit=100');
                 setData(rows || []);
             } catch (error) {
                 console.error('Error:', error);

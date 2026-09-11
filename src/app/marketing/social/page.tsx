@@ -22,10 +22,9 @@ import {
     Loader2, X
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { dashboardFetch, dashboardJson } from '@/lib/api/dashboardFetch';
 import { formatTimeAgo } from '@/lib/utils/date';
 import { confirmToast } from '@/components/ui/Toast';
-import { supabase } from '@/lib/supabase';
 
 // ======= Types =======
 
@@ -142,13 +141,8 @@ function SocialPageContent() {
         const fetchPosts = async () => {
             setLoadingPosts(true);
             try {
-                const { data, error } = await supabase
-                    .from('social_posts')
-                    .select('*')
-                    .eq('shop_id', shop.id)
-                    .order('created_at', { ascending: false });
-                if (error) throw error;
-                setPosts(data || []);
+                const { rows } = await dashboardJson<{ rows: SocialPost[] }>('/api/marketing/data/social_posts?order=created_at.desc');
+                setPosts(rows || []);
             } catch (error) {
                 console.error('Error:', error);
             } finally {

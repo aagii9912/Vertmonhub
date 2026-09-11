@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardFetch } from '@/lib/api/dashboardFetch';
-import { supabase } from '@/lib/supabase';
+import { dashboardFetch, dashboardJson } from '@/lib/api/dashboardFetch';
 import { TrendingUp, Users, Target, BarChart3, RefreshCw, Megaphone, DollarSign, Heart, MessageCircle, Share2 } from 'lucide-react';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
@@ -176,22 +175,13 @@ export default function MarketingROIPage() {
     async function fetchData() {
         setLoadError(false);
         try {
-            const { data, error: leadsError } = await supabase
-                .from('leads')
-                .select('id, source, status, budget_min, budget_max, created_at')
-                .eq('shop_id', shop!.id);
-            if (leadsError) throw leadsError;
-            setLeads(data || []);
+            // API-аар (RBAC + shop scope сервер талд) — өмнө нь browser Supabase, зөвхөн RLS
+            const { leads: leadRows } = await dashboardJson<{ leads: any[] }>('/api/dashboard/leads?pageSize=1000');
+            setLeads(leadRows || []);
 
             // Load already-stored Facebook campaigns from DB (no remote sync)
-            const { data: stored, error: campError } = await supabase
-                .from('ad_campaigns')
-                .select('*')
-                .eq('shop_id', shop!.id)
-                .eq('platform', 'facebook')
-                .order('updated_at', { ascending: false });
-            if (campError) throw campError;
-            setCampaigns((stored || []) as AdCampaign[]);
+            const { rows: stored } = await dashboardJson<{ rows: AdCampaign[] }>('/api/marketing/data/ad_campaigns?eq.platform=facebook&order=updated_at.desc');
+            setCampaigns(stored || []);
 
             // Жинхэнэ ROI roll-up (spend↔lead↔орлого) — best-effort
             try {

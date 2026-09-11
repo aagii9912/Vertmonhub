@@ -20,8 +20,7 @@ import {
     Building2,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardFetch } from '@/lib/api/dashboardFetch';
-import { supabase } from '@/lib/supabase';
+import { dashboardFetch, dashboardJson } from '@/lib/api/dashboardFetch';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
 import { sourceLabel } from '@/lib/leads/labels';
@@ -96,13 +95,10 @@ export default function LeadsReport() {
                 else if (period === 'quarter') start.setMonth(now.getMonth() - 3);
                 else start.setFullYear(now.getFullYear() - 1);
 
-                const { data: leads, error } = await supabase
-                    .from('leads')
-                    .select('*')
-                    .eq('shop_id', shop.id)
-                    .gte('created_at', start.toISOString());
-
-                if (error) throw error;
+                // API-аар (RBAC + shop scope сервер талд) — өмнө нь browser Supabase, зөвхөн RLS
+                const { leads } = await dashboardJson<{ leads: any[] }>(
+                    `/api/dashboard/leads?from=${encodeURIComponent(start.toISOString())}&pageSize=1000`,
+                );
 
                 if (!leads || leads.length === 0) {
                     setLoading(false);

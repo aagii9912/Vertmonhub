@@ -8,8 +8,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardFetch } from '@/lib/api/dashboardFetch';
-import { supabase } from '@/lib/supabase';
+import { dashboardFetch, dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { FormField } from '@/components/ui/FormField';
@@ -148,21 +147,11 @@ export default function SourcesPage() {
         try {
             // ЗААВАЛ shop_id-гаар шүүнэ (өмнө нь шүүлтгүй байсан — cross-tenant алдаа)
             const [channelsRes, contractsRes] = await Promise.all([
-                supabase
-                    .from('marketing_channels')
-                    .select('*')
-                    .eq('shop_id', shop.id)
-                    .order('created_at', { ascending: false }),
-                supabase
-                    .from('channel_contracts')
-                    .select('*')
-                    .eq('shop_id', shop.id)
-                    .order('end_date', { ascending: true, nullsFirst: false }),
+                dashboardJson<{ rows: MarketingChannel[] }>('/api/marketing/data/marketing_channels?order=created_at.desc'),
+                dashboardJson<{ rows: ChannelContract[] }>('/api/marketing/data/channel_contracts?order=end_date.asc'),
             ]);
-            if (channelsRes.error) throw channelsRes.error;
-            if (contractsRes.error) throw contractsRes.error;
-            setChannels(channelsRes.data || []);
-            setContracts(contractsRes.data || []);
+            setChannels(channelsRes.rows || []);
+            setContracts(contractsRes.rows || []);
         } catch (error) {
             console.error('Error:', error);
         } finally {
@@ -178,13 +167,11 @@ export default function SourcesPage() {
         if (!newChannel.name.trim() || !shop?.id) return;
         setCreating(true);
         try {
-            const { data, error } = await supabase.from('marketing_channels').insert([{
-                shop_id: shop.id,
+            const { row } = await dashboardMutate<{ row: MarketingChannel }>('/api/marketing/data/marketing_channels', 'POST', {
                 name: newChannel.name.trim(), type: newChannel.type,
                 status: 'active', description: newChannel.description || null,
-            }]).select().single();
-            if (error) throw error;
-            setChannels(prev => [data, ...prev]);
+            });
+            setChannels(prev => [row, ...prev]);
             setShowCreateModal(false);
             setNewChannel({ name: '', type: 'social', description: '' });
             toast.success('Суваг нэмэгдлээ');
