@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 interface DashboardData {
     stats: {
@@ -33,9 +34,7 @@ export function useDashboard(timeFilter: 'today' | 'week' | 'month' = 'today') {
             };
             if (!shopId) return empty;
 
-            const res = await fetch(`/api/dashboard/stats?period=${timeFilter}`, {
-                headers: { 'x-shop-id': shopId },
-            });
+            const res = await dashboardFetch(`/api/dashboard/stats?period=${timeFilter}`);
             if (!res.ok) throw new Error(`Dashboard stats failed: ${res.status}`);
             const json = await res.json();
 

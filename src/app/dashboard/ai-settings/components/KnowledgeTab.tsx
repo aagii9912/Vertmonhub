@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Plus, Trash2, Save, BookOpen } from 'lucide-react';
 import { toast } from 'sonner';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 interface KnowledgeTabProps {
     customKnowledge: Array<{ key: string; value: string }>;
@@ -28,9 +29,8 @@ export default function KnowledgeTab({ customKnowledge, setCustomKnowledge, savi
                 return acc;
             }, {} as Record<string, string>);
 
-            const res = await fetch('/api/shop', {
+            const res = await dashboardFetch('/api/shop', {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ custom_knowledge: knowledgeObject }),
             });
 

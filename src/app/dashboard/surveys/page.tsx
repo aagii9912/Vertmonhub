@@ -18,6 +18,7 @@ import {
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import NextLink from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 // ==============================================
 // TYPES
@@ -186,7 +187,7 @@ export default function SurveysPage() {
             const fetchSurveys = async () => {
                 setIsLoadingList(true);
                 try {
-                    const res = await fetch('/api/surveys');
+                    const res = await dashboardFetch('/api/surveys');
                     if (res.ok) {
                         const data = await res.json();
                         setSurveyList(data.surveys || []);
@@ -209,9 +210,8 @@ export default function SurveysPage() {
         setResearchResult({ title, content: '', loading: true });
 
         try {
-            const res = await fetch('/api/ai-assistant', {
+            const res = await dashboardFetch('/api/ai-assistant', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     message: prompt,
                     shopId: shop?.id,
@@ -267,9 +267,8 @@ export default function SurveysPage() {
     const handleSave = async () => {
         setIsSaving(true);
         try {
-            const res = await fetch('/api/surveys', {
+            const res = await dashboardFetch('/api/surveys', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(survey),
             });
             if (!res.ok) throw new Error('Failed');

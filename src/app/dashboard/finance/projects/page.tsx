@@ -8,6 +8,7 @@ import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { DataTable, type DataTableColumn } from '@/components/ui/DataTable';
 import { Money } from '@/components/ui/Money';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import {
     Dialog,
     DialogContent,
@@ -51,20 +52,15 @@ export default function ProjectFinancePage() {
     const [error, setError] = useState<string | null>(null);
     const [budgetForm, setBudgetForm] = useState({ project_id: '', account_id: '', label: '', planned_amount: '' });
 
-    const headers = () => ({
-        'Content-Type': 'application/json',
-        'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-    });
-
     useEffect(() => { loadAll();   }, []);
 
     async function loadAll() {
         setLoading(true);
         try {
             const [p, pr, ac] = await Promise.all([
-                fetch('/api/dashboard/finance/project-pnl', { headers: headers() }).then(r => r.json()),
-                fetch('/api/dashboard/projects', { headers: headers() }).then(r => r.json()),
-                fetch('/api/dashboard/finance/accounts', { headers: headers() }).then(r => r.json()),
+                dashboardFetch('/api/dashboard/finance/project-pnl').then(r => r.json()),
+                dashboardFetch('/api/dashboard/projects').then(r => r.json()),
+                dashboardFetch('/api/dashboard/finance/accounts').then(r => r.json()),
             ]);
             setRows(p.projects || []);
             setProjects(pr.projects || []);
@@ -75,7 +71,7 @@ export default function ProjectFinancePage() {
     async function autoMap() {
         setMapping(true);
         try {
-            const res = await fetch('/api/dashboard/finance/projects/automap', { method: 'POST', headers: headers() });
+            const res = await dashboardFetch('/api/dashboard/finance/projects/automap', { method: 'POST' });
             if (res.ok) await loadAll();
         } catch (e) { console.error(e); } finally { setMapping(false); }
     }
@@ -86,8 +82,8 @@ export default function ProjectFinancePage() {
         if (!amount || amount <= 0) { setError('Дүн оруулна уу'); return; }
         setSaving(true); setError(null);
         try {
-            const res = await fetch('/api/dashboard/finance/budgets', {
-                method: 'POST', headers: headers(),
+            const res = await dashboardFetch('/api/dashboard/finance/budgets', {
+                method: 'POST',
                 body: JSON.stringify({
                     project_id: budgetForm.project_id,
                     account_id: budgetForm.account_id || null,

@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -57,12 +58,10 @@ export function MarketIndicators() {
     const [value, setValue] = useState('');
     const [note, setNote] = useState('');
 
-    const headers = { 'Content-Type': 'application/json', 'x-shop-id': shopId || '' };
-
     const { data } = useQuery<{ indicators: Indicator[]; available: boolean }>({
         queryKey: ['market-indicators', shopId],
         queryFn: async () => {
-            const res = await fetch('/api/marketing/indicators', { headers: { 'x-shop-id': shopId! } });
+            const res = await dashboardFetch('/api/marketing/indicators');
             if (!res.ok) throw new Error(`Indicators failed: ${res.status}`);
             return res.json();
         },
@@ -74,9 +73,8 @@ export function MarketIndicators() {
 
     const addIndicator = useMutation({
         mutationFn: async () => {
-            const res = await fetch('/api/marketing/indicators', {
+            const res = await dashboardFetch('/api/marketing/indicators', {
                 method: 'POST',
-                headers,
                 body: JSON.stringify({
                     category,
                     name: name.trim(),
@@ -98,7 +96,7 @@ export function MarketIndicators() {
 
     const removeIndicator = useMutation({
         mutationFn: async (id: string) => {
-            const res = await fetch(`/api/marketing/indicators?id=${id}`, { method: 'DELETE', headers });
+            const res = await dashboardFetch(`/api/marketing/indicators?id=${id}`, { method: 'DELETE' });
             if (!res.ok) throw new Error('Устгах алдаа');
         },
         onSuccess: () => {

@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 export type MyStatsPeriod = 'today' | 'week' | 'month';
 
@@ -83,9 +84,7 @@ export function useMyStats(period: MyStatsPeriod = 'today', managerName?: string
         queryFn: async () => {
             const params = new URLSearchParams({ period });
             if (managerName) params.set('manager', managerName);
-            const res = await fetch(`/api/dashboard/my-stats?${params.toString()}`, {
-                headers: { 'x-shop-id': shopId! },
-            });
+            const res = await dashboardFetch(`/api/dashboard/my-stats?${params.toString()}`);
             if (!res.ok) throw new Error(`My stats failed: ${res.status}`);
             return res.json();
         },

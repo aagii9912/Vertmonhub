@@ -22,6 +22,7 @@ import {
     Loader2, X
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { supabase } from '@/lib/supabase';
 
 // ======= Types =======
@@ -161,7 +162,7 @@ function SocialPageContent() {
         setFbError(null);
         try {
             // Page info
-            const pageRes = await fetch(`/api/marketing/facebook${shop?.id ? `?shop_id=${shop.id}` : ''}`);
+            const pageRes = await dashboardFetch(`/api/marketing/facebook${shop?.id ? `?shop_id=${shop.id}` : ''}`);
             const pageData = await pageRes.json();
 
             if (pageData.connected) {
@@ -170,13 +171,13 @@ function SocialPageContent() {
                 setTokenExpired(false);
 
                 // Posts
-                const postsRes = await fetch(`/api/marketing/facebook/posts${shop?.id ? `?shop_id=${shop.id}` : ''}`);
+                const postsRes = await dashboardFetch(`/api/marketing/facebook/posts${shop?.id ? `?shop_id=${shop.id}` : ''}`);
                 const postsData = await postsRes.json();
                 setFbPosts(postsData.posts || []);
 
                 // Insights (may fail due to permissions)
                 try {
-                    const insightsRes = await fetch(`/api/marketing/facebook/insights${shop?.id ? `?shop_id=${shop.id}` : ''}`);
+                    const insightsRes = await dashboardFetch(`/api/marketing/facebook/insights${shop?.id ? `?shop_id=${shop.id}` : ''}`);
                     const insightsData = await insightsRes.json();
                     if (insightsData.insights) {
                         setFbInsights(insightsData.insights);
@@ -206,7 +207,7 @@ function SocialPageContent() {
         setIgLoading(true);
         setIgError(null);
         try {
-            const res = await fetch(`/api/marketing/instagram${shop?.id ? `?shop_id=${shop.id}` : ''}`);
+            const res = await dashboardFetch(`/api/marketing/instagram${shop?.id ? `?shop_id=${shop.id}` : ''}`);
             const data = await res.json();
             if (data.connected) {
                 setIgConnected(true);
@@ -247,7 +248,7 @@ function SocialPageContent() {
             setPagesLoading(true);
             setPageSelectorError(null);
             try {
-                const res = await fetch('/api/auth/facebook/pages');
+                const res = await dashboardFetch('/api/auth/facebook/pages');
                 const data = await res.json();
                 if (cancelled) return;
 
@@ -277,9 +278,8 @@ function SocialPageContent() {
         setPageSelectorError(null);
         try {
             // Step 1: get the access token by selecting the page
-            const selectRes = await fetch('/api/auth/facebook/pages', {
+            const selectRes = await dashboardFetch('/api/auth/facebook/pages', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ pageId: selectedPageId }),
             });
             const selectData = await selectRes.json();
@@ -289,9 +289,8 @@ function SocialPageContent() {
             }
 
             // Step 2: save to shop
-            const patchRes = await fetch('/api/shop', {
+            const patchRes = await dashboardFetch('/api/shop', {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     facebook_page_id: selectData.page.id,
                     facebook_page_name: selectData.page.name,
@@ -327,9 +326,8 @@ function SocialPageContent() {
         const label = platform === 'facebook' ? 'Facebook' : 'Instagram';
         if (!window.confirm(`${label} холболтыг салгах уу? Дараа нь дахин холбож болно.`)) return;
         try {
-            await fetch('/api/shop/disconnect', {
+            await dashboardFetch('/api/shop/disconnect', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ platform }),
             });
         } catch { /* алдааг үл хайхран reload хийнэ */ }
@@ -342,9 +340,8 @@ function SocialPageContent() {
         setPublishing(true);
         setPublishResult(null);
         try {
-            const res = await fetch('/api/marketing/facebook/publish', {
+            const res = await dashboardFetch('/api/marketing/facebook/publish', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     message: publishMessage,
                     imageUrl: publishImageUrl || undefined,

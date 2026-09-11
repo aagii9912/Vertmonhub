@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { Spinner } from '@/components/ui/Spinner';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Button } from '@/components/ui/Button';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import PropertyForm from '../../_components/PropertyForm';
 import type { Property } from '@/types/property';
 
@@ -23,11 +24,7 @@ export default function EditPropertyPage({ params }: EditPageProps) {
     useEffect(() => {
         const fetchProperty = async () => {
             try {
-                const res = await fetch(`/api/properties/${id}`, {
-                    headers: {
-                        'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-                    },
-                });
+                const res = await dashboardFetch(`/api/properties/${id}`);
                 if (!res.ok) {
                     throw new Error('Үл хөдлөх олдсонгүй');
                 }
@@ -44,12 +41,8 @@ export default function EditPropertyPage({ params }: EditPageProps) {
     }, [id, router]);
 
     const handleSubmit = async (payload: Record<string, unknown>) => {
-        const res = await fetch(`/api/properties/${id}`, {
+        const res = await dashboardFetch(`/api/properties/${id}`, {
             method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-            },
             body: JSON.stringify(payload),
         });
         if (!res.ok) {

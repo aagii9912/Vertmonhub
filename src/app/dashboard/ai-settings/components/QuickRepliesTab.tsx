@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Plus, Trash2, Edit2, X, Check, MessageCircle } from 'lucide-react';
 import type { QuickReply } from './types';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 interface QuickRepliesTabProps {
     quickReplies: QuickReply[];
@@ -20,9 +21,8 @@ export default function QuickRepliesTab({ quickReplies, setQuickReplies, editing
         if (!editingQuickReply?.name || !editingQuickReply?.response) return;
         try {
             const isNew = !editingQuickReply.id;
-            const res = await fetch('/api/ai-settings', {
+            const res = await dashboardFetch('/api/ai-settings', {
                 method: isNew ? 'POST' : 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     type: 'quick_replies', ...editingQuickReply,
                     trigger_words: typeof editingQuickReply.trigger_words === 'string'
@@ -40,7 +40,7 @@ export default function QuickRepliesTab({ quickReplies, setQuickReplies, editing
 
     async function deleteQuickReply(id: string) {
         try {
-            await fetch(`/api/ai-settings?type=quick_replies&id=${id}`, { method: 'DELETE' });
+            await dashboardFetch(`/api/ai-settings?type=quick_replies&id=${id}`, { method: 'DELETE' });
             setQuickReplies(quickReplies.filter(q => q.id !== id));
         } catch (err: any) { setError(err.message); }
     }

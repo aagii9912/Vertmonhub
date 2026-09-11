@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Textarea } from '@/components/ui/Textarea';
 import { Plus, Trash2, Edit2, X, Check, Quote } from 'lucide-react';
 import type { Slogan } from './types';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 interface SlogansTabProps {
     slogans: Slogan[];
@@ -19,9 +20,8 @@ export default function SlogansTab({ slogans, setSlogans, editingSlogan, setEdit
         if (!editingSlogan?.slogan) return;
         try {
             const isNew = !editingSlogan.id;
-            const res = await fetch('/api/ai-settings', {
+            const res = await dashboardFetch('/api/ai-settings', {
                 method: isNew ? 'POST' : 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ type: 'slogans', ...editingSlogan }),
             });
             if (!res.ok) throw new Error('Failed to save Slogan');
@@ -34,7 +34,7 @@ export default function SlogansTab({ slogans, setSlogans, editingSlogan, setEdit
 
     async function deleteSlogan(id: string) {
         try {
-            await fetch(`/api/ai-settings?type=slogans&id=${id}`, { method: 'DELETE' });
+            await dashboardFetch(`/api/ai-settings?type=slogans&id=${id}`, { method: 'DELETE' });
             setSlogans(slogans.filter(s => s.id !== id));
         } catch (err: any) { setError(err.message); }
     }

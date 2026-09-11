@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { supabase } from '@/lib/supabase';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
@@ -197,9 +198,8 @@ export default function SourcesPage() {
         if (!newContract.channel_id || !newContract.start_date || !shop?.id) return;
         setCreatingContract(true);
         try {
-            const res = await fetch('/api/marketing/contracts', {
+            const res = await dashboardFetch('/api/marketing/contracts', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'x-shop-id': shop.id },
                 body: JSON.stringify({
                     channel_id: newContract.channel_id,
                     start_date: newContract.start_date,

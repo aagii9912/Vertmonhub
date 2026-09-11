@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -94,14 +95,10 @@ export default function MarketingBudgetPage() {
     const [channel, setChannel] = useState('board');
     const [note, setNote] = useState('');
 
-    const headers = { 'Content-Type': 'application/json', 'x-shop-id': shopId || '' };
-
     const { data, isLoading } = useQuery<BudgetData>({
         queryKey: ['marketing-budget', shopId, year],
         queryFn: async () => {
-            const res = await fetch(`/api/marketing/budget?year=${year}`, {
-                headers: { 'x-shop-id': shopId! },
-            });
+            const res = await dashboardFetch(`/api/marketing/budget?year=${year}`);
             if (!res.ok) throw new Error(`Budget failed: ${res.status}`);
             return res.json();
         },
@@ -119,9 +116,8 @@ export default function MarketingBudgetPage() {
                 amount: Math.max(0, Number(v) || 0),
             }));
             if (months.length === 0) return;
-            const res = await fetch('/api/marketing/budget', {
+            const res = await dashboardFetch('/api/marketing/budget', {
                 method: 'PUT',
-                headers,
                 body: JSON.stringify({ year, months }),
             });
             if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || 'Алдаа');
@@ -137,9 +133,8 @@ export default function MarketingBudgetPage() {
 
     const addSpend = useMutation({
         mutationFn: async () => {
-            const res = await fetch('/api/marketing/budget', {
+            const res = await dashboardFetch('/api/marketing/budget', {
                 method: 'POST',
-                headers,
                 body: JSON.stringify({
                     spentAt,
                     amount: Math.max(0, Number(amount) || 0),
@@ -160,7 +155,7 @@ export default function MarketingBudgetPage() {
 
     const removeSpend = useMutation({
         mutationFn: async (id: string) => {
-            const res = await fetch(`/api/marketing/budget?id=${id}`, { method: 'DELETE', headers });
+            const res = await dashboardFetch(`/api/marketing/budget?id=${id}`, { method: 'DELETE' });
             if (!res.ok) throw new Error('Устгах алдаа');
         },
         onSuccess: () => {

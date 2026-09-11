@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/Sheet';
 import { TodayDashboard } from '@/components/dashboard/today/TodayDashboard';
 import { useAuth } from '@/contexts/AuthContext';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { UserRound } from 'lucide-react';
 
 interface ManagerOption {
@@ -44,9 +45,7 @@ export function ManagerSelector({ selected, onSelect }: ManagerSelectorProps) {
         queryKey: ['managers', shopId],
         queryFn: async () => {
             if (!shopId) return [];
-            const res = await fetch('/api/dashboard/managers', {
-                headers: { 'x-shop-id': shopId },
-            });
+            const res = await dashboardFetch('/api/dashboard/managers');
             if (!res.ok) return [];
             const json = await res.json();
             return json.managers || [];

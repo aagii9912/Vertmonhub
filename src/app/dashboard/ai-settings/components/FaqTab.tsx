@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Plus, Trash2, Edit2, X, Check, HelpCircle } from 'lucide-react';
 import type { FAQ } from './types';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 interface FaqTabProps {
     faqs: FAQ[];
@@ -20,9 +21,8 @@ export default function FaqTab({ faqs, setFaqs, editingFaq, setEditingFaq, setEr
         if (!editingFaq?.question || !editingFaq?.answer) return;
         try {
             const isNew = !editingFaq.id;
-            const res = await fetch('/api/ai-settings', {
+            const res = await dashboardFetch('/api/ai-settings', {
                 method: isNew ? 'POST' : 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ type: 'faqs', ...editingFaq }),
             });
             if (!res.ok) throw new Error('Failed to save FAQ');
@@ -35,7 +35,7 @@ export default function FaqTab({ faqs, setFaqs, editingFaq, setEditingFaq, setEr
 
     async function deleteFaq(id: string) {
         try {
-            await fetch(`/api/ai-settings?type=faqs&id=${id}`, { method: 'DELETE' });
+            await dashboardFetch(`/api/ai-settings?type=faqs&id=${id}`, { method: 'DELETE' });
             setFaqs(faqs.filter(f => f.id !== id));
         } catch (err: any) { setError(err.message); }
     }

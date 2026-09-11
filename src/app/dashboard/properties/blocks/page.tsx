@@ -23,8 +23,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { toast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
-
-const SHOP_KEY = 'vertmonhub_active_shop_id';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 interface SummaryRow {
     phase: string;
@@ -87,9 +86,6 @@ function formatMoney(n: number | null | undefined): string {
     if (n === null || n === undefined || n === 0) return '—';
     return new Intl.NumberFormat('mn-MN').format(Math.round(n)) + '₮';
 }
-function shopHeaders(): HeadersInit {
-    return { 'x-shop-id': typeof window !== 'undefined' ? localStorage.getItem(SHOP_KEY) || '' : '' };
-}
 function floorNum(floor: string | null): number {
     if (!floor) return 999;
     const s = String(floor).trim().toUpperCase();
@@ -117,7 +113,7 @@ export default function BlocksPage() {
         (async () => {
             try {
                 setLoading(true);
-                const res = await fetch('/api/dashboard/units', { headers: shopHeaders() });
+                const res = await dashboardFetch('/api/dashboard/units');
                 const data = await res.json();
                 setSummary(data.summary || []);
                 setPhases(data.phases || []);
@@ -153,7 +149,7 @@ export default function BlocksPage() {
         setUnitsLoading(true);
         try {
             const params = new URLSearchParams({ phase: activePhase, block, category: activeCategory });
-            const res = await fetch(`/api/dashboard/units?${params}`, { headers: shopHeaders() });
+            const res = await dashboardFetch(`/api/dashboard/units?${params}`);
             const data = await res.json();
             setUnits(data.units || []);
         } catch (e) {
@@ -505,9 +501,8 @@ function UnitEditForm({ unit: u, onCancel, onSaved }: {
                 rooms: form.rooms === '' ? null : Number(form.rooms),
                 sale_area: form.sale_area === '' ? null : Number(form.sale_area),
             };
-            const res = await fetch('/api/dashboard/units', {
+            const res = await dashboardFetch('/api/dashboard/units', {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json', 'x-shop-id': typeof window !== 'undefined' ? localStorage.getItem(SHOP_KEY) || '' : '' },
                 body: JSON.stringify({ id: u.id, ...patch }),
             });
             if (res.ok) {

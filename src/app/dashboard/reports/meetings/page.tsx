@@ -8,8 +8,7 @@ import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { DataTable, type DataTableColumn } from '@/components/ui/DataTable';
 import { ChartCard } from '@/components/ui/ChartCard';
 import { BarChart } from '@/components/charts/BarChart';
-
-const SHOP_KEY = 'vertmonhub_active_shop_id';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 interface MonthRow {
     month: string;
@@ -29,9 +28,6 @@ interface Totals {
     bank_loan: number; cash: number; mortgage: number; leasing: number; barter: number;
 }
 
-function shopHeaders(): HeadersInit {
-    return { 'x-shop-id': typeof window !== 'undefined' ? localStorage.getItem(SHOP_KEY) || '' : '' };
-}
 function monthLabel(iso: string): string {
     const d = new Date(iso);
     if (isNaN(d.getTime())) return iso;
@@ -55,7 +51,7 @@ export default function MeetingsReportPage() {
         (async () => {
             try {
                 setLoading(true);
-                const res = await fetch('/api/dashboard/reports/meetings', { headers: shopHeaders() });
+                const res = await dashboardFetch('/api/dashboard/reports/meetings');
                 const data = await res.json();
                 setMonths(data.months || []);
                 setTotals(data.totals || null);

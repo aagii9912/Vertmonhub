@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { supabase } from '@/lib/supabase';
 import { TrendingUp, Users, Target, BarChart3, RefreshCw, Megaphone, DollarSign, Heart, MessageCircle, Share2 } from 'lucide-react';
 import { PageHeader } from '@/components/dashboard/PageHeader';
@@ -211,9 +212,7 @@ export default function MarketingROIPage() {
 
             // Жинхэнэ ROI roll-up (spend↔lead↔орлого) — best-effort
             try {
-                const res = await fetch('/api/dashboard/marketing-roi', {
-                    headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
-                });
+                const res = await dashboardFetch('/api/dashboard/marketing-roi');
                 if (res.ok) {
                     const roiJson = await res.json();
                     setRoi(roiJson.roi || null);
@@ -224,9 +223,7 @@ export default function MarketingROIPage() {
 
             // Хадгалсан organic social түүх — best-effort
             try {
-                const res = await fetch('/api/dashboard/marketing/social-history', {
-                    headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
-                });
+                const res = await dashboardFetch('/api/dashboard/marketing/social-history');
                 if (res.ok) {
                     const socialJson = await res.json();
                     setSocial({ posts: socialJson.posts || [], insights: socialJson.insights || [] });
@@ -237,9 +234,7 @@ export default function MarketingROIPage() {
 
             // Маркетингийн нөлөөллийн сар бүрийн цуваа — best-effort
             try {
-                const res = await fetch('/api/dashboard/marketing-roi/timeline', {
-                    headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
-                });
+                const res = await dashboardFetch('/api/dashboard/marketing-roi/timeline');
                 if (res.ok) {
                     const json = await res.json();
                     setTimeline(json.months || []);
@@ -256,9 +251,7 @@ export default function MarketingROIPage() {
 
     const fetchAdAccounts = useCallback(async () => {
         try {
-            const res = await fetch('/api/marketing/facebook/ads/accounts', {
-                headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
-            });
+            const res = await dashboardFetch('/api/marketing/facebook/ads/accounts');
             const data = await res.json();
             if (!res.ok) {
                 throw new Error(data?.error || 'Ad account татахад алдаа');
@@ -274,11 +267,10 @@ export default function MarketingROIPage() {
     async function syncSocial() {
         setSyncingSocial(true);
         try {
-            const headers = { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' };
-            const res = await fetch('/api/dashboard/marketing/sync-social', { method: 'POST', headers });
+            const res = await dashboardFetch('/api/dashboard/marketing/sync-social', { method: 'POST' });
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || 'Sync алдаа');
-            const h = await fetch('/api/dashboard/marketing/social-history', { headers });
+            const h = await dashboardFetch('/api/dashboard/marketing/social-history');
             const hist = await h.json();
             setSocial({ posts: hist.posts || [], insights: hist.insights || [] });
             toast.success(data.message || 'Social хадгаллаа');
@@ -298,17 +290,11 @@ export default function MarketingROIPage() {
         setCampaignsError(null);
         try {
             // Persist selection
-            await fetch('/api/marketing/facebook/ads/accounts', {
+            await dashboardFetch('/api/marketing/facebook/ads/accounts', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-                },
                 body: JSON.stringify({ ad_account_id: selectedAdAccount }),
             });
-            const res = await fetch(`/api/marketing/facebook/ads/campaigns?ad_account_id=${encodeURIComponent(selectedAdAccount)}`, {
-                headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
-            });
+            const res = await dashboardFetch(`/api/marketing/facebook/ads/campaigns?ad_account_id=${encodeURIComponent(selectedAdAccount)}`);
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || 'Sync алдаа');
             setCampaigns(data.campaigns || []);
@@ -325,15 +311,11 @@ export default function MarketingROIPage() {
     async function syncInsights(campaign: AdCampaign) {
         if (!campaign.external_id) return;
         try {
-            const res = await fetch(`/api/marketing/facebook/ads/insights?campaign_id=${encodeURIComponent(campaign.external_id)}`, {
-                headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
-            });
+            const res = await dashboardFetch(`/api/marketing/facebook/ads/insights?campaign_id=${encodeURIComponent(campaign.external_id)}`);
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || 'Insights алдаа');
             // refetch list
-            const listRes = await fetch('/api/marketing/facebook/ads/campaigns', {
-                headers: { 'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '' },
-            });
+            const listRes = await dashboardFetch('/api/marketing/facebook/ads/campaigns');
             const listData = await listRes.json();
             if (listRes.ok) setCampaigns(listData.campaigns || []);
             toast.success('Insights шинэчлэгдлээ');

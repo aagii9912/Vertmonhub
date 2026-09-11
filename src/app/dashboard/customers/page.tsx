@@ -23,6 +23,7 @@ import {
     Star,
 } from 'lucide-react';
 import { formatShortDate } from '@/lib/utils/date';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { CustomerDetailSheet } from './_components/CustomerDetailSheet';
 import { CreateCustomerModal } from './_components/CreateCustomerModal';
 import { HubSpotImportModal } from './_components/HubSpotImportModal';
@@ -185,11 +186,7 @@ export default function CustomersPage() {
 
     async function fetchHealth() {
         try {
-            const res = await fetch('/api/dashboard/customer-health', {
-                headers: {
-                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-                },
-            });
+            const res = await dashboardFetch('/api/dashboard/customer-health');
             if (!res.ok) throw new Error('Failed to fetch customer health');
             const data = await res.json();
             setHealth(data.health || null);
@@ -208,11 +205,7 @@ export default function CustomersPage() {
             if (stageFilter) params.set('stage', stageFilter);
             params.set('sortBy', sortBy);
 
-            const res = await fetch(`/api/dashboard/customers?${params}`, {
-                headers: {
-                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-                },
-            });
+            const res = await dashboardFetch(`/api/dashboard/customers?${params}`);
             if (!res.ok) throw new Error('Харилцагчдын мэдээлэл татаж чадсангүй');
             const data = await res.json();
             setCustomers(data.customers || []);
@@ -227,11 +220,8 @@ export default function CustomersPage() {
     async function recomputeScores() {
         setRecomputing(true);
         try {
-            const res = await fetch('/api/dashboard/customers/recompute-scores', {
+            const res = await dashboardFetch('/api/dashboard/customers/recompute-scores', {
                 method: 'POST',
-                headers: {
-                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-                },
             });
             if (res.ok) {
                 await Promise.all([fetchCustomers(), fetchHealth()]);
@@ -245,11 +235,7 @@ export default function CustomersPage() {
 
     async function fetchCustomerDetail(id: string) {
         try {
-            const res = await fetch(`/api/dashboard/customers/${id}`, {
-                headers: {
-                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-                },
-            });
+            const res = await dashboardFetch(`/api/dashboard/customers/${id}`);
             if (!res.ok) throw new Error('Харилцагчийн мэдээлэл татаж чадсангүй');
             const data = await res.json();
             setSelectedCustomer(data.customer);
@@ -275,12 +261,8 @@ export default function CustomersPage() {
         setLogSubmitting(true);
         setLogError(null);
         try {
-            const res = await fetch('/api/dashboard/service-logs', {
+            const res = await dashboardFetch('/api/dashboard/service-logs', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-                },
                 body: JSON.stringify({
                     customer_id: selectedCustomer.id,
                     customer_name: selectedCustomer.name,
@@ -309,12 +291,8 @@ export default function CustomersPage() {
         setMerging(true);
         setMergeError(null);
         try {
-            const res = await fetch('/api/dashboard/customers/merge', {
+            const res = await dashboardFetch('/api/dashboard/customers/merge', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-                },
                 body: JSON.stringify({
                     primaryId: selectedCustomer.id,
                     duplicateId: mergeTargetId,
@@ -346,12 +324,9 @@ export default function CustomersPage() {
             const fd = new FormData();
             fd.append('file', importFile);
             fd.append('preview', 'true');
-            const res = await fetch('/api/dashboard/customers/import/hubspot', {
+            const res = await dashboardFetch('/api/dashboard/customers/import/hubspot', {
                 method: 'POST',
                 body: fd,
-                headers: {
-                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-                },
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || 'Урьдчилан харахад алдаа');
@@ -370,12 +345,9 @@ export default function CustomersPage() {
         try {
             const fd = new FormData();
             fd.append('file', importFile);
-            const res = await fetch('/api/dashboard/customers/import/hubspot', {
+            const res = await dashboardFetch('/api/dashboard/customers/import/hubspot', {
                 method: 'POST',
                 body: fd,
-                headers: {
-                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-                },
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || 'Импорт амжилтгүй');
@@ -412,11 +384,8 @@ export default function CustomersPage() {
         setHubspotSyncing(true);
         setHubspotError(null);
         try {
-            const res = await fetch('/api/integrations/hubspot/sync', {
-                headers: {
-                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-                    ...(hubspotToken.trim() ? { 'x-hubspot-token': hubspotToken.trim() } : {}),
-                },
+            const res = await dashboardFetch('/api/integrations/hubspot/sync', {
+                headers: hubspotToken.trim() ? { 'x-hubspot-token': hubspotToken.trim() } : undefined,
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || 'Урьдчилан харахад алдаа');
@@ -432,13 +401,9 @@ export default function CustomersPage() {
         setHubspotSyncing(true);
         setHubspotError(null);
         try {
-            const res = await fetch('/api/integrations/hubspot/sync', {
+            const res = await dashboardFetch('/api/integrations/hubspot/sync', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-                    ...(hubspotToken.trim() ? { 'x-hubspot-token': hubspotToken.trim() } : {}),
-                },
+                headers: hubspotToken.trim() ? { 'x-hubspot-token': hubspotToken.trim() } : undefined,
                 body: JSON.stringify({
                     save_token: hubspotSaveToken && hubspotToken.trim() ? hubspotToken.trim() : undefined,
                 }),
@@ -463,12 +428,8 @@ export default function CustomersPage() {
         setCreating(true);
         setCreateError(null);
         try {
-            const res = await fetch('/api/dashboard/customers', {
+            const res = await dashboardFetch('/api/dashboard/customers', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-                },
                 body: JSON.stringify({
                     name: createForm.name.trim(),
                     phone: createForm.phone.trim() || null,
@@ -495,12 +456,8 @@ export default function CustomersPage() {
         if (!selectedCustomer) return;
         setNotesSaving(true);
         try {
-            const res = await fetch('/api/dashboard/customers', {
+            const res = await dashboardFetch('/api/dashboard/customers', {
                 method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-                },
                 body: JSON.stringify({ id: selectedCustomer.id, notes: notesDraft }),
             });
             if (!res.ok) throw new Error('Тэмдэглэл хадгалахад алдаа');
@@ -517,12 +474,8 @@ export default function CustomersPage() {
         if (!selectedCustomer) return;
         setSaving(true);
         try {
-            const res = await fetch('/api/dashboard/customers', {
+            const res = await dashboardFetch('/api/dashboard/customers', {
                 method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || '',
-                },
                 body: JSON.stringify({
                     id: selectedCustomer.id,
                     ...editForm,

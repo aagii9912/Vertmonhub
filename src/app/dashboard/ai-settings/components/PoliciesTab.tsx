@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Check, Save } from 'lucide-react';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 interface PoliciesData {
     shipping_threshold: number;
@@ -28,9 +29,8 @@ export default function PoliciesTab({ policies, setPolicies, saving, setSaving, 
     async function handleSave() {
         setSaving(true);
         try {
-            await fetch('/api/shop', {
+            await dashboardFetch('/api/shop', {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ policies }),
             });
             setSuccess(true);

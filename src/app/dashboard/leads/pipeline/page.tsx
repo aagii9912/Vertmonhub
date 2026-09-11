@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { toast } from 'sonner';
 import {
     GripVertical,
@@ -354,9 +355,7 @@ export default function PipelinePage() {
         setLoading(true);
         try {
             // pageSize=1000 — pipeline самбар бүх лийдийг харуулна (аюулгүйн таг).
-            const res = await fetch('/api/dashboard/leads?pageSize=1000', {
-                headers: { 'x-shop-id': shop.id },
-            });
+            const res = await dashboardFetch('/api/dashboard/leads?pageSize=1000');
             if (!res.ok) throw new Error('Failed');
             const json = await res.json();
             setLeads(json.leads || []);
@@ -383,12 +382,8 @@ export default function PipelinePage() {
             }
             : l));
         try {
-            const res = await fetch(`/api/dashboard/leads/${leadId}`, {
+            const res = await dashboardFetch(`/api/dashboard/leads/${leadId}`, {
                 method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-shop-id': localStorage.getItem('vertmonhub_active_shop_id') || shop?.id || '',
-                },
                 body: JSON.stringify({ status: newStatus, ...(lostReason ? { lost_reason: lostReason } : {}) }),
             });
             if (!res.ok) throw new Error('Failed');

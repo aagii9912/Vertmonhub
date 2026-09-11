@@ -9,17 +9,12 @@ import { BarChart } from '@/components/charts/BarChart';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Building2, Download, CheckCircle2, Layers, Home } from 'lucide-react';
-
-const SHOP_KEY = 'vertmonhub_active_shop_id';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 interface Stats { total: number; available: number; sold: number; reserved: number; totalArea: number; }
 interface GroupRow { key: string; total: number; available: number; sold: number; }
 
 const CAT_LABEL: Record<string, string> = { residential: 'Орон сууц', parking: 'Зогсоол', industry: 'Агуулах', commercial: 'Үйлчилгээ' };
-
-function shopHeaders(): HeadersInit {
-    return { 'x-shop-id': typeof window !== 'undefined' ? localStorage.getItem(SHOP_KEY) || '' : '' };
-}
 
 export default function PropertiesReportPage() {
     const [loading, setLoading] = useState(true);
@@ -33,7 +28,7 @@ export default function PropertiesReportPage() {
             setLoading(true);
             try {
                 // property_block_summary view-ээс ээлж/блок/ангиллын нэгтгэлийг авна
-                const res = await fetch('/api/dashboard/units', { headers: shopHeaders() });
+                const res = await dashboardFetch('/api/dashboard/units');
                 const data = await res.json();
                 const summary: Array<Record<string, number | string>> = data.summary || [];
 
@@ -70,7 +65,7 @@ export default function PropertiesReportPage() {
     async function exportExcel() {
         setExporting(true);
         try {
-            const res = await fetch('/api/dashboard/export/excel?type=properties', { headers: shopHeaders() });
+            const res = await dashboardFetch('/api/dashboard/export/excel?type=properties');
             if (!res.ok) throw new Error('export failed');
             const blob = await res.blob();
             const url = URL.createObjectURL(blob);

@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import ImportTab from './components/ImportTab';
 import { SessionApprovalsReset } from '@/components/ai-assistant/SessionApprovalsReset';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 // ============================================
 // TYPES
@@ -75,7 +76,7 @@ export default function AISettingsPage() {
 
     async function fetchAllData() {
         try {
-            const shopRes = await fetch('/api/shop');
+            const shopRes = await dashboardFetch('/api/shop');
             const shopData = await shopRes.json();
             if (shopData.shop) {
                 setShopDescription(shopData.shop.description || '');
@@ -89,14 +90,14 @@ export default function AISettingsPage() {
                     setCustomKnowledge(Object.entries(shopData.shop.custom_knowledge).map(([key, value]) => ({ key, value: String(value) })));
                 }
             }
-            const aiRes = await fetch('/api/ai-settings');
+            const aiRes = await dashboardFetch('/api/ai-settings');
             if (aiRes.ok) {
                 const aiData = await aiRes.json();
                 setFaqs(aiData.faqs || []);
             }
             // Check import permission
             try {
-                const adminRes = await fetch('/api/admin/settings');
+                const adminRes = await dashboardFetch('/api/admin/settings');
                 if (adminRes.ok) {
                     const adminData = await adminRes.json();
                     const currentAdmin = adminData.admins?.find((a: any) => a.is_current);
@@ -112,9 +113,8 @@ export default function AISettingsPage() {
     async function handleSaveGeneral() {
         setSaving(true);
         try {
-            const res = await fetch('/api/shop', {
+            const res = await dashboardFetch('/api/shop', {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     description: shopDescription, ai_instructions: aiInstructions, ai_emotion: aiEmotion,
                     notify_on_contact: notifyOnContact, notify_on_support: notifyOnSupport,
@@ -331,9 +331,8 @@ function KnowledgeSection({ customKnowledge, setCustomKnowledge, saving, setSavi
                 if (item.key && item.value) acc[item.key] = item.value;
                 return acc;
             }, {} as Record<string, string>);
-            const res = await fetch('/api/shop', {
+            const res = await dashboardFetch('/api/shop', {
                 method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ custom_knowledge: obj }),
             });
             if (res.ok) {
@@ -453,9 +452,8 @@ function FAQSection({ faqs, setFaqs, editingFaq, setEditingFaq, setError }: {
         if (!editingFaq?.question || !editingFaq?.answer) return;
         try {
             const isNew = !editingFaq.id;
-            const res = await fetch('/api/ai-settings', {
+            const res = await dashboardFetch('/api/ai-settings', {
                 method: isNew ? 'POST' : 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ type: 'faqs', ...editingFaq }),
             });
             if (!res.ok) throw new Error('FAQ хадгалах алдаа');
@@ -469,7 +467,7 @@ function FAQSection({ faqs, setFaqs, editingFaq, setEditingFaq, setError }: {
 
     async function deleteFaq(id: string) {
         try {
-            await fetch(`/api/ai-settings?type=faqs&id=${id}`, { method: 'DELETE' });
+            await dashboardFetch(`/api/ai-settings?type=faqs&id=${id}`, { method: 'DELETE' });
             setFaqs(faqs.filter(f => f.id !== id));
             toast.success('FAQ устгагдлаа');
         } catch (err: any) { setError(err.message); }

@@ -3,12 +3,13 @@
 /**
  * AI Orchestrator-ийн "Энэ session-д үргэлж зөвшөөрсөн" tool-уудыг цэвэрлэх жижиг хяналт.
  * sessionStorage таб хаагдмагц өөрөө арилдаг ч, хэрэглэгч гараар цуцлах боломжтой байх ёстой.
- * Идэвхтэй shop-ийн id-г localStorage-оос (vertmonhub_active_shop_id) уншина.
+ * Идэвхтэй shop-ийн id-г getActiveShopId() (localStorage)-оос уншина.
  */
 
 import React, { useEffect, useState } from 'react';
 import { ShieldCheck, RotateCcw } from 'lucide-react';
 import { getAllowedTools, clearAllowedTools } from '@/lib/ai/allowedTools';
+import { getActiveShopId } from '@/lib/api/dashboardFetch';
 
 export function SessionApprovalsReset() {
     const [info, setInfo] = useState<{ shopId: string | null; count: number }>({ shopId: null, count: 0 });
@@ -16,7 +17,7 @@ export function SessionApprovalsReset() {
     const count = info.count;
 
     useEffect(() => {
-        const id = typeof window !== 'undefined' ? localStorage.getItem('vertmonhub_active_shop_id') : null;
+        const id = getActiveShopId();
         // localStorage зөвхөн client дээр байдаг тул mount дээр л уншина (SSR hydration-д аюулгүй).
         // eslint-disable-next-line react-hooks/set-state-in-effect
         setInfo({ shopId: id, count: id ? getAllowedTools(id).length : 0 });
