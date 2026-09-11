@@ -20,28 +20,6 @@ export const readTools: any[] = [
         }
     },
     {
-        name: 'list_orders',
-        description: 'Захиалгын жагсаалт авах. Статус, тоогоор шүүж болно.',
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                status: { type: SchemaType.STRING, enum: ['pending', 'confirmed', 'processing', 'shipped', 'delivered', 'cancelled'], description: 'Захиалгын статус' },
-                limit: { type: SchemaType.NUMBER, description: 'Хэдэн захиалга авах (default: 10)' }
-            }
-        }
-    },
-    {
-        name: 'get_product_stats',
-        description: 'Бүтээгдэхүүний статистик: хамгийн их борлуулсан, нөөц бага, үнэ гэх мэт.',
-        parameters: {
-            type: SchemaType.OBJECT,
-            properties: {
-                type: { type: SchemaType.STRING, enum: ['top_selling', 'low_stock', 'all'], description: 'Ямар төрлийн статистик авах' },
-                limit: { type: SchemaType.NUMBER, description: 'Хэдэн бүтээгдэхүүн авах' }
-            }
-        }
-    },
-    {
         name: 'list_properties',
         description: 'Байрны жагсаалт авах. Төрөл, үнэ, дүүрэг, статус, өрөөний тоогоор шүүж болно. Mandala Garden, Mandala Tower, Elysium гэх мэт.',
         parameters: {

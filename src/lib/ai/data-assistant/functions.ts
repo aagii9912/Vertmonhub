@@ -74,30 +74,7 @@ export async function fetchDashboardStats(shopId: string, timeRange: string = 'm
     return { timeRange, totalOrders: ordersRes.count || 0, totalRevenue, totalCustomers: customersRes.count || 0, totalLeads: leadsRes.count || 0, leadsByStatus, totalProperties: propertiesRes.count || 0 };
 }
 
-export async function fetchOrders(shopId: string, status?: string, limit: number = 10) {
-    let query = supabaseAdmin.from('orders').select('id, total_amount, status, created_at, customers(name, phone)').eq('shop_id', shopId).order('created_at', { ascending: false }).limit(limit);
-    if (status) query = query.eq('status', status);
-    const { data } = await query;
-    return data?.map(o => ({
-        id: o.id.substring(0, 8), amount: o.total_amount, status: o.status,
-        date: new Date(o.created_at).toLocaleDateString('mn-MN'),
-        customerName: (o.customers as any)?.name || 'Тодорхойгүй',
-        customerPhone: (o.customers as any)?.phone || '',
-    })) || [];
-}
-
-export async function fetchProductStats(shopId: string, type: string = 'all', limit: number = 10) {
-    if (type === 'low_stock') {
-        const { data } = await supabaseAdmin.from('products').select('id, name, stock, price').eq('shop_id', shopId).lt('stock', 10).order('stock', { ascending: true }).limit(limit);
-        return data || [];
-    } else if (type === 'top_selling') {
-        const { data } = await supabaseAdmin.from('products').select('id, name, stock, price').eq('shop_id', shopId).order('stock', { ascending: true }).limit(limit);
-        return data || [];
-    } else {
-        const { data } = await supabaseAdmin.from('products').select('id, name, stock, price, description, type').eq('shop_id', shopId).limit(limit);
-        return data || [];
-    }
-}
+// (Хуучин e-commerce fetchOrders / fetchProductStats — 2026-09 Wave 2-т устгав; CLAUDE.md «буцааж оруулахгүй»)
 
 export async function fetchProperties(shopId: string, args: any) {
     const limit = args.limit || 10;

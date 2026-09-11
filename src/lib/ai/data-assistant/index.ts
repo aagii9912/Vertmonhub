@@ -13,7 +13,7 @@ import { logger } from '@/lib/utils/logger';
 import { readTools, writeTools, WRITE_TOOL_NAMES, DELETE_TOOL_NAMES, ADMIN_TOOL_NAMES } from './tools';
 import { logAiAudit } from './audit';
 import {
-    fetchDashboardStats, fetchOrders, fetchProductStats,
+    fetchDashboardStats,
     fetchProperties, fetchLeads, fetchLeadDetails, fetchCustomerInsights,
     fetchContracts, fetchContractDetails, fetchContractsSummary,
     fetchSalesSummary, fetchSalesForecast, compareProperties,
@@ -67,8 +67,6 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
     let result: any;
     switch (toolName) {
         case 'get_dashboard_stats': result = await fetchDashboardStats(shopId, args.timeRange || 'month'); break;
-        case 'list_orders': result = await fetchOrders(shopId, args.status, args.limit || 10); break;
-        case 'get_product_stats': result = await fetchProductStats(shopId, args.type || 'all', args.limit || 10); break;
         case 'list_properties': result = await fetchProperties(shopId, args); break;
         case 'list_leads': result = await fetchLeads(shopId, args); break;
         case 'get_lead_details': result = await fetchLeadDetails(shopId, args); break;

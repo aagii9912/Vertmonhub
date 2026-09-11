@@ -2,7 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Sparkles, Check, X, Loader2, AlertCircle, RotateCcw, ChevronDown, ChevronRight, Wrench, ShieldCheck, Copy } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
+import dynamic from 'next/dynamic';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -383,30 +383,8 @@ function ActionCard({ a, onApprove, onCancel, onAlways }: { a: PendingAction; on
     );
 }
 
-function ChartBlock({ cfg, compact }: { cfg: NonNullable<AiMessage['chartConfig']>; compact: boolean }) {
-    const data = cfg.data || [];
-    const H = compact ? 160 : 220;
-    return (
-        <div className="mt-2 rounded-md border border-border bg-surface p-2">
-            <ResponsiveContainer width="100%" height={H}>
-                {cfg.type === 'line' ? (
-                    <LineChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                        <CartesianGrid stroke="var(--border)" vertical={false} />
-                        <XAxis dataKey="name" tick={{ fontSize: 10.5, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fontSize: 10.5, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={44} />
-                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6, border: '1px solid var(--border)' }} />
-                        <Line type="monotone" dataKey="value" stroke="var(--brand)" strokeWidth={2} dot={false} />
-                    </LineChart>
-                ) : (
-                    <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-                        <CartesianGrid stroke="var(--border)" vertical={false} />
-                        <XAxis dataKey="name" tick={{ fontSize: 10.5, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
-                        <YAxis tick={{ fontSize: 10.5, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={44} />
-                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6, border: '1px solid var(--border)' }} />
-                        <Bar dataKey="value" fill="var(--brand)" radius={[3, 3, 0, 0]} />
-                    </BarChart>
-                )}
-            </ResponsiveContainer>
-        </div>
-    );
-}
+// Диаграм — recharts-ийг зөвхөн харагдах үед татна (AiChat бүх хуудсанд mounted)
+const ChartBlock = dynamic(() => import('./AiChartBlock'), {
+    ssr: false,
+    loading: () => <div className="mt-2 h-[160px] animate-pulse rounded-md border border-border bg-surface" />,
+});

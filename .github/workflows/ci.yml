@@ -25,11 +25,15 @@ jobs:
         run: npm run typecheck
 
       - name: Lint
+        # 2026-09: continue-on-error хасав — lint алдаа PR-ийг унагана (анхааруулга унагахгүй)
         run: npm run lint
-        continue-on-error: true
 
       - name: Unit tests
         run: npm run test
+
+      - name: Dependency audit (critical)
+        # `xlsx`-д засваргүй high байгаа тул одоогоор зөвхөн critical-д унана
+        run: npm audit --omit=dev --audit-level=critical
 
       - name: Build
         run: npm run build
