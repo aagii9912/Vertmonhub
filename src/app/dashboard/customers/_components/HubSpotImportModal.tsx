@@ -62,7 +62,7 @@ export function HubSpotImportModal({
                     {!importPreview && !importResult && (
                         <>
                             <p className="text-sm text-muted-foreground">
-                                HubSpot Contacts хэсгээс экспортолсон CSV/XLSX файл сонгоно уу. Email эсвэл утсаар давхардлыг таниж хасна.
+                                HubSpot Contacts хэсгээс экспортолсон CSV/XLSX файл сонгоно уу. Имэйл эсвэл утсаар давхардлыг таниж хасна.
                             </p>
                             <input
                                 type="file"
@@ -100,7 +100,7 @@ export function HubSpotImportModal({
                                     <thead className="bg-surface-2/50">
                                         <tr>
                                             <th className="px-3 py-2 text-left">Нэр</th>
-                                            <th className="px-3 py-2 text-left">Email</th>
+                                            <th className="px-3 py-2 text-left">Имэйл</th>
                                             <th className="px-3 py-2 text-left">Утас</th>
                                         </tr>
                                     </thead>

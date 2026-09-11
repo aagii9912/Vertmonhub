@@ -7,6 +7,7 @@ import { Phone, CalendarDays, Clock, Check, ArrowRight, MoreHorizontal, ChevronR
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatMNTShort } from '@/lib/utils/currency';
+import { sourceLabel } from '@/lib/leads/labels';
 import { dashboardMutate } from '@/lib/api/dashboardFetch';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
 import { useMyStats, type MyStatsTask, type MyStatsLead } from '@/hooks/useMyStats';
@@ -19,11 +20,6 @@ import { useRegisterAiContext } from '@/lib/ai/context';
  * мөр бүр дээр Залгах / Дууссан / Хойшлуулах. Тоо нь хоёрдугаарт.
  */
 
-const SOURCE_LABEL: Record<string, string> = {
-    messenger: 'Messenger', facebook: 'Facebook', instagram: 'Instagram', website: 'Вэбсайт', referral: 'Зөвлөмж',
-    phone: 'Утас', facebook_ads: 'Facebook Ads', google_ads: 'Google Ads', tv: 'ТВ', radio: 'Радио', meeting: 'Уулзалт',
-    event: 'Өдөрлөг', board: 'Билборд / Самбар', other: 'Бусад',
-};
 const WEEKDAYS = ['Ням', 'Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан', 'Бямба'];
 
 type Filter = 'all' | 'followup' | 'viewing' | 'personal';
@@ -297,7 +293,7 @@ function LeadRow({ lead }: { lead: MyStatsLead }) {
             <Link href={`/dashboard/leads?lead=${lead.id}`} className="min-w-0 flex-1">
                 <div className="truncate text-[13px] font-medium text-foreground">{lead.customer_name || 'Нэргүй'}</div>
                 <div className="truncate text-[12px] text-muted-foreground">
-                    {[lead.customer_phone, lead.source ? SOURCE_LABEL[lead.source] ?? lead.source : null].filter(Boolean).join(' · ')}
+                    {[lead.customer_phone, lead.source ? sourceLabel(lead.source) : null].filter(Boolean).join(' · ')}
                 </div>
             </Link>
             {phone && (

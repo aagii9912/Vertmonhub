@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { confirmToast } from '@/components/ui/Toast';
 import { Loader2, Send, MessageSquare, User, Bot, PauseCircle, Search, Inbox as InboxIcon, Timer, Power, Trash2 } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { formatTime as formatTimeShared, formatShortDate } from '@/lib/utils/date';
+import { formatTime, formatTimeAgo } from '@/lib/utils/date';
 import { dashboardFetch, getActiveShopId } from '@/lib/api/dashboardFetch';
 
 interface ChatMessage {
@@ -156,27 +156,6 @@ export default function InboxMessagesPage() {
         }
     };
 
-    const formatTime = (dateStr: string) => {
-        try {
-            return formatTimeShared(dateStr);
-        } catch {
-            return '';
-        }
-    };
-
-    const formatDate = (dateStr: string) => {
-        try {
-            const d = new Date(dateStr);
-            const now = new Date();
-            const diff = now.getTime() - d.getTime();
-            if (diff < 86400000) return formatTime(dateStr);
-            if (diff < 172800000) return 'Өчигдөр';
-            return formatShortDate(dateStr);
-        } catch {
-            return '';
-        }
-    };
-
     const filtered = conversations.filter(c =>
         c.customer_name.toLowerCase().includes(searchQuery.toLowerCase())
     );
@@ -236,7 +215,7 @@ export default function InboxMessagesPage() {
                                             {convo.customer_name || 'Зочин'}
                                         </span>
                                         <span className="text-[10px] text-muted-foreground/60 shrink-0 ml-2">
-                                            {formatDate(convo.last_message_at)}
+                                            {formatTimeAgo(convo.last_message_at)}
                                         </span>
                                     </div>
                                     <p className="text-xs text-muted-foreground/60 truncate mt-0.5">

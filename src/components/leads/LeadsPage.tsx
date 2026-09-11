@@ -153,7 +153,7 @@ export function LeadsPage() {
                     );
                 })}
                 <Link href="/dashboard/leads/pipeline" className="-mb-px flex h-9 shrink-0 items-center gap-1.5 border-b-2 border-transparent px-2 text-[13px] font-medium text-fg-2 hover:text-foreground">
-                    <GitBranch className="h-3.5 w-3.5" /> Pipeline
+                    <GitBranch className="h-3.5 w-3.5" /> Лидийн pipeline
                 </Link>
                 <div className="ml-auto hidden shrink-0 items-center gap-1 pb-1 sm:flex">
                     <div className="inline-flex h-[28px] items-center rounded-md border border-border p-0.5">
@@ -231,8 +231,14 @@ export function LeadsPage() {
                                         return (
                                             <tr
                                                 key={l.id}
+                                                role="button"
+                                                tabIndex={0}
                                                 onClick={() => select(l.id)}
-                                                className={cn('h-9 cursor-pointer border-b border-border transition-colors last:border-b-0', sel ? 'bg-brand-soft/60' : 'hover:bg-surface-2/70', isFetching && 'opacity-90')}
+                                                onKeyDown={(e) => {
+                                                    if (e.target !== e.currentTarget) return;
+                                                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(l.id); }
+                                                }}
+                                                className={cn('h-9 cursor-pointer border-b border-border transition-colors last:border-b-0 focus-ring', sel ? 'bg-brand-soft/60' : 'hover:bg-surface-2/70', isFetching && 'opacity-90')}
                                             >
                                                 <td className="px-2" onClick={(e) => e.stopPropagation()}>
                                                     <CheckBox label="Сонгох" checked={checked.has(l.id)} onChange={(v) => setChecked((prev) => { const n = new Set(prev); if (v) n.add(l.id); else n.delete(l.id); return n; })} />

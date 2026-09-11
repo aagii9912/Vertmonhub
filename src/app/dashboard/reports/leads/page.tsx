@@ -24,6 +24,7 @@ import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
+import { sourceLabel } from '@/lib/leads/labels';
 
 interface LeadStats {
     total: number;
@@ -53,23 +54,6 @@ const sourceBarClass: Record<string, string> = {
     referral: 'bg-status-success',
     phone: 'bg-status-pending',
     other: 'bg-muted',
-};
-
-const sourceLabels: Record<string, string> = {
-    messenger: 'Messenger',
-    facebook: 'Facebook',
-    instagram: 'Instagram',
-    website: 'Вэбсайт',
-    referral: 'Зөвлөмж',
-    phone: 'Утас',
-    facebook_ads: 'Facebook Ads',
-    google_ads: 'Google Ads',
-    tv: 'ТВ',
-    radio: 'Радио',
-    meeting: 'Уулзалт',
-    event: 'Өдөрлөг',
-    board: 'Билборд / Самбар',
-    other: 'Бусад',
 };
 
 export default function LeadsReport() {
@@ -144,7 +128,7 @@ export default function LeadsReport() {
                 }
                 const srcData: SourceData[] = Array.from(sourceCounts.entries())
                     .map(([source, count]) => ({
-                        source: sourceLabels[source] || source,
+                        source: sourceLabel(source),
                         count,
                         percentage: Math.round((count / leads.length) * 100),
                         barClass: sourceBarClass[source] || 'bg-muted',

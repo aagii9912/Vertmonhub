@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/Select';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
+import { sourceLabel } from '@/lib/leads/labels';
 import { toast } from 'sonner';
 
 interface AdCampaign {
@@ -51,24 +52,6 @@ interface AdAccount {
     currency?: string;
     business_name?: string;
 }
-
-const sourceLabels: Record<string, string> = {
-    messenger: 'Messenger',
-    instagram: 'Instagram',
-    website: 'Вебсайт',
-    referral: 'Танилын',
-    phone: 'Утас',
-    facebook: 'Facebook',
-    google: 'Google Ads',
-    facebook_ads: 'Facebook Ads',
-    google_ads: 'Google Ads',
-    tv: 'ТВ',
-    radio: 'Радио',
-    meeting: 'Уулзалт',
-    event: 'Өдөрлөг',
-    board: 'Билборд / Самбар',
-    other: 'Бусад',
-};
 
 interface CampaignRoi {
     external_id: string;
@@ -340,7 +323,7 @@ export default function MarketingROIPage() {
         const sources = Object.entries(bySource)
             .map(([source, data]) => ({
                 source,
-                label: sourceLabels[source] || source,
+                label: sourceLabel(source),
                 ...data,
                 conversionRate: data.total > 0 ? Math.round((data.won / data.total) * 100) : 0,
             }))

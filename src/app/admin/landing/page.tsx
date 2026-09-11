@@ -16,6 +16,7 @@ import {
     Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { confirmToast } from '@/components/ui/Toast';
 import type { LandingContent } from '@/lib/landing/types';
 import { defaultLandingContent } from '@/lib/landing/defaults';
 
@@ -724,11 +725,17 @@ export default function LandingCMSPage() {
             {/* Reset to defaults */}
             <div className="flex justify-center pt-4 pb-8">
                 <button
-                    onClick={() => {
-                        if (confirm('Бүх өөрчлөлтийг анхны байдалд нь буцаах уу?')) {
-                            setContent(defaultLandingContent);
-                            toast.info('Анхны утга руу буцлаа. Хадгалахыг мартуузай.');
-                        }
+                    type="button"
+                    onClick={async () => {
+                        const ok = await confirmToast({
+                            title: 'Бүх өөрчлөлтийг анхны байдалд нь буцаах уу?',
+                            description: 'Хадгалаагүй өөрчлөлтүүд алга болно.',
+                            confirmLabel: 'Буцаах',
+                            destructive: true,
+                        });
+                        if (!ok) return;
+                        setContent(defaultLandingContent);
+                        toast.info('Анхны утга руу буцлаа. Хадгалахыг мартуузай.');
                     }}
                     className="inline-flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground hover:bg-surface-2/40 px-4 py-2 rounded-xl transition-colors"
                 >

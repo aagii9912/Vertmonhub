@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { Calculator, Building2, Percent, Calendar, DollarSign } from 'lucide-react';
+import { formatMNTShort } from '@/lib/utils/currency';
 
 interface MortgageCalcProps {
     defaultPrice?: number;
@@ -41,12 +42,6 @@ export function MortgageCalculator({ defaultPrice = 380_000_000, propertyName }:
         return { monthly, total, interest, downPayment, loanAmount };
     }, [price, downPaymentPercent, termYears, selectedBank]);
 
-    const formatMoney = (n: number) => {
-        if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)} тэрбум`;
-        if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)} сая`;
-        return n.toLocaleString() + '₮';
-    };
-
     return (
         <div className="bg-surface rounded-xl border border-border p-6">
             <div className="flex items-center gap-2 mb-5">
@@ -67,7 +62,7 @@ export function MortgageCalculator({ defaultPrice = 380_000_000, propertyName }:
                         onChange={e => setPrice(Number(e.target.value))}
                         className="w-full px-3 py-2 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-brand focus:border-brand"
                     />
-                    <p className="text-xs text-muted-foreground/70 mt-1">{formatMoney(price)}</p>
+                    <p className="text-xs text-muted-foreground/70 mt-1">{formatMNTShort(price)}</p>
                 </div>
 
                 {/* Down Payment */}
@@ -82,7 +77,7 @@ export function MortgageCalculator({ defaultPrice = 380_000_000, propertyName }:
                         onChange={e => setDownPaymentPercent(Number(e.target.value))}
                         className="w-full accent-emerald-600"
                     />
-                    <p className="text-xs text-muted-foreground/70">{formatMoney(calc.downPayment)}</p>
+                    <p className="text-xs text-muted-foreground/70">{formatMNTShort(calc.downPayment)}</p>
                 </div>
 
                 {/* Term */}
@@ -125,16 +120,16 @@ export function MortgageCalculator({ defaultPrice = 380_000_000, propertyName }:
             <div className="mt-6 p-4 bg-status-success-soft rounded-xl border border-status-success/20">
                 <div className="text-center mb-3">
                     <p className="text-xs text-status-success font-medium">Сарын төлбөр</p>
-                    <p className="text-3xl font-bold text-status-success">{formatMoney(calc.monthly)}</p>
+                    <p className="text-3xl font-bold text-status-success">{formatMNTShort(calc.monthly)}</p>
                 </div>
                 <div className="grid grid-cols-2 gap-3 text-center">
                     <div>
                         <p className="text-xs text-muted-foreground">Зээлийн дүн</p>
-                        <p className="text-sm font-semibold text-foreground">{formatMoney(calc.loanAmount)}</p>
+                        <p className="text-sm font-semibold text-foreground">{formatMNTShort(calc.loanAmount)}</p>
                     </div>
                     <div>
                         <p className="text-xs text-muted-foreground">Нийт хүү</p>
-                        <p className="text-sm font-semibold text-status-danger">{formatMoney(calc.interest)}</p>
+                        <p className="text-sm font-semibold text-status-danger">{formatMNTShort(calc.interest)}</p>
                     </div>
                 </div>
             </div>

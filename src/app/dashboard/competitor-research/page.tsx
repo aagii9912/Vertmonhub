@@ -22,6 +22,8 @@ import {
     SheetDescription,
 } from '@/components/ui/Sheet';
 import { cn } from '@/lib/utils';
+import { formatMNT } from '@/lib/utils/currency';
+import { confirmToast } from '@/components/ui/Toast';
 import { MarketIndicators } from '@/components/marketing/MarketIndicators';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
@@ -37,11 +39,6 @@ interface Competitor {
     facebook_url?: string | null;
     notes?: string | null;
     updated_at?: string;
-}
-
-function formatMoney(n?: number | null): string {
-    if (!n) return '—';
-    return new Intl.NumberFormat('mn-MN').format(Math.round(n)) + '₮';
 }
 
 const EMPTY = { name: '', location: '', district: '', num_blocks: '', planning: '', payment_terms: '', price_per_sqm: '', facebook_url: '', notes: '' };
@@ -91,7 +88,8 @@ export default function CompetitorResearchPage() {
     }
 
     async function remove(id: string) {
-        if (!confirm('Энэ өрсөлдөгчийг устгах уу?')) return;
+        const ok = await confirmToast({ title: 'Энэ өрсөлдөгчийг устгах уу?', confirmLabel: 'Устгах', destructive: true });
+        if (!ok) return;
         try {
             const res = await dashboardFetch(`/api/dashboard/competitors?id=${id}`, { method: 'DELETE' });
             if (res.ok) fetchData();
@@ -265,11 +263,11 @@ export default function CompetitorResearchPage() {
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                             <div className="p-3 rounded-lg bg-brand-soft">
                                 <div className="text-2xs uppercase tracking-wide text-muted-foreground">Мандала Гарден (м.кв)</div>
-                                <div className="heading-display text-xl text-brand-strong tabular-nums mt-1">{formatMoney(MANDALA_PRICE)}</div>
+                                <div className="heading-display text-xl text-brand-strong tabular-nums mt-1">{formatMNT(MANDALA_PRICE)}</div>
                             </div>
                             <div className="p-3 rounded-lg bg-surface-2/50">
                                 <div className="text-2xs uppercase tracking-wide text-muted-foreground">Өрсөлдөгчдийн дундаж</div>
-                                <div className="heading-display text-xl text-foreground tabular-nums mt-1">{formatMoney(avgComp)}</div>
+                                <div className="heading-display text-xl text-foreground tabular-nums mt-1">{avgComp ? formatMNT(avgComp) : '—'}</div>
                             </div>
                             <div className="p-3 rounded-lg bg-surface-2/50">
                                 <div className="text-2xs uppercase tracking-wide text-muted-foreground">Байр суурь ({priced.length} өрсөлдөгч)</div>

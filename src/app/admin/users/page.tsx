@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { Shield, ChevronDown, Search, UserPlus, Check, X, Loader2, Eye, EyeOff, AlertCircle, Trash2, Link as LinkIcon, Copy, Mail, KeyRound } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface UserWithRole {
     id: string;
@@ -260,10 +261,10 @@ export default function AdminUsersPage() {
                 setCreateSuccess(data.message || 'Хэрэглэгч устгагдлаа');
                 setTimeout(() => setCreateSuccess(null), 4000);
             } else {
-                alert(data.error || 'Устгах үед алдаа гарлаа');
+                toast.error(data.error || 'Устгах үед алдаа гарлаа');
             }
         } catch {
-            alert('Сүлжээний алдаа');
+            toast.error('Сүлжээний алдаа');
         } finally {
             setDeleting(false);
         }

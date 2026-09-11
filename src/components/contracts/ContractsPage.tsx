@@ -107,7 +107,17 @@ export function ContractsPage() {
                                     const st = CONTRACT_STATUS_META[c.contract_status] ?? { label: c.contract_status, tone: 'neutral' as const };
                                     const overdueDays = c.overdue_days || 0;
                                     return (
-                                        <tr key={c.id} onClick={() => router.push(`/dashboard/contracts/${c.id}`)} className={cn('h-10 cursor-pointer border-b border-border transition-colors last:border-b-0 hover:bg-surface-2/70', isFetching && 'opacity-90')}>
+                                        <tr
+                                            key={c.id}
+                                            role="button"
+                                            tabIndex={0}
+                                            onClick={() => router.push(`/dashboard/contracts/${c.id}`)}
+                                            onKeyDown={(e) => {
+                                                if (e.target !== e.currentTarget) return;
+                                                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); router.push(`/dashboard/contracts/${c.id}`); }
+                                            }}
+                                            className={cn('h-10 cursor-pointer border-b border-border transition-colors last:border-b-0 hover:bg-surface-2/70 focus-ring', isFetching && 'opacity-90')}
+                                        >
                                             <td className="px-2">
                                                 <div className="mono-label font-medium text-foreground">{c.contract_number || c.unit_label || '—'}</div>
                                                 <div className="mono-label text-[11px] text-muted-foreground">{c.contract_date ? formatShortDate(c.contract_date) : '—'}</div>

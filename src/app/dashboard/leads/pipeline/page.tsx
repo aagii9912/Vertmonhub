@@ -45,6 +45,7 @@ import {
 } from '@/components/ui/Sheet';
 import { cn } from '@/lib/utils';
 import { formatShortDate } from '@/lib/utils/date';
+import { formatMNTShort } from '@/lib/utils/currency';
 
 interface Lead {
     id: string;
@@ -104,12 +105,10 @@ const urgencyVariant: Record<string, 'danger' | 'neutral' | 'success'> = {
 
 const DAY_MS = 86400000;
 
-const fmtMoney = (n: number) => n >= 1e9 ? `${(n / 1e9).toFixed(1)}B` : n >= 1e6 ? `${(n / 1e6).toFixed(0)}M` : n.toLocaleString();
-
 const formatBudget = (min: number | null, max: number | null) => {
-    if (min && max) return `${fmtMoney(min)}-${fmtMoney(max)}₮`;
-    if (min) return `${fmtMoney(min)}₮+`;
-    if (max) return `${fmtMoney(max)}₮`;
+    if (min && max) return `${formatMNTShort(min)} – ${formatMNTShort(max)}`;
+    if (min) return `${formatMNTShort(min)}+`;
+    if (max) return formatMNTShort(max);
     return '';
 };
 
@@ -301,7 +300,7 @@ function StageColumn({
             </div>
             {stageValue > 0 && (
                 <p className="text-2xs text-muted-foreground -mt-2 mb-2 flex items-center gap-0.5 tabular-nums">
-                    <DollarSign className="w-3 h-3" />{fmtMoney(stageValue)}₮
+                    <DollarSign className="w-3 h-3" />{formatMNTShort(stageValue)}
                 </p>
             )}
 
@@ -434,12 +433,12 @@ export default function PipelinePage() {
     return (
         <div>
             <PageHeader
-                eyebrow="Pipeline"
-                title="Pipeline"
+                eyebrow="Лид"
+                title="Лидийн pipeline"
                 subtitle={`${leads.length} лийд • Чирж зөөнө үү`}
                 breadcrumbs={[
                     { label: 'Лийдүүд', href: '/dashboard/leads' },
-                    { label: 'Pipeline' },
+                    { label: 'Лидийн pipeline' },
                 ]}
                 secondaryActions={
                     <Button variant="secondary" size="sm" href="/dashboard/leads">
@@ -450,15 +449,15 @@ export default function PipelinePage() {
                     <div className="flex items-center gap-4">
                         <div className="text-right">
                             <p className="text-2xs uppercase tracking-wide text-muted-foreground/70">Нээлттэй дүн</p>
-                            <p className="text-sm font-semibold text-foreground tabular-nums">{fmtMoney(openValue)}₮</p>
+                            <p className="text-sm font-semibold text-foreground tabular-nums">{formatMNTShort(openValue)}</p>
                         </div>
                         <div className="text-right">
                             <p className="text-2xs uppercase tracking-wide text-muted-foreground/70">Жинлэсэн таамаг</p>
-                            <p className="text-sm font-bold text-brand-strong tabular-nums">{fmtMoney(weightedForecast)}₮</p>
+                            <p className="text-sm font-bold text-brand-strong tabular-nums">{formatMNTShort(weightedForecast)}</p>
                         </div>
                         <div className="text-right">
                             <p className="text-2xs uppercase tracking-wide text-muted-foreground/70">Хаасан</p>
-                            <p className="text-sm font-semibold text-status-success tabular-nums">{fmtMoney(wonValue)}₮</p>
+                            <p className="text-sm font-semibold text-status-success tabular-nums">{formatMNTShort(wonValue)}</p>
                         </div>
                     </div>
                 }

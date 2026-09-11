@@ -1,33 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { Building2, Users, UserPlus, FileText, UserCheck, CalendarDays, ArrowUpRight, type LucideIcon } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
-import {
-    Users, CreditCard, TrendingUp, Package,
-    ArrowUpRight, ArrowDownRight, Clock
-} from 'lucide-react';
+import { formatShortDate } from '@/lib/utils/date';
 
+/**
+ * Админ хяналт — платформын CRM тойм (бүх байгууллагын нийлбэр).
+ * 2026-09 review (M6): billing (захиалга / орлого / багц / нэхэмжлэх) хүснэгтүүд prod DB-д байхгүй тул
+ * `/api/admin/dashboard`-ийн `crm` талбарыг харуулна; хуучин SaaS картууд хасагдсан.
+ */
 interface DashboardData {
-    stats: {
-        total_shops: number;
-        subscriptions: {
-            active: number;
-            canceled: number;
-            past_due: number;
-            total: number;
-        };
-        revenue: {
-            total_revenue: number;
-            pending_revenue: number;
-            paid_count: number;
-            pending_count: number;
-        };
-        plans_count: number;
-    };
-    plans: Array<{ id: string; name: string; price_monthly: number }>;
+    stats: { total_shops: number };
+    crm?: { users: number; leads: number; contracts: number; customers: number; viewings: number };
     recent_shops: Array<{ id: string; name: string; created_at: string }>;
-    recent_invoices: Array<{ id: string; amount: number; status: string; created_at: string; shops: { name: string } }>;
 }
+
+const EMPTY_CRM = { users: 0, leads: 0, contracts: 0, customers: 0, viewings: 0 };
 
 export default function AdminDashboard() {
     const [data, setData] = useState<DashboardData | null>(null);
@@ -67,168 +56,64 @@ export default function AdminDashboard() {
         );
     }
 
-    const formatMoney = (amount: number) => {
-        return `₮${amount.toLocaleString()}`;
-    };
+    const crm = data.crm ?? EMPTY_CRM;
+    const cards: { label: string; value: number; icon: LucideIcon }[] = [
+        { label: 'Байгууллага', value: data.stats.total_shops, icon: Building2 },
+        { label: 'Хэрэглэгч', value: crm.users, icon: Users },
+        { label: 'Лид', value: crm.leads, icon: UserPlus },
+        { label: 'Гэрээ', value: crm.contracts, icon: FileText },
+        { label: 'Харилцагч', value: crm.customers, icon: UserCheck },
+        { label: 'Уулзалт', value: crm.viewings, icon: CalendarDays },
+    ];
 
     return (
         <div className="space-y-8">
             {/* Header */}
             <div>
                 <h1 className="heading-display text-2xl text-foreground">Админ хяналт</h1>
-                <p className="text-muted-foreground mt-1">Платформын ерөнхий тойм</p>
+                <p className="text-muted-foreground mt-1">Платформын CRM тойм — бүх байгууллагын нийлбэр</p>
             </div>
 
-            {/* Stats Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {/* Total Shops */}
-                <Card>
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-muted-foreground">Нийт байгууллага</p>
-                                <p className="text-3xl font-bold text-foreground mt-1">
-                                    {data.stats.total_shops}
-                                </p>
-                            </div>
-                            <div className="w-12 h-12 bg-brand-soft rounded-xl flex items-center justify-center">
-                                <Users className="w-6 h-6 text-brand-strong" />
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Active Subscriptions */}
-                <Card>
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-muted-foreground">Идэвхтэй захиалга</p>
-                                <p className="text-3xl font-bold text-foreground mt-1">
-                                    {data.stats.subscriptions.active}
-                                </p>
-                                {data.stats.subscriptions.past_due > 0 && (
-                                    <p className="text-xs text-status-danger mt-1">
-                                        {data.stats.subscriptions.past_due} хугацаа хэтэрсэн
+            {/* CRM stats */}
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+                {cards.map(({ label, value, icon: Icon }) => (
+                    <Card key={label}>
+                        <CardContent className="p-5">
+                            <div className="flex items-center justify-between gap-3">
+                                <div className="min-w-0">
+                                    <p className="text-[12.5px] text-muted-foreground">{label}</p>
+                                    <p className="num mt-1 text-2xl font-semibold tracking-[-0.02em] text-foreground">
+                                        {Number(value ?? 0).toLocaleString('en-US')}
                                     </p>
-                                )}
+                                </div>
+                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-brand-soft">
+                                    <Icon className="h-5 w-5 text-brand-strong" strokeWidth={1.75} />
+                                </div>
                             </div>
-                            <div className="w-12 h-12 bg-brand-soft rounded-xl flex items-center justify-center">
-                                <CreditCard className="w-6 h-6 text-brand-strong" />
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Total Revenue */}
-                <Card>
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-muted-foreground">Нийт орлого</p>
-                                <p className="text-3xl font-bold text-foreground mt-1">
-                                    {formatMoney(data.stats.revenue.total_revenue)}
-                                </p>
-                                <p className="text-xs text-muted-foreground mt-1">
-                                    {data.stats.revenue.paid_count} төлбөр
-                                </p>
-                            </div>
-                            <div className="w-12 h-12 bg-brand-soft rounded-xl flex items-center justify-center">
-                                <TrendingUp className="w-6 h-6 text-brand-strong" />
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
-
-                {/* Plans */}
-                <Card>
-                    <CardContent className="p-6">
-                        <div className="flex items-center justify-between">
-                            <div>
-                                <p className="text-sm text-muted-foreground">Идэвхтэй багц</p>
-                                <p className="text-3xl font-bold text-foreground mt-1">
-                                    {data.stats.plans_count}
-                                </p>
-                            </div>
-                            <div className="w-12 h-12 bg-status-info-soft rounded-xl flex items-center justify-center">
-                                <Package className="w-6 h-6 text-status-info" />
-                            </div>
-                        </div>
-                    </CardContent>
-                </Card>
+                        </CardContent>
+                    </Card>
+                ))}
             </div>
 
-            {/* Two Column Layout */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {/* Recent Shops */}
-                <Card>
-                    <CardContent className="p-6">
-                        <h2 className="text-lg font-semibold text-foreground mb-4">Сүүлийн байгууллагууд</h2>
-                        {data.recent_shops.length === 0 ? (
-                            <p className="text-muted-foreground text-center py-4">Шинэ байгууллага алга</p>
-                        ) : (
-                            <div className="space-y-3">
-                                {data.recent_shops.map((shop) => (
-                                    <div key={shop.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                                        <div>
-                                            <p className="font-medium text-foreground">{shop.name}</p>
-                                            <p className="text-sm text-muted-foreground">
-                                                {new Date(shop.created_at).toLocaleDateString('mn-MN')}
-                                            </p>
-                                        </div>
-                                        <ArrowUpRight className="w-4 h-4 text-brand-strong" />
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-
-                {/* Recent Invoices */}
-                <Card>
-                    <CardContent className="p-6">
-                        <h2 className="text-lg font-semibold text-foreground mb-4">Сүүлийн нэхэмжлэхүүд</h2>
-                        {data.recent_invoices.length === 0 ? (
-                            <p className="text-muted-foreground text-center py-4">Нэхэмжлэх алга</p>
-                        ) : (
-                            <div className="space-y-3">
-                                {data.recent_invoices.map((invoice) => (
-                                    <div key={invoice.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                                        <div>
-                                            <p className="font-medium text-foreground">{invoice.shops?.name}</p>
-                                            <p className="text-sm text-muted-foreground">{formatMoney(invoice.amount)}</p>
-                                        </div>
-                                        <span className={`px-2 py-1 text-xs rounded-full font-medium ${invoice.status === 'paid'
-                                            ? 'bg-brand-soft text-brand-strong'
-                                            : invoice.status === 'pending'
-                                                ? 'bg-status-pending-soft text-status-pending'
-                                                : 'bg-status-danger-soft text-status-danger'
-                                            }`}>
-                                            {invoice.status}
-                                        </span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </CardContent>
-                </Card>
-            </div>
-
-            {/* Plans Overview */}
+            {/* Recent shops */}
             <Card>
                 <CardContent className="p-6">
-                    <h2 className="text-lg font-semibold text-foreground mb-4">Багцын тойм</h2>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                        {data.plans.map((plan) => (
-                            <div key={plan.id} className="p-4 bg-surface-2 rounded-xl text-center">
-                                <p className="font-medium text-foreground">{plan.name}</p>
-                                <p className="text-lg font-bold text-brand-strong mt-1">
-                                    {plan.price_monthly === 0 ? 'Үнэгүй' : formatMoney(plan.price_monthly)}
-                                </p>
-                                <p className="text-xs text-muted-foreground">/сар</p>
-                            </div>
-                        ))}
-                    </div>
+                    <h2 className="text-lg font-semibold text-foreground mb-4">Сүүлийн байгууллагууд</h2>
+                    {data.recent_shops.length === 0 ? (
+                        <p className="text-muted-foreground text-center py-4">Шинэ байгууллага алга</p>
+                    ) : (
+                        <div className="space-y-1">
+                            {data.recent_shops.map((shop) => (
+                                <div key={shop.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+                                    <div className="min-w-0">
+                                        <p className="truncate font-medium text-foreground">{shop.name}</p>
+                                        <p className="mono-label text-[11px] text-muted-foreground">{formatShortDate(shop.created_at)}</p>
+                                    </div>
+                                    <ArrowUpRight className="w-4 h-4 shrink-0 text-brand-strong" />
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </CardContent>
             </Card>
         </div>

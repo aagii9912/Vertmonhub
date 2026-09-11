@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { formatShortDate } from '@/lib/utils/date';
+import { formatTimeAgo } from '@/lib/utils/date';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { FilterBar } from '@/components/dashboard/FilterBar';
@@ -121,18 +121,6 @@ function slaInfo(log: ServiceLog): { text: string; variant: StatusPillVariant } 
     if (hoursOpen > target) return { text: 'Хугацаа хэтэрсэн', variant: 'danger' };
     const remaining = Math.max(0, Math.round(target - hoursOpen));
     return { text: `${remaining}ц үлдсэн`, variant: hoursOpen > target * 0.75 ? 'pending' : 'neutral' };
-}
-
-function formatDate(s: string | null): string {
-    if (!s) return '—';
-    const d = new Date(s);
-    const now = new Date();
-    const diffH = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60));
-    if (diffH < 1) return 'Саяхан';
-    if (diffH < 24) return `${diffH} цагийн өмнө`;
-    const diffD = Math.floor(diffH / 24);
-    if (diffD < 7) return `${diffD} өдрийн өмнө`;
-    return formatShortDate(s);
 }
 
 export default function CustomerServicePage() {
@@ -419,7 +407,7 @@ export default function CustomerServicePage() {
                                                 {log.assigned_to || '—'}
                                             </td>
                                             <td className="px-4 py-3 text-muted-foreground text-xs">
-                                                {formatDate(log.created_at)}
+                                                {log.created_at ? formatTimeAgo(log.created_at) : '—'}
                                             </td>
                                             <td className="px-4 py-3">
                                                 <StatusPill variant={statusInfo.variant}>
@@ -543,7 +531,7 @@ function NewServiceLogModal({ open, onClose, onSubmit }: {
                         Шинэ хүсэлт бүртгэх
                     </DialogTitle>
                     <DialogDescription className="sr-only">
-                        Шинэ үйлчилгээний хүсэлт бүртгэх форм
+                        Шинэ санал гомдол бүртгэх форм
                     </DialogDescription>
                 </DialogHeader>
 

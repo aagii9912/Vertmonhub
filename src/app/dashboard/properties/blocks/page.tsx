@@ -23,6 +23,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { toast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
+import { formatMNT } from '@/lib/utils/currency';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 interface SummaryRow {
@@ -81,10 +82,6 @@ const STATUS_ORDER = ['available', 'ordered', 'reserved', 'sold', 'handed_over']
 
 function meta(status: string) {
     return STATUS_META[status] || STATUS_META.sold;
-}
-function formatMoney(n: number | null | undefined): string {
-    if (n === null || n === undefined || n === 0) return '—';
-    return new Intl.NumberFormat('mn-MN').format(Math.round(n)) + '₮';
 }
 function floorNum(floor: string | null): number {
     if (!floor) return 999;
@@ -423,7 +420,7 @@ function UnitDrawer({ unit: u, onClose, onUpdated }: {
                         >
                             <Pencil className="w-4 h-4" />
                         </button>
-                        <button onClick={onClose} className="p-1.5 hover:bg-surface-2 rounded-md text-muted-foreground transition-colors">
+                        <button type="button" onClick={onClose} aria-label="Хаах" className="p-1.5 hover:bg-surface-2 rounded-md text-muted-foreground transition-colors">
                             <X className="w-4 h-4" />
                         </button>
                     </div>
@@ -448,7 +445,7 @@ function UnitDrawer({ unit: u, onClose, onUpdated }: {
                                         <>
                                             <Field label="Нэр" value={u.buyer_name} />
                                             <Field label="Регистр" value={u.buyer_registration} icon={<IdCard className="w-3 h-3" />} />
-                                            <Field label="Гэрээний дүн" value={formatMoney(u.contract_total_price)} highlight />
+                                            <Field label="Гэрээний дүн" value={u.contract_total_price ? formatMNT(u.contract_total_price) : '—'} highlight />
                                         </>
                                     ) : (
                                         <p className="text-[12px] text-muted-foreground">Гэрээтэй холбогдсон худалдан авагч олдсонгүй.</p>

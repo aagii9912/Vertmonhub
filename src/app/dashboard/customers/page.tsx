@@ -22,7 +22,7 @@ import {
     RefreshCw,
     Star,
 } from 'lucide-react';
-import { formatShortDate } from '@/lib/utils/date';
+import { formatShortDate, formatRelativeDays } from '@/lib/utils/date';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { CustomerDetailSheet } from './_components/CustomerDetailSheet';
 import { CreateCustomerModal } from './_components/CreateCustomerModal';
@@ -509,18 +509,6 @@ export default function CustomersPage() {
         return formatShortDate(date);
     };
 
-    const formatTime = (date: string | null) => {
-        if (!date) return '';
-        const d = new Date(date);
-        const now = new Date();
-        const diff = now.getTime() - d.getTime();
-        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-        if (days === 0) return 'Өнөөдөр';
-        if (days === 1) return 'Өчигдөр';
-        if (days < 7) return `${days} өдрийн өмнө`;
-        return formatDate(date);
-    };
-
     const columns: DataTableColumn<Customer>[] = [
         {
             key: 'customer',
@@ -579,7 +567,7 @@ export default function CustomersPage() {
             cell: (customer) => (
                 <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
                     <Clock className="w-4 h-4 text-muted-foreground/70" />
-                    {formatTime(customer.last_contact_at || customer.created_at)}
+                    {formatRelativeDays(customer.last_contact_at || customer.created_at)}
                 </div>
             ),
         },
@@ -821,7 +809,7 @@ export default function CustomersPage() {
                     logError={logError}
                     onSubmitServiceLog={submitServiceLog}
                     formatDate={formatDate}
-                    formatTime={formatTime}
+                    formatTime={formatRelativeDays}
                 />
             )}
         </div>

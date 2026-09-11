@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Shield, Plus, Trash2, Save, Loader2, X, Check, AlertCircle, Lock } from 'lucide-react';
 import { ALL_MODULES, MODULE_LABELS } from '@/lib/rbac';
+import { confirmToast } from '@/components/ui/Toast';
 
 interface Role {
     id: string;
@@ -122,7 +123,13 @@ export default function RolesPage() {
     }
 
     async function deleteRole(roleId: string) {
-        if (!confirm('Энэ дүрийг устгахдаа итгэлтэй байна уу?')) return;
+        const ok = await confirmToast({
+            title: 'Энэ дүрийг устгах уу?',
+            description: 'Энэ үйлдлийг буцаах боломжгүй.',
+            confirmLabel: 'Устгах',
+            destructive: true,
+        });
+        if (!ok) return;
         setSaving(roleId);
         try {
             const res = await fetch(`/api/admin/roles/${roleId}`, { method: 'DELETE' });
@@ -188,7 +195,7 @@ export default function RolesPage() {
                         <thead className="bg-surface-2/40 border-b border-border">
                             <tr>
                                 <th className="text-left px-4 py-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider sticky left-0 bg-surface-2/40 min-w-[180px]">
-                                    Module
+                                    Модуль
                                 </th>
                                 {roles.map(role => (
                                     <th key={role.id} className="text-center px-3 py-3 min-w-[120px]">
@@ -257,7 +264,7 @@ export default function RolesPage() {
                             <tr className="hover:bg-surface-2/40">
                                 <td className="px-4 py-3 sticky left-0 bg-surface">
                                     <p className="text-sm font-medium text-foreground">Бичих эрх</p>
-                                    <p className="text-[11px] text-muted-foreground/70">canWrite</p>
+                                    <p className="text-[11px] text-muted-foreground/70">Бүртгэл үүсгэх, засах</p>
                                 </td>
                                 {roles.map(role => (
                                     <td key={role.id} className="text-center px-3 py-3">
@@ -278,7 +285,7 @@ export default function RolesPage() {
                             <tr className="hover:bg-surface-2/40">
                                 <td className="px-4 py-3 sticky left-0 bg-surface">
                                     <p className="text-sm font-medium text-foreground">Устгах эрх</p>
-                                    <p className="text-[11px] text-muted-foreground/70">canDelete</p>
+                                    <p className="text-[11px] text-muted-foreground/70">Бүртгэл устгах</p>
                                 </td>
                                 {roles.map(role => (
                                     <td key={role.id} className="text-center px-3 py-3">
@@ -299,7 +306,7 @@ export default function RolesPage() {
                             <tr className="hover:bg-surface-2/40">
                                 <td className="px-4 py-3 sticky left-0 bg-surface">
                                     <p className="text-sm font-medium text-foreground">Admin хандалт</p>
-                                    <p className="text-[11px] text-muted-foreground/70">canAccessAdmin</p>
+                                    <p className="text-[11px] text-muted-foreground/70">Админ самбарт нэвтрэх</p>
                                 </td>
                                 {roles.map(role => (
                                     <td key={role.id} className="text-center px-3 py-3">
@@ -371,7 +378,7 @@ export default function RolesPage() {
                                         value={newRole.display_name}
                                         onChange={e => setNewRole(p => ({ ...p, display_name: e.target.value }))}
                                         className="w-full px-3 py-2 border border-border-strong rounded-lg text-sm"
-                                        placeholder="Sales Agent"
+                                        placeholder="Борлуулалтын менежер"
                                     />
                                 </div>
                                 <div>
@@ -398,7 +405,7 @@ export default function RolesPage() {
 
                             {/* Module selection */}
                             <div>
-                                <label className="block text-sm font-medium text-foreground mb-2">Module зөвшөөрөл</label>
+                                <label className="block text-sm font-medium text-foreground mb-2">Модулийн зөвшөөрөл</label>
                                 <div className="grid grid-cols-3 gap-2">
                                     {ALL_MODULES.map(module => {
                                         const label = MODULE_LABELS[module];
