@@ -3,7 +3,7 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
-import * as XLSX from 'xlsx';
+import { readSheetRows, XlsxSheetNotFoundError, XlsxUnsupportedFormatError } from '@/lib/utils/xlsx';
 
 /** `?sortBy=` — зөвхөн эдгээр багана (өмнө нь дурын нэр `.order()`-т орж 500 өгдөг байв). */
 const SORTABLE = new Set([
@@ -143,6 +143,10 @@ export async function POST(request: NextRequest) {
         const result = await importContracts(authShop.id, buffer);
         return NextResponse.json(result, { status: result.success ? 200 : 400 });
     } catch (error) {
+        if (error instanceof XlsxUnsupportedFormatError) {
+            // .xls (Excel 97-2003) — exceljs уншдаггүй; ойлгомжтой 400
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
         logger.error('[Contracts API] POST error:', { error });
         return NextResponse.json(
             { error: 'Импорт хийхэд алдаа гарлаа' },
@@ -247,13 +251,16 @@ async function importContracts(
     shopId: string,
     buffer: Buffer
 ): Promise<{ success: boolean; imported: number; errors: string[]; message: string }> {
-    const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    if (!sheet) {
-        return { success: false, imported: 0, errors: [], message: 'Excel файлд лист олдсонгүй' };
+    // Эхний лист; огнооны нүд Date болж ирнэ (toDate боловсруулна). defval: null — толгой бүр түлхүүртэй.
+    let rows: Record<string, unknown>[];
+    try {
+        rows = await readSheetRows(buffer, 0, { defval: null });
+    } catch (error) {
+        if (error instanceof XlsxSheetNotFoundError) {
+            return { success: false, imported: 0, errors: [], message: 'Excel файлд лист олдсонгүй' };
+        }
+        throw error;
     }
-
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: null });
     if (rows.length === 0) {
         return { success: false, imported: 0, errors: [], message: 'Excel файл хоосон байна' };
     }

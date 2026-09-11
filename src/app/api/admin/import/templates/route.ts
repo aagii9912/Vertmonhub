@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import * as XLSX from 'xlsx';
+import { buildWorkbookBuffer } from '@/lib/utils/xlsx';
 
 /**
  * GET /api/admin/import/templates?type=properties
@@ -180,20 +180,17 @@ export async function GET(request: NextRequest) {
     }
 
     // Create workbook with headers + sample row
-    const wb = XLSX.utils.book_new();
-    const data = [tmpl.headers];
+    const data: unknown[][] = [tmpl.headers];
     if (tmpl.sampleRow) {
         data.push(tmpl.headers.map(h => tmpl.sampleRow![h] ?? ''));
     }
 
-    const ws = XLSX.utils.aoa_to_sheet(data);
-
-    // Set column widths
-    ws['!cols'] = tmpl.headers.map(h => ({ wch: Math.max(h.length + 4, 18) }));
-
-    XLSX.utils.book_append_sheet(wb, ws, tmpl.sheetName);
-
-    const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+    const buffer = await buildWorkbookBuffer([{
+        name: tmpl.sheetName,
+        aoa: data,
+        // Set column widths (тэмдэгтээр)
+        colWidths: tmpl.headers.map(h => Math.max(h.length + 4, 18)),
+    }]);
 
     return new NextResponse(buffer, {
         headers: {

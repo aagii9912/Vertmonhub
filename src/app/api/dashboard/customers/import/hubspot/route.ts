@@ -4,6 +4,7 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { parseHubspotContacts } from '@/lib/utils/file-parser';
+import { XlsxUnsupportedFormatError } from '@/lib/utils/xlsx';
 import { normalizePhone } from '@/lib/utils/phone';
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10MB
@@ -30,7 +31,7 @@ export async function POST(request: NextRequest) {
         }
 
         const buffer = Buffer.from(await file.arrayBuffer());
-        const contacts = parseHubspotContacts(buffer);
+        const contacts = await parseHubspotContacts(buffer);
 
         if (contacts.length === 0) {
             return NextResponse.json({
@@ -124,6 +125,10 @@ export async function POST(request: NextRequest) {
             errors,
         });
     } catch (error) {
+        if (error instanceof XlsxUnsupportedFormatError) {
+            // .xls (Excel 97-2003) — exceljs уншдаггүй; ойлгомжтой 400
+            return NextResponse.json({ error: error.message }, { status: 400 });
+        }
         logger.error('[HubSpot Import] error:', { error });
         return NextResponse.json({ error: 'Импорт амжилтгүй боллоо' }, { status: 500 });
     }

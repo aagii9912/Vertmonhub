@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
-import * as XLSX from 'xlsx';
+import { buildWorkbookBuffer, type WorkbookSheetSpec } from '@/lib/utils/xlsx';
 
 /** Export төрөл бүр өөрийн модулийн унших эрх шаардана (өмнө нь зөвхөн auth). */
 const EXPORT_MODULE: Record<string, string> = {
@@ -30,8 +30,8 @@ export async function GET(request: NextRequest) {
         const supabase = supabaseAdmin();
         const shopId = authShop.id;
 
-        let workbook;
-        let filename;
+        let sheet: WorkbookSheetSpec;
+        let filename: string;
 
         if (type === 'properties') {
             // Export нэгжийн нөөц (property_units) — Мандалын 2544 нэгж (paginate)
@@ -65,9 +65,7 @@ export async function GET(request: NextRequest) {
                 'Менежер': u.sales_manager || '-',
             }));
 
-            workbook = XLSX.utils.book_new();
-            const worksheet = XLSX.utils.json_to_sheet(exportData);
-            XLSX.utils.book_append_sheet(workbook, worksheet, 'Нэгжүүд');
+            sheet = { name: 'Нэгжүүд', rows: exportData };
             filename = `нэгжүүд_${new Date().toISOString().split('T')[0]}.xlsx`;
 
         } else if (type === 'leads') {
@@ -92,9 +90,7 @@ export async function GET(request: NextRequest) {
                 'Огноо': new Date(lead.created_at).toLocaleDateString('mn-MN'),
             })) || [];
 
-            workbook = XLSX.utils.book_new();
-            const worksheet = XLSX.utils.json_to_sheet(exportData);
-            XLSX.utils.book_append_sheet(workbook, worksheet, 'Лийдүүд');
+            sheet = { name: 'Лийдүүд', rows: exportData };
             filename = `лийдүүд_${new Date().toISOString().split('T')[0]}.xlsx`;
 
         } else if (type === 'customers') {
@@ -115,9 +111,7 @@ export async function GET(request: NextRequest) {
                 'Бүртгэгдсэн': new Date(c.created_at).toLocaleDateString('mn-MN'),
             })) || [];
 
-            workbook = XLSX.utils.book_new();
-            const worksheet = XLSX.utils.json_to_sheet(exportData);
-            XLSX.utils.book_append_sheet(workbook, worksheet, 'Харилцагчид');
+            sheet = { name: 'Харилцагчид', rows: exportData };
             filename = `харилцагчид_${new Date().toISOString().split('T')[0]}.xlsx`;
 
         } else if (type === 'contracts') {
@@ -156,8 +150,7 @@ export async function GET(request: NextRequest) {
                 'Огноо': c.contract_date ? new Date(String(c.contract_date)).toLocaleDateString('mn-MN') : '-',
             }));
 
-            workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportData), 'Гэрээнүүд');
+            sheet = { name: 'Гэрээнүүд', rows: exportData };
             filename = `гэрээнүүд_${new Date().toISOString().split('T')[0]}.xlsx`;
 
         } else if (type === 'manager') {
@@ -179,15 +172,14 @@ export async function GET(request: NextRequest) {
                 'Харилцагч': Number(m.unique_customers) || 0,
             }));
 
-            workbook = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(exportData), 'Менежерийн гүйцэтгэл');
+            sheet = { name: 'Менежерийн гүйцэтгэл', rows: exportData };
             filename = `менежер_гүйцэтгэл_${new Date().toISOString().split('T')[0]}.xlsx`;
 
         } else {
             return NextResponse.json({ error: 'Invalid export type' }, { status: 400 });
         }
 
-        const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+        const buffer = await buildWorkbookBuffer([sheet]);
 
         return new NextResponse(buffer, {
             headers: {
