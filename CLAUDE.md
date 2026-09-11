@@ -187,6 +187,7 @@ The internal staff assistant is a **multi-agent orchestrator** (`src/lib/ai/orch
 - Contracts/finance (finance-analyst): `process_contract_action`, `create_contract`, `delete_contract`.
 - Admin (`operations-admin`, super_admin only): `invite_user`, `assign_role`, `create_role`.
 - RBAC gating in `executeDataTool` (`lib/ai/data-assistant`): create/update→`canWrite`, delete→`canDelete`, admin→`role === 'super_admin'`.
+- **2026-09-11 review (Wave 0/1):** ALL write tools are confirm-gated — including `update_property_status/price`, `update_unit_status`, `update_lead_status`, `add_lead_note`, `process_contract_action` (they used to mutate without a preview and without audit). `add_lead_note`/`update_lead_status` refuse ambiguous name matches; `closed_won` requires an existing contract. Attachment URLs are only fetched from our own Supabase storage public buckets (`isAllowedAttachmentUrl`, 10s timeout). The stream route passes `signal` (client abort) + `deadlineAt` (50s) through `OrchestratorContext`; `withRetry` never retries an abort. `conversationId` writes are checked for `user_id` + `shop_id` ownership. «Үргэлж зөвшөөрөх» is keyed per shop **and** user; `update_property_price`, `create_contract`, `create_property` can never be remembered. Role resolution is `user_roles` only — the legacy `admins` table does not exist in prod and every fallback to it was removed.
 - **Sales-manager attribution:** create/schedule tools stamp the acting user's name (resolved from `user_profiles.full_name` via `resolveSalesManagerName`, passed as `OrchestratorContext.userName` → `executeDataTool(..., userName)`). Contracts use the existing `property_contracts.sales_manager` column; leads/viewings/customers use `sales_manager_name` (migration `20260617120000`, best-effort stamp so creates don't regress pre-migration).
 - **File attachments (read + attach).** The chat composer (`components/ai-assistant/ChatComposer.tsx`) uploads files/images to `POST /api/dashboard/upload` (bucket `products`, returns `{ url }`) and sends them as `attachments: [{url,name,mimeType}]`. `runAgent` passes image/PDF attachments to Gemini as `inlineData` (vision: AI reads/analyzes) and lists their URLs in the prompt. The confirm-gated `attach_file` tool links a file to a property/lead/customer/contract via the `ai_attachments` table (migration `20260617140000`); for property images it also appends to `properties.images[]`. Rendered via `components/ai-assistant/MessageAttachments.tsx`. The chat UI was redesigned (gradient header, agent legend, suggestion cards, animated bubbles, composer with drag-drop).
 - **Confirmation flow:** mutating tools are `confirm`-gated. During an agent run they are called with `confirm=false`, which returns a **preview** (no mutation) and is surfaced as a `pendingAction`. The UI (`components/ai-assistant/ActionConfirmCard.tsx`) renders an approve/cancel card; on approve the browser calls `POST /api/ai-assistant/action`, which re-checks RBAC + shop scope and re-runs the tool with `confirm=true` to actually mutate. Deletes are **soft** (`deleted_at`); migrations `20260617100000` (leads), `20260617120000` (viewings/contracts/customers + `sales_manager_name`). Reads hide soft-deleted rows via `runExcludingDeleted` (resilient to the column not existing yet). Audit via `logAiAudit` fires on real execution only. Tool name sets live in `lib/ai/data-assistant/tools.ts` (`WRITE_TOOL_NAMES`, `DELETE_TOOL_NAMES`, `ADMIN_TOOL_NAMES`, `MUTATING_TOOL_NAMES`).
@@ -205,7 +206,7 @@ The internal staff assistant is a **multi-agent orchestrator** (`src/lib/ai/orch
 |------|---------|
 | `supabase-browser.ts` | Client React components |
 | `supabase-server.ts` | Server components, API routes (user context) |
-| `supabase-middleware.ts` | Edge middleware (session refresh) |
+| `lib/auth/supabase-auth.ts` → `createSupabaseMiddlewareClient` | Edge middleware (session refresh); the old `supabase-middleware.ts` was dead and is deleted |
 | `supabase.ts` | Service-role (webhooks, admin operations) |
 
 ### Dashboard auth header
@@ -243,6 +244,18 @@ The «Editorial Terracotta» direction (docs/UI-REDESIGN-PLAN.md) is **supersede
 - **Dev mock**: in development only, a request header `x-ai-mock: ok|error` makes the stream route emit a scripted run without calling Gemini — use it to exercise the UI. Never available in production.
 - **Known environment issue (2026-09-10)**: the configured `GEMINI_API_KEY`'s Google project returns `403 Your project has been denied access` for every Gemini model (verified with curl), so the assistant cannot answer until the key/project is replaced. The UI now surfaces this as a clear non-retryable error instead of a generic failure.
 - `/dashboard/ai-assistant/agents` lists the real orchestrator agents from `GET /api/ai-assistant/agents` (static `AGENTS` definitions, tool permissions per agent); the old `ai_agents` table page is gone.
+
+### Server-side dates = Asia/Ulaanbaatar (2026-09-11)
+Vercel runs in UTC, so `new Date().setHours(0,0,0,0)` on the server is 08:00 Ulaanbaatar and «өнөөдөр» was wrong between 00:00–08:00 UB. Every server-side day/month boundary must use the helpers in `src/lib/utils/date.ts`: `ubStartOfDay`, `ubDayRange`, `ubDateStr`, `ubMonthRange`, `ubParts` (`getStartOfToday/getStartOfPeriod` now delegate to them). Vitest pins `process.env.TZ = 'Asia/Ulaanbaatar'` so local-date fixtures match. Never write `setHours(0, 0, 0, 0)` or `new Date(y, m, 1)` in API routes, libs or crons.
+
+### Auth / tenant rules that must not regress (2026-09-11 review, `docs/REVIEW-2026-09-11.md`)
+- No custom session cookie: the `vertmon-session` cookie is dead; `middleware.ts`, `resolve-user.ts`, `admin/auth.ts` and the marketing routes only trust Supabase `getUser()`.
+- Every `/api/*` handler self-authenticates: reads use `requireModule(...)` / `requireAnyModule([...])`, writes `requireModuleWrite(...)` / `requireWrite()`, deletes `requireModuleDelete(...)` (`src/lib/auth/require-permission.ts`), then `getUserShop()` (validates `x-shop-id` against owner ∪ `shop_members`). Public landing-page edits are super_admin only.
+- Cron routes use `isAuthorizedCron()` (`src/lib/auth/cron.ts`): timing-safe compare, **fails closed** unless `NODE_ENV === 'development'`. `CRON_SECRET` must be set in Vercel prod. Secrets/signatures are compared with `safeEqual` (`src/lib/crypto/safe-equal.ts`).
+- `PATCH` bodies never go straight into `.update()` — use a Zod allow-list (see `UpdatePaymentScheduleSchema`).
+- Storage: the `products` bucket policies are shop-folder scoped (migration `20260911120000`); server uploads go through `/api/dashboard/upload` (MIME allow-list, ≤4MB) and `/api/properties/upload`.
+- DM bot (`ToolExecutor.check_payment_status`) only reveals contract finances when **contract number + registered phone both match**; `request_human_support` pauses the bot (`ai_paused_until` +30 min).
+- Browser code never hand-writes `x-shop-id` or reads `vertmonhub_active_shop_id` — use `dashboardFetch`/`dashboardJson`/`dashboardMutate` (lint-enforced).
 
 ### Rate limiting (middleware)
 - **Strict:** `/api/chat`, `/api/ai*`
@@ -311,7 +324,11 @@ Active migrations live in `supabase/migrations/`. Old e-commerce migrations are 
 
 Key real-estate tables: `shops`, `properties`, `leads`, `property_viewings`, `customers`, `chat_history`, `ai_memory`, `roles`, `role_permissions`, `user_roles`, `push_subscriptions`, plus marketing/survey tables.
 
-Note: the `customers` table still carries legacy e-commerce columns (`total_orders`, `total_spent`, `is_vip`). They are no longer read by the app and are scheduled for a future destructive migration.
+Notes (verified against the live DB on 2026-09-11):
+- Legacy e-commerce **tables** still exist (`orders`, `order_items`, `products`, `discount_schedules`, `pending_messages`, …) but no live code reads them; `customers.total_orders/total_spent/is_vip` were dropped in `20260608160000`. The phantom SaaS objects (`admins`, `plans`, `subscriptions`, `invoices`, `ai_memory`, `exec_sql`) do **not** exist — do not write code that queries them.
+- `properties` (listing with images) is **empty** in prod; the real inventory is `property_units` (2 500+ units, `property_block_summary` view). The DM bot's `search_properties` / `schedule_viewing` and the prompt's inventory summary fall back to `property_units`.
+- Migrations are applied with node + `pg` over `DATABASE_URL` (no CLI). **Always record the version in `supabase_migrations.schema_migrations`** (the apply script in the 2026-09-11 session did this; history was stale before). Schema-only, additive DDL; data changes are separate, explicitly approved statements.
+- `rate_limits` is cleaned by the `data-cleanup` cron (pg_cron was not running); `leads.client_request_id` is the idempotency key for lead creation.
 
 Conventions: tables `snake_case` plural, columns `snake_case`, functions `snake_case`.
 
@@ -353,6 +370,8 @@ The following Syncly e-commerce surface was removed during the earlier `chore/re
 
 If you need to bring any of this back, do it intentionally — these were removed as a deliberate cleanup, not an oversight.
 
+**Removed in the 2026-09-11 review waves (branch `fix/wave-0-security`, see `docs/REVIEW-2026-09-11.md`):** `api/ai-assistant/analyze-messages` (unauthenticated), `api/admin/setup` (bootstrap backdoor against a nonexistent `admins` table), `api/features` + `FeatureGate` + `useFeatures` (phantom `plans` gating), the `vertmon-session` cookie readers, `sentry.client.config.ts` (replaced by `src/instrumentation-client.ts`), the data-assistant `list_orders`/`get_product_stats` tools, the webhook `ORDER_` postback, 32 zero-importer files (`components/charts/*`, `components/chat/*`, `NotificationButton`, `ThemeToggle`, `ConversationItem`, `EmptyCart`, `useDashboard`, `usePWAInstall`, `lib/ai/{index,analytics,experiments,resilience,services/ProductParser,tools/index,tools/definitions/customer,config/index,helpers/index}`, `lib/{errors,monitoring,services,webhook}/index`, `lib/webhooks`, `lib/supabase-middleware`, `lib/utils/{ai-preview,api-response,mobile-utils}`, `lib/validations/index`), the stale e2e specs (`workspace-switcher`, `admin-plan-change`, `ui_playground`), root scripts `check-db.ts`/`add_envs.sh`/`update_landing.js`, and the deps `@supabase/auth-helpers-nextjs`, `jsonwebtoken`, `puppeteer`. The HubSpot/contract PII CSVs were untracked (`.gitignore` now blocks `*.csv`, `REPORTS/*`) — the git history still has to be purged (`git filter-repo`), which needs the owner's go-ahead.
+
 **Removed in the v2 redesign (2026-09-10, branch `feat/redesign-v2`):** the three-workspace navigation (`lib/navigation/workspaces.ts`, `useActiveWorkspace.ts`, `WorkspaceSwitcher`), the v1 dashboards (`OrgDashboard`, `components/dashboard/my/*`, `AskAIHero`, `TeamOverview`, `SalesChart`, `AIMonitor`, `SalesTargetWidget`, `useDashboardPrefs`), dead primitives (`ui/Avatar`, `BottomSheet`, `Breadcrumb`, `Label`, `LiveIndicator`, `PullToRefresh`, `RadioGroup`, `Separator`, `Tooltip`), dead dashboard/chat components (`ActionCenter`, `ConversationList`, `FloorPlan`, `MessageThread`, `ShopSwitcher`, `chat/ChatContainer`), and the `src/app/test/*` playground routes. The `user_dashboard_prefs` table + `/api/dashboard/prefs` still exist but have no UI.
 
 ---
@@ -393,6 +412,15 @@ DIGEST_EMAIL=
 # Гадаад landing page-ээс лид хүлээн авах (/api/leads CORS)
 LEAD_ALLOWED_ORIGINS=
 LEAD_WELCOME_SITE_URL=
+LEAD_SHOP_ID=              # олон shop-той үед public лидийн эзэн shop (байхгүй бол хамгийн эртний shop)
+TURNSTILE_SECRET_KEY=      # prod-д ЗААВАЛ (байхгүй бол public /api/leads 400 буцаана)
+
+# Cron (Vercel Cron → Authorization: Bearer $CRON_SECRET) — prod-д ЗААВАЛ, байхгүй бол cron 401
+CRON_SECRET=
+
+# Sentry source map upload (заавал биш; байхгүй бол upload алгасна)
+SENTRY_ORG=
+SENTRY_PROJECT=
 
 # Sentry (optional)
 SENTRY_DSN=
@@ -411,3 +439,6 @@ SENTRY_AUTH_TOKEN=
 6. **`@/` path alias** maps to `src/`.
 7. **Vercel deploys only `main`** to the `sin1` region.
 8. The `shops` table is intentionally still load-bearing — a full multi-tenant rework is a planned follow-up, not in scope for routine changes.
+9. **Current improvement plan:** `docs/REVIEW-2026-09-11.md` (Wave 0–3). Wave 0/1 and part of Wave 2 are done on `fix/wave-0-security`; §8 of that doc tracks what is still open (git history PII purge, browser-Supabase → API routes, `/api/me`, UI consolidation, tests for RBAC/RLS).
+10. Sentry only works through `src/instrumentation.ts` + `src/instrumentation-client.ts` + `withSentryConfig` in `next.config.ts` — never add root-level `sentry.*.config.ts` files that nothing imports.
+11. Prod DB facts are in the auto-memory note `live-db-state-2026-09-11` and §7.1 of the review doc; check them before writing DB-dependent code.
