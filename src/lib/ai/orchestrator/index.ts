@@ -1,219 +1,95 @@
 /**
- * AI Orchestrator — entry point
+ * AI Orchestrator v3 — ГИБРИД (Claude)
  *
- * 1. Planner хүсэлтийг шинжилж аль agent(ууд)-ыг дуудахыг шийднэ.
- * 2. Сонгогдсон agent-ууд дараалан гүйцэтгэнэ (өмнөх үр дүнг контекст болгож дамжуулна).
- * 3. Нэгээс олон agent ажилласан бол синтезатор хариуг нэгтгэнэ.
- * 4. Бүх алхмын ил тод мөшгилт (trace) болон ашигласан agent-уудыг буцаана.
+ * Нэг үндсэн туслах (claude-opus-5) хэрэглэгчийн эрхэд тохирсон БҮХ data tool-той
+ * agentic loop ажиллуулж, хариугаа шууд stream-лэнэ. Нарийн олон домэйны шинжилгээнд
+ * модель өөрөө `delegate_to_specialists`-ээр мэргэшсэн дэд агентуудыг (Sonnet) ЗЭРЭГ
+ * ажиллуулж, үр дүнг нь өөрөө нэгтгэнэ. Planner/synthesizer дуудлага байхгүй.
  */
 
-import { GoogleGenerativeAI } from '@google/generative-ai';
 import { logger } from '@/lib/utils/logger';
-import { AGENTS } from './agents';
-import { runAgent } from './runAgent';
-import { planRequest } from './planner';
-import { withRetry } from './retry';
+import { MAIN_MODEL } from '@/lib/ai/claude/client';
+import { dataToolsForPerms, ASK_USER_TOOL, buildDelegateTool, DELEGATE_TOOL_NAME } from '@/lib/ai/claude/tools';
 import { getShopMemory, formatShopMemory } from '@/lib/ai/data-assistant/functions';
-import type {
-    AgentBadge, AgentRunResult, OrchestratorContext,
-    OrchestratorResult, OrchestrationTrace, TraceStep, PendingAction,
-} from './types';
+import { AGENTS, AGENT_LIST } from './agents';
+import { runAgent } from './runAgent';
+import { runLoop, buildHistory, buildUserContent } from './loop';
+import { buildSystemBlocks } from './prompt';
+import type { AgentBadge, AgentId, OrchestratorContext, OrchestratorResult, PendingAction, TraceStep } from './types';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-const SYNTH_MODEL = 'gemini-3.5-flash';
+const MAIN_BADGE: AgentBadge = { id: 'main', name: 'AI туслах', emoji: '✨', color: 'violet' };
 
-/** Олон agent-ийн хариуг нэг цэгцтэй монгол хариу болгон нэгтгэнэ. */
-async function synthesize(
-    message: string,
-    parts: Array<{ name: string; emoji: string; text: string }>,
-    onToken?: (text: string) => void,
-    onReset?: () => void,
-): Promise<{ text: string; latencyMs: number; tokens: number }> {
+export async function runOrchestrator(message: string, ctx: OrchestratorContext): Promise<OrchestratorResult> {
     const started = Date.now();
-    const model = genAI.getGenerativeModel({
-        model: SYNTH_MODEL,
-        systemInstruction: `Та бол Vertmon Hub-ийн ОРЧЕСТРАТОР нэгтгэгч. Доорх мэргэжилтэн agent-уудын хариуг нэг цэгцтэй, давхардалгүй, монгол хариу болгон нэгтгэ.
-ДҮРЭМ: монголоор; мөнгийг ₮ форматаар; хүснэгт/жагсаалтаар цэгцэл; шинэ мэдээлэл зохиохгүй, зөвхөн өгөгдсөн хариунуудыг ухаалгаар нэгтгэ.`,
-        generationConfig: { temperature: 0.4, maxOutputTokens: 2048 },
-    });
 
-    const composed = parts.map((p) => `### ${p.emoji} ${p.name}\n${p.text}`).join('\n\n');
-    const prompt = `Хэрэглэгчийн асуулт: ${message}\n\nМэргэжилтнүүдийн хариу:\n${composed}\n\nДээрхийг нэгтгэн эцсийн хариу бэлдэнэ үү.`;
-
-    if (onToken) {
-        // Streaming нэгтгэл — хэрэглэгч хариуг бичигдэж байхад нь харна.
-        let tries = 0;
-        const result = await withRetry(async () => {
-            // Дахин оролдлого: client-д аль хэдийн явуулсан токенуудыг цэвэрлүүлнэ (давхар текст)
-            if (tries++ > 0) onReset?.();
-            const r = await model.generateContentStream(prompt);
-            let text = '';
-            for await (const chunk of r.stream) {
-                let t = '';
-                try { t = chunk.text(); } catch { t = ''; }
-                if (t) { text += t; onToken(t); }
-            }
-            const resp = await r.response;
-            return { text: text || resp.text(), tokens: resp?.usageMetadata?.totalTokenCount ?? 0 };
-        });
-        return { text: result.text, latencyMs: Date.now() - started, tokens: result.tokens };
-    }
-
-    const result = await withRetry(() => model.generateContent(prompt));
-    return {
-        text: result.response.text(),
-        latencyMs: Date.now() - started,
-        tokens: result.response?.usageMetadata?.totalTokenCount ?? 0,
-    };
-}
-
-/**
- * Orchestrator-ийн үндсэн entry. Хүсэлтийг agent-уудад замчилж, нэгтгэж, мөшгилттэй буцаана.
- */
-export async function runOrchestrator(
-    message: string,
-    ctx: OrchestratorContext,
-): Promise<OrchestratorResult> {
-    const orchestratorStart = Date.now();
-
-    // 0. Урт хугацааны shop memory-г контекстод нэмнэ (агентууд санана)
+    // 0. Урт хугацааны shop memory → системийн мэдлэгт (best-effort).
     try {
         const memText = formatShopMemory(await getShopMemory(ctx.shopId));
         if (memText) ctx = { ...ctx, shopKnowledge: [ctx.shopKnowledge, memText].filter(Boolean).join('\n\n') };
-    } catch { /* memory багана/хүснэгт байхгүй бол алгасна */ }
+    } catch { /* хүснэгт байхгүй бол алгасна */ }
 
-    // 1. Plan
-    const { plan, latencyMs: plannerLatencyMs, model: plannerModel } = await planRequest(message, ctx);
-    logger.info('[Orchestrator] Plan', { steps: plan.steps.map((s) => s.agentId) });
-    ctx.onEvent?.({
-        type: 'plan',
-        reasoning: plan.reasoning,
-        steps: plan.steps.map((s) => ({ agentId: s.agentId, agentName: AGENTS[s.agentId]?.name ?? s.agentId, task: s.task })),
-        latencyMs: plannerLatencyMs,
-    });
-    // Ганц агент → түүний эцсийн текстийг шууд урсгана; олон агент → нэгтгэлийг урсгана.
-    const stepCtx: OrchestratorContext = { ...ctx, streamFinal: plan.steps.length === 1 };
+    // 1. Tool-ууд: data (RBAC) + ask_user + delegate (super_admin биш бол admin агентыг жагсаалтаас хасна).
+    const roster = AGENT_LIST.filter((a) => ctx.perms.role === 'super_admin' || !(a.adminToolNames?.length && a.readToolNames.length <= 1));
+    const tools = [...dataToolsForPerms(ctx.perms), ASK_USER_TOOL, buildDelegateTool(roster)];
 
-    // 2. Execute steps sequentially; feed prior outputs as context to later steps
-    const traceSteps: TraceStep[] = [];
-    const runResults: Array<{ agentId: string; name: string; emoji: string; result: AgentRunResult }> = [];
-    const priorOutputs: string[] = [];
-    let totalTokens = 0;
+    const steps: TraceStep[] = [];
+    const subResults: Array<{ agentId: AgentId; pendingActions: PendingAction[]; data: unknown; chartConfig: unknown }> = [];
 
-    for (const [index, step] of plan.steps.entries()) {
-        const agent = AGENTS[step.agentId];
-        if (!agent) continue;
-
-        // Client цуцалсан → цааш Gemini/DB дуудахгүй (өмнө нь «Зогсоох» дарсан ч сервер 60с ажилладаг байв)
-        if (ctx.signal?.aborted) throw new Error('Хүсэлт цуцлагдлаа (abort)');
-        // Хугацааны хязгаар: Vercel функц таслагдахаас өмнө байгаа хариугаа өгнө
-        if (ctx.deadlineAt && Date.now() > ctx.deadlineAt) {
-            logger.warn('[Orchestrator] deadline reached, skipping remaining agents', { skipped: plan.steps.length - index });
-            traceSteps.push({
-                agentId: agent.id, agentName: agent.name, emoji: agent.emoji, color: agent.color,
-                task: step.task, toolsUsed: [], latencyMs: 0, tokens: 0, ok: false,
-                error: 'Хугацаа хэтэрсэн тул энэ агентыг алгаслаа',
-            });
-            ctx.onEvent?.({ type: 'step_done', agentId: agent.id, agentName: agent.name, index, ok: false, latencyMs: 0, toolsUsed: [], error: 'Хугацаа хэтэрсэн' });
-            continue;
-        }
-
-        const task = priorOutputs.length > 0
-            ? `${step.task}\n\n[Өмнөх мэргэжилтнүүдийн олж тогтоосон зүйл — давхардуулахгүйгээр ашигла]:\n${priorOutputs.join('\n---\n')}`
-            : step.task;
-
-        ctx.onEvent?.({ type: 'step_start', agentId: agent.id, agentName: agent.name, index });
-        const result = await runAgent(agent, task, stepCtx);
-        ctx.onEvent?.({ type: 'step_done', agentId: agent.id, agentName: agent.name, index, ok: result.ok, latencyMs: result.latencyMs, toolsUsed: result.toolsUsed, error: result.error });
-        totalTokens += result.tokens;
-        runResults.push({ agentId: agent.id, name: agent.name, emoji: agent.emoji, result });
-        if (result.ok && result.text) priorOutputs.push(`${agent.name}: ${result.text}`);
-
-        traceSteps.push({
-            agentId: agent.id,
-            agentName: agent.name,
-            emoji: agent.emoji,
-            color: agent.color,
-            task: step.task,
-            toolsUsed: result.toolsUsed,
-            latencyMs: result.latencyMs,
-            tokens: result.tokens,
-            ok: result.ok,
-            error: result.error,
-        });
-    }
-
-    // 3. Compose the final answer
-    let finalText: string;
-    let synthesisUsed = false;
-    let synthesisLatencyMs = 0;
-
-    const okResults = runResults.filter((r) => r.result.ok && r.result.text);
-    if (okResults.length === 0) {
-        // Бүх agent унасан — шалтгааныг ялгаж ойлгомжтой мессеж өгнө.
-        const errs = runResults.map((r) => r.result.error || '').join(' | ');
-        const rateLimited = /429|rate.?limit|quota|overloaded|503/i.test(errs);
-        const denied = /403|denied access|PERMISSION_DENIED|API key not valid|API_KEY_INVALID/i.test(errs);
-        finalText = denied
-            ? 'AI үйлчилгээний түлхүүр/төслийн эрх хаагдсан байна (Google 403). Админ Тохиргоо → AI хэсэгт GEMINI_API_KEY-г шинэ төслийн түлхүүрээр солино уу.'
-            : rateLimited
-                ? 'AI систем түр ачаалалтай байна. 30 секунд орчим хүлээгээд дахин асуугаарай.'
-                : 'Уучлаарай, хариу бэлдэх үед алдаа гарлаа. Дахин оролдоно уу.';
-    } else if (okResults.length === 1) {
-        finalText = okResults[0].result.text;
-    } else if (ctx.deadlineAt && Date.now() > ctx.deadlineAt) {
-        // Хугацаа дууссан — нэгтгэх Gemini дуудлага хийхгүй, шууд залгана
-        finalText = okResults.map((r) => `${r.emoji} **${r.name}**\n${r.result.text}`).join('\n\n');
-    } else {
-        try {
-            ctx.onEvent?.({ type: 'synthesis_start' });
-            const synth = await synthesize(
-                message,
-                okResults.map((r) => ({ name: r.name, emoji: r.emoji, text: r.result.text })),
-                ctx.onEvent ? (t) => ctx.onEvent!({ type: 'token', text: t }) : undefined,
-                ctx.onEvent ? () => ctx.onEvent!({ type: 'token_reset' }) : undefined,
-            );
-            finalText = synth.text;
-            synthesisUsed = true;
-            synthesisLatencyMs = synth.latencyMs;
-            totalTokens += synth.tokens;
-        } catch (error) {
-            logger.error('[Orchestrator] Synthesis failed, concatenating', {
-                error: error instanceof Error ? error.message : 'unknown',
-            });
-            finalText = okResults.map((r) => `${r.emoji} **${r.name}**\n${r.result.text}`).join('\n\n');
-        }
-    }
-
-    // 4. Pick first data/chart produced by a successful step (for visualization)
-    const withChart = runResults.find((r) => r.result.ok && r.result.chartConfig);
-    const withData = runResults.find((r) => r.result.ok && r.result.data);
-
-    // Бүх алхмаас баталгаажуулалт хүлээж буй үйлдлүүдийг цуглуулна.
-    const pendingActions: PendingAction[] = runResults.flatMap((r) => r.result.pendingActions || []);
-
-    const agentsUsed: AgentBadge[] = runResults
-        .filter((r) => r.result.ok)
-        .map((r) => ({ id: r.agentId as AgentBadge['id'], name: r.name, emoji: r.emoji, color: AGENTS[r.agentId as AgentBadge['id']].color }));
-
-    const trace: OrchestrationTrace = {
-        plannerReasoning: plan.reasoning,
-        plannerLatencyMs,
-        plannerModel,
-        steps: traceSteps,
-        synthesisUsed,
-        synthesisLatencyMs,
-        totalLatencyMs: Date.now() - orchestratorStart,
-        totalTokens,
+    // 2. Дэд агентуудыг зэрэг ажиллуулах дотоод tool.
+    const delegate = async (args: Record<string, unknown>) => {
+        const tasks = (Array.isArray(args.tasks) ? args.tasks : []) as Array<{ agent?: string; task?: string }>;
+        const valid = tasks
+            .filter((t) => t && typeof t.agent === 'string' && AGENTS[t.agent as AgentId] && roster.some((r) => r.id === t.agent))
+            .slice(0, 4);
+        if (valid.length === 0) return { error: 'Хүчинтэй дэд агент/даалгавар алга. Өөрөө tool дуудаж үргэлжлүүл.' };
+        if (ctx.deadlineAt && Date.now() > ctx.deadlineAt - 15_000) return { error: 'Хугацаа хүрэлцэхгүй тул дэд агент ажиллуулахгүй — өөрөө шууд tool дуудаж товч хариул.' };
+        ctx.onEvent?.({ type: 'status', text: `${valid.length} мэргэжилтэн зэрэг ажиллаж байна…` });
+        const results = await Promise.all(valid.map(async (t) => {
+            const agent = AGENTS[t.agent as AgentId];
+            const r = await runAgent(agent, String(t.task || message), { ...ctx, onEvent: ctx.onEvent });
+            steps.push({ agentId: agent.id, agentName: agent.name, emoji: agent.emoji, color: agent.color, task: String(t.task || ''), toolsUsed: r.toolsUsed, latencyMs: r.latencyMs, tokens: r.tokens, ok: r.ok, error: r.error });
+            subResults.push({ agentId: agent.id, pendingActions: r.pendingActions, data: r.data, chartConfig: r.chartConfig });
+            return { agent: agent.id, name: agent.name, ok: r.ok, result: r.ok ? r.text : `(алдаа: ${r.error})`, pending_actions: r.pendingActions.map((p) => p.label) };
+        }));
+        return { results, note: 'Дээрх дүгнэлтүүдийг нэгтгэж хэрэглэгчид нэг цэгцтэй хариу бич. Дэд агентын санал болгосон үйлдлүүд аль хэдийн баталгаажуулалт хүлээж байна — дахин бүү дууд.' };
     };
 
+    // 3. Үндсэн loop.
+    const system = buildSystemBlocks(ctx);
+    const messages = [...buildHistory(ctx.history), { role: 'user' as const, content: await buildUserContent(message, ctx.attachments) }];
+    const r = await runLoop({
+        model: MAIN_MODEL, system, tools, messages, ctx, streamText: true,
+        agentLabel: { id: 'main', name: MAIN_BADGE.name, emoji: MAIN_BADGE.emoji },
+        customTools: { [DELEGATE_TOOL_NAME]: delegate },
+    });
+
+    const pendingActions = [...r.pendingActions, ...subResults.flatMap((s) => s.pendingActions)];
+    const agentsUsed: AgentBadge[] = [MAIN_BADGE, ...steps.filter((s) => s.ok).map((s) => ({ id: s.agentId, name: s.agentName, emoji: s.emoji, color: s.color }))];
+    const totalTokens = r.usage.input + r.usage.output + steps.reduce((a, s) => a + s.tokens, 0);
+    const withData = r.data ?? subResults.find((s) => s.data)?.data ?? null;
+    const withChart = r.chartConfig ?? subResults.find((s) => s.chartConfig)?.chartConfig ?? null;
+
+    logger.info('[Orchestrator] done', { rounds: r.rounds, tools: r.toolsUsed, steps: steps.map((s) => s.agentId), ms: Date.now() - started });
+
     return {
-        text: finalText,
-        data: withData?.result.data ?? null,
-        chartConfig: withChart?.result.chartConfig ?? null,
+        text: r.text,
+        data: withData,
+        chartConfig: withChart,
         agentsUsed,
-        trace,
         pendingActions,
+        clarification: r.clarification,
+        trace: {
+            model: MAIN_MODEL,
+            rounds: r.rounds,
+            tools: r.traceTools,
+            steps,
+            totalLatencyMs: Date.now() - started,
+            totalTokens,
+            inputTokens: r.usage.input,
+            outputTokens: r.usage.output,
+            cacheReadTokens: r.usage.cacheRead,
+            summaryUsed: !!ctx.conversationSummary,
+        },
     };
 }
 

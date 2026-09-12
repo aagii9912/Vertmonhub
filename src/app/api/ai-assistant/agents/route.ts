@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { resolveApiUser } from '@/lib/auth/resolve-user';
 import { AGENTS } from '@/lib/ai/orchestrator/agents';
+import { MAIN_MODEL, FAST_MODEL } from '@/lib/ai/claude/client';
 
 /**
  * GET /api/ai-assistant/agents — orchestrator-ын БОДИТ агентууд (статик
@@ -15,12 +16,12 @@ export async function GET() {
         id: a.id,
         name: a.name,
         description: a.description,
-        temperature: a.temperature,
+
         readTools: a.readToolNames,
         writeTools: a.writeToolNames,
         deleteTools: a.deleteToolNames ?? [],
         adminTools: a.adminToolNames ?? [],
         adminOnly: (a.adminToolNames ?? []).length > 0 && a.readToolNames.length <= 1,
     }));
-    return NextResponse.json({ agents, model: process.env.GEMINI_MODEL || 'gemini-3.5-flash' });
+    return NextResponse.json({ agents, model: MAIN_MODEL, fastModel: FAST_MODEL });
 }

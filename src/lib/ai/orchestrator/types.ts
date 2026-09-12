@@ -1,14 +1,14 @@
 /**
- * AI Orchestrator — type definitions
+ * AI Orchestrator v3 — type definitions
  *
- * The orchestrator замчилагч нь нэг хүсэлтийг задлан шинжилж, тусгай мэргэшсэн
- * agent-уудад (Дата аналист, Байрны мэргэжилтэн, CRM, Санхүү, Зөвлөх) хуваарилж,
- * үр дүнг нэгтгээд, бүх алхмын мөшгилт (trace)-ийг буцаана.
+ * v3 = ГИБРИД: нэг үндсэн Claude туслах (бүх tool-той agentic loop, streaming) +
+ * шаардлагатай үед мэргэшсэн дэд агентуудад зэрэг хуваарилах (`delegate_to_specialists`).
+ * Planner/synthesizer дуудлагууд байхгүй — модель өөрөө шийднэ.
  */
 
 import type { AssistantPerms } from '@/lib/ai/data-assistant';
 
-/** Бүртгэлтэй agent-уудын тогтмол ID-ууд. */
+/** Бүртгэлтэй дэд агентуудын тогтмол ID-ууд. */
 export type AgentId =
     | 'data-analyst'
     | 'property-expert'
@@ -18,26 +18,18 @@ export type AgentId =
     | 'operations-admin'
     | 'marketing-specialist';
 
-/** Нэг agent-ийн тодорхойлолт (registry дотор). */
+/** Нэг дэд агентын тодорхойлолт (registry дотор). */
 export interface AgentDefinition {
     id: AgentId;
-    /** Хэрэглэгчид харагдах монгол нэр. */
     name: string;
     emoji: string;
-    /** Badge-ийн өнгөний түлхүүр (UI talvendaa map хийнэ). */
     color: 'emerald' | 'violet' | 'sky' | 'amber' | 'rose';
-    /** Planner энэ agent-ийг хэзээ сонгохыг ойлгох тайлбар. */
+    /** Үндсэн туслах энэ агентыг хэзээ сонгохыг ойлгох тайлбар. */
     description: string;
-    temperature: number;
-    /** Энэ agent-д нээлттэй унших tool-уудын нэрс (data-assistant readTools-оос). */
     readToolNames: string[];
-    /** Бичих эрхтэй үед нээгдэх write/create tool-уудын нэрс (perms.canWrite шаардана). */
     writeToolNames: string[];
-    /** Устгах эрхтэй үед нээгдэх delete tool-уудын нэрс (perms.canDelete шаардана). */
     deleteToolNames?: string[];
-    /** ЗӨВХӨН super_admin-д нээгдэх admin tool-уудын нэрс. */
     adminToolNames?: string[];
-    /** Тухайн agent-д зориулсан фокустай систем заавар. */
     buildInstruction: (shopKnowledge?: string) => string;
 }
 
@@ -46,85 +38,90 @@ export interface PendingAction {
     id: string;
     tool: string;
     args: Record<string, unknown>;
-    /** Хэрэглэгчид харагдах товч гарчиг. */
     label: string;
-    /** Гүйцэтгэхээс өмнө харуулах талбарууд. */
     preview: Record<string, unknown>;
     agentId: string;
     agentName: string;
     emoji: string;
 }
 
-/** Orchestrator гүйцэтгэлд дамжуулах контекст. */
+/** Модель хэрэглэгчээс тодруулга асуусан (ask_user). */
+export interface Clarification {
+    question: string;
+    options: string[];
+}
+
+/** Ярианы түүхийн нэг мессеж (client → server). */
+export interface HistoryMessage {
+    role: string;
+    content: string;
+}
+
 /**
- * Streaming үйл явдлууд — UI алхам бүрийн явцыг бодит цагт харуулна.
- * token — эцсийн хариуны хэсэг; token_reset — өмнө илгээсэн урьдчилсан текстийг
- * хаях (model дунд нь tool дуудсан үед).
+ * Streaming үйл явдлууд — UI алхам бүрийг бодит цагт харуулна (ChatGPT/Claude маяг).
+ * - tool_start/tool_done: үндсэн туслахын tool дуудлага (chat дотор inline мөр).
+ * - step_*: дэд агентын ажил (delegate үед).
+ * - token: эцсийн хариуны хэсэг; token_reset: өмнөх урьдчилсан текстийг хаях.
  */
 export type OrchestratorEvent =
-    | { type: 'plan'; reasoning: string; steps: Array<{ agentId: AgentId; agentName: string; task: string }>; latencyMs: number }
-    | { type: 'step_start'; agentId: AgentId; agentName: string; index: number }
-    | { type: 'tool'; agentId: AgentId; tool: string }
-    | { type: 'step_done'; agentId: AgentId; agentName: string; index: number; ok: boolean; latencyMs: number; toolsUsed: string[]; error?: string }
-    | { type: 'synthesis_start' }
+    | { type: 'status'; text: string }
+    | { type: 'tool_start'; id: string; tool: string; args: Record<string, unknown>; agentId?: AgentId }
+    | { type: 'tool_done'; id: string; tool: string; ok: boolean; summary: string; latencyMs: number; agentId?: AgentId }
+    | { type: 'step_start'; agentId: AgentId; agentName: string; task: string }
+    | { type: 'step_done'; agentId: AgentId; agentName: string; ok: boolean; latencyMs: number; toolsUsed: string[]; error?: string }
     | { type: 'token'; text: string }
-    | { type: 'token_reset' };
+    | { type: 'token_reset' }
+    | { type: 'clarify'; question: string; options: string[] };
 
 export interface OrchestratorContext {
     shopId: string;
     userId: string;
     perms: AssistantPerms;
     shopKnowledge?: string;
-    history?: Array<{ role: string; content: string }>;
-    /** Streaming: алхам/токен бүрийг хүлээн авагч (заавал биш). */
+    history?: HistoryMessage[];
+    /** Урт ярианы хураангуй (DB-ээс, best-effort). */
+    conversationSummary?: string | null;
     onEvent?: (event: OrchestratorEvent) => void;
-    /** Ганц агенттай төлөвлөгөөнд эцсийн текстийг токеноор урсгах эсэх (orchestrator тавина). */
-    streamFinal?: boolean;
-    /** Нэвтэрсэн хэрэглэгчийн (борлуулалтын менежер) нэр — үүсгэх үйлдэлд хадгална. */
+    /** Нэвтэрсэн хэрэглэгчийн нэр — үүсгэх үйлдэлд хадгална. */
     userName?: string;
-    /** Чатад хавсаргасан файлууд (AI унших/шинжлэх + бичлэгт хавсаргах). */
     attachments?: OrchestratorAttachment[];
-    /** Client холболт таслахад (Зогсоох / таб хаах) Gemini дуудлагыг зогсооно. */
+    /** Дэд агентын ажиллагаанд: аль агент (trace/event-д). */
+    agentId?: AgentId;
+    /** Client холболт таслахад (Зогсоох / таб хаах) Claude дуудлагыг зогсооно. */
     signal?: AbortSignal;
-    /** Энэ мөчөөс хойш шинэ агент эхлүүлэхгүй (Vercel maxDuration-аас өмнө partial хариу өгнө). */
+    /** Энэ мөчөөс хойш шинэ раунд/агент эхлүүлэхгүй (Vercel maxDuration-аас өмнө partial хариу өгнө). */
     deadlineAt?: number;
 }
 
-/** Чатын хавсралт — /api/dashboard/upload-аас ирсэн URL. */
 export interface OrchestratorAttachment {
     url: string;
     name?: string;
     mimeType?: string;
 }
 
-/** Planner-ийн гаргасан нэг алхам. */
-export interface PlanStep {
-    agentId: AgentId;
-    /** Тухайн agent-д өгөх дэд даалгавар (монголоор). */
-    task: string;
-}
-
-/** Planner-ийн бүтэн төлөвлөгөө. */
-export interface OrchestrationPlan {
-    reasoning: string;
-    steps: PlanStep[];
-}
-
-/** Нэг agent гүйцэтгэлийн үр дүн. */
+/** Нэг дэд агентын үр дүн. */
 export interface AgentRunResult {
     text: string;
-    data: any;
-    chartConfig: any;
+    data: unknown;
+    chartConfig: unknown;
     toolsUsed: string[];
     latencyMs: number;
     tokens: number;
     ok: boolean;
     error?: string;
-    /** Энэ agent-ийн санал болгосон, баталгаажуулалт хүлээж буй үйлдлүүд. */
     pendingActions: PendingAction[];
 }
 
-/** Trace-д бичигдэх нэг алхмын мөшгилт. */
+/** Trace-д бичигдэх нэг tool дуудлага. */
+export interface TraceTool {
+    tool: string;
+    agentId: AgentId | 'main';
+    ok: boolean;
+    latencyMs: number;
+    summary: string;
+}
+
+/** Trace-д бичигдэх нэг дэд агентын алхам. */
 export interface TraceStep {
     agentId: AgentId;
     agentName: string;
@@ -138,33 +135,34 @@ export interface TraceStep {
     error?: string;
 }
 
-/** Бүх орчестрацийн ил тод мөшгилт (observability). */
+/** Бүх ажиллагааны ил тод мөшгилт. */
 export interface OrchestrationTrace {
-    plannerReasoning: string;
-    plannerLatencyMs: number;
-    plannerModel: string;
+    model: string;
+    /** Үндсэн loop-ийн модель дуудлагын тоо */
+    rounds: number;
+    tools: TraceTool[];
     steps: TraceStep[];
-    synthesisUsed: boolean;
-    synthesisLatencyMs: number;
     totalLatencyMs: number;
     totalTokens: number;
+    inputTokens: number;
+    outputTokens: number;
+    cacheReadTokens: number;
+    summaryUsed: boolean;
 }
 
-/** Хэрэглэгч/UI-д харуулах хураангуй agent тэмдэг. */
 export interface AgentBadge {
-    id: AgentId;
+    id: AgentId | 'main';
     name: string;
     emoji: string;
     color: string;
 }
 
-/** Orchestrator-ийн эцсийн үр дүн. */
 export interface OrchestratorResult {
     text: string;
-    data: any;
-    chartConfig: any;
+    data: unknown;
+    chartConfig: unknown;
     agentsUsed: AgentBadge[];
     trace: OrchestrationTrace;
-    /** Хэрэглэгчийн зөвшөөрлийг хүлээж буй үйлдлүүд (баталгаажуулалтын карт). */
     pendingActions: PendingAction[];
+    clarification: Clarification | null;
 }

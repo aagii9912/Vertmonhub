@@ -24,7 +24,7 @@
 | Language | TypeScript | 5.x |
 | Styling | Tailwind CSS (v4 — CSS-first config, no `tailwind.config.ts`) | 4.x |
 | Database / Auth | Supabase (PostgreSQL + RLS, Email + Google + Facebook OAuth) | — |
-| AI | Google Gemini via `@google/generative-ai` | 0.24.1 |
+| AI | Claude via `@anthropic-ai/sdk` (dashboard туслах) · Google Gemini via `@google/generative-ai` (FB/IG DM) | 0.125 · 0.24.1 |
 | Validation | Zod | 4.x |
 | Email | Resend | 6.7.0 |
 | Push notifications | web-push (VAPID) | 3.6.7 |
@@ -171,26 +171,15 @@ Meeting-driven marketing analytics layer (migration `20260721140000`):
 - **AI**: read tools `get_marketing_budget_status` + `get_market_indicators` (impl in `data-assistant/functions.ts`, registered to `marketing-specialist` + `advisor` agents).
 - **Lead sources**: `radio` added to `LeadSource` union + all label maps (types/property.ts, leads/new select, leads page, reports/leads, marketing-roi, weekly-report cron, kpi-report lib); `board` relabeled «Билборд / Самбар». Adding a source value requires touching ALL these maps.
 
-### Dashboard AI Orchestrator (`/dashboard/ai-assistant`)
-The internal staff assistant is a **multi-agent orchestrator** (`src/lib/ai/orchestrator/`), not a manual dual-mode chat anymore. Reliability: all Gemini calls (planner, agents, synthesizer) use `withRetry` (`orchestrator/retry.ts`, backoff on 429/503); agent history is capped to the last 10 messages for token control. Markdown answers render via a dependency-free renderer (`components/ai-assistant/MarkdownMessage.tsx`). An admin-only audit view lives at `/dashboard/ai-assistant/audit` (`GET /api/dashboard/ai-audit`, reads `ai_audit_log`). Orchestrator unit tests: `src/lib/ai/orchestrator/__tests__`. Flow:
-1. `POST /api/ai-assistant` (RBAC `ai-assistant`, shop-scoped) calls `runOrchestrator()`.
-2. **Planner** (`planner.ts`) analyzes the request → JSON plan selecting 1–3 specialized agents.
-3. **Agents** (`agents.ts`): `data-analyst`, `property-expert`, `crm-specialist`, `finance-analyst`, `advisor`, `operations-admin` (super_admin), `marketing-specialist`. Each has a focused Mongolian system prompt + a curated subset of the shared data-assistant tools. They run via the generic `runAgent.ts` (reuses `executeDataTool` from `lib/ai/data-assistant`; write tools gated by `perms.canWrite`).
-   - Marketing: `get_marketing_summary` (read), `create_social_post` (confirm-gated draft/scheduled into `social_posts`).
-   - **Long-term shop memory**: `ai_shop_memory` table (migration `20260617180000`); `remember_fact` tool (executes directly, `canWrite`) stores key→value; `getShopMemory`/`formatShopMemory` inject it into every run's context. Attachments shown on detail pages via `EntityAttachments` + `GET /api/dashboard/ai-attachments`. Proactive daily push digest: `GET/POST /api/cron/ai-digest` (vercel.json cron, `CRON_SECRET`).
-4. **Synthesizer** merges multi-agent output into one answer (skipped for single-agent).
-5. Returns `{ text, data, chartConfig, agentsUsed, trace, pendingActions }`. The **trace** (planner reasoning, per-step latency/tokens/tools) is shown in the UI (`components/ai-assistant/OrchestrationTrace.tsx`) and persisted to `ai_messages.agents_used` / `ai_messages.trace` (migration `20260616150000`). The old `data`/`general` mode toggle was removed — routing is automatic. Persistence and trace reads are migration-resilient (best-effort update + fallback select).
-
-**Write / actions (confirm-gated).** Agents can perform real CRM/sales/admin actions, not just read:
-- Property (property-expert): `create_property`, `update_property_*`, `delete_property`.
-- Leads/customers/viewings (crm-specialist): `create_lead`, `delete_lead`, `update_lead_*`, `add_lead_note`, `bulk_update_leads`, `create_customer`, `delete_customer`, `schedule_viewing`, `delete_viewing`.
-- Contracts/finance (finance-analyst): `process_contract_action`, `create_contract`, `delete_contract`.
-- Admin (`operations-admin`, super_admin only): `invite_user`, `assign_role`, `create_role`.
-- RBAC gating in `executeDataTool` (`lib/ai/data-assistant`): create/update→`canWrite`, delete→`canDelete`, admin→`role === 'super_admin'`.
-- **2026-09-11 review (Wave 0/1):** ALL write tools are confirm-gated — including `update_property_status/price`, `update_unit_status`, `update_lead_status`, `add_lead_note`, `process_contract_action` (they used to mutate without a preview and without audit). `add_lead_note`/`update_lead_status` refuse ambiguous name matches; `closed_won` requires an existing contract. Attachment URLs are only fetched from our own Supabase storage public buckets (`isAllowedAttachmentUrl`, 10s timeout). The stream route passes `signal` (client abort) + `deadlineAt` (50s) through `OrchestratorContext`; `withRetry` never retries an abort. `conversationId` writes are checked for `user_id` + `shop_id` ownership. «Үргэлж зөвшөөрөх» is keyed per shop **and** user; `update_property_price`, `create_contract`, `create_property` can never be remembered. Role resolution is `user_roles` only — the legacy `admins` table does not exist in prod and every fallback to it was removed.
-- **Sales-manager attribution:** create/schedule tools stamp the acting user's name (resolved from `user_profiles.full_name` via `resolveSalesManagerName`, passed as `OrchestratorContext.userName` → `executeDataTool(..., userName)`). Contracts use the existing `property_contracts.sales_manager` column; leads/viewings/customers use `sales_manager_name` (migration `20260617120000`, best-effort stamp so creates don't regress pre-migration).
-- **File attachments (read + attach).** The chat composer (`components/ai-assistant/ChatComposer.tsx`) uploads files/images to `POST /api/dashboard/upload` (bucket `products`, returns `{ url }`) and sends them as `attachments: [{url,name,mimeType}]`. `runAgent` passes image/PDF attachments to Gemini as `inlineData` (vision: AI reads/analyzes) and lists their URLs in the prompt. The confirm-gated `attach_file` tool links a file to a property/lead/customer/contract via the `ai_attachments` table (migration `20260617140000`); for property images it also appends to `properties.images[]`. Rendered via `components/ai-assistant/MessageAttachments.tsx`. The chat UI was redesigned (gradient header, agent legend, suggestion cards, animated bubbles, composer with drag-drop).
-- **Confirmation flow:** mutating tools are `confirm`-gated. During an agent run they are called with `confirm=false`, which returns a **preview** (no mutation) and is surfaced as a `pendingAction`. The UI (`components/ai-assistant/ActionConfirmCard.tsx`) renders an approve/cancel card; on approve the browser calls `POST /api/ai-assistant/action`, which re-checks RBAC + shop scope and re-runs the tool with `confirm=true` to actually mutate. Deletes are **soft** (`deleted_at`); migrations `20260617100000` (leads), `20260617120000` (viewings/contracts/customers + `sales_manager_name`). Reads hide soft-deleted rows via `runExcludingDeleted` (resilient to the column not existing yet). Audit via `logAiAudit` fires on real execution only. Tool name sets live in `lib/ai/data-assistant/tools.ts` (`WRITE_TOOL_NAMES`, `DELETE_TOOL_NAMES`, `ADMIN_TOOL_NAMES`, `MUTATING_TOOL_NAMES`).
+### Dashboard AI туслах v3 — Claude гибрид orchestrator (`/dashboard/ai-assistant`, branch `feat/ai-v3-claude`)
+Модель: **Claude** (`@anthropic-ai/sdk`, `ANTHROPIC_API_KEY`; `AI_MODEL` анхдагч `claude-opus-5`, `AI_FAST_MODEL` анхдагч `claude-sonnet-5`). Gemini зөвхөн FB/IG DM AI (`AIRouter`)-д үлдсэн. Бүрэн review: `docs/AI-REVIEW-2026-09-12.md`.
+- **Бүтэц** (`src/lib/ai/orchestrator/`): `index.ts` (`runOrchestrator`) → `loop.ts` (`runLoop` — Claude streaming agentic loop, parallel tool_use, ≤8 раунд, `ask_user` дээр зогсоно) → `executeDataTool` (`lib/ai/data-assistant`, confirm=false → preview → pendingAction). Planner/synthesizer байхгүй: үндсэн туслах RBAC-д тохирсон БҮХ data tool-той (`lib/ai/claude/tools.ts` `dataToolsForPerms`, Gemini schema → `input_schema` хөрвүүлэлт) + `ask_user` (тодруулга → UI chip) + `delegate_to_specialists` (нарийн олон домэйны асуултад `agents.ts` registry-ийн дэд агентуудыг `runAgent.ts`-ээр Sonnet дээр ЗЭРЭГ ажиллуулж, үр дүнг өөрөө нэгтгэнэ).
+- **Prompt** (`prompt.ts`): тогтмол persona+домэйн блок `cache_control`-той эхэнд, shop мэдлэг + `ai_shop_memory` дараа нь, огноо/хэрэглэгч/ярианы хураангуй ХАМГИЙН СҮҮЛД. Claude Opus 5 `temperature` хүлээж авахгүй — `effort` хэрэглэнэ. Алдааг `lib/ai/claude/client.ts` `describeClaudeError` (typed SDK class) — regex string-matching бүү бич.
+- **Санах ой** (`memory.ts`): 24+ мессежтэй яриаг Sonnet-оор хураангуйлж `ai_conversations.summary`/`summary_message_count`-д (migration `20260912120000`, best-effort) хадгална; хүсэлт бүрт хураангуй + сүүлийн 20 мессеж. `http.ts` `prepareAssistantRequest` уншина, `persistAssistantExchange` → `maybeUpdateSummary`.
+- **SSE event-үүд**: `status`, `tool_start`/`tool_done` (inline «Лид хайж байна… → 12 лид олдлоо»), `step_start`/`step_done` (дэд агент), `token`/`token_reset`, `clarify`, `done` (+`clarification`), `error` (+`code`). UI: `components/ai/AiChat.tsx` (`ActivityView`, тодруулгын chip, олон үйлдэлд «Бүгдийг зөвшөөрөх»; гүйцэтгэсэн/цуцалсан үйлдлийн төлөв дараагийн хүсэлтийн түүхэнд `[Үйлдлийн төлөв: …]` болж ордог), `components/ai-assistant/OrchestrationTrace.tsx` (model, rounds, tools, steps, cache токен).
+- **Dev mock**: development-д `localStorage.vertmonhub_ai_mock = ok|error|delegate|clarify` → client `x-ai-mock` header → stream route Claude дуудахгүй; түлхүүргүй орчинд ч ажиллана. Production-д хэзээ ч идэвхгүй.
+- **Баталгаажуулалтын бодлого**: 2026-09-11 Wave 0/1 нь БҮХ write tool-ыг confirm-gated болгосон (`executeDataTool` confirm=false → preview). v3 үүн дээр `AUTO_TOOL_NAMES` (tools.ts) нэмсэн: буцаах боломжтой, эрсдэл багатай tool-уудыг loop confirm=**true**-ээр шууд дуудна (audit бичигдэнэ) — эзний «хэлээд хийлгэх» шаардлага. Устгах/гэрээ/төлбөр/гадагш илгээх хэзээ ч AUTO биш.
+- **Хэвээр**: confirm-gated үйлдлийн урсгал (`POST /api/ai-assistant/action`, RBAC дахин шалгана, soft delete, `logAiAudit`), tool нэрсийн олонлог (`WRITE/DELETE/ADMIN/MUTATING_TOOL_NAMES`), хавсралт (зураг/PDF base64 блок), `remember_fact` shop memory, контекст тэмдэглэл (`buildContextNote`). Unit test: `src/lib/ai/orchestrator/__tests__`.
 
 ### Inbound message flow (lead generation)
 1. Customer DMs the shop's Facebook Page or Instagram account.
@@ -242,7 +231,7 @@ The «Editorial Terracotta» direction (docs/UI-REDESIGN-PLAN.md) is **supersede
 - **Streaming**: `POST /api/ai-assistant/stream` (SSE) runs the orchestrator with `ctx.onEvent` (`OrchestratorEvent`: plan → step_start → tool → step_done → synthesis_start → token/token_reset) and ends with `done` (same payload as the JSON route) or `error`. Single-agent plans stream the agent's final text (`streamFinal`), multi-agent plans stream the synthesis. The JSON `POST /api/ai-assistant` still works; both share `prepareAssistantRequest` / `persistAssistantExchange` in `lib/ai/orchestrator/http.ts`. Client: `streamAssistant` in `lib/ai/client.ts` (90s timeout, abort, friendly errors).
 - **Actions**: mutating tools still return previews; `AiChat` renders them as cards (Зөвшөөрөх / Болих / Үргэлж зөвшөөрөх → `POST /api/ai-assistant/action`, RBAC re-checked server-side). `lib/ai/allowedTools.ts` remembers «always allow» per session.
 - **Dev mock**: in development only, a request header `x-ai-mock: ok|error` makes the stream route emit a scripted run without calling Gemini — use it to exercise the UI. Never available in production.
-- **Known environment issue (2026-09-10)**: the configured `GEMINI_API_KEY`'s Google project returns `403 Your project has been denied access` for every Gemini model (verified with curl), so the assistant cannot answer until the key/project is replaced. The UI now surfaces this as a clear non-retryable error instead of a generic failure.
+- **Environment (2026-09-12)**: dashboard туслах Claude руу шилжсэн (`ANTHROPIC_API_KEY`). `GEMINI_API_KEY` одоогоор хүчингүй (`API key not valid`) тул FB/IG DM AI ажиллахгүй — тусад нь шийдэх.
 - `/dashboard/ai-assistant/agents` lists the real orchestrator agents from `GET /api/ai-assistant/agents` (static `AGENTS` definitions, tool permissions per agent); the old `ai_agents` table page is gone.
 
 ### Server-side dates = Asia/Ulaanbaatar (2026-09-11)
@@ -386,7 +375,11 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 
-# Gemini
+# Claude (dashboard AI туслах)
+ANTHROPIC_API_KEY=
+# AI_MODEL=claude-opus-5 / AI_FAST_MODEL=claude-sonnet-5 (заавал биш)
+
+# Gemini (FB/IG DM AI)
 GEMINI_API_KEY=
 
 # Facebook / Instagram

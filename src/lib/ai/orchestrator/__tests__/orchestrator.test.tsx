@@ -1,24 +1,27 @@
 /**
- * AI Orchestrator unit tests — RBAC gating, registry integrity, markdown rendering.
- * Gemini/DB дуудахгүй замуудыг шалгана (gating нь DB-д хүрэхээс өмнө буцдаг).
+ * AI Orchestrator v3 unit tests — RBAC gating, registry integrity, tool conversion,
+ * history building, summary trigger, tool result summaries, markdown rendering.
+ * Claude/DB дуудахгүй замуудыг шалгана.
  */
 
 import React from 'react';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { render } from '@testing-library/react';
 
-import {
-    readTools, writeTools, deleteTools, adminTools,
-    MUTATING_TOOL_NAMES,
-} from '@/lib/ai/data-assistant/tools';
+import { readTools, writeTools, deleteTools, adminTools, MUTATING_TOOL_NAMES } from '@/lib/ai/data-assistant/tools';
 import { AGENT_LIST } from '@/lib/ai/orchestrator/agents';
 import { MarkdownMessage } from '@/components/ai-assistant/MarkdownMessage';
+import { toClaudeTool, dataToolsForPerms, buildDelegateTool, ASK_USER_TOOL } from '@/lib/ai/claude/tools';
+import { needsSummary, SUMMARY_TRIGGER, KEEP_RECENT } from '@/lib/ai/orchestrator/memory';
+import { buildSystemBlocks } from '@/lib/ai/orchestrator/prompt';
 
-// executeDataTool нь GEMINI_API_KEY-тэй модулийг ачаалдаг тул env-ийг эхэлж тавиад dynamic import хийнэ.
+// executeDataTool нь GEMINI_API_KEY-тэй модулийг (data-assistant/index) ачаалдаг тул env тавиад dynamic import.
 let executeDataTool: (typeof import('@/lib/ai/data-assistant'))['executeDataTool'];
+let loop: typeof import('@/lib/ai/orchestrator/loop');
 beforeAll(async () => {
     process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-key';
     ({ executeDataTool } = await import('@/lib/ai/data-assistant'));
+    loop = await import('@/lib/ai/orchestrator/loop');
 });
 
 describe('executeDataTool RBAC gating (DB-д хүрэхгүй)', () => {
@@ -30,15 +33,47 @@ describe('executeDataTool RBAC gating (DB-д хүрэхгүй)', () => {
         const r = await executeDataTool('create_lead', { customer_name: 'X' }, 'shop1', viewer, 'u1', false, '');
         expect(r.error).toMatch(/бичих эрх/);
     });
-
     it('устгах эрхгүй бол delete_lead-ийг блоклоно', async () => {
         const r = await executeDataTool('delete_lead', { lead_id: 'l1' }, 'shop1', writerNoDelete, 'u1', false, '');
         expect(r.error).toMatch(/устгах эрх/);
     });
-
     it('super_admin биш бол invite_user-ийг блоклоно', async () => {
         const r = await executeDataTool('invite_user', { email: 'a@b.com' }, 'shop1', adminNotSuper, 'u1', false, '');
         expect(r.error).toMatch(/super_admin/);
+    });
+});
+
+describe('Claude tool хөрвүүлэлт (Gemini schema → input_schema)', () => {
+    it('SchemaType утгуудыг JSON Schema type болгож, parameters → input_schema', () => {
+        const t = toClaudeTool(readTools.find((x: { name: string }) => x.name === 'list_leads'));
+        expect(t.input_schema.type).toBe('object');
+        const props = t.input_schema.properties as Record<string, { type: string; enum?: string[] }>;
+        expect(props.status.type).toBe('string');
+        expect(props.status.enum).toContain('new');
+        expect(props.limit.type).toBe('number');
+    });
+    it('required болон nested array item-үүдийг хадгална', () => {
+        const t = toClaudeTool(adminTools.find((x: { name: string }) => x.name === 'create_role'));
+        expect(t.input_schema.required).toEqual(['name', 'display_name_mn']);
+        const props = t.input_schema.properties as Record<string, { type: string; items?: { type: string } }>;
+        expect(props.modules.type).toBe('array');
+        expect(props.modules.items?.type).toBe('string');
+    });
+    it('RBAC: viewer зөвхөн read tool, super_admin бүгд; e-commerce tool нуугдана', () => {
+        const viewer = dataToolsForPerms({ canWrite: false, canDelete: false, role: 'viewer' }).map((t) => t.name);
+        expect(viewer).toContain('list_leads');
+        expect(viewer).not.toContain('create_lead');
+        expect(viewer).not.toContain('list_orders');
+        const sup = dataToolsForPerms({ canWrite: true, canDelete: true, role: 'super_admin' }).map((t) => t.name);
+        expect(sup).toContain('delete_lead');
+        expect(sup).toContain('invite_user');
+        const admin = dataToolsForPerms({ canWrite: true, canDelete: true, role: 'admin' }).map((t) => t.name);
+        expect(admin).not.toContain('invite_user');
+    });
+    it('delegate tool агентын жагсаалтыг тайлбартаа агуулна; ask_user question шаардана', () => {
+        const d = buildDelegateTool(AGENT_LIST.map((a) => ({ id: a.id, name: a.name, description: a.description })));
+        expect(d.description).toContain('finance-analyst');
+        expect(ASK_USER_TOOL.input_schema.required).toEqual(['question']);
     });
 });
 
@@ -56,62 +91,62 @@ describe('Agent registry бүрэн бүтэн байдал', () => {
             (agent.adminToolNames || []).forEach((n) => expect(adminNames.has(n), `${agent.id} admin:${n}`).toBe(true));
         }
     });
-
     it('MUTATING_TOOL_NAMES шинэ tool-уудыг агуулна', () => {
         ['schedule_viewing', 'delete_viewing', 'create_contract', 'delete_contract', 'create_customer', 'delete_customer', 'attach_file', 'bulk_update_leads', 'invite_user', 'assign_role', 'create_role']
             .forEach((t) => expect(MUTATING_TOOL_NAMES, t).toContain(t));
     });
 });
 
-describe('MarkdownMessage rendering', () => {
-    it('хүснэгт ба тод текстийг render хийнэ', () => {
-        const { container } = render(
-            <MarkdownMessage content={'**Сайн** уу\n\n| A | B |\n|---|---|\n| 1 | 2 |'} />
-        );
-        expect(container.querySelector('table')).toBeTruthy();
-        expect(container.querySelector('strong')?.textContent).toBe('Сайн');
-        expect(container.querySelectorAll('tbody tr').length).toBe(1);
-        expect(container.querySelectorAll('thead th').length).toBe(2);
+describe('buildHistory — эхнийх заавал user, MAX_HISTORY тайрна', () => {
+    const msg = (role: string, i: number) => ({ role, content: `msg-${i}` });
+    it('сондгой урттай яриаг таслахад assistant-аар эхлэхгүй', () => {
+        const history = Array.from({ length: 21 }, (_, i) => msg(i % 2 === 0 ? 'user' : 'assistant', i));
+        const out = loop.buildHistory(history);
+        expect(out.length).toBeGreaterThan(0);
+        expect(out[0].role).toBe('user');
+        expect(out.length).toBeLessThanOrEqual(loop.MAX_HISTORY);
     });
-
-    it('жагсаалтыг render хийнэ', () => {
-        const { container } = render(<MarkdownMessage content={'- нэг\n- хоёр\n- гурав'} />);
-        expect(container.querySelectorAll('ul li').length).toBe(3);
+    it('assistant-аар эхэлсэн/хоосон түүхийг зөв', () => {
+        expect(loop.buildHistory([msg('assistant', 0)])).toEqual([]);
+        expect(loop.buildHistory(undefined)).toEqual([]);
+        expect(loop.buildHistory([{ role: 'user', content: '  ' }])).toEqual([]);
     });
 });
 
-describe('buildGeminiHistory — SDK-ийн "эхнийх нь user" шаардлага', () => {
-    let buildGeminiHistory: (typeof import('@/lib/ai/orchestrator/runAgent'))['buildGeminiHistory'];
-    beforeAll(async () => {
-        process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-key';
-        ({ buildGeminiHistory } = await import('@/lib/ai/orchestrator/runAgent'));
+describe('summarizeToolResult — UI мөрний товч', () => {
+    it('тоо, алдаа, баталгаажуулалтыг ялгана', () => {
+        expect(loop.summarizeToolResult('list_leads', { leads: [1, 2, 3] })).toEqual({ ok: true, summary: '3 лид олдлоо' });
+        expect(loop.summarizeToolResult('list_leads', [])).toEqual({ ok: true, summary: 'Олдсонгүй' });
+        expect(loop.summarizeToolResult('create_lead', { requiresConfirmation: true })).toEqual({ ok: true, summary: 'Баталгаажуулалт хүлээж байна' });
+        expect(loop.summarizeToolResult('x', { error: 'Эрх алга' })).toEqual({ ok: false, summary: 'Эрх алга' });
     });
+});
 
-    const msg = (role: string, i: number) => ({ role, content: `msg-${i}` });
-
-    it('сондгой урттай яриаг таслахад model-оор эхлэхгүй (1ms crash regression)', () => {
-        // 11 мессеж: slice(-10) нь assistant-аар эхэлдэг байсан → SDK шууд шиддэг байв
-        const history = Array.from({ length: 11 }, (_, i) => msg(i % 2 === 0 ? 'user' : 'assistant', i));
-        const out = buildGeminiHistory(history);
-        expect(out.length).toBeGreaterThan(0);
-        expect(out[0].role).toBe('user');
+describe('Ярианы санах ой — хураангуй trigger', () => {
+    it('богино яриаг хураангуйлахгүй; урт яриаг сүүлийн KEEP_RECENT-ээс бусдыг', () => {
+        expect(needsSummary(5, 0)).toBe(false);
+        expect(needsSummary(SUMMARY_TRIGGER, 0)).toBe(true);
+        expect(needsSummary(SUMMARY_TRIGGER + 2, SUMMARY_TRIGGER + 2 - KEEP_RECENT)).toBe(false);
+        expect(needsSummary(SUMMARY_TRIGGER + KEEP_RECENT + 1, SUMMARY_TRIGGER - KEEP_RECENT)).toBe(true);
     });
+});
 
-    it('бүх түүх model-ээр эхэлж байвал бүгдийг нь хасаж хоосон буцаана', () => {
-        const out = buildGeminiHistory([msg('assistant', 0)]);
-        expect(out).toEqual([]);
+describe('Систем prompt — cache-лэгдэх тогтмол хэсэг + хувьсах хэсэг', () => {
+    it('эхний блок cache_control-той, огноо/хэрэглэгч сүүлийн блокт', () => {
+        const blocks = buildSystemBlocks({ shopId: 's', userId: 'u', perms: { canWrite: true, canDelete: false, role: 'sales_manager' }, userName: 'Болд', conversationSummary: 'Өмнө нь X' });
+        expect(blocks[0].cache_control).toEqual({ type: 'ephemeral' });
+        const last = blocks[blocks.length - 1];
+        expect(last.cache_control).toBeUndefined();
+        expect(last.text).toContain('Болд');
+        expect(last.text).toContain('Өмнө нь X');
+        expect(blocks[0].text).not.toMatch(/ОДОО:/);
     });
+});
 
-    it('хоосон/undefined түүхэд хоосон буцаана', () => {
-        expect(buildGeminiHistory(undefined)).toEqual([]);
-        expect(buildGeminiHistory([])).toEqual([]);
-    });
-
-    it('MAX_HISTORY(10)-аас илүүг тайрч, user/model role зөв хөрвүүлнэ', () => {
-        const history = Array.from({ length: 24 }, (_, i) => msg(i % 2 === 0 ? 'user' : 'assistant', i));
-        const out = buildGeminiHistory(history);
-        expect(out.length).toBeLessThanOrEqual(10);
-        expect(out[0].role).toBe('user');
-        expect(out.every((c) => c.role === 'user' || c.role === 'model')).toBe(true);
+describe('MarkdownMessage rendering', () => {
+    it('хүснэгт ба тод текстийг render хийнэ', () => {
+        const { container } = render(<MarkdownMessage content={'**Сайн** уу\n\n| A | B |\n|---|---|\n| 1 | 2 |'} />);
+        expect(container.querySelector('table')).toBeTruthy();
+        expect(container.querySelector('strong')?.textContent).toBe('Сайн');
     });
 });

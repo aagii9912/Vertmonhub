@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Sparkles, Check, X, Loader2, AlertCircle, RotateCcw, ChevronDown, ChevronRight, Wrench, ShieldCheck, Copy } from 'lucide-react';
+import { Sparkles, Check, X, Loader2, AlertCircle, RotateCcw, ChevronDown, ChevronRight, ShieldCheck, Copy, CheckCheck, Users } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -31,8 +31,11 @@ export interface AiMessage {
     agentsUsed?: StreamDone['agentsUsed'];
     trace?: unknown;
     pendingActions?: PendingAction[];
-    /** Streaming явцын төлөв (зөвхөн идэвхтэй хариунд) */
-    progress?: Progress;
+    /** Тодруулга (ask_user) — chip-ээр хариулна */
+    clarification?: { question: string; options: string[] } | null;
+    /** Явцын мөрүүд (tool дуудлага, дэд агент) — streaming үед ба дараа нь хураангуй */
+    activity?: Activity[];
+    status?: string | null;
     streaming?: boolean;
     error?: { message: string; retryable: boolean; request?: PendingRequest };
 }
@@ -49,10 +52,15 @@ export interface PendingAction {
     autoApproved?: boolean;
 }
 
-interface Progress {
-    phase: 'planning' | 'running' | 'synthesizing' | 'done';
-    reasoning?: string;
-    steps: { agentId: string; agentName: string; task: string; status: 'wait' | 'run' | 'ok' | 'fail'; tools: string[]; latencyMs?: number; error?: string }[];
+/** Чат дотор inline харагдах нэг ажил: tool дуудлага эсвэл дэд агентын алхам. */
+export interface Activity {
+    id: string;
+    kind: 'tool' | 'agent';
+    label: string;
+    agentId?: string;
+    status: 'run' | 'ok' | 'fail';
+    summary?: string;
+    latencyMs?: number;
 }
 
 interface PendingRequest {
@@ -61,6 +69,8 @@ interface PendingRequest {
 }
 
 const TOOL_LABEL: Record<string, string> = {
+    delegate_to_specialists: 'Мэргэжилтнүүдэд хуваарилах', ask_user: 'Тодруулга',
+    update_unit_status: 'Нэгжийн статус', delete_property: 'Байр устгах', delete_viewing: 'Уулзалт цуцлах', delete_customer: 'Харилцагч устгах', create_role: 'Дүр үүсгэх',
     get_dashboard_stats: 'Самбарын тоо', list_properties: 'Байр хайх', list_leads: 'Лид хайх', get_lead_details: 'Лидийн мэдээлэл',
     get_customer_insights: 'Харилцагчийн дүн', list_contracts: 'Гэрээ хайх', get_contract_details: 'Гэрээний мэдээлэл', get_contracts_summary: 'Гэрээний нэгтгэл',
     get_sales_summary: 'Борлуулалтын нэгтгэл', get_sales_forecast: 'Прогноз', compare_properties: 'Байр харьцуулах', get_marketing_summary: 'Маркетингийн нэгтгэл',
@@ -70,6 +80,15 @@ const TOOL_LABEL: Record<string, string> = {
     remember_fact: 'Санах', create_social_post: 'Пост үүсгэх', delete_lead: 'Лид устгах', delete_contract: 'Гэрээ устгах', invite_user: 'Хэрэглэгч урих', assign_role: 'Эрх оноох',
 };
 const toolLabel = (t: string) => TOOL_LABEL[t] ?? t;
+
+/** Түүхэнд илгээх агуулга: текст + гүйцэтгэсэн/цуцалсан үйлдлийн тэмдэглэл + тодруулга. */
+function historyContent(m: AiMessage): string {
+    const parts = [m.content];
+    if (m.clarification && !m.content) parts.push(`(Тодруулга асуусан: ${m.clarification.question})`);
+    const acts = (m.pendingActions || []).filter((a) => a.status !== 'pending' && a.status !== 'running');
+    if (acts.length) parts.push('[Үйлдлийн төлөв: ' + acts.map((a) => `${a.label} — ${a.status === 'done' ? 'гүйцэтгэгдсэн' : a.status === 'cancelled' ? 'хэрэглэгч цуцалсан' : 'алдаа'}`).join('; ') + ']');
+    return parts.filter(Boolean).join('\n');
+}
 
 function uid() { return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`; }
 
@@ -95,6 +114,8 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
     const [conversationId, setConversationId] = useState<string | null>(convProp ?? null);
     const [busy, setBusy] = useState(false);
     const abortRef = useRef<AbortController | null>(null);
+    const messagesRef = useRef<AiMessage[]>(messages);
+    messagesRef.current = messages;
     const scrollRef = useRef<HTMLDivElement>(null);
     const firedRef = useRef<Set<string>>(new Set());
 
@@ -111,15 +132,14 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
         setMessages((prev) => prev.map((m) => (m.id === id ? (typeof patch === 'function' ? patch(m) : { ...m, ...patch }) : m)));
     }, []);
 
-    const send = async (text: string, attachments: AiAttachment[] | PendingRequest['attachments'], baseMessages?: AiMessage[]) => {
+    const send = async (text: string, attachments: AiAttachment[] | PendingRequest['attachments']) => {
         const atts = attachments.map((a) => ({ url: a.url!, name: a.name, mimeType: a.mimeType })).filter((a) => a.url);
         const content = text || (atts.length ? 'Хавсаргасан файлыг шинжилж туслаач.' : '');
         if (!content) return;
-        // retry() шүүсэн жагсаалтаа дамжуулна — state closure хоцорч алдсан user turn 2 удаа явдаг байв
-        const history = (baseMessages ?? messages).filter((m) => !m.error && m.content).slice(-20).map((m) => ({ role: m.role, content: m.content }));
+        const history = messagesRef.current.filter((m) => !m.error && (m.content || m.pendingActions?.length || m.clarification)).slice(-20).map((m) => ({ role: m.role, content: historyContent(m) }));
         const userMsg: AiMessage = { id: uid(), role: 'user', content, attachments: atts };
         const asstId = uid();
-        setMessages((prev) => [...prev, userMsg, { id: asstId, role: 'assistant', content: '', streaming: true, progress: { phase: 'planning', steps: [] } }]);
+        setMessages((prev) => [...prev, userMsg, { id: asstId, role: 'assistant', content: '', streaming: true, activity: [], status: 'Бодож байна…' }]);
         setBusy(true);
         const controller = new AbortController();
         abortRef.current = controller;
@@ -130,35 +150,38 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
                 signal: controller.signal,
                 onEvent: (e: StreamEvent) => {
                     switch (e.type) {
-                        case 'plan':
-                            update(asstId, (m) => ({ ...m, progress: { phase: 'running', reasoning: e.reasoning, steps: e.steps.map((s) => ({ ...s, status: 'wait', tools: [] })) } }));
+                        case 'status':
+                            update(asstId, { status: e.text });
+                            break;
+                        case 'tool_start':
+                            update(asstId, (m) => ({ ...m, status: null, activity: [...(m.activity || []), { id: e.id, kind: 'tool', label: toolLabel(e.tool), agentId: e.agentId, status: 'run' }] }));
+                            break;
+                        case 'tool_done':
+                            update(asstId, (m) => ({ ...m, activity: (m.activity || []).map((a) => (a.id === e.id ? { ...a, status: e.ok ? 'ok' : 'fail', summary: e.summary, latencyMs: e.latencyMs } : a)) }));
                             break;
                         case 'step_start':
-                            update(asstId, (m) => ({ ...m, progress: m.progress && { ...m.progress, phase: 'running', steps: m.progress.steps.map((s, i) => (i === e.index ? { ...s, status: 'run' } : s)) } }));
-                            break;
-                        case 'tool':
-                            update(asstId, (m) => ({ ...m, progress: m.progress && { ...m.progress, steps: m.progress.steps.map((s) => (s.agentId === e.agentId && s.status === 'run' ? { ...s, tools: [...s.tools, e.tool] } : s)) } }));
+                            update(asstId, (m) => ({ ...m, status: null, activity: [...(m.activity || []), { id: `agent:${e.agentId}`, kind: 'agent', label: e.agentName, agentId: e.agentId, status: 'run', summary: e.task }] }));
                             break;
                         case 'step_done':
-                            update(asstId, (m) => ({ ...m, progress: m.progress && { ...m.progress, steps: m.progress.steps.map((s, i) => (i === e.index ? { ...s, status: e.ok ? 'ok' : 'fail', latencyMs: e.latencyMs, tools: e.toolsUsed.length ? e.toolsUsed : s.tools, error: e.error } : s)) } }));
-                            break;
-                        case 'synthesis_start':
-                            update(asstId, (m) => ({ ...m, progress: m.progress && { ...m.progress, phase: 'synthesizing' } }));
+                            update(asstId, (m) => ({ ...m, activity: (m.activity || []).map((a) => (a.id === `agent:${e.agentId}` ? { ...a, status: e.ok ? 'ok' : 'fail', latencyMs: e.latencyMs, summary: e.ok ? (e.toolsUsed.length ? `${e.toolsUsed.length} хайлт` : a.summary) : (e.error || 'Алдаа') } : a)) }));
                             break;
                         case 'token':
-                            update(asstId, (m) => ({ ...m, content: m.content + e.text }));
+                            update(asstId, (m) => ({ ...m, status: null, content: m.content + e.text }));
                             break;
                         case 'token_reset':
                             update(asstId, { content: '' });
                             break;
+                        case 'clarify':
+                            update(asstId, { status: null, clarification: { question: e.question, options: e.options } });
+                            break;
                         case 'done': {
                             const actions: PendingAction[] = (e.pendingActions || []).map((a) => ({ ...a, status: 'pending', autoApproved: shop?.id ? isToolAllowed(shop.id, a.tool, user?.id) : false }));
-                            update(asstId, (m) => ({ ...m, content: e.response || m.content, streaming: false, progress: m.progress && { ...m.progress, phase: 'done' }, chartConfig: e.chartConfig as AiMessage['chartConfig'], data: e.data, agentsUsed: e.agentsUsed, trace: e.trace, pendingActions: actions }));
+                            update(asstId, (m) => ({ ...m, content: e.response || m.content, streaming: false, status: null, activity: (m.activity || []).map((a) => (a.status === 'run' ? { ...a, status: 'ok' } : a)), chartConfig: e.chartConfig as AiMessage['chartConfig'], data: e.data, agentsUsed: e.agentsUsed, trace: e.trace, pendingActions: actions, clarification: e.clarification ?? m.clarification ?? null }));
                             if (e.conversationId && e.conversationId !== conversationId) { setConversationId(e.conversationId); onConversationId?.(e.conversationId); }
                             break;
                         }
                         case 'error':
-                            update(asstId, (m) => ({ ...m, streaming: false, progress: undefined, error: { message: e.message, retryable: e.retryable !== false, request: { text: content, attachments: atts } } }));
+                            update(asstId, (m) => ({ ...m, streaming: false, status: null, error: { message: e.message, retryable: e.retryable !== false, request: { text: content, attachments: atts } } }));
                             break;
                     }
                 },
@@ -173,10 +196,12 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
     const retry = (m: AiMessage) => {
         const req = m.error?.request;
         if (!req) return;
+        // Шүүсэн жагсаалтаа шууд ref-д тавина — state closure хоцорч алдсан user turn 2 удаа явдаг байв
         const idx = messages.indexOf(m);
         const next = messages.filter((x, i) => x.id !== m.id && !(x.role === 'user' && x.content === req.text && i === idx - 1));
         setMessages(next);
-        void send(req.text, req.attachments, next);
+        messagesRef.current = next;
+        void send(req.text, req.attachments);
     };
 
     /* ---------- үйлдэл ---------- */
@@ -189,6 +214,11 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
         if (r.ok) { setAction(a.id, { status: 'done', resultMessage: r.message }); toast.success(r.message); }
         else { setAction(a.id, { status: 'error', resultMessage: r.message, autoApproved: false }); toast.error(r.message); }
     }, [shop?.id, conversationId]);
+
+    const approveAll = async (ids: string[]) => {
+        const all = messages.flatMap((m) => m.pendingActions || []).filter((a) => ids.includes(a.id) && a.status === 'pending');
+        for (const a of all) await approve(a);
+    };
 
     const allowAlways = (a: PendingAction) => {
         if (shop?.id) addAllowedTool(shop.id, a.tool, user?.id);
@@ -228,7 +258,7 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
                         </div>
                     )}
 
-                    {messages.map((m) => (m.role === 'user' ? <UserBubble key={m.id} m={m} /> : <AssistantBlock key={m.id} m={m} compact={!!compact} onRetry={() => retry(m)} onApprove={approve} onCancel={(a) => setAction(a.id, { status: 'cancelled' })} onAlways={allowAlways} />))}
+                    {messages.map((m) => (m.role === 'user' ? <UserBubble key={m.id} m={m} /> : <AssistantBlock key={m.id} m={m} compact={!!compact} busy={busy} onRetry={() => retry(m)} onApprove={approve} onApproveAll={approveAll} onCancel={(a) => setAction(a.id, { status: 'cancelled' })} onAlways={allowAlways} onClarify={(t) => void send(t, [])} />))}
                 </div>
             </div>
 
@@ -283,15 +313,17 @@ function UserBubble({ m }: { m: AiMessage }) {
     );
 }
 
-function AssistantBlock({ m, compact, onRetry, onApprove, onCancel, onAlways }: { m: AiMessage; compact: boolean; onRetry: () => void; onApprove: (a: PendingAction) => void; onCancel: (a: PendingAction) => void; onAlways: (a: PendingAction) => void }) {
+function AssistantBlock({ m, compact, busy, onRetry, onApprove, onApproveAll, onCancel, onAlways, onClarify }: { m: AiMessage; compact: boolean; busy: boolean; onRetry: () => void; onApprove: (a: PendingAction) => void; onApproveAll: (ids: string[]) => void; onCancel: (a: PendingAction) => void; onAlways: (a: PendingAction) => void; onClarify: (text: string) => void }) {
     const [showTrace, setShowTrace] = useState(false);
     const copy = () => { void navigator.clipboard?.writeText(m.content); toast.success('Хуулагдлаа'); };
+    const pending = (m.pendingActions || []).filter((a) => a.status === 'pending');
+    const isLast = !busy;
 
     return (
         <div className="flex gap-2.5">
             <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-brand-soft text-brand"><Sparkles className="h-3.5 w-3.5" /></span>
             <div className="min-w-0 flex-1">
-                {m.progress && (m.streaming || m.progress.phase !== 'done') && <ProgressView p={m.progress} />}
+                {(m.activity?.length || m.status) ? <ActivityView items={m.activity || []} status={m.status} streaming={!!m.streaming} /> : null}
                 {m.error ? (
                     <div className="rounded-md border border-status-danger/30 bg-status-danger-soft px-3 py-2 text-[12.5px] text-status-danger">
                         <div className="flex items-start gap-2"><AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" /><span>{m.error.message}</span></div>
@@ -306,12 +338,31 @@ function AssistantBlock({ m, compact, onRetry, onApprove, onCancel, onAlways }: 
                                     <button type="button" onClick={copy} className="invisible absolute -right-1 top-0 flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-surface-2 group-hover/msg:visible" aria-label="Хуулах"><Copy className="h-3 w-3" /></button>
                                 )}
                             </div>
-                        ) : m.streaming && !m.progress ? (
+                        ) : m.streaming && !m.activity?.length && !m.status ? (
                             <div className="flex items-center gap-2 text-[12.5px] text-muted-foreground"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Холбогдож байна…</div>
                         ) : null}
+                        {m.clarification && (
+                            <div className="mt-2 rounded-md border border-brand/30 bg-brand-soft/40 px-3 py-2">
+                                <div className="text-[13px] font-medium text-foreground">{m.clarification.question}</div>
+                                {m.clarification.options.length > 0 && (
+                                    <div className="mt-1.5 flex flex-wrap gap-1.5">
+                                        {m.clarification.options.map((o) => (
+                                            <button key={o} type="button" disabled={!isLast} onClick={() => onClarify(o)} className="h-[28px] rounded-md border border-border bg-surface px-2.5 text-[12.5px] text-foreground transition-colors hover:border-brand hover:text-brand disabled:opacity-50 focus-ring">{o}</button>
+                                        ))}
+                                    </div>
+                                )}
+                                <div className="mt-1 text-[11px] text-muted-foreground">Эсвэл доор бичээд хариулна уу.</div>
+                            </div>
+                        )}
                         {m.chartConfig?.data && m.chartConfig.data.length > 0 && <ChartBlock cfg={m.chartConfig} compact={compact} />}
                         {m.pendingActions && m.pendingActions.length > 0 && (
                             <div className="mt-2 flex flex-col gap-2">
+                                {pending.length > 1 && (
+                                    <div className="flex items-center gap-2 rounded-md border border-brand/30 bg-brand-soft/40 px-3 py-1.5 text-[12px]">
+                                        <span className="font-medium text-foreground">{pending.length} үйлдэл таны зөвшөөрлийг хүлээж байна</span>
+                                        <button type="button" onClick={() => onApproveAll(pending.map((a) => a.id))} className="ml-auto inline-flex h-[26px] items-center gap-1 rounded-md bg-brand px-2 text-[12px] font-medium text-brand-fg hover:bg-brand-strong"><CheckCheck className="h-3.5 w-3.5" /> Бүгдийг зөвшөөрөх</button>
+                                    </div>
+                                )}
                                 {m.pendingActions.map((a) => <ActionCard key={a.id} a={a} onApprove={() => onApprove(a)} onCancel={() => onCancel(a)} onAlways={() => onAlways(a)} />)}
                             </div>
                         )}
@@ -332,23 +383,40 @@ function AssistantBlock({ m, compact, onRetry, onApprove, onCancel, onAlways }: 
     );
 }
 
-function ProgressView({ p }: { p: Progress }) {
+/**
+ * Явцын мөрүүд — ChatGPT/Claude маягаар «Лид хайж байна… → 12 лид олдлоо».
+ * Streaming дууссаны дараа хураангуй (collapsed) хэвээр үлдэнэ.
+ */
+function ActivityView({ items, status, streaming }: { items: Activity[]; status?: string | null; streaming: boolean }) {
+    const [open, setOpen] = useState(false);
+    const expanded = streaming || open;
+    const ok = items.filter((a) => a.status === 'ok').length;
     return (
-        <div className="mb-2 flex flex-col gap-1 rounded-md border border-border bg-surface-2/50 px-2.5 py-2 text-[12px]">
-            {p.phase === 'planning' && <Row icon={<Loader2 className="h-3.5 w-3.5 animate-spin text-brand" />}>Асуултыг шинжилж, мэргэжилтэн сонгож байна…</Row>}
-            {p.steps.map((s, i) => (
-                <Row key={i} icon={s.status === 'run' ? <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" /> : s.status === 'ok' ? <Check className="h-3.5 w-3.5 text-status-success" /> : s.status === 'fail' ? <X className="h-3.5 w-3.5 text-status-danger" /> : <span className="inline-block h-3.5 w-3.5 rounded-full border border-border-strong" />}>
-                    <span className={cn('font-medium', s.status === 'wait' ? 'text-muted-foreground' : 'text-foreground')}>{s.agentName}</span>
-                    {s.tools.length > 0 && <span className="ml-1.5 inline-flex flex-wrap gap-1">{[...new Set(s.tools)].map((t) => <span key={t} className="inline-flex items-center gap-0.5 rounded bg-surface-3 px-1 text-[10.5px] text-fg-2"><Wrench className="h-2.5 w-2.5" />{toolLabel(t)}</span>)}</span>}
-                    {s.latencyMs !== undefined && <span className="mono-label ml-auto text-[10.5px] text-muted-foreground">{(s.latencyMs / 1000).toFixed(1)}с</span>}
-                </Row>
-            ))}
-            {p.phase === 'synthesizing' && <Row icon={<Loader2 className="h-3.5 w-3.5 animate-spin text-brand" />}>Хариуг нэгтгэж байна…</Row>}
+        <div className="mb-2 text-[12px]">
+            {!streaming && items.length > 0 && (
+                <button type="button" onClick={() => setOpen((v) => !v)} className="inline-flex items-center gap-1 text-[11.5px] text-muted-foreground hover:text-foreground">
+                    {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                    {items.length} алхам · {ok} амжилттай
+                </button>
+            )}
+            {expanded && (
+                <div className={cn('flex flex-col gap-1 rounded-md border border-border bg-surface-2/50 px-2.5 py-2', !streaming && 'mt-1')}>
+                    {items.map((a) => (
+                        <Row key={a.id} icon={a.status === 'run' ? <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" /> : a.status === 'ok' ? <Check className="h-3.5 w-3.5 text-status-success" /> : <X className="h-3.5 w-3.5 text-status-danger" />}>
+                            {a.kind === 'agent' && <Users className="mr-1 h-3 w-3 text-muted-foreground" />}
+                            <span className={cn('font-medium', a.status === 'run' ? 'text-foreground' : 'text-fg-2')}>{a.label}{a.status === 'run' ? '…' : ''}</span>
+                            {a.summary && <span className="ml-1.5 truncate text-muted-foreground">{a.status === 'run' && a.kind === 'agent' ? a.summary : a.status !== 'run' ? `→ ${a.summary}` : ''}</span>}
+                            {a.latencyMs !== undefined && a.latencyMs > 0 && <span className="mono-label ml-auto pl-2 text-[10.5px] text-muted-foreground">{(a.latencyMs / 1000).toFixed(1)}с</span>}
+                        </Row>
+                    ))}
+                    {status && <Row icon={<Loader2 className="h-3.5 w-3.5 animate-spin text-brand" />}><span className="text-muted-foreground">{status}</span></Row>}
+                </div>
+            )}
         </div>
     );
 }
 function Row({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
-    return <div className="flex items-center gap-2"><span className="flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span><span className="flex min-w-0 flex-1 flex-wrap items-center">{children}</span></div>;
+    return <div className="flex items-center gap-2"><span className="flex h-4 w-4 shrink-0 items-center justify-center">{icon}</span><span className="flex min-w-0 flex-1 items-center">{children}</span></div>;
 }
 
 function ActionCard({ a, onApprove, onCancel, onAlways }: { a: PendingAction; onApprove: () => void; onCancel: () => void; onAlways: () => void }) {
