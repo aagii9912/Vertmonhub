@@ -21,10 +21,15 @@ import { AiComposer, type AiAttachment } from './AiComposer';
  * Үргэлж зөвшөөрөх. Алдаа: ойлгомжтой мессеж + «Дахин оролдох».
  */
 
+/** Үйлдэл батлагдсаны дараа AI-д далдаар илгээх үргэлжлүүлэх мессежийн угтвар (UI-д харагдахгүй, түүхэнд орно). */
+export const CONTINUATION_PREFIX = '[Систем]';
+
 export interface AiMessage {
     id: string;
     role: 'user' | 'assistant';
     content: string;
+    /** Далд (системийн үргэлжлүүлэх) мессеж — рендер хийхгүй */
+    hidden?: boolean;
     attachments?: { url: string; name: string; mimeType: string }[];
     chartConfig?: { type?: string; data?: { name: string; value: number }[] } | null;
     data?: unknown;
@@ -49,6 +54,8 @@ export interface PendingAction {
     agentName: string;
     status: 'pending' | 'running' | 'done' | 'cancelled' | 'error';
     resultMessage?: string;
+    /** Серверийн бодит үр дүн (id-ууд) — үргэлжлүүлэх мессежид AI-д өгнө */
+    result?: unknown;
     autoApproved?: boolean;
 }
 
@@ -132,12 +139,12 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
         setMessages((prev) => prev.map((m) => (m.id === id ? (typeof patch === 'function' ? patch(m) : { ...m, ...patch }) : m)));
     }, []);
 
-    const send = async (text: string, attachments: AiAttachment[] | PendingRequest['attachments']) => {
+    const send = async (text: string, attachments: AiAttachment[] | PendingRequest['attachments'], opts?: { hidden?: boolean }) => {
         const atts = attachments.map((a) => ({ url: a.url!, name: a.name, mimeType: a.mimeType })).filter((a) => a.url);
         const content = text || (atts.length ? 'Хавсаргасан файлыг шинжилж туслаач.' : '');
         if (!content) return;
         const history = messagesRef.current.filter((m) => !m.error && (m.content || m.pendingActions?.length || m.clarification)).slice(-20).map((m) => ({ role: m.role, content: historyContent(m) }));
-        const userMsg: AiMessage = { id: uid(), role: 'user', content, attachments: atts };
+        const userMsg: AiMessage = { id: uid(), role: 'user', content, attachments: atts, hidden: opts?.hidden };
         const asstId = uid();
         setMessages((prev) => [...prev, userMsg, { id: asstId, role: 'assistant', content: '', streaming: true, activity: [], status: 'Бодож байна…' }]);
         setBusy(true);
@@ -208,12 +215,36 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
     const setAction = (id: string, patch: Partial<PendingAction>) =>
         setMessages((prev) => prev.map((m) => (m.pendingActions ? { ...m, pendingActions: m.pendingActions.map((a) => (a.id === id ? { ...a, ...patch } : a)) } : m)));
 
+    const continuationTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+    /**
+     * Бүх карт шийдэгдсэн (pending үлдээгүй) бөгөөд ≥1 гүйцэтгэгдсэн бол AI-д далд мессежээр
+     * үр дүнг (шинэ id-тай) өгч үргэлжлүүлнэ — «лид үүсгэ → уулзалт товло» маягийн олон
+     * алхамт даалгаврын дараагийн алхмыг зөв id-тай санал болгоно.
+     */
+    const scheduleContinuation = useCallback((msgId: string) => {
+        if (continuationTimer.current) clearTimeout(continuationTimer.current);
+        continuationTimer.current = setTimeout(() => {
+            const m = messagesRef.current.find((x) => x.id === msgId);
+            const acts = m?.pendingActions || [];
+            if (!acts.length || acts.some((a) => a.status === 'pending' || a.status === 'running')) return;
+            const done = acts.filter((a) => a.status === 'done');
+            if (!done.length) return;
+            const lines = done.map((a) => `- ${a.label}: ${a.resultMessage || 'гүйцэтгэгдлээ'}${a.result ? ` ${JSON.stringify(a.result).slice(0, 400)}` : ''}`).join('\n');
+            const skipped = acts.filter((a) => a.status !== 'done').map((a) => a.label);
+            void send(`${CONTINUATION_PREFIX} Хэрэглэгч дараах үйлдлийг баталж, гүйцэтгэгдлээ:\n${lines}${skipped.length ? `\nЦуцалсан/алдаатай: ${skipped.join(', ')}` : ''}\nХэрэглэгчийн анхны хүсэлтэд ҮЛДСЭН алхам байвал одоо шинэ id-г ашиглаад үргэлжлүүл (tool дууд). Үлдсэн алхам байхгүй бол НЭГ өгүүлбэрээр товч баталгаажуулж (жишээ: «Тэмдэглэл нэмэгдлээ.») дуусга.`, [], { hidden: true });
+        }, 400);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     const approve = useCallback(async (a: PendingAction) => {
         setAction(a.id, { status: 'running' });
         const r = await approveAssistantAction({ shopId: shop?.id, tool: a.tool, args: a.args, conversationId });
-        if (r.ok) { setAction(a.id, { status: 'done', resultMessage: r.message }); toast.success(r.message); }
+        if (r.ok) { setAction(a.id, { status: 'done', resultMessage: r.message, result: r.result }); toast.success(r.message); }
         else { setAction(a.id, { status: 'error', resultMessage: r.message, autoApproved: false }); toast.error(r.message); }
-    }, [shop?.id, conversationId]);
+        const owner = messagesRef.current.find((m) => m.pendingActions?.some((x) => x.id === a.id));
+        if (owner) scheduleContinuation(owner.id);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [shop?.id, conversationId, scheduleContinuation]);
 
     const approveAll = async (ids: string[]) => {
         const all = messages.flatMap((m) => m.pendingActions || []).filter((a) => ids.includes(a.id) && a.status === 'pending');
@@ -258,7 +289,7 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
                         </div>
                     )}
 
-                    {messages.map((m) => (m.role === 'user' ? <UserBubble key={m.id} m={m} /> : <AssistantBlock key={m.id} m={m} compact={!!compact} busy={busy} onRetry={() => retry(m)} onApprove={approve} onApproveAll={approveAll} onCancel={(a) => setAction(a.id, { status: 'cancelled' })} onAlways={allowAlways} onClarify={(t) => void send(t, [])} />))}
+                    {messages.map((m) => (m.role === 'user' ? ((m.hidden || m.content.startsWith(CONTINUATION_PREFIX)) ? null : <UserBubble key={m.id} m={m} />) : <AssistantBlock key={m.id} m={m} compact={!!compact} busy={busy} onRetry={() => retry(m)} onApprove={approve} onApproveAll={approveAll} onCancel={(a) => { setAction(a.id, { status: 'cancelled' }); const owner = messagesRef.current.find((x) => x.pendingActions?.some((y) => y.id === a.id)); if (owner) scheduleContinuation(owner.id); }} onAlways={allowAlways} onClarify={(t) => void send(t, [])} />))}
                 </div>
             </div>
 

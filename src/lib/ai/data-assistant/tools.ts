@@ -1,11 +1,11 @@
 /**
- * Data Assistant Tool Definitions (Gemini Function Calling)
- * 
- * Read tools: Available to all admins
- * Write tools: Super Admin only
+ * Data Assistant Tool Definitions — JSON Schema маягийн `parameters` (Claude-д
+ * `lib/ai/claude/tools.ts` → `input_schema` болгож хөрвүүлнэ).
+ *
+ * Read tools: бүх ажилтан; write/delete: RBAC; admin: super_admin.
  */
 
-import { SchemaType } from '@google/generative-ai';
+const SchemaType = { OBJECT: 'object', STRING: 'string', NUMBER: 'number', INTEGER: 'integer', BOOLEAN: 'boolean', ARRAY: 'array' } as const;
 
  
 export const readTools: any[] = [

@@ -15,11 +15,10 @@ import { toClaudeTool, dataToolsForPerms, buildDelegateTool, ASK_USER_TOOL } fro
 import { needsSummary, SUMMARY_TRIGGER, KEEP_RECENT } from '@/lib/ai/orchestrator/memory';
 import { buildSystemBlocks } from '@/lib/ai/orchestrator/prompt';
 
-// executeDataTool нь GEMINI_API_KEY-тэй модулийг (data-assistant/index) ачаалдаг тул env тавиад dynamic import.
+// data-assistant/index нь supabase env шаарддаг тул dynamic import.
 let executeDataTool: (typeof import('@/lib/ai/data-assistant'))['executeDataTool'];
 let loop: typeof import('@/lib/ai/orchestrator/loop');
 beforeAll(async () => {
-    process.env.GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'test-key';
     ({ executeDataTool } = await import('@/lib/ai/data-assistant'));
     loop = await import('@/lib/ai/orchestrator/loop');
 });
@@ -134,7 +133,7 @@ describe('Ярианы санах ой — хураангуй trigger', () => {
 describe('Систем prompt — cache-лэгдэх тогтмол хэсэг + хувьсах хэсэг', () => {
     it('эхний блок cache_control-той, огноо/хэрэглэгч сүүлийн блокт', () => {
         const blocks = buildSystemBlocks({ shopId: 's', userId: 'u', perms: { canWrite: true, canDelete: false, role: 'sales_manager' }, userName: 'Болд', conversationSummary: 'Өмнө нь X' });
-        expect(blocks[0].cache_control).toEqual({ type: 'ephemeral' });
+        expect(blocks[0].cache_control).toEqual({ type: 'ephemeral', ttl: '1h' });
         const last = blocks[blocks.length - 1];
         expect(last.cache_control).toBeUndefined();
         expect(last.text).toContain('Болд');

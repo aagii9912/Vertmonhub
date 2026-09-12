@@ -3,8 +3,8 @@
  *
  * Нэг дуудлага = model.stream → (tool_use блокууд байвал) tool гүйцэтгэ → tool_result-уудыг
  * НЭГ user мессежээр буцаа → давт. `end_turn` (эсвэл ask_user) дээр зогсоно.
- * Streaming: текст токен бүрийг onEvent('token') руу; tool дуудлага дунд орвол
- * token_reset (UI урьдчилсан текстийг хаяна).
+ * Streaming: текст токен бүрийг onEvent('token') руу. Tool дуудлагын өмнөх товч тайлбар
+ * («Лидийг шалгая…») хадгалагдаж, дараагийн раундын текст хоосон мөрөөр залгагдана.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -158,13 +158,14 @@ export async function runLoop(o: LoopOptions): Promise<LoopResult> {
     let data: unknown = null;
     let chartConfig: unknown = null;
     let clarification: Clarification | null = null;
-    let finalText = '';
+    /** Раунд бүрийн текст — tool дуудлагын өмнөх «одоо шалгая…» маягийн товч тайлбар ХАДГАЛАГДАНА (ChatGPT/Claude маяг). */
+    const textChunks: string[] = [];
     let stopReason: string | null = null;
     let rounds = 0;
     const maxRounds = o.maxRounds ?? MAX_ROUNDS;
     const streaming = o.streamText && !!o.ctx.onEvent;
-    let tokenEmitted = false;
     const emit = o.ctx.onEvent;
+    let needSeparator = false;
 
     for (rounds = 1; rounds <= maxRounds; rounds++) {
         // Client цуцалсан → цааш Claude/DB дуудахгүй; хугацаа хэтэрсэн → байгаа хариугаар дуусгана.
@@ -187,8 +188,13 @@ export async function runLoop(o: LoopOptions): Promise<LoopResult> {
             { signal: o.ctx.signal },
         );
         if (streaming) {
-            if (tokenEmitted) { emit!({ type: 'token_reset' }); tokenEmitted = false; }
-            stream.on('text', (delta) => { if (delta) { tokenEmitted = true; emit!({ type: 'token', text: delta }); } });
+            let first = true;
+            stream.on('text', (delta) => {
+                if (!delta) return;
+                if (first && needSeparator) { emit!({ type: 'token', text: '\n\n' }); }
+                first = false;
+                emit!({ type: 'token', text: delta });
+            });
         }
         const msg = await stream.finalMessage();
         usage.input += msg.usage.input_tokens;
@@ -196,20 +202,16 @@ export async function runLoop(o: LoopOptions): Promise<LoopResult> {
         usage.cacheRead += msg.usage.cache_read_input_tokens ?? 0;
         stopReason = msg.stop_reason;
 
-        const textParts = msg.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text);
+        const roundText = msg.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('\n').trim();
+        if (roundText) { textChunks.push(roundText); needSeparator = true; }
         const toolUses = msg.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
 
         if (msg.stop_reason === 'refusal') {
-            finalText = 'Уучлаарай, энэ хүсэлтэд хариулах боломжгүй байна.';
+            textChunks.push('Уучлаарай, энэ хүсэлтэд хариулах боломжгүй байна.');
             break;
         }
-        if (toolUses.length === 0 || msg.stop_reason !== 'tool_use') {
-            finalText = textParts.join('\n').trim();
-            break;
-        }
+        if (toolUses.length === 0 || msg.stop_reason !== 'tool_use') break;
 
-        // Tool дуудлага дунд орсон → урьдчилсан текстийг UI-д хаялгана.
-        if (streaming && tokenEmitted) { emit!({ type: 'token_reset' }); tokenEmitted = false; }
         messages.push({ role: 'assistant', content: msg.content });
 
         // Бүх tool-ыг зэрэг гүйцэтгээд НЭГ user мессежээр буцаана (parallel tool use).
@@ -272,13 +274,10 @@ export async function runLoop(o: LoopOptions): Promise<LoopResult> {
         }));
         messages.push({ role: 'user', content: results });
 
-        if (clarification) {
-            // Модель ask_user-тэй хамт текст бичсэн бол түүнийг хадгална; үгүй бол асуултаар орлуулна.
-            finalText = textParts.join('\n').trim();
-            break;
-        }
+        if (clarification) break;
     }
 
+    let finalText = textChunks.join('\n\n').trim();
     if (!finalText && rounds > maxRounds) {
         // Раундын хязгаар — цуглуулсан мэдээллээр эцсийн хариу бичүүлнэ (tool-гүй).
         try {
@@ -288,6 +287,7 @@ export async function runLoop(o: LoopOptions): Promise<LoopResult> {
                 thinking: { type: 'adaptive' }, output_config: { effort: 'low' },
             });
             finalText = closing.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('\n').trim();
+            if (streaming && finalText) emit!({ type: 'token', text: (needSeparator ? '\n\n' : '') + finalText });
             usage.input += closing.usage.input_tokens; usage.output += closing.usage.output_tokens;
         } catch { /* доорх fallback */ }
     }

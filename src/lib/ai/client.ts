@@ -94,7 +94,7 @@ export async function streamAssistant(req: StreamRequest, h: StreamHandlers): Pr
 }
 
 /** Баталгаажуулсан үйлдлийг гүйцэтгэнэ (RBAC серверт дахин шалгагдана). */
-export async function approveAssistantAction(input: { shopId?: string | null; tool: string; args: Record<string, unknown>; conversationId?: string | null }): Promise<{ ok: boolean; message: string }> {
+export async function approveAssistantAction(input: { shopId?: string | null; tool: string; args: Record<string, unknown>; conversationId?: string | null }): Promise<{ ok: boolean; message: string; result?: unknown }> {
     try {
         const res = await fetch('/api/ai-assistant/action', {
             method: 'POST',
@@ -102,7 +102,7 @@ export async function approveAssistantAction(input: { shopId?: string | null; to
             body: JSON.stringify(input),
         });
         const data = await res.json().catch(() => ({}));
-        if (res.ok && data.success) return { ok: true, message: data.message || 'Гүйцэтгэгдлээ' };
+        if (res.ok && data.success) return { ok: true, message: data.message || 'Гүйцэтгэгдлээ', result: data.result };
         return { ok: false, message: data.message || data.error || 'Алдаа гарлаа' };
     } catch {
         return { ok: false, message: 'Сүлжээний алдаа гарлаа' };

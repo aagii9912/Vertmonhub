@@ -42,11 +42,11 @@ const DOMAIN_NOTES = `ДОМЭЙНЫ ТЭМДЭГЛЭЛ:
 export function buildSystemBlocks(ctx: OrchestratorContext, extra?: { personaOverride?: string; includeDomainNotes?: boolean }): Anthropic.TextBlockParam[] {
     const stable = [extra?.personaOverride ?? ASSISTANT_PERSONA, extra?.includeDomainNotes === false ? '' : DOMAIN_NOTES].filter(Boolean).join('\n\n');
     const blocks: Anthropic.TextBlockParam[] = [
-        { type: 'text', text: stable, cache_control: { type: 'ephemeral' } },
+        { type: 'text', text: stable, cache_control: { type: 'ephemeral', ttl: '1h' } },
     ];
     // Shop мэдлэг + урт хугацааны санах ой — session дотор тогтмол тул мөн cache-лэнэ.
     if (ctx.shopKnowledge) {
-        blocks.push({ type: 'text', text: `КОМПАНИЙН МЭДЛЭГ:\n${ctx.shopKnowledge}`, cache_control: { type: 'ephemeral' } });
+        blocks.push({ type: 'text', text: `КОМПАНИЙН МЭДЛЭГ:\n${ctx.shopKnowledge}`, cache_control: { type: 'ephemeral', ttl: '1h' } });
     }
     const volatile: string[] = [];
     const now = new Date();
