@@ -4,6 +4,7 @@ import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logger } from '@/lib/utils/logger';
+import { listTasks, createTask, isMissingTaskTable, TASK_MIGRATION_HINT } from '@/lib/services/TaskService';
 
 /**
  * GET/POST /api/dashboard/tasks — хувийн ажлын жагсаалт (user_tasks).
@@ -22,15 +23,6 @@ const CreateSchema = z.object({
     remindAt: z.string().datetime({ offset: true }).optional().nullable(),
 });
 
-/** user_tasks хүснэгт үүсээгүй орчны алдаа мөн үү. */
-function isMissingTable(error: { code?: string; message?: string } | null): boolean {
-    if (!error) return false;
-    return error.code === '42P01' || /user_tasks/i.test(error.message || '');
-}
-
-const MIGRATION_HINT =
-    'Ажлын жагсаалтын хүснэгт (user_tasks) үүсээгүй байна — 20260721120000_user_tasks.sql миграцийг ажиллуулна уу';
-
 export async function GET(request: NextRequest) {
     try {
         const [authShop, uid] = await Promise.all([getUserShop(), getUserId()]);
@@ -41,20 +33,9 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url);
         const status = searchParams.get('status'); // pending | done | (бусад = бүгд)
 
-        const db = supabaseAdmin();
-        let q = db
-            .from('user_tasks')
-            .select('id, title, note, due_at, remind_at, status, completed_at, created_at')
-            .eq('user_id', uid)
-            .eq('shop_id', authShop.id)
-            .is('deleted_at', null)
-            .order('created_at', { ascending: false })
-            .limit(300);
-        if (status === 'pending' || status === 'done') q = q.eq('status', status);
-
-        const { data, error } = await q;
+        const { data, error } = await listTasks(supabaseAdmin(), authShop.id, uid, status);
         if (error) {
-            if (isMissingTable(error)) {
+            if (isMissingTaskTable(error)) {
                 return NextResponse.json({ tasks: [], available: false });
             }
             logger.error('[Tasks] list error', { error: error.message });
@@ -83,23 +64,11 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const db = supabaseAdmin();
-        const { data, error } = await db
-            .from('user_tasks')
-            .insert({
-                user_id: uid,
-                shop_id: authShop.id,
-                title: parsed.data.title,
-                note: parsed.data.note?.trim() || null,
-                due_at: parsed.data.dueAt || null,
-                remind_at: parsed.data.remindAt || null,
-            })
-            .select('id, title, note, due_at, remind_at, status, completed_at, created_at')
-            .single();
+        const { data, error } = await createTask(supabaseAdmin(), authShop.id, uid, parsed.data);
 
         if (error) {
-            if (isMissingTable(error)) {
-                return NextResponse.json({ error: MIGRATION_HINT }, { status: 503 });
+            if (isMissingTaskTable(error)) {
+                return NextResponse.json({ error: TASK_MIGRATION_HINT }, { status: 503 });
             }
             logger.error('[Tasks] create error', { error: error.message });
             return NextResponse.json({ error: 'Ажил нэмэх алдаа' }, { status: 500 });

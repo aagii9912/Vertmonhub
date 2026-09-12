@@ -76,7 +76,8 @@ interface PendingRequest {
 }
 
 const TOOL_LABEL: Record<string, string> = {
-    delegate_to_specialists: 'Мэргэжилтнүүдэд хуваарилах', ask_user: 'Тодруулга',
+    delegate_to_specialists: 'Мэргэжилтнүүдэд хуваарилах', ask_user: 'Тодруулга', list_viewings: 'Уулзалт хайх', list_my_tasks: 'Миний ажлууд', list_contract_payments: 'Төлбөрийн хуваарь',
+    log_call: 'Дуудлага бүртгэх', set_followup: 'Follow-up тавих', assign_lead_manager: 'Лид шилжүүлэх', record_viewing_outcome: 'Уулзалтын үр дүн', reschedule_viewing: 'Уулзалт зөөх', create_task: 'Ажил нэмэх', complete_task: 'Ажил дуусгах', add_contract_payment: 'Төлбөр нэмэх', mark_payment_paid: 'Төлбөр төлсөн',
     update_unit_status: 'Нэгжийн статус', delete_property: 'Байр устгах', delete_viewing: 'Уулзалт цуцлах', delete_customer: 'Харилцагч устгах', create_role: 'Дүр үүсгэх',
     get_dashboard_stats: 'Самбарын тоо', list_properties: 'Байр хайх', list_leads: 'Лид хайх', get_lead_details: 'Лидийн мэдээлэл',
     get_customer_insights: 'Харилцагчийн дүн', list_contracts: 'Гэрээ хайх', get_contract_details: 'Гэрээний мэдээлэл', get_contracts_summary: 'Гэрээний нэгтгэл',

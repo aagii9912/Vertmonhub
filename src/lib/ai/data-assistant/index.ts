@@ -23,6 +23,7 @@ import {
     generateChartConfig,
 } from './functions';
 import { inviteUser, assignRole, createRole } from './admin-functions';
+import { logCall, setFollowup, assignLeadManager, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
 
 /** AI Assistant-ийн RBAC эрхүүд (route-аас тооцоолж дамжуулна). */
 export interface AssistantPerms {
@@ -96,6 +97,19 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'get_market_indicators': result = await fetchMarketIndicators(shopId); break;
         case 'create_social_post': result = await createSocialPost(shopId, args, confirm, userName); break;
         case 'remember_fact': result = await rememberFact(shopId, args, confirm, userName); break;
+        // Wave 1 — өдөр тутмын үйлдлүүд (service давхаргаар)
+        case 'list_viewings': result = await listViewingsTool(shopId, args); break;
+        case 'list_my_tasks': result = await listMyTasks(shopId, args, userId); break;
+        case 'list_contract_payments': result = await listContractPayments(shopId, args); break;
+        case 'log_call': result = await logCall(shopId, args, userId, userName); break;
+        case 'set_followup': result = await setFollowup(shopId, args, userId, userName); break;
+        case 'assign_lead_manager': result = await assignLeadManager(shopId, args, confirm, userId, userName); break;
+        case 'record_viewing_outcome': result = await recordViewingOutcome(shopId, args, userId, userName); break;
+        case 'reschedule_viewing': result = await rescheduleViewing(shopId, args, confirm, userId, userName); break;
+        case 'create_task': result = await createTaskTool(shopId, args, userId); break;
+        case 'complete_task': result = await completeTaskTool(shopId, args, userId); break;
+        case 'add_contract_payment': result = await addContractPayment(shopId, args, confirm); break;
+        case 'mark_payment_paid': result = await markPaymentPaid(shopId, args, confirm); break;
         case 'invite_user': result = await inviteUser(shopId, args, confirm, userId); break;
         case 'assign_role': result = await assignRole(shopId, args, confirm); break;
         case 'create_role': result = await createRole(shopId, args, confirm); break;

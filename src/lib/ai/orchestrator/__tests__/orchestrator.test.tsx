@@ -8,7 +8,8 @@ import React from 'react';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { render } from '@testing-library/react';
 
-import { readTools, writeTools, deleteTools, adminTools, MUTATING_TOOL_NAMES } from '@/lib/ai/data-assistant/tools';
+import { readTools, writeTools, deleteTools, adminTools, MUTATING_TOOL_NAMES, WRITE_TOOL_NAMES, AUTO_TOOL_NAMES } from '@/lib/ai/data-assistant/tools';
+import { paymentStatus } from '@/lib/services/PaymentService';
 import { AGENT_LIST } from '@/lib/ai/orchestrator/agents';
 import { MarkdownMessage } from '@/components/ai-assistant/MarkdownMessage';
 import { toClaudeTool, dataToolsForPerms, buildDelegateTool, ASK_USER_TOOL } from '@/lib/ai/claude/tools';
@@ -93,6 +94,26 @@ describe('Agent registry бүрэн бүтэн байдал', () => {
     it('MUTATING_TOOL_NAMES шинэ tool-уудыг агуулна', () => {
         ['schedule_viewing', 'delete_viewing', 'create_contract', 'delete_contract', 'create_customer', 'delete_customer', 'attach_file', 'bulk_update_leads', 'invite_user', 'assign_role', 'create_role']
             .forEach((t) => expect(MUTATING_TOOL_NAMES, t).toContain(t));
+    });
+});
+
+describe('Wave 1 — өдөр тутмын tool-ууд', () => {
+    it('AUTO tool бүр WRITE tool бөгөөд устгах/төлбөр/шилжүүлэлт AUTO биш', () => {
+        AUTO_TOOL_NAMES.forEach((t) => expect(WRITE_TOOL_NAMES, t).toContain(t));
+        ['delete_lead', 'add_contract_payment', 'mark_payment_paid', 'assign_lead_manager', 'reschedule_viewing', 'create_contract'].forEach((t) => expect(AUTO_TOOL_NAMES).not.toContain(t));
+    });
+    it('шинэ tool бүр тодорхойлолттой бөгөөд Claude schema болж хөрвөнө', () => {
+        const all = [...readTools, ...writeTools].map((t: { name: string }) => t.name);
+        ['list_viewings', 'list_my_tasks', 'list_contract_payments', 'log_call', 'set_followup', 'assign_lead_manager', 'record_viewing_outcome', 'reschedule_viewing', 'create_task', 'complete_task', 'add_contract_payment', 'mark_payment_paid']
+            .forEach((t) => expect(all, t).toContain(t));
+        const t = toClaudeTool(writeTools.find((x: { name: string }) => x.name === 'log_call'));
+        expect(t.input_schema.required).toEqual(['summary']);
+    });
+    it('paymentStatus: төлсөн/хагас/хүлээгдэж буй', () => {
+        expect(paymentStatus(100, 100)).toBe('paid');
+        expect(paymentStatus(40, 100)).toBe('partial');
+        expect(paymentStatus(0, 100)).toBe('pending');
+        expect(paymentStatus(0, 0)).toBe('pending');
     });
 });
 

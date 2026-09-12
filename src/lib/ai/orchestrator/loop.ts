@@ -14,6 +14,9 @@ import { executeDataTool } from '@/lib/ai/data-assistant';
 import { generateChartConfig } from '@/lib/ai/data-assistant/functions';
 import { claude } from '@/lib/ai/claude/client';
 import { ASK_USER_TOOL } from '@/lib/ai/claude/tools';
+import { AUTO_TOOL_NAMES } from '@/lib/ai/data-assistant/tools';
+
+const AUTO_SET = new Set(AUTO_TOOL_NAMES);
 import type { AgentId, Clarification, HistoryMessage, OrchestratorAttachment, OrchestratorContext, PendingAction, TraceTool } from './types';
 
 export const MAX_HISTORY = 20;
@@ -242,7 +245,8 @@ export async function runLoop(o: LoopOptions): Promise<LoopResult> {
             try {
                 result = o.customTools?.[tu.name]
                     ? await o.customTools[tu.name](args)
-                    : await executeDataTool(tu.name, args, o.ctx.shopId, o.ctx.perms, o.ctx.userId, false, o.ctx.userName || '');
+                    // Эрсдэл багатай (AUTO) tool → картгүй шууд гүйцэтгэнэ (audit бичигдэнэ); бусад mutating → preview.
+                    : await executeDataTool(tu.name, args, o.ctx.shopId, o.ctx.perms, o.ctx.userId, AUTO_SET.has(tu.name), o.ctx.userName || '');
             } catch (e) {
                 isError = true;
                 result = { error: e instanceof Error ? e.message : 'Tool алдаа' };

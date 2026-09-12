@@ -65,3 +65,22 @@ export async function listLeadActivities(db: SupabaseClient, shopId: string, lea
         return [];
     }
 }
+
+/**
+ * Дуудлага/тэмдэглэл бүртгэх + лидийн last_contact_at / next_followup_at шинэчлэх —
+ * API route (`POST /leads/[id]/activities`) ба AI tool (`log_call`, `set_followup`) хоёулаа энд дамжина.
+ */
+export async function recordLeadContact(
+    db: SupabaseClient,
+    input: { shopId: string; leadId: string; type: 'note' | 'call'; content: string; nextFollowupAt?: string | null; userId?: string | null; managerName?: string | null },
+): Promise<{ activity: LeadActivity | null }> {
+    const activity = await logLeadActivity(db, {
+        shopId: input.shopId, leadId: input.leadId, type: input.type, content: input.content,
+        createdBy: input.userId ?? null, createdByName: input.managerName ?? null,
+    });
+    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (input.type === 'call') updates.last_contact_at = new Date().toISOString();
+    if (input.nextFollowupAt !== undefined) updates.next_followup_at = input.nextFollowupAt;
+    if (Object.keys(updates).length > 1) await db.from('leads').update(updates).eq('id', input.leadId);
+    return { activity };
+}
