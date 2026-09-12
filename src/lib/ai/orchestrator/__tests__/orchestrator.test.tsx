@@ -8,7 +8,7 @@ import React from 'react';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { render } from '@testing-library/react';
 
-import { readTools, writeTools, deleteTools, adminTools, MUTATING_TOOL_NAMES, WRITE_TOOL_NAMES, AUTO_TOOL_NAMES } from '@/lib/ai/data-assistant/tools';
+import { readTools, writeTools, deleteTools, adminTools, MUTATING_TOOL_NAMES, WRITE_TOOL_NAMES, AUTO_TOOL_NAMES, TOOL_MODULE } from '@/lib/ai/data-assistant/tools';
 import { paymentStatus } from '@/lib/services/PaymentService';
 import { AGENT_LIST } from '@/lib/ai/orchestrator/agents';
 import { MarkdownMessage } from '@/components/ai-assistant/MarkdownMessage';
@@ -108,6 +108,26 @@ describe('Wave 1 — өдөр тутмын tool-ууд', () => {
             .forEach((t) => expect(all, t).toContain(t));
         const t = toClaudeTool(writeTools.find((x: { name: string }) => x.name === 'log_call'));
         expect(t.input_schema.required).toEqual(['summary']);
+    });
+    it('wave 2–4: модулийн эрхгүй хэрэглэгч санхүү/тайлангийн tool-ыг харахгүй, super_admin бүгдийг', () => {
+        const base = { canWrite: true, canDelete: false, role: 'sales_manager' as const };
+        const noFinance = dataToolsForPerms({ ...base, modules: ['dashboard', 'leads', 'reports'] }).map((t) => t.name);
+        expect(noFinance).toContain('get_kpi_report');
+        expect(noFinance).not.toContain('get_finance_summary');
+        expect(noFinance).not.toContain('pay_vendor_bill');
+        const withFinance = dataToolsForPerms({ ...base, modules: ['dashboard', 'finance', 'procurement'] }).map((t) => t.name);
+        expect(withFinance).toContain('add_finance_transaction');
+        expect(withFinance).toContain('pay_vendor_bill');
+        expect(withFinance).not.toContain('get_kpi_report');
+        const sup = dataToolsForPerms({ canWrite: true, canDelete: true, role: 'super_admin', modules: [] }).map((t) => t.name);
+        expect(sup).toContain('get_finance_summary');
+        // modules өгөөгүй (хуучин дуудагч) → шүүлтгүй
+        expect(dataToolsForPerms(base).map((t) => t.name)).toContain('get_finance_summary');
+        Object.keys(TOOL_MODULE).forEach((t) => expect([...readTools, ...writeTools].map((x: { name: string }) => x.name), t).toContain(t));
+    });
+    it('executeDataTool модулийн эрхийг шалгана (DB-д хүрэхгүй)', async () => {
+        const r = await executeDataTool('get_finance_summary', {}, 'shop1', { canWrite: true, canDelete: false, role: 'admin', modules: ['dashboard'] }, 'u1', false, '');
+        expect(r.error).toMatch(/finance/);
     });
     it('paymentStatus: төлсөн/хагас/хүлээгдэж буй', () => {
         expect(paymentStatus(100, 100)).toBe('paid');

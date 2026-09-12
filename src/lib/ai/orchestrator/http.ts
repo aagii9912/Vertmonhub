@@ -124,7 +124,7 @@ export async function prepareAssistantRequest(req: Request): Promise<{ error: Ne
     ]);
 
     const uiCtx = context && typeof context === 'object' ? context : null;
-    const perms = { canWrite: permissions.canWrite, canDelete: permissions.canDelete, role: roleName };
+    const perms = { canWrite: permissions.canWrite, canDelete: permissions.canDelete, role: roleName, modules: permissions.modules };
     const [note, prefetched] = await Promise.all([
         Promise.resolve(buildContextNote(uiCtx)),
         prefetchContext(uiCtx, effectiveShopId, perms, resolvedUser.id),

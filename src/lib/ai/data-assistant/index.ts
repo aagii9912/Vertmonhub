@@ -6,7 +6,13 @@
  */
 
 import { logger } from '@/lib/utils/logger';
-import { WRITE_TOOL_NAMES, DELETE_TOOL_NAMES, ADMIN_TOOL_NAMES } from './tools';
+import { WRITE_TOOL_NAMES, DELETE_TOOL_NAMES, ADMIN_TOOL_NAMES, TOOL_MODULE, AUTO_TOOL_NAMES } from './tools';
+
+const AUTO_SET = new Set(AUTO_TOOL_NAMES);
+const AUTO_LABELS: Record<string, string> = {
+    add_lead_note: 'Тэмдэглэл нэмэх', remember_fact: 'Санах', log_call: 'Дуудлага бүртгэх', set_followup: 'Follow-up тавих', record_viewing_outcome: 'Уулзалтын үр дүн',
+    create_task: 'Ажил нэмэх', complete_task: 'Ажил дуусгах', add_customer_tag: 'Таг нэмэх', remove_customer_tag: 'Таг хасах', set_customer_ai_pause: 'AI зогсоох/сэргээх', add_market_indicator: 'Зах зээлийн үзүүлэлт',
+};
 import { logAiAudit } from './audit';
 import {
     fetchDashboardStats,
@@ -23,6 +29,7 @@ import {
     generateChartConfig,
 } from './functions';
 import { inviteUser, assignRole, createRole } from './admin-functions';
+import { getKpiReport, getManagerPerformanceTool, getExportLink, customerTag, customerAiPause, replyCustomer, mergeCustomersTool, logSpend, setBudget, listSpend, addIndicator, financeSummaryTool, listTransactionsTool, addTransactionTool, listBillsTool, payBillTool } from './actions2';
 import { logCall, setFollowup, assignLeadManager, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
 
 /** AI Assistant-ийн RBAC эрхүүд (route-аас тооцоолж дамжуулна). */
@@ -30,6 +37,8 @@ export interface AssistantPerms {
     canWrite: boolean;
     canDelete: boolean;
     role: string;
+    /** Хэрэглэгчийн нээлттэй модулиуд (RBAC). Өгөгдөөгүй бол модулийн шалгалт хийхгүй (хуучин дуудагч). */
+    modules?: string[];
 }
 
 // ============================================
@@ -57,6 +66,16 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
     }
     if (isAdmin && perms.role !== 'super_admin') {
         return { error: 'Энэ үйлдлийг зөвхөн super_admin хийх боломжтой.' };
+    }
+    const requiredModule = TOOL_MODULE[toolName];
+    if (requiredModule && perms.modules && !perms.modules.includes(requiredModule) && perms.role !== 'super_admin') {
+        return { error: `Энэ үйлдэлд «${requiredModule}» модулийн эрх шаардлагатай — танд алга.` };
+    }
+
+    // AUTO tool-ууд ч confirm=false үед preview буцаана (executor түвшний нэгдсэн хаалт).
+    // Orchestrator loop тэдгээрийг confirm=true-ээр дуудаж шууд гүйцэтгэнэ (AUTO_TOOL_NAMES).
+    if (AUTO_SET.has(toolName) && !confirm) {
+        return { requiresConfirmation: true, action: { tool: toolName, args }, label: AUTO_LABELS[toolName] || toolName, preview: args };
     }
 
     let result: any;
@@ -101,15 +120,33 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'list_viewings': result = await listViewingsTool(shopId, args); break;
         case 'list_my_tasks': result = await listMyTasks(shopId, args, userId); break;
         case 'list_contract_payments': result = await listContractPayments(shopId, args); break;
-        case 'log_call': result = await logCall(shopId, args, userId, userName); break;
-        case 'set_followup': result = await setFollowup(shopId, args, userId, userName); break;
+        case 'log_call': result = await logCall(shopId, args, userId, userName); break; // confirm: AUTO хаалт дээр
+        case 'set_followup': result = await setFollowup(shopId, args, userId, userName); break; // confirm: AUTO хаалт дээр
         case 'assign_lead_manager': result = await assignLeadManager(shopId, args, confirm, userId, userName); break;
-        case 'record_viewing_outcome': result = await recordViewingOutcome(shopId, args, userId, userName); break;
+        case 'record_viewing_outcome': result = await recordViewingOutcome(shopId, args, userId, userName); break; // confirm: AUTO хаалт дээр
         case 'reschedule_viewing': result = await rescheduleViewing(shopId, args, confirm, userId, userName); break;
-        case 'create_task': result = await createTaskTool(shopId, args, userId); break;
-        case 'complete_task': result = await completeTaskTool(shopId, args, userId); break;
+        case 'create_task': result = await createTaskTool(shopId, args, userId); break; // confirm: AUTO хаалт дээр
+        case 'complete_task': result = await completeTaskTool(shopId, args, userId); break; // confirm: AUTO хаалт дээр
         case 'add_contract_payment': result = await addContractPayment(shopId, args, confirm); break;
         case 'mark_payment_paid': result = await markPaymentPaid(shopId, args, confirm); break;
+        // Wave 2–4 — менежер / харилцагч / маркетинг / санхүү
+        case 'get_kpi_report': result = await getKpiReport(shopId, args, userId, perms); break;
+        case 'get_manager_performance': result = await getManagerPerformanceTool(shopId); break;
+        case 'get_export_link': result = await getExportLink(shopId, args); break;
+        case 'add_customer_tag': result = await customerTag(shopId, args, false); break; // confirm: AUTO хаалт дээр
+        case 'remove_customer_tag': result = await customerTag(shopId, args, true); break; // confirm: AUTO хаалт дээр
+        case 'set_customer_ai_pause': result = await customerAiPause(shopId, args); break; // confirm: AUTO хаалт дээр
+        case 'reply_to_customer': result = await replyCustomer(shopId, args, confirm); break;
+        case 'merge_customers': result = await mergeCustomersTool(shopId, args, confirm); break;
+        case 'log_marketing_spend': result = await logSpend(shopId, args, confirm, userId); break;
+        case 'set_marketing_budget': result = await setBudget(shopId, args, confirm); break;
+        case 'list_marketing_spend': result = await listSpend(shopId, args); break;
+        case 'add_market_indicator': result = await addIndicator(shopId, args); break; // confirm: AUTO хаалт дээр
+        case 'get_finance_summary': result = await financeSummaryTool(shopId); break;
+        case 'list_finance_transactions': result = await listTransactionsTool(shopId, args); break;
+        case 'add_finance_transaction': result = await addTransactionTool(shopId, args, confirm); break;
+        case 'list_vendor_bills': result = await listBillsTool(shopId, args); break;
+        case 'pay_vendor_bill': result = await payBillTool(shopId, args, confirm); break;
         case 'invite_user': result = await inviteUser(shopId, args, confirm, userId); break;
         case 'assign_role': result = await assignRole(shopId, args, confirm); break;
         case 'create_role': result = await createRole(shopId, args, confirm); break;

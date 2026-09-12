@@ -4,7 +4,7 @@ import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { PayBillSchema, validateBody } from '@/lib/validations/schemas';
-import { logFinanceAudit } from '@/lib/erp/audit';
+import { payBill } from '@/lib/services/FinanceOps';
 
 /**
  * POST /api/dashboard/procurement/bills/[id]/pay
@@ -26,56 +26,14 @@ export async function POST(
         if (!validation.success) return validation.response;
         const d = validation.data;
 
-        const supabase = supabaseAdmin();
-
-        const { data: bill } = await supabase
-            .from('vendor_bills')
-            .select('id, total_amount, paid_amount, project_id, status')
-            .eq('id', id)
-            .eq('shop_id', authShop.id)
-            .single();
-
-        if (!bill) return NextResponse.json({ error: 'Нэхэмжлэх олдсонгүй' }, { status: 404 });
-
-        const newPaid = (Number(bill.paid_amount) || 0) + d.amount;
-        const newStatus = newPaid >= Number(bill.total_amount) ? 'paid' : 'partial';
-
-        const { error: updateError } = await supabase
-            .from('vendor_bills')
-            .update({ paid_amount: newPaid, status: newStatus })
-            .eq('id', id);
-
-        if (updateError) throw updateError;
-
-        // Кассын дэвтэрт зарлага бичнэ
-        const { error: txnError } = await supabase
-            .from('finance_transactions')
-            .insert({
-                shop_id: authShop.id,
-                txn_date: d.paid_date || new Date().toISOString().slice(0, 10),
-                type: 'disbursement',
-                amount: d.amount,
-                method: d.method || null,
-                project_id: bill.project_id || null,
-                note: 'Нийлүүлэгчийн нэхэмжлэх төлбөр',
-            });
-        if (txnError) {
-            logger.warn('[Bill Pay] finance_transactions insert failed', { error: txnError });
-        }
-
-        await logFinanceAudit({
-            shopId: authShop.id,
-            action: 'bill.pay',
-            entity: 'vendor_bill',
-            entityId: id,
-            amount: d.amount,
-            meta: { status: newStatus },
-        });
+        const r = await payBill(supabaseAdmin(), authShop.id, id, d);
+        if ('error' in r) return NextResponse.json({ error: r.error }, { status: r.status });
+        const { bill } = r;
 
         return NextResponse.json({
             success: true,
-            paid_amount: newPaid,
-            status: newStatus,
+            paid_amount: bill.paid_amount,
+            status: bill.status,
             message: 'Төлбөр бүртгэлээ',
         });
     } catch (error) {

@@ -6,7 +6,7 @@
  */
 
 import type Anthropic from '@anthropic-ai/sdk';
-import { readTools, writeTools, deleteTools, adminTools } from '@/lib/ai/data-assistant/tools';
+import { readTools, writeTools, deleteTools, adminTools, TOOL_MODULE } from '@/lib/ai/data-assistant/tools';
 import type { AssistantPerms } from '@/lib/ai/data-assistant';
 
 /** Gemini маягийн tool тодорхойлолт (data-assistant/tools.ts). */
@@ -49,7 +49,11 @@ export function dataToolsForPerms(perms: AssistantPerms): Anthropic.Tool[] {
     ];
     // Хуучин e-commerce tool-ууд (list_orders, get_product_stats) — үл хөдлөхөд утгагүй, нуух.
     const hidden = new Set(['list_orders', 'get_product_stats']);
-    return defs.filter((d) => !hidden.has(d.name)).map(toClaudeTool);
+    const hasModule = (name: string) => {
+        const m = TOOL_MODULE[name];
+        return !m || !perms.modules || perms.role === 'super_admin' || perms.modules.includes(m);
+    };
+    return defs.filter((d) => !hidden.has(d.name) && hasModule(d.name)).map(toClaudeTool);
 }
 
 /** Нэрсийн дэд олонлогоор шүүх (дэд агентад). */

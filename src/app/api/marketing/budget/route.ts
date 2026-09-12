@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { logMarketingSpend } from '@/lib/services/MarketingOps';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { requireWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -173,19 +174,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const db = supabaseAdmin();
-        const { data, error } = await db
-            .from('marketing_spend_entries')
-            .insert({
-                shop_id: authShop.id,
-                spent_at: parsed.data.spentAt,
-                amount: parsed.data.amount,
-                channel: SPEND_CHANNELS[parsed.data.channel] ? parsed.data.channel : 'other',
-                note: parsed.data.note?.trim() || null,
-                created_by: uid,
-            })
-            .select('id, spent_at, amount, channel, note, created_at')
-            .single();
+        const { data, error } = await logMarketingSpend(supabaseAdmin(), authShop.id, uid, parsed.data);
 
         if (error) {
             if (isMissingTable(error)) {

@@ -78,6 +78,8 @@ interface PendingRequest {
 const TOOL_LABEL: Record<string, string> = {
     delegate_to_specialists: 'Мэргэжилтнүүдэд хуваарилах', ask_user: 'Тодруулга', list_viewings: 'Уулзалт хайх', list_my_tasks: 'Миний ажлууд', list_contract_payments: 'Төлбөрийн хуваарь',
     log_call: 'Дуудлага бүртгэх', set_followup: 'Follow-up тавих', assign_lead_manager: 'Лид шилжүүлэх', record_viewing_outcome: 'Уулзалтын үр дүн', reschedule_viewing: 'Уулзалт зөөх', create_task: 'Ажил нэмэх', complete_task: 'Ажил дуусгах', add_contract_payment: 'Төлбөр нэмэх', mark_payment_paid: 'Төлбөр төлсөн',
+    get_kpi_report: 'KPI тайлан', get_manager_performance: 'Менежерийн гүйцэтгэл', get_export_link: 'Excel линк', add_customer_tag: 'Таг нэмэх', remove_customer_tag: 'Таг хасах', set_customer_ai_pause: 'AI зогсоох/сэргээх', reply_to_customer: 'Messenger хариу', merge_customers: 'Харилцагч нэгтгэх',
+    log_marketing_spend: 'Зарцуулалт бүртгэх', set_marketing_budget: 'Төсөв тавих', list_marketing_spend: 'Зарцуулалт', add_market_indicator: 'Зах зээлийн үзүүлэлт', get_finance_summary: 'Санхүүгийн нэгтгэл', list_finance_transactions: 'Кассын гүйлгээ', add_finance_transaction: 'Кассын бичилт', list_vendor_bills: 'Нэхэмжлэх', pay_vendor_bill: 'Нэхэмжлэх төлөх',
     update_unit_status: 'Нэгжийн статус', delete_property: 'Байр устгах', delete_viewing: 'Уулзалт цуцлах', delete_customer: 'Харилцагч устгах', create_role: 'Дүр үүсгэх',
     get_dashboard_stats: 'Самбарын тоо', list_properties: 'Байр хайх', list_leads: 'Лид хайх', get_lead_details: 'Лидийн мэдээлэл',
     get_customer_insights: 'Харилцагчийн дүн', list_contracts: 'Гэрээ хайх', get_contract_details: 'Гэрээний мэдээлэл', get_contracts_summary: 'Гэрээний нэгтгэл',
@@ -244,7 +246,6 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
         else { setAction(a.id, { status: 'error', resultMessage: r.message, autoApproved: false }); toast.error(r.message); }
         const owner = messagesRef.current.find((m) => m.pendingActions?.some((x) => x.id === a.id));
         if (owner) scheduleContinuation(owner.id);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [shop?.id, conversationId, scheduleContinuation]);
 
     const approveAll = async (ids: string[]) => {

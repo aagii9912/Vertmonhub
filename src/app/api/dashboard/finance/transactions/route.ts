@@ -4,7 +4,7 @@ import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { CreateFinanceTransactionSchema, validateBody } from '@/lib/validations/schemas';
-import { logFinanceAudit } from '@/lib/erp/audit';
+import { addTransaction } from '@/lib/services/FinanceOps';
 
 /**
  * GET /api/dashboard/finance/transactions — Гүйлгээний жагсаалт (шүүлттэй)
@@ -64,35 +64,9 @@ export async function POST(request: NextRequest) {
         }
         const d = validation.data;
 
-        const supabase = supabaseAdmin();
-        const { data: txn, error } = await supabase
-            .from('finance_transactions')
-            .insert({
-                shop_id: authShop.id,
-                txn_date: d.txn_date || new Date().toISOString().slice(0, 10),
-                type: d.type,
-                amount: d.amount,
-                vat_amount: d.vat_amount || 0,
-                method: d.method || null,
-                account_id: d.account_id || null,
-                contract_id: d.contract_id || null,
-                payment_schedule_id: d.payment_schedule_id || null,
-                project_id: d.project_id || null,
-                note: d.note || null,
-            })
-            .select()
-            .single();
-
-        if (error) throw error;
-
-        await logFinanceAudit({
-            shopId: authShop.id,
-            action: 'transaction.create',
-            entity: 'finance_transaction',
-            entityId: txn.id,
-            amount: d.amount,
-            meta: { type: d.type, method: d.method || null },
-        });
+        const r = await addTransaction(supabaseAdmin(), authShop.id, d);
+        if ('error' in r) throw new Error(r.error);
+        const txn = r.transaction;
 
         return NextResponse.json({ transaction: txn, message: 'Гүйлгээ бүртгэлээ' }, { status: 201 });
     } catch (error) {

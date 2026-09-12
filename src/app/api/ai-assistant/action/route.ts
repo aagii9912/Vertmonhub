@@ -61,6 +61,7 @@ export async function POST(req: Request) {
             canWrite: permissions.canWrite,
             canDelete: permissions.canDelete,
             role: roleName,
+            modules: permissions.modules,
         };
 
         // RBAC-г executeDataTool дотор дахин шалгана. confirm=true → бодит үйлдэл.
