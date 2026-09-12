@@ -5,7 +5,7 @@ import { requireModuleWrite, requireModule } from '@/lib/auth/require-permission
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
-import { logLeadActivity, listLeadActivities } from '@/lib/leads/activities';
+import { listLeadActivities, recordLeadContact } from '@/lib/leads/activities';
 
 const CreateSchema = z.object({
     type: z.enum(['note', 'call']).default('note'),
@@ -55,24 +55,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         const uid = await getUserId();
         const identity = uid ? await resolveManagerIdentity(db, authShop.id, uid) : null;
 
-        const activity = await logLeadActivity(db, {
-            shopId: authShop.id,
-            leadId: id,
-            type: p.type,
-            content: p.content,
-            createdBy: uid,
-            createdByName: identity?.managerName ?? null,
+        const { activity } = await recordLeadContact(db, {
+            shopId: authShop.id, leadId: id, type: p.type, content: p.content, nextFollowupAt: p.next_followup_at,
+            userId: uid, managerName: identity?.managerName ?? null,
         });
         // Хэрэглэгчийн гараар бичсэн тэмдэглэл хадгалагдаагүй бол 201 биш 500 —
         // өмнө нь null activity-тэй «хадгалагдлаа» гэж хариулдаг байв.
         if (!activity) {
             return NextResponse.json({ error: 'Тэмдэглэл хадгалагдсангүй (lead_activities). Дахин оролдоно уу.' }, { status: 500 });
         }
-
-        const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
-        if (p.type === 'call') updates.last_contact_at = new Date().toISOString();
-        if (p.next_followup_at !== undefined) updates.next_followup_at = p.next_followup_at;
-        if (Object.keys(updates).length > 1) await db.from('leads').update(updates).eq('id', id);
 
         return NextResponse.json({ activity }, { status: 201 });
     } catch (error) {

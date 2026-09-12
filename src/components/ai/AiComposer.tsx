@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowUp, Paperclip, X, FileText, ImageIcon, Loader2, AlertCircle, Square } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { ArrowUp, Paperclip, X, FileText, ImageIcon, Loader2, AlertCircle, Square, Mic, MicOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
@@ -36,6 +36,10 @@ export function AiComposer({ busy, onSend, onStop, prefill, onPrefillConsumed, p
     const [dragOver, setDragOver] = useState(false);
     const fileRef = useRef<HTMLInputElement>(null);
     const taRef = useRef<HTMLTextAreaElement>(null);
+    const { supported: voiceSupported, listening, toggle: toggleVoice } = useVoiceInput((text) => {
+        setInput((prev) => (prev ? `${prev} ${text}` : text));
+        requestAnimationFrame(() => { const el = taRef.current; if (el) { el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, 160) + 'px'; } });
+    });
 
     useEffect(() => {
         if (prefill) {
@@ -100,13 +104,18 @@ export function AiComposer({ busy, onSend, onStop, prefill, onPrefillConsumed, p
                     <Paperclip className="h-4 w-4" />
                 </button>
                 <input ref={fileRef} type="file" multiple hidden accept="image/*,application/pdf" onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }} />
+                {voiceSupported && (
+                    <button type="button" onClick={toggleVoice} disabled={busy} className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-surface-2 disabled:opacity-50', listening ? 'text-status-danger animate-pulse' : 'text-muted-foreground hover:text-foreground')} aria-label={listening ? 'Ярихаа зогсоох' : 'Ярьж оруулах'} title={listening ? 'Сонсож байна… дарж зогсооно' : 'Дуу хоолойгоор оруулах (монгол)'}>
+                        {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                    </button>
+                )}
                 <textarea
                     ref={taRef}
                     value={input}
                     onChange={(e) => { setInput(e.target.value); const el = e.target; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, compact ? 120 : 160) + 'px'; }}
                     onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
                     rows={1}
-                    placeholder={placeholder || 'Асуух эсвэл даалгавар өгөх… (Enter — илгээх)'}
+                    placeholder={listening ? 'Сонсож байна… ярина уу' : (placeholder || 'Асуух эсвэл даалгавар өгөх… (Enter — илгээх)')}
                     disabled={busy && !onStop}
                     className="max-h-40 min-h-[32px] flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
                 />
@@ -118,4 +127,57 @@ export function AiComposer({ busy, onSend, onStop, prefill, onPrefillConsumed, p
             </div>
         </div>
     );
+}
+
+/* ------------------------------------------------------------------ */
+/* Дуу хоолойн оролт — Web Speech API (Chrome/Safari/Edge), mn-MN         */
+/* ------------------------------------------------------------------ */
+
+type SpeechRecognitionLike = {
+    lang: string; interimResults: boolean; continuous: boolean;
+    onresult: ((e: { resultIndex: number; results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> }) => void) | null;
+    onend: (() => void) | null; onerror: (() => void) | null;
+    start: () => void; stop: () => void;
+};
+
+function getRecognition(): (new () => SpeechRecognitionLike) | null {
+    if (typeof window === 'undefined') return null;
+    const w = window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike; webkitSpeechRecognition?: new () => SpeechRecognitionLike };
+    return w.SpeechRecognition || w.webkitSpeechRecognition || null;
+}
+
+/**
+ * «Болдтой ярилаа, маргааш 3 цагт дахин залгана» гэж хэлэхэд composer-т текст болж орно.
+ * Эцсийн (isFinal) хэсгийг л onText руу өгнө; утсанд ч ажиллана (Chrome/Safari).
+ */
+function useVoiceInput(onText: (text: string) => void) {
+    const [listening, setListening] = useState(false);
+    const recRef = useRef<SpeechRecognitionLike | null>(null);
+    const cbRef = useRef(onText);
+    useEffect(() => { cbRef.current = onText; }, [onText]);
+    // SSR-д false, client hydration дууссаны дараа шалгана (hydration зөрүүгээс сэргийлнэ)
+    const supported = useSyncExternalStore(() => () => {}, () => !!getRecognition(), () => false);
+
+    const stop = useCallback(() => { try { recRef.current?.stop(); } catch { /* noop */ } recRef.current = null; setListening(false); }, []);
+
+    const toggle = useCallback(() => {
+        if (listening) { stop(); return; }
+        const Ctor = getRecognition();
+        if (!Ctor) return;
+        const rec = new Ctor();
+        rec.lang = 'mn-MN';
+        rec.interimResults = true;
+        rec.continuous = true;
+        rec.onresult = (e) => {
+            let finalText = '';
+            for (let i = e.resultIndex; i < e.results.length; i++) if (e.results[i].isFinal) finalText += e.results[i][0].transcript;
+            if (finalText.trim()) cbRef.current(finalText.trim());
+        };
+        rec.onend = () => { recRef.current = null; setListening(false); };
+        rec.onerror = () => { recRef.current = null; setListening(false); };
+        try { rec.start(); recRef.current = rec; setListening(true); } catch { setListening(false); }
+    }, [listening, stop]);
+
+    useEffect(() => () => { try { recRef.current?.stop(); } catch { /* noop */ } }, []);
+    return { supported, listening, toggle };
 }

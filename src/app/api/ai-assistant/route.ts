@@ -27,6 +27,7 @@ export async function POST(req: Request) {
             agentsUsed: response.agentsUsed,
             trace: response.trace,
             pendingActions: response.pendingActions,
+            clarification: response.clarification,
             conversationId,
         });
     } catch (error) {

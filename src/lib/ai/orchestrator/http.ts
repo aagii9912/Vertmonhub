@@ -5,6 +5,9 @@ import { resolveApiUser } from '@/lib/auth/resolve-user';
 import { fetchRolePermissions } from '@/lib/rbac';
 import { buildDynamicKnowledge, buildFAQs } from '@/lib/ai/services/PromptService';
 import { resolveSalesManagerName } from '@/lib/ai/data-assistant/functions';
+import { hasClaudeKey } from '@/lib/ai/claude/client';
+import { executeDataTool } from '@/lib/ai/data-assistant';
+import { loadConversationSummary, maybeUpdateSummary } from './memory';
 import type { OrchestratorContext, OrchestratorResult } from './types';
 
 /**
@@ -64,6 +67,22 @@ export function buildContextNote(c?: AssistantUiContext | null): string {
 }
 
 /**
+ * Харж буй лид/гэрээний мэдээллийг урьдчилж уншина — модель нэг раунд хэмнэж шууд хариулна.
+ * Best-effort: алдаа бол хоосон (модель өөрөө tool дуудна).
+ */
+async function prefetchContext(c: AssistantUiContext | null, shopId: string, perms: { canWrite: boolean; canDelete: boolean; role: string }, userId: string): Promise<string> {
+    if (!c || !c.id || (c.type !== 'lead' && c.type !== 'contract')) return '';
+    try {
+        const tool = c.type === 'lead' ? 'get_lead_details' : 'get_contract_details';
+        const args = c.type === 'lead' ? { lead_id: c.id } : { contract_id: c.id };
+        const r = await executeDataTool(tool, args, shopId, perms, userId, false, '');
+        if (!r || r.error) return '';
+        const json = JSON.stringify(r);
+        return json.length > 6000 ? json.slice(0, 6000) + '…' : json;
+    } catch { return ''; }
+}
+
+/**
  * Хүсэлтийг шалгаж orchestrator-ын контекстийг бэлдэнэ. Алдаа бол NextResponse.
  */
 export async function prepareAssistantRequest(req: Request): Promise<{ error: NextResponse } | PreparedAssistantRequest> {
@@ -86,7 +105,8 @@ export async function prepareAssistantRequest(req: Request): Promise<{ error: Ne
         attachments?: unknown; context?: AssistantUiContext | null;
     };
     if (!message || typeof message !== 'string') return { error: NextResponse.json({ error: 'Message is required' }, { status: 400 }) };
-    if (!process.env.GEMINI_API_KEY) return { error: NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 }) };
+    const mockDev = process.env.NODE_ENV !== 'production' && !!req.headers.get('x-ai-mock');
+    if (!hasClaudeKey() && !mockDev) return { error: NextResponse.json({ error: 'AI туслах тохируулагдаагүй байна (ANTHROPIC_API_KEY алга). Админд хандана уу.' }, { status: 503 }) };
 
     const [{ data: ownedRows }, { data: memberRows }] = await Promise.all([
         adminDb.from('shops').select('id').eq('user_id', resolvedUser.id),
@@ -97,21 +117,28 @@ export async function prepareAssistantRequest(req: Request): Promise<{ error: Ne
     const effectiveShopId = shopId || [...accessible][0];
     if (!effectiveShopId) return { error: NextResponse.json({ error: 'Холбогдсон shop олдсонгүй' }, { status: 403 }) };
 
-    const [shopKnowledge, userName] = await Promise.all([
+    const [shopKnowledge, userName, summaryRow] = await Promise.all([
         loadShopKnowledge(adminDb, effectiveShopId),
         resolveSalesManagerName(resolvedUser.id, resolvedUser.email),
+        conversationId ? loadConversationSummary(adminDb, String(conversationId)) : Promise.resolve(null),
     ]);
 
-    const note = buildContextNote(context && typeof context === 'object' ? context : null);
-    const modelMessage = note ? `${note}\n\n${message}` : message;
+    const uiCtx = context && typeof context === 'object' ? context : null;
+    const perms = { canWrite: permissions.canWrite, canDelete: permissions.canDelete, role: roleName, modules: permissions.modules };
+    const [note, prefetched] = await Promise.all([
+        Promise.resolve(buildContextNote(uiCtx)),
+        prefetchContext(uiCtx, effectiveShopId, perms, resolvedUser.id),
+    ]);
+    const modelMessage = note ? `${note}${prefetched ? `\n[КОНТЕКСТИЙН ӨГӨГДӨЛ — аль хэдийн уншсан, дахин tool дуудах шаардлагагүй]:\n${prefetched}` : ''}\n\n${message}` : message;
 
     return {
         ctx: {
             shopId: effectiveShopId,
             userId: resolvedUser.id,
-            perms: { canWrite: permissions.canWrite, canDelete: permissions.canDelete, role: roleName },
+            perms,
             shopKnowledge,
             history: Array.isArray(history) ? history.slice(-20) : [],
+            conversationSummary: summaryRow?.summary || null,
             userName,
             attachments: Array.isArray(attachments) ? (attachments as OrchestratorContext['attachments']) : [],
         },
@@ -155,7 +182,7 @@ export async function persistAssistantExchange(
         if (activeConversationId) {
             const { data: inserted } = await p.adminDb.from('ai_messages').insert([
                 { conversation_id: activeConversationId, role: 'user', content: p.message },
-                { conversation_id: activeConversationId, role: 'assistant', content: response.text, chart_config: response.chartConfig || null, data: response.data || null },
+                { conversation_id: activeConversationId, role: 'assistant', content: response.text || (response.clarification ? `❓ ${response.clarification.question}` : ''), chart_config: response.chartConfig || null, data: response.data || null },
             ]).select('id, role');
             const assistantRow = (inserted || []).find((r: { role: string }) => r.role === 'assistant');
             if (assistantRow) {
@@ -163,6 +190,8 @@ export async function persistAssistantExchange(
                 if (error) console.warn('Orchestrator metadata not persisted (migration pending?):', error.message);
             }
             await p.adminDb.from('ai_conversations').update({ updated_at: new Date().toISOString() }).eq('id', activeConversationId);
+            // Урт яриа → өмнөх хэсгийг хураангуйлж санах ойд (best-effort, ~1с).
+            await maybeUpdateSummary(p.adminDb, activeConversationId);
         }
     } catch (e) {
         console.error('Failed to persist chat messages:', e);

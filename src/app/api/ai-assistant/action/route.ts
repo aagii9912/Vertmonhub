@@ -39,9 +39,6 @@ export async function POST(req: Request) {
         if (!tool || !MUTATING_TOOL_NAMES.includes(tool)) {
             return NextResponse.json({ error: 'Буруу эсвэл зөвшөөрөгдөөгүй үйлдэл' }, { status: 400 });
         }
-        if (!process.env.GEMINI_API_KEY) {
-            // Tool гүйцэтгэлд Gemini шаардлагагүй ч орчны бүрэн бус байдлыг анхааруулна.
-        }
 
         // Shop scoping
         const [{ data: ownedRows }, { data: memberRows }] = await Promise.all([
@@ -64,6 +61,7 @@ export async function POST(req: Request) {
             canWrite: permissions.canWrite,
             canDelete: permissions.canDelete,
             role: roleName,
+            modules: permissions.modules,
         };
 
         // RBAC-г executeDataTool дотор дахин шалгана. confirm=true → бодит үйлдэл.

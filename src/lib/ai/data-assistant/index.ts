@@ -1,16 +1,18 @@
 /**
- * Vertmon AI Data Assistant — Gemini Powered
- * 
- * Internal staff assistant that can query ALL Vertmon business data:
- * - Properties, Leads, Customers, Orders, Products
- * - Dashboard Stats, Property Viewings
- * 
- * Handler + Executor only. Tool definitions in ./tools.ts, data functions in ./functions.ts
+ * Vertmon AI Data Assistant — tool гүйцэтгэгч (provider-independent)
+ *
+ * Orchestrator (Claude) tool дуудлагыг энд гүйцэтгэнэ: RBAC шалгалт → data функц → audit.
+ * Tool тодорхойлолт ./tools.ts, data функцууд ./functions.ts. Модель дуудлага ЭНД БАЙХГҮЙ.
  */
 
-import { GoogleGenerativeAI, Content } from '@google/generative-ai';
 import { logger } from '@/lib/utils/logger';
-import { readTools, writeTools, WRITE_TOOL_NAMES, DELETE_TOOL_NAMES, ADMIN_TOOL_NAMES } from './tools';
+import { WRITE_TOOL_NAMES, DELETE_TOOL_NAMES, ADMIN_TOOL_NAMES, TOOL_MODULE, AUTO_TOOL_NAMES } from './tools';
+
+const AUTO_SET = new Set(AUTO_TOOL_NAMES);
+const AUTO_LABELS: Record<string, string> = {
+    add_lead_note: 'Тэмдэглэл нэмэх', remember_fact: 'Санах', log_call: 'Дуудлага бүртгэх', set_followup: 'Follow-up тавих', record_viewing_outcome: 'Уулзалтын үр дүн',
+    create_task: 'Ажил нэмэх', complete_task: 'Ажил дуусгах', add_customer_tag: 'Таг нэмэх', remove_customer_tag: 'Таг хасах', set_customer_ai_pause: 'AI зогсоох/сэргээх', add_market_indicator: 'Зах зээлийн үзүүлэлт',
+};
 import { logAiAudit } from './audit';
 import {
     fetchDashboardStats,
@@ -27,14 +29,16 @@ import {
     generateChartConfig,
 } from './functions';
 import { inviteUser, assignRole, createRole } from './admin-functions';
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+import { getKpiReport, getManagerPerformanceTool, getExportLink, customerTag, customerAiPause, replyCustomer, mergeCustomersTool, logSpend, setBudget, listSpend, addIndicator, financeSummaryTool, listTransactionsTool, addTransactionTool, listBillsTool, payBillTool } from './actions2';
+import { logCall, setFollowup, assignLeadManager, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
 
 /** AI Assistant-ийн RBAC эрхүүд (route-аас тооцоолж дамжуулна). */
 export interface AssistantPerms {
     canWrite: boolean;
     canDelete: boolean;
     role: string;
+    /** Хэрэглэгчийн нээлттэй модулиуд (RBAC). Өгөгдөөгүй бол модулийн шалгалт хийхгүй (хуучин дуудагч). */
+    modules?: string[];
 }
 
 // ============================================
@@ -62,6 +66,16 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
     }
     if (isAdmin && perms.role !== 'super_admin') {
         return { error: 'Энэ үйлдлийг зөвхөн super_admin хийх боломжтой.' };
+    }
+    const requiredModule = TOOL_MODULE[toolName];
+    if (requiredModule && perms.modules && !perms.modules.includes(requiredModule) && perms.role !== 'super_admin') {
+        return { error: `Энэ үйлдэлд «${requiredModule}» модулийн эрх шаардлагатай — танд алга.` };
+    }
+
+    // AUTO tool-ууд ч confirm=false үед preview буцаана (executor түвшний нэгдсэн хаалт).
+    // Orchestrator loop тэдгээрийг confirm=true-ээр дуудаж шууд гүйцэтгэнэ (AUTO_TOOL_NAMES).
+    if (AUTO_SET.has(toolName) && !confirm) {
+        return { requiresConfirmation: true, action: { tool: toolName, args }, label: AUTO_LABELS[toolName] || toolName, preview: args };
     }
 
     let result: any;
@@ -102,6 +116,37 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'get_market_indicators': result = await fetchMarketIndicators(shopId); break;
         case 'create_social_post': result = await createSocialPost(shopId, args, confirm, userName); break;
         case 'remember_fact': result = await rememberFact(shopId, args, confirm, userName); break;
+        // Wave 1 — өдөр тутмын үйлдлүүд (service давхаргаар)
+        case 'list_viewings': result = await listViewingsTool(shopId, args); break;
+        case 'list_my_tasks': result = await listMyTasks(shopId, args, userId); break;
+        case 'list_contract_payments': result = await listContractPayments(shopId, args); break;
+        case 'log_call': result = await logCall(shopId, args, userId, userName); break; // confirm: AUTO хаалт дээр
+        case 'set_followup': result = await setFollowup(shopId, args, userId, userName); break; // confirm: AUTO хаалт дээр
+        case 'assign_lead_manager': result = await assignLeadManager(shopId, args, confirm, userId, userName); break;
+        case 'record_viewing_outcome': result = await recordViewingOutcome(shopId, args, userId, userName); break; // confirm: AUTO хаалт дээр
+        case 'reschedule_viewing': result = await rescheduleViewing(shopId, args, confirm, userId, userName); break;
+        case 'create_task': result = await createTaskTool(shopId, args, userId); break; // confirm: AUTO хаалт дээр
+        case 'complete_task': result = await completeTaskTool(shopId, args, userId); break; // confirm: AUTO хаалт дээр
+        case 'add_contract_payment': result = await addContractPayment(shopId, args, confirm); break;
+        case 'mark_payment_paid': result = await markPaymentPaid(shopId, args, confirm); break;
+        // Wave 2–4 — менежер / харилцагч / маркетинг / санхүү
+        case 'get_kpi_report': result = await getKpiReport(shopId, args, userId, perms); break;
+        case 'get_manager_performance': result = await getManagerPerformanceTool(shopId); break;
+        case 'get_export_link': result = await getExportLink(shopId, args); break;
+        case 'add_customer_tag': result = await customerTag(shopId, args, false); break; // confirm: AUTO хаалт дээр
+        case 'remove_customer_tag': result = await customerTag(shopId, args, true); break; // confirm: AUTO хаалт дээр
+        case 'set_customer_ai_pause': result = await customerAiPause(shopId, args); break; // confirm: AUTO хаалт дээр
+        case 'reply_to_customer': result = await replyCustomer(shopId, args, confirm); break;
+        case 'merge_customers': result = await mergeCustomersTool(shopId, args, confirm); break;
+        case 'log_marketing_spend': result = await logSpend(shopId, args, confirm, userId); break;
+        case 'set_marketing_budget': result = await setBudget(shopId, args, confirm); break;
+        case 'list_marketing_spend': result = await listSpend(shopId, args); break;
+        case 'add_market_indicator': result = await addIndicator(shopId, args); break; // confirm: AUTO хаалт дээр
+        case 'get_finance_summary': result = await financeSummaryTool(shopId); break;
+        case 'list_finance_transactions': result = await listTransactionsTool(shopId, args); break;
+        case 'add_finance_transaction': result = await addTransactionTool(shopId, args, confirm); break;
+        case 'list_vendor_bills': result = await listBillsTool(shopId, args); break;
+        case 'pay_vendor_bill': result = await payBillTool(shopId, args, confirm); break;
         case 'invite_user': result = await inviteUser(shopId, args, confirm, userId); break;
         case 'assign_role': result = await assignRole(shopId, args, confirm); break;
         case 'create_role': result = await createRole(shopId, args, confirm); break;
@@ -114,106 +159,4 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
     }
 
     return result;
-}
-
-// ============================================
-// SYSTEM INSTRUCTIONS
-// ============================================
-
-const BASE_INSTRUCTION = `Та бол Vertmon Hub-ийн AI Дата Туслах. Та зөвхөн Vertmon-ий ажилтан, менежерүүдэд дотоод мэдээллээр үйлчилнэ.
-
-ТАНЫ ЧАДВАРУУД:
-- Байрны мэдээлэл (properties): жагсаалт, үнэ, статус, м², өрөө тоо, дүүрэг
-- Лийд/сонирхогч (leads): жагсаалт, статус, яаралтай, төсөв, сонирхол
-- Лийдийн дэлгэрэнгүй: холбогдох байр, уулзалтын түүх, зөвлөмж
-- Харилцагч (customers): мэдээлэл, тагууд, тэмдэглэл, мессеж тоо, холбогдох лийд+гэрээ
-- Гэрээ (property_contracts): жагсаалт, дэлгэрэнгүй (үнэ, төлсөн, үлдэгдэл, овердуэйс, менежер, банк), нэгтгэл (нийт борлуулалт, цуглуулалтын %, ТОП менежер)
-- Dashboard статистик: орлого, лийд тоо, харилцагч тоо, гэрээ тоо
-
-ДҮРЭМ:
-1. ЗААВАЛ монгол хэлээр хариулна
-2. Тоон мэдээллийг ₮ форматаар бичнэ (жишээ: 380,000,000₮)
-3. Хүснэгт, жагсаалт ашиглан цэгцтэй хариулна
-4. Хэрэглэгч тодорхой зүйл асуувал зөв tool дуудаж бодит мэдээлэл өгнө
-5. Tool дуудалтын үр дүнг хүн ойлгохоор тайлбарлана
-6. Хэрэглэгчийн асуултад шууд хариулна, илүү юм бичихгүй
-7. Ямар нэг data олдохгүй бол шударгаар хэлнэ`;
-
-const ADMIN_WRITE_INSTRUCTION = `
-
-Танд өгөгдөл өөрчлөх (бичих) эрх бий. Нэмэлт чадварууд:
-- Байрны статус солих (available/reserved/sold/rented/barter)
-- Байрны үнэ өөрчлөх
-- Лийд статус солих
-- Лийдэд тэмдэглэл нэмэх
-- Гэрээний процесс (sign=гэрээ→байр reserved+лийд negotiating, paid=төлбөр→sold+closed_won, cancel=цуцлах→available+closed_lost)
-
-ӨӨРЧЛӨЛТ хийхэд юу хийснийг тодорхой хэлж өгнө: "[Байрны нэр] статусыг [хуучин] → [шинэ] болгож солилоо."`;
-
-const READ_ONLY_INSTRUCTION = `
-
-Та УНШИЖ ЗӨВХӨН чадна. Мэдээлэл өөрчлөх, статус солих боломжгүй. Хэрэв хэрэглэгч өөрчлөлт хийхийг хүсвэл "Танд энэ үйлдлийг хийх эрх алга" гэж хариулна.`;
-
-function getSystemInstruction(canWrite: boolean, shopKnowledge?: string): string {
-    const base = canWrite ? BASE_INSTRUCTION + ADMIN_WRITE_INSTRUCTION : BASE_INSTRUCTION + READ_ONLY_INSTRUCTION;
-    return shopKnowledge ? base + '\n\n' + shopKnowledge : base;
-}
-
-// ============================================
-// MAIN HANDLER
-// ============================================
-
-export async function handleDataAssistantQuery(
-    message: string,
-    shopId: string,
-    userId: string,
-    history: any[] = [],
-    perms: AssistantPerms = { canWrite: false, canDelete: false, role: 'viewer' },
-    shopKnowledge?: string
-) {
-    try {
-        const activeTools = perms.canWrite ? [...readTools, ...writeTools] : readTools;
-
-        const model = genAI.getGenerativeModel({
-            model: 'gemini-3.5-flash',
-            systemInstruction: getSystemInstruction(perms.canWrite, shopKnowledge),
-            tools: [{ functionDeclarations: activeTools }],
-            generationConfig: { temperature: 0.3, topP: 0.8, maxOutputTokens: 2048 },
-        });
-
-        const geminiHistory: Content[] = history
-            .filter((m: any) => m.role && m.content)
-            .map((m: any) => ({ role: m.role === 'assistant' ? 'model' : 'user', parts: [{ text: m.content }] }));
-
-        const chat = model.startChat({ history: geminiHistory });
-        const result = await chat.sendMessage(message);
-        const response = result.response;
-        const functionCalls = response.functionCalls();
-
-        if (functionCalls && functionCalls.length > 0) {
-            const toolResults = [];
-            let allData: any = null;
-            let chartConfig: any = null;
-
-            for (const fc of functionCalls) {
-                const toolResult = await executeDataTool(fc.name, fc.args || {}, shopId, perms, userId);
-                toolResults.push({ functionResponse: { name: fc.name, response: { result: toolResult } } });
-                allData = toolResult;
-                chartConfig = generateChartConfig(fc.name, fc.args || {}, toolResult);
-            }
-
-            const synthesisResult = await chat.sendMessage(toolResults.map(tr => ({ functionResponse: tr.functionResponse })));
-            return { text: synthesisResult.response.text(), data: allData, chartConfig };
-        }
-
-        return { text: response.text(), data: null, chartConfig: null };
-    } catch (error) {
-        logger.error('[AI Data Assistant] Error:', { error });
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
-        if (errorMessage.includes('API key')) {
-            return { text: 'Gemini API key тохируулаагүй байна. Админд хандана уу.', data: null, chartConfig: null };
-        }
-        return { text: `Уучлаарай, алдаа гарлаа: ${errorMessage}. Дахин оролдоно уу.`, data: null, chartConfig: null };
-    }
 }

@@ -23,10 +23,11 @@ export interface StreamDone {
     agentsUsed: Array<{ id: string; name: string; emoji: string; color: string }>;
     trace: unknown;
     pendingActions: Array<{ id: string; tool: string; args: Record<string, unknown>; label: string; preview: Record<string, unknown>; agentId: string; agentName: string; emoji: string }>;
+    clarification: { question: string; options: string[] } | null;
     conversationId: string | null;
 }
 
-export type StreamEvent = OrchestratorEvent | { type: 'start'; at: number } | ({ type: 'done' } & StreamDone) | { type: 'error'; message: string; retryable?: boolean };
+export type StreamEvent = OrchestratorEvent | { type: 'start'; at: number } | ({ type: 'done' } & StreamDone) | { type: 'error'; message: string; retryable?: boolean; code?: string };
 
 export interface StreamHandlers {
     onEvent: (e: StreamEvent) => void;
@@ -42,9 +43,12 @@ export async function streamAssistant(req: StreamRequest, h: StreamHandlers): Pr
     const timer = setTimeout(() => controller.abort(new Error('timeout')), h.timeoutMs ?? 90_000);
 
     try {
+        // Хөгжүүлэлтийн mock: localStorage.vertmonhub_ai_mock = 'ok'|'error'|'delegate'|'clarify' → сервер Claude дуудахгүй.
+        let mock: string | null = null;
+        try { mock = process.env.NODE_ENV !== 'production' ? localStorage.getItem('vertmonhub_ai_mock') : null; } catch { mock = null; }
         const res = await fetch('/api/ai-assistant/stream', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 'Content-Type': 'application/json', ...(mock ? { 'x-ai-mock': mock } : {}) },
             body: JSON.stringify(req),
             signal: controller.signal,
         });
@@ -90,7 +94,7 @@ export async function streamAssistant(req: StreamRequest, h: StreamHandlers): Pr
 }
 
 /** Баталгаажуулсан үйлдлийг гүйцэтгэнэ (RBAC серверт дахин шалгагдана). */
-export async function approveAssistantAction(input: { shopId?: string | null; tool: string; args: Record<string, unknown>; conversationId?: string | null }): Promise<{ ok: boolean; message: string }> {
+export async function approveAssistantAction(input: { shopId?: string | null; tool: string; args: Record<string, unknown>; conversationId?: string | null }): Promise<{ ok: boolean; message: string; result?: unknown }> {
     try {
         const res = await fetch('/api/ai-assistant/action', {
             method: 'POST',
@@ -98,7 +102,7 @@ export async function approveAssistantAction(input: { shopId?: string | null; to
             body: JSON.stringify(input),
         });
         const data = await res.json().catch(() => ({}));
-        if (res.ok && data.success) return { ok: true, message: data.message || 'Гүйцэтгэгдлээ' };
+        if (res.ok && data.success) return { ok: true, message: data.message || 'Гүйцэтгэгдлээ', result: data.result };
         return { ok: false, message: data.message || data.error || 'Алдаа гарлаа' };
     } catch {
         return { ok: false, message: 'Сүлжээний алдаа гарлаа' };

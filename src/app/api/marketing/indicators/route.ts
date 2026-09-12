@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
+import { addMarketIndicator } from '@/lib/services/MarketingOps';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -74,20 +75,7 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        const db = supabaseAdmin();
-        const { data, error } = await db
-            .from('market_indicators')
-            .insert({
-                shop_id: authShop.id,
-                category: parsed.data.category,
-                name: parsed.data.name,
-                value: parsed.data.value,
-                note: parsed.data.note?.trim() || null,
-                source_url: parsed.data.sourceUrl || null,
-                recorded_at: parsed.data.recordedAt || new Date().toISOString().slice(0, 10),
-            })
-            .select('id, category, name, value, note, source_url, recorded_at')
-            .single();
+        const { data, error } = await addMarketIndicator(supabaseAdmin(), authShop.id, parsed.data);
 
         if (error) {
             if (isMissingTable(error)) {

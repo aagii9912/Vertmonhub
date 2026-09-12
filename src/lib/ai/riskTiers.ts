@@ -1,9 +1,8 @@
 /**
  * AI Orchestrator-ийн mutating tool-уудын эрсдэлийн түвшин (CLIENT-safe).
  *
- * ⚠️ src/lib/ai/data-assistant/tools.ts-ийг client component-д импортлож БОЛОХГҮЙ —
- * тэр нь `@google/generative-ai` (SchemaType)-г татаж client bundle-ийг хөөрөгдөнө.
- * Тиймээс энд tool нэрсийг plain string хуулбараар зарлана. `__tests__/riskTiers.test.ts`
+ * src/lib/ai/data-assistant/tools.ts том тул client bundle-д татахгүйн тулд
+ * tool нэрсийг plain string хуулбараар зарлана. `__tests__/riskTiers.test.ts`
  * нь эдгээрийг жинхэнэ tools.ts массивтай тэнцүү эсэхийг шалгаж drift-ээс сэргийлнэ.
  */
 
@@ -15,6 +14,8 @@ export const WRITE_TOOLS: string[] = [
     'process_contract_action', 'create_property', 'create_lead', 'create_customer',
     'schedule_viewing', 'create_contract', 'attach_file', 'bulk_update_leads',
     'create_social_post', 'remember_fact',
+    'log_call', 'set_followup', 'assign_lead_manager', 'record_viewing_outcome', 'reschedule_viewing', 'create_task', 'complete_task', 'add_contract_payment', 'mark_payment_paid',
+    'add_customer_tag', 'remove_customer_tag', 'set_customer_ai_pause', 'reply_to_customer', 'merge_customers', 'log_marketing_spend', 'set_marketing_budget', 'add_market_indicator', 'add_finance_transaction', 'pay_vendor_bill',
 ];
 
 /** Устгах (soft delete). tools.ts → DELETE_TOOL_NAMES-ийн хуулбар. */
@@ -33,6 +34,7 @@ const NON_REMEMBERABLE = new Set<string>([
     'bulk_update_leads', 'process_contract_action',
     // Санхүү/нөөцөд шууд нөлөөлдөг тул үргэлж гараар баталгаажуулна (2026-09 review).
     'update_property_price', 'create_contract', 'create_property',
+    'add_contract_payment', 'mark_payment_paid', 'merge_customers', 'reply_to_customer', 'add_finance_transaction', 'pay_vendor_bill', 'set_marketing_budget',
 ]);
 
 const DELETE_SET = new Set<string>(DELETE_TOOLS);

@@ -4,6 +4,7 @@ import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logger } from '@/lib/utils/logger';
+import { updateTask } from '@/lib/services/TaskService';
 
 /**
  * PATCH/DELETE /api/dashboard/tasks/[id] — хувийн ажлын засвар / зөөлөн устгал.
@@ -36,30 +37,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             );
         }
 
-        const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
-        const p = parsed.data;
-        if (p.title !== undefined) updates.title = p.title;
-        if (p.note !== undefined) updates.note = p.note?.trim() || null;
-        if (p.dueAt !== undefined) updates.due_at = p.dueAt;
-        if (p.remindAt !== undefined) {
-            updates.remind_at = p.remindAt;
-            updates.reminder_sent_at = null; // сануулгыг дахин идэвхжүүлнэ
-        }
-        if (p.status !== undefined) {
-            updates.status = p.status;
-            updates.completed_at = p.status === 'done' ? new Date().toISOString() : null;
-        }
-
-        const db = supabaseAdmin();
-        const { data, error } = await db
-            .from('user_tasks')
-            .update(updates)
-            .eq('id', id)
-            .eq('user_id', uid)
-            .eq('shop_id', authShop.id)
-            .is('deleted_at', null)
-            .select('id, title, note, due_at, remind_at, status, completed_at, created_at')
-            .maybeSingle();
+        const { data, error } = await updateTask(supabaseAdmin(), authShop.id, uid, id, parsed.data);
 
         if (error) {
             logger.error('[Tasks] update error', { error: error.message });
