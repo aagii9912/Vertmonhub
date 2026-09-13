@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchDashboardStats } from '../functions';
 
 const mocks = vi.hoisted(() => ({ from: vi.fn() }));
@@ -37,8 +37,25 @@ beforeEach(() => {
         return chain;
     });
 });
+afterEach(() => vi.useRealTimers());
 
 describe('AI dashboard statistics', () => {
+    it('uses the Ulaanbaatar calendar day for contracts and its UTC midnight boundary for leads', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-09-13T18:00:00Z')); // УБ: 09-14 02:00, өдрийн хил: 09-13 16:00 UTC.
+        tables.property_contracts = [
+            row('yesterday', { total_price: 99, contract_date: '2026-09-13' }),
+            row('today', { total_price: 10, contract_date: '2026-09-14' }),
+        ];
+        tables.leads = [
+            row('yesterday', { status: 'new', created_at: '2026-09-13T15:59:59.999Z' }),
+            row('midnight', { status: 'new', created_at: '2026-09-13T16:00:00.000Z' }),
+        ];
+        expect(await fetchDashboardStats('shop-1', 'today')).toMatchObject({
+            totalContracts: 1, totalContractValue: 10, totalLeads: 1,
+        });
+    });
+
     it('counts canonical residential inventory across pages, scopes rows and distinguishes contract value from cash', async () => {
         tables.property_units = [
             ...Array.from({ length: 1000 }, (_, i) => row(`u${i}`, { category: 'residential', status: 'available' })),

@@ -3,7 +3,7 @@
  */
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { formatShortDate, formatTime, ubStartOfDay } from '@/lib/utils/date';
+import { formatShortDate, formatTime, ubDateStr, ubStartOfDay } from '@/lib/utils/date';
 import { logger } from '@/lib/utils/logger';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { buildBudgetOverview, monthlySpendSeries, spendByChannel, SPEND_CHANNELS } from '@/lib/marketing/budget';
@@ -57,7 +57,7 @@ function getDateFilter(timeRange: string): string {
 
 export async function fetchDashboardStats(shopId: string, timeRange: string = 'month') {
     const isoDate = getDateFilter(timeRange);
-    const dateOnly = isoDate.slice(0, 10);
+    const dateOnly = ubDateStr(new Date(isoDate));
     const [contracts, customersRes, leadsAll, units] = await Promise.all([
         fetchAllRows<{ total_price: number | string | null }>((from, to) => supabaseAdmin
             .from('property_contracts').select('total_price').eq('shop_id', shopId)
