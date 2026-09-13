@@ -93,7 +93,8 @@ for (const mobile of [false, true]) {
         await form.getByPlaceholder('Ж: Г. Энхжин').fill('Туршилтын Харилцагч');
         await form.getByPlaceholder('9911 2233').fill('99112233');
         await form.getByRole('button', { name: 'Хадгалаад уулзалт товлох' }).click();
-        await expect(page).toHaveURL(new RegExp(`/dashboard/viewings\\?lead=${leadId}&new=1`));
+        // The page consumes the deep link; the dialog and submitted lead ID below are the durable contract.
+        await expect(page).toHaveURL(/\/dashboard\/viewings(?:\?|$)/);
         await expect(page.getByRole('dialog', { name: 'Уулзалт товлох', exact: true })).toBeVisible();
         await expect(page.getByText('Туршилтын Харилцагч', { exact: true }).first()).toBeVisible();
         await page.locator('input[type="datetime-local"]').fill('2027-01-10T11:00');
