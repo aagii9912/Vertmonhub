@@ -1,5 +1,7 @@
 'use client';
 
+import { Alert } from '@/components/ui/Alert';
+import { Button } from '@/components/ui/Button';
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
@@ -23,9 +25,10 @@ import { useRegisterAiContext } from '@/lib/ai/context';
 const WEEKDAYS = ['Ням', 'Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан', 'Бямба'];
 
 type Filter = 'all' | 'followup' | 'viewing' | 'personal';
+const TASK_SOURCES: Record<Filter, string[]> = { all: ['leads', 'viewings', 'tasks'], followup: ['leads'], viewing: ['viewings'], personal: ['tasks'] };
 
 export function TodayDashboard({ managerName, embedded = false }: { managerName?: string | null; embedded?: boolean }) {
-    const { data, isLoading, refetch } = useMyStats('today', managerName ?? undefined);
+    const { data, isLoading, isError, error, isFetching, refetch } = useMyStats('today', managerName ?? undefined);
     useRegisterAiContext(embedded ? null : { type: 'today' });
     const qc = useQueryClient();
     const [filter, setFilter] = useState<Filter>('all');
@@ -33,6 +36,10 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
 
     const now = useMemo(() => new Date(), []);
     const tasks = data?.tasks ?? [];
+    const missing = data?.missing ?? [];
+    const incompleteTasks = (kind: Filter) => TASK_SOURCES[kind].some((source) => missing.includes(source));
+    const missingSales = missing.includes('sales');
+    const missingTargets = missing.includes('targets');
     const counts = {
         all: tasks.length,
         followup: tasks.filter((t) => t.type === 'followup').length,
@@ -51,10 +58,15 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
     async function complete(t: MyStatsTask) {
         setBusy(t.id);
         try {
-            if (t.type === 'viewing') await dashboardMutate(`/api/dashboard/viewings/${t.id}`, 'PATCH', { status: 'completed' });
+            let warning: string | undefined;
+            if (t.type === 'viewing') {
+                const result = await dashboardMutate<{ warning?: string }>(`/api/dashboard/viewings/${t.id}`, 'PATCH', { status: 'completed' });
+                warning = result.warning;
+            }
             else if (t.type === 'personal') await dashboardMutate(`/api/dashboard/tasks/${t.id}`, 'PATCH', { status: 'done' });
             else await dashboardMutate(`/api/dashboard/leads/${t.id}`, 'PATCH', { next_followup_at: null, last_contact_at: new Date().toISOString() });
-            toast.success('Дууссан');
+            if (warning) toast.warning(warning);
+            else toast.success('Дууссан');
             invalidate();
         } catch (e) {
             toast.error(e instanceof Error ? e.message : 'Алдаа гарлаа');
@@ -70,10 +82,15 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
             if (next.getTime() < now.getTime()) next.setTime(now.getTime());
             next.setDate(next.getDate() + 1);
             const iso = next.toISOString();
-            if (t.type === 'viewing') await dashboardMutate(`/api/dashboard/viewings/${t.id}`, 'PATCH', { scheduled_at: iso });
+            let warning: string | undefined;
+            if (t.type === 'viewing') {
+                const result = await dashboardMutate<{ warning?: string }>(`/api/dashboard/viewings/${t.id}`, 'PATCH', { scheduled_at: iso });
+                warning = result.warning;
+            }
             else if (t.type === 'personal') await dashboardMutate(`/api/dashboard/tasks/${t.id}`, 'PATCH', { dueAt: iso });
             else await dashboardMutate(`/api/dashboard/leads/${t.id}`, 'PATCH', { next_followup_at: iso });
-            toast.success('Маргааш руу хойшлуулав');
+            if (warning) toast.warning(warning);
+            else toast.success('Маргааш руу хойшлуулав');
             invalidate();
         } catch (e) {
             toast.error(e instanceof Error ? e.message : 'Алдаа гарлаа');
@@ -86,8 +103,19 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
     const monthLabel = `${now.getMonth() + 1}-р сар`;
     const todayLeads = (data?.recentLeads ?? []).filter((l) => isSameDay(new Date(l.created_at), now));
 
+    if (!isLoading && !data) {
+        return <Alert variant="danger">
+            {error instanceof Error ? error.message : 'Самбарын мэдээллийг ачаалж чадсангүй.'}
+            <Button size="sm" variant="secondary" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</Button>
+        </Alert>;
+    }
+
     return (
         <div className={cn('grid gap-4', !embedded && 'lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]')}>
+            {(isError || !!data?.missing?.length) && <Alert variant="warning" className="col-span-full">
+                {isError ? 'Мэдээллийг шинэчилж чадсангүй. Өмнө ачаалсан мэдээлэл харагдаж байна.' : 'Зарим мэдээллийг ачаалж чадсангүй. Ажлын жагсаалт болон үзүүлэлтүүд дутуу байж болно.'}
+                <Button size="sm" variant="secondary" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</Button>
+            </Alert>}
             {/* ---------------- Жагсаалт ---------------- */}
             <Panel
                 title="Өнөөдрийн ажил"
@@ -116,7 +144,7 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
                                 )}
                             >
                                 {label}
-                                <span className={cn('mono-label text-[11px]', filter === k ? 'text-brand' : 'text-muted-foreground')}>{counts[k]}</span>
+                                <span className={cn('mono-label text-[11px]', filter === k ? 'text-brand' : 'text-muted-foreground')}>{incompleteTasks(k) ? '—' : counts[k]}</span>
                             </button>
                         ))}
                     </div>
@@ -128,16 +156,16 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
                     </div>
                 ) : visible.length === 0 ? (
                     <div className="flex flex-col items-center gap-3 px-4 py-10 text-center">
-                        <div className="text-[13.5px] font-medium text-foreground">Өнөөдөр төлөвлөсөн ажил алга</div>
+                        <div className="text-[13.5px] font-medium text-foreground">{incompleteTasks(filter) ? 'Ажлын жагсаалтын мэдээлэл дутуу байна' : 'Өнөөдөр төлөвлөсөн ажил алга'}</div>
                         <p className="max-w-xs text-[12.5px] text-muted-foreground">
-                            Шинэ лид бүртгэх, уулзалт товлоход энд цагийн дарааллаар гарна.
+                            {incompleteTasks(filter) ? 'Бүрэн ачаалсны дараа өнөөдрийн ажлыг шалгана уу.' : 'Шинэ лид бүртгэх, уулзалт товлоход энд цагийн дарааллаар гарна.'}
                         </p>
                         <button
                             type="button"
-                            onClick={() => openQuickCreate('lead')}
+                            onClick={() => incompleteTasks(filter) ? void refetch() : openQuickCreate('lead')}
                             className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring"
                         >
-                            <Plus className="h-4 w-4" /> Шинэ лид
+                            {incompleteTasks(filter) ? 'Дахин оролдох' : <><Plus className="h-4 w-4" /> Шинэ лид</>}
                         </button>
                     </div>
                 ) : (
@@ -176,9 +204,11 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
                         <>
                             <div>
                                 <div className="num text-[22px] font-semibold tracking-[-0.02em] text-foreground">
-                                    {formatMNTShort(data.kpis.salesThisMonth)}
+                                    {missingSales ? 'Борлуулалт түр боломжгүй' : formatMNTShort(data.kpis.salesThisMonth)}
                                 </div>
-                                {month && month.target > 0 ? (
+                                {missingTargets || missingSales ? (
+                                    <div className="text-[12px] text-muted-foreground">{missingTargets ? 'Сарын зорилтын мэдээлэл түр боломжгүй' : 'Зорилтын гүйцэтгэлийг тооцох мэдээлэл дутуу байна'}</div>
+                                ) : month && month.target > 0 ? (
                                     <div className="text-[12px] text-muted-foreground">
                                         Зорилт {formatMNTShort(month.target)} ·{' '}
                                         <span className={cn('font-medium', month.actual >= month.target ? 'text-status-success' : 'text-foreground')}>
@@ -188,22 +218,22 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
                                 ) : (
                                     <div className="text-[12px] text-muted-foreground">Сарын зорилт тохируулаагүй</div>
                                 )}
-                                {month && month.target > 0 && <Progress value={month.actual} max={month.target} className="mt-2" />}
+                                {!missingTargets && !missingSales && month && month.target > 0 && <Progress value={month.actual} max={month.target} className="mt-2" />}
                             </div>
                             <div className="grid grid-cols-3 gap-2">
-                                <Stat label="идэвхтэй гэрээ" value={data.kpis.activeContracts} />
-                                <Stat label="уулзалт / 7 хоног" value={data.kpis.viewingsThisWeek} />
-                                <Stat label="шинэ лид" value={data.kpis.newLeads} />
+                                <Stat label="идэвхтэй гэрээ" value={missing.includes('contracts') ? '—' : data.kpis.activeContracts} />
+                                <Stat label="уулзалт / 7 хоног" value={missing.includes('viewings') ? '—' : data.kpis.viewingsThisWeek} />
+                                <Stat label="шинэ лид" value={missing.includes('leads') ? '—' : data.kpis.newLeads} />
                             </div>
                         </>
                     )}
                 </Panel>
 
-                <Panel title="Өнөөдөр ирсэн лид" sub={isLoading ? undefined : String(todayLeads.length)}>
+                <Panel title="Өнөөдөр ирсэн лид" sub={isLoading ? undefined : missing.includes('leads') ? '—' : String(todayLeads.length)}>
                     {isLoading ? (
                         <div className="flex flex-col gap-2 p-3.5">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-10" />)}</div>
                     ) : todayLeads.length === 0 ? (
-                        <EmptyRow>Өнөөдөр шинэ лид ирээгүй</EmptyRow>
+                        <EmptyRow>{missing.includes('leads') ? 'Өнөөдрийн лидийн мэдээлэл түр боломжгүй' : 'Өнөөдөр шинэ лид ирээгүй'}</EmptyRow>
                     ) : (
                         <div className="flex flex-col">
                             {todayLeads.slice(0, 6).map((l) => <LeadRow key={l.id} lead={l} />)}
@@ -305,7 +335,7 @@ function LeadRow({ lead }: { lead: MyStatsLead }) {
     );
 }
 
-function Stat({ label, value }: { label: string; value: number }) {
+function Stat({ label, value }: { label: string; value: number | string }) {
     return (
         <div className="flex flex-col gap-0.5">
             <span className="num text-[20px] font-semibold tracking-[-0.02em] text-foreground">{value}</span>

@@ -1,12 +1,12 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Download, Plus, Check, Loader2, X, FileText, Phone } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatMNT, formatMNTShort } from '@/lib/utils/currency';
-import { formatShortDate, formatTime } from '@/lib/utils/date';
+import { formatShortDate, formatTime, ubDateStr } from '@/lib/utils/date';
 import { usePageTitle } from '@/lib/navigation/pageTitle';
 import { useContract, usePayments, useAddPayment, useUpdatePayment, CONTRACT_STATUS_META, PAYMENT_STATUS_META, PAYMENT_METHOD_LABEL, type PaymentRow } from '@/hooks/useContracts';
 import { useLeadDetail } from '@/hooks/useLeads';
@@ -14,6 +14,8 @@ import { parseLocalDate } from '@/lib/dashboard/director';
 import { Panel, Pill, Progress, Skeleton, Avatar, GhostButton } from '@/components/dashboard/v2/primitives';
 import { EntityAttachments } from '@/components/dashboard/EntityAttachments';
 import { useRegisterAiContext } from '@/lib/ai/context';
+
+const RECEIPT_KIND_LABEL = { advance: 'Урьдчилгаа', installment: 'Хуваарьт төлөлт', other: 'Бусад төлбөр' };
 
 /**
  * Гэрээний дэлгэрэнгүй — бүтэн хуудас (мокап 5).
@@ -168,6 +170,9 @@ function F({ label, children }: { label: string; children: React.ReactNode }) {
 
 function PaymentTr({ p, contractId, now }: { p: PaymentRow; contractId: string; now: Date }) {
     const update = useUpdatePayment(contractId);
+    const [method, setMethod] = useState(p.payment_method || '');
+    const [kind, setKind] = useState<keyof typeof RECEIPT_KIND_LABEL | ''>(p.receipt_kind || '');
+    const [receivedAt, setReceivedAt] = useState(() => ubDateStr());
     const remaining = Number(p.amount) - Number(p.paid_amount || 0);
     const overdue = p.status !== 'paid' && p.status !== 'cancelled' && parseLocalDate(p.due_date) < new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const effective = overdue ? 'overdue' : p.status;
@@ -175,8 +180,8 @@ function PaymentTr({ p, contractId, now }: { p: PaymentRow; contractId: string; 
     const daysTo = Math.round((parseLocalDate(p.due_date).getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) / 86_400_000);
 
     const markPaid = () => {
-        const today = new Date().toISOString().slice(0, 10);
-        update.mutate({ payment_id: p.id, paid_amount: Number(p.amount), amount: Number(p.amount), paid_date: today }, {
+        if (!method || !kind || !receivedAt) { toast.error('Төлсөн огноо, төлбөрийн хэлбэр, төрлийг сонгоно уу'); return; }
+        update.mutate({ payment_id: p.id, paid_amount: Number(p.amount), amount: Number(p.amount), paid_date: receivedAt, payment_method: method, receipt_kind: kind }, {
             onSuccess: () => toast.success('Төлсөн гэж тэмдэглэв'),
             onError: (e) => toast.error(e instanceof Error ? e.message : 'Алдаа'),
         });
@@ -189,10 +194,24 @@ function PaymentTr({ p, contractId, now }: { p: PaymentRow; contractId: string; 
             <td className="num px-2 text-right text-foreground">{formatMNT(Number(p.amount))}</td>
             <td className="num px-2 text-right text-fg-2">{Number(p.paid_amount) > 0 ? formatMNT(Number(p.paid_amount)) : '—'}</td>
             <td className="px-2"><Pill tone={meta.tone}>{meta.label}</Pill></td>
-            <td className="mono-label px-2 text-fg-2">{p.paid_date || '—'}{p.payment_method && <span className="ml-1 text-[11px] text-muted-foreground">· {PAYMENT_METHOD_LABEL[p.payment_method] ?? p.payment_method}</span>}</td>
+            <td className="px-2 py-1 text-fg-2">
+                {remaining > 0 && p.status !== 'cancelled' ? (
+                    <div className="flex flex-col gap-1">
+                        <input type="date" aria-label="Төлсөн огноо" value={receivedAt} onChange={e => setReceivedAt(e.target.value)} className="h-7 rounded border border-border bg-surface text-xs" />
+                        <select aria-label="Төлбөрийн хэлбэр" value={method} onChange={e => setMethod(e.target.value)} className="h-7 rounded border border-border bg-surface text-xs">
+                            <option value="">Хэлбэр сонгох</option>
+                            {Object.entries(PAYMENT_METHOD_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </select>
+                        <select aria-label="Төлбөрийн төрөл" value={kind} onChange={e => setKind(e.target.value as typeof kind)} className="h-7 rounded border border-border bg-surface text-xs">
+                            <option value="">Төрөл сонгох</option>
+                            {Object.entries(RECEIPT_KIND_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </select>
+                    </div>
+                ) : <><span className="mono-label">{p.paid_date || '—'}</span><span className="ml-1 text-[11px] text-muted-foreground">{p.payment_method ? PAYMENT_METHOD_LABEL[p.payment_method] ?? p.payment_method : 'Хэлбэр тодорхойгүй'} · {p.receipt_kind ? RECEIPT_KIND_LABEL[p.receipt_kind] : 'Төрөл тодорхойгүй'}</span></>}
+            </td>
             <td className="px-2 text-right">
                 {remaining > 0 && p.status !== 'cancelled' && (
-                    <GhostButton onClick={markPaid} disabled={update.isPending} className="invisible text-brand hover:bg-brand-soft group-hover:visible"><Check className="h-3.5 w-3.5" /> Төлсөн</GhostButton>
+                    <GhostButton onClick={markPaid} disabled={update.isPending || !method || !kind || !receivedAt} className="text-brand hover:bg-brand-soft"><Check className="h-3.5 w-3.5" /> Төлсөн</GhostButton>
                 )}
             </td>
         </tr>
@@ -201,18 +220,25 @@ function PaymentTr({ p, contractId, now }: { p: PaymentRow; contractId: string; 
 
 function AddPaymentRow({ contractId, next, defaultAmount, onDone }: { contractId: string; next: number; defaultAmount: number; onDone: () => void }) {
     const add = useAddPayment(contractId);
+    const requestId = useRef<string | null>(null);
     const [label, setLabel] = useState(next === 1 ? 'Урьдчилгаа' : `${next}-р төлөлт`);
-    const [due, setDue] = useState(() => new Date().toISOString().slice(0, 10));
+    const [due, setDue] = useState(() => ubDateStr());
+    const [receivedAt, setReceivedAt] = useState(() => ubDateStr());
     const [amount, setAmount] = useState(defaultAmount > 0 ? String(defaultAmount) : '');
     const [paid, setPaid] = useState('');
     const [method, setMethod] = useState('bank_transfer');
+    const [kind, setKind] = useState<keyof typeof RECEIPT_KIND_LABEL | ''>('');
 
     const submit = async () => {
-        const a = Number(amount.replace(/\D/g, ''));
-        if (!a) { toast.error('Дүн оруулна уу'); return; }
-        const pa = Number(paid.replace(/\D/g, '')) || 0;
+        const a = Number(amount);
+        const pa = paid.trim() ? Number(paid) : 0;
+        if (!Number.isFinite(a) || a <= 0 || a > 1e15) { toast.error('Зөв төлөх дүн оруулна уу'); return; }
+        if (!Number.isFinite(pa) || pa < 0 || pa > a) { toast.error('Төлсөн дүн 0-ээс төлөх дүнгийн хооронд байна'); return; }
+        if (!due || (pa > 0 && !receivedAt)) { toast.error('Төлөх болон төлсөн огноог сонгоно уу'); return; }
+        if (!kind) { toast.error('Төлбөрийн төрлийг сонгоно уу'); return; }
+        requestId.current ??= crypto.randomUUID();
         try {
-            await add.mutateAsync({ installment_number: next, label: label.trim() || null, due_date: due, amount: a, paid_amount: pa, paid_date: pa > 0 ? new Date().toISOString().slice(0, 10) : null, payment_method: pa > 0 ? method : null });
+            await add.mutateAsync({ client_request_id: requestId.current, installment_number: next, label: label.trim() || null, due_date: due, amount: a, paid_amount: pa, paid_date: pa > 0 ? receivedAt : null, payment_method: method, receipt_kind: kind });
             toast.success('Төлбөр бүртгэгдлээ');
             onDone();
         } catch (e) {
@@ -224,16 +250,23 @@ function AddPaymentRow({ contractId, next, defaultAmount, onDone }: { contractId
         <tr className="h-10 border-b border-brand/40 bg-brand-soft/30">
             <td className="px-2"><input value={label} onChange={(e) => setLabel(e.target.value)} className={cls} aria-label="Нэр" /></td>
             <td className="px-2"><input type="date" value={due} onChange={(e) => setDue(e.target.value)} className={cn(cls, 'mono-label')} aria-label="Огноо" /></td>
-            <td className="px-2"><input value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="numeric" placeholder="33 100 000" className={cn(cls, 'num text-right')} aria-label="Дүн" /></td>
-            <td className="px-2"><input value={paid} onChange={(e) => setPaid(e.target.value)} inputMode="numeric" placeholder="0" className={cn(cls, 'num text-right')} aria-label="Төлсөн" /></td>
+            <td className="px-2"><input type="number" min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="33100000" className={cn(cls, 'num text-right')} aria-label="Дүн" /></td>
+            <td className="px-2"><input type="number" min="0" step="0.01" value={paid} onChange={(e) => setPaid(e.target.value)} inputMode="decimal" placeholder="0" className={cn(cls, 'num text-right')} aria-label="Төлсөн" /></td>
             <td className="px-2" colSpan={2}>
-                <select value={method} onChange={(e) => setMethod(e.target.value)} className={cls} aria-label="Хэлбэр">
-                    {Object.entries(PAYMENT_METHOD_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                </select>
+                <div className="flex flex-col gap-1 py-1">
+                    {Number(paid) > 0 && <label className="text-[11px] text-muted-foreground">Төлсөн огноо<input type="date" value={receivedAt} onChange={e => setReceivedAt(e.target.value)} className={cls} aria-label="Төлсөн огноо" /></label>}
+                    <select value={method} onChange={(e) => setMethod(e.target.value)} className={cls} aria-label="Хэлбэр">
+                        {Object.entries(PAYMENT_METHOD_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                    </select>
+                    <select value={kind} onChange={e => setKind(e.target.value as typeof kind)} className={cls} aria-label="Төлбөрийн төрөл">
+                        <option value="">Төрөл сонгох</option>
+                        {Object.entries(RECEIPT_KIND_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                </div>
             </td>
             <td className="px-2 text-right">
                 <span className="inline-flex gap-1">
-                    <button type="button" onClick={() => void submit()} disabled={add.isPending} className="inline-flex h-7 items-center gap-1 rounded-md bg-brand px-2 text-[12px] font-medium text-brand-fg hover:bg-brand-strong disabled:opacity-60">{add.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}</button>
+                    <button type="button" onClick={() => void submit()} disabled={add.isPending} aria-label="Төлбөр хадгалах" className="inline-flex h-7 items-center gap-1 rounded-md bg-brand px-2 text-[12px] font-medium text-brand-fg hover:bg-brand-strong disabled:opacity-60">{add.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}</button>
                     <button type="button" onClick={onDone} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2" aria-label="Болих"><X className="h-3.5 w-3.5" /></button>
                 </span>
             </td>

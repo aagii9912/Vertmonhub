@@ -19,4 +19,10 @@ describe('UpdatePaymentScheduleSchema (strict allow-list)', () => {
         expect(UpdatePaymentScheduleSchema.safeParse({ payment_id: 'abc' }).success).toBe(false);
         expect(UpdatePaymentScheduleSchema.safeParse({ payment_id: id, status: 'x' }).success).toBe(false);
     });
+    it('relative, infinite and impossible payment dates are rejected', () => {
+        for (const date of ['today', 'yesterday', 'infinity', '2026-02-30', '2026-13-01']) {
+            expect(UpdatePaymentScheduleSchema.safeParse({ payment_id: id, paid_date: date }).success).toBe(false);
+            expect(UpdatePaymentScheduleSchema.safeParse({ payment_id: id, due_date: date }).success).toBe(false);
+        }
+    });
 });

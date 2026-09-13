@@ -25,6 +25,7 @@ export interface StreamDone {
     pendingActions: Array<{ id: string; tool: string; args: Record<string, unknown>; label: string; preview: Record<string, unknown>; agentId: string; agentName: string; emoji: string }>;
     clarification: { question: string; options: string[] } | null;
     conversationId: string | null;
+    interruption?: { code: string; message: string };
 }
 
 export type StreamEvent = OrchestratorEvent | { type: 'start'; at: number } | ({ type: 'done' } & StreamDone) | { type: 'error'; message: string; retryable?: boolean; code?: string };
@@ -40,6 +41,7 @@ export async function streamAssistant(req: StreamRequest, h: StreamHandlers): Pr
     const controller = new AbortController();
     const onAbort = () => controller.abort();
     h.signal?.addEventListener('abort', onAbort);
+    if (h.signal?.aborted) controller.abort();
     const timer = setTimeout(() => controller.abort(new Error('timeout')), h.timeoutMs ?? 90_000);
 
     try {
@@ -76,16 +78,17 @@ export async function streamAssistant(req: StreamRequest, h: StreamHandlers): Pr
                     const ev = JSON.parse(line.slice(6)) as StreamEvent;
                     if (ev.type === 'done' || ev.type === 'error') gotDone = true;
                     h.onEvent(ev);
+                    if (gotDone) return; // A trailing transport error cannot replace an already received result.
                 } catch { /* эвдэрсэн мөр — алгасна */ }
             }
         }
-        if (!gotDone) h.onEvent({ type: 'error', message: 'Холболт хариу дуусахаас өмнө тасарлаа.', retryable: true });
-    } catch (e) {
+        if (!gotDone) h.onEvent({ type: 'error', message: 'Холболт хариу дуусахаас өмнө тасарлаа. Дахин ажиллуулахын өмнө гүйцэтгэсэн алхам болон бүртгэлээ шалгана уу.', retryable: false });
+    } catch {
         if (controller.signal.aborted) {
             const reason = (controller.signal.reason as Error | undefined)?.message;
-            h.onEvent({ type: 'error', message: reason === 'timeout' ? 'AI хариу 90 секундэд амжсангүй — асуултаа арай тодорхой болгоод дахин оролдоно уу.' : 'Цуцлагдлаа', retryable: reason === 'timeout' });
+            h.onEvent({ type: 'error', message: reason === 'timeout' ? 'AI хариу хугацаандаа амжсангүй. Дахин ажиллуулахын өмнө гүйцэтгэсэн алхам болон бүртгэлээ шалгана уу.' : 'Цуцлагдлаа. Гүйцэтгэсэн алхам болон бүртгэлээ шалгана уу.', retryable: false });
         } else {
-            h.onEvent({ type: 'error', message: e instanceof Error && e.message !== 'Failed to fetch' ? e.message : 'Сүлжээний алдаа — интернэт холболтоо шалгаад дахин оролдоно уу.', retryable: true });
+            h.onEvent({ type: 'error', message: 'Сүлжээний алдаа гарлаа. Холболтоо сэргээгээд, хүсэлтийг дахин илгээхийн өмнө бүртгэлд өөрчлөлт орсон эсэхийг шалгана уу.', retryable: false });
         }
     } finally {
         clearTimeout(timer);

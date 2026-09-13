@@ -31,8 +31,26 @@ jobs:
       - name: Unit tests
         run: npm run test
 
+      - name: Atomic payment migration checks
+        run: npm run test:payments
+
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Isolated authenticated browser workflows
+        run: npm run test:workflow
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-workflow-failures
+          path: |
+            test-results/workflow/
+            playwright-report/
+          retention-days: 7
+
       - name: Dependency audit (critical)
-        # `xlsx`-д засваргүй high байгаа тул одоогоор зөвхөн critical-д унана
+        # Critical production dependency advisories block release.
         run: npm audit --omit=dev --audit-level=critical
 
       - name: Build

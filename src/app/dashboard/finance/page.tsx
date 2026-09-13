@@ -47,6 +47,11 @@ interface Summary {
     monthReceipts: number;
     monthDisbursements: number;
     monthNetCash: number;
+    monthBarterReceipts: number;
+    monthBarterDisbursements: number;
+    monthUnclassifiedReceipts: number;
+    monthUnclassifiedDisbursements: number;
+    monthUnclassifiedCount: number;
     contractCount: number;
 }
 
@@ -242,7 +247,7 @@ export default function FinancePage() {
                 </Card>
             ) : (
                 <>
-                    {summary && (
+                    {summary && (<>
                         <StatBar columns={4}>
                             <StatTile
                                 label="Нийт орлого (гэрээ)"
@@ -273,7 +278,11 @@ export default function FinancePage() {
                                 accent={summary.monthNetCash >= 0 ? 'info' : 'danger'}
                             />
                         </StatBar>
-                    )}
+                        <p className="mb-6 text-xs text-muted-foreground">
+                            Мөнгөн урсгалд зөвхөн бэлэн, банк, ипотекийн бүртгэл орно. Бартер: орлого {formatMNTShort(summary.monthBarterReceipts)}, зарлага {formatMNTShort(summary.monthBarterDisbursements)}.
+                            {summary.monthUnclassifiedCount > 0 && <> Хэлбэр тодорхойгүй {summary.monthUnclassifiedCount} гүйлгээ: орлого {formatMNTShort(summary.monthUnclassifiedReceipts)}, зарлага {formatMNTShort(summary.monthUnclassifiedDisbursements)} — мөнгөн урсгалд ороогүй.</>}
+                        </p>
+                    </>)}
 
                     {/* AR Aging — same five buckets, rendered as a horizontal bar chart. */}
                     {aging && (

@@ -1,7 +1,7 @@
 /**
  * AI Orchestrator v3 — type definitions
  *
- * v3 = ГИБРИД: нэг үндсэн Claude туслах (бүх tool-той agentic loop, streaming) +
+ * v3 = ГИБРИД: нэг үндсэн GPT туслах (бүх tool-той agentic loop, streaming) +
  * шаардлагатай үед мэргэшсэн дэд агентуудад зэрэг хуваарилах (`delegate_to_specialists`).
  * Planner/synthesizer дуудлагууд байхгүй — модель өөрөө шийднэ.
  */
@@ -87,7 +87,7 @@ export interface OrchestratorContext {
     attachments?: OrchestratorAttachment[];
     /** Дэд агентын ажиллагаанд: аль агент (trace/event-д). */
     agentId?: AgentId;
-    /** Client холболт таслахад (Зогсоох / таб хаах) Claude дуудлагыг зогсооно. */
+    /** Client холболт таслахад (Зогсоох / таб хаах) GPT дуудлагыг зогсооно. */
     signal?: AbortSignal;
     /** Энэ мөчөөс хойш шинэ раунд/агент эхлүүлэхгүй (Vercel maxDuration-аас өмнө partial хариу өгнө). */
     deadlineAt?: number;
@@ -101,6 +101,8 @@ export interface OrchestratorAttachment {
 
 /** Нэг дэд агентын үр дүн. */
 export interface AgentRunResult {
+    model?: string;
+    usage?: { input: number; output: number; cacheRead: number };
     text: string;
     data: unknown;
     chartConfig: unknown;
@@ -110,6 +112,14 @@ export interface AgentRunResult {
     ok: boolean;
     error?: string;
     pendingActions: PendingAction[];
+    traceTools?: TraceTool[];
+    interruption?: RunInterruption;
+}
+
+/** The run stopped after collecting results; completed writes must never be replayed as a retry. */
+export interface RunInterruption {
+    code: string;
+    message: string;
 }
 
 /** Trace-д бичигдэх нэг tool дуудлага. */
@@ -123,6 +133,10 @@ export interface TraceTool {
 
 /** Trace-д бичигдэх нэг дэд агентын алхам. */
 export interface TraceStep {
+    model?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    cacheReadTokens?: number;
     agentId: AgentId;
     agentName: string;
     emoji: string;
@@ -137,6 +151,7 @@ export interface TraceStep {
 
 /** Бүх ажиллагааны ил тод мөшгилт. */
 export interface OrchestrationTrace {
+    provider?: 'openai';
     model: string;
     /** Үндсэн loop-ийн модель дуудлагын тоо */
     rounds: number;
@@ -165,4 +180,5 @@ export interface OrchestratorResult {
     trace: OrchestrationTrace;
     pendingActions: PendingAction[];
     clarification: Clarification | null;
+    interruption?: RunInterruption;
 }

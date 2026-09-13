@@ -43,7 +43,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status });
         const data = r.data;
 
-        return NextResponse.json({ viewing: data });
+        return NextResponse.json({ viewing: data, warning: r.warning });
     } catch (error) {
         return safeErrorResponse(error, 'Уулзалт шинэчлэхэд алдаа гарлаа');
     }

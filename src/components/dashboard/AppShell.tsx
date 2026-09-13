@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { usePathname } from 'next/navigation';
 import { Sidebar } from '@/components/dashboard/Sidebar';
 import { Header } from '@/components/dashboard/Header';
 import { MobileNav } from '@/components/dashboard/MobileNav';
@@ -8,7 +9,6 @@ import { CommandPalette } from '@/components/dashboard/CommandPalette';
 import { QuickCreateSheet } from '@/components/dashboard/QuickCreateSheet';
 import { OutboxSync } from '@/components/dashboard/OutboxSync';
 import { AiPanel } from '@/components/ai/AiPanel';
-import { FeedbackWidget } from '@/components/feedback/FeedbackWidget';
 import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications';
 
 /**
@@ -22,6 +22,7 @@ import { useRealtimeNotifications } from '@/hooks/useRealtimeNotifications';
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
     useRealtimeNotifications();
+    const isInbox = usePathname() === '/dashboard/inbox/messages';
 
     return (
         <div className="min-h-screen bg-background text-foreground">
@@ -30,11 +31,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Sidebar />
             </div>
 
-            <div className="flex min-h-screen flex-col transition-[margin] duration-200 ease-out md:ml-[var(--sidebar-w)] print:ml-0">
-                <div className="print:hidden">
+            <div className={`flex flex-col transition-[margin] duration-200 ease-out md:ml-[var(--sidebar-w)] print:ml-0 ${isInbox ? 'h-dvh overflow-hidden' : 'min-h-screen'}`}>
+                <div className="sticky top-0 z-30 shrink-0 print:hidden">
                     <Header />
                 </div>
-                <main className="flex-1 p-4 pb-24 md:p-6 md:pb-6 print:p-0">{children}</main>
+                <main className={`flex-1 p-4 md:p-6 print:p-0 ${isInbox ? 'flex min-h-0 flex-col pb-[calc(4.5rem+env(safe-area-inset-bottom))]' : 'pb-24 md:pb-6'}`}>{children}</main>
             </div>
 
             <div className="print:hidden">
@@ -43,7 +44,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <QuickCreateSheet />
                 <OutboxSync />
                 <AiPanel />
-                <FeedbackWidget />
             </div>
         </div>
     );

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { resolveApiUser } from '@/lib/auth/resolve-user';
 import { AGENTS } from '@/lib/ai/orchestrator/agents';
-import { MAIN_MODEL, FAST_MODEL } from '@/lib/ai/claude/client';
+import { MAIN_MODEL, FAST_MODEL, hasOpenAIKey } from '@/lib/ai/openai/client';
 
 /**
  * GET /api/ai-assistant/agents — orchestrator-ын БОДИТ агентууд (статик
@@ -23,5 +23,5 @@ export async function GET() {
         adminTools: a.adminToolNames ?? [],
         adminOnly: (a.adminToolNames ?? []).length > 0 && a.readToolNames.length <= 1,
     }));
-    return NextResponse.json({ agents, model: MAIN_MODEL, fastModel: FAST_MODEL });
+    return NextResponse.json({ agents, provider: 'openai', model: MAIN_MODEL, fastModel: FAST_MODEL, configured: hasOpenAIKey() });
 }

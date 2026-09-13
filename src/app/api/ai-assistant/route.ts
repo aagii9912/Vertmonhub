@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { runOrchestrator } from '@/lib/ai/orchestrator';
 import { prepareAssistantRequest, persistAssistantExchange } from '@/lib/ai/orchestrator/http';
-import { safeErrorResponse } from '@/lib/utils/safe-error';
+import { describeOpenAIError } from '@/lib/ai/openai/client';
 
 export const maxDuration = 60;
 
@@ -17,7 +17,7 @@ export async function POST(req: Request) {
         const prep = await prepareAssistantRequest(req);
         if ('error' in prep) return prep.error;
 
-        const response = await runOrchestrator(prep.modelMessage, prep.ctx);
+        const response = await runOrchestrator(prep.modelMessage, { ...prep.ctx, signal: req.signal, deadlineAt: Date.now() + 50_000 });
         const conversationId = await persistAssistantExchange(prep, response);
 
         return NextResponse.json({
@@ -28,9 +28,11 @@ export async function POST(req: Request) {
             trace: response.trace,
             pendingActions: response.pendingActions,
             clarification: response.clarification,
+            interruption: response.interruption,
             conversationId,
         });
     } catch (error) {
-        return safeErrorResponse(error, 'AI туслахад алдаа гарлаа');
+        const info = describeOpenAIError(error);
+        return NextResponse.json({ error: info.message, code: info.code }, { status: 502 });
     }
 }

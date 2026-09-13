@@ -28,10 +28,11 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         emoji: '📊',
         color: 'emerald',
         description: 'Ерөнхий dashboard статистик, олон төрлийн өгөгдөл нэгтгэсэн шинжилгээ, KPI, график. Хэд хэдэн домэйн хамарсан өргөн асуултад тохиромжтой.',
-        readToolNames: ['get_dashboard_stats', 'list_properties', 'list_leads', 'get_sales_summary', 'get_contracts_summary', 'get_customer_insights', 'compare_properties'],
+        readToolNames: ['get_operations_report', 'get_dashboard_stats', 'list_properties', 'list_leads', 'get_sales_summary', 'get_contracts_summary', 'get_customer_insights', 'compare_properties'],
         writeToolNames: [],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн ДАТА АНАЛИСТ agent. Таны үүрэг: ерөнхий статистик, KPI, чиг хандлага, олон эх сурвалжийн өгөгдлийг нэгтгэн шинжлэх.
+Үйл ажиллагааны тайлан, гэрээний зорилт, орсон мөнгө, урьдчилгааны тухай асуувал эхлээд get_operations_report ашигла. Урьдчилгааны хуримтлагдсан дүнг тухайн сарын орлого гэж бүү тайлбарла; эх өгөгдлийн хамрах хүрээ ба дутуу бүртгэлийн тайлбарыг хадгал.
 Тоон дүгнэлт, харьцуулалт, график хийхэд тохиромжтой tool-уудыг дуудаж бодит мэдээлэл цуглуул.${COMMON_RULES}`, k),
     },
     'property-expert': {
@@ -67,11 +68,12 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         emoji: '💰',
         color: 'amber',
         description: 'Гэрээ (property_contracts), төлбөр, үлдэгдэл, цуглуулалтын хувь, овердуэйс, борлуулалтын нэгтгэл, прогноз, гэрээний процесс (sign/paid/cancel). Шинэ гэрээ ҮҮСГЭХ, гэрээ УСТГАХ.',
-        readToolNames: ['list_contracts', 'get_contract_details', 'get_contracts_summary', 'get_sales_summary', 'get_sales_forecast', 'get_dashboard_stats'],
+        readToolNames: ['get_operations_report', 'list_contracts', 'get_contract_details', 'get_contracts_summary', 'get_sales_summary', 'get_sales_forecast', 'get_dashboard_stats'],
         writeToolNames: ['process_contract_action', 'create_contract', 'attach_file'],
         deleteToolNames: ['delete_contract'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн САНХҮҮГИЙН АНАЛИСТ agent. Таны үүрэг: гэрээ, төлбөр, үлдэгдэл, цуглуулалт, овердуэйс, борлуулалтын мөнгөн урсгал ба прогноз, шинэ гэрээ үүсгэх, гэрээ устгах.
+Бодит мөнгөн урсгал, урьдчилгаа, хугацааны тайланд get_operations_report ашигла. Гэрээний нийт төлсөн/урьдчилгааны хуримтлагдсан дүнг сарын орлого гэж нэрлэхгүй. Бартер ба төлбөрийн хэлбэр тодорхойгүй гүйлгээ мөнгөн орлогод орохгүй; өгөгдлийн хамрах хүрээ, дутуу бүртгэлийн тайлбарыг заавал дамжуул.
 Хэрэв танд бичих/устгах эрх олгогдсон бол гэрээний процесс (гарын үсэг/төлбөр/цуцлалт), шинэ гэрээ үүсгэх, гэрээ устгаж болно. БҮХ үйлдлийг гүйцэтгэхээс өмнө систем баталгаажуулалт авна. Гэрээ нь нэвтэрсэн борлуулалтын менежерийн нэрээр хадгалагдана.
 Хэрэв хэрэглэгч ГЭРЭЭНИЙ ЗУРАГ/PDF хавсаргавал агуулгыг нь уншиж (харилцагч, үнэ, дугаар, төсөл), талбаруудыг задлан create_contract-д бэлдэж санал болго. Мөн файлыг attach_file-аар тухайн гэрээнд хавсаргаж болно.${COMMON_RULES}`, k),
     },

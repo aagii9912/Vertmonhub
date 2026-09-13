@@ -5,7 +5,7 @@ import { resolveApiUser } from '@/lib/auth/resolve-user';
 import { fetchRolePermissions } from '@/lib/rbac';
 import { buildDynamicKnowledge, buildFAQs } from '@/lib/ai/services/PromptService';
 import { resolveSalesManagerName } from '@/lib/ai/data-assistant/functions';
-import { hasClaudeKey } from '@/lib/ai/claude/client';
+import { hasOpenAIKey } from '@/lib/ai/openai/client';
 import { executeDataTool } from '@/lib/ai/data-assistant';
 import { loadConversationSummary, maybeUpdateSummary } from './memory';
 import type { OrchestratorContext, OrchestratorResult } from './types';
@@ -106,7 +106,7 @@ export async function prepareAssistantRequest(req: Request): Promise<{ error: Ne
     };
     if (!message || typeof message !== 'string') return { error: NextResponse.json({ error: 'Message is required' }, { status: 400 }) };
     const mockDev = process.env.NODE_ENV !== 'production' && !!req.headers.get('x-ai-mock');
-    if (!hasClaudeKey() && !mockDev) return { error: NextResponse.json({ error: 'AI туслах тохируулагдаагүй байна (ANTHROPIC_API_KEY алга). Админд хандана уу.' }, { status: 503 }) };
+    if (!hasOpenAIKey() && !mockDev) return { error: NextResponse.json({ error: 'AI туслах тохируулагдаагүй байна (OPENAI_API_KEY алга). Админд хандана уу.' }, { status: 503 }) };
 
     const [{ data: ownedRows }, { data: memberRows }] = await Promise.all([
         adminDb.from('shops').select('id').eq('user_id', resolvedUser.id),
@@ -120,7 +120,7 @@ export async function prepareAssistantRequest(req: Request): Promise<{ error: Ne
     const [shopKnowledge, userName, summaryRow] = await Promise.all([
         loadShopKnowledge(adminDb, effectiveShopId),
         resolveSalesManagerName(resolvedUser.id, resolvedUser.email),
-        conversationId ? loadConversationSummary(adminDb, String(conversationId)) : Promise.resolve(null),
+        conversationId ? loadConversationSummary(adminDb, String(conversationId), { userId: resolvedUser.id, shopId: effectiveShopId }) : Promise.resolve(null),
     ]);
 
     const uiCtx = context && typeof context === 'object' ? context : null;
@@ -191,7 +191,7 @@ export async function persistAssistantExchange(
             }
             await p.adminDb.from('ai_conversations').update({ updated_at: new Date().toISOString() }).eq('id', activeConversationId);
             // Урт яриа → өмнөх хэсгийг хураангуйлж санах ойд (best-effort, ~1с).
-            await maybeUpdateSummary(p.adminDb, activeConversationId);
+            if (!response.interruption) await maybeUpdateSummary(p.adminDb, activeConversationId, { userId: p.userId, shopId: p.effectiveShopId });
         }
     } catch (e) {
         console.error('Failed to persist chat messages:', e);

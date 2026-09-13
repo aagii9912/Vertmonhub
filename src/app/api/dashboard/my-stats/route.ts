@@ -49,13 +49,18 @@ interface QueryResult {
 
 /** Best-effort мөр татагч: deleted_at байхгүй бол шүүлтгүй дахин оролдоно, бусад алдаанд хоосон буцна. */
 async function safeManagerRows(
+    section: string,
+    missing: string[],
     run: (opts: { excludeDeleted: boolean }) => PromiseLike<QueryResult>,
 ): Promise<Record<string, unknown>[]> {
     let res = await run({ excludeDeleted: true });
     if (res.error && /deleted_at/i.test(res.error.message || '')) {
         res = await run({ excludeDeleted: false });
     }
-    if (res.error) return [];
+    if (res.error) {
+        missing.push(section);
+        return [];
+    }
     return (res.data || []) as Record<string, unknown>[];
 }
 
@@ -137,9 +142,10 @@ export async function GET(request: NextRequest) {
         const monthIdx = ubNow.month - 1;
         const quarter = quarterOfMonth(monthIdx + 1);
 
+        const missing: string[] = [];
         const [leadRowsRaw, viewingRowsRaw, contractRows, targets, byManager, personalTaskRows] = await Promise.all([
             // Миний лидүүд (сүүлийн 500 — KPI/таск/жагсаалт бүгд эндээс)
-            safeManagerRows(({ excludeDeleted }) => {
+            safeManagerRows('leads', missing, ({ excludeDeleted }) => {
                 let q = db
                     .from('leads')
                     .select('id, customer_name, customer_phone, status, source, created_at, next_followup_at, budget_max')
@@ -151,7 +157,7 @@ export async function GET(request: NextRequest) {
                 return q;
             }),
             // Миний уулзалтууд (өнөөдрөөс эхлэн — өнөөдрийн таск + 7 хоногийн KPI + ойрын жагсаалт)
-            safeManagerRows(({ excludeDeleted }) => {
+            safeManagerRows('viewings', missing, ({ excludeDeleted }) => {
                 let q = db
                     .from('property_viewings')
                     .select('id, scheduled_at, status, agent_notes, properties(name), leads(customer_name)')
@@ -164,7 +170,7 @@ export async function GET(request: NextRequest) {
                 return q;
             }),
             // Миний гэрээнүүд (идэвхтэй/хугацаа хэтэрсэн KPI)
-            safeManagerRows(({ excludeDeleted }) => {
+            safeManagerRows('contracts', missing, ({ excludeDeleted }) => {
                 let q = db
                     .from('property_contracts')
                     .select('id, contract_status, overdue_days')
@@ -174,12 +180,12 @@ export async function GET(request: NextRequest) {
                 if (excludeDeleted) q = q.is('deleted_at', null);
                 return q;
             }),
-            getTeamTargets(db, authShop.id, year),
-            getMonthlyActualsByManager(db, authShop.id, year),
+            getTeamTargets(db, authShop.id, year, () => { missing.push('targets'); }),
+            getMonthlyActualsByManager(db, authShop.id, year, () => { missing.push('sales'); }),
             // Хувийн ажлууд (user_tasks) — зөвхөн ӨӨРИЙН самбарт «Хийх ажлууд»-д
             // нэгтгэгдэнэ; миграци ороогүй орчинд хоосон (safeManagerRows)
             isSelf
-                ? safeManagerRows(() =>
+                ? safeManagerRows('tasks', missing, () =>
                       db
                           .from('user_tasks')
                           .select('id, title, note, due_at')
@@ -255,6 +261,7 @@ export async function GET(request: NextRequest) {
             identity.roster.find((r) => r.name === targetName) || (isSelf ? identity.rosterEntry : null);
 
         return NextResponse.json({
+            missing,
             manager: {
                 name: targetName,
                 isSelf,

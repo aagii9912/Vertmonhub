@@ -40,13 +40,15 @@ export const CreateLeadSchema = z.object({
 // Contract Payment Schedule Schema
 // ============================================
 export const CreatePaymentScheduleSchema = z.object({
+    client_request_id: z.string().uuid().optional(),
     installment_number: z.coerce.number().int().positive().max(1000).optional().default(1),
     label: z.string().max(255).optional().nullable(),
-    due_date: z.string().min(1, 'Төлөх огноо шаардлагатай').max(40),
+    due_date: z.iso.date(),
     amount: z.coerce.number().nonnegative('Дүн 0-ээс багагүй байх ёстой').max(1e15),
     paid_amount: z.coerce.number().nonnegative('Төлсөн дүн 0-ээс багагүй байх ёстой').max(1e15).optional().default(0),
-    paid_date: z.string().max(40).optional().nullable(),
-    payment_method: z.string().max(50).optional().nullable(),
+    paid_date: z.iso.date().optional().nullable(),
+    payment_method: z.enum(['cash', 'bank', 'bank_transfer', 'barter', 'mortgage']).optional().nullable(),
+    receipt_kind: z.enum(['advance', 'installment', 'other']).optional().nullable(),
     notes: z.string().max(2000).optional().nullable(),
 });
 
@@ -59,11 +61,12 @@ export const UpdatePaymentScheduleSchema = z.object({
     payment_id: z.string().uuid('payment_id UUID байх ёстой'),
     installment_number: z.coerce.number().int().positive().max(1000).optional(),
     label: z.string().max(255).optional().nullable(),
-    due_date: z.string().min(1).max(40).optional(),
+    due_date: z.iso.date().optional(),
     amount: z.coerce.number().nonnegative().max(1e15).optional(),
     paid_amount: z.coerce.number().nonnegative().max(1e15).optional(),
-    paid_date: z.string().max(40).optional().nullable(),
-    payment_method: z.string().max(50).optional().nullable(),
+    paid_date: z.iso.date().optional().nullable(),
+    payment_method: z.enum(['cash', 'bank', 'bank_transfer', 'barter', 'mortgage']).optional().nullable(),
+    receipt_kind: z.enum(['advance', 'installment', 'other']).optional().nullable(),
     notes: z.string().max(2000).optional().nullable(),
     status: z.enum(['pending', 'paid', 'overdue', 'partial', 'cancelled']).optional(),
 }).strict();
@@ -179,10 +182,11 @@ export const CreateBillSchema = z.object({
 });
 
 export const PayBillSchema = z.object({
+    client_request_id: z.string().uuid('Хүсэлтийн UUID шаардлагатай'),
     amount: z.number().positive('Дүн 0-ээс их байх ёстой').max(1e15),
     method: z.enum(['cash', 'bank', 'barter', 'mortgage']).optional().nullable(),
-    paid_date: z.string().optional().nullable(),
-});
+    paid_date: z.iso.date().optional().nullable(),
+}).strict();
 
 export const CreateBudgetLineSchema = z.object({
     project_id: z.string().uuid('Төсөл сонгоно уу'),

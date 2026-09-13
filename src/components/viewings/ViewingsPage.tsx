@@ -53,7 +53,7 @@ export function ViewingsPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const { data, isLoading } = useViewings({ range, status, manager });
+    const { data, isLoading, error, refetch } = useViewings({ range, status, manager });
     const { data: managers = [] } = useManagers();
     const update = useUpdateViewing();
     const now = useMemo(() => Date.now(), [data]); // eslint-disable-line react-hooks/exhaustive-deps -- өгөгдөл шинэчлэгдэх бүрт «одоо» шинэчлэгдэнэ
@@ -71,7 +71,7 @@ export function ViewingsPage() {
     }, [data]);
 
     const patch = (id: string, p: Parameters<typeof update.mutate>[0]['patch'], msg?: string) =>
-        update.mutate({ id, patch: p }, { onSuccess: () => msg && toast.success(msg), onError: (e) => toast.error(e instanceof Error ? e.message : 'Алдаа гарлаа') });
+        update.mutate({ id, patch: p }, { onSuccess: (result) => { if (result.warning) toast.warning(result.warning); else if (msg) toast.success(msg); }, onError: (e) => toast.error(e instanceof Error ? e.message : 'Алдаа гарлаа') });
 
     const postpone = (v: ViewingRow) => {
         const d = new Date(v.scheduled_at);
@@ -105,7 +105,10 @@ export function ViewingsPage() {
             </div>
 
             <div className="rounded-md border border-border bg-surface">
-                {isLoading ? (
+                {error ? <div role="alert" className="space-y-2 p-6 text-sm text-status-danger">
+                    <p>Уулзалтуудыг уншиж чадсангүй. Жагсаалт хоосон гэсэн үг биш.</p>
+                    <button type="button" onClick={() => void refetch()} className="underline focus-ring">Дахин оролдох</button>
+                </div> : isLoading ? (
                     <div className="flex flex-col gap-2 p-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-11" />)}</div>
                 ) : groups.length === 0 ? (
                     <div className="flex flex-col items-center gap-3 px-4 py-12 text-center">
@@ -130,7 +133,7 @@ export function ViewingsPage() {
 
             {/* Товлох */}
             <Sheet open={createOpen} onOpenChange={(o) => { if (!o) { setCreateOpen(false); setPrefillLead(null); } }}>
-                <SheetContent side="right" className="w-full p-0 sm:max-w-[440px]">
+                <SheetContent side="right" showCloseButton={false} aria-describedby={undefined} className="w-full p-0 sm:max-w-[440px]">
                     <SheetTitle className="sr-only">Уулзалт товлох</SheetTitle>
                     {createOpen && <CreateSheet leadId={prefillLead} onClose={() => { setCreateOpen(false); setPrefillLead(null); }} />}
                 </SheetContent>
@@ -138,7 +141,7 @@ export function ViewingsPage() {
 
             {/* Үр дүн */}
             <Sheet open={!!outcomeFor} onOpenChange={(o) => !o && setOutcomeFor(null)}>
-                <SheetContent side="right" className="w-full p-0 sm:max-w-[420px]">
+                <SheetContent side="right" showCloseButton={false} aria-describedby={undefined} className="w-full p-0 sm:max-w-[420px]">
                     <SheetTitle className="sr-only">Уулзалтын үр дүн</SheetTitle>
                     {outcomeFor && <OutcomeSheet v={outcomeFor} onClose={() => setOutcomeFor(null)} />}
                 </SheetContent>
@@ -238,7 +241,7 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
         if (!leadId && !name.trim()) { toast.error('Харилцагчийн нэр оруулна уу'); return; }
         if (!walkIn && !when) { toast.error('Огноо, цаг сонгоно уу'); return; }
         try {
-            await create.mutateAsync({
+            const result = await create.mutateAsync({
                 lead_id: leadId,
                 customer_name: leadId ? undefined : name.trim(),
                 customer_phone: leadId ? undefined : phone.trim() || null,
@@ -250,7 +253,8 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                 interest_level: walkIn && interest ? interest : null,
                 feedback: walkIn ? feedback.trim() || null : null,
             });
-            toast.success(walkIn ? 'Ирсэн уулзалт бүртгэгдлээ' : 'Уулзалт товлогдлоо');
+            if (result.warning) toast.warning(result.warning);
+            else toast.success(walkIn ? 'Ирсэн уулзалт бүртгэгдлээ' : 'Уулзалт товлогдлоо');
             onClose();
         } catch (e) {
             toast.error(e instanceof Error ? e.message : 'Хадгалж чадсангүй');
@@ -366,8 +370,9 @@ function OutcomeSheet({ v, onClose }: { v: ViewingRow; onClose: () => void }) {
         try {
             const next = followup ? new Date(Date.now() + followup * 86_400_000) : null;
             if (next) next.setHours(10, 0, 0, 0);
-            await update.mutateAsync({ id: v.id, patch: { status: 'completed', interest_level: interest || null, customer_feedback: feedback.trim() || null, ...(next ? { next_followup_at: next.toISOString() } : {}) } });
-            toast.success('Уулзалт дууслаа');
+            const result = await update.mutateAsync({ id: v.id, patch: { status: 'completed', interest_level: interest || null, customer_feedback: feedback.trim() || null, ...(next ? { next_followup_at: next.toISOString() } : {}) } });
+            if (result.warning) toast.warning(result.warning);
+            else toast.success('Уулзалт дууслаа');
             onClose();
         } catch (e) {
             toast.error(e instanceof Error ? e.message : 'Хадгалж чадсангүй');

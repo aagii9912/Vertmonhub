@@ -115,8 +115,9 @@ export function ManagerPicker({
 }) {
     const [open, setOpen] = useState(false);
     const [q, setQ] = useState('');
-    const canPick = !disabled && options.length > 0;
-    const list = options.filter((m) => !q || m.name.toLowerCase().includes(q.toLowerCase()));
+    const assignable = options.filter(m => m.assignable !== false && m.is_active);
+    const canPick = !disabled && assignable.length > 0;
+    const list = assignable.filter((m) => !q || m.name.toLowerCase().includes(q.toLowerCase()));
 
     const label = (
         <span className="inline-flex min-w-0 items-center gap-2">

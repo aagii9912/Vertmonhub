@@ -49,23 +49,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         const p = parsed.data;
 
         const db = supabaseAdmin();
-        const { data: lead } = await db.from('leads').select('id').eq('id', id).eq('shop_id', authShop.id).is('deleted_at', null).maybeSingle();
-        if (!lead) return NextResponse.json({ error: 'Лид олдсонгүй' }, { status: 404 });
-
         const uid = await getUserId();
         const identity = uid ? await resolveManagerIdentity(db, authShop.id, uid) : null;
 
-        const { activity } = await recordLeadContact(db, {
+        const result = await recordLeadContact(db, {
             shopId: authShop.id, leadId: id, type: p.type, content: p.content, nextFollowupAt: p.next_followup_at,
             userId: uid, managerName: identity?.managerName ?? null,
         });
-        // Хэрэглэгчийн гараар бичсэн тэмдэглэл хадгалагдаагүй бол 201 биш 500 —
-        // өмнө нь null activity-тэй «хадгалагдлаа» гэж хариулдаг байв.
-        if (!activity) {
-            return NextResponse.json({ error: 'Тэмдэглэл хадгалагдсангүй (lead_activities). Дахин оролдоно уу.' }, { status: 500 });
-        }
+        if (!result.ok) return NextResponse.json({ error: result.error, partialSuccess: result.partialSuccess ?? false }, { status: result.status });
 
-        return NextResponse.json({ activity }, { status: 201 });
+        return NextResponse.json({ activity: result.activity }, { status: 201 });
     } catch (error) {
         return safeErrorResponse(error, 'Тэмдэглэл хадгалахад алдаа гарлаа');
     }

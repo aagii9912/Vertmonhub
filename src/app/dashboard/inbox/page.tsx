@@ -16,7 +16,7 @@ export default function InboxPage() {
     const { data: conversations = [], isLoading, isError, refetch } = useConversations();
     const [searchQuery, setSearchQuery] = useState('');
 
-    const filtered = conversations.filter((c: any) =>
+    const filtered = conversations.filter((c) =>
         (c.customer_name || '').toLowerCase().includes(searchQuery.toLowerCase()),
     );
 
@@ -70,8 +70,8 @@ export default function InboxPage() {
                 </Card>
             ) : (
                 <div className="grid grid-cols-1 gap-3">
-                    {filtered.map((conv: any) => (
-                        <Link key={conv.id} href="/dashboard/inbox/messages" className="block">
+                    {filtered.map((conv) => (
+                        <Link key={conv.id} href={`/dashboard/inbox/messages?conversation=${encodeURIComponent(conv.id)}`} className="block">
                             <Card hover className="cursor-pointer">
                                 <CardContent className="p-4 flex items-center gap-4">
                                     <div className="w-10 h-10 rounded-full bg-brand-soft flex items-center justify-center flex-shrink-0">
@@ -86,7 +86,7 @@ export default function InboxPage() {
                                         </p>
                                     </div>
                                     <div className="text-xs text-muted-foreground/70 flex-shrink-0">
-                                        {conv.updated_at ? formatTimeAgo(conv.updated_at) : ''}
+                                        {conv.last_message_at ? formatTimeAgo(conv.last_message_at) : ''}
                                     </div>
                                 </CardContent>
                             </Card>

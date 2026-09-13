@@ -2,7 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { dashboardJson } from '@/lib/api/dashboardFetch';
 
 export interface DashboardMode {
     mode: 'personal' | 'org';
@@ -12,33 +12,14 @@ export interface DashboardMode {
     canViewTeam: boolean;
 }
 
-const FALLBACK: DashboardMode = {
-    mode: 'org',
-    managerName: null,
-    isManager: false,
-    canViewTeam: false,
-};
-
-/**
- * Дашбоардын горим (personal | org) — сервер шийднэ (/api/dashboard/mode).
- * Алдаа гарвал org горим руу fallback — самбар хэзээ ч блоклогдохгүй.
- */
+/** Самбарын горимыг сервер шийднэ; алдааг UI дээр дахин оролдох төлөвөөр харуулна. */
 export function useDashboardMode() {
     const { shop } = useAuth();
     const shopId = shop?.id;
 
     return useQuery<DashboardMode>({
         queryKey: ['dashboard-mode', shopId],
-        queryFn: async () => {
-            if (!shopId) return FALLBACK;
-            try {
-                const res = await dashboardFetch('/api/dashboard/mode');
-                if (!res.ok) return FALLBACK;
-                return await res.json();
-            } catch {
-                return FALLBACK;
-            }
-        },
+        queryFn: () => dashboardJson<DashboardMode>('/api/dashboard/mode'),
         enabled: !!shopId,
         staleTime: 60000,
     });

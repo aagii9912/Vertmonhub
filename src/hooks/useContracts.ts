@@ -75,6 +75,7 @@ export interface PaymentRow {
     paid_amount: number | null;
     paid_date: string | null;
     payment_method: string | null;
+    receipt_kind?: 'advance' | 'installment' | 'other' | null;
     status: 'pending' | 'paid' | 'overdue' | 'partial' | 'cancelled';
     notes: string | null;
 }
@@ -90,6 +91,7 @@ export function usePayments(contractId: string | null) {
 }
 
 export interface PaymentInput {
+    client_request_id?: string;
     installment_number: number;
     label?: string | null;
     due_date: string;
@@ -97,6 +99,7 @@ export interface PaymentInput {
     paid_amount: number;
     paid_date?: string | null;
     payment_method?: string | null;
+    receipt_kind?: 'advance' | 'installment' | 'other' | null;
     notes?: string | null;
 }
 
@@ -114,7 +117,7 @@ export function useAddPayment(contractId: string) {
 export function useUpdatePayment(contractId: string) {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: (input: { payment_id: string } & Partial<Pick<PaymentInput, 'paid_amount' | 'paid_date' | 'payment_method' | 'notes' | 'amount' | 'due_date'>>) =>
+        mutationFn: (input: { payment_id: string } & Partial<Pick<PaymentInput, 'paid_amount' | 'paid_date' | 'payment_method' | 'receipt_kind' | 'notes' | 'amount' | 'due_date'>>) =>
             dashboardMutate(`/api/dashboard/contracts/${contractId}/payments`, 'PATCH', input),
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: ['contracts'] });

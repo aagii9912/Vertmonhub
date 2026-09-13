@@ -9,7 +9,7 @@
 
 **Vertmon Hub** is an AI-powered Real Estate Sales & CRM Platform. Real estate sales managers use it to manage properties, handle Facebook/Instagram DM leads via an AI agent, schedule viewings, track contracts, and run marketing.
 
-- **Repo:** https://github.com/aagii9912/smarthub.git
+- **Repo:** https://github.com/aagii9912/Vertmonhub.git
 - **UI Language:** Mongolian (all labels, comments and content)
 - **Default branch:** `main`
 
@@ -19,12 +19,12 @@
 
 | Layer | Technology | Version |
 |-------|-----------|---------|
-| Framework | Next.js (App Router) | 16.1.1 |
+| Framework | Next.js (App Router), Node >=20.9 | 16.3.4 |
 | UI | React | 19.2.3 |
 | Language | TypeScript | 5.x |
 | Styling | Tailwind CSS (v4 — CSS-first config, no `tailwind.config.ts`) | 4.x |
 | Database / Auth | Supabase (PostgreSQL + RLS, Email + Google + Facebook OAuth) | — |
-| AI | Claude via `@anthropic-ai/sdk` (dashboard туслах) · Google Gemini via `@google/generative-ai` (FB/IG DM) | 0.125 · 0.24.1 |
+| AI | OpenAI Responses via `openai` (dashboard туслах) · Google Gemini via `@google/generative-ai` (FB/IG DM) | package.json |
 | Validation | Zod | 4.x |
 | Email | Resend | 6.7.0 |
 | Push notifications | web-push (VAPID) | 3.6.7 |
@@ -43,7 +43,13 @@ npm run build          # production build
 npm run lint           # eslint . (flat config; Next 16 removed `next lint`)
 npm run typecheck      # tsc --noEmit
 npm run test           # vitest run
+npm run test:payments  # disposable PostgreSQL; no live database
+npm run test:workflow  # isolated login + desktop/mobile workflow browser checks
 ```
+
+Current local hardening and release evidence: `docs/APP-READINESS-2026-09-13.md`.
+Responsive lead/inbox workflows, unit filters, and audit verification: `docs/UI-UX-FIXES-2026-09-13.md`.
+Payment migrations `20260913160000` and `20260913170000` must be applied before deploying the payment writes; a read-only check on 2026-09-13 found both absent. Do not bypass the RPC with non-atomic writes. Local GPT-5.6 Luna connectivity was verified with a synthetic request; this does not verify an authenticated business action.
 
 ---
 
@@ -145,6 +151,16 @@ src/
 
 ## Key Architecture Decisions
 
+### Internal operations workflow (2026-09-13)
+
+Vertmon LLC's operating scope is sales, marketing and administration: reduce duplicate Excel entry, expose unattended leads, and distinguish contract value from actual cash receipts. Workflow and release notes: `docs/OPERATIONS-WORKFLOW-2026-09-13.md`.
+
+- `/dashboard/leads?queue=unassigned|uncontacted|no_followup|overdue` uses shared rules in `lib/leads/work-queue.ts`. Counts and reports use the same active-lead definitions. A scheduled viewing counts as a next step when no explicit follow-up exists. These are data-quality/work queues, not proof an employee failed to call.
+- `POST /api/dashboard/leads/[id]/claim` atomically assigns an unowned, active lead to the authenticated active roster manager and saves a future follow-up. Competing claims return 409. Explicit reassignment still follows existing leads-write permissions and now validates an active roster name. Marketing/admin names are not implicitly assigned when they create a lead.
+- `/dashboard/reports/operations` and AI `get_operations_report` share `lib/dashboard/operations-report-load.ts`. Reads paginate and surface failures. Reports require `reports`; cash ledger sections additionally require `finance`. Contract value, dated cash receipts, explicitly classified advance receipts, barter and imported advance snapshots stay separate. Missing targets/classification must display unavailable, not guessed numbers.
+- Payment writes require `20260913160000_atomic_contract_payments.sql` before release. Service-role-only `mutate_contract_payment` locks the contract and commits schedule, receipt ledger and contract paid delta together. New payments carry a stable `client_request_id`; `receipt_kind` is explicit (`advance|installment|other`). Missing RPC returns 503. Migration is additive and does not backfill historical cash; it has not been applied to production by this implementation task.
+- Daily AI contact/follow-up/assignment actions surface DB failure and partial-save status. UI refreshes its query data after AI execution. Task/report entry points are available from the existing navigation; personal tasks remain private.
+
 ### Authentication
 Supabase Auth (Email/Password, Google, Facebook). `src/middleware.ts` protects `/dashboard` and `/admin`. Unauthenticated users are bounced to `/auth/login`.
 
@@ -171,13 +187,13 @@ Meeting-driven marketing analytics layer (migration `20260721140000`):
 - **AI**: read tools `get_marketing_budget_status` + `get_market_indicators` (impl in `data-assistant/functions.ts`, registered to `marketing-specialist` + `advisor` agents).
 - **Lead sources**: `radio` added to `LeadSource` union + all label maps (types/property.ts, leads/new select, leads page, reports/leads, marketing-roi, weekly-report cron, kpi-report lib); `board` relabeled «Билборд / Самбар». Adding a source value requires touching ALL these maps.
 
-### Dashboard AI туслах v3 — Claude гибрид orchestrator (`/dashboard/ai-assistant`, branch `feat/ai-v3-claude`)
-Модель: **Claude** (`@anthropic-ai/sdk`, `ANTHROPIC_API_KEY`; `AI_MODEL` анхдагч `claude-opus-5`, `AI_FAST_MODEL` анхдагч `claude-sonnet-5`). Gemini зөвхөн FB/IG DM AI (`AIRouter`)-д үлдсэн. Бүрэн review: `docs/AI-REVIEW-2026-09-12.md`.
-- **Бүтэц** (`src/lib/ai/orchestrator/`): `index.ts` (`runOrchestrator`) → `loop.ts` (`runLoop` — Claude streaming agentic loop, parallel tool_use, ≤8 раунд, `ask_user` дээр зогсоно) → `executeDataTool` (`lib/ai/data-assistant`, confirm=false → preview → pendingAction). Planner/synthesizer байхгүй: үндсэн туслах RBAC-д тохирсон БҮХ data tool-той (`lib/ai/claude/tools.ts` `dataToolsForPerms`, Gemini schema → `input_schema` хөрвүүлэлт) + `ask_user` (тодруулга → UI chip) + `delegate_to_specialists` (нарийн олон домэйны асуултад `agents.ts` registry-ийн дэд агентуудыг `runAgent.ts`-ээр Sonnet дээр ЗЭРЭГ ажиллуулж, үр дүнг өөрөө нэгтгэнэ).
-- **Prompt** (`prompt.ts`): тогтмол persona+домэйн блок `cache_control`-той эхэнд, shop мэдлэг + `ai_shop_memory` дараа нь, огноо/хэрэглэгч/ярианы хураангуй ХАМГИЙН СҮҮЛД. Claude Opus 5 `temperature` хүлээж авахгүй — `effort` хэрэглэнэ. Алдааг `lib/ai/claude/client.ts` `describeClaudeError` (typed SDK class) — regex string-matching бүү бич.
+### Dashboard AI туслах — GPT Responses orchestrator (`/dashboard/ai-assistant`)
+Модель: **OpenAI GPT** (`openai`, `OPENAI_API_KEY`; `OPENAI_MODEL` анхдагч `gpt-5.6-luna`, `OPENAI_FAST_MODEL` анхдагч `gpt-5.6-luna`). Хуучин `AI_MODEL` / `AI_FAST_MODEL` нь GPT routing-д нөлөөлөхгүй. Түлхүүргүй бол 503; өөр provider руу автоматаар шилжихгүй. Холболтын тайлбар: `docs/AI-GPT-MIGRATION.md`. Gemini зөвхөн FB/IG DM AI (`AIRouter`)-д үлдсэн. Бүрэн review: `docs/AI-REVIEW-2026-09-12.md`.
+- **Бүтэц** (`src/lib/ai/orchestrator/`): `index.ts` (`runOrchestrator`) → `loop.ts` (`runLoop` — Responses streaming agentic loop, parallel reads / sequential writes, ≤8 раунд, `ask_user` дээр зогсоно) → `executeDataTool` (`lib/ai/data-assistant`, confirm=false → preview → pendingAction). Planner/synthesizer байхгүй: үндсэн туслах RBAC-д тохирсон БҮХ data tool-той (`lib/ai/claude/tools.ts` `dataToolsForPerms`, Gemini schema → `input_schema` хөрвүүлэлт) + `ask_user` (тодруулга → UI chip) + `delegate_to_specialists` (нарийн олон домэйны асуултад `agents.ts` registry-ийн дэд агентуудыг `runAgent.ts`-ээр GPT-5.6 Luna дээр ЗЭРЭГ ажиллуулж, үр дүнг өөрөө нэгтгэнэ).
+- **Prompt** (`prompt.ts`): тогтмол persona+домэйн блок `cache_control`-той эхэнд, shop мэдлэг + `ai_shop_memory` дараа нь, огноо/хэрэглэгч/ярианы хураангуй ХАМГИЙН СҮҮЛД. `lib/ai/openai/responses.ts` нь хуучин input/tool бүтцийг Responses хэлбэрт хөрвүүлнэ; `cache_control` provider руу явахгүй. `reasoning.effort` хэрэглэнэ, `temperature` илгээхгүй. Алдааг `lib/ai/openai/client.ts` `describeOpenAIError` ялгана.
 - **Санах ой** (`memory.ts`): 24+ мессежтэй яриаг Sonnet-оор хураангуйлж `ai_conversations.summary`/`summary_message_count`-д (migration `20260912120000`, best-effort) хадгална; хүсэлт бүрт хураангуй + сүүлийн 20 мессеж. `http.ts` `prepareAssistantRequest` уншина, `persistAssistantExchange` → `maybeUpdateSummary`.
 - **SSE event-үүд**: `status`, `tool_start`/`tool_done` (inline «Лид хайж байна… → 12 лид олдлоо»), `step_start`/`step_done` (дэд агент), `token`/`token_reset`, `clarify`, `done` (+`clarification`), `error` (+`code`). UI: `components/ai/AiChat.tsx` (`ActivityView`, тодруулгын chip, олон үйлдэлд «Бүгдийг зөвшөөрөх»; гүйцэтгэсэн/цуцалсан үйлдлийн төлөв дараагийн хүсэлтийн түүхэнд `[Үйлдлийн төлөв: …]` болж ордог), `components/ai-assistant/OrchestrationTrace.tsx` (model, rounds, tools, steps, cache токен).
-- **Dev mock**: development-д `localStorage.vertmonhub_ai_mock = ok|error|delegate|clarify` → client `x-ai-mock` header → stream route Claude дуудахгүй; түлхүүргүй орчинд ч ажиллана. Production-д хэзээ ч идэвхгүй.
+- **Dev mock**: development-д `localStorage.vertmonhub_ai_mock = ok|error|delegate|clarify` → client `x-ai-mock` header → stream route GPT дуудахгүй; түлхүүргүй орчинд ч ажиллана. Production-д хэзээ ч идэвхгүй.
 - **Баталгаажуулалтын бодлого**: 2026-09-11 Wave 0/1 нь БҮХ write tool-ыг confirm-gated болгосон (`executeDataTool` confirm=false → preview). v3 үүн дээр `AUTO_TOOL_NAMES` (tools.ts) нэмсэн: буцаах боломжтой, эрсдэл багатай tool-уудыг loop confirm=**true**-ээр шууд дуудна (audit бичигдэнэ) — эзний «хэлээд хийлгэх» шаардлага. Устгах/гэрээ/төлбөр/гадагш илгээх хэзээ ч AUTO биш.
 - **Service давхарга (wave 1, 2026-09-12)**: уулзалт/ажил/төлбөр/дуудлагын логик `lib/services/{ViewingService,TaskService,PaymentService}.ts` + `lib/leads/activities.ts` (`recordLeadContact`)-д — API route ба AI tool (`lib/ai/data-assistant/actions.ts`) ХОЁУЛАА эндээс дамжина; шинэ tool нэмэхдээ route-ийн логикийг давхардуулахгүй, service гарга. Wave 1 tool-ууд: `list_viewings`, `list_my_tasks`, `list_contract_payments` (read); `log_call`, `set_followup`, `record_viewing_outcome`, `create_task`, `complete_task` (**AUTO** — `AUTO_TOOL_NAMES`, картгүй шууд гүйцэтгэгдэнэ, audit бичигдэнэ); `assign_lead_manager`, `reschedule_viewing`, `add_contract_payment`, `mark_payment_paid` (confirm). `riskTiers.ts` WRITE жагсаалтыг tools.ts-тэй тэнцүү байлгах (drift тест).
 - **Wave 2–4 (2026-09-12)**: `lib/ai/data-assistant/actions2.ts` + service давхарга `lib/services/{CustomerOps,MarketingOps,FinanceOps}.ts`, `lib/reports/manager-performance.ts`, `lib/dashboard/kpi-report-build.ts` (`computeKpiReport` — route ба tool хоёулаа). Tool-ууд: менежер (`get_kpi_report`, `get_manager_performance`, `get_export_link`), харилцагч (`add/remove_customer_tag`, `set_customer_ai_pause` — AUTO; `reply_to_customer`, `merge_customers` — confirm), маркетинг (`list_marketing_spend`, `add_market_indicator` — AUTO; `log_marketing_spend`, `set_marketing_budget` — confirm), санхүү (`get_finance_summary`, `list_finance_transactions`, `list_vendor_bills`; `add_finance_transaction`, `pay_vendor_bill` — confirm). **Модулийн RBAC**: `TOOL_MODULE` (tools.ts) → `dataToolsForPerms` модельд харуулахгүй + `executeDataTool` блоклоно (`AssistantPerms.modules`, http.ts/action route дамжуулна; super_admin бүгд). Мөнгөтэй tool-ууд «үргэлж зөвшөөрөх»-д цээжлэгдэхгүй (`riskTiers.ts NON_REMEMBERABLE`).
@@ -315,7 +331,7 @@ Rules that must not regress:
 
 Active migrations live in `supabase/migrations/`. Old e-commerce migrations are archived in `supabase/skipped_migrations/` for audit.
 
-Key real-estate tables: `shops`, `properties`, `leads`, `property_viewings`, `customers`, `chat_history`, `ai_memory`, `roles`, `role_permissions`, `user_roles`, `push_subscriptions`, plus marketing/survey tables.
+Key real-estate tables: `shops`, `properties`, `leads`, `property_viewings`, `customers`, `chat_history`, `roles`, `role_permissions`, `user_roles`, `push_subscriptions`, plus marketing/survey tables.
 
 Notes (verified against the live DB on 2026-09-11):
 - Legacy e-commerce/SaaS objects are **gone** (migration `20260911140000`: `orders`, `order_items`, `products`, `discount_schedules`, `pending_messages`, `ai_documents`, `ai_agents`, `satisfaction_surveys`, `email_logs`, `facebook_tokens`, `user_facebook_pages`, `hubspot_contacts`, `ai_analytics`, `conversion_funnel`, `ab_experiments*`, views `lead_funnel`/`customer_service_dashboard`, 11 dead functions). Backup JSON/SQL lives in `supabase/backups/2026-09-11-legacy/` (git-ignored). `customers.total_orders/total_spent/is_vip` were dropped in `20260608160000`. The phantom SaaS objects (`admins`, `plans`, `subscriptions`, `invoices`, `ai_memory`, `exec_sql`) never existed — do not write code that queries any of these.
@@ -378,9 +394,9 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 
-# Claude (dashboard AI туслах)
-ANTHROPIC_API_KEY=
-# AI_MODEL=claude-opus-5 / AI_FAST_MODEL=claude-sonnet-5 (заавал биш)
+# OpenAI GPT (dashboard AI туслах)
+OPENAI_API_KEY=
+# OPENAI_MODEL=gpt-5.6-luna / OPENAI_FAST_MODEL=gpt-5.6-luna (заавал биш)
 
 # Gemini (FB/IG DM AI)
 GEMINI_API_KEY=

@@ -60,20 +60,22 @@ export function ContractsPage() {
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
                 <Kpi label="Нийт гэрээ" value={stats ? String(stats.total) : null} sub={stats ? `${stats.active} идэвхтэй · ${stats.closed} хаагдсан` : undefined} />
                 <Kpi label="Нийт борлуулалт" value={stats ? formatMNTShort(stats.total_sales) : null} />
-                <Kpi label="Цуглуулсан" value={stats ? formatMNTShort(stats.total_paid) : null} sub={stats && stats.total_sales > 0 ? `${Math.round((stats.total_paid / stats.total_sales) * 100)}%` : undefined} />
-                <Kpi label="Үлдэгдэл" value={stats ? formatMNTShort(stats.total_balance) : null} sub={stats && stats.overdue_count > 0 ? `${stats.overdue_count} хоцролттой` : undefined} tone={stats && stats.overdue_count > 0 ? 'danger' : undefined} />
+                <Kpi label="Гэрээнд бүртгэсэн төлөлт" value={stats ? formatMNTShort(stats.total_paid) : null} sub={stats && stats.total_sales > 0 ? `${Math.round((stats.total_paid / stats.total_sales) * 100)}%` : undefined} />
+                <Kpi label="Үлдэгдэл" value={stats ? formatMNTShort(stats.total_balance) : null} sub={stats && stats.overdue_count > 0 ? `${stats.overdue_count} гэрээнд хоцролт бүртгэсэн` : undefined} tone={stats && stats.overdue_count > 0 ? 'danger' : undefined} />
             </div>
+
+            <p className="text-xs leading-relaxed text-muted-foreground">Төлөлт, үлдэгдэл, хоцролтыг гэрээний бүртгэлээс харуулав. Энэ нь тухайн сарын мөнгөн орлогын тайлан биш.</p>
 
             {/* Шүүлтүүр */}
             <div className="flex flex-wrap items-center gap-1.5">
                 <Chip value={status} onChange={(v) => { setStatus(v); setPage(1); }} label="Төлөв" options={Object.entries(CONTRACT_STATUS_META).map(([k, m]) => [k, m.label])} />
                 {managers.length > 0 && <Chip value={manager} onChange={(v) => { setManager(v); setPage(1); }} label="Менежер" options={managers.map((m) => [m.name, m.name])} />}
-                <button type="button" onClick={() => { setOverdue((v) => !v); setPage(1); }} className={cn('inline-flex h-[26px] items-center gap-1 rounded-md border px-2.5 text-[12px] focus-ring', overdue ? 'border-status-danger bg-status-danger-soft text-status-danger' : 'border-border bg-surface text-fg-2 hover:border-border-strong')}>
+                <button type="button" onClick={() => { setOverdue((v) => !v); setPage(1); }} className={cn('inline-flex h-9 md:h-[26px] items-center gap-1 rounded-md border px-2.5 text-[12px] focus-ring', overdue ? 'border-status-danger bg-status-danger-soft text-status-danger' : 'border-border bg-surface text-fg-2 hover:border-border-strong')}>
                     <AlertCircle className="h-3 w-3" /> Хоцролттой
                 </button>
                 <div className="relative ml-auto w-full sm:w-64">
                     <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <input value={qInput} onChange={(e) => setQInput(e.target.value)} placeholder="Гэрээний дугаар, нэр, утас, тоот…" className="h-[30px] w-full rounded-md border border-border-strong bg-surface pl-8 pr-2 text-[13px] outline-none placeholder:text-muted-foreground focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]" />
+                    <input aria-label="Гэрээ хайх" value={qInput} onChange={(e) => setQInput(e.target.value)} placeholder="Гэрээний дугаар, нэр, утас, тоот…" className="h-10 md:h-[30px] w-full rounded-md border border-border-strong bg-surface pl-8 pr-2 text-[13px] outline-none placeholder:text-muted-foreground focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]" />
                 </div>
                 <div className="hidden items-center gap-1 sm:flex">
                     <a href="/api/dashboard/export/excel?type=contracts" className="inline-flex h-[28px] items-center gap-1.5 rounded-md border border-border px-2 text-[12px] font-medium text-fg-2 hover:bg-surface-2 hover:text-foreground"><Download className="h-3.5 w-3.5" /> Экспорт</a>
@@ -182,7 +184,7 @@ function Th({ children, onClick, active, dir, right }: { children: React.ReactNo
 function Chip({ value, onChange, label, options }: { value: string; onChange: (v: string) => void; label: string; options: [string, string][] }) {
     const on = value !== 'all';
     return (
-        <label className={cn('relative inline-flex h-[26px] items-center gap-1 rounded-md border pl-2.5 pr-6 text-[12px]', on ? 'border-brand bg-brand-soft text-brand' : 'border-border bg-surface text-fg-2 hover:border-border-strong')}>
+        <label className={cn('relative inline-flex h-9 md:h-[26px] items-center gap-1 rounded-md border pl-2.5 pr-6 text-[12px]', on ? 'border-brand bg-brand-soft text-brand' : 'border-border bg-surface text-fg-2 hover:border-border-strong')}>
             <span className="pointer-events-none whitespace-nowrap">{on ? `${label}: ${options.find((o) => o[0] === value)?.[1] ?? value}` : label}</span>
             <select value={value} onChange={(e) => onChange(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0" aria-label={label}>
                 <option value="all">Бүгд</option>

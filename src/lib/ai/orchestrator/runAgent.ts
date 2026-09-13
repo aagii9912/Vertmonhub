@@ -1,12 +1,12 @@
 /**
  * Дэд агент (specialist) — үндсэн туслах `delegate_to_specialists`-ээр дуудахад
- * тухайн агентын фокустай заавар + tool дэд олонлогоор Claude (FAST_MODEL) дээр
+ * тухайн агентын фокустай заавар + tool дэд олонлогоор GPT (FAST_MODEL) дээр
  * тусдаа loop ажиллуулна. Streaming текст байхгүй (эцсийн хариу үндсэн туслахад очно),
  * гэхдээ tool_start/tool_done/step_* event-үүд UI руу явна.
  */
 
 import { logger } from '@/lib/utils/logger';
-import { FAST_MODEL } from '@/lib/ai/claude/client';
+import { FAST_MODEL } from '@/lib/ai/openai/client';
 import { dataToolsForPerms, pickTools } from '@/lib/ai/claude/tools';
 import { buildSystemBlocks } from './prompt';
 import { runLoop, buildHistory, buildUserContent } from './loop';
@@ -37,8 +37,8 @@ export async function runAgent(agent: AgentDefinition, task: string, ctx: Orches
             agentLabel: { id: agent.id, name: agent.name, emoji: agent.emoji }, maxRounds: 6, effort: 'medium', maxTokens: 4000,
         });
         const latencyMs = Date.now() - started;
-        ctx.onEvent?.({ type: 'step_done', agentId: agent.id, agentName: agent.name, ok: true, latencyMs, toolsUsed: r.toolsUsed });
-        return { text: r.text, data: r.data, chartConfig: r.chartConfig, toolsUsed: r.toolsUsed, latencyMs, tokens: r.usage.input + r.usage.output, ok: true, pendingActions: r.pendingActions };
+        ctx.onEvent?.({ type: 'step_done', agentId: agent.id, agentName: agent.name, ok: !r.interruption, latencyMs, toolsUsed: r.toolsUsed, error: r.interruption?.message });
+        return { model: r.model, usage: r.usage, text: r.text, data: r.data, chartConfig: r.chartConfig, toolsUsed: r.toolsUsed, latencyMs, tokens: r.usage.input + r.usage.output, ok: !r.interruption, pendingActions: r.pendingActions, traceTools: r.traceTools, interruption: r.interruption, error: r.interruption?.message };
     } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown error';
         logger.error('[Orchestrator] sub-agent failed', { agent: agent.id, error: message });

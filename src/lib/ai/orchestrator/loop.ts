@@ -1,5 +1,5 @@
 /**
- * Claude agentic loop — үндсэн туслах ба дэд агент хоёулаа үүнийг ашиглана.
+ * GPT Responses agentic loop — үндсэн туслах ба дэд агент хоёулаа үүнийг ашиглана.
  *
  * Нэг дуудлага = model.stream → (tool_use блокууд байвал) tool гүйцэтгэ → tool_result-уудыг
  * НЭГ user мессежээр буцаа → давт. `end_turn` (эсвэл ask_user) дээр зогсоно.
@@ -7,17 +7,18 @@
  * («Лидийг шалгая…») хадгалагдаж, дараагийн раундын текст хоосон мөрөөр залгагдана.
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import type Anthropic from '@anthropic-ai/sdk';
 import { randomUUID } from 'crypto';
 import { logger } from '@/lib/utils/logger';
 import { executeDataTool } from '@/lib/ai/data-assistant';
 import { generateChartConfig } from '@/lib/ai/data-assistant/functions';
-import { claude } from '@/lib/ai/claude/client';
+import { streamResponse, responseText, toResponseInput, toResponseTools } from '@/lib/ai/openai/responses';
+import { describeOpenAIError } from '@/lib/ai/openai/client';
 import { ASK_USER_TOOL } from '@/lib/ai/claude/tools';
-import { AUTO_TOOL_NAMES } from '@/lib/ai/data-assistant/tools';
+import { AUTO_TOOL_NAMES, MUTATING_TOOL_NAMES } from '@/lib/ai/data-assistant/tools';
 
 const AUTO_SET = new Set(AUTO_TOOL_NAMES);
-import type { AgentId, Clarification, HistoryMessage, OrchestratorAttachment, OrchestratorContext, PendingAction, TraceTool } from './types';
+import type { AgentId, Clarification, HistoryMessage, OrchestratorAttachment, OrchestratorContext, PendingAction, RunInterruption, TraceTool } from './types';
 
 export const MAX_HISTORY = 20;
 export const MAX_ROUNDS = 8;
@@ -139,6 +140,7 @@ export interface LoopOptions {
 }
 
 export interface LoopResult {
+    model: string;
     text: string;
     data: unknown;
     chartConfig: unknown;
@@ -149,11 +151,15 @@ export interface LoopResult {
     rounds: number;
     usage: { input: number; output: number; cacheRead: number };
     stopReason: string | null;
+    interruption?: RunInterruption;
 }
 
 export async function runLoop(o: LoopOptions): Promise<LoopResult> {
-    const client = claude();
-    const messages = [...o.messages];
+    const input = toResponseInput(o.messages);
+    const instructions = o.system.map((block) => block.text).join('\n\n');
+    const responseTools = toResponseTools(o.tools);
+    const allowedNames = new Set(o.tools.map((t) => t.name));
+    const mutationResults = new Map<string, Anthropic.ToolResultBlockParam>();
     const toolsUsed: string[] = [];
     const traceTools: TraceTool[] = [];
     const pendingActions: PendingAction[] = [];
@@ -164,6 +170,8 @@ export async function runLoop(o: LoopOptions): Promise<LoopResult> {
     /** Раунд бүрийн текст — tool дуудлагын өмнөх «одоо шалгая…» маягийн товч тайлбар ХАДГАЛАГДАНА (ChatGPT/Claude маяг). */
     const textChunks: string[] = [];
     let stopReason: string | null = null;
+    let interruption: RunInterruption | undefined;
+    let usedModel = o.model;
     let rounds = 0;
     const maxRounds = o.maxRounds ?? MAX_ROUNDS;
     const streaming = o.streamText && !!o.ctx.onEvent;
@@ -171,129 +179,168 @@ export async function runLoop(o: LoopOptions): Promise<LoopResult> {
     let needSeparator = false;
 
     for (rounds = 1; rounds <= maxRounds; rounds++) {
-        // Client цуцалсан → цааш Claude/DB дуудахгүй; хугацаа хэтэрсэн → байгаа хариугаар дуусгана.
-        if (o.ctx.signal?.aborted) throw new Error('Хүсэлт цуцлагдлаа (abort)');
-        if (rounds > 1 && o.ctx.deadlineAt && Date.now() > o.ctx.deadlineAt) {
-            logger.warn('[Orchestrator] deadline reached, stopping tool rounds', { rounds });
-            rounds = maxRounds + 1;
-            break;
-        }
-        const stream = client.messages.stream(
-            {
-                model: o.model,
-                max_tokens: o.maxTokens ?? 8000,
-                system: o.system,
-                tools: o.tools,
-                messages,
-                thinking: { type: 'adaptive' },
-                output_config: { effort: o.effort ?? 'medium' },
-            },
-            { signal: o.ctx.signal },
-        );
-        if (streaming) {
+        try {
+            // Client цуцалсан → цааш GPT/DB дуудахгүй; хугацаа хэтэрсэн → байгаа хариугаар дуусгана.
+            o.ctx.signal?.throwIfAborted();
+            if (rounds > 1 && o.ctx.deadlineAt && Date.now() > o.ctx.deadlineAt) {
+                throw new DOMException('AI deadline reached', 'TimeoutError');
+            }
             let first = true;
-            stream.on('text', (delta) => {
-                if (!delta) return;
-                if (first && needSeparator) { emit!({ type: 'token', text: '\n\n' }); }
-                first = false;
-                emit!({ type: 'token', text: delta });
+            const msg = await streamResponse({
+                model: o.model, instructions, input, tools: responseTools,
+                signal: o.ctx.signal, deadlineAt: o.ctx.deadlineAt,
+                effort: o.effort, maxTokens: o.maxTokens,
+                onText: streaming ? (delta) => {
+                    if (!delta) return;
+                    if (first && needSeparator) emit!({ type: 'token', text: '\n\n' });
+                    first = false;
+                    emit!({ type: 'token', text: delta });
+                } : undefined,
             });
-        }
-        const msg = await stream.finalMessage();
-        usage.input += msg.usage.input_tokens;
-        usage.output += msg.usage.output_tokens;
-        usage.cacheRead += msg.usage.cache_read_input_tokens ?? 0;
-        stopReason = msg.stop_reason;
+            usage.input += msg.usage?.input_tokens ?? 0;
+            usedModel = msg.model || o.model;
+            usage.output += msg.usage?.output_tokens ?? 0;
+            usage.cacheRead += msg.usage?.input_tokens_details.cached_tokens ?? 0;
+            stopReason = msg.status ?? null;
+            const roundText = responseText(msg);
+            if (roundText) { textChunks.push(roundText); needSeparator = true; }
+            const toolUses = msg.output.filter((item) => item.type === 'function_call').map((item) => ({
+                id: item.call_id, name: item.name, arguments: item.arguments,
+            }));
+            // Preserve encrypted reasoning and exact call IDs across every tool round.
+            input.push(...msg.output.filter((item) => item.type === 'message' || item.type === 'reasoning' || item.type === 'function_call'));
+            if (toolUses.length === 0) break;
 
-        const roundText = msg.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('\n').trim();
-        if (roundText) { textChunks.push(roundText); needSeparator = true; }
-        const toolUses = msg.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
+            // Бичих үйлдлүүдийг дарааллаар гүйцэтгэнэ; тодруулга шаардвал бусад үйлдлийг хүлээлгэнэ.
+            const execute = async (tu: typeof toolUses[number]): Promise<Anthropic.ToolResultBlockParam> => {
+                o.ctx.signal?.throwIfAborted();
+                if (o.ctx.deadlineAt && Date.now() >= o.ctx.deadlineAt) throw new DOMException('AI deadline reached', 'TimeoutError');
+                let args: Record<string, unknown>;
+                try {
+                    const parsed: unknown = JSON.parse(tu.arguments);
+                    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid arguments');
+                    args = parsed as Record<string, unknown>;
+                } catch {
+                    return { type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify({ error: 'Tool аргумент буруу JSON object байна. Үйлдэл хийгдээгүй.' }), is_error: true };
+                }
+                if (!allowedNames.has(tu.name)) return { type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify({ error: 'Энэ агентад зөвшөөрөөгүй үйлдэл.' }), is_error: true };
+                const mutationKey = `${tu.name}:${JSON.stringify(args, (_key, value) => value && typeof value === 'object' && !Array.isArray(value) ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))) : value)}`;
+                const previous = mutationResults.get(mutationKey);
+                if (previous) return { ...previous, tool_use_id: tu.id };
+                const started = Date.now();
+                toolsUsed.push(tu.name);
 
-        if (msg.stop_reason === 'refusal') {
-            textChunks.push('Уучлаарай, энэ хүсэлтэд хариулах боломжгүй байна.');
+                // ask_user — тодруулга: loop-ийг зогсооно.
+                if (tu.name === ASK_USER_TOOL.name) {
+                    const options = Array.isArray(args.options) ? (args.options as unknown[]).map(String).filter(Boolean).slice(0, 5) : [];
+                    clarification = { question: String(args.question || ''), options };
+                    emit?.({ type: 'clarify', question: clarification.question, options });
+                    return { type: 'tool_result', tool_use_id: tu.id, content: 'Асуулт хэрэглэгчид харуулагдлаа. Хариугаа энд дуусга.' };
+                }
+
+                emit?.({ type: 'tool_start', id: tu.id, tool: tu.name, args, agentId: o.agentId });
+
+                // Давхар pending үйлдэл үүсгэхгүй.
+                const dupKey = `${tu.name}:${JSON.stringify(args)}`;
+                if (pendingActions.some((p) => `${p.tool}:${JSON.stringify(p.args)}` === dupKey)) {
+                    emit?.({ type: 'tool_done', id: tu.id, tool: tu.name, ok: true, summary: 'Баталгаажуулалт хүлээж байна', latencyMs: 0, agentId: o.agentId });
+                    return { type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify({ status: 'awaiting_user_confirmation', note: 'Аль хэдийн баталгаажуулалт хүлээж байна. Дахин бүү дууд.' }) };
+                }
+
+                let result: unknown;
+                let isError = false;
+                try {
+                    result = o.customTools?.[tu.name]
+                        ? await o.customTools[tu.name](args)
+                        // Эрсдэл багатай (AUTO) tool → картгүй шууд гүйцэтгэнэ (audit бичигдэнэ); бусад mutating → preview.
+                        : await executeDataTool(tu.name, args, o.ctx.shopId, o.ctx.perms, o.ctx.userId, AUTO_SET.has(tu.name), o.ctx.userName || '');
+                } catch (e) {
+                    isError = true;
+                    result = { error: e instanceof Error ? e.message : 'Tool алдаа' };
+                    logger.error('[Orchestrator] tool failed', { tool: tu.name, error: result });
+                }
+
+                const r = result as { requiresConfirmation?: boolean; action?: { tool: string; args?: Record<string, unknown> }; label?: string; preview?: Record<string, unknown> } | null;
+                let content: string;
+                if (r && r.requiresConfirmation && r.action) {
+                    pendingActions.push({
+                        id: randomUUID(), tool: r.action.tool, args: r.action.args || {}, label: r.label || 'Үйлдэл', preview: r.preview || {},
+                        agentId: o.agentLabel.id, agentName: o.agentLabel.name, emoji: o.agentLabel.emoji,
+                    });
+                    content = JSON.stringify({ status: 'awaiting_user_confirmation', label: r.label, preview: r.preview, note: 'Хэрэглэгч UI картаас батална. Энэ tool-ыг ДАХИН БҮҮ ДУУД; товч мэдэгд.' });
+                } else {
+                    content = JSON.stringify(result ?? null);
+                    if (!o.customTools?.[tu.name]) {
+                        data = result;
+                        chartConfig = generateChartConfig(tu.name, args, result) || chartConfig;
+                    }
+                }
+                const s = summarizeToolResult(tu.name, result);
+                const latencyMs = Date.now() - started;
+                traceTools.push({ tool: tu.name, agentId: o.agentId ?? 'main', ok: s.ok && !isError, latencyMs, summary: s.summary });
+                emit?.({ type: 'tool_done', id: tu.id, tool: tu.name, ok: s.ok && !isError, summary: s.summary, latencyMs, agentId: o.agentId });
+                // Хэт том үр дүнг таслана (контекст хамгаалалт, ~40k тэмдэгт).
+                if (content.length > 40_000) content = content.slice(0, 40_000) + '…[тасалсан]';
+                const output: Anthropic.ToolResultBlockParam = { type: 'tool_result', tool_use_id: tu.id, content, is_error: isError || !s.ok || undefined };
+                if (MUTATING_TOOL_NAMES.includes(tu.name)) mutationResults.set(mutationKey, output);
+                return output;
+            };
+            // Reads can run together; writes execute in model order to avoid racing dependent changes.
+            const readsOnly = toolUses.every((tu) => !MUTATING_TOOL_NAMES.includes(tu.name) && !o.customTools?.[tu.name]);
+            const results: Anthropic.ToolResultBlockParam[] = [];
+            const question = toolUses.find((tu) => tu.name === ASK_USER_TOOL.name);
+            if (question) results.push(await execute(question));
+            else if (readsOnly) results.push(...await Promise.all(toolUses.map(execute)));
+            else for (const tu of toolUses) results.push(await execute(tu));
+            input.push(...results.map((r) => ({ type: 'function_call_output' as const, call_id: r.tool_use_id, output: String(r.content ?? '') })));
+
+
+            if (clarification) break;
+        } catch (error) {
+            // A later provider/deadline failure does not undo earlier DB work or pending previews.
+            if (!traceTools.length && !pendingActions.length) throw error;
+            const { code, message } = describeOpenAIError(error);
+            interruption = { code, message };
+            stopReason = 'interrupted';
+            logger.warn('[Orchestrator] returning partial results', { code, tools: traceTools.length });
             break;
         }
-        if (toolUses.length === 0 || msg.stop_reason !== 'tool_use') break;
-
-        messages.push({ role: 'assistant', content: msg.content });
-
-        // Бүх tool-ыг зэрэг гүйцэтгээд НЭГ user мессежээр буцаана (parallel tool use).
-        const results = await Promise.all(toolUses.map(async (tu): Promise<Anthropic.ToolResultBlockParam> => {
-            const args = (tu.input || {}) as Record<string, unknown>;
-            const started = Date.now();
-            toolsUsed.push(tu.name);
-
-            // ask_user — тодруулга: loop-ийг зогсооно.
-            if (tu.name === ASK_USER_TOOL.name) {
-                const options = Array.isArray(args.options) ? (args.options as unknown[]).map(String).filter(Boolean).slice(0, 5) : [];
-                clarification = { question: String(args.question || ''), options };
-                emit?.({ type: 'clarify', question: clarification.question, options });
-                return { type: 'tool_result', tool_use_id: tu.id, content: 'Асуулт хэрэглэгчид харуулагдлаа. Хариугаа энд дуусга.' };
-            }
-
-            emit?.({ type: 'tool_start', id: tu.id, tool: tu.name, args, agentId: o.agentId });
-
-            // Давхар pending үйлдэл үүсгэхгүй.
-            const dupKey = `${tu.name}:${JSON.stringify(args)}`;
-            if (pendingActions.some((p) => `${p.tool}:${JSON.stringify(p.args)}` === dupKey)) {
-                emit?.({ type: 'tool_done', id: tu.id, tool: tu.name, ok: true, summary: 'Баталгаажуулалт хүлээж байна', latencyMs: 0, agentId: o.agentId });
-                return { type: 'tool_result', tool_use_id: tu.id, content: JSON.stringify({ status: 'awaiting_user_confirmation', note: 'Аль хэдийн баталгаажуулалт хүлээж байна. Дахин бүү дууд.' }) };
-            }
-
-            let result: unknown;
-            let isError = false;
-            try {
-                result = o.customTools?.[tu.name]
-                    ? await o.customTools[tu.name](args)
-                    // Эрсдэл багатай (AUTO) tool → картгүй шууд гүйцэтгэнэ (audit бичигдэнэ); бусад mutating → preview.
-                    : await executeDataTool(tu.name, args, o.ctx.shopId, o.ctx.perms, o.ctx.userId, AUTO_SET.has(tu.name), o.ctx.userName || '');
-            } catch (e) {
-                isError = true;
-                result = { error: e instanceof Error ? e.message : 'Tool алдаа' };
-                logger.error('[Orchestrator] tool failed', { tool: tu.name, error: result });
-            }
-
-            const r = result as { requiresConfirmation?: boolean; action?: { tool: string; args?: Record<string, unknown> }; label?: string; preview?: Record<string, unknown> } | null;
-            let content: string;
-            if (r && r.requiresConfirmation && r.action) {
-                pendingActions.push({
-                    id: randomUUID(), tool: r.action.tool, args: r.action.args || {}, label: r.label || 'Үйлдэл', preview: r.preview || {},
-                    agentId: o.agentLabel.id, agentName: o.agentLabel.name, emoji: o.agentLabel.emoji,
-                });
-                content = JSON.stringify({ status: 'awaiting_user_confirmation', label: r.label, preview: r.preview, note: 'Хэрэглэгч UI картаас батална. Энэ tool-ыг ДАХИН БҮҮ ДУУД; товч мэдэгд.' });
-            } else {
-                content = JSON.stringify(result ?? null);
-                if (!o.customTools?.[tu.name]) {
-                    data = result;
-                    chartConfig = generateChartConfig(tu.name, args, result) || chartConfig;
-                }
-            }
-            const s = summarizeToolResult(tu.name, result);
-            const latencyMs = Date.now() - started;
-            traceTools.push({ tool: tu.name, agentId: o.agentId ?? 'main', ok: s.ok && !isError, latencyMs, summary: s.summary });
-            emit?.({ type: 'tool_done', id: tu.id, tool: tu.name, ok: s.ok && !isError, summary: s.summary, latencyMs, agentId: o.agentId });
-            // Хэт том үр дүнг таслана (контекст хамгаалалт, ~40k тэмдэгт).
-            if (content.length > 40_000) content = content.slice(0, 40_000) + '…[тасалсан]';
-            return { type: 'tool_result', tool_use_id: tu.id, content, is_error: isError || undefined };
-        }));
-        messages.push({ role: 'user', content: results });
-
-        if (clarification) break;
     }
 
     let finalText = textChunks.join('\n\n').trim();
-    if (!finalText && rounds > maxRounds) {
+    if (!interruption && rounds > maxRounds && (o.ctx.signal?.aborted || (o.ctx.deadlineAt && Date.now() >= o.ctx.deadlineAt - 2000))) {
+        const { code, message } = describeOpenAIError(new DOMException('AI deadline reached', 'TimeoutError'));
+        interruption = { code, message };
+        stopReason = 'interrupted';
+    }
+    if (!interruption && rounds > maxRounds && !o.ctx.signal?.aborted && (!o.ctx.deadlineAt || Date.now() < o.ctx.deadlineAt - 2000)) {
         // Раундын хязгаар — цуглуулсан мэдээллээр эцсийн хариу бичүүлнэ (tool-гүй).
         try {
-            const closing = await client.messages.create({
-                model: o.model, max_tokens: 2000, system: o.system,
-                messages: [...messages, { role: 'user', content: 'Tool дуудлагын хязгаарт хүрлээ. Одоо цуглуулсан мэдээлэлдээ үндэслэн эцсийн хариугаа монголоор товч бич.' }],
-                thinking: { type: 'adaptive' }, output_config: { effort: 'low' },
+            const closing = await streamResponse({
+                model: o.model, maxTokens: 2000, instructions, tools: [],
+                input: [...input, { role: 'user', content: 'Tool дуудлагын хязгаарт хүрлээ. Цуглуулсан мэдээлэлдээ үндэслэн хийгдсэн болон хүлээгдэж буй ажлыг ялгаж монголоор товч бич.' }],
+                signal: o.ctx.signal, deadlineAt: o.ctx.deadlineAt, effort: 'low',
             });
-            finalText = closing.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('\n').trim();
-            if (streaming && finalText) emit!({ type: 'token', text: (needSeparator ? '\n\n' : '') + finalText });
-            usage.input += closing.usage.input_tokens; usage.output += closing.usage.output_tokens;
-        } catch { /* доорх fallback */ }
+            const conclusion = responseText(closing);
+            finalText = [finalText, conclusion].filter(Boolean).join('\n\n');
+            if (streaming && conclusion) emit!({ type: 'token', text: (needSeparator ? '\n\n' : '') + conclusion });
+            usage.input += closing.usage?.input_tokens ?? 0;
+            usage.output += closing.usage?.output_tokens ?? 0;
+            usage.cacheRead += closing.usage?.input_tokens_details.cached_tokens ?? 0;
+        } catch (error) {
+            const { code, message } = describeOpenAIError(error);
+            interruption = { code, message };
+            stopReason = 'interrupted';
+        }
+    }
+    if (interruption) {
+        const actions = traceTools.filter(t => MUTATING_TOOL_NAMES.includes(t.tool));
+        finalText = [
+            'Ажиллагаа бүрэн дууссангүй. Өмнө хийгдсэн үйлдлийг дахин ажиллуулахгүйгээр бүртгэлээ шалгаад үргэлжлүүлнэ үү.',
+            ...actions.map(t => `- ${t.ok ? '✓' : '⚠'} ${t.summary}`),
+            pendingActions.length ? `${pendingActions.length} үйлдэл гүйцэтгэгдээгүй, таны баталгаажуулалтыг хүлээж байна.` : '',
+        ].filter(Boolean).join('\n');
+        if (streaming) { emit!({ type: 'token_reset' }); emit!({ type: 'token', text: finalText }); }
     }
     if (!finalText.trim()) {
         if (pendingActions.length > 0) finalText = `${pendingActions.length} үйлдэл таны баталгаажуулалтыг хүлээж байна — доорх картаас зөвшөөрнө үү.`;
@@ -302,5 +349,5 @@ export async function runLoop(o: LoopOptions): Promise<LoopResult> {
         else throw new Error('Empty model response');
     }
 
-    return { text: finalText, data, chartConfig, toolsUsed, traceTools, pendingActions, clarification, rounds: Math.min(rounds, maxRounds), usage, stopReason };
+    return { model: usedModel, text: finalText, data, chartConfig, toolsUsed, traceTools, pendingActions, clarification, interruption, rounds: Math.min(rounds, maxRounds), usage, stopReason };
 }

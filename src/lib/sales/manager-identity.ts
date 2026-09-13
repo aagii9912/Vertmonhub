@@ -33,6 +33,22 @@ export interface ManagerIdentity {
     rosterEmpty: boolean;
 }
 
+/** Бичилт хийхэд зөвхөн тухайн shop-ийн идэвхтэй бүртгэлийн канон нэрийг зөвшөөрнө. */
+export async function resolveActiveManagerName(
+    db: SupabaseClient,
+    shopId: string,
+    name: unknown,
+): Promise<{ ok: true; managerName: string } | { ok: false; error: string; status: number }> {
+    if (typeof name !== 'string' || !name.trim() || name.trim().length > 120) {
+        return { ok: false, error: 'Борлуулалтын менежерийн нэрийг зөв оруулна уу', status: 400 };
+    }
+    const { data, error } = await db.from('sales_managers').select('name')
+        .eq('shop_id', shopId).eq('is_active', true).eq('name', name.trim()).maybeSingle();
+    if (error) return { ok: false, error: 'Менежерийн бүртгэл шалгахад алдаа гарлаа', status: 500 };
+    if (!data) return { ok: false, error: 'Тухайн байгууллагын идэвхтэй борлуулалтын менежерийг сонгоно уу', status: 400 };
+    return { ok: true, managerName: data.name };
+}
+
 /**
  * PURE: roster-оос хэрэглэгчид таарах бүртгэлийг олно.
  * user_id таарц нэрийн таарцаас давамгайлна.

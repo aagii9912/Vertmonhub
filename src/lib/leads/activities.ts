@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
- * lead_activities туслахууд — миграци хийгдээгүй орчинд ЧИМЭЭГҮЙ алгасна
- * (бичилт null буцаана, уншилт хоосон), лидийн үндсэн урсгал хэзээ ч тасрахгүй.
+ * Түүхийн нэмэлт лог/уншилт нь best-effort. Хэрэглэгчийн үндсэн бичилт
+ * (recordLeadContact) хадгалалт бүрийг шалгаж, хэсэгчилсэн алдааг ил тод буцаана.
  */
 
 export type LeadActivityType = 'note' | 'call' | 'status' | 'manager' | 'meeting' | 'contract' | 'system';
@@ -69,18 +69,45 @@ export async function listLeadActivities(db: SupabaseClient, shopId: string, lea
 /**
  * Дуудлага/тэмдэглэл бүртгэх + лидийн last_contact_at / next_followup_at шинэчлэх —
  * API route (`POST /leads/[id]/activities`) ба AI tool (`log_call`, `set_followup`) хоёулаа энд дамжина.
+ * ok=true зөвхөн бүх хадгалалт амжилттай үед. partialSuccess=true бол лидийн цаг
+ * шинэчлэгдсэн ч түүх хадгалагдаагүй; дуудагч алдааг харуулж, дэлгэцийн өгөгдлийг шинэчилнэ.
  */
 export async function recordLeadContact(
     db: SupabaseClient,
     input: { shopId: string; leadId: string; type: 'note' | 'call'; content: string; nextFollowupAt?: string | null; userId?: string | null; managerName?: string | null },
-): Promise<{ activity: LeadActivity | null }> {
+): Promise<
+    { ok: true; activity: LeadActivity }
+    | { ok: false; error: string; status: number; partialSuccess?: boolean }
+> {
+    const { data: lead, error: readError } = await db.from('leads').select('id')
+        .eq('id', input.leadId).eq('shop_id', input.shopId).is('deleted_at', null).maybeSingle();
+    if (readError) return { ok: false, error: 'Лид шалгахад алдаа гарлаа', status: 500 };
+    if (!lead) return { ok: false, error: 'Лид олдсонгүй', status: 404 };
+
+    const now = new Date().toISOString();
+    const updates: Record<string, unknown> = { updated_at: now };
+    if (input.type === 'call') updates.last_contact_at = now;
+    if (input.nextFollowupAt !== undefined) updates.next_followup_at = input.nextFollowupAt;
+    const changesLead = Object.keys(updates).length > 1;
+    if (changesLead) {
+        const { data, error } = await db.from('leads').update(updates)
+            .eq('id', input.leadId).eq('shop_id', input.shopId).is('deleted_at', null).select('id').maybeSingle();
+        if (error) return { ok: false, error: 'Лидийн холбооны мэдээлэл шинэчлэгдсэнгүй. Бүртгэл хадгалагдаагүй.', status: 500 };
+        if (!data) return { ok: false, error: 'Лид олдсонгүй. Бүртгэл хадгалагдаагүй.', status: 404 };
+    }
+
     const activity = await logLeadActivity(db, {
         shopId: input.shopId, leadId: input.leadId, type: input.type, content: input.content,
+        meta: input.nextFollowupAt !== undefined ? { next_followup_at: input.nextFollowupAt } : {},
         createdBy: input.userId ?? null, createdByName: input.managerName ?? null,
     });
-    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
-    if (input.type === 'call') updates.last_contact_at = new Date().toISOString();
-    if (input.nextFollowupAt !== undefined) updates.next_followup_at = input.nextFollowupAt;
-    if (Object.keys(updates).length > 1) await db.from('leads').update(updates).eq('id', input.leadId);
-    return { activity };
+    if (!activity) {
+        return {
+            ok: false, status: 500, partialSuccess: changesLead,
+            error: changesLead
+                ? 'Лидийн холбооны цаг шинэчлэгдсэн боловч дуудлага/тэмдэглэлийн түүх хадгалагдсангүй. Лидээ нээж шалгана уу.'
+                : 'Тэмдэглэл хадгалагдсангүй. Дахин оролдоно уу.',
+        };
+    }
+    return { ok: true, activity };
 }

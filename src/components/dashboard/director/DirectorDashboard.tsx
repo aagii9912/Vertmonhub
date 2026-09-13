@@ -1,5 +1,7 @@
 'use client';
 
+import { Alert } from '@/components/ui/Alert';
+import { Button } from '@/components/ui/Button';
 import React, { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ChevronRight, AlertCircle, ArrowRight, RefreshCw } from 'lucide-react';
@@ -24,7 +26,7 @@ export function DirectorDashboard({ actions }: { actions?: React.ReactNode }) {
     useRegisterAiContext({ type: 'dashboard' });
     const now = new Date();
     const [ym, setYm] = useState({ year: now.getFullYear(), month: now.getMonth() + 1 });
-    const { data, isLoading, isFetching, refetch } = useDirector(ym.year, ym.month);
+    const { data, isLoading, isFetching, isError, error, refetch } = useDirector(ym.year, ym.month);
 
     const shift = (d: number) => {
         const m = ym.month + d;
@@ -34,8 +36,19 @@ export function DirectorDashboard({ actions }: { actions?: React.ReactNode }) {
     };
     const isCurrent = ym.year === now.getFullYear() && ym.month === now.getMonth() + 1;
 
+    if (!isLoading && !data) {
+        return <Alert variant="danger">
+            {error instanceof Error ? error.message : 'Самбарын мэдээллийг ачаалж чадсангүй.'}
+            <Button size="sm" variant="secondary" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</Button>
+        </Alert>;
+    }
+
     return (
         <div className="flex flex-col gap-4">
+            {isError && <Alert variant="warning">
+                Мэдээллийг шинэчилж чадсангүй. Өмнө ачаалсан мэдээлэл харагдаж байна.
+                <Button size="sm" variant="secondary" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</Button>
+            </Alert>}
             {/* Толгойн мөр: сар сонгогч */}
             <div className="flex flex-wrap items-center gap-2">
                 <div className="inline-flex h-[30px] items-center rounded-md border border-border-strong bg-surface">
@@ -65,7 +78,8 @@ export function DirectorDashboard({ actions }: { actions?: React.ReactNode }) {
             {data?.missing?.length ? (
                 <div className="flex items-center gap-2 rounded-md border border-status-pending/30 bg-status-pending-soft px-3 py-2 text-[12px] text-status-pending">
                     <AlertCircle className="h-4 w-4 shrink-0" />
-                    Зарим хэсгийн өгөгдөл олдсонгүй: {data.missing.join(', ')}. Миграци хийгдээгүй байж болно.
+                    Зарим хэсгийн мэдээллийг ачаалж чадсангүй. Үзүүлэлтүүд дутуу байж болно.
+                    <button type="button" className="underline focus-ring" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</button>
                 </div>
             ) : null}
 
@@ -216,13 +230,16 @@ function Receivables({ data, loading }: { data?: ReturnType<typeof useDirector>[
             ) : (
                 <>
                     <div className="flex flex-col gap-2 border-b border-border p-4">
-                        {r.count > 0 ? (
+                        <p className="text-[12px] font-medium text-fg-2">Төлбөрийн хуваарийн хоцролт · өнөөдрийн байдлаар</p>
+                        {data?.missing?.includes('receivables') ? (
+                            <p role="alert" className="text-[12px] text-status-pending">Төлбөрийн хуваарийг уншиж чадсангүй. Хоцролтыг тооцоогүй.</p>
+                        ) : r.count > 0 ? (
                             <>
                                 <div className="flex items-center gap-1.5 text-[12px] font-medium text-status-danger"><AlertCircle className="h-3.5 w-3.5" /> Хугацаа хэтэрсэн · {r.count} гэрээ</div>
                                 <div className="num text-[22px] font-semibold tracking-[-0.02em] text-status-danger">{formatMNTShort(r.total)}</div>
                                 <div className="flex flex-col">
                                     {r.items.map((it) => (
-                                        <Link key={it.contractId} href={`/dashboard/contracts?id=${it.contractId}`} className="flex items-center gap-2 border-b border-border py-2 last:border-b-0 hover:bg-surface-2/60">
+                                        <Link key={it.contractId} href={`/dashboard/contracts/${it.contractId}`} className="flex items-center gap-2 border-b border-border py-2 last:border-b-0 hover:bg-surface-2/60">
                                             <span className="min-w-0 flex-1 truncate text-[12.5px] font-medium text-foreground">{it.customer}</span>
                                             <span className="num text-[12.5px] text-fg-2">{formatMNTShort(it.amount)}</span>
                                             <Pill tone="danger">{it.daysOverdue} хоног</Pill>
@@ -231,8 +248,10 @@ function Receivables({ data, loading }: { data?: ReturnType<typeof useDirector>[
                                 </div>
                             </>
                         ) : (
-                            <div className="text-[12.5px] text-muted-foreground">Хугацаа хэтэрсэн төлбөр алга</div>
+                            <div className="text-[12.5px] text-muted-foreground">Төлбөрийн хуваарьт хоцролт бүртгэгдээгүй</div>
                         )}
+                        <p className="text-[12px] leading-relaxed text-muted-foreground">Зөвхөн бүртгэсэн төлбөрийн хуваарийг тооцов. Гэрээнд өмнө бүртгэсэн хоцролтоос ялгаатай байж болно.</p>
+                        <Link href="/dashboard/contracts" className="text-[12px] text-brand hover:underline">Гэрээний бүртгэл шалгах</Link>
                         {r.outstandingTotal > 0 && (
                             <div className="flex items-center justify-between text-[12px] text-muted-foreground">
                                 <span>Нийт авлага (идэвхтэй гэрээ)</span>

@@ -8,7 +8,8 @@ import React from 'react';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { render } from '@testing-library/react';
 
-import { readTools, writeTools, deleteTools, adminTools, MUTATING_TOOL_NAMES, WRITE_TOOL_NAMES, AUTO_TOOL_NAMES, TOOL_MODULE } from '@/lib/ai/data-assistant/tools';
+import { readTools, writeTools, deleteTools, adminTools, MUTATING_TOOL_NAMES, WRITE_TOOL_NAMES, AUTO_TOOL_NAMES, TOOL_MODULE, canUseToolModule } from '@/lib/ai/data-assistant/tools';
+import { ROLE_PERMISSIONS } from '@/lib/rbac';
 import { paymentStatus } from '@/lib/services/PaymentService';
 import { AGENT_LIST } from '@/lib/ai/orchestrator/agents';
 import { MarkdownMessage } from '@/components/ai-assistant/MarkdownMessage';
@@ -60,7 +61,7 @@ describe('Claude tool хөрвүүлэлт (Gemini schema → input_schema)', ()
         expect(props.modules.items?.type).toBe('string');
     });
     it('RBAC: viewer зөвхөн read tool, super_admin бүгд; e-commerce tool нуугдана', () => {
-        const viewer = dataToolsForPerms({ canWrite: false, canDelete: false, role: 'viewer' }).map((t) => t.name);
+        const viewer = dataToolsForPerms({ canWrite: false, canDelete: false, role: 'viewer', modules: ['leads'] }).map((t) => t.name);
         expect(viewer).toContain('list_leads');
         expect(viewer).not.toContain('create_lead');
         expect(viewer).not.toContain('list_orders');
@@ -121,13 +122,37 @@ describe('Wave 1 — өдөр тутмын tool-ууд', () => {
         expect(withFinance).not.toContain('get_kpi_report');
         const sup = dataToolsForPerms({ canWrite: true, canDelete: true, role: 'super_admin', modules: [] }).map((t) => t.name);
         expect(sup).toContain('get_finance_summary');
-        // modules өгөөгүй (хуучин дуудагч) → шүүлтгүй
-        expect(dataToolsForPerms(base).map((t) => t.name)).toContain('get_finance_summary');
-        Object.keys(TOOL_MODULE).forEach((t) => expect([...readTools, ...writeTools].map((x: { name: string }) => x.name), t).toContain(t));
+        // Missing permissions cannot silently grant access to legacy callers.
+        expect(dataToolsForPerms(base)).toEqual([]);
+        const allNames = [...readTools, ...writeTools, ...deleteTools, ...adminTools].map((x: { name: string }) => x.name);
+        expect(Object.keys(TOOL_MODULE).sort()).toEqual(allNames.sort());
     });
     it('executeDataTool модулийн эрхийг шалгана (DB-д хүрэхгүй)', async () => {
         const r = await executeDataTool('get_finance_summary', {}, 'shop1', { canWrite: true, canDelete: false, role: 'admin', modules: ['dashboard'] }, 'u1', false, '');
         expect(r.error).toMatch(/finance/);
+    });
+    it('marketing cannot read or mutate contracts, properties or viewings through AI', async () => {
+        const perms = { ...ROLE_PERMISSIONS.marketing, role: 'marketing' };
+        const visible = dataToolsForPerms(perms).map(tool => tool.name);
+        for (const tool of ['list_contracts', 'get_contract_details', 'create_contract', 'add_contract_payment', 'mark_payment_paid', 'update_property_price', 'schedule_viewing']) {
+            expect(visible).not.toContain(tool);
+            expect(await executeDataTool(tool, {}, 'shop1', perms, 'u1', true)).toHaveProperty('error');
+        }
+        expect(visible).toContain('list_leads');
+        expect(visible).toContain('get_marketing_summary');
+        expect(canUseToolModule('attach_file', perms, { entity_type: 'lead' })).toBe(true);
+        expect(await executeDataTool('attach_file', { entity_type: 'contract' }, 'shop1', perms, 'u1', true)).toHaveProperty('error');
+    });
+    it('fails closed for missing module permissions and unmapped tools, including new tools', async () => {
+        expect(await executeDataTool('list_leads', {}, 'shop1', { role: 'admin', canWrite: true, canDelete: true }, 'u1')).toHaveProperty('error');
+        expect(canUseToolModule('toString', { role: 'super_admin' })).toBe(false);
+        const original = TOOL_MODULE.create_task;
+        try {
+            delete TOOL_MODULE.create_task;
+            const perms = { role: 'super_admin', canWrite: true, canDelete: true, modules: [] };
+            expect(dataToolsForPerms(perms).map(t => t.name)).not.toContain('create_task');
+            expect(await executeDataTool('create_task', { title: 'Must not save' }, 'shop1', perms, 'u1', true)).toHaveProperty('error');
+        } finally { TOOL_MODULE.create_task = original; }
     });
     it('paymentStatus: төлсөн/хагас/хүлээгдэж буй', () => {
         expect(paymentStatus(100, 100)).toBe('paid');

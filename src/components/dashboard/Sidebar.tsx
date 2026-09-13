@@ -9,6 +9,7 @@ import { canAccessModule, canAccessModuleDynamic, getRoleDisplayName } from '@/l
 import { cn } from '@/lib/utils';
 import { PRIMARY_NAV, BOTTOM_NAV, isNavItemActive, type NavItem } from '@/lib/navigation/nav';
 import { useSidebarCollapsed } from '@/hooks/useSidebarCollapsed';
+import { useDashboardMode } from '@/hooks/useDashboardMode';
 import { useNavCounts } from '@/hooks/useNavCounts';
 import { openCommandPalette } from '@/lib/navigation/commandPalette';
 import { openAiPanel } from '@/lib/ai/context';
@@ -35,6 +36,8 @@ export function Sidebar() {
     const { shop, user, signOut } = useAuth();
     const { collapsed, toggle } = useSidebarCollapsed();
     const counts = useNavCounts();
+    const { data: dashboardMode } = useDashboardMode();
+    const dashboardName = dashboardMode?.mode === 'personal' ? 'Өнөөдөр' : 'Самбар';
 
     const userRole = user?.role || 'viewer';
     const userPermissions = user?.permissions;
@@ -109,7 +112,7 @@ export function Sidebar() {
             {/* Үндсэн цэс */}
             <nav className="flex flex-col gap-0.5 px-2.5" aria-label="Үндсэн цэс">
                 {allowed.primary.map((item) => (
-                    <NavRow key={item.href} item={item} pathname={pathname} collapsed={collapsed} count={item.countKey ? counts[item.countKey] : undefined} />
+                    <NavRow key={item.href} item={item.href === '/dashboard' ? { ...item, name: dashboardName } : item} pathname={pathname} collapsed={collapsed} count={item.countKey ? counts[item.countKey] : undefined} />
                 ))}
             </nav>
 
@@ -118,7 +121,7 @@ export function Sidebar() {
             {/* Доод цэс */}
             <nav className="flex flex-col gap-0.5 px-2.5 pb-1" aria-label="Нэмэлт цэс">
                 {allowed.bottom.map((item) => (
-                    <NavRow key={item.href} item={item} pathname={pathname} collapsed={collapsed} />
+                    <NavRow key={item.href} item={item.href === '/dashboard' ? { ...item, name: dashboardName } : item} pathname={pathname} collapsed={collapsed} />
                 ))}
             </nav>
 

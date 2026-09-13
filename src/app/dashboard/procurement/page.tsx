@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -11,12 +11,14 @@ import { Money } from '@/components/ui/Money';
 import { DateText } from '@/components/ui/DateText';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { ubDateStr } from '@/lib/utils/date';
 import {
     Dialog,
     DialogContent,
     DialogHeader,
     DialogFooter,
     DialogTitle,
+    DialogDescription,
 } from '@/components/ui/Dialog';
 import { FormField } from '@/components/ui/FormField';
 import { Building2, Wallet, AlertCircle, TrendingDown, Plus, Banknote } from 'lucide-react';
@@ -29,6 +31,11 @@ interface Bill {
     id: string; bill_number: string | null; bill_date: string; due_date: string | null;
     total_amount: number; paid_amount: number; status: string;
     vendors?: { name: string } | null; projects?: { name: string } | null;
+}
+interface PaymentAttempt {
+    payload: { client_request_id: string; amount: number; method: string; paid_date: string };
+    outcome: 'unknown' | 'rejected';
+    error?: string;
 }
 
 const STATUS: Record<string, { label: string; variant: 'success' | 'danger' | 'pending' | 'info' | 'neutral' }> = {
@@ -56,9 +63,11 @@ export default function ProcurementPage() {
         description: '', account_id: '', amount: '', vat_amount: '',
     });
     const [payBill, setPayBill] = useState<Bill | null>(null);
-    const [payForm, setPayForm] = useState({ amount: '', method: 'bank' });
+    const [payForm, setPayForm] = useState({ amount: '', method: 'bank', paid_date: '' });
+    const payAttempts = useRef(new Map<string, PaymentAttempt>());
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const payAttempt = payBill ? payAttempts.current.get(payBill.id) : undefined;
 
     useEffect(() => { loadAll();   }, []);
 
@@ -130,17 +139,40 @@ export default function ProcurementPage() {
     async function submitPay() {
         if (!payBill) return;
         const amount = parseFloat(payForm.amount);
-        if (!amount || amount <= 0) { setError('Дүн оруулна уу'); return; }
+        if (!Number.isFinite(amount) || amount <= 0) { setError('Дүн оруулна уу'); return; }
+        const attempt = payAttempts.current.get(payBill.id) ?? {
+            payload: { client_request_id: crypto.randomUUID(), amount, method: payForm.method, paid_date: payForm.paid_date },
+            outcome: 'unknown' as const,
+        };
+        attempt.outcome = 'unknown';
+        payAttempts.current.set(payBill.id, attempt);
         setSaving(true); setError(null);
         try {
             const res = await dashboardFetch(`/api/dashboard/procurement/bills/${payBill.id}/pay`, {
                 method: 'POST',
-                body: JSON.stringify({ amount, method: payForm.method }),
+                body: JSON.stringify(attempt.payload),
             });
-            if (!res.ok) throw new Error((await res.json())?.error || 'Алдаа');
-            setPayBill(null); setPayForm({ amount: '', method: 'bank' });
+            if (!res.ok) {
+                // These API responses reject before any committed payment. 409/5xx may describe an earlier committed request.
+                attempt.outcome = [400, 401, 403, 404, 422].includes(res.status) ? 'rejected' : 'unknown';
+                throw new Error((await res.json().catch(() => null))?.error || 'Төлбөрийн хариуг баталгаажуулж чадсангүй');
+            }
+            if ((await res.json()).success !== true) throw new Error('Төлбөрийн хариуг баталгаажуулж чадсангүй');
+            payAttempts.current.delete(payBill.id);
+            setPayBill(null); setPayForm({ amount: '', method: 'bank', paid_date: '' });
             await loadAll();
-        } catch (e) { setError(e instanceof Error ? e.message : 'Алдаа'); } finally { setSaving(false); }
+        } catch (e) {
+            attempt.error = e instanceof Error ? e.message : 'Алдаа';
+            setError(attempt.error);
+        } finally { setSaving(false); }
+    }
+
+    function openPayment(bill: Bill) {
+        const attempt = payAttempts.current.get(bill.id);
+        setPayBill(bill);
+        setPayForm(attempt ? { amount: String(attempt.payload.amount), method: attempt.payload.method, paid_date: attempt.payload.paid_date }
+            : { amount: String(Number(bill.total_amount) - Number(bill.paid_amount)), method: 'bank', paid_date: ubDateStr() });
+        setError(attempt?.error ?? null);
     }
 
     const billColumns: DataTableColumn<Bill>[] = [
@@ -182,9 +214,8 @@ export default function ProcurementPage() {
             header: 'Үйлдэл',
             align: 'right',
             cell: (b) => {
-                const outstanding = Number(b.total_amount) - Number(b.paid_amount);
                 return b.status !== 'paid' && b.status !== 'cancelled' ? (
-                    <Button variant="secondary" size="sm" onClick={() => { setPayBill(b); setPayForm({ amount: String(outstanding), method: 'bank' }); setError(null); }}>
+                    <Button variant="secondary" size="sm" onClick={() => openPayment(b)}>
                         Төлөх
                     </Button>
                 ) : null;
@@ -340,10 +371,11 @@ export default function ProcurementPage() {
             </Dialog>
 
             {/* Pay modal */}
-            <Dialog open={!!payBill} onOpenChange={(o) => { if (!o) setPayBill(null); }}>
+            <Dialog open={!!payBill} onOpenChange={(o) => { if (!o && !saving) setPayBill(null); }}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Нэхэмжлэх төлөх</DialogTitle>
+                        <DialogDescription>Бодитоор төлсөн дүн, хэлбэр, огноогоо бүртгэнэ үү.</DialogDescription>
                     </DialogHeader>
                     <div className="space-y-4">
                         {error && (
@@ -351,11 +383,15 @@ export default function ProcurementPage() {
                                 <AlertCircle className="w-4 h-4" />{error}
                             </div>
                         )}
+                        {payAttempt?.outcome === 'unknown' && !saving && <p className="text-sm text-muted-foreground">Өмнөх төлөлтийн хариу баталгаажаагүй. Ижил дүн, огноогоор дахин шалгахад давхар төлөлт үүсэхгүй.</p>}
                         <FormField label="Дүн (₮)" htmlFor="pay-amount">
-                            <input id="pay-amount" type="number" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={payForm.amount} onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))} />
+                            <input id="pay-amount" type="number" min="0.01" step="0.01" max={payBill ? Number(payBill.total_amount) - Number(payBill.paid_amount) : undefined} disabled={saving || !!payAttempt} className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={payForm.amount} onChange={e => setPayForm(f => ({ ...f, amount: e.target.value }))} />
+                        </FormField>
+                        <FormField label="Төлсөн огноо (Улаанбаатар)" htmlFor="pay-date">
+                            <input id="pay-date" type="date" disabled={saving || !!payAttempt} className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={payForm.paid_date} onChange={e => setPayForm(f => ({ ...f, paid_date: e.target.value }))} />
                         </FormField>
                         <FormField label="Хэлбэр" htmlFor="pay-method">
-                            <select id="pay-method" className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={payForm.method} onChange={e => setPayForm(f => ({ ...f, method: e.target.value }))}>
+                            <select id="pay-method" disabled={saving || !!payAttempt} className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface" value={payForm.method} onChange={e => setPayForm(f => ({ ...f, method: e.target.value }))}>
                                 <option value="bank">Банк</option>
                                 <option value="cash">Бэлэн</option>
                                 <option value="barter">Бартер</option>
@@ -363,8 +399,9 @@ export default function ProcurementPage() {
                         </FormField>
                     </div>
                     <DialogFooter>
-                        <Button variant="secondary" size="sm" onClick={() => setPayBill(null)}>Цуцлах</Button>
-                        <Button variant="primary" size="sm" onClick={submitPay} isLoading={saving} disabled={saving}>Төлөх</Button>
+                        <Button variant="secondary" size="sm" disabled={saving} onClick={() => setPayBill(null)}>{payAttempt ? 'Дараа үргэлжлүүлэх' : 'Цуцлах'}</Button>
+                        {payAttempt?.outcome === 'rejected' && <Button variant="secondary" size="sm" disabled={saving} onClick={() => { if (payBill) payAttempts.current.delete(payBill.id); setError(null); }}>Мэдээллийг засах</Button>}
+                        <Button variant="primary" size="sm" onClick={submitPay} isLoading={saving} disabled={saving}>{payAttempt ? 'Ижил төлөлтөөр дахин шалгах' : 'Төлөх'}</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

@@ -1,130 +1,120 @@
-/**
- * Офлайн outbox — талбай дээр интернэтгүй үед лид/уулзалтын бүртгэл алдагдахгүй.
- *
- * Сүлжээний алдаатай (fetch өөрөө шидсэн, HTTP хариу ирээгүй) POST-уудыг
- * localStorage-д дараалалд хийж, `online` үед болон апп ачаалахад дахин
- * илгээнэ. Серверийн алдаа (4xx/5xx) дараалалд ОРОХГҮЙ — тэр нь хэрэглэгчид
- * шууд харагдах ёстой.
- */
-import { dashboardFetch, getActiveShopId } from '@/lib/api/dashboardFetch';
+/** Офлайн лидийг эзэмшигч хэрэглэгч, байгууллагаар тусгаарлаж хадгална. */
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 const KEY = 'vertmonhub_outbox_v1';
 const EVENT = 'vertmon:outbox:changed';
+const MAX_ATTEMPTS = 30;
 
+export interface OutboxScope { userId: string; shopId: string; }
 export interface OutboxItem {
     id: string;
     url: string;
     method: 'POST' | 'PATCH';
     body: unknown;
-    /** Хэрэглэгчид харуулах нэр: «Лид · Г. Энхжин» */
     label: string;
     createdAt: string;
     attempts: number;
-    /**
-     * Бүртгэх үеийн идэвхтэй shop — flush хийхэд localStorage-ийн ОДООГИЙН shop биш
-     * энэ shop руу явна (shop сольсон/өөр хүн нэвтэрсэн бол буруу tenant-д орохгүй).
-     */
+    /** Хуучин owner-гүй мөрийг хадгална, автоматаар илгээхгүй. */
+    userId?: string;
     shopId?: string | null;
+    paused?: boolean;
+    error?: string;
 }
-
-/** Үүнээс олон удаа сүлжээний алдаа авсан мөрийг «амжилтгүй» болгож дараалалаас хасна. */
-const MAX_ATTEMPTS = 30;
 
 function read(): OutboxItem[] {
     if (typeof window === 'undefined') return [];
-    try {
-        const raw = localStorage.getItem(KEY);
-        const list = raw ? (JSON.parse(raw) as OutboxItem[]) : [];
-        return Array.isArray(list) ? list : [];
-    } catch {
-        return [];
-    }
+    const raw = localStorage.getItem(KEY);
+    const list: unknown = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(list)) throw new Error('Офлайн бүртгэлийг уншиж чадсангүй. Хадгалсан мэдээллийг арилгаагүй.');
+    return list as OutboxItem[];
 }
 
 function write(list: OutboxItem[]) {
-    try {
-        localStorage.setItem(KEY, JSON.stringify(list));
-    } catch { /* хадгалах боломжгүй — алгасна */ }
+    // Хадгалалт амжилтгүй бол дуудагчид мэдэгдэнэ; формыг амжилттай гэж хаахгүй.
+    localStorage.setItem(KEY, JSON.stringify(list));
     window.dispatchEvent(new CustomEvent(EVENT));
 }
 
-export function outboxList(): OutboxItem[] {
-    return read();
+const belongsTo = (item: OutboxItem, scope: OutboxScope) => item.userId === scope.userId && item.shopId === scope.shopId;
+
+export function outboxList(scope: OutboxScope): OutboxItem[] {
+    return read().filter((item) => belongsTo(item, scope));
 }
 
 export function onOutboxChange(handler: () => void): () => void {
-    if (typeof window === 'undefined') return () => {};
     window.addEventListener(EVENT, handler);
-    return () => window.removeEventListener(EVENT, handler);
-}
-
-/** Сүлжээний алдаа мөн үү (fetch reject) — серверийн хариу биш. */
-export function isNetworkError(e: unknown): boolean {
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
-    return e instanceof TypeError; // fetch: "Failed to fetch" / "Load failed"
-}
-
-export function enqueue(item: Omit<OutboxItem, 'id' | 'createdAt' | 'attempts'>): OutboxItem {
-    const full: OutboxItem = {
-        ...item,
-        shopId: item.shopId ?? getActiveShopId(),
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        createdAt: new Date().toISOString(),
-        attempts: 0,
+    window.addEventListener('storage', handler);
+    return () => {
+        window.removeEventListener(EVENT, handler);
+        window.removeEventListener('storage', handler);
     };
+}
+
+export function isNetworkError(e: unknown): boolean {
+    return (typeof navigator !== 'undefined' && navigator.onLine === false) || e instanceof TypeError;
+}
+
+export function enqueue(item: Pick<OutboxItem, 'url' | 'method' | 'body' | 'label'>, scope: OutboxScope): OutboxItem {
+    if (!scope.userId || !scope.shopId) throw new Error('Хэрэглэгч, байгууллагыг тодорхойлж чадсангүй. Формын мэдээллээ хадгалаад дахин нэвтэрнэ үү.');
+    const full: OutboxItem = { ...item, ...scope, id: crypto.randomUUID(), createdAt: new Date().toISOString(), attempts: 0 };
     write([...read(), full]);
     return full;
 }
 
-export function remove(id: string) {
-    write(read().filter((i) => i.id !== id));
+export function remove(id: string, scope: OutboxScope) {
+    write(read().filter((item) => item.id !== id || !belongsTo(item, scope)));
+}
+
+export function retryOutboxItem(id: string, scope: OutboxScope) {
+    write(read().map((item) => item.id === id && belongsTo(item, scope)
+        ? { ...item, attempts: 0, paused: false, error: undefined } : item));
 }
 
 let flushing = false;
 
-/**
- * Дарааллыг илгээх. Амжилттай → хасна; серверийн алдаа (4xx) → хасаад
- * `failed`-д буцаана (хэрэглэгчид мэдэгдэнэ); сүлжээний алдаа → үлдээнэ.
- */
-export async function flushOutbox(): Promise<{ sent: OutboxItem[]; failed: { item: OutboxItem; error: string }[]; remaining: number }> {
+/** Амжилттай илгээгдсэн мөрийг л устгана. Алдаатай мөрүүд дахин оролдох хүртэл үлдэнэ. */
+export async function flushOutbox(scope: OutboxScope, isCurrentScope: () => boolean) {
     const sent: OutboxItem[] = [];
     const failed: { item: OutboxItem; error: string }[] = [];
-    if (flushing || typeof window === 'undefined') return { sent, failed, remaining: read().length };
+    if (flushing || !isCurrentScope()) return { sent, failed };
     flushing = true;
     try {
-        for (const item of read()) {
-            if (item.attempts >= MAX_ATTEMPTS) {
-                failed.push({ item, error: 'Олон удаа илгээж чадсангүй — дахин бүртгэнэ үү' });
-                remove(item.id);
+        for (const item of outboxList(scope)) {
+            if (!isCurrentScope()) break;
+            if (item.paused || item.attempts >= MAX_ATTEMPTS) continue;
+            let error = 'Илгээж чадсангүй. Бүртгэл энэ төхөөрөмжид хадгалагдсан.';
+            let pause = false;
+            let response: Response | undefined;
+            try {
+                response = await dashboardFetch(item.url, { method: item.method, body: JSON.stringify(item.body), shopId: scope.shopId });
+            } catch {
+                error = 'Сүлжээнд холбогдож чадсангүй. Бүртгэл энэ төхөөрөмжид хадгалагдсан.';
+            }
+            if (response?.ok) {
+                remove(item.id, scope);
+                sent.push(item);
                 continue;
             }
-            try {
-                // Бүртгэх үеийн shop руу (dashboardFetch shopId override); байхгүй бол одоогийнх.
-                const res = await dashboardFetch(item.url, {
-                    method: item.method,
-                    body: JSON.stringify(item.body),
-                    ...(item.shopId ? { shopId: item.shopId } : {}),
-                });
-                if (res.ok) {
-                    sent.push(item);
-                    remove(item.id);
-                } else if (res.status >= 400 && res.status < 500) {
-                    const detail = await res.json().catch(() => null as { error?: string } | null);
-                    failed.push({ item, error: detail?.error || `Хүсэлт амжилтгүй (${res.status})` });
-                    remove(item.id);
-                } else {
-                    bump(item.id);
-                }
-            } catch {
-                bump(item.id);
+            if (response) {
+                const detail = await response.json().catch(() => null as { error?: string } | null);
+                error = response.status === 401 ? 'Дахин нэвтрээд «Дахин илгээх» дарна уу.'
+                    : response.status === 429 ? 'Хэт олон хүсэлт илгээсэн. Түр хүлээгээд дахин илгээнэ үү.'
+                    : detail?.error || `Илгээж чадсангүй (${response.status}). Бүртгэл хадгалагдсан.`;
+                pause = response.status >= 400 && response.status < 500;
+            }
+            const attempts = item.attempts + 1;
+            pause ||= attempts >= MAX_ATTEMPTS;
+            const message = error;
+            write(read().map((current) => current.id === item.id && belongsTo(current, scope)
+                ? { ...current, attempts, paused: pause, error: message } : current));
+            if (pause) failed.push({ item, error: message });
+            if (response?.status === 401 || response?.status === 429) {
+                write(read().map((current) => belongsTo(current, scope) ? { ...current, paused: true, error: message } : current));
+                break;
             }
         }
     } finally {
         flushing = false;
     }
-    return { sent, failed, remaining: read().length };
-}
-
-function bump(id: string) {
-    write(read().map((i) => (i.id === id ? { ...i, attempts: i.attempts + 1 } : i)));
+    return { sent, failed };
 }

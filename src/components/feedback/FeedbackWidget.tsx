@@ -1,179 +1,46 @@
-/**
- * Feedback Widget - Bug report and support button
- */
-
 'use client';
 
 import { useState } from 'react';
-import { MessageCircle, Bug, HelpCircle, X, Send, Loader2, CheckCircle } from 'lucide-react';
+import { CheckCircle, HelpCircle, Loader2, Send } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/Sheet';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
 type FeedbackType = 'bug' | 'feature' | 'support';
 
-interface FeedbackState {
-    type: FeedbackType;
-    message: string;
-    email: string;
-}
-
+/** Толгой хэсэгт байрлах тусламж; үндсэн ажлын товчлууруудыг халхлахгүй. */
 export function FeedbackWidget() {
-    const [isOpen, setIsOpen] = useState(false);
-    const [isExpanded, setIsExpanded] = useState(false);
+    const [open, setOpen] = useState(false);
     const [sending, setSending] = useState(false);
     const [sent, setSent] = useState(false);
-    const [feedback, setFeedback] = useState<FeedbackState>({
-        type: 'bug',
-        message: '',
-        email: ''
-    });
+    const [error, setError] = useState<string | null>(null);
+    const [feedback, setFeedback] = useState({ type: 'bug' as FeedbackType, message: '', email: '' });
 
-    async function handleSubmit(e: React.FormEvent) {
+    async function submit(e: React.FormEvent) {
         e.preventDefault();
+        if (sending || !feedback.message.trim()) return;
         setSending(true);
-
+        setError(null);
         try {
-            // Send feedback to API
-            await dashboardFetch('/api/feedback', {
-                method: 'POST',
-                body: JSON.stringify(feedback)
-            });
-
+            const res = await dashboardFetch('/api/feedback', { method: 'POST', body: JSON.stringify(feedback) });
+            if (!res.ok) throw new Error('Илгээж чадсангүй. Бичсэн зүйлээ алдалгүй дахин оролдоно уу.');
             setSent(true);
-            setTimeout(() => {
-                setIsExpanded(false);
-                setSent(false);
-                setFeedback({ type: 'bug', message: '', email: '' });
-            }, 2000);
-        } catch (error) {
-            console.error('Feedback error:', error);
-        } finally {
-            setSending(false);
-        }
+            setFeedback({ type: 'bug', message: '', email: '' });
+        } catch (err) { setError(err instanceof Error ? err.message : 'Холболт тасарлаа. Дахин оролдоно уу.'); }
+        finally { setSending(false); }
     }
 
-    const feedbackTypes = [
-        { id: 'bug' as FeedbackType, icon: Bug, label: 'Алдаа мэдэгдэх', color: 'text-status-danger' },
-        { id: 'feature' as FeedbackType, icon: MessageCircle, label: 'Санал хүсэлт', color: 'text-status-info' },
-        { id: 'support' as FeedbackType, icon: HelpCircle, label: 'Тусламж', color: 'text-green-500' }
-    ];
-
-    return (
-        <div className="fixed right-4 z-40 bottom-[calc(3.5rem+env(safe-area-inset-bottom)+0.75rem)] md:bottom-6 md:right-6">
-            {/* Expanded Form */}
-            {isExpanded && (
-                <div className="absolute bottom-16 right-0 w-80 bg-surface rounded-2xl shadow-2xl border border-border/60 overflow-hidden animate-in slide-in-from-bottom-4 duration-300">
-                    {/* Header */}
-                    <div className="bg-brand px-4 py-3 flex items-center justify-between">
-                        <span className="text-white font-medium">Санал хүсэлт</span>
-                        <button
-                            onClick={() => setIsExpanded(false)}
-                            className="text-white/80 hover:text-white"
-                        >
-                            <X className="w-4 h-4" />
-                        </button>
-                    </div>
-
-                    {sent ? (
-                        <div className="p-8 text-center">
-                            <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
-                            <p className="font-medium text-foreground">Баярлалаа!</p>
-                            <p className="text-sm text-muted-foreground">Таны санал хүсэлт илгээгдлээ</p>
-                        </div>
-                    ) : (
-                        <form onSubmit={handleSubmit} className="p-4 space-y-4">
-                            {/* Type Selection */}
-                            <div className="flex gap-2">
-                                {feedbackTypes.map(type => (
-                                    <button
-                                        key={type.id}
-                                        type="button"
-                                        onClick={() => setFeedback(f => ({ ...f, type: type.id }))}
-                                        className={`flex-1 flex flex-col items-center gap-1 p-2 rounded-lg border transition-all ${feedback.type === type.id
-                                                ? 'border-brand bg-brand-soft'
-                                                : 'border-border hover:border-border-strong'
-                                            }`}
-                                    >
-                                        <type.icon className={`w-5 h-5 ${type.color}`} />
-                                        <span className="text-xs text-muted-foreground">{type.label}</span>
-                                    </button>
-                                ))}
-                            </div>
-
-                            {/* Message */}
-                            <textarea
-                                value={feedback.message}
-                                onChange={e => setFeedback(f => ({ ...f, message: e.target.value }))}
-                                placeholder={
-                                    feedback.type === 'bug'
-                                        ? 'Ямар алдаа гарсан бэ? Алхмуудыг дэлгэрэнгүй бичнэ үү...'
-                                        : feedback.type === 'feature'
-                                            ? 'Ямар функц нэмээсэй гэж хүсч байна вэ?'
-                                            : 'Бид яаж туслах вэ?'
-                                }
-                                className="w-full h-24 px-3 py-2 text-sm border border-border rounded-lg resize-none focus:ring-2 focus:ring-brand focus:border-transparent"
-                                required
-                            />
-
-                            {/* Email (optional) */}
-                            <input
-                                type="email"
-                                value={feedback.email}
-                                onChange={e => setFeedback(f => ({ ...f, email: e.target.value }))}
-                                placeholder="Имэйл (заавал биш)"
-                                className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:ring-2 focus:ring-brand focus:border-transparent"
-                            />
-
-                            <Button type="submit" className="w-full" disabled={sending || !feedback.message}>
-                                {sending ? (
-                                    <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                                ) : (
-                                    <Send className="w-4 h-4 mr-2" />
-                                )}
-                                Илгээх
-                            </Button>
-                        </form>
-                    )}
-                </div>
-            )}
-
-            {/* Toggle Button */}
-            <button
-                onClick={() => {
-                    setIsOpen(!isOpen);
-                    if (!isOpen) setIsExpanded(false);
-                }}
-                className={`w-14 h-14 rounded-full shadow-lg flex items-center justify-center transition-all ${isOpen
-                        ? 'bg-foreground rotate-45'
-                        : 'bg-brand hover:bg-brand-strong hover:shadow-lg'
-                    }`}
-            >
-                {isOpen ? (
-                    <X className="w-6 h-6 text-white" />
-                ) : (
-                    <MessageCircle className="w-6 h-6 text-white" />
-                )}
-            </button>
-
-            {/* Quick Actions */}
-            {isOpen && !isExpanded && (
-                <div className="absolute bottom-16 right-0 flex flex-col gap-2 animate-in slide-in-from-bottom-2 duration-200">
-                    {feedbackTypes.map((type, i) => (
-                        <button
-                            key={type.id}
-                            onClick={() => {
-                                setFeedback(f => ({ ...f, type: type.id }));
-                                setIsExpanded(true);
-                            }}
-                            className="flex items-center gap-3 px-4 py-2.5 bg-surface rounded-full shadow-lg hover:shadow-xl transition-all hover:scale-105"
-                            style={{ animationDelay: `${i * 50}ms` }}
-                        >
-                            <type.icon className={`w-5 h-5 ${type.color}`} />
-                            <span className="text-sm font-medium text-foreground">{type.label}</span>
-                        </button>
-                    ))}
-                </div>
-            )}
-        </div>
-    );
+    return <Sheet open={open} onOpenChange={setOpen}>
+        <SheetTrigger asChild><button type="button" aria-label="Тусламж, санал хүсэлт" title="Тусламж, санал хүсэлт" onClick={() => setSent(false)} className="flex h-10 w-9 items-center justify-center rounded-md text-fg-2 hover:bg-surface-2 focus-ring md:h-[30px] md:w-[30px]"><HelpCircle className="h-4 w-4" /></button></SheetTrigger>
+        <SheetContent className="overflow-y-auto">
+            <SheetHeader><SheetTitle>Тусламж, санал хүсэлт</SheetTitle><SheetDescription>Алдаа мэдээлэх, санал гаргах эсвэл тусламж авах.</SheetDescription></SheetHeader>
+            {sent ? <div role="status" className="space-y-4 px-4 py-8 text-center"><CheckCircle className="mx-auto h-9 w-9 text-status-success" /><p>Таны санал хүсэлт илгээгдлээ.</p><Button variant="secondary" onClick={() => setOpen(false)}>Хаах</Button></div> : <form onSubmit={submit} className="space-y-4 px-4 pb-6">
+                <label className="block space-y-2 text-sm"><span>Төрөл</span><select value={feedback.type} onChange={e => setFeedback(f => ({ ...f, type: e.target.value as FeedbackType }))} className="h-11 w-full rounded-md border border-border bg-surface px-3 focus-ring"><option value="bug">Алдаа мэдэгдэх</option><option value="feature">Санал хүсэлт</option><option value="support">Тусламж авах</option></select></label>
+                <label className="block space-y-2 text-sm"><span>Дэлгэрэнгүй</span><textarea required rows={5} value={feedback.message} onChange={e => setFeedback(f => ({ ...f, message: e.target.value }))} placeholder="Ямар алхам дээр юу болсон эсвэл юуг сайжруулахыг бичнэ үү…" className="w-full rounded-md border border-border bg-surface px-3 py-2 focus-ring" /></label>
+                <label className="block space-y-2 text-sm"><span>Хариу авах имэйл (заавал биш)</span><input type="email" value={feedback.email} onChange={e => setFeedback(f => ({ ...f, email: e.target.value }))} className="h-11 w-full rounded-md border border-border bg-surface px-3 focus-ring" /></label>
+                {error && <p role="alert" className="text-sm text-status-danger">{error}</p>}
+                <Button type="submit" disabled={sending || !feedback.message.trim()} className="w-full">{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Илгээх</Button>
+            </form>}
+        </SheetContent>
+    </Sheet>;
 }

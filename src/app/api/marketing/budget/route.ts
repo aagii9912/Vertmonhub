@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { logMarketingSpend } from '@/lib/services/MarketingOps';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
-import { requireWrite } from '@/lib/auth/require-permission';
+import { requireModule, requireModuleWrite, requireModuleDelete } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logger } from '@/lib/utils/logger';
+import { fetchAllRows } from '@/lib/utils/pagination';
+import { ubParts } from '@/lib/utils/date';
 import {
     monthlySpendSeries,
     spendByChannel,
@@ -43,27 +45,28 @@ const SpendSchema = z.object({
 
 function isMissingTable(error: { code?: string; message?: string } | null): boolean {
     if (!error) return false;
-    return error.code === '42P01' || /marketing_budgets|marketing_spend_entries/i.test(error.message || '');
+    return /marketing_budgets|marketing_spend_entries/i.test(error.message || '')
+        && (error.code === '42P01' || error.code === 'PGRST205'
+            || /does not exist|could not find .*table.*schema cache/i.test(error.message || ''));
 }
 
 const MIGRATION_HINT =
     'Төсвийн хүснэгтүүд үүсээгүй байна — 20260721140000_marketing_budget_indicators.sql миграцийг ажиллуулна уу';
 
 export async function GET(request: NextRequest) {
+    const year = Math.min(2100, Math.max(2020, parseInt(new URL(request.url).searchParams.get('year') || '', 10) || ubParts().year));
     try {
+        const denied = await requireModule('marketing-roi');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         }
 
-        const { searchParams } = new URL(request.url);
-        const now = new Date();
-        const year = Math.min(2100, Math.max(2020, parseInt(searchParams.get('year') || '', 10) || now.getFullYear()));
-
         const db = supabaseAdmin();
-        const [budgetRes, spendRes, revenueRes, adsRes] = await Promise.all([
+        const [budgetRes, entries, revenueRows, adRows] = await Promise.all([
             db.from('marketing_budgets').select('month, amount').eq('shop_id', authShop.id).eq('year', year),
-            db
+            fetchAllRows((from, to) => db
                 .from('marketing_spend_entries')
                 .select('id, spent_at, amount, channel, note, created_at')
                 .eq('shop_id', authShop.id)
@@ -71,29 +74,31 @@ export async function GET(request: NextRequest) {
                 .gte('spent_at', `${year}-01-01`)
                 .lte('spent_at', `${year}-12-31`)
                 .order('spent_at', { ascending: false })
-                .limit(500),
-            db.from('manager_monthly_sales').select('month, actual_amount').eq('shop_id', authShop.id).eq('year', year),
-            db.from('ad_campaigns').select('spend').eq('shop_id', authShop.id),
+                .order('id').range(from, to)),
+            fetchAllRows((from, to) => db.from('manager_monthly_sales').select('month, actual_amount')
+                .eq('shop_id', authShop.id).eq('year', year).order('sales_manager').order('month').range(from, to)),
+            fetchAllRows((from, to) => db.from('ad_campaigns').select('spend').eq('shop_id', authShop.id)
+                .in('platform', ['facebook', 'instagram']).order('id').range(from, to)),
         ]);
 
         if (budgetRes.error && isMissingTable(budgetRes.error)) {
             return NextResponse.json({ year, available: false });
         }
+        if (budgetRes.error) throw budgetRes.error;
 
         const budgets = Array(12).fill(0);
         for (const r of budgetRes.data || []) {
             if (r.month >= 1 && r.month <= 12) budgets[r.month - 1] = Number(r.amount) || 0;
         }
 
-        const entries = spendRes.error ? [] : spendRes.data || [];
         const spend = monthlySpendSeries(entries, year);
 
         const revenue = Array(12).fill(0);
-        for (const r of revenueRes.error ? [] : revenueRes.data || []) {
+        for (const r of revenueRows) {
             if (r.month >= 1 && r.month <= 12) revenue[r.month - 1] += Number(r.actual_amount) || 0;
         }
 
-        const metaAdsTotalSpend = (adsRes.error ? [] : adsRes.data || []).reduce(
+        const metaAdsTotalSpend = adRows.reduce(
             (a, c) => a + (Number(c.spend) || 0),
             0,
         );
@@ -105,16 +110,20 @@ export async function GET(request: NextRequest) {
             byChannel: spendByChannel(entries),
             entries: entries.slice(0, 100),
             metaAdsTotalSpend,
+            metaAdsSpendPeriod: 'unknown_snapshot',
             channels: SPEND_CHANNELS,
         });
     } catch (error) {
+        if (isMissingTable(error as { code?: string; message?: string } | null)) {
+            return NextResponse.json({ year, available: false });
+        }
         return safeErrorResponse(error, 'Төсвийн мэдээлэл унших алдаа');
     }
 }
 
 export async function PUT(request: NextRequest) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('marketing-roi');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
@@ -158,7 +167,7 @@ export async function PUT(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('marketing-roi');
         if (denied) return denied;
         const [authShop, uid] = await Promise.all([getUserShop(), getUserId()]);
         if (!authShop) {
@@ -192,7 +201,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleDelete('marketing-roi');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {

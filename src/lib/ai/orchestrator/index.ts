@@ -1,21 +1,21 @@
 /**
- * AI Orchestrator v3 — ГИБРИД (Claude)
+ * AI Orchestrator v3 — ГИБРИД (GPT Responses)
  *
- * Нэг үндсэн туслах (claude-opus-5) хэрэглэгчийн эрхэд тохирсон БҮХ data tool-той
+ * Нэг үндсэн туслах (GPT-5.6 Luna) хэрэглэгчийн эрхэд тохирсон БҮХ data tool-той
  * agentic loop ажиллуулж, хариугаа шууд stream-лэнэ. Нарийн олон домэйны шинжилгээнд
- * модель өөрөө `delegate_to_specialists`-ээр мэргэшсэн дэд агентуудыг (Sonnet) ЗЭРЭГ
+ * модель өөрөө `delegate_to_specialists`-ээр мэргэшсэн дэд агентуудыг (GPT-5.6 Luna) ЗЭРЭГ
  * ажиллуулж, үр дүнг нь өөрөө нэгтгэнэ. Planner/synthesizer дуудлага байхгүй.
  */
 
 import { logger } from '@/lib/utils/logger';
-import { MAIN_MODEL } from '@/lib/ai/claude/client';
+import { MAIN_MODEL } from '@/lib/ai/openai/client';
 import { dataToolsForPerms, ASK_USER_TOOL, buildDelegateTool, DELEGATE_TOOL_NAME } from '@/lib/ai/claude/tools';
 import { getShopMemory, formatShopMemory } from '@/lib/ai/data-assistant/functions';
 import { AGENTS, AGENT_LIST } from './agents';
 import { runAgent } from './runAgent';
 import { runLoop, buildHistory, buildUserContent } from './loop';
 import { buildSystemBlocks } from './prompt';
-import type { AgentBadge, AgentId, OrchestratorContext, OrchestratorResult, PendingAction, TraceStep } from './types';
+import type { AgentBadge, AgentId, OrchestratorContext, OrchestratorResult, PendingAction, RunInterruption, TraceStep, TraceTool } from './types';
 
 const MAIN_BADGE: AgentBadge = { id: 'main', name: 'AI туслах', emoji: '✨', color: 'violet' };
 
@@ -33,7 +33,7 @@ export async function runOrchestrator(message: string, ctx: OrchestratorContext)
     const tools = [...dataToolsForPerms(ctx.perms), ASK_USER_TOOL, buildDelegateTool(roster)];
 
     const steps: TraceStep[] = [];
-    const subResults: Array<{ agentId: AgentId; pendingActions: PendingAction[]; data: unknown; chartConfig: unknown }> = [];
+    const subResults: Array<{ agentId: AgentId; pendingActions: PendingAction[]; data: unknown; chartConfig: unknown; traceTools: TraceTool[]; interruption?: RunInterruption }> = [];
 
     // 2. Дэд агентуудыг зэрэг ажиллуулах дотоод tool.
     const delegate = async (args: Record<string, unknown>) => {
@@ -47,9 +47,9 @@ export async function runOrchestrator(message: string, ctx: OrchestratorContext)
         const results = await Promise.all(valid.map(async (t) => {
             const agent = AGENTS[t.agent as AgentId];
             const r = await runAgent(agent, String(t.task || message), { ...ctx, onEvent: ctx.onEvent });
-            steps.push({ agentId: agent.id, agentName: agent.name, emoji: agent.emoji, color: agent.color, task: String(t.task || ''), toolsUsed: r.toolsUsed, latencyMs: r.latencyMs, tokens: r.tokens, ok: r.ok, error: r.error });
-            subResults.push({ agentId: agent.id, pendingActions: r.pendingActions, data: r.data, chartConfig: r.chartConfig });
-            return { agent: agent.id, name: agent.name, ok: r.ok, result: r.ok ? r.text : `(алдаа: ${r.error})`, pending_actions: r.pendingActions.map((p) => p.label) };
+            steps.push({ model: r.model, inputTokens: r.usage?.input, outputTokens: r.usage?.output, cacheReadTokens: r.usage?.cacheRead, agentId: agent.id, agentName: agent.name, emoji: agent.emoji, color: agent.color, task: String(t.task || ''), toolsUsed: r.toolsUsed, latencyMs: r.latencyMs, tokens: r.tokens, ok: r.ok, error: r.error });
+            subResults.push({ agentId: agent.id, pendingActions: r.pendingActions, data: r.data, chartConfig: r.chartConfig, traceTools: r.traceTools || [], interruption: r.interruption });
+            return { agent: agent.id, name: agent.name, ok: r.ok, result: r.text || `(алдаа: ${r.error})`, pending_actions: r.pendingActions.map((p) => p.label), interruption: r.interruption };
         }));
         return { results, note: 'Дээрх дүгнэлтүүдийг нэгтгэж хэрэглэгчид нэг цэгцтэй хариу бич. Дэд агентын санал болгосон үйлдлүүд аль хэдийн баталгаажуулалт хүлээж байна — дахин бүү дууд.' };
     };
@@ -78,16 +78,18 @@ export async function runOrchestrator(message: string, ctx: OrchestratorContext)
         agentsUsed,
         pendingActions,
         clarification: r.clarification,
+        interruption: r.interruption || subResults.find(s => s.interruption)?.interruption,
         trace: {
-            model: MAIN_MODEL,
+            provider: 'openai',
+            model: r.model,
             rounds: r.rounds,
-            tools: r.traceTools,
+            tools: [...r.traceTools, ...subResults.flatMap(s => s.traceTools)],
             steps,
             totalLatencyMs: Date.now() - started,
             totalTokens,
-            inputTokens: r.usage.input,
-            outputTokens: r.usage.output,
-            cacheReadTokens: r.usage.cacheRead,
+            inputTokens: r.usage.input + steps.reduce((n, s) => n + (s.inputTokens ?? 0), 0),
+            outputTokens: r.usage.output + steps.reduce((n, s) => n + (s.outputTokens ?? 0), 0),
+            cacheReadTokens: r.usage.cacheRead + steps.reduce((n, s) => n + (s.cacheReadTokens ?? 0), 0),
             summaryUsed: !!ctx.conversationSummary,
         },
     };

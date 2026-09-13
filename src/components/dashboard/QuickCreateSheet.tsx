@@ -10,6 +10,7 @@ import { dashboardFetch, dashboardMutate } from '@/lib/api/dashboardFetch';
 import { onQuickCreate, type QuickCreateKind } from '@/lib/navigation/commandPalette';
 import { INTEREST_CHIPS, SOURCES, SOURCE_LABEL } from '@/lib/leads/labels';
 import { enqueue, isNetworkError } from '@/lib/offline/outbox';
+import { useAuth } from '@/contexts/AuthContext';
 
 /**
  * Түргэн бүртгэл — «Шинэ» товч, N товчлуур, гар утасны «+» бүгд үүнийг нээнэ.
@@ -76,6 +77,7 @@ export function QuickCreateSheet() {
 /* ------------------------------------------------------------------ */
 
 function LeadForm({ onClose }: { onClose: () => void }) {
+    const { user, shop } = useAuth();
     const router = useRouter();
     const qc = useQueryClient();
     const nameRef = useRef<HTMLInputElement>(null);
@@ -83,6 +85,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
     const submittingRef = useRef(false);
 
     const [name, setName] = useState('');
+    const [requestId] = useState(() => crypto.randomUUID());
     const [phone, setPhone] = useState('');
     const [interest, setInterest] = useState<string>('');
     const [source, setSource] = useState('phone');
@@ -136,7 +139,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
             const budgetMax = budget ? Number(budget.replace(/\D/g, '')) : null;
             const payload = {
                 // Idempotency: timeout-ын дараа outbox дахин илгээхэд сервер давхар лид үүсгэхгүй
-                client_request_id: crypto.randomUUID(),
+                client_request_id: requestId,
                 customer_name: name.trim(),
                 customer_phone: phone.trim() || null,
                 customer_email: email.trim() || null,
@@ -155,14 +158,18 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                 onClose();
                 if (thenSchedule) {
                     const id = created?.lead?.id;
-                    router.push(id ? `/dashboard/viewings?lead=${id}` : '/dashboard/viewings');
+                    router.push(id ? `/dashboard/viewings?lead=${id}&new=1` : '/dashboard/viewings?new=1');
                 }
             } catch (e) {
                 if (isNetworkError(e)) {
                     // Талбай дээр интернэтгүй: алдахгүй, холбогдмогц илгээнэ.
-                    enqueue({ url: '/api/dashboard/leads', method: 'POST', body: payload, label: `Лид · ${payload.customer_name}` });
-                    toast.success('Интернэтгүй байна — лид хадгалагдлаа, холбогдмогц илгээнэ');
-                    onClose();
+                    try {
+                        enqueue({ url: '/api/dashboard/leads', method: 'POST', body: payload, label: `Лид · ${payload.customer_name}` }, { userId: user?.id || '', shopId: shop?.id || '' });
+                        toast.success('Интернэтгүй байна — лид энэ төхөөрөмжид хадгалагдлаа');
+                        onClose();
+                    } catch {
+                        toast.error('Лидийг төхөөрөмжид хадгалж чадсангүй. Формын мэдээлэл хэвээр байна; хуулж аваад дахин оролдоно уу.');
+                    }
                 } else {
                     toast.error(e instanceof Error ? e.message : 'Хадгалж чадсангүй');
                 }
@@ -171,7 +178,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                 setSaving(false);
             }
         },
-        [name, phone, email, source, interest, budget, notes, qc, onClose, router],
+        [name, phone, email, source, interest, budget, notes, qc, onClose, router, user, shop, requestId],
     );
 
     // ⌘↵ — хадгалах

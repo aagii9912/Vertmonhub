@@ -31,12 +31,14 @@ export async function getTeamTargets(
     supabase: SupabaseClient,
     shopId: string,
     year: number,
+    onError?: (error: unknown) => void,
 ): Promise<number[]> {
-    const { data } = await supabase
+    const { data, error } = await supabase
         .from('team_sales_targets')
         .select('month, target_amount')
         .eq('shop_id', shopId)
         .eq('year', year);
+    if (error) onError?.(error);
 
     const targets = Array(12).fill(0);
     for (const r of data || []) {
@@ -50,12 +52,14 @@ export async function getMonthlyActualsByManager(
     supabase: SupabaseClient,
     shopId: string,
     year: number,
+    onError?: (error: unknown) => void,
 ): Promise<Map<string, { actuals: number[]; counts: number[] }>> {
-    const { data } = await supabase
+    const { data, error } = await supabase
         .from('manager_monthly_sales')
         .select('sales_manager, month, actual_amount, contract_count')
         .eq('shop_id', shopId)
         .eq('year', year);
+    if (error) onError?.(error);
 
     const map = new Map<string, { actuals: number[]; counts: number[] }>();
     for (const r of data || []) {

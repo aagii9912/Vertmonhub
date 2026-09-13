@@ -63,13 +63,14 @@ function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
     void qc.invalidateQueries({ queryKey: ['my-stats'] });
     void qc.invalidateQueries({ queryKey: ['nav-counts'] });
     void qc.invalidateQueries({ queryKey: ['director'] });
+    void qc.invalidateQueries({ queryKey: ['operations-report'] });
 }
 
 export function useCreateViewing() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: (input: CreateViewingInput) => dashboardMutate<{ viewing: { id: string }; lead_id: string | null }>('/api/dashboard/viewings', 'POST', input),
-        onSuccess: () => invalidateAll(qc),
+        mutationFn: (input: CreateViewingInput) => dashboardMutate<{ viewing: { id: string }; lead_id: string | null; warning?: string }>('/api/dashboard/viewings', 'POST', input),
+        onSettled: () => invalidateAll(qc),
     });
 }
 
@@ -85,7 +86,7 @@ export type ViewingPatch = Partial<{
 export function useUpdateViewing() {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: ({ id, patch }: { id: string; patch: ViewingPatch }) => dashboardMutate(`/api/dashboard/viewings/${id}`, 'PATCH', patch),
+        mutationFn: ({ id, patch }: { id: string; patch: ViewingPatch }) => dashboardMutate<{ viewing: { id: string }; warning?: string }>(`/api/dashboard/viewings/${id}`, 'PATCH', patch),
         onMutate: async ({ id, patch }) => {
             await qc.cancelQueries({ queryKey: ['viewings'] });
             const snapshots = qc.getQueriesData<ViewingsResult>({ queryKey: ['viewings'] });

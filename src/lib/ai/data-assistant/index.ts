@@ -6,7 +6,11 @@
  */
 
 import { logger } from '@/lib/utils/logger';
-import { WRITE_TOOL_NAMES, DELETE_TOOL_NAMES, ADMIN_TOOL_NAMES, TOOL_MODULE, AUTO_TOOL_NAMES } from './tools';
+import { supabaseAdmin } from '@/lib/supabase';
+import { loadOperationsReport } from '@/lib/dashboard/operations-report-load';
+import { formatOperationsReportText } from '@/lib/dashboard/operations-report';
+import { ZodError } from 'zod';
+import { WRITE_TOOL_NAMES, DELETE_TOOL_NAMES, ADMIN_TOOL_NAMES, TOOL_MODULE, AUTO_TOOL_NAMES, canUseToolModule } from './tools';
 
 const AUTO_SET = new Set(AUTO_TOOL_NAMES);
 const AUTO_LABELS: Record<string, string> = {
@@ -37,7 +41,7 @@ export interface AssistantPerms {
     canWrite: boolean;
     canDelete: boolean;
     role: string;
-    /** Хэрэглэгчийн нээлттэй модулиуд (RBAC). Өгөгдөөгүй бол модулийн шалгалт хийхгүй (хуучин дуудагч). */
+    /** Серверийн баталсан модулиуд. Өгөгдөөгүй бол super_admin-аас бусдад хандалт хаалттай. */
     modules?: string[];
 }
 
@@ -68,8 +72,8 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         return { error: 'Энэ үйлдлийг зөвхөн super_admin хийх боломжтой.' };
     }
     const requiredModule = TOOL_MODULE[toolName];
-    if (requiredModule && perms.modules && !perms.modules.includes(requiredModule) && perms.role !== 'super_admin') {
-        return { error: `Энэ үйлдэлд «${requiredModule}» модулийн эрх шаардлагатай — танд алга.` };
+    if (!canUseToolModule(toolName, perms, args)) {
+        return { error: `Энэ үйлдэлд «${requiredModule || toolName}» модулийн эрх шаардлагатай — хандалт зөвшөөрөгдөөгүй.` };
     }
 
     // AUTO tool-ууд ч confirm=false үед preview буцаана (executor түвшний нэгдсэн хаалт).
@@ -80,6 +84,24 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
 
     let result: any;
     switch (toolName) {
+        case 'get_operations_report': {
+            // This report never accepts client-supplied permissions, including legacy callers without modules.
+            if (perms.role !== 'super_admin' && !perms.modules?.includes('reports')) {
+                return { error: 'Үйл ажиллагааны тайлан харах эрх шаардлагатай.' };
+            }
+            try {
+                const report = await loadOperationsReport(supabaseAdmin(), {
+                    shopId, from: args.from, to: args.to,
+                    canReadFinance: perms.role === 'super_admin' || !!perms.modules?.includes('finance'),
+                });
+                result = { ...report, plainText: formatOperationsReportText(report),
+                    url: `/dashboard/reports/operations?${new URLSearchParams(report.range)}` };
+            } catch (error) {
+                logger.error('[AI Operations Report] Read failed', { error });
+                result = { error: error instanceof ZodError ? 'Огноо буруу байна. YYYY-MM-DD хэлбэрээр 367 хүртэл өдөр сонгоно уу.' : 'Тайлангийн эх өгөгдлийг бүрэн татаж чадсангүй. Дахин оролдоно уу.' };
+            }
+            break;
+        }
         case 'get_dashboard_stats': result = await fetchDashboardStats(shopId, args.timeRange || 'month'); break;
         case 'list_properties': result = await fetchProperties(shopId, args); break;
         case 'list_leads': result = await fetchLeads(shopId, args); break;
@@ -101,10 +123,10 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'process_contract_action': result = await processContractAction(shopId, args, confirm); break;
         case 'create_property': result = await createProperty(shopId, args, confirm); break;
         case 'delete_property': result = await deleteProperty(shopId, args, confirm); break;
-        case 'create_lead': result = await createLead(shopId, args, confirm, userName); break;
+        case 'create_lead': result = await createLead(shopId, args, confirm, userName, userId); break;
         case 'delete_lead': result = await deleteLead(shopId, args, confirm); break;
         case 'create_customer': result = await createCustomer(shopId, args, confirm, userName); break;
-        case 'schedule_viewing': result = await scheduleViewing(shopId, args, confirm, userName); break;
+        case 'schedule_viewing': result = await scheduleViewing(shopId, args, confirm, userName, userId); break;
         case 'delete_viewing': result = await deleteViewing(shopId, args, confirm); break;
         case 'create_contract': result = await createContract(shopId, args, confirm, userName); break;
         case 'delete_contract': result = await deleteContract(shopId, args, confirm); break;

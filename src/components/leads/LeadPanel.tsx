@@ -12,6 +12,9 @@ import { INTEREST_CHIPS, ACTIVITY_LABEL, sourceLabel, interestLabel } from '@/li
 import { Pill, Skeleton, GhostButton } from '@/components/dashboard/v2/primitives';
 import { StatusPicker, ManagerPicker } from './pickers';
 import { useRegisterAiContext } from '@/lib/ai/context';
+import { LeadWorkActions } from './LeadWorkActions';
+import { Alert } from '@/components/ui/Alert';
+import { Button } from '@/components/ui/Button';
 
 /**
  * Лидийн хажуугийн панел — жагсаалтаас гаралгүй бүх ажлыг хийнэ:
@@ -31,7 +34,7 @@ export function LeadPanel({
     onClose?: () => void;
     className?: string;
 }) {
-    const { data, isLoading } = useLeadDetail(leadId);
+    const { data, isLoading, isError, error, isFetching, refetch } = useLeadDetail(leadId);
     const update = useUpdateLead();
     const addActivity = useAddLeadActivity(leadId);
     const noteRef = useRef<HTMLTextAreaElement>(null);
@@ -75,13 +78,24 @@ export function LeadPanel({
 
     const patch = (p: Parameters<typeof update.mutate>[0]['patch']) => update.mutate({ id: leadId, patch: p }, { onError: (e) => toast.error(e instanceof Error ? e.message : 'Алдаа') });
 
-    if (isLoading || !lead) {
+    if (isLoading) {
         return (
             <div className={cn('flex flex-col gap-3 p-4', className)}>
                 <Skeleton className="h-6 w-48" /><Skeleton className="h-32" /><Skeleton className="h-9" /><Skeleton className="h-40" />
             </div>
         );
     }
+
+    if (!lead) {
+        return <div className={cn('p-4', className)}><Alert variant="danger">
+            {isError && error instanceof Error ? error.message : 'Лидийн мэдээлэл олдсонгүй.'}
+            <div className="flex gap-2">
+                <Button size="sm" variant="secondary" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</Button>
+                {onClose && <Button size="sm" variant="secondary" onClick={onClose}>Хаах</Button>}
+            </div>
+        </Alert></div>;
+    }
+    const partialNames: Record<string, string> = { viewings: 'уулзалт', contracts: 'гэрээ', activities: 'түүх', property: 'байр', property_names: 'байрны нэр' };
 
     const phoneDigits = lead.customer_phone?.replace(/\D/g, '') || '';
     const interestValue = INTEREST_CHIPS.find((c) => (c.rooms && c.rooms === lead.preferred_rooms) || (c.type && c.type === lead.preferred_type))?.label ?? '';
@@ -100,6 +114,11 @@ export function LeadPanel({
             </header>
 
             <div className="min-h-0 flex-1 overflow-y-auto">
+                {(isError || !!data?.partial?.length) && <Alert variant="warning" className="m-3 w-auto">
+                    {isError ? 'Мэдээллийг шинэчилж чадсангүй. Өмнө ачаалсан мэдээлэл харагдаж байна.' : `Дараах мэдээллийг ачаалж чадсангүй: ${data!.partial!.map((name) => partialNames[name] || name).join(', ')}. Түүх дутуу байж болно.`}
+                    <Button size="sm" variant="secondary" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</Button>
+                </Alert>}
+                <LeadWorkActions key={lead.id} lead={lead} canWrite={canWrite} />
                 {/* Баримт */}
                 <div className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-2 border-b border-border px-4 py-3 text-[12.5px]">
                     <Label>Утас</Label>
@@ -113,6 +132,7 @@ export function LeadPanel({
                     <div>
                         {canWrite ? (
                             <select
+                                aria-label="Сонирхол"
                                 value={interestValue}
                                 onChange={(e) => {
                                     const c = INTEREST_CHIPS.find((x) => x.label === e.target.value);
@@ -132,6 +152,7 @@ export function LeadPanel({
                     <div>
                         {canWrite ? (
                             <input
+                                aria-label="Төсөв (₮)"
                                 value={budgetDraft ?? (lead.budget_max ? String(lead.budget_max) : '')}
                                 onFocus={() => setBudgetDraft(lead.budget_max ? String(lead.budget_max) : '')}
                                 onChange={(e) => setBudgetDraft(e.target.value)}
@@ -155,7 +176,7 @@ export function LeadPanel({
                     <Label>Дараагийн алхам</Label>
                     <div className="text-foreground">{nextStep(lead)}</div>
                     <Label>Сүүлд холбогдсон</Label>
-                    <div className="mono-label text-fg-2">{formatRelativeDays(lead.last_contact_at || lead.created_at)}</div>
+                    <div className="mono-label text-fg-2">{lead.last_contact_at ? formatRelativeDays(lead.last_contact_at) : 'Бүртгээгүй'}</div>
                 </div>
 
                 {/* Үйлдэл */}
@@ -176,6 +197,7 @@ export function LeadPanel({
                     <div className="border-b border-border px-4 py-3">
                         <div className={cn('rounded-md border bg-surface transition-shadow', note || isCall ? 'border-brand shadow-[0_0_0_3px_var(--brand-soft)]' : 'border-border-strong')}>
                             <textarea
+                                aria-label="Тэмдэглэл эсвэл дуудлагын үр дүн"
                                 ref={noteRef}
                                 value={note}
                                 onChange={(e) => setNote(e.target.value)}

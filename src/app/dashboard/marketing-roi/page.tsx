@@ -62,13 +62,13 @@ interface CampaignRoi {
     cpl: number | null;
     cpa: number | null;
     roas: number | null;
-    profit: number;
+    profit: number | null;
 }
 interface RoiTotals {
     spend: number; leads: number; won: number; revenue: number;
-    cpl: number | null; cpa: number | null; roas: number | null; profit: number;
+    cpl: number | null; cpa: number | null; roas: number | null; profit: number | null;
 }
-interface RoiData { campaigns: CampaignRoi[]; sources: unknown[]; totals: RoiTotals; }
+interface RoiData { campaigns: CampaignRoi[]; sources: unknown[]; totals: RoiTotals; basis?: { note: string }; }
 
 interface SocialPost { id: string; content: string | null; likes: number; comments: number; shares: number; published_at: string | null; }
 interface SocialInsight { captured_at: string; reach: number; impressions: number; followers: number; }
@@ -107,7 +107,7 @@ const roiColumns: DataTableColumn<CampaignRoi>[] = [
     { key: 'leads', header: 'Лийд', align: 'center', sortable: true, accessor: (c) => c.leads, cell: (c) => <span className="tabular-nums">{c.leads}</span> },
     { key: 'cpl', header: 'CPL', align: 'right', sortable: true, accessor: (c) => c.cpl ?? -1, cell: (c) => (c.cpl !== null ? <Money value={c.cpl} compact /> : '—') },
     { key: 'won', header: 'Хожсон', align: 'center', sortable: true, accessor: (c) => c.won, cell: (c) => <span className="tabular-nums">{c.won}</span> },
-    { key: 'revenue', header: 'Орлого', align: 'right', sortable: true, accessor: (c) => c.revenue, cell: (c) => <Money value={c.revenue} compact /> },
+    { key: 'revenue', header: 'Гэрээний дүн', align: 'right', sortable: true, accessor: (c) => c.revenue, cell: (c) => <Money value={c.revenue} compact /> },
     {
         key: 'roas',
         header: 'ROAS',
@@ -162,6 +162,7 @@ export default function MarketingROIPage() {
     const [campaignsLoading, setCampaignsLoading] = useState(false);
     const [campaignsError, setCampaignsError] = useState<string | null>(null);
     const [roi, setRoi] = useState<RoiData | null>(null);
+    const [roiError, setRoiError] = useState(false);
     const [social, setSocial] = useState<{ posts: SocialPost[]; insights: SocialInsight[] } | null>(null);
     const [timeline, setTimeline] = useState<TimelineMonth[]>([]);
     const [syncingSocial, setSyncingSocial] = useState(false);
@@ -169,11 +170,12 @@ export default function MarketingROIPage() {
     useEffect(() => {
         if (!shop?.id) return;
         fetchData();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [shop?.id]);
 
     async function fetchData() {
         setLoadError(false);
+        setRoiError(false);
+        setRoi(null);
         try {
             // API-аар (RBAC + shop scope сервер талд) — өмнө нь browser Supabase, зөвхөн RLS
             const { leads: leadRows } = await dashboardJson<{ leads: any[] }>('/api/dashboard/leads?pageSize=1000');
@@ -183,15 +185,14 @@ export default function MarketingROIPage() {
             const { rows: stored } = await dashboardJson<{ rows: AdCampaign[] }>('/api/marketing/data/ad_campaigns?eq.platform=facebook&order=updated_at.desc');
             setCampaigns(stored || []);
 
-            // Жинхэнэ ROI roll-up (spend↔lead↔орлого) — best-effort
+            // Таталт алдагдвал хуучин/тэг дүнг одоогийн тайлан мэт харуулахгүй.
             try {
                 const res = await dashboardFetch('/api/dashboard/marketing-roi');
-                if (res.ok) {
-                    const roiJson = await res.json();
-                    setRoi(roiJson.roi || null);
-                }
+                if (!res.ok) throw new Error('ROI унших алдаа');
+                const roiJson = await res.json();
+                setRoi(roiJson.roi || null);
             } catch {
-                // best-effort
+                setRoiError(true);
             }
 
             // Хадгалсан organic social түүх — best-effort
@@ -508,14 +509,15 @@ export default function MarketingROIPage() {
                         />
                     </StatBar>
 
-                    {/* True ROI (spend ↔ lead ↔ орлого) */}
-                    {roi && roi.totals.spend > 0 && (
+                    {roiError && <Alert variant="warning">Маркетингийн гэрээ, зардлын тайланг уншиж чадсангүй. Дахин шинэчилнэ үү.</Alert>}
+                    {roi && (
                         <>
+                            {roi.basis?.note && <p className="text-sm text-muted-foreground mb-4">{roi.basis.note}</p>}
                             <StatBar columns={4}>
                                 <StatTile label="Зарын зардал" value={fmtMNT(roi.totals.spend)} icon={<DollarSign className="w-4 h-4" />} accent="warning" />
-                                <StatTile label="Орлого (хожсон)" value={fmtMNT(roi.totals.revenue)} icon={<Target className="w-4 h-4" />} accent="success" />
+                                <StatTile label="Гэрээний дүн" value={fmtMNT(roi.totals.revenue)} helper="Бүх хугацааны, лидтэй холбосон" icon={<Target className="w-4 h-4" />} accent="success" />
                                 <StatTile label="ROAS" value={roi.totals.roas !== null ? `${roi.totals.roas}x` : '—'} helper={roi.totals.cpl !== null ? `CPL ${fmtMNT(roi.totals.cpl)}` : undefined} icon={<TrendingUp className="w-4 h-4" />} accent="brand" />
-                                <StatTile label="Цэвэр ашиг" value={fmtMNT(roi.totals.profit)} helper={roi.totals.cpa !== null ? `CPA ${fmtMNT(roi.totals.cpa)}` : undefined} icon={<BarChart3 className="w-4 h-4" />} accent={roi.totals.profit >= 0 ? 'success' : 'danger'} />
+                                <StatTile label="Гэрээтэй лид" value={String(roi.totals.won)} helper="Хүчинтэй гэрээгээр баталгаажсан" icon={<BarChart3 className="w-4 h-4" />} accent="success" />
                             </StatBar>
 
                             {roi.campaigns.length > 0 && (

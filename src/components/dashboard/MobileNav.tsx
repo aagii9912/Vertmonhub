@@ -15,6 +15,7 @@ import {
     isNavItemActive,
     type NavItem,
 } from '@/lib/navigation/nav';
+import { useDashboardMode } from '@/hooks/useDashboardMode';
 import { useNavCounts } from '@/hooks/useNavCounts';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
 import { openAiPanel } from '@/lib/ai/context';
@@ -30,6 +31,8 @@ export function MobileNav() {
     const [sheetOpen, setSheetOpen] = useState(false);
     const { user } = useAuth();
     const counts = useNavCounts();
+    const { data: dashboardMode } = useDashboardMode();
+    const dashboardName = dashboardMode?.mode === 'personal' ? 'Өнөөдөр' : 'Самбар';
 
     const userRole = user?.role || 'viewer';
     const userPermissions = user?.permissions;
@@ -43,7 +46,7 @@ export function MobileNav() {
         };
     }, [userRole, userPermissions]);
 
-    const tabs = MOBILE_TABS.filter((t) => can(t.module));
+    const tabs = MOBILE_TABS.filter((t) => can(t.module)).map(item => item.href === '/dashboard' ? { ...item, name: dashboardName } : item);
     const rest = [
         ...PRIMARY_NAV.filter((i) => !MOBILE_TABS.includes(i)),
         ...BOTTOM_NAV,

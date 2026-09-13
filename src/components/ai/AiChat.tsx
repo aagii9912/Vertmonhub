@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Sparkles, Check, X, Loader2, AlertCircle, RotateCcw, ChevronDown, ChevronRight, ShieldCheck, Copy, CheckCheck, Users } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAiContext, suggestionsFor, contextLabel } from '@/lib/ai/context';
@@ -34,6 +35,7 @@ export interface AiMessage {
     chartConfig?: { type?: string; data?: { name: string; value: number }[] } | null;
     data?: unknown;
     agentsUsed?: StreamDone['agentsUsed'];
+    interruption?: StreamDone['interruption'];
     trace?: unknown;
     pendingActions?: PendingAction[];
     /** Тодруулга (ask_user) — chip-ээр хариулна */
@@ -94,6 +96,7 @@ const toolLabel = (t: string) => TOOL_LABEL[t] ?? t;
 /** Түүхэнд илгээх агуулга: текст + гүйцэтгэсэн/цуцалсан үйлдлийн тэмдэглэл + тодруулга. */
 function historyContent(m: AiMessage): string {
     const parts = [m.content];
+    if (m.error) parts.push(`[Ажиллагаа тасарсан: ${m.error.message}. Алхмууд: ${(m.activity || []).map(a => `${a.label}: ${a.summary || 'үр дүн тодорхойгүй'}`).join('; ')}. Дахин үйлдэл хийхээс өмнө бүртгэлийг шалга.]`);
     if (m.clarification && !m.content) parts.push(`(Тодруулга асуусан: ${m.clarification.question})`);
     const acts = (m.pendingActions || []).filter((a) => a.status !== 'pending' && a.status !== 'running');
     if (acts.length) parts.push('[Үйлдлийн төлөв: ' + acts.map((a) => `${a.label} — ${a.status === 'done' ? 'гүйцэтгэгдсэн' : a.status === 'cancelled' ? 'хэрэглэгч цуцалсан' : 'алдаа'}`).join('; ') + ']');
@@ -119,6 +122,8 @@ interface Props {
 
 export function AiChat({ compact, className, prefill, onPrefillConsumed, active, conversationId: convProp, onConversationId, initialMessages, messagesLoading }: Props) {
     const { shop, user } = useAuth();
+    const queryClient = useQueryClient();
+    const refreshWork = useCallback(() => { void queryClient.invalidateQueries(); }, [queryClient]);
     const ctx = useAiContext();
     const [messages, setMessages] = useState<AiMessage[]>(initialMessages ?? []);
     const [conversationId, setConversationId] = useState<string | null>(convProp ?? null);
@@ -146,7 +151,7 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
         const atts = attachments.map((a) => ({ url: a.url!, name: a.name, mimeType: a.mimeType })).filter((a) => a.url);
         const content = text || (atts.length ? 'Хавсаргасан файлыг шинжилж туслаач.' : '');
         if (!content) return;
-        const history = messagesRef.current.filter((m) => !m.error && (m.content || m.pendingActions?.length || m.clarification)).slice(-20).map((m) => ({ role: m.role, content: historyContent(m) }));
+        const history = messagesRef.current.filter((m) => m.content || m.pendingActions?.length || m.clarification || m.activity?.length).slice(-20).map((m) => ({ role: m.role, content: historyContent(m) }));
         const userMsg: AiMessage = { id: uid(), role: 'user', content, attachments: atts, hidden: opts?.hidden };
         const asstId = uid();
         setMessages((prev) => [...prev, userMsg, { id: asstId, role: 'assistant', content: '', streaming: true, activity: [], status: 'Бодож байна…' }]);
@@ -185,18 +190,20 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
                             update(asstId, { status: null, clarification: { question: e.question, options: e.options } });
                             break;
                         case 'done': {
-                            const actions: PendingAction[] = (e.pendingActions || []).map((a) => ({ ...a, status: 'pending', autoApproved: shop?.id ? isToolAllowed(shop.id, a.tool, user?.id) : false }));
-                            update(asstId, (m) => ({ ...m, content: e.response || m.content, streaming: false, status: null, activity: (m.activity || []).map((a) => (a.status === 'run' ? { ...a, status: 'ok' } : a)), chartConfig: e.chartConfig as AiMessage['chartConfig'], data: e.data, agentsUsed: e.agentsUsed, trace: e.trace, pendingActions: actions, clarification: e.clarification ?? m.clarification ?? null }));
+                            const actions: PendingAction[] = (e.pendingActions || []).map((a) => ({ ...a, status: 'pending', autoApproved: !e.interruption && shop?.id ? isToolAllowed(shop.id, a.tool, user?.id) : false }));
+                            update(asstId, (m) => ({ ...m, content: e.response || m.content, streaming: false, status: null, activity: (m.activity || []).map((a) => (a.status === 'run' ? { ...a, status: e.interruption ? 'fail' : 'ok', summary: e.interruption ? 'Үр дүнг бүртгэлээс шалгана уу' : a.summary } : a)), chartConfig: e.chartConfig as AiMessage['chartConfig'], data: e.data, agentsUsed: e.agentsUsed, trace: e.trace, pendingActions: actions, clarification: e.clarification ?? m.clarification ?? null, interruption: e.interruption }));
                             if (e.conversationId && e.conversationId !== conversationId) { setConversationId(e.conversationId); onConversationId?.(e.conversationId); }
                             break;
                         }
                         case 'error':
-                            update(asstId, (m) => ({ ...m, streaming: false, status: null, error: { message: e.message, retryable: e.retryable !== false, request: { text: content, attachments: atts } } }));
+                            update(asstId, (m) => ({ ...m, streaming: false, status: null, activity: (m.activity || []).map(a => a.status === 'run' ? { ...a, status: 'fail', summary: 'Үр дүн тодорхойгүй — бүртгэлээ шалгана уу' } : a), error: { message: e.message, retryable: e.retryable === true && !m.activity?.length, request: { text: content, attachments: atts } } }));
                             break;
                     }
                 },
             },
         );
+        // A disconnected/partial run may already have changed data.
+        refreshWork();
         setBusy(false);
         abortRef.current = null;
     };
@@ -228,6 +235,7 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
         if (continuationTimer.current) clearTimeout(continuationTimer.current);
         continuationTimer.current = setTimeout(() => {
             const m = messagesRef.current.find((x) => x.id === msgId);
+            if (m?.interruption || m?.error) return;
             const acts = m?.pendingActions || [];
             if (!acts.length || acts.some((a) => a.status === 'pending' || a.status === 'running')) return;
             const done = acts.filter((a) => a.status === 'done');
@@ -242,11 +250,12 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
     const approve = useCallback(async (a: PendingAction) => {
         setAction(a.id, { status: 'running' });
         const r = await approveAssistantAction({ shopId: shop?.id, tool: a.tool, args: a.args, conversationId });
+        refreshWork();
         if (r.ok) { setAction(a.id, { status: 'done', resultMessage: r.message, result: r.result }); toast.success(r.message); }
         else { setAction(a.id, { status: 'error', resultMessage: r.message, autoApproved: false }); toast.error(r.message); }
         const owner = messagesRef.current.find((m) => m.pendingActions?.some((x) => x.id === a.id));
         if (owner) scheduleContinuation(owner.id);
-    }, [shop?.id, conversationId, scheduleContinuation]);
+    }, [shop?.id, conversationId, scheduleContinuation, refreshWork]);
 
     const approveAll = async (ids: string[]) => {
         const all = messages.flatMap((m) => m.pendingActions || []).filter((a) => ids.includes(a.id) && a.status === 'pending');
@@ -255,7 +264,7 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
 
     const allowAlways = (a: PendingAction) => {
         if (shop?.id) addAllowedTool(shop.id, a.tool, user?.id);
-        setMessages((prev) => prev.map((m) => (m.pendingActions ? { ...m, pendingActions: m.pendingActions.map((x) => (x.id !== a.id && x.status === 'pending' && x.tool === a.tool ? { ...x, autoApproved: true } : x)) } : m)));
+        setMessages((prev) => prev.map((m) => (m.pendingActions && !m.interruption ? { ...m, pendingActions: m.pendingActions.map((x) => (x.id !== a.id && x.status === 'pending' && x.tool === a.tool ? { ...x, autoApproved: true } : x)) } : m)));
         void approve(a);
     };
 
@@ -267,6 +276,10 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
     }, [messages, approve]);
 
     const suggestions = useMemo(() => suggestionsFor(ctx), [ctx]);
+    const selectSuggestion = (prompt: string) => {
+        if (prompt.endsWith(': ')) window.dispatchEvent(new CustomEvent('vertmon:ai-prefill', { detail: prompt }));
+        else void send(prompt, []);
+    };
     const empty = messages.length === 0 && !messagesLoading;
 
     return (
@@ -279,11 +292,11 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
                             <span className="flex h-9 w-9 items-center justify-center rounded-md bg-brand-soft text-brand"><Sparkles className="h-4.5 w-4.5" /></span>
                             <div>
                                 <div className="text-[14px] font-semibold text-foreground">{ctx ? `${contextLabel(ctx)} — юугаар туслах вэ?` : 'Юугаар туслах вэ?'}</div>
-                                <p className="mt-1 text-[12.5px] text-muted-foreground">Өгөгдөл асуух, дүгнэлт авах, лид/уулзалт/гэрээний үйлдлийг чатаар хийлгэх. Үйлдэл бүрийг та батална.</p>
+                                <p className="mt-1 text-[12.5px] text-muted-foreground">Дуудлага, хийх ажил, дараагийн холбоогоо энгийн үгээр бүртгүүлж, тайлангаа гаргуулаарай. Төлбөр болон чухал өөрчлөлтийг батлахаас өмнө харуулна.</p>
                             </div>
                             <div className={cn('flex flex-wrap gap-1.5', !compact && 'justify-center')}>
                                 {suggestions.map((s) => (
-                                    <button key={s.label} type="button" onClick={() => (s.prompt.endsWith(': ') ? onPrefillConsumed && (window.dispatchEvent(new CustomEvent('vertmon:ai-prefill', { detail: s.prompt }))) : void send(s.prompt, []))} className="h-[28px] rounded-md border border-border bg-surface px-2.5 text-[12.5px] text-fg-2 transition-colors hover:border-brand hover:bg-brand-soft hover:text-brand focus-ring">
+                                    <button key={s.label} type="button" onClick={() => selectSuggestion(s.prompt)} className="h-[28px] rounded-md border border-border bg-surface px-2.5 text-[12.5px] text-fg-2 transition-colors hover:border-brand hover:bg-brand-soft hover:text-brand focus-ring">
                                         {s.label}
                                     </button>
                                 ))}
@@ -300,7 +313,7 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
                     {!empty && suggestions.length > 0 && !busy && (
                         <div className="mb-2 flex gap-1.5 overflow-x-auto no-scrollbar">
                             {suggestions.slice(0, 3).map((s) => (
-                                <button key={s.label} type="button" onClick={() => void send(s.prompt, [])} className="h-[24px] shrink-0 rounded-md border border-border px-2 text-[11.5px] text-fg-2 hover:border-brand hover:text-brand">{s.label}</button>
+                                <button key={s.label} type="button" onClick={() => selectSuggestion(s.prompt)} className="h-[24px] shrink-0 rounded-md border border-border px-2 text-[11.5px] text-fg-2 hover:border-brand hover:text-brand">{s.label}</button>
                             ))}
                         </div>
                     )}
@@ -364,6 +377,7 @@ function AssistantBlock({ m, compact, busy, onRetry, onApprove, onApproveAll, on
                     </div>
                 ) : (
                     <>
+                        {m.interruption && <div role="status" className="mb-2 rounded-md border border-status-danger/30 bg-status-danger-soft px-3 py-2 text-[12.5px] text-status-danger">{m.interruption.message} Үлдсэн үйлдлийг шалгаад тус бүрд нь зөвшөөрнө үү.</div>}
                         {m.content ? (
                             <div className={cn('group/msg relative text-[13px] leading-relaxed text-foreground', m.streaming && 'after:ml-0.5 after:inline-block after:h-3.5 after:w-1.5 after:animate-pulse after:bg-brand after:align-middle')}>
                                 <MarkdownMessage content={m.content} />

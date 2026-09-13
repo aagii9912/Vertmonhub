@@ -32,6 +32,7 @@ import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { formatShortDate, formatTime } from '@/lib/utils/date';
 import { KpiGridSkeleton } from '@/components/ui/LoadingSkeleton';
 import { cn } from '@/lib/utils';
+import { openAiPanel } from '@/lib/ai/context';
 import {
     Bell,
     BellRing,
@@ -337,7 +338,7 @@ export default function TasksPage() {
     return (
         <div className="mx-auto max-w-3xl">
             <PageHeader
-                eyebrow="Борлуулалт"
+                eyebrow="Өдөр тутмын ажил"
                 title="Миний ажлууд"
                 subtitle={
                     pendingCount > 0
@@ -346,6 +347,7 @@ export default function TasksPage() {
                 }
                 secondaryActions={
                     <div className="flex items-center gap-3">
+                        <Button variant="secondary" size="sm" onClick={() => openAiPanel('Миний хийх ажил, дуусах хугацаа, сануулгыг бүртгэ: ')}>AI-аар бүртгүүлэх</Button>
                         {todayPct !== null && (
                             <ProgressRing
                                 value={todayPct}

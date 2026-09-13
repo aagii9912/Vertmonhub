@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireModule } from '@/lib/auth/require-permission';
+import { requireAnyModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 
@@ -14,7 +14,7 @@ import { safeErrorResponse } from '@/lib/utils/safe-error';
  */
 export async function GET() {
     try {
-        const denied = await requireModule('reports');
+        const denied = await requireAnyModule(['reports', 'leads']);
         if (denied) return denied;
 
         const authShop = await getUserShop();
@@ -36,7 +36,7 @@ export async function GET() {
 
         const map = new Map<
             string,
-            { name: string; user_id: string | null; is_active: boolean; hasAccount: boolean }
+            { name: string; user_id: string | null; is_active: boolean; hasAccount: boolean; assignable: boolean }
         >();
 
         for (const r of rosterRes.error ? [] : rosterRes.data || []) {
@@ -46,13 +46,14 @@ export async function GET() {
                 user_id: r.user_id ?? null,
                 is_active: !!r.is_active,
                 hasAccount: !!r.user_id,
+                assignable: !!r.is_active,
             });
         }
 
         // Бүртгэлд байхгүй нэрс — default идэвхтэй (manager-performance route-ын жишиг)
         const addName = (name?: string | null) => {
             if (!name || map.has(name)) return;
-            map.set(name, { name, user_id: null, is_active: true, hasAccount: false });
+            map.set(name, { name, user_id: null, is_active: true, hasAccount: false, assignable: false });
         };
         for (const r of perfRes.error ? [] : perfRes.data || []) addName(r.sales_manager);
         for (const r of leadRes.error ? [] : leadRes.data || []) addName(r.sales_manager_name);

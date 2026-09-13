@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { requireModuleWrite, requireModule } from '@/lib/auth/require-permission';
-import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
+import { resolveManagerIdentity, resolveActiveManagerName } from '@/lib/sales/manager-identity';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logLeadActivity, listLeadActivities } from '@/lib/leads/activities';
 import { statusLabel } from '@/lib/leads/labels';
+import { hasRealContractFields } from '@/lib/leads/contracts';
 import { logger } from '@/lib/utils/logger';
 
 const VALID_STATUS = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'];
@@ -167,6 +168,11 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const db = supabaseAdmin();
 
         // Лийд энэ shop-д харьяалагдаж байгааг шалгана (өмнөх утгуудыг түүхэнд бичихэд ашиглана)
+        if (typeof updates.sales_manager_name === 'string') {
+            const manager = await resolveActiveManagerName(db, authShop.id, updates.sales_manager_name);
+            if (!manager.ok) return NextResponse.json({ error: manager.error }, { status: manager.status });
+            updates.sales_manager_name = manager.managerName;
+        }
         const { data: lead } = await db
             .from('leads')
             .select('id, status, sales_manager_name, lost_reason')
@@ -181,13 +187,14 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         // «Амжилттай» — зөвхөн бодит гэрээтэй лид. DB trigger (create_contract_on_lead_won)
         // гэрээгүй closed_won-д үнэгүй stub гэрээ үүсгэж статистикийг өсгөдөг байв (review H5).
         if (updates.status === 'closed_won' && lead.status !== 'closed_won') {
-            const { count } = await db
+            const { data: contracts, error: contractError } = await db
                 .from('property_contracts')
-                .select('id', { count: 'exact', head: true })
+                .select('contract_number, total_price, contract_status')
                 .eq('lead_id', id)
                 .eq('shop_id', authShop.id)
                 .is('deleted_at', null);
-            if (!count) {
+            if (contractError) return NextResponse.json({ error: 'Гэрээ шалгахад алдаа гарлаа' }, { status: 500 });
+            if (!contracts?.some(hasRealContractFields)) {
                 return NextResponse.json(
                     { error: 'Гэрээгүй лидийг «Амжилттай» болгох боломжгүй. Эхлээд «Гэрээ үүсгэх»-ээр гэрээ бүртгэнэ үү.' },
                     { status: 400 },

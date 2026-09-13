@@ -3,8 +3,9 @@ import { z } from 'zod';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { requireModuleWrite, resolvePermissions, requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
-import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
+import { resolveManagerIdentity, resolveActiveManagerName } from '@/lib/sales/manager-identity';
 import { ACTIVE_STATUSES } from '@/lib/leads/labels';
+import { isLeadWorkQueue, workQueueFilter } from '@/lib/leads/work-queue';
 import { parsePagination, buildPageMeta } from '@/lib/utils/pagination';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logger } from '@/lib/utils/logger';
@@ -59,6 +60,10 @@ export async function GET(request: NextRequest) {
             .order(sort, { ascending, nullsFirst: false })
             .order('created_at', { ascending: false })
             .range(pagination.from, pagination.to);
+
+        const queue = searchParams.get('queue');
+        if (queue && !isLeadWorkQueue(queue)) return NextResponse.json({ error: 'Буруу ажлын жагсаалт' }, { status: 400 });
+        if (isLeadWorkQueue(queue)) query = query.or(workQueueFilter(queue));
 
         // Хадгалсан харагдац
         const view = searchParams.get('view');
@@ -181,8 +186,15 @@ export async function POST(request: NextRequest) {
         ]);
         const role = perms?.role || 'viewer';
         const isAdmin = role === 'admin' || role === 'super_admin';
-        const salesManagerName =
-            (isAdmin && input.assignManager) || identity.managerName || null;
+        let salesManagerName = identity.isManager ? identity.managerName : null;
+        if (isAdmin && input.assignManager) {
+            const manager = await resolveActiveManagerName(db, authShop.id, input.assignManager);
+            if (!manager.ok) return NextResponse.json({ error: manager.error }, { status: manager.status });
+            salesManagerName = manager.managerName;
+        }
+        if (input.status === 'closed_won' || input.status === 'closed_lost') {
+            return NextResponse.json({ error: 'Шинэ лидийг идэвхтэй төлөвөөр бүртгэнэ. Гэрээ эсвэл алдсан шалтгаанаа дараа нь бүртгэнэ үү.' }, { status: 400 });
+        }
 
         // Idempotency: ижил client_request_id-тай лид аль хэдийн байвал түүнийг буцаана
         // (сүлжээ тасарч outbox дахин илгээсэн / ⌘↵ давхар дарсан тохиолдол).

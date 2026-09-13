@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "engines": {
-    "node": ">=18.17.0"
+    "node": ">=20.9.0"
   },
   "scripts": {
     "dev": "PORT=3001 HOST=127.0.0.1 NODE_OPTIONS='--no-network-family-autoselection' next dev",
@@ -14,6 +14,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "test:workflow": "playwright test --config=playwright.workflow.config.ts",
+    "test:payments": "node scripts/test-atomic-payments.mjs && node scripts/test-atomic-vendor-payments.mjs",
     "typecheck": "tsc --noEmit",
     "test:agent": "./scripts/agent-browser-test.sh"
   },
@@ -39,6 +41,7 @@
     "lucide-react": "^0.562.0",
     "motion": "^12.42.0",
     "next": "^16.3.4",
+    "openai": "^7.15.0",
     "radix-ui": "^1.4.3",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -52,6 +55,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.3.14",
     "@next/bundle-analyzer": "^16.3.4",
     "@playwright/test": "^1.58.0",
     "@tailwindcss/postcss": "^4",

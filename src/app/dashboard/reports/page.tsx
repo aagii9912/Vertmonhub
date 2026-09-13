@@ -22,6 +22,13 @@ const TILE_ACCENT: Record<ReportTile['accent'], string> = {
 
 const REPORTS: ReportTile[] = [
     {
+        href: '/dashboard/reports/operations',
+        title: 'Үйл ажиллагааны тайлан',
+        description: 'Гэрээний зорилт, мөнгөн урсгал, урьдчилгаа болон анхаарах лидийг нэг дор автоматаар нэгтгэнэ',
+        icon: FileBarChart,
+        accent: 'brand',
+    },
+    {
         href: '/dashboard/reports/kpi',
         title: 'Сарын KPI тайлан',
         description: 'Менежерийн сарын лид, уулзалт, гэрээ, борлуулалт, хийсэн ажлыг автоматаар нэгтгэсэн тайлан',
@@ -30,8 +37,8 @@ const REPORTS: ReportTile[] = [
     },
     {
         href: '/dashboard/reports/leads',
-        title: 'Лийд шинжилгээ',
-        description: 'Сэжмийн эх сурвалж, хөрвүүлэлт, төслөөр гүйцэтгэлийн анализ',
+        title: 'Лидийн шинжилгээ',
+        description: 'Лидийн эх үүсвэр, хөрвүүлэлт, төслөөр гүйцэтгэлийн анализ',
         icon: Users,
         accent: 'info',
     },
@@ -63,7 +70,7 @@ export default function ReportsPage() {
         <div>
             <PageHeader
                 eyebrow="Аналитик"
-                title="Тайлан & Шинжилгээ"
+                title="Тайлан ба шинжилгээ"
                 subtitle="Үл хөдлөхийн борлуулалтын дэлгэрэнгүй шинжилгээний төв"
             />
 

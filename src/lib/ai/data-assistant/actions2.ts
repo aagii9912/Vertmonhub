@@ -14,6 +14,9 @@ import { logMarketingSpend, upsertMarketingBudget, addMarketIndicator, listMarke
 import { listTransactions, financeSummary, addTransaction, listBills, payBill, type TxnMethod } from '@/lib/services/FinanceOps';
 import { SPEND_CHANNELS } from '@/lib/marketing/budget';
 import type { AssistantPerms } from './index';
+import { randomUUID } from 'node:crypto';
+import { ubDateStr } from '@/lib/utils/date';
+import { PayBillSchema } from '@/lib/validations/schemas';
 
 type Args = Record<string, any>;
 const db = () => adminClient();
@@ -190,16 +193,20 @@ export async function payBillTool(shopId: string, args: Args, confirm: boolean) 
     if (args.bill_id) q = q.eq('id', args.bill_id);
     else if (args.bill_number) q = q.ilike('bill_number', `%${args.bill_number}%`);
     else return { error: 'bill_id эсвэл bill_number шаардлагатай' };
-    const { data } = await q.limit(1);
+    const { data, error } = await q.limit(2);
+    if (error) return { error: 'Нэхэмжлэхийн мэдээлэл татаж чадсангүй' };
+    if (data && data.length > 1) return { error: 'Ижил дугаартай хэд хэдэн нэхэмжлэх байна. Яг төлөх нэхэмжлэхийн bill_id-г сонгоно уу.', bills: data };
     const bill: any = data?.[0];
     if (!bill) return { error: 'Нэхэмжлэх олдсонгүй' };
     const remaining = Number(bill.total_amount) - Number(bill.paid_amount || 0);
     const amount = args.amount != null ? Number(args.amount) : remaining;
     if (!Number.isFinite(amount) || amount <= 0) return { error: 'amount 0-ээс их байх ёстой' };
-    const payload = { bill_id: bill.id, amount, method: methodOf(args.method), paid_date: args.paid_date || null };
+    const parsed = PayBillSchema.safeParse({ client_request_id: args.client_request_id ?? (confirm ? undefined : randomUUID()), amount, method: methodOf(args.method), paid_date: args.paid_date ?? ubDateStr() });
+    if (!parsed.success) return { error: 'Төлбөрийн дүн, огноо эсвэл хүсэлтийн UUID буруу байна. Төлөлтийг шинээр бэлтгэнэ үү.' };
+    const payload = { bill_id: bill.id, ...parsed.data };
     const vendorName = Array.isArray(bill.vendors) ? bill.vendors[0]?.name : bill.vendors?.name;
     if (!confirm) return confirmNeeded('pay_vendor_bill', payload, `Нэхэмжлэх төлөх: ${bill.bill_number || vendorName || ''}`, { Нийлүүлэгч: vendorName || '-', Нэхэмжлэх: bill.bill_number || '-', Нийт: money(Number(bill.total_amount)), Үлдэгдэл: money(remaining), Төлөх: money(amount), Хэлбэр: payload.method || '-' });
-    const r = await payBill(db(), shopId, bill.id, payload);
+    const r = await payBill(db(), shopId, bill.id, parsed.data);
     if ('error' in r) return { error: r.error };
     return { success: true, message: `Нэхэмжлэх ${bill.bill_number || ''} ${money(amount)} төлөгдлөө (${r.bill.status === 'paid' ? 'бүрэн төлөгдсөн' : 'хэсэгчлэн'}).`, billId: bill.id };
 }

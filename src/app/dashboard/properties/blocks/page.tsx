@@ -266,18 +266,7 @@ export default function BlocksPage() {
                                 <Building2 className="w-5 h-5 text-brand-strong" />
                                 {activePhase} · Блок {selectedBlock} · {CATEGORY_LABEL[activeCategory]}
                             </h3>
-                            <div className="flex flex-wrap gap-2">
-                                {STATUS_ORDER.map((s) => {
-                                    const count = units.filter((u) => u.status === s).length;
-                                    if (!count) return null;
-                                    const m = meta(s);
-                                    return (
-                                        <span key={s} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                                            <StatusDot variant={m.dot} /> {m.label} ({count})
-                                        </span>
-                                    );
-                                })}
-                            </div>
+
                         </div>
 
                         {unitsLoading ? (
@@ -285,7 +274,7 @@ export default function BlocksPage() {
                         ) : units.length === 0 ? (
                             <EmptyState icon={<DoorOpen className="w-7 h-7" />} title="Нэгж алга" />
                         ) : (
-                            <UnitGrid units={units} category={activeCategory} onSelect={setSelectedUnit} selectedId={selectedUnit?.id} />
+                            <UnitBrowser key={`${activePhase}:${selectedBlock}:${activeCategory}`} units={units} category={activeCategory} onSelect={setSelectedUnit} selectedId={selectedUnit?.id} />
                         )}
                     </CardContent>
                 </Card>
@@ -303,6 +292,46 @@ export default function BlocksPage() {
             )}
         </div>
     );
+}
+
+// Шүүлтүүр нь зөвхөн сонгосон блокийн нэгжүүдэд үйлчилнэ.
+function UnitBrowser({ units, category, onSelect, selectedId }: {
+    units: UnitRow[]; category: string; onSelect: (unit: UnitRow) => void; selectedId?: string;
+}) {
+    const [status, setStatus] = useState('all');
+    const [rooms, setRooms] = useState('all');
+    const [query, setQuery] = useState('');
+    const [minArea, setMinArea] = useState('');
+    const [maxArea, setMaxArea] = useState('');
+    const [view, setView] = useState<'grid' | 'table'>('grid');
+    const roomOptions = [...new Set(units.flatMap(u => u.rooms == null ? [] : [u.rooms]))].sort((a, b) => a - b);
+    const filtered = units.filter(u => (status === 'all' || u.status === status)
+        && (rooms === 'all' || String(u.rooms) === rooms)
+        && (!query.trim() || u.code.toLowerCase().includes(query.trim().toLowerCase()))
+        && (!minArea || (u.sale_area != null && u.sale_area >= Number(minArea)))
+        && (!maxArea || (u.sale_area != null && u.sale_area <= Number(maxArea))));
+    const hasFilter = status !== 'all' || rooms !== 'all' || !!query || !!minArea || !!maxArea;
+    const reset = () => { setStatus('all'); setRooms('all'); setQuery(''); setMinArea(''); setMaxArea(''); };
+    const inputClass = 'h-10 rounded-md border border-border bg-surface px-2 text-sm focus-ring';
+    return <div className="space-y-3">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Нэгжийн төлөвөөр шүүх">
+            {['all', ...STATUS_ORDER].map(value => {
+                const count = value === 'all' ? units.length : units.filter(u => u.status === value).length;
+                return <button key={value} type="button" aria-pressed={status === value} onClick={() => setStatus(value)} className={cn('flex min-h-10 items-center gap-2 rounded-md border px-3 text-xs focus-ring', status === value ? 'border-brand bg-brand-soft text-brand-strong' : 'border-border text-fg-2 hover:bg-surface-2')}>
+                    {value !== 'all' && <StatusDot variant={meta(value).dot} />}{value === 'all' ? 'Бүгд' : meta(value).label} <span className="tabular-nums">{count}</span>
+                </button>;
+            })}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+            <input aria-label="Нэгжийн кодоор хайх" placeholder="Тоот / код хайх" value={query} onChange={e => setQuery(e.target.value)} className={cn(inputClass, 'min-w-0 w-full sm:w-44')} />
+            {roomOptions.length > 0 && <select aria-label="Өрөөний тоо" value={rooms} onChange={e => setRooms(e.target.value)} className={inputClass}><option value="all">Бүх өрөө</option>{roomOptions.map(n => <option key={n} value={n}>{n} өрөө</option>)}</select>}
+            <input type="number" min="0" step="any" aria-label="Талбай хамгийн бага (м²)" placeholder="м² доод" value={minArea} onChange={e => setMinArea(e.target.value)} className={cn(inputClass, 'w-24')} />
+            <input type="number" min="0" step="any" aria-label="Талбай хамгийн их (м²)" placeholder="м² дээд" value={maxArea} onChange={e => setMaxArea(e.target.value)} className={cn(inputClass, 'w-24')} />
+            <div className="flex gap-1 sm:ml-auto" role="group" aria-label="Нэгжийн харагдац">{(['grid', 'table'] as const).map(v => <button key={v} type="button" aria-pressed={view === v} onClick={() => setView(v)} className={cn(inputClass, view === v && 'border-brand bg-brand-soft text-brand-strong')}>{v === 'grid' ? 'Давхраар' : 'Хүснэгт'}</button>)}</div>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground"><p role="status">{units.length} нэгжээс {filtered.length} харагдаж байна</p>{hasFilter && <button type="button" onClick={reset} className="min-h-9 text-brand-strong hover:underline focus-ring">Шүүлтүүр цэвэрлэх</button>}</div>
+        {filtered.length === 0 ? <EmptyState icon={<DoorOpen className="h-6 w-6" />} title="Шүүлтүүрт тохирох нэгж алга" description="Төлөв, өрөө эсвэл талбайн нөхцөлийг өөрчилнө үү." /> : view === 'grid' ? <UnitGrid units={filtered} category={category} onSelect={onSelect} selectedId={selectedId} /> : <div className="max-h-[600px] overflow-auto rounded-md border border-border"><table className="w-full text-sm"><caption className="sr-only">Сонгосон блокийн шүүсэн нэгжүүд</caption><thead className="sticky top-0 bg-surface-2"><tr>{['Тоот / код', 'Давхар', 'Өрөө', 'Талбай', 'Төлөв'].map(label => <th key={label} scope="col" className="whitespace-nowrap px-3 py-2 text-left text-xs font-medium">{label}</th>)}</tr></thead><tbody>{filtered.map(u => <tr key={u.id} className={cn('border-t border-border', selectedId === u.id && 'bg-brand-soft')}><td className="px-3"><button type="button" onClick={() => onSelect(u)} className="min-h-11 whitespace-nowrap font-medium text-brand-strong underline-offset-4 hover:underline focus-ring">{u.code}</button></td><td className="px-3">{u.floor ?? '—'}</td><td className="px-3">{u.rooms ?? '—'}</td><td className="whitespace-nowrap px-3">{u.sale_area == null ? '—' : `${u.sale_area} м²`}</td><td className="whitespace-nowrap px-3"><Badge variant={meta(u.status).variant}>{meta(u.status).label}</Badge></td></tr>)}</tbody></table></div>}
+    </div>;
 }
 
 // ============================================
@@ -330,15 +359,16 @@ function UnitGrid({ units, category, onSelect, selectedId }: {
             <button
                 key={u.id}
                 onClick={() => onSelect(u)}
+                aria-label={`${u.code} · ${m.label} · ${u.rooms ? `${u.rooms} өрөө · ` : ''}${u.sale_area ?? '—'} м²`}
                 title={`${u.code} · ${m.label}${u.buyer_name ? ' · ' + u.buyer_name : ''}`}
                 className={cn(
-                    'relative h-12 w-full rounded-md border flex flex-col items-center justify-center text-center transition-all px-1',
+                    'relative h-14 w-full rounded-md border flex flex-col items-center justify-center text-center transition-all px-1',
                     m.cell,
                     selectedId === u.id && 'ring-2 ring-brand scale-105',
                 )}
             >
-                <span className="text-[10px] font-bold leading-tight truncate max-w-full">{u.unit_type || u.code.split('-').pop()}</span>
-                <span className="text-[9px] opacity-75 leading-tight">
+                <span className="text-xs font-semibold leading-tight truncate max-w-full">{u.code}</span>
+                <span className="text-[11px] leading-relaxed">
                     {u.rooms ? `${u.rooms}ө · ` : ''}{u.sale_area ? `${u.sale_area}м²` : ''}
                 </span>
                 {u.buyer_name && <StatusDot variant="brand" className="absolute top-1 right-1 size-1.5" />}
@@ -350,7 +380,7 @@ function UnitGrid({ units, category, onSelect, selectedId }: {
     const useFloors = category === 'residential' && byFloor.length > 1;
 
     // Tailwind v4 нь динамик grid-cols-*-ийг үргэлж үүсгэдэггүй тул inline style ашиглав.
-    const gridCols = { gridTemplateColumns: 'repeat(auto-fill, minmax(72px, 1fr))' };
+    const gridCols = { gridTemplateColumns: 'repeat(auto-fill, minmax(96px, 1fr))' };
 
     if (!useFloors) {
         return (

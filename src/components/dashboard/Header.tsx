@@ -3,11 +3,13 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Bell, ChevronRight, Plus } from 'lucide-react';
+import { MessageSquare, ChevronRight, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getBreadcrumb, getNavTitle } from '@/lib/navigation/nav';
 import { openCommandPalette, openQuickCreate } from '@/lib/navigation/commandPalette';
 import { onPageTitle } from '@/lib/navigation/pageTitle';
+import { FeedbackWidget } from '@/components/feedback/FeedbackWidget';
+import { useDashboardMode } from '@/hooks/useDashboardMode';
 import { useNavCounts } from '@/hooks/useNavCounts';
 
 /**
@@ -18,12 +20,13 @@ import { useNavCounts } from '@/hooks/useNavCounts';
  */
 export function Header() {
     const pathname = usePathname() || '';
+    const { data: dashboardMode } = useDashboardMode();
     const [override, setOverride] = useState<string | null>(null);
     useEffect(() => onPageTitle(setOverride), []);
     useEffect(() => setOverride(null), [pathname]);
 
     const crumbs = override ? [] : getBreadcrumb(pathname);
-    const title = override ?? getNavTitle(pathname);
+    const title = override ?? (pathname === '/dashboard' ? (dashboardMode?.mode === 'personal' ? 'Өнөөдөр' : 'Самбар') : getNavTitle(pathname));
 
     // N товчлуур — түргэн бүртгэл. Оролтод бичиж байхад ажиллахгүй.
     useEffect(() => {
@@ -31,7 +34,7 @@ export function Header() {
             if (e.key !== 'n' && e.key !== 'N' && e.key !== 'ү' && e.key !== 'Ү') return;
             if (e.metaKey || e.ctrlKey || e.altKey) return;
             const el = document.activeElement as HTMLElement | null;
-            if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+            if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
             e.preventDefault();
             openQuickCreate('lead');
         };
@@ -41,7 +44,7 @@ export function Header() {
 
     return (
         <header
-            className="sticky top-0 z-30 flex shrink-0 items-center gap-3 border-b border-border bg-surface px-4 md:px-6"
+            className="sticky top-0 z-30 flex shrink-0 items-center gap-2 border-b border-border bg-surface px-4 md:px-6"
             style={{ height: 'var(--header-h)' }}
         >
             {/* Гар утсанд брэнд, дэлгэц дээр breadcrumb */}
@@ -59,15 +62,15 @@ export function Header() {
                         const last = i === crumbs.length - 1;
                         return (
                             <React.Fragment key={`${c.name}-${i}`}>
-                                {i > 0 && <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+                                {i > 0 && <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground sm:block" />}
                                 {last ? (
                                     <h1 className="truncate text-[16px] font-semibold tracking-[-0.01em] text-foreground">{c.name}</h1>
                                 ) : c.href ? (
-                                    <Link href={c.href} className="truncate text-[13px] text-muted-foreground transition-colors hover:text-foreground">
+                                    <Link href={c.href} className="hidden truncate sm:block text-[13px] text-muted-foreground transition-colors hover:text-foreground">
                                         {c.name}
                                     </Link>
                                 ) : (
-                                    <span className="truncate text-[13px] text-muted-foreground">{c.name}</span>
+                                    <span className="hidden truncate sm:block text-[13px] text-muted-foreground">{c.name}</span>
                                 )}
                             </React.Fragment>
                         );
@@ -77,12 +80,12 @@ export function Header() {
                 )}
             </nav>
 
-            <div className="ml-auto flex shrink-0 items-center gap-2">
+            <div className="ml-auto flex shrink-0 items-center gap-1">
                 {/* Гар утсанд хайлт (sidebar байхгүй тул) */}
                 <button
                     type="button"
                     onClick={openCommandPalette}
-                    className="flex h-[30px] w-[30px] items-center justify-center rounded-md text-fg-2 transition-colors hover:bg-surface-2 hover:text-foreground focus-ring md:hidden"
+                    className="flex h-10 w-9 md:h-[30px] md:w-[30px] items-center justify-center rounded-md text-fg-2 transition-colors hover:bg-surface-2 hover:text-foreground focus-ring md:hidden"
                     aria-label="Хайх"
                 >
                     <svg viewBox="0 0 24 24" className="h-4 w-4 stroke-current" fill="none" strokeWidth={1.75} strokeLinecap="round">
@@ -92,17 +95,18 @@ export function Header() {
                 </button>
 
                 <NotificationBell />
+                <FeedbackWidget />
 
                 <button
                     type="button"
                     onClick={() => openQuickCreate('lead')}
                     className={cn(
-                        'flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-2.5 text-[12.5px] font-medium text-brand-fg',
+                        'hidden md:flex h-10 md:h-[30px] items-center gap-1.5 rounded-md bg-brand px-2.5 text-[12.5px] font-medium text-brand-fg',
                         'transition-colors hover:bg-brand-strong focus-ring',
                     )}
                 >
                     <Plus className="h-4 w-4" strokeWidth={2} />
-                    <span>Шинэ</span>
+                    <span>Лид нэмэх</span>
                     <kbd className="mono-label hidden text-[10.5px] opacity-75 sm:inline">N</kbd>
                 </button>
             </div>
@@ -116,10 +120,10 @@ function NotificationBell() {
     return (
         <Link
             href="/dashboard/inbox"
-            className="relative flex h-[30px] w-[30px] items-center justify-center rounded-md text-fg-2 transition-colors hover:bg-surface-2 hover:text-foreground focus-ring"
-            aria-label={inbox > 0 ? `${inbox} шинэ мессеж` : 'Мэдэгдэл'}
+            className="relative flex h-10 w-9 md:h-[30px] md:w-[30px] items-center justify-center rounded-md text-fg-2 transition-colors hover:bg-surface-2 hover:text-foreground focus-ring"
+            aria-label={inbox > 0 ? `${inbox} шинэ мессеж` : 'Мессежүүд'}
         >
-            <Bell className="h-4 w-4" strokeWidth={1.75} />
+            <MessageSquare className="h-4 w-4" strokeWidth={1.75} />
             {inbox > 0 && (
                 <span className="absolute right-1 top-1 h-1.5 w-1.5 rounded-full bg-status-danger ring-2 ring-surface" />
             )}

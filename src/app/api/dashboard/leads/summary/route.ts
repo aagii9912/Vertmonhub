@@ -5,6 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { ACTIVE_STATUSES } from '@/lib/leads/labels';
+import { LEAD_WORK_QUEUES, workQueueFilter } from '@/lib/leads/work-queue';
 
 /**
  * GET /api/dashboard/leads/summary
@@ -31,16 +32,20 @@ export async function GET() {
             return c ?? 0;
         };
 
-        const [all, mine, fresh, meetings, active] = await Promise.all([
+        const [all, mine, fresh, meetings, active, queueCounts] = await Promise.all([
             count(base()),
             mineName ? count(base().eq('sales_manager_name', mineName)) : Promise.resolve(0),
             count(base().eq('status', 'new')),
             count(base().eq('status', 'viewing_scheduled')),
             count(base().in('status', ACTIVE_STATUSES)),
+            Promise.all(LEAD_WORK_QUEUES.map(q => count(base().or(workQueueFilter(q.key))))),
         ]);
 
         return NextResponse.json(
-            { all, mine, new: fresh, meetings, active, mineName },
+            { all, mine, new: fresh, meetings, active, mineName,
+                canClaim: !!identity?.isManager,
+                queues: Object.fromEntries(LEAD_WORK_QUEUES.map((q, i) => [q.key, queueCounts[i]])),
+            },
             { headers: { 'Cache-Control': 'private, no-store' } },
         );
     } catch (error) {

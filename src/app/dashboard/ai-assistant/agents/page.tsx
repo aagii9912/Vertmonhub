@@ -24,7 +24,7 @@ const ICON: Record<string, React.ElementType> = {
  */
 export default function AgentsPage() {
     usePageTitle('AI агентууд');
-    const { data, isLoading } = useQuery<{ agents: AgentInfo[]; model: string }>({
+    const { data, isLoading, isError } = useQuery<{ agents: AgentInfo[]; model: string; fastModel: string; configured: boolean }>({
         queryKey: ['ai-agents'],
         queryFn: async () => { const r = await fetch('/api/ai-assistant/agents'); if (!r.ok) throw new Error('failed'); return r.json(); },
         staleTime: 5 * 60_000,
@@ -34,9 +34,12 @@ export default function AgentsPage() {
         <div className="flex flex-col gap-4">
             <div className="flex flex-wrap items-center gap-2">
                 <Link href="/dashboard/ai-assistant" className="inline-flex h-[30px] items-center gap-1 rounded-md px-2 text-[12.5px] text-muted-foreground hover:bg-surface-2 hover:text-foreground"><ArrowLeft className="h-4 w-4" /> AI туслах</Link>
-                <p className="text-[13px] text-muted-foreground">Асуулт бүрийг төлөвлөгч шинжилж 1–3 мэргэжилтэнд хуваарилна. Мэргэжилтэн бүр зөвхөн өөрийн tool-уудыг ашиглана.</p>
-                {data?.model && <span className="mono-label ml-auto rounded-md border border-border bg-surface px-2 py-0.5 text-[11px] text-muted-foreground">модел · {data.model}</span>}
+                <p className="text-[13px] text-muted-foreground">GPT туслах өдөр тутмын ажлыг гүйцэтгэж, олон чиглэлийн шинжилгээнд мэргэжилтнүүдээ оролцуулна.</p>
+                {data?.model && <span className="mono-label ml-auto rounded-md border border-border bg-surface px-2 py-0.5 text-[11px] text-muted-foreground">Үндсэн · {data.model} / Мэргэжилтэн · {data.fastModel}</span>}
             </div>
+
+            {isError && <p role="alert" className="text-sm text-status-danger">AI тохиргоог уншиж чадсангүй. Дахин ачаална уу.</p>}
+            {data?.configured === false && <p role="status" className="rounded-md border border-border p-3 text-sm text-muted-foreground">GPT хараахан холбогдоогүй байна. Админ үйлчилгээний түлхүүрийг тохируулсны дараа ашиглах боломжтой.</p>}
 
             {isLoading ? (
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-40" />)}</div>

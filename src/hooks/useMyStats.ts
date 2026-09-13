@@ -49,6 +49,7 @@ export interface MyStatsLead {
 }
 
 export interface MyStatsData {
+    missing?: string[];
     manager: { name: string | null; isSelf: boolean; inRoster: boolean; hasAccount: boolean };
     onboarding: boolean;
     period: MyStatsPeriod;

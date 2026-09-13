@@ -13,6 +13,10 @@ const eslintConfig = [
     // ('.next/**' биш '**/.next/**' — worktree доторх .next-ийг ч хамруулна.)
     ignores: [
       "**/.next/**",
+      "**/.next-e2e/**",
+      "playwright-report/**",
+      "test-results/**",
+      "output/**",
       "**/out/**",
       "**/build/**",
       "**/node_modules/**",

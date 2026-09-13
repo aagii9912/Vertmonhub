@@ -54,8 +54,11 @@ export async function POST(request: Request) {
             });
 
         if (insertError) {
-            // If table doesn't exist, just log the feedback
-            logger.info('Feedback received (table may not exist)', { type });
+            logger.error('Feedback could not be saved', { code: insertError.code });
+            return NextResponse.json(
+                { error: 'Санал хүсэлтийг хадгалж чадсангүй. Дахин оролдоно уу.' },
+                { status: 500 }
+            );
         }
 
         return NextResponse.json({ success: true });

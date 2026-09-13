@@ -1,6 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useAuth } from '@/contexts/AuthContext';
+import { Alert } from '@/components/ui/Alert';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatsCard } from '@/components/dashboard/StatsCard';
@@ -9,7 +13,7 @@ import { BarChart } from '@/components/charts/BarChart';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Building2, Download, CheckCircle2, Layers, Home } from 'lucide-react';
-import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { dashboardFetch, dashboardJson } from '@/lib/api/dashboardFetch';
 
 interface Stats { total: number; available: number; sold: number; reserved: number; totalArea: number; }
 interface GroupRow { key: string; total: number; available: number; sold: number; }
@@ -17,50 +21,35 @@ interface GroupRow { key: string; total: number; available: number; sold: number
 const CAT_LABEL: Record<string, string> = { residential: 'Орон сууц', parking: 'Зогсоол', industry: 'Агуулах', commercial: 'Үйлчилгээ' };
 
 export default function PropertiesReportPage() {
-    const [loading, setLoading] = useState(true);
+    const { shop, loading: authLoading } = useAuth();
     const [exporting, setExporting] = useState(false);
-    const [stats, setStats] = useState<Stats>({ total: 0, available: 0, sold: 0, reserved: 0, totalArea: 0 });
-    const [byPhase, setByPhase] = useState<GroupRow[]>([]);
-    const [byCategory, setByCategory] = useState<GroupRow[]>([]);
-
-    useEffect(() => {
-        (async () => {
-            setLoading(true);
-            try {
-                // property_block_summary view-ээс ээлж/блок/ангиллын нэгтгэлийг авна
-                const res = await dashboardFetch('/api/dashboard/units');
-                const data = await res.json();
-                const summary: Array<Record<string, number | string>> = data.summary || [];
-
-                const s: Stats = { total: 0, available: 0, sold: 0, reserved: 0, totalArea: 0 };
-                const phaseMap = new Map<string, GroupRow>();
-                const catMap = new Map<string, GroupRow>();
-                for (const r of summary) {
-                    const total = Number(r.total_units) || 0;
-                    const avail = Number(r.available_units) || 0;
-                    const sold = Number(r.sold_units) || 0;
-                    const pending = Number(r.pending_units) || 0;
-                    s.total += total; s.available += avail; s.sold += sold; s.reserved += pending;
-                    s.totalArea += Number(r.total_area) || 0;
-
-                    const ph = String(r.phase || '—');
-                    const p = phaseMap.get(ph) || { key: ph, total: 0, available: 0, sold: 0 };
-                    p.total += total; p.available += avail; p.sold += sold; phaseMap.set(ph, p);
-
-                    const cat = CAT_LABEL[String(r.category)] || String(r.category || '—');
-                    const c = catMap.get(cat) || { key: cat, total: 0, available: 0, sold: 0 };
-                    c.total += total; c.available += avail; c.sold += sold; catMap.set(cat, c);
-                }
-                setStats(s);
-                setByPhase([...phaseMap.values()].sort((a, b) => b.total - a.total));
-                setByCategory([...catMap.values()].sort((a, b) => b.total - a.total));
-            } catch (e) {
-                console.error('[PropertiesReport] error', e);
-            } finally {
-                setLoading(false);
+    const { data, isLoading: loading, isError, isFetching, refetch } = useQuery({
+        queryKey: ['properties-report', shop?.id],
+        queryFn: () => dashboardJson<{ summary: Array<Record<string, number | string>> }>('/api/dashboard/units'),
+        enabled: !!shop?.id,
+    });
+    const { stats, byPhase, byCategory } = useMemo(() => {
+        const stats: Stats = { total: 0, available: 0, sold: 0, reserved: 0, totalArea: 0 };
+        const phaseMap = new Map<string, GroupRow>();
+        const catMap = new Map<string, GroupRow>();
+        for (const row of data?.summary || []) {
+            const total = Number(row.total_units) || 0;
+            const available = Number(row.available_units) || 0;
+            const sold = Number(row.sold_units) || 0;
+            stats.total += total; stats.available += available; stats.sold += sold;
+            stats.reserved += Number(row.pending_units) || 0;
+            stats.totalArea += Number(row.total_area) || 0;
+            for (const [map, key] of [
+                [phaseMap, String(row.phase || '—')],
+                [catMap, CAT_LABEL[String(row.category)] || String(row.category || '—')],
+            ] as const) {
+                const group = map.get(key) || { key, total: 0, available: 0, sold: 0 };
+                group.total += total; group.available += available; group.sold += sold;
+                map.set(key, group);
             }
-        })();
-    }, []);
+        }
+        return { stats, byPhase: [...phaseMap.values()].sort((a, b) => b.total - a.total), byCategory: [...catMap.values()].sort((a, b) => b.total - a.total) };
+    }, [data]);
 
     async function exportExcel() {
         setExporting(true);
@@ -72,15 +61,22 @@ export default function PropertiesReportPage() {
             const a = document.createElement('a');
             a.href = url; a.download = `нэгжүүд_${new Date().toISOString().slice(0, 10)}.xlsx`; a.click();
             URL.revokeObjectURL(url);
-        } catch (e) { console.error(e); } finally { setExporting(false); }
+        } catch { toast.error('Тайлан татаж чадсангүй. Дахин оролдоно уу.'); } finally { setExporting(false); }
     }
 
-    if (loading) {
+    if (authLoading || loading) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
                 <Spinner size="md" />
             </div>
         );
+    }
+
+    if (!shop || (!data && isError)) {
+        return <Alert variant="danger">
+            Үл хөдлөхийн тайланг ачаалж чадсангүй. Мэдээлэл байхгүй гэж дүгнэх боломжгүй.
+            <Button size="sm" variant="secondary" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</Button>
+        </Alert>;
     }
 
     const pctSold = stats.total > 0 ? Math.round((stats.sold / stats.total) * 100) : 0;
@@ -98,6 +94,10 @@ export default function PropertiesReportPage() {
                 }
             />
 
+            {isError && <Alert variant="warning">
+                Тайланг шинэчилж чадсангүй. Өмнө ачаалсан мэдээлэл харагдаж байна.
+                <Button size="sm" variant="secondary" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</Button>
+            </Alert>}
             {stats.total === 0 ? (
                 <EmptyState
                     icon={<Building2 className="w-7 h-7" />}

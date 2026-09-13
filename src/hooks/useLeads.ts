@@ -6,11 +6,13 @@ import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
 import type { Lead } from '@/types/property';
 import type { LeadView } from '@/lib/leads/labels';
 import type { LeadActivity } from '@/lib/leads/activities';
+import type { LeadWorkQueue } from '@/lib/leads/work-queue';
 
 export type LeadRow = Lead & { lost_reason?: string | null };
 
 export interface LeadsListParams {
     view: LeadView;
+    queue?: LeadWorkQueue;
     status?: string;
     source?: string;
     manager?: string;
@@ -29,6 +31,7 @@ export interface LeadsListResult {
 
 function buildQuery(p: LeadsListParams): string {
     const sp = new URLSearchParams();
+    if (p.queue) sp.set('queue', p.queue);
     if (p.view && p.view !== 'all') sp.set('view', p.view);
     if (p.status && p.status !== 'all') sp.set('status', p.status);
     if (p.source && p.source !== 'all') sp.set('source', p.source);
@@ -62,6 +65,8 @@ export interface LeadSummary {
     meetings: number;
     active: number;
     mineName: string | null;
+    canClaim: boolean;
+    queues: Record<LeadWorkQueue, number>;
 }
 
 export function useLeadSummary() {
@@ -76,6 +81,7 @@ export function useLeadSummary() {
 }
 
 export interface LeadDetail {
+    partial?: string[];
     lead: LeadRow;
     viewings: {
         id: string;
@@ -118,6 +124,7 @@ export function useLeadDetail(id: string | null) {
 export interface ManagerOption {
     name: string;
     is_active: boolean;
+    assignable?: boolean;
 }
 
 /** Менежерийн жагсаалт (reports эрхгүй бол хоосон — сонгогч нуугдана). */
@@ -176,9 +183,8 @@ export function useUpdateLead() {
             for (const [key, data] of ctx?.snapshots ?? []) qc.setQueryData(key, data);
         },
         onSettled: () => {
-            void qc.invalidateQueries({ queryKey: ['leads', 'list'] });
-            void qc.invalidateQueries({ queryKey: ['leads', 'summary'] });
-            void qc.invalidateQueries({ queryKey: ['leads', 'detail'] });
+            void qc.invalidateQueries({ queryKey: ['leads'] });
+            void qc.invalidateQueries({ queryKey: ['operations-report'] });
             void qc.invalidateQueries({ queryKey: ['nav-counts'] });
             void qc.invalidateQueries({ queryKey: ['my-stats'] });
         },
@@ -190,10 +196,25 @@ export function useAddLeadActivity(leadId: string | null) {
     return useMutation({
         mutationFn: (input: { type: 'note' | 'call'; content: string; next_followup_at?: string | null }) =>
             dashboardMutate<{ activity: LeadActivity | null }>(`/api/dashboard/leads/${leadId}/activities`, 'POST', input),
-        onSuccess: () => {
+        onSettled: () => {
             void qc.invalidateQueries({ queryKey: ['leads', 'detail'] });
             void qc.invalidateQueries({ queryKey: ['leads', 'list'] });
+            void qc.invalidateQueries({ queryKey: ['leads', 'summary'] });
+            void qc.invalidateQueries({ queryKey: ['operations-report'] });
             void qc.invalidateQueries({ queryKey: ['my-stats'] });
+        },
+    });
+}
+
+export function useClaimLead() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: ({ id, nextFollowupAt }: { id: string; nextFollowupAt: string }) =>
+            dashboardMutate<{ success: boolean; warning?: string }>(`/api/dashboard/leads/${id}/claim`, 'POST', { next_followup_at: nextFollowupAt }),
+        onSettled: () => {
+            void qc.invalidateQueries({ queryKey: ['leads'] });
+            void qc.invalidateQueries({ queryKey: ['my-stats'] });
+            void qc.invalidateQueries({ queryKey: ['operations-report'] });
         },
     });
 }

@@ -2,15 +2,16 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { useAuth } from '@/contexts/AuthContext';
 
-interface Message {
+export interface Message {
     id: string;
     role: 'user' | 'assistant' | 'human';
     content: string;
     created_at: string;
 }
 
-interface Conversation {
+export interface Conversation {
     id: string;
     customer_name: string;
     customer_avatar?: string;
@@ -30,9 +31,11 @@ async function fetchConversations(): Promise<Conversation[]> {
 }
 
 export function useConversations() {
+    const { shop } = useAuth();
     return useQuery({
-        queryKey: ['conversations'],
+        queryKey: ['conversations', shop?.id],
         queryFn: fetchConversations,
+        enabled: !!shop?.id,
         staleTime: 1000 * 30, // 30 seconds
         refetchInterval: 1000 * 60, // Refetch every minute
     });

@@ -10,6 +10,17 @@ const SchemaType = { OBJECT: 'object', STRING: 'string', NUMBER: 'number', INTEG
  
 export const readTools: any[] = [
     {
+        name: 'get_operations_report',
+        description: 'Байгууллагын үйл ажиллагааны тайланг системийн бодит бүртгэлээс нэгтгэнэ: хугацааны гэрээний дүн ба сарын зорилт, огноотой гүйлгээний мөнгөн урсгал, урьдчилгаа гэж ангилсан хугацааны мөнгөн орлого, гэрээнд хадгалсан урьдчилгааны импорт/өмнөх бүртгэлийн дүн, эзэнгүй/холбоогүй/дараагийн алхамгүй/хугацаа хэтэрсэн лид. Орлого, урьдчилгаа, Excel-гүй тайлан хүсэхэд ашигла. Өгөгдлийн хамрах хүрээ, дутуу бүртгэлийн тайлбарыг хариундаа заавал хадгал. Ангилаагүй орлогыг урьдчилгаа гэж таамаглахгүй. Гэрээнд хадгалсан урьдчилгааг шинэ гүйлгээ автоматаар өөрчлөхгүй; хугацааны урьдчилгаатай нэмж нийлбэрлэхгүй. Мөнгөн урсгал зөвхөн finance эрхтэй хүнд ирнэ.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                from: { type: SchemaType.STRING, description: 'Эхлэх өдөр YYYY-MM-DD; орхивол энэ сарын эхэн' },
+                to: { type: SchemaType.STRING, description: 'Дуусах өдөр YYYY-MM-DD, тухайн өдрийг оруулна; орхивол энэ сарын сүүл' },
+            },
+        },
+    },
+    {
         name: 'get_dashboard_stats',
         description: 'Ерөнхий статистик авах: нийт орлого, захиалга тоо, харилцагч тоо, лийд тоо, байрны тоо. Хугацаагаар шүүж болно.',
         parameters: {
@@ -38,14 +49,16 @@ export const readTools: any[] = [
     },
     {
         name: 'list_leads',
-        description: 'Лийд/сонирхогчдийн жагсаалт авах. Статус, эх үүсвэр, яаралтай эсэхээр шүүж болно.',
+        description: 'Лидийн ажлын жагсаалт: хариуцагч, холбооны цагтай. queue-ээр анхаарах лидүүдийг, manager_name-ээр хариуцагчийг шүүнэ. Буцаасан жагсаалт хязгаартай; байгууллагын нийт тоог get_operations_report-оос авна.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 status: { type: SchemaType.STRING, enum: ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'], description: 'Лийдийн статус' },
                 source: { type: SchemaType.STRING, enum: ['messenger', 'instagram', 'website', 'referral', 'phone', 'other'], description: 'Эх үүсвэр' },
                 urgency: { type: SchemaType.STRING, enum: ['urgent', 'normal', 'flexible'], description: 'Яаралтай эсэх' },
-                limit: { type: SchemaType.NUMBER, description: 'Хэдэн лийд авах (default: 10)' }
+                queue: { type: SchemaType.STRING, enum: ['unassigned', 'uncontacted', 'no_followup', 'overdue'], description: 'Хариуцагчгүй, холбоо бүртгээгүй, дараагийн алхамгүй, хугацаа хэтэрсэн лидүүд' },
+                manager_name: { type: SchemaType.STRING, description: 'Хариуцагчийн канон нэр (яг бүртгэлээр)' },
+                limit: { type: SchemaType.NUMBER, description: 'Хэдэн лид харуулах (default 10, дээд 100); нийт тоо биш' }
             }
         }
     },
@@ -297,13 +310,14 @@ export const writeTools: any[] = [
     },
     {
         name: 'update_lead_status',
-        description: 'Лийдийн статусыг өөрчлөх. ЗӨВХӨН Super Admin.',
+        description: 'Лидийн төлөв өөрчлөх. closed_won нь хүчинтэй дугаар/дүнтэй гэрээ, closed_lost нь lost_reason шаарддаг. Баталгаажуулалт авна.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 lead_id: { type: SchemaType.STRING, description: 'Лийдийн ID' },
                 customer_name: { type: SchemaType.STRING, description: 'Хэрэглэгчийн нэрээр хайх' },
-                new_status: { type: SchemaType.STRING, enum: ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'], description: 'Шинэ статус' }
+                new_status: { type: SchemaType.STRING, enum: ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'], description: 'Шинэ статус' },
+                lost_reason: { type: SchemaType.STRING, description: 'closed_lost үед алдсан бодит шалтгаан; хэрэглэгчээс тодруулна, таамаглахгүй' }
             },
             required: ['new_status']
         }
@@ -337,7 +351,8 @@ export const writeTools: any[] = [
                 property_id: { type: SchemaType.STRING, description: 'Listing байрны ID (property_units биш үед)' },
                 property_name: { type: SchemaType.STRING, description: 'Listing байрны нэр' },
                 lead_id: { type: SchemaType.STRING, description: 'Лийдийн ID (байвал)' },
-                customer_name: { type: SchemaType.STRING, description: 'Хэрэглэгчийн нэрээр хайх' }
+                customer_name: { type: SchemaType.STRING, description: 'Хэрэглэгчийн нэрээр хайх' },
+                lost_reason: { type: SchemaType.STRING, description: 'cancel-тай хамт лид хаахад алдсан шалтгаан шаардлагатай' }
             },
             required: ['action']
         }
@@ -364,14 +379,14 @@ export const writeTools: any[] = [
     },
     {
         name: 'create_lead',
-        description: 'Шинэ лийд/сонирхогч үүсгэх. Бичих эрхтэй ажилтан ашиглана. Үйлдэл хийхээс өмнө хэрэглэгчээс баталгаажуулалт авна.',
+        description: 'Шинэ лид үүсгэх. Нэвтэрсэн ажилтан идэвхтэй борлуулалтын менежер бол өөрт нь хариуцуулна; бусад ажилтан үүсгэвэл хариуцагчгүй үлдээнэ. Үйлдэл хийхээс өмнө баталгаажуулалт авна.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 customer_name: { type: SchemaType.STRING, description: 'Харилцагчийн нэр' },
                 customer_phone: { type: SchemaType.STRING, description: 'Утасны дугаар' },
                 customer_email: { type: SchemaType.STRING, description: 'Имэйл' },
-                status: { type: SchemaType.STRING, enum: ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'], description: 'Статус (default: new)' },
+                status: { type: SchemaType.STRING, enum: ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating'], description: 'Идэвхтэй төлөв (default: new); үүсгэхдээ хаахгүй' },
                 source: { type: SchemaType.STRING, enum: ['messenger', 'instagram', 'website', 'referral', 'phone', 'facebook_ads', 'google_ads', 'other'], description: 'Эх үүсвэр' },
                 budget_min: { type: SchemaType.NUMBER, description: 'Доод төсөв (MNT)' },
                 budget_max: { type: SchemaType.NUMBER, description: 'Дээд төсөв (MNT)' },
@@ -399,15 +414,17 @@ export const writeTools: any[] = [
     },
     {
         name: 'schedule_viewing',
-        description: 'Үл хөдлөхийн уулзалт товлох. Бичих эрхтэй ажилтан ашиглана. Баталгаажуулалт авна. Борлуулалтын менежерийн нэрээр хадгална.',
+        description: 'Үл хөдлөхийн уулзалт товлох. Байр сонгоогүй бол property_id/property_name шаардахгүй. Лидийн төлөв, түүхийг шинэчилнэ. Баталгаажуулалт авна. Борлуулалтын менежерийн нэрээр хадгална.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 property_id: { type: SchemaType.STRING, description: 'Байрны ID' },
                 property_name: { type: SchemaType.STRING, description: 'Байрны нэрээр хайх' },
-                scheduled_at: { type: SchemaType.STRING, description: 'Уулзалтын огноо/цаг (ISO эсвэл "2026-06-20 14:00")' },
+                scheduled_at: { type: SchemaType.STRING, description: 'Уулзалтын огноо/цаг, цагийн бүстэй ISO 8601 (жишээ: 2026-09-20T14:00:00+08:00)' },
                 customer_name: { type: SchemaType.STRING, description: 'Харилцагчийн нэр (лийдтэй холбоход)' },
+                customer_phone: { type: SchemaType.STRING, description: 'Харилцагчийн утас (нэр давхардвал ялгахад)' },
                 lead_id: { type: SchemaType.STRING, description: 'Лийдийн ID (байвал)' },
+                meeting_type: { type: SchemaType.STRING, enum: ['new_customer', 'repeat_customer', 'existing_buyer'] },
                 notes: { type: SchemaType.STRING, description: 'Тэмдэглэл' }
             },
             required: ['scheduled_at']
@@ -461,13 +478,13 @@ export const writeTools: any[] = [
     },
     {
         name: 'bulk_update_leads',
-        description: 'Олон лийдийн статусыг нэг дор шинэчлэх. from_status (тухайн статустай бүгд) эсвэл lead_ids (таслалаар) -ээр сонгоно. Баталгаажуулалт авна.',
+        description: '100 хүртэл лидийг идэвхтэй төлөвт нэг дор шинэчлэх. Хаах бол лид тус бүрт update_lead_status ашиглана. from_status эсвэл lead_ids-ээр сонгоно; баталгаажуулсан ID-уудыг л өөрчилнө.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 from_status: { type: SchemaType.STRING, enum: ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'], description: 'Энэ статустай бүх лийдийг сонгох' },
                 lead_ids: { type: SchemaType.STRING, description: 'Лийдийн ID-ууд (таслалаар)' },
-                new_status: { type: SchemaType.STRING, enum: ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'], description: 'Шинэ статус' }
+                new_status: { type: SchemaType.STRING, enum: ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating'], description: 'Шинэ идэвхтэй төлөв; бөөнөөр хаахгүй' }
             },
             required: ['new_status']
         }
@@ -593,7 +610,7 @@ export const writeTools: any[] = [
     },
     {
         name: 'add_contract_payment',
-        description: 'Гэрээнд төлбөрийн хуваарийн мөр нэмэх (төлөх огноо, дүн; төлсөн дүн өгвөл кассад орлого бичигдэнэ). Баталгаажуулалт авна.',
+        description: 'Гэрээнд төлбөрийн хуваарийн мөр нэмэх. Төлсөн дүн өгвөл receipt_kind ба payment_method-ийг хэрэглэгчээс тодруулна; бартерыг мөнгөн орлого гэж тооцохгүй. Баталгаажуулалт авна.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
@@ -604,7 +621,8 @@ export const writeTools: any[] = [
                 due_date: { type: SchemaType.STRING, description: 'Төлөх огноо YYYY-MM-DD (default өнөөдөр)' },
                 paid_amount: { type: SchemaType.NUMBER, description: 'Аль хэдийн төлсөн дүн (default 0)' },
                 paid_date: { type: SchemaType.STRING, description: 'Төлсөн огноо' },
-                payment_method: { type: SchemaType.STRING, description: 'cash, bank, card, loan гэх мэт' },
+                payment_method: { type: SchemaType.STRING, description: 'cash, bank, bank_transfer, barter, mortgage; төлсөн дүнтэй бол заавал' },
+                receipt_kind: { type: SchemaType.STRING, description: 'advance (урьдчилгаа), installment (хуваарийн төлбөр), other (бусад). Төлсөн дүнтэй бол хэрэглэгчээс тодруулна; нэр/дүнгээр таамаглахгүй.' },
                 label: { type: SchemaType.STRING, description: 'Мөрийн нэр (жишээ: Урьдчилгаа)' },
                 installment_number: { type: SchemaType.NUMBER, description: 'Хуваарийн дугаар' }
             },
@@ -613,7 +631,7 @@ export const writeTools: any[] = [
     },
     {
         name: 'mark_payment_paid',
-        description: 'Хуваарийн мөрийг ТӨЛСӨН гэж тэмдэглэх (payment_id эсвэл гэрээ + installment_number; өгөхгүй бол эхний төлөгдөөгүй мөр). Кассад орлого бичигдэнэ. Баталгаажуулалт авна.',
+        description: 'Хуваарийн мөрийг ТӨЛСӨН гэж тэмдэглэх (payment_id эсвэл гэрээ + installment_number; өгөхгүй бол эхний төлөгдөөгүй мөр). Төлөлтийн төрөл ба хэлбэр тодорхойгүй бол хэрэглэгчээс асууна; бартер мөнгөн орлого биш. Баталгаажуулалт авна.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
@@ -624,7 +642,8 @@ export const writeTools: any[] = [
                 installment_number: { type: SchemaType.NUMBER, description: 'Аль мөр' },
                 paid_amount: { type: SchemaType.NUMBER, description: 'Төлсөн дүн (default: мөрийн бүтэн дүн)' },
                 paid_date: { type: SchemaType.STRING, description: 'Төлсөн огноо YYYY-MM-DD' },
-                payment_method: { type: SchemaType.STRING, description: 'Төлбөрийн хэлбэр' }
+                payment_method: { type: SchemaType.STRING, description: 'cash, bank, bank_transfer, barter, mortgage. Өгөхгүй бол хадгалсан хэлбэрийг хэрэглэнэ.' },
+                receipt_kind: { type: SchemaType.STRING, description: 'advance (урьдчилгаа), installment (хуваарийн төлбөр), other (бусад). Өгөхгүй бол хадгалсан төрлийг хэрэглэнэ; байхгүй бол хэрэглэгчээс асууна.' }
             }
         }
     }
@@ -713,7 +732,8 @@ export const writeTools: any[] = [
         parameters: { type: SchemaType.OBJECT, properties: {
             bill_id: { type: SchemaType.STRING }, bill_number: { type: SchemaType.STRING },
             amount: { type: SchemaType.NUMBER, description: 'Төлөх дүн (default: үлдэгдэл)' }, method: { type: SchemaType.STRING, enum: ['cash', 'bank', 'barter', 'mortgage'] },
-            paid_date: { type: SchemaType.STRING, description: 'YYYY-MM-DD' } } }
+            paid_date: { type: SchemaType.STRING, description: 'YYYY-MM-DD' },
+            client_request_id: { type: SchemaType.STRING, description: 'Баталгаажуулалтын preview-ээс ирсэн UUID; давтан төлөлтөөс хамгаална. Шинээр зохиохгүй.' } } }
     }
 ];
 
@@ -844,16 +864,40 @@ export const WRITE_TOOL_NAMES = ['update_property_status', 'update_unit_status',
 export const AUTO_TOOL_NAMES = ['add_lead_note', 'remember_fact', 'log_call', 'set_followup', 'record_viewing_outcome', 'create_task', 'complete_task', 'add_customer_tag', 'remove_customer_tag', 'set_customer_ai_pause', 'add_market_indicator'];
 
 /**
- * RBAC модулийн шаардлага: энд байгаа tool-ыг зөвхөн тухайн модулийн эрхтэй хэрэглэгч харна/дуудна
- * (executeDataTool + dataToolsForPerms). Байхгүй tool = ерөнхий (dashboard) эрх хангалттай.
+ * API-тай ижил модулийн шаардлага. Бүртгэлгүй tool эсвэл тодорхойгүй эрх → хориглоно.
+ * Array утга = эдгээрийн аль нэг модуль; attach_file гүйцэтгэхэд entity-ийн модулийг дахин шалгана.
  */
-export const TOOL_MODULE: Record<string, string> = {
-    get_kpi_report: 'reports', get_manager_performance: 'reports', get_export_link: 'reports',
-    list_marketing_spend: 'marketing-roi', log_marketing_spend: 'marketing-roi', set_marketing_budget: 'marketing-roi', add_market_indicator: 'marketing-roi', get_marketing_summary: 'marketing-roi', get_marketing_budget_status: 'marketing-roi',
+const ATTACHMENT_MODULE: Record<string, string> = { property: 'properties', lead: 'leads', customer: 'customers', contract: 'contracts' };
+export const TOOL_MODULE: Record<string, string | string[]> = {
+    get_dashboard_stats: 'dashboard',
+    list_properties: 'properties', compare_properties: 'properties', update_property_status: 'properties', update_unit_status: 'properties', update_property_price: 'properties', create_property: 'properties', delete_property: 'properties',
+    list_leads: 'leads', get_lead_details: 'leads', update_lead_status: 'leads', add_lead_note: 'leads', create_lead: 'leads', delete_lead: 'leads', bulk_update_leads: 'leads', log_call: 'leads', set_followup: 'leads', assign_lead_manager: 'leads',
+    get_customer_insights: 'customers', create_customer: 'customers', delete_customer: 'customers', add_customer_tag: 'customers', remove_customer_tag: 'customers', merge_customers: 'customers',
+    list_viewings: 'viewings', schedule_viewing: 'viewings', delete_viewing: 'viewings', record_viewing_outcome: 'viewings', reschedule_viewing: 'viewings',
+    list_contracts: 'contracts', get_contract_details: 'contracts', get_contracts_summary: 'contracts', process_contract_action: 'contracts', create_contract: 'contracts', delete_contract: 'contracts', list_contract_payments: 'contracts', add_contract_payment: 'contracts', mark_payment_paid: 'contracts',
+    list_my_tasks: 'dashboard', create_task: 'dashboard', complete_task: 'dashboard',
+    attach_file: Object.values(ATTACHMENT_MODULE), remember_fact: 'ai-settings',
+    get_operations_report: 'reports',
+    get_kpi_report: 'reports', get_manager_performance: 'reports', get_export_link: 'reports', get_sales_summary: 'reports', get_sales_forecast: 'reports',
+    list_marketing_spend: 'marketing-roi', log_marketing_spend: 'marketing-roi', set_marketing_budget: 'marketing-roi', add_market_indicator: 'marketing-roi', get_market_indicators: 'marketing-roi', get_marketing_summary: 'marketing-roi', get_marketing_budget_status: 'marketing-roi', create_social_post: 'marketing-roi',
     get_finance_summary: 'finance', list_finance_transactions: 'finance', add_finance_transaction: 'finance',
     list_vendor_bills: 'procurement', pay_vendor_bill: 'procurement',
     reply_to_customer: 'inbox', set_customer_ai_pause: 'inbox',
+    invite_user: 'settings', assign_role: 'settings', create_role: 'settings',
 };
+
+/** Нэг шалгалтыг model-ийн tool жагсаалт болон бодит executor хоёул ашиглана. */
+export function canUseToolModule(tool: string, perms: { role: string; modules?: string[] }, args?: Record<string, unknown>): boolean {
+    if (!Object.hasOwn(TOOL_MODULE, tool)) return false;
+    let required = TOOL_MODULE[tool];
+    if (tool === 'attach_file' && args) {
+        const entityType = String(args.entity_type || '');
+        if (!Object.hasOwn(ATTACHMENT_MODULE, entityType)) return false;
+        required = ATTACHMENT_MODULE[entityType];
+    }
+    if (perms.role === 'super_admin') return true;
+    return (Array.isArray(required) ? required : [required]).some(module => perms.modules?.includes(module));
+}
 export const DELETE_TOOL_NAMES = ['delete_property', 'delete_lead', 'delete_viewing', 'delete_contract', 'delete_customer'];
 export const ADMIN_TOOL_NAMES = ['invite_user', 'assign_role', 'create_role'];
 

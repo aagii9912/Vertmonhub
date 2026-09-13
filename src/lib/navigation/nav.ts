@@ -73,6 +73,10 @@ export const PRIMARY_NAV: NavItem[] = [
         href: '/dashboard',
         icon: CalendarCheck,
         module: 'dashboard',
+        children: [
+            { name: 'Самбар', href: '/dashboard' },
+            { name: 'Миний ажлууд', href: '/dashboard/tasks' },
+        ],
     },
     {
         name: 'Лид',
@@ -132,6 +136,7 @@ export const PRIMARY_NAV: NavItem[] = [
         module: 'reports',
         children: [
             { name: 'Сарын KPI', href: '/dashboard/reports/kpi' },
+            { name: 'Үйл ажиллагаа', href: '/dashboard/reports/operations' },
             { name: 'Менежерийн гүйцэтгэл', href: '/dashboard/reports/manager-performance' },
             { name: 'Лид', href: '/dashboard/reports/leads' },
             { name: 'Байр', href: '/dashboard/reports/properties' },
@@ -223,7 +228,7 @@ const ALL_ITEMS: NavItem[] = [...PRIMARY_NAV, ...BOTTOM_NAV];
  * `/dashboard` нь зөвхөн ЯГ таарвал идэвхтэй (бусад бүх зам түүгээр эхэлдэг).
  */
 export function isNavItemActive(item: NavItem, pathname: string): boolean {
-    if (item.href === '/dashboard') return pathname === '/dashboard';
+    if (item.href === '/dashboard') return pathname === '/dashboard' || pathname === '/dashboard/tasks';
     if (pathname === item.href) return true;
     if (pathname.startsWith(item.href + '/')) return true;
     return (item.children ?? []).some(
