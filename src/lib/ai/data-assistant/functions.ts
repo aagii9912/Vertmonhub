@@ -58,17 +58,23 @@ function getDateFilter(timeRange: string): string {
 export async function fetchDashboardStats(shopId: string, timeRange: string = 'month') {
     const isoDate = getDateFilter(timeRange);
     const dateOnly = isoDate.slice(0, 10);
-    // Үл хөдлөхийн систем: «захиалга/орлого» = гэрээ (property_contracts). Хуучин e-commerce
-    // `orders` хүснэгт 2026-09 Wave 2-т устгагдсан.
-    const [contractsRes, customersRes, leadsRes, propertiesRes] = await Promise.all([
-        supabaseAdmin.from('property_contracts').select('total_price', { count: 'exact' }).eq('shop_id', shopId).is('deleted_at', null).gte('contract_date', dateOnly),
+    const [contracts, customersRes, leadsAll, units] = await Promise.all([
+        fetchAllRows<{ total_price: number | string | null }>((from, to) => supabaseAdmin
+            .from('property_contracts').select('total_price').eq('shop_id', shopId)
+            .is('deleted_at', null).gte('contract_date', dateOnly).order('id').range(from, to)),
         supabaseAdmin.from('customers').select('id', { count: 'exact', head: true }).eq('shop_id', shopId).is('deleted_at', null),
-        supabaseAdmin.from('leads').select('status').eq('shop_id', shopId).is('deleted_at', null).gte('created_at', isoDate).limit(5000),
-        supabaseAdmin.from('properties').select('id', { count: 'exact', head: true }).eq('shop_id', shopId).eq('is_active', true),
+        fetchAllRows<{ status: string | null }>((from, to) => supabaseAdmin
+            .from('leads').select('status').eq('shop_id', shopId)
+            .is('deleted_at', null).gte('created_at', isoDate).order('id').range(from, to)),
+        // Dashboard /stats-тай ижил орон сууцны нэгжийн сан; `properties` нь зарын сан.
+        fetchAllRows<{ status: string | null }>((from, to) => supabaseAdmin
+            .from('property_units').select('status').eq('shop_id', shopId)
+            .eq('category', 'residential').order('id').range(from, to)),
     ]);
+    if (customersRes.error) throw new Error(customersRes.error.message);
 
-    const totalRevenue = contractsRes.data?.reduce((sum, c) => sum + (Number(c.total_price) || 0), 0) || 0;
-    const leadsAll = leadsRes.data || [];
+    // Гэрээний нийт үнэ нь кассад бодитоор орсон мөнгө биш.
+    const totalContractValue = contracts.reduce((sum, c) => sum + (Number(c.total_price) || 0), 0);
     const leadsByStatus = {
         new: leadsAll.filter(l => l.status === 'new').length,
         contacted: leadsAll.filter(l => l.status === 'contacted').length,
@@ -79,7 +85,24 @@ export async function fetchDashboardStats(shopId: string, timeRange: string = 'm
         closed_lost: leadsAll.filter(l => l.status === 'closed_lost').length,
     };
 
-    return { timeRange, totalContracts: contractsRes.count || 0, totalRevenue, totalCustomers: customersRes.count || 0, totalLeads: leadsAll.length, leadsByStatus, totalProperties: propertiesRes.count || 0 };
+    const statusCounts: Record<string, number> = { available: 0, reserved: 0, ordered: 0, sold: 0, handed_over: 0 };
+    for (const unit of units) {
+        const status = unit.status || 'unknown';
+        statusCounts[status] = (statusCounts[status] || 0) + 1;
+    }
+    return {
+        timeRange, totalContracts: contracts.length, totalContractValue,
+        contractValueBasis: 'Гэрээний нийт үнийн нийлбэр (MNT); бодитоор хүлээн авсан мөнгөн орлого биш.',
+        totalCustomers: customersRes.count || 0, totalLeads: leadsAll.length, leadsByStatus,
+        totalProperties: units.length,
+        inventory: {
+            source: 'property_units', category: 'residential', total: units.length,
+            available: statusCounts.available,
+            sold: statusCounts.sold + statusCounts.handed_over,
+            pending: statusCounts.reserved + statusCounts.ordered,
+            statusCounts,
+        },
+    };
 }
 
 // (Хуучин e-commerce fetchOrders / fetchProductStats — 2026-09 Wave 2-т устгав; CLAUDE.md «буцааж оруулахгүй»)
