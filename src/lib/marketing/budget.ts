@@ -8,6 +8,8 @@ export type BudgetStatus = 'none' | 'ok' | 'warn' | 'over';
 
 /** Зарцуулалтын гар бүртгэлийн канон сувгууд + монгол нэрс. */
 export const SPEND_CHANNELS: Record<string, string> = {
+    meta_ads: 'Meta Ads',
+    organic: 'Website / Organic',
     facebook_ads: 'Facebook Ads',
     google_ads: 'Google Ads',
     board: 'Билборд / Самбар',

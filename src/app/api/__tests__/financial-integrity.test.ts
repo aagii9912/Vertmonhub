@@ -102,7 +102,7 @@ describe('conversion integrity', () => {
 describe('budget aggregation', () => {
     const request = () => new NextRequest('http://localhost/api/marketing/budget?year=2026');
     it('includes all 1105 spend entries and returns only 100 display rows', async () => {
-        state.rows.marketing_spend_entries = Array.from({ length: 1105 }, (_, id) => ({ id, shop_id: 'shop-1', spent_at: '2026-01-01', amount: 10, channel: 'other' }));
+        state.rows.marketing_spend_entries = Array.from({ length: 1105 }, (_, id) => ({ id: String(id), shop_id: 'shop-1', spent_at: '2026-01-01', amount: 10, channel: 'other' }));
         state.rows.marketing_spend_entries.push({ id: -1, shop_id: 'other-shop', spent_at: '2026-01-01', amount: 999 });
         const response = await budget(request());
         const json = await response.json();
@@ -110,7 +110,7 @@ describe('budget aggregation', () => {
         expect(json.overview.totals.spend).toBe(11050);
         expect(json.entries).toHaveLength(100);
     });
-    it.each(['marketing_budgets', 'marketing_spend_entries', 'manager_monthly_sales', 'ad_campaigns'])('fails instead of showing zeros if %s fails', async table => {
+    it.each(['marketing_budgets', 'marketing_spend_entries', 'manager_monthly_sales', 'meta_daily_spend', 'meta_spend_coverage', 'marketing_campaigns'])('fails instead of showing zeros if %s fails', async table => {
         state.errors[table] = { message: `permission denied for table ${table}`, code: '42501' };
         const response = await budget(request());
         expect(response.status).toBe(500);
@@ -119,6 +119,22 @@ describe('budget aggregation', () => {
     it('keeps missing migration distinguishable from permission failures', async () => {
         state.errors.marketing_spend_entries = { message: "Could not find the table 'public.marketing_spend_entries' in the schema cache", code: 'PGRST205' };
         expect(await (await budget(request())).json()).toMatchObject({ available: false, year: 2026 });
+    });
+    it('includes converted daily Meta, excludes overlap and foreign currency, and never adds snapshots', async () => {
+        state.rows.marketing_spend_entries = [{ id: 'manual', shop_id: 'shop-1', spent_at: '2026-01-01', amount: 9999, channel: 'facebook_ads' }];
+        state.rows.meta_spend_coverage = [{ shop_id: 'shop-1', spent_at: '2026-01-01' }];
+        state.rows.meta_daily_spend = [
+            { id: 'meta1', shop_id: 'shop-1', campaign_id: '123', spent_at: '2026-01-01', native_amount: 10, currency: 'USD', amount_mnt: 35000 },
+            { id: 'meta2', shop_id: 'shop-1', campaign_id: '456', spent_at: '2026-01-01', native_amount: 20, currency: 'USD', amount_mnt: null },
+            { id: 'foreign', shop_id: 'shop-2', campaign_id: '789', spent_at: '2026-01-01', native_amount: 30, currency: 'USD', amount_mnt: 105000 },
+        ];
+        state.rows.ad_campaigns = [{ shop_id: 'shop-1', platform: 'facebook', spend: 888888 }];
+        const response = await budget(request());
+        expect(response.status).toBe(200);
+        const json = await response.json();
+        expect(json.overview.totals.spend).toBe(35000);
+        expect(json.metaAdsTotalSpend).toBe(35000);
+        expect(json.spendQuality).toMatchObject({ excludedManual: 1, missingFx: 1, pendingCurrencies: { USD: 20 } });
     });
 });
 

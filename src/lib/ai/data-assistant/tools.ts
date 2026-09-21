@@ -10,6 +10,15 @@ const SchemaType = { OBJECT: 'object', STRING: 'string', NUMBER: 'number', INTEG
  
 export const readTools: any[] = [
     {
+        name: 'get_marketing_performance',
+        description: 'Маркетингийн нэгдсэн самбар ба багийн гүйцэтгэл: төсөл/суваг/акцын Lead–Sales–Deal, өмнөх хугацааны харьцуулалт, маркетингийн менежерийн сарын зорилт, төсөв, зардал, хэтрэлт. Dashboard-ийн AI дүгнэлтэд энэ tool ашиглана. basis ба quality-г тайлбартаа хадгал; дутуу зорилтыг 0 гэж үзэхгүй.',
+        parameters: { type: SchemaType.OBJECT, properties: {
+            from: { type: SchemaType.STRING, description: 'Эхлэх өдөр YYYY-MM-DD' },
+            to: { type: SchemaType.STRING, description: 'Дуусах өдөр YYYY-MM-DD, оруулна' },
+            project: { type: SchemaType.STRING, description: 'Төслийн UUID; орхивол бүх төсөл' },
+        } },
+    },
+    {
         name: 'get_operations_report',
         description: 'Байгууллагын үйл ажиллагааны тайланг системийн бодит бүртгэлээс нэгтгэнэ: хугацааны гэрээний дүн ба сарын зорилт, огноотой гүйлгээний мөнгөн урсгал, урьдчилгаа гэж ангилсан хугацааны мөнгөн орлого, гэрээнд хадгалсан урьдчилгааны импорт/өмнөх бүртгэлийн дүн, эзэнгүй/холбоогүй/дараагийн алхамгүй/хугацаа хэтэрсэн лид. Орлого, урьдчилгаа, Excel-гүй тайлан хүсэхэд ашигла. Өгөгдлийн хамрах хүрээ, дутуу бүртгэлийн тайлбарыг хариундаа заавал хадгал. Ангилаагүй орлогыг урьдчилгаа гэж таамаглахгүй. Гэрээнд хадгалсан урьдчилгааг шинэ гүйлгээ автоматаар өөрчлөхгүй; хугацааны урьдчилгаатай нэмж нийлбэрлэхгүй. Мөнгөн урсгал зөвхөн finance эрхтэй хүнд ирнэ.',
         parameters: {
@@ -879,7 +888,7 @@ export const TOOL_MODULE: Record<string, string | string[]> = {
     attach_file: Object.values(ATTACHMENT_MODULE), remember_fact: 'ai-settings',
     get_operations_report: 'reports',
     get_kpi_report: 'reports', get_manager_performance: 'reports', get_export_link: 'reports', get_sales_summary: 'reports', get_sales_forecast: 'reports',
-    list_marketing_spend: 'marketing-roi', log_marketing_spend: 'marketing-roi', set_marketing_budget: 'marketing-roi', add_market_indicator: 'marketing-roi', get_market_indicators: 'marketing-roi', get_marketing_summary: 'marketing-roi', get_marketing_budget_status: 'marketing-roi', create_social_post: 'marketing-roi',
+    get_marketing_performance: 'marketing-roi', list_marketing_spend: 'marketing-roi', log_marketing_spend: 'marketing-roi', set_marketing_budget: 'marketing-roi', add_market_indicator: 'marketing-roi', get_market_indicators: 'marketing-roi', get_marketing_summary: 'marketing-roi', get_marketing_budget_status: 'marketing-roi', create_social_post: 'marketing-roi',
     get_finance_summary: 'finance', list_finance_transactions: 'finance', add_finance_transaction: 'finance',
     list_vendor_bills: 'procurement', pay_vendor_bill: 'procurement',
     reply_to_customer: 'inbox', set_customer_ai_pause: 'inbox',

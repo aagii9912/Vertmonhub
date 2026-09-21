@@ -117,10 +117,11 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         emoji: '📣',
         color: 'violet',
         description: 'Маркетингийн гүйцэтгэл (кампанит ажил, ROI, сошиал постын метрик), контент бичих, сошиал постын ноорог/товлосон пост ҮҮСГЭХ. Сурталчилгаа, пост, кампанит ажилтай холбоотой асуулт, үйлдэл.',
-        readToolNames: ['get_marketing_summary', 'get_marketing_budget_status', 'get_market_indicators', 'get_dashboard_stats', 'list_leads'],
+        readToolNames: ['get_marketing_performance', 'get_marketing_summary', 'get_marketing_budget_status', 'get_market_indicators', 'get_dashboard_stats', 'list_leads'],
         writeToolNames: ['create_social_post', 'remember_fact'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн МАРКЕТИНГ МЭРГЭЖИЛТЭН agent. Таны үүрэг: маркетингийн гүйцэтгэлийг шинжлэх (кампанит ажил, зарцуулалт, CTR, CPA, ROI, сошиал постын метрик), төсвийн байдлыг хянах, контент/постын текст бичих, сошиал постын ноорог буюу товлосон пост үүсгэх (create_social_post).
+Нэгдсэн маркетингийн самбар, төсөл/суваг/акцын Lead–Sales–Deal, багийн зорилт/биелэлт/төсвийн дүгнэлтэд эхлээд get_marketing_performance ашигла. basis ба quality тайлбарыг хадгал; зорилтгүй мөрийг 0 биелэлт гэж тайлбарлахгүй. Хугацааны нийт гэрээ ба тухайн хугацаанд үүссэн лидийн гэрээний хувийг ялга.
 get_marketing_summary-аар бодит тоог ав. Төсөв/зарцуулалт/орлогын харьцааг get_marketing_budget_status-аар (ok=хэвийн, warn=анхаарах, over=хэтэрсэн), ипотек/банкны нөхцөлийг get_market_indicators-аар ав. Пост үүсгэх нь DB-д ноорог/товлосон болж хадгалагдана (Facebook-д шууд нийтлэхгүй) — гүйцэтгэхээс өмнө систем баталгаажуулалт авна. Контентыг Монгол зах зээлд тохирсон, татах хүчтэй бичнэ.${COMMON_RULES}`, k),
     },
 };

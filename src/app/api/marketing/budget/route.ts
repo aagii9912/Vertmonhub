@@ -7,6 +7,8 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logger } from '@/lib/utils/logger';
 import { fetchAllRows } from '@/lib/utils/pagination';
+import { loadMarketingSpend } from '@/lib/marketing/spend-load';
+import { spendQuality, SPEND_BASIS } from '@/lib/marketing/performance';
 import { ubParts } from '@/lib/utils/date';
 import {
     monthlySpendSeries,
@@ -64,21 +66,11 @@ export async function GET(request: NextRequest) {
         }
 
         const db = supabaseAdmin();
-        const [budgetRes, entries, revenueRows, adRows] = await Promise.all([
+        const [budgetRes, allEntries, revenueRows] = await Promise.all([
             db.from('marketing_budgets').select('month, amount').eq('shop_id', authShop.id).eq('year', year),
-            fetchAllRows((from, to) => db
-                .from('marketing_spend_entries')
-                .select('id, spent_at, amount, channel, note, created_at')
-                .eq('shop_id', authShop.id)
-                .is('deleted_at', null)
-                .gte('spent_at', `${year}-01-01`)
-                .lte('spent_at', `${year}-12-31`)
-                .order('spent_at', { ascending: false })
-                .order('id').range(from, to)),
+            loadMarketingSpend(db, authShop.id, `${year}-01-01`, `${year}-12-31`),
             fetchAllRows((from, to) => db.from('manager_monthly_sales').select('month, actual_amount')
                 .eq('shop_id', authShop.id).eq('year', year).order('sales_manager').order('month').range(from, to)),
-            fetchAllRows((from, to) => db.from('ad_campaigns').select('spend').eq('shop_id', authShop.id)
-                .in('platform', ['facebook', 'instagram']).order('id').range(from, to)),
         ]);
 
         if (budgetRes.error && isMissingTable(budgetRes.error)) {
@@ -91,6 +83,7 @@ export async function GET(request: NextRequest) {
             if (r.month >= 1 && r.month <= 12) budgets[r.month - 1] = Number(r.amount) || 0;
         }
 
+        const entries = allEntries.filter(e => !e.exclusion);
         const spend = monthlySpendSeries(entries, year);
 
         const revenue = Array(12).fill(0);
@@ -98,19 +91,16 @@ export async function GET(request: NextRequest) {
             if (r.month >= 1 && r.month <= 12) revenue[r.month - 1] += Number(r.actual_amount) || 0;
         }
 
-        const metaAdsTotalSpend = adRows.reduce(
-            (a, c) => a + (Number(c.spend) || 0),
-            0,
-        );
-
         return NextResponse.json({
             year,
             available: true,
             overview: buildBudgetOverview(budgets, spend, revenue),
             byChannel: spendByChannel(entries),
-            entries: entries.slice(0, 100),
-            metaAdsTotalSpend,
-            metaAdsSpendPeriod: 'unknown_snapshot',
+            entries: allEntries.slice(0, 100),
+            metaAdsTotalSpend: entries.filter(e => e.source === 'meta').reduce((sum, e) => sum + Number(e.amount), 0),
+            metaAdsSpendPeriod: 'daily_included',
+            spendQuality: spendQuality(allEntries),
+            spendBasis: SPEND_BASIS,
             channels: SPEND_CHANNELS,
         });
     } catch (error) {

@@ -8,6 +8,7 @@
 import { logger } from '@/lib/utils/logger';
 import { supabaseAdmin } from '@/lib/supabase';
 import { loadOperationsReport } from '@/lib/dashboard/operations-report-load';
+import { loadMarketingPerformance } from '@/lib/marketing/performance-load';
 import { formatOperationsReportText } from '@/lib/dashboard/operations-report';
 import { ZodError } from 'zod';
 import { WRITE_TOOL_NAMES, DELETE_TOOL_NAMES, ADMIN_TOOL_NAMES, TOOL_MODULE, AUTO_TOOL_NAMES, canUseToolModule } from './tools';
@@ -84,6 +85,16 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
 
     let result: any;
     switch (toolName) {
+        case 'get_marketing_performance': {
+            try {
+                const { report } = await loadMarketingPerformance(supabaseAdmin(), shopId, args);
+                result = { ...report, url: '/marketing', guidance: 'Зөвхөн энэ тайлангийн тоонд тулгуурлан дүгнэ. Үүссэн лидийн бүлгийн Sales/Deal хувийг хугацааны нийт гэрээтэй андуурахгүй. Хоосон зорилт, дутуу холбоосыг 0 гүйцэтгэл гэж тайлбарлахгүй. Дуусаагүй сарыг бүтэн сартай харьцуулсныг дурд. Шалтгааныг нотолгоогүй бүү зохио.' };
+            } catch (error) {
+                logger.error('[AI Marketing Performance] Read failed', { error });
+                result = { error: error instanceof ZodError ? 'Огноо, төслийн сонголт буруу байна.' : 'Маркетингийн тайлан бүрэн уншигдсангүй. Тоо таамаглаж дүгнэх боломжгүй.' };
+            }
+            break;
+        }
         case 'get_operations_report': {
             // This report never accepts client-supplied permissions, including legacy callers without modules.
             if (perms.role !== 'super_admin' && !perms.modules?.includes('reports')) {

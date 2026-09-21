@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/Select';
 import { formatShortDate } from '@/lib/utils/date';
 import type { BudgetOverview, BudgetStatus } from '@/lib/marketing/budget';
+import type { spendQuality } from '@/lib/marketing/performance';
 import {
     ChevronLeft,
     ChevronRight,
@@ -41,6 +42,8 @@ import {
  */
 
 interface SpendEntry {
+    source?: 'manual' | 'meta';
+    exclusion?: string | null;
     id: string;
     spent_at: string;
     amount: number;
@@ -49,6 +52,7 @@ interface SpendEntry {
 }
 
 interface BudgetData {
+    spendQuality?: ReturnType<typeof spendQuality>;
     year: number;
     available: boolean;
     overview?: BudgetOverview;
@@ -285,12 +289,12 @@ export default function MarketingBudgetPage() {
 
                     {(data.metaAdsTotalSpend || 0) > 0 && (
                         <p className="text-xs text-muted-foreground">
-                            ℹ️ Meta Ads кампанит ажлуудын нийт зарцуулалт (автомат sync):{' '}
-                            <Money value={data.metaAdsTotalSpend} className="font-medium text-foreground" /> — сар руу
-                            задлахын тулд зарцуулалтын бүртгэлд Facebook Ads сувгаар гараар нэмнэ үү.
+                            Meta Ads өдрийн зардал (жилийн нийтэд орсон):{' '}
+                            <Money value={data.metaAdsTotalSpend} className="font-medium text-foreground" /> — саруудад автоматаар хуваарилсан. Гараар дахин нэмэхгүй.
                         </p>
                     )}
 
+                    {!!(data.spendQuality?.missingFx || data.spendQuality?.excludedManual) && <Alert variant="warning">Ханшгүй Meta: {data.spendQuality?.missingFx} мөр; нийтээс хассан гар Meta: {data.spendQuality?.excludedManual} мөр. Ханшгүй бол нийт зардал бүрэн биш. <a href="/marketing" className="underline">Meta синк / ханш тохируулах</a></Alert>}
                     {/* Сар бүрийн хяналт */}
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between py-3">
@@ -459,6 +463,7 @@ export default function MarketingBudgetPage() {
                                             <div className="min-w-0">
                                                 <p className="text-sm text-foreground">
                                                     {channelLabels[e.channel] || e.channel}
+                                                    {e.source === 'meta' ? ' · Meta автомат' : ''}{e.exclusion ? ' · Нийтээс хассан' : ''}
                                                     {e.note ? ` · ${e.note}` : ''}
                                                 </p>
                                                 <p className="text-xs text-muted-foreground tabular-nums">
@@ -466,10 +471,11 @@ export default function MarketingBudgetPage() {
                                                 </p>
                                             </div>
                                             <div className="flex items-center gap-2 flex-shrink-0">
-                                                <Money value={e.amount} className="text-sm font-medium" />
+                                                {e.exclusion ? <span className="text-xs text-muted-foreground">Нийтэд ороогүй</span> : <Money value={e.amount} className="text-sm font-medium" />}
                                                 <Button
                                                     variant="ghost"
                                                     size="iconSm"
+                                                    disabled={e.source === 'meta'}
                                                     onClick={() => removeSpend.mutate(e.id)}
                                                     title="Устгах"
                                                 >

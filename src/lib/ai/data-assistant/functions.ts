@@ -7,6 +7,8 @@ import { formatShortDate, formatTime, ubDateStr, ubStartOfDay } from '@/lib/util
 import { logger } from '@/lib/utils/logger';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { buildBudgetOverview, monthlySpendSeries, spendByChannel, SPEND_CHANNELS } from '@/lib/marketing/budget';
+import { loadMarketingSpend } from '@/lib/marketing/spend-load';
+import { spendQuality, SPEND_BASIS } from '@/lib/marketing/performance';
 import { isLeadWorkQueue, workQueueFilter } from '@/lib/leads/work-queue';
 import { hasRealContractFields } from '@/lib/leads/contracts';
 import { resolveActiveManagerName, resolveManagerIdentity } from '@/lib/sales/manager-identity';
@@ -1254,15 +1256,9 @@ export async function fetchMarketingSummary(shopId: string, args: any) {
 
 export async function fetchMarketingBudgetStatus(shopId: string, args: any) {
     const year = Number(args?.year) || new Date().getFullYear();
-    const [budgetRes, spendRes, revenueRes] = await Promise.all([
+    const [budgetRes, allEntries, revenueRes] = await Promise.all([
         supabaseAdmin.from('marketing_budgets').select('month, amount').eq('shop_id', shopId).eq('year', year),
-        supabaseAdmin
-            .from('marketing_spend_entries')
-            .select('spent_at, amount, channel')
-            .eq('shop_id', shopId)
-            .is('deleted_at', null)
-            .gte('spent_at', `${year}-01-01`)
-            .lte('spent_at', `${year}-12-31`),
+        loadMarketingSpend(supabaseAdmin, shopId, `${year}-01-01`, `${year}-12-31`),
         supabaseAdmin.from('manager_monthly_sales').select('month, actual_amount').eq('shop_id', shopId).eq('year', year),
     ]);
 
@@ -1274,7 +1270,8 @@ export async function fetchMarketingBudgetStatus(shopId: string, args: any) {
     for (const r of budgetRes.data || []) {
         if (r.month >= 1 && r.month <= 12) budgets[r.month - 1] = Number(r.amount) || 0;
     }
-    const entries = spendRes.error ? [] : spendRes.data || [];
+    if (budgetRes.error || revenueRes.error) throw new Error('Төсөв эсвэл орлого уншиж чадсангүй');
+    const entries = allEntries.filter(e => !e.exclusion);
     const revenue = Array(12).fill(0);
     for (const r of revenueRes.error ? [] : revenueRes.data || []) {
         if (r.month >= 1 && r.month <= 12) revenue[r.month - 1] += Number(r.actual_amount) || 0;
@@ -1284,6 +1281,8 @@ export async function fetchMarketingBudgetStatus(shopId: string, args: any) {
     const fmt = (v: number) => `${Math.round(v).toLocaleString()}₮`;
     return {
         year,
+        spendQuality: spendQuality(allEntries),
+        spendBasis: SPEND_BASIS,
         months: overview.months
             .filter((m) => m.budget > 0 || m.spend > 0 || m.revenue > 0)
             .map((m) => ({
