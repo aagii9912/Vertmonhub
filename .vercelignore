@@ -1,0 +1,15 @@
+.git
+.vercel
+node_modules
+.next*
+.codex*
+.env*
+*.tsbuildinfo
+*.log
+test-results
+playwright-report
+playwright/.auth
+output
+supabase/backups
+REPORTS
+deliverables
