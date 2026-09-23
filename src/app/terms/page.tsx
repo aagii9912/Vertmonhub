@@ -22,7 +22,7 @@ export default function TermsOfServicePage() {
                         Үйлчилгээний нөхцөл
                     </h1>
                     <p className="mt-4 text-lg text-muted-foreground dark:text-muted-foreground/70">
-                        Сүүлд шинэчилсэн: 2026 оны 1-р сарын 6
+                        Сүүлд шинэчилсэн: 2026 оны 9-р сарын 23
                     </p>
                 </div>
 
@@ -31,9 +31,11 @@ export default function TermsOfServicePage() {
                     <section className="mb-12">
                         <h2 className="text-2xl font-bold text-foreground  mb-4">1. Үйлчилгээний тухай</h2>
                         <p className="text-foreground dark:text-muted-foreground/60 mb-4">
-                            Vertmon Hub нь Facebook Messenger болон Instagram платформ дээр ажилладаг AI чатбот үйлчилгээ юм.
-                            Манай үйлчилгээ нь бизнесүүдэд харилцагчидтай автоматаар харилцах, захиалга авах,
-                            борлуулалтаа нэмэгдүүлэх боломжийг олгодог.
+                            Vertmon Hub нь үл хөдлөх хөрөнгийн борлуулалт, харилцагчийн удирдлага (CRM) болон
+                            маркетингийн тайлангийн платформ юм. Үйлчилгээ нь үл хөдлөх хөрөнгийн мэдээлэл,
+                            харилцагч, лийд, үзлэг, гэрээний явцыг удирдах, Facebook болон Instagram мессежид
+                            AI туслахаар хариулах боломжтой. Meta Ads данс холбогдож, шаардлагатай API эрх
+                            нээгдсэн үед зарын зардлын тайланг харуулна.
                         </p>
                     </section>
 
@@ -45,7 +47,7 @@ export default function TermsOfServicePage() {
                         <ul className="list-disc pl-6 text-foreground dark:text-muted-foreground/60 space-y-2 mb-4">
                             <li>18 нас хүрсэн байх ёстой</li>
                             <li>Үнэн зөв мэдээлэл өгөх ёстой</li>
-                            <li>Facebook аккаунт эсвэл Facebook Page эзэмшиж байх ёстой</li>
+                            <li>Meta мессеж эсвэл зарын холболт ашиглах бол холбогдох Page, Instagram эсвэл зарын дансанд эрхтэй байх ёстой</li>
                             <li>Энэхүү үйлчилгээний нөхцөлийг хүлээн зөвшөөрч байна</li>
                             <li>Монгол Улсын болон олон улсын хууль тогтоомжийг дагаж мөрдөх</li>
                         </ul>
@@ -157,7 +159,8 @@ export default function TermsOfServicePage() {
                             Та хүссэн үедээ үйлчилгээг зогсоож болно. Үүний тулд:
                         </p>
                         <ul className="list-disc pl-6 text-foreground dark:text-muted-foreground/60 space-y-2 mb-4">
-                            <li>Facebook Page-аас webhook холболтыг салга</li>
+                            <li>Meta мессежийн холболт ашигласан бол холбогдох Page эсвэл Instagram холболтоо салга</li>
+                            <li>Meta Ads ашигласан бол Meta дахь Vertmon Hub app-ийн хандалтыг цуцалж, хадгалсан өгөгдлөө устгуулахын тулд <Link href="/data-deletion" className="text-status-info hover:text-status-info">өгөгдөл устгах зааврыг</Link> дага</li>
                             <li>Бидэнд мэдэгдэл илгээ</li>
                             <li>Өгөгдөл устгуулахыг хүсвэл хүсэлт илгээ</li>
                         </ul>
@@ -177,8 +180,8 @@ export default function TermsOfServicePage() {
                             Асуулт, санал байвал:
                         </p>
                         <ul className="list-none text-foreground dark:text-muted-foreground/60 space-y-2">
-                            <li><strong>Вэб:</strong> <Link href="/" className="text-status-info hover:text-status-info">vertmonhub.vercel.app</Link></li>
-                            <li><strong>Facebook:</strong> Framebrone хуудас</li>
+                            <li><strong>Вэб:</strong> <Link href="/" className="text-status-info hover:text-status-info">www.vertmon.mn</Link></li>
+                            <li><strong>Meta Ads өгөгдлийн хүсэлт:</strong> <a href="mailto:aagii9912@gmail.com" className="text-status-info hover:text-status-info">aagii9912@gmail.com</a></li>
                             <li><strong>Privacy Policy:</strong> <Link href="/privacy" className="text-status-info hover:text-status-info">/privacy</Link></li>
                         </ul>
                     </section>
@@ -204,4 +207,3 @@ export default function TermsOfServicePage() {
         </div >
     );
 }
-
