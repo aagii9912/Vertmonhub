@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserShop, supabaseAdmin } from '@/lib/auth/supabase-auth';
-import { fetchCampaignInsights } from '@/lib/facebook/marketing-api';
+import { campaignBelongsToAccount, fetchCampaignInsights } from '@/lib/facebook/marketing-api';
 import { metaAdsToken } from '@/lib/facebook/ads-auth';
 import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { logger } from '@/lib/utils/logger';
@@ -29,11 +29,17 @@ export async function GET(req: NextRequest) {
         const admin = supabaseAdmin();
         const { data: shop } = await admin
             .from('shops')
-            .select('meta_ads_user_access_token, meta_ads_user_token_expires_at')
+            .select('meta_ads_user_access_token, meta_ads_user_token_expires_at, facebook_ad_account_id')
             .eq('id', authShop.id)
             .single();
 
         const adsToken = metaAdsToken(shop);
+
+        const adAccountId = shop?.facebook_ad_account_id;
+        if (!adAccountId) return NextResponse.json({ error: 'Зарын данс сонгоно уу.' }, { status: 400 });
+        if (!await campaignBelongsToAccount(externalId, adAccountId, adsToken)) {
+            return NextResponse.json({ error: 'Кампанит ажил сонгосон зарын дансанд байхгүй байна.' }, { status: 403 });
+        }
 
         const result = await fetchCampaignInsights(externalId, adsToken, datePreset);
         const insight = result.data?.[0];

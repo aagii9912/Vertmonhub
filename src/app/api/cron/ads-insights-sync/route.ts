@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
-import { fetchCampaignInsights } from '@/lib/facebook/marketing-api';
+import { campaignBelongsToAccount, fetchCampaignInsights } from '@/lib/facebook/marketing-api';
 import { metaAdsToken } from '@/lib/facebook/ads-auth';
 import { syncMetaSpend } from '@/lib/marketing/meta-spend';
 import { fetchAllRows } from '@/lib/utils/pagination';
@@ -23,8 +23,8 @@ export async function POST(request: NextRequest) {
     try {
         const supabase = supabaseAdmin();
 
-        const shops = await fetchAllRows<{ id: string; meta_ads_user_access_token: string | null; meta_ads_user_token_expires_at: string | null }>((from, to) => supabase.from('shops')
-            .select('id,meta_ads_user_access_token,meta_ads_user_token_expires_at').not('facebook_ad_account_id', 'is', null).order('id').range(from, to));
+        const shops = await fetchAllRows<{ id: string; facebook_ad_account_id: string; meta_ads_user_access_token: string | null; meta_ads_user_token_expires_at: string | null }>((from, to) => supabase.from('shops')
+            .select('id,facebook_ad_account_id,meta_ads_user_access_token,meta_ads_user_token_expires_at').not('facebook_ad_account_id', 'is', null).order('id').range(from, to));
         const dailyResults: { shopId: string; success: boolean; rows?: number }[] = [];
         let snapshotFailures = 0;
         let updated = 0;
@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
             if (campaignError) { snapshotFailures++; continue; }
             for (const c of campaigns || []) {
                 try {
+                    if (!await campaignBelongsToAccount(c.external_id, shop.facebook_ad_account_id, token)) continue;
                     const result = await fetchCampaignInsights(c.external_id, token, 'last_30d');
                     const insight = result.data?.[0];
                     if (!insight) continue;

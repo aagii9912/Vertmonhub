@@ -169,6 +169,13 @@ export async function fetchAdAccountCampaigns(
     return metaRead<{ data: FacebookAdCampaign[] }>(`${accountId}/campaigns`, accessToken, { fields, limit: String(limit) });
 }
 
+/** Verify a campaign belongs to the shop's selected ad account before reading its insights. */
+export async function campaignBelongsToAccount(campaignId: string, adAccountId: string, accessToken: string): Promise<boolean> {
+    if (!/^\d+$/.test(campaignId) || !/^act_\d+$/.test(adAccountId)) return false;
+    const campaign = await metaRead<{ id: string; account_id: string }>(campaignId, accessToken, { fields: 'id,account_id' });
+    return campaign.id === campaignId && campaign.account_id === adAccountId.slice(4);
+}
+
 /**
  * Кампанит ажлын insights авах (date_preset: today, yesterday, last_7d, last_30d, lifetime)
  */

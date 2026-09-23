@@ -14,6 +14,7 @@ vi.mock('@/lib/crypto/tokens', () => ({ encryptToken: mocks.encrypt }));
 
 import { GET as start } from '@/app/api/marketing/facebook/ads/connect/route';
 import { GET as callback } from '@/app/api/marketing/facebook/ads/connect/callback/route';
+import { campaignBelongsToAccount } from '@/lib/facebook/marketing-api';
 
 const connection = () => new NextRequest('http://localhost/api/marketing/facebook/ads/connect?shop_id=shop-1');
 const graphResponse = (data: unknown) => new Response(JSON.stringify(data), { status: 200 });
@@ -55,6 +56,14 @@ it('accepts only the same user, shop and OAuth state, then stores the encrypted 
     const url = `http://localhost/api/marketing/facebook/ads/connect/callback?state=${state}&code=one-time-code`;
     const request = () => new NextRequest(url, { headers: { cookie: `meta_ads_oauth=${encodeURIComponent(saved)}` } });
     expect((await callback(request())).headers.get('location')).toContain('meta_ads=connected');
+    expect(http).toHaveBeenCalledTimes(2);
+    for (const [url, options] of http.mock.calls) {
+        expect(url).toBe('https://graph.facebook.com/v26.0/oauth/access_token');
+        expect(options.method).toBe('POST');
+        expect(options.body).toBeInstanceOf(URLSearchParams);
+    }
+    expect(http.mock.calls[0][1].body.get('client_secret')).toBe('new-secret');
+    expect(http.mock.calls[1][1].body.get('fb_exchange_token')).toBe('short');
     expect(mocks.read).toHaveBeenCalledWith('me/permissions', 'long');
     expect(mocks.update).toHaveBeenCalledWith(expect.objectContaining({ meta_ads_user_access_token: 'enc:v1:stored', facebook_ad_account_id: null }));
 
@@ -65,6 +74,15 @@ it('accepts only the same user, shop and OAuth state, then stores the encrypted 
     mocks.user.mockResolvedValue('other-user');
     expect((await callback(request())).headers.get('location')).toContain('meta_ads=session_error');
     expect(mocks.update).not.toHaveBeenCalled();
+});
+
+it('only accepts campaigns returned by Meta for the selected ad account', async () => {
+    mocks.read.mockResolvedValueOnce({ id: '42', account_id: '123' })
+        .mockResolvedValueOnce({ id: '42', account_id: '999' });
+    expect(await campaignBelongsToAccount('42', 'act_123', 'ads-token')).toBe(true);
+    expect(await campaignBelongsToAccount('42', 'act_123', 'ads-token')).toBe(false);
+    expect(await campaignBelongsToAccount('../42', 'act_123', 'ads-token')).toBe(false);
+    expect(mocks.read).toHaveBeenCalledTimes(2);
 });
 
 it('does not store a token when ads_read was not granted', async () => {

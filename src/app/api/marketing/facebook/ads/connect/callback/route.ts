@@ -39,15 +39,24 @@ export async function GET(request: NextRequest) {
     if (!appId || !appSecret) return finish('config_error');
     const redirectUri = `${request.nextUrl.origin}${META_ADS_CALLBACK_PATH}`;
     try {
-        const shortUrl = new URL('https://graph.facebook.com/v26.0/oauth/access_token');
-        for (const [key, value] of Object.entries({ client_id: appId, client_secret: appSecret, redirect_uri: redirectUri, code })) shortUrl.searchParams.set(key, value);
-        const short = await fetch(shortUrl, { cache: 'no-store', signal: AbortSignal.timeout(20000) });
+        const tokenUrl = 'https://graph.facebook.com/v26.0/oauth/access_token';
+        const short = await fetch(tokenUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ client_id: appId, client_secret: appSecret, redirect_uri: redirectUri, code }),
+            cache: 'no-store',
+            signal: AbortSignal.timeout(20000),
+        });
         const shortData = await short.json().catch(() => null);
         if (!short.ok || typeof shortData?.access_token !== 'string') return finish('token_error');
 
-        const longUrl = new URL('https://graph.facebook.com/v26.0/oauth/access_token');
-        for (const [key, value] of Object.entries({ grant_type: 'fb_exchange_token', client_id: appId, client_secret: appSecret, fb_exchange_token: shortData.access_token })) longUrl.searchParams.set(key, value);
-        const long = await fetch(longUrl, { cache: 'no-store', signal: AbortSignal.timeout(20000) });
+        const long = await fetch(tokenUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ grant_type: 'fb_exchange_token', client_id: appId, client_secret: appSecret, fb_exchange_token: shortData.access_token }),
+            cache: 'no-store',
+            signal: AbortSignal.timeout(20000),
+        });
         const longData = await long.json().catch(() => null);
         if (!long.ok || typeof longData?.access_token !== 'string' || !Number.isFinite(longData.expires_in) || longData.expires_in <= 0) return finish('token_error');
 
