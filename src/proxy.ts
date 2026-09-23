@@ -17,6 +17,7 @@ const publicRoutes = [
     '/api/webhook',
     '/privacy',
     '/terms',
+    '/data-deletion',
     '/help',
 ];
 

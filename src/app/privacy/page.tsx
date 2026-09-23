@@ -22,7 +22,7 @@ export default function PrivacyPolicyPage() {
                         Нууцлалын бодлого
                     </h1>
                     <p className="mt-4 text-lg text-muted-foreground dark:text-muted-foreground/70">
-                        Сүүлд шинэчилсэн: 2026 оны 1-р сарын 6
+                        Сүүлд шинэчилсэн: 2026 оны 9-р сарын 23
                     </p>
                 </div>
 
@@ -44,8 +44,9 @@ export default function PrivacyPolicyPage() {
                         </p>
                         <ul className="list-disc pl-6 text-foreground dark:text-muted-foreground/60 space-y-2 mb-4">
                             <li><strong>Харилцагчийн мэдээлэл:</strong> Нэр, утасны дугаар, и-мэйл хаяг, байгууллагын нэр</li>
-                            <li><strong>Мессежийн мэдээлэл:</strong> Facebook Messenger-ээр илгээсэн мессежүүд, чат түүх</li>
-                            <li><strong>Бизнесийн мэдээлэл:</strong> Захиалга, бүтээгдэхүүн, борлуулалтын статистик</li>
+                            <li><strong>Мессежийн мэдээлэл:</strong> Facebook Messenger болон Instagram-аар илгээсэн мессежүүд, чат түүх</li>
+                            <li><strong>Бизнесийн мэдээлэл:</strong> Сонирхсон үл хөдлөх хөрөнгө, борлуулалт болон маркетингийн тайлан</li>
+                            <li><strong>Meta Ads мэдээлэл:</strong> Холбосон зарын дансны ID, кампанит ажлын ID, нэр, тохиргоо, өдрийн зарцуулалт, үзэлт, даралт, хөрвүүлэлт зэрэг гүйцэтгэлийн үзүүлэлт, валют, цагийн бүс, шифрлэсэн холболтын эрх болон түүний хугацаа</li>
                             <li><strong>Техникийн мэдээлэл:</strong> IP хаяг, төхөөрөмжийн төрөл, browser мэдээлэл</li>
                         </ul>
                     </section>
@@ -58,7 +59,7 @@ export default function PrivacyPolicyPage() {
                         <ul className="list-disc pl-6 text-foreground dark:text-muted-foreground/60 space-y-2 mb-4">
                             <li>AI туслахаар автомат хариулт үүсгэх</li>
                             <li>Харилцагчийн үйлчилгээ үзүүлэх</li>
-                            <li>Захиалга боловсруулах, удирдах</li>
+                            <li>Үл хөдлөх хөрөнгийн сонирхогч, борлуулалтын ажлыг удирдах</li>
                             <li>Бизнесийн статистик, тайлан гаргах</li>
                             <li>Үйлчилгээг сайжруулах, хөгжүүлэх</li>
                             <li>Холбоо барих, мэдэгдэл илгээх</li>
@@ -66,16 +67,21 @@ export default function PrivacyPolicyPage() {
                     </section>
 
                     <section className="mb-12">
-                        <h2 className="text-2xl font-bold text-foreground  mb-4">4. Facebook Messenger интеграци</h2>
+                        <h2 className="text-2xl font-bold text-foreground  mb-4">4. Meta холболт</h2>
                         <p className="text-foreground dark:text-muted-foreground/60 mb-4">
-                            Манай AI chatbot нь Facebook Messenger платформ дээр ажилладаг. Мессеж солилцох үед:
+                            Манай AI туслах Facebook Messenger болон Instagram мессежид ажилладаг. Мессеж солилцох үед:
                         </p>
                         <ul className="list-disc pl-6 text-foreground dark:text-muted-foreground/60 space-y-2 mb-4">
                             <li>Таны мессежүүд манай AI системд боловсруулагдана</li>
                             <li>Чат түүх манай датабаазад хадгалагдана</li>
-                            <li>Facebook-ийн Privacy Policy мөн хамаарна</li>
-                            <li>Та Facebook дээрх тохиргоогоор мессеж солилцохыг зогсоож болно</li>
+                            <li>Facebook болон Instagram-ийн нууцлалын бодлого мөн хамаарна</li>
+                            <li>Та Meta дахь тохиргоогоор мессеж солилцохыг зогсоож болно</li>
                         </ul>
+                        <p className="text-foreground dark:text-muted-foreground/60 mb-4">
+                            Төслийн эрх бүхий хэрэглэгч Meta Ads-ийг холбовол бид зөвхөн зарын тайлан унших <code>ads_read</code> эрх хүснэ.
+                            Холболтын эрхийг шифрлэн хадгалж, сонгосон зарын дансны кампанит ажил болон өдрийн зарцуулалтыг
+                            маркетингийн тайланд татна. Энэ холболтоор зар үүсгэх, засах эрх хүсэхгүй.
+                        </p>
                     </section>
 
                     <section className="mb-12">
@@ -84,7 +90,7 @@ export default function PrivacyPolicyPage() {
                             Бид дараах технологиуд ашиглан мэдээллээ аюулгүй хадгалдаг:
                         </p>
                         <ul className="list-disc pl-6 text-foreground dark:text-muted-foreground/60 space-y-2 mb-4">
-                            <li><strong>Supabase:</strong> Өгөгдлийн сан, нууцлалтай, шифрлэгдсэн</li>
+                            <li><strong>Supabase:</strong> Өгөгдлийн сан; Meta Ads холболтын эрхийг хадгалахаас өмнө шифрлэдэг</li>
                             <li><strong>Vercel:</strong> Hosting үйлчилгээ, SSL сертификаттай</li>
                             <li><strong>AI туслах:</strong> Хариулт үүсгэх боловсруулалт</li>
                         </ul>
@@ -96,7 +102,7 @@ export default function PrivacyPolicyPage() {
                             Бид дараах гуравдагч үйлчилгээ ашигладаг:
                         </p>
                         <ul className="list-disc pl-6 text-foreground dark:text-muted-foreground/60 space-y-2 mb-4">
-                            <li><strong>Facebook/Meta:</strong> Messenger платформ</li>
+                            <li><strong>Facebook/Meta:</strong> Messenger, Instagram болон зарын тайлангийн API</li>
                             <li><strong>AI систем:</strong> Хариулт үүсгэх боловсруулалт</li>
                             <li><strong>Supabase:</strong> Database хостинг</li>
                             <li><strong>Vercel:</strong> Веб хостинг</li>
@@ -119,6 +125,13 @@ export default function PrivacyPolicyPage() {
                             <li>Мэдээллийн хуулбар авах</li>
                             <li>Үйлчилгээнээс гарах</li>
                         </ul>
+                        <p className="text-foreground dark:text-muted-foreground/60 mb-4">
+                            Meta Ads-д олгосон хандалтыг Facebook-ийн холболтын тохиргооноос цуцалж болно.
+                            Ингэвэл цаашид шинэ зарын тайлан татах боломжгүй болно. Өмнө хадгалсан холболтын эрх
+                            болон импортолсон тайлан автоматаар устахгүй. Устгуулах хүсэлтийн алхмуудыг{' '}
+                            <Link href="/data-deletion" className="text-status-info hover:underline">өгөгдөл устгах заавраас</Link>
+                            {' '}үзнэ үү.
+                        </p>
                     </section>
 
                     <section className="mb-12">
@@ -143,8 +156,8 @@ export default function PrivacyPolicyPage() {
                             Нууцлалын бодлоготой холбоотой асуулт байвал:
                         </p>
                         <ul className="list-none text-foreground dark:text-muted-foreground/60 space-y-2">
-                            <li><strong>Вэб:</strong> <Link href="/" className="text-status-info hover:text-status-info">vertmonhub.vercel.app</Link></li>
-                            <li><strong>Facebook:</strong> Framebrone хуудас</li>
+                            <li><strong>Вэб:</strong> <a href="https://www.vertmon.mn" className="text-status-info hover:text-status-info">www.vertmon.mn</a></li>
+                            <li><strong>И-мэйл:</strong> <a href="mailto:aagii9912@gmail.com" className="text-status-info hover:text-status-info">aagii9912@gmail.com</a></li>
                         </ul>
                     </section>
 
@@ -168,4 +181,3 @@ export default function PrivacyPolicyPage() {
         </div >
     );
 }
-
