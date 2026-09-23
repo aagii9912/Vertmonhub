@@ -75,6 +75,7 @@ export interface Property {
 export interface Lead {
     id: string;
     shop_id: string;
+    project_id: string | null;
     customer_id: string | null;
     property_id: string | null;
 

@@ -11,7 +11,7 @@ import { useMobile } from '@/hooks/use-mobile';
 import { canAccessModuleDynamic } from '@/lib/rbac';
 import { formatRelativeDays } from '@/lib/utils/date';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
-import { useLeadsList, useLeadSummary, useManagers, useUpdateLead, type LeadRow } from '@/hooks/useLeads';
+import { useLeadsList, useLeadProjects, useLeadSummary, useManagers, useUpdateLead, type LeadRow } from '@/hooks/useLeads';
 import { LEAD_VIEWS, LEAD_STATUSES, STATUS_META, SOURCES, SOURCE_LABEL, sourceLabel, interestLabel, type LeadView } from '@/lib/leads/labels';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/Sheet';
 import { Avatar, Pill, Skeleton } from '@/components/dashboard/v2/primitives';
@@ -48,6 +48,7 @@ function LeadsWorkspace() {
     const [view, setView] = useState<LeadView>('all');
     const [status, setStatus] = useState('all');
     const [source, setSource] = useState('all');
+    const [project, setProject] = useState('all');
     const [manager, setManager] = useState('all');
     const [period, setPeriod] = useState('all');
     const [qInput, setQInput] = useState('');
@@ -84,13 +85,15 @@ function LeadsWorkspace() {
         return () => clearTimeout(t);
     }, [qInput]);
 
-    const params = useMemo(() => ({ view, queue, status, source, manager, period, q, sort, dir, page, pageSize: PAGE_SIZE }), [view, queue, status, source, manager, period, q, sort, dir, page]);
+    const params = useMemo(() => ({ view, queue, status, source, project, manager, period, q, sort, dir, page, pageSize: PAGE_SIZE }), [view, queue, status, source, project, manager, period, q, sort, dir, page]);
     const { data, isLoading, isFetching, error, refetch } = useLeadsList(params);
+    const { data: projects = [], error: projectsError, refetch: refetchProjects } = useLeadProjects();
     const { data: summary, error: summaryError } = useLeadSummary();
     const { data: managers = [] } = useManagers();
     const update = useUpdateLead();
 
     const leads = useMemo(() => data?.leads ?? [], [data]);
+    const projectNames = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects]);
     const total = data?.pagination.total ?? 0;
     const totalPages = data?.pagination.totalPages ?? 1;
 
@@ -153,7 +156,7 @@ function LeadsWorkspace() {
                 <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-4 lg:gap-2">
                     {LEAD_WORK_QUEUES.map(item => <button key={item.key} type="button" aria-pressed={queue === item.key}
                         onClick={() => {
-                            setView('all'); setStatus('all'); setSource('all'); setManager('all'); setPeriod('all'); setQInput(''); setQ(''); setPage(1); setChecked(new Set()); setSelectedId(null);
+                            setView('all'); setStatus('all'); setSource('all'); setProject('all'); setManager('all'); setPeriod('all'); setQInput(''); setQ(''); setPage(1); setChecked(new Set()); setSelectedId(null);
                             setSort(item.key === 'overdue' ? 'next_followup_at' : 'created_at'); setDir('asc');
                             router.replace(`/dashboard/leads?queue=${item.key}`);
                         }}
@@ -173,6 +176,7 @@ function LeadsWorkspace() {
                 {summaryError && <p role="alert" className="text-[12px] text-danger">Лидийн тоолол уншиж чадсангүй. Хуудсаа шинэчилнэ үү.</p>}
             </section>
             {error && <div role="alert" className="rounded-md border border-danger/30 p-3 text-sm text-danger">Лидийн жагсаалт уншиж чадсангүй. <button type="button" onClick={() => void refetch()} className="underline focus-ring">Дахин оролдох</button></div>}
+            {projectsError && <div role="alert" className="rounded-md border border-danger/30 p-3 text-sm text-danger">Төслийн нэрсийг уншиж чадсангүй. <button type="button" onClick={() => void refetchProjects()} className="underline focus-ring">Дахин оролдох</button></div>}
             {/* Таб + хуудасны үйлдэл */}
             <div className="flex items-center gap-1 overflow-x-auto no-scrollbar border-b border-border">
                 {LEAD_VIEWS.map((v) => {
@@ -208,6 +212,7 @@ function LeadsWorkspace() {
             <div className="flex flex-wrap items-center gap-1.5">
                 <FilterSelect value={status} onChange={(v) => { setStatus(v); setPage(1); }} label="Статус" options={LEAD_STATUSES.map((s) => [s, STATUS_META[s].label])} />
                 <FilterSelect value={source} onChange={(v) => { setSource(v); setPage(1); }} label="Эх үүсвэр" options={SOURCES.map((s) => [s, SOURCE_LABEL[s]])} />
+                {projects.length > 0 && <FilterSelect value={project} onChange={(v) => { setProject(v); setPage(1); setChecked(new Set()); }} label="Төсөл" options={projects.map((p) => [p.id, p.name])} />}
                 {managers.length > 0 && <FilterSelect value={manager} onChange={(v) => { setManager(v); setPage(1); }} label="Менежер" options={managers.map((m) => [m.name, m.name])} />}
                 <FilterSelect value={period} onChange={(v) => { setPeriod(v); setPage(1); }} label="Огноо" options={[['week', '7 хоног'], ['month', '30 хоног'], ['quarter', '90 хоног'], ['year', '1 жил']]} />
                 <div className="relative ml-auto w-full sm:w-60">
@@ -232,7 +237,7 @@ function LeadsWorkspace() {
             <div className={cn('grid gap-3', showSplit && 'lg:grid-cols-[minmax(0,1fr)_minmax(400px,480px)]')}>
                 <div className="min-w-0 rounded-md border border-border bg-surface">
                     {isMobile ? (
-                        <MobileList leads={leads} loading={isLoading} onOpen={select} />
+                        <MobileList leads={leads} loading={isLoading} onOpen={select} projectNames={projectNames} />
                     ) : (
                         <div className="overflow-x-auto">
                             <table className="w-full text-[12.5px]">
@@ -281,7 +286,10 @@ function LeadsWorkspace() {
                                                 <td className="px-2" onClick={(e) => e.stopPropagation()}>
                                                     <CheckBox label="Сонгох" checked={checked.has(l.id)} onChange={(v) => setChecked((prev) => { const n = new Set(prev); if (v) n.add(l.id); else n.delete(l.id); return n; })} />
                                                 </td>
-                                                <td className="px-2"><span className={cn('block max-w-[220px] truncate font-medium', sel ? 'text-brand' : 'text-foreground')}>{l.customer_name || 'Нэргүй'}</span></td>
+                                                <td className="px-2">
+                                                    <span className={cn('block max-w-[220px] truncate font-medium', sel ? 'text-brand' : 'text-foreground')}>{l.customer_name || 'Нэргүй'}</span>
+                                                    {l.project_id && <span className="block max-w-[220px] truncate text-[11px] text-muted-foreground">{projectNames.get(l.project_id) ?? 'Төслийн нэр олдсонгүй'}</span>}
+                                                </td>
                                                 <td className="mono-label px-2 text-fg-2">{l.customer_phone || '—'}</td>
                                                 <td className="px-2"><StatusPicker value={l.status} disabled={!canWrite} onChange={(s, reason) => patchLead(l.id, { status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} /></td>
                                                 {!showSplit && <td className="px-2 text-fg-2">{sourceLabel(l.source)}</td>}
@@ -381,7 +389,7 @@ function FilterSelect({ value, onChange, label, options }: { value: string; onCh
     );
 }
 
-function MobileList({ leads, loading, onOpen }: { leads: LeadRow[]; loading: boolean; onOpen: (id: string) => void }) {
+function MobileList({ leads, loading, onOpen, projectNames }: { leads: LeadRow[]; loading: boolean; onOpen: (id: string) => void; projectNames: Map<string, string> }) {
     if (loading) return <div className="flex flex-col gap-2 p-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>;
     if (!leads.length) return <div className="px-4 py-10 text-center text-[13px] text-muted-foreground">Лид олдсонгүй</div>;
     return (
@@ -394,7 +402,7 @@ function MobileList({ leads, loading, onOpen }: { leads: LeadRow[]; loading: boo
                             <Avatar name={l.customer_name} className="h-8 w-8 text-[11px]" />
                             <span className="min-w-0 flex-1">
                                 <span className="block truncate text-[14px] font-medium text-foreground">{l.customer_name || 'Нэргүй'}</span>
-                                <span className="block truncate text-[12px] text-muted-foreground">{[interestLabel(l) !== '—' ? interestLabel(l) : null, sourceLabel(l.source), l.last_contact_at ? `Холбогдсон: ${formatRelativeDays(l.last_contact_at)}` : 'Холбоо бүртгээгүй'].filter(Boolean).join(' · ')}</span>
+                                <span className="block truncate text-[12px] text-muted-foreground">{[l.project_id ? projectNames.get(l.project_id) ?? 'Төслийн нэр олдсонгүй' : null, interestLabel(l) !== '—' ? interestLabel(l) : null, sourceLabel(l.source), l.last_contact_at ? `Холбогдсон: ${formatRelativeDays(l.last_contact_at)}` : 'Холбоо бүртгээгүй'].filter(Boolean).join(' · ')}</span>
                             </span>
                             <Pill tone={STATUS_META[l.status]?.tone ?? 'neutral'}>{STATUS_META[l.status]?.short ?? l.status}</Pill>
                         </button>

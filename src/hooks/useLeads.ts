@@ -13,6 +13,7 @@ export type LeadRow = Lead & { lost_reason?: string | null };
 export interface LeadsListParams {
     view: LeadView;
     queue?: LeadWorkQueue;
+    project?: string;
     status?: string;
     source?: string;
     manager?: string;
@@ -33,6 +34,7 @@ function buildQuery(p: LeadsListParams): string {
     const sp = new URLSearchParams();
     if (p.queue) sp.set('queue', p.queue);
     if (p.view && p.view !== 'all') sp.set('view', p.view);
+    if (p.project && p.project !== 'all') sp.set('project', p.project);
     if (p.status && p.status !== 'all') sp.set('status', p.status);
     if (p.source && p.source !== 'all') sp.set('source', p.source);
     if (p.manager && p.manager !== 'all') sp.set('manager', p.manager);
@@ -55,6 +57,19 @@ export function useLeadsList(params: LeadsListParams) {
         enabled: !!shopId,
         staleTime: 20_000,
         placeholderData: (prev) => prev,
+    });
+}
+
+export interface LeadProjectOption { id: string; name: string }
+
+export function useLeadProjects() {
+    const { shop } = useAuth();
+    const shopId = shop?.id;
+    return useQuery<LeadProjectOption[]>({
+        queryKey: ['projects', 'leads', shopId],
+        queryFn: async () => (await dashboardJson<{ projects: LeadProjectOption[] }>('/api/dashboard/projects')).projects ?? [],
+        enabled: !!shopId,
+        staleTime: 5 * 60_000,
     });
 }
 

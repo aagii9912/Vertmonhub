@@ -431,6 +431,10 @@ LEAD_WELCOME_SITE_URL=
 LEAD_SHOP_ID=              # олон shop-той үед public лидийн эзэн shop (байхгүй бол хамгийн эртний shop)
 TURNSTILE_SECRET_KEY=      # зөвлөмжтэй: тохируулмагц public /api/leads captcha шаардана (байхгүй бол origin allowlist + rate limit + honeypot л)
 
+# Elysium сайтын /api/contact → /api/integrations/elysium/leads (сервер хооронд)
+ELYSIUM_LEAD_SYNC_SECRET=  # Elysium Vercel-ийн VERTMONHUB_LEADS_SECRET-тэй ижил нууц түлхүүр
+ELYSIUM_LEAD_PROJECT_ID=   # projects.id; lead-ийн shop_id-г уг төслөөс авна
+
 # Cron (Vercel Cron → Authorization: Bearer $CRON_SECRET) — prod-д ЗААВАЛ, байхгүй бол cron 401
 CRON_SECRET=
 

@@ -19,7 +19,7 @@ const PERIOD_DAYS: Record<string, number> = {
 };
 
 /**
- * GET /api/dashboard/leads?status=<status>&source=<source>&period=<week|month|quarter|year>&manager=<нэр>&phone=<дугаар>&q=<хайлт>
+ * GET /api/dashboard/leads?status=<status>&source=<source>&project=<uuid>&period=<week|month|quarter|year>&manager=<нэр>&phone=<дугаар>&q=<хайлт>
  * Лийдийн жагсаалт (shop-scoped, сервер cookie auth + service role).
  * phone — утасны давхардал шалгах (форматаас үл хамааран: «9911 2233» / «99112233» / «9911-2233»).
  * q — нэр, утас, и-мэйлээр хайлт.
@@ -40,7 +40,11 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url);
         const status = searchParams.get('status');
         const source = searchParams.get('source');
+        const project = searchParams.get('project');
         const period = searchParams.get('period');
+        if (project && project !== 'all' && !z.string().uuid().safeParse(project).success) {
+            return NextResponse.json({ error: 'Буруу төсөл' }, { status: 400 });
+        }
 
         // Хуудаслалт: их өгөгдөлд бүгдийг татаж ~1000 мөрөнд чимээгүй тасрахаас
         // сэргийлнэ. ?page&pageSize эсвэл ?limit&offset өгөөгүй бол аюулгүйн таг.
@@ -85,6 +89,9 @@ export async function GET(request: NextRequest) {
         }
         if (source && source !== 'all') {
             query = query.eq('source', source);
+        }
+        if (project && project !== 'all') {
+            query = query.eq('project_id', project);
         }
         const manager = searchParams.get('manager');
         if (manager && manager !== 'all') {

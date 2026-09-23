@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
 import { formatShortDate, formatTime, formatRelativeDays } from '@/lib/utils/date';
-import { useLeadDetail, useUpdateLead, useAddLeadActivity, type ManagerOption } from '@/hooks/useLeads';
+import { useLeadDetail, useLeadProjects, useUpdateLead, useAddLeadActivity, type ManagerOption } from '@/hooks/useLeads';
 import { INTEREST_CHIPS, ACTIVITY_LABEL, sourceLabel, interestLabel } from '@/lib/leads/labels';
 import { Pill, Skeleton, GhostButton } from '@/components/dashboard/v2/primitives';
 import { StatusPicker, ManagerPicker } from './pickers';
@@ -35,6 +35,7 @@ export function LeadPanel({
     className?: string;
 }) {
     const { data, isLoading, isError, error, isFetching, refetch } = useLeadDetail(leadId);
+    const { data: projects = [] } = useLeadProjects();
     const update = useUpdateLead();
     const addActivity = useAddLeadActivity(leadId);
     const noteRef = useRef<HTMLTextAreaElement>(null);
@@ -128,6 +129,10 @@ export function LeadPanel({
                     </div>
                     <Label>Эх үүсвэр</Label>
                     <div className="text-foreground">{sourceLabel(lead.source)}</div>
+                    {lead.project_id && <>
+                        <Label>Төсөл</Label>
+                        <div className="text-foreground">{projects.find((p) => p.id === lead.project_id)?.name ?? 'Төслийн нэр олдсонгүй'}</div>
+                    </>}
                     <Label>Сонирхол</Label>
                     <div>
                         {canWrite ? (
