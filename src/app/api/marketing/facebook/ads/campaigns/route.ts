@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserShop, supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { fetchAdAccountCampaigns } from '@/lib/facebook/marketing-api';
-import { decryptToken } from '@/lib/crypto/tokens';
+import { metaAdsToken } from '@/lib/facebook/ads-auth';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { logger } from '@/lib/utils/logger';
 
 const STATUS_MAP: Record<string, 'active' | 'paused' | 'completed' | 'draft'> = {
@@ -17,6 +18,8 @@ const STATUS_MAP: Record<string, 'active' | 'paused' | 'completed' | 'draft'> = 
  */
 export async function GET(req: NextRequest) {
     try {
+        const denied = await requireModuleWrite('marketing-roi');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -25,19 +28,18 @@ export async function GET(req: NextRequest) {
         const admin = supabaseAdmin();
         const { data: shop } = await admin
             .from('shops')
-            .select('facebook_user_access_token, facebook_page_access_token, facebook_ad_account_id')
+            .select('meta_ads_user_access_token, meta_ads_user_token_expires_at, facebook_ad_account_id')
             .eq('id', authShop.id)
             .single();
 
-        // Ads API нь ads_read (USER token) шаардана — Page token-д БИШ.
-        const adsToken = decryptToken(shop?.facebook_user_access_token) || decryptToken(shop?.facebook_page_access_token) || '';
-        if (!adsToken) {
-            return NextResponse.json({ error: 'Facebook account холбогдоогүй' }, { status: 400 });
-        }
+        const adsToken = metaAdsToken(shop);
 
-        const adAccountId = req.nextUrl.searchParams.get('ad_account_id') || shop?.facebook_ad_account_id;
+        const adAccountId = shop?.facebook_ad_account_id;
         if (!adAccountId) {
             return NextResponse.json({ error: 'Ad Account ID шаардлагатай' }, { status: 400 });
+        }
+        if (req.nextUrl.searchParams.get('ad_account_id') && req.nextUrl.searchParams.get('ad_account_id') !== adAccountId) {
+            return NextResponse.json({ error: 'Сонгосон зарын данс өөрчлөгдсөн байна.' }, { status: 409 });
         }
 
         const result = await fetchAdAccountCampaigns(adAccountId, adsToken);

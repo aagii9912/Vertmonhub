@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/Button';
@@ -11,9 +11,19 @@ import { marketingInputClass } from './PerformanceEditor';
 export function MetaSpendSync({ shopId, canWrite, from, to }: { shopId?: string; canWrite: boolean; from: string; to: string }) {
     const cache = useQueryClient();
     const [busy, setBusy] = useState(false), [rate, setRate] = useState('');
+    const [oauthError, setOauthError] = useState(false);
     const state = useQuery({ queryKey: ['meta-spend-sync', shopId], enabled: !!shopId, retry: false,
-        queryFn: () => dashboardJson<{ accountId: string | null; status: MetaSyncStatus | null }>('/api/marketing/facebook/ads/spend-sync', { shopId }) });
+        queryFn: () => dashboardJson<{ accountId: string | null; status: MetaSyncStatus | null; connected: boolean; expiresAt: string | null }>('/api/marketing/facebook/ads/spend-sync', { shopId }) });
     const status = state.data?.status;
+    useEffect(() => {
+        const url = new URL(window.location.href);
+        const result = url.searchParams.get('meta_ads');
+        if (!result) return;
+        if (result === 'connected') toast.success('Meta Ads холбогдлоо.');
+        else setOauthError(true);
+        url.searchParams.delete('meta_ads');
+        window.history.replaceState(null, '', url);
+    }, []);
     async function sync(withRate: boolean) {
         setBusy(true);
         try {
@@ -32,10 +42,16 @@ export function MetaSpendSync({ shopId, canWrite, from, to }: { shopId?: string;
         <div className="flex flex-wrap items-center justify-between gap-3">
             <div><h2 className="text-sm font-semibold">Meta автомат зардал</h2>
                 <p className="mt-1 text-xs text-muted-foreground">6 цаг тутам сүүлийн 35 өдрийг шинэчилнэ. Сонгосон хугацааг 93 хүртэл өдрөөр нөхөж татаж болно.</p></div>
-            {canWrite && <Button size="sm" variant="secondary" disabled={!state.data?.accountId || busy} isLoading={busy} onClick={() => void sync(false)}>Meta зардал татах</Button>}
+            <div className="flex flex-wrap gap-2">
+                {canWrite && <Button size="sm" variant="secondary" href={`/api/marketing/facebook/ads/connect?shop_id=${encodeURIComponent(shopId || '')}`}>{state.data?.connected ? 'Meta Ads дахин холбох' : 'Meta Ads холбох'}</Button>}
+                {canWrite && <Button size="sm" variant="secondary" disabled={!state.data?.accountId || !state.data?.connected || busy} isLoading={busy} onClick={() => void sync(false)}>Meta зардал татах</Button>}
+            </div>
         </div>
+        {oauthError && <Alert variant="danger">Meta Ads холболт амжилтгүй боллоо. App-ийн ads_read эрх, Meta зөвшөөрөл болон нэвтрэх тохиргоог шалгана уу.</Alert>}
         {state.isError && <Alert variant="danger">{state.error.message}<Button size="sm" variant="ghost" onClick={() => void state.refetch()}>Дахин шалгах</Button></Alert>}
-        {state.data && !state.data.accountId && <p className="text-sm text-muted-foreground">Meta зарын данс сонгоогүй байна. <a className="underline" href="/dashboard/marketing-roi">Зарын данс сонгох</a></p>}
+        {state.data && !state.data.connected && <p className="text-sm text-muted-foreground">Зардал татахын тулд Meta Ads app-аа холбоно уу.</p>}
+        {state.data?.connected && !state.data.accountId && <p className="text-sm text-muted-foreground">Meta зарын данс сонгоогүй байна. <a className="underline" href="/dashboard/marketing-roi">Зарын данс сонгох</a></p>}
+        {state.data?.connected && state.data.expiresAt && <p className="text-xs text-muted-foreground">Meta Ads эрхийн хугацаа: {new Date(state.data.expiresAt).toLocaleDateString('mn-MN', { timeZone: 'Asia/Ulaanbaatar' })}</p>}
         {state.data?.accountId && <p className="text-xs text-muted-foreground">Данс: {state.data.accountId} · {status?.currency || 'Валютыг анхны синкээр уншина'} · {status?.timezone || 'Цагийн бүс тодорхойгүй'}<br />
             Сүүлийн амжилттай синк: {status?.last_success_at ? new Date(status.last_success_at).toLocaleString('mn-MN', { timeZone: 'Asia/Ulaanbaatar' }) : 'Хийгдээгүй'} {status?.last_from && `(${status.last_from} – ${status.last_to})`}</p>}
         {status?.last_error && <Alert variant="danger">{status.last_error} Өмнө хадгалсан зардал хэвээр байна.</Alert>}

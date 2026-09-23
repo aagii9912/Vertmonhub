@@ -13,12 +13,15 @@ export async function GET() {
     if (!shop) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
     try {
         const db = supabaseAdmin();
-        const { data: config, error } = await db.from('shops').select('facebook_ad_account_id').eq('id', shop.id).single();
+        const { data: config, error } = await db.from('shops').select('facebook_ad_account_id,meta_ads_user_access_token,meta_ads_user_token_expires_at').eq('id', shop.id).single();
         if (error) throw error;
         const accountId = config?.facebook_ad_account_id ? `act_${config.facebook_ad_account_id.replace(/^act_/, '')}` : null;
         const { data: status, error: readError } = accountId ? await db.from('meta_spend_sync').select('account_id,currency,timezone,mnt_per_unit,last_attempt_at,last_success_at,last_from,last_to,last_error').eq('shop_id', shop.id).eq('account_id', accountId).maybeSingle() : { data: null, error: null };
         if (readError) throw readError;
-        return NextResponse.json({ accountId, status }, { headers: { 'Cache-Control': 'private, no-store' } });
+        const connected = !!config?.meta_ads_user_access_token && !!config.meta_ads_user_token_expires_at &&
+            Date.parse(config.meta_ads_user_token_expires_at) > Date.now();
+        return NextResponse.json({ accountId, status, connected,
+            expiresAt: config?.meta_ads_user_token_expires_at ?? null }, { headers: { 'Cache-Control': 'private, no-store' } });
     } catch { return NextResponse.json({ error: 'Meta зардлын тохиргоог уншиж чадсангүй. Шинэчлэл суулгасан эсэхийг шалгана уу.' }, { status: 503 }); }
 }
 export async function POST(request: NextRequest) {

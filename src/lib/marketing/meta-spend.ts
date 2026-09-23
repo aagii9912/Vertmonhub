@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { decryptToken } from '@/lib/crypto/tokens';
+import { metaAdsToken } from '@/lib/facebook/ads-auth';
 import { fetchMetaAccount, fetchMetaDailySpend } from '@/lib/facebook/daily-spend';
 import { dateSchema } from './performance';
 
@@ -18,13 +18,12 @@ export interface MetaSyncStatus {
 export async function syncMetaSpend(db: SupabaseClient, shopId: string, options: MetaSyncOptions = {}) {
     const input = MetaSyncInput.parse(options);
     const started = new Date().toISOString();
-    const { data: shop, error } = await db.from('shops').select('facebook_ad_account_id,facebook_user_access_token').eq('id', shopId).single();
+    const { data: shop, error } = await db.from('shops').select('facebook_ad_account_id,meta_ads_user_access_token,meta_ads_user_token_expires_at').eq('id', shopId).single();
     if (error) throw new Error('Meta тохиргоог уншиж чадсангүй.');
     const accountId = `act_${String(shop?.facebook_ad_account_id || '').replace(/^act_/, '')}`;
     if (!/^act_\d+$/.test(accountId)) throw new Error('Эхлээд Meta зарын дансаа сонгоно уу.');
     try {
-        const token = decryptToken(shop?.facebook_user_access_token);
-        if (!token) throw new Error('Facebook холболтоо ads_read эрхтэйгээр дахин холбоно уу.');
+        const token = metaAdsToken(shop);
         const account = await fetchMetaAccount(accountId, token);
         const today = new Intl.DateTimeFormat('en-CA', { timeZone: account.timezone_name, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
         const to = input.to && input.to < today ? input.to : today;

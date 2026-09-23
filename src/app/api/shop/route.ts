@@ -5,6 +5,13 @@ import { CreateShopSchema, UpdateShopSchema, validateBody } from '@/lib/validati
 import { encryptToken, decryptToken } from '@/lib/crypto/tokens';
 import { subscribePageToApp } from '@/lib/facebook/marketing-api';
 
+function publicShop(shop: Record<string, unknown> | null) {
+  if (!shop) return null;
+  const copy = { ...shop };
+  delete copy.meta_ads_user_access_token;
+  return copy;
+}
+
 // GET - Get user's shop
 export async function GET() {
   try {
@@ -26,7 +33,7 @@ export async function GET() {
       throw error;
     }
 
-    return NextResponse.json({ shop });
+    return NextResponse.json({ shop: publicShop(shop) });
   } catch (error) {
     return safeErrorResponse(error, 'Shop мэдээлэл унших үед алдаа гарлаа');
   }
@@ -67,7 +74,7 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (error) throw error;
-      return NextResponse.json({ shop: updatedShop });
+      return NextResponse.json({ shop: publicShop(updatedShop) });
     }
 
     // No shop limit — internal company app, create freely
@@ -88,7 +95,7 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error;
 
-    return NextResponse.json({ shop });
+    return NextResponse.json({ shop: publicShop(shop) });
   } catch (error) {
     return safeErrorResponse(error, 'Shop үүсгэх/шинэчлэх үед алдаа гарлаа');
   }
@@ -200,7 +207,7 @@ export async function PATCH(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ shop: updatedShop, webhookSubscribed });
+    return NextResponse.json({ shop: publicShop(updatedShop), webhookSubscribed });
   } catch (error) {
     return safeErrorResponse(error, 'Shop шинэчлэх үед алдаа гарлаа');
   }

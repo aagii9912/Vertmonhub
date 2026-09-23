@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserShop, supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { fetchCampaignInsights } from '@/lib/facebook/marketing-api';
-import { decryptToken } from '@/lib/crypto/tokens';
+import { metaAdsToken } from '@/lib/facebook/ads-auth';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { logger } from '@/lib/utils/logger';
 
 /**
@@ -10,6 +11,8 @@ import { logger } from '@/lib/utils/logger';
  */
 export async function GET(req: NextRequest) {
     try {
+        const denied = await requireModuleWrite('marketing-roi');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -26,15 +29,11 @@ export async function GET(req: NextRequest) {
         const admin = supabaseAdmin();
         const { data: shop } = await admin
             .from('shops')
-            .select('facebook_user_access_token, facebook_page_access_token')
+            .select('meta_ads_user_access_token, meta_ads_user_token_expires_at')
             .eq('id', authShop.id)
             .single();
 
-        // Campaign insights нь ads_read (USER token) шаардана — Page token-д БИШ.
-        const adsToken = decryptToken(shop?.facebook_user_access_token) || decryptToken(shop?.facebook_page_access_token) || '';
-        if (!adsToken) {
-            return NextResponse.json({ error: 'Facebook account холбогдоогүй' }, { status: 400 });
-        }
+        const adsToken = metaAdsToken(shop);
 
         const result = await fetchCampaignInsights(externalId, adsToken, datePreset);
         const insight = result.data?.[0];

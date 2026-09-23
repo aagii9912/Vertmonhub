@@ -264,10 +264,14 @@ export default function MarketingROIPage() {
         setCampaignsError(null);
         try {
             // Persist selection
-            await dashboardFetch('/api/marketing/facebook/ads/accounts', {
+            const selectResponse = await dashboardFetch('/api/marketing/facebook/ads/accounts', {
                 method: 'POST',
                 body: JSON.stringify({ ad_account_id: selectedAdAccount }),
             });
+            if (!selectResponse.ok) {
+                const detail = await selectResponse.json().catch(() => null);
+                throw new Error(detail?.error || 'Зарын данс сонгож чадсангүй');
+            }
             const res = await dashboardFetch(`/api/marketing/facebook/ads/campaigns?ad_account_id=${encodeURIComponent(selectedAdAccount)}`);
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || 'Sync алдаа');
@@ -604,6 +608,7 @@ export default function MarketingROIPage() {
                                 )}
                             </div>
                             <div className="flex items-center gap-2">
+                                {shop?.id && <Button variant="secondary" size="sm" href={`/api/marketing/facebook/ads/connect?shop_id=${encodeURIComponent(shop.id)}`}>Meta Ads холбох</Button>}
                                 {adAccounts.length === 0 ? (
                                     <Button variant="secondary" size="sm" onClick={fetchAdAccounts}>
                                         Ad account-уудыг ачаалах
@@ -620,7 +625,7 @@ export default function MarketingROIPage() {
                                             <SelectContent>
                                                 {adAccounts.map((a) => (
                                                     <SelectItem key={a.id} value={a.id}>
-                                                        {a.name || a.business_name || a.account_id}
+                                                        {a.name || a.business_name || a.account_id} · {a.id} · {a.currency || 'валют тодорхойгүй'}
                                                     </SelectItem>
                                                 ))}
                                             </SelectContent>

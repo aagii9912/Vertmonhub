@@ -24,6 +24,9 @@ export const RECOMMENDED_PROD_ENV = [
     'RESEND_API_KEY',
     'NEXT_PUBLIC_VAPID_PUBLIC_KEY',
     'VAPID_PRIVATE_KEY',
+    'META_ADS_APP_ID',
+    'META_ADS_APP_SECRET',
+    'META_ADS_LOGIN_CONFIG_ID',
 ] as const;
 
 export function missingEnv(names: readonly string[], env: NodeJS.ProcessEnv = process.env): string[] {

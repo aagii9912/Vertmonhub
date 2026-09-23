@@ -11,6 +11,8 @@ export interface Shop {
     facebook_token_expires_at?: string | null;
     facebook_user_access_token?: string | null;
     facebook_user_token_expires_at?: string | null;
+    meta_ads_user_access_token?: string | null;
+    meta_ads_user_token_expires_at?: string | null;
     owner_name: string | null;
     phone: string | null;
     created_at: string;

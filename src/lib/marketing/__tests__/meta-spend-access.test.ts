@@ -31,7 +31,7 @@ it('requires cron authentication and reports a daily sync failure rather than su
     mocks.cron.mockReturnValueOnce(false);
     expect((await cron(request())).status).toBe(403); expect(mocks.from).not.toHaveBeenCalled();
     mocks.cron.mockReturnValue(true);
-    const q = { select: () => q, not: () => q, order: () => q, range: async () => ({ data: [{ id: 'allowed', facebook_user_access_token: null }], error: null }) };
+    const q = { select: () => q, not: () => q, order: () => q, range: async () => ({ data: [{ id: 'allowed', meta_ads_user_access_token: null, meta_ads_user_token_expires_at: null }], error: null }) };
     mocks.from.mockReturnValue(q); mocks.sync.mockRejectedValue(new Error('Meta unavailable'));
     const response = await cron(request());
     expect(response.status).toBe(500); expect(await response.json()).toMatchObject({ success: false, dailyResults: [{ shopId: 'allowed', success: false }] });

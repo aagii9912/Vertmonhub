@@ -4,13 +4,12 @@ import { fetchMetaAccount, fetchMetaDailySpend } from '@/lib/facebook/daily-spen
 import { mergeMarketingSpend } from '../spend-load';
 import { buildMarketingPerformance, type MarketingSpend } from '../performance';
 import { syncMetaSpend, MetaSyncInput } from '../meta-spend';
-vi.mock('@/lib/facebook/messenger', () => ({ appsecretProof: () => 'proof' }));
 vi.mock('@/lib/crypto/tokens', () => ({ decryptToken: (value: string) => value }));
 const account = { id: 'act_123', currency: 'USD', timezone_name: 'Asia/Ulaanbaatar' };
 const insight = { account_id: '123', account_currency: 'USD', campaign_id: '456', campaign_name: 'Campaign', date_start: '2026-09-10', date_stop: '2026-09-10', spend: '12.50' };
 const http = vi.fn();
-beforeEach(() => { vi.clearAllMocks(); vi.stubGlobal('fetch', http); });
-afterEach(() => vi.unstubAllGlobals());
+beforeEach(() => { vi.clearAllMocks(); vi.stubGlobal('fetch', http); vi.stubEnv('META_ADS_APP_SECRET', 'ads-app-secret'); });
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 const reply = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 it('requests daily campaign data and paginates using only the trusted host and bearer header', async () => {
     http.mockResolvedValueOnce(reply({ data: [insight], paging: { next: 'https://evil.test/?access_token=leaked', cursors: { after: 'cursor1' } } }))
@@ -18,6 +17,8 @@ it('requests daily campaign data and paginates using only the trusted host and b
     expect(await fetchMetaDailySpend(account, 'secret-token', '2026-09-01', '2026-09-30')).toHaveLength(2);
     for (const [url, init] of http.mock.calls) {
         expect(url.origin).toBe('https://graph.facebook.com'); expect(url.searchParams.get('time_increment')).toBe('1');
+        expect(url.pathname.startsWith('/v26.0/')).toBe(true);
+        expect(url.searchParams.get('appsecret_proof')).toMatch(/^[a-f0-9]{64}$/);
         expect(url.searchParams.get('level')).toBe('campaign'); expect(url.toString()).not.toContain('secret-token');
         expect(init.headers.Authorization).toBe('Bearer secret-token');
     }
@@ -46,7 +47,7 @@ function database(saveFails = false) {
     const filters: [string, unknown][] = [];
     const db = { from: vi.fn((table: string) => {
         const q = { select: () => q, eq: (k: string, v: unknown) => { filters.push([k, v]); return q; },
-            single: async () => ({ data: { facebook_ad_account_id: '123', facebook_user_access_token: 'secret' }, error: null }),
+            single: async () => ({ data: { facebook_ad_account_id: '123', meta_ads_user_access_token: 'secret', meta_ads_user_token_expires_at: null }, error: null }),
             maybeSingle: async () => ({ data: table === 'meta_spend_sync' ? { currency: 'USD', mnt_per_unit: 3500 } : null, error: null }) };
         return q;
     }), rpc: vi.fn(async (name: string) => ({ data: 1, error: saveFails && name === 'save_meta_daily_spend' ? { message: 'DB failed' } : null })) };

@@ -1,15 +1,17 @@
-import { appsecretProof } from '@/lib/facebook/messenger';
+import crypto from 'crypto';
 import { dateSchema } from '@/lib/marketing/performance';
 
-const BASE = 'https://graph.facebook.com/v21.0';
+const BASE = 'https://graph.facebook.com/v26.0';
 export interface MetaAccount { id: string; currency: string; timezone_name: string }
 export interface MetaDailyRow { campaign_id: string; campaign_name: string; spent_at: string; native_amount: string }
 
 // Never log a URL, response body or token. Even Graph paging.next can contain credentials.
 export async function metaRead<T>(path: string, token: string, params: Record<string, string> = {}, signal?: AbortSignal): Promise<T> {
+    const secret = process.env.META_ADS_APP_SECRET?.trim();
+    if (!secret) throw new Error('Meta Ads app-ийн нууц түлхүүр тохируулаагүй байна.');
     const url = new URL(`${BASE}/${path}`);
-    const proof = appsecretProof(token);
-    for (const [key, value] of Object.entries({ ...params, ...(proof ? { appsecret_proof: proof } : {}) })) url.searchParams.set(key, value);
+    const proof = crypto.createHmac('sha256', secret).update(token).digest('hex');
+    for (const [key, value] of Object.entries({ ...params, appsecret_proof: proof })) url.searchParams.set(key, value);
     let response: Response;
     try { response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store', signal: signal ?? AbortSignal.timeout(20000) }); }
     catch { throw new Error('Meta холболт тасарлаа эсвэл хугацаа хэтэрлээ. Дахин синк хийнэ үү.'); }
