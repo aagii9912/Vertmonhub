@@ -12,7 +12,6 @@ import { formatMNTShort } from '@/lib/utils/currency';
 
 interface ManagerRow {
     sales_manager: string;
-    is_active?: boolean;
     contract_count: number;
     closed_count: number;
     total_sales: number;
@@ -86,9 +85,6 @@ export default function ManagerPerformancePage() {
                             <Award className={`w-4 h-4 ${i === 0 ? 'text-status-pending' : i === 1 ? 'text-muted-foreground' : 'text-status-pending/70'}`} />
                         )}
                         <span className="font-medium text-foreground">{m.sales_manager || '—'}</span>
-                        {m.is_active === false && (
-                            <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-2xs text-muted-foreground">Идэвхгүй</span>
-                        )}
                     </div>
                 );
             },
@@ -125,7 +121,7 @@ export default function ManagerPerformancePage() {
             <PageHeader
                 eyebrow="Аналитик"
                 title="Менежерийн гүйцэтгэл"
-                subtitle="Менежер тус бүрийн гэрээ, хаалт, борлуулалт, цуглуулалт"
+                subtitle="Идэвхтэй менежер тус бүрийн гэрээ, хаалт, борлуулалт, цуглуулалт"
                 primaryAction={
                     <Button onClick={exportExcel} variant="secondary" size="md" isLoading={exporting} disabled={exporting || managers.length === 0}>
                         {!exporting && <Download className="w-4 h-4" />} Excel татах

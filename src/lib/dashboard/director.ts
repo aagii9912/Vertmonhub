@@ -91,7 +91,7 @@ export function buildFunnel(
 /* ------------------------------------------------------------------ */
 
 export interface LeaderboardInput {
-    /** Идэвхтэй менежерүүдийн канон нэр (roster). Хоосон бол өгөгдлөөс гарна. */
+    /** Идэвхтэй менежерүүдийн канон нэр. */
     rosterNames: string[];
     contracts: { sales_manager: string | null; total_price: number | null; contract_status?: string | null }[];
     viewings: { sales_manager_name: string | null }[];
@@ -114,11 +114,6 @@ export interface LeaderboardRow {
 
 export function buildLeaderboard(input: LeaderboardInput): LeaderboardRow[] {
     const names = new Set<string>(input.rosterNames.filter(Boolean));
-    if (!names.size) {
-        for (const c of input.contracts) if (c.sales_manager) names.add(c.sales_manager);
-        for (const v of input.viewings) if (v.sales_manager_name) names.add(v.sales_manager_name);
-        for (const l of input.leads) if (l.sales_manager_name) names.add(l.sales_manager_name);
-    }
 
     const rows = new Map<string, LeaderboardRow>();
     const ensure = (name: string) => {

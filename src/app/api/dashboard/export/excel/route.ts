@@ -3,6 +3,7 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { buildWorkbookBuffer, type WorkbookSheetSpec } from '@/lib/utils/xlsx';
+import { getManagerPerformance } from '@/lib/reports/manager-performance';
 
 /** Export төрөл бүр өөрийн модулийн унших эрх шаардана (өмнө нь зөвхөн auth). */
 const EXPORT_MODULE: Record<string, string> = {
@@ -154,14 +155,9 @@ export async function GET(request: NextRequest) {
             filename = `гэрээнүүд_${new Date().toISOString().split('T')[0]}.xlsx`;
 
         } else if (type === 'manager') {
-            // Export Manager Performance (manager_performance view)
-            const { data: managers } = await supabase
-                .from('manager_performance')
-                .select('*')
-                .eq('shop_id', shopId)
-                .order('total_sales', { ascending: false, nullsFirst: false });
+            const { managers } = await getManagerPerformance(supabase, shopId);
 
-            const exportData = (managers || []).map((m) => ({
+            const exportData = managers.map((m) => ({
                 'Менежер': m.sales_manager || '-',
                 'Нийт гэрээ': Number(m.contract_count) || 0,
                 'Хаагдсан': Number(m.closed_count) || 0,

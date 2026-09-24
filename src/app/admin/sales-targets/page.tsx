@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import { Target, Loader2, Save, TrendingUp, Users, Check, Plus } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -25,6 +27,7 @@ interface ManagerRow {
 const sum = (arr: number[]) => arr.reduce((a, b) => a + (b || 0), 0);
 
 export default function SalesTargetsAdminPage() {
+    const queryClient = useQueryClient();
     const [shops, setShops] = useState<Array<{ id: string; name: string }>>([]);
     const [shopId, setShopId] = useState('');
     const [year, setYear] = useState(new Date().getFullYear());
@@ -34,6 +37,7 @@ export default function SalesTargetsAdminPage() {
     const [managers, setManagers] = useState<ManagerRow[]>([]);
     const [teamMembers, setTeamMembers] = useState<Array<{ id: string; full_name: string }>>([]);
     const [newManagerName, setNewManagerName] = useState('');
+    const [showInactive, setShowInactive] = useState(false);
 
     const [loading, setLoading] = useState(false);
     const [savingTarget, setSavingTarget] = useState(false);
@@ -100,14 +104,25 @@ export default function SalesTargetsAdminPage() {
     }
 
     async function persistRoster(list: ManagerRow[]) {
-        await fetch('/api/admin/sales-targets', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                shopId,
-                managers: list.map((m) => ({ name: m.name, is_active: m.is_active, user_id: m.user_id })),
-            }),
-        });
+        try {
+            const res = await fetch('/api/admin/sales-targets', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    shopId,
+                    managers: list.map((m) => ({ name: m.name, is_active: m.is_active, user_id: m.user_id })),
+                }),
+            });
+            if (!res.ok) throw new Error('Менежерийн жагсаалт хадгалагдсангүй');
+            await Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['managers', shopId] }),
+                queryClient.invalidateQueries({ queryKey: ['director', shopId] }),
+                queryClient.invalidateQueries({ queryKey: ['kpi-report', shopId] }),
+                queryClient.invalidateQueries({ queryKey: ['my-stats', shopId] }),
+            ]);
+        } catch {
+            toast.error('Менежерийн жагсаалт хадгалагдсангүй');
+        }
         await loadData();
     }
 
@@ -146,6 +161,8 @@ export default function SalesTargetsAdminPage() {
     const yearActual = sum(teamActual);
     const yearP = yearTarget > 0 ? Math.round((yearActual / yearTarget) * 100) : 0;
     const activeCount = managers.filter((m) => m.is_active).length;
+    const visibleManagers = showInactive ? managers : managers.filter((m) => m.is_active);
+    const inactiveCount = managers.length - activeCount;
 
     // Жагсаалтад ороогүй акаунттай гишүүд (шууд менежер болгож нэмэх)
     const unlistedMembers = teamMembers.filter(
@@ -259,18 +276,18 @@ export default function SalesTargetsAdminPage() {
                                         <Users className="h-4 w-4 text-brand" /> Идэвхтэй менежерүүд
                                     </p>
                                     <p className="text-xs text-muted-foreground">
-                                        {activeCount}/{managers.length} идэвхтэй · багийн гүйцэтгэл эдгээрийн нийлбэр
+                                        {activeCount} идэвхтэй · багийн гүйцэтгэл эдгээрийн нийлбэр
                                     </p>
                                 </div>
                             </div>
 
-                            {managers.length === 0 ? (
+                            {visibleManagers.length === 0 ? (
                                 <p className="py-8 text-center text-sm text-muted-foreground">
-                                    Гэрээнд менежер бүртгэгдээгүй байна
+                                    Идэвхтэй менежер байхгүй
                                 </p>
                             ) : (
                                 <div className="max-h-[22rem] space-y-1.5 overflow-y-auto">
-                                    {managers.map((m) => (
+                                    {visibleManagers.map((m) => (
                                         <button
                                             key={m.name}
                                             onClick={() => toggleManager(m.name)}
@@ -300,6 +317,17 @@ export default function SalesTargetsAdminPage() {
                                         </button>
                                     ))}
                                 </div>
+                            )}
+
+                            {inactiveCount > 0 && (
+                                <button
+                                    type="button"
+                                    aria-expanded={showInactive}
+                                    onClick={() => setShowInactive((value) => !value)}
+                                    className="text-xs font-medium text-muted-foreground hover:text-foreground"
+                                >
+                                    {showInactive ? 'Идэвхгүй менежерүүдийг нуух' : `Идэвхгүй менежерүүдийг харах (${inactiveCount})`}
+                                </button>
                             )}
 
                             {/* Шинэ борлуулалтын менежер нэмэх */}

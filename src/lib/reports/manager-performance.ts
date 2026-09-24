@@ -25,23 +25,27 @@ export async function getManagerPerformance(supabase: SupabaseClient, shopId: st
         getMonthlyActualsByManager(supabase, shopId, year),
         supabase.from('sales_managers').select('name, is_active').eq('shop_id', shopId),
     ]);
-    const rosterMap = new Map((rosterRes.data || []).map((r) => [r.name, r.is_active]));
+    if (rosterRes.error) throw rosterRes.error;
+    const activeRoster = (rosterRes.data || []).filter((r) => r.is_active);
+    const activeNames = new Set(activeRoster.map((r) => r.name));
+    const performanceByName = new Map((data || []).map((m) => [m.sales_manager, m]));
 
-    const managers = (data || []).map((m) => ({
-        sales_manager: m.sales_manager,
-        // Бүртгэлд байхгүй бол default идэвхтэй
-        is_active: rosterMap.has(m.sales_manager) ? !!rosterMap.get(m.sales_manager) : true,
-        contract_count: Number(m.contract_count) || 0,
-        closed_count: Number(m.closed_count) || 0,
-        total_sales: Number(m.total_sales) || 0,
-        total_collected: Number(m.total_collected) || 0,
-        total_outstanding: Number(m.total_outstanding) || 0,
-        collection_rate_pct: Number(m.collection_rate_pct) || 0,
-        unique_customers: Number(m.unique_customers) || 0,
-    }));
+    const managers = activeRoster.map((r) => {
+        const m = performanceByName.get(r.name);
+        return {
+            sales_manager: r.name,
+            is_active: true,
+            contract_count: Number(m?.contract_count) || 0,
+            closed_count: Number(m?.closed_count) || 0,
+            total_sales: Number(m?.total_sales) || 0,
+            total_collected: Number(m?.total_collected) || 0,
+            total_outstanding: Number(m?.total_outstanding) || 0,
+            collection_rate_pct: Number(m?.collection_rate_pct) || 0,
+            unique_customers: Number(m?.unique_customers) || 0,
+        };
+    }).sort((a, b) => b.total_sales - a.total_sales || a.sales_manager.localeCompare(b.sales_manager, 'mn'));
 
     // Багийн гүйцэтгэл (энэ жил) = идэвхтэй менежерүүдийн нийлбэр
-    const activeNames = new Set(managers.filter((m) => m.is_active).map((m) => m.sales_manager));
     let teamActualYear = 0;
     for (const [name, mm] of byManager) {
         if (activeNames.has(name)) teamActualYear += sumYear(mm.actuals);

@@ -8,8 +8,8 @@ import { getTeamTargets, getMonthlyActualsByManager, sumYear } from '@/lib/sales
  * Багийн борлуулалтын төлөвлөгөө + идэвхтэй менежерийн бүртгэл (admin only).
  *
  * GET  ?shopId=&year=
- *      → багийн 12 сарын төлөвлөгөө + гүйцэтгэл, all-time менежерүүд (идэвхтэй
- *        эсэх + жилийн борлуулалт), акаунт холбох багийн гишүүд.
+ *      → багийн 12 сарын төлөвлөгөө + гүйцэтгэл, бүртгэлтэй менежерүүд
+ *        (идэвхтэй эсэх + жилийн борлуулалт), акаунт холбох багийн гишүүд.
  * POST body:{ shopId, year, months:number[12] }
  *      → багийн сарын төлөвлөгөөг upsert.
  * PUT  body:{ shopId, managers:[{name, is_active, user_id?}] }
@@ -51,31 +51,18 @@ export async function GET(request: NextRequest) {
 
         const supabase = supabaseAdmin();
 
-        const [teamTarget, byManager, rosterRes, perfRes, teamMembers] = await Promise.all([
+        const [teamTarget, byManager, rosterRes, teamMembers] = await Promise.all([
             getTeamTargets(supabase, shopId, year),
             getMonthlyActualsByManager(supabase, shopId, year),
             supabase.from('sales_managers').select('name, user_id, is_active').eq('shop_id', shopId),
-            supabase.from('manager_performance').select('sales_manager').eq('shop_id', shopId),
             loadMembers(supabase, shopId),
         ]);
+        if (rosterRes.error) throw rosterRes.error;
 
-        const rosterMap = new Map(
-            (rosterRes.data || []).map((r) => [r.name, { is_active: r.is_active, user_id: r.user_id }]),
-        );
-
-        // all-time менежерүүдийн нэгдэл: гэрээ (perf) ∪ энэ жилийн борлуулалт ∪ бүртгэл
-        const names = new Set<string>();
-        for (const r of perfRes.data || []) if (r.sales_manager) names.add(r.sales_manager);
-        for (const n of byManager.keys()) names.add(n);
-        for (const n of rosterMap.keys()) names.add(n);
-
-        const managers = Array.from(names)
-            .map((name) => {
-                const roster = rosterMap.get(name);
-                // Бүртгэлд байхгүй бол default идэвхтэй (админ идэвхгүйг нь салгана)
-                const isActive = roster ? roster.is_active : true;
-                const yearActual = sumYear(byManager.get(name)?.actuals || []);
-                return { name, is_active: isActive, user_id: roster?.user_id || null, year_actual: yearActual };
+        const managers = (rosterRes.data || [])
+            .map((manager) => {
+                const yearActual = sumYear(byManager.get(manager.name)?.actuals || []);
+                return { name: manager.name, is_active: manager.is_active, user_id: manager.user_id || null, year_actual: yearActual };
             })
             .sort((a, b) => a.name.localeCompare(b.name, 'mn'));
 

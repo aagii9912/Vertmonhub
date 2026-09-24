@@ -66,10 +66,7 @@ interface KpiReportData {
     target?: { teamTarget: number; teamActual: number; myShare: number | null } | null;
 }
 
-interface ManagerOption {
-    name: string;
-    is_active: boolean;
-}
+interface ManagerOption { name: string }
 
 /** Medium/Stripe маягийн намуухан өөрчлөлтийн мөр («+12% өмнөх сараас»). */
 function DeltaLine({ value }: { value: number | null | undefined }) {
@@ -99,19 +96,22 @@ export default function KpiReportPage() {
     const [month, setMonth] = useState(now.getMonth() + 1);
     const [managerChoice, setManagerChoice] = useState('');
 
-    const { data: managerList } = useQuery<{ managers: ManagerOption[] }>({
+    const { data: managerList } = useQuery<ManagerOption[]>({
         queryKey: ['managers', shopId],
         queryFn: async () => {
             const res = await dashboardFetch('/api/dashboard/managers');
-            if (!res.ok) return { managers: [] };
-            return res.json();
+            if (!res.ok) return [];
+            const data = await res.json();
+            return data.managers || [];
         },
         enabled: !!shopId && canPickManager,
         staleTime: 300000,
     });
 
     // Админ/тайлангийн хэрэглэгчид: сонгоогүй бол жагсаалтын эхний менежер (derived — effect хэрэггүй)
-    const manager = canPickManager ? managerChoice || managerList?.managers?.[0]?.name || '' : '';
+    const manager = canPickManager
+        ? managerList?.find((m) => m.name === managerChoice)?.name || managerList?.[0]?.name || ''
+        : '';
 
     const { data, isLoading } = useQuery<KpiReportData>({
         queryKey: ['kpi-report', shopId, year, month, manager || 'self'],
@@ -216,7 +216,7 @@ export default function KpiReportPage() {
                                 </span>
                             </SelectTrigger>
                             <SelectContent>
-                                {(managerList?.managers || []).map((m) => (
+                                {(managerList || []).map((m) => (
                                     <SelectItem key={m.name} value={m.name}>
                                         {m.name}
                                     </SelectItem>

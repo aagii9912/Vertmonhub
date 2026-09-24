@@ -139,10 +139,10 @@ export async function GET(request: NextRequest) {
 
         /* ---------- sales vs target ---------- */
         const activeNames = roster.filter((r) => r.is_active).map((r) => r.name);
-        const allow = activeNames.length ? new Set(activeNames) : null;
+        const allow = new Set(activeNames);
         const trendActual = Array(12).fill(0) as number[];
         for (const [name, m] of byManager) {
-            if (allow && !allow.has(name)) continue;
+            if (!allow.has(name)) continue;
             for (let i = 0; i < 12; i++) trendActual[i] += m.actuals[i];
         }
         const actual = trendActual[monthIdx];

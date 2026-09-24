@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
     Select,
@@ -23,7 +24,6 @@ import { UserRound } from 'lucide-react';
 interface ManagerOption {
     name: string;
     user_id: string | null;
-    is_active: boolean;
     hasAccount: boolean;
 }
 
@@ -34,7 +34,7 @@ interface ManagerSelectorProps {
 
 /**
  * «Менежер сонгогч» — админ аль ч менежерийн хувийн самбарыг нээж үзнэ.
- * Select нь /api/dashboard/managers (бүртгэл ∪ гэрээ ∪ лидийн нэрс)-ээс,
+ * Select нь /api/dashboard/managers (идэвхтэй нэрс)-ээс,
  * сонгоход баруун талын Sheet дотор тухайн менежерийн «Өнөөдөр» нээгдэнэ.
  */
 export function ManagerSelector({ selected, onSelect }: ManagerSelectorProps) {
@@ -55,6 +55,9 @@ export function ManagerSelector({ selected, onSelect }: ManagerSelectorProps) {
     });
 
     const managers = data || [];
+    useEffect(() => {
+        if (selected && data && !data.some((m) => m.name === selected)) onSelect(null);
+    }, [data, selected, onSelect]);
 
     return (
         <>
@@ -70,7 +73,6 @@ export function ManagerSelector({ selected, onSelect }: ManagerSelectorProps) {
                         {managers.map((m) => (
                             <SelectItem key={m.name} value={m.name}>
                                 {m.name}
-                                {!m.is_active ? ' · идэвхгүй' : ''}
                             </SelectItem>
                         ))}
                     </SelectContent>

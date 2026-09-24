@@ -24,15 +24,19 @@ async function handler(request: Request) {
 
         for (const shop of shops || []) {
             // Менежерийн нэгтгэл (борлуулалт/цуглуулалт + топ)
-            const { data: managers } = await supabase
-                .from('manager_performance')
-                .select('sales_manager, contract_count, total_sales, total_collected')
-                .eq('shop_id', shop.id)
-                .order('total_sales', { ascending: false, nullsFirst: false });
+            const [{ data: managers }, rosterRes] = await Promise.all([
+                supabase.from('manager_performance')
+                    .select('sales_manager, contract_count, total_sales, total_collected')
+                    .eq('shop_id', shop.id)
+                    .order('total_sales', { ascending: false, nullsFirst: false }),
+                supabase.from('sales_managers').select('name, is_active').eq('shop_id', shop.id),
+            ]);
 
             const totalSales = (managers || []).reduce((s, m) => s + (Number(m.total_sales) || 0), 0);
             const collected = (managers || []).reduce((s, m) => s + (Number(m.total_collected) || 0), 0);
-            const topManagers = (managers || []).slice(0, 5).map((m) => ({
+            const activeNames = new Set((rosterRes.data || []).filter((r) => r.is_active).map((r) => r.name));
+            const visibleManagers = (managers || []).filter((m) => activeNames.has(m.sales_manager));
+            const topManagers = visibleManagers.slice(0, 5).map((m) => ({
                 name: m.sales_manager || '—',
                 contracts: Number(m.contract_count) || 0,
                 sales: Number(m.total_sales) || 0,

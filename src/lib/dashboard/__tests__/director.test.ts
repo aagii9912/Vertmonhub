@@ -60,16 +60,15 @@ describe('buildLeaderboard', () => {
         expect(rows[2]).toMatchObject({ rank: 3, contracts: 0, sales: 0, leads: 1, targetPct: 0 });
     });
 
-    it('roster хоосон бол өгөгдлөөс нэрсийг гаргана', () => {
+    it('бүх менежер идэвхгүй бол түүхэн нэрсийг дахин гаргахгүй', () => {
         const rows = buildLeaderboard({
             rosterNames: [],
-            contracts: [{ sales_manager: 'X', total_price: 1 }],
-            viewings: [{ sales_manager_name: 'Y' }],
-            leads: [],
-            teamTargetMonth: 0,
+            contracts: [{ sales_manager: 'Хуучин', total_price: 100 }],
+            viewings: [{ sales_manager_name: 'Хуучин' }],
+            leads: [{ sales_manager_name: 'Хуучин' }],
+            teamTargetMonth: 100,
         });
-        expect(rows.map((r) => r.name)).toEqual(['X', 'Y']);
-        expect(rows[0].targetPct).toBe(0);
+        expect(rows).toEqual([]);
     });
 });
 
