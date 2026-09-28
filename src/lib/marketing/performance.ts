@@ -48,10 +48,10 @@ export interface MarketingContract {
 }
 export interface MarketingSpend {
     id: string; spent_at: string; amount: number | string; channel: string;
-    source?: 'manual' | 'meta'; exclusion?: 'manual_overlap' | 'missing_fx' | null; native_amount?: number; currency?: string;
+    source?: 'manual' | 'meta'; ingestionSource?: 'api' | 'file'; exclusion?: 'manual_overlap' | 'missing_fx' | null; native_amount?: number; currency?: string;
     project_id: string | null; marketing_owner_name: string | null; marketing_campaign_id: string | null; note: string | null;
 }
-export const SPEND_BASIS = 'Зардал = гар бүртгэл + Meta өдрийн зардал. Meta нь зарын дансны цагийн бүсээр; төгрөгт хөрвүүлсэн дүнгээр тооцно. Автомат синк хийсэн өдрийн гар Meta Ads бүртгэлийг давхардлаас сэргийлж нийтээс хасна. Ханшгүй зардал нийтэд орохгүй. Meta snapshot нэмэхгүй.';
+export const SPEND_BASIS = 'Зардал = гар бүртгэл + Meta өдрийн зардал (API / файл). Meta нь зарын дансны цагийн бүсээр; төгрөгт хөрвүүлсэн дүнгээр тооцно. API-аар татсан эсвэл файлаар оруулсан өдрийн гар Meta Ads бүртгэлийг давхардлаас сэргийлж нийтээс хасна; өөр дансны гар зардал байвал тулгана. API-аар баталгаажсан өдрийг файл дарахгүй. Ханшгүй зардал нийтэд орохгүй. Meta snapshot нэмэхгүй.';
 export function spendQuality(rows: MarketingSpend[]) {
     const pending: Record<string, number> = {};
     for (const r of rows.filter(s => s.exclusion === 'missing_fx')) pending[r.currency!] = (pending[r.currency!] ?? 0) + (r.native_amount ?? 0);

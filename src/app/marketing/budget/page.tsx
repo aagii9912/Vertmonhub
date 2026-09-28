@@ -43,6 +43,7 @@ import {
 
 interface SpendEntry {
     source?: 'manual' | 'meta';
+    ingestionSource?: 'api' | 'file';
     exclusion?: string | null;
     id: string;
     spent_at: string;
@@ -463,7 +464,7 @@ export default function MarketingBudgetPage() {
                                             <div className="min-w-0">
                                                 <p className="text-sm text-foreground">
                                                     {channelLabels[e.channel] || e.channel}
-                                                    {e.source === 'meta' ? ' · Meta автомат' : ''}{e.exclusion ? ' · Нийтээс хассан' : ''}
+                                                    {e.source === 'meta' ? ` · Meta ${e.ingestionSource === 'file' ? 'файл импорт' : 'API'}` : ''}{e.exclusion ? ' · Нийтээс хассан' : ''}
                                                     {e.note ? ` · ${e.note}` : ''}
                                                 </p>
                                                 <p className="text-xs text-muted-foreground tabular-nums">

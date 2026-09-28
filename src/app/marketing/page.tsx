@@ -17,6 +17,7 @@ import { ubDateStr, ubMonthRange, ubParts } from '@/lib/utils/date';
 import { MARKETING_CHANNELS, marketingChannel, performanceChange, type MarketingPerformance, type MarketingActivity, type MarketingSpend } from '@/lib/marketing/performance';
 import { PerformanceEditor, marketingInputClass, type EditRecord } from '@/components/marketing/PerformanceEditor';
 import { MetaSpendSync } from '@/components/marketing/MetaSpendSync';
+import { MetaSpendImport } from '@/components/marketing/MetaSpendImport';
 
 const number = (v: number | null) => v === null ? '—' : new Intl.NumberFormat('mn-MN', { maximumFractionDigits: 1 }).format(v);
 const percent = (v: number | null) => v === null ? '—' : `${number(v)}%`;
@@ -59,7 +60,7 @@ export default function MarketingPage() {
     return <div className="min-w-0 space-y-4">
         <PageHeader title="Маркетингийн самбар" subtitle="Акц, контент, Lead, гэрээ болон багийн гүйцэтгэл"
             primaryAction={canWrite && <Button size="sm" onClick={() => setEditing({ kind: 'activity' })}><Plus />Акц / контент нэмэх</Button>}
-            secondaryActions={<><Button size="sm" variant="secondary" disabled={!r} isLoading={exporting} onClick={() => void download()}><Download />Excel</Button>
+            secondaryActions={<>{canWrite && shop && <MetaSpendImport key={shop.id} shopId={shop.id} projects={data?.projects ?? []} activities={data?.activities ?? []} onSaved={setRange} />}<Button size="sm" variant="secondary" disabled={!r} isLoading={exporting} onClick={() => void download()}><Download />Excel</Button>
                 {canAi && <Button size="sm" variant="secondary" disabled={!r} onClick={() => openAiPanel(`get_marketing_performance ашиглан ${range.from}–${range.to} хугацааны маркетингийн гүйцэтгэлийг${project ? ` project=${project}` : ''} шинжил. Өмнөх хугацаатай харьцуулж, төслүүд болон маркетингийн менежерүүдийн зорилт, биелэлт, төсвийн зөрүүг тайлбарла. Дутуу өгөгдлийг дурд. 3 тодорхой дараагийн ажил санал болго. Шалтгааныг нотолгоогүй таамаглахгүй.`)}><Sparkles />AI дүгнэлт</Button>}</>} />
         <div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-surface p-3">
             <label className="grid gap-1 text-xs text-muted-foreground">Эхлэх өдөр<input aria-label="Эхлэх өдөр" className={marketingInputClass} type="date" value={range.from} onChange={e => setRange(v => ({ ...v, from: e.target.value }))} /></label>
@@ -116,8 +117,8 @@ export default function MarketingPage() {
                 <SectionCard title="Акц, контентын бүртгэл" description="Бүх хугацааны ажил. Хариуцагчийн нэрийг зорилттой ижил бичнэ үү."><Table headers={['Ажил', 'Төсөл', 'Хариуцагч', 'Эхлэх', 'Дууссан', 'Төлөв', '']}>
                     {data.activities.filter(a => !project || a.project_id === project).map(a => <tr key={a.id}><td>{a.name}</td><td>{data.projects.find(p => p.id === a.project_id)?.name || '—'}</td><td>{a.marketing_owner_name || '—'}</td><td>{a.start_date || '—'}</td><td>{a.completed_on || '—'}</td><td>{({ draft: 'Төлөвлөсөн', active: 'Хэрэгжиж байгаа', paused: 'Түр зогссон', completed: 'Дууссан', cancelled: 'Цуцлагдсан' } as Record<string, string>)[a.status] || a.status}</td><td>{canWrite && <Button variant="ghost" size="sm" onClick={() => setEditing({ ...a, kind: 'activity' })}>Засах</Button>}</td></tr>)}
                 </Table></SectionCard>
-                <SectionCard title="Сонгосон хугацааны зардал" description="Meta автомат болон гар бүртгэл. Ханшгүй, давхардсан гар Meta мөрүүд нийтэд орохгүй."><Table headers={['Огноо', 'Төсөл', 'Хариуцагч', 'Зардал (₮)', 'Тайлбар', '']}>
-                    {data.spend.map(s => <tr key={s.id}><td>{s.spent_at}</td><td>{data.projects.find(p => p.id === s.project_id)?.name || 'Холбоогүй'}</td><td>{s.marketing_owner_name || 'Холбоогүй'}</td><td>{s.exclusion ? 'Нийтэд ороогүй' : number(Number(s.amount))}{s.source === 'meta' && <p className="text-xs text-muted-foreground">{s.native_amount} {s.currency} · автомат</p>}</td><td>{s.note}{s.exclusion && <p className="text-xs text-status-pending">{s.exclusion === 'missing_fx' ? 'Ханш оруулна уу' : 'Автомат дүнтэй давхцаж болзошгүй гар Meta'}</p>}</td><td>{canWrite && s.source !== 'meta' && <Button variant="ghost" size="sm" onClick={() => setEditing({ ...s, kind: 'spend' })}>Засах</Button>}</td></tr>)}
+                <SectionCard title="Сонгосон хугацааны зардал" description="Meta API, файл импорт болон гар бүртгэл. Ханшгүй, давхардсан гар Meta мөрүүд нийтэд орохгүй."><Table headers={['Огноо', 'Төсөл', 'Хариуцагч', 'Зардал (₮)', 'Тайлбар', '']}>
+                    {data.spend.map(s => <tr key={s.id}><td>{s.spent_at}</td><td>{data.projects.find(p => p.id === s.project_id)?.name || 'Холбоогүй'}</td><td>{s.marketing_owner_name || 'Холбоогүй'}</td><td>{s.exclusion ? 'Нийтэд ороогүй' : number(Number(s.amount))}{s.source === 'meta' && <p className="text-xs text-muted-foreground">{s.native_amount} {s.currency} · {s.ingestionSource === 'file' ? 'файл импорт' : 'API'}</p>}</td><td>{s.note}{s.exclusion && <p className="text-xs text-status-pending">{s.exclusion === 'missing_fx' ? 'Ханш оруулна уу' : 'API / файлын дүнтэй давхцаж болзошгүй гар Meta'}</p>}</td><td>{canWrite && s.source !== 'meta' && <Button variant="ghost" size="sm" onClick={() => setEditing({ ...s, kind: 'spend' })}>Засах</Button>}</td></tr>)}
                 </Table></SectionCard>
             </>}
             <SectionCard title="Бүртгэлийн бүрэн байдал" description="Эдгээрийг нөхөхөд тайлангийн задаргаа илүү бүрэн болно. Ангиллууд давхцаж болно.">

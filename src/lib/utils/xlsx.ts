@@ -71,6 +71,27 @@ export async function readSheetRows(
     options: ReadSheetOptions = {}
 ): Promise<SheetRow[]> {
     const matrix = await loadMatrix(input, sheet);
+    return matrixRows(matrix, options);
+}
+
+/** Бүх sheet-ийг уншиж, CSV-ийн 00123 зэрэг ID-г текстээр хадгална. */
+export async function readWorkbookSheets(input: BinaryInput): Promise<Array<{ name: string; columns: string[]; rows: SheetRow[] }>> {
+    const buf = toBuffer(input);
+    const format = detectFormat(buf);
+    if (format === 'xls') throw new XlsxUnsupportedFormatError('.xls');
+    const matrices: Array<{ name: string; matrix: Matrix }> = [];
+    if (format === 'text') matrices.push({ name: 'Sheet1', matrix: csvToMatrix(buf, 0, true) });
+    else {
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(buf as unknown as ArrayBuffer);
+        for (const ws of workbook.worksheets) matrices.push({ name: ws.name, matrix: worksheetToMatrix(ws) });
+    }
+    return matrices.filter(s => s.matrix.length).map(({ name, matrix }) => ({
+        name, columns: buildHeaders(matrix[0], matrix.reduce((width, row) => Math.max(width, row.length), 0)), rows: matrixRows(matrix, { defval: '' }),
+    }));
+}
+
+function matrixRows(matrix: Matrix, options: ReadSheetOptions): SheetRow[] {
     if (matrix.length === 0) return [];
 
     const [headerRow, ...dataRows] = matrix;
@@ -79,7 +100,7 @@ export async function readSheetRows(
     const hasDefval = options.defval !== undefined;
 
     return dataRows.map((values) => {
-        const row: SheetRow = {};
+        const row: SheetRow = Object.create(null);
         for (let c = 0; c < headers.length; c++) {
             const v = values[c];
             if (v === undefined) {
@@ -193,7 +214,7 @@ function trimRow(values: unknown[]): unknown[] {
 
 // ---------- CSV ----------
 
-function csvToMatrix(buf: Buffer, sheet: number | string): Matrix {
+function csvToMatrix(buf: Buffer, sheet: number | string, preserveText = false): Matrix {
     // SheetJS CSV-г "Sheet1" нэртэй ганц лист болгодог
     if (sheet !== 0 && sheet !== 'Sheet1') throw new XlsxSheetNotFoundError(sheet);
     const text = decodeText(buf);
@@ -209,7 +230,7 @@ function csvToMatrix(buf: Buffer, sheet: number | string): Matrix {
 
     const matrix: Matrix = [];
     for (const record of records) {
-        const trimmed = trimRow(record.map(csvCellValue));
+        const trimmed = trimRow(record.map(s => preserveText ? (s === '' ? undefined : s) : csvCellValue(s)));
         if (trimmed.length > 0) matrix.push(trimmed);
     }
     return matrix;
