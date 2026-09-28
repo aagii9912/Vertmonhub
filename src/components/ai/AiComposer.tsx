@@ -86,7 +86,7 @@ export function AiComposer({ busy, onSend, onStop, prefill, onPrefillConsumed, p
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
             onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files); }}
-            className={cn('rounded-md border bg-surface transition-shadow', dragOver ? 'border-brand shadow-[0_0_0_3px_var(--brand-soft)]' : 'border-border-strong focus-within:border-brand focus-within:shadow-[0_0_0_3px_var(--brand-soft)]')}
+            className={cn('ai-composer rounded-[24px] border bg-surface p-2 shadow-xs transition-shadow', dragOver ? 'border-brand shadow-[0_0_0_3px_var(--brand-soft)]' : 'border-border-strong focus-within:border-muted')}
         >
             {attachments.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 px-2.5 pt-2">
@@ -99,30 +99,32 @@ export function AiComposer({ busy, onSend, onStop, prefill, onPrefillConsumed, p
                     ))}
                 </div>
             )}
-            <div className="flex items-end gap-1 p-1.5">
-                <button type="button" onClick={() => fileRef.current?.click()} disabled={busy} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground disabled:opacity-50" aria-label="Файл хавсаргах" title="Зураг / PDF хавсаргах">
+            <textarea
+                ref={taRef}
+                value={input}
+                aria-label="AI туслахад бичих"
+                onChange={(e) => { setInput(e.target.value); const el = e.target; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, compact ? 120 : 160) + 'px'; }}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); submit(); } }}
+                rows={compact ? 1 : 2}
+                placeholder={listening ? 'Сонсож байна… ярина уу' : (placeholder || 'Асуух эсвэл ажил даалгах…')}
+                disabled={busy && !onStop}
+                className="max-h-40 min-h-11 w-full resize-none bg-transparent px-3 py-2 text-[14px] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground"
+            />
+            <div className="flex items-center gap-1">
+                <button type="button" onClick={() => fileRef.current?.click()} disabled={busy} className="flex size-10 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-surface-2 hover:text-foreground disabled:opacity-50 focus-ring" aria-label="Файл хавсаргах" title="Зураг / PDF хавсаргах">
                     <Paperclip className="h-4 w-4" />
                 </button>
                 <input ref={fileRef} type="file" multiple hidden accept="image/*,application/pdf" onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }} />
                 {voiceSupported && (
-                    <button type="button" onClick={toggleVoice} disabled={busy} className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-md hover:bg-surface-2 disabled:opacity-50', listening ? 'text-status-danger animate-pulse' : 'text-muted-foreground hover:text-foreground')} aria-label={listening ? 'Ярихаа зогсоох' : 'Ярьж оруулах'} title={listening ? 'Сонсож байна… дарж зогсооно' : 'Дуу хоолойгоор оруулах (монгол)'}>
+                    <button type="button" onClick={toggleVoice} disabled={busy} className={cn('flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-surface-2 disabled:opacity-50 focus-ring', listening ? 'text-status-danger animate-pulse' : 'text-muted-foreground hover:text-foreground')} aria-label={listening ? 'Ярихаа зогсоох' : 'Ярьж оруулах'} title={listening ? 'Сонсож байна… дарж зогсооно' : 'Дуу хоолойгоор оруулах (монгол)'}>
                         {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
                     </button>
                 )}
-                <textarea
-                    ref={taRef}
-                    value={input}
-                    onChange={(e) => { setInput(e.target.value); const el = e.target; el.style.height = 'auto'; el.style.height = Math.min(el.scrollHeight, compact ? 120 : 160) + 'px'; }}
-                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
-                    rows={1}
-                    placeholder={listening ? 'Сонсож байна… ярина уу' : (placeholder || 'Асуух эсвэл даалгавар өгөх… (Enter — илгээх)')}
-                    disabled={busy && !onStop}
-                    className="max-h-40 min-h-[32px] flex-1 resize-none bg-transparent px-1.5 py-1.5 text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
-                />
+                <span className="ml-1 flex-1 text-xs text-muted-foreground">Vertmon AI</span>
                 {busy && onStop ? (
-                    <button type="button" onClick={onStop} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-surface-2 text-foreground hover:bg-surface-3" aria-label="Зогсоох" title="Зогсоох"><Square className="h-3.5 w-3.5" /></button>
+                    <button type="button" onClick={onStop} className="flex size-10 shrink-0 items-center justify-center rounded-full bg-foreground text-background hover:opacity-80 focus-ring" aria-label="Зогсоох" title="Зогсоох"><Square className="h-3.5 w-3.5" /></button>
                 ) : (
-                    <button type="button" onClick={submit} disabled={!canSend} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand text-brand-fg hover:bg-brand-strong disabled:opacity-40" aria-label="Илгээх"><ArrowUp className="h-4 w-4" strokeWidth={2.25} /></button>
+                    <button type="button" onClick={submit} disabled={!canSend} className="flex size-10 shrink-0 items-center justify-center rounded-full bg-foreground text-background hover:opacity-80 disabled:opacity-30 focus-ring" aria-label="Илгээх"><ArrowUp className="h-4 w-4" strokeWidth={2.25} /></button>
                 )}
             </div>
         </div>

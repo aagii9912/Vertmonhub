@@ -128,7 +128,7 @@ export function ConversationSidebar({
                 <button
                     onClick={onToggleCollapse}
                     aria-label="Ярианы жагсаалт нээх"
-                    className="w-9 h-9 rounded-md bg-status-info-soft hover:bg-status-info-soft flex items-center justify-center text-status-info transition-colors"
+                    className="w-10 h-10 rounded-xl hover:bg-surface-2 flex items-center justify-center text-fg-2 transition-colors focus-ring"
                     title="Ярианы жагсаалт нээх"
                 >
                     <MessageSquare className="w-4 h-4" />
@@ -136,7 +136,7 @@ export function ConversationSidebar({
                 <button
                     onClick={onNewChat}
                     aria-label="Шинэ чат"
-                    className="w-9 h-9 rounded-md bg-brand hover:bg-brand-strong flex items-center justify-center text-brand-fg transition-colors"
+                    className="w-10 h-10 rounded-xl bg-surface-2 hover:bg-surface-3 flex items-center justify-center text-foreground transition-colors focus-ring"
                     title="Шинэ чат"
                 >
                     <Plus className="w-4 h-4" />
@@ -146,7 +146,7 @@ export function ConversationSidebar({
     }
 
     return (
-        <div className="w-72 flex-shrink-0 bg-surface border-r border-border flex flex-col h-full">
+        <div className="absolute inset-y-0 left-0 z-20 flex h-full w-[min(18rem,calc(100vw-3rem))] shrink-0 flex-col border-r border-border bg-surface md:static md:w-64">
             {/* Header */}
             <div className="p-3 border-b border-border/60">
                 <div className="flex items-center justify-between mb-3">
@@ -166,7 +166,7 @@ export function ConversationSidebar({
                 {/* New Chat Button */}
                 <button
                     onClick={onNewChat}
-                    className="flex h-[34px] w-full items-center justify-center gap-2 rounded-md bg-brand px-3 text-[13px] font-medium text-brand-fg transition-colors hover:bg-brand-strong active:scale-[0.98]"
+                    className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-foreground px-3 text-[13px] font-medium text-background transition-opacity hover:opacity-80 focus-ring"
                 >
                     <Plus className="w-4 h-4" />
                     Шинэ чат

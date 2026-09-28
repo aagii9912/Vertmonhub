@@ -3,19 +3,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { CalendarPlus, Check, ChevronDown, MapPin, Phone, Star, UserX, X, ArrowRight, Search, Loader2 } from 'lucide-react';
+import { CalendarPlus, Check, MapPin, Phone, Star, UserX, X, ArrowRight, Search, Loader2, MoreHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
-import { useMobile } from '@/hooks/use-mobile';
 import { canAccessModuleDynamic } from '@/lib/rbac';
-import { formatTime, formatShortDate } from '@/lib/utils/date';
+import { formatTime, formatShortDate, ubDateStr } from '@/lib/utils/date';
 import { formatMNT } from '@/lib/utils/currency';
 import { useViewings, useCreateViewing, useUpdateViewing, usePropertySearch, type ViewingRow, type ViewingRange, type PropertyOption } from '@/hooks/useViewings';
 import { useLeadDetail, useManagers } from '@/hooks/useLeads';
 import { MEETING_TYPES, MEETING_TYPE_META, VIEWING_STATUS_META, viewingStatusLabel, viewingStatusTone, dayHeading, type MeetingType } from '@/lib/viewings/labels';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/Sheet';
-import { Avatar, Pill, Skeleton, GhostButton } from '@/components/dashboard/v2/primitives';
+import { Avatar, Pill, Skeleton } from '@/components/dashboard/v2/primitives';
+import { PageHeader } from '@/components/dashboard/PageHeader';
+import { Button } from '@/components/ui/Button';
+import { FilterBar, FilterChip } from '@/components/dashboard/FilterBar';
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/Dropdown';
 
 /**
  * «Уулзалт» v2 — өдрөөр бүлэглэсэн нягт жагсаалт; товлох ба үр дүн бүртгэх
@@ -32,7 +35,6 @@ const TABS: { key: ViewingRange; label: string }[] = [
 export function ViewingsPage() {
     const router = useRouter();
     const search = useSearchParams();
-    const isMobile = useMobile().isMobile;
     const { user } = useAuth();
     const canWrite = !!user?.permissions && canAccessModuleDynamic(user.permissions, 'viewings') && !!user.permissions.canWrite;
 
@@ -61,8 +63,7 @@ export function ViewingsPage() {
     const groups = useMemo(() => {
         const map = new Map<string, ViewingRow[]>();
         for (const v of data?.viewings ?? []) {
-            const d = new Date(v.scheduled_at);
-            const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+            const key = ubDateStr(new Date(v.scheduled_at));
             const list = map.get(key) ?? [];
             list.push(v);
             map.set(key, list);
@@ -74,37 +75,33 @@ export function ViewingsPage() {
         update.mutate({ id, patch: p }, { onSuccess: (result) => { if (result.warning) toast.warning(result.warning); else if (msg) toast.success(msg); }, onError: (e) => toast.error(e instanceof Error ? e.message : 'Алдаа гарлаа') });
 
     const postpone = (v: ViewingRow) => {
-        const d = new Date(v.scheduled_at);
-        d.setDate(d.getDate() + 1);
+        const d = new Date(Date.parse(v.scheduled_at) + 86_400_000);
         patch(v.id, { scheduled_at: d.toISOString() }, 'Маргааш руу хойшлуулав');
     };
 
     return (
-        <div className="flex flex-col gap-3">
-            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar border-b border-border">
+        <div className="mx-auto flex w-full max-w-[1240px] flex-col gap-5">
+            <PageHeader title="Уулзалтууд" subtitle="Товлосон цагаа харж, уулзалтын үр дүнгээ энд бүртгээрэй. Улаанбаатарын цагаар."
+                className="mb-0" primaryAction={canWrite && <Button onClick={() => { setPrefillLead(null); setCreateOpen(true); }}><CalendarPlus />Уулзалт товлох</Button>} />
+            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
                 {TABS.map((t) => {
                     const n = t.key === 'all' ? undefined : data?.counts[t.key];
                     const active = range === t.key;
                     return (
-                        <button key={t.key} type="button" onClick={() => setRange(t.key)} className={cn('-mb-px flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-2 text-[13px] font-medium transition-colors focus-ring', active ? 'border-brand text-foreground' : 'border-transparent text-fg-2 hover:text-foreground')}>
+                        <button key={t.key} type="button" aria-pressed={active} onClick={() => setRange(t.key)} className={cn('flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] font-medium transition-colors focus-ring', active ? 'bg-surface-2 text-foreground shadow-[inset_0_0_0_1px_var(--border)]' : 'text-fg-2 hover:bg-surface-2 hover:text-foreground')}>
                             {t.label}
                             {typeof n === 'number' && <span className={cn('mono-label text-[11px]', active ? 'text-brand' : 'text-muted-foreground')}>{n}</span>}
                         </button>
                     );
                 })}
-                {canWrite && (
-                    <button type="button" onClick={() => { setPrefillLead(null); setCreateOpen(true); }} className="ml-auto mb-1 inline-flex h-[30px] shrink-0 items-center gap-1.5 rounded-md bg-brand px-2.5 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring">
-                        <CalendarPlus className="h-4 w-4" /> <span className="hidden sm:inline">Уулзалт товлох</span>
-                    </button>
-                )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-1.5">
-                <Chip value={status} onChange={setStatus} label="Төлөв" options={Object.entries(VIEWING_STATUS_META).map(([k, m]) => [k, m.label])} />
-                {managers.length > 0 && <Chip value={manager} onChange={setManager} label="Менежер" options={managers.map((m) => [m.name, m.name])} />}
-            </div>
+            <FilterBar className="mb-0" showClear={status !== 'all' || manager !== 'all'} onClear={() => { setStatus('all'); setManager('all'); }}>
+                <FilterChip value={status} onChange={setStatus} label="Төлөв" options={Object.entries(VIEWING_STATUS_META).map(([k, m]) => [k, m.label])} />
+                {managers.length > 0 && <FilterChip value={manager} onChange={setManager} label="Менежер" options={managers.map((m) => [m.name, m.name])} />}
+            </FilterBar>
 
-            <div className="rounded-md border border-border bg-surface">
+            <div className="overflow-hidden rounded-2xl border border-border bg-surface">
                 {error ? <div role="alert" className="space-y-2 p-6 text-sm text-status-danger">
                     <p>Уулзалтуудыг уншиж чадсангүй. Жагсаалт хоосон гэсэн үг биш.</p>
                     <button type="button" onClick={() => void refetch()} className="underline focus-ring">Дахин оролдох</button>
@@ -119,12 +116,12 @@ export function ViewingsPage() {
                 ) : (
                     groups.map((g) => (
                         <div key={g.key}>
-                            <div className="flex items-center gap-2 border-b border-border bg-surface-2/60 px-3.5 py-1.5">
-                                <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">{dayHeading(g.date)}</span>
+                            <div className="flex items-center gap-2 border-b border-border bg-surface-2/60 px-4 py-3">
+                                <span className="text-xs font-medium text-fg-2">{dayHeading(g.date)}</span>
                                 <span className="mono-label ml-auto text-[11px] text-muted-foreground">{g.items.length}</span>
                             </div>
                             {g.items.map((v) => (
-                                <Row key={v.id} v={v} now={now} mobile={isMobile} canWrite={canWrite} busy={update.isPending} onArrived={() => setOutcomeFor(v)} onNoShow={() => patch(v.id, { status: 'no_show' }, 'Ирээгүй гэж тэмдэглэв')} onCancel={() => patch(v.id, { status: 'cancelled' }, 'Цуцлагдлаа')} onPostpone={() => postpone(v)} />
+                                <Row key={v.id} v={v} now={now} canWrite={canWrite} busy={update.isPending} onArrived={() => setOutcomeFor(v)} onNoShow={() => patch(v.id, { status: 'no_show' }, 'Ирээгүй гэж тэмдэглэв')} onCancel={() => patch(v.id, { status: 'cancelled' }, 'Цуцлагдлаа')} onPostpone={() => postpone(v)} />
                             ))}
                         </div>
                     ))
@@ -152,66 +149,38 @@ export function ViewingsPage() {
 
 /* ------------------------------------------------------------------ */
 
-function Row({ v, now, mobile, canWrite, busy, onArrived, onNoShow, onCancel, onPostpone }: { v: ViewingRow; now: number; mobile: boolean; canWrite: boolean; busy: boolean; onArrived: () => void; onNoShow: () => void; onCancel: () => void; onPostpone: () => void }) {
+function Row({ v, now, canWrite, busy, onArrived, onNoShow, onCancel, onPostpone }: { v: ViewingRow; now: number; canWrite: boolean; busy: boolean; onArrived: () => void; onNoShow: () => void; onCancel: () => void; onPostpone: () => void }) {
     const phone = v.lead?.customer_phone?.replace(/\D/g, '') || '';
     const past = new Date(v.scheduled_at).getTime() < now;
     const name = v.lead?.customer_name || 'Нэргүй';
     const mt = v.meeting_type ? MEETING_TYPE_META[v.meeting_type] : null;
-
-    return (
-        <div className={cn('group flex min-h-[48px] items-center gap-3 border-b border-border px-3.5 py-1.5 last:border-b-0 hover:bg-surface-2/70', v.status === 'scheduled' && past && 'bg-status-danger-soft/30')}>
-            <span className={cn('mono-label w-11 shrink-0 text-[12.5px]', v.status === 'scheduled' && past ? 'text-status-danger' : 'text-fg-2')}>{formatTime(v.scheduled_at)}</span>
-            <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                    {v.lead ? <Link href={`/dashboard/leads?lead=${v.lead.id}`} className="truncate text-[13px] font-medium text-foreground hover:text-brand">{name}</Link> : <span className="truncate text-[13px] font-medium text-foreground">{name}</span>}
-                    {!mobile && v.lead?.customer_phone && <span className="mono-label text-[12px] text-muted-foreground">{v.lead.customer_phone}</span>}
-                </div>
-                <div className="flex items-center gap-1.5 truncate text-[12px] text-muted-foreground">
-                    {v.property ? (<><MapPin className="h-3 w-3 shrink-0" /><span className="truncate">{v.property.name}{v.property.district ? ` · ${v.property.district}` : ''}</span></>) : <span>Байр сонгоогүй</span>}
-                    {v.agent_notes && <span className="truncate">· {v.agent_notes}</span>}
-                </div>
-            </div>
-            {!mobile && mt && <Pill tone={mt.tone}>{mt.label}</Pill>}
-            {v.status === 'completed' && v.interest_level ? (
-                <span className="hidden items-center gap-0.5 sm:flex" title={`Сонирхол ${v.interest_level}/5`}>
-                    {[1, 2, 3, 4, 5].map((s) => <Star key={s} className={cn('h-3 w-3', s <= (v.interest_level || 0) ? 'fill-current text-status-pending' : 'text-border-strong')} />)}
-                </span>
-            ) : (
-                <Pill tone={viewingStatusTone(v.status)} className="hidden sm:inline-flex">{viewingStatusLabel(v.status)}</Pill>
-            )}
-            {!mobile && v.sales_manager_name && <span className="hidden items-center gap-1.5 md:inline-flex"><Avatar name={v.sales_manager_name} /><span className="text-[12px] text-fg-2">{v.sales_manager_name}</span></span>}
-            {canWrite && v.status === 'scheduled' && !mobile && (
-                <div className="hidden shrink-0 items-center gap-0.5 group-hover:flex group-focus-within:flex">
-                    <GhostButton onClick={onArrived} disabled={busy} className="text-brand hover:bg-brand-soft"><Check className="h-3.5 w-3.5" /> Ирсэн</GhostButton>
-                    <GhostButton onClick={onNoShow} disabled={busy}><UserX className="h-3.5 w-3.5" /> Ирээгүй</GhostButton>
-                    <GhostButton onClick={onPostpone} disabled={busy}><ArrowRight className="h-3.5 w-3.5" /> Хойшлуулах</GhostButton>
-                    <GhostButton onClick={onCancel} disabled={busy}><X className="h-3.5 w-3.5" /></GhostButton>
-                </div>
-            )}
-            {mobile ? (
-                phone ? <a href={`tel:${phone}`} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-brand active:bg-brand-soft" aria-label="Залгах"><Phone className="h-5 w-5" /></a>
-                : canWrite && v.status === 'scheduled' ? <button type="button" onClick={onArrived} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-brand active:bg-brand-soft" aria-label="Ирсэн"><Check className="h-5 w-5" /></button> : null
-            ) : null}
-            {mobile && canWrite && v.status === 'scheduled' && phone && (
-                <button type="button" onClick={onArrived} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground active:bg-surface-2" aria-label="Ирсэн"><Check className="h-5 w-5" /></button>
-            )}
+    return <div className={cn('grid grid-cols-[52px_minmax(0,1fr)] items-center gap-x-3 gap-y-3 border-b border-border p-4 last:border-b-0 sm:flex sm:min-h-24 sm:gap-4', v.status === 'scheduled' && past && 'bg-status-danger-soft/30')}>
+        <span className={cn('num self-start pt-0.5 text-base font-semibold sm:self-auto', v.status === 'scheduled' && past ? 'text-status-danger' : 'text-foreground')}>{formatTime(v.scheduled_at)}</span>
+        <div className="min-w-0 flex-1">
+            {v.lead ? <Link href={`/dashboard/leads?lead=${v.lead.id}`} className="block truncate text-sm font-medium text-foreground hover:text-brand focus-ring">{name}</Link> : <span className="text-sm font-medium">{name}</span>}
+            <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"><MapPin className="size-3 shrink-0" /><span className="truncate">{v.property ? [v.property.name, v.property.district].filter(Boolean).join(' · ') : 'Байр сонгоогүй'}</span></div>
+            {v.agent_notes && <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{v.agent_notes}</p>}
+            {mt && <p className="mt-1 text-xs text-muted-foreground">{mt.label}</p>}
         </div>
-    );
+        {v.sales_manager_name && <span className="hidden items-center gap-2 lg:inline-flex"><Avatar name={v.sales_manager_name} /><span className="text-xs text-fg-2">{v.sales_manager_name}</span></span>}
+        <div className="col-span-2 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3 sm:ml-auto sm:shrink-0 sm:border-0 sm:pt-0">
+            <Pill tone={viewingStatusTone(v.status)}>{viewingStatusLabel(v.status)}</Pill>
+            {v.status === 'completed' && v.interest_level && <span className="inline-flex items-center gap-1 text-xs text-status-pending" aria-label={`Сонирхол ${v.interest_level}/5`}><Star className="size-3.5 fill-current" />{v.interest_level}/5</span>}
+            {phone && <a href={`tel:${phone}`} className="ml-auto flex size-11 items-center justify-center rounded-lg text-brand hover:bg-surface-2 focus-ring sm:ml-0 sm:size-9" aria-label={`${name} руу залгах`}><Phone className="size-4" /></a>}
+            {canWrite && v.status === 'scheduled' && <>
+                <Button variant="secondary" size="sm" disabled={busy} onClick={onArrived}><Check />Ирсэн</Button>
+                <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" disabled={busy} aria-label={`${name}: уулзалтын бусад үйлдэл`}><MoreHorizontal /></Button></DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                        <DropdownMenuItem onSelect={onPostpone}><ArrowRight />Маргааш руу хойшлуулах</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={onNoShow}><UserX />Ирээгүй гэж тэмдэглэх</DropdownMenuItem>
+                        <DropdownMenuItem variant="danger" onSelect={onCancel}><X />Уулзалтыг цуцлах</DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+            </>}
+        </div>
+    </div>;
 }
 
-function Chip({ value, onChange, label, options }: { value: string; onChange: (v: string) => void; label: string; options: [string, string][] }) {
-    const on = value !== 'all';
-    return (
-        <label className={cn('relative inline-flex h-[26px] items-center gap-1 rounded-md border pl-2.5 pr-6 text-[12px]', on ? 'border-brand bg-brand-soft text-brand' : 'border-border bg-surface text-fg-2 hover:border-border-strong')}>
-            <span className="pointer-events-none whitespace-nowrap">{on ? `${label}: ${options.find((o) => o[0] === value)?.[1] ?? value}` : label}</span>
-            <select value={value} onChange={(e) => onChange(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0" aria-label={label}>
-                <option value="all">Бүгд</option>
-                {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-1.5 h-3 w-3 opacity-70" />
-        </label>
-    );
-}
 
 /* ------------------------------------------------------------------ */
 
@@ -351,8 +320,8 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                 <Field label="Тэмдэглэл"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="12-р давхраас дээш…" className={cn(inputCls, 'h-auto resize-none py-2')} /></Field>
             </div>
             <footer className="flex shrink-0 items-center gap-2 border-t border-border p-4">
-                <button type="button" onClick={onClose} className="h-[34px] rounded-md px-3 text-[13px] text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-ring">Болих</button>
-                <button type="button" disabled={create.isPending} onClick={() => void submit()} className="ml-auto inline-flex h-[34px] items-center gap-2 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong disabled:opacity-60 focus-ring">
+                <button type="button" onClick={onClose} className="h-11 rounded-md px-3 text-[13px] text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-ring sm:h-[34px]">Болих</button>
+                <button type="button" disabled={create.isPending} onClick={() => void submit()} className="ml-auto inline-flex h-11 items-center gap-2 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong disabled:opacity-60 focus-ring sm:h-[34px]">
                     {create.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{walkIn ? 'Бүртгэх' : 'Товлох'}
                 </button>
             </footer>
@@ -406,8 +375,8 @@ function OutcomeSheet({ v, onClose }: { v: ViewingRow; onClose: () => void }) {
                 </Field>
             </div>
             <footer className="flex shrink-0 items-center gap-2 border-t border-border p-4">
-                <button type="button" onClick={onClose} className="h-[34px] rounded-md px-3 text-[13px] text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-ring">Болих</button>
-                <button type="button" disabled={update.isPending} onClick={() => void submit()} className="ml-auto inline-flex h-[34px] items-center gap-2 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong disabled:opacity-60 focus-ring">
+                <button type="button" onClick={onClose} className="h-11 rounded-md px-3 text-[13px] text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-ring sm:h-[34px]">Болих</button>
+                <button type="button" disabled={update.isPending} onClick={() => void submit()} className="ml-auto inline-flex h-11 items-center gap-2 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong disabled:opacity-60 focus-ring sm:h-[34px]">
                     {update.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}<Check className="h-4 w-4" /> Дууссан
                 </button>
             </footer>

@@ -13,9 +13,9 @@ const colsMap: Record<NonNullable<StatBarProps['columns']>, string> = {
     4: 'grid-cols-2 md:grid-cols-4',
 };
 
-/** v2 KPI мөр — нягт, хил хязгаартай, 20px тоо. */
+/** Тоон тойм: нэг гадаргуу, тусгаарласан үзүүлэлтүүд. */
 export function StatBar({ children, columns = 4, className }: StatBarProps) {
-    return <div className={cn('mb-4 grid gap-2', colsMap[columns], className)}>{children}</div>;
+    return <div className={cn('mb-4 grid gap-px overflow-hidden rounded-2xl border border-border bg-border [&>div]:rounded-none [&>div]:border-0', colsMap[columns], className)}>{children}</div>;
 }
 
 interface StatTileProps {
@@ -38,13 +38,13 @@ const accentMap: Record<NonNullable<StatTileProps['accent']>, string> = {
 
 export function StatTile({ label, value, helper, icon, accent = 'neutral', className }: StatTileProps) {
     return (
-        <div className={cn('flex min-w-0 flex-col gap-0.5 rounded-md border border-border bg-surface px-3.5 py-2.5', className)}>
+        <div className={cn('flex min-w-0 flex-col gap-2 bg-surface p-4 sm:p-5', className)}>
             <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-[11.5px] font-medium text-muted-foreground">{label}</span>
+                <span className="text-xs font-medium text-muted-foreground">{label}</span>
                 {icon && <span className={cn('shrink-0 [&>svg]:h-4 [&>svg]:w-4', accentMap[accent])}>{icon}</span>}
             </div>
-            <div className="num truncate text-[17px] font-semibold tracking-[-0.02em] text-foreground sm:text-[20px]">{value}</div>
-            {helper && <div className="truncate text-[11.5px] text-muted-foreground">{helper}</div>}
+            <div className="num break-words text-xl font-semibold tracking-tight text-foreground sm:text-[26px]">{value}</div>
+            {helper && <div className="text-xs leading-relaxed text-muted-foreground">{helper}</div>}
         </div>
     );
 }

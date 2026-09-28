@@ -53,7 +53,7 @@ export function AiPanel() {
             )}
         >
             <header className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3.5">
-                <span className="flex h-6 w-6 items-center justify-center rounded-md bg-brand-soft text-brand"><Sparkles className="h-3.5 w-3.5" /></span>
+                <span className="flex h-6 w-6 items-center justify-center text-foreground"><Sparkles className="h-4 w-4" /></span>
                 <h2 className="text-[14px] font-semibold text-foreground">AI туслах</h2>
                 {ctx && <span className="ml-1 max-w-[160px] truncate rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-fg-2" title={contextLabel(ctx)}>{contextLabel(ctx)}</span>}
                 <div className="ml-auto flex items-center gap-0.5">

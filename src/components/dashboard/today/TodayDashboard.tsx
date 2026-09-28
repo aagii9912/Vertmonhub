@@ -9,6 +9,7 @@ import { Phone, CalendarDays, Clock, Check, ArrowRight, MoreHorizontal, ChevronR
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatMNTShort } from '@/lib/utils/currency';
+import { formatTime, formatWorkdayDate, ubDateStr, ubParts } from '@/lib/utils/date';
 import { sourceLabel } from '@/lib/leads/labels';
 import { dashboardMutate } from '@/lib/api/dashboardFetch';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
@@ -21,8 +22,6 @@ import { useRegisterAiContext } from '@/lib/ai/context';
  * Уулзалт, залгах лид, сануулга НЭГ цагийн дараалалтай жагсаалтаар;
  * мөр бүр дээр Залгах / Дууссан / Хойшлуулах. Тоо нь хоёрдугаарт.
  */
-
-const WEEKDAYS = ['Ням', 'Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан', 'Бямба'];
 
 type Filter = 'all' | 'followup' | 'viewing' | 'personal';
 const TASK_SOURCES: Record<Filter, string[]> = { all: ['leads', 'viewings', 'tasks'], followup: ['leads'], viewing: ['viewings'], personal: ['tasks'] };
@@ -53,6 +52,7 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
     const invalidate = () => {
         void qc.invalidateQueries({ queryKey: ['my-stats'] });
         void qc.invalidateQueries({ queryKey: ['nav-counts'] });
+        void qc.invalidateQueries({ queryKey: ['my-tasks'] });
     };
 
     async function complete(t: MyStatsTask) {
@@ -80,7 +80,7 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
         try {
             const next = new Date(t.dueAt);
             if (next.getTime() < now.getTime()) next.setTime(now.getTime());
-            next.setDate(next.getDate() + 1);
+            next.setTime(next.getTime() + 86_400_000);
             const iso = next.toISOString();
             let warning: string | undefined;
             if (t.type === 'viewing') {
@@ -100,7 +100,7 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
     }
 
     const month = data?.target?.periods.month;
-    const monthLabel = `${now.getMonth() + 1}-р сар`;
+    const monthLabel = `${ubParts(now).month}-р сар`;
     const todayLeads = (data?.recentLeads ?? []).filter((l) => isSameDay(new Date(l.created_at), now));
 
     if (!isLoading && !data) {
@@ -111,7 +111,7 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
     }
 
     return (
-        <div className={cn('grid gap-4', !embedded && 'lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]')}>
+        <div className={cn('grid items-start gap-4', !embedded && 'lg:grid-cols-[minmax(0,2fr)_minmax(320px,1fr)]')}>
             {(isError || !!data?.missing?.length) && <Alert variant="warning" className="col-span-full">
                 {isError ? 'Мэдээллийг шинэчилж чадсангүй. Өмнө ачаалсан мэдээлэл харагдаж байна.' : 'Зарим мэдээллийг ачаалж чадсангүй. Ажлын жагсаалт болон үзүүлэлтүүд дутуу байж болно.'}
                 <Button size="sm" variant="secondary" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</Button>
@@ -122,10 +122,10 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
                 sub={
                     isLoading ? undefined : overdueCount > 0
                         ? <span className="text-status-danger">{overdueCount} хугацаа хэтэрсэн</span>
-                        : `${WEEKDAYS[now.getDay()]}, ${now.getMonth() + 1}-р сарын ${now.getDate()}`
+                        : formatWorkdayDate(now)
                 }
                 right={
-                    <div className="hidden items-center gap-1 sm:flex">
+                    <div className="flex flex-wrap items-center gap-1">
                         {(
                             [
                                 ['all', 'Бүгд'],
@@ -138,9 +138,10 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
                                 key={k}
                                 type="button"
                                 onClick={() => setFilter(k)}
+                                aria-pressed={filter === k}
                                 className={cn(
-                                    'inline-flex h-[26px] items-center gap-1.5 rounded-md border px-2 text-[12px] transition-colors focus-ring',
-                                    filter === k ? 'border-brand bg-brand-soft text-brand' : 'border-border text-fg-2 hover:border-border-strong',
+                                    'inline-flex min-h-10 items-center gap-1.5 rounded-lg border px-2.5 text-[12px] transition-colors focus-ring sm:min-h-8',
+                                    filter === k ? 'border-border-strong bg-surface-2 text-foreground' : 'border-transparent text-muted-foreground hover:bg-surface-2',
                                 )}
                             >
                                 {label}
@@ -272,12 +273,12 @@ function TaskRow({ task, busy, onDone, onSnooze }: { task: MyStatsTask; busy: bo
     return (
         <div
             className={cn(
-                'group flex min-h-[52px] items-center gap-3 border-b border-border px-3.5 py-1.5 transition-colors hover:bg-surface-2/70',
+                'group flex min-h-[64px] items-center gap-3 border-b border-border px-4 py-2 transition-colors hover:bg-surface-2/70',
                 task.overdue && 'bg-status-danger-soft/40',
             )}
         >
             <span className={cn('mono-label w-11 shrink-0 text-[12.5px]', task.overdue ? 'text-status-danger' : 'text-fg-2')}>
-                {task.type === 'followup' && task.overdue ? '—' : fmtTime(time)}
+                {task.type === 'followup' && task.overdue ? '—' : formatTime(time)}
             </span>
             <Icon className={cn('h-4 w-4 shrink-0', task.overdue ? 'text-status-danger' : 'text-muted-foreground')} strokeWidth={1.75} />
             <Link href={task.href} className="min-w-0 flex-1">
@@ -310,6 +311,13 @@ function TaskRow({ task, busy, onDone, onSnooze }: { task: MyStatsTask; busy: bo
                     <Check className="h-5 w-5" />
                 </button>
             )}
+            <details className="relative shrink-0 sm:hidden">
+                <summary aria-label={`${task.title}: бусад үйлдэл`} className="flex size-11 cursor-pointer list-none items-center justify-center rounded-full text-muted-foreground hover:bg-surface-2 focus-ring [&::-webkit-details-marker]:hidden"><MoreHorizontal className="size-5" /></summary>
+                <div className="absolute right-0 top-full z-20 w-44 rounded-xl border border-border bg-surface p-1 shadow-lg">
+                    <button type="button" disabled={busy} onClick={onDone} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-sm hover:bg-surface-2 focus-ring"><Check className="size-4" />Дууссан</button>
+                    <button type="button" disabled={busy} onClick={onSnooze} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-sm hover:bg-surface-2 focus-ring"><ArrowRight className="size-4" />Маргааш болгох</button>
+                </div>
+            </details>
             <MoreHorizontal className="hidden h-4 w-4 shrink-0 text-muted-foreground sm:block sm:group-hover:hidden" />
         </div>
     );
@@ -351,8 +359,8 @@ function groupByDaypart(tasks: MyStatsTask[], now: Date) {
     for (const t of tasks) {
         const d = new Date(t.dueAt);
         if (t.overdue && !isSameDay(d, now)) g.overdue.push(t);
-        else if (d.getHours() < 12) g.morning.push(t);
-        else if (d.getHours() < 17) g.afternoon.push(t);
+        else if (Number(formatTime(d).slice(0, 2)) < 12) g.morning.push(t);
+        else if (Number(formatTime(d).slice(0, 2)) < 17) g.afternoon.push(t);
         else g.evening.push(t);
     }
     return (
@@ -366,10 +374,7 @@ function groupByDaypart(tasks: MyStatsTask[], now: Date) {
 }
 
 function isSameDay(a: Date, b: Date) {
-    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-}
-function fmtTime(d: Date) {
-    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    return ubDateStr(a) === ubDateStr(b);
 }
 function daysAgo(d: Date) {
     return Math.max(1, Math.floor((Date.now() - d.getTime()) / 86_400_000));

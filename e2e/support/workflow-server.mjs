@@ -4,6 +4,11 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { parse } from 'dotenv';
 
+const appPort = Number(process.env.WORKFLOW_APP_PORT || 3101);
+const authPort = Number(process.env.WORKFLOW_AUTH_PORT || 4319);
+const appOrigin = `http://127.0.0.1:${appPort}`;
+const authOrigin = `http://127.0.0.1:${authPort}`;
+
 // Only this disposable server accepts the fixture credentials. Application auth
 // still goes through the real login handler, SSR cookies and proxy.getUser().
 const user = { id: '00000000-0000-4000-8000-000000000001', aud: 'authenticated', role: 'authenticated',
@@ -14,12 +19,12 @@ const encode = value => Buffer.from(JSON.stringify(value)).toString('base64url')
 const token = `${encode({ alg: 'HS256', typ: 'JWT' })}.${encode({ sub: user.id, aud: 'authenticated', role: 'authenticated', exp: Math.floor(Date.now() / 1000) + 3600, session_id: randomUUID() })}.${Buffer.from(randomUUID()).toString('base64url')}`;
 const server = createServer(async (request, response) => {
     response.setHeader('Content-Type', 'application/json');
-    response.setHeader('Access-Control-Allow-Origin', 'http://127.0.0.1:3101');
+    response.setHeader('Access-Control-Allow-Origin', appOrigin);
     response.setHeader('Access-Control-Allow-Headers', '*');
     response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     const send = (status, data) => { response.writeHead(status); response.end(JSON.stringify(data)); };
     if (request.method === 'OPTIONS') return send(200, {});
-    const path = new URL(request.url, 'http://127.0.0.1:4319').pathname;
+    const path = new URL(request.url, authOrigin).pathname;
     if (path === '/auth/v1/token') {
         let body = ''; for await (const chunk of request) body += chunk;
         const credentials = JSON.parse(body || '{}');
@@ -40,11 +45,11 @@ const env = Object.fromEntries(['PATH', 'HOME', 'TMPDIR', 'TEMP', 'CI', 'NODE_OP
 for (const file of readdirSync('.').filter(name => /^\.env(?:\.|$)/.test(name))) {
     for (const key of Object.keys(parse(readFileSync(file)))) env[key] = '';
 }
-Object.assign(env, { NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:4319', NEXT_PUBLIC_SUPABASE_ANON_KEY: 'workflow-anon',
-    SUPABASE_SERVICE_ROLE_KEY: 'workflow-service', NEXT_PUBLIC_APP_URL: 'http://127.0.0.1:3101',
-    NEXT_BUILD_DIR: '.next-e2e', NEXT_TELEMETRY_DISABLED: '1' });
-await new Promise(resolve => server.listen(4319, '127.0.0.1', resolve));
-const child = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'dev', '--hostname', '127.0.0.1', '--port', '3101'], { env, stdio: 'inherit' });
+Object.assign(env, { NEXT_PUBLIC_SUPABASE_URL: authOrigin, NEXT_PUBLIC_SUPABASE_ANON_KEY: 'workflow-anon',
+    SUPABASE_SERVICE_ROLE_KEY: 'workflow-service', NEXT_PUBLIC_APP_URL: appOrigin,
+    NEXT_BUILD_DIR: process.env.WORKFLOW_BUILD_DIR || '.next-e2e', NEXT_TELEMETRY_DISABLED: '1' });
+await new Promise(resolve => server.listen(authPort, '127.0.0.1', resolve));
+const child = spawn(process.execPath, ['node_modules/next/dist/bin/next', 'dev', '--hostname', '127.0.0.1', '--port', String(appPort)], { env, stdio: 'inherit' });
 const stop = () => { child.kill('SIGTERM'); server.close(); };
 process.on('SIGINT', stop);
 process.on('SIGTERM', stop);

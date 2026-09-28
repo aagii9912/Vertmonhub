@@ -283,23 +283,15 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
     const empty = messages.length === 0 && !messagesLoading;
 
     return (
-        <div className={cn('flex min-h-0 flex-col', className)}>
-            <div ref={scrollRef} className={cn('min-h-0 flex-1 overflow-y-auto', compact ? 'px-3.5 py-3' : 'px-4 py-5 md:px-8')}>
+        <div className={cn('flex min-h-0 flex-col', empty && !compact && 'justify-center pb-6 md:pb-[12vh]', className)}>
+            <div ref={scrollRef} className={cn('min-h-0 overflow-y-auto', (!empty || compact) && 'flex-1', compact ? 'px-3.5 py-3' : 'px-4 py-5 md:px-8')}>
                 <div className={cn('mx-auto flex flex-col gap-4', !compact && 'max-w-3xl')}>
                     {messagesLoading && <div className="flex items-center gap-2 py-8 text-[12.5px] text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Яриа ачаалж байна…</div>}
                     {empty && (
-                        <div className={cn('flex flex-col', compact ? 'gap-3 pt-2' : 'items-center gap-4 py-10 text-center')}>
-                            <span className="flex h-9 w-9 items-center justify-center rounded-md bg-brand-soft text-brand"><Sparkles className="h-4.5 w-4.5" /></span>
+                        <div className={cn('flex flex-col', compact ? 'gap-3 pt-6' : 'items-center gap-4 pt-8 text-center')}>
                             <div>
-                                <div className="text-[14px] font-semibold text-foreground">{ctx ? `${contextLabel(ctx)} — юугаар туслах вэ?` : 'Юугаар туслах вэ?'}</div>
-                                <p className="mt-1 text-[12.5px] text-muted-foreground">Дуудлага, хийх ажил, дараагийн холбоогоо энгийн үгээр бүртгүүлж, тайлангаа гаргуулаарай. Төлбөр болон чухал өөрчлөлтийг батлахаас өмнө харуулна.</p>
-                            </div>
-                            <div className={cn('flex flex-wrap gap-1.5', !compact && 'justify-center')}>
-                                {suggestions.map((s) => (
-                                    <button key={s.label} type="button" onClick={() => selectSuggestion(s.prompt)} className="h-[28px] rounded-md border border-border bg-surface px-2.5 text-[12.5px] text-fg-2 transition-colors hover:border-brand hover:bg-brand-soft hover:text-brand focus-ring">
-                                        {s.label}
-                                    </button>
-                                ))}
+                                <h2 className={cn('font-semibold tracking-tight text-foreground', compact ? 'text-xl' : 'text-[28px] md:text-[32px]')}>{ctx ? `${contextLabel(ctx)} — юугаар туслах вэ?` : 'Өнөөдөр юуг хамт хийх вэ?'}</h2>
+                                <p className="mx-auto mt-3 max-w-lg text-sm leading-relaxed text-muted-foreground">Ажлаа цэгцлэх, харилцагчаа хөтлөх, тайлангаа бэлдэхэд тусалъя.</p>
                             </div>
                         </div>
                     )}
@@ -308,7 +300,7 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
                 </div>
             </div>
 
-            <div className={cn('shrink-0 border-t border-border bg-surface', compact ? 'p-3' : 'px-4 py-3 md:px-8')}>
+            <div className={cn('shrink-0 bg-surface', compact ? 'p-3' : 'px-4 py-3 md:px-8')}>
                 <div className={cn(!compact && 'mx-auto max-w-3xl')}>
                     {!empty && suggestions.length > 0 && !busy && (
                         <div className="mb-2 flex gap-1.5 overflow-x-auto no-scrollbar">
@@ -320,8 +312,9 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
                     <PrefillBridge prefill={prefill} onPrefillConsumed={onPrefillConsumed}>
                         {(pf, consumed) => <AiComposer busy={busy} onSend={(t, a) => void send(t, a)} onStop={stop} prefill={pf} onPrefillConsumed={consumed} autoFocus={active} compact={compact} />}
                     </PrefillBridge>
-                    <div className="mt-1.5 flex items-center justify-between text-[10.5px] text-muted-foreground">
-                        <span>Enter — илгээх · Shift+Enter — мөр</span>
+                    {empty && <div className="mt-4 flex flex-wrap justify-center gap-2">{suggestions.map(s => <button key={s.label} type="button" onClick={() => selectSuggestion(s.prompt)} className="min-h-10 rounded-full border border-border px-3.5 text-xs text-fg-2 transition-colors hover:bg-surface-2 focus-ring">{s.label}</button>)}</div>}
+                    <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                        <span className="hidden sm:inline">Enter — илгээх · Shift+Enter — шинэ мөр</span>
                         <span className="inline-flex items-center gap-1"><ShieldCheck className="h-3 w-3" /> Үйлдлийг та батална</span>
                     </div>
                 </div>
@@ -347,7 +340,7 @@ function PrefillBridge({ prefill, onPrefillConsumed, children }: { prefill?: str
 function UserBubble({ m }: { m: AiMessage }) {
     return (
         <div className="flex justify-end">
-            <div className="max-w-[85%] rounded-md bg-brand px-3 py-2 text-[13px] leading-relaxed text-brand-fg">
+            <div className="max-w-[85%] whitespace-pre-wrap rounded-3xl bg-surface-2 px-4 py-3 text-[14px] leading-relaxed text-foreground">
                 {m.content}
                 {m.attachments && m.attachments.length > 0 && (
                     <div className="mt-1.5 flex flex-wrap gap-1">
@@ -361,13 +354,13 @@ function UserBubble({ m }: { m: AiMessage }) {
 
 function AssistantBlock({ m, compact, busy, onRetry, onApprove, onApproveAll, onCancel, onAlways, onClarify }: { m: AiMessage; compact: boolean; busy: boolean; onRetry: () => void; onApprove: (a: PendingAction) => void; onApproveAll: (ids: string[]) => void; onCancel: (a: PendingAction) => void; onAlways: (a: PendingAction) => void; onClarify: (text: string) => void }) {
     const [showTrace, setShowTrace] = useState(false);
-    const copy = () => { void navigator.clipboard?.writeText(m.content); toast.success('Хуулагдлаа'); };
+    const copy = async () => { try { await navigator.clipboard.writeText(m.content); toast.success('Хуулагдлаа'); } catch { toast.error('Хуулж чадсангүй. Дахин оролдоно уу.'); } };
     const pending = (m.pendingActions || []).filter((a) => a.status === 'pending');
     const isLast = !busy;
 
     return (
         <div className="flex gap-2.5">
-            <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-brand-soft text-brand"><Sparkles className="h-3.5 w-3.5" /></span>
+            <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-foreground"><Sparkles className="h-4 w-4" /></span>
             <div className="min-w-0 flex-1">
                 {(m.activity?.length || m.status) ? <ActivityView items={m.activity || []} status={m.status} streaming={!!m.streaming} /> : null}
                 {m.error ? (
@@ -379,10 +372,10 @@ function AssistantBlock({ m, compact, busy, onRetry, onApprove, onApproveAll, on
                     <>
                         {m.interruption && <div role="status" className="mb-2 rounded-md border border-status-danger/30 bg-status-danger-soft px-3 py-2 text-[12.5px] text-status-danger">{m.interruption.message} Үлдсэн үйлдлийг шалгаад тус бүрд нь зөвшөөрнө үү.</div>}
                         {m.content ? (
-                            <div className={cn('group/msg relative text-[13px] leading-relaxed text-foreground', m.streaming && 'after:ml-0.5 after:inline-block after:h-3.5 after:w-1.5 after:animate-pulse after:bg-brand after:align-middle')}>
+                            <div className={cn('group/msg relative text-[14px] leading-7 text-foreground', m.streaming && 'after:ml-0.5 after:inline-block after:h-3.5 after:w-1.5 after:animate-pulse after:bg-foreground after:align-middle')}>
                                 <MarkdownMessage content={m.content} />
                                 {!m.streaming && (
-                                    <button type="button" onClick={copy} className="invisible absolute -right-1 top-0 flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-surface-2 group-hover/msg:visible" aria-label="Хуулах"><Copy className="h-3 w-3" /></button>
+                                    <button type="button" onClick={copy} className="mt-2 flex size-8 items-center justify-center rounded text-muted-foreground hover:bg-surface-2 focus-ring" aria-label="Хуулах"><Copy className="h-3.5 w-3.5" /></button>
                                 )}
                             </div>
                         ) : m.streaming && !m.activity?.length && !m.status ? (

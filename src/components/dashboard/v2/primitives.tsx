@@ -24,12 +24,12 @@ export function Panel({
     children: React.ReactNode;
 }) {
     return (
-        <section className={cn('flex min-w-0 flex-col rounded-md border border-border bg-surface', className)}>
+        <section className={cn('flex min-w-0 flex-col rounded-2xl border border-border bg-surface', className)}>
             {(title || right) && (
-                <header className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3.5">
-                    {title && <h2 className="truncate text-[12.5px] font-semibold text-foreground">{title}</h2>}
+                <header className="flex min-h-14 shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-3">
+                    {title && <h2 className="text-[14px] font-semibold text-foreground">{title}</h2>}
                     {sub && <span className="truncate text-[12px] text-muted-foreground">{sub}</span>}
-                    {right && <div className="ml-auto flex shrink-0 items-center gap-2">{right}</div>}
+                    {right && <div className="ml-auto flex max-w-full shrink-0 items-center gap-2">{right}</div>}
                 </header>
             )}
             <div className={cn('min-h-0 flex-1', bodyClassName)}>{children}</div>

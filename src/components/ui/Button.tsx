@@ -24,11 +24,11 @@ const buttonVariants = cva(
                     'text-brand underline-offset-4 hover:underline px-0 min-h-0',
             },
             size: {
-                // v2 density ladder: 30 / 34 / 40 (mobile primary 44 = lg)
-                sm: 'h-[30px] px-2.5 text-[12.5px] gap-1.5 [&_svg]:h-4 [&_svg]:w-4',
-                md: 'h-[34px] px-3 text-[13px] gap-2 [&_svg]:h-4 [&_svg]:w-4',
-                lg: 'h-[40px] px-4 text-[14px] gap-2 [&_svg]:h-4 [&_svg]:w-4 md:h-[44px]',
-                icon: 'h-[30px] w-[30px] p-0 [&_svg]:h-4 [&_svg]:w-4',
+                // v2 density ladder: 30 / 34 / 44 (primary actions stay touch-safe on mobile)
+                sm: 'h-11 px-2.5 text-[12.5px] gap-1.5 md:h-[30px] [&_svg]:h-4 [&_svg]:w-4',
+                md: 'h-11 px-3 text-[13px] gap-2 md:h-[36px] [&_svg]:h-4 [&_svg]:w-4',
+                lg: 'h-[44px] px-4 text-[14px] gap-2 [&_svg]:h-4 [&_svg]:w-4',
+                icon: 'h-11 w-11 p-0 md:h-[34px] md:w-[34px] [&_svg]:h-4 [&_svg]:w-4',
                 iconSm: 'h-7 w-7 p-0 [&_svg]:h-3.5 [&_svg]:w-3.5',
             },
         },

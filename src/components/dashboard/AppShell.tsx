@@ -32,6 +32,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     return (
         <div className="min-h-screen bg-background text-foreground">
+            <a href="#workspace-content" className="sr-only z-50 rounded-md bg-foreground p-3 text-background focus:not-sr-only focus:fixed focus:left-4 focus:top-4">Үндсэн агуулга руу очих</a>
             {/* print:hidden — KPI тайлан г.м хуудсыг хэвлэхэд chrome-гүй цэвэр гарна */}
             <div className="print:hidden">
                 <Sidebar />
@@ -41,7 +42,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <div className="sticky top-0 z-30 shrink-0 print:hidden">
                     <Header />
                 </div>
-                <main className={`flex-1 p-4 md:p-6 print:p-0 ${isInbox ? 'flex min-h-0 flex-col pb-[calc(4.5rem+env(safe-area-inset-bottom))]' : 'pb-24 md:pb-6'}`}>
+                <main id="workspace-content" tabIndex={-1} className={`flex-1 p-4 md:p-6 print:p-0 ${isInbox ? 'flex min-h-0 flex-col pb-[calc(4.5rem+env(safe-area-inset-bottom))]' : 'pb-24 md:pb-6'}`}>
                     {!isLoaded ? <p role="status">Уншиж байна…</p>
                         : allowed ? children
                         : <p role="alert">Энэ хэсэгт хандах эрх танд алга.</p>}

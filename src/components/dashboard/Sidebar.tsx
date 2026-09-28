@@ -12,7 +12,6 @@ import { useSidebarCollapsed } from '@/hooks/useSidebarCollapsed';
 import { useDashboardMode } from '@/hooks/useDashboardMode';
 import { useNavCounts } from '@/hooks/useNavCounts';
 import { openCommandPalette } from '@/lib/navigation/commandPalette';
-import { openAiPanel } from '@/lib/ai/context';
 import {
     DropdownMenu,
     DropdownMenuTrigger,
@@ -61,23 +60,23 @@ export function Sidebar() {
         <aside
             className={cn(
                 'fixed inset-y-0 left-0 z-40 hidden md:flex flex-col',
-                'border-r border-border bg-sidebar',
+                'border-r border-border/50 bg-sidebar',
                 'w-[var(--sidebar-w)] transition-[width] duration-200 ease-out',
             )}
         >
             {/* Брэнд */}
-            <div className={cn('flex items-center gap-2.5 px-3 pt-3 pb-2.5', collapsed && 'justify-center px-0')}>
+            <div className={cn('flex items-center gap-2.5 px-4 pt-5 pb-5', collapsed && 'justify-center px-0')}>
                 <Link
                     href="/dashboard"
-                    className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-md bg-brand text-[14px] font-bold text-brand-fg"
+                    className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-foreground text-base font-semibold text-background"
                     aria-label="Vertmon Hub"
                 >
                     V
                 </Link>
                 {!collapsed && (
                     <div className="min-w-0 flex-1 leading-tight">
-                        <div className="truncate text-[13.5px] font-semibold text-foreground">Vertmon Hub</div>
-                        <div className="truncate text-[11.5px] text-muted-foreground">{shop?.name || 'Mandala Garden'}</div>
+                        <div className="truncate text-[15px] font-semibold tracking-tight text-foreground">Vertmon Hub</div>
+                        <div className="mt-0.5 truncate text-[11.5px] text-muted-foreground">{shop?.name || 'Ажлын орчин'}</div>
                     </div>
                 )}
             </div>
@@ -88,9 +87,9 @@ export function Sidebar() {
                     type="button"
                     onClick={openCommandPalette}
                     className={cn(
-                        'flex w-full items-center gap-2 rounded-md border border-border-strong bg-surface text-muted-foreground',
+                        'flex w-full items-center gap-2 rounded-lg text-muted-foreground',
                         'transition-colors hover:border-brand/40 hover:text-foreground focus-ring',
-                        collapsed ? 'h-[30px] justify-center px-0' : 'h-[30px] px-2.5',
+                        collapsed ? 'h-10 justify-center px-0' : 'h-10 px-2.5 hover:bg-surface-3',
                     )}
                     aria-label="Хайх"
                 >
@@ -110,9 +109,15 @@ export function Sidebar() {
             </div>
 
             {/* Үндсэн цэс */}
-            <nav className="flex flex-col gap-0.5 px-2.5" aria-label="Үндсэн цэс">
+            <nav className="flex min-h-0 flex-col gap-1 overflow-y-auto px-2.5" aria-label="Үндсэн цэс">
+                {allowed.bottom.filter(item => item.href === '/dashboard/ai-assistant').map(item => <NavRow key={item.href} item={item} pathname={pathname} collapsed={collapsed} />)}
+                {!collapsed && <p className="px-2.5 pb-1 pt-5 text-[11px] text-muted-foreground">Ажлын орчин</p>}
                 {allowed.primary.map((item) => (
-                    <NavRow key={item.href} item={item.href === '/dashboard' ? { ...item, name: dashboardName } : item} pathname={pathname} collapsed={collapsed} count={item.countKey ? counts[item.countKey] : undefined} />
+                    <React.Fragment key={item.href}>
+                        {!collapsed && item.href === '/dashboard/leads' && <p className="px-2.5 pb-1 pt-5 text-[11px] text-muted-foreground">Харилцагч ба борлуулалт</p>}
+                        {!collapsed && item.href === '/dashboard/reports' && <p className="px-2.5 pb-1 pt-5 text-[11px] text-muted-foreground">Үр дүн</p>}
+                        <NavRow item={item.href === '/dashboard' ? { ...item, name: dashboardName } : item} pathname={pathname} collapsed={collapsed} count={item.countKey ? counts[item.countKey] : undefined} />
+                    </React.Fragment>
                 ))}
             </nav>
 
@@ -120,7 +125,7 @@ export function Sidebar() {
 
             {/* Доод цэс */}
             <nav className="flex flex-col gap-0.5 px-2.5 pb-1" aria-label="Нэмэлт цэс">
-                {allowed.bottom.map((item) => (
+                {allowed.bottom.filter(item => item.href !== '/dashboard/ai-assistant').map((item) => (
                     <NavRow key={item.href} item={item.href === '/dashboard' ? { ...item, name: dashboardName } : item} pathname={pathname} collapsed={collapsed} />
                 ))}
             </nav>
@@ -200,15 +205,11 @@ function NavRow({
             href={item.href}
             aria-current={active ? 'page' : undefined}
             title={collapsed ? item.name : item.href === '/dashboard/ai-assistant' ? 'AI туслах (⌘J)' : undefined}
-            onClick={(e) => {
-                // AI туслах — хуудас солихгүй, хажуугийн панел нээнэ (⌘/ctrl+click → бүтэн хуудас)
-                if (item.href === '/dashboard/ai-assistant' && !e.metaKey && !e.ctrlKey) { e.preventDefault(); openAiPanel(); }
-            }}
             className={cn(
-                'flex h-[30px] items-center gap-2.5 rounded-md px-2 text-[13px] font-medium transition-colors focus-ring',
+                'flex min-h-10 shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-[13px] transition-colors focus-ring',
                 collapsed && 'justify-center px-0',
                 active
-                    ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+                    ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
                     : 'text-fg-2 hover:bg-surface-2 hover:text-foreground',
             )}
         >

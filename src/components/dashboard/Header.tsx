@@ -64,7 +64,7 @@ export function Header() {
                             <React.Fragment key={`${c.name}-${i}`}>
                                 {i > 0 && <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground sm:block" />}
                                 {last ? (
-                                    <h1 className="truncate text-[16px] font-semibold tracking-[-0.01em] text-foreground">{c.name}</h1>
+                                    <p className="truncate text-[13px] font-medium text-foreground">{c.name}</p>
                                 ) : c.href ? (
                                     <Link href={c.href} className="hidden truncate sm:block text-[13px] text-muted-foreground transition-colors hover:text-foreground">
                                         {c.name}
@@ -76,7 +76,7 @@ export function Header() {
                         );
                     })
                 ) : (
-                    <h1 className="truncate text-[16px] font-semibold tracking-[-0.01em] text-foreground">{title}</h1>
+                    <p className="truncate text-[13px] font-medium text-foreground">{title}</p>
                 )}
             </nav>
 

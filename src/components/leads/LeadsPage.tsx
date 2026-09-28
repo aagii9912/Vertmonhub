@@ -1,9 +1,8 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Check, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Download, LayoutList, PanelRight, Plus, Search, MoreHorizontal, Phone, GitBranch } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Download, LayoutList, PanelRight, Plus, MoreHorizontal, Phone, GitBranch } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -11,13 +10,17 @@ import { useMobile } from '@/hooks/use-mobile';
 import { canAccessModuleDynamic } from '@/lib/rbac';
 import { formatRelativeDays } from '@/lib/utils/date';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
-import { useLeadsList, useLeadProjects, useLeadSummary, useManagers, useUpdateLead, type LeadRow } from '@/hooks/useLeads';
+import { useLeadsList, useLeadSummary, useManagers, useUpdateLead, type LeadRow } from '@/hooks/useLeads';
 import { LEAD_VIEWS, LEAD_STATUSES, STATUS_META, SOURCES, SOURCE_LABEL, sourceLabel, interestLabel, type LeadView } from '@/lib/leads/labels';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/Sheet';
 import { Avatar, Pill, Skeleton } from '@/components/dashboard/v2/primitives';
 import { StatusPicker, ManagerPicker } from './pickers';
 import { LeadPanel, nextStep } from './LeadPanel';
 import { isLeadWorkQueue, LEAD_WORK_QUEUES } from '@/lib/leads/work-queue';
+import { PageHeader } from '@/components/dashboard/PageHeader';
+import { FilterBar, FilterChip } from '@/components/dashboard/FilterBar';
+import { Button } from '@/components/ui/Button';
+import { dashboardDownload } from '@/lib/api/dashboardFetch';
 
 /**
  * «Лид» — v2. Нягт хүснэгт (A) эсвэл split view (B) — хэрэглэгч сольж болно,
@@ -48,13 +51,13 @@ function LeadsWorkspace() {
     const [view, setView] = useState<LeadView>('all');
     const [status, setStatus] = useState('all');
     const [source, setSource] = useState('all');
-    const [project, setProject] = useState('all');
     const [manager, setManager] = useState('all');
     const [period, setPeriod] = useState('all');
     const [qInput, setQInput] = useState('');
     const [q, setQ] = useState('');
-    const [sort, setSort] = useState<SortKey>('created_at');
-    const [dir, setDir] = useState<'asc' | 'desc'>('desc');
+    const [sort, setSort] = useState<SortKey>(queue === 'overdue' ? 'next_followup_at' : 'created_at');
+    const [dir, setDir] = useState<'asc' | 'desc'>(queue ? 'asc' : 'desc');
+    const [exporting, setExporting] = useState(false);
     const [page, setPage] = useState(1);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [checked, setChecked] = useState<Set<string>>(new Set());
@@ -85,15 +88,13 @@ function LeadsWorkspace() {
         return () => clearTimeout(t);
     }, [qInput]);
 
-    const params = useMemo(() => ({ view, queue, status, source, project, manager, period, q, sort, dir, page, pageSize: PAGE_SIZE }), [view, queue, status, source, project, manager, period, q, sort, dir, page]);
+    const params = useMemo(() => ({ view, queue, status, source, manager, period, q, sort, dir, page, pageSize: PAGE_SIZE }), [view, queue, status, source, manager, period, q, sort, dir, page]);
     const { data, isLoading, isFetching, error, refetch } = useLeadsList(params);
-    const { data: projects = [], error: projectsError, refetch: refetchProjects } = useLeadProjects();
     const { data: summary, error: summaryError } = useLeadSummary();
     const { data: managers = [] } = useManagers();
     const update = useUpdateLead();
 
     const leads = useMemo(() => data?.leads ?? [], [data]);
-    const projectNames = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects]);
     const total = data?.pagination.total ?? 0;
     const totalPages = data?.pagination.totalPages ?? 1;
 
@@ -145,40 +146,42 @@ function LeadsWorkspace() {
     const showSplit = mode === 'split' && isDesktop;
     const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
     const to = Math.min(page * PAGE_SIZE, total);
+    const chooseQueue = (key: typeof LEAD_WORK_QUEUES[number]['key']) => {
+        setView('all'); setStatus('all'); setSource('all'); setManager('all'); setPeriod('all'); setQInput(''); setQ(''); setPage(1); setChecked(new Set()); setSelectedId(null);
+        setSort(key === 'overdue' ? 'next_followup_at' : 'created_at'); setDir('asc');
+        router.replace(`/dashboard/leads?queue=${key}`);
+    };
+    const filtered = !!queue || view !== 'all' || status !== 'all' || source !== 'all' || manager !== 'all' || period !== 'all' || !!qInput;
+    function resetFilters() {
+        setView('all'); setStatus('all'); setSource('all'); setManager('all'); setPeriod('all'); setQInput(''); setQ(''); setPage(1); setChecked(new Set());
+        if (queue) router.replace('/dashboard/leads');
+    }
+    async function download() {
+        setExporting(true);
+        try { await dashboardDownload('/api/dashboard/export/excel?type=leads', 'Vertmon-leads.xlsx'); }
+        catch (error) { toast.error(error instanceof Error ? error.message : 'Файл татаж чадсангүй.'); }
+        finally { setExporting(false); }
+    }
 
     return (
-        <div className="flex flex-col gap-3">
-            <section aria-label="Анхаарах лидүүд" className="space-y-2">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-[13px] font-medium">Анхаарах лидүүд</p>
-                    {queue && <button type="button" onClick={() => { router.replace('/dashboard/leads'); setPage(1); setChecked(new Set()); }} className="text-[12px] text-brand underline focus-ring">Ажлын шүүлтүүр арилгах</button>}
-                </div>
-                <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-4 lg:gap-2">
-                    {LEAD_WORK_QUEUES.map(item => <button key={item.key} type="button" aria-pressed={queue === item.key}
-                        onClick={() => {
-                            setView('all'); setStatus('all'); setSource('all'); setProject('all'); setManager('all'); setPeriod('all'); setQInput(''); setQ(''); setPage(1); setChecked(new Set()); setSelectedId(null);
-                            setSort(item.key === 'overdue' ? 'next_followup_at' : 'created_at'); setDir('asc');
-                            router.replace(`/dashboard/leads?queue=${item.key}`);
-                        }}
-                        title={item.help}
-                        className={cn('flex min-h-11 items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-left focus-ring lg:block lg:p-3', queue === item.key ? 'border-brand bg-brand-soft' : 'border-border bg-surface hover:bg-surface-2')}>
-                        <span className="block text-[12px] text-fg-2">{item.label}</span>
-                        <span className="num block text-base font-semibold lg:my-1 lg:text-xl">{summaryError ? '—' : summary?.queues?.[item.key] ?? '…'}</span>
-                        <span className="hidden text-[12px] text-muted-foreground lg:block">{item.help}</span>
-                    </button>)}
-                </div>
-                <details className="text-[12px] text-muted-foreground lg:hidden">
-                    <summary className="cursor-pointer py-1 focus-ring">Ангиллын тайлбар</summary>
-                    <ul className="space-y-1 py-2">{LEAD_WORK_QUEUES.map(item => <li key={item.key}><b className="font-medium text-fg-2">{item.label}:</b> {item.help}</li>)}</ul>
-                    Нэг лид хэд хэдэн ангилалд орж болно.
-                </details>
-                <p className="hidden text-[12px] text-muted-foreground lg:block">Нийт идэвхтэй лидүүдийн анхаарах нөхцөл. Нэг лид хэд хэдэн жагсаалтад орж болно.</p>
-                {summaryError && <p role="alert" className="text-[12px] text-danger">Лидийн тоолол уншиж чадсангүй. Хуудсаа шинэчилнэ үү.</p>}
+        <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5">
+            <PageHeader title="Лидүүд" subtitle="Холбогдох харилцагчаа сонгоод, үр дүн ба дараагийн алхмаа бүртгээрэй."
+                className="mb-0" primaryAction={canWrite && <Button onClick={() => openQuickCreate('lead')}><Plus />Шинэ лид</Button>}
+                secondaryActions={<><Button href="/dashboard/leads/pipeline" variant="secondary"><GitBranch />Pipeline</Button><Button variant="ghost" isLoading={exporting} onClick={() => void download()} title="Байгууллагын бүх лидийг татна"><Download />Excel · бүгд</Button></>} />
+            <section aria-label="Анхаарах лидүүд" className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                {LEAD_WORK_QUEUES.map(item => <button key={item.key} type="button" aria-pressed={queue === item.key}
+                    onClick={() => chooseQueue(item.key)} title={item.help}
+                    className={cn('flex min-h-18 flex-col items-start justify-between gap-1 rounded-2xl border p-3 sm:min-h-24 sm:gap-2 sm:p-4 text-left transition-colors focus-ring', queue === item.key ? 'border-foreground bg-surface-2' : 'border-transparent bg-surface-2 hover:bg-surface-3')}>
+                    <span className="text-xs text-fg-2">{item.label}</span>
+                    <span className="num text-2xl font-semibold tracking-tight">{summaryError ? '—' : summary?.queues?.[item.key] ?? '…'}</span>
+                </button>)}
             </section>
-            {error && <div role="alert" className="rounded-md border border-danger/30 p-3 text-sm text-danger">Лидийн жагсаалт уншиж чадсангүй. <button type="button" onClick={() => void refetch()} className="underline focus-ring">Дахин оролдох</button></div>}
-            {projectsError && <div role="alert" className="rounded-md border border-danger/30 p-3 text-sm text-danger">Төслийн нэрсийг уншиж чадсангүй. <button type="button" onClick={() => void refetchProjects()} className="underline focus-ring">Дахин оролдох</button></div>}
+            {queue && <p role="status" className="text-sm text-fg-2">{LEAD_WORK_QUEUES.find(item => item.key === queue)?.help}</p>}
+            {error && <div role="alert" className="rounded-xl border border-status-danger/30 bg-status-danger-soft p-4 text-sm text-status-danger">Лидүүдийг уншиж чадсангүй. <button type="button" onClick={() => void refetch()} className="ml-2 min-h-9 underline focus-ring">Дахин оролдох</button></div>}
+            {summaryError && <p role="status" className="text-xs text-muted-foreground">Анхаарах лидийн тоог уншиж чадсангүй.</p>}
+
             {/* Таб + хуудасны үйлдэл */}
-            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar border-b border-border">
+            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
                 {LEAD_VIEWS.map((v) => {
                     const n = summary?.[v.key];
                     const active = view === v.key;
@@ -186,40 +189,27 @@ function LeadsWorkspace() {
                         <button
                             key={v.key}
                             type="button"
-                            onClick={() => { setView(v.key); setPage(1); }}
-                            className={cn('-mb-px flex h-9 shrink-0 items-center gap-1.5 border-b-2 px-2 text-[13px] font-medium transition-colors focus-ring', active ? 'border-brand text-foreground' : 'border-transparent text-fg-2 hover:text-foreground')}
+                            aria-pressed={view === v.key}
+                            onClick={() => { setView(v.key); setPage(1); setChecked(new Set()); }}
+                            className={cn('flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] font-medium transition-colors focus-ring', active ? 'bg-surface-2 text-foreground shadow-[inset_0_0_0_1px_var(--border)]' : 'text-fg-2 hover:bg-surface-2 hover:text-foreground')}
                         >
                             {v.label}
                             {typeof n === 'number' && <span className={cn('mono-label text-[11px]', active ? 'text-brand' : 'text-muted-foreground')}>{n}</span>}
                         </button>
                     );
                 })}
-                <Link href="/dashboard/leads/pipeline" className="-mb-px flex h-9 shrink-0 items-center gap-1.5 border-b-2 border-transparent px-2 text-[13px] font-medium text-fg-2 hover:text-foreground">
-                    <GitBranch className="h-3.5 w-3.5" /> Лидийн pipeline
-                </Link>
-                <div className="ml-auto hidden shrink-0 items-center gap-1 pb-1 sm:flex">
-                    <div className="hidden h-[28px] items-center rounded-md border border-border p-0.5 lg:inline-flex">
-                        <button type="button" onClick={() => changeMode('table')} className={cn('flex h-full w-7 items-center justify-center rounded', mode === 'table' ? 'bg-surface-2 text-foreground' : 'text-muted-foreground hover:text-foreground')} aria-label="Хүснэгт" title="Хүснэгт"><LayoutList className="h-4 w-4" /></button>
-                        <button type="button" onClick={() => changeMode('split')} className={cn('hidden h-full w-7 items-center justify-center rounded lg:flex', mode === 'split' ? 'bg-surface-2 text-foreground' : 'text-muted-foreground hover:text-foreground')} aria-label="Хажуугийн самбартай" title="Хажуугийн самбартай"><PanelRight className="h-4 w-4" /></button>
-                    </div>
-                    <a href="/api/dashboard/export/excel?type=leads" className="inline-flex h-[28px] items-center gap-1.5 rounded-md border border-border px-2 text-[12px] font-medium text-fg-2 hover:bg-surface-2 hover:text-foreground">
-                        <Download className="h-3.5 w-3.5" /> Экспорт
-                    </a>
+                <div className="ml-auto hidden shrink-0 items-center gap-1 rounded-lg bg-surface-2 p-1 lg:flex">
+                    <button type="button" onClick={() => changeMode('table')} aria-pressed={mode === 'table'} className={cn('flex size-8 items-center justify-center rounded-md focus-ring', mode === 'table' ? 'bg-surface text-foreground shadow-xs' : 'text-muted-foreground')} aria-label="Хүснэгт" title="Хүснэгт"><LayoutList className="size-4" /></button>
+                    <button type="button" onClick={() => changeMode('split')} aria-pressed={mode === 'split'} className={cn('flex size-8 items-center justify-center rounded-md focus-ring', mode === 'split' ? 'bg-surface text-foreground shadow-xs' : 'text-muted-foreground')} aria-label="Хажуугийн самбартай" title="Хажуугийн самбартай"><PanelRight className="size-4" /></button>
                 </div>
             </div>
 
-            {/* Шүүлтүүр */}
-            <div className="flex flex-wrap items-center gap-1.5">
-                <FilterSelect value={status} onChange={(v) => { setStatus(v); setPage(1); }} label="Статус" options={LEAD_STATUSES.map((s) => [s, STATUS_META[s].label])} />
-                <FilterSelect value={source} onChange={(v) => { setSource(v); setPage(1); }} label="Эх үүсвэр" options={SOURCES.map((s) => [s, SOURCE_LABEL[s]])} />
-                {projects.length > 0 && <FilterSelect value={project} onChange={(v) => { setProject(v); setPage(1); setChecked(new Set()); }} label="Төсөл" options={projects.map((p) => [p.id, p.name])} />}
-                {managers.length > 0 && <FilterSelect value={manager} onChange={(v) => { setManager(v); setPage(1); }} label="Менежер" options={managers.map((m) => [m.name, m.name])} />}
-                <FilterSelect value={period} onChange={(v) => { setPeriod(v); setPage(1); }} label="Огноо" options={[['week', '7 хоног'], ['month', '30 хоног'], ['quarter', '90 хоног'], ['year', '1 жил']]} />
-                <div className="relative ml-auto w-full sm:w-60">
-                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <input aria-label="Лидийг нэр, утсаар хайх" value={qInput} onChange={(e) => setQInput(e.target.value)} placeholder="Нэр, утас…" className="h-10 w-full rounded-md border border-border-strong bg-surface pl-8 pr-2 text-[13px] outline-none placeholder:text-muted-foreground focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)] md:h-[30px]" />
-                </div>
-            </div>
+            <FilterBar className="mb-0" search={{ value: qInput, onChange: setQInput, label: 'Лидийг нэр, утсаар хайх', placeholder: 'Нэр, утас, имэйлээр хайх…' }} showClear={filtered} onClear={resetFilters}>
+                <FilterChip value={status} onChange={(v) => { setStatus(v); setPage(1); }} label="Статус" options={LEAD_STATUSES.map((s) => [s, STATUS_META[s].label])} />
+                <FilterChip value={source} onChange={(v) => { setSource(v); setPage(1); }} label="Эх үүсвэр" options={SOURCES.map((s) => [s, SOURCE_LABEL[s]])} />
+                {managers.length > 0 && <FilterChip value={manager} onChange={(v) => { setManager(v); setPage(1); }} label="Менежер" options={managers.map((m) => [m.name, m.name])} />}
+                <FilterChip value={period} onChange={(v) => { setPeriod(v); setPage(1); }} label="Огноо" options={[['week', '7 хоног'], ['month', '30 хоног'], ['quarter', '90 хоног'], ['year', '1 жил']]} />
+            </FilterBar>
 
             {/* Bulk */}
             {checked.size > 0 && canWrite && (
@@ -235,14 +225,14 @@ function LeadsWorkspace() {
 
             {/* Агуулга */}
             <div className={cn('grid gap-3', showSplit && 'lg:grid-cols-[minmax(0,1fr)_minmax(400px,480px)]')}>
-                <div className="min-w-0 rounded-md border border-border bg-surface">
-                    {isMobile ? (
-                        <MobileList leads={leads} loading={isLoading} onOpen={select} projectNames={projectNames} />
+                <div className="min-w-0 overflow-hidden rounded-2xl border border-border bg-surface">
+                    {error ? null : isMobile ? (
+                        <MobileList leads={leads} loading={isLoading} onOpen={select} />
                     ) : (
                         <div className="overflow-x-auto">
-                            <table className="w-full text-[12.5px]">
+                            <table className="w-full text-[13px]">
                                 <thead>
-                                    <tr className="h-8 bg-surface-2 text-[11px] font-medium tracking-[0.03em] text-muted-foreground">
+                                    <tr className="h-11 border-b border-border bg-surface-2/60 text-xs font-medium tracking-[0.03em] text-muted-foreground">
                                         <th className="w-9 px-2"><CheckBox label="Бүгдийг сонгох" checked={leads.length > 0 && leads.every((l) => checked.has(l.id))} onChange={(v) => setChecked(v ? new Set(leads.map((l) => l.id)) : new Set())} /></th>
                                         <Th onClick={() => toggleSort('customer_name')} active={sort === 'customer_name'} dir={dir}>Нэр</Th>
                                         <th className="px-2 text-left font-medium">Утас</th>
@@ -257,7 +247,7 @@ function LeadsWorkspace() {
                                 </thead>
                                 <tbody>
                                     {isLoading && Array.from({ length: 8 }).map((_, i) => (
-                                        <tr key={i} className="h-9 border-b border-border"><td colSpan={10} className="px-2"><Skeleton className="h-5" /></td></tr>
+                                        <tr key={i} className="h-10 border-b border-border"><td colSpan={10} className="px-2"><Skeleton className="h-5" /></td></tr>
                                     ))}
                                     {!error && !isLoading && leads.length === 0 && (
                                         <tr><td colSpan={10}>
@@ -281,22 +271,19 @@ function LeadsWorkspace() {
                                                     if (e.target !== e.currentTarget) return;
                                                     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(l.id); }
                                                 }}
-                                                className={cn('h-9 cursor-pointer border-b border-border transition-colors last:border-b-0 focus-ring', sel ? 'bg-brand-soft/60' : 'hover:bg-surface-2/70', isFetching && 'opacity-90')}
+                                                className={cn('h-14 cursor-pointer border-b border-border transition-colors last:border-b-0 focus-ring', sel ? 'bg-brand-soft/60 shadow-[inset_2px_0_0_var(--brand)]' : 'hover:bg-surface-2/70', isFetching && 'opacity-90')}
                                             >
                                                 <td className="px-2" onClick={(e) => e.stopPropagation()}>
                                                     <CheckBox label="Сонгох" checked={checked.has(l.id)} onChange={(v) => setChecked((prev) => { const n = new Set(prev); if (v) n.add(l.id); else n.delete(l.id); return n; })} />
                                                 </td>
-                                                <td className="px-2">
-                                                    <span className={cn('block max-w-[220px] truncate font-medium', sel ? 'text-brand' : 'text-foreground')}>{l.customer_name || 'Нэргүй'}</span>
-                                                    {l.project_id && <span className="block max-w-[220px] truncate text-[11px] text-muted-foreground">{projectNames.get(l.project_id) ?? 'Төслийн нэр олдсонгүй'}</span>}
-                                                </td>
+                                                <td className="px-2"><span className={cn('block max-w-[220px] truncate font-medium', sel ? 'text-brand' : 'text-foreground')}>{l.customer_name || 'Нэргүй'}</span></td>
                                                 <td className="mono-label px-2 text-fg-2">{l.customer_phone || '—'}</td>
                                                 <td className="px-2"><StatusPicker value={l.status} disabled={!canWrite} onChange={(s, reason) => patchLead(l.id, { status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} /></td>
                                                 {!showSplit && <td className="px-2 text-fg-2">{sourceLabel(l.source)}</td>}
                                                 <td className="px-2 text-fg-2">{interestLabel(l)}</td>
                                                 {!showSplit && <td className="px-2"><ManagerPicker value={l.sales_manager_name ?? null} options={managers} disabled={!canWrite} onChange={(n) => patchLead(l.id, { sales_manager_name: n })} /></td>}
                                                 {!showSplit && <td className={cn('px-2', overdue ? 'font-medium text-status-danger' : 'text-fg-2')}>{nextStep(l)}</td>}
-                                                <td className={cn('mono-label px-2', overdue ? 'text-status-danger' : 'text-fg-2')}>{l.last_contact_at ? formatRelativeDays(l.last_contact_at) : 'Бүртгээгүй'}</td>
+                                                <td className="mono-label px-2 text-fg-2">{l.last_contact_at ? formatRelativeDays(l.last_contact_at) : 'Бүртгээгүй'}</td>
                                                 <td className="px-2 text-muted-foreground"><MoreHorizontal className="h-4 w-4" /></td>
                                             </tr>
                                         );
@@ -309,14 +296,14 @@ function LeadsWorkspace() {
                     {/* Хуудаслалт */}
                     <div className="flex items-center gap-2 border-t border-border px-3 py-2 text-[12px] text-muted-foreground">
                         <span className="mono-label">{from}–{to} / {total}</span>
-                        <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="flex h-6 w-6 items-center justify-center rounded hover:bg-surface-2 disabled:opacity-40" aria-label="Өмнөх"><ChevronLeft className="h-4 w-4" /></button>
-                        <button type="button" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} className="flex h-6 w-6 items-center justify-center rounded hover:bg-surface-2 disabled:opacity-40" aria-label="Дараах"><ChevronRight className="h-4 w-4" /></button>
+                        <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="flex size-11 items-center justify-center rounded-lg focus-ring md:size-9 hover:bg-surface-2 disabled:opacity-40" aria-label="Өмнөх"><ChevronLeft className="h-4 w-4" /></button>
+                        <button type="button" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} className="flex size-11 items-center justify-center rounded-lg focus-ring md:size-9 hover:bg-surface-2 disabled:opacity-40" aria-label="Дараах"><ChevronRight className="h-4 w-4" /></button>
                         <span className="ml-auto">Хуудсанд {PAGE_SIZE}</span>
                     </div>
                 </div>
 
                 {showSplit && (
-                    <aside aria-label="Сонгосон лид" className="sticky top-[calc(var(--header-h)+1rem)] h-[calc(100dvh-var(--header-h)-2rem)] min-h-0 self-start overflow-hidden rounded-md border border-border bg-surface">
+                    <aside aria-label="Сонгосон лид" className="sticky top-[calc(var(--header-h)+1rem)] h-[calc(100dvh-var(--header-h)-2rem)] min-h-0 self-start overflow-hidden rounded-2xl border border-border bg-surface">
                         {selectedId ? (
                             <LeadPanel leadId={selectedId} managers={managers} canWrite={canWrite} onClose={() => select(null)} />
                         ) : (
@@ -375,21 +362,8 @@ function Th({ children, onClick, active, dir }: { children: React.ReactNode; onC
     );
 }
 
-function FilterSelect({ value, onChange, label, options }: { value: string; onChange: (v: string) => void; label: string; options: [string, string][] }) {
-    const on = value !== 'all';
-    return (
-        <label className={cn('relative inline-flex h-9 md:h-[26px] items-center gap-1 rounded-md border pl-2.5 pr-6 text-[12px] focus-within:border-brand', on ? 'border-brand bg-brand-soft text-brand' : 'border-border bg-surface text-fg-2 hover:border-border-strong')}>
-            <span className="pointer-events-none whitespace-nowrap">{on ? `${label}: ${options.find((o) => o[0] === value)?.[1] ?? value}` : label}</span>
-            <select value={value} onChange={(e) => onChange(e.target.value)} className="absolute inset-0 cursor-pointer opacity-0" aria-label={label}>
-                <option value="all">Бүгд</option>
-                {options.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-1.5 h-3 w-3 opacity-70" />
-        </label>
-    );
-}
 
-function MobileList({ leads, loading, onOpen, projectNames }: { leads: LeadRow[]; loading: boolean; onOpen: (id: string) => void; projectNames: Map<string, string> }) {
+function MobileList({ leads, loading, onOpen }: { leads: LeadRow[]; loading: boolean; onOpen: (id: string) => void }) {
     if (loading) return <div className="flex flex-col gap-2 p-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>;
     if (!leads.length) return <div className="px-4 py-10 text-center text-[13px] text-muted-foreground">Лид олдсонгүй</div>;
     return (
@@ -397,12 +371,13 @@ function MobileList({ leads, loading, onOpen, projectNames }: { leads: LeadRow[]
             {leads.map((l) => {
                 const phone = l.customer_phone?.replace(/\D/g, '') || '';
                 return (
-                    <div key={l.id} className="flex min-h-14 items-center gap-3 border-b border-border px-3 py-2 last:border-b-0 active:bg-surface-2">
+                    <div key={l.id} className="flex min-h-20 items-center gap-3 border-b border-border px-4 py-3 last:border-b-0 active:bg-surface-2">
                         <button type="button" onClick={() => onOpen(l.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
                             <Avatar name={l.customer_name} className="h-8 w-8 text-[11px]" />
                             <span className="min-w-0 flex-1">
                                 <span className="block truncate text-[14px] font-medium text-foreground">{l.customer_name || 'Нэргүй'}</span>
-                                <span className="block truncate text-[12px] text-muted-foreground">{[l.project_id ? projectNames.get(l.project_id) ?? 'Төслийн нэр олдсонгүй' : null, interestLabel(l) !== '—' ? interestLabel(l) : null, sourceLabel(l.source), l.last_contact_at ? `Холбогдсон: ${formatRelativeDays(l.last_contact_at)}` : 'Холбоо бүртгээгүй'].filter(Boolean).join(' · ')}</span>
+                                <span className="block truncate text-[12px] text-muted-foreground">{[interestLabel(l) !== '—' ? interestLabel(l) : null, sourceLabel(l.source), l.last_contact_at ? `Холбогдсон: ${formatRelativeDays(l.last_contact_at)}` : 'Холбоо бүртгээгүй'].filter(Boolean).join(' · ')}</span>
+                                <span className="mt-1 block text-xs text-fg-2">{nextStep(l)}</span>
                             </span>
                             <Pill tone={STATUS_META[l.status]?.tone ?? 'neutral'}>{STATUS_META[l.status]?.short ?? l.status}</Pill>
                         </button>

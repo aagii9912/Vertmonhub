@@ -30,26 +30,26 @@ function SectionCard({
   contentClassName,
 }: SectionCardProps) {
   return (
-    <Card className={className}>
-      <div className={cn("px-4 md:px-6 py-4 md:py-5", contentClassName)}>
+    <Card className={cn("min-w-0 rounded-2xl", className)}>
+      <div className={cn("p-4 md:p-5", contentClassName)}>
         <div className="flex items-start gap-3">
           {Icon ? (
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand-strong">
-              <Icon className="size-5" />
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-2 text-fg-2">
+              <Icon className="size-4" />
             </span>
           ) : null}
           <div className="min-w-0 flex-1">
-            <h3 className="heading-section text-base md:text-lg text-foreground">
+            <h3 className="text-sm font-semibold text-foreground">
               {title}
             </h3>
             {description ? (
-              <p className="mt-0.5 text-sm text-muted-foreground">
+              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
                 {description}
               </p>
             ) : null}
           </div>
         </div>
-        <div className="mt-4">{children}</div>
+        <div className="mt-5">{children}</div>
       </div>
     </Card>
   )

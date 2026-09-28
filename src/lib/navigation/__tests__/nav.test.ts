@@ -12,17 +12,18 @@ import {
 } from '../nav';
 
 describe('nav v2 — бүтэц', () => {
-    it('direct URLs retain module boundaries including aliases and nested routes', () => {
+    it('direct URLs retain module boundaries including aliases and narrower child modules', () => {
         expect(getRouteModule('/dashboard/marketing-roi')).toBe('marketing-roi');
         expect(getRouteModule('/dashboard/competitor-research')).toBe('marketing-roi');
         expect(getRouteModule('/dashboard/properties/fixture-id')).toBe('properties');
         expect(getRouteModule('/dashboard/finance/reports')).toBe('finance');
         expect(getRouteModule('/dashboard/tasks')).toBe('dashboard');
+        expect(getRouteModule('/dashboard/weekly')).toBe('dashboard');
         expect(getRouteModule('/dashboard/leadsX')).toBeUndefined();
     });
-    it('үндсэн цэс яг 8 зүйлтэй, өдрийн урсгалын дарааллаар', () => {
+    it('өдөр тутмын ажил ба хурлын бэлтгэл эхэнд байна', () => {
         expect(PRIMARY_NAV.map((i) => i.name)).toEqual([
-            'Өнөөдөр', 'Лид', 'Уулзалт', 'Гэрээ', 'Байр', 'Inbox', 'Тайлан', 'Маркетинг',
+            'Өнөөдөр', 'Хурлын бэлтгэл', 'Лид', 'Уулзалт', 'Гэрээ', 'Байр', 'Inbox', 'Тайлан', 'Маркетинг',
         ]);
     });
 
@@ -30,8 +31,8 @@ describe('nav v2 — бүтэц', () => {
         expect(BOTTOM_NAV.map((i) => i.name)).toEqual(['AI туслах', 'Тохиргоо']);
     });
 
-    it('гар утасны таб нь үндсэн цэсний эхний гурав', () => {
-        expect(MOBILE_TABS.map((i) => i.href)).toEqual(['/dashboard', '/dashboard/leads', '/dashboard/viewings']);
+    it('гар утаснаас хурлын бэлтгэлд шууд орно', () => {
+        expect(MOBILE_TABS.map((i) => i.href)).toEqual(['/dashboard', '/dashboard/leads', '/dashboard/weekly']);
     });
 
     it('санхүү / ERP цэсэнд БАЙХГҮЙ, харин хоёрдогч замд байна', () => {
@@ -50,7 +51,7 @@ describe('nav v2 — бүтэц', () => {
 
 describe('isNavItemActive', () => {
     const today = PRIMARY_NAV[0];
-    const leads = PRIMARY_NAV[1];
+    const leads = PRIMARY_NAV.find(item => item.href === '/dashboard/leads')!;
 
     it('«Өнөөдөр» зөвхөн /dashboard дээр идэвхтэй (бусад зам түүгээр эхэлдэг ч)', () => {
         expect(isNavItemActive(today, '/dashboard')).toBe(true);

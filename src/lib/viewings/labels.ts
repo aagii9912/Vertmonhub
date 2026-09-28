@@ -1,3 +1,4 @@
+import { ubDateStr, ubParts } from '@/lib/utils/date';
 import type { Tone } from '@/lib/leads/labels';
 
 export type MeetingType = 'new_customer' | 'repeat_customer' | 'existing_buyer';
@@ -31,11 +32,12 @@ export const WEEKDAYS_MN = ['Ням', 'Даваа', 'Мягмар', 'Лхагв�
 
 /** «Өнөөдөр · Даваа, 9-р сарын 8» / «Маргааш · …» / «Мягмар, 9-р сарын 9» */
 export function dayHeading(d: Date, now = new Date()): string {
-    const start = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-    const diff = Math.round((start(d) - start(now)) / 86_400_000);
-    const base = `${WEEKDAYS_MN[d.getDay()]}, ${d.getMonth() + 1}-р сарын ${d.getDate()}`;
+    const date = ubDateStr(d);
+    const { year, month, day } = ubParts(d);
+    const diff = Math.round((Date.parse(date) - Date.parse(ubDateStr(now))) / 86_400_000);
+    const base = `${WEEKDAYS_MN[new Date(`${date}T00:00:00Z`).getUTCDay()]}, ${month}-р сарын ${day}`;
     if (diff === 0) return `Өнөөдөр · ${base}`;
     if (diff === 1) return `Маргааш · ${base}`;
     if (diff === -1) return `Өчигдөр · ${base}`;
-    return d.getFullYear() === now.getFullYear() ? base : `${d.getFullYear()} · ${base}`;
+    return year === ubParts(now).year ? base : `${year} · ${base}`;
 }

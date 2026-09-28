@@ -5,8 +5,8 @@
 @custom-variant dark (&:is(.dark *, [data-theme="dark"] *));
 
 /* ============================================================
-   Vertmon Hub — Design System v2 (2026-09)
-   Cool neutral base + Vertmon blue accent · borders over shadows
+   Vertmon Hub — Workday design system (2026-09-28)
+   Neutral surfaces + quiet Vertmon blue · readable workspaces
    Golos Text (UI, Cyrillic-ready) + JetBrains Mono (numbers/dates/IDs)
    ============================================================ */
 
@@ -125,18 +125,18 @@
    ============================================================ */
 :root {
   /* Surfaces */
-  --bg: #F6F7F9;
+  --bg: #FFFFFF;
   --surface: #FFFFFF;
-  --surface-2: #F0F2F5;
-  --surface-3: #E7EAEF;
-  --border: #E3E6EB;
-  --border-strong: #C9CED8;
+  --surface-2: #F5F5F3;
+  --surface-3: #ECECEA;
+  --border: #E7E7E3;
+  --border-strong: #D1D2CC;
 
   /* Foreground */
-  --fg: #15181E;
-  --fg-2: #3E4552;
-  --muted: #6B7383;
-  --muted-2: #858D9C;
+  --fg: #252623;
+  --fg-2: #51524D;
+  --muted: #70716B;
+  --muted-2: #7D7E78;
 
   /* Brand — Vertmon blue */
   --brand: #2D6FE6;
@@ -182,11 +182,11 @@
   /* Radius scale */
   --r-xs: 4px;
   --r-sm: 5px;
-  --r-md: 6px;
-  --r-lg: 8px;
-  --r-xl: 10px;
-  --r-2xl: 12px;
-  --r-3xl: 16px;
+  --r-md: 8px;
+  --r-lg: 10px;
+  --r-xl: 12px;
+  --r-2xl: 16px;
+  --r-3xl: 24px;
 
   /* Motion tokens (durations; easings live in @theme above) */
   --duration-fast: 120ms;
@@ -195,7 +195,7 @@
 
   /* Layout tokens — single source of truth for the shell dimensions so the
      AI-assistant full-height calc can't drift from the header. */
-  --sidebar-w: 14.5rem;  /* 232px */
+  --sidebar-w: 15.5rem;  /* 248px */
   --header-h: 3.25rem;   /* 52px — same on every breakpoint in v2 */
 
   /* Control heights — one density ladder for every interactive element */
@@ -215,12 +215,12 @@
   --shadow-2xl-val: 0 24px 64px rgba(21, 24, 30, 0.16), 0 2px 6px rgba(21, 24, 30, 0.08);
 
   /* Sidebar (uses surface tokens) */
-  --sidebar: var(--bg);
+  --sidebar: var(--surface-2);
   --sidebar-foreground: var(--fg);
   --sidebar-primary: var(--brand);
   --sidebar-primary-foreground: var(--brand-fg);
-  --sidebar-accent: var(--brand-soft);
-  --sidebar-accent-foreground: var(--brand);
+  --sidebar-accent: var(--surface-3);
+  --sidebar-accent-foreground: var(--fg);
   --sidebar-border: var(--border);
   --sidebar-ring: var(--brand);
 }
@@ -234,17 +234,17 @@
    ============================================================ */
 :root[data-theme="dark"],
 .dark {
-  --bg: #0F1216;
-  --surface: #161A20;
-  --surface-2: #1D222A;
-  --surface-3: #262C36;
-  --border: #262C36;
-  --border-strong: #363E4B;
+  --bg: #212121;
+  --surface: #242424;
+  --surface-2: #2D2D2D;
+  --surface-3: #393939;
+  --border: #3C3C3C;
+  --border-strong: #525252;
 
-  --fg: #E7EAF0;
-  --fg-2: #BAC2CF;
-  --muted: #8A93A3;
-  --muted-2: #6E7787;
+  --fg: #ECECE8;
+  --fg-2: #C5C5C0;
+  --muted: #A2A29C;
+  --muted-2: #92928C;
 
   --brand: #6FA0FF;
   --brand-soft: #1A2B4A;
@@ -268,25 +268,25 @@
   --chart-4: #D9A23F;
   --chart-5: #8A93A3;
 
-  --sidebar: var(--bg);
-  --sidebar-accent: var(--brand-soft);
-  --sidebar-accent-foreground: var(--brand);
+  --sidebar: var(--surface-2);
+  --sidebar-accent: var(--surface-3);
+  --sidebar-accent-foreground: var(--fg);
 }
 
 /* System preference fallback (only applies when no explicit data-theme set) */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
-    --bg: #0F1216;
-    --surface: #161A20;
-    --surface-2: #1D222A;
-    --surface-3: #262C36;
-    --border: #262C36;
-    --border-strong: #363E4B;
+    --bg: #212121;
+    --surface: #242424;
+    --surface-2: #2D2D2D;
+    --surface-3: #393939;
+    --border: #3C3C3C;
+    --border-strong: #525252;
 
-    --fg: #E7EAF0;
-    --fg-2: #BAC2CF;
-    --muted: #8A93A3;
-    --muted-2: #6E7787;
+    --fg: #ECECE8;
+    --fg-2: #C5C5C0;
+    --muted: #A2A29C;
+    --muted-2: #92928C;
 
     --brand: #6FA0FF;
     --brand-soft: #1A2B4A;
@@ -485,4 +485,32 @@ body {
     outline-offset: 2px !important;
     border-radius: 2px;
   }
+  /* Composer-ийн гадна хүрээ нь textarea-ийн keyboard focus-ийг харуулна.
+     Base layer дотор байснаар дээрх important дүрмийг зөв дарна. */
+  .ai-composer:has(textarea:focus-visible) { outline: 2px solid var(--fg-2); outline-offset: 2px; }
+  .ai-composer textarea:focus-visible { outline: none !important; }
+}
+
+/* Хурлын танилцуулга: native fullscreen, Escape-ээр буцна. */
+.weekly-report .fullscreen-exit { display: none; }
+.weekly-report:fullscreen { overflow: auto; padding: clamp(24px, 5vw, 80px); }
+.weekly-report:fullscreen > * { max-width: 1080px; margin-inline: auto; }
+.weekly-report:fullscreen .fullscreen-exit { display: inline-flex; }
+@page weekly-review { size: A4; margin: 14mm; }
+@media print {
+  body:has(.weekly-report) { page: weekly-review; }
+  body:has(.weekly-report) [data-sonner-toaster] { display: none !important; }
+  body:has(.weekly-report) * { transition: none !important; }
+  body:has(.weekly-report) .min-h-screen { min-height: 0; }
+  body:has(.weekly-report) #workspace-content { min-width: 0; }
+  .weekly-report {
+    --bg: #FFFFFF; --surface: #FFFFFF; --surface-2: #F5F5F3;
+    --fg: #252623; --fg-2: #51524D; --muted: #70716B;
+    --border: #E7E7E3; --border-strong: #D1D2CC;
+    color: var(--fg); background: var(--bg);
+    width: 100%; max-width: 100%;
+  }
+  .weekly-report section { break-inside: avoid; }
+  .weekly-report > section > header { break-after: avoid; }
+  .weekly-report > section:last-child { break-inside: auto; }
 }

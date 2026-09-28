@@ -18,7 +18,7 @@ export default function AIAssistantPage() {
         conversations, activeConversationId, setActiveConversationId, loading, messagesLoading,
         loadMessages, renameConversation, deleteConversation, loadConversations,
     } = useAIConversations({ shopId: shop?.id });
-    const [collapsed, setCollapsed] = useState(false);
+    const [collapsed, setCollapsed] = useState(true);
     const [initial, setInitial] = useState<AiMessage[] | undefined>(undefined);
     const [session, setSession] = useState(0);
 
@@ -38,7 +38,8 @@ export default function AIAssistantPage() {
     useEffect(() => { if (activeConversationId) void loadConversations(); }, [activeConversationId, loadConversations]);
 
     return (
-        <div className="flex h-full min-h-0">
+        <div className="relative flex h-full min-h-0">
+            <h1 className="sr-only">AI туслах</h1>
             <ConversationSidebar
                 conversations={conversations}
                 activeId={activeConversationId}

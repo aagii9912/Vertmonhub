@@ -9,6 +9,7 @@ import { KpiGridSkeleton } from '@/components/ui/LoadingSkeleton';
 import { TodayDashboard } from '@/components/dashboard/today/TodayDashboard';
 import { DirectorDashboard } from '@/components/dashboard/director/DirectorDashboard';
 import { ManagerSelector } from '@/components/dashboard/ManagerSelector';
+import { WorkspaceIntro } from '@/components/dashboard/today/WorkspaceIntro';
 
 /**
  * Дашбоардын нүүр — role-aware router (сервер /api/dashboard/mode шийднэ):
@@ -35,12 +36,12 @@ export default function DashboardPage() {
     }
 
     if (mode?.mode === 'personal') {
-        return <TodayDashboard />;
+        return <div className="mx-auto max-w-[1240px]"><WorkspaceIntro /><TodayDashboard /></div>;
     }
 
     return (
-        <DirectorDashboard
+        <div className="mx-auto max-w-[1240px]"><WorkspaceIntro /><DirectorDashboard
             actions={mode?.canViewTeam ? <ManagerSelector selected={selectedManager} onSelect={setSelectedManager} /> : undefined}
-        />
+        /></div>
     );
 }

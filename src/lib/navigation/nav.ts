@@ -3,7 +3,7 @@
  *
  * v1-д гурван workspace (Борлуулалт / AI / Маркетинг), 30 цэсний зүйл байсан
  * бөгөөд switcher нь sidebar-ыг бүхэлд нь солиход хэрэглэгч төөрдөг байв.
- * v2 нь НЭГ sidebar, 8 үндсэн цэстэй. Өдөр бүрийн ажил дээрээс доош эрэмбэлэв.
+ * Нэг sidebar дотор өдөр тутмын ажил, хурлын бэлтгэл, үр дүнг бүлэглэнэ.
  *
  * Ховор хэрэглэгддэг хуудсууд цэснээс хасагдсан ч УСТААГҮЙ — ⌘K хайлт,
  * Тохиргоо, эсвэл шууд URL-аар нээгдэнэ (SECONDARY_ROUTES).
@@ -64,7 +64,7 @@ export interface NavChild {
 export type CountKey = 'leads' | 'inbox' | 'meetings';
 
 /* ------------------------------------------------------------------ */
-/* Үндсэн цэс — 8 зүйл. Дараалал нь өдрийн ажлын урсгалыг дагана.      */
+/* Үндсэн цэс. Дараалал нь өдрийн ажлын урсгалыг дагана.              */
 /* ------------------------------------------------------------------ */
 
 export const PRIMARY_NAV: NavItem[] = [
@@ -77,6 +77,12 @@ export const PRIMARY_NAV: NavItem[] = [
             { name: 'Самбар', href: '/dashboard' },
             { name: 'Миний ажлууд', href: '/dashboard/tasks' },
         ],
+    },
+    {
+        name: 'Хурлын бэлтгэл',
+        href: '/dashboard/weekly',
+        icon: ClipboardList,
+        module: 'dashboard',
     },
     {
         name: 'Лид',
@@ -213,8 +219,8 @@ export const SECONDARY_ROUTES: SecondaryRoute[] = [
 
 export const MOBILE_TABS: NavItem[] = [
     PRIMARY_NAV[0], // Өнөөдөр
-    PRIMARY_NAV[1], // Лид
-    PRIMARY_NAV[2], // Уулзалт
+    PRIMARY_NAV.find(item => item.href === '/dashboard/leads')!,
+    PRIMARY_NAV.find(item => item.href === '/dashboard/weekly')!,
 ];
 
 /* ------------------------------------------------------------------ */

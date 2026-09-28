@@ -153,6 +153,10 @@ src/
 
 ### Internal operations workflow (2026-09-13)
 
+Workday UI/UX (2026-09-28): `/dashboard/weekly` combines existing operations + marketing reports for the previous Wednesday–Tuesday window, explicit staff updates, text export, print/PDF and native fullscreen. `weekly_updates` is server-only; reads require dashboard, team reads additionally require reports, and writes require dashboard/write and are always self-scoped. Apply `20260928150000_weekly_updates.sql` before enabling persistence; this task did not apply it to production. Shared neutral shell, larger page headings and ChatGPT-inspired AI composer are documented in `docs/WORKDAY-DESIGN-SYSTEM-2026-09-28.md`. UI fixtures: `E2E_BROWSER_CHANNEL=chrome npx playwright test --config=playwright.workday.config.ts` (isolated ports 3107/4327).
+
+Workday CRM continuation: lead/contract list headers and exports stay visible on mobile; `FilterBar`/`FilterChip`, `StatBar`/`StatTile`, and `SectionCard` share spacing and touch targets. Meeting outcome/actions are visible on both layouts, with Ulaanbaatar day grouping. `dashboardDownload` in `lib/api/dashboardFetch.ts` is the active-shop-aware file transport; lead/contract exports cover all records, marketing exports retain the selected range/project. `/api/marketing/performance` returns `{ report, projects, activities, spend }`, including for the weekly view. `e2e/crm-workday.spec.ts` covers these workflows with isolated data. This UI task does not apply production database migrations.
+
 Vertmon LLC's operating scope is sales, marketing and administration: reduce duplicate Excel entry, expose unattended leads, and distinguish contract value from actual cash receipts. Workflow and release notes: `docs/OPERATIONS-WORKFLOW-2026-09-13.md`.
 
 - `/dashboard/leads?queue=unassigned|uncontacted|no_followup|overdue` uses shared rules in `lib/leads/work-queue.ts`. Counts and reports use the same active-lead definitions. A scheduled viewing counts as a next step when no explicit follow-up exists. These are data-quality/work queues, not proof an employee failed to call.

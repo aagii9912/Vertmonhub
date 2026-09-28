@@ -22,21 +22,17 @@ interface PageHeaderProps {
 }
 
 /**
- * v2 хуудасны толгой.
- *
- * v1-д хуудас бүр 2xl–4xl серифэн гарчгаа давтан харуулдаг байсан бол v2-т
- * гарчиг АППЫН 52px толгойд (Header) нэг л газар гарна — энэ компонент
- * `usePageTitle`-аар тэр гарчгийг тохируулаад, зөвхөн тайлбар + үйлдлийн
- * товчнуудыг нэг нягт мөрөнд харуулна. 35 хуудас өөрчлөлтгүй ашиглана.
+ * Агуулгын үндсэн гарчиг, тайлбар, үйлдлүүд.
+ * `usePageTitle` нь shell-ийн замын мөрийг тохируулна; h1 энд нэг удаа гарна.
  */
 export function PageHeader({ title, subtitle, primaryAction, secondaryActions, className }: PageHeaderProps) {
     usePageTitle(title);
     const hasActions = !!(primaryAction || secondaryActions);
-    if (!subtitle && !hasActions) return null;
-
     return (
-        <header className={cn('mb-4 flex flex-wrap items-center gap-2', className)}>
-            {subtitle && <p className="min-w-0 flex-1 text-[13px] text-muted-foreground">{subtitle}</p>}
+        <header className={cn('mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:flex-wrap', className)}>
+            <div className="w-full min-w-0 flex-1 sm:w-auto"><h1 className="text-[24px] font-semibold tracking-tight text-foreground">{title}</h1>
+                {subtitle && <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">{subtitle}</p>}
+            </div>
             {hasActions && (
                 <div className={cn('flex flex-wrap items-center gap-2', !subtitle && 'ml-auto')}>
                     {secondaryActions}

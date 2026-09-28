@@ -96,6 +96,14 @@ export function ubDateStr(d: Date = new Date()): string {
     return new Date(d.getTime() + UB_OFFSET_MS).toISOString().slice(0, 10);
 }
 
+/** Зарим Chromium build mn-MN-ийг English рүү fallback хийдэг тул UI огноог ил нэрлэнэ. */
+export function formatWorkdayDate(date = new Date()): string {
+    const { month, day } = ubParts(date);
+    const weekdays = ['Ням', 'Даваа', 'Мягмар', 'Лхагва', 'Пүрэв', 'Баасан', 'Бямба'];
+    const weekday = new Date(`${ubDateStr(date)}T00:00:00Z`).getUTCDay();
+    return `${month}-р сарын ${day}, ${weekdays[weekday]}`;
+}
+
 /** Тухайн мөчийн УБ-ийн шөнө дунд (UTC instant-аар). */
 export function ubStartOfDay(d: Date = new Date()): Date {
     const s = new Date(d.getTime() + UB_OFFSET_MS);

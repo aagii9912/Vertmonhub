@@ -51,6 +51,23 @@ export async function dashboardJson<T>(input: string, init: DashboardFetchInit =
     return (await res.json()) as T;
 }
 
+/** Excel зэрэг файлыг идэвхтэй байгууллагын эрхээр татна. */
+export async function dashboardDownload(input: string, filename: string): Promise<void> {
+    const res = await dashboardFetch(input);
+    if (!res.ok) {
+        const detail = await res.json().catch(() => null);
+        throw new Error(detail?.error || 'Файл татаж чадсангүй. Дахин оролдоно уу.');
+    }
+    const url = URL.createObjectURL(await res.blob());
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 /** POST/PATCH/DELETE-д зориулсан богино хэлбэр. */
 export function dashboardMutate<T>(
     input: string,
