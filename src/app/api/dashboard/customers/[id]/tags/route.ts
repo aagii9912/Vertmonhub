@@ -1,6 +1,6 @@
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { addCustomerTag, removeCustomerTag } from '@/lib/services/CustomerOps';
 
@@ -10,7 +10,7 @@ export async function POST(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('customers');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
@@ -40,7 +40,7 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('customers');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {

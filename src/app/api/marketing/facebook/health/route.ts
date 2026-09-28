@@ -1,3 +1,4 @@
+import { requireModule } from '@/lib/auth/require-permission';
 import { NextResponse } from 'next/server';
 import { getUserShop, supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { getPageInfo, getPageInsights, getPageSubscribedApps, subscribePageToApp } from '@/lib/facebook/marketing-api';
@@ -19,6 +20,8 @@ interface Check {
  */
 export async function GET() {
     try {
+        const denied = await requireModule('marketing-roi');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

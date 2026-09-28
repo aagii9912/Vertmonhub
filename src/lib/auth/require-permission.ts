@@ -12,9 +12,11 @@ export async function resolvePermissions(): Promise<{ role: string; permissions:
     const db = supabaseAdmin();
     // Ганц эх сурвалж: user_roles. (Хуучин `admins` хүснэгт prod DB-д байхгүй тул
     // fallback query бүр алдаа залгидаг байсан — 2026-09 review M2/M6.)
-    const { data: roleRow } = await db.from('user_roles').select('role').eq('user_id', userId).maybeSingle();
+    const { data: roleRow, error: roleError } = await db.from('user_roles').select('role').eq('user_id', userId).maybeSingle();
+    if (roleError) return null;
     const role = roleRow?.role || 'viewer';
-    const permissions = await fetchRolePermissions(role);
+    const permissions = await fetchRolePermissions(role, db, true).catch(() => null);
+    if (!permissions) return null;
     return { role, permissions };
 }
 

@@ -1,3 +1,4 @@
+import { requireModule } from '@/lib/auth/require-permission';
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -7,6 +8,8 @@ import { safeErrorResponse } from '@/lib/utils/safe-error';
 
 export async function GET(request: NextRequest) {
   try {
+    const denied = await requireModule('dashboard');
+    if (denied) return denied;
     const authShop = await getUserShop();
 
     const identifier = authShop?.id || getClientIdentifier(request) || 'anonymous';

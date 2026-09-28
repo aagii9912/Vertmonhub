@@ -49,7 +49,10 @@ const CATEGORY_VARIANT: Record<string, 'info' | 'success' | 'pending' | 'neutral
 };
 
 export function MarketIndicators() {
-    const { shop } = useAuth();
+    const { shop, user } = useAuth();
+    const hasModule = user?.role === 'super_admin' || !!user?.permissions.modules.includes('marketing-roi');
+    const canWrite = hasModule && !!user?.permissions.canWrite;
+    const canDelete = hasModule && !!user?.permissions.canDelete;
     const shopId = shop?.id;
     const queryClient = useQueryClient();
 
@@ -117,7 +120,7 @@ export function MarketIndicators() {
                 </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-                <div className="flex flex-wrap items-center gap-2">
+                {canWrite && <div className="flex flex-wrap items-center gap-2">
                     <Select value={category} onValueChange={setCategory}>
                         <SelectTrigger className="h-10 w-40" aria-label="Ангилал">
                             <SelectValue />
@@ -158,7 +161,7 @@ export function MarketIndicators() {
                     >
                         <Plus className="w-4 h-4" />
                     </Button>
-                </div>
+                </div>}
 
                 {indicators.length > 0 ? (
                     <div className="divide-y divide-border/60">
@@ -181,14 +184,14 @@ export function MarketIndicators() {
                                     <span className="text-xs text-muted-foreground tabular-nums">
                                         {formatShortDate(ind.recorded_at)}
                                     </span>
-                                    <Button
+                                    {canDelete && <Button
                                         variant="ghost"
                                         size="iconSm"
                                         onClick={() => removeIndicator.mutate(ind.id)}
                                         title="Устгах"
                                     >
                                         <Trash2 className="w-4 h-4 text-status-danger" />
-                                    </Button>
+                                    </Button>}
                                 </div>
                             </div>
                         ))}

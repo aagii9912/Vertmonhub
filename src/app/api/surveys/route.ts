@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { supabaseAdmin } from '@/lib/supabase';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireWrite } from '@/lib/auth/require-permission';
+import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import * as z from 'zod';
 
 const createSurveySchema = z.object({
@@ -20,28 +19,9 @@ const createSurveySchema = z.object({
 
 export async function POST(req: NextRequest) {
     try {
-        const cookieStore = await cookies();
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                cookies: {
-                    get(name: string) {
-                        return cookieStore.get(name)?.value
-                    },
-                },
-            }
-        );
-
-        // Verify authentication
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
-            return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
-        }
-
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('surveys');
         if (denied) return denied;
-
+        const supabase = supabaseAdmin();
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Холбогдсон shop олдсонгүй' }, { status: 403 });
@@ -83,25 +63,9 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
     try {
-        const cookieStore = await cookies();
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                cookies: {
-                    get(name: string) {
-                        return cookieStore.get(name)?.value
-                    },
-                },
-            }
-        );
-
-        // Verify authentication
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
-            return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
-        }
-
+        const denied = await requireModule('surveys');
+        if (denied) return denied;
+        const supabase = supabaseAdmin();
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ surveys: [] }, { status: 200 });

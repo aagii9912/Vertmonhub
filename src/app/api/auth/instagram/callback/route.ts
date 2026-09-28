@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 
 interface InstagramAccount {
     id: string;
@@ -21,6 +22,8 @@ interface PageWithInstagram {
 }
 
 export async function GET(request: NextRequest) {
+    const denied = await requireModuleWrite('marketing-roi');
+    if (denied) return denied;
     const searchParams = request.nextUrl.searchParams;
     const code = searchParams.get('code');
     const error = searchParams.get('error');

@@ -92,9 +92,11 @@ export async function prepareAssistantRequest(req: Request): Promise<{ error: Ne
     const adminDb = supabaseAdmin();
 
     // Дүр — ганц эх сурвалж user_roles (`admins` хүснэгт prod-д байхгүй, fallback хасав)
-    const { data: roleRow } = await adminDb.from('user_roles').select('role').eq('user_id', resolvedUser.id).maybeSingle();
+    const { data: roleRow, error: roleError } = await adminDb.from('user_roles').select('role').eq('user_id', resolvedUser.id).maybeSingle();
+    if (roleError) return { error: NextResponse.json({ error: 'Эрхийн мэдээлэл ачаалагдсангүй' }, { status: 503 }) };
     const roleName = roleRow?.role || 'viewer';
-    const permissions = await fetchRolePermissions(roleName);
+    const permissions = await fetchRolePermissions(roleName, adminDb, true).catch(() => null);
+    if (!permissions) return { error: NextResponse.json({ error: 'Эрхийн мэдээлэл ачаалагдсангүй' }, { status: 503 }) };
     if (!permissions.modules.includes('ai-assistant')) {
         return { error: NextResponse.json({ error: 'AI туслах ашиглах эрх танд алга' }, { status: 403 }) };
     }

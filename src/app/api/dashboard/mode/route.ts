@@ -33,12 +33,13 @@ export async function GET() {
             resolvePermissions(),
             resolveManagerIdentity(supabaseAdmin(), authShop.id, uid),
         ]);
+        if (!perms) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
 
         const role = perms?.role || 'viewer';
         const modules = perms?.permissions.modules || [];
         const isAdmin = role === 'admin' || role === 'super_admin';
         const personal = !isAdmin && (role === 'sales_manager' || identity.isManager);
-        const canViewTeam = !personal && (isAdmin || modules.includes('reports'));
+        const canViewTeam = !personal && (role === 'super_admin' || modules.includes('reports'));
 
         return NextResponse.json({
             mode: personal ? 'personal' : 'org',

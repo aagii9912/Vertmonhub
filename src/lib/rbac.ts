@@ -5,7 +5,7 @@
  * Static mapping fallback болж ажиллана.
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 // ============================================
 // Types
@@ -158,13 +158,13 @@ const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /**
  * Fetch role permissions from database
- * Falls back to static mapping if DB query fails
+ * Strict server checks use current DB grants; legacy callers retain static fallback.
  * @param roleName - The role name to fetch permissions for 
  * @param supabaseClient - Optional authenticated Supabase client (from AuthContext)
  */
-export async function fetchRolePermissions(roleName: string, supabaseClient?: any): Promise<RolePermissions> {
+export async function fetchRolePermissions(roleName: string, supabaseClient?: SupabaseClient, strict = false): Promise<RolePermissions> {
     // Check cache first
-    const cached = permissionsCache.get(roleName);
+    const cached = supabaseClient ? undefined : permissionsCache.get(roleName);
     if (cached && cached.expiry > Date.now()) {
         return cached.data;
     }
@@ -184,14 +184,19 @@ export async function fetchRolePermissions(roleName: string, supabaseClient?: an
         }
 
         // Fetch role details + permissions in one go.
-        // maybeSingle() — мөр олдохгүй бол 406 биш, null буцаана (static fallback руу шилжинэ).
+        // Missing role definitions must not restore static grants on server checks.
         const { data: role, error: roleError } = await supabase
             .from('roles')
             .select('*, role_permissions(module)')
             .eq('name', roleName)
             .maybeSingle();
 
-        if (roleError || !role) {
+        if (roleError) {
+            if (strict) throw roleError;
+            return getStaticPermissions(roleName);
+        }
+        if (!role) {
+            if (strict && roleName !== 'super_admin') throw new Error('Role not found');
             return getStaticPermissions(roleName);
         }
 
@@ -205,10 +210,11 @@ export async function fetchRolePermissions(roleName: string, supabaseClient?: an
         };
 
         // Cache result
-        permissionsCache.set(roleName, { data: permissions, expiry: Date.now() + CACHE_TTL });
+        if (!supabaseClient) permissionsCache.set(roleName, { data: permissions, expiry: Date.now() + CACHE_TTL });
 
         return permissions;
-    } catch {
+    } catch (error) {
+        if (strict) throw error;
         return getStaticPermissions(roleName);
     }
 }

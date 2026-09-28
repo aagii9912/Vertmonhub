@@ -1,9 +1,12 @@
 import { NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 
 // Get Instagram accounts from OAuth cookie
 export async function GET() {
     try {
+        const denied = await requireModuleWrite('marketing-roi');
+        if (denied) return denied;
         const cookieStore = await cookies();
         const igAccountsCookie = cookieStore.get('ig_accounts');
 
@@ -25,6 +28,8 @@ export async function GET() {
 // Clear Instagram accounts cookie after selection
 export async function DELETE() {
     try {
+        const denied = await requireModuleWrite('marketing-roi');
+        if (denied) return denied;
         const cookieStore = await cookies();
         cookieStore.delete('ig_accounts');
         return NextResponse.json({ success: true });

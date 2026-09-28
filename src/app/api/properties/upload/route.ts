@@ -1,3 +1,4 @@
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -8,6 +9,8 @@ const MAX_BYTES = 8 * 1024 * 1024; // 8MB
 
 export async function POST(request: NextRequest) {
   try {
+    const denied = await requireModuleWrite('properties');
+    if (denied) return denied;
     const authShop = await getUserShop();
     if (!authShop) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });

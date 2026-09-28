@@ -22,6 +22,7 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: (...args: unknown[]
 vi.mock('@/hooks/useMyStats', () => ({ useMyStats: () => ({ ...mocks.myStats, isLoading: false, error: new Error('Өгөгдөл татаж чадсангүй'), refetch: mocks.refetch }) }));
 vi.mock('@/hooks/useDirector', () => ({ useDirector: () => ({ data: undefined, isLoading: false, isError: true, error: new Error('Өгөгдөл татаж чадсангүй'), refetch: mocks.refetch }) }));
 vi.mock('@/hooks/useLeads', () => ({
+    useLeadProjects: () => ({ data: [] }),
     useLeadDetail: () => ({ ...mocks.detail, refetch: mocks.refetch }),
     useUpdateLead: () => ({ mutate: vi.fn() }), useAddLeadActivity: () => ({ mutateAsync: vi.fn() }),
 }));

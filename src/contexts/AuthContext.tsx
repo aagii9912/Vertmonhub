@@ -1,9 +1,8 @@
 'use client';
 
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
-import type { User, Session } from '@supabase/supabase-js';
+import type { Session } from '@supabase/supabase-js';
 import type { UserRole, RolePermissions } from '@/lib/rbac';
-import { ROLE_PERMISSIONS } from '@/lib/rbac';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
 
 const isDev = process.env.NODE_ENV === 'development';
@@ -92,10 +91,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const res = await fetch('/api/me', { cache: 'no-store' });
       if (!res.ok) return null;
       const data = await res.json();
+      if (!Array.isArray(data.permissions?.modules)
+        || !data.permissions.modules.every((module: unknown) => typeof module === 'string')
+        || typeof data.permissions.canWrite !== 'boolean'
+        || typeof data.permissions.canDelete !== 'boolean') return null;
       const roleName = (data.role as string) || 'viewer';
       return {
         role: roleName as UserRole,
-        permissions: (data.permissions as RolePermissions) || ROLE_PERMISSIONS[roleName] || ROLE_PERMISSIONS['viewer'],
+        permissions: data.permissions as RolePermissions,
         fullName: (data.user?.fullName as string | null) ?? null,
         shops: Array.isArray(data.shops) ? (data.shops as Shop[]) : [],
       };
@@ -171,50 +174,80 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Listen for auth state changes
   useEffect(() => {
     let lastUserId: string | null = null;
+    let disposed = false;
+    let authVersion = 0;
+    let permissionRequest = 0;
 
     const applyMe = async (s: Session) => {
+      const request = ++permissionRequest;
       const me = await fetchMe();
+      if (disposed || lastUserId !== s.user.id || request !== permissionRequest) return;
+      if (!me) {
+        setUser(null);
+        setShops([]);
+        setActiveShop(null);
+        return;
+      }
       setUser({
         id: s.user.id,
         email: s.user.email || '',
-        fullName: me?.fullName ?? (s.user.user_metadata?.full_name || null),
-        role: me?.role ?? 'viewer',
-        permissions: me?.permissions ?? ROLE_PERMISSIONS['viewer'],
+        fullName: me.fullName ?? (s.user.user_metadata?.full_name || null),
+        role: me.role,
+        permissions: me.permissions,
       });
-      if (me) {
-        setShops(me.shops);
-        initializeActiveShop(me.shops);
-      }
+      setShops(me.shops);
+      initializeActiveShop(me.shops);
     };
 
     // Get initial session
     supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (disposed || authVersion > 0) return;
       setSession(session);
       if (session?.user) {
         lastUserId = session.user.id;
         await applyMe(session);
       }
-      setLoading(false);
+      if (!disposed) setLoading(false);
     });
 
-    // Listen for auth changes (TOKEN_REFRESHED зэрэгт ижил хэрэглэгчийн хувьд дахин татахгүй)
+    // Refresh permissions after token renewal and when returning to the app.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, session) => {
+        if (disposed) return;
+        authVersion++;
         setSession(session);
         if (session?.user) {
-          if (session.user.id !== lastUserId) {
+          if (session.user.id !== lastUserId || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
             lastUserId = session.user.id;
-            void applyMe(session);
+            void applyMe(session).finally(() => { if (!disposed) setLoading(false); });
           }
         } else {
           lastUserId = null;
+          permissionRequest++;
           setUser(null);
+          setShops([]);
+          setActiveShop(null);
+          setLoading(false);
         }
       }
     );
 
-    return () => subscription.unsubscribe();
-  }, [supabase, fetchMe, initializeActiveShop]);
+    const refreshAccess = () => {
+      if (document.visibilityState !== 'visible') return;
+      void supabase.auth.getSession().then(({ data: { session } }) => {
+        if (!disposed && session && session.user.id === lastUserId) void applyMe(session);
+      });
+    };
+    window.addEventListener('focus', refreshAccess);
+    document.addEventListener('visibilitychange', refreshAccess);
+    return () => {
+      lastUserId = null;
+      disposed = true;
+      subscription.unsubscribe();
+      window.removeEventListener('focus', refreshAccess);
+      document.removeEventListener('visibilitychange', refreshAccess);
+    };
+  }, [supabase, fetchMe, initializeActiveShop, setActiveShop]);
 
   return (
     <AuthContext.Provider value={{

@@ -1,3 +1,4 @@
+import { requireModule } from '@/lib/auth/require-permission';
 import { NextResponse } from 'next/server';
 import { resolveApiUser } from '@/lib/auth/resolve-user';
 import { AGENTS } from '@/lib/ai/orchestrator/agents';
@@ -9,6 +10,8 @@ import { MAIN_MODEL, FAST_MODEL, hasOpenAIKey } from '@/lib/ai/openai/client';
  * v1-ийн «AI Агентууд» хуудас хоосон `ai_agents` хүснэгтээс уншдаг байсан.
  */
 export async function GET() {
+    const denied = await requireModule('ai-assistant');
+    if (denied) return denied;
     const user = await resolveApiUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 

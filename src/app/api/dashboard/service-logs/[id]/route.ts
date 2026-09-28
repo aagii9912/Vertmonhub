@@ -1,6 +1,6 @@
+import { requireModuleWrite, requireModuleDelete } from '@/lib/auth/require-permission';
 import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireWrite, requireDelete } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
@@ -13,7 +13,7 @@ export async function PATCH(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('customer-service');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
@@ -66,7 +66,7 @@ export async function DELETE(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const denied = await requireDelete();
+        const denied = await requireModuleDelete('customer-service');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {

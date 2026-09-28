@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import crypto from 'crypto';
 
 // Instagram OAuth - Start (uses Facebook OAuth with Instagram permissions)
 export async function GET(request: NextRequest) {
+    const denied = await requireModuleWrite('marketing-roi');
+    if (denied) return denied;
     const appId = process.env.FACEBOOK_APP_ID?.trim();
 
     if (!appId) {

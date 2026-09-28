@@ -3,6 +3,7 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { ubDayRange } from '@/lib/utils/date';
+import { resolvePermissions } from '@/lib/auth/require-permission';
 
 /**
  * GET /api/dashboard/nav-counts
@@ -17,6 +18,9 @@ import { ubDayRange } from '@/lib/utils/date';
  */
 export async function GET() {
     try {
+        const access = await resolvePermissions();
+        if (!access) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        const canRead = (moduleName: string) => access.role === 'super_admin' || access.permissions.modules.includes(moduleName);
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -30,14 +34,14 @@ export async function GET() {
         const nowIso = new Date().toISOString();
 
         const [leads, meetings, inbox] = await Promise.all([
-            db
+            canRead('leads') ? db
                 .from('leads')
                 .select('id', { count: 'exact', head: true })
                 .eq('shop_id', shopId)
                 .eq('status', 'new')
                 .is('deleted_at', null)
-                .then((r) => (r.error ? undefined : r.count ?? 0)),
-            db
+                .then((r) => (r.error ? undefined : r.count ?? 0)) : undefined,
+            canRead('viewings') ? db
                 .from('property_viewings')
                 .select('id', { count: 'exact', head: true })
                 .eq('shop_id', shopId)
@@ -45,13 +49,13 @@ export async function GET() {
                 .is('deleted_at', null)
                 .gte('scheduled_at', dayStart.toISOString())
                 .lt('scheduled_at', dayEnd.toISOString())
-                .then((r) => (r.error ? undefined : r.count ?? 0)),
-            db
+                .then((r) => (r.error ? undefined : r.count ?? 0)) : undefined,
+            canRead('inbox') ? db
                 .from('customers')
                 .select('id', { count: 'exact', head: true })
                 .eq('shop_id', shopId)
                 .gt('ai_paused_until', nowIso)
-                .then((r) => (r.error ? undefined : r.count ?? 0)),
+                .then((r) => (r.error ? undefined : r.count ?? 0)) : undefined,
         ]);
 
         // no-store: react-query өөрөө cache-лэнэ; browser HTTP cache нь invalidation-ийг

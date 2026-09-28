@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { supabaseAdmin } from '@/lib/supabase';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import * as z from 'zod';
 
@@ -20,22 +19,7 @@ export async function GET(req: NextRequest) {
     try {
         const denied = await requireModule('marketing-roi');
         if (denied) return denied;
-        const cookieStore = await cookies();
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                cookies: {
-                    get(name: string) { return cookieStore.get(name)?.value; },
-                },
-            }
-        );
-
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
-            return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
-        }
-
+        const supabase = supabaseAdmin();
         const authShop = await getUserShop();
         if (!authShop) return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 401 });
 
@@ -67,22 +51,7 @@ export async function POST(req: NextRequest) {
     try {
         const denied = await requireModuleWrite('marketing-roi');
         if (denied) return denied;
-        const cookieStore = await cookies();
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                cookies: {
-                    get(name: string) { return cookieStore.get(name)?.value; },
-                },
-            }
-        );
-
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
-            return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
-        }
-
+        const supabase = supabaseAdmin();
         const authShop = await getUserShop();
         if (!authShop) return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 401 });
 
@@ -90,6 +59,11 @@ export async function POST(req: NextRequest) {
 
         // Zod validation
         const validatedData = contractSchema.parse(body);
+
+        const { data: channel, error: channelError } = await supabase.from('marketing_channels')
+            .select('id').eq('id', validatedData.channel_id).eq('shop_id', authShop.id).maybeSingle();
+        if (channelError) throw channelError;
+        if (!channel) return NextResponse.json({ error: 'Суваг олдсонгүй' }, { status: 404 });
 
         const { data, error } = await supabase
             .from('channel_contracts')

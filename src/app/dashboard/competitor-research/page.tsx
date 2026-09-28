@@ -26,6 +26,7 @@ import { formatMNT } from '@/lib/utils/currency';
 import { confirmToast } from '@/components/ui/Toast';
 import { MarketIndicators } from '@/components/marketing/MarketIndicators';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Competitor {
     id: string;
@@ -44,6 +45,10 @@ interface Competitor {
 const EMPTY = { name: '', location: '', district: '', num_blocks: '', planning: '', payment_terms: '', price_per_sqm: '', facebook_url: '', notes: '' };
 
 export default function CompetitorResearchPage() {
+    const { user } = useAuth();
+    const hasModule = user?.role === 'super_admin' || !!user?.permissions.modules.includes('marketing-roi');
+    const canWrite = hasModule && !!user?.permissions.canWrite;
+    const canDelete = hasModule && !!user?.permissions.canDelete;
     const [competitors, setCompetitors] = useState<Competitor[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
@@ -88,6 +93,7 @@ export default function CompetitorResearchPage() {
     }
 
     async function remove(id: string) {
+        if (!canDelete) return;
         const ok = await confirmToast({ title: 'Энэ өрсөлдөгчийг устгах уу?', confirmLabel: 'Устгах', destructive: true });
         if (!ok) return;
         try {
@@ -201,8 +207,8 @@ export default function CompetitorResearchPage() {
             align: 'right',
             cell: (c) => (
                 <div className="flex items-center justify-end gap-1">
-                    <button onClick={(e) => { e.stopPropagation(); openEdit(c); }} className="p-1.5 rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background" aria-label="Засах"><Pencil className="w-3.5 h-3.5" /></button>
-                    <button onClick={(e) => { e.stopPropagation(); remove(c.id); }} className="p-1.5 rounded-md text-muted-foreground hover:bg-status-danger-soft hover:text-status-danger outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background" aria-label="Устгах"><Trash2 className="w-3.5 h-3.5" /></button>
+                    {canWrite && <button onClick={(e) => { e.stopPropagation(); openEdit(c); }} className="p-1.5 rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background" aria-label="Засах"><Pencil className="w-3.5 h-3.5" /></button>}
+                    {canDelete && <button onClick={(e) => { e.stopPropagation(); remove(c.id); }} className="p-1.5 rounded-md text-muted-foreground hover:bg-status-danger-soft hover:text-status-danger outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background" aria-label="Устгах"><Trash2 className="w-3.5 h-3.5" /></button>}
                 </div>
             ),
         },
@@ -214,7 +220,7 @@ export default function CompetitorResearchPage() {
                 eyebrow="Маркетинг"
                 title="Өрсөлдөгчийн судалгаа"
                 subtitle="Зах зээл дэх өрсөлдөгчдийн үнэ, байршил, блок, төлбөрийн нөхцөл"
-                primaryAction={<Button onClick={openNew} variant="primary" size="md"><Plus className="w-4 h-4" /> Өрсөлдөгч нэмэх</Button>}
+                primaryAction={canWrite && <Button onClick={openNew} variant="primary" size="md"><Plus className="w-4 h-4" /> Өрсөлдөгч нэмэх</Button>}
                 secondaryActions={
                     competitors.length > 0 ? (
                         <Button
@@ -286,7 +292,7 @@ export default function CompetitorResearchPage() {
                         icon={<Building2 className="w-7 h-7" />}
                         title="Өрсөлдөгч бүртгээгүй"
                         description="Зах зээлийн өрсөлдөгчдийн мэдээллийг нэмж, Мандала Гардены байр сууриа тодорхойлоорой."
-                        action={<Button onClick={openNew} variant="primary" size="sm"><Plus className="w-4 h-4" /> Эхний өрсөлдөгчийг нэмэх</Button>}
+                        action={canWrite && <Button onClick={openNew} variant="primary" size="sm"><Plus className="w-4 h-4" /> Эхний өрсөлдөгчийг нэмэх</Button>}
                     />
                 </CardContent></Card>
             ) : (

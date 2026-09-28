@@ -13,6 +13,7 @@ vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ shop: { id: 'shop-a
 vi.mock('@/lib/api/dashboardFetch', () => ({ dashboardFetch: (...args: unknown[]) => mocks.fetch(...args) }));
 vi.mock('@/hooks/useConversations', () => ({ useConversations: () => ({ data: mocks.readError ? undefined : mocks.conversations, isLoading: false, isError: mocks.readError, isFetching: false, refetch: mocks.refetch }) }));
 vi.mock('@/hooks/useLeads', () => ({
+    useLeadProjects: () => ({ data: [] }),
     useLeadsList: () => ({ data: { leads: [], pagination: { total: 0, totalPages: 1 } }, isLoading: false }),
     useLeadSummary: () => ({ data: {} }), useManagers: () => ({ data: [] }), useUpdateLead: () => ({ mutate: vi.fn() }),
 }));

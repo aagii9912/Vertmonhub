@@ -1,5 +1,6 @@
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthUser } from '@/lib/auth/auth';
+import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
@@ -9,10 +10,8 @@ import { logger } from '@/lib/utils/logger';
  */
 export async function POST(request: NextRequest) {
     try {
-        const userId = await getAuthUser();
-        if (!userId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const denied = await requireModuleWrite('marketing-roi');
+        if (denied) return denied;
 
         const body = await request.json();
         const { platform } = body;
@@ -27,14 +26,8 @@ export async function POST(request: NextRequest) {
         const supabase = supabaseAdmin();
 
         // Get user's active shop
-        const { data: shop, error: shopError } = await supabase
-            .from('shops')
-            .select('id')
-            .eq('user_id', userId)
-            .eq('is_active', true)
-            .single();
-
-        if (shopError || !shop) {
+        const shop = await getUserShop();
+        if (!shop) {
             return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 404 });
         }
 

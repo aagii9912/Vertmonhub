@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { supabaseAdmin } from '@/lib/supabase';
+import { getUserShop } from '@/lib/auth/supabase-auth';
+import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import * as z from 'zod';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
@@ -15,21 +16,23 @@ const submitResponseSchema = z.object({
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
-        const cookieStore = await cookies();
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                cookies: {
-                    get(name: string) { return cookieStore.get(name)?.value },
-                },
-            }
-        );
+        const supabase = supabaseAdmin();
 
         const resolvedParams = await params;
         const surveyId = resolvedParams.id;
         const body = await req.json();
         const validatedData = submitResponseSchema.parse(body);
+        const source = validatedData.source ?? 'online';
+        let staffShopId: string | null = null;
+        // CRM links and staff notes are privileged even if a caller labels the
+        // response "online". Public responses may only submit respondent data.
+        if (source === 'offline' || validatedData.customer_id || validatedData.notes) {
+            const denied = await requireModuleWrite('surveys');
+            if (denied) return denied;
+            const shop = await getUserShop();
+            if (!shop) return NextResponse.json({ error: 'Хандах эрхгүй' }, { status: 403 });
+            staffShopId = shop.id;
+        }
 
         // Check if survey exists and is active
         const { data: survey, error: surveyError } = await supabase
@@ -44,19 +47,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         if (!survey.is_active) {
             return NextResponse.json({ error: 'Судалгаа хаагдсан байна' }, { status: 400 });
         }
-
-        const source = validatedData.source ?? 'online';
-
-        // Offline responses must be authenticated (sales manager entry).
-        // Online responses can be submitted anonymously by survey takers.
-        if (source === 'offline') {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) {
-                return NextResponse.json(
-                    { error: 'Биеэр оруулсан хариулт нэвтэрсэн ажилтан шаардана' },
-                    { status: 401 }
-                );
-            }
+        if (staffShopId && staffShopId !== survey.shop_id) {
+            return NextResponse.json({ error: 'Хандах эрхгүй' }, { status: 403 });
+        }
+        if (validatedData.customer_id) {
+            const { data: customer, error: customerError } = await supabase.from('customers')
+                .select('id').eq('id', validatedData.customer_id).eq('shop_id', survey.shop_id).maybeSingle();
+            if (customerError) throw customerError;
+            if (!customer) return NextResponse.json({ error: 'Харилцагч олдсонгүй' }, { status: 404 });
         }
 
         const { data, error } = await supabase
@@ -93,22 +91,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 // GET: Generate AI Summary for Survey Responses
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
     try {
-        const cookieStore = await cookies();
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                cookies: {
-                    get(name: string) { return cookieStore.get(name)?.value },
-                },
-            }
-        );
-
-        // Verify authentication (Admin only)
-        const { data: { user }, error: authError } = await supabase.auth.getUser();
-        if (authError || !user) {
-            return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
-        }
+        const denied = await requireModule('surveys');
+        if (denied) return denied;
+        const shop = await getUserShop();
+        if (!shop) return NextResponse.json({ error: 'Хандах эрхгүй' }, { status: 403 });
+        const supabase = supabaseAdmin();
 
         const resolvedParams = await params;
         const surveyId = resolvedParams.id;
@@ -118,6 +105,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
             .from('surveys')
             .select('*')
             .eq('id', surveyId)
+            .eq('shop_id', shop.id)
             .single();
 
         if (surveyError || !survey) {
@@ -128,7 +116,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         const { data: responses, error: responsesError } = await supabase
             .from('survey_responses')
             .select('*')
-            .eq('survey_id', surveyId);
+            .eq('survey_id', surveyId)
+            .eq('shop_id', shop.id);
 
         if (responsesError) {
             return NextResponse.json({ error: 'Хариултууд татахад алдаа гарлаа' }, { status: 500 });

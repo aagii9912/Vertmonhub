@@ -1,6 +1,6 @@
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
@@ -22,7 +22,7 @@ const MAX_BYTES = 4 * 1024 * 1024;
 
 export async function POST(request: Request) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('ai-assistant');
         if (denied) return denied;
         const authShop = await getUserShop();
 

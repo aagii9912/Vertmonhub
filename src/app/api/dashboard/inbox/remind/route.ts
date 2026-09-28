@@ -1,6 +1,7 @@
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getAuthUserShop } from '@/lib/auth/auth';
+import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { sendPushNotification } from '@/lib/notifications';
@@ -23,7 +24,9 @@ const DEFAULT_MESSAGE = 'Сайн байна уу! Үзэхээр сонирхо
  */
 export async function POST(request: NextRequest) {
     try {
-        const shop = await getAuthUserShop();
+        const denied = await requireModuleWrite('inbox');
+        if (denied) return denied;
+        const shop = await getUserShop();
         if (!shop) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }

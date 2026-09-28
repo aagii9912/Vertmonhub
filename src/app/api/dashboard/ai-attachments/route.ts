@@ -2,8 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
+import { requireModule } from '@/lib/auth/require-permission';
 
-const VALID_TYPES = ['property', 'lead', 'customer', 'contract'];
+const ENTITY_MODULES: Record<string, string> = {
+    property: 'properties', lead: 'leads', customer: 'customers', contract: 'contracts',
+};
 
 /**
  * GET /api/dashboard/ai-attachments?entity_type=&entity_id=
@@ -17,9 +20,11 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url);
         const entityType = searchParams.get('entity_type') || '';
         const entityId = searchParams.get('entity_id') || '';
-        if (!VALID_TYPES.includes(entityType) || !entityId) {
+        if (!Object.hasOwn(ENTITY_MODULES, entityType) || !entityId) {
             return NextResponse.json({ error: 'entity_type ба entity_id шаардлагатай' }, { status: 400 });
         }
+        const denied = await requireModule(ENTITY_MODULES[entityType]);
+        if (denied) return denied;
 
         const db = supabaseAdmin();
         // Хүснэгт байхгүй (миграци ороогүй) бол хоосон буцаана — UI эвдрэхгүй.

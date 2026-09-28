@@ -1,6 +1,6 @@
+import { requireModule, requireModuleWrite, requireModuleDelete } from '@/lib/auth/require-permission';
 import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireWrite, requireDelete } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { UpdatePropertySchema, validateBody } from '@/lib/validations/schemas';
@@ -9,6 +9,8 @@ type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_request: NextRequest, { params }: Params) {
   try {
+    const denied = await requireModule('properties');
+    if (denied) return denied;
     const { id } = await params;
     const authShop = await getUserShop();
     if (!authShop) {
@@ -36,7 +38,7 @@ export async function GET(_request: NextRequest, { params }: Params) {
 
 export async function PATCH(request: NextRequest, { params }: Params) {
   try {
-    const denied = await requireWrite();
+    const denied = await requireModuleWrite('properties');
     if (denied) return denied;
     const { id } = await params;
     const authShop = await getUserShop();
@@ -84,7 +86,7 @@ export async function PATCH(request: NextRequest, { params }: Params) {
 
 export async function DELETE(_request: NextRequest, { params }: Params) {
   try {
-    const denied = await requireDelete();
+    const denied = await requireModuleDelete('properties');
     if (denied) return denied;
     const { id } = await params;
     const authShop = await getUserShop();

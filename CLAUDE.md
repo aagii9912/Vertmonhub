@@ -260,7 +260,7 @@ Vercel runs in UTC, so `new Date().setHours(0,0,0,0)` on the server is 08:00 Ula
 
 ### Auth / tenant rules that must not regress (2026-09-11 review, `docs/REVIEW-2026-09-11.md`)
 - No custom session cookie: the `vertmon-session` cookie is dead; `middleware.ts`, `resolve-user.ts`, `admin/auth.ts` and the marketing routes only trust Supabase `getUser()`.
-- Every `/api/*` handler self-authenticates: reads use `requireModule(...)` / `requireAnyModule([...])`, writes `requireModuleWrite(...)` / `requireWrite()`, deletes `requireModuleDelete(...)` (`src/lib/auth/require-permission.ts`), then `getUserShop()` (validates `x-shop-id` against owner ∪ `shop_members`). Public landing-page edits are super_admin only.
+- Every business `/api/*` handler self-authenticates: reads use `requireModule(...)` / `requireAnyModule([...])`, writes `requireModuleWrite(...)`, deletes `requireModuleDelete(...)` (`src/lib/auth/require-permission.ts`), then `getUserShop()` (validates `x-shop-id` against owner ∪ `shop_members`). A generic write/delete flag alone is insufficient. Personal tasks/preferences/conversations keep self scope. Public landing-page edits are super_admin only.
 - Cron routes use `isAuthorizedCron()` (`src/lib/auth/cron.ts`): timing-safe compare, **fails closed** unless `NODE_ENV === 'development'`. `CRON_SECRET` must be set in Vercel prod. Secrets/signatures are compared with `safeEqual` (`src/lib/crypto/safe-equal.ts`).
 - `PATCH` bodies never go straight into `.update()` — use a Zod allow-list (see `UpdatePaymentScheduleSchema`).
 - Storage: the `products` bucket policies are shop-folder scoped (migration `20260911120000`); server uploads go through `/api/dashboard/upload` (MIME allow-list, ≤4MB) and `/api/properties/upload`.
@@ -284,7 +284,9 @@ inbox, reports, reports-leads, marketing-roi, surveys,
 ai-assistant, ai-settings, settings
 ```
 
-Static fallback roles: `super_admin`, `admin`, `sales_manager`, `marketing`, `viewer`. The runtime first tries to load permissions from the `roles` / `role_permissions` / `user_roles` tables and falls back to the static map if Supabase is unreachable.
+Static fallback roles: `super_admin`, `admin`, `sales_manager`, `marketing`, `viewer`. Server permission resolution uses `fetchRolePermissions(role, db, true)`: database errors and missing role definitions deny access, and cached permissions are not used. Only a missing `super_admin` definition retains its static fallback (the audited live `super_admin` has no `roles` row). `admin` does not bypass dynamic module permissions.
+
+RBAC remediation (2026-09-28): `docs/RBAC-FIX-2026-09-28.md`. Migration `20260928120000_rbac_api_boundary.sql` makes business writes server-only, restricts browser reads by module + shop, protects role assignments and app Storage buckets. Deploy companion API changes **before** applying it: surveys and marketing channels/contracts now use the guarded service client. Existing role assignments and module grants are not changed. Run `npm run test:rbac` for disposable PostgreSQL policy/privilege regressions; `rls-audit.mjs` alone does not verify role operations.
 
 ---
 
@@ -364,7 +366,7 @@ Conventions: tables `snake_case` plural, columns `snake_case`, functions `snake_
 - Server components by default; `"use client"` only when interactive.
 - Tailwind v4 — styles configured in `globals.css`, not a `tailwind.config.ts`.
 - Icons: `lucide-react`. Toasts: `sonner`. Forms: `react-hook-form` + `zod`.
-- API routes: validate input with Zod, return `{ error, details? }` on failure, use `createSupabaseServerClient()` for user-scoped calls and `supabaseAdmin()` for service-role/webhook calls.
+- API routes: validate input with Zod, return `{ error, details? }` on failure. Business reads/writes through `supabaseAdmin()` must first pass authentication, module/operation permissions and tenant checks. Use the session client for authentication; browser RLS is an additional read boundary.
 
 ---
 

@@ -26,7 +26,7 @@ import {
  *   receivables  — хугацаа хэтэрсэн төлбөр (payment_schedules) + нийт үлдэгдэл
  *   inventory    — блок бүрийн үлдэгдэл байр (property_block_summary)
  *
- * Эрх: admin / super_admin, эсвэл `reports` модультай хэрэглэгч.
+ * Эрх: super_admin, эсвэл `reports` модультай хэрэглэгч.
  * Хүснэгт/багана дутуу орчинд (миграци хийгдээгүй) тухайн хэсэг хоосон буцаж
  * `missing`-д нэр нь орно — 500 хэзээ ч буцахгүй.
  */
@@ -36,9 +36,10 @@ export async function GET(request: NextRequest) {
         if (!authShop) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const perms = await resolvePermissions();
+        if (!perms) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         const role = perms?.role || 'viewer';
         const modules = perms?.permissions.modules || [];
-        const allowed = role === 'admin' || role === 'super_admin' || modules.includes('reports');
+        const allowed = role === 'super_admin' || modules.includes('reports');
         if (!allowed) return NextResponse.json({ error: 'Эрх хүрэлцэхгүй' }, { status: 403 });
 
         const { searchParams } = new URL(request.url);

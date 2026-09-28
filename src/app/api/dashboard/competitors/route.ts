@@ -1,6 +1,6 @@
+import { requireModule, requireModuleWrite, requireModuleDelete } from '@/lib/auth/require-permission';
 import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
 // DELETE — id-аар устгах
 export async function DELETE(request: NextRequest) {
     try {
-        const denied = await requireModuleWrite('marketing-roi');
+        const denied = await requireModuleDelete('marketing-roi');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });

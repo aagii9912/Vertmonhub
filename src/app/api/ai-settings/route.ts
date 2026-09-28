@@ -1,3 +1,4 @@
+import { requireModule, requireModuleWrite, requireModuleDelete } from '@/lib/auth/require-permission';
 /**
  * AI Settings API
  * CRUD operations for FAQ, Quick Replies, Slogans, and AI Stats
@@ -7,10 +8,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
+import { z } from 'zod';
+
+const UPDATE_SCHEMAS = {
+    faqs: z.object({ question: z.string().min(1), answer: z.string().min(1), category: z.string(), sort_order: z.number().int(), is_active: z.boolean() }).partial().strict(),
+    quick_replies: z.object({ name: z.string().min(1), trigger_words: z.array(z.string()), response: z.string(), is_exact_match: z.boolean(), is_active: z.boolean() }).partial().strict(),
+    slogans: z.object({ slogan: z.string().min(1), usage_context: z.string(), is_active: z.boolean() }).partial().strict(),
+};
 
 // GET - Fetch all AI settings (FAQs, Quick Replies, Slogans, Stats)
 export async function GET(request: NextRequest) {
     try {
+        const denied = await requireModule('ai-settings');
+        if (denied) return denied;
         const shop = await getUserShop();
 
         if (!shop) {
@@ -115,6 +125,8 @@ export async function GET(request: NextRequest) {
 // POST - Create new FAQ, Quick Reply, or Slogan
 export async function POST(request: NextRequest) {
     try {
+        const denied = await requireModuleWrite('ai-settings');
+        if (denied) return denied;
         const shop = await getUserShop();
 
         if (!shop) {
@@ -184,6 +196,8 @@ export async function POST(request: NextRequest) {
 // PATCH - Update FAQ, Quick Reply, or Slogan
 export async function PATCH(request: NextRequest) {
     try {
+        const denied = await requireModuleWrite('ai-settings');
+        if (denied) return denied;
         const shop = await getUserShop();
 
         if (!shop) {
@@ -220,7 +234,7 @@ export async function PATCH(request: NextRequest) {
 
         const { data: updated, error } = await supabase
             .from(tableName)
-            .update({ ...data, updated_at: new Date().toISOString() })
+            .update({ ...UPDATE_SCHEMAS[type as keyof typeof UPDATE_SCHEMAS].parse(data), updated_at: new Date().toISOString() })
             .eq('id', id)
             .eq('shop_id', shop.id) // Security: only update own shop's items
             .select()
@@ -230,6 +244,7 @@ export async function PATCH(request: NextRequest) {
 
         return NextResponse.json({ success: true, data: updated });
     } catch (error) {
+        if (error instanceof z.ZodError) return NextResponse.json({ error: 'Буруу өгөгдөл', details: error.flatten() }, { status: 400 });
         return safeErrorResponse(error, 'AI тохиргоо шинэчлэх үед алдаа гарлаа');
     }
 }
@@ -237,6 +252,8 @@ export async function PATCH(request: NextRequest) {
 // DELETE - Remove FAQ, Quick Reply, or Slogan
 export async function DELETE(request: NextRequest) {
     try {
+        const denied = await requireModuleDelete('ai-settings');
+        if (denied) return denied;
         const shop = await getUserShop();
 
         if (!shop) {

@@ -1,3 +1,4 @@
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/auth/auth';
 import { getAccessibleShopIds } from '@/lib/auth/supabase-auth';
@@ -12,6 +13,8 @@ import { encryptToken, decryptToken } from '@/lib/crypto/tokens';
  */
 export async function POST(request: NextRequest) {
     try {
+        const denied = await requireModuleWrite('marketing-roi');
+        if (denied) return denied;
         const userId = await getAuthUser();
         if (!userId) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });

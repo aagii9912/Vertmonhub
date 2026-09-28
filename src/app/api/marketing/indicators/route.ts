@@ -1,8 +1,8 @@
+import { requireModule, requireModuleWrite, requireModuleDelete } from '@/lib/auth/require-permission';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { addMarketIndicator } from '@/lib/services/MarketingOps';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logger } from '@/lib/utils/logger';
@@ -30,6 +30,8 @@ function isMissingTable(error: { code?: string; message?: string } | null): bool
 
 export async function GET() {
     try {
+        const denied = await requireModule('marketing-roi');
+        if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
             return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
@@ -59,7 +61,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('marketing-roi');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {
@@ -96,7 +98,7 @@ export async function POST(request: NextRequest) {
 
 export async function DELETE(request: NextRequest) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleDelete('marketing-roi');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {

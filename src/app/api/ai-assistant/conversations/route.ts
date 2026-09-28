@@ -1,6 +1,8 @@
+import { requireModule } from '@/lib/auth/require-permission';
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveApiUser } from '@/lib/auth/resolve-user';
+import { assertShopAccess } from '@/lib/auth/supabase-auth';
 
 /**
  * GET /api/ai-assistant/conversations
@@ -8,6 +10,8 @@ import { resolveApiUser } from '@/lib/auth/resolve-user';
  */
 export async function GET(req: Request) {
     try {
+        const denied = await requireModule('ai-assistant');
+        if (denied) return denied;
         const user = await resolveApiUser();
         if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -17,6 +21,9 @@ export async function GET(req: Request) {
         const shopId = searchParams.get('shopId');
         if (!shopId) {
             return NextResponse.json({ error: 'shopId is required' }, { status: 400 });
+        }
+        if (!await assertShopAccess(shopId)) {
+            return NextResponse.json({ error: 'Энэ төсөлд хандах эрх алга' }, { status: 403 });
         }
 
         const db = supabaseAdmin();
@@ -46,6 +53,8 @@ export async function GET(req: Request) {
  */
 export async function POST(req: Request) {
     try {
+        const denied = await requireModule('ai-assistant');
+        if (denied) return denied;
         const user = await resolveApiUser();
         if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -54,6 +63,9 @@ export async function POST(req: Request) {
         const { shopId, title, mode } = await req.json();
         if (!shopId) {
             return NextResponse.json({ error: 'shopId is required' }, { status: 400 });
+        }
+        if (typeof shopId !== 'string' || !await assertShopAccess(shopId)) {
+            return NextResponse.json({ error: 'Энэ төсөлд хандах эрх алга' }, { status: 403 });
         }
 
         const db = supabaseAdmin();

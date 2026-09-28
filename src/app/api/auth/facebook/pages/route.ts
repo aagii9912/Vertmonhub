@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 
 interface FacebookPage {
   id: string;
@@ -14,6 +15,8 @@ interface FacebookPage {
 // GET - Fetch pages from cookie
 export async function GET() {
   try {
+    const denied = await requireModuleWrite('marketing-roi');
+    if (denied) return denied;
     const cookieStore = await cookies();
     const pagesCookie = cookieStore.get('fb_pages');
 
@@ -45,6 +48,8 @@ export async function GET() {
 // POST - Select a page and save to shop
 export async function POST(request: NextRequest) {
   try {
+    const denied = await requireModuleWrite('marketing-roi');
+    if (denied) return denied;
     const { pageId } = await request.json();
 
     if (!pageId) {

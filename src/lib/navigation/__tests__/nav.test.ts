@@ -8,9 +8,18 @@ import {
     findNavItem,
     getBreadcrumb,
     getNavTitle,
+    getRouteModule,
 } from '../nav';
 
 describe('nav v2 — бүтэц', () => {
+    it('direct URLs retain module boundaries including aliases and nested routes', () => {
+        expect(getRouteModule('/dashboard/marketing-roi')).toBe('marketing-roi');
+        expect(getRouteModule('/dashboard/competitor-research')).toBe('marketing-roi');
+        expect(getRouteModule('/dashboard/properties/fixture-id')).toBe('properties');
+        expect(getRouteModule('/dashboard/finance/reports')).toBe('finance');
+        expect(getRouteModule('/dashboard/tasks')).toBe('dashboard');
+        expect(getRouteModule('/dashboard/leadsX')).toBeUndefined();
+    });
     it('үндсэн цэс яг 8 зүйлтэй, өдрийн урсгалын дарааллаар', () => {
         expect(PRIMARY_NAV.map((i) => i.name)).toEqual([
             'Өнөөдөр', 'Лид', 'Уулзалт', 'Гэрээ', 'Байр', 'Inbox', 'Тайлан', 'Маркетинг',

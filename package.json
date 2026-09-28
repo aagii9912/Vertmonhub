@@ -16,6 +16,7 @@
     "test:coverage": "vitest run --coverage",
     "test:workflow": "playwright test --config=playwright.workflow.config.ts",
     "test:payments": "node scripts/test-atomic-payments.mjs && node scripts/test-atomic-vendor-payments.mjs",
+    "test:rbac": "node scripts/test-rbac.mjs",
     "typecheck": "tsc --noEmit",
     "test:agent": "./scripts/agent-browser-test.sh"
   },

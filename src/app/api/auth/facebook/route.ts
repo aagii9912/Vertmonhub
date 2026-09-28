@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 
 // Facebook OAuth - Start
 export async function GET(request: NextRequest) {
+  const denied = await requireModuleWrite('marketing-roi');
+  if (denied) return denied;
   const appId = process.env.FACEBOOK_APP_ID?.trim();
 
   if (!appId) {
@@ -64,4 +67,3 @@ export async function GET(request: NextRequest) {
   });
   return response;
 }
-

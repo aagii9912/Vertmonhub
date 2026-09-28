@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getUserId, supabaseAdmin } from '@/lib/auth/supabase-auth';
+import { requireModuleWrite } from '@/lib/auth/require-permission';
+import { CreateShopSchema, validateBody } from '@/lib/validations/schemas';
 
 // GET /api/user/shops - Get all shops for the current user
 export async function GET() {
@@ -44,18 +46,17 @@ export async function GET() {
 // POST /api/user/shops - Create a new shop for the current user
 export async function POST(request: Request) {
     try {
+        const denied = await requireModuleWrite('settings');
+        if (denied) return denied;
         const userId = await getUserId();
 
         if (!userId) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const body = await request.json();
-        const { name, owner_name, phone } = body;
-
-        if (!name) {
-            return NextResponse.json({ error: 'Shop name is required' }, { status: 400 });
-        }
+        const validation = validateBody(CreateShopSchema, await request.json());
+        if (!validation.success) return validation.response;
+        const { name, owner_name, phone } = validation.data;
 
         const supabase = supabaseAdmin();
 

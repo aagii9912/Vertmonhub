@@ -14,7 +14,7 @@ const API_ROOT = path.join(process.cwd(), 'src', 'app', 'api');
 
 /** Нийтэд нээлттэй (эсвэл өөрийн гарын үсэг/токеноор хамгаалагдсан) route-ууд. */
 const PUBLIC_ROUTES: Record<string, string> = {
-    'auth': 'нэвтрэх урсгал (login/callback/…)',
+    'auth/login': 'нэвтрэх урсгал; Meta integration endpoints require marketing permission',
     'health': 'health probe (нууц мэдээлэлгүй)',
     'docs': 'нийтийн API баримт',
     'push/vapid': 'VAPID public key',
@@ -23,8 +23,9 @@ const PUBLIC_ROUTES: Record<string, string> = {
     'meta/data-deletion': 'Meta signed_request HMAC',
     'marketing/facebook/leadgen': 'Meta leadgen signature',
     'leads': 'гадаад landing page-ийн лид intake (Turnstile + origin + rate limit)',
+    'integrations/elysium/leads': 'сервер хоорондын intake: ELYSIUM_LEAD_SYNC_SECRET Bearer token (safeEqual)',
     'feedback': 'нийтийн feedback widget',
-    'surveys/[id]': 'судалгааны нийтийн хариулт (anon client + RLS)',
+    'surveys/[id]': 'active survey online responses are public; staff/offline/summary paths have explicit RBAC tests',
 };
 
 const GATE = /\b(requireModule|requireAnyModule|requireModuleWrite|requireModuleDelete|requireWrite|requireDelete|resolvePermissions|getUserShop|getUserId|getAuthUser|resolveApiUser|prepareAssistantRequest|getAuthUserShop|getAdminUser|requireAdmin|isAuthorizedCron|verifyWebhookSignature|assertShopAccess)\s*\(/;

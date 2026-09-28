@@ -191,7 +191,7 @@ export const SECONDARY_ROUTES: SecondaryRoute[] = [
     { name: 'Худалдан авалт', href: '/dashboard/procurement', icon: ShoppingCart, module: 'procurement', group: 'Санхүү' },
 
     { name: 'Судалгаа', href: '/dashboard/surveys', icon: ClipboardList, module: 'surveys', group: 'Судалгаа' },
-    { name: 'Өрсөлдөгчийн судалгаа', href: '/dashboard/competitor-research', icon: Search, module: 'reports', group: 'Судалгаа' },
+    { name: 'Өрсөлдөгчийн судалгаа', href: '/dashboard/competitor-research', icon: Search, module: 'marketing-roi', group: 'Судалгаа' },
 
     { name: 'Сурталчилгаа', href: '/marketing/ads', icon: Target, module: 'marketing-roi', group: 'Маркетинг' },
     { name: 'Маркетингийн аналитик', href: '/marketing/analytics', icon: Award, module: 'marketing-roi', group: 'Маркетинг' },
@@ -222,6 +222,17 @@ export const MOBILE_TABS: NavItem[] = [
 /* ------------------------------------------------------------------ */
 
 const ALL_ITEMS: NavItem[] = [...PRIMARY_NAV, ...BOTTOM_NAV];
+const ROUTE_MODULES = [
+    ...SECONDARY_ROUTES,
+    ...ALL_ITEMS.flatMap(item => [item, ...(item.children ?? []).map(child => ({ ...child, module: item.module }))]),
+];
+
+/** Direct URLs use the same module as navigation; the longest route wins. */
+export function getRouteModule(pathname: string): string | undefined {
+    return ROUTE_MODULES
+        .filter(item => pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href + '/')))
+        .sort((a, b) => b.href.length - a.href.length)[0]?.module;
+}
 
 /**
  * Тухайн зам энэ цэсэнд харьяалагдах эсэх.

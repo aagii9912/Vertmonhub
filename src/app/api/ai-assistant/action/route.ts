@@ -26,10 +26,11 @@ export async function POST(req: Request) {
         const adminDb = supabaseAdmin();
 
         // Дүр тодорхойлох — ганц эх сурвалж user_roles (`admins` хүснэгт prod-д байхгүй)
-        const { data: roleRow } = await adminDb
+        const { data: roleRow, error: roleError } = await adminDb
             .from('user_roles').select('role').eq('user_id', resolvedUser.id).maybeSingle();
+        if (roleError) throw roleError;
         const roleName = roleRow?.role || 'viewer';
-        const permissions = await fetchRolePermissions(roleName);
+        const permissions = await fetchRolePermissions(roleName, adminDb, true);
 
         if (!permissions.modules.includes('ai-assistant')) {
             return NextResponse.json({ error: 'AI Orchestrator ашиглах эрх танд алга' }, { status: 403 });

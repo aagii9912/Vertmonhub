@@ -21,7 +21,7 @@ vi.mock('@/lib/auth/supabase-auth', () => ({
     }),
 }));
 vi.mock('@/lib/rbac', () => ({
-    fetchRolePermissions: (role: string) => fetchRolePermissions(role),
+    fetchRolePermissions: (role: string, client: unknown, strict: boolean) => fetchRolePermissions(role, client, strict),
 }));
 
 import {
@@ -51,7 +51,7 @@ describe('resolvePermissions', () => {
         roleRow.mockReturnValue({ data: null });
         const p = await resolvePermissions();
         expect(p?.role).toBe('viewer');
-        expect(fetchRolePermissions).toHaveBeenCalledWith('viewer');
+        expect(fetchRolePermissions).toHaveBeenCalledWith('viewer', expect.anything(), true);
     });
 });
 

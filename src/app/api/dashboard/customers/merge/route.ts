@@ -1,6 +1,6 @@
+import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { MergeCustomersSchema, validateBody } from '@/lib/validations/schemas';
@@ -15,7 +15,7 @@ import { mergeCustomers } from '@/lib/services/CustomerOps';
  */
 export async function POST(request: NextRequest) {
     try {
-        const denied = await requireWrite();
+        const denied = await requireModuleWrite('customers');
         if (denied) return denied;
         const authShop = await getUserShop();
         if (!authShop) {

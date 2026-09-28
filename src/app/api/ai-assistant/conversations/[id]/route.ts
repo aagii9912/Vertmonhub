@@ -1,6 +1,8 @@
+import { requireModule } from '@/lib/auth/require-permission';
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveApiUser } from '@/lib/auth/resolve-user';
+import { assertShopAccess, getAccessibleShopIds } from '@/lib/auth/supabase-auth';
 
 interface RouteParams {
     params: Promise<{ id: string }>;
@@ -12,6 +14,8 @@ interface RouteParams {
  */
 export async function GET(req: Request, { params }: RouteParams) {
     try {
+        const denied = await requireModule('ai-assistant');
+        if (denied) return denied;
         const { id } = await params;
         const user = await resolveApiUser();
         if (!user) {
@@ -23,11 +27,11 @@ export async function GET(req: Request, { params }: RouteParams) {
         // Verify ownership
         const { data: conv } = await db
             .from('ai_conversations')
-            .select('id, user_id, title, mode')
+            .select('id, user_id, shop_id, title, mode')
             .eq('id', id)
             .single();
 
-        if (!conv || conv.user_id !== user.id) {
+        if (!conv || conv.user_id !== user.id || !conv.shop_id || !await assertShopAccess(conv.shop_id)) {
             return NextResponse.json({ error: 'Not found' }, { status: 404 });
         }
 
@@ -71,6 +75,8 @@ export async function GET(req: Request, { params }: RouteParams) {
  */
 export async function PATCH(req: Request, { params }: RouteParams) {
     try {
+        const denied = await requireModule('ai-assistant');
+        if (denied) return denied;
         const { id } = await params;
         const user = await resolveApiUser();
         if (!user) {
@@ -78,16 +84,19 @@ export async function PATCH(req: Request, { params }: RouteParams) {
         }
 
         const { title } = await req.json();
-        if (!title || !title.trim()) {
+        if (typeof title !== 'string' || !title.trim()) {
             return NextResponse.json({ error: 'Title is required' }, { status: 400 });
         }
 
+        const shopIds = [...await getAccessibleShopIds(user.id)];
+        if (!shopIds.length) return NextResponse.json({ error: 'Not found' }, { status: 404 });
         const db = supabaseAdmin();
         const { data, error } = await db
             .from('ai_conversations')
             .update({ title: title.trim() })
             .eq('id', id)
             .eq('user_id', user.id)
+            .in('shop_id', shopIds)
             .select('id, title')
             .single();
 
@@ -108,18 +117,23 @@ export async function PATCH(req: Request, { params }: RouteParams) {
  */
 export async function DELETE(req: Request, { params }: RouteParams) {
     try {
+        const denied = await requireModule('ai-assistant');
+        if (denied) return denied;
         const { id } = await params;
         const user = await resolveApiUser();
         if (!user) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
+        const shopIds = [...await getAccessibleShopIds(user.id)];
+        if (!shopIds.length) return NextResponse.json({ error: 'Not found' }, { status: 404 });
         const db = supabaseAdmin();
         const { error } = await db
             .from('ai_conversations')
             .delete()
             .eq('id', id)
-            .eq('user_id', user.id);
+            .eq('user_id', user.id)
+            .in('shop_id', shopIds);
 
         if (error) {
             console.error('Failed to delete conversation:', error);
