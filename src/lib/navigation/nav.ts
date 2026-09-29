@@ -160,6 +160,7 @@ export const PRIMARY_NAV: NavItem[] = [
             { name: 'ROI', href: '/dashboard/marketing-roi' },
             { name: 'Сувгууд', href: '/marketing/sources' },
             { name: 'Кампанит ажил', href: '/marketing/campaigns' },
+            { name: 'Newsletter', href: '/marketing/newsletter' },
         ],
     },
 ];
@@ -203,6 +204,7 @@ export const SECONDARY_ROUTES: SecondaryRoute[] = [
     { name: 'Маркетингийн аналитик', href: '/marketing/analytics', icon: Award, module: 'marketing-roi', group: 'Маркетинг' },
     { name: 'Контентийн календарь', href: '/marketing/calendar', icon: Calendar, module: 'marketing-roi', group: 'Маркетинг' },
     { name: 'Сошиал', href: '/marketing/social', icon: Share2, module: 'marketing-roi', group: 'Маркетинг' },
+    { name: 'Email / Newsletter', href: '/marketing/newsletter', icon: Mail, module: 'marketing-roi', group: 'Маркетинг', keywords: ['resend', 'имэйл', 'товхимол'] },
     { name: 'Мессеж', href: '/marketing/messaging', icon: Mail, module: 'marketing-roi', group: 'Маркетинг' },
     { name: 'Брэнд', href: '/marketing/brand', icon: Palette, module: 'marketing-roi', group: 'Маркетинг' },
     { name: 'Вэб', href: '/marketing/analytics', icon: Globe, module: 'marketing-roi', group: 'Маркетинг' },

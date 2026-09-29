@@ -38,7 +38,7 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     const isDev = process.env.NODE_ENV === 'development';
-    return [
+    const rules = [
       {
         source: '/(.*)',
         headers: [
@@ -84,6 +84,13 @@ const nextConfig: NextConfig = {
         ],
       },
     ];
+    // The locked newsletter iframe previews user-provided HTTPS images.
+    // Broaden only this page's image sources; keep all other CSP directives.
+    const policy = rules[0].headers.find(header => header.key === 'Content-Security-Policy')!.value;
+    return [...rules, {
+      source: '/marketing/newsletter',
+      headers: [{ key: 'Content-Security-Policy', value: policy.replace(/img-src [^;]+/, "img-src 'self' data: blob: https:") }],
+    }];
   },
 };
 
