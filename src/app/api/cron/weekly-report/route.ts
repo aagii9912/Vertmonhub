@@ -84,7 +84,7 @@ async function run(request: Request) {
 
                 await sendPushNotification(shop.id, {
                     title: '🗓 Долоо хоногийн тайлан',
-                    body: `Шинэ лийд: ${newLeads} · Уулзалт: ${meetings} · Хожсон: ${wonLeads} · Шинэ гэрээ: ${newContracts}`,
+                    body: 'CRM шинэчлэгдлээ. Өөрийн долоо хоногийн тайланг шалгана уу.',
                     url: '/dashboard/reports/leads',
                     tag,
                 });

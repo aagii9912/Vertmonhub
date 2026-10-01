@@ -1,3 +1,4 @@
+import { applyLeadScope, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { NextRequest, NextResponse } from 'next/server';
 import { ubParts } from '@/lib/utils/date';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
@@ -112,6 +113,7 @@ export async function GET(request: NextRequest) {
         }
 
         const db = supabaseAdmin();
+        const scope = await resolveSalesProjectScope(db, authShop.id);
         const [perms, identity] = await Promise.all([
             resolvePermissions(),
             resolveManagerIdentity(db, authShop.id, uid),
@@ -155,20 +157,20 @@ export async function GET(request: NextRequest) {
                     .order('created_at', { ascending: false })
                     .limit(500);
                 if (excludeDeleted) q = q.is('deleted_at', null);
-                return q;
+                return applyLeadScope(q, scope);
             }),
             // Миний уулзалтууд (өнөөдрөөс эхлэн — өнөөдрийн таск + 7 хоногийн KPI + ойрын жагсаалт)
             safeManagerRows('viewings', missing, ({ excludeDeleted }) => {
                 let q = db
                     .from('property_viewings')
-                    .select('id, scheduled_at, status, agent_notes, properties(name), leads(customer_name)')
+                    .select(scope.projectIds === null ? 'id, scheduled_at, status, agent_notes, properties(name), leads(customer_name)' : 'id,scheduled_at,status,agent_notes,properties(name),leads!inner(customer_name,project_id,sales_manager_name)')
                     .eq('shop_id', authShop.id)
                     .eq('sales_manager_name', targetName)
                     .gte('scheduled_at', dayStart.toISOString())
                     .order('scheduled_at', { ascending: true })
                     .limit(100);
                 if (excludeDeleted) q = q.is('deleted_at', null);
-                return q;
+                return applyLeadScope(q, scope, 'leads.project_id', 'leads.sales_manager_name');
             }),
             // Миний гэрээнүүд (идэвхтэй/хугацаа хэтэрсэн KPI)
             safeManagerRows('contracts', missing, ({ excludeDeleted }) => {
@@ -297,6 +299,7 @@ export async function GET(request: NextRequest) {
             revenueTrend,
         });
     } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         return safeErrorResponse(error, 'Хувийн дашбоардын мэдээлэл унших алдаа');
     }
 }

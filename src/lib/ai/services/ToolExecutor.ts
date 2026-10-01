@@ -5,7 +5,7 @@
 
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
-import { sendPushNotification } from '@/lib/notifications';
+import { sendLeadPushNotification, type NotificationPayload } from '@/lib/notifications';
 import type { ChatContext, ImageAction } from '@/types/ai';
 import type {
     SearchPropertiesArgs,
@@ -45,6 +45,16 @@ export interface ToolExecutionContext {
     customerName?: string;
     properties?: ChatContext['properties'];
     notifySettings?: ChatContext['notifySettings'];
+}
+
+async function notifyCustomer(context: ToolExecutionContext, payload: NotificationPayload) {
+    if (!context.customerId) return;
+    const result = await supabaseAdmin().from('leads').select('id').eq('shop_id', context.shopId)
+        .eq('customer_id', context.customerId).is('deleted_at', null).limit(2);
+    if (result.error) return;
+    // Олон төсөлд бүртгэлтэй эсвэл лидгүй харилцагчийг админ тодруулна.
+    const leadId = result.data?.length === 1 ? result.data[0].id : null;
+    await sendLeadPushNotification(context.shopId, leadId, payload);
 }
 
 // ============================================
@@ -460,7 +470,7 @@ export async function executeScheduleViewing(
     }
 
     // Send notification to owner
-    await sendPushNotification(context.shopId, {
+    await sendLeadPushNotification(context.shopId, leadId, {
         title: '🏠 Шинэ уулзалт товлогдлоо',
         body: `${context.customerName || 'Хэрэглэгч'} ${scheduledAt.toLocaleDateString('mn-MN')} ${hour}:00 цагт уулзалт хийхийг хүсэж байна.`,
         url: `/dashboard/leads/${leadId}`,
@@ -547,7 +557,7 @@ export async function executeCreateLead(
     }
 
     // Notify owner
-    await sendPushNotification(context.shopId, {
+    await sendLeadPushNotification(context.shopId, newLead.id, {
         title: '🆕 Шинэ сонирхогч',
         body: `${context.customerName || 'Хэрэглэгч'} үл хөдлөхийн талаар сонирхож байна.`,
         url: `/dashboard/leads/${newLead.id}`,
@@ -614,7 +624,7 @@ export async function executeCollectContact(
             .eq('shop_id', context.shopId);
     }
 
-    await sendPushNotification(context.shopId, {
+    await notifyCustomer(context, {
         title: '📍 Холбоо барих мэдээлэл',
         body: `${name || 'Хэрэглэгч'}: ${phone || email || ''}`,
         url: `/dashboard/customers/${context.customerId}`,
@@ -647,7 +657,7 @@ export async function executeRequestSupport(
             .eq('shop_id', context.shopId);
     }
 
-    await sendPushNotification(context.shopId, {
+    await notifyCustomer(context, {
         title: '📞 Холбогдох хүсэлт',
         body: `${(context.customerName || 'Хэрэглэгч').slice(0, 60)}: ${reason || 'Оператортой холбогдохыг хүсч байна'}`,
         url: `/dashboard/inbox/messages?customer=${context.customerId}`,
@@ -890,7 +900,7 @@ export async function executeLogServiceRequest(
     }
 
     // Notify manager
-    await sendPushNotification(context.shopId, {
+    await notifyCustomer(context, {
         title: args.type === 'complaint' ? '🔴 Шинэ гомдол' : '📩 Шинэ хүсэлт',
         body: `${context.customerName || 'Хэрэглэгч'}: ${args.subject}`,
         url: '/dashboard/customer-service',

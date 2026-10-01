@@ -6,7 +6,7 @@ import { sendPushNotification } from '@/lib/notifications';
 
 /**
  * AI өдрийн тойм (proactive digest). Push бүхий төсөл бүрт өнөөдрийн шинэ лийд,
- * хугацаа хэтэрсэн гэрээ, удахгүйх уулзалтын товч мэдээллийг push-аар илгээнэ.
+ * хугацаа хэтэрсэн гэрээ, удахгүйх уулзалт байгаа үед ерөнхий сануулга илгээнэ.
  * Өдөрт нэг удаа (vercel.json cron). CRON_SECRET-ээр хамгаалагдсан.
  */
 async function run(request: Request) {
@@ -37,7 +37,7 @@ async function run(request: Request) {
 
             await sendPushNotification(shopId, {
                 title: '📊 Өдрийн тойм',
-                body: `Шинэ лийд: ${newLeads} · Хугацаа хэтэрсэн гэрээ: ${overdue} · Удахгүйх уулзалт: ${upcoming}`,
+                body: 'CRM шинэчлэгдлээ. Өөрийн ажлын самбарыг шалгана уу.',
                 url: '/dashboard',
                 tag,
             });

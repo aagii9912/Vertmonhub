@@ -1,3 +1,4 @@
+import { applyLeadScope, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { requireModule } from '@/lib/auth/require-permission';
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
@@ -41,6 +42,7 @@ export async function GET(request: NextRequest) {
     }
 
     const supabase = supabaseAdmin();
+        const scope = await resolveSalesProjectScope(supabase, authShop.id);
     const shopId = authShop.id;
     const periodStart = getStartOfPeriod(period);
     const periodEnd = (() => {
@@ -60,19 +62,19 @@ export async function GET(request: NextRequest) {
       .eq('category', 'residential');
 
     // Leads count
-    const { count: totalLeads } = await supabase
+    const { count: totalLeads } = await applyLeadScope(supabase
       .from('leads')
       .select('*', { count: 'exact', head: true })
-      .eq('shop_id', shopId);
+      .eq('shop_id', shopId).is('deleted_at', null), scope);
 
     // Viewings scheduled in this period (scheduled_at-аар тоолно, created_at биш —
     // "Уулзалт (сар)" = тухайн хугацаанд товлогдсон уулзалтын тоо)
-    const { count: monthlyViewings } = await supabase
+    const { count: monthlyViewings } = await applyLeadScope(supabase
       .from('property_viewings')
-      .select('*', { count: 'exact', head: true })
+      .select(scope.projectIds === null ? '*' : '*,leads!inner(project_id,sales_manager_name)', { count: 'exact', head: true })
       .eq('shop_id', shopId)
       .gte('scheduled_at', periodStart.toISOString())
-      .lt('scheduled_at', periodEnd.toISOString());
+      .lt('scheduled_at', periodEnd.toISOString()), scope, 'leads.project_id', 'leads.sales_manager_name');
 
     // Pending (active) contracts
     const { count: pendingContracts } = await supabase
@@ -88,22 +90,22 @@ export async function GET(request: NextRequest) {
       .eq('shop_id', shopId);
 
     // Recent leads
-    const { data: recentLeads } = await supabase
+    const { data: recentLeads } = await applyLeadScope(supabase
       .from('leads')
       .select('*')
       .eq('shop_id', shopId)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
-      .limit(10);
+      .limit(10), scope);
 
     // Upcoming viewings (next scheduled)
-    const { data: upcomingViewings } = await supabase
+    const { data: upcomingViewings } = await applyLeadScope(supabase
       .from('property_viewings')
-      .select('*, properties(name)')
+      .select(scope.projectIds === null ? '*,properties(name)' : '*,properties(name),leads!inner(project_id,sales_manager_name)')
       .eq('shop_id', shopId)
       .gte('scheduled_at', new Date().toISOString())
       .order('scheduled_at', { ascending: true })
-      .limit(3);
+      .limit(3), scope, 'leads.project_id', 'leads.sales_manager_name');
 
     // Recent chats (grouped by customer)
     const { data: recentChats } = await supabase
@@ -180,6 +182,7 @@ export async function GET(request: NextRequest) {
       unansweredCount,
     });
   } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
     return safeErrorResponse(error, 'Dashboard stats унших алдаа');
   }
 }

@@ -8,6 +8,7 @@ import { logger } from '@/lib/utils/logger';
 import { sendTextMessage } from '@/lib/facebook/messenger';
 import { decryptToken } from '@/lib/crypto/tokens';
 import { recomputeCustomerScore } from '@/lib/services/CustomerScoringService';
+import { resolveSalesProjectScope, type SalesProjectScope } from '@/lib/sales/project-scope';
 
 export async function addCustomerTag(db: SupabaseClient, shopId: string, customerId: string, tag: string) {
     const { data: customer } = await db.from('customers').select('tags').eq('id', customerId).eq('shop_id', shopId).single();
@@ -53,7 +54,9 @@ export async function replyToCustomer(db: SupabaseClient, shopId: string, custom
 const CHILD_TABLES = ['leads', 'chat_history', 'property_viewings', 'property_contracts', 'ai_memory', 'customer_surveys', 'service_logs'];
 
 /** Давхардсан хоёр харилцагчийг нэгтгэнэ: duplicate → primary, duplicate устна. */
-export async function mergeCustomers(db: SupabaseClient, shopId: string, primaryId: string, duplicateId: string) {
+export async function mergeCustomers(db: SupabaseClient, shopId: string, primaryId: string, duplicateId: string, scope?: SalesProjectScope) {
+    const salesScope = scope ?? await resolveSalesProjectScope(db, shopId);
+    if (salesScope.projectIds !== null) return { error: 'Харилцагч нэгтгэхэд бусад менежерийн лид өөрчлөгдөх боломжтой тул байгууллагын эрх шаардлагатай', status: 403 as const };
     if (primaryId === duplicateId) return { error: 'Нэг харилцагчийг өөртэй нь нэгтгэх боломжгүй', status: 400 as const };
     const { data: rows } = await db.from('customers').select('*').eq('shop_id', shopId).in('id', [primaryId, duplicateId]);
     const primary = rows?.find((r) => r.id === primaryId);
@@ -62,7 +65,7 @@ export async function mergeCustomers(db: SupabaseClient, shopId: string, primary
 
     const repointWarnings: string[] = [];
     for (const table of CHILD_TABLES) {
-        const { error } = await db.from(table).update({ customer_id: primaryId }).eq('customer_id', duplicateId);
+        const { error } = await db.from(table).update({ customer_id: primaryId }).eq('shop_id', shopId).eq('customer_id', duplicateId);
         if (error) repointWarnings.push(`${table}: ${error.message}`);
     }
     const mergedTags = Array.from(new Set([...(Array.isArray(primary.tags) ? primary.tags : []), ...(Array.isArray(duplicate.tags) ? duplicate.tags : [])]));

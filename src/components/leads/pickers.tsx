@@ -107,15 +107,17 @@ export function ManagerPicker({
     options,
     onChange,
     disabled,
+    projectId,
 }: {
     value: string | null;
     options: ManagerOption[];
     onChange: (name: string | null) => void;
     disabled?: boolean;
+    projectId?: string | null;
 }) {
     const [open, setOpen] = useState(false);
     const [q, setQ] = useState('');
-    const assignable = options.filter(m => m.assignable !== false && m.is_active);
+    const assignable = options.filter(m => m.assignable !== false && m.is_active && (projectId === undefined || !!projectId && m.project_ids?.includes(projectId)));
     const canPick = !disabled && assignable.length > 0;
     const list = assignable.filter((m) => !q || m.name.toLowerCase().includes(q.toLowerCase()));
 

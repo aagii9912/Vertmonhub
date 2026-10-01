@@ -24,7 +24,8 @@ import Page from './page';
 const response = (body: unknown) => ({ ok: true, json: async () => body });
 const data = (target: number, name: string) => ({
     teamTarget: Array(12).fill(target), teamActual: Array(12).fill(0),
-    managers: [{ name, is_active: true, user_id: null, year_actual: 0 }], teamMembers: [],
+    managers: [{ name, is_active: true, user_id: null, year_actual: 0, project_ids: ['elysium'] }], teamMembers: [],
+    projects: [{ id: 'elysium', name: 'Elysium' }, { id: 'mandala', name: 'Mandala' }],
 });
 afterEach(() => vi.unstubAllGlobals());
 
@@ -75,17 +76,20 @@ it('ignores a previous year response after the new year loads', async () => {
 });
 
 it('preserves target drafts when saving roster changes', async () => {
+    const writes: object[] = [];
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
         if (url === '/api/admin/shops') return response({ shops: [{ id: 'shop-a', name: 'Shop A' }] });
-        if (init?.method === 'PUT') return response({ success: true });
+        if (init?.method === 'PUT') { writes.push(JSON.parse(String(init.body))); return response({ success: true }); }
         return response(data(111, 'Manager A'));
     }));
     render(<Page />);
     await screen.findByText('Manager A');
     fireEvent.change(screen.getAllByRole('textbox')[0], { target: { value: '999' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Идэвхтэй жагсаалт хадгалах' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Manager A: Mandala' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Менежерийн бүртгэл хадгалах' }));
     await screen.findByText('Manager A');
     await waitFor(() => expect(screen.getAllByRole('textbox')[0]).toHaveValue('999'));
+    expect(writes).toMatchObject([{ managers: [{ name: 'Manager A', project_ids: ['elysium', 'mandala'] }] }]);
 });
 
 it('preserves roster drafts when saving target changes', async () => {
@@ -98,8 +102,36 @@ it('preserves roster drafts when saving target changes', async () => {
     render(<Page />);
     fireEvent.click(await screen.findByRole('button', { name: /Manager A/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Төлөвлөгөө хадгалах' }));
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Идэвхтэй жагсаалт хадгалах' })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Менежерийн бүртгэл хадгалах' })).toBeEnabled());
     expect(screen.queryByRole('button', { name: /Manager A/ })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Идэвхтэй жагсаалт хадгалах' }));
-    await waitFor(() => expect(writes[1]).toMatchObject({ managers: [{ name: 'Manager A', is_active: false }] }));
+    fireEvent.click(screen.getByRole('button', { name: 'Менежерийн бүртгэл хадгалах' }));
+    await waitFor(() => expect(writes[1]).toMatchObject({ managers: [{ name: 'Manager A', is_active: false, project_ids: ['elysium'] }] }));
+});
+
+it('saves multiple projects without changing another manager membership', async () => {
+    const writes: object[] = [];
+    const roster = {
+        ...data(111, 'Manager A'),
+        managers: [
+            ...data(111, 'Manager A').managers,
+            { name: 'Manager B', is_active: true, user_id: null, year_actual: 0, project_ids: ['mandala'] },
+        ],
+    };
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === '/api/admin/shops') return response({ shops: [{ id: 'shop-a', name: 'Shop A' }] });
+        if (init?.method === 'PUT') { writes.push(JSON.parse(String(init.body))); return response({ success: true }); }
+        return response(roster);
+    }));
+    render(<Page />);
+    expect(await screen.findByRole('checkbox', { name: 'Manager A: Elysium' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Manager A: Mandala' })).not.toBeChecked();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Manager A: Mandala' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Менежерийн бүртгэл хадгалах' }));
+    await waitFor(() => expect(writes).toMatchObject([{
+        shopId: 'shop-a', managers: [
+            { name: 'Manager A', project_ids: ['elysium', 'mandala'] },
+            { name: 'Manager B', project_ids: ['mandala'] },
+        ],
+    }]));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Менежерийн бүртгэл хадгалах' })).toBeEnabled());
 });

@@ -1,3 +1,4 @@
+import { applyLeadScope, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { requireModule } from '@/lib/auth/require-permission';
 import { NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
@@ -19,6 +20,7 @@ export async function GET() {
         }
 
         const supabase = supabaseAdmin();
+        const scope = await resolveSalesProjectScope(supabase, authShop.id);
         const shopId = authShop.id;
 
         const monthStart = new Date();
@@ -31,11 +33,11 @@ export async function GET() {
                 .from('customers')
                 .select('created_at, lifecycle_stage, quality_score, quality_tier, next_followup_at')
                 .eq('shop_id', shopId),
-            supabase
+            applyLeadScope(supabase
                 .from('leads')
                 .select('created_at, converted_at')
                 .eq('shop_id', shopId)
-                .not('converted_at', 'is', null),
+                .not('converted_at', 'is', null), scope),
         ]);
 
         const rows = customers || [];
@@ -85,6 +87,7 @@ export async function GET() {
             },
         });
     } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         logger.error('[Customer Health] error', { error });
         return NextResponse.json({ error: 'Failed to fetch customer health' }, { status: 500 });
     }

@@ -5,6 +5,7 @@ import { resolvePermissions } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { canReadPrivateAttachment, parsePrivateAttachmentUrl, privateAttachmentUrl, PRIVATE_ATTACHMENT_BUCKET } from '@/lib/ai/private-attachments';
+import { ProjectScopeError } from '@/lib/sales/project-scope';
 
 /**
  * POST /api/dashboard/upload — AI туслахын хавсралт (зураг/PDF) upload.
@@ -95,6 +96,7 @@ export async function GET(request: Request) {
             'X-Content-Type-Options': 'nosniff',
         } });
     } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         logger.error('[Upload API] download error:', { error });
         return NextResponse.json({ error: 'Файл татахад алдаа гарлаа' }, { status: 500 });
     }

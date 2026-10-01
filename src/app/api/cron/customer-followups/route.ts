@@ -67,8 +67,8 @@ export async function POST(request: NextRequest) {
 
             // Менежерт нэг товч мэдэгдэл (digest)
             await sendPushNotification(shop.id, {
-                title: '⭐ Дагаж холбогдох харилцагчид',
-                body: `${due.length} чанартай харилцагч удаан хугацаанд чимээгүй байна. Дагаж холбогдоорой.`,
+                title: 'CRM шинэчлэгдлээ',
+                body: 'CRM шинэчлэгдлээ. Өөрийн хариуцсан харилцагчийн дагалтыг шалгана уу.',
                 url: '/dashboard/customers?tier=A',
                 tag: 'customer-followups',
             });

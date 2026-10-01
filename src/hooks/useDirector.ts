@@ -12,14 +12,14 @@ export type { DirectorPayload } from '@/lib/dashboard/director';
  * харагдана (placeholderData) — spinner-гүй шилжилт.
  */
 export function useDirector(year: number, month: number) {
-    const { shop } = useAuth();
+    const { shop, user } = useAuth();
     const shopId = shop?.id;
 
     return useQuery<DirectorPayload>({
-        queryKey: ['director', shopId, year, month],
+        queryKey: ['director', shopId, user?.id, user?.role, year, month],
         queryFn: () => dashboardJson<DirectorPayload>(`/api/dashboard/director?year=${year}&month=${month}`),
-        enabled: !!shopId,
+        enabled: !!shopId && !!user?.id,
         staleTime: 30_000,
-        placeholderData: (prev) => prev,
+        placeholderData: (prev, query) => query?.queryKey[1] === shopId && query?.queryKey[2] === user?.id && query?.queryKey[3] === user?.role ? prev : undefined,
     });
 }

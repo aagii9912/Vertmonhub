@@ -8,10 +8,17 @@ vi.mock('@/lib/auth/require-permission', () => ({ requireModuleWrite: async () =
 vi.mock('@/lib/auth/supabase-auth', () => ({ getUserShop: async () => ({ id: 'shop-a' }), getUserId: async () => 'user-a' }));
 vi.mock('@/lib/sales/manager-identity', () => ({ resolveManagerIdentity: async () => ({ isManager: state.isManager, managerName: 'Менежер' }) }));
 vi.mock('@/lib/leads/activities', () => ({ logLeadActivity: async () => ({ id: 'activity' }) }));
+vi.mock('@/lib/sales/project-scope', () => ({
+    ProjectScopeError: class extends Error {},
+    resolveSalesProjectScope: async () => ({ projectIds: null, managerName: null }),
+    applyLeadScope: (q: unknown) => q,
+    assertProjectManager: async () => {},
+}));
 vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: () => {
     const q: Record<string, unknown> = {};
-    for (const method of ['update', 'eq', 'is', 'in', 'or', 'select']) q[method] = (...args: unknown[]) => { state.calls.push([method, ...args]); return q; };
-    q.maybeSingle = async () => state.result;
+    let writing = false;
+    for (const method of ['update', 'eq', 'is', 'in', 'or', 'select']) q[method] = (...args: unknown[]) => { if (method === 'update') writing = true; state.calls.push([method, ...args]); return q; };
+    q.maybeSingle = async () => writing ? state.result : { data: { id: 'lead', project_id: 'project-a' }, error: null };
     return q;
 } }) }));
 import { POST } from './route';

@@ -6,7 +6,7 @@ import { sendPushNotification } from '@/lib/notifications';
 
 /**
  * Өглөөний лийд сануулга. Push бүхий төсөл бүрт өнөөдөр холбогдох ёстой
- * лийдүүдийг (шинэ + follow-up хугацаа болсон) тоолж менежерүүдэд push илгээнэ.
+ * лийдүүд байгаа үед CRM-ээ шалгах ерөнхий сануулга илгээнэ.
  * Өглөө бүр (vercel.json cron, 00:30 UTC = 08:30 УБ). CRON_SECRET-ээр хамгаалагдсан.
  */
 async function run(request: Request) {
@@ -44,8 +44,8 @@ async function run(request: Request) {
             if (newLeads === 0 && followups === 0) continue;
 
             await sendPushNotification(shopId, {
-                title: '📞 Өнөөдөр холбогдох лийдүүд',
-                body: `Шинэ лийд: ${newLeads} · Дагаж холбогдох: ${followups}`,
+                title: 'CRM шинэчлэгдлээ',
+                body: 'CRM шинэчлэгдлээ. Өөрийн хариуцсан лидүүдийн дараагийн ажлыг шалгана уу.',
                 url: '/dashboard/leads',
                 tag,
             });

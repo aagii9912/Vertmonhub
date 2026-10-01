@@ -8,6 +8,7 @@ import { logAttributionEvent } from '@/lib/marketing/attribution-events';
 import { z } from 'zod';
 import { hasRealContractFields } from '@/lib/leads/contracts';
 import { fetchAllRows } from '@/lib/utils/pagination';
+import { applyLeadScope, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 
 const ConvertSchema = z.object({ conversion_value: z.number().finite().nonnegative().optional() });
 
@@ -34,14 +35,15 @@ export async function POST(
         if (!parsed.success) return NextResponse.json({ error: 'Буруу гэрээний дүн' }, { status: 400 });
 
         const supabase = supabaseAdmin();
+        const scope = await resolveSalesProjectScope(supabase, authShop.id);
 
         // Lead энэ shop-д харьяалагдаж байгааг шалгана
-        const { data: lead, error: leadError } = await supabase
+        const { data: lead, error: leadError } = await applyLeadScope(supabase
             .from('leads')
             .select('id, customer_id, status')
             .eq('id', id)
             .eq('shop_id', authShop.id)
-            .is('deleted_at', null)
+            .is('deleted_at', null), scope)
             .maybeSingle();
 
         if (leadError) throw leadError;
@@ -69,7 +71,7 @@ export async function POST(
             return NextResponse.json({ success: true, contract, message: 'Лид аль хэдийн амжилттай болсон' });
         }
 
-        const { data: updated, error: updateError } = await supabase
+        const { data: updated, error: updateError } = await applyLeadScope(supabase
             .from('leads')
             .update({
                 status: 'closed_won',
@@ -77,7 +79,7 @@ export async function POST(
                 updated_at: new Date().toISOString(),
             })
             .eq('id', id).eq('shop_id', authShop.id).is('deleted_at', null)
-            .eq('status', lead.status)
+            .eq('status', lead.status), scope)
             .select('id').maybeSingle();
 
         if (updateError) {
@@ -112,6 +114,7 @@ export async function POST(
             message: 'Lead-ийг гэрээ болгон хөрвүүллээ',
         });
     } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         logger.error('[Lead Convert] error', { error });
         return NextResponse.json({ error: 'Хөрвүүлэхэд алдаа гарлаа' }, { status: 500 });
     }

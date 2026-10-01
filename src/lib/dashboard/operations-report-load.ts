@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { applyLeadScope, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { ubDateStr, ubDayRange, ubMonthRange, ubParts } from '@/lib/utils/date';
 import {
@@ -10,7 +11,9 @@ import {
 export async function loadOperationsReport(db: SupabaseClient, options: {
     shopId: string; shopName?: string; canReadFinance: boolean;
     from?: unknown; to?: unknown; now?: Date;
+    scope?: SalesProjectScope;
 }) {
+    const scope = options.scope ?? { projectIds: null, managerName: null };
     const now = options.now ?? new Date();
     const { year, month } = ubParts(now);
     const current = ubMonthRange(year, month - 1);
@@ -22,10 +25,10 @@ export async function loadOperationsReport(db: SupabaseClient, options: {
     const meetingEnd = ubDayRange(new Date(`${range.to}T00:00:00+08:00`)).end.toISOString();
     let meetingClassificationAvailable = true;
     const viewingPage = async (from: number, to: number) => {
-        const fetchPage = (withType: boolean) => db.from('property_viewings')
-            .select(`scheduled_at, status${withType ? ', meeting_type' : ''}`)
+        const fetchPage = (withType: boolean) => applyLeadScope(db.from('property_viewings')
+            .select(`scheduled_at, status${withType ? ', meeting_type' : ''}${scope.projectIds === null ? '' : ',leads!inner(project_id,sales_manager_name)'}`)
             .eq('shop_id', options.shopId).is('deleted_at', null)
-            .gte('scheduled_at', meetingStart).lt('scheduled_at', meetingEnd).order('id').range(from, to);
+            .gte('scheduled_at', meetingStart).lt('scheduled_at', meetingEnd).order('id').range(from, to), scope, 'leads.project_id', 'leads.sales_manager_name');
         let result = await fetchPage(meetingClassificationAvailable);
         if (result.error && ['42703', 'PGRST204'].includes(result.error.code) && result.error.message.includes('meeting_type')) {
             meetingClassificationAvailable = false;
@@ -50,9 +53,9 @@ export async function loadOperationsReport(db: SupabaseClient, options: {
         fetchAllRows<OperationsContract>((from, to) => db.from('property_contracts')
             .select('id, contract_date, contract_status, total_price, prepayment_paid_cash, product_type')
             .eq('shop_id', options.shopId).is('deleted_at', null).order('id').range(from, to)),
-        fetchAllRows<OperationsLead>((from, to) => db.from('leads')
+        fetchAllRows<OperationsLead>((from, to) => applyLeadScope(db.from('leads')
             .select('created_at, status, source, sales_manager_name, last_contact_at, next_followup_at, viewing_scheduled_at')
-            .eq('shop_id', options.shopId).is('deleted_at', null).order('id').range(from, to)),
+            .eq('shop_id', options.shopId).is('deleted_at', null).order('id').range(from, to), scope)),
         fetchAllRows<OperationsTarget>((from, to) => db.from('team_sales_targets')
             .select('year, month, target_amount').eq('shop_id', options.shopId)
             .gte('year', Number(range.from.slice(0, 4))).lte('year', Number(range.to.slice(0, 4)))

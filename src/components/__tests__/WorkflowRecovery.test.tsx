@@ -8,12 +8,14 @@ import { openQuickCreate } from '@/lib/navigation/commandPalette';
 
 const mocks = vi.hoisted(() => ({
     refetch: vi.fn(), push: vi.fn(), mutate: vi.fn(), enqueue: vi.fn(), isNetworkError: vi.fn(), toastError: vi.fn(),
+    managers: vi.fn(),
+    role: 'viewer', update: vi.fn(),
     myStats: { data: undefined as unknown, isError: true },
     detail: { data: undefined as unknown, isLoading: false, isError: true, error: new Error('Лид олдсонгүй'), isFetching: false },
 }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries: vi.fn() }) }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: mocks.push }) }));
-vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 'manager-a' }, shop: { id: 'shop-a' } }) }));
+vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 'manager-a', role: mocks.role }, shop: { id: 'shop-a' } }) }));
 vi.mock('@/lib/ai/context', () => ({ useRegisterAiContext: vi.fn() }));
 vi.mock('@/lib/navigation/pageTitle', () => ({ usePageTitle: vi.fn() }));
 vi.mock('@/lib/api/dashboardFetch', () => ({ dashboardMutate: (...args: unknown[]) => mocks.mutate(...args), dashboardFetch: vi.fn() }));
@@ -22,9 +24,10 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: (...args: unknown[]
 vi.mock('@/hooks/useMyStats', () => ({ useMyStats: () => ({ ...mocks.myStats, isLoading: false, error: new Error('Өгөгдөл татаж чадсангүй'), refetch: mocks.refetch }) }));
 vi.mock('@/hooks/useDirector', () => ({ useDirector: () => ({ data: undefined, isLoading: false, isError: true, error: new Error('Өгөгдөл татаж чадсангүй'), refetch: mocks.refetch }) }));
 vi.mock('@/hooks/useLeads', () => ({
-    useLeadProjects: () => ({ data: [] }),
+    useLeadProjects: () => ({ data: [{ id: 'mandala', name: 'Mandala Garden', status: 'active' }, { id: 'elysium', name: 'Elysium', status: 'active' }], isLoading: false }),
+    useManagers: (...args: unknown[]) => { mocks.managers(...args); return { data: [] }; },
     useLeadDetail: () => ({ ...mocks.detail, refetch: mocks.refetch }),
-    useUpdateLead: () => ({ mutate: vi.fn() }), useAddLeadActivity: () => ({ mutateAsync: vi.fn() }),
+    useUpdateLead: () => ({ mutate: mocks.update }), useAddLeadActivity: () => ({ mutateAsync: vi.fn() }),
 }));
 vi.mock('../leads/pickers', () => ({ StatusPicker: () => null, ManagerPicker: () => null }));
 vi.mock('../leads/LeadWorkActions', () => ({ LeadWorkActions: () => null }));
@@ -35,6 +38,7 @@ beforeEach(() => {
     mocks.myStats.isError = true;
     mocks.detail.data = undefined;
     mocks.detail.isError = true;
+    mocks.role = 'viewer';
     mocks.isNetworkError.mockReturnValue(false);
     mocks.mutate.mockResolvedValue({ lead: { id: 'new-lead' } });
 });
@@ -68,7 +72,7 @@ describe('workflow error and recovery states', () => {
 
     it('shows a missing lead error and lets the user close or retry', () => {
         const onClose = vi.fn();
-        render(<LeadPanel leadId="missing" managers={[]} canWrite={false} onClose={onClose} />);
+        render(<LeadPanel leadId="missing" canWrite={false} onClose={onClose} />);
         expect(screen.getByRole('alert')).toHaveTextContent('Лид олдсонгүй');
         fireEvent.click(screen.getByRole('button', { name: 'Хаах' }));
         expect(onClose).toHaveBeenCalledOnce();
@@ -77,7 +81,7 @@ describe('workflow error and recovery states', () => {
     it('identifies a partial lead history without discarding the loaded lead', () => {
         mocks.detail.isError = false;
         mocks.detail.data = { lead: { id: 'lead', customer_name: 'Болд', source: 'other', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null, partial: ['viewings', 'contracts'] };
-        render(<LeadPanel leadId="lead" managers={[]} canWrite={false} />);
+        render(<LeadPanel leadId="lead" canWrite={false} />);
         expect(screen.getByRole('alert')).toHaveTextContent('уулзалт, гэрээ');
         expect(screen.getByRole('heading', { name: 'Болд' })).toBeInTheDocument();
     });
@@ -87,6 +91,7 @@ describe('workflow error and recovery states', () => {
         act(() => openQuickCreate('lead'));
         const input = await screen.findByPlaceholderText('Ж: Г. Энхжин');
         fireEvent.change(input, { target: { value: 'Болд' } });
+        fireEvent.change(screen.getByRole('combobox', { name: 'Төсөл' }), { target: { value: 'mandala' } });
         fireEvent.click(screen.getByRole('button', { name: 'Хадгалаад уулзалт товлох' }));
         await waitFor(() => expect(mocks.push).toHaveBeenCalledWith('/dashboard/viewings?lead=new-lead&new=1'));
     });
@@ -99,6 +104,7 @@ describe('workflow error and recovery states', () => {
         act(() => openQuickCreate('lead'));
         const input = await screen.findByPlaceholderText('Ж: Г. Энхжин');
         fireEvent.change(input, { target: { value: 'Болд' } });
+        fireEvent.change(screen.getByRole('combobox', { name: 'Төсөл' }), { target: { value: 'elysium' } });
         fireEvent.click(screen.getByRole('button', { name: /^Хадгалах/ }));
         await waitFor(() => expect(mocks.toastError).toHaveBeenCalled());
         expect(input).toHaveValue('Болд');
@@ -107,5 +113,43 @@ describe('workflow error and recovery states', () => {
         fireEvent.click(screen.getByRole('button', { name: /^Хадгалах/ }));
         await waitFor(() => expect(mocks.mutate).toHaveBeenCalledTimes(2));
         expect(mocks.mutate.mock.calls[1][2].client_request_id).toBe(firstPayload.client_request_id);
+        expect(mocks.mutate.mock.calls[1][2].project_id).toBe('elysium');
+    });
+
+    it('requires a project before quick lead creation', async () => {
+        render(<QuickCreateSheet />);
+        act(() => openQuickCreate('lead'));
+        fireEvent.change(await screen.findByPlaceholderText('Ж: Г. Энхжин'), { target: { value: 'Болд' } });
+        fireEvent.click(screen.getByRole('button', { name: /^Хадгалах/ }));
+        expect(mocks.toastError).toHaveBeenCalledWith('Төсөл сонгоно уу');
+        expect(mocks.mutate).not.toHaveBeenCalled();
+        fireEvent.change(screen.getByRole('combobox', { name: 'Төсөл' }), { target: { value: 'mandala' } });
+        fireEvent.click(screen.getByRole('button', { name: /^Хадгалах/ }));
+        await waitFor(() => expect(mocks.mutate).toHaveBeenCalledWith('/api/dashboard/leads', 'POST', expect.objectContaining({ project_id: 'mandala', customer_name: 'Болд' })));
+    });
+
+    it('requests only managers in the selected lead project', () => {
+        mocks.detail.isError = false;
+        mocks.detail.data = { lead: { id: 'lead', project_id: 'elysium', customer_name: 'Болд', source: 'other', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
+        render(<LeadPanel leadId="lead" canWrite={true} />);
+        expect(mocks.managers).toHaveBeenCalledWith('elysium');
+        expect(screen.getByText('Elysium')).toBeInTheDocument();
+    });
+
+    it('lets an admin identify a legacy lead project and clears its previous manager', () => {
+        mocks.role = 'admin';
+        mocks.detail.isError = false;
+        mocks.detail.data = { lead: { id: 'legacy', project_id: null, sales_manager_name: 'Хуучин менежер', customer_name: 'Болд', source: 'other', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
+        render(<LeadPanel leadId="legacy" canWrite={true} />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Лидийн төсөл' }), { target: { value: 'mandala' } });
+        expect(mocks.update).toHaveBeenCalledWith({ id: 'legacy', patch: { project_id: 'mandala', sales_manager_name: null } }, expect.any(Object));
+    });
+
+    it('does not let a sales manager move a lead to another project', () => {
+        mocks.role = 'sales_manager';
+        mocks.detail.isError = false;
+        mocks.detail.data = { lead: { id: 'lead', project_id: 'mandala', customer_name: 'Болд', source: 'other', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
+        render(<LeadPanel leadId="lead" canWrite={true} />);
+        expect(screen.queryByRole('combobox', { name: 'Лидийн төсөл' })).not.toBeInTheDocument();
     });
 });

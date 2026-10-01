@@ -5,7 +5,8 @@ const { from } = vi.hoisted(() => ({ from: vi.fn() }));
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ from }) }));
 vi.mock('@/lib/utils/logger', () => ({ logger: { error: vi.fn(), warn: vi.fn() } }));
 
-const lead = { id: 'lead-1', customer_name: 'Болд', status: 'contacted', lost_reason: null };
+const projectId = '00000000-0000-4000-8000-000000000003';
+const lead = { project_id: projectId, id: 'lead-1', customer_name: 'Болд', status: 'contacted', lost_reason: null };
 
 function query(table: string, data: unknown, error: unknown = null) {
     const result = { data, error };
@@ -47,25 +48,52 @@ describe('AI lead queues', () => {
 
 describe('AI lead creation ownership', () => {
     it('keeps marketing-created leads unassigned and says so', async () => {
+        const project = query('projects', { id: projectId });
         query('user_profiles', { full_name: 'Маркетинг' });
         query('sales_managers', [{ name: 'Батаа', user_id: 'sales-1', is_active: true }]);
         const insert = query('leads', { id: lead.id, customer_name: lead.customer_name });
-        const result = await createLead('shop-1', { customer_name: lead.customer_name }, true, 'Маркетинг', 'marketing-1');
-        expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({ shop_id: 'shop-1', sales_manager_name: null }));
+        const result = await createLead('shop-1', { project_id: projectId, customer_name: lead.customer_name }, true, 'Маркетинг', 'marketing-1');
+        expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({ shop_id: 'shop-1', project_id: projectId, sales_manager_name: null }));
+        expect(project.eq).toHaveBeenCalledWith('id', projectId);
+        expect(project.eq).toHaveBeenCalledWith('shop_id', 'shop-1');
         expect(result).toHaveProperty('message', expect.stringContaining('хариуцагчгүй'));
-        expect(from).toHaveBeenCalledTimes(3);
+        expect(from).toHaveBeenCalledTimes(4);
     });
     it('uses the user-linked active roster name in the original insert', async () => {
+        query('projects', { id: projectId });
         query('user_profiles', { full_name: 'Өөр нэр' });
         query('sales_managers', [{ name: 'Батаа', user_id: 'sales-1', is_active: true }]);
+        const membership = query('sales_manager_projects', { project_id: projectId });
+        query('sales_managers', { name: 'Батаа' });
         const insert = query('leads', { id: lead.id, customer_name: lead.customer_name });
-        expect(await createLead('shop-1', { customer_name: lead.customer_name }, true, 'Өөр нэр', 'sales-1')).toMatchObject({ success: true });
-        expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({ sales_manager_name: 'Батаа' }));
-        expect(from).toHaveBeenCalledTimes(3); // No later best-effort manager stamp.
+        expect(await createLead('shop-1', { project_id: projectId, customer_name: lead.customer_name }, true, 'Өөр нэр', 'sales-1', { projectIds: [projectId], managerName: 'Батаа' })).toMatchObject({ success: true });
+        expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({ project_id: projectId, sales_manager_name: 'Батаа' }));
+        expect(membership.eq).toHaveBeenCalledWith('shop_id', 'shop-1');
+        expect(membership.eq).toHaveBeenCalledWith('project_id', projectId);
+        expect(from).toHaveBeenCalledTimes(6); // Manager linkage is checked before the insert.
+    });
+    it('retains the verified project in the confirmation preview without inserting a lead', async () => {
+        query('projects', { id: projectId });
+        query('user_profiles', { full_name: 'Маркетинг' });
+        query('sales_managers', [{ name: 'Батаа', user_id: 'sales-1', is_active: true }]);
+        expect(await createLead('shop-1', { project_id: projectId, customer_name: lead.customer_name }, false, 'Маркетинг', 'marketing-1'))
+            .toMatchObject({ requiresConfirmation: true, action: { args: { project_id: projectId, customer_name: lead.customer_name } } });
+        expect(from).toHaveBeenCalledTimes(3);
+    });
+    it('rejects a missing, foreign or out-of-scope project before a lead insert', async () => {
+        expect(await createLead('shop-1', { customer_name: lead.customer_name }, true)).toHaveProperty('error', expect.stringContaining('project_id'));
+        expect(from).not.toHaveBeenCalled();
+        expect(await createLead('shop-1', { project_id: projectId, customer_name: lead.customer_name }, true, '', 'sales-1', { projectIds: [], managerName: 'Батаа' })).toHaveProperty('error', expect.stringContaining('эрх'));
+        expect(from).not.toHaveBeenCalled();
+        query('projects', null);
+        expect(await createLead('shop-1', { project_id: projectId, customer_name: lead.customer_name }, true)).toHaveProperty('error', expect.stringContaining('Төсөл олдсонгүй'));
+        expect(from).toHaveBeenCalledTimes(1);
     });
     it.each(['closed_won', 'closed_lost'])('rejects closed creation %s before any write', async (status) => {
-        expect(await createLead('shop-1', { customer_name: 'Болд', status }, true)).toHaveProperty('error');
-        expect(from).not.toHaveBeenCalled();
+        const project = query('projects', { id: projectId });
+        expect(await createLead('shop-1', { project_id: projectId, customer_name: 'Болд', status }, true)).toHaveProperty('error', expect.stringContaining('идэвхтэй төлөвөөр'));
+        expect(project.insert).not.toHaveBeenCalled();
+        expect(from).toHaveBeenCalledTimes(1);
     });
 });
 

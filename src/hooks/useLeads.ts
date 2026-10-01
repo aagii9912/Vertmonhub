@@ -8,15 +8,15 @@ import type { LeadView } from '@/lib/leads/labels';
 import type { LeadActivity } from '@/lib/leads/activities';
 import type { LeadWorkQueue } from '@/lib/leads/work-queue';
 
-export type LeadRow = Lead & { lost_reason?: string | null };
+export type LeadRow = Lead & { lost_reason?: string | null; project_id?: string | null };
 
 export interface LeadsListParams {
     view: LeadView;
     queue?: LeadWorkQueue;
-    project?: string;
     status?: string;
     source?: string;
     manager?: string;
+    project?: string;
     period?: string;
     q?: string;
     sort?: string;
@@ -34,10 +34,10 @@ function buildQuery(p: LeadsListParams): string {
     const sp = new URLSearchParams();
     if (p.queue) sp.set('queue', p.queue);
     if (p.view && p.view !== 'all') sp.set('view', p.view);
-    if (p.project && p.project !== 'all') sp.set('project', p.project);
     if (p.status && p.status !== 'all') sp.set('status', p.status);
     if (p.source && p.source !== 'all') sp.set('source', p.source);
     if (p.manager && p.manager !== 'all') sp.set('manager', p.manager);
+    if (p.project && p.project !== 'all') sp.set('project', p.project);
     if (p.period && p.period !== 'all') sp.set('period', p.period);
     if (p.q) sp.set('q', p.q);
     if (p.sort) sp.set('sort', p.sort);
@@ -49,27 +49,14 @@ function buildQuery(p: LeadsListParams): string {
 
 /** Лидийн жагсаалт — хуудас солиход өмнөх өгөгдөл хэвээр (spinner-гүй). */
 export function useLeadsList(params: LeadsListParams) {
-    const { shop } = useAuth();
+    const { shop, user } = useAuth();
     const shopId = shop?.id;
     return useQuery<LeadsListResult>({
-        queryKey: ['leads', 'list', shopId, params],
+        queryKey: ['leads', 'list', shopId, user?.id, params, user?.role],
         queryFn: () => dashboardJson<LeadsListResult>(`/api/dashboard/leads?${buildQuery(params)}`),
         enabled: !!shopId,
         staleTime: 20_000,
-        placeholderData: (prev) => prev,
-    });
-}
-
-export interface LeadProjectOption { id: string; name: string }
-
-export function useLeadProjects() {
-    const { shop } = useAuth();
-    const shopId = shop?.id;
-    return useQuery<LeadProjectOption[]>({
-        queryKey: ['projects', 'leads', shopId],
-        queryFn: async () => (await dashboardJson<{ projects: LeadProjectOption[] }>('/api/dashboard/projects')).projects ?? [],
-        enabled: !!shopId,
-        staleTime: 5 * 60_000,
+        placeholderData: (prev, previousQuery) => previousQuery && previousQuery.queryKey[2] === shopId && previousQuery.queryKey[3] === user?.id && previousQuery.queryKey[5] === user?.role ? prev : undefined,
     });
 }
 
@@ -85,10 +72,10 @@ export interface LeadSummary {
 }
 
 export function useLeadSummary() {
-    const { shop } = useAuth();
+    const { shop, user } = useAuth();
     const shopId = shop?.id;
     return useQuery<LeadSummary>({
-        queryKey: ['leads', 'summary', shopId],
+        queryKey: ['leads', 'summary', shopId, user?.id, user?.role],
         queryFn: () => dashboardJson<LeadSummary>('/api/dashboard/leads/summary'),
         enabled: !!shopId,
         staleTime: 30_000,
@@ -126,10 +113,10 @@ export interface LeadDetail {
 }
 
 export function useLeadDetail(id: string | null) {
-    const { shop } = useAuth();
+    const { shop, user } = useAuth();
     const shopId = shop?.id;
     return useQuery<LeadDetail>({
-        queryKey: ['leads', 'detail', shopId, id],
+        queryKey: ['leads', 'detail', shopId, user?.id, id, user?.role],
         queryFn: () => dashboardJson<LeadDetail>(`/api/dashboard/leads/${id}`),
         enabled: !!shopId && !!id,
         staleTime: 10_000,
@@ -140,28 +127,47 @@ export interface ManagerOption {
     name: string;
     is_active: boolean;
     assignable?: boolean;
+    project_ids?: string[];
 }
 
-/** Менежерийн жагсаалт (reports эрхгүй бол хоосон — сонгогч нуугдана). */
-export function useManagers() {
-    const { shop } = useAuth();
+export interface LeadProject {
+    id: string;
+    name: string;
+    status: string | null;
+}
+
+export function useLeadProjects() {
+    const { shop, user } = useAuth();
+    return useQuery<LeadProject[]>({
+        queryKey: ['lead-projects', shop?.id, user?.id, user?.role],
+        queryFn: async () => (await dashboardJson<{ projects: LeadProject[] }>('/api/dashboard/leads/projects')).projects,
+        enabled: !!shop?.id,
+        staleTime: 60_000,
+    });
+}
+
+/** null төсөлтэй хуучин лидэд менежер сонгохгүй. */
+export function useManagers(projectId?: string | null) {
+    const { shop, user } = useAuth();
     const shopId = shop?.id;
     return useQuery<ManagerOption[]>({
-        queryKey: ['managers', shopId],
+        queryKey: ['managers', shopId, user?.id, projectId, user?.role],
         queryFn: async () => {
             try {
-                const r = await dashboardJson<{ managers: ManagerOption[] }>('/api/dashboard/managers');
+                const url = projectId ? `/api/dashboard/managers?project=${encodeURIComponent(projectId)}` : '/api/dashboard/managers';
+                const r = await dashboardJson<{ managers: ManagerOption[] }>(url);
                 return (r.managers || []).filter((m) => m.is_active !== false);
             } catch {
                 return [];
             }
         },
-        enabled: !!shopId,
+        enabled: !!shopId && projectId !== null,
         staleTime: 5 * 60_000,
     });
 }
 
 export type LeadPatch = Partial<{
+    project_id: string;
     status: string;
     lost_reason: string | null;
     notes: string;

@@ -1,3 +1,4 @@
+import { applyLeadScope, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -27,6 +28,7 @@ export async function GET() {
         }
 
         const db = supabaseAdmin();
+        const scope = await resolveSalesProjectScope(db, authShop.id);
         const shopId = authShop.id;
 
         // «Өнөөдөр» — Улаанбаатарын өдрийн хилээр (сервер UTC)
@@ -34,21 +36,21 @@ export async function GET() {
         const nowIso = new Date().toISOString();
 
         const [leads, meetings, inbox] = await Promise.all([
-            canRead('leads') ? db
+            canRead('leads') ? applyLeadScope(db
                 .from('leads')
                 .select('id', { count: 'exact', head: true })
                 .eq('shop_id', shopId)
                 .eq('status', 'new')
-                .is('deleted_at', null)
+                .is('deleted_at', null), scope)
                 .then((r) => (r.error ? undefined : r.count ?? 0)) : undefined,
-            canRead('viewings') ? db
+            canRead('viewings') ? applyLeadScope(db
                 .from('property_viewings')
-                .select('id', { count: 'exact', head: true })
+                .select(scope.projectIds === null ? 'id' : 'id,leads!inner(project_id,sales_manager_name)', { count: 'exact', head: true })
                 .eq('shop_id', shopId)
                 .eq('status', 'scheduled')
                 .is('deleted_at', null)
                 .gte('scheduled_at', dayStart.toISOString())
-                .lt('scheduled_at', dayEnd.toISOString())
+                .lt('scheduled_at', dayEnd.toISOString()), scope, 'leads.project_id', 'leads.sales_manager_name')
                 .then((r) => (r.error ? undefined : r.count ?? 0)) : undefined,
             canRead('inbox') ? db
                 .from('customers')
@@ -65,6 +67,7 @@ export async function GET() {
             { headers: { 'Cache-Control': 'private, no-store' } },
         );
     } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         return safeErrorResponse(error, 'Тоолол татахад алдаа гарлаа');
     }
 }

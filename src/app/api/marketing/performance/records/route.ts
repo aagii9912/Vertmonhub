@@ -5,6 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { MarketingRecordSchema } from '@/lib/marketing/performance-records';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { ubDateStr } from '@/lib/utils/date';
+import { applyLeadScope, assertProjectManager, canAccessProject, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 
 export async function GET(request: NextRequest) {
     try {
@@ -15,13 +16,18 @@ export async function GET(request: NextRequest) {
         const shop = await getUserShop();
         if (!shop) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         const search = (request.nextUrl.searchParams.get('q') || '').trim().slice(0, 120).replace(/[%_\\]/g, '');
-        let query = supabaseAdmin().from('leads').select('id,customer_name,project_id,marketing_campaign_id,marketing_owner_name,marketing_channel,sales_manager_name,sales_handoff_at')
-            .eq('shop_id', shop.id).is('deleted_at', null).order('created_at', { ascending: false }).limit(30);
+        const db = supabaseAdmin();
+        const scope = await resolveSalesProjectScope(db, shop.id);
+        let query = applyLeadScope(db.from('leads').select('id,customer_name,project_id,marketing_campaign_id,marketing_owner_name,marketing_channel,sales_manager_name,sales_handoff_at')
+            .eq('shop_id', shop.id).is('deleted_at', null).order('created_at', { ascending: false }).limit(30), scope);
         if (search) query = query.ilike('customer_name', `%${search}%`);
         const { data, error } = await query;
         if (error) throw error;
         return NextResponse.json({ leads: data }, { headers: { 'Cache-Control': 'private, no-store' } });
-    } catch (error) { return safeErrorResponse(error, 'Лидийн жагсаалт татаж чадсангүй'); }
+    } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
+        return safeErrorResponse(error, 'Лидийн жагсаалт татаж чадсангүй');
+    }
 }
 
 export async function POST(request: NextRequest) {
@@ -38,7 +44,9 @@ export async function POST(request: NextRequest) {
             const leadDenied = await requireModuleWrite('leads');
             if (leadDenied) return leadDenied;
         }
+        const scope = await resolveSalesProjectScope(db, shop.id);
         if ('project_id' in input) {
+            if (!canAccessProject(scope, input.project_id)) return NextResponse.json({ error: 'Энэ төсөлд хандах эрхгүй' }, { status: 403 });
             const { data, error } = await db.from('projects').select('id').eq('shop_id', shop.id).eq('id', input.project_id).maybeSingle();
             if (error) throw error;
             if (!data) return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 404 });
@@ -80,7 +88,7 @@ export async function POST(request: NextRequest) {
             result = existing ? await db.from('marketing_spend_entries').update(row).eq('shop_id', shop.id).eq('id', input.id).is('deleted_at', null).select('id').single()
                 : await db.from('marketing_spend_entries').insert({ ...row, id: input.id, shop_id: shop.id, created_by: await getUserId() }).select('id').single();
         } else {
-            const { data: lead, error } = await db.from('leads').select('id,sales_manager_name,sales_handoff_at').eq('id', input.lead_id).eq('shop_id', shop.id).is('deleted_at', null).maybeSingle();
+            const { data: lead, error } = await applyLeadScope(db.from('leads').select('id,project_id,sales_manager_name,sales_handoff_at').eq('id', input.lead_id).eq('shop_id', shop.id).is('deleted_at', null), scope).maybeSingle();
             if (error) throw error;
             if (!lead) return NextResponse.json({ error: 'Лид олдсонгүй' }, { status: 404 });
             if (input.kind === 'handoff' && !lead.sales_manager_name?.trim()) return NextResponse.json({ error: 'Эхлээд борлуулалтын менежерт хуваарилна уу' }, { status: 409 });
@@ -90,9 +98,19 @@ export async function POST(request: NextRequest) {
                 marketing_owner_name: campaign?.marketing_owner_name || input.marketing_owner_name,
                 marketing_channel: campaign?.channel || input.marketing_channel,
             };
-            result = await db.from('leads').update(updates).eq('id', input.lead_id).eq('shop_id', shop.id).is('deleted_at', null).select('id').single();
+            if ('project_id' in updates) {
+                if (!canAccessProject(scope, updates.project_id)) return NextResponse.json({ error: 'Энэ төсөлд хандах эрхгүй' }, { status: 403 });
+                if (scope.projectIds !== null && updates.project_id !== lead.project_id) return NextResponse.json({ error: 'Лидийн төслийг өөрчлөх эрхгүй' }, { status: 403 });
+                if (lead.sales_manager_name) await assertProjectManager(db, shop.id, updates.project_id, lead.sales_manager_name);
+            }
+            let write = applyLeadScope(db.from('leads').update(updates).eq('id', input.lead_id).eq('shop_id', shop.id).is('deleted_at', null), scope);
+            write = lead.project_id ? write.eq('project_id', lead.project_id) : write.is('project_id', null);
+            result = await write.select('id').single();
         }
         if (result.error) throw result.error;
         return NextResponse.json({ success: true, id: result.data.id });
-    } catch (error) { return safeErrorResponse(error, 'Хадгалж чадсангүй. Мэдээллээ шалгаад дахин оролдоно уу.'); }
+    } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
+        return safeErrorResponse(error, 'Хадгалж чадсангүй. Мэдээллээ шалгаад дахин оролдоно уу.');
+    }
 }

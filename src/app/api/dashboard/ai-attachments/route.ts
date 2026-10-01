@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUserShop } from '@/lib/auth/supabase-auth';
+import { getUserId, getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
-import { requireModule } from '@/lib/auth/require-permission';
+import { requireAnyModule, requireModule, resolvePermissions } from '@/lib/auth/require-permission';
+import { canAccessLeadAttachmentEntity } from '@/lib/ai/private-attachments';
+import { ProjectScopeError } from '@/lib/sales/project-scope';
+import { z } from 'zod';
 
 const ENTITY_MODULES: Record<string, string> = {
     property: 'properties', lead: 'leads', customer: 'customers', contract: 'contracts',
@@ -14,20 +17,28 @@ const ENTITY_MODULES: Record<string, string> = {
  */
 export async function GET(request: NextRequest) {
     try {
+        const deniedAny = await requireAnyModule(Object.values(ENTITY_MODULES));
+        if (deniedAny) return deniedAny;
         const authShop = await getUserShop();
         if (!authShop) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
         const { searchParams } = new URL(request.url);
         const entityType = searchParams.get('entity_type') || '';
         const entityId = searchParams.get('entity_id') || '';
-        if (!Object.hasOwn(ENTITY_MODULES, entityType) || !entityId) {
+        if (!Object.hasOwn(ENTITY_MODULES, entityType) || !z.uuid().safeParse(entityId).success) {
             return NextResponse.json({ error: 'entity_type ба entity_id шаардлагатай' }, { status: 400 });
         }
         const denied = await requireModule(ENTITY_MODULES[entityType]);
         if (denied) return denied;
 
         const db = supabaseAdmin();
-        // Хүснэгт байхгүй (миграци ороогүй) бол хоосон буцаана — UI эвдрэхгүй.
+        if (entityType === 'lead') {
+            const [userId, permissions] = await Promise.all([getUserId(), resolvePermissions()]);
+            if (!userId || !permissions) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
+            if (!await canAccessLeadAttachmentEntity(db, entityId, {
+                shopId: authShop.id, userId, perms: { role: permissions.role, modules: permissions.permissions.modules },
+            })) return NextResponse.json({ error: 'Лид олдсонгүй' }, { status: 404 });
+        }
         const { data, error } = await db
             .from('ai_attachments')
             .select('id, url, file_name, mime_type, uploaded_by, created_at')
@@ -36,9 +47,10 @@ export async function GET(request: NextRequest) {
             .eq('entity_id', entityId)
             .order('created_at', { ascending: false });
 
-        if (error) return NextResponse.json({ attachments: [] });
-        return NextResponse.json({ attachments: data || [] });
+        if (error) throw error;
+        return NextResponse.json({ attachments: data || [] }, { headers: { 'Cache-Control': 'private, no-store' } });
     } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         return safeErrorResponse(error, 'Хавсралт татахад алдаа гарлаа');
     }
 }

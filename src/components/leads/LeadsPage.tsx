@@ -10,7 +10,7 @@ import { useMobile } from '@/hooks/use-mobile';
 import { canAccessModuleDynamic } from '@/lib/rbac';
 import { formatRelativeDays } from '@/lib/utils/date';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
-import { useLeadsList, useLeadSummary, useManagers, useUpdateLead, type LeadRow } from '@/hooks/useLeads';
+import { useLeadsList, useLeadSummary, useLeadProjects, useManagers, useUpdateLead, type LeadRow } from '@/hooks/useLeads';
 import { LEAD_VIEWS, LEAD_STATUSES, STATUS_META, SOURCES, SOURCE_LABEL, sourceLabel, interestLabel, type LeadView } from '@/lib/leads/labels';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/Sheet';
 import { Avatar, Pill, Skeleton } from '@/components/dashboard/v2/primitives';
@@ -46,12 +46,14 @@ function LeadsWorkspace() {
     const { isMobile, isDesktop } = useMobile();
     const { user } = useAuth();
     const canWrite = !!user?.permissions && canAccessModuleDynamic(user.permissions, 'leads') && !!user.permissions.canWrite;
+    const canAssign = canWrite && user?.role !== 'sales_manager';
 
     const [mode, setMode] = useState<Mode>('table');
     const [view, setView] = useState<LeadView>('all');
     const [status, setStatus] = useState('all');
     const [source, setSource] = useState('all');
     const [manager, setManager] = useState('all');
+    const [project, setProject] = useState(() => search.get('project') || 'all');
     const [period, setPeriod] = useState('all');
     const [qInput, setQInput] = useState('');
     const [q, setQ] = useState('');
@@ -88,15 +90,20 @@ function LeadsWorkspace() {
         return () => clearTimeout(t);
     }, [qInput]);
 
-    const params = useMemo(() => ({ view, queue, status, source, manager, period, q, sort, dir, page, pageSize: PAGE_SIZE }), [view, queue, status, source, manager, period, q, sort, dir, page]);
+    const params = useMemo(() => ({ view, queue, status, source, manager, project, period, q, sort, dir, page, pageSize: PAGE_SIZE }), [view, queue, status, source, manager, project, period, q, sort, dir, page]);
     const { data, isLoading, isFetching, error, refetch } = useLeadsList(params);
     const { data: summary, error: summaryError } = useLeadSummary();
     const { data: managers = [] } = useManagers();
+    const { data: projects = [] } = useLeadProjects();
     const update = useUpdateLead();
 
     const leads = useMemo(() => data?.leads ?? [], [data]);
     const total = data?.pagination.total ?? 0;
     const totalPages = data?.pagination.totalPages ?? 1;
+    const projectNames = useMemo(() => Object.fromEntries(projects.map(p => [p.id, p.name])), [projects]);
+    const selectedLeads = leads.filter(l => checked.has(l.id));
+    const bulkManagers = managers.filter(m => selectedLeads.length === checked.size && selectedLeads.every(l => !!l.project_id && m.project_ids?.includes(l.project_id)));
+    const filterManagers = project === 'all' ? managers : managers.filter(m => m.project_ids?.includes(project));
 
     const select = useCallback((id: string | null) => {
         setSelectedId(id);
@@ -151,9 +158,9 @@ function LeadsWorkspace() {
         setSort(key === 'overdue' ? 'next_followup_at' : 'created_at'); setDir('asc');
         router.replace(`/dashboard/leads?queue=${key}`);
     };
-    const filtered = !!queue || view !== 'all' || status !== 'all' || source !== 'all' || manager !== 'all' || period !== 'all' || !!qInput;
+    const filtered = !!queue || view !== 'all' || status !== 'all' || source !== 'all' || manager !== 'all' || project !== 'all' || period !== 'all' || !!qInput;
     function resetFilters() {
-        setView('all'); setStatus('all'); setSource('all'); setManager('all'); setPeriod('all'); setQInput(''); setQ(''); setPage(1); setChecked(new Set());
+        setView('all'); setStatus('all'); setSource('all'); setManager('all'); setProject('all'); setPeriod('all'); setQInput(''); setQ(''); setPage(1); setChecked(new Set());
         if (queue) router.replace('/dashboard/leads');
     }
     async function download() {
@@ -205,9 +212,10 @@ function LeadsWorkspace() {
             </div>
 
             <FilterBar className="mb-0" search={{ value: qInput, onChange: setQInput, label: 'Лидийг нэр, утсаар хайх', placeholder: 'Нэр, утас, имэйлээр хайх…' }} showClear={filtered} onClear={resetFilters}>
+                <FilterChip value={project} onChange={(v) => { setProject(v); setManager('all'); setPage(1); setChecked(new Set()); select(null); }} label="Төсөл" options={projects.map((p) => [p.id, p.name])} />
                 <FilterChip value={status} onChange={(v) => { setStatus(v); setPage(1); }} label="Статус" options={LEAD_STATUSES.map((s) => [s, STATUS_META[s].label])} />
                 <FilterChip value={source} onChange={(v) => { setSource(v); setPage(1); }} label="Эх үүсвэр" options={SOURCES.map((s) => [s, SOURCE_LABEL[s]])} />
-                {managers.length > 0 && <FilterChip value={manager} onChange={(v) => { setManager(v); setPage(1); }} label="Менежер" options={managers.map((m) => [m.name, m.name])} />}
+                {filterManagers.length > 0 && <FilterChip value={manager} onChange={(v) => { setManager(v); setPage(1); }} label="Менежер" options={filterManagers.map((m) => [m.name, m.name])} />}
                 <FilterChip value={period} onChange={(v) => { setPeriod(v); setPage(1); }} label="Огноо" options={[['week', '7 хоног'], ['month', '30 хоног'], ['quarter', '90 хоног'], ['year', '1 жил']]} />
             </FilterBar>
 
@@ -218,7 +226,7 @@ function LeadsWorkspace() {
                     <span className="text-muted-foreground">·</span>
                     <span className="text-fg-2">Статус:</span>
                     <StatusPicker value="" onChange={(s, reason) => void bulk({ status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} />
-                    {managers.length > 0 && (<><span className="text-fg-2">Менежер:</span><ManagerPicker value={null} options={managers} onChange={(n) => void bulk({ sales_manager_name: n })} /></>)}
+                    {canAssign && bulkManagers.length > 0 && (<><span className="text-fg-2">Менежер:</span><ManagerPicker value={null} options={bulkManagers} onChange={(n) => void bulk({ sales_manager_name: n })} /></>)}
                     <button type="button" onClick={() => setChecked(new Set())} className="ml-auto text-[12px] text-muted-foreground hover:text-foreground">Цуцлах</button>
                 </div>
             )}
@@ -227,7 +235,7 @@ function LeadsWorkspace() {
             <div className={cn('grid gap-3', showSplit && 'lg:grid-cols-[minmax(0,1fr)_minmax(400px,480px)]')}>
                 <div className="min-w-0 overflow-hidden rounded-2xl border border-border bg-surface">
                     {error ? null : isMobile ? (
-                        <MobileList leads={leads} loading={isLoading} onOpen={select} />
+                        <MobileList leads={leads} projectNames={projectNames} loading={isLoading} onOpen={select} />
                     ) : (
                         <div className="overflow-x-auto">
                             <table className="w-full text-[13px]">
@@ -276,12 +284,12 @@ function LeadsWorkspace() {
                                                 <td className="px-2" onClick={(e) => e.stopPropagation()}>
                                                     <CheckBox label="Сонгох" checked={checked.has(l.id)} onChange={(v) => setChecked((prev) => { const n = new Set(prev); if (v) n.add(l.id); else n.delete(l.id); return n; })} />
                                                 </td>
-                                                <td className="px-2"><span className={cn('block max-w-[220px] truncate font-medium', sel ? 'text-brand' : 'text-foreground')}>{l.customer_name || 'Нэргүй'}</span></td>
+                                                <td className="px-2"><span className={cn('block max-w-[220px] truncate font-medium', sel ? 'text-brand' : 'text-foreground')}>{l.customer_name || 'Нэргүй'}</span><span className="block max-w-[220px] truncate text-xs text-muted-foreground">{l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй'}</span></td>
                                                 <td className="mono-label px-2 text-fg-2">{l.customer_phone || '—'}</td>
                                                 <td className="px-2"><StatusPicker value={l.status} disabled={!canWrite} onChange={(s, reason) => patchLead(l.id, { status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} /></td>
                                                 {!showSplit && <td className="px-2 text-fg-2">{sourceLabel(l.source)}</td>}
                                                 <td className="px-2 text-fg-2">{interestLabel(l)}</td>
-                                                {!showSplit && <td className="px-2"><ManagerPicker value={l.sales_manager_name ?? null} options={managers} disabled={!canWrite} onChange={(n) => patchLead(l.id, { sales_manager_name: n })} /></td>}
+                                                {!showSplit && <td className="px-2"><ManagerPicker value={l.sales_manager_name ?? null} options={managers} projectId={l.project_id ?? null} disabled={!canAssign} onChange={(n) => patchLead(l.id, { sales_manager_name: n })} /></td>}
                                                 {!showSplit && <td className={cn('px-2', overdue ? 'font-medium text-status-danger' : 'text-fg-2')}>{nextStep(l)}</td>}
                                                 <td className="mono-label px-2 text-fg-2">{l.last_contact_at ? formatRelativeDays(l.last_contact_at) : 'Бүртгээгүй'}</td>
                                                 <td className="px-2 text-muted-foreground"><MoreHorizontal className="h-4 w-4" /></td>
@@ -305,7 +313,7 @@ function LeadsWorkspace() {
                 {showSplit && (
                     <aside aria-label="Сонгосон лид" className="sticky top-[calc(var(--header-h)+1rem)] h-[calc(100dvh-var(--header-h)-2rem)] min-h-0 self-start overflow-hidden rounded-2xl border border-border bg-surface">
                         {selectedId ? (
-                            <LeadPanel leadId={selectedId} managers={managers} canWrite={canWrite} onClose={() => select(null)} />
+                            <LeadPanel leadId={selectedId} canWrite={canWrite} onClose={() => select(null)} />
                         ) : (
                             <div className="flex h-full min-h-[300px] flex-col items-center justify-center gap-2 p-6 text-center">
                                 <PanelRight className="h-6 w-6 text-muted-foreground" />
@@ -323,7 +331,7 @@ function LeadsWorkspace() {
                     <SheetContent side="right" showCloseButton={false} className="w-full p-0 sm:max-w-[520px]">
                         <SheetTitle className="sr-only">Лидийн дэлгэрэнгүй</SheetTitle>
                         <SheetDescription className="sr-only">Сонгосон лидийн мэдээлэл болон дараагийн үйлдлүүд.</SheetDescription>
-                        {selectedId && <LeadPanel leadId={selectedId} managers={managers} canWrite={canWrite} onClose={() => select(null)} />}
+                        {selectedId && <LeadPanel leadId={selectedId} canWrite={canWrite} onClose={() => select(null)} />}
                     </SheetContent>
                 </Sheet>
             )}
@@ -363,7 +371,7 @@ function Th({ children, onClick, active, dir }: { children: React.ReactNode; onC
 }
 
 
-function MobileList({ leads, loading, onOpen }: { leads: LeadRow[]; loading: boolean; onOpen: (id: string) => void }) {
+function MobileList({ leads, projectNames, loading, onOpen }: { leads: LeadRow[]; projectNames: Record<string, string>; loading: boolean; onOpen: (id: string) => void }) {
     if (loading) return <div className="flex flex-col gap-2 p-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>;
     if (!leads.length) return <div className="px-4 py-10 text-center text-[13px] text-muted-foreground">Лид олдсонгүй</div>;
     return (
@@ -376,6 +384,7 @@ function MobileList({ leads, loading, onOpen }: { leads: LeadRow[]; loading: boo
                             <Avatar name={l.customer_name} className="h-8 w-8 text-[11px]" />
                             <span className="min-w-0 flex-1">
                                 <span className="block truncate text-[14px] font-medium text-foreground">{l.customer_name || 'Нэргүй'}</span>
+                                <span className="block truncate text-xs text-fg-2">{l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй'}</span>
                                 <span className="block truncate text-[12px] text-muted-foreground">{[interestLabel(l) !== '—' ? interestLabel(l) : null, sourceLabel(l.source), l.last_contact_at ? `Холбогдсон: ${formatRelativeDays(l.last_contact_at)}` : 'Холбоо бүртгээгүй'].filter(Boolean).join(' · ')}</span>
                                 <span className="mt-1 block text-xs text-fg-2">{nextStep(l)}</span>
                             </span>

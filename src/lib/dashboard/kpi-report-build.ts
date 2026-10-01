@@ -5,6 +5,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ManagerIdentity } from '@/lib/sales/manager-identity';
+import { applyLeadScope, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { getTeamTargets, getMonthlyActualsByManager } from '@/lib/sales/targets';
 import {
     monthRange, prevMonthOf, countBy, buildKpiSummary,
@@ -41,6 +42,7 @@ async function safeCount(
 }
 
 export interface KpiReportInput {
+    scope?: SalesProjectScope;
     shopId: string;
     shopName: string | null;
     identity: ManagerIdentity;
@@ -51,7 +53,7 @@ export interface KpiReportInput {
     month: number;
 }
 
-export async function computeKpiReport(db: SupabaseClient, { shopId, shopName, identity, targetName, uid, year, month }: KpiReportInput) {
+export async function computeKpiReport(db: SupabaseClient, { shopId, shopName, identity, targetName, uid, year, month, scope = { projectIds: null, managerName: null } }: KpiReportInput) {
     const isSelf = targetName === identity.managerName;
 
     const { start, end } = monthRange(year, month);
@@ -87,12 +89,12 @@ export async function computeKpiReport(db: SupabaseClient, { shopId, shopName, i
                 .order('created_at', { ascending: true })
                 .limit(1000);
             if (excludeDeleted) q = q.is('deleted_at', null);
-            return q;
+            return applyLeadScope(q, scope);
         }),
         safeManagerRows(({ excludeDeleted }) => {
             let q = db
                 .from('property_viewings')
-                .select('id, scheduled_at, status, properties(name), leads(customer_name)')
+                .select(scope.projectIds === null ? 'id,scheduled_at,status,properties(name),leads(customer_name)' : 'id,scheduled_at,status,properties(name),leads!inner(customer_name,project_id,sales_manager_name)')
                 .eq('shop_id', shopId)
                 .eq('sales_manager_name', targetName)
                 .gte('scheduled_at', startIso)
@@ -100,7 +102,7 @@ export async function computeKpiReport(db: SupabaseClient, { shopId, shopName, i
                 .order('scheduled_at', { ascending: true })
                 .limit(500);
             if (excludeDeleted) q = q.is('deleted_at', null);
-            return q;
+            return applyLeadScope(q, scope, 'leads.project_id', 'leads.sales_manager_name');
         }),
         safeManagerRows(({ excludeDeleted }) => {
             let q = db
@@ -140,19 +142,19 @@ export async function computeKpiReport(db: SupabaseClient, { shopId, shopName, i
                 .gte('created_at', prevStart.toISOString())
                 .lt('created_at', prevEnd.toISOString());
             if (excludeDeleted) q = q.is('deleted_at', null);
-            return q;
+            return applyLeadScope(q, scope);
         }),
         safeCount(({ excludeDeleted }) => {
             let q = db
                 .from('property_viewings')
-                .select('id', { count: 'exact', head: true })
+                .select(scope.projectIds === null ? 'id' : 'id,leads!inner(project_id,sales_manager_name)', { count: 'exact', head: true })
                 .eq('shop_id', shopId)
                 .eq('sales_manager_name', targetName)
                 .neq('status', 'cancelled')
                 .gte('scheduled_at', prevStart.toISOString())
                 .lt('scheduled_at', prevEnd.toISOString());
             if (excludeDeleted) q = q.is('deleted_at', null);
-            return q;
+            return applyLeadScope(q, scope, 'leads.project_id', 'leads.sales_manager_name');
         }),
         getTeamTargets(db, shopId, year),
         getMonthlyActualsByManager(db, shopId, year),

@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { useAuth } from '@/contexts/AuthContext';
 import type { CountKey } from '@/lib/navigation/nav';
 
 export type NavCounts = Partial<Record<CountKey, number>>;
@@ -13,8 +14,9 @@ export type NavCounts = Partial<Record<CountKey, number>>;
  * Алдаа гарвал ЧИМЭЭГҮЙ хоосон буцаана: sidebar тоогүй ч бүрэн ажиллана.
  */
 export function useNavCounts(): NavCounts {
+    const { shop, user } = useAuth();
     const { data } = useQuery<NavCounts>({
-        queryKey: ['nav-counts'],
+        queryKey: ['nav-counts', shop?.id, user?.id, user?.role],
         queryFn: async () => {
             const res = await dashboardFetch('/api/dashboard/nav-counts');
             if (!res.ok) return {};
@@ -26,6 +28,7 @@ export function useNavCounts(): NavCounts {
             };
         },
         staleTime: 60_000,
+        enabled: !!shop?.id && !!user?.id,
         refetchOnWindowFocus: false,
         retry: false,
     });

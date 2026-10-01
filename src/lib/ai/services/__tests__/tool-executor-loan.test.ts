@@ -8,7 +8,7 @@ import { describe, it, expect, vi } from 'vitest';
 // ToolExecutor нь модуль ачаалахдаа эдгээрийг импортолдог тул mock хийнэ.
 // executeCalculateLoan өөрөө DB/push ашигладаггүй (pure тооцоо).
 vi.mock('@/lib/supabase', () => ({ supabaseAdmin: vi.fn() }));
-vi.mock('@/lib/notifications', () => ({ sendPushNotification: vi.fn() }));
+vi.mock('@/lib/notifications', () => ({ sendLeadPushNotification: vi.fn() }));
 vi.mock('@/lib/utils/logger', () => ({
     logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn(), success: vi.fn() },
 }));

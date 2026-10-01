@@ -81,21 +81,13 @@ export async function POST(request: Request) {
         let pushSent = 0;
         let pushFailed = 0;
         if (overduePayments && overduePayments.length > 0) {
-            const byShop = new Map<string, { count: number; totalAmount: number }>();
-            for (const p of overduePayments) {
-                if (!p.shop_id) continue;
-                const remaining = Math.max(0, Number(p.amount || 0) - Number(p.paid_amount || 0));
-                const entry = byShop.get(p.shop_id) || { count: 0, totalAmount: 0 };
-                entry.count += 1;
-                entry.totalAmount += remaining;
-                byShop.set(p.shop_id, entry);
-            }
+            const shopIds = [...new Set(overduePayments.map(p => p.shop_id).filter(Boolean))] as string[];
 
             const results = await Promise.all(
-                Array.from(byShop.entries()).map(([shopId, { count, totalAmount }]) =>
+                shopIds.map(shopId =>
                     sendPushNotification(shopId, {
                         title: '⚠️ Хугацаа хэтэрсэн төлбөр',
-                        body: `${count} төлбөрийн хугацаа хэтэрсэн (нийт ${totalAmount.toLocaleString()}₮). Гэрээнүүдээ шалгана уу.`,
+                        body: 'CRM шинэчлэгдлээ. Өөрийн хариуцсан гэрээний төлбөрийг шалгана уу.',
                         url: '/dashboard/contracts?filter=overdue',
                         tag: `overdue-${today}`,
                     })

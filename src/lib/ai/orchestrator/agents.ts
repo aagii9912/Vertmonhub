@@ -28,7 +28,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         emoji: '📊',
         color: 'emerald',
         description: 'Ерөнхий dashboard статистик, олон төрлийн өгөгдөл нэгтгэсэн шинжилгээ, KPI, график. Хэд хэдэн домэйн хамарсан өргөн асуултад тохиромжтой.',
-        readToolNames: ['get_operations_report', 'get_dashboard_stats', 'list_properties', 'list_leads', 'get_sales_summary', 'get_contracts_summary', 'get_customer_insights', 'compare_properties'],
+        readToolNames: ['get_operations_report', 'get_dashboard_stats', 'list_properties', 'list_lead_projects', 'list_leads', 'get_sales_summary', 'get_contracts_summary', 'get_customer_insights', 'compare_properties'],
         writeToolNames: [],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн ДАТА АНАЛИСТ agent. Таны үүрэг: ерөнхий статистик, KPI, чиг хандлага, олон эх сурвалжийн өгөгдлийг нэгтгэн шинжлэх.
@@ -55,7 +55,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         emoji: '🤝',
         color: 'violet',
         description: 'Лийд/сонирхогчид, харилцагч, УУЛЗАЛТ (meeting) товлох/цуцлах, тагууд, тэмдэглэл. Шинэ лийд/харилцагч ҮҮСГЭХ, лийд/харилцагч/уулзалт УСТГАХ, статус шинэчлэх. Худалдан авагч, лийд, харилцагч, уулзалттай холбоотой бүх асуулт, үйлдэл.',
-        readToolNames: ['list_leads', 'get_lead_details', 'get_customer_insights', 'list_properties'],
+        readToolNames: ['list_lead_projects', 'list_leads', 'get_lead_details', 'get_customer_insights', 'list_properties'],
         writeToolNames: ['update_lead_status', 'add_lead_note', 'create_lead', 'create_customer', 'schedule_viewing', 'attach_file', 'bulk_update_leads'],
         deleteToolNames: ['delete_lead', 'delete_customer', 'delete_viewing'],
         buildInstruction: (k) => withKnowledge(

@@ -6,6 +6,7 @@
 
 import { supabaseAdmin as adminClient } from '@/lib/supabase';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
+import { resolveSalesProjectScope, UNRESTRICTED_SALES_SCOPE, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { computeKpiReport } from '@/lib/dashboard/kpi-report-build';
 import { formatKpiReportText } from '@/lib/dashboard/kpi-report';
 import { getManagerPerformance } from '@/lib/reports/manager-performance';
@@ -25,7 +26,7 @@ const confirmNeeded = (tool: string, args: Args, label: string, preview: Record<
 
 /* ---------------- Менежер / тайлан ---------------- */
 
-export async function getKpiReport(shopId: string, args: Args, userId: string, perms: AssistantPerms) {
+export async function getKpiReport(shopId: string, args: Args, userId: string, perms: AssistantPerms, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
     const now = new Date();
     const year = Math.min(2100, Math.max(2020, Number(args.year) || now.getFullYear()));
     const month = Math.min(12, Math.max(1, Number(args.month) || now.getMonth() + 1));
@@ -36,7 +37,7 @@ export async function getKpiReport(shopId: string, args: Args, userId: string, p
     const targetName = args.manager && canViewOthers ? String(args.manager) : identity.managerName;
     if (!targetName) return { error: 'Та борлуулалтын менежерийн бүртгэлд байхгүй — тайлан гаргах менежер тодорхойгүй.' };
     const { data: shop } = await db().from('shops').select('name').eq('id', shopId).maybeSingle();
-    const report = await computeKpiReport(db(), { shopId, shopName: shop?.name || null, identity, targetName, uid: userId, year, month });
+    const report = await computeKpiReport(db(), { shopId, shopName: shop?.name || null, identity, targetName, uid: userId, year, month, scope });
     let text = '';
     try { text = formatKpiReportText(report as never); } catch { text = ''; }
     return { ...report, plainText: text };
@@ -98,14 +99,16 @@ export async function replyCustomer(shopId: string, args: Args, confirm: boolean
     return { success: true, message: `«${f.customer.name}»-д Messenger-ээр хариу илгээлээ.`, customerId: f.customer.id };
 }
 
-export async function mergeCustomersTool(shopId: string, args: Args, confirm: boolean) {
+export async function mergeCustomersTool(shopId: string, args: Args, confirm: boolean, scope?: SalesProjectScope) {
+    const salesScope = scope ?? await resolveSalesProjectScope(db(), shopId);
+    if (salesScope.projectIds !== null) return { error: 'Харилцагч нэгтгэхэд бусад менежерийн лид өөрчлөгдөх боломжтой тул байгууллагын эрх шаардлагатай' };
     const p = await findCustomer(shopId, { customer_id: args.primary_id, customer_name: args.primary_name, phone: args.primary_phone });
     if ('error' in p) return { error: `Үндсэн харилцагч: ${p.error}`, options: p.options };
     const d = await findCustomer(shopId, { customer_id: args.duplicate_id, customer_name: args.duplicate_name, phone: args.duplicate_phone });
     if ('error' in d) return { error: `Давхардсан харилцагч: ${d.error}`, options: d.options };
     if (p.customer.id === d.customer.id) return { error: 'Хоёр ижил харилцагч' };
     if (!confirm) return confirmNeeded('merge_customers', { primary_id: p.customer.id, duplicate_id: d.customer.id }, 'Харилцагч нэгтгэх', { Үлдэх: `${p.customer.name} (${p.customer.phone || '-'})`, 'Нэгтгээд устах': `${d.customer.name} (${d.customer.phone || '-'})` });
-    const r = await mergeCustomers(db(), shopId, p.customer.id, d.customer.id);
+    const r = await mergeCustomers(db(), shopId, p.customer.id, d.customer.id, salesScope);
     if ('error' in r) return { error: r.error };
     return { success: true, message: `«${d.customer.name}»-г «${p.customer.name}» руу нэгтгэлээ.`, customerId: p.customer.id };
 }

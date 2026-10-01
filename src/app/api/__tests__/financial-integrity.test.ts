@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/auth/require-permission', () => ({
+    resolvePermissions: async () => state.denied ? null : ({ role: 'super_admin', permissions: { modules: ['leads'], canWrite: true, canDelete: true } }),
     requireModule: async () => state.denied,
     requireModuleWrite: async () => state.denied,
     requireModuleDelete: async () => state.denied,

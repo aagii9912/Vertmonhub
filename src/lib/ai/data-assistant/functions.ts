@@ -12,7 +12,9 @@ import { spendQuality, SPEND_BASIS } from '@/lib/marketing/performance';
 import { isLeadWorkQueue, workQueueFilter } from '@/lib/leads/work-queue';
 import { hasRealContractFields } from '@/lib/leads/contracts';
 import { resolveActiveManagerName, resolveManagerIdentity } from '@/lib/sales/manager-identity';
-import { createViewing, resolveViewingInput } from '@/lib/services/ViewingService';
+import { createViewing, resolveViewingInput, updateViewing } from '@/lib/services/ViewingService';
+import { applyLeadScope, assertProjectManager, canAccessProject, UNRESTRICTED_SALES_SCOPE, type SalesProjectScope } from '@/lib/sales/project-scope';
+import { z } from 'zod';
 import { canReadPrivateAttachment, isLegacyPublicAttachmentUrl, parsePrivateAttachmentUrl } from '@/lib/ai/private-attachments';
 
 // Lazy admin client — built on first property access so missing env at
@@ -58,7 +60,7 @@ function getDateFilter(timeRange: string): string {
 // READ FUNCTIONS
 // ============================================
 
-export async function fetchDashboardStats(shopId: string, timeRange: string = 'month') {
+export async function fetchDashboardStats(shopId: string, timeRange: string = 'month', scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
     const isoDate = getDateFilter(timeRange);
     const dateOnly = ubDateStr(new Date(isoDate));
     const [contracts, customersRes, leadsAll, units] = await Promise.all([
@@ -66,9 +68,9 @@ export async function fetchDashboardStats(shopId: string, timeRange: string = 'm
             .from('property_contracts').select('total_price').eq('shop_id', shopId)
             .is('deleted_at', null).gte('contract_date', dateOnly).order('id').range(from, to)),
         supabaseAdmin.from('customers').select('id', { count: 'exact', head: true }).eq('shop_id', shopId).is('deleted_at', null),
-        fetchAllRows<{ status: string | null }>((from, to) => supabaseAdmin
+        fetchAllRows<{ status: string | null }>((from, to) => applyLeadScope(supabaseAdmin
             .from('leads').select('status').eq('shop_id', shopId)
-            .is('deleted_at', null).gte('created_at', isoDate).order('id').range(from, to)),
+            .is('deleted_at', null).gte('created_at', isoDate).order('id').range(from, to), scope)),
         // Dashboard /stats-тай ижил орон сууцны нэгжийн сан; `properties` нь зарын сан.
         fetchAllRows<{ status: string | null }>((from, to) => supabaseAdmin
             .from('property_units').select('status').eq('shop_id', shopId)
@@ -136,13 +138,14 @@ export async function fetchProperties(shopId: string, args: any) {
     })) || [];
 }
 
-export async function fetchLeads(shopId: string, args: any) {
+export async function fetchLeads(shopId: string, args: any, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
     const limit = Number.isFinite(Number(args.limit)) ? Math.min(100, Math.max(1, Math.floor(Number(args.limit)))) : 10;
     if (args.queue && !isLeadWorkQueue(args.queue)) return { error: 'Буруу ажлын жагсаалт: unassigned, uncontacted, no_followup, overdue' };
     let query = supabaseAdmin.from('leads')
-        .select('id, customer_name, customer_phone, customer_email, status, source, sales_manager_name, budget_min, budget_max, preferred_type, preferred_district, preferred_rooms, urgency, notes, internal_notes, last_contact_at, next_followup_at, viewing_scheduled_at, created_at, updated_at')
+        .select('id, project_id, customer_name, customer_phone, customer_email, status, source, sales_manager_name, budget_min, budget_max, preferred_type, preferred_district, preferred_rooms, urgency, notes, internal_notes, last_contact_at, next_followup_at, viewing_scheduled_at, created_at, updated_at')
         .eq('shop_id', shopId).is('deleted_at', null)
         .order(args.queue === 'overdue' ? 'next_followup_at' : 'created_at', { ascending: !!args.queue, nullsFirst: false }).limit(limit);
+    query = applyLeadScope(query, scope);
 
     if (isLeadWorkQueue(args.queue)) query = query.or(workQueueFilter(args.queue));
     if (args.manager_name) query = query.eq('sales_manager_name', args.manager_name);
@@ -154,7 +157,7 @@ export async function fetchLeads(shopId: string, args: any) {
     if (error) { logger.error('Lead fetch error:', { error }); return { error: 'Лидийн жагсаалт уншиж чадсангүй. Дахин оролдоно уу.' }; }
 
     return data?.map(l => ({
-        id: l.id, name: l.customer_name || 'Тодорхойгүй', phone: l.customer_phone, email: l.customer_email,
+        id: l.id, project_id: l.project_id, name: l.customer_name || 'Тодорхойгүй', phone: l.customer_phone, email: l.customer_email,
         status: l.status, source: l.source, sales_manager_name: l.sales_manager_name ?? null,
         budget: l.budget_min && l.budget_max ? `${Number(l.budget_min).toLocaleString()}₮ - ${Number(l.budget_max).toLocaleString()}₮` : l.budget_min ? `${Number(l.budget_min).toLocaleString()}₮+` : 'Тодорхойгүй',
         preferred_type: l.preferred_type, preferred_district: l.preferred_district, preferred_rooms: l.preferred_rooms,
@@ -167,8 +170,9 @@ export async function fetchLeads(shopId: string, args: any) {
     })) || [];
 }
 
-export async function fetchLeadDetails(shopId: string, args: any) {
+export async function fetchLeadDetails(shopId: string, args: any, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
     let query = supabaseAdmin.from('leads').select('*, properties(id, name, price, type, size_sqm, rooms, district, status)').eq('shop_id', shopId).is('deleted_at', null);
+    query = applyLeadScope(query, scope);
     if (args.lead_id) query = query.eq('id', args.lead_id);
     else if (args.customer_name) query = query.ilike('customer_name', `%${args.customer_name}%`);
     else return { error: 'lead_id эсвэл customer_name шаардлагатай' };
@@ -198,7 +202,7 @@ export async function fetchLeadDetails(shopId: string, args: any) {
 
     return {
         lead: {
-            id: data.id, name: data.customer_name, phone: data.customer_phone, email: data.customer_email,
+            id: data.id, project_id: data.project_id, name: data.customer_name, phone: data.customer_phone, email: data.customer_email,
             status: data.status, source: data.source, budget_min: data.budget_min, budget_max: data.budget_max,
             preferred_type: data.preferred_type, preferred_district: data.preferred_district,
             preferred_rooms: data.preferred_rooms, urgency: data.urgency, notes: data.notes,
@@ -211,7 +215,7 @@ export async function fetchLeadDetails(shopId: string, args: any) {
     };
 }
 
-export async function fetchCustomerInsights(shopId: string, args: any) {
+export async function fetchCustomerInsights(shopId: string, args: any, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
     const limit = args.limit || 10;
     const customerSelect = 'id, name, phone, email, address, tags, notes, message_count, last_contact_at, created_at, facebook_id, instagram_id';
 
@@ -228,10 +232,10 @@ export async function fetchCustomerInsights(shopId: string, args: any) {
         });
         if (!customer) return { error: 'Харилцагч олдсонгүй' };
 
-        const { data: leads } = await supabaseAdmin.from('leads')
+        const { data: leads } = await applyLeadScope(supabaseAdmin.from('leads')
             .select('id, status, source, preferred_type, preferred_district, preferred_rooms, budget_min, budget_max, urgency, created_at, last_contact_at')
-            .eq('customer_id', args.customer_id).eq('shop_id', shopId)
-            .order('created_at', { ascending: false });
+            .eq('customer_id', args.customer_id).eq('shop_id', shopId).is('deleted_at', null)
+            .order('created_at', { ascending: false }), scope);
 
         // Contracts are denormalized — join by phone (no FK).
         const { data: contracts } = customer.phone ? await supabaseAdmin.from('property_contracts')
@@ -655,11 +659,12 @@ export async function updateUnitStatus(shopId: string, args: any, confirm = fals
     return { success: true, unit: label, block: unit.block, oldStatus, newStatus };
 }
 
-export async function updateLeadStatus(shopId: string, args: any, confirm = false) {
+export async function updateLeadStatus(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
     if (!LEAD_STATUSES_FOR_AI.includes(args.new_status)) {
         return { error: `Төлөв буруу. Боломжтой: ${LEAD_STATUSES_FOR_AI.join(', ')}` };
     }
     let query = supabaseAdmin.from('leads').select('id, customer_name, status, lost_reason').eq('shop_id', shopId).is('deleted_at', null);
+    query = applyLeadScope(query, scope);
     if (args.lead_id) query = query.eq('id', args.lead_id);
     else if (args.customer_name) query = query.ilike('customer_name', `%${args.customer_name}%`);
     else return { error: 'lead_id эсвэл customer_name шаардлагатай' };
@@ -687,19 +692,20 @@ export async function updateLeadStatus(shopId: string, args: any, confirm = fals
             `Лийдийн төлөв өөрчлөх: ${lead.customer_name}`,
             { Лийд: lead.customer_name, 'Одоогийн төлөв': oldStatus, 'Шинэ төлөв': args.new_status, ...(args.new_status === 'closed_lost' ? { 'Алдсан шалтгаан': lostReason } : {}) });
     }
-    const { data, error } = await supabaseAdmin.from('leads')
+    const { data, error } = await applyLeadScope(supabaseAdmin.from('leads')
         .update({ status: args.new_status, lost_reason: args.new_status === 'closed_lost' ? lostReason : null, updated_at: new Date().toISOString() })
         .eq('id', lead.id)
-        .eq('shop_id', shopId).is('deleted_at', null).select('id').maybeSingle();
+        .eq('shop_id', shopId).is('deleted_at', null).select('id').maybeSingle(), scope);
     if (error) return { error: `Алдаа: ${error.message}` };
     if (!data) return { error: 'Лид олдсонгүй. Төлөв өөрчлөгдөөгүй.' };
     return { success: true, lead: lead.customer_name, oldStatus, newStatus: args.new_status };
 }
 
-export async function addLeadNote(shopId: string, args: any, confirm = false) {
+export async function addLeadNote(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
     const note = typeof args.note === 'string' ? args.note.trim() : '';
     if (!note) return { error: 'note (тэмдэглэлийн текст) шаардлагатай' };
-    let query = supabaseAdmin.from('leads').select('id, customer_name, notes').eq('shop_id', shopId).is('deleted_at', null);
+    let query = supabaseAdmin.from('leads').select('id, project_id, customer_name, notes').eq('shop_id', shopId).is('deleted_at', null);
+    query = applyLeadScope(query, scope);
     if (args.lead_id) query = query.eq('id', args.lead_id);
     else if (args.customer_name) query = query.ilike('customer_name', `%${args.customer_name}%`);
     else return { error: 'lead_id эсвэл customer_name шаардлагатай' };
@@ -707,7 +713,7 @@ export async function addLeadNote(shopId: string, args: any, confirm = false) {
     const { data: leads } = await query.limit(20);
     if (!leads || leads.length === 0) return { error: 'Лийд олдсонгүй' };
     // Өмнө нь нэр давхцвал чимээгүй эхний лийдэд бичдэг байсан — одоо тодруулна.
-    if (leads.length > 1) return { error: `${leads.length} лийд олдлоо, тодруулна уу`, options: leads.map(l => ({ id: l.id, name: l.customer_name })) };
+    if (leads.length > 1) return { error: `${leads.length} лийд олдлоо, тодруулна уу`, options: leads.map(l => ({ id: l.id, project_id: l.project_id, name: l.customer_name })) };
 
     const lead = leads[0];
     if (!confirm) {
@@ -720,10 +726,10 @@ export async function addLeadNote(shopId: string, args: any, confirm = false) {
     const existingNotes = lead.notes || '';
     const updatedNotes = existingNotes ? `${existingNotes}\n[${timestamp}] ${note}` : `[${timestamp}] ${note}`;
 
-    const { error } = await supabaseAdmin.from('leads')
+    const { error } = await applyLeadScope(supabaseAdmin.from('leads')
         .update({ notes: updatedNotes, updated_at: new Date().toISOString() })
         .eq('id', lead.id)
-        .eq('shop_id', shopId);
+        .eq('shop_id', shopId), scope);
     if (error) return { error: `Алдаа: ${error.message}` };
     return { success: true, lead: lead.customer_name, note };
 }
@@ -771,10 +777,10 @@ export async function updateContractStatus(shopId: string, args: any, confirm = 
  * статусыг action-оор нэгтгэж шинэчилнэ. confirm=false үед бүх зорилтыг олж НЭГ
  * нэгдсэн preview буцаана; confirm=true үед preview-д тогтсон ID-уудаар бодитоор шинэчилнэ.
  */
-export async function processContractAction(shopId: string, args: any, confirm = false): Promise<any> {
+export async function processContractAction(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE): Promise<any> {
     // Баталгаажуулалтын хооронд өгөгдөл өөрчлөгдөж болно; бүх зорилтын дүрмийг бичихээс өмнө дахин шалгана.
     if (confirm) {
-        const checked = await processContractAction(shopId, args, false);
+        const checked = await processContractAction(shopId, args, false, scope);
         if (checked.error) return checked;
     }
     const statusMap: Record<string, { property: string; unit: string; lead: string; contract: string }> = {
@@ -823,7 +829,7 @@ export async function processContractAction(shopId: string, args: any, confirm =
 
     // Лийд
     if (args.lead_id || args.customer_name) {
-        const leadResult: any = await updateLeadStatus(shopId, { lead_id: args.lead_id, customer_name: args.customer_name, new_status: mapping.lead, lost_reason: args.lost_reason }, confirm);
+        const leadResult: any = await updateLeadStatus(shopId, { lead_id: args.lead_id, customer_name: args.customer_name, new_status: mapping.lead, lost_reason: args.lost_reason }, confirm, scope);
         results.lead = leadResult;
         if (leadResult.requiresConfirmation) {
             resolvedArgs.lead_id = leadResult.action.args.lead_id;
@@ -946,7 +952,11 @@ export async function deleteProperty(shopId: string, args: any, confirm = false)
     return { success: true, message: `"${prop.name}" байрыг устгалаа (сэргээх боломжтой).`, propertyId: prop.id };
 }
 
-export async function createLead(shopId: string, args: any, confirm = false, salesManagerName = '', userId?: string) {
+export async function createLead(shopId: string, args: any, confirm = false, salesManagerName = '', userId?: string, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
+    if (!z.string().uuid().safeParse(args.project_id).success) return { error: 'Лидийн төслийг project_id-аар сонгоно уу' };
+    if (!canAccessProject(scope, args.project_id)) return { error: 'Энэ төслийн лид үүсгэх эрх танд алга' };
+    const project = await supabaseAdmin.from('projects').select('id').eq('id', args.project_id).eq('shop_id', shopId).maybeSingle();
+    if (project.error || !project.data) return { error: 'Төсөл олдсонгүй эсвэл шалгаж чадсангүй' };
     if (typeof args.customer_name !== 'string' || !args.customer_name.trim()) return { error: 'customer_name шаардлагатай' };
     if (args.status === 'closed_won' || args.status === 'closed_lost') return { error: 'Шинэ лидийг идэвхтэй төлөвөөр бүртгэнэ. Гэрээ эсвэл алдсан шалтгаанаа дараа нь бүртгэнэ үү.' };
     const validStatus = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating'];
@@ -963,6 +973,10 @@ export async function createLead(shopId: string, args: any, confirm = false, sal
         else if (resolved.status === 500) return { error: resolved.error };
     }
 
+    if (managerName) {
+        try { await assertProjectManager(supabaseAdmin, shopId, args.project_id, managerName); }
+        catch (error) { return { error: error instanceof Error ? error.message : 'Менежерийн төсөл шалгахад алдаа гарлаа' }; }
+    }
     const preview = {
         Нэр: args.customer_name, Утас: args.customer_phone || '-', Статус: status, 'Эх сурвалж': source,
         Төсөв: args.budget_max ? `${Number(args.budget_max).toLocaleString()}₮` : '-',
@@ -971,7 +985,7 @@ export async function createLead(shopId: string, args: any, confirm = false, sal
     if (!confirm) return confirmNeeded('create_lead', { ...args, status, source }, `Шинэ лийд: ${args.customer_name}`, preview);
 
     const insert = {
-        shop_id: shopId,
+        shop_id: shopId, project_id: args.project_id,
         customer_name: args.customer_name.trim(),
         customer_phone: args.customer_phone || null,
         customer_email: args.customer_email || null,
@@ -987,15 +1001,16 @@ export async function createLead(shopId: string, args: any, confirm = false, sal
     return { success: true, message: `"${data.customer_name}" лийд амжилттай үүсгэлээ (${managerName ? `менежер: ${managerName}` : 'хариуцагчгүй — идэвхтэй менежерт онооно'}).`, leadId: data.id };
 }
 
-export async function deleteLead(shopId: string, args: any, confirm = false) {
-    let query = supabaseAdmin.from('leads').select('id, customer_name, status').eq('shop_id', shopId).is('deleted_at', null);
+export async function deleteLead(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
+    let query = supabaseAdmin.from('leads').select('id, project_id, customer_name, status').eq('shop_id', shopId).is('deleted_at', null);
+    query = applyLeadScope(query, scope);
     if (args.lead_id) query = query.eq('id', args.lead_id);
     else if (args.customer_name) query = query.ilike('customer_name', `%${args.customer_name}%`);
     else return { error: 'lead_id эсвэл customer_name шаардлагатай' };
 
     const { data: leads } = await query;
     if (!leads || leads.length === 0) return { error: 'Лийд олдсонгүй' };
-    if (leads.length > 1) return { error: `${leads.length} лийд олдлоо, тодруулна уу`, options: leads.map(l => ({ id: l.id, name: l.customer_name })) };
+    if (leads.length > 1) return { error: `${leads.length} лийд олдлоо, тодруулна уу`, options: leads.map(l => ({ id: l.id, project_id: l.project_id, name: l.customer_name })) };
 
     const lead = leads[0];
     if (!confirm) {
@@ -1005,9 +1020,9 @@ export async function deleteLead(shopId: string, args: any, confirm = false) {
             { Нэр: lead.customer_name, Статус: lead.status, Шалтгаан: args.reason || '-' });
     }
 
-    const { error } = await supabaseAdmin.from('leads')
+    const { error } = await applyLeadScope(supabaseAdmin.from('leads')
         .update({ deleted_at: new Date().toISOString() })
-        .eq('id', lead.id);
+        .eq('id', lead.id), scope);
     if (error) return { error: `Алдаа: ${error.message}` };
     return { success: true, message: `"${lead.customer_name}" лийдийг устгалаа (сэргээх боломжтой).`, leadId: lead.id };
 }
@@ -1045,7 +1060,7 @@ export async function createCustomer(shopId: string, args: any, confirm = false,
 
 // ---- Viewings (уулзалт) ----
 
-export async function scheduleViewing(shopId: string, args: any, confirm = false, salesManagerName = '', userId?: string) {
+export async function scheduleViewing(shopId: string, args: any, confirm = false, salesManagerName = '', userId?: string, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
     let propertyId = args.property_id || null;
     if (!propertyId && args.property_name) {
         const name = String(args.property_name).trim().replace(/[\\%_]/g, '\\$&');
@@ -1058,7 +1073,7 @@ export async function scheduleViewing(shopId: string, args: any, confirm = false
         propertyId = props[0].id;
     }
     const input = { ...args, property_id: propertyId };
-    const resolved = await resolveViewingInput(supabaseAdmin, shopId, input);
+    const resolved = await resolveViewingInput(supabaseAdmin, shopId, input, scope);
     if (!resolved.ok) return { error: resolved.error };
     const { input: p, lead, property } = resolved.data;
     const payload = { ...p, lead_id: lead?.id ?? null };
@@ -1069,17 +1084,18 @@ export async function scheduleViewing(shopId: string, args: any, confirm = false
     });
     const identity = userId ? await resolveManagerIdentity(supabaseAdmin, shopId, userId) : null;
     const result = await createViewing(supabaseAdmin, shopId, payload, {
-        userId: userId ?? null, managerName: identity?.isManager ? identity.managerName : null,
+        scope, userId: userId ?? null, managerName: identity?.isManager ? identity.managerName : null,
     });
     if (!result.ok) return { error: result.error, partialSuccess: result.partialSuccess, leadId: result.leadId };
     return { success: true, message: result.warning || `Уулзалтыг ${when}-д бүртгэлээ.`, warning: result.warning,
         viewingId: result.data.viewing.id, leadId: result.data.lead_id };
 }
 
-export async function deleteViewing(shopId: string, args: any, confirm = false) {
+export async function deleteViewing(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE, userId?: string) {
     let query = supabaseAdmin.from('property_viewings')
-        .select('id, scheduled_at, status, properties(name)')
+        .select(`id, scheduled_at, status, properties(name), ${scope.projectIds === null ? 'leads' : 'leads!inner'}(project_id,sales_manager_name)`)
         .eq('shop_id', shopId).is('deleted_at', null);
+    query = applyLeadScope(query, scope, 'leads.project_id', 'leads.sales_manager_name');
     if (args.viewing_id) {
         query = query.eq('id', args.viewing_id);
     } else if (args.property_name) {
@@ -1102,15 +1118,43 @@ export async function deleteViewing(shopId: string, args: any, confirm = false) 
             { Байр: propName, Огноо: v.scheduled_at ? new Date(v.scheduled_at).toLocaleString('mn-MN') : '-', Шалтгаан: args.reason || '-' });
     }
 
-    const { error } = await supabaseAdmin.from('property_viewings').update({ deleted_at: new Date().toISOString(), status: 'cancelled' }).eq('id', v.id);
-    if (error) return { error: `Алдаа: ${error.message}` };
+    if (scope.projectIds !== null) {
+        const result = await updateViewing(supabaseAdmin, shopId, v.id, { deleted_at: new Date().toISOString(), status: 'cancelled' }, {
+            scope, userId: userId || null, managerName: scope.managerName,
+        });
+        if (!result.ok) return { error: result.error };
+    } else {
+        const { data, error } = await supabaseAdmin.from('property_viewings')
+            .update({ deleted_at: new Date().toISOString(), status: 'cancelled' })
+            .eq('id', v.id).eq('shop_id', shopId).is('deleted_at', null).select('id').maybeSingle();
+        if (error) return { error: `Алдаа: ${error.message}` };
+        if (!data) return { error: 'Уулзалт олдсонгүй' };
+    }
     return { success: true, message: `"${propName}" байрны уулзалтыг устгалаа (сэргээх боломжтой).`, viewingId: v.id };
 }
 
 // ---- Contracts (гэрээ) ----
 
-export async function createContract(shopId: string, args: any, confirm = false, salesManagerName = '') {
+export async function createContract(shopId: string, args: any, confirm = false, salesManagerName = '', scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
     if (!args.customer_name) return { error: 'customer_name шаардлагатай' };
+    let projectId: string | null = null;
+    let customerId = args.customer_id || null;
+    if (args.lead_id) {
+        if (!z.string().uuid().safeParse(args.lead_id).success) return { error: 'Лидийн ID буруу байна' };
+        const { data: lead, error } = await applyLeadScope(supabaseAdmin.from('leads')
+            .select('id, project_id, customer_id, sales_manager_name').eq('id', args.lead_id)
+            .eq('shop_id', shopId).is('deleted_at', null), scope).maybeSingle();
+        if (error) return { error: 'Лидийн хандалтыг шалгаж чадсангүй' };
+        if (!lead) return { error: 'Лид олдсонгүй' };
+        if (customerId && customerId !== lead.customer_id) return { error: 'Харилцагч лидтэй тохирохгүй байна' };
+        projectId = lead.project_id;
+        customerId = lead.customer_id;
+        salesManagerName = scope.projectIds === null ? salesManagerName : scope.managerName || '';
+    } else if (customerId) {
+        const customer = await supabaseAdmin.from('customers').select('id').eq('id', customerId)
+            .eq('shop_id', shopId).is('deleted_at', null).maybeSingle();
+        if (customer.error || !customer.data) return { error: 'Харилцагч олдсонгүй' };
+    }
 
     const preview = {
         Харилцагч: args.customer_name, Утас: args.customer_phone || '-',
@@ -1122,6 +1166,7 @@ export async function createContract(shopId: string, args: any, confirm = false,
 
     const insert: Record<string, unknown> = {
         shop_id: shopId,
+        project_id: projectId,
         product_type: args.product_type || 'residential',
         contract_status: 'active',
         customer_name: args.customer_name,
@@ -1135,7 +1180,7 @@ export async function createContract(shopId: string, args: any, confirm = false,
         sales_manager: salesManagerName || null,
         contract_date: new Date().toISOString().slice(0, 10),
         lead_id: args.lead_id || null,
-        customer_id: args.customer_id || null,
+        customer_id: customerId,
     };
     const { data, error } = await supabaseAdmin.from('property_contracts').insert(insert).select('id, customer_name').single();
     if (error) return { error: `Алдаа: ${error.message}` };
@@ -1192,12 +1237,13 @@ export async function deleteCustomer(shopId: string, args: any, confirm = false)
 
 // ---- Bulk үйлдэл ----
 
-export async function bulkUpdateLeads(shopId: string, args: any, confirm = false) {
+export async function bulkUpdateLeads(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
     if (args.new_status === 'closed_won' || args.new_status === 'closed_lost') return { error: 'Олон лидийг бөөнөөр хаахгүй. Лид тус бүрт update_lead_status ашиглаж, гэрээ эсвэл алдсан шалтгааныг шалгана уу.' };
     const valid = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating'];
     if (!args.new_status || !valid.includes(args.new_status)) return { error: 'new_status шаардлагатай ба зөв төлөв байх ёстой' };
 
     let q = supabaseAdmin.from('leads').select('id, customer_name, status').eq('shop_id', shopId).is('deleted_at', null);
+    q = applyLeadScope(q, scope);
     if (args.lead_ids) {
         const ids = String(args.lead_ids).split(',').map((s) => s.trim()).filter(Boolean);
         if (!ids.length) return { error: 'lead_ids хоосон байна' };
@@ -1218,8 +1264,8 @@ export async function bulkUpdateLeads(shopId: string, args: any, confirm = false
     }
 
     const ids = leads.map((l) => l.id);
-    const { data: updated, error } = await supabaseAdmin.from('leads').update({ status: args.new_status, lost_reason: null, updated_at: new Date().toISOString() })
-        .in('id', ids).eq('shop_id', shopId).is('deleted_at', null).select('id');
+    const { data: updated, error } = await applyLeadScope(supabaseAdmin.from('leads').update({ status: args.new_status, lost_reason: null, updated_at: new Date().toISOString() })
+        .in('id', ids).eq('shop_id', shopId).is('deleted_at', null).select('id'), scope);
     if (error) return { error: `Алдаа: ${error.message}` };
     if (updated?.length !== ids.length) return { error: `${ids.length} лидээс ${updated?.length || 0} нь шинэчлэгдлээ. Жагсаалтаа шинэчилж шалгана уу.`, partialSuccess: !!updated?.length };
     return { success: true, message: `${updated.length} лийдийн статусыг "${args.new_status}" болгож шинэчиллээ.`, count: updated.length };
@@ -1394,7 +1440,7 @@ export async function rememberFact(shopId: string, args: any, _confirm = false, 
 // ---- File attach (файл хавсаргах) ----
 
 /** Хавсаргах entity-г төрөл + id/нэрээр шийдвэрлэнэ. */
-async function resolveEntity(shopId: string, entityType: string, args: any): Promise<{ id: string; label: string } | { error: string; options?: any[] }> {
+async function resolveEntity(shopId: string, entityType: string, args: any, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE): Promise<{ id: string; label: string } | { error: string; options?: any[] }> {
     const byId = args.entity_id;
     if (entityType === 'property') {
         let q = supabaseAdmin.from('properties').select('id, name').eq('shop_id', shopId).is('deleted_at', null);
@@ -1406,6 +1452,7 @@ async function resolveEntity(shopId: string, entityType: string, args: any): Pro
     }
     if (entityType === 'lead') {
         let q = supabaseAdmin.from('leads').select('id, customer_name').eq('shop_id', shopId).is('deleted_at', null);
+    q = applyLeadScope(q, scope);
         q = byId ? q.eq('id', byId) : q.ilike('customer_name', `%${args.entity_name || ''}%`);
         const { data } = await q;
         if (!data || !data.length) return { error: 'Лийд олдсонгүй' };
@@ -1431,7 +1478,7 @@ async function resolveEntity(shopId: string, entityType: string, args: any): Pro
     return { id: data[0].id, label: data[0].customer_name || data[0].contract_number || 'гэрээ' };
 }
 
-export async function attachFile(shopId: string, args: any, confirm = false, salesManagerName = '', userId?: string, perms?: { role: string; modules?: string[] }) {
+export async function attachFile(shopId: string, args: any, confirm = false, salesManagerName = '', userId?: string, perms?: { role: string; modules?: string[] }, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
     const types = ['property', 'lead', 'customer', 'contract'];
     if (!args.entity_type || !types.includes(args.entity_type)) return { error: 'entity_type буруу (property/lead/customer/contract)' };
     if (!args.file_url) return { error: 'file_url шаардлагатай' };
@@ -1442,7 +1489,7 @@ export async function attachFile(shopId: string, args: any, confirm = false, sal
         return { error: 'Файлын хаяг зөвшөөрөгдөөгүй байна.' };
     }
 
-    const resolved = await resolveEntity(shopId, args.entity_type, args);
+    const resolved = await resolveEntity(shopId, args.entity_type, args, scope);
     if ('error' in resolved) return resolved;
 
     const typeLabel: Record<string, string> = { property: 'Байр', lead: 'Лийд', customer: 'Харилцагч', contract: 'Гэрээ' };

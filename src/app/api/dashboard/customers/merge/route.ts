@@ -5,6 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { MergeCustomersSchema, validateBody } from '@/lib/validations/schemas';
 import { mergeCustomers } from '@/lib/services/CustomerOps';
+import { ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 
 // customer_id-аар customers-ыг лавладаг хүүхэд хүснэгтүүд — нэгтгэхэд repoint хийнэ.
 // Зарим хүснэгт deployment-д байхгүй байж болзошгүй тул алдааг тус бүрд нь тэвчинэ.
@@ -29,7 +30,9 @@ export async function POST(request: NextRequest) {
         }
         const { primaryId, duplicateId } = validation.data;
 
-        const r = await mergeCustomers(supabaseAdmin(), authShop.id, primaryId, duplicateId);
+        const db = supabaseAdmin();
+        const scope = await resolveSalesProjectScope(db, authShop.id);
+        const r = await mergeCustomers(db, authShop.id, primaryId, duplicateId, scope);
         if ('error' in r) return NextResponse.json({ error: r.error }, { status: r.status });
         const { merged, repointWarnings } = r;
 
@@ -45,6 +48,7 @@ export async function POST(request: NextRequest) {
             message: 'Харилцагчдыг амжилттай нэгтгэлээ',
         });
     } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         logger.error('[Customer Merge] error', { error });
         return NextResponse.json({ error: 'Нэгтгэх үед алдаа гарлаа' }, { status: 500 });
     }

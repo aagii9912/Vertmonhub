@@ -8,6 +8,8 @@ import { logLeadActivity, listLeadActivities } from '@/lib/leads/activities';
 import { statusLabel } from '@/lib/leads/labels';
 import { hasRealContractFields } from '@/lib/leads/contracts';
 import { logger } from '@/lib/utils/logger';
+import { z } from 'zod';
+import { applyLeadScope, assertProjectManager, canAccessProject, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 
 const VALID_STATUS = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'];
 
@@ -25,13 +27,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
         const { id } = await params;
         const db = supabaseAdmin();
+        const scope = await resolveSalesProjectScope(db, authShop.id);
 
-        const { data: lead, error } = await db
+        const { data: lead, error } = await applyLeadScope(db
             .from('leads')
             .select('*')
             .eq('id', id)
             .eq('shop_id', authShop.id)
-            .is('deleted_at', null)
+            .is('deleted_at', null), scope)
             .maybeSingle();
         if (error) return NextResponse.json({ error: 'Лид татахад алдаа гарлаа' }, { status: 500 });
         if (!lead) return NextResponse.json({ error: 'Лид олдсонгүй' }, { status: 404 });
@@ -47,6 +50,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
                 .from('property_viewings')
                 .select('id, scheduled_at, status, meeting_type, property_id, agent_notes, customer_feedback, interest_level, sales_manager_name')
                 .eq('lead_id', id)
+                .eq('shop_id', authShop.id)
                 .is('deleted_at', null)
                 .order('scheduled_at', { ascending: false })
                 .limit(20)
@@ -55,6 +59,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
                 .from('property_contracts')
                 .select('id, contract_number, contract_status, contract_date, total_price, paid_amount, balance, unit_number, block_name')
                 .eq('lead_id', id)
+                .eq('shop_id', authShop.id)
                 .is('deleted_at', null)
                 .order('contract_date', { ascending: false })
                 .limit(10)
@@ -65,6 +70,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
                       .from('properties')
                       .select('id, name, price, rooms, size_sqm, status, images')
                       .eq('id', lead.property_id)
+                      .eq('shop_id', authShop.id)
                       .maybeSingle()
                       .then((r) => (r.error ? null : r.data))
                 : Promise.resolve(null),
@@ -74,7 +80,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         const propIds = [...new Set((viewings as { property_id: string | null }[]).map((v) => v.property_id).filter((x): x is string => !!x))];
         const propNames = new Map<string, string>();
         if (propIds.length) {
-            const { data } = await db.from('properties').select('id, name').in('id', propIds);
+            const { data } = await db.from('properties').select('id, name').eq('shop_id', authShop.id).in('id', propIds);
             for (const p of data || []) propNames.set(p.id, p.name);
         }
         const viewingsOut = (viewings as Record<string, unknown>[]).map((v) => ({
@@ -85,6 +91,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         if (partial.length) logger.warn('[leads/[id]] partial sub-queries failed', { id, partial });
         return NextResponse.json({ lead, viewings: viewingsOut, contracts, activities, property, partial });
     } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         return safeErrorResponse(error, 'Лид татахад алдаа гарлаа');
     }
 }
@@ -108,6 +115,12 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         const body = await request.json().catch(() => ({}));
 
         const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+        if (body.project_id !== undefined) {
+            if (body.project_id !== null && !z.string().uuid().safeParse(body.project_id).success) {
+                return NextResponse.json({ error: 'Буруу төсөл' }, { status: 400 });
+            }
+            updates.project_id = body.project_id;
+        }
         if (body.status !== undefined) {
             if (!VALID_STATUS.includes(body.status)) {
                 return NextResponse.json({ error: 'Буруу төлөв' }, { status: 400 });
@@ -166,6 +179,16 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         }
 
         const db = supabaseAdmin();
+        const scope = await resolveSalesProjectScope(db, authShop.id);
+        if (updates.project_id !== undefined) {
+            if (!canAccessProject(scope, updates.project_id as string | null)) return NextResponse.json({ error: 'Энэ төсөлд лид шилжүүлэх эрхгүй' }, { status: 403 });
+            if (updates.project_id) {
+                const { data: project, error } = await db.from('projects').select('id')
+                    .eq('id', updates.project_id).eq('shop_id', authShop.id).maybeSingle();
+                if (error) throw error;
+                if (!project) return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 400 });
+            }
+        }
 
         // Лийд энэ shop-д харьяалагдаж байгааг шалгана (өмнөх утгуудыг түүхэнд бичихэд ашиглана)
         if (typeof updates.sales_manager_name === 'string') {
@@ -173,15 +196,29 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             if (!manager.ok) return NextResponse.json({ error: manager.error }, { status: manager.status });
             updates.sales_manager_name = manager.managerName;
         }
-        const { data: lead } = await db
+        const { data: lead, error: readError } = await applyLeadScope(db
             .from('leads')
-            .select('id, status, sales_manager_name, lost_reason')
+            .select('id, project_id, status, sales_manager_name, lost_reason')
             .eq('id', id)
             .eq('shop_id', authShop.id)
-            .is('deleted_at', null)
+            .is('deleted_at', null), scope)
             .single();
+        if (readError && readError.code !== 'PGRST116') throw readError;
         if (!lead) {
             return NextResponse.json({ error: 'Лийд олдсонгүй' }, { status: 404 });
+        }
+        if (scope.projectIds !== null) {
+            if (updates.sales_manager_name !== undefined && updates.sales_manager_name !== lead.sales_manager_name) {
+                return NextResponse.json({ error: 'Лидийг өөр менежерт хуваарилах эрхгүй' }, { status: 403 });
+            }
+            if (updates.project_id !== undefined && updates.project_id !== lead.project_id) {
+                return NextResponse.json({ error: 'Лидийн төслийг өөрчлөх эрхгүй' }, { status: 403 });
+            }
+        }
+        const projectId = updates.project_id !== undefined ? updates.project_id as string | null : lead.project_id;
+        const managerName = updates.sales_manager_name !== undefined ? updates.sales_manager_name : lead.sales_manager_name;
+        if (typeof managerName === 'string' && (updates.sales_manager_name !== undefined || updates.project_id !== undefined)) {
+            await assertProjectManager(db, authShop.id, projectId, managerName);
         }
 
         // «Амжилттай» — зөвхөн бодит гэрээтэй лид. DB trigger (create_contract_on_lead_won)
@@ -206,10 +243,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
             return NextResponse.json({ error: 'Алдсан шалтгаанаа (lost_reason) заана уу' }, { status: 400 });
         }
 
-        const { error } = await db.from('leads').update(updates).eq('id', id).eq('shop_id', authShop.id);
+        let write = applyLeadScope(db.from('leads').update(updates).eq('id', id).eq('shop_id', authShop.id).is('deleted_at', null), scope);
+        write = lead.project_id ? write.eq('project_id', lead.project_id) : write.is('project_id', null);
+        const { data: updated, error } = await write.select('id').maybeSingle();
         if (error) {
             return NextResponse.json({ error: 'Шинэчлэхэд алдаа гарлаа' }, { status: 500 });
         }
+        if (!updated) return NextResponse.json({ error: 'Лидийн төсөл өөрчлөгдсөн байна. Дахин уншаад оролдоно уу.' }, { status: 409 });
 
         // Түүх: статус / менежерийн өөрчлөлт (best-effort)
         const changedStatus = updates.status !== undefined && updates.status !== lead.status;
@@ -236,6 +276,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
         return NextResponse.json({ success: true });
     } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         return safeErrorResponse(error, 'Лийд шинэчлэхэд алдаа гарлаа');
     }
 }

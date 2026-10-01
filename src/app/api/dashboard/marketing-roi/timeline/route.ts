@@ -1,3 +1,4 @@
+import { applyLeadScope, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { requireModule } from '@/lib/auth/require-permission';
 import { NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
@@ -34,6 +35,7 @@ export async function GET() {
         }
 
         const supabase = supabaseAdmin();
+        const scope = await resolveSalesProjectScope(supabase, authShop.id);
         const shopId = authShop.id;
 
         // Цонхны эхлэл: одоогоос N-1 сарын өмнөх сарын 1-ний өдөр.
@@ -43,17 +45,17 @@ export async function GET() {
 
         const [{ data: leads }, { data: viewings }, { data: posts }, { data: adCampaigns }, { data: mktCampaigns }] =
             await Promise.all([
-                supabase
+                applyLeadScope(supabase
                     .from('leads')
                     .select('created_at')
                     .eq('shop_id', shopId)
                     .is('deleted_at', null)
-                    .gte('created_at', startISO),
-                supabase
+                    .gte('created_at', startISO), scope),
+                applyLeadScope(supabase
                     .from('property_viewings')
-                    .select('scheduled_at')
+                    .select(scope.projectIds === null ? 'scheduled_at' : 'scheduled_at,leads!inner(project_id,sales_manager_name)')
                     .eq('shop_id', shopId)
-                    .gte('scheduled_at', startISO),
+                    .gte('scheduled_at', startISO), scope, 'leads.project_id', 'leads.sales_manager_name'),
                 supabase
                     .from('social_posts')
                     .select('published_at, status')
@@ -99,7 +101,7 @@ export async function GET() {
         };
 
         for (const l of leads || []) bump(monthKey(l.created_at), 'leads');
-        for (const v of viewings || []) bump(monthKey(v.scheduled_at), 'meetings');
+        for (const v of (viewings || []) as unknown as { scheduled_at: string | null }[]) bump(monthKey(v.scheduled_at), 'meetings');
         for (const p of posts || []) bump(monthKey(p.published_at), 'activity');
         for (const c of mktCampaigns || []) bump(monthKey(c.start_date || c.created_at), 'activity');
 
@@ -117,6 +119,7 @@ export async function GET() {
 
         return NextResponse.json({ months: Array.from(buckets.values()) });
     } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         logger.error('[Marketing timeline] error', { error });
         return NextResponse.json({ error: 'Цуваа татахад алдаа гарлаа' }, { status: 500 });
     }

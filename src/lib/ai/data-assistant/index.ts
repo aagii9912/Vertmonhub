@@ -7,6 +7,8 @@
 
 import { logger } from '@/lib/utils/logger';
 import { supabaseAdmin } from '@/lib/supabase';
+import { applyProjectScope, resolveSalesProjectScope, UNRESTRICTED_SALES_SCOPE } from '@/lib/sales/project-scope';
+import { fetchAllRows } from '@/lib/utils/pagination';
 import { loadOperationsReport } from '@/lib/dashboard/operations-report-load';
 import { loadMarketingPerformance } from '@/lib/marketing/performance-load';
 import { buildDepartmentKpis } from '@/lib/marketing/department-kpi';
@@ -78,6 +80,13 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         return { error: `Энэ үйлдэлд «${requiredModule || toolName}» модулийн эрх шаардлагатай — хандалт зөвшөөрөгдөөгүй.` };
     }
 
+    const scopedTools = new Set(['list_lead_projects', 'get_marketing_performance', 'get_operations_report', 'get_dashboard_stats', 'list_leads', 'get_lead_details', 'get_customer_insights', 'update_lead_status', 'add_lead_note', 'create_lead', 'delete_lead', 'bulk_update_leads', 'log_call', 'set_followup', 'assign_lead_manager', 'list_viewings', 'schedule_viewing', 'delete_viewing', 'record_viewing_outcome', 'reschedule_viewing', 'attach_file', 'process_contract_action', 'create_contract', 'get_kpi_report', 'merge_customers']);
+    let scope = UNRESTRICTED_SALES_SCOPE;
+    if (scopedTools.has(toolName) && (toolName !== 'attach_file' || args.entity_type === 'lead')) {
+        try { scope = await resolveSalesProjectScope(supabaseAdmin(), shopId, { userId, role: perms.role }); }
+        catch (error) { return { error: error instanceof Error ? error.message : 'Лидийн хандалтыг шалгаж чадсангүй' }; }
+    }
+
     // AUTO tool-ууд ч confirm=false үед preview буцаана (executor түвшний нэгдсэн хаалт).
     // Orchestrator loop тэдгээрийг confirm=true-ээр дуудаж шууд гүйцэтгэнэ (AUTO_TOOL_NAMES).
     if (AUTO_SET.has(toolName) && !confirm) {
@@ -86,9 +95,13 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
 
     let result: any;
     switch (toolName) {
+        case 'list_lead_projects':
+            result = { projects: await fetchAllRows((from, to) => applyProjectScope(supabaseAdmin().from('projects')
+                .select('id,name').eq('shop_id', shopId).order('id').range(from, to), scope, 'id')) };
+            break;
         case 'get_marketing_performance': {
             try {
-                const { report } = await loadMarketingPerformance(supabaseAdmin(), shopId, args);
+                const { report } = await loadMarketingPerformance(supabaseAdmin(), shopId, args, scope);
                 result = { ...report, departmentKpis: buildDepartmentKpis(report), url: '/marketing', guidance: 'Зөвхөн энэ тайлангийн тоонд тулгуурлан дүгнэ. Үүссэн лидийн бүлгийн Sales/Deal хувийг хугацааны нийт гэрээтэй андуурахгүй. Менежерт шилжүүлэлтийг Qualified Lead гэж үзэхгүй. Албаны KPI-ийн жин нь нийлбэр үнэлгээ биш; дутуу шалгуур, зорилт, онооны дүрмийг зохиохгүй. Хоосон зорилт, дутуу холбоосыг 0 гүйцэтгэл гэж тайлбарлахгүй. Дуусаагүй сарыг бүтэн сартай харьцуулсныг дурд. Шалтгааныг нотолгоогүй бүү зохио.' };
             } catch (error) {
                 logger.error('[AI Marketing Performance] Read failed', { error });
@@ -103,7 +116,7 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
             }
             try {
                 const report = await loadOperationsReport(supabaseAdmin(), {
-                    shopId, from: args.from, to: args.to,
+                    shopId, from: args.from, to: args.to, scope,
                     canReadFinance: perms.role === 'super_admin' || !!perms.modules?.includes('finance'),
                 });
                 result = { ...report, plainText: formatOperationsReportText(report),
@@ -114,11 +127,11 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
             }
             break;
         }
-        case 'get_dashboard_stats': result = await fetchDashboardStats(shopId, args.timeRange || 'month'); break;
+        case 'get_dashboard_stats': result = await fetchDashboardStats(shopId, args.timeRange || 'month', scope); break;
         case 'list_properties': result = await fetchProperties(shopId, args); break;
-        case 'list_leads': result = await fetchLeads(shopId, args); break;
-        case 'get_lead_details': result = await fetchLeadDetails(shopId, args); break;
-        case 'get_customer_insights': result = await fetchCustomerInsights(shopId, args); break;
+        case 'list_leads': result = await fetchLeads(shopId, args, scope); break;
+        case 'get_lead_details': result = await fetchLeadDetails(shopId, args, scope); break;
+        case 'get_customer_insights': result = await fetchCustomerInsights(shopId, args, scope); break;
         case 'list_contracts': result = await fetchContracts(shopId, args); break;
         case 'get_contract_details': result = await fetchContractDetails(shopId, args); break;
         case 'get_contracts_summary': result = await fetchContractsSummary(shopId, args); break;
@@ -130,48 +143,48 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'update_property_status': result = await updatePropertyStatus(shopId, args, confirm); break;
         case 'update_unit_status': result = await updateUnitStatus(shopId, args, confirm); break;
         case 'update_property_price': result = await updatePropertyPrice(shopId, args, confirm); break;
-        case 'update_lead_status': result = await updateLeadStatus(shopId, args, confirm); break;
-        case 'add_lead_note': result = await addLeadNote(shopId, args, confirm); break;
-        case 'process_contract_action': result = await processContractAction(shopId, args, confirm); break;
+        case 'update_lead_status': result = await updateLeadStatus(shopId, args, confirm, scope); break;
+        case 'add_lead_note': result = await addLeadNote(shopId, args, confirm, scope); break;
+        case 'process_contract_action': result = await processContractAction(shopId, args, confirm, scope); break;
         case 'create_property': result = await createProperty(shopId, args, confirm); break;
         case 'delete_property': result = await deleteProperty(shopId, args, confirm); break;
-        case 'create_lead': result = await createLead(shopId, args, confirm, userName, userId); break;
-        case 'delete_lead': result = await deleteLead(shopId, args, confirm); break;
+        case 'create_lead': result = await createLead(shopId, args, confirm, userName, userId, scope); break;
+        case 'delete_lead': result = await deleteLead(shopId, args, confirm, scope); break;
         case 'create_customer': result = await createCustomer(shopId, args, confirm, userName); break;
-        case 'schedule_viewing': result = await scheduleViewing(shopId, args, confirm, userName, userId); break;
-        case 'delete_viewing': result = await deleteViewing(shopId, args, confirm); break;
-        case 'create_contract': result = await createContract(shopId, args, confirm, userName); break;
+        case 'schedule_viewing': result = await scheduleViewing(shopId, args, confirm, userName, userId, scope); break;
+        case 'delete_viewing': result = await deleteViewing(shopId, args, confirm, scope, userId); break;
+        case 'create_contract': result = await createContract(shopId, args, confirm, userName, scope); break;
         case 'delete_contract': result = await deleteContract(shopId, args, confirm); break;
         case 'delete_customer': result = await deleteCustomer(shopId, args, confirm); break;
-        case 'attach_file': result = await attachFile(shopId, args, confirm, userName, userId, perms); break;
-        case 'bulk_update_leads': result = await bulkUpdateLeads(shopId, args, confirm); break;
+        case 'attach_file': result = await attachFile(shopId, args, confirm, userName, userId, perms, scope); break;
+        case 'bulk_update_leads': result = await bulkUpdateLeads(shopId, args, confirm, scope); break;
         case 'get_marketing_summary': result = await fetchMarketingSummary(shopId, args); break;
         case 'get_marketing_budget_status': result = await fetchMarketingBudgetStatus(shopId, args); break;
         case 'get_market_indicators': result = await fetchMarketIndicators(shopId); break;
         case 'create_social_post': result = await createSocialPost(shopId, args, confirm, userName); break;
         case 'remember_fact': result = await rememberFact(shopId, args, confirm, userName); break;
         // Wave 1 — өдөр тутмын үйлдлүүд (service давхаргаар)
-        case 'list_viewings': result = await listViewingsTool(shopId, args); break;
+        case 'list_viewings': result = await listViewingsTool(shopId, args, scope); break;
         case 'list_my_tasks': result = await listMyTasks(shopId, args, userId); break;
         case 'list_contract_payments': result = await listContractPayments(shopId, args); break;
-        case 'log_call': result = await logCall(shopId, args, userId, userName); break; // confirm: AUTO хаалт дээр
-        case 'set_followup': result = await setFollowup(shopId, args, userId, userName); break; // confirm: AUTO хаалт дээр
-        case 'assign_lead_manager': result = await assignLeadManager(shopId, args, confirm, userId, userName); break;
-        case 'record_viewing_outcome': result = await recordViewingOutcome(shopId, args, userId, userName); break; // confirm: AUTO хаалт дээр
-        case 'reschedule_viewing': result = await rescheduleViewing(shopId, args, confirm, userId, userName); break;
+        case 'log_call': result = await logCall(shopId, args, userId, userName, scope); break; // confirm: AUTO хаалт дээр
+        case 'set_followup': result = await setFollowup(shopId, args, userId, userName, scope); break; // confirm: AUTO хаалт дээр
+        case 'assign_lead_manager': result = await assignLeadManager(shopId, args, confirm, userId, userName, scope); break;
+        case 'record_viewing_outcome': result = await recordViewingOutcome(shopId, args, userId, userName, scope); break; // confirm: AUTO хаалт дээр
+        case 'reschedule_viewing': result = await rescheduleViewing(shopId, args, confirm, userId, userName, scope); break;
         case 'create_task': result = await createTaskTool(shopId, args, userId); break; // confirm: AUTO хаалт дээр
         case 'complete_task': result = await completeTaskTool(shopId, args, userId); break; // confirm: AUTO хаалт дээр
         case 'add_contract_payment': result = await addContractPayment(shopId, args, confirm); break;
         case 'mark_payment_paid': result = await markPaymentPaid(shopId, args, confirm); break;
         // Wave 2–4 — менежер / харилцагч / маркетинг / санхүү
-        case 'get_kpi_report': result = await getKpiReport(shopId, args, userId, perms); break;
+        case 'get_kpi_report': result = await getKpiReport(shopId, args, userId, perms, scope); break;
         case 'get_manager_performance': result = await getManagerPerformanceTool(shopId); break;
         case 'get_export_link': result = await getExportLink(shopId, args); break;
         case 'add_customer_tag': result = await customerTag(shopId, args, false); break; // confirm: AUTO хаалт дээр
         case 'remove_customer_tag': result = await customerTag(shopId, args, true); break; // confirm: AUTO хаалт дээр
         case 'set_customer_ai_pause': result = await customerAiPause(shopId, args); break; // confirm: AUTO хаалт дээр
         case 'reply_to_customer': result = await replyCustomer(shopId, args, confirm); break;
-        case 'merge_customers': result = await mergeCustomersTool(shopId, args, confirm); break;
+        case 'merge_customers': result = await mergeCustomersTool(shopId, args, confirm, scope); break;
         case 'log_marketing_spend': result = await logSpend(shopId, args, confirm, userId); break;
         case 'set_marketing_budget': result = await setBudget(shopId, args, confirm); break;
         case 'list_marketing_spend': result = await listSpend(shopId, args); break;

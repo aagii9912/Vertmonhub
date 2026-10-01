@@ -3,16 +3,22 @@ import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { getAdminUser } from '@/lib/admin/auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { getTeamTargets, getMonthlyActualsByManager, sumYear } from '@/lib/sales/targets';
+import { fetchAllRows } from '@/lib/utils/pagination';
 import { z } from 'zod';
 
+const shopSchema = z.uuid();
+const yearSchema = z.number().int().min(2000).max(2100);
 const rosterSchema = z.object({
-    shopId: z.uuid(),
+    shopId: shopSchema,
     managers: z.array(z.object({
         name: z.string().trim().min(1).max(120),
         is_active: z.boolean(),
         user_id: z.uuid().nullable(),
+        project_ids: z.array(z.uuid()).max(500).optional(),
     })).max(500),
 });
+
+function throwOnError(error: unknown): never { throw error; }
 
 /**
  * Багийн борлуулалтын төлөвлөгөө + идэвхтэй менежерийн бүртгэл (admin only).
@@ -22,8 +28,9 @@ const rosterSchema = z.object({
  *        (идэвхтэй эсэх + жилийн борлуулалт), акаунт холбох багийн гишүүд.
  * POST body:{ shopId, year, months:number[12] }
  *      → багийн сарын төлөвлөгөөг upsert.
- * PUT  body:{ shopId, managers:[{name, is_active, user_id?}] }
- *      → менежерүүдийн идэвхтэй эсэхийг хадгална (акаунтыг нэрээр авто-холбоно).
+ * PUT  body:{ shopId, managers:[{name, is_active, user_id, project_ids?}] }
+ *      → менежерийн бүртгэл + төслийн харьяаллыг нэг гүйлгээгээр хадгална.
+ *        project_ids байхгүй бол өмнөх харьяаллыг хадгална; [] бол цэвэрлэнэ.
  */
 
 async function requireAdmin() {
@@ -58,23 +65,38 @@ export async function GET(request: NextRequest) {
 
         const sp = request.nextUrl.searchParams;
         const shopId = sp.get('shopId');
-        if (!shopId) return NextResponse.json({ error: 'shopId шаардлагатай' }, { status: 400 });
-        const year = Number(sp.get('year')) || new Date().getFullYear();
+        if (!shopSchema.safeParse(shopId).success) return NextResponse.json({ error: 'Байгууллага буруу байна' }, { status: 400 });
+        const year = sp.has('year') ? Number(sp.get('year')) : new Date().getFullYear();
+        if (!yearSchema.safeParse(year).success) return NextResponse.json({ error: 'Он буруу байна' }, { status: 400 });
 
         const supabase = supabaseAdmin();
 
-        const [teamTarget, byManager, rosterRes, teamMembers] = await Promise.all([
-            getTeamTargets(supabase, shopId, year),
-            getMonthlyActualsByManager(supabase, shopId, year),
+        const [teamTarget, byManager, rosterRes, teamMembers, projects, memberships] = await Promise.all([
+            getTeamTargets(supabase, shopId!, year, throwOnError),
+            getMonthlyActualsByManager(supabase, shopId!, year, throwOnError),
             supabase.from('sales_managers').select('name, user_id, is_active').eq('shop_id', shopId),
-            loadMembers(supabase, shopId),
+            loadMembers(supabase, shopId!),
+            fetchAllRows<{ id: string; name: string }>((from, to) => supabase.from('projects')
+                .select('id, name').eq('shop_id', shopId).order('id').range(from, to)),
+            fetchAllRows<{ manager_name: string; project_id: string }>((from, to) => supabase.from('sales_manager_projects')
+                .select('manager_name, project_id').eq('shop_id', shopId).order('manager_name').order('project_id').range(from, to)),
         ]);
         if (rosterRes.error) throw rosterRes.error;
+        const projectsByManager = new Map<string, string[]>();
+        for (const membership of memberships) {
+            const ids = projectsByManager.get(membership.manager_name) || [];
+            ids.push(membership.project_id);
+            projectsByManager.set(membership.manager_name, ids);
+        }
 
         const managers = (rosterRes.data || [])
             .map((manager) => {
                 const yearActual = sumYear(byManager.get(manager.name)?.actuals || []);
-                return { name: manager.name, is_active: manager.is_active, user_id: manager.user_id || null, year_actual: yearActual };
+                return {
+                    name: manager.name, is_active: manager.is_active, user_id: manager.user_id || null,
+                    year_actual: yearActual,
+                    project_ids: projectsByManager.get(manager.name) || [],
+                };
             })
             .sort((a, b) => a.name.localeCompare(b.name, 'mn'));
 
@@ -86,9 +108,11 @@ export async function GET(request: NextRequest) {
             for (let i = 0; i < 12; i++) teamActual[i] += m.actuals[i];
         }
 
-        return NextResponse.json({ year, teamTarget, teamActual, managers, teamMembers });
+        return NextResponse.json({ year, teamTarget, teamActual, managers, teamMembers, projects }, {
+            headers: { 'Cache-Control': 'private, no-store' },
+        });
     } catch (error) {
-        return safeErrorResponse(error, 'Төлөвлөгөө татахад алдаа гарлаа');
+        return safeErrorResponse(error, 'Төлөвлөгөө болон менежерийн төслийн харьяалал татахад алдаа гарлаа', 503);
     }
 }
 
@@ -133,13 +157,25 @@ export async function PUT(request: NextRequest) {
         const parsed = rosterSchema.safeParse(await request.json());
         if (!parsed.success) return NextResponse.json({ error: 'Менежерийн мэдээлэл буруу байна' }, { status: 400 });
         const { shopId, managers } = parsed.data;
-        if (new Set(managers.map((manager) => manager.name)).size !== managers.length)
+        if (new Set(managers.map((m) => m.name)).size !== managers.length)
             return NextResponse.json({ error: 'Ижил нэртэй менежер давхар байна' }, { status: 400 });
 
         const supabase = supabaseAdmin();
+
+        const requestedProjectIds = [...new Set(managers.flatMap((manager) => manager.project_ids || []))];
+        if (requestedProjectIds.length) {
+            const projects = await fetchAllRows<{ id: string }>((from, to) => supabase.from('projects')
+                .select('id').eq('shop_id', shopId).order('id').range(from, to));
+            const allowedProjectIds = new Set(projects.map((project) => project.id));
+            if (requestedProjectIds.some((id) => !allowedProjectIds.has(id))) {
+                return NextResponse.json({ error: 'Менежерийн төсөл энэ байгууллагад харьяалагдахгүй байна' }, { status: 400 });
+            }
+        }
+
+        // Нэрээр акаунт авто-холбох (full_name → user_id)
         const members = await loadMembers(supabase, shopId);
-        const memberIds = new Set(members.map((member) => member.id));
-        if (managers.some((manager) => manager.user_id && !memberIds.has(manager.user_id)))
+        const memberIds = new Set(members.map((m) => m.id));
+        if (managers.some((m) => m.user_id && !memberIds.has(m.user_id)))
             return NextResponse.json({ error: 'Менежерийн акаунт энэ байгууллагад харьяалагдахгүй байна' }, { status: 400 });
         const nameToId = new Map<string, string>();
         const duplicateNames = new Set<string>();
@@ -149,14 +185,17 @@ export async function PUT(request: NextRequest) {
                 duplicateNames.add(member.full_name);
             } else nameToId.set(member.full_name, member.id);
         }
-        const rows = managers.map((manager) => ({
-            shop_id: shopId,
-            name: manager.name,
-            is_active: manager.is_active,
-            user_id: manager.user_id || nameToId.get(manager.name) || null,
-        }));
-        if (!rows.length) return NextResponse.json({ success: true });
 
+        const rows = managers.map((m) => ({
+                name: m.name,
+                is_active: m.is_active,
+                user_id: m.user_id || nameToId.get(m.name) || null,
+                ...(m.project_ids !== undefined ? { project_ids: [...new Set(m.project_ids)] } : {}),
+            }));
+
+        if (rows.length === 0) return NextResponse.json({ success: true });
+
+        // Submitted names replace existing rows; every other roster link survives this upsert.
         const { data: existingRoster, error: rosterError } = await supabase
             .from('sales_managers').select('name, user_id').eq('shop_id', shopId);
         if (rosterError) throw rosterError;
@@ -165,16 +204,18 @@ export async function PUT(request: NextRequest) {
         const linkedUsers = new Set<string>();
         for (const row of [...retained, ...rows]) {
             if (!row.user_id) continue;
-            if (linkedUsers.has(row.user_id))
+            if (linkedUsers.has(row.user_id)) {
                 return NextResponse.json({ error: 'Нэг акаунтыг энэ байгууллагад олон менежерт холбож болохгүй' }, { status: 409 });
+            }
             linkedUsers.add(row.user_id);
         }
 
-        const { error } = await supabase
-            .from('sales_managers')
-            .upsert(rows, { onConflict: 'shop_id,name' });
+        const { error } = await supabase.rpc('save_sales_manager_roster', {
+            p_shop_id: shopId,
+            p_managers: rows,
+        });
 
-        if (error) return safeErrorResponse(error, 'Менежерийн бүртгэл хадгалахад алдаа гарлаа');
+        if (error) return safeErrorResponse(error, 'Менежерийн бүртгэл болон төслийн харьяалал хадгалахад алдаа гарлаа', error.code === '23505' ? 409 : 503);
         return NextResponse.json({ success: true });
     } catch (error) {
         return safeErrorResponse(error, 'Менежерийн бүртгэл хадгалахад алдаа гарлаа');

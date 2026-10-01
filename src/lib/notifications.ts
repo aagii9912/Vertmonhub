@@ -161,6 +161,50 @@ export async function sendPushNotificationToUser(
     return sendToSubscriptions(subscriptions, payload);
 }
 
+/** Лидийн хувийн мэдээллийг зөвхөн хариуцсан акаунт болон байгууллагын админд илгээнэ. */
+export async function sendLeadPushNotification(
+    shopId: string,
+    leadId: string | null,
+    payload: NotificationPayload,
+): Promise<{ success: number; failed: number }> {
+    const skipped = { success: 0, failed: 0 };
+    if (!ensureVapidConfigured()) return skipped;
+    const db = supabaseAdmin();
+    const [shop, members] = await Promise.all([
+        db.from('shops').select('user_id').eq('id', shopId).maybeSingle(),
+        db.from('shop_members').select('user_id').eq('shop_id', shopId),
+    ]);
+    if (shop.error || members.error || !shop.data) return skipped;
+    const shopUsers = new Set<string>((members.data || []).map(row => row.user_id).filter(Boolean));
+    if (shop.data.user_id) shopUsers.add(shop.data.user_id);
+    if (!shopUsers.size) return skipped;
+    const roles = await db.from('user_roles').select('user_id').in('user_id', [...shopUsers]).in('role', ['admin', 'super_admin']);
+    if (roles.error) return skipped;
+    const recipients = new Set<string>((roles.data || []).map(row => row.user_id));
+
+    if (leadId) {
+        const lead = await db.from('leads').select('project_id,sales_manager_name').eq('id', leadId).eq('shop_id', shopId).is('deleted_at', null).maybeSingle();
+        if (lead.error || !lead.data) return skipped;
+        const leadRow = lead.data;
+        if (leadRow.project_id && leadRow.sales_manager_name) {
+            const managers = await db.from('sales_managers').select('name,user_id').eq('shop_id', shopId).eq('is_active', true);
+            if (!managers.error) {
+                const matched = (managers.data || []).filter(row => row.name === leadRow.sales_manager_name);
+                const manager = matched.length === 1 ? matched[0] : null;
+                if (manager?.user_id && shopUsers.has(manager.user_id) && managers.data?.filter(row => row.user_id === manager.user_id).length === 1) {
+                    const membership = await db.from('sales_manager_projects').select('project_id').eq('shop_id', shopId)
+                        .eq('project_id', leadRow.project_id).eq('manager_name', manager.name).maybeSingle();
+                    if (!membership.error && membership.data) recipients.add(manager.user_id);
+                }
+            }
+        }
+    }
+    if (!recipients.size) return skipped;
+    const subscriptions = await db.from('push_subscriptions').select('*').eq('shop_id', shopId).in('user_id', [...recipients]);
+    if (subscriptions.error) return skipped;
+    return sendToSubscriptions(subscriptions.data || [], payload);
+}
+
 /**
  * Get VAPID public key for client
  */

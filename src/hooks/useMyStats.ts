@@ -77,11 +77,11 @@ export interface MyStatsData {
  * managerName өгвөл (админы drill-in) тухайн менежерийн самбарыг татна.
  */
 export function useMyStats(period: MyStatsPeriod = 'today', managerName?: string | null) {
-    const { shop } = useAuth();
+    const { shop, user } = useAuth();
     const shopId = shop?.id;
 
     return useQuery<MyStatsData>({
-        queryKey: ['my-stats', shopId, period, managerName ?? 'self'],
+        queryKey: ['my-stats', shopId, user?.id, user?.role, period, managerName ?? 'self'],
         queryFn: async () => {
             const params = new URLSearchParams({ period });
             if (managerName) params.set('manager', managerName);
@@ -89,7 +89,7 @@ export function useMyStats(period: MyStatsPeriod = 'today', managerName?: string
             if (!res.ok) throw new Error(`My stats failed: ${res.status}`);
             return res.json();
         },
-        enabled: !!shopId,
+        enabled: !!shopId && !!user?.id,
         staleTime: 30000,
     });
 }

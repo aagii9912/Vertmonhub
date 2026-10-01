@@ -10,7 +10,10 @@ import {
 import { logger } from '@/lib/utils/logger';
 import { sendMetaCapiEvent, buildFbc } from '@/lib/marketing/meta-capi';
 import { sendLeadWelcomeEmail } from '@/lib/email/email';
-import { getUserId } from '@/lib/auth/supabase-auth';
+import { getUserId, getUserShop } from '@/lib/auth/supabase-auth';
+import { requireModuleWrite, resolvePermissions } from '@/lib/auth/require-permission';
+import { assertProjectManager, canAccessProject, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
+import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -18,6 +21,31 @@ export const runtime = 'nodejs';
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 const LEAD_RATE_LIMIT = { windowMs: 60 * 60 * 1000, maxRequests: 5 };
+const IntakeLeadSchema = CreateLeadSchema.extend({ project_id: z.uuid().optional() });
+
+/** Нийтийн form төсөл сонгохгүй; серверийн баталсан UUID холбоос ашиглана. */
+function configuredProjectId(request: NextRequest): string {
+    const originMap = process.env.LEAD_PROJECT_ORIGINS?.trim();
+    if (originMap) {
+        let configured: Record<string, string>;
+        try {
+            configured = z.record(z.string(), z.uuid()).parse(JSON.parse(originMap));
+            for (const origin of Object.keys(configured)) {
+                if (new URL(origin).origin !== origin) throw new Error('Non-canonical origin');
+            }
+        } catch {
+            throw new ProjectScopeError(503, 'Лид хүлээн авах төслийн тохиргоо буруу байна');
+        }
+        const source = request.headers.get('origin') || request.headers.get('referer');
+        let origin = '';
+        try { origin = source ? new URL(source).origin : ''; } catch { /* баталгаагүй origin */ }
+        if (!Object.hasOwn(configured, origin)) throw new ProjectScopeError(503, 'Энэ сайтын лид хүлээн авах төсөл тохируулаагүй байна');
+        return configured[origin];
+    }
+    const configured = z.uuid().safeParse(process.env.LEAD_PROJECT_ID?.trim());
+    if (!configured.success) throw new ProjectScopeError(503, 'Лид хүлээн авах төсөл тохируулаагүй байна');
+    return configured.data;
+}
 
 /**
  * Зөвшөөрөгдсөн origin-ы host-ууд: NEXT_PUBLIC_APP_URL дээр нэмээд
@@ -136,6 +164,10 @@ async function handleLeadPost(request: NextRequest): Promise<NextResponse> {
         } catch {
             staffUserId = null;
         }
+        if (staffUserId) {
+            const denied = await requireModuleWrite('leads');
+            if (denied) return denied;
+        }
 
         const clientIp = getClientIdentifier(request);
         if (!staffUserId) {
@@ -149,7 +181,7 @@ async function handleLeadPost(request: NextRequest): Promise<NextResponse> {
         const supabase = supabaseAdmin();
         const body = await request.json();
 
-        const validation = validateBody(CreateLeadSchema, body);
+        const validation = validateBody(IntakeLeadSchema, body);
         if (!validation.success) return validation.response;
 
         const {
@@ -170,6 +202,32 @@ async function handleLeadPost(request: NextRequest): Promise<NextResponse> {
                 return NextResponse.json({ error: 'Captcha verification failed' }, { status: 400 });
             }
         }
+
+        const projectId = staffUserId && validation.data.project_id
+            ? validation.data.project_id : configuredProjectId(request);
+        const { data: project, error: projectError } = await supabase.from('projects')
+            .select('id, shop_id').eq('id', projectId).maybeSingle();
+        if (projectError) throw new ProjectScopeError(503, 'Лидийн төслийг шалгаж чадсангүй');
+        if (!project) throw new ProjectScopeError(staffUserId ? 400 : 503, 'Лид хүлээн авах төсөл олдсонгүй');
+
+        let salesManagerName: string | null = null;
+        if (staffUserId) {
+            const [shop, permissions] = await Promise.all([getUserShop(), resolvePermissions()]);
+            if (!shop || !permissions) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
+            if (project.shop_id !== shop.id) return NextResponse.json({ error: 'Төсөл энэ байгууллагад харьяалагдахгүй байна' }, { status: 403 });
+            const scope = await resolveSalesProjectScope(supabase, shop.id, { userId: staffUserId, role: permissions.role });
+            if (!canAccessProject(scope, projectId)) return NextResponse.json({ error: 'Энэ төсөлд лид бүртгэх эрхгүй' }, { status: 403 });
+            salesManagerName = scope.managerName;
+            if (salesManagerName) await assertProjectManager(supabase, shop.id, projectId, salesManagerName);
+        } else {
+            const configuredShop = process.env.LEAD_SHOP_ID?.trim();
+            if (configuredShop && (!z.uuid().safeParse(configuredShop).success || configuredShop !== project.shop_id)) {
+                throw new ProjectScopeError(503, 'Лид хүлээн авах байгууллага болон төсөл зөрж байна');
+            }
+        }
+        const { data: primaryShop, error: shopError } = await supabase.from('shops')
+            .select('id, name, phone').eq('id', project.shop_id).maybeSingle();
+        if (shopError || !primaryShop) throw new ProjectScopeError(503, 'Лид хүлээн авах байгууллага олдсонгүй');
 
         // Менежерийн түргэн бүртгэлд (staffUserId) AI хариу шаардлагагүй —
         // дараалсан бүртгэлийн хурдыг хадгална.
@@ -220,23 +278,6 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
             advance_percent != null ? `Урьдчилгаа: ${advance_percent}%` : null,
         ].filter(Boolean).join('\n') || null;
 
-        // Public form — эзэн shop: LEAD_SHOP_ID env (олон shop-той үед заавал), эс бөгөөс
-        // хамгийн эртний shop (нэг tenant-ийн таамаг).
-        const configuredShopId = (process.env.LEAD_SHOP_ID || '').trim();
-        let shopQuery = supabase.from('shops').select('id, name, phone');
-        shopQuery = configuredShopId
-            ? shopQuery.eq('id', configuredShopId)
-            : shopQuery.order('created_at', { ascending: true });
-        const { data: primaryShop, error: shopError } = await shopQuery.limit(1).maybeSingle();
-
-        if (shopError || !primaryShop) {
-            logger.error('Lead insert: primary shop not found', { error: shopError });
-            return NextResponse.json(
-                { error: 'Хүсэлт илгээхэд алдаа гарлаа' },
-                { status: 500 }
-            );
-        }
-
         // company / AI хариуг тусдаа багана байхгүй тул internal_notes-д хадгална
         const internalNotes = [
             company ? `Компани: ${company}` : null,
@@ -247,6 +288,8 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
             .from('leads')
             .insert([{
                 shop_id: primaryShop.id,
+                project_id: projectId,
+                sales_manager_name: salesManagerName,
                 customer_name: name,
                 customer_phone: phone,
                 customer_email: email || null,
@@ -266,7 +309,7 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
                 facebook_adset_id: facebook_adset_id || null,
                 facebook_ad_id: facebook_ad_id || null,
             }])
-            .select()
+            .select('id')
             .single();
 
         if (error) {
@@ -275,30 +318,6 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
                 { error: 'Хүсэлт илгээхэд алдаа гарлаа' },
                 { status: 500 }
             );
-        }
-
-        // Нэвтэрсэн менежер бүртгэсэн бол нэрийг нь лидэд тэмдэглэнэ (best-effort —
-        // sales_manager_name багана байхгүй орчинд бүртгэлийг унагахгүй).
-        if (staffUserId && data?.id) {
-            try {
-                const { data: profile } = await supabase
-                    .from('user_profiles')
-                    .select('full_name, email')
-                    .eq('id', staffUserId)
-                    .maybeSingle();
-                const managerName = profile?.full_name || profile?.email || null;
-                if (managerName) {
-                    const { error: stampErr } = await supabase
-                        .from('leads')
-                        .update({ sales_manager_name: managerName })
-                        .eq('id', data.id);
-                    if (stampErr) {
-                        logger.warn('sales_manager_name stamp skipped', { error: stampErr.message });
-                    }
-                }
-            } catch (stampError) {
-                logger.warn('sales_manager_name stamp failed', { error: stampError });
-            }
         }
 
         // Угталтын имэйл (Resend, EMAIL_FROM домэйнээс) — best-effort,
@@ -334,11 +353,11 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
 
         return NextResponse.json({
             success: true,
-            data,
-            aiResponse,
+            receipt_id: data?.id,
         });
 
     } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         return safeErrorResponse(error, 'Хүсэлт илгээхэд алдаа гарлаа');
     }
 }

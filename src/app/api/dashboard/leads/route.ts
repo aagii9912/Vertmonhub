@@ -8,7 +8,7 @@ import { ACTIVE_STATUSES } from '@/lib/leads/labels';
 import { isLeadWorkQueue, workQueueFilter } from '@/lib/leads/work-queue';
 import { parsePagination, buildPageMeta } from '@/lib/utils/pagination';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
-import { logger } from '@/lib/utils/logger';
+import { applyLeadScope, assertProjectManager, canAccessProject, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 
 /** Хугацааны шүүлтүүр — гүйдэг цонх (өнөөдрөөс хойш N хоног). */
 const PERIOD_DAYS: Record<string, number> = {
@@ -19,7 +19,7 @@ const PERIOD_DAYS: Record<string, number> = {
 };
 
 /**
- * GET /api/dashboard/leads?status=<status>&source=<source>&project=<uuid>&period=<week|month|quarter|year>&manager=<нэр>&phone=<дугаар>&q=<хайлт>
+ * GET /api/dashboard/leads?status=<status>&source=<source>&period=<week|month|quarter|year>&manager=<нэр>&phone=<дугаар>&q=<хайлт>
  * Лийдийн жагсаалт (shop-scoped, сервер cookie auth + service role).
  * phone — утасны давхардал шалгах (форматаас үл хамааран: «9911 2233» / «99112233» / «9911-2233»).
  * q — нэр, утас, и-мэйлээр хайлт.
@@ -40,11 +40,7 @@ export async function GET(request: NextRequest) {
         const { searchParams } = new URL(request.url);
         const status = searchParams.get('status');
         const source = searchParams.get('source');
-        const project = searchParams.get('project');
         const period = searchParams.get('period');
-        if (project && project !== 'all' && !z.string().uuid().safeParse(project).success) {
-            return NextResponse.json({ error: 'Буруу төсөл' }, { status: 400 });
-        }
 
         // Хуудаслалт: их өгөгдөлд бүгдийг татаж ~1000 мөрөнд чимээгүй тасрахаас
         // сэргийлнэ. ?page&pageSize эсвэл ?limit&offset өгөөгүй бол аюулгүйн таг.
@@ -56,14 +52,20 @@ export async function GET(request: NextRequest) {
         const ascending = searchParams.get('dir') === 'asc';
 
         const db = supabaseAdmin();
-        let query = db
+        const scope = await resolveSalesProjectScope(db, authShop.id);
+        const requestedProject = searchParams.get('project');
+        const projectId = requestedProject === 'all' ? null : requestedProject;
+        if (projectId && !z.string().uuid().safeParse(projectId).success) return NextResponse.json({ error: 'Буруу төсөл' }, { status: 400 });
+        if (projectId && !canAccessProject(scope, projectId)) return NextResponse.json({ error: 'Энэ төслийн лид харах эрхгүй' }, { status: 403 });
+        let query = applyLeadScope(db
             .from('leads')
             .select('*', { count: 'exact' })
             .eq('shop_id', authShop.id)
             .is('deleted_at', null)
             .order(sort, { ascending, nullsFirst: false })
             .order('created_at', { ascending: false })
-            .range(pagination.from, pagination.to);
+            .range(pagination.from, pagination.to), scope);
+        if (projectId) query = query.eq('project_id', projectId);
 
         const queue = searchParams.get('queue');
         if (queue && !isLeadWorkQueue(queue)) return NextResponse.json({ error: 'Буруу ажлын жагсаалт' }, { status: 400 });
@@ -89,9 +91,6 @@ export async function GET(request: NextRequest) {
         }
         if (source && source !== 'all') {
             query = query.eq('source', source);
-        }
-        if (project && project !== 'all') {
-            query = query.eq('project_id', project);
         }
         const manager = searchParams.get('manager');
         if (manager && manager !== 'all') {
@@ -134,6 +133,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json({ leads: data || [], pagination: buildPageMeta(count ?? 0, pagination) });
     } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         return safeErrorResponse(error, 'Лийд татахад алдаа гарлаа');
     }
 }
@@ -141,6 +141,7 @@ export async function GET(request: NextRequest) {
 const VALID_STATUSES = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'] as const;
 
 const CreateLeadSchema = z.object({
+    project_id: z.string().uuid('Төслөө сонгоно уу'),
     customer_name: z.string().trim().min(1, 'Нэр шаардлагатай').max(200),
     customer_phone: z.string().trim().max(30).nullish(),
     customer_email: z.string().trim().max(200).nullish(),
@@ -163,7 +164,7 @@ const CreateLeadSchema = z.object({
  * Дашбоардаас шинэ лийд үүсгэнэ. Хариуцагч менежерийг СЕРВЕР дээр тамгална:
  * үүсгэсэн хэрэглэгчийн канон нэр (user_profiles/sales_managers), админ бол
  * assignManager-аар өөр менежерт хуваарилж болно.
- * sales_manager_name багана байхгүй (миграци ороогүй) орчинд тамгагүй үүсгэнэ.
+ * Төслийн харьяалал, менежерийн холбоосыг сервер дээр шалгана.
  */
 export async function POST(request: NextRequest) {
     try {
@@ -187,6 +188,12 @@ export async function POST(request: NextRequest) {
         const input = parsed.data;
 
         const db = supabaseAdmin();
+        const scope = await resolveSalesProjectScope(db, authShop.id);
+        if (!canAccessProject(scope, input.project_id)) return NextResponse.json({ error: 'Энэ төсөлд лид үүсгэх эрхгүй' }, { status: 403 });
+        const { data: project, error: projectError } = await db.from('projects').select('id')
+            .eq('id', input.project_id).eq('shop_id', authShop.id).maybeSingle();
+        if (projectError) throw projectError;
+        if (!project) return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 400 });
         const [perms, identity] = await Promise.all([
             resolvePermissions(),
             resolveManagerIdentity(db, authShop.id, uid),
@@ -199,6 +206,7 @@ export async function POST(request: NextRequest) {
             if (!manager.ok) return NextResponse.json({ error: manager.error }, { status: manager.status });
             salesManagerName = manager.managerName;
         }
+        if (salesManagerName) await assertProjectManager(db, authShop.id, input.project_id, salesManagerName);
         if (input.status === 'closed_won' || input.status === 'closed_lost') {
             return NextResponse.json({ error: 'Шинэ лидийг идэвхтэй төлөвөөр бүртгэнэ. Гэрээ эсвэл алдсан шалтгаанаа дараа нь бүртгэнэ үү.' }, { status: 400 });
         }
@@ -206,17 +214,20 @@ export async function POST(request: NextRequest) {
         // Idempotency: ижил client_request_id-тай лид аль хэдийн байвал түүнийг буцаана
         // (сүлжээ тасарч outbox дахин илгээсэн / ⌘↵ давхар дарсан тохиолдол).
         if (input.client_request_id) {
-            const { data: existing } = await db
+            const { data: existing, error: replayError } = await applyLeadScope(db
                 .from('leads')
                 .select('*')
                 .eq('shop_id', authShop.id)
                 .eq('client_request_id', input.client_request_id)
+                .eq('project_id', input.project_id), scope)
                 .maybeSingle();
+            if (replayError) throw replayError;
             if (existing) return NextResponse.json({ lead: existing, deduplicated: true });
         }
 
         const insert: Record<string, unknown> = {
             shop_id: authShop.id,
+            project_id: input.project_id,
             client_request_id: input.client_request_id || null,
             customer_name: input.customer_name,
             customer_phone: input.customer_phone || null,
@@ -232,28 +243,23 @@ export async function POST(request: NextRequest) {
             sales_manager_name: salesManagerName,
         };
 
-        let { data, error } = await db.from('leads').insert(insert).select('*').single();
+        const { data, error } = await db.from('leads').insert(insert).select('*').single();
 
         // Unique (shop_id, client_request_id) зөрчил = давхар илгээлт → байгааг буцаана
         if (error && error.code === '23505' && input.client_request_id) {
-            const { data: existing } = await db.from('leads').select('*')
-                .eq('shop_id', authShop.id).eq('client_request_id', input.client_request_id).maybeSingle();
+            const { data: existing } = await applyLeadScope(db.from('leads').select('*')
+                .eq('shop_id', authShop.id).eq('client_request_id', input.client_request_id)
+                .eq('project_id', input.project_id), scope).maybeSingle();
             if (existing) return NextResponse.json({ lead: existing, deduplicated: true });
+            return NextResponse.json({ error: 'Энэ хүсэлтийн түлхүүр өмнө ашиглагдсан байна' }, { status: 409 });
         }
-        // Миграци ороогүй орчинд (sales_manager_name / client_request_id багана байхгүй) тамгагүйгээр дахин оролдоно
-        if (error && /sales_manager_name|client_request_id/i.test(error.message || '')) {
-            logger.warn(`[Leads API] optional column skipped: ${error.message}`);
-            if (/sales_manager_name/i.test(error.message || '')) delete insert.sales_manager_name;
-            if (/client_request_id/i.test(error.message || '')) delete insert.client_request_id;
-            ({ data, error } = await db.from('leads').insert(insert).select('*').single());
-        }
-
         if (error) {
             return NextResponse.json({ error: 'Лийд үүсгэхэд алдаа гарлаа' }, { status: 500 });
         }
 
         return NextResponse.json({ lead: data });
     } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         return safeErrorResponse(error, 'Лийд үүсгэхэд алдаа гарлаа');
     }
 }

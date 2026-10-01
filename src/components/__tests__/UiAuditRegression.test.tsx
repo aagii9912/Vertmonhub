@@ -7,15 +7,16 @@ import { FeedbackWidget } from '../feedback/FeedbackWidget';
 const mocks = vi.hoisted(() => ({
     params: '', push: vi.fn(), fetch: vi.fn(), refetch: vi.fn(),
     conversations: [] as unknown[], readError: false,
+    listParams: vi.fn(),
 }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: mocks.push, replace: vi.fn() }), useSearchParams: () => new URLSearchParams(mocks.params) }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ shop: { id: 'shop-a' }, loading: false, user: { permissions: { modules: ['leads', 'inbox'], canWrite: true, canDelete: false } } }) }));
 vi.mock('@/lib/api/dashboardFetch', () => ({ dashboardFetch: (...args: unknown[]) => mocks.fetch(...args) }));
 vi.mock('@/hooks/useConversations', () => ({ useConversations: () => ({ data: mocks.readError ? undefined : mocks.conversations, isLoading: false, isError: mocks.readError, isFetching: false, refetch: mocks.refetch }) }));
 vi.mock('@/hooks/useLeads', () => ({
-    useLeadProjects: () => ({ data: [] }),
-    useLeadsList: () => ({ data: { leads: [], pagination: { total: 0, totalPages: 1 } }, isLoading: false }),
+    useLeadsList: (params: unknown) => { mocks.listParams(params); return { data: { leads: [], pagination: { total: 0, totalPages: 1 } }, isLoading: false }; },
     useLeadSummary: () => ({ data: {} }), useManagers: () => ({ data: [] }), useUpdateLead: () => ({ mutate: vi.fn() }),
+    useLeadProjects: () => ({ data: [{ id: 'mandala', name: 'Mandala Garden' }, { id: 'elysium', name: 'Elysium' }] }),
 }));
 vi.mock('../leads/pickers', () => ({ StatusPicker: () => null, ManagerPicker: () => null }));
 vi.mock('../leads/LeadPanel', () => ({ LeadPanel: ({ leadId, onClose }: { leadId: string; onClose: () => void }) => <div><h2>{leadId}</h2><button onClick={onClose}>Хаах</button></div>, nextStep: () => '' }));
@@ -32,6 +33,13 @@ beforeEach(() => {
 });
 
 describe('UI audit regressions', () => {
+    it('filters the list by project and resets it with the other filters', () => {
+        render(<LeadsPage />);
+        fireEvent.change(screen.getByRole('combobox', { name: 'Төсөл' }), { target: { value: 'elysium' } });
+        expect(mocks.listParams).toHaveBeenLastCalledWith(expect.objectContaining({ project: 'elysium', page: 1 }));
+        fireEvent.click(screen.getByRole('button', { name: 'Цэвэрлэх' }));
+        expect(mocks.listParams).toHaveBeenLastCalledWith(expect.objectContaining({ project: 'all' }));
+    });
     it('keeps the selected lead accessible when a saved desktop split layout is opened on a tablet, then resized', () => {
         localStorage.setItem('vertmonhub_leads_mode', 'split');
         mocks.params = 'lead=tablet-lead';

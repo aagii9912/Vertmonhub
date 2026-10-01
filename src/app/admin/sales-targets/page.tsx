@@ -22,6 +22,7 @@ interface ManagerRow {
     is_active: boolean;
     user_id: string | null;
     year_actual: number;
+    project_ids: string[];
 }
 
 const sum = (arr: number[]) => arr.reduce((a, b) => a + (b || 0), 0);
@@ -35,6 +36,7 @@ export default function SalesTargetsAdminPage() {
     const [teamTarget, setTeamTarget] = useState<number[]>(Array(12).fill(0));
     const [teamActual, setTeamActual] = useState<number[]>(Array(12).fill(0));
     const [managers, setManagers] = useState<ManagerRow[]>([]);
+    const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
     const [teamMembers, setTeamMembers] = useState<Array<{ id: string; full_name: string }>>([]);
     const [newManagerName, setNewManagerName] = useState('');
     const [showInactive, setShowInactive] = useState(false);
@@ -82,8 +84,9 @@ export default function SalesTargetsAdminPage() {
             if (panel !== 'roster') setTeamTarget(d.teamTarget || Array(12).fill(0));
             setTeamActual(d.teamActual || Array(12).fill(0));
             if (panel !== 'targets') {
-                setManagers(d.managers || []);
+                setManagers((d.managers || []).map((manager: ManagerRow) => ({ ...manager, project_ids: manager.project_ids || [] })));
                 setTeamMembers(d.teamMembers || []);
+                setProjects(d.projects || []);
             }
             setLoadedScope(`${shopId}:${year}`);
         } catch (cause) {
@@ -125,8 +128,18 @@ export default function SalesTargetsAdminPage() {
     }
 
     function toggleManager(name: string) {
-        if (!scopeReady || savingRoster) return;
+        if (!scopeReady || saving) return;
         setManagers((prev) => prev.map((m) => (m.name === name ? { ...m, is_active: !m.is_active } : m)));
+    }
+
+    function toggleManagerProject(name: string, projectId: string) {
+        if (!scopeReady || saving) return;
+        setManagers((prev) => prev.map((manager) => manager.name !== name ? manager : {
+            ...manager,
+            project_ids: manager.project_ids.includes(projectId)
+                ? manager.project_ids.filter((id) => id !== projectId)
+                : [...manager.project_ids, projectId],
+        }));
     }
 
     async function persistRoster(list: ManagerRow[]) {
@@ -135,7 +148,7 @@ export default function SalesTargetsAdminPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     shopId,
-                    managers: list.map((m) => ({ name: m.name, is_active: m.is_active, user_id: m.user_id })),
+                    managers: list.map((m) => ({ name: m.name, is_active: m.is_active, user_id: m.user_id, project_ids: m.project_ids })),
                 }),
             });
         if (!res.ok) throw new Error((await res.json()).error || 'Менежерийн жагсаалт хадгалагдсангүй');
@@ -144,6 +157,9 @@ export default function SalesTargetsAdminPage() {
                 queryClient.invalidateQueries({ queryKey: ['director', shopId] }),
                 queryClient.invalidateQueries({ queryKey: ['kpi-report', shopId] }),
                 queryClient.invalidateQueries({ queryKey: ['my-stats', shopId] }),
+                queryClient.invalidateQueries({ queryKey: ['lead-projects', shopId] }),
+                queryClient.invalidateQueries({ queryKey: ['leads', 'list', shopId] }),
+                queryClient.invalidateQueries({ queryKey: ['leads', 'summary', shopId] }),
         ]);
         await loadData('roster');
     }
@@ -172,7 +188,7 @@ export default function SalesTargetsAdminPage() {
         }
         const next = [
             ...managers,
-            { name: trimmed, is_active: true, user_id: userId, year_actual: 0 },
+            { name: trimmed, is_active: true, user_id: userId, year_actual: 0, project_ids: [] },
         ].sort((a, b) => a.name.localeCompare(b.name, 'mn'));
         setManagers(next);
         setNewManagerName('');
@@ -211,7 +227,7 @@ export default function SalesTargetsAdminPage() {
                 <div>
                     <h1 className="text-xl font-semibold text-foreground">Борлуулалтын төлөвлөгөө</h1>
                     <p className="text-sm text-muted-foreground">
-                        Багийн сарын төлөвлөгөө (₮) + идэвхтэй менежерүүд. Улирал/жил = сарын нийлбэр.
+                        Багийн сарын төлөвлөгөө (₮), идэвхтэй менежерүүд, төслийн харьяалал.
                     </p>
                 </div>
             </div>
@@ -315,6 +331,9 @@ export default function SalesTargetsAdminPage() {
                                     <p className="text-xs text-muted-foreground">
                                         {activeCount} идэвхтэй · багийн гүйцэтгэл эдгээрийн нийлбэр
                                     </p>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                        Менежер зөвхөн сонгосон төслийн лидийг хариуцна. Нэг менежерт олон төсөл сонгож болно.
+                                    </p>
                                 </div>
                             </div>
 
@@ -323,12 +342,14 @@ export default function SalesTargetsAdminPage() {
                                     Идэвхтэй менежер байхгүй
                                 </p>
                             ) : (
-                                <div className="max-h-[22rem] space-y-1.5 overflow-y-auto">
+                                <div className="max-h-[32rem] space-y-2 overflow-y-auto">
                                     {visibleManagers.map((m) => (
+                                        <div key={m.name} className="rounded-lg border border-border">
                                         <button
-                                            key={m.name}
+                                            type="button"
+                                            aria-pressed={m.is_active}
                                             onClick={() => toggleManager(m.name)}
-                                            disabled={savingRoster}
+                                            disabled={!scopeReady || saving}
                                             className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors ${
                                                 m.is_active
                                                     ? 'border-brand/40 bg-brand-soft/30'
@@ -353,6 +374,29 @@ export default function SalesTargetsAdminPage() {
                                                 {m.is_active ? 'Идэвхтэй' : 'Идэвхгүй'}
                                             </span>
                                         </button>
+                                        <fieldset disabled={!scopeReady || saving} className="space-y-2 px-3 pb-3 pt-2">
+                                            <legend className="sr-only">{m.name} — төслийн харьяалал</legend>
+                                            <p className="text-2xs text-muted-foreground">
+                                                {m.project_ids.length ? 'Төслийн харьяалал' : 'Төсөл сонгоогүй — төслийн лид хариуцах эрхгүй'}
+                                            </p>
+                                            {projects.length ? (
+                                                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                                                    {projects.map((project) => (
+                                                        <label key={project.id} className="inline-flex min-h-7 items-center gap-2 text-xs text-foreground">
+                                                            <input
+                                                                type="checkbox"
+                                                                aria-label={`${m.name}: ${project.name}`}
+                                                                checked={m.project_ids.includes(project.id)}
+                                                                onChange={() => toggleManagerProject(m.name, project.id)}
+                                                                className="h-4 w-4 accent-brand"
+                                                            />
+                                                            {project.name}
+                                                        </label>
+                                                    ))}
+                                                </div>
+                                            ) : <p className="text-xs text-muted-foreground">Энэ байгууллагад төсөл бүртгэгдээгүй байна.</p>}
+                                        </fieldset>
+                                        </div>
                                     ))}
                                 </div>
                             )}
@@ -410,7 +454,7 @@ export default function SalesTargetsAdminPage() {
                             {managers.length > 0 && (
                                 <div className="flex justify-end">
                                     <Button onClick={saveRoster} disabled={!scopeReady || saving} isLoading={savingRoster} variant="secondary" size="sm">
-                                        {!savingRoster && <Save className="h-4 w-4" />} Идэвхтэй жагсаалт хадгалах
+                                        {!savingRoster && <Save className="h-4 w-4" />} Менежерийн бүртгэл хадгалах
                                     </Button>
                                 </div>
                             )}

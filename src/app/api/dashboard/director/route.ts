@@ -1,3 +1,4 @@
+import { applyLeadScope, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { NextRequest, NextResponse } from 'next/server';
 import { ubParts, ubMonthRange, ubDateStr } from '@/lib/utils/date';
 import { getUserShop } from '@/lib/auth/supabase-auth';
@@ -57,6 +58,7 @@ export async function GET(request: NextRequest) {
         const meDate = monthIdx === 11 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`;
 
         const db = supabaseAdmin();
+        const scope = await resolveSalesProjectScope(db, authShop.id);
         const shopId = authShop.id;
         const missing: string[] = [];
 
@@ -83,26 +85,26 @@ export async function GET(request: NextRequest) {
             }, [] as ContractRow[]),
             safe('viewings', missing, async () => {
                 const base = () =>
-                    db
+                    applyLeadScope(db
                         .from('property_viewings')
-                        .select('id, sales_manager_name, lead_id, status')
+                        .select(scope.projectIds === null ? 'id,sales_manager_name,lead_id,status' : 'id,sales_manager_name,lead_id,status,leads!inner(project_id,sales_manager_name)')
                         .eq('shop_id', shopId)
                         .gte('scheduled_at', ms)
                         .lt('scheduled_at', me)
-                        .neq('status', 'cancelled');
+                        .neq('status', 'cancelled'), scope, 'leads.project_id', 'leads.sales_manager_name');
                 let { data, error } = await base().is('deleted_at', null);
                 if (error) ({ data, error } = await base());
                 if (error) throw error;
-                return (data || []) as ViewingRow[];
+                return (data || []) as unknown as ViewingRow[];
             }, [] as ViewingRow[]),
             safe('leads', missing, async () => {
                 const base = () =>
-                    db
+                    applyLeadScope(db
                         .from('leads')
                         .select('id, source, sales_manager_name')
                         .eq('shop_id', shopId)
                         .gte('created_at', ms)
-                        .lt('created_at', me);
+                        .lt('created_at', me), scope);
                 let { data, error } = await base().is('deleted_at', null);
                 if (error) ({ data, error } = await base());
                 if (error) throw error;
@@ -216,6 +218,7 @@ export async function GET(request: NextRequest) {
 
         return NextResponse.json(payload, { headers: { 'Cache-Control': 'private, no-store' } });
     } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         return safeErrorResponse(error, 'Захирлын самбар татахад алдаа гарлаа');
     }
 }

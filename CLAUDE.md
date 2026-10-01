@@ -164,12 +164,14 @@ Workday CRM continuation: lead/contract list headers and exports stay visible on
 Vertmon LLC's operating scope is sales, marketing and administration: reduce duplicate Excel entry, expose unattended leads, and distinguish contract value from actual cash receipts. Workflow and release notes: `docs/OPERATIONS-WORKFLOW-2026-09-13.md`.
 
 - `/dashboard/leads?queue=unassigned|uncontacted|no_followup|overdue` uses shared rules in `lib/leads/work-queue.ts`. Counts and reports use the same active-lead definitions. A scheduled viewing counts as a next step when no explicit follow-up exists. These are data-quality/work queues, not proof an employee failed to call.
-- `POST /api/dashboard/leads/[id]/claim` atomically assigns an unowned, active lead to the authenticated active roster manager and saves a future follow-up. Competing claims return 409. Explicit reassignment still follows existing leads-write permissions and now validates an active roster name. Marketing/admin names are not implicitly assigned when they create a lead.
+- `POST /api/dashboard/leads/[id]/claim` cannot expose or self-assign unowned leads to restricted sales managers. Organization users with leads-write permissions can assign a lead only to an active manager registered for that lead's project. Marketing/admin names are not implicitly assigned when they create a lead.
 - `/dashboard/reports/operations` and AI `get_operations_report` share `lib/dashboard/operations-report-load.ts`. Reads paginate and surface failures. Reports require `reports`; cash ledger sections additionally require `finance`. Contract value, dated cash receipts, explicitly classified advance receipts, barter and imported advance snapshots stay separate. Missing targets/classification must display unavailable, not guessed numbers.
 - Payment writes require `20260913160000_atomic_contract_payments.sql` before release. Service-role-only `mutate_contract_payment` locks the contract and commits schedule, receipt ledger and contract paid delta together. New payments carry a stable `client_request_id`; `receipt_kind` is explicit (`advance|installment|other`). Missing RPC returns 503. Migration is additive and does not backfill historical cash; it has not been applied to production by this implementation task.
 - Daily AI contact/follow-up/assignment actions surface DB failure and partial-save status. UI refreshes its query data after AI execution. Task/report entry points are available from the existing navigation; personal tasks remain private.
 
 ### Authentication
+
+Project and assigned-lead access (2026-10-01, local): `lib/sales/project-scope.ts` restricts sales_manager accounts and active roster managers to their own `sales_manager_name` AND registered `project_id`. Only a unique active `sales_managers.user_id` link grants access; profile-name-only, ambiguous, unconfigured and legacy project-less leads stay unavailable to restricted managers. Admin/super_admin retain organization access. `/admin/sales-targets` saves account links and multiple project memberships atomically via `save_sales_manager_roster`; migrations `20261001130000` and `20261001131000` create membership and enforce lead/activities/viewings/attachment browser reads and service-role assignment validation. Migrations `20261001132000` and `20261001133000` atomically validate and create/change assigned-lead viewings under a lead lock. API, AI, reports, exports, lead-driven push and account-scoped caches share the same boundary. New leads require a validated project; public form binding uses server UUID configuration. Existing data is not backfilled. Independent customer/contract modules retain their existing permissions, except merging customers is denied for restricted managers because it changes linked leads. Behavior, configuration and rollout prerequisites: `docs/PROJECT-LEAD-ACCESS-2026-10-01.md`. Live migration, roster configuration, form environment and deployment remain separate prerequisites.
 Supabase Auth (Email/Password, Google, Facebook). `src/middleware.ts` protects `/dashboard` and `/admin`. Unauthenticated users are bounced to `/auth/login`.
 
 ### Per-manager dashboards («Миний самбар»)
@@ -442,7 +444,9 @@ DIGEST_EMAIL=
 # Гадаад landing page-ээс лид хүлээн авах (/api/leads CORS)
 LEAD_ALLOWED_ORIGINS=
 LEAD_WELCOME_SITE_URL=
-LEAD_SHOP_ID=              # олон shop-той үед public лидийн эзэн shop (байхгүй бол хамгийн эртний shop)
+LEAD_PROJECT_ID=           # нэг төслийн public form-ийн баталгаатай projects.id UUID
+LEAD_PROJECT_ORIGINS=      # олон сайт: exact origin -> projects.id UUID JSON object
+LEAD_SHOP_ID=              # optional: дээрх төслийн shop_id-тай заавал таарна
 TURNSTILE_SECRET_KEY=      # зөвлөмжтэй: тохируулмагц public /api/leads captcha шаардана (байхгүй бол origin allowlist + rate limit + honeypot л)
 
 # Elysium сайтын /api/contact → /api/integrations/elysium/leads (сервер хооронд)

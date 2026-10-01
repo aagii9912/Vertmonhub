@@ -90,9 +90,9 @@ export async function POST(request: NextRequest) {
             title: sentMethod === 'facebook' ? '🔔 Сануулга илгээгдлээ' : '⚠️ Сануулга илгээгдсэнгүй',
             body:
                 sentMethod === 'facebook'
-                    ? `${customer.name}-д Facebook-аар сануулга илгээлээ`
-                    : `${customer.name}-руу Facebook-аар хүрч чадсангүй (${customer.phone ? 'утсаар холбогдоно уу' : 'холбоо барих утас алга'})`,
-            tag: `remind-${customerId}`,
+                    ? 'CRM сануулга илгээгдлээ. Inbox хэсэгт шалгана уу.'
+                    : 'CRM сануулга илгээж чадсангүй. Inbox хэсэгт шалгана уу.',
+            tag: 'crm-reminder',
         });
 
         return NextResponse.json({

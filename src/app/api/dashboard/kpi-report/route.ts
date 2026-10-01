@@ -1,3 +1,4 @@
+import { ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { NextRequest, NextResponse } from 'next/server';
 import { ubParts } from '@/lib/utils/date';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
@@ -46,6 +47,7 @@ export async function GET(request: NextRequest) {
         const managerParam = searchParams.get('manager');
 
         const db = supabaseAdmin();
+        const scope = await resolveSalesProjectScope(db, authShop.id);
         const [perms, identity] = await Promise.all([
             resolvePermissions(),
             resolveManagerIdentity(db, authShop.id, uid),
@@ -68,9 +70,10 @@ export async function GET(request: NextRequest) {
                 onboarding: true,
             });
         }
-        const report = await computeKpiReport(db, { shopId: authShop.id, shopName: authShop.name || null, identity, targetName, uid, year, month });
+        const report = await computeKpiReport(db, { shopId: authShop.id, shopName: authShop.name || null, identity, targetName, uid, year, month, scope });
         return NextResponse.json(report);
     } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         return safeErrorResponse(error, 'KPI тайлан унших алдаа');
     }
 }

@@ -5,10 +5,16 @@
  * Read tools: бүх ажилтан; write/delete: RBAC; admin: super_admin.
  */
 
+import { SPEND_CHANNELS } from '@/lib/marketing/budget';
+
 const SchemaType = { OBJECT: 'object', STRING: 'string', NUMBER: 'number', INTEGER: 'integer', BOOLEAN: 'boolean', ARRAY: 'array' } as const;
 
  
 export const readTools: any[] = [
+    {
+        name: 'list_lead_projects', description: 'Лид бүртгэхэд ашиглах эрхтэй төслийн UUID ба нэрийг авна. Төслийг таамгаар сонгохгүй; хэрэглэгчээс сонголтыг тодруулна.',
+        parameters: { type: SchemaType.OBJECT, properties: {} },
+    },
     {
         name: 'get_marketing_performance',
         description: 'Маркетингийн нэгдсэн самбар, албаны KPI-ийн зургаан ангиллын жин ба бодит нотолгоо, багийн гүйцэтгэл: төсөл/суваг/кампанит ажил/контентын Lead–Sales–Deal, өмнөх хугацааны харьцуулалт, маркетингийн менежерийн сарын зорилт, төсөв, зардал, хэтрэлт. Dashboard-ийн AI дүгнэлтэд энэ tool ашиглана. basis, quality, KPI-ийн дутуу шалгуурыг тайлбартаа хадгал; дутуу зорилтыг 0 гэж үзэхгүй. Qualified Lead, Site Visit, нийлбэр оноог таамгаар гаргахгүй.',
@@ -392,6 +398,7 @@ export const writeTools: any[] = [
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
+                project_id: { type: SchemaType.STRING, description: 'Төслийн UUID; list_lead_projects-оос авч хэрэглэгчээр сонгуулна' },
                 customer_name: { type: SchemaType.STRING, description: 'Харилцагчийн нэр' },
                 customer_phone: { type: SchemaType.STRING, description: 'Утасны дугаар' },
                 customer_email: { type: SchemaType.STRING, description: 'Имэйл' },
@@ -403,7 +410,7 @@ export const writeTools: any[] = [
                 preferred_rooms: { type: SchemaType.NUMBER, description: 'Сонирхсон өрөөний тоо' },
                 notes: { type: SchemaType.STRING, description: 'Тэмдэглэл' }
             },
-            required: ['customer_name']
+            required: ['customer_name', 'project_id']
         }
     },
     {
@@ -427,6 +434,7 @@ export const writeTools: any[] = [
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
+                project_id: { type: SchemaType.STRING, description: 'Төслийн UUID; list_lead_projects-оос авч хэрэглэгчээр сонгуулна' },
                 property_id: { type: SchemaType.STRING, description: 'Байрны ID' },
                 property_name: { type: SchemaType.STRING, description: 'Байрны нэрээр хайх' },
                 scheduled_at: { type: SchemaType.STRING, description: 'Уулзалтын огноо/цаг, цагийн бүстэй ISO 8601 (жишээ: 2026-09-20T14:00:00+08:00)' },
@@ -707,7 +715,7 @@ export const writeTools: any[] = [
         description: 'Маркетингийн зарцуулалт (билборд, радио, boost г.м.) гараар бүртгэх — төсвийн хяналтад орно. Баталгаажуулалт авна.',
         parameters: { type: SchemaType.OBJECT, properties: {
             amount: { type: SchemaType.NUMBER, description: 'Дүн ₮' },
-            channel: { type: SchemaType.STRING, enum: ['facebook_ads', 'google_ads', 'board', 'radio', 'tv', 'print', 'event', 'influencer', 'other'], description: 'Суваг' },
+            channel: { type: SchemaType.STRING, enum: Object.keys(SPEND_CHANNELS), description: 'Суваг' },
             spent_at: { type: SchemaType.STRING, description: 'YYYY-MM-DD (default өнөөдөр)' },
             note: { type: SchemaType.STRING } }, required: ['amount'] }
     },
@@ -880,7 +888,7 @@ const ATTACHMENT_MODULE: Record<string, string> = { property: 'properties', lead
 export const TOOL_MODULE: Record<string, string | string[]> = {
     get_dashboard_stats: 'dashboard',
     list_properties: 'properties', compare_properties: 'properties', update_property_status: 'properties', update_unit_status: 'properties', update_property_price: 'properties', create_property: 'properties', delete_property: 'properties',
-    list_leads: 'leads', get_lead_details: 'leads', update_lead_status: 'leads', add_lead_note: 'leads', create_lead: 'leads', delete_lead: 'leads', bulk_update_leads: 'leads', log_call: 'leads', set_followup: 'leads', assign_lead_manager: 'leads',
+    list_lead_projects: ['leads', 'viewings'], list_leads: 'leads', get_lead_details: 'leads', update_lead_status: 'leads', add_lead_note: 'leads', create_lead: 'leads', delete_lead: 'leads', bulk_update_leads: 'leads', log_call: 'leads', set_followup: 'leads', assign_lead_manager: 'leads',
     get_customer_insights: 'customers', create_customer: 'customers', delete_customer: 'customers', add_customer_tag: 'customers', remove_customer_tag: 'customers', merge_customers: 'customers',
     list_viewings: 'viewings', schedule_viewing: 'viewings', delete_viewing: 'viewings', record_viewing_outcome: 'viewings', reschedule_viewing: 'viewings',
     list_contracts: 'contracts', get_contract_details: 'contracts', get_contracts_summary: 'contracts', process_contract_action: 'contracts', create_contract: 'contracts', delete_contract: 'contracts', list_contract_payments: 'contracts', add_contract_payment: 'contracts', mark_payment_paid: 'contracts',

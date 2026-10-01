@@ -8,18 +8,25 @@ import { ubDateStr } from '../src/lib/utils/date';
 const shopId = '00000000-0000-4000-8000-000000000002';
 const leadId = '00000000-0000-4000-8000-000000000010';
 const projectId = '00000000-0000-4000-8000-000000000030';
+const elysiumId = '00000000-0000-4000-8000-000000000031';
 const today = ubDateStr();
 const tomorrow = ubDateStr(new Date(Date.now() + 86_400_000));
 
-async function setup(page: Page, readonly = false) {
+async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admin' = 'sales_manager') {
     const leads = ['Б. Энхжин', 'Г. Тэмүүлэн', 'Д. Болормаа'].map((name, i) => ({
         id: i === 0 ? leadId : `${leadId.slice(0, -1)}${i + 1}`, customer_name: name, customer_phone: `9911223${i}`,
         customer_email: null, status: i === 0 ? 'contacted' : 'new', source: i === 2 ? 'website' : 'facebook',
         sales_manager_name: i === 2 ? null : 'Номин', notes: null, interest_type: 'apartment', interest_rooms: 3,
+        project_id: i === 2 ? null : projectId,
         created_at: `${today}T01:00:00Z`, updated_at: `${today}T01:00:00Z`,
         last_contact_at: i === 0 ? `${today}T02:00:00Z` : null,
         next_followup_at: i === 0 ? '2026-01-01T01:00:00Z' : null,
     }));
+    const privateLeads = [
+        { ...leads[0], id: '00000000-0000-4000-8000-000000000014', customer_name: 'Өөр менежерийн лид', sales_manager_name: 'Сараа' },
+        { ...leads[0], id: '00000000-0000-4000-8000-000000000015', customer_name: 'Өөр төслийн лид', project_id: elysiumId },
+    ];
+    const visibleLeads = () => role === 'admin' ? [...leads, ...privateLeads] : leads.filter(lead => lead.sales_manager_name === 'Номин' && lead.project_id === projectId);
     const viewings = leads.slice(0, 2).map((lead, i) => ({
         id: `viewing-${i}`, scheduled_at: `${tomorrow}T${i ? '15' : '11'}:00:00+08:00`, status: 'scheduled',
         lead, lead_id: lead.id, sales_manager_name: 'Номин', meeting_type: 'new_customer', agent_notes: i ? null : '3 өрөө байрны зохион байгуулалт танилцуулах',
@@ -39,23 +46,40 @@ async function setup(page: Page, readonly = false) {
         if (path.startsWith('/api/auth/')) return route.continue();
         state.requests.push({ path, search: url.search, method: request.method(), shop: request.headers()['x-shop-id'], ...(request.method() === 'PATCH' ? { body: request.postDataJSON() } : {}) });
         const reply = (json: unknown, status = 200) => route.fulfill({ status, json });
-        if (path === '/api/me') return reply({ user: { fullName: 'Номин' }, role: 'sales_manager',
-            permissions: { ...ROLE_PERMISSIONS.sales_manager, canWrite: !readonly, modules: [...ROLE_PERMISSIONS.sales_manager.modules, 'reports', 'marketing-roi', 'ai-assistant'] },
+        if (path === '/api/me') return reply({ user: { fullName: 'Номин' }, role,
+            permissions: { ...ROLE_PERMISSIONS[role], canWrite: !readonly, modules: [...ROLE_PERMISSIONS[role].modules, 'reports', 'marketing-roi', 'ai-assistant'] },
             shops: [{ id: shopId, name: 'Vertmon · Туршилтын өгөгдөл', is_active: true, setup_completed: true }] });
         if (path === '/api/dashboard/mode') return reply({ mode: 'personal', managerName: 'Номин', isManager: true, canViewTeam: true });
         if (path === '/api/dashboard/nav-counts') return reply({ leads: 3, inbox: 0, meetings: 2 });
         if (path === '/api/dashboard/my-stats') return reply({ manager: { name: 'Номин', isSelf: true, inRoster: true, hasAccount: true }, onboarding: false, missing: [], period: 'today',
             kpis: { activeLeads: 3, newLeads: 2, viewingsToday: 0, viewingsThisWeek: 2, activeContracts: 3, salesThisMonth: 860000000 }, target: null, tasks: [], recentLeads: [], upcomingViewings: [], revenueTrend: [] });
-        if (path === '/api/dashboard/managers') return reply({ managers: [{ id: 'manager-1', name: 'Номин' }], mineName: 'Номин' });
-        if (path === '/api/dashboard/projects') return reply({ projects: [{ id: projectId, name: 'Мандала Гарден' }] });
-        if (path === '/api/dashboard/leads/summary') return reply({ all: 3, mine: 2, new: 2, meetings: 2, active: 1, mineName: 'Номин', canClaim: true, queues: { unassigned: 1, uncontacted: 2, no_followup: 2, overdue: 1 } });
+        if (path === '/api/dashboard/leads/projects') return reply({ projects: [{ id: projectId, name: 'Мандала Гарден' }, ...(role === 'admin' ? [{ id: elysiumId, name: 'Элизиум' }] : [])] });
+        if (path === '/api/dashboard/managers') {
+            const managers = [
+                { id: 'manager-1', name: 'Номин', is_active: true, project_ids: [projectId], assignable: role === 'admin' },
+                { id: 'manager-2', name: 'Сараа', is_active: true, project_ids: [projectId], assignable: role === 'admin' },
+                { id: 'manager-3', name: 'Элизиум Менежер', is_active: true, project_ids: [elysiumId], assignable: role === 'admin' },
+            ].filter(manager => (!url.searchParams.has('project') || manager.project_ids.includes(url.searchParams.get('project')!)) && (role === 'admin' || manager.project_ids.includes(projectId)));
+            return reply({ managers, mineName: 'Номин' });
+        }
+        if (path === '/api/dashboard/leads/summary') return reply({ all: visibleLeads().length, mine: 2, new: 1, meetings: 2, active: 1, mineName: 'Номин', canClaim: false, queues: { unassigned: role === 'admin' ? 1 : 0, uncontacted: 1, no_followup: 1, overdue: 1 } });
         if (path === '/api/dashboard/leads') {
-            const matches = leads.filter(lead => (!url.searchParams.get('q') || lead.customer_name.includes(url.searchParams.get('q')!))
+            const matches = visibleLeads().filter(lead => (!url.searchParams.get('q') || lead.customer_name.includes(url.searchParams.get('q')!))
+                && (!url.searchParams.get('project') || lead.project_id === url.searchParams.get('project'))
                 && (!url.searchParams.get('status') || lead.status === url.searchParams.get('status'))
                 && (url.searchParams.get('queue') !== 'overdue' || !!lead.next_followup_at));
             return reply({ leads: matches, pagination: { page: 1, pageSize: 25, total: matches.length, totalPages: 1, hasMore: false } });
         }
-        if (path.startsWith('/api/dashboard/leads/')) return reply({ lead: leads.find(lead => path.endsWith(lead.id)), viewings: [], contracts: [], activities: [], property: null });
+        if (path.startsWith('/api/dashboard/leads/')) {
+            const lead = visibleLeads().find(lead => path.endsWith(lead.id));
+            if (!lead) return reply({ error: 'Лид олдсонгүй' }, 404);
+            if (request.method() === 'PATCH') {
+                const body = request.postDataJSON();
+                if (role !== 'admin' && ('project_id' in body || 'sales_manager_name' in body)) return reply({ error: 'Хуваарилах эрхгүй' }, 403);
+                Object.assign(lead, body);
+            }
+            return reply({ lead, viewings: [], contracts: [], activities: [], property: null });
+        }
         if (path.startsWith('/api/dashboard/viewings/') && request.method() === 'PATCH') {
             const item = state.viewings.find(item => path.endsWith(item.id));
             Object.assign(item!, request.postDataJSON());
@@ -217,4 +241,43 @@ test('унших эрхтэй хэрэглэгчид шинээр үүсгэх �
     await expect(page.getByText('Б. Энхжин', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Ирсэн', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Уулзалт товлох', exact: true })).toHaveCount(0);
+});
+
+test('менежер өөрийн төслийн зөвхөн өөрт оноосон лидийг ажиллуулна', async ({ page }) => {
+    const state = await setup(page);
+    await page.goto('/dashboard/leads');
+    await expect(page.getByText('Б. Энхжин', { exact: true })).toBeVisible();
+    await expect(page.getByText('Г. Тэмүүлэн', { exact: true })).toBeVisible();
+    for (const name of ['Д. Болормаа', 'Өөр менежерийн лид', 'Өөр төслийн лид']) await expect(page.getByText(name, { exact: true })).toHaveCount(0);
+    await page.getByLabel('Төсөл', { exact: true }).selectOption(projectId);
+    await expect.poll(() => state.requests.some(r => r.path === '/api/dashboard/leads' && r.search.includes(`project=${projectId}`))).toBe(true);
+    await page.getByText('Б. Энхжин', { exact: true }).click();
+    const panel = page.getByRole('dialog', { name: 'Лидийн дэлгэрэнгүй' });
+    await expect(panel).toBeVisible();
+    await expect(panel.getByLabel('Лидийн төсөл')).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Менежер солих', exact: true })).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Хариуцаж аваад товлох', exact: true })).toHaveCount(0);
+    await expect.poll(() => state.requests.some(r => r.path === '/api/dashboard/managers' && r.search.includes(`project=${projectId}`))).toBe(true);
+    expect(state.errors).toEqual([]);
+    expect(state.unhandled).toEqual([]);
+});
+
+test('админ төслийг ил тод сонгоод зөв төслийн менежерт хуваарилна', async ({ page }) => {
+    const state = await setup(page, false, 'admin');
+    await page.goto('/dashboard/leads');
+    await page.getByText('Д. Болормаа', { exact: true }).click();
+    const panel = page.getByRole('dialog', { name: 'Лидийн дэлгэрэнгүй' });
+    await expect(panel.getByLabel('Лидийн төсөл')).toHaveValue('');
+    await expect(panel.getByRole('button', { name: 'Менежер солих', exact: true })).toHaveCount(0);
+    await panel.getByLabel('Лидийн төсөл').selectOption(elysiumId);
+    await expect.poll(() => state.requests.some(r => r.method === 'PATCH' && r.body?.project_id === elysiumId && r.body.sales_manager_name === null)).toBe(true);
+    await expect.poll(() => state.requests.some(r => r.path === '/api/dashboard/managers' && r.search.includes(`project=${elysiumId}`))).toBe(true);
+    await panel.getByRole('button', { name: 'Менежер солих', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Номин', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Сараа', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Элизиум Менежер', exact: true }).click();
+    await expect.poll(() => state.requests.some(r => r.method === 'PATCH' && r.body?.sales_manager_name === 'Элизиум Менежер')).toBe(true);
+    await expect(panel.getByText('Элизиум Менежер', { exact: true })).toBeVisible();
+    expect(state.errors).toEqual([]);
+    expect(state.unhandled).toEqual([]);
 });

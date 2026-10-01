@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { applyLeadScope, UNRESTRICTED_SALES_SCOPE, type SalesProjectScope } from '@/lib/sales/project-scope';
 
 /**
  * Түүхийн нэмэлт лог/уншилт нь best-effort. Хэрэглэгчийн үндсэн бичилт
@@ -74,13 +75,32 @@ export async function listLeadActivities(db: SupabaseClient, shopId: string, lea
  */
 export async function recordLeadContact(
     db: SupabaseClient,
-    input: { shopId: string; leadId: string; type: 'note' | 'call'; content: string; nextFollowupAt?: string | null; userId?: string | null; managerName?: string | null },
+    input: { shopId: string; leadId: string; type: 'note' | 'call'; content: string; nextFollowupAt?: string | null; userId?: string | null; managerName?: string | null; scope?: SalesProjectScope },
 ): Promise<
     { ok: true; activity: LeadActivity }
     | { ok: false; error: string; status: number; partialSuccess?: boolean }
 > {
-    const { data: lead, error: readError } = await db.from('leads').select('id')
-        .eq('id', input.leadId).eq('shop_id', input.shopId).is('deleted_at', null).maybeSingle();
+    const scope = input.scope || UNRESTRICTED_SALES_SCOPE;
+    if (scope.projectIds !== null) {
+        if (!input.userId || !scope.managerName || !scope.projectIds.length) {
+            return { ok: false, error: 'Лид олдсонгүй', status: 404 };
+        }
+        const { data, error } = await db.rpc('record_scoped_sales_lead_contact', {
+            p_shop_id: input.shopId, p_lead_id: input.leadId, p_user_id: input.userId,
+            p_manager_name: scope.managerName, p_project_ids: scope.projectIds,
+            p_input: { type: input.type, content: input.content,
+                ...(input.nextFollowupAt !== undefined ? { next_followup_at: input.nextFollowupAt } : {}),
+            },
+        });
+        if (error || !data) {
+            const status = error?.code === 'P0002' ? 404
+                : ['22023', '22P02', '22007', '22008'].includes(error?.code || '') ? 400 : 503;
+            return { ok: false, status, error: status === 404 ? 'Лид олдсонгүй' : 'Дуудлага/тэмдэглэл хадгалагдсангүй. Дахин оролдоно уу.' };
+        }
+        return { ok: true, activity: data as LeadActivity };
+    }
+    const { data: lead, error: readError } = await applyLeadScope(db.from('leads').select('id')
+        .eq('id', input.leadId).eq('shop_id', input.shopId).is('deleted_at', null), scope).maybeSingle();
     if (readError) return { ok: false, error: 'Лид шалгахад алдаа гарлаа', status: 500 };
     if (!lead) return { ok: false, error: 'Лид олдсонгүй', status: 404 };
 
@@ -90,8 +110,8 @@ export async function recordLeadContact(
     if (input.nextFollowupAt !== undefined) updates.next_followup_at = input.nextFollowupAt;
     const changesLead = Object.keys(updates).length > 1;
     if (changesLead) {
-        const { data, error } = await db.from('leads').update(updates)
-            .eq('id', input.leadId).eq('shop_id', input.shopId).is('deleted_at', null).select('id').maybeSingle();
+        const { data, error } = await applyLeadScope(db.from('leads').update(updates)
+            .eq('id', input.leadId).eq('shop_id', input.shopId).is('deleted_at', null), scope).select('id').maybeSingle();
         if (error) return { ok: false, error: 'Лидийн холбооны мэдээлэл шинэчлэгдсэнгүй. Бүртгэл хадгалагдаагүй.', status: 500 };
         if (!data) return { ok: false, error: 'Лид олдсонгүй. Бүртгэл хадгалагдаагүй.', status: 404 };
     }

@@ -1,9 +1,12 @@
+import { applyLeadScope, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { buildWorkbookBuffer, type WorkbookSheetSpec } from '@/lib/utils/xlsx';
 import { getManagerPerformance } from '@/lib/reports/manager-performance';
+import { fetchAllRows } from '@/lib/utils/pagination';
+import { statusLabel } from '@/lib/leads/labels';
 
 /** Export төрөл бүр өөрийн модулийн унших эрх шаардана (өмнө нь зөвхөн auth). */
 const EXPORT_MODULE: Record<string, string> = {
@@ -29,6 +32,7 @@ export async function GET(request: NextRequest) {
         }
 
         const supabase = supabaseAdmin();
+        const scope = await resolveSalesProjectScope(supabase, authShop.id);
         const shopId = authShop.id;
 
         let sheet: WorkbookSheetSpec;
@@ -71,22 +75,22 @@ export async function GET(request: NextRequest) {
 
         } else if (type === 'leads') {
             // Export Leads
-            const { data: leads } = await supabase
+            const leads = await fetchAllRows<Record<string, any>>((from, to) => applyLeadScope(supabase
                 .from('leads')
                 .select('*')
                 .eq('shop_id', shopId)
+                .is('deleted_at', null)
                 .order('created_at', { ascending: false })
-                .limit(500);
+                .order('id').range(from, to), scope));
 
             const exportData = leads?.map(lead => ({
-                'Нэр': lead.name || '-',
-                'Утас': lead.phone || '-',
-                'Имэйл': lead.email || '-',
+                'Нэр': lead.customer_name || '-',
+                'Утас': lead.customer_phone || '-',
+                'Имэйл': lead.customer_email || '-',
                 'Эх сурвалж': lead.source || '-',
-                'Төлөв': lead.status === 'new' ? 'Шинэ' :
-                    lead.status === 'contacted' ? 'Холбогдсон' :
-                        lead.status === 'qualified' ? 'Баталгаажсан' :
-                            lead.status === 'converted' ? 'Гэрээ' : lead.status || '-',
+                'Төлөв': statusLabel(lead.status),
+                'Менежер': lead.sales_manager_name || '-',
+                'Төсөл ID': lead.project_id || '-',
                 'Тэмдэглэл': lead.notes || '-',
                 'Огноо': new Date(lead.created_at).toLocaleDateString('mn-MN'),
             })) || [];
@@ -185,6 +189,7 @@ export async function GET(request: NextRequest) {
         });
 
     } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         console.error('Export API error:', error);
         return NextResponse.json({ error: 'Failed to export data' }, { status: 500 });
     }

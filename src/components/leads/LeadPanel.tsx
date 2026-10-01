@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
 import { formatShortDate, formatTime, formatRelativeDays } from '@/lib/utils/date';
-import { useLeadDetail, useLeadProjects, useUpdateLead, useAddLeadActivity, type ManagerOption } from '@/hooks/useLeads';
+import { useLeadDetail, useUpdateLead, useAddLeadActivity, useLeadProjects, useManagers } from '@/hooks/useLeads';
 import { INTEREST_CHIPS, ACTIVITY_LABEL, sourceLabel, interestLabel } from '@/lib/leads/labels';
 import { Pill, Skeleton, GhostButton } from '@/components/dashboard/v2/primitives';
 import { StatusPicker, ManagerPicker } from './pickers';
@@ -15,6 +15,7 @@ import { useRegisterAiContext } from '@/lib/ai/context';
 import { LeadWorkActions } from './LeadWorkActions';
 import { Alert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
+import { useAuth } from '@/contexts/AuthContext';
 
 /**
  * Лидийн хажуугийн панел — жагсаалтаас гаралгүй бүх ажлыг хийнэ:
@@ -23,19 +24,17 @@ import { Button } from '@/components/ui/Button';
  */
 export function LeadPanel({
     leadId,
-    managers,
     canWrite,
     onClose,
     className,
 }: {
     leadId: string;
-    managers: ManagerOption[];
     canWrite: boolean;
     onClose?: () => void;
     className?: string;
 }) {
+    const { user } = useAuth();
     const { data, isLoading, isError, error, isFetching, refetch } = useLeadDetail(leadId);
-    const { data: projects = [] } = useLeadProjects();
     const update = useUpdateLead();
     const addActivity = useAddLeadActivity(leadId);
     const noteRef = useRef<HTMLTextAreaElement>(null);
@@ -45,6 +44,9 @@ export function LeadPanel({
     const [budgetDraft, setBudgetDraft] = useState<string | null>(null);
 
     const lead = data?.lead;
+    const { data: managers = [] } = useManagers(lead?.project_id ?? null);
+    const { data: projects = [] } = useLeadProjects();
+    const canEditProject = canWrite && (user?.role === 'admin' || user?.role === 'super_admin');
     useRegisterAiContext(lead ? { type: 'lead', id: lead.id, label: lead.customer_name || 'Нэргүй лид' } : null);
 
     const timeline = useMemo(() => {
@@ -122,6 +124,11 @@ export function LeadPanel({
                 <LeadWorkActions key={lead.id} lead={lead} canWrite={canWrite} />
                 {/* Баримт */}
                 <div className="grid grid-cols-[110px_1fr] gap-x-3 gap-y-2 border-b border-border px-4 py-3 text-[12.5px]">
+                    <Label>Төсөл</Label>
+                    <div className="text-foreground">{canEditProject ? <select aria-label="Лидийн төсөл" value={lead.project_id ?? ''} onChange={e => { if (e.target.value) patch({ project_id: e.target.value, sales_manager_name: null }); }} className="h-7 max-w-full rounded-md border border-border bg-surface px-2 text-[12.5px] focus-ring">
+                        <option value="" disabled>Төсөл тодорхойгүй</option>
+                        {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select> : lead.project_id ? projects.find(p => p.id === lead.project_id)?.name || 'Төсөл' : 'Төсөл тодорхойгүй'}</div>
                     <Label>Утас</Label>
                     <div className="flex items-center gap-2">
                         <span className="mono-label text-foreground">{lead.customer_phone || '—'}</span>
@@ -129,10 +136,6 @@ export function LeadPanel({
                     </div>
                     <Label>Эх үүсвэр</Label>
                     <div className="text-foreground">{sourceLabel(lead.source)}</div>
-                    {lead.project_id && <>
-                        <Label>Төсөл</Label>
-                        <div className="text-foreground">{projects.find((p) => p.id === lead.project_id)?.name ?? 'Төслийн нэр олдсонгүй'}</div>
-                    </>}
                     <Label>Сонирхол</Label>
                     <div>
                         {canWrite ? (
@@ -177,7 +180,7 @@ export function LeadPanel({
                         )}
                     </div>
                     <Label>Менежер</Label>
-                    <div><ManagerPicker value={lead.sales_manager_name ?? null} options={managers} disabled={!canWrite} onChange={(n) => patch({ sales_manager_name: n })} /></div>
+                    <div><ManagerPicker value={lead.sales_manager_name ?? null} options={managers} disabled={!canWrite || user?.role === 'sales_manager' || !lead.project_id} onChange={(n) => patch({ sales_manager_name: n })} />{!lead.project_id && <p className="mt-1 text-xs text-muted-foreground">Төслийг тодорхойлсны дараа менежер хуваарилна.</p>}</div>
                     <Label>Дараагийн алхам</Label>
                     <div className="text-foreground">{nextStep(lead)}</div>
                     <Label>Сүүлд холбогдсон</Label>

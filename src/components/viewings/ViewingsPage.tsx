@@ -11,7 +11,7 @@ import { canAccessModuleDynamic } from '@/lib/rbac';
 import { formatTime, formatShortDate, ubDateStr } from '@/lib/utils/date';
 import { formatMNT } from '@/lib/utils/currency';
 import { useViewings, useCreateViewing, useUpdateViewing, usePropertySearch, type ViewingRow, type ViewingRange, type PropertyOption } from '@/hooks/useViewings';
-import { useLeadDetail, useManagers } from '@/hooks/useLeads';
+import { useLeadDetail, useLeadProjects, useManagers } from '@/hooks/useLeads';
 import { MEETING_TYPES, MEETING_TYPE_META, VIEWING_STATUS_META, viewingStatusLabel, viewingStatusTone, dayHeading, type MeetingType } from '@/lib/viewings/labels';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/Sheet';
 import { Avatar, Pill, Skeleton } from '@/components/dashboard/v2/primitives';
@@ -186,10 +186,12 @@ function Row({ v, now, canWrite, busy, onArrived, onNoShow, onCancel, onPostpone
 
 function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () => void }) {
     const { data: leadDetail } = useLeadDetail(leadId);
+    const { data: projects = [], isLoading: projectsLoading, error: projectsError, refetch: refetchProjects } = useLeadProjects();
     const create = useCreateViewing();
     const [walkIn, setWalkIn] = useState(false);
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
+    const [projectId, setProjectId] = useState('');
     const [propQ, setPropQ] = useState('');
     const [property, setProperty] = useState<PropertyOption | null>(null);
     const [when, setWhen] = useState(() => defaultWhen());
@@ -197,7 +199,8 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
     const [notes, setNotes] = useState('');
     const [interest, setInterest] = useState(0);
     const [feedback, setFeedback] = useState('');
-    const { data: props = [], isFetching: searching } = usePropertySearch(propQ, !property);
+    const projectScope = leadId ? leadDetail?.lead.project_id ?? null : projectId || null;
+    const { data: props = [], isFetching: searching } = usePropertySearch(propQ, !property, projectScope);
 
     // Лидээс ирсэн бол төрлийг статусаас нь таана (гараар сольж болно)
     const inferredType: MeetingType = leadDetail?.lead
@@ -207,11 +210,13 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
     const setType = setTypeOverride;
 
     const submit = async () => {
+        if (!leadId && !projects.some(p => p.id === projectId)) { toast.error('Төсөл сонгоно уу'); return; }
         if (!leadId && !name.trim()) { toast.error('Харилцагчийн нэр оруулна уу'); return; }
         if (!walkIn && !when) { toast.error('Огноо, цаг сонгоно уу'); return; }
         try {
             const result = await create.mutateAsync({
                 lead_id: leadId,
+                project_id: leadId ? undefined : projectId,
                 customer_name: leadId ? undefined : name.trim(),
                 customer_phone: leadId ? undefined : phone.trim() || null,
                 property_id: property?.id ?? null,
@@ -243,6 +248,14 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                     </button>
                     <span className="text-foreground">Талбай дээр ирсэн — шууд «болсон» гэж бүртгэх</span>
                 </label>
+
+                {!leadId && <Field label="Төсөл" required>
+                    <select aria-label="Төсөл" required value={projectId} onChange={e => { setProjectId(e.target.value); setProperty(null); }} disabled={projectsLoading || !!projectsError} className={inputCls}>
+                        <option value="">{projectsLoading ? 'Төсөл ачаалж байна…' : 'Төсөл сонгох'}</option>
+                        {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                    {projectsError ? <p role="alert" className="mt-1 text-xs text-status-danger">Төслүүдийг уншиж чадсангүй. <button type="button" className="underline" onClick={() => void refetchProjects()}>Дахин оролдох</button></p> : !projectsLoading && !projects.length && <p role="status" className="mt-1 text-xs text-muted-foreground">Уулзалт бүртгэх төслийн эрх олгогдоогүй байна.</p>}
+                </Field>}
 
                 {leadId && leadDetail?.lead ? (
                     <div className="flex items-center gap-3 rounded-md border border-border bg-surface-2/60 px-3 py-2">

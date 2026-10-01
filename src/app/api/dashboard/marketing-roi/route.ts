@@ -1,3 +1,4 @@
+import { applyLeadScope, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule } from '@/lib/auth/require-permission';
@@ -15,10 +16,11 @@ export async function GET() {
         if (!authShop) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
 
         const db = supabaseAdmin();
+        const scope = await resolveSalesProjectScope(db, authShop.id);
         const [leads, campaigns, contracts] = await Promise.all([
-            fetchAllRows((from, to) => db.from('leads')
+            fetchAllRows((from, to) => applyLeadScope(db.from('leads')
                 .select('id, source, status, facebook_campaign_id')
-                .eq('shop_id', authShop.id).is('deleted_at', null).order('id').range(from, to)),
+                .eq('shop_id', authShop.id).is('deleted_at', null).order('id').range(from, to), scope)),
             fetchAllRows((from, to) => db.from('ad_campaigns')
                 .select('external_id, name, spend, status')
                 .eq('shop_id', authShop.id).eq('platform', 'facebook').order('id').range(from, to)),
@@ -28,6 +30,7 @@ export async function GET() {
         ]);
         return NextResponse.json({ roi: buildMarketingRoi(leads, campaigns, contracts) });
     } catch (error) {
+        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         logger.error('[Marketing ROI] error', { error });
         return NextResponse.json({ error: 'ROI татахад алдаа гарлаа' }, { status: 500 });
     }

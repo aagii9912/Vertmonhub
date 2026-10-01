@@ -9,6 +9,11 @@ const state = vi.hoisted(() => ({
 
 vi.mock('@/lib/auth/require-permission', () => ({ requireAnyModule: async () => null }));
 vi.mock('@/lib/auth/supabase-auth', () => ({ getUserShop: async () => ({ id: 'shop-1' }) }));
+vi.mock('@/lib/sales/project-scope', () => ({
+    ProjectScopeError: class extends Error {},
+    resolveSalesProjectScope: async () => ({ projectIds: null, managerName: null }),
+    canAccessProject: () => true,
+}));
 vi.mock('@/lib/supabase', () => ({
     supabaseAdmin: () => ({
         from: (table: string) => {
@@ -23,6 +28,7 @@ vi.mock('@/lib/supabase', () => ({
                 not: (key: string, _op: string, value: unknown) => { filters.push((row) => row[key] !== value); return query; },
                 order: () => query,
                 limit: () => query,
+                range: () => query,
                 then: (resolve: (value: ReturnType<typeof run>) => unknown) => Promise.resolve(run()).then(resolve),
             };
             return query;

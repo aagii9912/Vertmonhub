@@ -29,23 +29,24 @@ export interface ViewingsResult {
 }
 
 export function useViewings(params: { range: ViewingRange; status?: string; manager?: string; lead?: string }) {
-    const { shop } = useAuth();
+    const { shop, user } = useAuth();
     const shopId = shop?.id;
     const sp = new URLSearchParams({ range: params.range });
     if (params.status && params.status !== 'all') sp.set('status', params.status);
     if (params.manager && params.manager !== 'all') sp.set('manager', params.manager);
     if (params.lead) sp.set('lead', params.lead);
     return useQuery<ViewingsResult>({
-        queryKey: ['viewings', shopId, params],
+        queryKey: ['viewings', shopId, user?.id, params, user?.role],
         queryFn: () => dashboardJson<ViewingsResult>(`/api/dashboard/viewings?${sp.toString()}`),
         enabled: !!shopId,
         staleTime: 20_000,
-        placeholderData: (prev) => prev,
+        placeholderData: (prev, previousQuery) => previousQuery && previousQuery.queryKey[1] === shopId && previousQuery.queryKey[2] === user?.id && previousQuery.queryKey[4] === user?.role ? prev : undefined,
     });
 }
 
 export interface CreateViewingInput {
     lead_id?: string | null;
+    project_id?: string | null;
     customer_name?: string | null;
     customer_phone?: string | null;
     property_id?: string | null;
@@ -111,13 +112,14 @@ export interface PropertyOption {
     status: string | null;
 }
 
-export function usePropertySearch(q: string, enabled = true) {
-    const { shop } = useAuth();
+export function usePropertySearch(q: string, enabled = true, projectId?: string | null) {
+    const { shop, user } = useAuth();
+    const projectQuery = projectId ? `&project=${encodeURIComponent(projectId)}` : '';
     return useQuery<PropertyOption[]>({
-        queryKey: ['properties', 'search', shop?.id, q],
-        queryFn: async () => (await dashboardJson<{ properties: PropertyOption[] }>(`/api/dashboard/properties/search?q=${encodeURIComponent(q)}`)).properties,
-        enabled: !!shop?.id && enabled,
+        queryKey: ['properties', 'search', shop?.id, user?.id, projectId, q, user?.role],
+        queryFn: async () => (await dashboardJson<{ properties: PropertyOption[] }>(`/api/dashboard/properties/search?q=${encodeURIComponent(q)}${projectQuery}`)).properties,
+        enabled: !!shop?.id && enabled && projectId !== null,
         staleTime: 60_000,
-        placeholderData: (prev) => prev,
+        placeholderData: (prev, previousQuery) => previousQuery && previousQuery.queryKey[2] === shop?.id && previousQuery.queryKey[3] === user?.id && previousQuery.queryKey[4] === projectId && previousQuery.queryKey[6] === user?.role ? prev : undefined,
     });
 }

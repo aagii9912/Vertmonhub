@@ -2,13 +2,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { assignLeadManager, findLead, logCall, setFollowup } from '../actions';
 import { recordLeadContact } from '@/lib/leads/activities';
 import { resolveActiveManagerName } from '@/lib/sales/manager-identity';
+import { UNRESTRICTED_SALES_SCOPE } from '@/lib/sales/project-scope';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 const { from } = vi.hoisted(() => ({ from: vi.fn() }));
 vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from }) }));
 
 const db = { from } as unknown as SupabaseClient;
-const lead = { id: 'lead-1', customer_name: 'Болд', customer_phone: '99112233', status: 'new', sales_manager_name: null };
+const projectId = '00000000-0000-4000-8000-000000000003';
+const lead = { id: 'lead-1', project_id: projectId, customer_name: 'Болд', customer_phone: '99112233', status: 'new', sales_manager_name: null };
 const activity = { id: 'activity-1', lead_id: lead.id, type: 'call', content: 'Ярьсан', meta: {}, created_by_name: 'Батаа', created_at: '2026-09-13T02:00:00Z' };
 
 /** One response per DB query; unexpected extra writes fail instead of passing silently. */
@@ -16,7 +18,7 @@ function query(table: string, data: unknown, error: unknown = null) {
     const result = { data, error };
     const chain = {
         select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), is: vi.fn().mockReturnThis(),
-        ilike: vi.fn().mockReturnThis(), limit: vi.fn().mockReturnThis(),
+        in: vi.fn().mockReturnThis(), ilike: vi.fn().mockReturnThis(), limit: vi.fn().mockReturnThis(),
         update: vi.fn().mockReturnThis(), insert: vi.fn().mockReturnThis(),
         maybeSingle: vi.fn().mockResolvedValue(result), single: vi.fn().mockResolvedValue(result),
         then: (resolve: (value: typeof result) => unknown) => Promise.resolve(result).then(resolve),
@@ -26,6 +28,12 @@ function query(table: string, data: unknown, error: unknown = null) {
         return chain;
     });
     return chain;
+}
+
+function projectManager() {
+    const membership = query('sales_manager_projects', { project_id: projectId });
+    const activeManager = query('sales_managers', { name: 'Батаа' });
+    return { membership, activeManager };
 }
 
 beforeEach(() => {
@@ -126,12 +134,17 @@ describe('manager assignment', () => {
     it('previews the canonical active roster name without mutation', async () => {
         query('leads', [lead]);
         const roster = query('sales_managers', { name: 'Батаа' });
-        const result = await assignLeadManager('shop-1', { lead_id: lead.id, manager_name: ' Батаа ' }, false, 'user-1', 'Сараа');
+        const { membership, activeManager } = projectManager();
+        const result = await assignLeadManager('shop-1', { lead_id: lead.id, manager_name: ' Батаа ' }, false, 'user-1', 'Сараа', UNRESTRICTED_SALES_SCOPE);
         expect(result).toMatchObject({ requiresConfirmation: true, action: { args: { manager_name: 'Батаа' } } });
         expect(roster.eq).toHaveBeenCalledWith('shop_id', 'shop-1');
         expect(roster.eq).toHaveBeenCalledWith('is_active', true);
         expect(roster.eq).toHaveBeenCalledWith('name', 'Батаа');
-        expect(from).toHaveBeenCalledTimes(2);
+        expect(membership.eq).toHaveBeenCalledWith('shop_id', 'shop-1');
+        expect(membership.eq).toHaveBeenCalledWith('project_id', projectId);
+        expect(membership.eq).toHaveBeenCalledWith('manager_name', 'Батаа');
+        expect(activeManager.eq).toHaveBeenCalledWith('is_active', true);
+        expect(from).toHaveBeenCalledTimes(4);
     });
 
     it.each([null, { message: 'roster unavailable' }])('fails closed when the active roster cannot be verified (%j)', async (error) => {
@@ -146,9 +159,10 @@ describe('manager assignment', () => {
     it('updates only the current tenant active lead, then records the change', async () => {
         query('leads', [lead]);
         query('sales_managers', { name: 'Батаа' });
+        projectManager();
         const update = query('leads', { id: lead.id });
         const insert = query('lead_activities', { ...activity, type: 'manager' });
-        expect(await assignLeadManager('shop-1', { lead_id: lead.id, manager_name: 'Батаа' }, true, 'user-1', 'Сараа')).toMatchObject({ success: true });
+        expect(await assignLeadManager('shop-1', { lead_id: lead.id, manager_name: 'Батаа' }, true, 'user-1', 'Сараа', UNRESTRICTED_SALES_SCOPE)).toMatchObject({ success: true });
         expect(update.eq).toHaveBeenCalledWith('shop_id', 'shop-1');
         expect(update.is).toHaveBeenCalledWith('deleted_at', null);
         expect(update.update).toHaveBeenCalledWith(expect.objectContaining({ sales_manager_name: 'Батаа' }));
@@ -158,21 +172,43 @@ describe('manager assignment', () => {
     it.each([null, { message: 'update failed' }])('does not log or claim assignment for a missing/failed update (%j)', async (error) => {
         query('leads', [lead]);
         query('sales_managers', { name: 'Батаа' });
+        projectManager();
         query('leads', null, error);
         const result = await assignLeadManager('shop-1', { lead_id: lead.id, manager_name: 'Батаа' }, true, 'user-1', 'Сараа');
         expect(result).toHaveProperty('error');
         expect(result).not.toHaveProperty('success');
-        expect(from).toHaveBeenCalledTimes(3);
+        expect(from).toHaveBeenCalledTimes(5);
     });
 
     it('reports the assigned manager when only the timeline fails', async () => {
         query('leads', [lead]);
         query('sales_managers', { name: 'Батаа' });
+        projectManager();
         query('leads', { id: lead.id });
         query('lead_activities', null, { message: 'insert failed' });
         const result = await assignLeadManager('shop-1', { lead_id: lead.id, manager_name: 'Батаа' }, true, 'user-1', 'Сараа');
         expect(result).toMatchObject({ partialSuccess: true, error: expect.stringContaining('Батаа-д шилжсэн боловч') });
         expect(result).not.toHaveProperty('success');
+    });
+
+    it.each([null, { message: 'project membership unavailable' }])('blocks an assignment when project membership is missing or cannot be verified (%j)', async (error) => {
+        query('leads', [lead]);
+        query('sales_managers', { name: 'Батаа' });
+        query('sales_manager_projects', null, error);
+        query('sales_managers', { name: 'Батаа' });
+        const result = await assignLeadManager('shop-1', { lead_id: lead.id, manager_name: 'Батаа' }, true, 'user-1', 'Сараа', UNRESTRICTED_SALES_SCOPE);
+        expect(result).toHaveProperty('error');
+        expect(result).not.toHaveProperty('success');
+        expect(from).toHaveBeenCalledTimes(4);
+    });
+
+    it('requires admin scope to transfer a project lead to another manager', async () => {
+        const read = query('leads', [{ ...lead, sales_manager_name: 'Сараа' }]);
+        const result = await assignLeadManager('shop-1', { lead_id: lead.id, manager_name: 'Батаа' }, true, 'user-1', 'Сараа', { projectIds: [projectId], managerName: 'Сараа' });
+        expect(result).toHaveProperty('error', 'Лидийн хуваарилалтыг admin өөрчилнө');
+        expect(read.in).toHaveBeenCalledWith('project_id', [projectId]);
+        expect(read.eq).toHaveBeenCalledWith('sales_manager_name', 'Сараа');
+        expect(from).toHaveBeenCalledTimes(1);
     });
 
     it.each([null, '', '   ', 'x'.repeat(121)])('rejects invalid manager name before any roster query', async (name) => {

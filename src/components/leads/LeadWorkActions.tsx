@@ -14,7 +14,7 @@ export function LeadWorkActions({ lead, canWrite }: { lead: LeadRow; canWrite: b
     if (!ACTIVE_STATUSES.includes(lead.status)) return null;
     const queues = getLeadWorkQueues(lead);
     const unassigned = !lead.sales_manager_name;
-    const canClaim = unassigned && summary?.canClaim;
+    const canClaim = unassigned && !!lead.project_id && summary?.canClaim;
     const save = async (take: boolean) => {
         const date = new Date(at);
         if (!Number.isFinite(date.getTime()) || date.getTime() <= Date.now()) {

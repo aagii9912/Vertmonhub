@@ -5,6 +5,7 @@ import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 const leadId = '00000000-0000-4000-8000-000000000010';
 const shopId = '00000000-0000-4000-8000-000000000002';
 const viewingId = '00000000-0000-4000-8000-000000000020';
+const projectId = '00000000-0000-4000-8000-000000000030';
 
 /** Browser/API contracts use in-memory data; SQL integrity is tested separately. */
 async function fixtures(page: Page) {
@@ -23,6 +24,7 @@ async function fixtures(page: Page) {
         if (path === '/api/dashboard/mode') return reply({ mode: 'personal', managerName: 'Тест Менежер', isManager: true, canViewTeam: false });
         if (path === '/api/dashboard/nav-counts') return reply({ leads: state.lead ? 1 : 0, inbox: 0, meetings: state.viewings.length });
         if (path === '/api/dashboard/managers') return reply({ managers: [], mineName: 'Тест Менежер' });
+        if (path === '/api/dashboard/leads/projects') return reply({ projects: [{ id: projectId, name: 'Мандала Гарден' }] });
         if (path === '/api/dashboard/my-stats') {
             if (state.failStats) return reply({ error: 'Туршилтын түр алдаа' }, 503);
             return reply({ manager: { name: 'Тест Менежер', isSelf: true, inRoster: true, hasAccount: true }, onboarding: false, period: 'today',
@@ -38,7 +40,7 @@ async function fixtures(page: Page) {
             return reply({ lead: state.lead }, 201);
         }
         if (path === `/api/dashboard/leads/${leadId}`) return reply({ lead: state.lead, viewings: state.viewings, contracts: [], activities: [], property: null });
-        if (path === '/api/dashboard/leads/summary') return reply({ all: 1, mine: 1, new: 0, meetings: 1, active: 1, mineName: 'Тест Менежер', canClaim: true,
+        if (path === '/api/dashboard/leads/summary') return reply({ all: 1, mine: 1, new: 0, meetings: 1, active: 1, mineName: 'Тест Менежер', canClaim: false,
             queues: { unassigned: 0, uncontacted: 0, no_followup: 0, overdue: 0 } });
         if (path === '/api/dashboard/leads') return reply({ leads: url.searchParams.has('phone') ? [] : state.lead ? [state.lead] : [],
             pagination: { total: state.lead ? 1 : 0, page: 1, pageSize: 25, totalPages: 1, hasMore: false } });
@@ -92,6 +94,7 @@ for (const mobile of [false, true]) {
         const form = page.getByRole('dialog', { name: 'Түргэн бүртгэл' });
         await form.getByPlaceholder('Ж: Г. Энхжин').fill('Туршилтын Харилцагч');
         await form.getByPlaceholder('9911 2233').fill('99112233');
+        await form.getByLabel('Төсөл', { exact: true }).selectOption(projectId);
         await form.getByRole('button', { name: 'Хадгалаад уулзалт товлох' }).click();
         // The page consumes the deep link; the dialog and submitted lead ID below are the durable contract.
         await expect(page).toHaveURL(/\/dashboard\/viewings(?:\?|$)/);
@@ -102,6 +105,7 @@ for (const mobile of [false, true]) {
         await expect(page.getByRole('dialog', { name: 'Уулзалт товлох', exact: true })).not.toBeVisible();
         expect(state.requests).toHaveLength(2);
         expect(state.requests[0].body.client_request_id).toMatch(/^[0-9a-f-]{36}$/);
+        expect(state.requests[0].body.project_id).toBe(projectId);
         expect(state.requests[1].body).toMatchObject({ lead_id: leadId, property_id: null, scheduled_at: '2027-01-10T03:00:00.000Z', meeting_type: 'new_customer' });
         await page.goto('/dashboard/reports/operations?from=2026-09-01&to=2026-09-30');
         await expect(page.getByText('Гэрээний бүртгэлтэй дүн', { exact: true })).toBeVisible();
