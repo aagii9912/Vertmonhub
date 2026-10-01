@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
     Building2,
     Layers,
@@ -24,7 +24,7 @@ import { PageHeader } from '@/components/dashboard/PageHeader';
 import { toast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
-import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { dashboardFetch, dashboardJson } from '@/lib/api/dashboardFetch';
 
 interface SummaryRow {
     phase: string;
@@ -96,6 +96,8 @@ export default function BlocksPage() {
     const [summary, setSummary] = useState<SummaryRow[]>([]);
     const [phases, setPhases] = useState<string[]>([]);
     const [loading, setLoading] = useState(true);
+    const [summaryError, setSummaryError] = useState<string | null>(null);
+    const [summaryAttempt, setSummaryAttempt] = useState(0);
 
     const [activePhase, setActivePhase] = useState<string>('');
     const [activeCategory, setActiveCategory] = useState<string>('residential');
@@ -103,25 +105,49 @@ export default function BlocksPage() {
 
     const [units, setUnits] = useState<UnitRow[]>([]);
     const [unitsLoading, setUnitsLoading] = useState(false);
+    const [unitsError, setUnitsError] = useState<string | null>(null);
     const [selectedUnit, setSelectedUnit] = useState<UnitRow | null>(null);
+    const blockRequest = useRef<AbortController | null>(null);
+
+    const clearBlock = useCallback(() => {
+        blockRequest.current?.abort();
+        blockRequest.current = null;
+        setSelectedBlock(null);
+        setSelectedUnit(null);
+        setUnits([]);
+        setUnitsError(null);
+        setUnitsLoading(false);
+    }, []);
+
+    useEffect(() => () => blockRequest.current?.abort(), []);
 
     // Initial summary
     useEffect(() => {
+        const controller = new AbortController();
         (async () => {
             try {
                 setLoading(true);
-                const res = await dashboardFetch('/api/dashboard/units');
-                const data = await res.json();
-                setSummary(data.summary || []);
-                setPhases(data.phases || []);
-                setActivePhase((data.phases || [])[0] || '');
+                setSummaryError(null);
+                const data = await dashboardJson<{ summary: SummaryRow[]; phases: string[] }>(
+                    '/api/dashboard/units', { signal: controller.signal },
+                );
+                if (controller.signal.aborted) return;
+                if (!Array.isArray(data.summary) || !Array.isArray(data.phases)) {
+                    throw new Error('Блокийн мэдээллийг ачаалж чадсангүй. Дахин оролдоно уу.');
+                }
+                setSummary(data.summary);
+                setPhases(data.phases);
+                setActivePhase(data.phases[0] || '');
             } catch (e) {
-                console.error('[Blocks] summary error', e);
+                if (!controller.signal.aborted) {
+                    setSummaryError(e instanceof Error ? e.message : 'Блокийн мэдээллийг ачаалж чадсангүй.');
+                }
             } finally {
-                setLoading(false);
+                if (!controller.signal.aborted) setLoading(false);
             }
         })();
-    }, []);
+        return () => controller.abort();
+    }, [summaryAttempt]);
 
     // Categories available in the active phase
     const categories = useMemo(() => {
@@ -130,8 +156,11 @@ export default function BlocksPage() {
     }, [summary, activePhase]);
 
     useEffect(() => {
-        if (categories.length && !categories.includes(activeCategory)) setActiveCategory(categories[0]);
-    }, [categories, activeCategory]);
+        if (categories.length && !categories.includes(activeCategory)) {
+            clearBlock();
+            setActiveCategory(categories[0]);
+        }
+    }, [categories, activeCategory, clearBlock]);
 
     // Blocks for active phase + category
     const blocks = useMemo(() => {
@@ -141,26 +170,45 @@ export default function BlocksPage() {
     }, [summary, activePhase, activeCategory]);
 
     const loadBlock = useCallback(async (block: string) => {
+        blockRequest.current?.abort();
+        const controller = new AbortController();
+        blockRequest.current = controller;
         setSelectedBlock(block);
         setUnits([]);
+        setUnitsError(null);
         setUnitsLoading(true);
         try {
             const params = new URLSearchParams({ phase: activePhase, block, category: activeCategory });
-            const res = await dashboardFetch(`/api/dashboard/units?${params}`);
-            const data = await res.json();
-            setUnits(data.units || []);
+            const data = await dashboardJson<{ units: UnitRow[] }>(
+                `/api/dashboard/units?${params}`, { signal: controller.signal },
+            );
+            if (!Array.isArray(data.units)) {
+                throw new Error('Нэгжийн мэдээллийг ачаалж чадсангүй. Дахин оролдоно уу.');
+            }
+            if (!controller.signal.aborted && blockRequest.current === controller) setUnits(data.units);
         } catch (e) {
-            console.error('[Blocks] units error', e);
+            if (!controller.signal.aborted && blockRequest.current === controller) {
+                setUnitsError(e instanceof Error ? e.message : 'Нэгжийн мэдээллийг ачаалж чадсангүй.');
+            }
         } finally {
-            setUnitsLoading(false);
+            if (!controller.signal.aborted && blockRequest.current === controller) setUnitsLoading(false);
         }
     }, [activePhase, activeCategory]);
 
-    if (loading) {
+    if (loading || summaryError) {
         return (
             <div>
                 <PageHeader eyebrow="Үл хөдлөх" title="Блокийн харагдац" subtitle="Ээлж, блок бүрээр зарагдсан / зарагдаагүй нэгж" />
-                <div className="flex items-center justify-center py-24"><Spinner size="lg" /></div>
+                {loading ? <div className="flex items-center justify-center py-24"><Spinner size="lg" /></div> : (
+                    <div role="alert">
+                        <EmptyState
+                            icon={<Building2 className="w-7 h-7" />}
+                            title="Блокийн мэдээллийг ачаалж чадсангүй"
+                            description={summaryError ?? undefined}
+                            action={<Button onClick={() => setSummaryAttempt((attempt) => attempt + 1)}>Дахин оролдох</Button>}
+                        />
+                    </div>
+                )}
             </div>
         );
     }
@@ -182,7 +230,7 @@ export default function BlocksPage() {
                     return (
                         <button
                             key={p}
-                            onClick={() => { setActivePhase(p); setSelectedBlock(null); setUnits([]); }}
+                            onClick={() => { clearBlock(); setActivePhase(p); }}
                             className={cn(
                                 'flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium border transition-colors',
                                 activePhase === p
@@ -206,7 +254,7 @@ export default function BlocksPage() {
                     return (
                         <button
                             key={c}
-                            onClick={() => { setActiveCategory(c); setSelectedBlock(null); setUnits([]); }}
+                            onClick={() => { clearBlock(); setActiveCategory(c); }}
                             className={cn(
                                 'px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
                                 activeCategory === c
@@ -231,7 +279,7 @@ export default function BlocksPage() {
                         return (
                             <button
                                 key={b.block}
-                                onClick={() => loadBlock(b.block)}
+                                onClick={() => { setSelectedUnit(null); loadBlock(b.block); }}
                                 className={cn(
                                     'text-left p-3.5 rounded-xl border transition-all',
                                     isSel ? 'border-brand ring-2 ring-brand/30 bg-brand-soft' : 'border-border bg-surface hover:bg-surface-2 hover:border-brand/40',
@@ -271,6 +319,15 @@ export default function BlocksPage() {
 
                         {unitsLoading ? (
                             <div className="flex items-center justify-center py-16"><Spinner size="md" /></div>
+                        ) : unitsError ? (
+                            <div role="alert">
+                                <EmptyState
+                                    icon={<DoorOpen className="w-7 h-7" />}
+                                    title="Нэгжийн мэдээллийг ачаалж чадсангүй"
+                                    description={unitsError}
+                                    action={<Button onClick={() => loadBlock(selectedBlock)}>Дахин оролдох</Button>}
+                                />
+                            </div>
                         ) : units.length === 0 ? (
                             <EmptyState icon={<DoorOpen className="w-7 h-7" />} title="Нэгж алга" />
                         ) : (

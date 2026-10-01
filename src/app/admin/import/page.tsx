@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
+import type { InventoryImportPreview } from '@/lib/admin/import/units-import';
 import {
     Upload, Building2, MessageSquare, CheckCircle2, AlertCircle,
     Download, Loader2, Users, FileText, CreditCard, MapPin,
@@ -19,9 +21,30 @@ interface ImportCategory {
 
 const IMPORT_CATEGORIES: ImportCategory[] = [
     {
+        type: 'units',
+        label: 'Блокийн байр',
+        desc: 'Блокууд дээр харагдах байр, зогсоол',
+        icon: Building2,
+        color: 'blue',
+        columns: [
+            { name: 'Код', required: true },
+            { name: 'Блок', required: true },
+            { name: 'Бүтээгдэхүүний төрөл', required: true },
+            { name: 'Бүтээгдэхүүний төлөв', required: true },
+            { name: 'Ээлж' },
+            { name: 'Давхар' },
+            { name: 'Борлуулах талбай' },
+            { name: 'Өрөөний тоо' },
+            { name: 'Загвар' },
+        ],
+        templateFn: () =>
+            'Код,Блок,Бүтээгдэхүүний төрөл,Бүтээгдэхүүний төлөв,Давхар,Борлуулах талбай,Өрөөний тоо,Загвар,Цонхны харагдац\n' +
+            'Б1-201,Б1,Орон сууц,Худалдаанд,2,95,3,A,Өмнөд\n',
+    },
+    {
         type: 'properties',
         label: 'Үл хөдлөх',
-        desc: 'Байр, газар, оффис',
+        desc: 'Зурагтай зарын мэдээлэл',
         icon: Building2,
         color: 'violet',
         columns: [
@@ -224,7 +247,11 @@ interface ImportResult {
     skipped?: number;
     errors?: string[];
     message: string;
+    preview?: InventoryImportPreview;
 }
+
+const UNIT_CATEGORY_LABELS: Record<string, string> = { residential: 'Орон сууц', parking: 'Зогсоол', industry: 'Агуулах', commercial: 'Үйлчилгээ' };
+const UNIT_STATUS_LABELS: Record<string, string> = { available: 'Чөлөөтэй', reserved: 'Хадгалсан', ordered: 'Захиалсан', sold: 'Зарагдсан', handed_over: 'Хүлээлгэсэн' };
 
 interface AdminProject {
     id: string;
@@ -243,6 +270,7 @@ export default function AdminImportPage() {
     const [file, setFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
     const [result, setResult] = useState<ImportResult | null>(null);
+    const [inventoryBlock, setInventoryBlock] = useState('');
     const fileRef = useRef<HTMLInputElement>(null);
 
     // Project state
@@ -265,7 +293,6 @@ export default function AdminImportPage() {
             .then(data => {
                 if (data.projects) {
                     setProjects(data.projects);
-                    if (data.projects.length > 0) setSelectedProject(data.projects[0].id);
                 }
             })
             .catch(() => { })
@@ -287,9 +314,9 @@ export default function AdminImportPage() {
         if (f) { setFile(f); setResult(null); }
     };
 
-    const handleImport = async () => {
+    const handleImport = async (preview = false) => {
         const proj = projects.find(p => p.id === selectedProject);
-        if (!file || !proj) return;
+        if (!file || !proj || loading || creatingProject) return;
         setLoading(true);
         setResult(null);
 
@@ -300,6 +327,10 @@ export default function AdminImportPage() {
             formData.append('projectId', proj.id);
             formData.append('projectName', proj.name);
             formData.append('type', selected.type);
+            if (selected.type === 'units') {
+                formData.append('preview', String(preview));
+                formData.append('block', inventoryBlock);
+            }
 
             const res = await fetch('/api/admin/import', { method: 'POST', body: formData });
             const data = await res.json();
@@ -309,15 +340,15 @@ export default function AdminImportPage() {
             } else {
                 setResult(data);
             }
-        } catch (error: any) {
-            setResult({ success: false, imported: 0, message: error.message });
+        } catch (error) {
+            setResult({ success: false, imported: 0, message: error instanceof Error ? error.message : 'Импорт хийхэд алдаа гарлаа' });
         } finally {
             setLoading(false);
         }
     };
 
     const createProject = async () => {
-        if (!newProjectName.trim()) return;
+        if (!newProjectName.trim() || loading || creatingProject) return;
         setCreatingProject(true);
         setCreateError(null);
         try {
@@ -334,6 +365,7 @@ export default function AdminImportPage() {
             if (res.ok && data.project) {
                 setProjects(prev => [data.project, ...prev]);
                 setSelectedProject(data.project.id);
+                setResult(null);
                 setNewProjectName('');
                 setNewProjectLocation('');
                 setShowNewProject(false);
@@ -360,6 +392,7 @@ export default function AdminImportPage() {
     };
 
     const c = COLOR_MAP[selected.color] || COLOR_MAP.violet;
+    const inventoryPreview = selected.type === 'units' && result?.success ? result.preview : undefined;
 
     return (
         <div className="max-w-5xl mx-auto">
@@ -376,7 +409,8 @@ export default function AdminImportPage() {
                     return (
                         <button
                             key={cat.type}
-                            onClick={() => { setSelected(cat); setResult(null); setFile(null); }}
+                            disabled={loading}
+                            onClick={() => { setSelected(cat); setResult(null); setFile(null); setInventoryBlock(''); if (fileRef.current) fileRef.current.value = ''; }}
                             className={`relative flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all text-center ${
                                 isActive
                                     ? `${cc.border} ${cc.bg} ${cc.text}`
@@ -407,8 +441,9 @@ export default function AdminImportPage() {
                 {/* Project Selector */}
                 <div>
                     <div className="flex items-center justify-between mb-2">
-                        <label className="block text-sm font-medium text-foreground">Төсөл сонгох</label>
+                        <label htmlFor="import-project" className="block text-sm font-medium text-foreground">Төсөл сонгох</label>
                         <button
+                            disabled={loading}
                             onClick={() => setShowNewProject(!showNewProject)}
                             className="text-xs text-brand-strong hover:text-brand font-medium"
                         >
@@ -420,6 +455,7 @@ export default function AdminImportPage() {
                         <div className="mb-3 p-4 bg-brand-soft border border-brand/30 rounded-lg space-y-3">
                             <input
                                 type="text"
+                                disabled={loading || creatingProject}
                                 placeholder="Төслийн нэр *"
                                 value={newProjectName}
                                 onChange={(e) => setNewProjectName(e.target.value)}
@@ -427,6 +463,7 @@ export default function AdminImportPage() {
                             />
                             <input
                                 type="text"
+                                disabled={loading || creatingProject}
                                 placeholder="Байршил (заавал биш)"
                                 value={newProjectLocation}
                                 onChange={(e) => setNewProjectLocation(e.target.value)}
@@ -438,6 +475,7 @@ export default function AdminImportPage() {
                                         Харьяалагдах shop *
                                     </label>
                                     <select
+                                        disabled={loading || creatingProject}
                                         value={newProjectShopId}
                                         onChange={(e) => setNewProjectShopId(e.target.value)}
                                         className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand focus:border-transparent text-sm"
@@ -456,7 +494,7 @@ export default function AdminImportPage() {
                             )}
                             <button
                                 onClick={createProject}
-                                disabled={!newProjectName.trim() || creatingProject || (shops.length > 1 && !newProjectShopId)}
+                                disabled={!newProjectName.trim() || loading || creatingProject || (shops.length > 1 && !newProjectShopId)}
                                 className="w-full py-2 bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2"
                             >
                                 {creatingProject ? (
@@ -482,10 +520,13 @@ export default function AdminImportPage() {
                         </div>
                     ) : (
                         <select
+                            id="import-project"
                             value={selectedProject}
-                            onChange={(e) => setSelectedProject(e.target.value)}
+                            disabled={loading}
+                            onChange={(e) => { setSelectedProject(e.target.value); setResult(null); }}
                             className="w-full px-3 py-2.5 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand focus:border-brand"
                         >
+                            <option value="">Төсөл сонгоно уу</option>
                             {projects.map(p => (
                                 <option key={p.id} value={p.id}>
                                     {p.name}{shops.length > 1 && p.shops?.name ? ` — ${p.shops.name}` : ''}
@@ -494,6 +535,28 @@ export default function AdminImportPage() {
                         </select>
                     )}
                 </div>
+
+                {selected.type === 'units' && (
+                    <div className="space-y-3">
+                        <p className="text-sm text-muted-foreground">
+                            Файлын эхний листээс байрны код, ангилал, төлөвийг уншина. «Ээлж» багана байхгүй бол сонгосон төслийн нэрээр бүлэглэнэ.
+                            Шинэ байруудыг нэмнэ. Өмнө бүртгэсэн байрны төлөв, мэдээлэл хадгалагдана.
+                        </p>
+                        <div>
+                            <label htmlFor="inventory-block" className="block text-sm font-medium text-foreground mb-1">Файлд «Блок» багана байхгүй бол блокийн нэр</label>
+                            <input
+                                id="inventory-block"
+                                value={inventoryBlock}
+                                maxLength={50}
+                                disabled={loading}
+                                onChange={event => { setInventoryBlock(event.target.value); setResult(null); }}
+                                placeholder="Жишээ: Б1"
+                                className="w-full px-3 py-2 border border-border-strong rounded-lg text-sm"
+                            />
+                            <p className="text-xs text-muted-foreground mt-1">Нэг блокийн бүх байр орсон файлд хэрэглэнэ. Олон блоктой файлд мөр бүрийн «Блок» баганыг бөглөнө.</p>
+                        </div>
+                    </div>
+                )}
 
                 {/* Template Download */}
                 <div className="flex items-center justify-between p-4 bg-status-info-soft rounded-lg border border-status-info">
@@ -551,6 +614,8 @@ export default function AdminImportPage() {
                     <input
                         ref={fileRef}
                         type="file"
+                        aria-label="Импортын файл"
+                        disabled={loading}
                         accept=".csv,.xlsx"
                         onChange={handleFileChange}
                         className="hidden"
@@ -558,15 +623,30 @@ export default function AdminImportPage() {
                 </div>
 
                 {/* Import Button */}
+                {inventoryPreview && (
+                    <div className="rounded-lg border border-border p-4 space-y-3" aria-label="Блокийн импортын урьдчилсан шалгалт">
+                        <p className="font-medium">{projects.find(project => project.id === selectedProject)?.name} · {inventoryPreview.total} байр</p>
+                        <p className="text-sm text-muted-foreground">{inventoryPreview.fresh} шинэ байр нэмнэ · {inventoryPreview.existing} бүртгэлтэй байр хадгалагдана</p>
+                        <ul className="space-y-2 text-sm max-h-64 overflow-y-auto">
+                            {inventoryPreview.groups.map(group => (
+                                <li key={JSON.stringify([group.phase, group.block, group.category])}>
+                                    <span className="font-medium">{group.phase} / {group.block} / {UNIT_CATEGORY_LABELS[group.category] || group.category}: {group.total}</span>
+                                    <p className="text-xs text-muted-foreground">Файлын төлөв: {Object.entries(group.statuses).map(([status, count]) => `${UNIT_STATUS_LABELS[status] || status} ${count}`).join(' · ')}</p>
+                                </li>
+                            ))}
+                        </ul>
+                        <p className="text-xs text-muted-foreground">Файлын шалгалт амжилттай. Байруудыг хадгалахын тулд доорх товчийг дарна уу.</p>
+                    </div>
+                )}
                 <button
-                    onClick={handleImport}
-                    disabled={!file || !selectedProject || loading}
+                    onClick={() => handleImport(selected.type === 'units' && !inventoryPreview)}
+                    disabled={!file || !selectedProject || loading || creatingProject || inventoryPreview?.fresh === 0}
                     className="w-full py-3 bg-brand text-brand-fg font-semibold rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                 >
                     {loading ? (
                         <><Loader2 className="w-5 h-5 animate-spin" /> Импорт хийж байна...</>
                     ) : (
-                        <><Upload className="w-5 h-5" /> {selected.label} импорт хийх</>
+                        <><Upload className="w-5 h-5" /> {selected.type === 'units' ? inventoryPreview ? `${inventoryPreview.fresh} байр нэмэх` : 'Байрны файлыг шалгах' : `${selected.label} импорт хийх`}</>
                     )}
                 </button>
             </div>
@@ -585,7 +665,10 @@ export default function AdminImportPage() {
                         </p>
                     </div>
                     {result.success && (result.imported || 0) > 0 && (
-                        <p className="text-sm text-status-success">✅ {result.imported} мөр амжилттай оруулсан</p>
+                        <div className="space-y-2">
+                            <p className="text-sm text-status-success">✅ {result.imported} мөр амжилттай оруулсан</p>
+                            {selected.type === 'units' && <Link href="/dashboard/properties/blocks" className="text-sm text-brand-strong underline">Блокуудыг нээх</Link>}
+                        </div>
                     )}
                     {result.success && (result.updated || 0) > 0 && (
                         <p className="text-sm text-status-success">🔄 {result.updated} мөр шинэчлэгдсэн</p>

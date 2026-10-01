@@ -1,287 +1,104 @@
 /**
- * Import Elysium Residence Block Б1 (110 units) into Supabase.
+ * Import a real Elysium ERP product export into property_units (block inventory).
+ * Dry-run by default; existing units, listings and AI knowledge are preserved.
+ * XLSX/CSV/TSV files are supported. Supply the actual file; no unit count is assumed.
  *
- * Replaces prior placeholder Elysium properties (created by import-project-knowledge.ts)
- * with the real 110 units from the customer-supplied Excel file.
+ * Required environment (existing process values override .env.local):
+ *   SHOP_ID, ELYSIUM_PROJECT_ID, NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
  *
- * Writes:
- *  1. properties                         → DELETE name LIKE 'Elysium %' for target shop, INSERT 110
- *  2. shops.custom_knowledge.elysium_units → regenerated as a grouped (available/reserved/sold) listing
+ * Preview (read-only):
+ *   npx tsx scripts/import-elysium-b1-units.ts /path/to/elysium-products.xlsx
+ * Apply after reviewing the preview:
+ *   npx tsx scripts/import-elysium-b1-units.ts /path/to/elysium-products.xlsx --apply
+ * For a multi-sheet workbook, explicitly select the product sheet:
+ *   npx tsx scripts/import-elysium-b1-units.ts /path/to/export.xlsx --sheet=Products
  *
- * Idempotent: re-running with the same Excel produces the same DB state.
- *
- * Usage:
- *   npx tsx scripts/import-elysium-b1-units.ts "/Users/aagii/Downloads/Property (property.property) (3).xlsx"
- *   npx tsx scripts/import-elysium-b1-units.ts            # falls back to ./elysium-b1-units.xlsx
+ * Missing phase columns use the validated project name. Missing block columns
+ * use the explicitly selected Б1 block; blank cells in existing columns fail.
+ * New units are inserted together; matching existing units are never updated.
  */
 
-import * as XLSX from 'xlsx';
+import { readFile } from 'node:fs/promises';
+import * as path from 'node:path';
 import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
-import * as path from 'path';
+import { readWorkbookSheets } from '../src/lib/utils/xlsx';
+import { mapInventoryRows } from '../src/lib/admin/import/units';
+import { importInventoryUnits } from '../src/lib/admin/import/units-import';
 
-dotenv.config({ path: path.resolve(__dirname, '../.env.local') });
-
-const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-// ============================================
-// TYPES & MAPPINGS
-// ============================================
-
-type PropertyStatus = 'available' | 'reserved' | 'sold' | 'rented';
-
-const STATUS_MAP: Record<string, PropertyStatus> = {
-    'Худалдаанд': 'available',
-    'Хадгалсан': 'reserved',
-    'Гэрээ баталгаажсан': 'sold',
-    'Хүлээлгэсэн': 'sold',
-};
-
-interface ExcelRow {
-    'Код': string;
-    'Загвар': string;
-    'Хуучин Тоот': number;
-    'Давхар': number;
-    'Борлуулах талбай': number;
-    'Борлуулалтын үнэ 1мкв': number;
-    'Нийт борлуулах үнэ': number;
-    'Бүтээгдэхүүний төлөв': string;
-    'Бүтээгдэхүүний төрөл': string;
-    'Цонхны харагдац': string;
-    'Өрөөний тоо': number;
-    'Урьдчилгааны нөхцөл'?: string | number | null;
-    'Төлөх урьдчилгаа төлбөр': number;
-    'Үлдэгдэл төлбөр': number;
-}
-
-interface PropertyInsert {
-    shop_id: string;
-    name: string;
-    description: string;
-    type: 'apartment';
-    price: number;
-    price_per_sqm: number | null;
-    currency: 'MNT';
-    size_sqm: number;
-    rooms: number;
-    floor: string;
-    district: string;
-    city: string;
-    status: PropertyStatus;
-    is_active: boolean;
-    is_featured: boolean;
-    features: Record<string, unknown>;
-}
-
-// ============================================
-// HELPERS
-// ============================================
-
-function fmt(n: number): string {
-    return Math.round(n).toLocaleString('en-US');
-}
-
-function readExcel(filePath: string): ExcelRow[] {
-    const wb = XLSX.readFile(filePath);
-    const sheet = wb.Sheets[wb.SheetNames[0]];
-    return XLSX.utils.sheet_to_json<ExcelRow>(sheet);
-}
-
-function buildName(row: ExcelRow): string {
-    return `Elysium ${row['Код']} (${row['Загвар']}, давхар ${row['Давхар']}, ${row['Борлуулах талбай']}м², ${row['Өрөөний тоо']} өрөө)`;
-}
-
-function buildDescription(row: ExcelRow): string {
-    const pricePerSqm = row['Борлуулалтын үнэ 1мкв'];
-    const ppsClause = pricePerSqm > 0 ? ` 1м² үнэ ${fmt(pricePerSqm)}₮.` : '';
-    return `Elysium Residence бизнес зэрэглэлийн орон сууц. Блок Б1, ${row['Давхар']}-р давхар. Талбай ${row['Борлуулах талбай']}м², ${row['Өрөөний тоо']} өрөө. Цонхны харагдац: ${row['Цонхны харагдац']}.${ppsClause} 2027 оны 2-р улиралд хүлээлгэж өгнө.`;
-}
-
-function buildFeatures(row: ExcelRow): Record<string, unknown> {
-    const features: Record<string, unknown> = {
-        project: 'Elysium Residence',
-        block: 'Б1',
-        unit_code: row['Код'],
-        layout: row['Загвар'],
-        unit_number: row['Хуучин Тоот'],
-        window_view: row['Цонхны харагдац'],
-    };
-
-    const dpPct = row['Урьдчилгааны нөхцөл'];
-    if (dpPct != null && String(dpPct).trim() !== '') {
-        features.down_payment_pct = String(dpPct);
-    }
-    if (row['Төлөх урьдчилгаа төлбөр'] > 0) {
-        features.down_payment_amount = row['Төлөх урьдчилгаа төлбөр'];
-    }
-    if (row['Үлдэгдэл төлбөр'] > 0) {
-        features.remaining_balance = row['Үлдэгдэл төлбөр'];
-    }
-
-    return features;
-}
-
-function buildKnowledgeText(rows: ExcelRow[]): string {
-    const grouped: Record<PropertyStatus, ExcelRow[]> = { available: [], reserved: [], sold: [], rented: [] };
-    for (const row of rows) {
-        const status = STATUS_MAP[row['Бүтээгдэхүүний төлөв']];
-        if (!status) continue;
-        grouped[status].push(row);
-    }
-
-    const labels: Record<PropertyStatus, string> = {
-        available: 'Худалдаанд бэлэн',
-        reserved: 'Хадгалсан',
-        sold: 'Зарагдсан/Гэрээтэй',
-        rented: 'Түрээслэсэн',
-    };
-
-    const sections: string[] = [
-        `Elysium Residence Б1 блокийн нийт ${rows.length} байр (давхар 2-23, давхар тус бүрт 5 байр):`,
-        '',
-    ];
-
-    for (const status of ['available', 'reserved', 'sold'] as const) {
-        const list = grouped[status];
-        if (!list.length) continue;
-        sections.push(`[${labels[status]} — ${list.length}]`);
-        for (const r of list) {
-            sections.push(
-                `- ${r['Код']}: ${r['Загвар']}, давхар ${r['Давхар']}, ${r['Борлуулах талбай']}м², ${r['Өрөөний тоо']} өрөө, ${r['Цонхны харагдац']}, ${fmt(r['Нийт борлуулах үнэ'])}₮`
-            );
-        }
-        sections.push('');
-    }
-
-    sections.push('Жич: үнийн дэлгэрэнгүй ба нөхцлийн талаар борлуулалтын менежертэй холбогдоно уу.');
-
-    return sections.join('\n');
-}
-
-// ============================================
-// MAIN
-// ============================================
+const usage = 'npx tsx scripts/import-elysium-b1-units.ts <product-export.xlsx|csv|tsv> [--sheet=<name>] [--apply]';
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 async function main() {
-    const filePath = process.argv[2] || path.resolve(process.cwd(), 'elysium-b1-units.xlsx');
-    console.log(`📂 Excel: ${filePath}`);
-
-    const rows = readExcel(filePath);
-    console.log(`📊 Нийт ${rows.length} мөр уншсан\n`);
-
-    // Validate every row before any DB write
-    for (const row of rows) {
-        if (!row['Код']) throw new Error(`Код хоосон row олдов`);
-        if (!STATUS_MAP[row['Бүтээгдэхүүний төлөв']]) {
-            throw new Error(`Тодорхойгүй статус "${row['Бүтээгдэхүүний төлөв']}" (${row['Код']})`);
-        }
-        if (!row['Нийт борлуулах үнэ'] || row['Нийт борлуулах үнэ'] <= 0) {
-            throw new Error(`Үнэ 0 эсвэл хоосон байна (${row['Код']})`);
-        }
+    const args = process.argv.slice(2);
+    if (args.length === 1 && ['--help', '-h'].includes(args[0])) {
+        console.log(usage);
+        console.log('SHOP_ID болон ELYSIUM_PROJECT_ID заавал тохируулна. --apply байхгүй бол зөвхөн урьдчилсан шалгалт хийнэ.');
+        return;
     }
-
-    // Pick target shop (first by created_at — same as import-project-knowledge.ts)
-    const { data: shops, error: shopErr } = await supabase
-        .from('shops')
-        .select('id, name, created_at')
-        .order('created_at', { ascending: true })
-        .limit(1);
-
-    if (shopErr || !shops?.length) {
-        console.error('❌ Shop олдсонгүй:', shopErr);
-        process.exit(1);
+    const fileArgs = args.filter(argument => !argument.startsWith('--'));
+    const sheetArgs = args.filter(argument => argument.startsWith('--sheet='));
+    const unknown = args.filter(argument => argument.startsWith('--') && argument !== '--apply' && !argument.startsWith('--sheet='));
+    if (fileArgs.length !== 1 || sheetArgs.length > 1 || unknown.length || args.filter(argument => argument === '--apply').length > 1) {
+        throw new Error(`Ашиглах команд: ${usage}`);
     }
-    const targetShop = shops[0];
-    console.log(`🎯 Target shop: ${targetShop.name} (${targetShop.id})\n`);
+    const apply = args.includes('--apply');
+    const sheetName = sheetArgs[0]?.slice('--sheet='.length).trim();
+    if (sheetArgs.length && !sheetName) throw new Error('--sheet=<name> утга хоосон байна');
 
-    // Delete existing Elysium properties
-    const { data: deleted, error: delErr } = await supabase
-        .from('properties')
-        .delete()
-        .eq('shop_id', targetShop.id)
-        .like('name', 'Elysium %')
-        .select('id');
-    if (delErr) {
-        console.error('❌ Delete алдаа:', delErr);
-        process.exit(1);
+    // Do not overwrite the caller's credentials or proxy settings.
+    dotenv.config({ path: path.resolve(__dirname, '../.env.local'), quiet: true });
+    const shopId = process.env.SHOP_ID;
+    const projectId = process.env.ELYSIUM_PROJECT_ID;
+    if (!shopId || !projectId || !uuid.test(shopId) || !uuid.test(projectId)) {
+        throw new Error('SHOP_ID болон ELYSIUM_PROJECT_ID UUID утгуудыг ил тод тохируулна уу');
     }
-    console.log(`🗑  Хуучин Elysium байр устгасан: ${deleted?.length || 0}`);
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !serviceKey) throw new Error('Supabase URL болон service-role тохиргоо шаардлагатай');
 
-    // Build inserts
-    const inserts: PropertyInsert[] = rows.map((row) => {
-        const status = STATUS_MAP[row['Бүтээгдэхүүний төлөв']];
-        const pricePerSqm = row['Борлуулалтын үнэ 1мкв'];
-        return {
-            shop_id: targetShop.id,
-            name: buildName(row),
-            description: buildDescription(row),
-            type: 'apartment',
-            price: row['Нийт борлуулах үнэ'],
-            price_per_sqm: pricePerSqm > 0 ? pricePerSqm : null,
-            currency: 'MNT',
-            size_sqm: row['Борлуулах талбай'],
-            rooms: row['Өрөөний тоо'],
-            floor: String(row['Давхар']),
-            district: 'Хан-Уул',
-            city: 'Улаанбаатар',
-            status,
-            is_active: true,
-            is_featured: false,
-            features: buildFeatures(row),
-        };
+    const filePath = path.resolve(fileArgs[0]);
+    if (!['.xlsx', '.csv', '.tsv'].includes(path.extname(filePath).toLowerCase())) {
+        throw new Error('Бүтээгдэхүүний .xlsx, .csv эсвэл .tsv экспорт сонгоно уу');
+    }
+    const buffer = await readFile(filePath);
+    if (buffer.byteLength > 4 * 1024 * 1024) throw new Error('Файл 4 MiB-аас ихгүй байна');
+    const sheets = await readWorkbookSheets(buffer);
+    if (!sheetName && sheets.length !== 1) {
+        throw new Error('Олон sheet бүхий файлд --sheet=<name> ашиглан бүтээгдэхүүний sheet-ийг сонгоно уу');
+    }
+    const sheet = sheetName ? sheets.find(candidate => candidate.name === sheetName) : sheets[0];
+    if (!sheet) throw new Error('Сонгосон бүтээгдэхүүний sheet олдсонгүй');
+    if (sheet.rows.length > 20000) throw new Error('Нэг импорт 20,000 мөрөөс ихгүй байна');
+
+    const db = createClient(supabaseUrl, serviceKey, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
     });
-
-    // Bulk insert
-    const { data: inserted, error: insErr } = await supabase
-        .from('properties')
-        .insert(inserts)
-        .select('id, status');
-    if (insErr) {
-        console.error('❌ Insert алдаа:', insErr);
-        process.exit(1);
+    const { data: project, error } = await db.from('projects')
+        .select('id, shop_id, name')
+        .eq('id', projectId)
+        .eq('shop_id', shopId)
+        .maybeSingle();
+    if (error) throw new Error(`Төслийн холбоос шалгах боломжгүй: ${error.message}`);
+    if (!project || project.name !== 'Elysium Residence') {
+        throw new Error('ELYSIUM_PROJECT_ID нь SHOP_ID байгууллагын Elysium Residence төсөлтэй таарахгүй байна');
     }
 
-    const counts: Record<string, number> = { available: 0, reserved: 0, sold: 0, rented: 0 };
-    for (const p of inserted || []) counts[p.status as string]++;
-    console.log(`✅ properties insert хийсэн: ${inserted?.length || 0}`);
-    console.log(`   - available: ${counts.available}`);
-    console.log(`   - reserved: ${counts.reserved}`);
-    console.log(`   - sold:     ${counts.sold}`);
-
-    // Update custom_knowledge.elysium_units (preserve all other keys)
-    const { data: shop, error: readErr } = await supabase
-        .from('shops')
-        .select('custom_knowledge')
-        .eq('id', targetShop.id)
-        .single();
-    if (readErr) {
-        console.error('❌ shop custom_knowledge уншихад алдаа:', readErr);
-        process.exit(1);
+    const mapped = mapInventoryRows(sheet.rows, {
+        shopId: project.shop_id, projectId: project.id, projectName: project.name,
+        sourceFile: path.basename(filePath), block: 'Б1',
+    });
+    if (mapped.errors.length) {
+        console.error(JSON.stringify({ success: false, mode: apply ? 'apply' : 'dry-run', errors: mapped.errors, summary: mapped.summary }, null, 2));
+        process.exitCode = 1;
+        return;
     }
-
-    const newUnitsText = buildKnowledgeText(rows);
-    const newKnowledge = {
-        ...((shop.custom_knowledge as Record<string, unknown>) || {}),
-        elysium_units: newUnitsText,
-    };
-
-    const { error: updErr } = await supabase
-        .from('shops')
-        .update({ custom_knowledge: newKnowledge })
-        .eq('id', targetShop.id);
-    if (updErr) {
-        console.error('❌ custom_knowledge шинэчлэхэд алдаа:', updErr);
-        process.exit(1);
-    }
-    console.log(`✅ custom_knowledge.elysium_units шинэчлэгдсэн (~${newUnitsText.length} bytes)`);
-
-    console.log('\n🎉 Import дууслаа!');
+    const result = await importInventoryUnits(db, mapped.rows, !apply);
+    console.log(JSON.stringify({ mode: apply ? 'apply' : 'dry-run', project: project.name, sheet: sheet.name, ...result }, null, 2));
+    if (!result.success) process.exitCode = 1;
 }
 
-main().catch((e) => {
-    console.error('❌ Үндсэн алдаа:', e);
-    process.exit(1);
+main().catch(error => {
+    console.error(error instanceof Error ? error.message : 'Импортын тодорхойгүй алдаа');
+    process.exitCode = 1;
 });

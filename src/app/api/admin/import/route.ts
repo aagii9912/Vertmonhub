@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { getAdminUser } from '@/lib/admin/auth';
-import { readSheetRows, XlsxUnsupportedFormatError } from '@/lib/utils/xlsx';
+import { readSheetRows, readWorkbookSheets, XlsxUnsupportedFormatError } from '@/lib/utils/xlsx';
+import { mapInventoryRows } from '@/lib/admin/import/units';
+import { importInventoryUnits, type InventoryImportPreview } from '@/lib/admin/import/units-import';
 import { z } from 'zod';
 import {
     ImportRow,
@@ -27,6 +29,7 @@ import {
 // ============================================
 
 type ImportType =
+    | 'units'
     | 'properties'
     | 'faq'
     | 'company'
@@ -39,7 +42,7 @@ type ImportType =
     | 'contracts';
 
 const IMPORT_TYPES: ImportType[] = [
-    'properties', 'faq', 'company', 'project', 'payment_policy',
+    'units', 'properties', 'faq', 'company', 'project', 'payment_policy',
     'loan_info', 'amenities', 'ai_extra', 'leads', 'contracts',
 ];
 
@@ -50,6 +53,7 @@ interface ImportResult {
     skipped?: number;
     errors?: string[];
     message: string;
+    preview?: InventoryImportPreview;
 }
 
 interface ImportContext {
@@ -66,7 +70,8 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024;
 // CSV/Excel файлаас бөөнөөр импортлох.
 //
 // Өгөгдлийн зам (архитектурын гол шийдвэр):
-//   - properties / leads / contracts → тухайн CRM хүснэгтүүд рүү (жинхэнэ багануудаар)
+//   - units → property_units (блокийн нөөц); properties → зурагтай зарын жагсаалт
+//   - leads / contracts → тухайн CRM хүснэгтүүд рүү (жинхэнэ багануудаар)
 //   - FAQ → shop_faqs (WebhookService.getAIFeatures → DM AI уншдаг)
 //   - Мэдлэгийн категориуд → shops.custom_knowledge JSONB (PromptService.buildDynamicKnowledge
 //     → DM AI-ийн prompt-д ордог) + ai_knowledge_base (бүтэцлэгдсэн архив, query хийхэд)
@@ -95,7 +100,8 @@ export async function POST(request: NextRequest) {
 
         const formData = await request.formData();
         const file = formData.get('file');
-        const shopId = formData.get('shopId');
+        const shopIdRaw = formData.get('shopId');
+        const shopId = typeof shopIdRaw === 'string' ? shopIdRaw.toLowerCase() : shopIdRaw;
         const importType = formData.get('type') as ImportType;
         const projectIdRaw = formData.get('projectId');
 
@@ -139,8 +145,26 @@ export async function POST(request: NextRequest) {
             projectName = project.name;
         }
 
+        if (importType === 'units' && !projectId) {
+            return NextResponse.json({ error: 'Блокийн байр импортлоход төсөл заавал сонгоно уу' }, { status: 400 });
+        }
+
+        const inventoryOptions = z.object({
+            preview: z.enum(['true', 'false']).default('false'),
+            block: z.string().trim().max(50).default(''),
+        }).safeParse({
+            preview: formData.get('preview') ?? undefined,
+            block: formData.get('block') ?? undefined,
+        });
+        if (importType === 'units' && !inventoryOptions.success) {
+            return NextResponse.json({ error: 'Блок эсвэл урьдчилан шалгах сонголт буруу байна' }, { status: 400 });
+        }
+
         const buffer = Buffer.from(await file.arrayBuffer());
-        const rows = await parseExcel(buffer);
+        // Inventory IDs such as 00123 must retain their leading zeros in CSV.
+        const rows = importType === 'units'
+            ? (await readWorkbookSheets(buffer))[0]?.rows ?? []
+            : await parseExcel(buffer);
 
         if (rows.length === 0) {
             return NextResponse.json(
@@ -159,6 +183,18 @@ export async function POST(request: NextRequest) {
 
         let result: ImportResult;
         switch (importType) {
+            case 'units': {
+                const mapped = mapInventoryRows(rows, {
+                    shopId, projectId: projectId!, projectName, sourceFile: file.name,
+                    block: inventoryOptions.success ? inventoryOptions.data.block || undefined : undefined,
+                });
+                if (mapped.errors.length) {
+                    result = { success: false, imported: 0, message: 'Файлын алдааг засаж дахин шалгана уу. Байр хадгалаагүй.', errors: mapped.errors };
+                } else {
+                    result = await importInventoryUnits(supabase, mapped.rows, inventoryOptions.success && inventoryOptions.data.preview === 'true');
+                }
+                break;
+            }
             case 'properties':
                 result = await importProperties(supabase, rows, ctx);
                 break;

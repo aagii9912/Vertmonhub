@@ -10,6 +10,11 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get('type') || 'properties';
 
     const templates: Record<string, { headers: string[]; sampleRow?: Record<string, any>; sheetName: string }> = {
+        units: {
+            sheetName: 'Блокийн байр',
+            headers: ['Код', 'Блок', 'Бүтээгдэхүүний төрөл', 'Бүтээгдэхүүний төлөв', 'Давхар', 'Борлуулах талбай', 'Өрөөний тоо', 'Загвар'],
+            sampleRow: { 'Код': 'Б1-201', 'Блок': 'Б1', 'Бүтээгдэхүүний төрөл': 'Орон сууц', 'Бүтээгдэхүүний төлөв': 'Худалдаанд', 'Давхар': '2', 'Борлуулах талбай': 95, 'Өрөөний тоо': 3, 'Загвар': 'A' },
+        },
         properties: {
             sheetName: 'Байрны мэдээлэл',
             headers: [

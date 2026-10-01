@@ -330,6 +330,7 @@ Bulk CSV/Excel import for onboarding a new project's data. UI: `src/app/admin/im
 
 | Category | Destination | Read by |
 |----------|-------------|---------|
+| `units` | `property_units` (validated project/phase/block/code; one insert for new rows, existing rows preserved) | `/dashboard/properties/blocks`, inventory fallback for DM AI |
 | `properties` | `properties` table (insert; re-import resolves an active row by shop/project/name and updates by scoped ID) | DM AI `search_properties`, dashboard |
 | `leads` | `leads` table — real columns (`customer_name`/`customer_phone`/`customer_email`/`budget_max`, `status` = `lead_status` enum). Existing phones are skipped, never overwritten | CRM |
 | `contracts` | `property_contracts` — real columns (`customer_name`/`unit_number`/`prepayment_paid`/`paid_amount`/`balance`, `contract_status` = `active\|closed\|cancelled`). Re-import updates the active scoped ID and preserves existing paid/advance values | dashboard/contracts |
@@ -337,7 +338,8 @@ Bulk CSV/Excel import for onboarding a new project's data. UI: `src/app/admin/im
 | `company`, `project`, `payment_policy`, `loan_info`, `amenities`, `ai_extra` | `shops.custom_knowledge` JSONB (merge, keys prefixed by project slug e.g. `mandala_garden_payment`) + `ai_knowledge_base` as structured archive | `PromptService.buildDynamicKnowledge` → DM AI prompt |
 
 Rules that must not regress:
-- **`shops.custom_knowledge` + `shop_faqs` + `properties` are the ONLY sources the FB/IG DM AI reads.** `ai_knowledge_base` is an archive (only competitors routes read it) — never write AI-facing knowledge only there.
+- Block inventory import (2026-10-01, local): `/admin/import` → «Блокийн байр» explicitly selects a project and previews phase/block/category/status counts before adding new units. CSV codes keep leading zeros. Invalid rows or project/block collisions stop the entire file; existing unassigned units are never reassigned and repeated imports never overwrite live status. `scripts/import-elysium-b1-units.ts` uses the same mapper/service, dry-run by default with explicit `SHOP_ID` and `ELYSIUM_PROJECT_ID`. ERP snapshots remain separate. No production data import or deployment was performed by this fix; the actual product export and configured connection are still required.
+- **DM AI reads `shops.custom_knowledge`, `shop_faqs`, and `properties`, with `property_units` as the inventory fallback.** `ai_knowledge_base` is an archive (only competitors routes read it) — never write AI-facing knowledge only there.
 - `projectId` is validated server-side against `projects` (must belong to the posted `shopId`) and stamped onto `properties`/`leads`/`property_contracts` (`project_id`, migration `20260707120000`). Missing scope columns stop import; retries never remove `project_id`. Ambiguous legacy/duplicate matches become row errors. Contract re-import reads paid totals before writes and compares the paid value during update so concurrent receipts win.
 - The `project` import category also upserts into the `projects` table (by `shop_id`+`name`) so imported projects appear in the project dropdown.
 - `POST /api/admin/projects` requires an explicit `shop_id` when more than one shop exists (never silently attaches to the first shop).

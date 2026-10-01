@@ -14,11 +14,20 @@ const state = vi.hoisted(() => ({
     missingProjectColumn: false,
     failProjectInsert: false,
     beforeUpdate: null as (() => void) | null,
+    adminRole: 'super_admin',
+    realInventoryFile: false,
 }));
 
 vi.mock('@/lib/auth/supabase-auth', () => ({ supabaseAdmin: () => db, getUserId: async () => 'actor' }));
-vi.mock('@/lib/admin/auth', () => ({ getAdminUser: async () => ({ id: 'actor', role: 'super_admin' }) }));
-vi.mock('@/lib/utils/xlsx', () => ({ readSheetRows: async () => state.importRows, XlsxUnsupportedFormatError: class extends Error {} }));
+vi.mock('@/lib/admin/auth', () => ({ getAdminUser: async () => ({ id: 'actor', role: state.adminRole }) }));
+vi.mock('@/lib/utils/xlsx', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@/lib/utils/xlsx')>();
+    return {
+        ...actual,
+        readSheetRows: async () => state.importRows,
+        readWorkbookSheets: async (buffer: Buffer) => state.realInventoryFile ? actual.readWorkbookSheets(buffer) : [{ name: 'Sheet1', rows: state.importRows }],
+    };
+});
 
 const db = {
     from(table: string) {
@@ -39,7 +48,7 @@ const db = {
                 const added = inserts.map((row, index) => ({ id: `new-${index}`, deleted_at: null, project_id: null, ...row }));
                 state.rows[table] = [...(state.rows[table] || []), ...added];
                 state.writes.push({ table, payload: added[0], ids: added.map((row) => row.id) });
-                return { data: added, error: null };
+                return { data: added, error: null, count: added.length };
             }
             if (patch && state.beforeUpdate) {
                 const callback = state.beforeUpdate;
@@ -73,13 +82,16 @@ const db = {
 
 import { POST } from '../import/route';
 
-async function runImport(type: string, rows: Row[], projectId = '') {
+async function runImport(type: string, rows: Row[], projectId = '', options: { preview?: boolean; block?: string; content?: string; projectName?: string } = {}) {
     state.importRows = rows;
     const formData = new FormData();
-    formData.set('file', new File(['csv'], 'rows.csv'));
+    formData.set('file', new File([options.content ?? 'csv'], 'rows.csv'));
     formData.set('shopId', shopId);
     formData.set('type', type);
     if (projectId) formData.set('projectId', projectId);
+    if (options.preview !== undefined) formData.set('preview', String(options.preview));
+    if (options.block !== undefined) formData.set('block', options.block);
+    if (options.projectName !== undefined) formData.set('projectName', options.projectName);
     return POST(new NextRequest('http://localhost/api/admin/import', { method: 'POST', body: formData }));
 }
 
@@ -98,7 +110,53 @@ beforeEach(() => {
     state.missingProjectColumn = false;
     state.failProjectInsert = false;
     state.beforeUpdate = null;
+    state.adminRole = 'super_admin';
+    state.realInventoryFile = false;
     vi.spyOn(console, 'error').mockImplementation(() => {});
+});
+
+describe('block inventory import route', () => {
+    const unitRow = { code: 'Б1-201', block: 'Б1', category: 'residential', status: 'available', floor: '2', sale_area: 95 };
+
+    it('requires Super Admin and an explicit project before saving units', async () => {
+        state.adminRole = 'admin';
+        expect((await runImport('units', [unitRow], projectA)).status).toBe(403);
+        state.adminRole = 'super_admin';
+        expect((await runImport('units', [unitRow])).status).toBe(400);
+        expect(state.writes).toEqual([]);
+    });
+
+    it('rejects a project in another shop without writes', async () => {
+        state.rows.projects[0].shop_id = projectB;
+        expect((await runImport('units', [unitRow], projectA)).status).toBe(400);
+        expect(state.writes).toEqual([]);
+    });
+
+    it('previews the server-validated project, then writes only block inventory', async () => {
+        const preview = await runImport('units', [unitRow], projectA, { preview: true, projectName: 'Forged Project' });
+        expect(preview.status).toBe(200);
+        expect(await preview.json()).toMatchObject({ success: true, preview: { total: 1, fresh: 1, existing: 0, groups: [{ phase: 'Project A', block: 'Б1', category: 'residential' }] } });
+        expect(state.writes).toEqual([]);
+        expect((await runImport('units', [unitRow], projectA)).status).toBe(200);
+        expect(state.rows.property_units).toEqual([expect.objectContaining({ shop_id: shopId, project_id: projectA, phase: 'Project A', block: 'Б1', code: 'Б1-201', source_file: 'rows.csv' })]);
+        expect(state.writes.map(write => write.table)).toEqual(['property_units']);
+        expect(state.rows.properties).toBeUndefined();
+    });
+
+    it('does not save any row when the file contains invalid inventory', async () => {
+        expect((await runImport('units', [unitRow, { ...unitRow, code: 'Б1-202', status: 'unknown' }], projectA)).status).toBe(400);
+        expect(state.writes).toEqual([]);
+    });
+
+    it('preserves leading zeros from a real CSV and supports a single-block export', async () => {
+        state.realInventoryFile = true;
+        const response = await runImport('units', [], projectA, {
+            block: 'Б1',
+            content: 'Код,Бүтээгдэхүүний төрөл,Бүтээгдэхүүний төлөв,Давхар,Борлуулах талбай\n00123,Орон сууц,Хүлээлгэсэн,02,95\n',
+        });
+        expect(response.status).toBe(200);
+        expect(state.rows.property_units[0]).toMatchObject({ code: '00123', floor: '02', block: 'Б1', status: 'handed_over', sale_area: 95 });
+    });
 });
 
 describe('contract import preserves payment accounting', () => {
