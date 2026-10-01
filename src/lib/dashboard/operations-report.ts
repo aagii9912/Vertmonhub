@@ -19,6 +19,13 @@ export interface OperationsContract {
     contract_status: string | null;
     total_price: Amount;
     prepayment_paid_cash: Amount;
+    product_type?: string | null;
+    deleted_at?: string | null;
+}
+export interface OperationsViewing {
+    scheduled_at: string;
+    status: string | null;
+    meeting_type?: string | null;
     deleted_at?: string | null;
 }
 export interface OperationsLead {
@@ -112,6 +119,8 @@ export function buildOperationsReport(input: {
     transactions: OperationsTransaction[] | null;
     targets: OperationsTarget[];
     receiptClassificationAvailable?: boolean;
+    viewings?: OperationsViewing[];
+    meetingClassificationAvailable?: boolean;
 }) {
     const { range, now } = input;
     const within = (date: string | null) => !!date && date >= range.from && date <= range.to;
@@ -119,11 +128,36 @@ export function buildOperationsReport(input: {
     const periodContracts = contracts.filter(c => within(c.contract_date));
     let contractValue = 0;
     let missingContractAmounts = 0;
+    const productLabels: Record<string, string> = { residential: 'Орон сууц', parking: 'Зогсоол', industry: 'Агуулах', commercial: 'Үйлчилгээ' };
+    const products = new Map<string, { productType: string; label: string; count: number; value: number; missingAmounts: number }>();
     for (const c of periodContracts) {
         const value = amount(c.total_price);
+        const productType = c.product_type?.trim() || 'unknown';
+        const product = products.get(productType) || { productType, label: Object.hasOwn(productLabels, productType) ? productLabels[productType] : productType === 'unknown' ? 'Төрөл тодорхойгүй' : productType, count: 0, value: 0, missingAmounts: 0 };
+        product.count++;
+        if (value === null) product.missingAmounts++;
+        else product.value += value;
+        products.set(productType, product);
         if (value === null) missingContractAmounts++;
         else contractValue += value;
     }
+    const periodViewings = input.viewings?.filter(v => !v.deleted_at && within(ubDateStr(new Date(v.scheduled_at))));
+    const completedViewings = periodViewings?.filter(v => v.status === 'completed');
+    const classifiedTypes = ['new_customer', 'repeat_customer', 'existing_buyer'];
+    const meetings = periodViewings && completedViewings ? {
+        count: periodViewings.length,
+        completed: completedViewings.length,
+        newCustomer: completedViewings.filter(v => v.meeting_type === 'new_customer').length,
+        repeatCustomer: completedViewings.filter(v => v.meeting_type === 'repeat_customer').length,
+        existingBuyer: completedViewings.filter(v => v.meeting_type === 'existing_buyer').length,
+        unclassified: completedViewings.filter(v => !classifiedTypes.includes(v.meeting_type || '')).length,
+        scheduled: periodViewings.filter(v => v.status === 'scheduled').length,
+        cancelled: periodViewings.filter(v => v.status === 'cancelled').length,
+        noShow: periodViewings.filter(v => v.status === 'no_show').length,
+        unknownStatus: periodViewings.filter(v => !['completed', 'scheduled', 'cancelled', 'no_show'].includes(v.status || '')).length,
+        classificationAvailable: input.meetingClassificationAvailable !== false,
+        basis: 'Улаанбаатарын цагаар тайлант хугацаанд товлосон, болсон гэж тэмдэглэсэн уулзалтын бүртгэл. Давтан уулзалтыг тусдаа тоолно. Энэ нь давхардалгүй хүний тоо биш.',
+    } : null;
     const snapshots = contracts.map(c => amount(c.prepayment_paid_cash));
     const months = targetMonths(range);
     const targets = new Map(input.targets.map(t => [`${t.year}-${String(t.month).padStart(2, '0')}`, amount(t.target_amount)]));
@@ -150,7 +184,9 @@ export function buildOperationsReport(input: {
 
     return {
         range, generatedAt: now,
-        contracts: { count: periodContracts.length, value: contractValue, missingAmounts: missingContractAmounts, undatedCount: contracts.filter(c => !c.contract_date).length },
+        contracts: { count: periodContracts.length, value: contractValue, missingAmounts: missingContractAmounts, undatedCount: contracts.filter(c => !c.contract_date).length,
+            byProduct: [...products.values()].sort((a, b) => b.count - a.count || a.productType.localeCompare(b.productType)) },
+        meetings,
         target: { amount: targetAmount, completeMonths: !!months, configuredMonths: targetValues?.filter(t => t !== null).length ?? 0, expectedMonths: months?.length ?? 0,
             attainmentPct: targetAmount && !missingContractAmounts ? Math.round(contractValue / targetAmount * 100) : null },
         cash,
@@ -164,13 +200,20 @@ export function buildOperationsReport(input: {
 export type OperationsReport = ReturnType<typeof buildOperationsReport> & { shopName: string };
 
 export function formatOperationsReportText(report: OperationsReport): string {
-    const { range, contracts, target, cash, advanceSnapshot: advance, leads } = report;
+    const { range, contracts, target, cash, advanceSnapshot: advance, leads, meetings } = report;
     return [
         `${report.shopName} · Үйл ажиллагааны тайлан`,
         `Хугацаа: ${range.from} – ${range.to} (Улаанбаатар)`,
         `Гаргасан: ${ubDateStr(new Date(report.generatedAt))}`,
         `Гэрээ: ${contracts.count} · бүртгэлтэй дүн ${formatMNT(contracts.value)}`,
         `Дүн дутуу гэрээ: ${contracts.missingAmounts} · огноогүй гэрээ (хугацаанд ороогүй): ${contracts.undatedCount}`,
+        ...(contracts.byProduct || []).map(product => `  ${product.label}: ${product.count} гэрээ · бүртгэлтэй дүн ${formatMNT(product.value)}${product.missingAmounts ? ` · дүн дутуу ${product.missingAmounts}` : ''}`),
+        ...(meetings ? [
+            `Болсон уулзалтын бүртгэл: ${meetings.completed} · шинэ харилцагч ${meetings.classificationAvailable ? meetings.newCustomer : '—'} · давтан ${meetings.classificationAvailable ? meetings.repeatCustomer : '—'} · худалдан авагч ${meetings.classificationAvailable ? meetings.existingBuyer : '—'} · төрөл тодорхойгүй ${meetings.unclassified}`,
+            `Тайлант хугацааны товлосон уулзалт: хүлээгдэж буй ${meetings.scheduled} · цуцалсан ${meetings.cancelled} · ирээгүй ${meetings.noShow} · төлөв тодорхойгүй ${meetings.unknownStatus}`,
+            meetings.basis,
+            ...(!meetings.classificationAvailable ? ['Уулзалтын төрлийн ангилал системд хараахан нэвтрээгүй. Болсон уулзалтыг төрөл тодорхойгүйгээр харуулав.'] : []),
+        ] : ['Уулзалтын мэдээлэл энэ тайланд байхгүй.']),
         target.amount !== null ? `Гэрээний зорилт: ${formatMNT(target.amount)} · биелэлт ${target.attainmentPct === null ? 'тооцох боломжгүй' : `${target.attainmentPct}%`}` : 'Гэрээний зорилт: сонгосон хугацаанд бүрэн тохируулаагүй эсвэл бүтэн сар сонгоогүй',
         ...(cash ? [
             `Мөнгөөр орсон бүртгэл: ${cash.receiptCount} гүйлгээ · ${formatMNT(cash.receipts)}`,

@@ -10,6 +10,11 @@ export type BudgetStatus = 'none' | 'ok' | 'warn' | 'over';
 export const SPEND_CHANNELS: Record<string, string> = {
     meta_ads: 'Meta Ads',
     organic: 'Website / Organic',
+    facebook: 'Facebook',
+    instagram: 'Instagram',
+    youtube: 'YouTube',
+    tiktok: 'TikTok',
+    email: 'Email / Newsletter',
     facebook_ads: 'Facebook Ads',
     google_ads: 'Google Ads',
     board: 'Билборд / Самбар',

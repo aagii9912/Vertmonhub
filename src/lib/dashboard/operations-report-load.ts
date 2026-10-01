@@ -1,9 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fetchAllRows } from '@/lib/utils/pagination';
-import { ubDateStr, ubMonthRange, ubParts } from '@/lib/utils/date';
+import { ubDateStr, ubDayRange, ubMonthRange, ubParts } from '@/lib/utils/date';
 import {
     buildOperationsReport, OperationsRangeSchema,
-    type OperationsContract, type OperationsLead, type OperationsTarget, type OperationsTransaction,
+    type OperationsContract, type OperationsLead, type OperationsTarget, type OperationsTransaction, type OperationsViewing,
 } from './operations-report';
 
 /** Shared by the report page and AI. Authorization is supplied by their server-side callers. */
@@ -18,6 +18,21 @@ export async function loadOperationsReport(db: SupabaseClient, options: {
         from: options.from ?? ubDateStr(current.start),
         to: options.to ?? ubDateStr(new Date(current.end.getTime() - 1)),
     });
+    const meetingStart = ubDayRange(new Date(`${range.from}T00:00:00+08:00`)).start.toISOString();
+    const meetingEnd = ubDayRange(new Date(`${range.to}T00:00:00+08:00`)).end.toISOString();
+    let meetingClassificationAvailable = true;
+    const viewingPage = async (from: number, to: number) => {
+        const fetchPage = (withType: boolean) => db.from('property_viewings')
+            .select(`scheduled_at, status${withType ? ', meeting_type' : ''}`)
+            .eq('shop_id', options.shopId).is('deleted_at', null)
+            .gte('scheduled_at', meetingStart).lt('scheduled_at', meetingEnd).order('id').range(from, to);
+        let result = await fetchPage(meetingClassificationAvailable);
+        if (result.error && ['42703', 'PGRST204'].includes(result.error.code) && result.error.message.includes('meeting_type')) {
+            meetingClassificationAvailable = false;
+            result = await fetchPage(false);
+        }
+        return result as unknown as { data: OperationsViewing[] | null; error: { message: string } | null };
+    };
     let receiptClassificationAvailable = true;
     const receiptPage = async (from: number, to: number) => {
         const fetchPage = (withKind: boolean) => db.from('finance_transactions')
@@ -31,9 +46,9 @@ export async function loadOperationsReport(db: SupabaseClient, options: {
         }
         return result as unknown as { data: OperationsTransaction[] | null; error: { message: string } | null };
     };
-    const [contracts, leads, targets, transactions] = await Promise.all([
+    const [contracts, leads, targets, transactions, viewings] = await Promise.all([
         fetchAllRows<OperationsContract>((from, to) => db.from('property_contracts')
-            .select('id, contract_date, contract_status, total_price, prepayment_paid_cash')
+            .select('id, contract_date, contract_status, total_price, prepayment_paid_cash, product_type')
             .eq('shop_id', options.shopId).is('deleted_at', null).order('id').range(from, to)),
         fetchAllRows<OperationsLead>((from, to) => db.from('leads')
             .select('created_at, status, source, sales_manager_name, last_contact_at, next_followup_at, viewing_scheduled_at')
@@ -43,6 +58,7 @@ export async function loadOperationsReport(db: SupabaseClient, options: {
             .gte('year', Number(range.from.slice(0, 4))).lte('year', Number(range.to.slice(0, 4)))
             .order('year').order('month').range(from, to)),
         options.canReadFinance ? fetchAllRows<OperationsTransaction>(receiptPage) : Promise.resolve(null),
+        fetchAllRows<OperationsViewing>(viewingPage),
     ]);
-    return { ...buildOperationsReport({ range, now: now.toISOString(), contracts, leads, targets, transactions, receiptClassificationAvailable }), shopName: options.shopName || 'Vertmon Hub' };
+    return { ...buildOperationsReport({ range, now: now.toISOString(), contracts, leads, targets, transactions, viewings, receiptClassificationAvailable, meetingClassificationAvailable }), shopName: options.shopName || 'Vertmon Hub' };
 }

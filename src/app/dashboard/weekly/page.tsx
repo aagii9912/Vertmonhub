@@ -15,7 +15,8 @@ import { formatTime, ubDateStr } from '@/lib/utils/date';
 import { cn } from '@/lib/utils';
 import { type OperationsReport } from '@/lib/dashboard/operations-report';
 import { type MarketingPerformance } from '@/lib/marketing/performance';
-import { formatWeeklyReview, meetingDateSchema, nextMeetingDate, shiftReviewDate, weeklyReviewRange, type WeeklyUpdate, type WeeklyUpdatesData } from '@/lib/dashboard/weekly-review';
+import { formatReviewChange, formatWeeklyReview, meetingDateSchema, nextMeetingDate, shiftReviewDate, weeklyDiscussionItems, weeklyReviewRange, type WeeklyUpdate, type WeeklyUpdatesData } from '@/lib/dashboard/weekly-review';
+import { PerformanceKpis, PerformanceChannelTable } from '@/components/marketing/PerformanceKpis';
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
 import { Avatar, Skeleton } from '@/components/dashboard/v2/primitives';
@@ -32,41 +33,50 @@ function WeeklyReview() {
     const [dirty, setDirty] = useState(false);
     const reportRef = useRef<HTMLElement>(null);
     const range = weeklyReviewRange(meetingDate);
+    const previousRange = weeklyReviewRange(shiftReviewDate(meetingDate, -7));
     const can = (module: string) => !!user && (user.role === 'super_admin' || user.permissions.modules.includes(module));
     const canWrite = user?.role === 'super_admin' || !!user?.permissions.canWrite;
     const params = new URLSearchParams(range);
     const salesQuery = useQuery<OperationsReport>({
         queryKey: ['operations-report', shop?.id, range.from, range.to, user?.id, can('finance')],
-        queryFn: ({ signal }) => dashboardJson(`/api/dashboard/reports/operations?${params}`, { signal }),
+        queryFn: ({ signal }) => dashboardJson(`/api/dashboard/reports/operations?${params}`, { signal, shopId: shop?.id }),
+        enabled: !!shop?.id && can('reports'), staleTime: 60_000, retry: 1,
+    });
+    const previousSalesQuery = useQuery<OperationsReport>({
+        queryKey: ['operations-report', shop?.id, previousRange.from, previousRange.to, user?.id, can('finance')],
+        queryFn: ({ signal }) => dashboardJson(`/api/dashboard/reports/operations?${new URLSearchParams(previousRange)}`, { signal, shopId: shop?.id }),
         enabled: !!shop?.id && can('reports'), staleTime: 60_000, retry: 1,
     });
     const marketingQuery = useQuery<MarketingPerformance>({
-        queryKey: ['marketing-performance', shop?.id, range.from, range.to, user?.id],
-        queryFn: async ({ signal }) => (await dashboardJson<{ report: MarketingPerformance }>(`/api/marketing/performance?${params}`, { signal })).report,
+        queryKey: ['marketing-performance', 'weekly', shop?.id, user?.id, range.from, range.to],
+        queryFn: async ({ signal }) => (await dashboardJson<{ report: MarketingPerformance }>(`/api/marketing/performance?${params}`, { signal, shopId: shop?.id })).report,
         enabled: !!shop?.id && can('marketing-roi'), staleTime: 60_000, retry: 1,
     });
     const updatesQuery = useQuery<WeeklyUpdatesData>({
         queryKey: ['weekly-updates', shop?.id, user?.id, meetingDate, can('reports')],
-        queryFn: ({ signal }) => dashboardJson(`/api/dashboard/weekly-updates?meetingDate=${meetingDate}`, { signal }),
+        queryFn: ({ signal }) => dashboardJson(`/api/dashboard/weekly-updates?meetingDate=${meetingDate}`, { signal, shopId: shop?.id }),
         enabled: !!shop?.id, staleTime: 30_000, retry: 1,
     });
     const tasksQuery = useMyTasks();
     const sales = can('reports') && !salesQuery.isError ? salesQuery.data : undefined;
+    const previousSales = can('reports') && !previousSalesQuery.isError ? previousSalesQuery.data : undefined;
     const marketing = can('marketing-roi') && !marketingQuery.isError ? marketingQuery.data : undefined;
     const updates = updatesQuery.isError ? undefined : updatesQuery.data;
     const completedTasks = (tasksQuery.data?.tasks || []).filter(task => task.status === 'done' && task.completed_at && ubDateStr(new Date(task.completed_at)) >= range.from && ubDateStr(new Date(task.completed_at)) <= range.to);
-    const loading = salesQuery.isFetching || marketingQuery.isFetching || updatesQuery.isFetching;
+    const loading = salesQuery.isFetching || previousSalesQuery.isFetching || marketingQuery.isFetching || updatesQuery.isFetching;
     const notices = [
         ...(range.to >= ubDateStr() ? ['Тайлант хугацаа дуусаагүй. Одоогоор бүртгэсэн мэдээллийг харуулж байна.'] : []),
         ...(!can('reports') ? ['Борлуулалтын нэгдсэн тоонд тайлангийн эрх шаардлагатай.'] : salesQuery.error ? [`Борлуулалт: ${salesQuery.error.message}`] : []),
+        ...(can('reports') && previousSalesQuery.error ? [`Өмнөх борлуулалтын харьцуулалт боломжгүй: ${previousSalesQuery.error.message}`] : []),
         ...(!can('marketing-roi') ? ['Маркетингийн үзүүлэлтэд маркетингийн эрх шаардлагатай.'] : marketingQuery.error ? [`Маркетинг: ${marketingQuery.error.message}`] : []),
         ...(updatesQuery.error ? [`Ажлын шинэчлэл: ${updatesQuery.error.message}`] : []),
         ...(!updatesQuery.data?.canViewTeam ? ['Ажлын шинэчлэл: зөвхөн миний оруулсан мэдээлэл.'] : []),
     ];
-    const text = formatWeeklyReview({ shopName: shop?.name || 'Vertmon Hub', meetingDate, sales, marketing, updates: updates?.updates, notices });
+    const discussionItems = weeklyDiscussionItems({ sales, marketing, updates: updates?.updates });
+    const text = formatWeeklyReview({ shopName: shop?.name || 'Vertmon Hub', meetingDate, sales, previousSales, marketing, updates: updates?.updates, notices });
     const exportable = !loading && !dirty && !!(sales || marketing || updates);
     const refresh = () => {
-        if (can('reports')) void salesQuery.refetch();
+        if (can('reports')) { void salesQuery.refetch(); void previousSalesQuery.refetch(); }
         if (can('marketing-roi')) void marketingQuery.refetch();
         void updatesQuery.refetch();
     };
@@ -114,19 +124,50 @@ function WeeklyReview() {
                             <p className="text-xs font-medium text-muted-foreground">{shop?.name} · Хурлын тайлан</p>
                             <h2 className="mt-1 text-xl font-semibold tracking-tight">{range.from} — {range.to}</h2>
                             <p className="mt-1 text-xs text-muted-foreground">Улаанбаатарын цагаар · Хурал: {meetingDate}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">Харьцуулалт: {previousRange.from} — {previousRange.to}</p>
                         </div>
                         <Button variant="ghost" size="icon" className="fullscreen-exit" aria-label="Танилцуулгыг хаах" onClick={() => void document.exitFullscreen()}><X /></Button>
                     </header>
                     {notices.length > 0 && <div role="status" className="space-y-1 rounded-xl bg-surface-2 px-4 py-3 text-xs leading-relaxed text-fg-2">{notices.map(notice => <p key={notice}>{notice}</p>)}</div>}
 
+                    <section className="break-inside-avoid space-y-3 rounded-2xl bg-surface-2 p-5">
+                        <h2 className="text-base font-semibold">Энэ хурлаар шийдэх</h2>
+                        {loading ? <p className="text-sm text-muted-foreground">Хэлэлцэх асуудлыг нэгтгэж байна…</p> : discussionItems.length ? <ul className="space-y-3">{discussionItems.map((item, index) => <li key={index} className="text-sm">
+                            {item.href && can('leads') ? <Link href={item.href} className="font-medium hover:underline focus-ring">{item.title}<ArrowUpRight className="ml-1 inline size-3.5 print:hidden" /></Link> : <p className="font-medium">{item.title}</p>}
+                            <p className="mt-1 whitespace-pre-wrap break-words text-fg-2">{item.detail}</p>
+                        </li>)}</ul> : <p className="text-sm text-muted-foreground">Хадгалсан мэдээллээс хэлэлцэх асуудал илрээгүй.</p>}
+                        <p className="text-xs text-muted-foreground">Лидийн ажлын дараалал нь одоогийн төлөв. Ангиллууд давхцаж болно.</p>
+                    </section>
+
                     <section className="break-inside-avoid space-y-4">
                         <ReportHeading number="01" title="Борлуулалтын тойм" href={can('reports') ? `/dashboard/reports/operations?${params}` : undefined} />
                         {salesQuery.isPending && can('reports') ? <Skeleton className="h-32" /> : sales ? <>
-                            <div className="grid grid-cols-2 gap-y-5 rounded-2xl border border-border p-5 sm:grid-cols-3">
-                                <Metric label="Шинэ лид" value={sales.leads.newCount} />
-                                <Metric label="Байгуулсан гэрээ" value={sales.contracts.count} />
-                                <Metric label="Гэрээний бүртгэлтэй дүн" value={formatMNTShort(sales.contracts.value)} />
+                            <div className="grid grid-cols-2 gap-5 rounded-2xl border border-border p-5">
+                                <Metric label="Шинэ лид" value={sales.leads.newCount} helper={formatReviewChange(sales.leads.newCount, previousSales?.leads.newCount)} />
+                                <Metric label="Байгуулсан гэрээ" value={sales.contracts.count} helper={formatReviewChange(sales.contracts.count, previousSales?.contracts.count)} />
+                                <Metric label="Гэрээний бүртгэлтэй дүн" value={formatMNTShort(sales.contracts.value)} helper={previousSales ? `Өмнөх ${formatMNTShort(previousSales.contracts.value)}${previousSales.contracts.missingAmounts ? ' · дүн дутуу' : ''}` : 'Өмнөх хугацааны мэдээлэл байхгүй'} />
+                                <Metric label="Болсон уулзалт" value={sales.meetings?.completed ?? '—'} helper={sales.meetings ? formatReviewChange(sales.meetings.completed, previousSales?.meetings?.completed) : 'Уулзалтын мэдээлэл байхгүй'} />
                             </div>
+                            {sales.meetings && <div className="space-y-3 rounded-2xl border border-border p-5">
+                                <h3 className="text-sm font-medium">Болсон уулзалтын төрөл</h3>
+                                <div className="grid grid-cols-3 gap-4 text-sm">
+                                    <Metric label="Шинэ харилцагч" value={sales.meetings.classificationAvailable ? sales.meetings.newCustomer : '—'} />
+                                    <Metric label="Давтан уулзалт" value={sales.meetings.classificationAvailable ? sales.meetings.repeatCustomer : '—'} />
+                                    <Metric label="Гэрээтэй захиалагч" value={sales.meetings.classificationAvailable ? sales.meetings.existingBuyer : '—'} />
+                                </div>
+                                <p className="text-xs leading-relaxed text-muted-foreground">{sales.meetings.basis}</p>
+                                {!sales.meetings.classificationAvailable && <p className="text-xs text-muted-foreground">Уулзалтын төрлийн ангилал системд хараахан нэвтрээгүй.</p>}
+                                {sales.meetings.unclassified > 0 && <p className="text-xs text-muted-foreground">Төрөл тодорхойгүй: {sales.meetings.unclassified}.</p>}
+                                <p className="text-xs text-muted-foreground">Товлосон хэвээр {sales.meetings.scheduled} · Цуцалсан {sales.meetings.cancelled} · Ирээгүй {sales.meetings.noShow}</p>
+                                {sales.meetings.unknownStatus > 0 && <p className="text-xs text-muted-foreground">Төлөв тодорхойгүй: {sales.meetings.unknownStatus}.</p>}
+                            </div>}
+                            {!!sales.contracts.byProduct?.length && <div className="max-w-full overflow-x-auto focus-ring print:overflow-visible" tabIndex={0} role="region" aria-label="Гэрээний бүтээгдэхүүний задаргаа">
+                                <table className="w-full text-left text-sm">
+                                    <caption className="mb-2 text-left text-sm font-medium">Гэрээний бүтээгдэхүүний задаргаа</caption>
+                                    <thead className="border-b border-border text-xs text-muted-foreground"><tr><th scope="col" className="py-2 font-medium">Бүтээгдэхүүн</th><th scope="col" className="py-2 text-right font-medium">Гэрээ</th><th scope="col" className="py-2 text-right font-medium">Бүртгэлтэй дүн</th></tr></thead>
+                                    <tbody>{sales.contracts.byProduct.map(product => <tr key={product.productType} className="border-b border-border last:border-0"><th scope="row" className="break-words py-3 font-medium [overflow-wrap:anywhere]">{product.label}</th><td className="text-right tabular-nums">{product.count}</td><td className="text-right tabular-nums">{formatMNTShort(product.value)}{product.missingAmounts > 0 && <span className="block text-xs text-muted-foreground">Дүн дутуу {product.missingAmounts}</span>}</td></tr>)}</tbody>
+                                </table>
+                            </div>}
                             <p className="text-xs leading-relaxed text-muted-foreground">Гэрээний дүн нь мөнгөөр орсон орлогоос тусдаа.{sales.cash ? ` Мөнгөөр орсон бүртгэл: ${formatMNTShort(sales.cash.receipts)} (${sales.cash.receiptCount} гүйлгээ). Банкны хуулгатай тулгаагүй.` : ' Мөнгөн орлогыг санхүүгийн эрхтэй хүн харна.'}</p>
                             {(sales.contracts.missingAmounts > 0 || sales.contracts.undatedCount > 0) && <Alert variant="warning">Дүн дутуу {sales.contracts.missingAmounts}, огноогүй {sales.contracts.undatedCount} гэрээ байна.</Alert>}
                             <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
@@ -138,21 +179,18 @@ function WeeklyReview() {
                     </section>
 
                     <section className="break-inside-avoid space-y-4">
-                        <ReportHeading number="02" title="Маркетингийн үр дүн" href={can('marketing-roi') ? '/marketing' : undefined} />
+                        <ReportHeading number="02" title="Маркетингийн үр дүн" href={can('marketing-roi') ? `/marketing?${params}` : undefined} />
                         {marketingQuery.isPending && can('marketing-roi') ? <Skeleton className="h-36" /> : marketing ? <>
-                            <div className="grid grid-cols-2 gap-y-5 rounded-2xl border border-border p-5 sm:grid-cols-3">
-                                <Metric label="Менежерт шилжсэн лид" value={marketing.totals.sales} />
-                                <Metric label="Дууссан ажил" value={marketing.totals.activities} />
-                                <Metric label="Бүртгэсэн зардал" value={formatMNTShort(marketing.totals.spend)} />
+                            <div className="grid grid-cols-2 gap-5 rounded-2xl border border-border p-5 sm:grid-cols-3">
+                                <Metric label="Шинэ лид" value={marketing.totals.leads} helper={formatReviewChange(marketing.totals.leads, marketing.previous.leads)} />
+                                <Metric label="Менежерт шилжсэн лид" value={marketing.totals.sales} helper={formatReviewChange(marketing.totals.sales, marketing.previous.sales)} />
+                                <Metric label="Гэрээтэй лид" value={marketing.totals.deals} helper={formatReviewChange(marketing.totals.deals, marketing.previous.deals)} />
+                                <Metric label="Дууссан кампанит ажил" value={marketing.totals.campaigns} helper={formatReviewChange(marketing.totals.campaigns, marketing.previous.campaigns)} />
+                                <Metric label="Дууссан контент" value={marketing.totals.content} helper={formatReviewChange(marketing.totals.content, marketing.previous.content)} />
                             </div>
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-left text-sm">
-                                    <caption className="sr-only">Маркетингийн сувгийн үр дүн</caption>
-                                    <thead className="border-b border-border text-xs text-muted-foreground"><tr><th className="py-3 font-medium">Суваг</th><th className="text-right font-medium">Лид</th><th className="text-right font-medium">Шилжсэн</th><th className="text-right font-medium">Гэрээтэй</th></tr></thead>
-                                    <tbody>{marketing.channels.filter(channel => channel.leads > 0).map(channel => <tr key={channel.id} className="border-b border-border last:border-0"><th scope="row" className="py-3 font-medium">{channel.name}</th><td className="text-right tabular-nums">{channel.leads}</td><td className="text-right tabular-nums">{channel.sales}</td><td className="text-right tabular-nums">{channel.deals}</td></tr>)}</tbody>
-                                </table>
-                                {!marketing.totals.leads && <p className="py-5 text-sm text-muted-foreground">Энэ хугацаанд шинэ лид бүртгэгдээгүй.</p>}
-                            </div>
+                            <PerformanceKpis report={marketing} />
+                            <PerformanceChannelTable report={marketing} />
+                            <Link href={`/marketing?${params}&tab=department`} className="inline-flex min-h-11 items-center gap-2 text-sm font-medium focus-ring hover:underline">Маркетингийн албаны KPI<ArrowUpRight className="size-4" /></Link>
                             <p className="text-xs leading-relaxed text-muted-foreground">Тухайн хугацаанд үүссэн лидээс хугацааны эцэс хүртэл шилжсэн, гэрээтэй болсон тоо. Борлуулалтын гэрээний тоотой ижил хэмжүүр биш.</p>
                             {(marketing.spendQuality.current.missingFx > 0 || marketing.quality.unknownHandoff > 0) && <Alert variant="warning">Ханшгүй {marketing.spendQuality.current.missingFx} зардал, шилжүүлсэн огноогүй {marketing.quality.unknownHandoff} лид тооцоонд ороогүй.</Alert>}
                         </> : <Unavailable>{can('marketing-roi') ? 'Маркетингийн мэдээлэл түр боломжгүй. Шинэчлэх товчоор дахин оролдоно уу.' : 'Маркетингийн үзүүлэлт харах эрх шаардлагатай.'}</Unavailable>}
@@ -221,8 +259,8 @@ function UpdateForm({ meetingDate, initial, completedTasks, canWrite, onDirty, t
     </form>;
 }
 
-function Metric({ label, value }: { label: string; value: string | number }) {
-    return <div><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-[26px] font-semibold tracking-tight tabular-nums">{value}</p></div>;
+function Metric({ label, value, helper }: { label: string; value: string | number; helper?: string }) {
+    return <div><p className="text-xs text-muted-foreground">{label}</p><p className="mt-2 text-[26px] font-semibold tracking-tight tabular-nums">{value}</p>{helper && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{helper}</p>}</div>;
 }
 function ReportHeading({ number, title, href }: { number: string; title: string; href?: string }) {
     return <header className="flex items-center gap-3"><span className="text-xs tabular-nums text-muted-foreground">{number}</span><h2 className="text-base font-semibold tracking-tight">{title}</h2>{href && <Link href={href} aria-label={`${title} дэлгэрэнгүй`} className="ml-auto rounded-md p-2 text-muted-foreground hover:bg-surface-2 focus-ring print:hidden"><ArrowUpRight className="size-4" /></Link>}</header>;

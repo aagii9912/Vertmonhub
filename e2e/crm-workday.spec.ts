@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
-import { buildMarketingPerformance } from '../src/lib/marketing/performance';
+import { buildMarketingPerformance, type MarketingSpend } from '../src/lib/marketing/performance';
 import { nextMeetingDate, weeklyReviewRange } from '../src/lib/dashboard/weekly-review';
 import { ubDateStr } from '../src/lib/utils/date';
 
@@ -31,7 +31,7 @@ async function setup(page: Page, readonly = false) {
         total_price: 286000000 + i * 52000000, paid_amount: 80000000, balance: 206000000 + i * 52000000,
         sales_manager: 'Номин', block_name: 'B', unit_number: `120${i + 1}`, rooms: 3, overdue_days: i === 0 ? 4 : 0,
     }));
-    const state = { failContracts: false, failExport: false, viewings,
+    const state = { failContracts: false, failExport: false, missingFx: false, viewings,
         requests: [] as { path: string; search: string; method: string; shop: string | undefined; body?: Record<string, unknown> }[], errors: [] as string[], unhandled: [] as string[] };
     page.on('pageerror', error => state.errors.push(error.message));
     await page.route('**/api/**', async route => {
@@ -47,7 +47,7 @@ async function setup(page: Page, readonly = false) {
         if (path === '/api/dashboard/my-stats') return reply({ manager: { name: 'Номин', isSelf: true, inRoster: true, hasAccount: true }, onboarding: false, missing: [], period: 'today',
             kpis: { activeLeads: 3, newLeads: 2, viewingsToday: 0, viewingsThisWeek: 2, activeContracts: 3, salesThisMonth: 860000000 }, target: null, tasks: [], recentLeads: [], upcomingViewings: [], revenueTrend: [] });
         if (path === '/api/dashboard/managers') return reply({ managers: [{ id: 'manager-1', name: 'Номин' }], mineName: 'Номин' });
-        if (path === '/api/dashboard/projects') return reply({ projects: [{ id: projectId, name: 'Мандала Гарден', status: 'active' }] });
+        if (path === '/api/dashboard/projects') return reply({ projects: [{ id: projectId, name: 'Мандала Гарден' }] });
         if (path === '/api/dashboard/leads/summary') return reply({ all: 3, mine: 2, new: 2, meetings: 2, active: 1, mineName: 'Номин', canClaim: true, queues: { unassigned: 1, uncontacted: 2, no_followup: 2, overdue: 1 } });
         if (path === '/api/dashboard/leads') {
             const matches = leads.filter(lead => (!url.searchParams.get('q') || lead.customer_name.includes(url.searchParams.get('q')!))
@@ -75,8 +75,13 @@ async function setup(page: Page, readonly = false) {
         if (path === '/api/marketing/performance') {
             const range = { from: url.searchParams.get('from')!, to: url.searchParams.get('to')! };
             const projects = [{ id: projectId, name: 'Мандала Гарден' }];
-            return reply({ report: buildMarketingPerformance({ projects, activities: [], targets: [], spend: [], contracts: [],
-                leads: leads.map(lead => ({ id: lead.id, created_at: `${range.from}T02:00:00Z`, project_id: projectId, source: lead.source, marketing_campaign_id: null, marketing_owner_name: 'Номин', marketing_channel: null, sales_manager_name: lead.sales_manager_name, sales_handoff_at: lead.sales_manager_name ? `${range.from}T03:00:00Z` : null })) }, range), projects, activities: [], spend: [] });
+            const spend: MarketingSpend[] = [
+                { id: 'facebook-spend', spent_at: range.from, amount: 2000, channel: 'facebook', project_id: projectId, marketing_owner_name: 'Номин', marketing_campaign_id: null, note: null },
+                { id: 'google-spend', spent_at: range.from, amount: 180000, channel: 'google_ads', project_id: projectId, marketing_owner_name: 'Номин', marketing_campaign_id: null, note: null },
+            ];
+            if (state.missingFx) spend.push({ id: 'missing-fx', spent_at: range.from, amount: 0, channel: 'facebook', source: 'meta', exclusion: 'missing_fx', native_amount: 100, currency: 'USD', project_id: projectId, marketing_owner_name: 'Номин', marketing_campaign_id: null, note: null });
+            return reply({ report: buildMarketingPerformance({ projects, activities: [], targets: [], spend, contracts: [],
+                leads: leads.map(lead => ({ id: lead.id, created_at: `${range.from}T02:00:00Z`, project_id: projectId, source: lead.source, marketing_campaign_id: null, marketing_owner_name: 'Номин', marketing_channel: null, sales_manager_name: lead.sales_manager_name, sales_handoff_at: lead.sales_manager_name ? `${range.from}T03:00:00Z` : null })) }, range), projects, activities: [], spend });
         }
         if (path === '/api/marketing/facebook/ads/spend-sync') return reply({ accountId: null, status: null });
         if (path === '/api/ai-assistant/conversations') return reply({ conversations: [] });
@@ -98,6 +103,7 @@ for (const mobile of [false, true]) {
         mkdirSync('output/workday', { recursive: true });
         const shot = async (name: string) => {
             expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+            await page.evaluate(() => window.scrollTo(0, 0));
             await page.screenshot({ path: `output/workday/${mobile ? 'mobile' : 'desktop'}-${name}.png`, fullPage: true, animations: 'disabled' });
         };
         await page.goto('/dashboard/leads');
@@ -142,10 +148,20 @@ for (const mobile of [false, true]) {
         await page.goto('/marketing');
         await expect(page.getByRole('heading', { name: 'Маркетинг', exact: true })).toBeVisible();
         await expect(page.getByRole('heading', { name: 'Төсөл бүрийн үр дүн' })).toBeVisible();
-        await expect(page.getByText('Google Ads', { exact: true })).not.toBeVisible();
-        await page.getByRole('checkbox', { name: 'Лидгүй сувгуудыг харуулах' }).check();
-        await expect(page.getByText('Google Ads', { exact: true })).toBeVisible();
-        await page.getByRole('checkbox', { name: 'Лидгүй сувгуудыг харуулах' }).uncheck();
+        const channels = page.getByRole('region', { name: 'Маркетингийн сувгийн KPI' });
+        const google = channels.getByRole('row').filter({ has: page.getByRole('rowheader', { name: 'Google Ads', exact: true }) });
+        await expect(google).toBeVisible();
+        await expect(google.getByRole('cell').first()).toHaveText('0');
+        await expect(google.getByRole('cell').nth(4)).toHaveText('180,000 ₮');
+        await expect(google.getByRole('cell').last()).toHaveText('—');
+        const facebook = channels.getByRole('row').filter({ has: page.getByRole('rowheader', { name: 'Facebook', exact: true }) });
+        await expect(facebook.getByRole('cell').last()).toHaveText('1,000 ₮');
+        await expect(page.getByText('Нэг гэрээтэй лидийн өртөг', { exact: true }).locator('..').locator('dd').first()).toHaveText('—');
+        await expect(channels.getByRole('rowheader', { name: 'TikTok', exact: true })).not.toBeVisible();
+        await page.getByRole('checkbox', { name: 'Бүртгэлгүй сувгуудыг харуулах' }).check();
+        await expect(channels.getByRole('rowheader', { name: 'TikTok', exact: true })).toBeVisible();
+        await page.getByRole('checkbox', { name: 'Бүртгэлгүй сувгуудыг харуулах' }).uncheck();
+        await expect(google).toBeVisible();
         await shot('marketing');
         await page.getByRole('button', { name: 'Хурлын долоо хоног', exact: true }).click();
         const range = weeklyReviewRange(nextMeetingDate());
@@ -175,6 +191,21 @@ test('гэрээний ачааллын алдаа болон экспортын
     await page.getByRole('button', { name: 'Excel · бүгд', exact: true }).click();
     await expect(page.getByText('Экспорт түр боломжгүй', { exact: true })).toBeVisible();
     expect(state.errors).toEqual([]);
+});
+
+test('маркетингийн ханш дутуу үед өртөг тэг гэж харагдахгүй', async ({ page }) => {
+    const state = await setup(page);
+    state.missingFx = true;
+    await page.goto('/marketing');
+    const cost = page.getByText('Нэг лидийн өртөг', { exact: true }).locator('..');
+    await expect(cost.locator('dd').first()).toHaveText('—');
+    await expect(cost).toContainText('Ханш дутуу · өртөг тооцоогүй');
+    const channels = page.getByRole('region', { name: 'Маркетингийн сувгийн KPI' });
+    const facebook = channels.getByRole('row').filter({ has: page.getByRole('rowheader', { name: 'Facebook', exact: true }) });
+    await expect(facebook).toContainText('Ханш дутуу');
+    await expect(facebook.getByRole('cell').last()).toHaveText('—');
+    expect(state.errors).toEqual([]);
+    expect(state.unhandled).toEqual([]);
 });
 
 test('унших эрхтэй хэрэглэгчид шинээр үүсгэх болон уулзалт өөрчлөх товч харагдахгүй', async ({ page }) => {

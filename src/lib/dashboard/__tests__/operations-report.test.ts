@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
     buildOperationsReport, formatOperationsReportText, OperationsRangeSchema, targetMonths,
-    type OperationsContract, type OperationsLead, type OperationsTransaction,
+    type OperationsContract, type OperationsLead, type OperationsTransaction, type OperationsViewing,
 } from '../operations-report';
 
 const range = { from: '2026-09-01', to: '2026-09-30' };
 const now = '2026-09-13T04:00:00.000Z';
 const contract = (over: Partial<OperationsContract> = {}): OperationsContract => ({
     id: 'c1', contract_date: '2026-09-01', contract_status: 'active', total_price: 200_000_000,
-    prepayment_paid_cash: 50_000_000, ...over,
+    prepayment_paid_cash: 50_000_000, product_type: 'residential', ...over,
 });
 const lead = (over: Partial<OperationsLead> = {}): OperationsLead => ({
     created_at: '2026-09-01T00:00:00Z', status: 'new', source: 'facebook', sales_manager_name: null,
@@ -42,7 +42,8 @@ describe('operations report financial meaning', () => {
             contract({ total_price: null, prepayment_paid_cash: null }), contract({ contract_date: null, prepayment_paid_cash: null })],
             targets: [{ year: 2026, month: 9, target_amount: 400_000_000 }],
         });
-        expect(report.contracts).toEqual({ count: 2, value: 200_000_000, missingAmounts: 1, undatedCount: 1 });
+        expect(report.contracts).toEqual({ count: 2, value: 200_000_000, missingAmounts: 1, undatedCount: 1,
+            byProduct: [{ productType: 'residential', label: 'Орон сууц', count: 2, value: 200_000_000, missingAmounts: 1 }] });
         expect(report.target.attainmentPct).toBeNull();
         expect(report.advanceSnapshot).toEqual({ amount: 50_000_000, recordedContracts: 1, totalContracts: 3 });
     });
@@ -77,6 +78,55 @@ describe('operations report financial meaning', () => {
         const report = buildOperationsReport({ ...base, contracts: [contract()], targets: [{ year: 2026, month: 9, target_amount: 400_000_000 }] });
         expect(report.target.attainmentPct).toBe(50);
         expect(buildOperationsReport({ ...base, range: { from: '2026-08-01', to: '2026-09-30' }, targets: [{ year: 2026, month: 9, target_amount: 400_000_000 }] }).target.amount).toBeNull();
+    });
+});
+
+describe('operations meetings and product breakdown', () => {
+    it('counts meeting events by their recorded Ulaanbaatar date and completed status', () => {
+        const viewing = (over: Partial<OperationsViewing> = {}): OperationsViewing => ({
+            scheduled_at: '2026-09-15T00:00:00Z', status: 'completed', meeting_type: 'new_customer', ...over,
+        });
+        const report = buildOperationsReport({ ...base, viewings: [
+            viewing({ scheduled_at: '2026-08-31T16:00:00Z' }), // September 1 in UB
+            viewing({ scheduled_at: '2026-09-30T15:59:59.999Z', meeting_type: 'repeat_customer' }),
+            viewing({ meeting_type: 'existing_buyer' }), viewing({ meeting_type: null }),
+            viewing({ meeting_type: 'legacy_type' }), viewing({ status: 'scheduled' }),
+            viewing({ status: 'cancelled' }), viewing({ status: 'no_show' }), viewing({ status: null }),
+            viewing({ scheduled_at: '2026-08-31T15:59:59Z' }), viewing({ scheduled_at: '2026-09-30T16:00:00Z' }),
+            viewing({ deleted_at: now }),
+        ] });
+        expect(report.meetings).toMatchObject({ count: 9, completed: 5, newCustomer: 1, repeatCustomer: 1, existingBuyer: 1,
+            unclassified: 2, scheduled: 1, cancelled: 1, noShow: 1, unknownStatus: 1, classificationAvailable: true });
+        expect(report.meetings?.basis).toContain('давхардалгүй хүний тоо биш');
+        const text = formatOperationsReportText({ ...report, shopName: 'Тест' });
+        expect(text).toContain('Болсон уулзалтын бүртгэл: 5');
+        expect(text).toContain('төрөл тодорхойгүй 2');
+    });
+
+    it('distinguishes unprovided meeting data from a successfully read empty period', () => {
+        expect(buildOperationsReport(base).meetings).toBeNull();
+        expect(buildOperationsReport({ ...base, viewings: [] }).meetings?.completed).toBe(0);
+        const report = buildOperationsReport({ ...base, viewings: [{ scheduled_at: now, status: 'completed' }], meetingClassificationAvailable: false });
+        expect(report.meetings).toMatchObject({ completed: 1, unclassified: 1, classificationAvailable: false });
+        const text = formatOperationsReportText({ ...report, shopName: 'Тест' });
+        expect(text).toContain('төрлийн ангилал системд хараахан нэвтрээгүй');
+        expect(text).toContain('шинэ харилцагч — · давтан — · худалдан авагч —');
+    });
+
+    it('reconciles products to the same valid dated contracts and preserves unknown/custom types', () => {
+        const report = buildOperationsReport({ ...base, contracts: [
+            contract(), contract({ product_type: 'parking', total_price: 50 }),
+            contract({ product_type: 'industry', total_price: null }), contract({ product_type: 'commercial', total_price: 0 }),
+            contract({ product_type: null, total_price: 25 }), contract({ product_type: 'custom', total_price: 10 }),
+            contract({ product_type: '__proto__', total_price: 5 }), contract({ contract_status: 'cancelled', total_price: 999 }),
+            contract({ contract_date: null, total_price: 999 }), contract({ contract_date: '2026-08-31', total_price: 999 }),
+        ] });
+        expect(report.contracts.byProduct.reduce((sum, product) => sum + product.count, 0)).toBe(report.contracts.count);
+        expect(report.contracts.byProduct.reduce((sum, product) => sum + product.value, 0)).toBe(report.contracts.value);
+        expect(report.contracts.byProduct).toContainEqual({ productType: 'industry', label: 'Агуулах', count: 1, value: 0, missingAmounts: 1 });
+        expect(report.contracts.byProduct).toContainEqual({ productType: '__proto__', label: '__proto__', count: 1, value: 5, missingAmounts: 0 });
+        expect(report.contracts.byProduct).toContainEqual({ productType: 'unknown', label: 'Төрөл тодорхойгүй', count: 1, value: 25, missingAmounts: 0 });
+        expect(formatOperationsReportText({ ...report, shopName: 'Тест' })).toContain('Агуулах: 1 гэрээ');
     });
 });
 

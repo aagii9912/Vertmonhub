@@ -949,12 +949,14 @@ function AllPostsContent({
                     iconColor="brand"
                 />
                 <StatsCard
-                    title="Нийт хүрэлт"
+                    title="Нийтлэлүүдийн хүрэлтийн нийлбэр"
                     value={totalReach.toLocaleString()}
                     icon={Eye}
                     iconColor="success"
                 />
             </div>
+
+            <p className="text-xs leading-relaxed text-muted-foreground">Хүрэлтийн нийлбэр нь энд ачаалсан нийтлэл бүрийн дүн. Олон нийтлэл үзсэн хүний давхардлыг хасаагүй; тайлант хугацааны давхардалгүй нийт хүрэлт биш.</p>
 
             <Card>
                 <CardContent className="p-0">

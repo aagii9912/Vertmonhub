@@ -10,12 +10,13 @@ vi.mock('@/lib/utils/logger', () => ({ logger: { info: vi.fn(), error: vi.fn(), 
 import { GET } from '@/app/api/marketing/performance/route';
 import { POST } from '@/app/api/marketing/performance/records/route';
 import { executeDataTool } from '@/lib/ai/data-assistant';
+import { buildMarketingPerformance } from '../performance';
 
 const id = '00000000-0000-4000-8000-000000000001';
 const request = (body?: unknown) => new NextRequest('http://localhost/api/marketing/performance?from=2026-08-01&to=2026-08-31&shopId=hostile', body ? { method: 'POST', body: JSON.stringify(body) } : undefined);
 beforeEach(() => {
     vi.clearAllMocks(); mocks.read.mockResolvedValue(null); mocks.write.mockResolvedValue(null);
-    mocks.shop.mockResolvedValue({ id: 'allowed' }); mocks.load.mockResolvedValue({ report: { totals: {} } });
+    mocks.shop.mockResolvedValue({ id: 'allowed' }); mocks.load.mockResolvedValue({ report: buildMarketingPerformance({ projects: [], leads: [], contracts: [], activities: [], targets: [], spend: [] }, { from: '2026-08-01', to: '2026-08-31' }) });
 });
 it('rejects unauthorized reads and writes before loading any data', async () => {
     mocks.read.mockResolvedValueOnce(NextResponse.json({}, { status: 403 }));
@@ -46,6 +47,8 @@ it('AI uses module permission and server shop, ignoring client shop overrides', 
     const permissions = { role: 'marketing', canWrite: false, canDelete: false, modules: [] as string[] };
     expect(await executeDataTool('get_marketing_performance', {}, 'allowed', permissions, 'user')).toHaveProperty('error');
     expect(mocks.load).not.toHaveBeenCalled();
-    await executeDataTool('get_marketing_performance', { shopId: 'hostile' }, 'allowed', { ...permissions, modules: ['marketing-roi'] }, 'user');
+    const result = await executeDataTool('get_marketing_performance', { shopId: 'hostile' }, 'allowed', { ...permissions, modules: ['marketing-roi'] }, 'user');
     expect(mocks.load).toHaveBeenCalledWith(expect.anything(), 'allowed', expect.anything());
+    expect(result.departmentKpis.categories.map((category: { weight: number }) => category.weight)).toEqual([40, 25, 15, 10, 5, 5]);
+    expect(result.guidance).toContain('онооны дүрмийг зохиохгүй');
 });

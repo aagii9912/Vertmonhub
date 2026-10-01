@@ -11,7 +11,7 @@ const SchemaType = { OBJECT: 'object', STRING: 'string', NUMBER: 'number', INTEG
 export const readTools: any[] = [
     {
         name: 'get_marketing_performance',
-        description: 'Маркетингийн нэгдсэн самбар ба багийн гүйцэтгэл: төсөл/суваг/акцын Lead–Sales–Deal, өмнөх хугацааны харьцуулалт, маркетингийн менежерийн сарын зорилт, төсөв, зардал, хэтрэлт. Dashboard-ийн AI дүгнэлтэд энэ tool ашиглана. basis ба quality-г тайлбартаа хадгал; дутуу зорилтыг 0 гэж үзэхгүй.',
+        description: 'Маркетингийн нэгдсэн самбар, албаны KPI-ийн зургаан ангиллын жин ба бодит нотолгоо, багийн гүйцэтгэл: төсөл/суваг/кампанит ажил/контентын Lead–Sales–Deal, өмнөх хугацааны харьцуулалт, маркетингийн менежерийн сарын зорилт, төсөв, зардал, хэтрэлт. Dashboard-ийн AI дүгнэлтэд энэ tool ашиглана. basis, quality, KPI-ийн дутуу шалгуурыг тайлбартаа хадгал; дутуу зорилтыг 0 гэж үзэхгүй. Qualified Lead, Site Visit, нийлбэр оноог таамгаар гаргахгүй.',
         parameters: { type: SchemaType.OBJECT, properties: {
             from: { type: SchemaType.STRING, description: 'Эхлэх өдөр YYYY-MM-DD' },
             to: { type: SchemaType.STRING, description: 'Дуусах өдөр YYYY-MM-DD, оруулна' },
