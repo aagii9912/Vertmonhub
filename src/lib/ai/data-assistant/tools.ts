@@ -47,18 +47,23 @@ export const readTools: any[] = [
     },
     {
         name: 'list_properties',
-        description: 'Байрны жагсаалт авах. Төрөл, үнэ, дүүрэг, статус, өрөөний тоогоор шүүж болно. Mandala Garden, Mandala Tower, Elysium гэх мэт.',
+        description: 'Байрны бодит нөөц ба зарын сангаас хайх. "2 өрөө байр байна уу?" гэхэд rooms=2-оор шууд хайна. Анхдагч төлөв available, нэгжийн ангилал residential. Жагсаалт хязгаартай, нийт тоо биш. Нэгжийн үнэ байхгүй: үнийн шалгууртай үед unverifiedUnits нь төсөвт багтсан гэсэн үг биш, үнийг тодруулна. Дүүргийг зөвхөн бүртгэлтэй төслийн байршлаар батална; байршилгүй нэгж дүүргийн хайлтад орохгүй. Mandala Garden, Mandala Tower, Elysium гэх мэт.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 type: { type: SchemaType.STRING, description: 'Байрны төрөл: apartment, house, office, land, commercial' },
-                status: { type: SchemaType.STRING, enum: ['available', 'reserved', 'sold', 'rented', 'barter'], description: 'Байрны статус' },
+                status: { type: SchemaType.STRING, enum: ['available', 'reserved', 'ordered', 'sold', 'handed_over', 'rented', 'barter', 'all'], description: 'Анхдагч available (худалдаанд). sold нэгжид handed_over орно. all бүх төлөвийг хайна; rented/barter зөвхөн зарын сан.' },
                 min_price: { type: SchemaType.NUMBER, description: 'Хамгийн бага үнэ (MNT)' },
                 max_price: { type: SchemaType.NUMBER, description: 'Хамгийн их үнэ (MNT)' },
                 rooms: { type: SchemaType.NUMBER, description: 'Өрөөний тоо' },
                 district: { type: SchemaType.STRING, description: 'Дүүрэг/Байршил' },
-                name_search: { type: SchemaType.STRING, description: 'Нэрээр хайх (Mandala, Elysium гэх мэт)' },
-                limit: { type: SchemaType.NUMBER, description: 'Хэдэн байр авах (default: 10)' }
+                name_search: { type: SchemaType.STRING, description: 'Төсөл, ээлж, блок, код эсвэл зарын нэрээр хайх (Mandala, Elysium гэх мэт)' },
+                category: { type: SchemaType.STRING, enum: ['residential', 'commercial', 'parking', 'industry'], description: 'Нэгжийн ангилал. Анхдагч residential (орон сууц); apartment=residential, office/commercial=commercial.' },
+                phase: { type: SchemaType.STRING, description: 'Нэгжийн ээлжийн яг бүртгэлтэй нэр (Zoo Garden гэх мэт)' },
+                block: { type: SchemaType.STRING, description: 'Нэгжийн блокийн дугаар (201 гэх мэт)' },
+                code: { type: SchemaType.STRING, description: 'Нэгжийн яг код (201-440 гэх мэт); ээлж/ангиллаар давхцаж болно' },
+                project_id: { type: SchemaType.STRING, description: 'Төслийн ID; тухайн байгууллагын дотор шүүнэ' },
+                limit: { type: SchemaType.NUMBER, description: 'Хэдэн хувилбар харуулах (default 10, дээд 100); нийт нөөцийн тоо биш' }
             }
         }
     },

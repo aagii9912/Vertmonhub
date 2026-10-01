@@ -113,29 +113,113 @@ export async function fetchDashboardStats(shopId: string, timeRange: string = 'm
 // (Хуучин e-commerce fetchOrders / fetchProductStats — 2026-09 Wave 2-т устгав; CLAUDE.md «буцааж оруулахгүй»)
 
 export async function fetchProperties(shopId: string, args: any) {
-    const limit = args.limit || 10;
-    let query = supabaseAdmin.from('properties')
-        .select('id, name, type, price, price_per_sqm, size_sqm, rooms, bedrooms, bathrooms, floor, district, city, status, is_featured, features, amenities, views_count, inquiries_count, created_at')
-        .eq('shop_id', shopId).eq('is_active', true).order('created_at', { ascending: false }).limit(limit);
+    const limit = Number.isFinite(Number(args.limit)) ? Math.min(100, Math.max(1, Math.floor(Number(args.limit)))) : 10;
+    const status = args.status || 'available';
+    const listingStatuses = ['available', 'reserved', 'sold', 'rented', 'barter'];
+    const unitStatuses = ['available', 'reserved', 'ordered', 'sold', 'handed_over'];
+    const types = ['apartment', 'house', 'office', 'land', 'commercial'];
+    const categories = ['residential', 'commercial', 'parking', 'industry'];
+    if (![...listingStatuses, ...unitStatuses, 'all'].includes(status)
+        || (args.type && !types.includes(args.type)) || (args.category && !categories.includes(args.category))) {
+        return { error: 'Байрны төрөл, ангилал эсвэл төлөв буруу байна.' };
+    }
+    const typeCategory = args.type === 'apartment' ? 'residential'
+        : ['office', 'commercial'].includes(args.type) ? 'commercial' : null;
+    if (args.category && args.type && args.category !== typeCategory) {
+        return { error: 'Байрны төрөл болон нэгжийн ангилал зөрж байна.' };
+    }
+    const category = args.category || typeCategory || 'residential';
+    const hasPriceFilter = args.min_price != null || args.max_price != null;
+    for (const key of ['min_price', 'max_price', 'rooms']) {
+        if (args[key] != null && (!Number.isFinite(Number(args[key])) || Number(args[key]) < 0)) {
+            return { error: 'Үнэ, өрөөний тоо эерэг тоо байх ёстой.' };
+        }
+    }
+    if (args.rooms != null && (Number(args.rooms) < 1 || !Number.isInteger(Number(args.rooms)))) {
+        return { error: 'Өрөөний тоо эерэг бүхэл тоо байх ёстой.' };
+    }
+    if (args.min_price != null && args.max_price != null && Number(args.min_price) > Number(args.max_price)) {
+        return { error: 'Үнийн доод хязгаар дээд хязгаараас их байна.' };
+    }
+    // PostgREST-ийн OR илэрхийлэлд хэрэглэгчийн текстийг шүүлтийн синтакс болгохгүй.
+    const search = args.name_search ? String(args.name_search).replace(/[%_*,()"'\\]/g, ' ').trim() : '';
+    if (args.name_search && !search) return { error: 'Хайх нэрээ тодорхой оруулна уу.' };
 
-    if (args.status) query = query.eq('status', args.status);
-    if (args.type) query = query.eq('type', args.type);
-    if (args.min_price) query = query.gte('price', args.min_price);
-    if (args.max_price) query = query.lte('price', args.max_price);
-    if (args.rooms) query = query.eq('rooms', args.rooms);
-    if (args.district) query = query.ilike('district', `%${args.district}%`);
-    if (args.name_search) query = query.ilike('name', `%${args.name_search}%`);
+    try {
+        // Нэгжид байршил/төслийн нэр байхгүй; зөвхөн тухайн shop-ийн төслөөр холбоно.
+        const projects = search || args.district || args.project_id
+            ? await fetchAllRows<{ id: string; name: string; district: string | null }>((from, to) => supabaseAdmin
+                .from('projects').select('id, name, district').eq('shop_id', shopId).order('id').range(from, to)) : [];
+        const projectById = new Map(projects.map(p => [p.id, p]));
+        const matchingProjectIds = projects.filter(p => p.name.toLowerCase().includes(search.toLowerCase())).map(p => p.id);
+        const districtProjectIds = projects.filter(p => p.district?.toLowerCase().includes(String(args.district).toLowerCase())).map(p => p.id);
 
-    const { data, error } = await query;
-    if (error) { logger.error('Property fetch error:', { error }); return []; }
+        const readListings = !args.phase && !args.block && !args.code
+            && !['parking', 'industry'].includes(category) && (status === 'all' || listingStatuses.includes(status));
+        const readUnits = !['house', 'land'].includes(args.type)
+            && (status === 'all' || unitStatuses.includes(status)) && (!args.district || districtProjectIds.length > 0);
+        let listingQuery = supabaseAdmin.from('properties')
+            .select('id, project_id, name, type, price, price_per_sqm, size_sqm, rooms, bedrooms, bathrooms, floor, district, city, status, is_featured, views_count, inquiries_count')
+            .eq('shop_id', shopId).eq('is_active', true).is('deleted_at', null)
+            .order('created_at', { ascending: false }).limit(limit);
+        if (status !== 'all' && listingStatuses.includes(status)) listingQuery = listingQuery.eq('status', status);
+        if (args.type) listingQuery = listingQuery.eq('type', args.type);
+        else if (args.category === 'commercial') listingQuery = listingQuery.in('type', ['office', 'commercial']);
+        else if (args.category === 'residential' || args.rooms != null) listingQuery = listingQuery.eq('type', 'apartment');
+        if (args.min_price != null) listingQuery = listingQuery.gte('price', Number(args.min_price));
+        if (args.max_price != null) listingQuery = listingQuery.lte('price', Number(args.max_price));
+        if (args.rooms != null) listingQuery = listingQuery.eq('rooms', Number(args.rooms));
+        if (args.project_id) listingQuery = listingQuery.eq('project_id', args.project_id);
+        if (args.district) listingQuery = listingQuery.ilike('district', `%${args.district}%`);
+        if (search) listingQuery = listingQuery.or(`name.ilike.%${search}%${matchingProjectIds.length ? `,project_id.in.(${matchingProjectIds.join(',')})` : ''}`);
 
-    return data?.map(p => ({
-        id: p.id, name: p.name, type: p.type, price: p.price,
-        priceFormatted: `${Number(p.price).toLocaleString()}₮`,
-        size_sqm: p.size_sqm, rooms: p.rooms, bedrooms: p.bedrooms, bathrooms: p.bathrooms,
-        floor: p.floor, district: p.district, city: p.city, status: p.status,
-        is_featured: p.is_featured, views_count: p.views_count, inquiries_count: p.inquiries_count,
-    })) || [];
+        let unitQuery = supabaseAdmin.from('property_units')
+            .select('id, project_id, phase, block, floor, code, unit_number, category, unit_type, rooms, sale_area, window_view, status')
+            .eq('shop_id', shopId).eq('category', category)
+            .order('phase', { ascending: true }).order('block', { ascending: true }).order('code', { ascending: true }).limit(limit);
+        if (status === 'sold') unitQuery = unitQuery.in('status', ['sold', 'handed_over']);
+        else if (status !== 'all' && unitStatuses.includes(status)) unitQuery = unitQuery.eq('status', status);
+        if (args.rooms != null) unitQuery = unitQuery.eq('rooms', Number(args.rooms));
+        for (const field of ['phase', 'block', 'code', 'project_id']) {
+            if (args[field]) unitQuery = unitQuery.eq(field, args[field]);
+        }
+        if (args.district && districtProjectIds.length) unitQuery = unitQuery.in('project_id', districtProjectIds);
+        if (search) unitQuery = unitQuery.or(`phase.ilike.%${search}%,block.ilike.%${search}%,code.ilike.%${search}%${matchingProjectIds.length ? `,project_id.in.(${matchingProjectIds.join(',')})` : ''}`);
+
+        const [listingResult, unitResult] = await Promise.all([
+            readListings ? listingQuery : Promise.resolve({ data: [], error: null }),
+            readUnits ? unitQuery : Promise.resolve({ data: [], error: null }),
+        ]);
+        if (listingResult.error) throw new Error(listingResult.error.message);
+        if (unitResult.error) throw new Error(unitResult.error.message);
+        const listings = (listingResult.data || []).map(p => ({
+            source: 'properties', id: p.id, project_id: p.project_id, name: p.name, type: p.type, price: p.price,
+            priceFormatted: p.price == null ? 'Үнэ бүртгэгдээгүй' : `${Number(p.price).toLocaleString()}₮`,
+            size_sqm: p.size_sqm, rooms: p.rooms, bedrooms: p.bedrooms, bathrooms: p.bathrooms,
+            floor: p.floor, district: p.district, city: p.city, status: p.status,
+            is_featured: p.is_featured, views_count: p.views_count, inquiries_count: p.inquiries_count,
+        }));
+        const units = (unitResult.data || []).map(u => ({
+            source: 'property_units', id: u.id, project_id: u.project_id,
+            name: [projectById.get(u.project_id)?.name, u.phase, u.block, u.unit_number || u.code].filter(Boolean).join(' · '),
+            type: u.category === 'residential' ? 'apartment' : u.category, category: u.category,
+            phase: u.phase, block: u.block, code: u.code, unit_number: u.unit_number, unit_type: u.unit_type,
+            rooms: u.rooms, size_sqm: u.sale_area, floor: u.floor, window_view: u.window_view, status: u.status,
+            district: projectById.get(u.project_id)?.district ?? null, price: null, priceFormatted: 'Үнэ бүртгэгдээгүй',
+        }));
+        // Үнэ байхгүй нэгжийг төсөвт багтсан гэж үзэхгүй, тусад нь тодорхойгүй хувилбараар өгнө.
+        if (hasPriceFilter && units.length) {
+            const unverifiedUnits = units.slice(0, Math.max(0, limit - listings.length));
+            return { properties: listings, unverifiedUnits,
+                message: `Үнийн шалгуурт тохирох ${listings.length} зар олдлоо; үнэ нь бүртгэгдээгүй ${unverifiedUnits.length} нэгжийн үнийг тодруулах шаардлагатай.`,
+                warning: 'Нэгжийн үнэ бүртгэгдээгүй тул unverifiedUnits нь үнийн шалгуур хангасныг батлахгүй. Үнэ тодруулах шаардлагатай. Жагсаалт хязгаартай, нийт нөөцийн тоо биш.', limit };
+        }
+        // Нөөцийг listing байгаа үед ч уншина. Хоёр хүснэгтийн ID-г source-оор ялгана.
+        return [...units, ...listings].slice(0, limit);
+    } catch (error) {
+        logger.error('Property inventory fetch error:', { error });
+        return { error: 'Байрны нөөцийн мэдээлэл уншиж чадсангүй. Энэ нь тохирох байр байхгүй гэсэн үг биш. Дахин оролдоно уу.' };
+    }
 }
 
 export async function fetchLeads(shopId: string, args: any, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
@@ -1543,8 +1627,9 @@ export function generateChartConfig(toolName: string, args: any, data: any): any
                 ]
             };
         case 'list_properties':
-            if (Array.isArray(data) && data.length > 0) {
-                return { type: 'bar', data: data.slice(0, 8).map((p: any) => ({ name: p.name?.substring(0, 15) || 'Байр', value: Number(p.price) || 0 })) };
+            if (Array.isArray(data)) {
+                const priced = data.filter((p: any) => p.price != null && Number.isFinite(Number(p.price)));
+                if (priced.length > 0) return { type: 'bar', data: priced.slice(0, 8).map((p: any) => ({ name: p.name?.substring(0, 15) || 'Байр', value: Number(p.price) })) };
             }
             return null;
         case 'list_leads':
