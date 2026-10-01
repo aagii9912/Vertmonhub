@@ -41,6 +41,7 @@ export const ALL_MODULES = [
     'customers',
     'customer-service',
     'finance',
+    'erp-imports',
     'procurement',
     'inbox',
     'reports',
@@ -63,6 +64,7 @@ export const MODULE_LABELS: Record<string, { en: string; mn: string }> = {
     'contracts': { en: 'Contracts', mn: 'Гэрээ' },
     'customers': { en: 'Customers', mn: 'Харилцагч' },
     'customer-service': { en: 'Feedback & Complaints', mn: 'Санал гомдол' },
+    'erp-imports': { en: 'ERP imports', mn: 'ERP импорт' },
     'finance': { en: 'Finance / ERP', mn: 'Санхүү' },
     'procurement': { en: 'Procurement', mn: 'Худалдан авалт' },
     'inbox': { en: 'Inbox', mn: 'Мессэж' },
@@ -99,7 +101,7 @@ export const ROLE_PERMISSIONS: Record<string, RolePermissions> = {
     sales_manager: {
         modules: [
             'dashboard', 'properties', 'leads', 'viewings', 'contracts',
-            'customers', 'customer-service', 'inbox', 'reports', 'reports-leads', 'ai-assistant',
+            'customers', 'customer-service', 'inbox', 'erp-imports', 'reports', 'reports-leads', 'ai-assistant',
         ],
         canWrite: true,
         canDelete: false,
@@ -120,7 +122,7 @@ export const ROLE_PERMISSIONS: Record<string, RolePermissions> = {
     },
     finance_manager: {
         modules: [
-            'dashboard', 'finance', 'procurement', 'contracts', 'reports',
+            'dashboard', 'finance', 'erp-imports', 'procurement', 'contracts', 'reports',
         ],
         canWrite: true,
         canDelete: true,
@@ -130,7 +132,7 @@ export const ROLE_PERMISSIONS: Record<string, RolePermissions> = {
     },
     accountant: {
         modules: [
-            'dashboard', 'finance', 'procurement', 'contracts', 'reports',
+            'dashboard', 'finance', 'erp-imports', 'procurement', 'contracts', 'reports',
         ],
         canWrite: true,
         canDelete: false,

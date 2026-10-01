@@ -192,6 +192,7 @@ export const SECONDARY_ROUTES: SecondaryRoute[] = [
     { name: 'Харилцагч', href: '/dashboard/customers', icon: Users, module: 'customers', group: 'Ажил', keywords: ['customer', 'crm'] },
     { name: 'Санал гомдол', href: '/dashboard/customer-service', icon: Headphones, module: 'customer-service', group: 'Ажил' },
 
+    { name: 'ERP импорт', href: '/dashboard/reports/erp', icon: ClipboardList, module: 'erp-imports', group: 'Санхүү', keywords: ['erp', 'импорт', 'snapshot'] },
     { name: 'Санхүү', href: '/dashboard/finance', icon: Wallet, module: 'finance', group: 'Санхүү', keywords: ['erp', 'мөнгө'] },
     { name: 'Санхүүгийн төслүүд', href: '/dashboard/finance/projects', icon: LayoutGrid, module: 'finance', group: 'Санхүү' },
     { name: 'Санхүүгийн тайлан', href: '/dashboard/finance/reports', icon: BarChart3, module: 'finance', group: 'Санхүү' },
