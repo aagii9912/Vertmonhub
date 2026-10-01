@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Shield, Plus, Trash2, Save, Loader2, X, Check, AlertCircle, Lock } from 'lucide-react';
 import { ALL_MODULES, MODULE_LABELS } from '@/lib/rbac';
 import { confirmToast } from '@/components/ui/Toast';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/Dialog';
 
 interface Role {
     id: string;
@@ -21,7 +22,8 @@ interface Role {
 export default function RolesPage() {
     const [roles, setRoles] = useState<Role[]>([]);
     const [loading, setLoading] = useState(true);
-    const [saving, setSaving] = useState<string | null>(null);
+    const [saving, setSaving] = useState<string[]>([]);
+    const pendingRoles = useRef(new Set<string>());
     const [error, setError] = useState<string | null>(null);
     const [success, setSuccess] = useState<string | null>(null);
 
@@ -48,47 +50,48 @@ export default function RolesPage() {
         finally { setLoading(false); }
     }
 
+    function startSaving(roleId: string) {
+        if (pendingRoles.current.has(roleId)) return false;
+        pendingRoles.current.add(roleId);
+        setSaving(prev => [...prev, roleId]);
+        return true;
+    }
+
+    function stopSaving(roleId: string) {
+        pendingRoles.current.delete(roleId);
+        setSaving(prev => prev.filter(id => id !== roleId));
+    }
+
+    async function updateRole(roleId: string, changes: Record<string, boolean | string[]>) {
+        if (!startSaving(roleId)) return;
+        try {
+            const res = await fetch(`/api/admin/roles/${roleId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(changes),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                if (data.role?.id !== roleId) throw new Error('Дүрийн хариу буруу байна');
+                setRoles(prev => prev.map(r => r.id === roleId ? data.role : r));
+            } else {
+                setError(data.error || 'Дүр шинэчлэгдсэнгүй');
+            }
+        } catch { setError('Шинэчлэхэд алдаа гарлаа'); }
+        finally { stopSaving(roleId); }
+    }
+
     async function toggleModule(roleId: string, module: string) {
         const role = roles.find(r => r.id === roleId);
         if (!role) return;
-
         const currentModules = role.role_permissions.map(rp => rp.module);
-        const newModules = currentModules.includes(module)
+        await updateRole(roleId, { modules: currentModules.includes(module)
             ? currentModules.filter(m => m !== module)
-            : [...currentModules, module];
-
-        setSaving(roleId);
-        try {
-            const res = await fetch(`/api/admin/roles/${roleId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ modules: newModules }),
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setRoles(prev => prev.map(r => r.id === roleId ? data.role : r));
-            } else {
-                const data = await res.json();
-                setError(data.error);
-            }
-        } catch { setError('Шинэчлэхэд алдаа гарлаа'); }
-        finally { setSaving(null); }
+            : [...currentModules, module] });
     }
 
     async function updateRoleField(roleId: string, field: string, value: boolean) {
-        setSaving(roleId);
-        try {
-            const res = await fetch(`/api/admin/roles/${roleId}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ [field]: value }),
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setRoles(prev => prev.map(r => r.id === roleId ? data.role : r));
-            }
-        } catch { setError('Шинэчлэхэд алдаа гарлаа'); }
-        finally { setSaving(null); }
+        await updateRole(roleId, { [field]: value });
     }
 
     async function createRole() {
@@ -97,7 +100,7 @@ export default function RolesPage() {
             return;
         }
 
-        setSaving('new');
+        if (!startSaving('new')) return;
         try {
             const res = await fetch('/api/admin/roles', {
                 method: 'POST',
@@ -119,7 +122,7 @@ export default function RolesPage() {
                 setError(data.error || 'Үүсгэхэд алдаа гарлаа');
             }
         } catch { setError('Сүлжээний алдаа'); }
-        finally { setSaving(null); }
+        finally { stopSaving('new'); }
     }
 
     async function deleteRole(roleId: string) {
@@ -129,8 +132,7 @@ export default function RolesPage() {
             confirmLabel: 'Устгах',
             destructive: true,
         });
-        if (!ok) return;
-        setSaving(roleId);
+        if (!ok || !startSaving(roleId)) return;
         try {
             const res = await fetch(`/api/admin/roles/${roleId}`, { method: 'DELETE' });
             if (res.ok) {
@@ -142,7 +144,7 @@ export default function RolesPage() {
                 setError(data.error || 'Устгахад алдаа гарлаа');
             }
         } catch { setError('Сүлжээний алдаа'); }
-        finally { setSaving(null); }
+        finally { stopSaving(roleId); }
     }
 
     if (loading) {
@@ -227,7 +229,7 @@ export default function RolesPage() {
                                         </td>
                                         {roles.map(role => {
                                             const hasModule = role.role_permissions.some(rp => rp.module === module);
-                                            const isSaving = saving === role.id;
+                                            const isSaving = saving.includes(role.id);
                                             return (
                                                 <td key={role.id} className="text-center px-3 py-3">
                                                     <button
@@ -270,6 +272,7 @@ export default function RolesPage() {
                                     <td key={role.id} className="text-center px-3 py-3">
                                         <button
                                             onClick={() => updateRoleField(role.id, 'can_write', !role.can_write)}
+                                            disabled={saving.includes(role.id)}
                                             className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all ${
                                                 role.can_write
                                                     ? 'bg-status-info border-transparent text-background'
@@ -291,6 +294,7 @@ export default function RolesPage() {
                                     <td key={role.id} className="text-center px-3 py-3">
                                         <button
                                             onClick={() => updateRoleField(role.id, 'can_delete', !role.can_delete)}
+                                            disabled={saving.includes(role.id)}
                                             className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all ${
                                                 role.can_delete
                                                     ? 'bg-status-danger border-transparent text-background'
@@ -305,13 +309,14 @@ export default function RolesPage() {
                             {/* canAccessAdmin */}
                             <tr className="hover:bg-surface-2/40">
                                 <td className="px-4 py-3 sticky left-0 bg-surface">
-                                    <p className="text-sm font-medium text-foreground">Admin хандалт</p>
-                                    <p className="text-[11px] text-muted-foreground/70">Админ самбарт нэвтрэх</p>
+                                    <p className="text-sm font-medium text-foreground">AI аудитын хандалт</p>
+                                    <p className="text-[11px] text-muted-foreground/70">Админ самбар зөвхөн super_admin-д нээлттэй</p>
                                 </td>
                                 {roles.map(role => (
                                     <td key={role.id} className="text-center px-3 py-3">
                                         <button
                                             onClick={() => updateRoleField(role.id, 'can_access_admin', !role.can_access_admin)}
+                                            disabled={saving.includes(role.id)}
                                             className={`w-8 h-8 rounded-lg border-2 flex items-center justify-center transition-all ${
                                                 role.can_access_admin
                                                     ? 'bg-brand border-transparent text-brand-fg'
@@ -335,7 +340,7 @@ export default function RolesPage() {
                                         ) : (
                                             <button
                                                 onClick={() => deleteRole(role.id)}
-                                                disabled={saving === role.id}
+                                                disabled={saving.includes(role.id)}
                                                 className="p-2 text-status-danger hover:text-status-danger hover:bg-status-danger-soft rounded-lg transition-colors"
                                             >
                                                 <Trash2 className="w-4 h-4" />
@@ -351,14 +356,15 @@ export default function RolesPage() {
 
             {/* Create Role Dialog */}
             {showCreate && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-surface rounded-2xl w-full max-w-xl">
+                <Dialog open onOpenChange={open => { if (!open && !saving.includes('new')) setShowCreate(false); }}>
+                    <DialogContent showCloseButton={false} className="bg-surface max-w-xl max-h-[calc(100vh-2rem)] overflow-y-auto p-0 gap-0 rounded-2xl">
                         <div className="flex items-center justify-between p-6 border-b border-border/60">
-                            <h2 className="text-lg font-bold text-foreground">Шинэ дүр үүсгэх</h2>
-                            <button onClick={() => setShowCreate(false)} className="p-2 hover:bg-surface-2 rounded-xl">
+                            <DialogTitle className="text-lg font-bold text-foreground">Шинэ дүр үүсгэх</DialogTitle>
+                            <button onClick={() => setShowCreate(false)} disabled={saving.includes('new')} aria-label="Хаах" className="p-2 hover:bg-surface-2 rounded-xl disabled:opacity-50">
                                 <X className="w-5 h-5 text-muted-foreground" />
                             </button>
                         </div>
+                        <DialogDescription className="sr-only">Шинэ дүрийн нэр, модулийн эрхийг тохируулах</DialogDescription>
                         <div className="p-6 space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div>
@@ -462,7 +468,7 @@ export default function RolesPage() {
                                         onChange={e => setNewRole(p => ({ ...p, can_access_admin: e.target.checked }))}
                                         className="w-4 h-4 rounded border-border-strong text-brand-strong focus:ring-brand"
                                     />
-                                    <span className="text-sm text-foreground">Admin хандалт</span>
+                                    <span className="text-sm text-foreground">AI аудитын хандалт</span>
                                 </label>
                             </div>
                         </div>
@@ -475,15 +481,15 @@ export default function RolesPage() {
                             </button>
                             <button
                                 onClick={createRole}
-                                disabled={saving === 'new'}
+                                disabled={saving.includes('new')}
                                 className="flex items-center gap-2 px-4 py-2 text-sm bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50"
                             >
-                                {saving === 'new' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                                {saving.includes('new') ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                                 Үүсгэх
                             </button>
                         </div>
-                    </div>
-                </div>
+                    </DialogContent>
+                </Dialog>
             )}
         </div>
     );

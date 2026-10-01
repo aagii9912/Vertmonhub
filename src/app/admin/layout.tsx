@@ -6,30 +6,31 @@ import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 import {
     LayoutDashboard, Users, Upload, Shield,
-    Settings, LogOut, ChevronRight, Menu, X, Target
+    Settings, LogOut, ChevronRight, Menu, X, Target, Globe
 } from 'lucide-react';
-
-const isDev = process.env.NODE_ENV === 'development';
 
 interface AdminLayoutProps {
     children: React.ReactNode;
 }
 
 const navItems = [
-    { href: '/admin', label: 'Хянах самбар', icon: LayoutDashboard },
+    { href: '/admin/dashboard', label: 'Хянах самбар', icon: LayoutDashboard },
     { href: '/admin/users', label: 'Хэрэглэгчид', icon: Users },
     { href: '/admin/sales-targets', label: 'Борлуулалтын төлөвлөгөө', icon: Target },
     { href: '/admin/roles', label: 'Дүрүүд', icon: Shield },
     { href: '/admin/import', label: 'Дата импорт', icon: Upload },
+    { href: '/admin/landing', label: 'Нүүр хуудас', icon: Globe },
     { href: '/admin/settings', label: 'Тохиргоо', icon: Settings },
 ];
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
     const router = useRouter();
     const pathname = usePathname();
-    const { isSignedIn, isLoaded } = useAuth();
+    const { user, isSignedIn, isLoaded } = useAuth();
+    const userId = user?.id;
+    const userRole = user?.role;
     const [loading, setLoading] = useState(true);
-    const [admin, setAdmin] = useState<{ email: string; role: string } | null>(null);
+    const [admin, setAdmin] = useState<{ userId: string; email: string; role: string } | null>(null);
     const [sidebarOpen, setSidebarOpen] = useState(false);
 
     // Allow login page to render without auth check
@@ -37,44 +38,48 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
 
     useEffect(() => {
         if (isLoginPage) {
+            setAdmin(null);
             setLoading(false);
             return;
         }
 
         if (!isLoaded) return;
 
+        setAdmin(null);
+
         if (!isSignedIn) {
-            router.push('/admin/login');
+            setLoading(false);
+            router.replace('/admin/login');
+            return;
+        }
+        if (!userId || userRole !== 'super_admin') {
+            setLoading(false);
+            router.replace('/dashboard');
             return;
         }
 
-        // Check if user is admin
-        checkAdmin();
-    }, [isLoaded, isSignedIn, isLoginPage]);
+        setLoading(true);
 
-    async function checkAdmin() {
-        try {
-            const res = await fetch('/api/admin/dashboard', {
-                credentials: 'include',
-                headers: { 'Cache-Control': 'no-cache' }
-            });
-
-            if (res.ok) {
-                const data = await res.json();
-                if (isDev) console.log('Admin verified:', data.admin?.email);
-                setAdmin(data.admin);
-            } else {
-                if (isDev) console.log('Not an admin, redirecting');
-                // Not an admin - redirect to regular dashboard
-                router.push('/dashboard');
+        let active = true;
+        async function checkAdmin() {
+            try {
+                const res = await fetch('/api/admin/settings', { cache: 'no-store' });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (active) setAdmin({ ...data.admin, userId: userId! });
+                } else {
+                    if (active) router.replace('/dashboard');
+                }
+            } catch (error) {
+                console.error('Admin check error:', error);
+                if (active) router.replace('/dashboard');
+            } finally {
+                if (active) setLoading(false);
             }
-        } catch (error) {
-            if (isDev) console.error('Admin check error:', error);
-            router.push('/dashboard');
-        } finally {
-            setLoading(false);
         }
-    }
+        void checkAdmin();
+        return () => { active = false; };
+    }, [isLoaded, isSignedIn, isLoginPage, router, userId, userRole]);
 
     // Login page renders without layout
     if (isLoginPage) {
@@ -89,7 +94,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         );
     }
 
-    if (!admin) {
+    if (!admin || !isSignedIn || userRole !== 'super_admin' || admin.userId !== userId) {
         return null;
     }
 
@@ -97,7 +102,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
         <div className="min-h-screen bg-surface-2">
             {/* Mobile sidebar overlay */}
             {sidebarOpen && (
-                <div
+                <button
+                    type="button"
+                    aria-label="Цэсийг хаах"
                     className="fixed inset-0 bg-black/50 z-40 lg:hidden"
                     onClick={() => setSidebarOpen(false)}
                 />
@@ -114,6 +121,8 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 <div className="h-16 flex items-center justify-between px-4 border-b border-background/10">
                     <span className="heading-display text-lg text-background">Vertmon Админ</span>
                     <button
+                        type="button"
+                        aria-label="Цэсийг хаах"
                         className="lg:hidden p-2 hover:bg-background/10 rounded-md"
                         onClick={() => setSidebarOpen(false)}
                     >
@@ -124,7 +133,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 {/* Navigation */}
                 <nav className="p-4 space-y-1">
                     {navItems.map((item) => {
-                        const isActive = pathname === item.href || (item.href !== '/admin' && pathname?.startsWith(item.href));
+                        const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
                         return (
                             <Link
                                 key={item.href}
@@ -146,7 +155,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-background/10">
                     <div className="flex items-center gap-3 px-4 py-2">
                         <div className="w-8 h-8 rounded-full bg-brand flex items-center justify-center text-sm font-medium text-brand-fg">
-                            {admin.email[0].toUpperCase()}
+                            {admin.email[0]?.toUpperCase() || 'A'}
                         </div>
                         <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium truncate text-background">{admin.email}</p>
@@ -168,6 +177,9 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                 {/* Top bar */}
                 <header className="h-16 bg-surface border-b border-border flex items-center justify-between px-4 lg:px-8">
                     <button
+                        type="button"
+                        aria-label="Цэс нээх"
+                        aria-expanded={sidebarOpen}
                         className="lg:hidden p-2 hover:bg-surface-2 rounded-lg"
                         onClick={() => setSidebarOpen(true)}
                     >
@@ -178,7 +190,7 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
                         <Link href="/admin" className="hover:text-foreground">Админ</Link>
                         <ChevronRight className="w-4 h-4" />
                         <span className="text-foreground font-medium">
-                            {navItems.find(n => pathname?.startsWith(n.href))?.label || 'Хянах самбар'}
+                        {navItems.find(n => pathname === n.href || pathname?.startsWith(n.href + '/'))?.label || 'Хянах самбар'}
                         </span>
                     </div>
 

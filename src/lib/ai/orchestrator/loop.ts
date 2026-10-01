@@ -16,6 +16,8 @@ import { streamResponse, responseText, toResponseInput, toResponseTools } from '
 import { describeOpenAIError } from '@/lib/ai/openai/client';
 import { ASK_USER_TOOL } from '@/lib/ai/claude/tools';
 import { AUTO_TOOL_NAMES, MUTATING_TOOL_NAMES } from '@/lib/ai/data-assistant/tools';
+import { supabaseAdmin } from '@/lib/supabase';
+import { canReadPrivateAttachment, isLegacyPublicAttachmentUrl, parsePrivateAttachmentUrl, PRIVATE_ATTACHMENT_BUCKET, type AttachmentAccess } from '@/lib/ai/private-attachments';
 
 const AUTO_SET = new Set(AUTO_TOOL_NAMES);
 import type { AgentId, Clarification, HistoryMessage, OrchestratorAttachment, OrchestratorContext, PendingAction, RunInterruption, TraceTool } from './types';
@@ -41,20 +43,11 @@ export function buildHistory(history?: HistoryMessage[], max = MAX_HISTORY): Ant
 }
 
 /**
- * SSRF хамгаалалт: хавсралтын URL нь ЗӨВХӨН манай Supabase storage-ийн public bucket
- * (upload route-ийн буцаадаг хаяг) байх ёстой — client-ээс ирсэн дурын URL-ийг сервер татахгүй.
+ * Private references are authorized before download. Legacy public references
+ * are restricted to this project's Storage origin; arbitrary URLs are rejected.
  */
 export function isAllowedAttachmentUrl(url: string): boolean {
-    const base = (process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
-    if (!base || typeof url !== 'string') return false;
-    try {
-        const u = new URL(url);
-        const b = new URL(base);
-        if (u.protocol !== b.protocol || u.host !== b.host) return false;
-        return u.pathname.startsWith('/storage/v1/object/public/products/') || u.pathname.startsWith('/storage/v1/object/public/property-images/');
-    } catch {
-        return false;
-    }
+    return !!parsePrivateAttachmentUrl(url) || isLegacyPublicAttachmentUrl(url);
 }
 
 function isImage(mime?: string): mime is 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' {
@@ -62,24 +55,37 @@ function isImage(mime?: string): mime is 'image/jpeg' | 'image/png' | 'image/gif
 }
 
 /** Хэрэглэгчийн мессеж + хавсралт (зураг/PDF inline base64) → content блокууд. */
-export async function buildUserContent(text: string, attachments?: OrchestratorAttachment[]): Promise<Anthropic.ContentBlockParam[]> {
+export async function buildUserContent(text: string, attachments?: OrchestratorAttachment[], access?: AttachmentAccess): Promise<Anthropic.ContentBlockParam[]> {
     if (!attachments || attachments.length === 0) return [{ type: 'text', text }];
-    const list = attachments.map((a, i) => `${i + 1}. ${a.name || 'файл'} — ${a.url}${a.mimeType ? ` (${a.mimeType})` : ''}`).join('\n');
+    const accessible: OrchestratorAttachment[] = [];
     const blocks: Anthropic.ContentBlockParam[] = [];
     for (const att of attachments) {
         if (!isImage(att.mimeType) && att.mimeType !== 'application/pdf') continue;
         if (!isAllowedAttachmentUrl(att.url)) continue;
         try {
-            const res = await fetch(att.url, { signal: AbortSignal.timeout(10_000), redirect: 'error' });
-            if (!res.ok) continue;
-            const buf = await res.arrayBuffer();
+            let buf: ArrayBuffer;
+            const parsed = parsePrivateAttachmentUrl(att.url);
+            if (parsed) {
+                if (!access) continue;
+                const db = supabaseAdmin();
+                if (!await canReadPrivateAttachment(db, att.url, access)) continue;
+                const { data, error } = await db.storage.from(PRIVATE_ATTACHMENT_BUCKET).download(parsed.path);
+                if (error || !data || data.type !== att.mimeType || data.size > 4 * 1024 * 1024) continue;
+                buf = await data.arrayBuffer();
+            } else {
+                const res = await fetch(att.url, { signal: AbortSignal.timeout(10_000), redirect: 'error' });
+                if (!res.ok) continue;
+                buf = await res.arrayBuffer();
+            }
             if (buf.byteLength > 8 * 1024 * 1024) continue;
+            accessible.push(att);
             const data = Buffer.from(buf).toString('base64');
             if (isImage(att.mimeType)) blocks.push({ type: 'image', source: { type: 'base64', media_type: att.mimeType, data } });
             else blocks.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data } });
-        } catch { /* татаж чадахгүй бол URL текстэд үлдэнэ */ }
+        } catch { /* Unauthorized or unavailable files are excluded from model input. */ }
     }
-    blocks.push({ type: 'text', text: `${text}\n\n[Хавсаргасан файлууд]:\n${list}\n(Бичлэгт хавсаргах бол attach_file-д яг дээрх URL-ийг өг.)` });
+    const list = accessible.map((a, i) => `${i + 1}. ${a.name || 'файл'} — ${a.url}${a.mimeType ? ` (${a.mimeType})` : ''}`).join('\n');
+    blocks.push({ type: 'text', text: list ? `${text}\n\n[Хавсаргасан файлууд]:\n${list}\n(Бичлэгт хавсаргах бол attach_file-д яг дээрх URL-ийг өг.)` : text });
     return blocks;
 }
 

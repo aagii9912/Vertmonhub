@@ -31,7 +31,7 @@ export async function runAgent(agent: AgentDefinition, task: string, ctx: Orches
     try {
         const tools = pickTools(dataToolsForPerms(ctx.perms), agentToolNames(agent, ctx.perms));
         const system = buildSystemBlocks(ctx, { personaOverride: agent.buildInstruction(undefined), includeDomainNotes: true });
-        const messages = [...buildHistory(ctx.history, 6), { role: 'user' as const, content: await buildUserContent(task, ctx.attachments) }];
+        const messages = [...buildHistory(ctx.history, 6), { role: 'user' as const, content: await buildUserContent(task, ctx.attachments, ctx) }];
         const r = await runLoop({
             model: FAST_MODEL, system, tools, messages, ctx, streamText: false, agentId: agent.id,
             agentLabel: { id: agent.id, name: agent.name, emoji: agent.emoji }, maxRounds: 6, effort: 'medium', maxTokens: 4000,

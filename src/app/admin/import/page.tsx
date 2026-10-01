@@ -544,7 +544,7 @@ export default function AdminImportPage() {
                         ) : (
                             <div>
                                 <p className="text-sm text-muted-foreground">Файл чирж тавих эсвэл сонгох</p>
-                                <p className="text-xs text-muted-foreground/70 mt-1">.csv, .xlsx, .xls дэмжинэ</p>
+                                <p className="text-xs text-muted-foreground/70 mt-1">.csv, .xlsx · 10 MB хүртэл</p>
                             </div>
                         )}
                     </div>

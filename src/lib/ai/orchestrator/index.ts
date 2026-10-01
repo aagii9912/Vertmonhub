@@ -56,7 +56,7 @@ export async function runOrchestrator(message: string, ctx: OrchestratorContext)
 
     // 3. Үндсэн loop.
     const system = buildSystemBlocks(ctx);
-    const messages = [...buildHistory(ctx.history), { role: 'user' as const, content: await buildUserContent(message, ctx.attachments) }];
+    const messages = [...buildHistory(ctx.history), { role: 'user' as const, content: await buildUserContent(message, ctx.attachments, ctx) }];
     const r = await runLoop({
         model: MAIN_MODEL, system, tools, messages, ctx, streamText: true,
         agentLabel: { id: 'main', name: MAIN_BADGE.name, emoji: MAIN_BADGE.emoji },

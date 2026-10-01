@@ -13,6 +13,7 @@ import { isLeadWorkQueue, workQueueFilter } from '@/lib/leads/work-queue';
 import { hasRealContractFields } from '@/lib/leads/contracts';
 import { resolveActiveManagerName, resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { createViewing, resolveViewingInput } from '@/lib/services/ViewingService';
+import { canReadPrivateAttachment, isLegacyPublicAttachmentUrl, parsePrivateAttachmentUrl } from '@/lib/ai/private-attachments';
 
 // Lazy admin client — built on first property access so missing env at
 // module-evaluation time (e.g. Next.js page-data collection) does not
@@ -1420,7 +1421,7 @@ async function resolveEntity(shopId: string, entityType: string, args: any): Pro
         return { id: data[0].id, label: data[0].name };
     }
     // contract
-    let q = supabaseAdmin.from('property_contracts').select('id, contract_number, customer_name').eq('shop_id', shopId);
+    let q = supabaseAdmin.from('property_contracts').select('id, contract_number, customer_name').eq('shop_id', shopId).is('deleted_at', null);
     if (byId) q = q.eq('id', byId);
     else if (args.contract_number) q = q.ilike('contract_number', `%${args.contract_number}%`);
     else q = q.ilike('customer_name', `%${args.entity_name || ''}%`);
@@ -1430,10 +1431,16 @@ async function resolveEntity(shopId: string, entityType: string, args: any): Pro
     return { id: data[0].id, label: data[0].customer_name || data[0].contract_number || 'гэрээ' };
 }
 
-export async function attachFile(shopId: string, args: any, confirm = false, salesManagerName = '') {
+export async function attachFile(shopId: string, args: any, confirm = false, salesManagerName = '', userId?: string, perms?: { role: string; modules?: string[] }) {
     const types = ['property', 'lead', 'customer', 'contract'];
     if (!args.entity_type || !types.includes(args.entity_type)) return { error: 'entity_type буруу (property/lead/customer/contract)' };
     if (!args.file_url) return { error: 'file_url шаардлагатай' };
+    const privateFile = parsePrivateAttachmentUrl(args.file_url);
+    if (privateFile) {
+        if (!userId || !perms || !await canReadPrivateAttachment(supabaseAdmin, args.file_url, { shopId, userId, perms })) return { error: 'Энэ файлыг хавсаргах эрх танд алга.' };
+    } else if (!isLegacyPublicAttachmentUrl(args.file_url)) {
+        return { error: 'Файлын хаяг зөвшөөрөгдөөгүй байна.' };
+    }
 
     const resolved = await resolveEntity(shopId, args.entity_type, args);
     if ('error' in resolved) return resolved;
@@ -1460,7 +1467,7 @@ export async function attachFile(shopId: string, args: any, confirm = false, sal
 
     // Байрны зураг бол properties.images[]-д давхар нэмнэ
     const isImage = (args.mime_type || '').startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(args.file_url);
-    if (args.entity_type === 'property' && isImage) {
+    if (!privateFile && args.entity_type === 'property' && isImage) {
         const { data: prop } = await supabaseAdmin.from('properties').select('images').eq('id', resolved.id).single();
         const images = Array.isArray(prop?.images) ? prop!.images : [];
         if (!images.includes(args.file_url)) {

@@ -269,7 +269,7 @@ Vercel runs in UTC, so `new Date().setHours(0,0,0,0)` on the server is 08:00 Ula
 - Every business `/api/*` handler self-authenticates: reads use `requireModule(...)` / `requireAnyModule([...])`, writes `requireModuleWrite(...)`, deletes `requireModuleDelete(...)` (`src/lib/auth/require-permission.ts`), then `getUserShop()` (validates `x-shop-id` against owner ∪ `shop_members`). A generic write/delete flag alone is insufficient. Personal tasks/preferences/conversations keep self scope. Public landing-page edits are super_admin only.
 - Cron routes use `isAuthorizedCron()` (`src/lib/auth/cron.ts`): timing-safe compare, **fails closed** unless `NODE_ENV === 'development'`. `CRON_SECRET` must be set in Vercel prod. Secrets/signatures are compared with `safeEqual` (`src/lib/crypto/safe-equal.ts`).
 - `PATCH` bodies never go straight into `.update()` — use a Zod allow-list (see `UpdatePaymentScheduleSchema`).
-- Storage: the `products` bucket policies are shop-folder scoped (migration `20260911120000`); server uploads go through `/api/dashboard/upload` (MIME allow-list, ≤4MB) and `/api/properties/upload`.
+- Storage: public listing images use `/api/properties/upload`. AI images/PDFs use `/api/dashboard/upload` (MIME allow-list, ≤4MB) and the private `ai-attachments` bucket. Stable private links recheck identity, shop membership and the linked entity module on every download; unlinked uploads require their uploader plus AI access. Private attachments never enter public `properties.images`. Attachment metadata and private Storage objects are server-only.
 - DM bot (`ToolExecutor.check_payment_status`) only reveals contract finances when **contract number + registered phone both match**; `request_human_support` pauses the bot (`ai_paused_until` +30 min).
 - Browser code never hand-writes `x-shop-id` or reads `vertmonhub_active_shop_id` — use `dashboardFetch`/`dashboardJson`/`dashboardMutate` (lint-enforced).
 
@@ -293,6 +293,8 @@ ai-assistant, ai-settings, settings
 Static fallback roles: `super_admin`, `admin`, `sales_manager`, `marketing`, `viewer`. Server permission resolution uses `fetchRolePermissions(role, db, true)`: database errors and missing role definitions deny access, and cached permissions are not used. Only a missing `super_admin` definition retains its static fallback (the audited live `super_admin` has no `roles` row). `admin` does not bypass dynamic module permissions.
 
 RBAC remediation (2026-09-28): `docs/RBAC-FIX-2026-09-28.md`. Migration `20260928120000_rbac_api_boundary.sql` makes business writes server-only, restricts browser reads by module + shop, protects role assignments and app Storage buckets. Deploy companion API changes **before** applying it: surveys and marketing channels/contracts now use the guarded service client. Existing role assignments and module grants are not changed. Run `npm run test:rbac` for disposable PostgreSQL policy/privilege regressions; `rls-audit.mjs` alone does not verify role operations.
+
+Admin review remediation (2026-09-30): `docs/ADMIN-RBAC-FIX-2026-09-30.md`. Independent migration `20260930120000_admin_rbac_private_attachments.sql` closes browser role/membership writes and webhook/attachment metadata access, and creates the private attachment bucket. It was applied and recorded live on 2026-09-30; the broader `20260928120000` migration still requires its companion deployment. API and AI role changes share actor/self-change validation and checked provisioning with compensating cleanup; existing accounts keep passwords and profiles. Admin UI responses are identity/scope guarded and role saves serialize per role.
 
 ---
 
@@ -321,18 +323,18 @@ Bulk CSV/Excel import for onboarding a new project's data. UI: `src/app/admin/im
 
 | Category | Destination | Read by |
 |----------|-------------|---------|
-| `properties` | `properties` table (insert; re-import updates by `shop_id`+`name`) | DM AI `search_properties`, dashboard |
+| `properties` | `properties` table (insert; re-import resolves an active row by shop/project/name and updates by scoped ID) | DM AI `search_properties`, dashboard |
 | `leads` | `leads` table — real columns (`customer_name`/`customer_phone`/`customer_email`/`budget_max`, `status` = `lead_status` enum). Existing phones are skipped, never overwritten | CRM |
-| `contracts` | `property_contracts` — real columns (`customer_name`/`unit_number`/`prepayment_paid`/`paid_amount`/`balance`, `contract_status` = `active\|closed\|cancelled`). Re-import updates by `contract_number` | dashboard/contracts |
+| `contracts` | `property_contracts` — real columns (`customer_name`/`unit_number`/`prepayment_paid`/`paid_amount`/`balance`, `contract_status` = `active\|closed\|cancelled`). Re-import updates the active scoped ID and preserves existing paid/advance values | dashboard/contracts |
 | `faq` | `shop_faqs` (upsert by question) | `WebhookService.getAIFeatures` → DM AI |
 | `company`, `project`, `payment_policy`, `loan_info`, `amenities`, `ai_extra` | `shops.custom_knowledge` JSONB (merge, keys prefixed by project slug e.g. `mandala_garden_payment`) + `ai_knowledge_base` as structured archive | `PromptService.buildDynamicKnowledge` → DM AI prompt |
 
 Rules that must not regress:
 - **`shops.custom_knowledge` + `shop_faqs` + `properties` are the ONLY sources the FB/IG DM AI reads.** `ai_knowledge_base` is an archive (only competitors routes read it) — never write AI-facing knowledge only there.
-- `projectId` is validated server-side against `projects` (must belong to the posted `shopId`) and stamped best-effort onto `properties`/`leads`/`property_contracts` (`project_id`, migration `20260707120000`); inserts retry without optional columns when a migration hasn't been applied yet.
+- `projectId` is validated server-side against `projects` (must belong to the posted `shopId`) and stamped onto `properties`/`leads`/`property_contracts` (`project_id`, migration `20260707120000`). Missing scope columns stop import; retries never remove `project_id`. Ambiguous legacy/duplicate matches become row errors. Contract re-import reads paid totals before writes and compares the paid value during update so concurrent receipts win.
 - The `project` import category also upserts into the `projects` table (by `shop_id`+`name`) so imported projects appear in the project dropdown.
 - `POST /api/admin/projects` requires an explicit `shop_id` when more than one shop exists (never silently attaches to the first shop).
-- Excel date cells arrive as `Date` objects or serials — always go through `toDateStr`.
+- Excel date cells arrive as `Date` objects or serials — always go through `toDateStr`. Invalid calendar dates become row errors so valid rows can import.
 - **Excel I/O goes through `src/lib/utils/xlsx.ts`** (`readSheetRows`, `readSheetCsv`, `buildWorkbookBuffer`, built on `exceljs`; SheetJS `xlsx` was removed for an unfixable prototype-pollution/ReDoS advisory). `.xls` (Excel 97-2003) is **not** readable — upload routes return 400 asking for `.xlsx`/`.csv`; CSV/TSV is parsed via `csv-parse`.
 
 ---

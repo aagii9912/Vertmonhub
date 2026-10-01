@@ -142,7 +142,7 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'create_contract': result = await createContract(shopId, args, confirm, userName); break;
         case 'delete_contract': result = await deleteContract(shopId, args, confirm); break;
         case 'delete_customer': result = await deleteCustomer(shopId, args, confirm); break;
-        case 'attach_file': result = await attachFile(shopId, args, confirm, userName); break;
+        case 'attach_file': result = await attachFile(shopId, args, confirm, userName, userId, perms); break;
         case 'bulk_update_leads': result = await bulkUpdateLeads(shopId, args, confirm); break;
         case 'get_marketing_summary': result = await fetchMarketingSummary(shopId, args); break;
         case 'get_marketing_budget_status': result = await fetchMarketingBudgetStatus(shopId, args); break;
@@ -181,7 +181,7 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'list_vendor_bills': result = await listBillsTool(shopId, args); break;
         case 'pay_vendor_bill': result = await payBillTool(shopId, args, confirm); break;
         case 'invite_user': result = await inviteUser(shopId, args, confirm, userId); break;
-        case 'assign_role': result = await assignRole(shopId, args, confirm); break;
+        case 'assign_role': result = await assignRole(shopId, args, confirm, userId); break;
         case 'create_role': result = await createRole(shopId, args, confirm); break;
         default: return { error: `Unknown tool: ${toolName}` };
     }

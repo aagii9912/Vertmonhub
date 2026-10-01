@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Target, Loader2, Save, TrendingUp, Users, Check, Plus } from 'lucide-react';
@@ -42,6 +42,11 @@ export default function SalesTargetsAdminPage() {
     const [loading, setLoading] = useState(false);
     const [savingTarget, setSavingTarget] = useState(false);
     const [savingRoster, setSavingRoster] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [loadedScope, setLoadedScope] = useState<string | null>(null);
+    const loadRequest = useRef(0);
+    const scopeReady = loadedScope === `${shopId}:${year}` && !loading && !error;
+    const saving = savingTarget || savingRoster;
 
     const nowYear = new Date().getFullYear();
     const yearOptions = [nowYear - 1, nowYear, nowYear + 1];
@@ -52,32 +57,47 @@ export default function SalesTargetsAdminPage() {
             try {
                 const res = await fetch('/api/admin/shops');
                 const d = await res.json();
+                if (!res.ok) throw new Error(d.error || 'Байгууллагууд ачаалагдсангүй');
                 const list = d.shops || [];
                 setShops(list);
                 if (list.length && !shopId) setShopId(list[0].id);
-            } catch { /* ignore */ }
+                if (!list.length) setError('Байгууллага бүртгэгдээгүй байна');
+            } catch (cause) {
+                setError(cause instanceof Error ? cause.message : 'Байгууллагууд ачаалагдсангүй');
+            }
         })();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const loadData = useCallback(async () => {
+    const loadData = useCallback(async (panel: 'all' | 'targets' | 'roster' = 'all') => {
         if (!shopId) return;
+        const request = ++loadRequest.current;
         setLoading(true);
+        setError(null);
         try {
             const res = await fetch(`/api/admin/sales-targets?shopId=${shopId}&year=${year}`);
             const d = await res.json();
-            setTeamTarget(d.teamTarget || Array(12).fill(0));
+            if (request !== loadRequest.current) return;
+            if (!res.ok) throw new Error(d.error || 'Төлөвлөгөө ачаалагдсангүй');
+            if (panel !== 'roster') setTeamTarget(d.teamTarget || Array(12).fill(0));
             setTeamActual(d.teamActual || Array(12).fill(0));
-            setManagers(d.managers || []);
-            setTeamMembers(d.teamMembers || []);
-        } catch {
-            setManagers([]);
+            if (panel !== 'targets') {
+                setManagers(d.managers || []);
+                setTeamMembers(d.teamMembers || []);
+            }
+            setLoadedScope(`${shopId}:${year}`);
+        } catch (cause) {
+            if (request === loadRequest.current) setError(cause instanceof Error ? cause.message : 'Төлөвлөгөө ачаалагдсангүй');
         } finally {
-            setLoading(false);
+            if (request === loadRequest.current) setLoading(false);
         }
     }, [shopId, year]);
 
-    useEffect(() => { loadData(); }, [loadData]);
+    useEffect(() => {
+        const requests = loadRequest;
+        void loadData();
+        return () => { requests.current++; };
+    }, [loadData]);
 
     function setMonth(idx: number, value: string) {
         const next = [...teamTarget];
@@ -86,26 +106,31 @@ export default function SalesTargetsAdminPage() {
     }
 
     async function saveTarget() {
+        if (!scopeReady || saving) return;
         setSavingTarget(true);
         try {
-            await fetch('/api/admin/sales-targets', {
+            const res = await fetch('/api/admin/sales-targets', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ shopId, year, months: teamTarget }),
             });
-            await loadData();
+            if (!res.ok) throw new Error((await res.json()).error || 'Төлөвлөгөө хадгалагдсангүй');
+            await loadData('targets');
+            toast.success('Төлөвлөгөө хадгалагдлаа');
+        } catch (cause) {
+            toast.error(cause instanceof Error ? cause.message : 'Төлөвлөгөө хадгалагдсангүй');
         } finally {
             setSavingTarget(false);
         }
     }
 
     function toggleManager(name: string) {
+        if (!scopeReady || savingRoster) return;
         setManagers((prev) => prev.map((m) => (m.name === name ? { ...m, is_active: !m.is_active } : m)));
     }
 
     async function persistRoster(list: ManagerRow[]) {
-        try {
-            const res = await fetch('/api/admin/sales-targets', {
+        const res = await fetch('/api/admin/sales-targets', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -113,23 +138,24 @@ export default function SalesTargetsAdminPage() {
                     managers: list.map((m) => ({ name: m.name, is_active: m.is_active, user_id: m.user_id })),
                 }),
             });
-            if (!res.ok) throw new Error('Менежерийн жагсаалт хадгалагдсангүй');
-            await Promise.all([
+        if (!res.ok) throw new Error((await res.json()).error || 'Менежерийн жагсаалт хадгалагдсангүй');
+        await Promise.all([
                 queryClient.invalidateQueries({ queryKey: ['managers', shopId] }),
                 queryClient.invalidateQueries({ queryKey: ['director', shopId] }),
                 queryClient.invalidateQueries({ queryKey: ['kpi-report', shopId] }),
                 queryClient.invalidateQueries({ queryKey: ['my-stats', shopId] }),
-            ]);
-        } catch {
-            toast.error('Менежерийн жагсаалт хадгалагдсангүй');
-        }
-        await loadData();
+        ]);
+        await loadData('roster');
     }
 
     async function saveRoster() {
+        if (!scopeReady || saving) return;
         setSavingRoster(true);
         try {
             await persistRoster(managers);
+            toast.success('Менежерийн жагсаалт хадгалагдлаа');
+        } catch (cause) {
+            toast.error(cause instanceof Error ? cause.message : 'Менежерийн жагсаалт хадгалагдсангүй');
         } finally {
             setSavingRoster(false);
         }
@@ -137,6 +163,7 @@ export default function SalesTargetsAdminPage() {
 
     // Шинэ борлуулалтын менежер нэмэх (ростерт шингээж шууд хадгална)
     async function addManager(name: string, userId: string | null) {
+        if (!scopeReady || saving) return;
         const trimmed = name.trim();
         if (!trimmed) return;
         if (managers.some((m) => m.name === trimmed)) {
@@ -152,6 +179,11 @@ export default function SalesTargetsAdminPage() {
         setSavingRoster(true);
         try {
             await persistRoster(next);
+            toast.success('Менежер нэмэгдлээ');
+        } catch (cause) {
+            setManagers(managers);
+            setNewManagerName(trimmed);
+            toast.error(cause instanceof Error ? cause.message : 'Менежер нэмэгдсэнгүй');
         } finally {
             setSavingRoster(false);
         }
@@ -186,7 +218,7 @@ export default function SalesTargetsAdminPage() {
 
             {/* Toolbar */}
             <div className="flex flex-wrap items-center gap-3">
-                <Select value={shopId} onValueChange={setShopId}>
+                <Select value={shopId} onValueChange={setShopId} disabled={saving}>
                     <SelectTrigger className="h-9 w-56 text-sm" aria-label="Компани сонгох">
                         <SelectValue placeholder="Компани сонгох" />
                     </SelectTrigger>
@@ -196,7 +228,7 @@ export default function SalesTargetsAdminPage() {
                         ))}
                     </SelectContent>
                 </Select>
-                <Select value={String(year)} onValueChange={(v) => setYear(Number(v))}>
+                <Select value={String(year)} onValueChange={(v) => setYear(Number(v))} disabled={saving}>
                     <SelectTrigger className="h-9 w-28 text-sm" aria-label="Он сонгох">
                         <SelectValue />
                     </SelectTrigger>
@@ -208,7 +240,11 @@ export default function SalesTargetsAdminPage() {
                 </Select>
             </div>
 
-            {loading ? (
+            {error ? (
+                <div role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger-soft p-4 text-sm text-status-danger">
+                    {error} <button onClick={() => shopId ? void loadData() : window.location.reload()} className="ml-2 font-semibold underline">Дахин ачаалах</button>
+                </div>
+            ) : loading || !scopeReady ? (
                 <div className="flex items-center justify-center py-16">
                     <Loader2 className="h-6 w-6 animate-spin text-brand" />
                 </div>
@@ -239,6 +275,7 @@ export default function SalesTargetsAdminPage() {
                                         <input
                                             type="text"
                                             inputMode="numeric"
+                                            disabled={savingTarget}
                                             value={val ? val.toLocaleString('en-US') : ''}
                                             onChange={(e) => setMonth(i, e.target.value)}
                                             placeholder="0"
@@ -260,7 +297,7 @@ export default function SalesTargetsAdminPage() {
                             )}
 
                             <div className="flex justify-end">
-                                <Button onClick={saveTarget} isLoading={savingTarget} variant="primary" size="sm">
+                                <Button onClick={saveTarget} disabled={!scopeReady || saving} isLoading={savingTarget} variant="primary" size="sm">
                                     {!savingTarget && <Save className="h-4 w-4" />} Төлөвлөгөө хадгалах
                                 </Button>
                             </div>
@@ -291,6 +328,7 @@ export default function SalesTargetsAdminPage() {
                                         <button
                                             key={m.name}
                                             onClick={() => toggleManager(m.name)}
+                                            disabled={savingRoster}
                                             className={`flex w-full items-center justify-between gap-3 rounded-lg border px-3 py-2 text-left transition-colors ${
                                                 m.is_active
                                                     ? 'border-brand/40 bg-brand-soft/30'
@@ -339,7 +377,7 @@ export default function SalesTargetsAdminPage() {
                                             <button
                                                 key={t.id}
                                                 onClick={() => addManager(t.full_name, t.id)}
-                                                disabled={savingRoster}
+                                                disabled={!scopeReady || saving}
                                                 className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-xs text-foreground hover:border-brand hover:text-brand disabled:opacity-50"
                                             >
                                                 <Plus className="h-3 w-3" /> {t.full_name}
@@ -350,6 +388,7 @@ export default function SalesTargetsAdminPage() {
                                 <div className="flex gap-2">
                                     <input
                                         type="text"
+                                        disabled={savingRoster}
                                         value={newManagerName}
                                         onChange={(e) => setNewManagerName(e.target.value)}
                                         onKeyDown={(e) => { if (e.key === 'Enter') addManager(newManagerName, null); }}
@@ -361,7 +400,7 @@ export default function SalesTargetsAdminPage() {
                                         isLoading={savingRoster}
                                         variant="secondary"
                                         size="sm"
-                                        disabled={!newManagerName.trim() || savingRoster}
+                                        disabled={!newManagerName.trim() || !scopeReady || saving}
                                     >
                                         {!savingRoster && <Plus className="h-4 w-4" />} Нэмэх
                                     </Button>
@@ -370,7 +409,7 @@ export default function SalesTargetsAdminPage() {
 
                             {managers.length > 0 && (
                                 <div className="flex justify-end">
-                                    <Button onClick={saveRoster} isLoading={savingRoster} variant="secondary" size="sm">
+                                    <Button onClick={saveRoster} disabled={!scopeReady || saving} isLoading={savingRoster} variant="secondary" size="sm">
                                         {!savingRoster && <Save className="h-4 w-4" />} Идэвхтэй жагсаалт хадгалах
                                     </Button>
                                 </div>

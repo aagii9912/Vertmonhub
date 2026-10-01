@@ -117,6 +117,7 @@ describe('toDateStr', () => {
         expect(toDateStr('2026-01-15')).toBe('2026-01-15');
         expect(toDateStr('2026.1.5')).toBe('2026-01-05');
         expect(toDateStr('2026/01/15')).toBe('2026-01-15');
+        expect(toDateStr('1/15/2026')).toBe('2026-01-15');
     });
 
     it('буруу утгад null буцаана', () => {
@@ -130,6 +131,14 @@ describe('toDateStr', () => {
         expect(toDateStr('2026.13.05')).toBeNull();
         expect(toDateStr('2026-01-45')).toBeNull();
         expect(toDateStr('2026-00-10')).toBeNull();
+    });
+
+    it('календарийн боломжгүй огноо болон дутуу текстийг хүлээж авахгүй', () => {
+        for (const value of ['2026-02-31', '2026-02-29', '2026-04-31', '2026-01-15garbage', '02/31/2026']) {
+            expect(toDateStr(value)).toBeNull();
+        }
+        expect(toDateStr('2024-02-29')).toBe('2024-02-29');
+        expect(toDateStr('2026-01-15T00:00:00Z')).toBe('2026-01-15');
     });
 });
 
@@ -361,6 +370,12 @@ describe('mapContractRow — property_contracts-ийн жинхэнэ баган
         expect(error).toContain('сөрөг');
     });
 
+    it('хүчингүй гэрээний огноог мөрийн алдаа болгоно', () => {
+        const row = { contract_number: 'C-1', buyer_name: 'Buyer', property_name: 'A-101', total_price: 100 };
+        expect(mapContractRow({ ...row, contract_date: '2026-02-31' }, 7).error).toContain('Мөр 7: Гэрээний огноо буруу');
+        expect(mapContractRow({ ...row, contract_date: '2024-02-29' }, 7).data?.contract_date).toBe('2024-02-29');
+    });
+
     it('provided = зөвхөн файлд байсан баганууд (Урьдчилгаагүй файл төлбөрийн явцыг дарахгүй)', () => {
         const { provided } = mapContractRow({
             'Гэрээний дугаар': 'C-1', 'Худалдан авагч': 'X', 'Байрны нэр': 'Y', 'Нийт үнэ': '100',
@@ -429,6 +444,11 @@ describe('мэдлэгийн текст бүтээгчид', () => {
 
     it('нэргүй төслийг алдаа болгоно', () => {
         expect(buildProjectKnowledge({}, 5).error).toContain('Мөр 5');
+    });
+
+    it('хүчингүй төслийн огноог AI мэдлэг рүү бичихгүй', () => {
+        expect(buildProjectKnowledge({ name: 'Project', 'Start Date': '2026-02-31' }, 4).error).toContain('Мөр 4: Төслийн огноо буруу');
+        expect(buildProjectKnowledge({ name: 'Project', 'Delivery Date': '2026-04-31' }, 5).error).toContain('Мөр 5');
     });
 
     it('төлбөрийн бодлого — хуучин typo толгой мөрүүдийг мөн уншина', () => {

@@ -4,6 +4,9 @@ import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logAdminAudit } from '@/lib/admin/audit';
 import { getAdminUser } from '@/lib/admin/auth';
+import { adminUserInput, checkRoleAssignment, isAssignableRole, provisionUserAccess, resolveTargetShop } from '@/lib/admin/user-provisioning';
+import { fetchAllRows } from '@/lib/utils/pagination';
+import type { User } from '@supabase/supabase-js';
 
 /**
  * Үүсгэсэн/шинэчилсэн нууц үгээр нэвтрэлт БОДИТООР ажиллаж буйг сервер талд
@@ -46,26 +49,29 @@ export async function GET() {
         if (!admin) return NextResponse.json({ error: 'Admin required' }, { status: 403 });
 
         // Get all users via Supabase Admin API
-        const { data: { users: authUsers }, error: authError } = await supabase.auth.admin.listUsers({
-            perPage: 1000,
-        });
-
-        if (authError) {
-            console.error('Admin listUsers error:', authError);
-            throw authError;
+        const authUsers: User[] = [];
+        for (let page = 1; ; page++) {
+            const { data, error } = await supabase.auth.admin.listUsers({ page, perPage: 1000 });
+            if (error) throw error;
+            authUsers.push(...data.users);
+            if (data.users.length < 1000) break;
         }
 
         // Get all roles
-        const { data: roles } = await supabase
-            .from('user_roles')
-            .select('user_id, role');
+        const [roles, profiles] = await Promise.all([
+            fetchAllRows<{ user_id: string; role: string }>((from, to) =>
+                supabase.from('user_roles').select('user_id, role').range(from, to)),
+            fetchAllRows<{ id: string; full_name: string | null }>((from, to) =>
+                supabase.from('user_profiles').select('id, full_name').range(from, to)),
+        ]);
 
         const roleMap = new Map((roles || []).map(r => [r.user_id, r.role]));
+        const profileMap = new Map((profiles || []).map(p => [p.id, p.full_name]));
 
         const users = (authUsers || []).map(u => ({
             id: u.id,
             email: u.email || '',
-            full_name: u.user_metadata?.full_name || null,
+            full_name: profileMap.get(u.id) || u.user_metadata?.full_name || null,
             role: roleMap.get(u.id) || 'viewer',
             created_at: u.created_at,
         }));
@@ -92,13 +98,17 @@ export async function PATCH(request: NextRequest) {
 
         // Check admin
         const admin = await getAdminUser();
-        if (!admin) return NextResponse.json({ error: 'Admin required' }, { status: 403 });
+        if (!admin || admin.role !== 'super_admin') return NextResponse.json({ error: 'Super admin эрх шаардлагатай' }, { status: 403 });
 
         const { userId: targetUserId, role } = await request.json();
 
-        if (!targetUserId || !role) {
-            return NextResponse.json({ error: 'userId and role required' }, { status: 400 });
-        }
+        if (typeof targetUserId !== 'string' || !targetUserId)
+            return NextResponse.json({ error: 'Хэрэглэгч эсвэл дүр буруу байна' }, { status: 400 });
+        const denied = await checkRoleAssignment(supabase, userId, targetUserId, role);
+        if (denied) return NextResponse.json({ error: denied.error }, { status: denied.status });
+        const { data: target, error: targetError } = await supabase.auth.admin.getUserById(targetUserId);
+        if (targetError || !target?.user)
+            return NextResponse.json({ error: 'Хэрэглэгч олдсонгүй' }, { status: 404 });
 
         // Upsert role
         const { error } = await supabase
@@ -133,19 +143,22 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { full_name, role, shop_id } = body;
         // Автомат бөглөлт/хуулбарлалтын үл үзэгдэх хоосон зайг арилгана —
         // эс бөгөөс хэрэглэгч мэдэгдсэнээс өөр нууц үгтэй үүсдэг
-        const email = typeof body.email === 'string' ? body.email.trim() : body.email;
+        const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : body.email;
         const password = typeof body.password === 'string' ? body.password.trim() : body.password;
-
-        if (!email || !password) {
-            return NextResponse.json({ error: 'Имэйл болон нууц үг шаардлагатай' }, { status: 400 });
+        const parsed = adminUserInput.safeParse({ ...body, email });
+        if (!parsed.success || typeof password !== 'string') {
+            return NextResponse.json({ error: 'Имэйл, дүр эсвэл байгууллагын мэдээлэл буруу байна' }, { status: 400 });
         }
-
         if (password.length < 8) {
             return NextResponse.json({ error: 'Нууц үг хамгийн багадаа 8 тэмдэгт байх ёстой' }, { status: 400 });
         }
+        const { full_name, role } = parsed.data;
+        if (!await isAssignableRole(supabase, role))
+            return NextResponse.json({ error: 'Сонгосон дүр олдсонгүй' }, { status: 400 });
+        const shop = await resolveTargetShop(supabase, parsed.data.shop_id);
+        if (!shop.id) return NextResponse.json({ error: shop.error }, { status: 400 });
 
         // Create user via Supabase Admin API
         const { data: newUser, error: createError } = await supabase.auth.admin.createUser({
@@ -170,50 +183,14 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Хэрэглэгч үүсгэх үед алдаа: ' + createError.message }, { status: 500 });
         }
 
-        const newUserId = newUser.user.id;
+        const newUserId = newUser?.user?.id;
+        if (!newUserId) return NextResponse.json({ error: 'Хэрэглэгчийн бүртгэл бүрэн үүссэнгүй' }, { status: 500 });
+        const provisioningError = await provisionUserAccess(supabase, {
+            actorId: userId, userId: newUserId, email, fullName: full_name, role, shopId: shop.id, isNew: true,
+        });
+        if (provisioningError) return NextResponse.json(provisioningError, { status: provisioningError.status });
 
-        // Create user_profiles entry
-        await supabase.from('user_profiles').upsert({
-            id: newUserId,
-            email,
-            full_name: full_name || email,
-        }, { onConflict: 'id' });
-
-        // Assign role if provided
         const warnings: string[] = [];
-        if (role) {
-            const { error: roleErr } = await supabase
-                .from('user_roles')
-                .upsert({ user_id: newUserId, role }, { onConflict: 'user_id' });
-
-            if (roleErr) {
-                warnings.push('Дүр оноох үед алдаа: ' + roleErr.message);
-                console.error('Role assignment warning:', roleErr.message);
-            }
-        }
-
-        // Shop-д гишүүнээр оноох. shop_id өгөгдсөн бол түүнийг, эс бөгөөс ганц л shop
-        // байвал автоматаар тэр shop-д холбоно (нэг төслийн дотоод системд хялбар болгох).
-        let targetShopId: string | null = shop_id || null;
-        if (!targetShopId) {
-            const { data: shopRows } = await supabase.from('shops').select('id').limit(2);
-            if (shopRows && shopRows.length === 1) {
-                targetShopId = shopRows[0].id;
-            }
-        }
-
-        if (targetShopId) {
-            const { error: memberErr } = await supabase
-                .from('shop_members')
-                .upsert(
-                    { shop_id: targetShopId, user_id: newUserId, role: 'member' },
-                    { onConflict: 'shop_id,user_id' }
-                );
-            if (memberErr) {
-                warnings.push('Shop-д холбох үед алдаа: ' + memberErr.message);
-                console.error('Shop membership warning:', memberErr.message);
-            }
-        }
 
         // Нэвтрэлт бодитоор ажиллаж буйг шууд шалгана — асуудал байвал үүсгэх
         // мөчид нь админд харагдана (хэрэглэгч рүү очиж унахаас өмнө).
@@ -340,11 +317,15 @@ export async function DELETE(request: NextRequest) {
             return NextResponse.json({ error: 'Өөрийгөө устгах боломжгүй' }, { status: 400 });
         }
 
-        // Delete from public tables first
-        await supabase.from('user_roles').delete().eq('user_id', targetUserId);
-        await supabase.from('user_profiles').delete().eq('id', targetUserId);
+        // shops.user_id cascades through user_profiles: deleting an owner would delete
+        // the whole shop and all CRM data. Refuse until ownership is reassigned.
+        const { data: ownedShops, error: ownerError } = await supabase.from('shops')
+            .select('id').eq('user_id', targetUserId).limit(1);
+        if (ownerError) throw ownerError;
+        if (ownedShops?.length)
+            return NextResponse.json({ error: 'Байгууллагын эзэмшигчийг устгах боломжгүй. Эхлээд эзэмшлийг шилжүүлнэ үү' }, { status: 409 });
 
-        // Delete from auth via Admin API
+        // Auth deletion cascades to profile, role and membership rows.
         const { error: deleteError } = await supabase.auth.admin.deleteUser(targetUserId);
 
         if (deleteError) {

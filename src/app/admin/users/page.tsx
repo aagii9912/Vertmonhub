@@ -65,7 +65,7 @@ export default function AdminUsersPage() {
     // Invite link modal
     const [showInvite, setShowInvite] = useState(false);
     const [inviting, setInviting] = useState(false);
-    const [inviteForm, setInviteForm] = useState({ email: '', full_name: '', role: 'sales_manager' });
+    const [inviteForm, setInviteForm] = useState({ email: '', full_name: '', role: 'sales_manager', shop_id: '' });
     const [inviteError, setInviteError] = useState<string | null>(null);
     const [inviteResult, setInviteResult] = useState<{ link: string; mode: string; emailed: boolean } | null>(null);
     const [copied, setCopied] = useState(false);
@@ -83,6 +83,7 @@ export default function AdminUsersPage() {
             // Ганц shop байвал автоматаар сонгож тавьна
             if (list.length === 1) {
                 setNewUser(p => ({ ...p, shop_id: list[0].id }));
+                setInviteForm(p => ({ ...p, shop_id: list[0].id }));
             }
         } catch (e) {
             console.error('Failed to fetch shops:', e);
@@ -180,6 +181,10 @@ export default function AdminUsersPage() {
             setInviteError('Имэйл оруулна уу');
             return;
         }
+        if (!shops.some(shop => shop.id === inviteForm.shop_id)) {
+            setInviteError('Байгууллага сонгоно уу');
+            return;
+        }
         setInviting(true);
         setInviteError(null);
         setInviteResult(null);
@@ -187,7 +192,7 @@ export default function AdminUsersPage() {
             const res = await fetch('/api/admin/users/invite', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: inviteForm.email, full_name: inviteForm.full_name, role: inviteForm.role }),
+                body: JSON.stringify(inviteForm),
             });
             const data = await res.json();
             if (res.ok && data.success) {
@@ -494,6 +499,19 @@ export default function AdminUsersPage() {
                                             ))}
                                         </select>
                                     </div>
+                                    <div>
+                                        <label htmlFor="invite-shop" className="block text-sm font-medium text-foreground mb-1">Байгууллага</label>
+                                        <select
+                                            id="invite-shop"
+                                            value={inviteForm.shop_id}
+                                            onChange={e => setInviteForm(p => ({ ...p, shop_id: e.target.value }))}
+                                            disabled={inviting}
+                                            className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface focus:ring-2 focus:ring-brand focus:border-brand"
+                                        >
+                                            <option value="">Байгууллага сонгох</option>
+                                            {shops.map(shop => <option key={shop.id} value={shop.id}>{shop.name}</option>)}
+                                        </select>
+                                    </div>
                                 </>
                             ) : (
                                 <div className="space-y-3">
@@ -534,7 +552,7 @@ export default function AdminUsersPage() {
                             {!inviteResult && (
                                 <button
                                     onClick={sendInvite}
-                                    disabled={inviting || !inviteForm.email}
+                                    disabled={inviting || !inviteForm.email || !inviteForm.shop_id}
                                     className="flex items-center gap-2 px-5 py-2.5 text-sm bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                                 >
                                     {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}

@@ -6,6 +6,7 @@ import { PGlite } from '@electric-sql/pglite';
 
 const db = new PGlite();
 const migration = await readFile(new URL('../supabase/migrations/20260928120000_rbac_api_boundary.sql', import.meta.url), 'utf8');
+const adminMigration = await readFile(new URL('../supabase/migrations/20260930120000_admin_rbac_private_attachments.sql', import.meta.url), 'utf8');
 const ids = Object.fromEntries(['admin', 'sales', 'marketing', 'viewer', 'super', 'other', 'shop', 'otherShop', 'lead', 'property'].map(key => [key, randomUUID()]));
 let checks = 0;
 async function check(name, fn) { await fn(); checks++; console.log(`✓ ${name}`); }
@@ -44,6 +45,9 @@ try {
         CREATE TABLE user_tasks (id uuid PRIMARY KEY, user_id uuid, shop_id uuid);
         CREATE TABLE user_dashboard_prefs (user_id uuid PRIMARY KEY, shop_id uuid);
         CREATE TABLE user_profiles (id uuid PRIMARY KEY, full_name text);
+        CREATE TABLE webhook_configs (id uuid PRIMARY KEY, shop_id uuid, headers jsonb);
+        CREATE TABLE webhook_logs (id uuid PRIMARY KEY, shop_id uuid, payload jsonb);
+        CREATE TABLE storage.buckets (id text PRIMARY KEY, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
         CREATE TABLE storage.objects (name text PRIMARY KEY, bucket_id text);
         CREATE FUNCTION public.get_user_shop_ids() RETURNS SETOF uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
             SELECT id FROM public.shops WHERE user_id=auth.uid()
@@ -72,7 +76,7 @@ try {
         CREATE POLICY legacy_storage ON storage.objects FOR ALL TO authenticated USING (true) WITH CHECK (true);
         CREATE POLICY public_images ON storage.objects FOR SELECT TO anon USING (bucket_id IN ('products','property-images'));
     `);
-    for (const table of ['leads', 'properties', 'customers', 'surveys', 'survey_responses', 'marketing_channels', 'channel_contracts', 'ai_attachments']) {
+    for (const table of ['leads', 'properties', 'customers', 'surveys', 'survey_responses', 'marketing_channels', 'channel_contracts', 'ai_attachments', 'webhook_configs', 'webhook_logs']) {
         await db.exec(`ALTER TABLE ${table} ENABLE ROW LEVEL SECURITY;
             CREATE POLICY old_shop_all ON ${table} FOR ALL TO authenticated
             USING (shop_id IN (SELECT get_user_shop_ids())) WITH CHECK (shop_id IN (SELECT get_user_shop_ids()));`);
@@ -99,6 +103,23 @@ try {
     await db.query('INSERT INTO properties VALUES ($1,$2),($3,$4)',[ids.property,ids.shop,randomUUID(),ids.otherShop]);
     await db.query('INSERT INTO ai_attachments VALUES ($1,$2,$3)',[randomUUID(),ids.shop,'property']);
     await db.exec("INSERT INTO storage.objects VALUES ('fixture.png','property-images'),('other.png','other-bucket')");
+    await db.query('INSERT INTO webhook_configs VALUES ($1,$2,$3)', [randomUUID(),ids.shop,{ Authorization:'SYNTHETIC_ONLY' }]);
+    await db.query('INSERT INTO webhook_logs VALUES ($1,$2,$3)', [randomUUID(),ids.shop,{ phone:'SYNTHETIC_ONLY' }]);
+    // The independent Admin migration must protect roles without relying on the
+    // broad migration that requires companion business APIs to be deployed first.
+    await db.exec(adminMigration);
+    await db.exec(adminMigration);
+    await check('independent admin migration blocks role escalation before business boundary', async () => {
+        await forbidden(() => asUser('admin', () => db.query("UPDATE user_roles SET role='super_admin' WHERE user_id=$1",[ids.admin])));
+    });
+    await check('independent private-file metadata cannot be forged or read through legacy shop policies', async () => {
+        for (const key of ['sales','super']) {
+            await forbidden(() => asUser(key, () => count('ai_attachments')));
+            await forbidden(() => asUser(key, () => db.exec("UPDATE ai_attachments SET entity_type='lead'")));
+            await forbidden(() => asUser(key, () => db.query('INSERT INTO ai_attachments VALUES ($1,$2,$3)',[randomUUID(),ids.shop,'lead'])));
+            await forbidden(() => asUser(key, () => db.exec('DELETE FROM ai_attachments')));
+        }
+    });
     await db.exec(migration);
     await db.exec(migration);
 
@@ -118,7 +139,7 @@ try {
     });
     await check('marketing cannot read properties, including through a permissive legacy policy', async () => {
         assert.equal(await asUser('marketing', () => count('properties')),0);
-        assert.equal(await asUser('marketing', () => count('ai_attachments')),0);
+        await forbidden(() => asUser('marketing', () => count('ai_attachments')));
     });
     await check('viewer cannot read customer or lead rows', async () => {
         assert.equal(await asUser('viewer', () => count('leads')),0);
@@ -177,6 +198,24 @@ try {
         await forbidden(() => asUser('viewer', () => db.query('INSERT INTO user_dashboard_prefs VALUES ($1,$2)',[ids.sales,ids.shop])));
         await asUser('viewer', () => db.query('INSERT INTO user_profiles VALUES ($1,$2)',[ids.viewer,'Fixture']));
         await forbidden(() => asUser('viewer', () => db.query('INSERT INTO user_profiles VALUES ($1,$2)',[ids.sales,'Fixture'])));
+    });
+    await check('browser cannot read webhook credentials or business payloads', async () => {
+        for (const role of ['viewer','admin','super']) {
+            await forbidden(() => asUser(role, () => db.exec('SELECT headers FROM webhook_configs')));
+            await forbidden(() => asUser(role, () => db.exec('SELECT payload FROM webhook_logs')));
+        }
+        assert.equal(await asUser('admin', () => count('webhook_configs'), 'service_role'),1);
+    });
+    await check('private attachment bucket stays private and server-only under legacy Storage policies', async () => {
+        const bucket = (await db.query("SELECT public,file_size_limit FROM storage.buckets WHERE id='ai-attachments'")).rows[0];
+        assert.equal(bucket.public,false);
+        assert.equal(Number(bucket.file_size_limit),4194304);
+        await asUser('admin', () => db.exec("INSERT INTO storage.objects VALUES ('secret.pdf','ai-attachments')"),'service_role');
+        for (const role of ['anon','authenticated']) {
+            assert.equal((await asUser('viewer', () => db.query("SELECT name FROM storage.objects WHERE bucket_id='ai-attachments'"),role)).rows.length,0);
+        }
+        await forbidden(() => asUser('super', () => db.exec("INSERT INTO storage.objects VALUES ('bad.pdf','ai-attachments')")));
+        assert.equal((await asUser('super', () => db.query("DELETE FROM storage.objects WHERE bucket_id='ai-attachments' RETURNING name"))).rows.length,0);
     });
     console.log(`RBAC: ${checks} checks passed (disposable PostgreSQL)`);
 } finally { await db.close(); }

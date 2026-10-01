@@ -5,7 +5,7 @@
  * схемийн ЖИНХЭНЭ баганууд руу хөрвүүлнэ:
  *   - leads:              customer_name / customer_phone / customer_email / budget_max / notes / status(enum)
  *   - property_contracts: customer_name / unit_number / total_price / prepayment_paid / balance / contract_status
- *   - properties:         schema-тай шууд таарна (project_id-г route best-effort тамгална)
+ *   - properties:         schema-тай шууд таарна (project_id-г route баталгаажуулж тамгална)
  *   - AI мэдлэг:          shops.custom_knowledge (JSONB) — PromptService.buildDynamicKnowledge уншдаг
  *   - FAQ:                shop_faqs — WebhookService.getAIFeatures уншдаг
  *
@@ -86,7 +86,7 @@ function formatLocalDate(d: Date): string {
 export function toDateStr(v: unknown): string | null {
     if (v === null || v === undefined || v === '') return null;
     if (v instanceof Date) {
-        return isNaN(v.getTime()) ? null : formatLocalDate(v);
+        return isNaN(v.getTime()) || v.getFullYear() < 1 || v.getFullYear() > 9999 ? null : formatLocalDate(v);
     }
     if (typeof v === 'number') {
         // Excel serial (1900 систем): 25569 = 1970-01-01. UTC-ээр задална.
@@ -96,16 +96,19 @@ export function toDateStr(v: unknown): string | null {
         return null;
     }
     const s = String(v).trim();
-    const m = s.match(/^(\d{4})[.\/-](\d{1,2})[.\/-](\d{1,2})/);
+    const ymd = s.match(/^(\d{4})[.\/-](\d{1,2})[.\/-](\d{1,2})(?:[T\s].*)?$/);
+    const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    const m = ymd ? [ymd[1], ymd[2], ymd[3]] : mdy ? [mdy[3], mdy[1], mdy[2]] : null;
     if (m) {
-        const month = parseInt(m[2], 10);
-        const day = parseInt(m[3], 10);
-        // Муж шалгана — '2026.13.45' мэт хүчингүй огноо Postgres-д бүтэн batch унагадаг
-        if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-        return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+        const year = parseInt(m[0], 10);
+        const month = parseInt(m[1], 10);
+        const day = parseInt(m[2], 10);
+        const date = new Date(0);
+        date.setUTCFullYear(year, month - 1, day);
+        if (year < 1 || date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return null;
+        return `${m[0]}-${m[1].padStart(2, '0')}-${m[2].padStart(2, '0')}`;
     }
-    const parsed = new Date(s);
-    return isNaN(parsed.getTime()) ? null : formatLocalDate(parsed);
+    return null;
 }
 
 export function getDate(row: ImportRow, ...keys: string[]): string | null {
@@ -423,7 +426,11 @@ export function mapContractRow(row: ImportRow, rowNum: number): MappedRow<Contra
 
     const phone = clamp(getVal(row, 'Худалдан авагч утас', 'buyer_phone', 'Phone', 'Утас') || null, 50);
     const blockName = clamp(getVal(row, 'Блок', 'block', 'Block') || null, 255);
-    const contractDate = getDate(row, 'Гэрээний огноо', 'contract_date', 'Date');
+    const contractDateRaw = getRaw(row, 'Гэрээний огноо', 'contract_date', 'Date');
+    const contractDate = toDateStr(contractDateRaw);
+    if (contractDateRaw !== null && contractDate === null) {
+        return { error: `Мөр ${rowNum}: Гэрээний огноо буруу (${contractNumber})` };
+    }
     const statusRaw = getVal(row, 'Статус', 'status', 'Status');
     const notes = getVal(row, 'Тэмдэглэл', 'notes', 'Notes') || null;
 
@@ -526,6 +533,13 @@ export function buildProjectKnowledge(row: ImportRow, rowNum: number): MappedRow
     const totalFloors = getVal(row, 'Нийт давхарын тоо', 'Нийт давхар', 'Floors', 'Давхарын тоо');
     const totalUnits = getInt(row, 'Нийт байрны тоо', 'Units', 'Нийт байр');
     const description = getVal(row, 'Төслийн тайлбар', 'Description', 'Тайлбар');
+    const startRaw = getRaw(row, 'Баригдаж эхэлсэн огноо', 'Start Date', 'Барилга эхэлсэн');
+    const deliveryRaw = getRaw(row, 'Хүлээлгэж өгөх огноо', 'Delivery Date', 'Хүлээлгэх огноо');
+    const startDate = toDateStr(startRaw);
+    const deliveryDate = toDateStr(deliveryRaw);
+    if ((startRaw !== null && startDate === null) || (deliveryRaw !== null && deliveryDate === null)) {
+        return { error: `Мөр ${rowNum}: Төслийн огноо буруу (${name})` };
+    }
 
     const text = joinLines([
         ['Төслийн нэр', name],
@@ -535,8 +549,8 @@ export function buildProjectKnowledge(row: ImportRow, rowNum: number): MappedRow
         ['Нийт блок', totalBlocks !== null ? String(totalBlocks) : ''],
         ['Нийт давхар', totalFloors],
         ['Нийт байр', totalUnits !== null ? String(totalUnits) : ''],
-        ['Барилга эхэлсэн', getDate(row, 'Баригдаж эхэлсэн огноо', 'Start Date', 'Барилга эхэлсэн') || getVal(row, 'Баригдаж эхэлсэн огноо', 'Start Date', 'Барилга эхэлсэн')],
-        ['Хүлээлгэж өгөх огноо', getDate(row, 'Хүлээлгэж өгөх огноо', 'Delivery Date', 'Хүлээлгэх огноо') || getVal(row, 'Хүлээлгэж өгөх огноо', 'Delivery Date', 'Хүлээлгэх огноо')],
+        ['Барилга эхэлсэн', startDate || ''],
+        ['Хүлээлгэж өгөх огноо', deliveryDate || ''],
         ['Барилгын явц', (() => { const p = getPct(row, 'Барилгын явц', 'Барилгын явц (%)', 'Progress'); return p !== null ? `${p}%` : ''; })()],
         ['Тайлбар', description],
     ]);

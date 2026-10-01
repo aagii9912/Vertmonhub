@@ -1,8 +1,10 @@
 import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { NextResponse } from 'next/server';
-import { getUserShop } from '@/lib/auth/supabase-auth';
+import { assertShopAccess, getUserId, getUserShop } from '@/lib/auth/supabase-auth';
+import { resolvePermissions } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { canReadPrivateAttachment, parsePrivateAttachmentUrl, privateAttachmentUrl, PRIVATE_ATTACHMENT_BUCKET } from '@/lib/ai/private-attachments';
 
 /**
  * POST /api/dashboard/upload — AI туслахын хавсралт (зураг/PDF) upload.
@@ -44,12 +46,14 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Файлын хэмжээ 4MB-аас хэтэрсэн байна' }, { status: 400 });
         }
 
+        const userId = await getUserId();
+        if (!userId) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         const supabase = supabaseAdmin();
-        const fileName = `${authShop.id}/${Date.now()}_${crypto.randomUUID()}.${ext}`;
+        const fileName = `${authShop.id}/${userId}/${crypto.randomUUID()}.${ext}`;
 
         // Upload to Supabase Storage using Admin client (bypasses RLS)
         const { error } = await supabase.storage
-            .from('products')
+            .from(PRIVATE_ATTACHMENT_BUCKET)
             .upload(fileName, await file.arrayBuffer(), {
                 contentType: file.type,
                 upsert: false,
@@ -60,13 +64,38 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: 'Файл хадгалахад алдаа гарлаа' }, { status: 500 });
         }
 
-        const { data: { publicUrl } } = supabase.storage
-            .from('products')
-            .getPublicUrl(fileName);
-
-        return NextResponse.json({ url: publicUrl });
+        return NextResponse.json({ url: privateAttachmentUrl(fileName) });
     } catch (error) {
         logger.error('[Upload API] error:', { error });
         return NextResponse.json({ error: 'Файл upload хийхэд алдаа гарлаа' }, { status: 500 });
+    }
+}
+
+/** Stable links recheck identity, membership and entity module on every download. */
+export async function GET(request: Request) {
+    try {
+        const access = await resolvePermissions();
+        const userId = await getUserId();
+        if (!access || !userId) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
+        const url = new URL(request.url);
+        const parsed = parsePrivateAttachmentUrl(`${url.pathname}${url.search}`);
+        if (!parsed) return NextResponse.json({ error: 'Файлын хаяг буруу байна' }, { status: 400 });
+        if (!await assertShopAccess(parsed.shopId)) return NextResponse.json({ error: 'Файл олдсонгүй' }, { status: 404 });
+        const db = supabaseAdmin();
+        if (!await canReadPrivateAttachment(db, privateAttachmentUrl(parsed.path), { shopId: parsed.shopId, userId, perms: { role: access.role, modules: access.permissions.modules } })) {
+            return NextResponse.json({ error: 'Хавсралт харах эрх танд алга' }, { status: 403 });
+        }
+        const { data, error } = await db.storage.from(PRIVATE_ATTACHMENT_BUCKET).download(parsed.path);
+        if (error || !data) return NextResponse.json({ error: 'Файл олдсонгүй' }, { status: 404 });
+        if (!ALLOWED[data.type] || data.size > MAX_BYTES) return NextResponse.json({ error: 'Файлын төрөл эсвэл хэмжээ буруу байна' }, { status: 400 });
+        return new Response(data, { headers: {
+            'Content-Type': data.type,
+            'Content-Disposition': 'inline',
+            'Cache-Control': 'private, no-store',
+            'X-Content-Type-Options': 'nosniff',
+        } });
+    } catch (error) {
+        logger.error('[Upload API] download error:', { error });
+        return NextResponse.json({ error: 'Файл татахад алдаа гарлаа' }, { status: 500 });
     }
 }

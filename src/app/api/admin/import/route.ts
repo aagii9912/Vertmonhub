@@ -3,6 +3,7 @@ import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { getAdminUser } from '@/lib/admin/auth';
 import { readSheetRows, XlsxUnsupportedFormatError } from '@/lib/utils/xlsx';
+import { z } from 'zod';
 import {
     ImportRow,
     mapPropertyRow,
@@ -58,6 +59,7 @@ interface ImportContext {
 }
 
 const MAX_ROWS = 5000;
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
 
 // ============================================
 // POST /api/admin/import
@@ -68,7 +70,7 @@ const MAX_ROWS = 5000;
 //   - FAQ → shop_faqs (WebhookService.getAIFeatures → DM AI уншдаг)
 //   - Мэдлэгийн категориуд → shops.custom_knowledge JSONB (PromptService.buildDynamicKnowledge
 //     → DM AI-ийн prompt-д ордог) + ai_knowledge_base (бүтэцлэгдсэн архив, query хийхэд)
-//   - projectId → properties/leads/contracts дээр best-effort тамгална,
+//   - projectId → properties/leads/contracts дээр тамгална; scope багана байхгүй бол импорт зогсоно,
 //     мэдлэгийн түлхүүрүүдийг төслийн нэрээр угтварлана (нэг shop дотор
 //     олон төслийн мэдээлэл холилдохгүй)
 // ============================================
@@ -81,29 +83,27 @@ export async function POST(request: NextRequest) {
 
         const supabase = supabaseAdmin();
 
-        // super_admin (admins хүснэгт эсвэл RBAC) → зөвшөөрнө; бусад бол admins.permissions.can_import_data шалгана.
+        // Импорт зөвхөн super_admin-д нээлттэй.
         const admin = await getAdminUser();
         if (!admin) {
             return NextResponse.json({ error: 'Админ эрх шаардлагатай' }, { status: 403 });
         }
 
-        // Зөвхөн super_admin (хуучин `admins.permissions.can_import_data` — хүснэгт prod-д байхгүй)
-        const allowed = admin.role === 'super_admin';
-
-        if (!allowed) {
+        if (admin.role !== 'super_admin') {
             return NextResponse.json({ error: 'Import хийх эрх байхгүй. Super Admin-д хандана уу.' }, { status: 403 });
         }
 
         const formData = await request.formData();
-        const file = formData.get('file') as File;
-        const shopId = formData.get('shopId') as string;
+        const file = formData.get('file');
+        const shopId = formData.get('shopId');
         const importType = formData.get('type') as ImportType;
-        const projectIdRaw = (formData.get('projectId') as string) || '';
-        const projectNameRaw = (formData.get('projectName') as string) || '';
+        const projectIdRaw = formData.get('projectId');
 
-        if (!file || !shopId) {
+        if (!(file instanceof File) || typeof shopId !== 'string' || !z.uuid().safeParse(shopId).success) {
             return NextResponse.json({ error: 'Файл болон shopId шаардлагатай' }, { status: 400 });
         }
+        if (file.size === 0 || file.size > MAX_FILE_BYTES || !/\.(csv|xlsx)$/i.test(file.name))
+            return NextResponse.json({ error: '10 MB-аас бага .csv эсвэл .xlsx файл сонгоно уу' }, { status: 400 });
 
         if (!importType || !IMPORT_TYPES.includes(importType)) {
             return NextResponse.json({ error: 'Буруу import төрөл' }, { status: 400 });
@@ -121,27 +121,22 @@ export async function POST(request: NextRequest) {
 
         // Төслийг сервер талд баталгаажуулна — нэр нь клиентээс биш projects хүснэгтээс.
         let projectId: string | null = null;
-        let projectName = projectNameRaw.trim();
+        let projectName = '';
         if (projectIdRaw) {
-            try {
-                const { data: project } = await supabase
+            if (!z.uuid().safeParse(projectIdRaw).success)
+                return NextResponse.json({ error: 'Төслийн ID буруу байна' }, { status: 400 });
+            const { data: project, error: projectError } = await supabase
                     .from('projects')
                     .select('id, name, shop_id')
                     .eq('id', projectIdRaw)
                     .maybeSingle();
-                if (project) {
-                    if (project.shop_id !== shopId) {
-                        return NextResponse.json(
-                            { error: 'Сонгосон төсөл өөр shop-д харьяалагдаж байна' },
-                            { status: 400 }
-                        );
-                    }
-                    projectId = project.id;
-                    projectName = project.name;
-                }
-            } catch {
-                // projects хүснэгт байхгүй орчинд импортыг унагахгүй — клиентийн нэрээр үргэлжилнэ
+            if (projectError) return safeErrorResponse(projectError, 'Төсөл шалгахад алдаа гарлаа');
+            if (!project) return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 400 });
+            if (project.shop_id !== shopId) {
+                return NextResponse.json({ error: 'Сонгосон төсөл өөр shop-д харьяалагдаж байна' }, { status: 400 });
             }
+            projectId = project.id;
+            projectName = project.name;
         }
 
         const buffer = Buffer.from(await file.arrayBuffer());
@@ -226,7 +221,7 @@ function errMessage(error: unknown): string {
 
 /**
  * Batch insert — migration хараахан хийгдээгүй орчинд optional багана
- * (project_id, notes г.м.) байхгүй бол тухайн баганыг хасаад дахин оролдоно.
+ * (notes г.м.) байхгүй бол тухайн баганыг хасаад дахин оролдоно. project_id-г хасахгүй.
  * PostgREST-ийн алдааны мэдэгдэлд байхгүй баганын нэр ордог тул түүгээр таньдаг.
  */
 async function insertWithOptionalColumns(
@@ -281,7 +276,7 @@ async function fetchExistingValues(
 
             const { data, error } = await query.range(from, from + PAGE - 1);
             if (error) {
-                if (withSoftDelete) return null; // deleted_at байхгүй хүснэгт — fallback
+                if (withSoftDelete && (error.code === '42703' || error.code === 'PGRST204')) return null;
                 throw new Error(errMessage(error));
             }
             const rows = (data || []) as unknown as Record<string, unknown>[];
@@ -315,7 +310,50 @@ async function columnExists(
     column: string
 ): Promise<boolean> {
     const { error } = await supabase.from(table).select(column).limit(1);
-    return !error;
+    if (!error) return true;
+    if (error.code === '42703' || error.code === 'PGRST204') return false;
+    throw new Error(errMessage(error));
+}
+
+interface ExistingImportRecord {
+    id: string;
+    project_id: string | null;
+    [key: string]: unknown;
+}
+
+/** CRM imports require the project and soft-delete migrations; never broaden a failed scope query. */
+async function loadImportRecords(
+    supabase: ReturnType<typeof supabaseAdmin>,
+    table: string,
+    key: string,
+    shopId: string,
+): Promise<Map<string, ExistingImportRecord[]>> {
+    const byKey = new Map<string, ExistingImportRecord[]>();
+    const PAGE = 1000;
+    for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase.from(table).select(`id, ${key}, project_id`)
+            .eq('shop_id', shopId).is('deleted_at', null).order('id').range(from, from + PAGE - 1);
+        if (error) throw new Error(errMessage(error));
+        const records = (data || []) as unknown as ExistingImportRecord[];
+        for (const record of records) {
+            const value = String(record[key] ?? '').trim();
+            if (value) byKey.set(value, [...(byKey.get(value) || []), record]);
+        }
+        if (records.length < PAGE) return byKey;
+    }
+}
+
+function matchImportRecord(
+    records: ExistingImportRecord[],
+    projectId: string | null,
+): { record?: ExistingImportRecord; error?: string } {
+    const matches = records.filter((record) => (record.project_id ?? null) === projectId);
+    if (matches.length > 1) return { error: 'Ижил түлхүүртэй олон мөр байна. Давхардлыг эхлээд шийдвэрлэнэ үү' };
+    if (projectId && records.some((record) => !record.project_id))
+        return { error: 'Төсөлд холбогдоогүй хуучин мөр байна. Харьяаллыг эхлээд шийдвэрлэнэ үү' };
+    if (!projectId && records.some((record) => record.project_id))
+        return { error: 'Энэ түлхүүр төсөлд харьяалагдаж байна. Төслөө сонгоно уу' };
+    return { record: matches[0] };
 }
 
 /** data-гаас зөвхөн заасан түлхүүрүүдийг түүнэ (update = файлд байсан баганууд л) */
@@ -490,7 +528,7 @@ function summarize(
     if (skipped > 0) parts.push(`${skipped} давхардсан (алгассан)`);
     if (errors.length > 0) parts.push(`${errors.length} алдаа`);
     return {
-        success: true,
+        success: imported + updated + skipped > 0,
         imported,
         updated,
         skipped,
@@ -511,13 +549,8 @@ async function importProperties(
     const errors: string[] = [];
     const seen = new Set<string>();
     const fresh: Array<Record<string, unknown>> = [];
-    const toUpdate: Array<{ name: string; fields: Record<string, unknown> }> = [];
-
-    const [existingNames, hasProjectId, hasDeletedAt] = await Promise.all([
-        fetchExistingValues(supabase, 'properties', 'name', ctx.shopId),
-        ctx.projectId ? columnExists(supabase, 'properties', 'project_id') : Promise.resolve(false),
-        columnExists(supabase, 'properties', 'deleted_at'),
-    ]);
+    const toUpdate: Array<{ id: string; name: string; fields: Record<string, unknown> }> = [];
+    const existingByName = await loadImportRecords(supabase, 'properties', 'name', ctx.shopId);
 
     for (let i = 0; i < rows.length; i++) {
         const { data, error, provided } = mapPropertyRow(rows[i], i + 2);
@@ -530,12 +563,13 @@ async function importProperties(
         }
         seen.add(data.name);
 
-        if (existingNames.has(data.name)) {
+        const match = matchImportRecord(existingByName.get(data.name) || [], ctx.projectId);
+        if (match.error) { errors.push(`Мөр ${i + 2}: "${data.name}": ${match.error}`); continue; }
+        if (match.record) {
             // Update = зөвхөн файлд байсан баганууд. Бусад талбарыг default-оор
             // дарж устгахгүй (ж: Нэр+Үнэ бүхий үнийн файл зөвхөн үнэ шинэчилнэ).
             const fields = pickFields(data as unknown as Record<string, unknown>, provided, ['name']);
-            if (hasProjectId) fields.project_id = ctx.projectId;
-            toUpdate.push({ name: data.name, fields });
+            toUpdate.push({ id: match.record.id, name: data.name, fields });
         } else {
             const record: Record<string, unknown> = { shop_id: ctx.shopId, ...data };
             if (ctx.projectId) record.project_id = ctx.projectId;
@@ -549,23 +583,27 @@ async function importProperties(
 
     let imported = 0;
     if (fresh.length > 0) {
-        const { count, error } = await insertWithOptionalColumns(supabase, 'properties', fresh, ['project_id']);
+        const { count, error } = await insertWithOptionalColumns(supabase, 'properties', fresh, []);
         if (error) return { success: false, message: error, errors };
         imported = count;
     }
 
-    // Дахин импорт = үнэ/статус шинэчлэлт (нэрээр тааруулж update — идемпотент)
+    // Баталгаажуулсан active мөрийн ID + project scope-оор үнэ/статус шинэчилнэ.
     let updated = 0;
-    await runChunked(toUpdate, 20, async ({ name, fields }) => {
+    await runChunked(toUpdate, 20, async ({ id, name, fields }) => {
         let query = supabase
             .from('properties')
             .update(fields)
+            .eq('id', id)
             .eq('shop_id', ctx.shopId)
-            .eq('name', name);
-        if (hasDeletedAt) query = query.is('deleted_at', null);
-        const { error } = await query;
+            .eq('name', name)
+            .is('deleted_at', null);
+        query = ctx.projectId ? query.eq('project_id', ctx.projectId) : query.is('project_id', null);
+        const { data, error } = await query.select('id');
         if (error) {
             errors.push(`"${name}": шинэчлэхэд алдаа — ${errMessage(error)}`);
+        } else if (data?.length !== 1) {
+            errors.push(`"${name}": мөр эсвэл төслийн харьяалал өөрчлөгдсөн. Дахин импортлоно уу`);
         } else {
             updated++;
         }
@@ -910,7 +948,7 @@ async function importLeads(
         return { success: false, message: 'Lead олдсонгүй', errors };
     }
 
-    const { count, error } = await insertWithOptionalColumns(supabase, 'leads', fresh, ['project_id']);
+    const { count, error } = await insertWithOptionalColumns(supabase, 'leads', fresh, []);
     if (error) return { success: false, message: error, errors };
 
     return summarize('Lead', count, 0, skipped, errors);
@@ -928,12 +966,11 @@ async function importContracts(
 ): Promise<ImportResult> {
     const errors: string[] = [];
     const fresh: Array<Record<string, unknown>> = [];
-    const toUpdate: Array<{ contract_number: string; fields: Record<string, unknown> }> = [];
+    const toUpdate: Array<{ id: string; contract_number: string; fields: Record<string, unknown>; paidAmount?: number | null }> = [];
     const seen = new Set<string>();
 
-    const [existingNumbers, hasProjectId, hasNotes] = await Promise.all([
-        fetchExistingValues(supabase, 'property_contracts', 'contract_number', ctx.shopId),
-        ctx.projectId ? columnExists(supabase, 'property_contracts', 'project_id') : Promise.resolve(false),
+    const [existingByNumber, hasNotes] = await Promise.all([
+        loadImportRecords(supabase, 'property_contracts', 'contract_number', ctx.shopId),
         columnExists(supabase, 'property_contracts', 'notes'),
     ]);
 
@@ -948,14 +985,21 @@ async function importContracts(
         }
         seen.add(data.contract_number);
 
-        if (existingNumbers.has(data.contract_number)) {
-            // Update = зөвхөн файлд байсан баганууд — Урьдчилгаа багана байхгүй
-            // файл одоо байгаа гэрээний төлбөрийн явцыг 0 болгож дарахгүй.
-            const fields = pickFields(data as unknown as Record<string, unknown>, provided, ['contract_number']);
+        const existing = existingByNumber.get(data.contract_number) || [];
+        const match = matchImportRecord(existing, ctx.projectId);
+        if (match.error) { errors.push(`Мөр ${i + 2}: "${data.contract_number}": ${match.error}`); continue; }
+        if (match.record) {
+            // Existing receipts and imported advance snapshots are never rewritten by a spreadsheet.
+            const fields = pickFields(data as unknown as Record<string, unknown>, provided,
+                ['contract_number', 'prepayment_paid', 'paid_amount', 'balance']);
             if (!hasNotes) delete fields.notes;
-            if (hasProjectId) fields.project_id = ctx.projectId;
-            toUpdate.push({ contract_number: data.contract_number, fields });
+            toUpdate.push({ id: match.record.id, contract_number: data.contract_number, fields });
         } else {
+            // Active contract numbers are unique across a shop, including other projects.
+            if (existing.length) {
+                errors.push(`Мөр ${i + 2}: "${data.contract_number}" өөр төсөлд бүртгэлтэй байна`);
+                continue;
+            }
             const record: Record<string, unknown> = { shop_id: ctx.shopId, ...data };
             if (ctx.projectId) record.project_id = ctx.projectId;
             fresh.push(record);
@@ -966,49 +1010,57 @@ async function importContracts(
         return { success: false, message: 'Гэрээ олдсонгүй', errors };
     }
 
+    // Resolve every paid total before any insert/write; failed reads cannot become a zero balance input.
+    if (toUpdate.length > 0) {
+        const paidById = new Map<string, number | null>();
+        for (let i = 0; i < toUpdate.length; i += 200) {
+            const ids = toUpdate.slice(i, i + 200).map(u => u.id);
+            let query = supabase
+                .from('property_contracts')
+                .select('id, paid_amount')
+                .eq('shop_id', ctx.shopId)
+                .is('deleted_at', null)
+                .in('id', ids);
+            query = ctx.projectId ? query.eq('project_id', ctx.projectId) : query.is('project_id', null);
+            const { data, error } = await query;
+            if (error) throw new Error(`Төлсөн дүн уншихад алдаа: ${errMessage(error)}`);
+            for (const r of data || []) {
+                if (r.paid_amount !== null && (!Number.isFinite(Number(r.paid_amount)) || Number(r.paid_amount) < 0))
+                    return { success: false, message: 'Гэрээний төлсөн дүн буруу байна', errors };
+                paidById.set(r.id, r.paid_amount === null ? null : Number(r.paid_amount));
+            }
+        }
+        for (const u of toUpdate) {
+            if (!paidById.has(u.id)) return { success: false, message: 'Гэрээ эсвэл төслийн харьяалал өөрчлөгдсөн. Дахин импортлоно уу', errors };
+            u.paidAmount = paidById.get(u.id)!;
+            u.fields.balance = Math.max(0, (u.fields.total_price as number) - (u.paidAmount ?? 0));
+        }
+    }
+
     let imported = 0;
     if (fresh.length > 0) {
-        const { count, error } = await insertWithOptionalColumns(
-            supabase, 'property_contracts', fresh, ['project_id', 'notes']
-        );
+        const { count, error } = await insertWithOptionalColumns(supabase, 'property_contracts', fresh, ['notes']);
         if (error) return { success: false, message: error, errors };
         imported = count;
     }
 
-    // Урьдчилгаа баганагүй файл үнэ өөрчилбөл balance хуучин үнээр үлдэхгүй —
-    // одоогийн paid_amount-аас дахин тооцно (үнэ ба үлдэгдэл зөрөхөөс сэргийлнэ).
-    const needBalance = toUpdate.filter(
-        u => u.fields.total_price !== undefined && u.fields.balance === undefined
-    );
-    if (needBalance.length > 0) {
-        const paidByNumber = new Map<string, number>();
-        for (let i = 0; i < needBalance.length; i += 200) {
-            const nums = needBalance.slice(i, i + 200).map(u => u.contract_number);
-            const { data } = await supabase
-                .from('property_contracts')
-                .select('contract_number, paid_amount')
-                .eq('shop_id', ctx.shopId)
-                .in('contract_number', nums);
-            for (const r of data || []) {
-                paidByNumber.set(String(r.contract_number), Number(r.paid_amount) || 0);
-            }
-        }
-        for (const u of needBalance) {
-            const paid = paidByNumber.get(u.contract_number) ?? 0;
-            u.fields.balance = (u.fields.total_price as number) - paid;
-        }
-    }
-
-    // Дахин импорт = төлбөрийн явц шинэчлэлт (дугаараар тааруулж update)
     let updated = 0;
-    await runChunked(toUpdate, 20, async ({ contract_number, fields }) => {
-        const { error } = await supabase
+    await runChunked(toUpdate, 20, async ({ id, contract_number, fields, paidAmount }) => {
+        let query = supabase
             .from('property_contracts')
             .update(fields)
+            .eq('id', id)
             .eq('shop_id', ctx.shopId)
-            .eq('contract_number', contract_number);
+            .eq('contract_number', contract_number)
+            .is('deleted_at', null);
+        query = ctx.projectId ? query.eq('project_id', ctx.projectId) : query.is('project_id', null);
+        // A concurrent receipt must win; retry rather than overwrite its freshly computed balance.
+        query = paidAmount === null ? query.is('paid_amount', null) : query.eq('paid_amount', paidAmount);
+        const { data, error } = await query.select('id');
         if (error) {
             errors.push(`"${contract_number}": шинэчлэхэд алдаа — ${errMessage(error)}`);
+        } else if (data?.length !== 1) {
+            errors.push(`"${contract_number}": гэрээ эсвэл төлбөр өөрчлөгдсөн. Дахин импортлоно уу`);
         } else {
             updated++;
         }
