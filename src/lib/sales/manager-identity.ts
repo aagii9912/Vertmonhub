@@ -58,10 +58,11 @@ export function matchRosterEntry(
     userId: string,
     fullName: string | null,
 ): RosterEntry | null {
-    const byUserId = roster.find((r) => !!r.user_id && r.user_id === userId);
-    if (byUserId) return byUserId;
+    const byUserId = roster.filter((r) => !!r.user_id && r.user_id === userId);
+    if (byUserId.length) return byUserId.length === 1 ? byUserId[0] : null;
     if (fullName) {
-        const byName = roster.find((r) => r.name === fullName);
+        // Нэрийн legacy таарц өөр акаунтад холбосон менежерийг орлож болохгүй.
+        const byName = roster.find((r) => r.name === fullName && !r.user_id);
         if (byName) return byName;
     }
     return null;
@@ -93,9 +94,11 @@ export async function resolveManagerIdentity(
     }));
 
     const rosterEntry = matchRosterEntry(roster, userId, fullName);
+    const ambiguousAccount = roster.filter((r) => r.user_id === userId).length > 1;
 
     return {
-        managerName: rosterEntry?.name || fullName || null,
+        managerName: rosterRes.error || ambiguousAccount ? null : rosterEntry?.name
+            || (roster.some((r) => r.name === fullName) ? null : fullName),
         isManager: !!rosterEntry?.is_active,
         rosterEntry,
         fullName,

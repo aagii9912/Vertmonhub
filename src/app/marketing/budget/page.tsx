@@ -21,8 +21,8 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/Select';
-import { formatShortDate } from '@/lib/utils/date';
-import type { BudgetOverview, BudgetStatus } from '@/lib/marketing/budget';
+import { formatShortDate, ubDateStr, ubParts } from '@/lib/utils/date';
+import { allocateAnnualBudget, MarketingBudgetSchema, MAX_BUDGET_AMOUNT, type BudgetOverview, type BudgetStatus } from '@/lib/marketing/budget';
 import type { spendQuality } from '@/lib/marketing/performance';
 import {
     ChevronLeft,
@@ -35,7 +35,7 @@ import {
 } from 'lucide-react';
 
 /**
- * «Төсвийн хяналт» — сар бүрийн маркетингийн төсөв vs бодит зарцуулалт vs
+ * «Төсвийн хяналт» — жилийн/сарын маркетингийн төсөв vs бүртгэсэн зарцуулалт vs
  * борлуулалтын орлого (гэрээний дүн). Зарцуулалт төсвийн <80% ногоон,
  * 80–100% шар, >100% улаан өнгөөр ялгарна. Зарцуулалтыг гараар бүртгэнэ
  * (билборд, радио, boost...); Meta Ads-ийн автомат spend тусдаа харагдана.
@@ -56,6 +56,10 @@ interface BudgetData {
     spendQuality?: ReturnType<typeof spendQuality>;
     year: number;
     available: boolean;
+    error?: string;
+    projects?: Array<{ id: string; name: string }>;
+    project_id?: string | null;
+    unassignedSpendCount?: number;
     overview?: BudgetOverview;
     byChannel?: Array<{ channel: string; amount: number }>;
     entries?: SpendEntry[];
@@ -85,27 +89,40 @@ const STATUS_LABEL: Record<BudgetStatus, string> = {
 };
 
 export default function MarketingBudgetPage() {
-    const { shop } = useAuth();
-    const shopId = shop?.id;
+    const { shop, user } = useAuth();
+    if (!shop || !user) return <p className="py-8 text-sm text-muted-foreground">Төсөв харахын тулд байгууллага сонгоно уу.</p>;
+    const hasModule = user?.role === 'super_admin' || !!user?.permissions?.modules.includes('marketing-roi');
+    if (!hasModule) return <p className="py-8 text-sm text-muted-foreground">Маркетингийн төсөв харах эрх алга.</p>;
+    const canWrite = !!user.permissions.canWrite;
+    const canDelete = !!user.permissions.canDelete;
+    return <MarketingBudgetWorkspace key={`${user.id}:${shop.id}:${canWrite}:${canDelete}`} shopId={shop.id} userId={user.id}
+        canWrite={canWrite} canDelete={canDelete} />;
+}
+
+function MarketingBudgetWorkspace({ shopId, userId, canWrite, canDelete }: { shopId: string; userId: string; canWrite: boolean; canDelete: boolean }) {
     const queryClient = useQueryClient();
 
-    const now = new Date();
-    const [year, setYear] = useState(now.getFullYear());
+    const now = ubParts();
+    const [year, setYear] = useState(now.year);
+    const [project, setProject] = useState('');
     const [editMode, setEditMode] = useState(false);
     const [draftBudgets, setDraftBudgets] = useState<Record<number, string>>({});
+    const [annualAmount, setAnnualAmount] = useState('');
 
     // Зарцуулалтын форм
-    const [spentAt, setSpentAt] = useState(now.toISOString().slice(0, 10));
+    const [spentAt, setSpentAt] = useState(ubDateStr());
     const [amount, setAmount] = useState('');
     const [channel, setChannel] = useState('board');
     const [note, setNote] = useState('');
 
-    const { data, isLoading } = useQuery<BudgetData>({
-        queryKey: ['marketing-budget', shopId, year],
+    const { data, isLoading, error, refetch } = useQuery<BudgetData>({
+        queryKey: ['marketing-budget', userId, shopId, year, project],
         queryFn: async () => {
-            const res = await dashboardFetch(`/api/marketing/budget?year=${year}`);
-            if (!res.ok) throw new Error(`Budget failed: ${res.status}`);
-            return res.json();
+            const params = new URLSearchParams({ year: String(year), ...(project ? { project } : {}) });
+            const res = await dashboardFetch(`/api/marketing/budget?${params}`, { shopId });
+            const body = await res.json().catch(() => null);
+            if (!res.ok) throw new Error(body?.error || 'Төсвийн мэдээлэл татах алдаа');
+            return body;
         },
         enabled: !!shopId,
         staleTime: 30000,
@@ -116,20 +133,20 @@ export default function MarketingBudgetPage() {
 
     const saveBudgets = useMutation({
         mutationFn: async () => {
-            const months = Object.entries(draftBudgets).map(([m, v]) => ({
-                month: Number(m),
-                amount: Math.max(0, Number(v) || 0),
-            }));
-            if (months.length === 0) return;
+            const parsed = MarketingBudgetSchema.safeParse({ year, project_id: project || null, annualAmount: Number(annualAmount),
+                months: Object.entries(draftBudgets).map(([m, v]) => ({ month: Number(m), amount: v.trim() ? Number(v) : 0 })) });
+            if (!parsed.success) throw new Error(parsed.error.issues[0]?.message || 'Төсөв буруу байна');
             const res = await dashboardFetch('/api/marketing/budget', {
+                shopId,
                 method: 'PUT',
-                body: JSON.stringify({ year, months }),
+                body: JSON.stringify(parsed.data),
             });
             if (!res.ok) throw new Error((await res.json().catch(() => null))?.error || 'Алдаа');
         },
         onSuccess: () => {
             setEditMode(false);
             setDraftBudgets({});
+            setAnnualAmount('');
             invalidate();
             toast.success('Төсөв хадгалагдлаа');
         },
@@ -139,10 +156,12 @@ export default function MarketingBudgetPage() {
     const addSpend = useMutation({
         mutationFn: async () => {
             const res = await dashboardFetch('/api/marketing/budget', {
+                shopId,
                 method: 'POST',
                 body: JSON.stringify({
                     spentAt,
-                    amount: Math.max(0, Number(amount) || 0),
+                    amount: Number(amount),
+                    project_id: project || null,
                     channel,
                     note: note.trim() || null,
                 }),
@@ -160,7 +179,8 @@ export default function MarketingBudgetPage() {
 
     const removeSpend = useMutation({
         mutationFn: async (id: string) => {
-            const res = await dashboardFetch(`/api/marketing/budget?id=${id}`, { method: 'DELETE' });
+            const params = new URLSearchParams({ id, ...(project ? { project } : {}) });
+            const res = await dashboardFetch(`/api/marketing/budget?${params}`, { method: 'DELETE', shopId });
             if (!res.ok) throw new Error('Устгах алдаа');
         },
         onSuccess: () => {
@@ -172,6 +192,10 @@ export default function MarketingBudgetPage() {
 
     const overview = data?.overview;
     const channelLabels = useMemo(() => data?.channels || {}, [data]);
+    const scopeBusy = editMode || saveBudgets.isPending || addSpend.isPending || removeSpend.isPending;
+    const draftTotal = Object.values(draftBudgets).reduce((sum, value) => sum + (Number(value) || 0), 0);
+    const validDraft = annualAmount.trim() !== '' && MarketingBudgetSchema.safeParse({ year, annualAmount: Number(annualAmount),
+        months: Object.entries(draftBudgets).map(([m, v]) => ({ month: Number(m), amount: v.trim() ? Number(v) : 0 })) }).success;
 
     const startEdit = () => {
         const init: Record<number, string> = {};
@@ -179,26 +203,35 @@ export default function MarketingBudgetPage() {
             init[m.month] = m.budget ? String(m.budget) : '';
         });
         setDraftBudgets(init);
+        setAnnualAmount(String(overview?.totals.budget ?? 0));
         setEditMode(true);
     };
+
+    const distributeAnnual = () => {
+        try {
+            const months = allocateAnnualBudget(Number(annualAmount));
+            setDraftBudgets(Object.fromEntries(months.map(m => [m.month, String(m.amount)])));
+        } catch { toast.error('Жилийн төсөв 0-ээс их эсвэл тэнцүү бүхэл төгрөгөөр байна'); }
+    };
+    const resetSpendDraft = () => { setAmount(''); setNote(''); };
 
     return (
         <div className="mx-auto max-w-5xl">
             <PageHeader
                 eyebrow="Маркетинг"
                 title="Төсвийн хяналт"
-                subtitle="Сар бүрийн маркетингийн төсөв, бодит зарцуулалт, борлуулалтын орлогын харьцуулалт — өнгөөр ялгаж хянана"
+                subtitle="Байгууллага эсвэл төслийн жилийн төсөв оруулж, сар бүрийн бүртгэсэн зарцуулалт, гэрээний дүнтэй харьцуулна"
                 secondaryActions={
                     <div className="flex items-center gap-1">
-                        <Button variant="secondary" size="iconSm" onClick={() => setYear((y) => y - 1)} title="Өмнөх он">
+                        <Button variant="secondary" size="iconSm" disabled={scopeBusy || year <= 2020} onClick={() => { setYear((y) => y - 1); resetSpendDraft(); }} title="Өмнөх он">
                             <ChevronLeft className="w-4 h-4" />
                         </Button>
                         <span className="min-w-16 text-center text-sm font-medium tabular-nums">{year}</span>
                         <Button
                             variant="secondary"
                             size="iconSm"
-                            onClick={() => setYear((y) => y + 1)}
-                            disabled={year >= now.getFullYear() + 1}
+                            onClick={() => { setYear((y) => y + 1); resetSpendDraft(); }}
+                            disabled={scopeBusy || year >= 2100}
                             title="Дараах он"
                         >
                             <ChevronRight className="w-4 h-4" />
@@ -207,7 +240,17 @@ export default function MarketingBudgetPage() {
                 }
             />
 
-            {isLoading || !data ? (
+            <label className="mb-5 grid max-w-sm gap-1.5 text-sm">
+                Төсвийн хамрах хүрээ
+                <select aria-label="Төсвийн хамрах хүрээ" className="h-10 rounded-md border border-border bg-surface px-3 text-sm" value={project}
+                    disabled={scopeBusy || isLoading} onChange={e => { setProject(e.target.value); resetSpendDraft(); }}>
+                    <option value="">Байгууллагын нийт төсөв</option>
+                    {data?.projects?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+                <span className="text-xs text-muted-foreground">Төслийн төсвүүд тусдаа хадгалагдана. Байгууллагын нийт төсөвт автоматаар нэмэгдэхгүй.</span>
+            </label>
+
+            {error ? <Alert variant="danger"><AlertTitle>Төсөв татахад алдаа гарлаа</AlertTitle><AlertDescription>{error.message}</AlertDescription><Button variant="secondary" size="sm" onClick={() => void refetch()}>Дахин оролдох</Button></Alert> : isLoading || !data ? (
                 <div className="flex items-center justify-center py-24">
                     <Spinner size="lg" />
                 </div>
@@ -215,8 +258,7 @@ export default function MarketingBudgetPage() {
                 <Alert variant="warning">
                     <AlertTitle>Хүснэгт үүсээгүй байна</AlertTitle>
                     <AlertDescription>
-                        Төсвийн миграци (supabase/migrations/20260721140000_marketing_budget_indicators.sql)
-                        хийгдээгүй тул энэ хуудас түр ажиллахгүй.
+                        {data.error || 'Төсвийн хадгалалт бэлэн биш байна.'}
                     </AlertDescription>
                 </Alert>
             ) : (
@@ -260,11 +302,11 @@ export default function MarketingBudgetPage() {
                                     { label: 'Жилийн төсөв', node: <Money value={overview?.totals.budget} compact /> },
                                     { label: 'Зарцуулалт', node: <Money value={overview?.totals.spend} compact /> },
                                     {
-                                        label: 'Борлуулалтын орлого',
+                                        label: 'Гэрээний нийт дүн',
                                         node: <Money value={overview?.totals.revenue} compact />,
                                     },
                                     {
-                                        label: 'Өгөөж (орлого/зардал)',
+                                        label: 'Гэрээний дүн / зардал',
                                         node: (
                                             <span className="inline-flex items-center gap-1.5">
                                                 <TrendingUp className="w-3.5 h-3.5 text-status-success" />
@@ -296,27 +338,38 @@ export default function MarketingBudgetPage() {
                     )}
 
                     {!!(data.spendQuality?.missingFx || data.spendQuality?.excludedManual) && <Alert variant="warning">Ханшгүй Meta: {data.spendQuality?.missingFx} мөр; нийтээс хассан гар Meta: {data.spendQuality?.excludedManual} мөр. Ханшгүй бол нийт зардал бүрэн биш. <a href="/marketing" className="underline">Meta синк / ханш тохируулах</a></Alert>}
+                    {!!data.unassignedSpendCount && <Alert variant="warning">Төсөлд холбоогүй {data.unassignedSpendCount} зардлын мөр энэ төслийн нийтэд ороогүй. Маркетингийн зардлын бүртгэлээс төслийг холбоно уу.</Alert>}
                     {/* Сар бүрийн хяналт */}
                     <Card>
                         <CardHeader className="flex flex-row items-center justify-between py-3">
                             <CardTitle className="text-base">Сар бүрийн төсөв ба гүйцэтгэл</CardTitle>
                             {editMode ? (
                                 <div className="flex gap-2">
-                                    <Button variant="secondary" size="sm" onClick={() => setEditMode(false)}>
+                                    <Button variant="secondary" size="sm" disabled={saveBudgets.isPending} onClick={() => setEditMode(false)}>
                                         Болих
                                     </Button>
-                                    <Button size="sm" onClick={() => saveBudgets.mutate()} isLoading={saveBudgets.isPending}>
+                                    <Button size="sm" disabled={!validDraft} onClick={() => saveBudgets.mutate()} isLoading={saveBudgets.isPending}>
                                         Хадгалах
                                     </Button>
                                 </div>
                             ) : (
-                                <Button variant="secondary" size="sm" onClick={startEdit}>
+                                canWrite && <Button variant="secondary" size="sm" onClick={startEdit}>
                                     <Pencil className="w-4 h-4 mr-1.5" />
                                     Төсөв засах
                                 </Button>
                             )}
                         </CardHeader>
                         <CardContent className="p-0">
+                            {editMode && <div className="space-y-2 border-b border-border px-4 py-4">
+                                <div className="flex flex-wrap items-end gap-3">
+                                    <label className="grid gap-1.5 text-sm">Жилийн төсөв (₮)<Input type="number" min={0} max={MAX_BUDGET_AMOUNT} step={1}
+                                        value={annualAmount} disabled={saveBudgets.isPending} onChange={e => setAnnualAmount(e.target.value)} /></label>
+                                    <Button variant="secondary" disabled={saveBudgets.isPending || annualAmount.trim() === '' || !Number.isSafeInteger(Number(annualAmount)) || Number(annualAmount) < 0 || Number(annualAmount) > MAX_BUDGET_AMOUNT}
+                                        onClick={distributeAnnual}>12 сард тэнцүү хуваарилах</Button>
+                                </div>
+                                <p className="text-xs text-muted-foreground">Хуваарилах товч доорх 12 сарын дүнг шинэчилнэ. Сар бүрийг шалгаж, шаардлагатай бол өөрчилсний дараа хадгална.</p>
+                                <p className="text-sm">Хуваарилсан нийт: <Money value={draftTotal} />{draftTotal !== Number(annualAmount) && <span className="ml-2 text-status-pending">Жилийн дүнтэй тэнцүүлэх шаардлагатай</span>}</p>
+                            </div>}
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm">
                                     <thead>
@@ -325,23 +378,28 @@ export default function MarketingBudgetPage() {
                                             <th className="px-2 py-2 font-medium text-right">Төсөв</th>
                                             <th className="px-2 py-2 font-medium text-right">Зарцуулалт</th>
                                             <th className="px-2 py-2 font-medium w-[26%]">Гүйцэтгэл</th>
-                                            <th className="px-2 py-2 font-medium text-right">Орлого</th>
+                                            <th className="px-2 py-2 font-medium text-right">Гэрээний дүн</th>
                                             <th className="px-4 py-2 font-medium text-right">Төлөв</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-border/60">
                                         {overview?.months.map((m) => (
-                                            <tr key={m.month} className={m.month === now.getMonth() + 1 && year === now.getFullYear() ? 'bg-brand-soft/20' : undefined}>
+                                            <tr key={m.month} className={m.month === now.month && year === now.year ? 'bg-brand-soft/20' : undefined}>
                                                 <td className="px-4 py-2.5 whitespace-nowrap">{m.month}-р сар</td>
                                                 <td className="px-2 py-2.5 text-right">
                                                     {editMode ? (
                                                         <Input
                                                             type="number"
                                                             min={0}
+                                                            max={MAX_BUDGET_AMOUNT}
+                                                            step={1}
+                                                            disabled={saveBudgets.isPending}
                                                             value={draftBudgets[m.month] ?? ''}
-                                                            onChange={(e) =>
-                                                                setDraftBudgets((p) => ({ ...p, [m.month]: e.target.value }))
-                                                            }
+                                                            onChange={(e) => {
+                                                                const next = { ...draftBudgets, [m.month]: e.target.value };
+                                                                setDraftBudgets(next);
+                                                                setAnnualAmount(String(Object.values(next).reduce((sum, value) => sum + (Number(value) || 0), 0)));
+                                                            }}
                                                             className="h-8 w-32 text-right ml-auto"
                                                             aria-label={`${m.month}-р сарын төсөв`}
                                                         />
@@ -386,10 +444,11 @@ export default function MarketingBudgetPage() {
                             </CardTitle>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <div className="flex flex-wrap items-center gap-2">
+                            {canWrite && <div className="flex flex-wrap items-center gap-2">
                                 <Input
                                     type="date"
                                     value={spentAt}
+                                    disabled={addSpend.isPending}
                                     onChange={(e) => setSpentAt(e.target.value)}
                                     className="w-auto"
                                     aria-label="Огноо"
@@ -397,13 +456,16 @@ export default function MarketingBudgetPage() {
                                 <Input
                                     type="number"
                                     min={0}
+                                    max={MAX_BUDGET_AMOUNT}
+                                    step={1}
                                     value={amount}
+                                    disabled={addSpend.isPending}
                                     onChange={(e) => setAmount(e.target.value)}
                                     placeholder="Дүн (₮)"
                                     className="w-36"
                                     aria-label="Дүн"
                                 />
-                                <Select value={channel} onValueChange={setChannel}>
+                                <Select value={channel} onValueChange={setChannel} disabled={addSpend.isPending}>
                                     <SelectTrigger className="h-10 w-44" aria-label="Суваг">
                                         <SelectValue />
                                     </SelectTrigger>
@@ -417,6 +479,7 @@ export default function MarketingBudgetPage() {
                                 </Select>
                                 <Input
                                     value={note}
+                                    disabled={addSpend.isPending}
                                     onChange={(e) => setNote(e.target.value)}
                                     placeholder="Тайлбар (заавал биш)"
                                     className="flex-1 min-w-40"
@@ -425,12 +488,12 @@ export default function MarketingBudgetPage() {
                                 <Button
                                     onClick={() => addSpend.mutate()}
                                     isLoading={addSpend.isPending}
-                                    disabled={!amount || Number(amount) <= 0}
+                                    disabled={!amount || !Number.isSafeInteger(Number(amount)) || Number(amount) <= 0 || Number(amount) > MAX_BUDGET_AMOUNT}
                                 >
                                     <Plus className="w-4 h-4 md:mr-1.5" />
                                     <span className="hidden md:inline">Бүртгэх</span>
                                 </Button>
-                            </div>
+                            </div>}
 
                             {(data.byChannel || []).length > 0 && (
                                 <div className="space-y-2">
@@ -473,15 +536,15 @@ export default function MarketingBudgetPage() {
                                             </div>
                                             <div className="flex items-center gap-2 flex-shrink-0">
                                                 {e.exclusion ? <span className="text-xs text-muted-foreground">Нийтэд ороогүй</span> : <Money value={e.amount} className="text-sm font-medium" />}
-                                                <Button
+                                                {canDelete && <Button
                                                     variant="ghost"
                                                     size="iconSm"
-                                                    disabled={e.source === 'meta'}
+                                                    disabled={e.source === 'meta' || removeSpend.isPending}
                                                     onClick={() => removeSpend.mutate(e.id)}
                                                     title="Устгах"
                                                 >
                                                     <Trash2 className="w-4 h-4 text-status-danger" />
-                                                </Button>
+                                                </Button>}
                                             </div>
                                         </div>
                                     ))}

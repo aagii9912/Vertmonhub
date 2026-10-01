@@ -59,6 +59,8 @@ export async function inviteUser(shopId: string, args: any, confirm = false, act
         let uid = profile?.id;
         let tempPassword: string | undefined;
         if (!uid) {
+            if (role === 'sales_manager' && (!full_name || full_name === email))
+                return { error: 'Борлуулалтын менежерийн бодит нэрийг оруулна уу' };
             tempPassword = `Vh1${randomBytes(18).toString('base64url')}!`;
             const { data, error } = await db.auth.admin.createUser({
                 email, password: tempPassword, email_confirm: true, user_metadata: { full_name: full_name || email },
@@ -87,7 +89,7 @@ export async function inviteUser(shopId: string, args: any, confirm = false, act
 }
 
 /** API-тай ижил дүрийн шалгалт: тодорхой дүр, өөр хэрэглэгч, баталгаажуулалт. */
-export async function assignRole(_shopId: string, args: any, confirm = false, actingUserId?: string) {
+export async function assignRole(shopId: string, args: any, confirm = false, actingUserId?: string) {
     try {
         const parsed = adminUserInput.safeParse(args);
         if (!parsed.success || !args.role) return { error: 'Имэйл эсвэл дүр буруу байна' };
@@ -102,8 +104,19 @@ export async function assignRole(_shopId: string, args: any, confirm = false, ac
         if (targetError || !target?.user) return { error: 'Хэрэглэгчийн Auth мэдээлэл уншигдсангүй' };
         if (!confirm) return confirmNeeded('assign_role', { email, role },
             `Дүр оноох: ${email} → ${role}`, { Хэрэглэгч: email, 'Шинэ дүр': role });
-        const { error: roleError } = await db.from('user_roles').upsert({ user_id: profile.id, role }, { onConflict: 'user_id' });
-        if (roleError) throw roleError;
+        if (role === 'sales_manager') {
+            const shop = await resolveTargetShop(db, args.shop_id || shopId);
+            if (!shop.id) return { error: shop.error };
+            if (!await userCanAccessShop(db, actingUserId!, shop.id))
+                return { error: 'Та энэ байгууллагад харьяалагдахгүй байна' };
+            const provisioningError = await provisionUserAccess(db, {
+                actorId: actingUserId!, userId: profile.id, email, role, shopId: shop.id, isNew: false,
+            });
+            if (provisioningError) return provisioningError;
+        } else {
+            const { error: roleError } = await db.from('user_roles').upsert({ user_id: profile.id, role }, { onConflict: 'user_id' });
+            if (roleError) throw roleError;
+        }
         return { success: true, message: `${email}-д "${role}" дүр оноолоо.` };
     } catch (error) {
         console.error('AI role assignment failed:', error);

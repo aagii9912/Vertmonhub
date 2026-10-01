@@ -19,10 +19,11 @@ vi.mock('@/lib/supabase-browser', () => ({
 import { AuthProvider, useAuth } from '../AuthContext';
 
 function Reader() {
-    const { user, shop, isLoaded } = useAuth();
+    const { user, shop, isLoaded, refreshShops } = useAuth();
     return <div>
         <span data-testid="access">{isLoaded ? user?.permissions.modules.join(',') || 'denied' : 'loading'}</span>
         <span data-testid="shop">{shop?.id || 'none'}</span>
+        <button onClick={() => void refreshShops()}>Байгууллагууд шинэчлэх</button>
     </div>;
 }
 function me(modules = ['customers'], shops = [{ id: 'fixture-shop', name: 'Fixture' }]) {
@@ -30,6 +31,7 @@ function me(modules = ['customers'], shops = [{ id: 'fixture-shop', name: 'Fixtu
 }
 const fetchMock = vi.fn<typeof fetch>();
 beforeEach(() => {
+    state.session = { user: { id: 'fixture-user', email: 'fixture@example.invalid', user_metadata: {} } } as Session;
     fetchMock.mockReset();
     fetchMock.mockImplementation(async () => me());
     vi.stubGlobal('fetch', fetchMock);
@@ -79,5 +81,40 @@ describe('permission refresh', () => {
         await act(async () => newer(me(['dashboard'])));
         await act(async () => older(me(['customers'])));
         expect(screen.getByTestId('access')).toHaveTextContent('dashboard');
+    });
+    it('clears prior admin access while a different account is loading', async () => {
+        render(<AuthProvider><Reader /></AuthProvider>);
+        await waitFor(() => expect(screen.getByTestId('access')).toHaveTextContent('customers'));
+        let finish!: (response: Response) => void;
+        fetchMock.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+        const nextSession = { user: { id: 'next-user', email: 'next@example.invalid', user_metadata: {} } } as Session;
+        act(() => state.onChange?.('SIGNED_IN', nextSession));
+        expect(screen.getByTestId('access')).toHaveTextContent('loading');
+        expect(screen.getByTestId('shop')).toHaveTextContent('none');
+        expect(localStorage.getItem('vertmonhub_active_shop_id')).toBeNull();
+        await act(async () => finish(me(['dashboard'], [{ id: 'next-shop', name: 'Next' }])));
+        await waitFor(() => expect(screen.getByTestId('access')).toHaveTextContent('dashboard'));
+        expect(screen.getByTestId('shop')).toHaveTextContent('next-shop');
+    });
+    it('a failed shop refresh preserves the selected organization for retry', async () => {
+        render(<AuthProvider><Reader /></AuthProvider>);
+        await waitFor(() => expect(screen.getByTestId('shop')).toHaveTextContent('fixture-shop'));
+        fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'Temporary failure' }), { status: 500 }));
+        fireEvent.click(screen.getByText('Байгууллагууд шинэчлэх'));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        expect(screen.getByTestId('shop')).toHaveTextContent('fixture-shop');
+        expect(localStorage.getItem('vertmonhub_active_shop_id')).toBe('fixture-shop');
+    });
+    it('a stale shop refresh cannot restore membership after logout', async () => {
+        render(<AuthProvider><Reader /></AuthProvider>);
+        await waitFor(() => expect(screen.getByTestId('access')).toHaveTextContent('customers'));
+        let finish!: (response: Response) => void;
+        fetchMock.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+        fireEvent.click(screen.getByText('Байгууллагууд шинэчлэх'));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        act(() => state.onChange?.('SIGNED_OUT', null));
+        await act(async () => finish(new Response(JSON.stringify({ shops: [{ id: 'fixture-shop', name: 'Fixture' }] }))));
+        expect(screen.getByTestId('access')).toHaveTextContent('denied');
+        expect(screen.getByTestId('shop')).toHaveTextContent('none');
     });
 });

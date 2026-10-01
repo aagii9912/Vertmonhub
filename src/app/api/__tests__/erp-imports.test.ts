@@ -18,16 +18,26 @@ function query(table: string) {
     const filters: Array<(r: Row) => boolean> = [];
     let update: Row | null = null;
     let insert: Row | null = null;
+    let bounds: [number, number] | null = null;
+    let order: { key: string; ascending: boolean } | null = null;
+    let limit: number | null = null;
     const execute = (single = false) => {
         if (insert) tables[table].push(insert);
         const data = tables[table].filter(r => filters.every(f => f(r)));
         if (update) for (const r of data) Object.assign(r, update);
-        return { data: single ? data[0] ?? null : data, error: null, count: data.length };
+        if (order) {
+            const { key, ascending } = order;
+            data.sort((a, b) => (Number(a[key]) - Number(b[key])) * (ascending ? 1 : -1));
+        }
+        const rows = limit === null ? data : data.slice(0, limit);
+        return { data: single ? rows[0] ?? null : bounds ? rows.slice(bounds[0], bounds[1] + 1) : rows, error: null, count: data.length };
     };
     const q = {
         select: () => q, eq: (key: string, value: unknown) => { filters.push(r => key === 'design' && typeof value === 'string' ? JSON.stringify(r[key]) === value : r[key] === value); return q; },
         is: (key: string, value: unknown) => { filters.push(r => r[key] === value); return q; },
-        order: () => q, range: () => q, limit: () => q,
+        order: (key: string, options?: { ascending?: boolean }) => { order = { key, ascending: options?.ascending !== false }; return q; },
+        range: (from: number, to: number) => { bounds = [from, to]; return q; },
+        limit: (value: number) => { limit = value; return q; },
         update: (values: Row) => { update = values; return q; }, insert: (values: Row) => { insert = values; return q; },
         maybeSingle: async () => execute(true), single: async () => execute(true),
         then: (resolve: (v: ReturnType<typeof execute>) => unknown) => Promise.resolve(execute()).then(resolve),
@@ -52,6 +62,26 @@ it('rejects stale ERP previews before committing and does not expose another sho
     expect((await erpPost(new NextRequest('http://localhost/api/dashboard/erp-imports', { method: 'POST', body: form }))).status).toBe(409);
     expect(mocks.rpc).not.toHaveBeenCalled();
     expect((await erpGet(new NextRequest(`http://localhost/api/dashboard/erp-imports?id=${foreign}`))).status).toBe(404);
+});
+it('discovers every saved ERP source in the verified shop and defaults to the latest saved source', async () => {
+    tables.erp_imports.push(
+        ...Array.from({ length: 1000 }, (_, i) => ({ id: String(i), shop_id: 'allowed', source: 'Elysium ERP', sequence: 2000 - i, datasets: [] })),
+        { id: own, shop_id: 'allowed', source: 'Mandala ERP', sequence: 1, datasets: [] },
+        { id: foreign, shop_id: 'other', source: 'Foreign ERP', sequence: 9999, datasets: [] },
+    );
+    const sources = await erpGet(new NextRequest('http://localhost/api/dashboard/erp-imports?sources=1&shop_id=other'));
+    expect(sources.headers.get('cache-control')).toBe('no-store');
+    expect(await sources.json()).toEqual({ sources: ['Elysium ERP', 'Mandala ERP'] });
+    const history = await erpGet(new NextRequest('http://localhost/api/dashboard/erp-imports'));
+    expect(await history.json()).toMatchObject({ source: 'Elysium ERP', total: 1000 });
+    const explicit = await erpGet(new NextRequest('http://localhost/api/dashboard/erp-imports?source=Mandala%20ERP'));
+    expect(await explicit.json()).toMatchObject({ source: 'Mandala ERP', total: 1, imports: [{ id: own }] });
+});
+it('keeps an empty source list valid and uses ERP as the initial source when no imports exist', async () => {
+    const sources = await erpGet(new NextRequest('http://localhost/api/dashboard/erp-imports?sources=1'));
+    expect(await sources.json()).toEqual({ sources: [] });
+    const history = await erpGet(new NextRequest('http://localhost/api/dashboard/erp-imports'));
+    expect(await history.json()).toMatchObject({ source: 'ERP', total: 0, imports: [] });
 });
 it('exports all matching ERP rows with separate before/after values and retains string IDs', async () => {
     const dataset = (amount: number) => normalizeErpSheets([{ name: 'Гэрээ', columns: ['ID', 'Дүн'], rows: [{ ID: '001', Дүн: amount }] }], { Гэрээ: ['ID'] });

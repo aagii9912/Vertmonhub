@@ -11,7 +11,7 @@ export async function logAdminAudit(params: {
     meta?: Record<string, unknown>;
 }): Promise<void> {
     try {
-        await supabaseAdmin()
+        const { error } = await supabaseAdmin()
             .from('admin_audit_log')
             .insert({
                 actor_id: params.actorId || null,
@@ -19,6 +19,7 @@ export async function logAdminAudit(params: {
                 target_id: params.targetId || null,
                 meta: params.meta || {},
             });
+        if (error) throw error;
     } catch (error) {
         logger.warn('[Admin Audit] log failed', { action: params.action, error });
     }

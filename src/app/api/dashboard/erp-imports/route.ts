@@ -6,6 +6,7 @@ import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission
 import { readWorkbookSheets, buildWorkbookBuffer } from '@/lib/utils/xlsx';
 import { compareErp, normalizeErpSheets, ErpOptionsSchema, ERP_LIMITS, erpWeek, type ErpImport } from '@/lib/erp/import';
 import { ubDateStr } from '@/lib/utils/date';
+import { fetchAllRows } from '@/lib/utils/pagination';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -19,12 +20,27 @@ export async function GET(req: NextRequest) {
     const db = supabaseAdmin();
     const q = req.nextUrl.searchParams;
     const id = q.get('id');
+    if (q.get('sources') === '1') {
+        try {
+            const rows = await fetchAllRows<{ source: string }>((from, to) => db.from('erp_imports')
+                .select('source').eq('shop_id', shop.id).order('sequence', { ascending: false }).range(from, to));
+            return NextResponse.json({ sources: [...new Set(rows.map(row => row.source))] }, { headers: noCache });
+        } catch {
+            return failure();
+        }
+    }
     if (!id) {
-        const source = q.get('source')?.trim() || 'ERP';
+        let source = q.get('source')?.trim();
+        if (!source) {
+            const latest = await db.from('erp_imports').select('source').eq('shop_id', shop.id)
+                .order('sequence', { ascending: false }).limit(1).maybeSingle();
+            if (latest.error) return failure();
+            source = latest.data?.source ?? 'ERP';
+        }
         const page = Math.max(0, Math.min(10000, Number(q.get('page')) || 0));
         const { data, error, count } = await db.from('erp_imports').select(metadata, { count: 'exact' }).eq('shop_id', shop.id).eq('source', source).order('sequence', { ascending: false }).range(page * 50, page * 50 + 49);
         if (error) return failure();
-        return NextResponse.json({ imports: data, total: count, week: erpWeek() }, { headers: noCache });
+        return NextResponse.json({ imports: data, total: count, source, week: erpWeek() }, { headers: noCache });
     }
     if (!z.string().uuid().safeParse(id).success) return NextResponse.json({ error: 'Импортын ID буруу' }, { status: 400 });
     const { data, error } = await db.from('erp_imports').select('*').eq('shop_id', shop.id).eq('id', id).maybeSingle();

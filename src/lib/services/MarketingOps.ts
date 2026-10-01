@@ -12,16 +12,18 @@ export function isMissingMarketingTable(error: { code?: string; message?: string
 }
 export const MARKETING_MIGRATION_HINT = 'Төсвийн хүснэгтүүд үүсээгүй байна — 20260721140000_marketing_budget_indicators.sql миграцийг ажиллуулна уу';
 
-export async function logMarketingSpend(db: SupabaseClient, shopId: string, userId: string | null, d: { spentAt: string; amount: number; channel?: string; note?: string | null }) {
+export async function logMarketingSpend(db: SupabaseClient, shopId: string, userId: string | null, d: { spentAt: string; amount: number; channel?: string; note?: string | null; project_id?: string | null }) {
     return db.from('marketing_spend_entries').insert({
         shop_id: shopId, spent_at: d.spentAt, amount: d.amount,
-        channel: d.channel && SPEND_CHANNELS[d.channel] ? d.channel : 'other', note: d.note?.trim() || null, created_by: userId,
+        channel: d.channel && Object.hasOwn(SPEND_CHANNELS, d.channel) ? d.channel : 'other', note: d.note?.trim() || null, created_by: userId,
+        ...(d.project_id ? { project_id: d.project_id } : {}),
     }).select('id, spent_at, amount, channel, note, created_at').single();
 }
 
-export async function upsertMarketingBudget(db: SupabaseClient, shopId: string, year: number, months: Array<{ month: number; amount: number }>) {
-    const rows = months.map((m) => ({ shop_id: shopId, year, month: m.month, amount: m.amount }));
-    return db.from('marketing_budgets').upsert(rows, { onConflict: 'shop_id,year,month' });
+export async function upsertMarketingBudget(db: SupabaseClient, shopId: string, year: number, months: Array<{ month: number; amount: number }>, projectId?: string | null) {
+    const rows = months.map((m) => ({ shop_id: shopId, year, month: m.month, amount: m.amount, ...(projectId ? { project_id: projectId } : {}) }));
+    return db.from(projectId ? 'marketing_project_budgets' : 'marketing_budgets')
+        .upsert(rows, { onConflict: projectId ? 'shop_id,project_id,year,month' : 'shop_id,year,month' });
 }
 
 export async function addMarketIndicator(db: SupabaseClient, shopId: string, d: { category?: string; name: string; value: string; note?: string | null; sourceUrl?: string | null; recordedAt?: string | null }) {

@@ -1,3 +1,5 @@
+import { z } from 'zod';
+
 /**
  * Маркетингийн төсвийн хяналтын PURE туслахууд (DB-гүй, unit-тестэд ордог).
  * Самбарын өнгөний дүрэм: зарцуулалт төсвийн <80% = ok (ногоон),
@@ -5,6 +7,33 @@
  */
 
 export type BudgetStatus = 'none' | 'ok' | 'warn' | 'over';
+
+export const MAX_BUDGET_AMOUNT = 99_999_999_999_999;
+export const budgetAmountSchema = z.number().int().min(0).max(MAX_BUDGET_AMOUNT);
+export const MarketingBudgetSchema = z.object({
+    year: z.number().int().min(2020).max(2100),
+    project_id: z.string().uuid().nullable().optional(),
+    annualAmount: budgetAmountSchema.optional(),
+    months: z.array(z.object({ month: z.number().int().min(1).max(12), amount: budgetAmountSchema })).min(1).max(12).optional(),
+}).superRefine((value, ctx) => {
+    if (!value.months && value.annualAmount === undefined) {
+        ctx.addIssue({ code: 'custom', message: 'Жилийн дүн эсвэл сарын хуваарилалт шаардлагатай', path: ['months'] });
+    }
+    if (value.months && new Set(value.months.map(m => m.month)).size !== value.months.length) {
+        ctx.addIssue({ code: 'custom', message: 'Сар давхардсан байна', path: ['months'] });
+    }
+    if (value.months && value.annualAmount !== undefined
+        && (value.months.length !== 12 || value.months.reduce((sum, m) => sum + m.amount, 0) !== value.annualAmount)) {
+        ctx.addIssue({ code: 'custom', message: '12 сарын нийлбэр жилийн төсөвтэй тэнцүү байна', path: ['annualAmount'] });
+    }
+});
+
+/** Жилийн дүнг бүхэл төгрөгөөр хуваана; үлдэгдлийг эхний саруудад нэмнэ. */
+export function allocateAnnualBudget(amount: number): Array<{ month: number; amount: number }> {
+    const total = budgetAmountSchema.parse(amount);
+    const monthly = Math.floor(total / 12);
+    return Array.from({ length: 12 }, (_, i) => ({ month: i + 1, amount: monthly + (i < total % 12 ? 1 : 0) }));
+}
 
 /** Зарцуулалтын гар бүртгэлийн канон сувгууд + монгол нэрс. */
 export const SPEND_CHANNELS: Record<string, string> = {
@@ -38,9 +67,10 @@ export function monthlySpendSeries(entries: SpendEntryLite[], year: number): num
     const out = Array(12).fill(0);
     for (const entry of entries) {
         if (!entry.spent_at) continue;
-        const d = new Date(entry.spent_at);
-        if (d.getFullYear() !== year) continue;
-        out[d.getMonth()] += Number(entry.amount) || 0;
+        const match = /^(\d{4})-(\d{2})-\d{2}$/.exec(entry.spent_at);
+        if (!match || Number(match[1]) !== year) continue;
+        const month = Number(match[2]);
+        if (month >= 1 && month <= 12) out[month - 1] += Number(entry.amount) || 0;
     }
     return out;
 }

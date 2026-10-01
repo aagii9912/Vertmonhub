@@ -7,6 +7,14 @@ import { getAdminUser } from '@/lib/admin/auth';
 import { adminUserInput, checkRoleAssignment, isAssignableRole, provisionUserAccess, resolveTargetShop } from '@/lib/admin/user-provisioning';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import type { User } from '@supabase/supabase-js';
+import { z } from 'zod';
+
+const roleChangeInput = z.object({
+    userId: z.uuid(),
+    role: z.string().regex(/^[a-z][a-z0-9_]{0,49}$/),
+    shop_id: z.preprocess(value => value === '' ? undefined : value, z.uuid().optional()),
+});
+const passwordInput = z.string().min(8).max(1024);
 
 /**
  * Үүсгэсэн/шинэчилсэн нууц үгээр нэвтрэлт БОДИТООР ажиллаж буйг сервер талд
@@ -58,15 +66,22 @@ export async function GET() {
         }
 
         // Get all roles
-        const [roles, profiles] = await Promise.all([
+        const [roles, profiles, shops, members, managers] = await Promise.all([
             fetchAllRows<{ user_id: string; role: string }>((from, to) =>
                 supabase.from('user_roles').select('user_id, role').range(from, to)),
             fetchAllRows<{ id: string; full_name: string | null }>((from, to) =>
                 supabase.from('user_profiles').select('id, full_name').range(from, to)),
+            fetchAllRows<{ id: string; name: string; user_id: string }>((from, to) =>
+                supabase.from('shops').select('id, name, user_id').range(from, to)),
+            fetchAllRows<{ user_id: string; shop_id: string }>((from, to) =>
+                supabase.from('shop_members').select('user_id, shop_id').range(from, to)),
+            fetchAllRows<{ user_id: string | null; shop_id: string; name: string; is_active: boolean }>((from, to) =>
+                supabase.from('sales_managers').select('user_id, shop_id, name, is_active').range(from, to)),
         ]);
 
         const roleMap = new Map((roles || []).map(r => [r.user_id, r.role]));
         const profileMap = new Map((profiles || []).map(p => [p.id, p.full_name]));
+        const memberKeys = new Set(members.map(member => `${member.user_id}:${member.shop_id}`));
 
         const users = (authUsers || []).map(u => ({
             id: u.id,
@@ -74,12 +89,18 @@ export async function GET() {
             full_name: profileMap.get(u.id) || u.user_metadata?.full_name || null,
             role: roleMap.get(u.id) || 'viewer',
             created_at: u.created_at,
+            email_confirmed: Boolean(u.email_confirmed_at),
+            last_sign_in_at: u.last_sign_in_at || null,
+            shops: shops.filter(shop => shop.user_id === u.id || memberKeys.has(`${u.id}:${shop.id}`))
+                .map(shop => ({ id: shop.id, name: shop.name, is_owner: shop.user_id === u.id })),
+            manager_shops: managers.filter(manager => manager.user_id === u.id && manager.is_active)
+                .map(manager => ({ shop_id: manager.shop_id, name: manager.name })),
         }));
 
         // Sort by created_at desc
         users.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
-        return NextResponse.json({ users });
+        return NextResponse.json({ users, actor_id: admin.id });
     } catch (error) {
         console.error('GET /api/admin/users error:', error);
         return safeErrorResponse(error, 'Хэрэглэгчдийн жагсаалт унших үед алдаа гарлаа');
@@ -100,24 +121,33 @@ export async function PATCH(request: NextRequest) {
         const admin = await getAdminUser();
         if (!admin || admin.role !== 'super_admin') return NextResponse.json({ error: 'Super admin эрх шаардлагатай' }, { status: 403 });
 
-        const { userId: targetUserId, role } = await request.json();
-
-        if (typeof targetUserId !== 'string' || !targetUserId)
+        const parsed = roleChangeInput.safeParse(await request.json().catch(() => null));
+        if (!parsed.success)
             return NextResponse.json({ error: 'Хэрэглэгч эсвэл дүр буруу байна' }, { status: 400 });
+        const { userId: targetUserId, role, shop_id } = parsed.data;
         const denied = await checkRoleAssignment(supabase, userId, targetUserId, role);
         if (denied) return NextResponse.json({ error: denied.error }, { status: denied.status });
         const { data: target, error: targetError } = await supabase.auth.admin.getUserById(targetUserId);
         if (targetError || !target?.user)
             return NextResponse.json({ error: 'Хэрэглэгч олдсонгүй' }, { status: 404 });
 
-        // Upsert role
-        const { error } = await supabase
-            .from('user_roles')
-            .upsert({ user_id: targetUserId, role }, { onConflict: 'user_id' });
+        let managerShopId: string | undefined;
+        if (role === 'sales_manager') {
+            const shop = await resolveTargetShop(supabase, shop_id);
+            if (!shop.id) return NextResponse.json({ error: shop.error }, { status: 400 });
+            managerShopId = shop.id;
+            const provisioningError = await provisionUserAccess(supabase, {
+                actorId: userId, userId: targetUserId, email: target.user.email || '',
+                role, shopId: shop.id, isNew: false,
+            });
+            if (provisioningError) return NextResponse.json(provisioningError, { status: provisioningError.status });
+        } else {
+            const { error } = await supabase.from('user_roles')
+                .upsert({ user_id: targetUserId, role }, { onConflict: 'user_id' });
+            if (error) return safeErrorResponse(error, 'Хэрэглэгчийн эрх шинэчлэх үед алдаа гарлаа');
+        }
 
-        if (error) return safeErrorResponse(error, 'Хэрэглэгчийн эрх шинэчлэх үед алдаа гарлаа');
-
-        await logAdminAudit({ actorId: userId, action: 'user.role_update', targetId: targetUserId, meta: { role } });
+        await logAdminAudit({ actorId: userId, action: role === 'super_admin' ? 'user.super_admin_grant' : 'user.role_update', targetId: targetUserId, meta: { role, shop_id: managerShopId } });
 
         return NextResponse.json({ success: true, message: `Role updated to ${role}` });
     } catch (error) {
@@ -142,19 +172,17 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Super admin required' }, { status: 403 });
         }
 
-        const body = await request.json();
-        // Автомат бөглөлт/хуулбарлалтын үл үзэгдэх хоосон зайг арилгана —
-        // эс бөгөөс хэрэглэгч мэдэгдсэнээс өөр нууц үгтэй үүсдэг
-        const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : body.email;
-        const password = typeof body.password === 'string' ? body.password.trim() : body.password;
+        const body = await request.json().catch(() => null);
+        const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : body?.email;
+        // Login preserves the exact password; creating/resetting must do the same.
+        const password = body?.password;
         const parsed = adminUserInput.safeParse({ ...body, email });
-        if (!parsed.success || typeof password !== 'string') {
+        if (!parsed.success || !passwordInput.safeParse(password).success) {
             return NextResponse.json({ error: 'Имэйл, дүр эсвэл байгууллагын мэдээлэл буруу байна' }, { status: 400 });
         }
-        if (password.length < 8) {
-            return NextResponse.json({ error: 'Нууц үг хамгийн багадаа 8 тэмдэгт байх ёстой' }, { status: 400 });
-        }
         const { full_name, role } = parsed.data;
+        if (role === 'sales_manager' && (!full_name || full_name === email))
+            return NextResponse.json({ error: 'Борлуулалтын менежерийн бодит нэрийг оруулна уу' }, { status: 400 });
         if (!await isAssignableRole(supabase, role))
             return NextResponse.json({ error: 'Сонгосон дүр олдсонгүй' }, { status: 400 });
         const shop = await resolveTargetShop(supabase, parsed.data.shop_id);
@@ -239,17 +267,11 @@ export async function PUT(request: NextRequest) {
             return NextResponse.json({ error: 'Super admin эрх шаардлагатай' }, { status: 403 });
         }
 
-        const body = await request.json();
-        const targetUserId = body.userId;
-        // Үл үзэгдэх хоосон зайг арилгана (үүсгэх талтай ижил дүрэм)
-        const password = typeof body.password === 'string' ? body.password.trim() : body.password;
-
-        if (!targetUserId || !password) {
-            return NextResponse.json({ error: 'userId болон нууц үг шаардлагатай' }, { status: 400 });
-        }
-        if (password.length < 8) {
-            return NextResponse.json({ error: 'Нууц үг хамгийн багадаа 8 тэмдэгт байх ёстой' }, { status: 400 });
-        }
+        const parsed = z.object({ userId: z.uuid(), password: passwordInput })
+            .safeParse(await request.json().catch(() => null));
+        if (!parsed.success)
+            return NextResponse.json({ error: 'Хэрэглэгчийн ID болон 8–1024 тэмдэгттэй нууц үг шаардлагатай' }, { status: 400 });
+        const { userId: targetUserId, password } = parsed.data;
 
         const { data: updated, error: updateError } = await supabase.auth.admin.updateUserById(
             targetUserId,
@@ -308,8 +330,8 @@ export async function DELETE(request: NextRequest) {
         const { searchParams } = new URL(request.url);
         const targetUserId = searchParams.get('userId');
 
-        if (!targetUserId) {
-            return NextResponse.json({ error: 'userId параметр шаардлагатай' }, { status: 400 });
+        if (!z.uuid().safeParse(targetUserId).success) {
+            return NextResponse.json({ error: 'Хэрэглэгчийн ID буруу байна' }, { status: 400 });
         }
 
         // Prevent self-deletion
@@ -320,20 +342,20 @@ export async function DELETE(request: NextRequest) {
         // shops.user_id cascades through user_profiles: deleting an owner would delete
         // the whole shop and all CRM data. Refuse until ownership is reassigned.
         const { data: ownedShops, error: ownerError } = await supabase.from('shops')
-            .select('id').eq('user_id', targetUserId).limit(1);
+            .select('id').eq('user_id', targetUserId!).limit(1);
         if (ownerError) throw ownerError;
         if (ownedShops?.length)
             return NextResponse.json({ error: 'Байгууллагын эзэмшигчийг устгах боломжгүй. Эхлээд эзэмшлийг шилжүүлнэ үү' }, { status: 409 });
 
         // Auth deletion cascades to profile, role and membership rows.
-        const { error: deleteError } = await supabase.auth.admin.deleteUser(targetUserId);
+        const { error: deleteError } = await supabase.auth.admin.deleteUser(targetUserId!);
 
         if (deleteError) {
             console.error('Delete user error:', deleteError);
             return NextResponse.json({ error: 'Хэрэглэгч устгах үед алдаа: ' + deleteError.message }, { status: 500 });
         }
 
-        await logAdminAudit({ actorId: userId, action: 'user.delete', targetId: targetUserId });
+        await logAdminAudit({ actorId: userId, action: 'user.delete', targetId: targetUserId! });
 
         return NextResponse.json({
             success: true,

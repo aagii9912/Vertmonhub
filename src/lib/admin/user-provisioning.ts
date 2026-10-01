@@ -26,12 +26,18 @@ export async function checkRoleAssignment(db: AdminDb, actorId: string | undefin
     return null;
 }
 
+type AccessError = { error: string; status: number; partial_failure?: boolean };
+type ManagerRow = { name: string; user_id: string | null; is_active: boolean };
+
 /** Алдаа гарвал шинэ Auth бүртгэл эсвэл шинээр нэмсэн гишүүнчлэлийг буцаана. */
 export async function provisionUserAccess(db: AdminDb, input: {
     actorId: string; userId: string; email: string; fullName?: string;
     role: string; shopId: string; isNew: boolean;
-}): Promise<{ error: string; status: number; partial_failure?: boolean } | null> {
+}): Promise<AccessError | null> {
     let addedMembership = false;
+    let managerName: string | undefined;
+    let previousManager: ManagerRow | null = null;
+    let changedManager = false;
     try {
         const denied = await checkRoleAssignment(db, input.actorId, input.userId, input.role);
         if (denied) {
@@ -44,6 +50,32 @@ export async function provisionUserAccess(db: AdminDb, input: {
             }, { onConflict: 'id' });
             if (error) throw error;
         }
+
+        // sales_manager эрх нь идэвхтэй, яг энэ акаунттай холбосон roster-гүй бол
+        // лид авах/оноох урсгал ажиллахгүй. Одоо байгаа профайлын нэрийг хадгална.
+        if (input.role === 'sales_manager') {
+            const { data: profile, error: profileError } = await db.from('user_profiles')
+                .select('full_name').eq('id', input.userId).maybeSingle();
+            if (profileError) throw profileError;
+            const name = profile?.full_name?.trim();
+            if (!name || name === input.email || name.length > 120)
+                throw { error: 'Борлуулалтын менежерийн профайлд бодит нэр оруулна уу. Имэйлээр менежер үүсгэх боломжгүй.', status: 400 };
+            const [linked, named] = await Promise.all([
+                db.from('sales_managers').select('name, user_id, is_active')
+                    .eq('shop_id', input.shopId).eq('user_id', input.userId).limit(2),
+                db.from('sales_managers').select('name, user_id, is_active')
+                    .eq('shop_id', input.shopId).eq('name', name).maybeSingle(),
+            ]);
+            if (linked.error) throw linked.error;
+            if (named.error) throw named.error;
+            if ((linked.data || []).length > 1)
+                throw { error: 'Энэ акаунт олон менежерт холбогдсон байна. Борлуулалтын төлөвлөгөө хэсэгт холбоосыг засна уу.', status: 409 };
+            previousManager = linked.data?.[0] || named.data;
+            if (previousManager?.user_id && previousManager.user_id !== input.userId)
+                throw { error: 'Ижил нэртэй менежер өөр акаунттай холбогдсон байна. Профайлын нэр эсвэл менежерийн холбоосыг шалгана уу.', status: 409 };
+            managerName = previousManager?.name || name;
+        }
+
         const { data: membership, error: readError } = await db.from('shop_members').select('id')
             .eq('shop_id', input.shopId).eq('user_id', input.userId).maybeSingle();
         if (readError) throw readError;
@@ -55,6 +87,21 @@ export async function provisionUserAccess(db: AdminDb, input: {
             if (error && error.code !== '23505') throw error;
             addedMembership = !error;
         }
+
+        if (managerName && (!previousManager || !previousManager.user_id || !previousManager.is_active)) {
+            const row = { shop_id: input.shopId, name: managerName, user_id: input.userId, is_active: true };
+            // Нэрийг өөр акаунт зэрэг холбосон бол дарж бичихгүй.
+            let query = previousManager
+                ? db.from('sales_managers').update({ user_id: input.userId, is_active: true })
+                    .eq('shop_id', input.shopId).eq('name', managerName).eq('is_active', previousManager.is_active)
+                : db.from('sales_managers').insert(row);
+            if (previousManager) query = previousManager.user_id
+                ? query.eq('user_id', input.userId) : query.is('user_id', null);
+            const { data, error } = await query.select('name').maybeSingle();
+            if (error) throw error;
+            if (!data) throw { error: 'Менежерийн холбоос зэрэг өөрчлөгдсөн байна. Жагсаалтыг шинэчлээд дахин оролдоно уу.', status: 409 };
+            changedManager = true;
+        }
         // Write the role last: a failed profile/membership must never demote an existing account.
         const { error } = await db.from('user_roles').upsert({ user_id: input.userId, role: input.role }, { onConflict: 'user_id' });
         if (error) throw error;
@@ -62,18 +109,32 @@ export async function provisionUserAccess(db: AdminDb, input: {
     } catch (error) {
         console.error('User provisioning failed:', error);
         let rollbackError: unknown;
+        if (changedManager && managerName) {
+            try {
+                const query = previousManager
+                    ? db.from('sales_managers').update({ user_id: previousManager.user_id, is_active: previousManager.is_active })
+                    : db.from('sales_managers').delete();
+                const rollback = await query.eq('shop_id', input.shopId).eq('name', managerName)
+                    .eq('user_id', input.userId).eq('is_active', true).select('name').maybeSingle();
+                if (rollback.error || !rollback.data) rollbackError = rollback.error || new Error('Менежерийн холбоос буцаагдсангүй');
+            } catch (error) { rollbackError = error; }
+        }
         try {
             if (input.isNew) {
-                ({ error: rollbackError } = await db.auth.admin.deleteUser(input.userId));
+                const rollback = await db.auth.admin.deleteUser(input.userId);
+                rollbackError ||= rollback.error;
             } else if (addedMembership) {
-                ({ error: rollbackError } = await db.from('shop_members').delete()
-                    .eq('shop_id', input.shopId).eq('user_id', input.userId));
+                const rollback = await db.from('shop_members').delete()
+                    .eq('shop_id', input.shopId).eq('user_id', input.userId);
+                rollbackError ||= rollback.error;
             }
-        } catch (error) { rollbackError = error; }
+        } catch (error) { rollbackError ||= error; }
         if (rollbackError) {
             console.error('User provisioning rollback failed:', rollbackError);
             return { error: 'Бүртгэлийн холболт дутуу үүссэн бөгөөд буцаах үйлдэл амжилтгүй. Админ хэрэглэгчийн дүр, гишүүнчлэлийг шалгана уу.', status: 500, partial_failure: true };
         }
+        if (error && typeof error === 'object' && 'status' in error && 'error' in error)
+            return error as AccessError;
         return { error: 'Бүртгэлийн холболт үүссэнгүй. Өөрчлөлтийг буцаасан тул дахин оролдоно уу.', status: 500 };
     }
 }

@@ -5,7 +5,33 @@ import {
     budgetStatus,
     buildBudgetOverview,
     daysUntil,
+    allocateAnnualBudget,
+    MarketingBudgetSchema,
 } from '../budget';
+
+describe('жилийн төсвийн хуваарилалт', () => {
+    it('бүхэл төгрөгийн үлдэгдэлтэй ч 12 сарын нийлбэр жилийн дүнтэй тэнцэнэ', () => {
+        const months = allocateAnnualBudget(1201);
+        expect(months).toHaveLength(12);
+        expect(months[0]).toEqual({ month: 1, amount: 101 });
+        expect(months[11]).toEqual({ month: 12, amount: 100 });
+        expect(months.reduce((sum, m) => sum + m.amount, 0)).toBe(1201);
+        expect(allocateAnnualBudget(0).every(m => m.amount === 0)).toBe(true);
+        expect(allocateAnnualBudget(5).reduce((sum, m) => sum + m.amount, 0)).toBe(5);
+    });
+
+    it('буруу мөнгөн дүн, давхардсан сар, жилийн дүнтэй зөрсөн хуваарилалтыг хориглоно', () => {
+        for (const annualAmount of [-1, 1.5, Infinity, NaN, 100_000_000_000_000]) {
+            expect(() => allocateAnnualBudget(annualAmount)).toThrow();
+        }
+        expect(MarketingBudgetSchema.safeParse({ year: 2026, annualAmount: 1201 }).success).toBe(true);
+        expect(MarketingBudgetSchema.safeParse({ year: 2026 }).success).toBe(false);
+        expect(MarketingBudgetSchema.safeParse({ year: 2026, months: [{ month: 1, amount: 1 }, { month: 1, amount: 2 }] }).success).toBe(false);
+        expect(MarketingBudgetSchema.safeParse({ year: 2026, annualAmount: 1202, months: allocateAnnualBudget(1201) }).success).toBe(false);
+        expect(MarketingBudgetSchema.safeParse({ year: 2026, annualAmount: 1201, months: allocateAnnualBudget(1201) }).success).toBe(true);
+        expect(MarketingBudgetSchema.safeParse({ year: 2026, months: [{ month: 2, amount: 500 }] }).success).toBe(true);
+    });
+});
 
 describe('monthlySpendSeries', () => {
     it('оноор шүүж сар бүрийн нийлбэр гаргана', () => {
@@ -21,6 +47,15 @@ describe('monthlySpendSeries', () => {
         expect(out[0]).toBe(150);
         expect(out[6]).toBe(30);
         expect(out[11]).toBe(0);
+    });
+    it('огнооны сарын дугаарыг серверийн цагийн бүсээс үл хамааран ашиглана', () => {
+        const original = process.env.TZ;
+        try {
+            process.env.TZ = 'America/Los_Angeles';
+            const out = monthlySpendSeries([{ spent_at: '2026-01-01', amount: 100 }, { spent_at: '2026-13-01', amount: 1000 }], 2026);
+            expect(out[0]).toBe(100);
+            expect(out.reduce((sum, value) => sum + value, 0)).toBe(100);
+        } finally { process.env.TZ = original; }
     });
 });
 

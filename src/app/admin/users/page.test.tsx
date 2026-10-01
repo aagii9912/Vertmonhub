@@ -27,6 +27,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 it('requires an explicit shop choice and sends the selected multishop invitation scope', async () => {
     const invitations = mockApi([shopA, shopB]);
     render(<Page />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Урих холбоос' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Урих холбоос' }));
     await screen.findByRole('option', { name: 'Shop B' });
     const shopSelect = screen.getByRole('combobox', { name: 'Байгууллага' });
@@ -47,6 +48,7 @@ it('requires an explicit shop choice and sends the selected multishop invitation
 it('defaults to the only shop and includes its ID in the invitation payload', async () => {
     const invitations = mockApi([shopA]);
     render(<Page />);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Урих холбоос' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Урих холбоос' }));
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Байгууллага' })).toHaveValue(shopA.id));
     fireEvent.change(screen.getByPlaceholderText('manager@example.com'), { target: { value: 'target@example.com' } });

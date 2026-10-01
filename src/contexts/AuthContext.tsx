@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useEffect, useState, useRef, ReactNode, useCallback } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import type { UserRole, RolePermissions } from '@/lib/rbac';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
@@ -66,20 +66,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [shop, setShop] = useState<Shop | null>(null);
   const [shops, setShops] = useState<Shop[]>([]);
   const [loading, setLoading] = useState(true);
+  const currentUserId = useRef<string | null>(null);
+  const shopRequest = useRef(0);
 
   // Fetch all shops for user
-  const fetchShops = useCallback(async () => {
-    if (!session) return [];
+  const fetchShops = useCallback(async (): Promise<Shop[] | null> => {
+    if (!session) return null;
+    const userId = session.user.id;
+    const request = ++shopRequest.current;
 
     try {
-      const res = await fetch('/api/user/shops');
+      const res = await fetch('/api/user/shops', { cache: 'no-store' });
       const data = await res.json();
-      const userShops = data.shops || [];
+      if (!res.ok || !Array.isArray(data.shops)) throw new Error(data.error || 'Байгууллагууд ачаалагдсангүй');
+      if (currentUserId.current !== userId || request !== shopRequest.current) return null;
+      const userShops = data.shops as Shop[];
       setShops(userShops);
       return userShops;
     } catch (err) {
       if (isDev) console.error('Fetch shops error:', err);
-      return [];
+      return null;
     }
   }, [session]);
 
@@ -152,7 +158,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refreshShops = useCallback(async () => {
     const userShops = await fetchShops();
-    initializeActiveShop(userShops);
+    if (userShops) initializeActiveShop(userShops);
   }, [fetchShops, initializeActiveShop]);
 
   const refreshShop = useCallback(async () => {
@@ -182,6 +188,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const request = ++permissionRequest;
       const me = await fetchMe();
       if (disposed || lastUserId !== s.user.id || request !== permissionRequest) return;
+      shopRequest.current++;
       if (!me) {
         setUser(null);
         setShops([]);
@@ -205,9 +212,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(session);
       if (session?.user) {
         lastUserId = session.user.id;
+        currentUserId.current = session.user.id;
         await applyMe(session);
       }
-      if (!disposed) setLoading(false);
+      if (!disposed && (!session || currentUserId.current === session.user.id)) setLoading(false);
     });
 
     // Refresh permissions after token renewal and when returning to the app.
@@ -218,11 +226,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         if (session?.user) {
           if (session.user.id !== lastUserId || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+            if (session.user.id !== lastUserId) {
+              shopRequest.current++;
+              setUser(null);
+              setShops([]);
+              setActiveShop(null);
+              setLoading(true);
+            }
             lastUserId = session.user.id;
-            void applyMe(session).finally(() => { if (!disposed) setLoading(false); });
+            currentUserId.current = session.user.id;
+            void applyMe(session).finally(() => {
+              if (!disposed && currentUserId.current === session.user.id) setLoading(false);
+            });
           }
         } else {
           lastUserId = null;
+          currentUserId.current = null;
+          shopRequest.current++;
           permissionRequest++;
           setUser(null);
           setShops([]);
@@ -242,6 +262,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     document.addEventListener('visibilitychange', refreshAccess);
     return () => {
       lastUserId = null;
+      currentUserId.current = null;
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- Invalidate the current request generation on cleanup.
+      shopRequest.current++;
       disposed = true;
       subscription.unsubscribe();
       window.removeEventListener('focus', refreshAccess);

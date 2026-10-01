@@ -15,10 +15,11 @@ export async function GET() {
         const supabase = supabaseAdmin();
 
         // Хэрэглэгчийн хандаж болох shop-ууд: эзэмшсэн + гишүүнчлэлээр
-        const { data: memberRows } = await supabase
+        const { data: memberRows, error: memberError } = await supabase
             .from('shop_members')
             .select('shop_id')
             .eq('user_id', userId);
+        if (memberError) throw memberError;
         const memberIds = (memberRows || []).map(r => r.shop_id);
 
         let query = supabase
@@ -36,7 +37,7 @@ export async function GET() {
 
         if (error) throw error;
 
-        return NextResponse.json({ shops: shops || [] });
+        return NextResponse.json({ shops: shops || [] }, { headers: { 'Cache-Control': 'private, no-store' } });
     } catch (error) {
         console.error('User shops API error:', error);
         return NextResponse.json({ error: 'Failed to fetch shops' }, { status: 500 });
