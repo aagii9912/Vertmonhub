@@ -52,11 +52,19 @@ const db = {
     } },
     from(table: string) {
         let batch = false;
+        let selectedShopId: unknown;
         const query = {
             select: () => query,
-            eq: () => query,
+            eq: (field: string, value: unknown) => {
+                if (table === 'shops' && field === 'id') selectedShopId = value;
+                return query;
+            },
             limit: () => query,
-            maybeSingle: async () => ({ data: table === 'roles' && state.roleExists ? { id: 'role-1' } : null, error: null }),
+            maybeSingle: async () => ({
+                data: table === 'roles' && state.roleExists ? { id: 'role-1' }
+                    : table === 'shops' ? state.shops.find(shop => shop.id === selectedShopId) ?? null : null,
+                error: null,
+            }),
             upsert: async () => { state.upserts++; return { error: null }; },
             insert: async () => ({ error: null }),
             range: () => { batch = true; return query; },
@@ -113,6 +121,33 @@ describe('admin user safety', () => {
         const response = await POST(jsonRequest('POST', { email: 'new@example.com', password: 'strong-pass-123', role: 'viewer' }));
         expect(response.status).toBe(400);
         expect(state.creates).toBe(0);
+    });
+
+    it('creates a user in an explicitly selected legacy shop GUID', async () => {
+        const shopId = '00000000-0000-0000-0000-000000000001';
+        state.shops = [{ id: shopId }];
+        const response = await POST(jsonRequest('POST', {
+            email: 'new@example.com', password: 'strong-pass-123', role: 'viewer', shop_id: shopId,
+        }));
+        expect(response.status).toBe(201);
+        expect(state.creates).toBe(1);
+    });
+
+    it.each(['not-a-guid', '00000000-0000-0000-0000-00000000000g'])('rejects malformed shop IDs before Auth mutation: %s', async shopId => {
+        const response = await POST(jsonRequest('POST', {
+            email: 'new@example.com', password: 'strong-pass-123', role: 'viewer', shop_id: shopId,
+        }));
+        expect(response.status).toBe(400);
+        expect(state.creates).toBe(0);
+        expect(state.upserts).toBe(0);
+    });
+
+    it('accepts a legacy shop GUID when changing another user role', async () => {
+        const response = await PATCH(jsonRequest('PATCH', {
+            userId: targetId, role: 'viewer', shop_id: '00000000-0000-0000-0000-000000000001',
+        }));
+        expect(response.status).toBe(200);
+        expect(state.upserts).toBe(1);
     });
 
     it('refuses to delete a shop owner, preserving the shop cascade', async () => {

@@ -105,7 +105,7 @@ export async function POST(request: NextRequest) {
         const importType = formData.get('type') as ImportType;
         const projectIdRaw = formData.get('projectId');
 
-        if (!(file instanceof File) || typeof shopId !== 'string' || !z.uuid().safeParse(shopId).success) {
+        if (!(file instanceof File) || typeof shopId !== 'string' || !z.guid().safeParse(shopId).success) {
             return NextResponse.json({ error: 'Файл болон shopId шаардлагатай' }, { status: 400 });
         }
         if (file.size === 0 || file.size > MAX_FILE_BYTES || !/\.(csv|xlsx)$/i.test(file.name))

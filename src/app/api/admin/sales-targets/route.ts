@@ -6,7 +6,7 @@ import { getTeamTargets, getMonthlyActualsByManager, sumYear } from '@/lib/sales
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { z } from 'zod';
 
-const shopSchema = z.uuid();
+const shopSchema = z.guid();
 const yearSchema = z.number().int().min(2000).max(2100);
 const rosterSchema = z.object({
     shopId: shopSchema,

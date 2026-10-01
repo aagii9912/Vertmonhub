@@ -193,6 +193,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUser(null);
         setShops([]);
         setActiveShop(null);
+        setLoading(false);
         return;
       }
       setUser({
@@ -204,6 +205,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       setShops(me.shops);
       initializeActiveShop(me.shops);
+      setLoading(false);
     };
 
     // Get initial session
@@ -215,7 +217,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         currentUserId.current = session.user.id;
         await applyMe(session);
       }
-      if (!disposed && (!session || currentUserId.current === session.user.id)) setLoading(false);
+      if (!disposed && !session) setLoading(false);
     });
 
     // Refresh permissions after token renewal and when returning to the app.
@@ -235,9 +237,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
             lastUserId = session.user.id;
             currentUserId.current = session.user.id;
-            void applyMe(session).finally(() => {
-              if (!disposed && currentUserId.current === session.user.id) setLoading(false);
-            });
+            void applyMe(session);
           }
         } else {
           lastUserId = null;

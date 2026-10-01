@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
     roleExists: true,
     membership: false,
     actorAccess: true,
+    shopId: '10000000-0000-4000-8000-000000000001',
     linkMode: 'invite' as 'invite' | 'magiclink',
     linkUserId: 'target',
     apiTargetExists: true,
@@ -65,7 +66,8 @@ const db = {
             const error = state.errors[`${operation}:${table}`] || null;
             let data: unknown = null;
             if (table === 'roles' && state.roleExists) data = { id: 'role-id', name: 'analyst' };
-            if (table === 'shops') data = filters.user_id && !state.actorAccess ? null : { id: shopId };
+            if (table === 'shops') data = (filters.id && filters.id !== state.shopId) || (filters.user_id && !state.actorAccess)
+                ? null : { id: state.shopId };
             if (table === 'shop_members' && state.membership && filters.user_id !== 'actor') data = { id: 'existing-membership' };
             if (table === 'user_profiles' && state.profileId) data = { id: state.profileId, email: 'target@example.com', full_name: state.fullName };
             if (table === 'sales_managers') {
@@ -101,12 +103,12 @@ const db = {
     },
 };
 
-import { isAssignableRole, provisionUserAccess } from '../user-provisioning';
+import { adminUserInput, isAssignableRole, provisionUserAccess, resolveTargetShop } from '../user-provisioning';
 import { ROLE_PERMISSIONS } from '@/lib/rbac';
 import { assignRole, createRole, inviteUser } from '@/lib/ai/data-assistant/admin-functions';
 import { executeDataTool } from '@/lib/ai/data-assistant';
 import { POST as inviteApi } from '@/app/api/admin/users/invite/route';
-import { PATCH as roleApi } from '@/app/api/admin/users/route';
+import { POST as createApi, PATCH as roleApi } from '@/app/api/admin/users/route';
 
 const invite = { email: 'target@example.com', role: 'viewer', shop_id: shopId };
 const newRole = { name: 'analyst', display_name_mn: 'Аналист', modules: ['reports'] };
@@ -118,11 +120,48 @@ beforeEach(() => {
     vi.restoreAllMocks();
     vi.spyOn(console, 'error').mockImplementation(() => {});
     state.profileId = 'target'; state.roleExists = true; state.membership = false; state.actorAccess = true;
+    state.shopId = shopId;
     state.fullName = 'Бат'; state.roster = []; state.rosterRace = false;
     state.linkMode = 'invite'; state.linkUserId = 'target'; state.errors = {}; state.writes = [];
     state.apiTargetExists = true; state.createdUserId = 'created-target'; state.missingLink = false;
     state.linkTypes = []; state.linkInputs = []; state.authCreates = [];
     state.passwords = []; state.authDeletes = []; state.authUpdates = 0; state.emails = 0;
+});
+
+describe('existing shop GUID validation', () => {
+    const legacyShopId = '00000000-0000-0000-0000-000000000001';
+
+    it('accepts a PostgreSQL UUID without RFC version bits and still requires the shop to exist', async () => {
+        state.shopId = legacyShopId;
+        expect(adminUserInput.safeParse({ ...invite, shop_id: legacyShopId }).success).toBe(true);
+        expect(await resolveTargetShop(db as never, legacyShopId)).toEqual({ id: legacyShopId });
+        expect(await resolveTargetShop(db as never, '00000000-0000-0000-0000-000000000002'))
+            .toHaveProperty('error', 'Сонгосон байгууллага олдсонгүй');
+        expect(state.writes).toEqual([]);
+    });
+
+    it.each(['not-a-guid', '00000000-0000-0000-0000-00000000000g'])('rejects malformed shop IDs: %s', async invalidId => {
+        expect(adminUserInput.safeParse({ ...invite, shop_id: invalidId }).success).toBe(false);
+        expect(await resolveTargetShop(db as never, invalidId)).toHaveProperty('error', 'Байгууллагын ID буруу байна');
+        expect(state.writes).toEqual([]);
+    });
+
+    it.each(['create', 'invite'] as const)('provisions the selected legacy shop through the %s API', async mode => {
+        state.shopId = legacyShopId;
+        // Password verification cannot call an external Auth server in this regression.
+        vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', '');
+        vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', '');
+        try {
+            const response = await (mode === 'create' ? createApi : inviteApi)(new NextRequest(`http://localhost/api/admin/users${mode === 'invite' ? '/invite' : ''}`, {
+                method: 'POST', body: JSON.stringify({ ...invite, shop_id: legacyShopId, ...(mode === 'create' ? { password: 'synthetic-password' } : {}) }),
+            }));
+            expect(response.status).toBe(mode === 'create' ? 201 : 200);
+            expect(await response.json()).toHaveProperty('success', true);
+            expect(writesTo('shop_members')[0].payload).toMatchObject({ shop_id: legacyShopId });
+            expect(writesTo('user_roles')).toHaveLength(1);
+            expect(state.authDeletes).toEqual([]);
+        } finally { vi.unstubAllEnvs(); }
+    });
 });
 
 describe('admin provisioning across API and AI', () => {

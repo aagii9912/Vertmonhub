@@ -12,7 +12,7 @@ import { z } from 'zod';
 const roleChangeInput = z.object({
     userId: z.uuid(),
     role: z.string().regex(/^[a-z][a-z0-9_]{0,49}$/),
-    shop_id: z.preprocess(value => value === '' ? undefined : value, z.uuid().optional()),
+    shop_id: z.preprocess(value => value === '' ? undefined : value, z.guid().optional()),
 });
 const passwordInput = z.string().min(8).max(1024);
 

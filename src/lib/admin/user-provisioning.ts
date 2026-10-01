@@ -7,7 +7,7 @@ export const adminUserInput = z.object({
     email: z.preprocess((value) => typeof value === 'string' ? value.trim().toLowerCase() : value, z.email().max(254)),
     full_name: z.string().trim().max(120).optional().default(''),
     role: z.string().regex(/^[a-z][a-z0-9_]{0,49}$/).optional().default('viewer'),
-    shop_id: z.preprocess((value) => value === '' ? undefined : value, z.uuid().optional()),
+    shop_id: z.preprocess((value) => value === '' ? undefined : value, z.guid().optional()),
 });
 
 /** DB-defined roles may be assigned; only super_admin retains its missing-row fallback. */
@@ -142,7 +142,7 @@ export async function provisionUserAccess(db: AdminDb, input: {
 /** A multi-shop installation must always name the destination shop explicitly. */
 export async function resolveTargetShop(db: AdminDb, shopId: unknown): Promise<{ id?: string; error?: string }> {
     if (shopId !== undefined && shopId !== null && shopId !== '') {
-        if (!z.uuid().safeParse(shopId).success) return { error: 'Байгууллагын ID буруу байна' };
+        if (!z.guid().safeParse(shopId).success) return { error: 'Байгууллагын ID буруу байна' };
         const { data, error } = await db.from('shops').select('id').eq('id', shopId).maybeSingle();
         if (error) throw error;
         return data ? { id: data.id } : { error: 'Сонгосон байгууллага олдсонгүй' };

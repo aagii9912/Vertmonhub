@@ -10,7 +10,7 @@ type ProjectCounts = { leads: number; units: number; contracts: number };
 const emptyCounts = (): ProjectCounts => ({ leads: 0, units: 0, contracts: 0 });
 
 const projectSchema = z.object({
-    shop_id: z.uuid().optional(),
+    shop_id: z.guid().optional(),
     name: z.string().trim().min(1).max(160),
     location: z.string().trim().max(200).optional(),
     district: z.string().trim().max(120).optional(),

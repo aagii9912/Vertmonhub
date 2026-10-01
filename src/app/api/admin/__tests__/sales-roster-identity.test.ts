@@ -2,7 +2,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const shopId = '20000000-0000-4000-8000-000000000001';
+const shopId = '00000000-0000-0000-0000-000000000001';
 const userId = '10000000-0000-4000-8000-000000000002';
 const projectId = '30000000-0000-4000-8000-000000000001';
 const otherProjectId = '30000000-0000-4000-8000-000000000002';

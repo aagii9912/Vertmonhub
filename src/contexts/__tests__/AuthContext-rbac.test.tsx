@@ -41,6 +41,20 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('permission refresh', () => {
+    it('keeps initial access loading until the latest token refresh finishes', async () => {
+        let initial!: (response: Response) => void;
+        let refreshed!: (response: Response) => void;
+        fetchMock.mockReturnValueOnce(new Promise(resolve => { initial = resolve; }));
+        fetchMock.mockReturnValueOnce(new Promise(resolve => { refreshed = resolve; }));
+        render(<AuthProvider><Reader /></AuthProvider>);
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+        act(() => state.onChange?.('TOKEN_REFRESHED', state.session));
+        await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+        await act(async () => initial(me()));
+        expect(screen.getByTestId('access')).toHaveTextContent('loading');
+        await act(async () => refreshed(me(['dashboard'])));
+        expect(screen.getByTestId('access')).toHaveTextContent('dashboard');
+    });
     it('refreshes permissions and memberships when returning to the app', async () => {
         render(<AuthProvider><Reader /></AuthProvider>);
         await waitFor(() => expect(screen.getByTestId('access')).toHaveTextContent('customers'));
