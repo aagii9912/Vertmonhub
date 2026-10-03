@@ -37,6 +37,7 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+!.env.example
 
 # vercel
 .vercel
@@ -59,3 +60,10 @@ REPORTS/*.xlsx
 # DB backup dump-ууд (legacy хүснэгт устгахын өмнөх) — commit хийхгүй
 supabase/backups/
 scripts/eval/out/
+
+# Supabase CLI-ийн локал холболтын төлөв (project ref, pooler host)
+supabase/.temp/
+
+# Codex build/finalizer гаралт
+.codex-build/
+.codex-finalizer/

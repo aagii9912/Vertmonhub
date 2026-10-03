@@ -35,7 +35,6 @@ import {
     Calendar,
     Share2,
     Mail,
-    Globe,
     Palette,
     Bot,
     HelpCircle,
@@ -203,13 +202,12 @@ export const SECONDARY_ROUTES: SecondaryRoute[] = [
     { name: 'Өрсөлдөгчийн судалгаа', href: '/dashboard/competitor-research', icon: Search, module: 'marketing-roi', group: 'Судалгаа' },
 
     { name: 'Сурталчилгаа', href: '/marketing/ads', icon: Target, module: 'marketing-roi', group: 'Маркетинг' },
-    { name: 'Маркетингийн аналитик', href: '/marketing/analytics', icon: Award, module: 'marketing-roi', group: 'Маркетинг' },
+    { name: 'Маркетингийн аналитик', href: '/marketing/analytics', icon: Award, module: 'marketing-roi', group: 'Маркетинг', keywords: ['вэб', 'web', 'analytics'] },
     { name: 'Контентийн календарь', href: '/marketing/calendar', icon: Calendar, module: 'marketing-roi', group: 'Маркетинг' },
     { name: 'Сошиал', href: '/marketing/social', icon: Share2, module: 'marketing-roi', group: 'Маркетинг' },
     { name: 'Email / Newsletter', href: '/marketing/newsletter', icon: Mail, module: 'marketing-roi', group: 'Маркетинг', keywords: ['resend', 'имэйл', 'товхимол'] },
     { name: 'Мессеж', href: '/marketing/messaging', icon: Mail, module: 'marketing-roi', group: 'Маркетинг' },
     { name: 'Брэнд', href: '/marketing/brand', icon: Palette, module: 'marketing-roi', group: 'Маркетинг' },
-    { name: 'Вэб', href: '/marketing/analytics', icon: Globe, module: 'marketing-roi', group: 'Маркетинг' },
 
     { name: 'AI агентууд', href: '/dashboard/ai-assistant/agents', icon: Bot, module: 'ai-assistant', group: 'AI' },
     { name: 'AI тохиргоо', href: '/dashboard/ai-settings', icon: Settings, module: 'ai-settings', group: 'AI' },

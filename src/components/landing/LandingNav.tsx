@@ -63,7 +63,7 @@ export function LandingNav() {
                     <Button href="/auth/login" variant="ghost" size="sm" className="hidden sm:inline-flex">
                         Нэвтрэх
                     </Button>
-                    <Button href="/auth/register" variant="primary" size="sm">
+                    <Button href="/auth/login" variant="primary" size="sm">
                         Үнэгүй эхлэх
                         <ArrowRight className="h-4 w-4" aria-hidden="true" />
                     </Button>

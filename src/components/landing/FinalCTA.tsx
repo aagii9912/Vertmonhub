@@ -29,7 +29,7 @@ export function FinalCTA() {
                         Хэдхэн минутын дотор нэвтэрч, AI борлуулагчаа ажиллуулж эхлээрэй.
                     </p>
                     <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
-                        <Button href="/auth/register" variant="primary" size="lg" className="w-full sm:w-auto">
+                        <Button href="/auth/login" variant="primary" size="lg" className="w-full sm:w-auto">
                             Үнэгүй эхлэх
                             <ArrowRight className="h-4 w-4" aria-hidden="true" />
                         </Button>

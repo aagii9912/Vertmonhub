@@ -71,7 +71,7 @@ export function Hero() {
                         {...fade(0.24)}
                         className="mt-8 flex flex-col items-center gap-3 sm:flex-row lg:items-start lg:justify-start sm:justify-center"
                     >
-                        <Button href="/auth/register" variant="primary" size="lg" className="w-full sm:w-auto">
+                        <Button href="/auth/login" variant="primary" size="lg" className="w-full sm:w-auto">
                             Үнэгүй эхлэх
                             <ArrowRight className="h-4 w-4" aria-hidden="true" />
                         </Button>
