@@ -75,7 +75,6 @@ import { POST as convert } from './[id]/convert/route';
 import { GET as projects } from './projects/route';
 import { GET as managers } from '../managers/route';
 import { GET as counts } from '../nav-counts/route';
-import { GET as dashboardStats } from '../stats/route';
 
 const mandala = '00000000-0000-4000-8000-000000000001';
 const elysium = '00000000-0000-4000-8000-000000000002';
@@ -126,12 +125,8 @@ describe('project and personal lead API boundaries', () => {
         expect((await (await list(request('?manager=Хамтрагч'))).json()).leads).toEqual([]);
     });
 
-    it('keeps navigation and organization dashboard lead/viewing counts in the same personal scope', async () => {
+    it('keeps navigation lead/viewing counts in the same personal scope', async () => {
         expect(await (await counts()).json()).toMatchObject({ leads: 1, meetings: 1 });
-        const stats = await (await dashboardStats(request())).json();
-        expect(stats.stats).toMatchObject({ totalLeads: 1, monthlyViewings: 1 });
-        expect(stats.recentLeads.map((lead: { id: string }) => lead.id)).toEqual([ownLead]);
-        expect(stats.upcomingViewings.map((viewing: { id: string }) => viewing.id)).toEqual(['own-viewing']);
     });
 
     it('keeps the all-project selector within the manager own assigned scope', async () => {

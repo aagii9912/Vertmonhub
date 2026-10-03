@@ -61,9 +61,8 @@ src/
 │   ├── api/
 │   │   ├── webhook/                # Facebook/Instagram webhook → routes DMs into the AI router and saves leads
 │   │   ├── chat/                   # Inbox AI chat endpoint
-│   │   ├── dashboard/              # Dashboard data APIs (stats, customers, export, posts, etc.)
+│   │   ├── dashboard/              # Dashboard data APIs (leads, contracts, customers, export, etc.)
 │   │   │   ├── customers/          # CRM contacts API (PATCH for edits)
-│   │   │   ├── stats/              # Real-estate KPIs
 │   │   │   ├── export/excel/       # Properties / leads / customers Excel export
 │   │   │   └── ...
 │   │   ├── leads/                  # Lead CRUD
@@ -97,7 +96,7 @@ src/
 │   │   └── settings/               # Shop settings
 │   │
 │   ├── admin/                      # Super-admin panel
-│   ├── auth/                       # /login, /register, /callback
+│   ├── auth/                       # /login, /callback (/register redirects to /login)
 │   ├── marketing/                  # Public marketing/landing hub
 │   ├── page.tsx                    # Landing page
 │   └── layout.tsx                  # Root layout
@@ -111,16 +110,13 @@ src/
 │   │   ├── tools/
 │   │   │   ├── definitions.ts      # 8 Gemini tool definitions
 │   │   │   └── memory.ts           # Customer preference memory
-│   │   ├── helpers/memoryTTL.ts    # Memory TTL utilities
 │   │   ├── config/plans.ts         # Plan-tier feature gates (still gates AI features)
 │   │   ├── intent-detector.ts
 │   │   └── comment-detector.ts
 │   ├── webhook/
 │   │   └── WebhookService.ts       # FB/IG webhook helpers — getShopByPageId, getOrCreateCustomer, processAIResponse, etc.
 │   ├── facebook/messenger.ts       # Meta Graph send helpers
-│   ├── services/
-│   │   ├── CustomerService.ts      # Customer CRUD (no e-commerce aggregations)
-│   │   └── ChatHistoryService.ts
+│   ├── services/                   # Viewing/Task/Payment + Customer/Marketing/Finance ops shared by API routes and AI tools
 │   ├── auth/                       # Supabase auth helpers
 │   ├── email/                      # Resend helpers
 │   ├── notifications.ts            # Push notification dispatcher
@@ -138,11 +134,10 @@ src/
 │   ├── providers/                  # React context providers
 │   └── ...
 │
-├── contexts/                       # AuthContext, LanguageContext
+├── contexts/                       # AuthContext
 ├── hooks/                          # useDashboard, useRealtimeNotifications, ...
 ├── types/
 │   ├── ai.ts                       # ChatContext, ChatResponse, ImageAction, NotifySettings (real-estate shape)
-│   ├── database.ts                 # Shop, Customer, ChatHistory, DashboardStats
 │   └── property.ts                 # Property type
 └── middleware.ts                   # Auth + rate limiting
 ```
@@ -176,10 +171,10 @@ Supabase Auth (Email/Password, Google, Facebook). `src/middleware.ts` protects `
 
 ### Per-manager dashboards («Миний самбар»)
 `/dashboard` is **role-aware**: `src/app/dashboard/page.tsx` is a thin router driven by `GET /api/dashboard/mode` (server-side decision — never client role-guessing).
-- **personal** — users with the `sales_manager` role OR an active `sales_managers` roster match get `ManagerDashboard` (`src/components/dashboard/my/`). Identity resolution is centralized in `src/lib/sales/manager-identity.ts` (`resolveManagerIdentity`: `sales_managers.user_id` link wins, then `user_profiles.full_name` string match; canonical name = roster name). The roster-empty "show to everyone" fallback exists ONLY in `/api/dashboard/my-target`, never in mode routing.
+- **personal** — users with the `sales_manager` role OR an active `sales_managers` roster match get `ManagerDashboard` (`src/components/dashboard/my/`). Identity resolution is centralized in `src/lib/sales/manager-identity.ts` (`resolveManagerIdentity`: `sales_managers.user_id` link wins, then `user_profiles.full_name` string match; canonical name = roster name). The roster-empty "show to everyone" fallback is used only for team targets (`my-stats`, `kpi-report`), never in mode routing.
 - **org** — everyone else keeps the org dashboard (`src/components/dashboard/OrgDashboard.tsx`); users with the `reports` module also get `TeamOverview` (leaderboard over `manager_performance`) + `ManagerSelector` (Sheet drill-in to any manager's board).
 - **Data**: `GET /api/dashboard/my-stats?period=&manager=` returns the whole personal payload in one round trip (leads/viewings via `sales_manager_name`, contracts via `property_contracts.sales_manager`, revenue via `manager_monthly_sales` + `lib/sales/targets.ts`). `?manager=` is honored only for admin/reports users who are not themselves personal-mode; otherwise it silently falls back to self. Reads are soft-delete-filtered and resilient to missing columns (pre-migration envs degrade to empty sections, never 500). Pure aggregation helpers live in `src/lib/dashboard/my-stats.ts` (unit-tested).
-- **Widget customization**: `user_dashboard_prefs` table (migration `20260707150000`, per user+shop) via `GET/PUT /api/dashboard/prefs`; merge/order logic in `src/lib/dashboard/widget-prefs.ts` (`MANAGER_WIDGETS` registry — add new widgets there; saved order preserved, new widgets auto-appear).
+- **Widget customization**: removed on 2026-10-04. The `user_dashboard_prefs` table (migration `20260707150000`) remains, but `/api/dashboard/prefs` and `widget-prefs.ts` were deleted because no UI used them.
 - **Manager list**: `GET /api/dashboard/managers` (reports/leads permission) returns only `sales_managers.is_active=true`; historical contract and lead names never enter current selectors. Admin roster settings show active entries by default and allow expanding inactive entries for reactivation. Current manager performance, Excel and leaderboard use the same active roster; historical contracts and cash records stay intact.
 - **Attribution rules (do not regress)**: dashboard lead creation goes through `POST /api/dashboard/leads` which stamps `sales_manager_name` server-side from `resolveManagerIdentity` (admin may pass `assignManager`); leads list API supports `?manager=`; `PATCH /api/dashboard/leads/[id]` accepts `sales_manager_name` (assign/reassign UI in the leads detail Sheet); the viewings form stamps the canonical `mode.managerName` (server `user_profiles`), NOT client `user_metadata`. `manager_performance` / `manager_monthly_sales` views exclude soft-deleted contracts and must keep `WITH (security_invoker = on)` (migration `20260707140000`).
 
@@ -403,7 +398,9 @@ If you need to bring any of this back, do it intentionally — these were remove
 
 **Removed in the 2026-09-11 review waves (branch `fix/wave-0-security`, see `docs/REVIEW-2026-09-11.md`):** `api/ai-assistant/analyze-messages` (unauthenticated), `api/admin/setup` (bootstrap backdoor against a nonexistent `admins` table), `api/features` + `FeatureGate` + `useFeatures` (phantom `plans` gating), the `vertmon-session` cookie readers, `sentry.client.config.ts` (replaced by `src/instrumentation-client.ts`), the data-assistant `list_orders`/`get_product_stats` tools, the webhook `ORDER_` postback, 32 zero-importer files (`components/charts/*`, `components/chat/*`, `NotificationButton`, `ThemeToggle`, `ConversationItem`, `EmptyCart`, `useDashboard`, `usePWAInstall`, `lib/ai/{index,analytics,experiments,resilience,services/ProductParser,tools/index,tools/definitions/customer,config/index,helpers/index}`, `lib/{errors,monitoring,services,webhook}/index`, `lib/webhooks`, `lib/supabase-middleware`, `lib/utils/{ai-preview,api-response,mobile-utils}`, `lib/validations/index`), the stale e2e specs (`workspace-switcher`, `admin-plan-change`, `ui_playground`), root scripts `check-db.ts`/`add_envs.sh`/`update_landing.js`, and the deps `@supabase/auth-helpers-nextjs`, `jsonwebtoken`, `puppeteer`. The HubSpot/contract PII CSVs were untracked (`.gitignore` now blocks `*.csv`, `REPORTS/*`) — the git history still has to be purged (`git filter-repo`), which needs the owner's go-ahead.
 
-**Removed in the v2 redesign (2026-09-10, branch `feat/redesign-v2`):** the three-workspace navigation (`lib/navigation/workspaces.ts`, `useActiveWorkspace.ts`, `WorkspaceSwitcher`), the v1 dashboards (`OrgDashboard`, `components/dashboard/my/*`, `AskAIHero`, `TeamOverview`, `SalesChart`, `AIMonitor`, `SalesTargetWidget`, `useDashboardPrefs`), dead primitives (`ui/Avatar`, `BottomSheet`, `Breadcrumb`, `Label`, `LiveIndicator`, `PullToRefresh`, `RadioGroup`, `Separator`, `Tooltip`), dead dashboard/chat components (`ActionCenter`, `ConversationList`, `FloorPlan`, `MessageThread`, `ShopSwitcher`, `chat/ChatContainer`), and the `src/app/test/*` playground routes. The `user_dashboard_prefs` table + `/api/dashboard/prefs` still exist but have no UI.
+**Removed in the v2 redesign (2026-09-10, branch `feat/redesign-v2`):** the three-workspace navigation (`lib/navigation/workspaces.ts`, `useActiveWorkspace.ts`, `WorkspaceSwitcher`), the v1 dashboards (`OrgDashboard`, `components/dashboard/my/*`, `AskAIHero`, `TeamOverview`, `SalesChart`, `AIMonitor`, `SalesTargetWidget`, `useDashboardPrefs`), dead primitives (`ui/Avatar`, `BottomSheet`, `Breadcrumb`, `Label`, `LiveIndicator`, `PullToRefresh`, `RadioGroup`, `Separator`, `Tooltip`), dead dashboard/chat components (`ActionCenter`, `ConversationList`, `FloorPlan`, `MessageThread`, `ShopSwitcher`, `chat/ChatContainer`), and the `src/app/test/*` playground routes. The `user_dashboard_prefs` table still exists without an API or UI (`/api/dashboard/prefs` was removed on 2026-10-04).
+
+**Removed in the 2026-10-04 simplification (branch `chore/simplify-phase-0-1`):** zero-importer modules (`lib/ai/{helpers/memoryTTL,i18n/messages,validation/schemas,claude/client,tools/definitions/core}`, `lib/services/{CustomerService,ChatHistoryService}`, `lib/errors/errorHandler`, `lib/constants/ai-setup`, `lib/utils/index`, `types/{database,errors,facebook,index}`, `components/chat/*`, the eight unused `dashboard/ai-settings/components/*` tabs (the page renders its own) and `src/test/mocks`); the `/auth/register` page with the whole i18n stack (`i18n/*`, `lib/i18n`, `LanguageContext`, `LanguageSwitcher`; `proxy.ts` still redirects `/auth/register` to login); `/docs` + `/api/docs` (they documented removed e-commerce APIs); API routes nothing called (`dashboard/{stats,posts,prefs,my-target,connect-instagram,customers/[id]/tags}`, `marketing/{channels,facebook/health}`, `auth/instagram/accounts`); and the uncalled `POST /api/dashboard/contracts` Excel importer (it overwrote `paid_amount` outside the payment RPC; `/admin/import` is the importer). `dashboard/leads/[id]/convert`, `dashboard/inbox/remind` and `dashboard/handover` also have no UI but were kept pending an owner decision.
 
 ---
 

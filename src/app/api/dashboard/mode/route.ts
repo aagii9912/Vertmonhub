@@ -11,7 +11,7 @@ import { safeErrorResponse } from '@/lib/utils/safe-error';
  * • personal — sales_manager role-той ЭСВЭЛ sales_managers бүртгэлд идэвхтэй
  *   таарсан (админ биш) хэрэглэгч → «Миний самбар».
  * • org — бусад бүгд (админ, marketing, viewer...) → нэгдсэн самбар.
- * Анхаар: roster хоосон үед my-target-ийн «бүгдэд харуулах» fallback-ийг ЭНД
+ * Анхаар: roster хоосон үед багийн зорилтын (my-stats, kpi-report) «бүгдэд харуулах» fallback-ийг ЭНД
  * хэрэглэхгүй — эс бөгөөс бүх role personal болчихно.
  *
  * managerName — user_profiles/roster-оос гарсан КАНОН нэр; attribution

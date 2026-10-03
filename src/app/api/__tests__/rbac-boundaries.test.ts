@@ -80,7 +80,6 @@ import * as disconnect from '@/app/api/shop/disconnect/route';
 import * as attachments from '@/app/api/dashboard/ai-attachments/route';
 import * as surveys from '@/app/api/surveys/route';
 import * as surveyDetail from '@/app/api/surveys/[id]/route';
-import * as channels from '@/app/api/marketing/channels/route';
 import * as channelContracts from '@/app/api/marketing/contracts/route';
 import * as conversations from '@/app/api/ai-assistant/conversations/route';
 import * as conversationDetail from '@/app/api/ai-assistant/conversations/[id]/route';
@@ -89,7 +88,6 @@ import * as facebookCallback from '@/app/api/auth/facebook/callback/route';
 import * as facebookPages from '@/app/api/auth/facebook/pages/route';
 import * as instagram from '@/app/api/auth/instagram/route';
 import * as instagramCallback from '@/app/api/auth/instagram/callback/route';
-import * as instagramAccounts from '@/app/api/auth/instagram/accounts/route';
 import * as navCounts from '@/app/api/dashboard/nav-counts/route';
 import * as director from '@/app/api/dashboard/director/route';
 import * as adCampaigns from '@/app/api/marketing/facebook/ads/campaigns/route';
@@ -191,7 +189,6 @@ const moduleCases: [string, () => Promise<Response>][] = [
     ['survey create', () => surveys.POST(request('/api/surveys', 'POST', {}))],
     ['survey summary', () => surveyDetail.GET(request('/api/surveys/fixture-id'), params)],
     ['offline response', () => surveyDetail.POST(request('/api/surveys/fixture-id', 'POST', { answers: {}, source: 'offline' }), params)],
-    ['marketing channel', () => channels.POST(request('/api/marketing/channels', 'POST', {}))],
     ['marketing contract', () => channelContracts.POST(request('/api/marketing/contracts', 'POST', {}))],
     ['conversation list', () => conversations.GET(request('/api/ai-assistant/conversations?shopId=fixture-shop'))],
     ['conversation create', () => conversations.POST(request('/api/ai-assistant/conversations', 'POST', {}))],
@@ -204,8 +201,6 @@ const moduleCases: [string, () => Promise<Response>][] = [
     ['Facebook page token', () => facebookPages.POST(request('/api/auth/facebook/pages', 'POST', { pageId: 'fixture' }))],
     ['Instagram OAuth start', () => instagram.GET(request('/api/auth/instagram'))],
     ['Instagram OAuth callback', () => instagramCallback.GET(request('/api/auth/instagram/callback?code=fixture'))],
-    ['Instagram accounts', () => instagramAccounts.GET()],
-    ['Instagram account clearing', () => instagramAccounts.DELETE()],
 ];
 
 describe.each([false, true])('module boundaries (signed in: %s)', signedIn => {
@@ -283,11 +278,6 @@ describe('allowed operations, field permissions and tenant boundaries', () => {
         state.shopAccess = false;
         expect((await shop.PATCH(request('/api/shop', 'PATCH', { ai_instructions: 'Fixture' }))).status).toBe(404);
         expect(state.mutations).toEqual([]);
-    });
-    it('marketing channel API still inserts into the member shop through its server client', async () => {
-        asRole('marketing');
-        expect((await channels.POST(request('/api/marketing/channels', 'POST', { name: 'Fixture', type: 'social' }))).status).toBe(201);
-        expect(state.writes).toContainEqual({ table: 'marketing_channels', data: [expect.objectContaining({ shop_id: 'fixture-shop' })] });
     });
     it('marketing contract rejects a channel from another tenant', async () => {
         asRole('marketing');

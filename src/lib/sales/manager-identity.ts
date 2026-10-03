@@ -29,7 +29,7 @@ export interface ManagerIdentity {
     fullName: string | null;
     /** Тухайн shop-ийн бүх roster (давхар query-гээс сэргийлж дамжуулна). */
     roster: RosterEntry[];
-    /** Roster огт бөглөгдөөгүй эсэх (my-target-ийн "бүгдэд харуулах" fallback-д). */
+    /** Roster огт бөглөгдөөгүй эсэх (багийн зорилтын "бүгдэд харуулах" fallback-д: my-stats, kpi-report). */
     rosterEmpty: boolean;
 }
 

@@ -16,7 +16,6 @@ const API_ROOT = path.join(process.cwd(), 'src', 'app', 'api');
 const PUBLIC_ROUTES: Record<string, string> = {
     'auth/login': 'нэвтрэх урсгал; Meta integration endpoints require marketing permission',
     'health': 'health probe (нууц мэдээлэлгүй)',
-    'docs': 'нийтийн API баримт',
     'push/vapid': 'VAPID public key',
     'admin/import/templates': 'Excel загвар татах (өгөгдөлгүй)',
     'webhook': 'Meta X-Hub-Signature-256 гарын үсэг (verifyWebhookSignature)',
