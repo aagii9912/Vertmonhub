@@ -222,7 +222,7 @@ export default function BlocksPage() {
             />
 
             {/* Phase tabs */}
-            <div className="flex flex-wrap gap-2 mb-3">
+            <div className="mb-2 flex flex-wrap gap-1 border-y border-border py-2">
                 {phases.map((p) => {
                     const phaseRows = summary.filter((r) => r.phase === p);
                     const total = phaseRows.reduce((s, r) => s + (r.total_units || 0), 0);
@@ -232,7 +232,7 @@ export default function BlocksPage() {
                             key={p}
                             onClick={() => { clearBlock(); setActivePhase(p); }}
                             className={cn(
-                                'flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm font-medium border transition-colors',
+                                'flex min-h-11 items-center gap-2 rounded-md border px-3 text-xs font-medium transition-colors md:min-h-[34px]',
                                 activePhase === p
                                     ? 'bg-brand-soft border-brand text-brand-strong'
                                     : 'bg-surface border-border text-muted-foreground hover:bg-surface-2',
@@ -247,7 +247,7 @@ export default function BlocksPage() {
             </div>
 
             {/* Category chips */}
-            <div className="flex flex-wrap gap-2 mb-4">
+            <div className="mb-3 flex flex-wrap gap-1">
                 {categories.map((c) => {
                     const rows = summary.filter((r) => r.phase === activePhase && r.category === c);
                     const total = rows.reduce((s, r) => s + (r.total_units || 0), 0);
@@ -256,7 +256,7 @@ export default function BlocksPage() {
                             key={c}
                             onClick={() => { clearBlock(); setActiveCategory(c); }}
                             className={cn(
-                                'px-3 py-1.5 rounded-md text-xs font-medium border transition-colors',
+                                'min-h-9 rounded-md border px-3 text-xs font-medium transition-colors',
                                 activeCategory === c
                                     ? 'bg-foreground text-background border-foreground'
                                     : 'bg-surface border-border text-muted-foreground hover:bg-surface-2',
@@ -272,7 +272,7 @@ export default function BlocksPage() {
             {blocks.length === 0 ? (
                 <EmptyState icon={<Building2 className="w-7 h-7" />} title="Энэ ангилалд блок алга" />
             ) : (
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 mb-5">
+                <div className="mb-4 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                     {blocks.map((b) => {
                         const pctSold = b.total_units > 0 ? Math.round((b.sold_units / b.total_units) * 100) : 0;
                         const isSel = selectedBlock === b.block;
@@ -281,8 +281,8 @@ export default function BlocksPage() {
                                 key={b.block}
                                 onClick={() => { setSelectedUnit(null); loadBlock(b.block); }}
                                 className={cn(
-                                    'text-left p-3.5 rounded-xl border transition-all',
-                                    isSel ? 'border-brand ring-2 ring-brand/30 bg-brand-soft' : 'border-border bg-surface hover:bg-surface-2 hover:border-brand/40',
+                                    'min-h-32 bg-surface p-3 text-left transition-colors',
+                                    isSel ? 'bg-brand-soft ring-2 ring-inset ring-brand/30' : 'hover:bg-surface-2',
                                 )}
                             >
                                 <div className="flex items-center justify-between mb-2">
@@ -308,8 +308,8 @@ export default function BlocksPage() {
             {/* Selected block units */}
             {selectedBlock && (
                 <Card>
-                    <CardContent className="p-4">
-                        <div className="flex items-center justify-between mb-3">
+                    <CardContent className="p-3 md:p-4">
+                        <div className="mb-2 flex items-center justify-between border-b border-border pb-2">
                             <h3 className="font-semibold text-foreground flex items-center gap-2">
                                 <Building2 className="w-5 h-5 text-brand-strong" />
                                 {activePhase} · Блок {selectedBlock} · {CATEGORY_LABEL[activeCategory]}
@@ -369,12 +369,12 @@ function UnitBrowser({ units, category, onSelect, selectedId }: {
         && (!maxArea || (u.sale_area != null && u.sale_area <= Number(maxArea))));
     const hasFilter = status !== 'all' || rooms !== 'all' || !!query || !!minArea || !!maxArea;
     const reset = () => { setStatus('all'); setRooms('all'); setQuery(''); setMinArea(''); setMaxArea(''); };
-    const inputClass = 'h-10 rounded-md border border-border bg-surface px-2 text-sm focus-ring';
+    const inputClass = 'h-11 rounded-md border border-border bg-surface px-2 text-sm focus-ring md:h-[34px]';
     return <div className="space-y-3">
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Нэгжийн төлөвөөр шүүх">
+        <div className="flex flex-wrap gap-1 border-y border-border py-2" role="group" aria-label="Нэгжийн төлөвөөр шүүх">
             {['all', ...STATUS_ORDER].map(value => {
                 const count = value === 'all' ? units.length : units.filter(u => u.status === value).length;
-                return <button key={value} type="button" aria-pressed={status === value} onClick={() => setStatus(value)} className={cn('flex min-h-10 items-center gap-2 rounded-md border px-3 text-xs focus-ring', status === value ? 'border-brand bg-brand-soft text-brand-strong' : 'border-border text-fg-2 hover:bg-surface-2')}>
+                return <button key={value} type="button" aria-pressed={status === value} onClick={() => setStatus(value)} className={cn('flex min-h-11 items-center gap-2 rounded-md border px-3 text-xs focus-ring md:min-h-[34px]', status === value ? 'border-brand bg-brand-soft text-brand-strong' : 'border-border text-fg-2 hover:bg-surface-2')}>
                     {value !== 'all' && <StatusDot variant={meta(value).dot} />}{value === 'all' ? 'Бүгд' : meta(value).label} <span className="tabular-nums">{count}</span>
                 </button>;
             })}

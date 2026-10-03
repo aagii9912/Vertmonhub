@@ -4,37 +4,35 @@ import { useEffect, useState } from 'react';
 import { Building2, Users, UserPlus, FileText, UserCheck, CalendarDays, ArrowUpRight, type LucideIcon } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { formatShortDate } from '@/lib/utils/date';
+import Link from 'next/link';
 
-/**
- * Админ хяналт — платформын CRM тойм (бүх байгууллагын нийлбэр).
- * 2026-09 review (M6): billing (захиалга / орлого / багц / нэхэмжлэх) хүснэгтүүд prod DB-д байхгүй тул
- * `/api/admin/dashboard`-ийн `crm` талбарыг харуулна; хуучин SaaS картууд хасагдсан.
- */
+/** Админ хяналт — платформын CRM тойм (бүх байгууллагын нийлбэр). */
 interface DashboardData {
     stats: { total_shops: number };
-    crm?: { users: number; leads: number; contracts: number; customers: number; viewings: number };
+    crm: { users: number; leads: number; contracts: number; customers: number; viewings: number };
     recent_shops: Array<{ id: string; name: string; created_at: string }>;
 }
-
-const EMPTY_CRM = { users: 0, leads: 0, contracts: 0, customers: 0, viewings: 0 };
 
 export default function AdminDashboard() {
     const [data, setData] = useState<DashboardData | null>(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         fetchDashboard();
     }, []);
 
     async function fetchDashboard() {
+        setLoading(true);
+        setError(null);
         try {
             const res = await fetch('/api/admin/dashboard');
-            if (res.ok) {
-                const result = await res.json();
-                setData(result);
-            }
+            const result = await res.json();
+            if (!res.ok || !result.crm) throw new Error(result.error || 'Мэдээлэл дутуу ирлээ');
+            setData(result);
         } catch (error) {
             console.error('Dashboard error:', error);
+            setError('Хяналтын самбарын мэдээлэл ачаалагдсангүй. Дахин оролдоно уу.');
         } finally {
             setLoading(false);
         }
@@ -51,12 +49,13 @@ export default function AdminDashboard() {
     if (!data) {
         return (
             <div className="text-center py-12">
-                <p className="text-muted-foreground">Хяналтын самбар ачаалахад алдаа гарлаа</p>
+                <p className="text-muted-foreground">{error || 'Хяналтын самбар ачаалахад алдаа гарлаа'}</p>
+                <button onClick={fetchDashboard} className="mt-3 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Дахин ачаалах</button>
             </div>
         );
     }
 
-    const crm = data.crm ?? EMPTY_CRM;
+    const crm = data.crm;
     const cards: { label: string; value: number; icon: LucideIcon }[] = [
         { label: 'Байгууллага', value: data.stats.total_shops, icon: Building2 },
         { label: 'Хэрэглэгч', value: crm.users, icon: Users },
@@ -72,6 +71,16 @@ export default function AdminDashboard() {
             <div>
                 <h1 className="heading-display text-2xl text-foreground">Админ хяналт</h1>
                 <p className="text-muted-foreground mt-1">Платформын CRM тойм — бүх байгууллагын нийлбэр</p>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+                {[
+                    { href: '/admin/users', label: 'Хэрэглэгчид' },
+                    { href: '/admin/projects', label: 'Төслүүд' },
+                    { href: '/admin/sales-targets', label: 'Борлуулалтын төлөвлөгөө' },
+                    { href: '/admin/import', label: 'Дата импорт' },
+                    { href: '/admin/landing', label: 'Нүүр хуудас' },
+                ].map((action) => <Link key={action.href} href={action.href} className="rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground hover:border-brand">{action.label}</Link>)}
             </div>
 
             {/* CRM stats */}
@@ -100,7 +109,7 @@ export default function AdminDashboard() {
                 <CardContent className="p-6">
                     <h2 className="text-lg font-semibold text-foreground mb-4">Сүүлийн байгууллагууд</h2>
                     {data.recent_shops.length === 0 ? (
-                        <p className="text-muted-foreground text-center py-4">Шинэ байгууллага алга</p>
+                        <p className="text-muted-foreground text-center py-4">Байгууллага бүртгэгдээгүй байна</p>
                     ) : (
                         <div className="space-y-1">
                             {data.recent_shops.map((shop) => (

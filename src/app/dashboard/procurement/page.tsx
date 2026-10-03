@@ -263,8 +263,8 @@ export default function ProcurementPage() {
                     )}
 
                     <Card>
-                        <div className="p-5">
-                            <h3 className="heading-section text-sm text-foreground mb-4">Нэхэмжлэхүүд</h3>
+                        <div className="p-3 md:p-4">
+                            <h3 className="heading-section mb-3 text-sm text-foreground">Нэхэмжлэхүүд</h3>
                             <DataTable
                                 columns={billColumns}
                                 data={bills}
@@ -276,8 +276,8 @@ export default function ProcurementPage() {
                     </Card>
 
                     {vendors.length > 0 && (
-                        <Card className="mt-6">
-                            <div className="p-5">
+                        <Card className="mt-4">
+                            <div className="p-3 md:p-4">
                                 <h3 className="heading-section text-sm text-foreground mb-3">Нийлүүлэгчид ({vendors.length})</h3>
                                 <div className="flex flex-wrap gap-2">
                                     {vendors.map(v => (

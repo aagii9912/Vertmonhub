@@ -278,7 +278,7 @@ export default function FinancePage() {
                                 accent={summary.monthNetCash >= 0 ? 'info' : 'danger'}
                             />
                         </StatBar>
-                        <p className="mb-6 text-xs text-muted-foreground">
+                        <p className="mb-4 text-xs text-muted-foreground">
                             Мөнгөн урсгалд зөвхөн бэлэн, банк, ипотекийн бүртгэл орно. Бартер: орлого {formatMNTShort(summary.monthBarterReceipts)}, зарлага {formatMNTShort(summary.monthBarterDisbursements)}.
                             {summary.monthUnclassifiedCount > 0 && <> Хэлбэр тодорхойгүй {summary.monthUnclassifiedCount} гүйлгээ: орлого {formatMNTShort(summary.monthUnclassifiedReceipts)}, зарлага {formatMNTShort(summary.monthUnclassifiedDisbursements)} — мөнгөн урсгалд ороогүй.</>}
                         </p>
@@ -310,8 +310,8 @@ export default function FinancePage() {
 
                     {/* Recent transactions */}
                     <Card>
-                        <div className="p-5">
-                            <h3 className="heading-section text-sm text-foreground mb-4">Сүүлийн гүйлгээ</h3>
+                        <div className="p-3 md:p-4">
+                            <h3 className="heading-section mb-3 text-sm text-foreground">Сүүлийн гүйлгээ</h3>
                             <DataTable<Txn>
                                 columns={txnColumns}
                                 data={transactions}

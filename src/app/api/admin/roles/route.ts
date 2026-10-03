@@ -1,8 +1,10 @@
 import { NextResponse } from 'next/server';
-import { requireAdmin } from '@/lib/admin/auth';
+import { getAdminUser } from '@/lib/admin/auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { CreateRoleSchema, validateBody } from '@/lib/validations/schemas';
+import { ALL_MODULES, clearPermissionsCache } from '@/lib/rbac';
+import { logAdminAudit } from '@/lib/admin/audit';
 
 /**
  * GET /api/admin/roles
@@ -10,7 +12,7 @@ import { CreateRoleSchema, validateBody } from '@/lib/validations/schemas';
  */
 export async function GET() {
     try {
-        const admin = await requireAdmin();
+        const admin = await getAdminUser();
         if (!admin) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
@@ -38,7 +40,7 @@ export async function GET() {
  */
 export async function POST(request: Request) {
     try {
-        const admin = await requireAdmin();
+        const admin = await getAdminUser();
         if (!admin || admin.role !== 'super_admin') {
             return NextResponse.json({ error: 'Super admin access required' }, { status: 403 });
         }
@@ -49,6 +51,10 @@ export async function POST(request: Request) {
         const validation = validateBody(CreateRoleSchema, body);
         if (!validation.success) return validation.response;
         const { name, display_name, display_name_mn, description, can_write, can_delete, can_access_admin, modules } = validation.data;
+        if (modules?.some((module) => !ALL_MODULES.includes(module as typeof ALL_MODULES[number])))
+            return NextResponse.json({ error: 'Танигдаагүй модуль байна' }, { status: 400 });
+        if (modules && new Set(modules).size !== modules.length)
+            return NextResponse.json({ error: 'Модуль давхар сонгогдсон байна' }, { status: 400 });
 
         // Create role
         const supabase = supabaseAdmin();
@@ -93,11 +99,14 @@ export async function POST(request: Request) {
         }
 
         // Fetch fresh role with permissions
-        const { data: freshRole } = await supabase
+        const { data: freshRole, error: freshError } = await supabase
             .from('roles')
             .select('*, role_permissions(id, module)')
             .eq('id', role.id)
             .single();
+        if (freshError) return safeErrorResponse(freshError, 'Дүрийг дахин уншихад алдаа гарлаа');
+        clearPermissionsCache(name);
+        await logAdminAudit({ actorId: admin.id, action: 'role.create', targetId: role.id, meta: { name } });
 
         return NextResponse.json({ role: freshRole }, { status: 201 });
     } catch (error) {

@@ -100,7 +100,7 @@ export default function AISettingsPage() {
                 const adminRes = await dashboardFetch('/api/admin/settings');
                 if (adminRes.ok) {
                     const adminData = await adminRes.json();
-                    const currentAdmin = adminData.admins?.find((a: any) => a.is_current);
+                    const currentAdmin = adminData.admin;
                     if (currentAdmin?.role === 'super_admin' || currentAdmin?.permissions?.can_import_data) {
                         setCanImport(true);
                     }

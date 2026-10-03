@@ -3,9 +3,11 @@
 import Link from 'next/link';
 import { Card, CardContent } from '@/components/ui/Card';
 import { PageHeader } from '@/components/dashboard/PageHeader';
+import { useAuth } from '@/contexts/AuthContext';
 import { Users, Building2, UserCheck, CalendarClock, FileBarChart, ArrowUpRight, type LucideIcon } from 'lucide-react';
 
 interface ReportTile {
+    module?: string;
     href: string;
     title: string;
     description: string;
@@ -21,6 +23,11 @@ const TILE_ACCENT: Record<ReportTile['accent'], string> = {
 };
 
 const REPORTS: ReportTile[] = [
+    {
+        href: '/dashboard/reports/erp', title: 'ERP · Долоо хоногийн тайлан',
+        description: 'Мягмар гарагийн ERP импорт, бүх sheet-ийн мэдээлэл, өмнөх импорттой харьцуулсан өөрчлөлт',
+        icon: FileBarChart, accent: 'brand', module: 'erp-imports',
+    },
     {
         href: '/dashboard/reports/operations',
         title: 'Үйл ажиллагааны тайлан',
@@ -66,6 +73,7 @@ const REPORTS: ReportTile[] = [
 ];
 
 export default function ReportsPage() {
+    const { user } = useAuth();
     return (
         <div>
             <PageHeader
@@ -75,7 +83,7 @@ export default function ReportsPage() {
             />
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-5">
-                {REPORTS.map((report) => {
+                {REPORTS.filter(report => !report.module || user?.role === 'super_admin' || user?.permissions?.modules.includes(report.module)).map((report) => {
                     const Icon = report.icon;
                     return (
                         <Link key={report.href} href={report.href} className="group">

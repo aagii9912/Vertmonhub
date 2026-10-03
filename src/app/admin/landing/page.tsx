@@ -128,20 +128,27 @@ export default function LandingCMSPage() {
     const [content, setContent] = useState<LandingContent>(defaultLandingContent);
     const [original, setOriginal] = useState<LandingContent>(defaultLandingContent);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [savingSection, setSavingSection] = useState<string | null>(null);
     const [lastSaved, setLastSaved] = useState<string | null>(null);
 
-    // Load content
-    useEffect(() => {
-        fetch('/api/dashboard/landing-content')
-            .then((r) => r.json())
-            .then((data) => {
-                setContent(data);
-                setOriginal(data);
-            })
-            .catch(() => toast.error('Контент ачааллахад алдаа гарлаа'))
-            .finally(() => setLoading(false));
+    const loadContent = useCallback(async () => {
+        setLoading(true);
+        setLoadError(null);
+        try {
+            const response = await fetch('/api/dashboard/landing-content?editor=1', { cache: 'no-store' });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Контент ачаалагдсангүй');
+            setContent(data);
+            setOriginal(data);
+        } catch (error) {
+            setLoadError(error instanceof Error ? error.message : 'Контент ачаалагдсангүй');
+        } finally {
+            setLoading(false);
+        }
     }, []);
+
+    useEffect(() => { void loadContent(); }, [loadContent]);
 
     const isDirty = useCallback(
         (section: keyof LandingContent) => {
@@ -184,6 +191,10 @@ export default function LandingCMSPage() {
                 <Loader2 className="w-6 h-6 animate-spin text-brand-strong" />
             </div>
         );
+    }
+
+    if (loadError) {
+        return <div role="alert" className="rounded-xl border border-status-danger/30 bg-status-danger-soft p-6 text-sm text-status-danger">{loadError} <button onClick={loadContent} className="ml-2 font-semibold underline">Дахин ачаалах</button></div>;
     }
 
     return (

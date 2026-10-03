@@ -143,6 +143,7 @@ export const PRIMARY_NAV: NavItem[] = [
         children: [
             { name: 'Сарын KPI', href: '/dashboard/reports/kpi' },
             { name: 'Үйл ажиллагаа', href: '/dashboard/reports/operations' },
+            { name: 'ERP импорт, тайлан', href: '/dashboard/reports/erp' },
             { name: 'Менежерийн гүйцэтгэл', href: '/dashboard/reports/manager-performance' },
             { name: 'Лид', href: '/dashboard/reports/leads' },
             { name: 'Байр', href: '/dashboard/reports/properties' },
@@ -187,6 +188,7 @@ export interface SecondaryRoute {
 }
 
 export const SECONDARY_ROUTES: SecondaryRoute[] = [
+    { name: 'ERP импорт, долоо хоногийн тайлан', href: '/dashboard/reports/erp', icon: FileText, module: 'erp-imports', group: 'Ажил', keywords: ['excel', 'csv', 'erp', 'импорт', 'мягмар', 'өөрчлөлт'] },
     { name: 'Миний ажлууд', href: '/dashboard/tasks', icon: ListChecks, module: 'dashboard', group: 'Ажил', keywords: ['task', 'todo', 'сануулга'] },
     { name: 'Лидийн pipeline', href: '/dashboard/leads/pipeline', icon: GitBranch, module: 'leads', group: 'Ажил', keywords: ['kanban', 'шат'] },
     { name: 'Харилцагч', href: '/dashboard/customers', icon: Users, module: 'customers', group: 'Ажил', keywords: ['customer', 'crm'] },
@@ -207,6 +209,7 @@ export const SECONDARY_ROUTES: SecondaryRoute[] = [
     { name: 'Сошиал', href: '/marketing/social', icon: Share2, module: 'marketing-roi', group: 'Маркетинг' },
     { name: 'Email / Newsletter', href: '/marketing/newsletter', icon: Mail, module: 'marketing-roi', group: 'Маркетинг', keywords: ['resend', 'имэйл', 'товхимол'] },
     { name: 'Мессеж', href: '/marketing/messaging', icon: Mail, module: 'marketing-roi', group: 'Маркетинг' },
+    { name: 'Email / Newsletter', href: '/marketing/newsletter', icon: Mail, module: 'marketing-roi', group: 'Маркетинг', keywords: ['resend', 'имэйл', 'товхимол'] },
     { name: 'Брэнд', href: '/marketing/brand', icon: Palette, module: 'marketing-roi', group: 'Маркетинг' },
     { name: 'Вэб', href: '/marketing/analytics', icon: Globe, module: 'marketing-roi', group: 'Маркетинг' },
 

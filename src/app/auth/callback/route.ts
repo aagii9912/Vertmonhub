@@ -1,37 +1,37 @@
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { createSupabaseServerClient } from '@/lib/auth/supabase-auth';
 
 export async function GET(request: Request) {
     const requestUrl = new URL(request.url);
     const code = requestUrl.searchParams.get('code');
+    const tokenHash = requestUrl.searchParams.get('token_hash');
+    const type = requestUrl.searchParams.get('type');
 
-    if (code) {
-        const cookieStore = await cookies();
+    const redirect = (path: string) => {
+        const response = NextResponse.redirect(new URL(path, requestUrl.origin));
+        response.headers.set('Cache-Control', 'private, no-store');
+        return response;
+    };
+    const failed = (errorCode?: string) => redirect(`/auth/login?auth_error=${errorCode === 'otp_expired' ? 'link_expired' : 'callback_failed'}`);
 
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                cookies: {
-                    getAll() {
-                        return cookieStore.getAll();
-                    },
-                    setAll(cookiesToSet) {
-                        try {
-                            cookiesToSet.forEach(({ name, value, options }) =>
-                                cookieStore.set(name, value, options)
-                            );
-                        } catch {
-                            // Ignore
-                        }
-                    },
-                },
-            }
-        );
-
-        await supabase.auth.exchangeCodeForSession(code);
+    if (requestUrl.searchParams.has('error') || requestUrl.searchParams.has('error_description')) {
+        return failed(requestUrl.searchParams.get('error_code') || undefined);
     }
 
-    return NextResponse.redirect(new URL('/dashboard', requestUrl.origin));
+    try {
+        if (requestUrl.searchParams.has('token_hash')) {
+            if (!tokenHash || (type !== 'invite' && type !== 'magiclink' && type !== 'email')) return failed();
+            const supabase = await createSupabaseServerClient();
+            const { data, error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
+            if (error || !data.session) return failed(error?.code);
+        } else if (code) {
+            const supabase = await createSupabaseServerClient();
+            const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+            if (error || !data.session) return failed(error?.code);
+        }
+    } catch {
+        return failed();
+    }
+
+    return redirect('/dashboard');
 }

@@ -43,7 +43,7 @@ function InboxWorkspace() {
         <button type="button" disabled={isFetching} onClick={() => void refetch()} className="mt-3 min-h-11 rounded-md border border-border px-3 focus-ring">Дахин оролдох</button>
     </div>;
 
-    return <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-surface">
+    return <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border bg-surface">
         {isError && <p role="alert" className="border-b border-border px-4 py-2 text-xs text-status-pending">Шинэчилж чадсангүй. Өмнө ачаалсан ярианууд харагдаж байна.</p>}
         <div className="flex min-h-0 flex-1">
             <section aria-label="Ярианы жагсаалт" className={cn('min-h-0 w-full shrink-0 flex-col border-border md:flex md:w-72 md:border-r lg:w-80', activeId ? 'hidden' : 'flex')}>
@@ -61,9 +61,9 @@ function InboxWorkspace() {
                         <p className="font-medium text-foreground">{query ? 'Хайлтад тохирох яриа алга' : 'Одоогоор яриа бүртгэгдээгүй'}</p>
                         <p>{query ? 'Өөр нэрээр хайх эсвэл хайлтаа арилгана уу.' : 'Холбогдсон сувгаас мессеж ирэхэд энд харагдана.'}</p>
                         {query && <button type="button" onClick={() => setQuery('')} className="min-h-11 text-brand focus-ring">Хайлт арилгах</button>}
-                    </div> : filtered.map(c => <button key={c.id} type="button" aria-pressed={activeId === c.id} onClick={() => select(c.id)} className={cn('flex w-full items-start gap-3 border-b border-border px-3 py-3 text-left focus-ring', activeId === c.id ? 'bg-brand-soft' : 'hover:bg-surface-2')}>
+                    </div> : filtered.map(c => <button key={c.id} type="button" aria-pressed={activeId === c.id} onClick={() => select(c.id)} className={cn('flex w-full items-start gap-3 border-b border-border px-3 py-3 text-left transition-colors focus-ring', activeId === c.id ? 'bg-brand-soft shadow-[inset_2px_0_0_var(--brand)]' : 'hover:bg-surface-2')}>
                         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-surface-3 text-sm">{(c.customer_name || 'Зочин').slice(0,1)}</span>
-                        <span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium">{c.customer_name || 'Зочин'}</span><span className="mt-1 block truncate text-xs text-muted-foreground">{c.last_message}</span><span className="mt-1 block text-xs text-muted-foreground">{c.last_message_at ? formatTimeAgo(c.last_message_at) : ''}</span></span>
+                        <span className="min-w-0 flex-1"><span className="flex items-center gap-2"><span className="min-w-0 flex-1 truncate text-sm font-medium">{c.customer_name || 'Зочин'}</span>{c.unread_count > 0 && <span className="mono-label inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] text-brand-fg">{c.unread_count}</span>}</span><span className="mt-1 block truncate text-xs text-muted-foreground">{c.last_message}</span><span className="mt-1 block text-xs text-muted-foreground">{c.last_message_at ? formatTimeAgo(c.last_message_at) : ''}</span></span>
                     </button>)}
                 </div>
             </section>
@@ -121,7 +121,7 @@ function ConversationThread({ conversation, onBack, onRefresh }: { conversation:
     }
 
     return <>
-        <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
+        <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
             <button type="button" onClick={onBack} aria-label="Ярианы жагсаалт руу буцах" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md hover:bg-surface-2 focus-ring md:hidden"><ArrowLeft className="h-5 w-5" /></button>
             <div className="min-w-0"><h2 className="truncate text-sm font-semibold">{conversation.customer_name || 'Зочин'}</h2><p className="text-xs text-muted-foreground">{messages.length} мессеж</p></div>
             {canDelete && <button type="button" disabled={sending} onClick={() => void remove()} aria-label="Харилцагч болон яриаг устгах" className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-status-danger-soft hover:text-status-danger focus-ring"><Trash2 className="h-4 w-4" /></button>}
@@ -133,7 +133,7 @@ function ConversationThread({ conversation, onBack, onRefresh }: { conversation:
             </div></div>)}
             <div ref={endRef} />
         </div>
-        {canWrite ? <form onSubmit={e => { e.preventDefault(); void send(); }} className="shrink-0 space-y-2 border-t border-border p-3">
+        {canWrite ? <form onSubmit={e => { e.preventDefault(); void send(); }} className="shrink-0 space-y-2 border-t border-border bg-surface p-3">
             <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">Хариу илгээсний дараа:
                 <select aria-label="Хариу илгээсний дараах AI горим" disabled={sending} value={pause} onChange={e => setPause(e.target.value as 'pause' | 'off')} className="min-h-9 rounded-md border border-border bg-surface px-2 text-foreground focus-ring"><option value="pause">AI-г 30 минут зогсоох</option><option value="off">AI-г дахин асаах хүртэл зогсоох</option></select>
             </label>

@@ -11,9 +11,14 @@ import type { LandingContent } from '@/lib/landing/types';
 import { getAuthUser } from '@/lib/auth/auth';
 import { resolvePermissions } from '@/lib/auth/require-permission';
 import { logger } from '@/lib/utils/logger';
+import { getAdminUser } from '@/lib/admin/auth';
 
-// GET — Public, no auth required
-export async function GET() {
+// Public reads fall back to defaults. The editor requests an authenticated read
+// and must see DB failures instead of treating defaults as saved content.
+export async function GET(request: NextRequest) {
+    const editing = request.nextUrl.searchParams.get('editor') === '1';
+    if (editing && !await getAdminUser())
+        return NextResponse.json({ error: 'Админ эрх шаардлагатай' }, { status: 403 });
     try {
         const supabase = supabaseAdmin();
         const { data, error } = await supabase
@@ -24,6 +29,7 @@ export async function GET() {
 
         if (error) {
             logger.error('[Landing Content API] GET error:', { error: error });
+            if (editing) return NextResponse.json({ error: 'Контент уншихад алдаа гарлаа' }, { status: 500 });
             return NextResponse.json(defaultLandingContent);
         }
 
@@ -47,6 +53,7 @@ export async function GET() {
         return NextResponse.json(content);
     } catch (error: unknown) {
         logger.error('[Landing Content API] GET error:', { error: error });
+        if (editing) return NextResponse.json({ error: 'Контент уншихад алдаа гарлаа' }, { status: 500 });
         return NextResponse.json(defaultLandingContent);
     }
 }

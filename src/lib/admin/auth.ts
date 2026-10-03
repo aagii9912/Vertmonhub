@@ -1,7 +1,7 @@
 /**
  * Admin Authentication & Authorization
  * Middleware for Super Admin access using Supabase Auth
- * Supports both Supabase Auth and custom vertmon-session cookie
+ * Uses the verified Supabase session and the super_admin user role.
  */
 
 import { getAuthUser } from '@/lib/auth/supabase-auth';
@@ -37,7 +37,7 @@ export async function getAdminUser(): Promise<AdminUser | null> {
         const resolved = await resolveUserId();
 
         if (!resolved) {
-            logger.debug('Admin auth: No user found via Supabase or session cookie');
+            logger.debug('Admin auth: No Supabase user found');
             return null;
         }
 
@@ -61,7 +61,7 @@ export async function getAdminUser(): Promise<AdminUser | null> {
             };
         }
 
-        logger.debug('Admin auth: Not in admins table and not RBAC super_admin');
+        logger.debug('Admin auth: User is not RBAC super_admin');
         return null;
     } catch (error) {
         logger.error('Admin auth error', { error });

@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { createBrowserClient } from '@supabase/ssr';
+import { useEffect, useState } from 'react';
+import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
 import { AuthShell } from '@/components/auth/AuthShell';
 import { AuthCard } from '@/components/auth/AuthCard';
 import { OAuthButton } from '@/components/auth/OAuthButton';
@@ -16,10 +16,16 @@ export default function LoginPage() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    const supabase = createBrowserClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    );
+    const supabase = createSupabaseBrowserClient();
+
+    useEffect(() => {
+        const callbackError = new URLSearchParams(window.location.search).get('auth_error');
+        if (callbackError === 'link_expired') {
+            setError('Урилгын холбоосын хугацаа дууссан эсвэл өмнө ашигласан байна. Админаас шинэ холбоос авна уу.');
+        } else if (callbackError === 'callback_failed') {
+            setError('Нэвтрэлтийг баталгаажуулж чадсангүй. Дахин нэвтэрнэ үү. Урилга ашигласан бол админаас шинэ холбоос авна уу.');
+        }
+    }, []);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -35,7 +41,7 @@ export default function LoginPage() {
             const data = await res.json();
 
             if (res.ok && data.success) {
-                window.location.href = '/dashboard';
+                window.location.assign(new URL('/dashboard', window.location.origin).href);
                 return;
             }
 

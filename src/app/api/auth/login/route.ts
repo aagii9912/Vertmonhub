@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 import { createClient } from '@supabase/supabase-js';
+import { z } from 'zod';
+
+const LoginSchema = z.object({
+    email: z.string().trim().pipe(z.email().max(254)),
+    password: z.string().min(1).max(1024),
+});
 
 /**
  * POST /api/auth/login — Login via Supabase Auth
@@ -12,25 +18,20 @@ import { createClient } from '@supabase/supabase-js';
  */
 export async function POST(request: NextRequest) {
     try {
-        const body = await request.json();
-        // Имэйл/нууц үгийн үл үзэгдэх хоосон зай нэвтрэлтийг санамсаргүй унагадаг.
-        // Нууц үгийг үүсгэх тал (POST /api/admin/users) trim хийдэг тул энд trim
-        // хийх нь аюулгүй — чатаар хуулахад ордог сүүлчийн зай/мөрийг арилгана.
-        const email = typeof body.email === 'string' ? body.email.trim() : body.email;
-        const password = typeof body.password === 'string' ? body.password.trim() : body.password;
-
-        if (!email || !password) {
+        const parsed = LoginSchema.safeParse(await request.json().catch(() => null));
+        if (!parsed.success) {
             return NextResponse.json(
-                { error: 'Имэйл болон нууц үг шаардлагатай' },
+                { error: 'Имэйл болон нууц үгээ зөв оруулна уу' },
                 { status: 400 },
             );
         }
+        const { email, password } = parsed.data;
 
         const cookieStore = await cookies();
 
         const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            process.env.NEXT_PUBLIC_SUPABASE_URL!.trim(),
+            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!.trim(),
             {
                 cookies: {
                     getAll() {
@@ -77,8 +78,8 @@ export async function POST(request: NextRequest) {
 
         // Look up role with service-role client (bypasses RLS)
         const adminSupabase = createClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.SUPABASE_SERVICE_ROLE_KEY!,
+            process.env.NEXT_PUBLIC_SUPABASE_URL!.trim(),
+            process.env.SUPABASE_SERVICE_ROLE_KEY!.trim(),
         );
 
         const { data: roleData } = await adminSupabase
@@ -100,9 +101,8 @@ export async function POST(request: NextRequest) {
         });
     } catch (err) {
         console.error('Login error:', err);
-        const message = err instanceof Error ? err.message : 'Unknown';
         return NextResponse.json(
-            { error: 'Нэвтрэх үед алдаа гарлаа: ' + message },
+            { error: 'Нэвтрэх үед алдаа гарлаа. Дахин оролдоно уу' },
             { status: 500 },
         );
     }
