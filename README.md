@@ -154,11 +154,7 @@ vertmonhub/
 │   ├── migrations/            # 52 migration файл
 │   └── vertmonhub_complete_setup.sql
 ├── e2e/                       # Playwright тестүүд (8)
-├── docs/                      # Баримт бичгүүд
-│   ├── API_DOCUMENTATION.md
-│   ├── DEPLOYMENT.md
-│   ├── SETUP_GUIDE.md
-│   └── FRONTEND_DEVELOPER_GUIDE.md
+├── docs/                      # Баримт бичгүүд (workflow, review, rollout тэмдэглэл)
 ├── REPORTS/                   # Гэрээний тайлангууд
 └── scripts/                   # Utility скриптүүд
 ```
@@ -224,7 +220,7 @@ npm run lint
 
 ## 📦 Deploy
 
-Vercel дээр deploy хийнэ. Дэлгэрэнгүй: [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md)
+Vercel дээр `main` branch-аас автоматаар deploy хийгдэнэ (`sin1`). Env-ийн жагсаалт: [.env.example](./.env.example)
 
 ```bash
 npm run build

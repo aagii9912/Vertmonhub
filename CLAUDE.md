@@ -366,7 +366,7 @@ Conventions: tables `snake_case` plural, columns `snake_case`, functions `snake_
 |------|---------|
 | `next.config.ts` | Security headers, image domains |
 | `vercel.json` | Region (`sin1`), main-only deploys |
-| `sentry.*.config.ts` | Sentry client/server/edge |
+| `src/instrumentation.ts`, `src/instrumentation-client.ts` | Sentry server/edge and client init |
 | `vitest.config.ts` | Vitest setup |
 | `tsconfig.json` | `@/` → `src/` path alias |
 
@@ -377,7 +377,7 @@ Conventions: tables `snake_case` plural, columns `snake_case`, functions `snake_
 - Imports use the `@/` alias (`@/lib/...`, `@/components/...`).
 - Server components by default; `"use client"` only when interactive.
 - Tailwind v4 — styles configured in `globals.css`, not a `tailwind.config.ts`.
-- Icons: `lucide-react`. Toasts: `sonner`. Forms: `react-hook-form` + `zod`.
+- Icons: `lucide-react`. Toasts: `sonner`. Forms: controlled inputs + `zod` (no form library).
 - API routes: validate input with Zod, return `{ error, details? }` on failure. Business reads/writes through `supabaseAdmin()` must first pass authentication, module/operation permissions and tenant checks. Use the session client for authentication; browser RLS is an additional read boundary.
 
 ---
@@ -400,7 +400,7 @@ If you need to bring any of this back, do it intentionally — these were remove
 
 **Removed in the v2 redesign (2026-09-10, branch `feat/redesign-v2`):** the three-workspace navigation (`lib/navigation/workspaces.ts`, `useActiveWorkspace.ts`, `WorkspaceSwitcher`), the v1 dashboards (`OrgDashboard`, `components/dashboard/my/*`, `AskAIHero`, `TeamOverview`, `SalesChart`, `AIMonitor`, `SalesTargetWidget`, `useDashboardPrefs`), dead primitives (`ui/Avatar`, `BottomSheet`, `Breadcrumb`, `Label`, `LiveIndicator`, `PullToRefresh`, `RadioGroup`, `Separator`, `Tooltip`), dead dashboard/chat components (`ActionCenter`, `ConversationList`, `FloorPlan`, `MessageThread`, `ShopSwitcher`, `chat/ChatContainer`), and the `src/app/test/*` playground routes. The `user_dashboard_prefs` table still exists without an API or UI (`/api/dashboard/prefs` was removed on 2026-10-04).
 
-**Removed in the 2026-10-04 simplification (branch `chore/simplify-phase-0-1`):** zero-importer modules (`lib/ai/{helpers/memoryTTL,i18n/messages,validation/schemas,claude/client,tools/definitions/core}`, `lib/services/{CustomerService,ChatHistoryService}`, `lib/errors/errorHandler`, `lib/constants/ai-setup`, `lib/utils/index`, `types/{database,errors,facebook,index}`, `components/chat/*`, the eight unused `dashboard/ai-settings/components/*` tabs (the page renders its own) and `src/test/mocks`); the `/auth/register` page with the whole i18n stack (`i18n/*`, `lib/i18n`, `LanguageContext`, `LanguageSwitcher`; `proxy.ts` still redirects `/auth/register` to login); `/docs` + `/api/docs` (they documented removed e-commerce APIs); API routes nothing called (`dashboard/{stats,posts,prefs,my-target,connect-instagram,customers/[id]/tags}`, `marketing/{channels,facebook/health}`, `auth/instagram/accounts`); and the uncalled `POST /api/dashboard/contracts` Excel importer (it overwrote `paid_amount` outside the payment RPC; `/admin/import` is the importer). `dashboard/leads/[id]/convert`, `dashboard/inbox/remind` and `dashboard/handover` also have no UI but were kept pending an owner decision.
+**Removed in the 2026-10-04 simplification (branch `chore/simplify-phase-0-1`):** zero-importer modules (`lib/ai/{helpers/memoryTTL,i18n/messages,validation/schemas,claude/client,tools/definitions/core}`, `lib/services/{CustomerService,ChatHistoryService}`, `lib/errors/errorHandler`, `lib/constants/ai-setup`, `lib/utils/index`, `types/{database,errors,facebook,index}`, `components/chat/*`, the eight unused `dashboard/ai-settings/components/*` tabs (the page renders its own) and `src/test/mocks`); the `/auth/register` page with the whole i18n stack (`i18n/*`, `lib/i18n`, `LanguageContext`, `LanguageSwitcher`; `proxy.ts` still redirects `/auth/register` to login); `/docs` + `/api/docs` (they documented removed e-commerce APIs); API routes nothing called (`dashboard/{stats,posts,prefs,my-target,connect-instagram,customers/[id]/tags}`, `marketing/{channels,facebook/health}`, `auth/instagram/accounts`); and the uncalled `POST /api/dashboard/contracts` Excel importer (it overwrote `paid_amount` outside the payment RPC; `/admin/import` is the importer). `dashboard/leads/[id]/convert`, `dashboard/inbox/remind` and `dashboard/handover` also have no UI but were kept pending an owner decision. Repo hygiene in the same pass: the identical root `sentry.{server,edge}.config.ts` were folded into `src/instrumentation.ts`; two `.bak` migrations; broken or destructive scripts (`scripts/{delete-users,run-feature-migration,fix-rls}.ts`, `scripts/eval/run-agent-evals.ts`, `data/{run-migrations,set-super-admin-aagii9912}.mjs` — they targeted nonexistent `admins`/`plans`/`exec_sql` or wiped users); 27 legacy Syncly/SmartHub docs and the old agent kit (`.agent/`, `skills/`, `REVIEW.md`); unused deps `@dnd-kit/{sortable,modifiers,utilities}`, `@radix-ui/react-dialog`, `@tanstack/react-table`, `vaul`, `react-hook-form`, `msw`, `@testing-library/user-event`. Ignored files that had been committed (`supabase/.temp`, `playwright/.auth`, `test-results`, `*.xlsx`) were untracked.
 
 ---
 
@@ -478,5 +478,5 @@ SENTRY_AUTH_TOKEN=
 7. **Vercel deploys only `main`** to the `sin1` region.
 8. The `shops` table is intentionally still load-bearing — a full multi-tenant rework is a planned follow-up, not in scope for routine changes.
 9. **Current improvement plan:** `docs/REVIEW-2026-09-11.md` (Wave 0–3). Wave 0/1 and part of Wave 2 are done on `fix/wave-0-security`; §8 of that doc tracks what is still open (git history PII purge, browser-Supabase → API routes, `/api/me`, UI consolidation, tests for RBAC/RLS).
-10. Sentry only works through `src/instrumentation.ts` + `src/instrumentation-client.ts` + `withSentryConfig` in `next.config.ts` — never add root-level `sentry.*.config.ts` files that nothing imports.
+10. Sentry only works through `src/instrumentation.ts` + `src/instrumentation-client.ts` + `withSentryConfig` in `next.config.ts` — server/edge `Sentry.init` lives in `src/instrumentation.ts`; never add root-level `sentry.*.config.ts` files.
 11. Prod DB facts are in the auto-memory note `live-db-state-2026-09-11` and §7.1 of the review doc; check them before writing DB-dependent code.
