@@ -13,6 +13,11 @@ export async function GET(request: Request) {
         return response;
     };
     const failed = (errorCode?: string) => redirect(`/auth/login?auth_error=${errorCode === 'otp_expired' ? 'link_expired' : 'callback_failed'}`);
+    // Ашигласан холбоосыг дахин нээсэн ч хүчинтэй session-тэй хэрэглэгчийг аппад үлдээнэ.
+    const failedUnlessSignedIn = async (supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>, errorCode?: string) => {
+        const { data } = await supabase.auth.getUser();
+        return data.user ? redirect('/dashboard') : failed(errorCode);
+    };
 
     if (requestUrl.searchParams.has('error') || requestUrl.searchParams.has('error_description')) {
         return failed(requestUrl.searchParams.get('error_code') || undefined);
@@ -23,11 +28,11 @@ export async function GET(request: Request) {
             if (!tokenHash || (type !== 'invite' && type !== 'magiclink' && type !== 'email')) return failed();
             const supabase = await createSupabaseServerClient();
             const { data, error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type });
-            if (error || !data.session) return failed(error?.code);
+            if (error || !data.session) return await failedUnlessSignedIn(supabase, error?.code);
         } else if (code) {
             const supabase = await createSupabaseServerClient();
             const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-            if (error || !data.session) return failed(error?.code);
+            if (error || !data.session) return await failedUnlessSignedIn(supabase, error?.code);
         }
     } catch {
         return failed();

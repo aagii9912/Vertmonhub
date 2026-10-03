@@ -10,7 +10,8 @@ import { adminUserInput, isAssignableRole, provisionUserAccess, resolveTargetSho
  * POST /api/admin/users/invite — урих / нэвтрэх холбоос үүсгэж имэйлээр илгээх (super_admin).
  *
  * Холбоосыг Resend-ээр имэйлээр АВТОМАТААР илгээнэ (best-effort). Илгээж чадаагүй бол
- * `action_link`-ийг буцаах тул админ гараар хуулж илгээж болно. Шинэ имэйл бол урилга
+ * `action_link`-ийг (аппын `/auth/callback?token_hash=…&type=…`) буцаах тул админ гараар
+ * хуулж илгээж болно. Шинэ имэйл бол урилга
  * (хэрэглэгч үүснэ), баталгаажуулсан бүртгэлтэй бол нэвтрэх (magiclink) холбоос үүснэ.
  */
 export async function POST(request: NextRequest) {
@@ -75,9 +76,16 @@ export async function POST(request: NextRequest) {
 
         if (linkRes.error || !linkRes.data) throw linkRes.error || new Error('Холбоос үүссэнгүй');
 
-        const actionLink = linkRes.data.properties?.action_link;
+        const properties = linkRes.data.properties;
         const invitedUserId = linkRes.data.user?.id;
-        if (!invitedUserId || !actionLink) throw new Error('Урих холбоос бүрэн үүссэнгүй');
+        if (!invitedUserId || !properties?.hashed_token || properties.verification_type !== mode)
+            throw new Error('Урих холбоос бүрэн үүссэнгүй');
+        // Admin generateLink-ийн implicit холбоос нь recipient-ийн PKCE verifier-гүй.
+        // Callback дээр token_hash-ийг баталгаажуулж SSR session cookie үүсгэнэ.
+        const callbackLink = new URL('/auth/callback', originUrl.origin);
+        callbackLink.searchParams.set('token_hash', properties.hashed_token);
+        callbackLink.searchParams.set('type', mode);
+        const actionLink = callbackLink.toString();
         if (createdUserId && invitedUserId !== createdUserId) throw new Error('Урих холбоосын хэрэглэгч шинэ бүртгэлтэй таарахгүй байна');
         const provisioningError = await provisionUserAccess(supabase, {
             actorId: userId, userId: invitedUserId, email, fullName: full_name, role, shopId: shop.id, isNew: createdUserId === invitedUserId,

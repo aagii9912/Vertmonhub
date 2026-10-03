@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const state = vi.hoisted(() => ({
@@ -15,7 +15,9 @@ const state = vi.hoisted(() => ({
     linkUserId: 'target',
     apiTargetExists: true,
     createdUserId: 'created-target',
-    missingLink: false,
+    missingTokenHash: false,
+    wrongVerificationType: false,
+    tokenHash: 'synthetic-token-hash',
     linkTypes: [] as string[],
     linkInputs: [] as Array<{ type: string; options?: { data?: unknown } }>,
     authCreates: [] as Array<Record<string, unknown>>,
@@ -25,6 +27,7 @@ const state = vi.hoisted(() => ({
     authDeletes: [] as string[],
     authUpdates: 0,
     emails: 0,
+    emailLinks: [] as string[],
 }));
 const shopId = '10000000-0000-4000-8000-000000000001';
 vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => db }));
@@ -32,7 +35,11 @@ vi.mock('@/lib/auth/supabase-auth', () => ({ supabaseAdmin: () => db, getUserId:
 vi.mock('@/lib/admin/auth', () => ({ getAdminUser: async () => ({ id: 'actor', email: 'actor@example.com', role: 'super_admin' }) }));
 vi.mock('@/lib/admin/audit', () => ({ logAdminAudit: async () => {} }));
 vi.mock('@/lib/ai/data-assistant/audit', () => ({ logAiAudit: async () => {} }));
-vi.mock('@/lib/email/email', () => ({ sendInviteEmail: async () => { state.emails++; return true; } }));
+vi.mock('@/lib/email/email', () => ({ sendInviteEmail: async (input: { actionLink: string }) => {
+    state.emails++;
+    state.emailLinks.push(input.actionLink);
+    return true;
+} }));
 
 const db = {
     auth: { admin: {
@@ -53,7 +60,11 @@ const db = {
             if (state.errors.link) return { data: null, error: state.errors.link };
             return input.type === 'invite' && state.linkMode === 'magiclink'
                 ? { data: null, error: { message: 'User already registered' } }
-                : { data: { user: { id: state.linkUserId }, properties: { action_link: state.missingLink ? undefined : 'https://example.invalid/link' } }, error: null };
+                : { data: { user: { id: state.linkUserId }, properties: {
+                    action_link: 'https://example.invalid/link',
+                    hashed_token: state.missingTokenHash ? undefined : state.tokenHash,
+                    verification_type: state.wrongVerificationType ? 'recovery' : input.type,
+                } }, error: null };
         },
     } },
     from(table: string) {
@@ -123,10 +134,13 @@ beforeEach(() => {
     state.shopId = shopId;
     state.fullName = 'Бат'; state.roster = []; state.rosterRace = false;
     state.linkMode = 'invite'; state.linkUserId = 'target'; state.errors = {}; state.writes = [];
-    state.apiTargetExists = true; state.createdUserId = 'created-target'; state.missingLink = false;
+    state.apiTargetExists = true; state.createdUserId = 'created-target'; state.missingTokenHash = false;
+    state.wrongVerificationType = false; state.tokenHash = 'synthetic-token-hash';
     state.linkTypes = []; state.linkInputs = []; state.authCreates = [];
-    state.passwords = []; state.authDeletes = []; state.authUpdates = 0; state.emails = 0;
+    state.passwords = []; state.authDeletes = []; state.authUpdates = 0; state.emails = 0; state.emailLinks = [];
 });
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe('existing shop GUID validation', () => {
     const legacyShopId = '00000000-0000-0000-0000-000000000001';
@@ -342,14 +356,42 @@ describe('admin provisioning across API and AI', () => {
         expect(state.authDeletes).toEqual([]);
     });
 
-    it.each([true, false])('missing invite link preserves existing accounts and rolls back owned accounts (existing: %s)', async (existing) => {
-        state.apiTargetExists = existing; state.missingLink = true;
+    it.each(['invite', 'magiclink'] as const)('sends and returns an SSR callback link for %s without a recipient PKCE verifier', async (mode) => {
+        vi.stubEnv('NEXT_PUBLIC_APP_URL', 'https://hub.example.invalid');
+        state.linkMode = mode;
+        state.tokenHash = 'synthetic+hash/token?&';
+        const response = await inviteApi(new NextRequest('http://localhost/api/admin/users/invite', {
+            method: 'POST', body: JSON.stringify(invite),
+        }));
+        expect(response.status).toBe(200);
+        const result = await response.json();
+        const callback = new URL(result.action_link);
+        expect(callback.origin).toBe('https://hub.example.invalid');
+        expect(callback.pathname).toBe('/auth/callback');
+        expect(callback.hash).toBe('');
+        expect([...callback.searchParams]).toEqual([['token_hash', state.tokenHash], ['type', mode]]);
+        expect(state.emailLinks).toEqual([result.action_link]);
+    });
+
+    it.each([true, false])('missing callback token preserves existing accounts and rolls back owned accounts (existing: %s)', async (existing) => {
+        state.apiTargetExists = existing; state.missingTokenHash = true;
         state.linkUserId = existing ? 'target' : state.createdUserId;
         const response = await inviteApi(new NextRequest('http://localhost/api/admin/users/invite', {
             method: 'POST', body: JSON.stringify(invite),
         }));
         expect(response.status).toBe(500);
         expect(state.authDeletes).toEqual(existing ? [] : ['created-target']);
+        expect(state.writes).toEqual([]);
+        expect(state.emails).toBe(0);
+    });
+
+    it('rejects mismatched verification types before provisioning or emailing', async () => {
+        state.apiTargetExists = false; state.linkUserId = state.createdUserId; state.wrongVerificationType = true;
+        const response = await inviteApi(new NextRequest('http://localhost/api/admin/users/invite', {
+            method: 'POST', body: JSON.stringify(invite),
+        }));
+        expect(response.status).toBe(500);
+        expect(state.authDeletes).toEqual(['created-target']);
         expect(state.writes).toEqual([]);
         expect(state.emails).toBe(0);
     });
@@ -376,7 +418,7 @@ describe('admin provisioning across API and AI', () => {
     });
 
     it('reports an owned invite account cleanup failure explicitly', async () => {
-        state.apiTargetExists = false; state.missingLink = true; state.errors.authDelete = failure;
+        state.apiTargetExists = false; state.missingTokenHash = true; state.errors.authDelete = failure;
         const response = await inviteApi(new NextRequest('http://localhost/api/admin/users/invite', {
             method: 'POST', body: JSON.stringify(invite),
         }));
@@ -425,12 +467,14 @@ describe('sales manager access provisioning', () => {
         expect(writesTo('user_profiles')).toEqual([]);
     });
 
-    it('API invitation links the existing manager profile before returning its unchanged Auth link', async () => {
+    it('API invitation links the existing manager profile before returning its callback link', async () => {
         const response = await inviteApi(new NextRequest('http://localhost/api/admin/users/invite', {
             method: 'POST', body: JSON.stringify({ ...invite, role: 'sales_manager' }),
         }));
         expect(response.status).toBe(200);
-        expect(await response.json()).toMatchObject({ success: true, action_link: 'https://example.invalid/link' });
+        expect(await response.json()).toMatchObject({
+            success: true, action_link: 'http://localhost/auth/callback?token_hash=synthetic-token-hash&type=invite',
+        });
         expect(state.roster).toEqual([row({ user_id: 'target', is_active: true })]);
         expect(state.authUpdates).toBe(0);
         expect(writesTo('user_profiles')).toEqual([]);

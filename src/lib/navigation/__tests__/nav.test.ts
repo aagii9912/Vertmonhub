@@ -20,6 +20,8 @@ describe('nav v2 — бүтэц', () => {
         expect(getRouteModule('/dashboard/tasks')).toBe('dashboard');
         expect(getRouteModule('/dashboard/weekly')).toBe('dashboard');
         expect(getRouteModule('/dashboard/leadsX')).toBeUndefined();
+        // «Тайлан»-ийн хүүхэд мөр reports-ийг өвлөдөг ч ERP нь илүү нарийн эрх шаардана.
+        expect(getRouteModule('/dashboard/reports/erp')).toBe('erp-imports');
     });
     it('өдөр тутмын ажил ба хурлын бэлтгэл эхэнд байна', () => {
         expect(PRIMARY_NAV.map((i) => i.name)).toEqual([
@@ -46,6 +48,13 @@ describe('nav v2 — бүтэц', () => {
     it('href бүр давтагдахгүй', () => {
         const hrefs = [...PRIMARY_NAV, ...BOTTOM_NAV].map((i) => i.href);
         expect(new Set(hrefs).size).toBe(hrefs.length);
+    });
+
+    it('⌘K / «Бусад» мөрүүд давхардахгүй (React key = href + name)', () => {
+        const keys = SECONDARY_ROUTES.map((r) => r.href + r.name);
+        expect(new Set(keys).size).toBe(keys.length);
+        expect(SECONDARY_ROUTES.filter((r) => r.href === '/dashboard/reports/erp')).toHaveLength(1);
+        expect(SECONDARY_ROUTES.filter((r) => r.href === '/marketing/newsletter')).toHaveLength(1);
     });
 });
 

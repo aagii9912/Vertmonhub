@@ -4,13 +4,14 @@ import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ClipboardCopy, Printer, RefreshCw, ArrowUpRight, Sparkles } from 'lucide-react';
+import { ClipboardCopy, MoreHorizontal, Printer, RefreshCw, ArrowUpRight, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { dashboardJson } from '@/lib/api/dashboardFetch';
 import { openAiPanel } from '@/lib/ai/context';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Button } from '@/components/ui/Button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/Dropdown';
 import { Money } from '@/components/ui/Money';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
 import { sourceLabel } from '@/lib/leads/labels';
@@ -39,6 +40,9 @@ function OperationsReportContent() {
         try { await navigator.clipboard.writeText(formatOperationsReportText(data)); toast.success('Тайлан хууллаа'); }
         catch { toast.error('Хуулж чадсангүй. Хэвлэх товчоор PDF болгон хадгалж болно.'); }
     };
+    const askAi = () => openAiPanel(`${range.from}-ээс ${range.to} хүртэлх үйл ажиллагааны нэгдсэн тайлангаас гэрээний зорилт, орсон мөнгө, анхаарах лидийг товч тайлбарла. Хугацаанд бүртгэсэн урьдчилгааг гэрээнд өмнө хадгалсан дүнгээс тусад нь тайлбарла.`);
+    const reportActionDisabled = !usable || isFetching;
+    const refreshDisabled = isFetching || !validRange || !shop?.id;
 
     return (
         <div className="space-y-3">
@@ -46,18 +50,18 @@ function OperationsReportContent() {
                 className="print:hidden"
                 secondaryActions={<>
                     <span className="hidden md:contents">
-                        <Button variant="secondary" disabled={!usable || isFetching} onClick={() => openAiPanel(`${range.from}-ээс ${range.to} хүртэлх үйл ажиллагааны нэгдсэн тайлангаас гэрээний зорилт, орсон мөнгө, анхаарах лидийг товч тайлбарла. Хугацаанд бүртгэсэн урьдчилгааг гэрээнд өмнө хадгалсан дүнгээс тусад нь тайлбарла.`)}><Sparkles className="size-4" />AI-аар тайлбарлуулах</Button>
-                        <Button variant="secondary" onClick={() => refetch()} disabled={isFetching || !validRange || !shop?.id}><RefreshCw className="size-4" />Шинэчлэх</Button>
-                        <Button variant="secondary" onClick={copy} disabled={!usable || isFetching}><ClipboardCopy className="size-4" />Хуулах</Button>
+                        <Button variant="secondary" disabled={reportActionDisabled} onClick={askAi}><Sparkles className="size-4" />AI-аар тайлбарлуулах</Button>
+                        <Button variant="secondary" onClick={() => refetch()} disabled={refreshDisabled}><RefreshCw className="size-4" />Шинэчлэх</Button>
+                        <Button variant="secondary" onClick={copy} disabled={reportActionDisabled}><ClipboardCopy className="size-4" />Хуулах</Button>
                     </span>
-                    <details className="relative md:hidden">
-                        <summary className="flex h-[var(--control-h)] cursor-pointer list-none items-center rounded-md border border-border-strong bg-surface px-3 text-[13px] font-medium text-foreground marker:content-none focus-ring [&::-webkit-details-marker]:hidden">Үйлдэл</summary>
-                        <div className="absolute right-0 top-full z-20 mt-1 flex w-56 flex-col gap-1 rounded-md border border-border bg-surface p-1 shadow-md">
-                            <Button variant="ghost" className="justify-start" disabled={!usable || isFetching} onClick={() => openAiPanel(`${range.from}-ээс ${range.to} хүртэлх үйл ажиллагааны нэгдсэн тайлангаас гэрээний зорилт, орсон мөнгө, анхаарах лидийг товч тайлбарла. Хугацаанд бүртгэсэн урьдчилгааг гэрээнд өмнө хадгалсан дүнгээс тусад нь тайлбарла.`)}><Sparkles className="size-4" />AI-аар тайлбарлуулах</Button>
-                            <Button variant="ghost" className="justify-start" onClick={() => refetch()} disabled={isFetching || !validRange || !shop?.id}><RefreshCw className="size-4" />Шинэчлэх</Button>
-                            <Button variant="ghost" className="justify-start" onClick={copy} disabled={!usable || isFetching}><ClipboardCopy className="size-4" />Хуулах</Button>
-                        </div>
-                    </details>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild><Button variant="secondary" className="md:hidden"><MoreHorizontal className="size-4" />Үйлдэл</Button></DropdownMenuTrigger>
+                        <DropdownMenuContent align="start" className="w-56">
+                            <DropdownMenuItem disabled={reportActionDisabled} onSelect={askAi}><Sparkles />AI-аар тайлбарлуулах</DropdownMenuItem>
+                            <DropdownMenuItem disabled={refreshDisabled} onSelect={() => void refetch()}><RefreshCw />Шинэчлэх</DropdownMenuItem>
+                            <DropdownMenuItem disabled={reportActionDisabled} onSelect={() => void copy()}><ClipboardCopy />Хуулах</DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                 </>}
                 primaryAction={<Button size="lg" className="min-h-14 md:min-h-[44px]" onClick={() => window.print()} disabled={!usable || isFetching}><Printer className="size-4" />Хэвлэх / PDF</Button>}
             />
@@ -72,13 +76,15 @@ function OperationsReportContent() {
             {isPending && validRange && shop?.id && <p role="status" className="py-12 text-center text-muted-foreground">Тайлан нэгтгэж байна…</p>}
             {usable && <>
                 <div className="border-b border-border pb-2">
-                    <p className="text-sm font-medium text-foreground">{data.shopName}</p>
+                    {/* PageHeader хэвлэхэд нуугддаг тул PDF-д тайлангийн нэрийг энд гаргана. */}
+                    <h1 className="hidden text-xl font-semibold print:block">{data.shopName} · Үйл ажиллагааны тайлан</h1>
+                    <p className="text-sm font-medium text-foreground print:hidden">{data.shopName}</p>
                     <p className="mt-0.5 text-sm text-muted-foreground num">{data.range.from} – {data.range.to}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">Шинэчилсэн: {formatShortDate(data.generatedAt)} {formatTime(data.generatedAt)} · Сонгосон төслийн бүх бүртгэл</p>
                 </div>
                 <div className="divide-y divide-border overflow-hidden rounded-md border border-border bg-surface sm:grid sm:grid-cols-2 sm:divide-y-0 xl:grid-cols-4">
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 p-2.5 sm:block sm:border-r sm:border-b sm:border-border xl:border-b-0"><p className="text-xs text-muted-foreground">Гэрээний бүртгэлтэй дүн</p><Money value={data.contracts.value} compact className="row-span-2 block text-right text-xl font-semibold sm:mt-1.5 sm:text-left" /><p className="col-span-2 mt-0.5 line-clamp-1 text-xs text-muted-foreground sm:mt-1 sm:line-clamp-none">Хугацаанд байгуулсан {data.contracts.count} гэрээ · цуцалсныг хассан</p></div>
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 p-2.5 sm:block sm:border-b sm:border-border xl:border-b-0"><p className="text-xs text-muted-foreground">Гэрээний төлөвлөгөөний биелэлт</p><p className="row-span-2 text-right text-xl font-semibold num sm:mt-1.5 sm:text-left">{data.target.attainmentPct === null ? 'Тооцоогүй' : `${data.target.attainmentPct}%`}</p><p className="col-span-2 mt-0.5 line-clamp-1 text-xs text-muted-foreground sm:mt-1 sm:line-clamp-none">{data.target.amount !== null ? <>Зорилт: <Money value={data.target.amount} /></> : data.target.completeMonths ? `Зорилттой сар: ${data.target.configuredMonths}/${data.target.expectedMonths}` : 'Сарын зорилттой харьцуулахдаа бүтэн сар сонгоно'}</p></div>
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 p-2.5 sm:block sm:border-b sm:border-border xl:border-r xl:border-b-0"><p className="text-xs text-muted-foreground">Гэрээний төлөвлөгөөний биелэлт</p><p className="row-span-2 text-right text-xl font-semibold num sm:mt-1.5 sm:text-left">{data.target.attainmentPct === null ? 'Тооцоогүй' : `${data.target.attainmentPct}%`}</p><p className="col-span-2 mt-0.5 line-clamp-1 text-xs text-muted-foreground sm:mt-1 sm:line-clamp-none">{data.target.amount !== null ? <>Зорилт: <Money value={data.target.amount} /></> : data.target.completeMonths ? `Зорилттой сар: ${data.target.configuredMonths}/${data.target.expectedMonths}` : 'Сарын зорилттой харьцуулахдаа бүтэн сар сонгоно'}</p></div>
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 p-2.5 sm:block sm:border-r sm:border-border"><p className="text-xs text-muted-foreground">Мөнгөөр орсон бүртгэл</p>{data.cash && data.cash.receiptCount > 0 ? <Money value={data.cash.receipts} compact className="row-span-2 block text-right text-xl font-semibold sm:mt-1.5 sm:text-left" /> : <p className="row-span-2 max-w-[132px] text-right text-[13px] font-semibold leading-4 sm:mt-1.5 sm:max-w-none sm:text-left sm:text-base">{data.cash ? 'Бүртгэл алга' : 'Санхүүгийн эрх шаардлагатай'}</p>}<p className="col-span-2 mt-0.5 line-clamp-1 text-xs text-muted-foreground sm:mt-1 sm:line-clamp-none">{data.cash ? `${data.cash.receiptCount} гүйлгээ · бэлэн, банк, ипотек` : 'Гүйлгээг сервер эрхээр хязгаарлана'}</p></div>
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 p-2.5 sm:block"><p className="text-xs text-muted-foreground">Үүнээс урьдчилгаа мөнгө</p>{data.cash?.receiptClassificationAvailable && data.cash.advanceReceiptCount > 0 ? <Money value={data.cash.advanceReceipts} compact className="row-span-2 block text-right text-xl font-semibold sm:mt-1.5 sm:text-left" /> : <p className="row-span-2 max-w-[132px] text-right text-[13px] font-semibold leading-4 sm:mt-1.5 sm:max-w-none sm:text-left sm:text-base">{!data.cash ? 'Санхүүгийн эрх шаардлагатай' : !data.cash.receiptClassificationAvailable ? 'Ангилал нэвтрээгүй' : data.cash.unclassifiedCashReceiptCount ? 'Ангилал дутуу' : 'Урьдчилгаа бүртгэлгүй'}</p>}<p className="col-span-2 mt-0.5 line-clamp-1 text-xs text-muted-foreground sm:mt-1 sm:line-clamp-none">Сонгосон хугацаанд урьдчилгаа гэж бүртгэсэн мөнгөн орлого</p></div>
                 </div>
