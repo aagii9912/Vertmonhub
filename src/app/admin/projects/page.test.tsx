@@ -1,9 +1,16 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AdminProjectsPage from './page';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn() } }));
+vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ shop: { id: 'shop-1' }, user: { id: 'admin-1', role: 'super_admin' } }) }));
+
+const renderPage = () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(<QueryClientProvider client={client}><AdminProjectsPage /></QueryClientProvider>);
+};
 
 const shopId = 'd8d5f05f-3288-477f-bba1-3aa98c89192d';
 const savedBodies: unknown[] = [];
@@ -18,7 +25,7 @@ describe('admin project management', () => {
         vi.stubGlobal('fetch', vi.fn(async (input: string) => ({ ok: true, json: async () => input === '/api/admin/shops'
             ? { shops: [{ id: shopId, name: 'Мандала' }] }
             : { projects: [{ id: 'elysium', shop_id: shopId, name: 'Elysium Residence', status: 'active', counts: { leads: 114, units: 0, contracts: 0 } }], unassigned: [{ shop_id: shopId, leads: 30, units: 2544, contracts: 1617 }] } })));
-        render(<AdminProjectsPage />);
+        renderPage();
         expect(await screen.findByText('Лид 114 · Нэгж 0 · Гэрээ 0')).toBeInTheDocument();
         expect(screen.getByText('Мандала: лид 30 · нэгж 2,544 · гэрээ 1,617')).toBeInTheDocument();
         expect(screen.getByRole('link', { name: 'ERP тайлан харах →' })).toHaveAttribute('href', '/dashboard/reports/erp');
@@ -39,8 +46,10 @@ describe('admin project management', () => {
             throw new Error(`Unexpected request: ${input}`);
         }));
 
-        render(<AdminProjectsPage />);
-        fireEvent.click(await screen.findByRole('button', { name: 'Шинэ төсөл' }));
+        renderPage();
+        const createButton = await screen.findByRole('button', { name: 'Шинэ төсөл' });
+        await waitFor(() => expect(createButton).toBeEnabled());
+        fireEvent.click(createButton);
         fireEvent.change(screen.getByLabelText('Төслийн нэр'), { target: { value: 'Шинэ хотхон' } });
         fireEvent.click(screen.getByRole('button', { name: 'Хадгалах' }));
 

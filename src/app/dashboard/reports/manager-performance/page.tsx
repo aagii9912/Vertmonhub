@@ -1,13 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Users, FileText, TrendingUp, DollarSign, Award, Download } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/Alert';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { DataTable, type DataTableColumn, StatusPill } from '@/components/ui/DataTable';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 import { formatMNTShort } from '@/lib/utils/currency';
 import { ubDateStr } from '@/lib/utils/date';
 
@@ -32,10 +34,17 @@ interface Totals {
     teamAttainmentPct: number;
 }
 
+const NO_MANAGERS: ManagerRow[] = [];
+const EMPTY_TOTALS: Totals = { managers: 0, contracts: 0, closed: 0, sales: 0, collected: 0, teamTarget: 0, teamActual: 0, teamAttainmentPct: 0 };
+
 export default function ManagerPerformancePage() {
-    const [managers, setManagers] = useState<ManagerRow[]>([]);
-    const [totals, setTotals] = useState<Totals>({ managers: 0, contracts: 0, closed: 0, sales: 0, collected: 0, teamTarget: 0, teamActual: 0, teamAttainmentPct: 0 });
-    const [loading, setLoading] = useState(true);
+    const { data, error, isFetching, refetch } = useDashboardQuery<{ managers?: ManagerRow[]; totals?: Totals }>(
+        ['manager-performance'],
+        '/api/dashboard/reports/manager-performance',
+    );
+    const managers = data?.managers || NO_MANAGERS;
+    const totals = data?.totals || EMPTY_TOTALS;
+    const loading = !data && isFetching;
     const [exporting, setExporting] = useState(false);
 
     async function exportExcel() {
@@ -52,23 +61,6 @@ export default function ManagerPerformancePage() {
             URL.revokeObjectURL(url);
         } catch (e) { console.error('[ManagerPerformance] export error', e); } finally { setExporting(false); }
     }
-
-    useEffect(() => {
-        (async () => {
-            try {
-                setLoading(true);
-                const res = await dashboardFetch('/api/dashboard/reports/manager-performance');
-                const data = await res.json();
-                setManagers(data.managers || []);
-                setTotals(data.totals || totals);
-            } catch (e) {
-                console.error('[ManagerPerformance] fetch error', e);
-            } finally {
-                setLoading(false);
-            }
-        })();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     const topSales = managers[0]?.total_sales || 1;
 
@@ -117,18 +109,34 @@ export default function ManagerPerformancePage() {
         { key: 'unique_customers', header: 'Харилцагч', align: 'right', cell: (m) => <span className="tabular-nums text-muted-foreground">{m.unique_customers}</span> },
     ];
 
+    const header = (
+        <PageHeader
+            eyebrow="Аналитик"
+            title="Менежерийн гүйцэтгэл"
+            subtitle="Идэвхтэй менежер тус бүрийн гэрээ, хаалт, борлуулалт, цуглуулалт"
+            primaryAction={
+                <Button onClick={exportExcel} variant="secondary" size="md" isLoading={exporting} disabled={exporting || managers.length === 0}>
+                    {!exporting && <Download className="w-4 h-4" />} Excel татах
+                </Button>
+            }
+        />
+    );
+    const errorAlert = error && !isFetching && (
+        <Alert variant="danger" className="mb-4">
+            <AlertDescription>{error.message}</AlertDescription>
+            <Button variant="secondary" size="sm" className="mt-1 self-start" onClick={() => void refetch()}>Дахин оролдох</Button>
+        </Alert>
+    );
+
+    // Алдаа гарсан үед хоосон тайлан харуулахгүй — мэдээлэл байхгүй гэж ойлгогдоно.
+    if (errorAlert && !data) {
+        return <div>{header}{errorAlert}</div>;
+    }
+
     return (
         <div>
-            <PageHeader
-                eyebrow="Аналитик"
-                title="Менежерийн гүйцэтгэл"
-                subtitle="Идэвхтэй менежер тус бүрийн гэрээ, хаалт, борлуулалт, цуглуулалт"
-                primaryAction={
-                    <Button onClick={exportExcel} variant="secondary" size="md" isLoading={exporting} disabled={exporting || managers.length === 0}>
-                        {!exporting && <Download className="w-4 h-4" />} Excel татах
-                    </Button>
-                }
-            />
+            {header}
+            {errorAlert}
 
             <StatBar columns={4}>
                 <StatTile label="Менежер" value={totals.managers} icon={<Users className="w-4 h-4" />} accent="info" />

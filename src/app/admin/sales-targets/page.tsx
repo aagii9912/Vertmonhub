@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Target, Loader2, Save, TrendingUp, Users, Check, Plus } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
@@ -13,9 +13,11 @@ import {
     SelectTrigger,
     SelectValue,
 } from '@/components/ui/Select';
+import { useAuth } from '@/contexts/AuthContext';
 import { formatMNT } from '@/lib/utils/currency';
 
 const MONTHS = ['1-р', '2-р', '3-р', '4-р', '5-р', '6-р', '7-р', '8-р', '9-р', '10-р', '11-р', '12-р'];
+const NO_MONTHS: number[] = Array(12).fill(0);
 
 interface ManagerRow {
     name: string;
@@ -25,87 +27,102 @@ interface ManagerRow {
     project_ids: string[];
 }
 
+interface SalesTargetsData {
+    teamTarget: number[];
+    teamActual: number[];
+    managers: ManagerRow[];
+    teamMembers: Array<{ id: string; full_name: string }>;
+    projects: Array<{ id: string; name: string }>;
+}
+
+const NO_MANAGERS: ManagerRow[] = [];
+const NO_TEAM_MEMBERS: SalesTargetsData['teamMembers'] = [];
+const NO_PROJECTS: SalesTargetsData['projects'] = [];
+const NO_SHOPS: Array<{ id: string; name: string }> = [];
+
 const sum = (arr: number[]) => arr.reduce((a, b) => a + (b || 0), 0);
 
 export default function SalesTargetsAdminPage() {
     const queryClient = useQueryClient();
-    const [shops, setShops] = useState<Array<{ id: string; name: string }>>([]);
-    const [shopId, setShopId] = useState('');
+    const { shop, user } = useAuth();
+    const authScope = [shop?.id, user?.id, user?.role] as const;
+    const [selectedShopId, setShopId] = useState('');
     const [year, setYear] = useState(new Date().getFullYear());
 
-    const [teamTarget, setTeamTarget] = useState<number[]>(Array(12).fill(0));
-    const [teamActual, setTeamActual] = useState<number[]>(Array(12).fill(0));
-    const [managers, setManagers] = useState<ManagerRow[]>([]);
-    const [projects, setProjects] = useState<Array<{ id: string; name: string }>>([]);
-    const [teamMembers, setTeamMembers] = useState<Array<{ id: string; full_name: string }>>([]);
+    // Хадгалаагүй засварууд — серверийн өгөгдлийн дээр давхарлана (null бол серверийнхийг харуулна).
+    const [targetDraft, setTargetDraft] = useState<number[] | null>(null);
+    const [managersDraft, setManagersDraft] = useState<ManagerRow[] | null>(null);
     const [newManagerName, setNewManagerName] = useState('');
     const [showInactive, setShowInactive] = useState(false);
 
-    const [loading, setLoading] = useState(false);
     const [savingTarget, setSavingTarget] = useState(false);
     const [savingRoster, setSavingRoster] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [loadedScope, setLoadedScope] = useState<string | null>(null);
-    const loadRequest = useRef(0);
-    const scopeReady = loadedScope === `${shopId}:${year}` && !loading && !error;
     const saving = savingTarget || savingRoster;
 
     const nowYear = new Date().getFullYear();
     const yearOptions = [nowYear - 1, nowYear, nowYear + 1];
 
     // Shop жагсаалт
-    useEffect(() => {
-        (async () => {
-            try {
-                const res = await fetch('/api/admin/shops');
-                const d = await res.json();
-                if (!res.ok) throw new Error(d.error || 'Байгууллагууд ачаалагдсангүй');
-                const list = d.shops || [];
-                setShops(list);
-                if (list.length && !shopId) setShopId(list[0].id);
-                if (!list.length) setError('Байгууллага бүртгэгдээгүй байна');
-            } catch (cause) {
-                setError(cause instanceof Error ? cause.message : 'Байгууллагууд ачаалагдсангүй');
-            }
-        })();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
+    const shopsQuery = useQuery({
+        meta: { inlineError: true },
+        queryKey: ['admin-shops', 'sales-targets', ...authScope],
+        queryFn: async (): Promise<Array<{ id: string; name: string }>> => {
+            const res = await fetch('/api/admin/shops');
+            const d = await res.json();
+            if (!res.ok) throw new Error(d.error || 'Байгууллагууд ачаалагдсангүй');
+            return d.shops || [];
+        },
+        enabled: !!user?.id,
+        staleTime: 30_000,
+    });
+    const shops = shopsQuery.data ?? NO_SHOPS;
+    const shopId = selectedShopId || shops[0]?.id || '';
 
-    const loadData = useCallback(async (panel: 'all' | 'targets' | 'roster' = 'all') => {
-        if (!shopId) return;
-        const request = ++loadRequest.current;
-        setLoading(true);
-        setError(null);
-        try {
+    const targetsQuery = useQuery({
+        meta: { inlineError: true },
+        queryKey: ['admin-sales-targets', shopId, year, ...authScope],
+        queryFn: async (): Promise<SalesTargetsData> => {
             const res = await fetch(`/api/admin/sales-targets?shopId=${shopId}&year=${year}`);
             const d = await res.json();
-            if (request !== loadRequest.current) return;
             if (!res.ok) throw new Error(d.error || 'Төлөвлөгөө ачаалагдсангүй');
-            if (panel !== 'roster') setTeamTarget(d.teamTarget || Array(12).fill(0));
-            setTeamActual(d.teamActual || Array(12).fill(0));
-            if (panel !== 'targets') {
-                setManagers((d.managers || []).map((manager: ManagerRow) => ({ ...manager, project_ids: manager.project_ids || [] })));
-                setTeamMembers(d.teamMembers || []);
-                setProjects(d.projects || []);
-            }
-            setLoadedScope(`${shopId}:${year}`);
-        } catch (cause) {
-            if (request === loadRequest.current) setError(cause instanceof Error ? cause.message : 'Төлөвлөгөө ачаалагдсангүй');
-        } finally {
-            if (request === loadRequest.current) setLoading(false);
-        }
-    }, [shopId, year]);
+            return {
+                teamTarget: d.teamTarget || Array(12).fill(0),
+                teamActual: d.teamActual || Array(12).fill(0),
+                managers: (d.managers || []).map((manager: ManagerRow) => ({ ...manager, project_ids: manager.project_ids || [] })),
+                teamMembers: d.teamMembers || [],
+                projects: d.projects || [],
+            };
+        },
+        enabled: !!user?.id && !!shopId,
+        staleTime: 30_000,
+    });
+    const data = targetsQuery.data;
 
-    useEffect(() => {
-        const requests = loadRequest;
-        void loadData();
-        return () => { requests.current++; };
-    }, [loadData]);
+    // Компани эсвэл он солигдвол өмнөх хүрээний хадгалаагүй засварыг хаяна.
+    const scopeKey = `${shopId}:${year}`;
+    const [draftScope, setDraftScope] = useState(scopeKey);
+    if (draftScope !== scopeKey) {
+        setDraftScope(scopeKey);
+        setTargetDraft(null);
+        setManagersDraft(null);
+    }
+
+    const teamTarget = targetDraft ?? data?.teamTarget ?? NO_MONTHS;
+    const teamActual = data?.teamActual ?? NO_MONTHS;
+    const managers = managersDraft ?? data?.managers ?? NO_MANAGERS;
+    const teamMembers = data?.teamMembers ?? NO_TEAM_MEMBERS;
+    const projects = data?.projects ?? NO_PROJECTS;
+
+    const shopsError = shopsQuery.data
+        ? (shopsQuery.data.length ? null : 'Байгууллага бүртгэгдээгүй байна')
+        : shopsQuery.error?.message ?? null;
+    const error = (!shopsQuery.isFetching && shopsError) || (!targetsQuery.isFetching && targetsQuery.error?.message) || null;
+    const scopeReady = !!data && !error;
 
     function setMonth(idx: number, value: string) {
         const next = [...teamTarget];
         next[idx] = Math.max(0, Number(value.replace(/[^0-9]/g, '')) || 0);
-        setTeamTarget(next);
+        setTargetDraft(next);
     }
 
     async function saveTarget() {
@@ -118,7 +135,8 @@ export default function SalesTargetsAdminPage() {
                 body: JSON.stringify({ shopId, year, months: teamTarget }),
             });
             if (!res.ok) throw new Error((await res.json()).error || 'Төлөвлөгөө хадгалагдсангүй');
-            await loadData('targets');
+            await targetsQuery.refetch();
+            setTargetDraft(null);
             toast.success('Төлөвлөгөө хадгалагдлаа');
         } catch (cause) {
             toast.error(cause instanceof Error ? cause.message : 'Төлөвлөгөө хадгалагдсангүй');
@@ -129,12 +147,12 @@ export default function SalesTargetsAdminPage() {
 
     function toggleManager(name: string) {
         if (!scopeReady || saving) return;
-        setManagers((prev) => prev.map((m) => (m.name === name ? { ...m, is_active: !m.is_active } : m)));
+        setManagersDraft((prev) => (prev ?? managers).map((m) => (m.name === name ? { ...m, is_active: !m.is_active } : m)));
     }
 
     function toggleManagerProject(name: string, projectId: string) {
         if (!scopeReady || saving) return;
-        setManagers((prev) => prev.map((manager) => manager.name !== name ? manager : {
+        setManagersDraft((prev) => (prev ?? managers).map((manager) => manager.name !== name ? manager : {
             ...manager,
             project_ids: manager.project_ids.includes(projectId)
                 ? manager.project_ids.filter((id) => id !== projectId)
@@ -161,7 +179,8 @@ export default function SalesTargetsAdminPage() {
                 queryClient.invalidateQueries({ queryKey: ['leads', 'list', shopId] }),
                 queryClient.invalidateQueries({ queryKey: ['leads', 'summary', shopId] }),
         ]);
-        await loadData('roster');
+        await targetsQuery.refetch();
+        setManagersDraft(null);
     }
 
     async function saveRoster() {
@@ -190,14 +209,15 @@ export default function SalesTargetsAdminPage() {
             ...managers,
             { name: trimmed, is_active: true, user_id: userId, year_actual: 0, project_ids: [] },
         ].sort((a, b) => a.name.localeCompare(b.name, 'mn'));
-        setManagers(next);
+        const previousDraft = managersDraft;
+        setManagersDraft(next);
         setNewManagerName('');
         setSavingRoster(true);
         try {
             await persistRoster(next);
             toast.success('Менежер нэмэгдлээ');
         } catch (cause) {
-            setManagers(managers);
+            setManagersDraft(previousDraft);
             setNewManagerName(trimmed);
             toast.error(cause instanceof Error ? cause.message : 'Менежер нэмэгдсэнгүй');
         } finally {
@@ -258,9 +278,9 @@ export default function SalesTargetsAdminPage() {
 
             {error ? (
                 <div role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger-soft p-4 text-sm text-status-danger">
-                    {error} <button onClick={() => shopId ? void loadData() : window.location.reload()} className="ml-2 font-semibold underline">Дахин ачаалах</button>
+                    {error} <button onClick={() => void (shopsError ? shopsQuery.refetch() : targetsQuery.refetch())} className="ml-2 font-semibold underline">Дахин ачаалах</button>
                 </div>
-            ) : loading || !scopeReady ? (
+            ) : !scopeReady ? (
                 <div className="flex items-center justify-center py-16">
                     <Loader2 className="h-6 w-6 animate-spin text-brand" />
                 </div>

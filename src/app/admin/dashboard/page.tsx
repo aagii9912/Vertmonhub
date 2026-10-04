@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Building2, Users, UserPlus, FileText, UserCheck, CalendarDays, ArrowUpRight, type LucideIcon } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
+import { useAuth } from '@/contexts/AuthContext';
 import { formatShortDate } from '@/lib/utils/date';
 import Link from 'next/link';
 
@@ -13,32 +14,24 @@ interface DashboardData {
     recent_shops: Array<{ id: string; name: string; created_at: string }>;
 }
 
+async function fetchDashboard(): Promise<DashboardData> {
+    const res = await fetch('/api/admin/dashboard');
+    const result = await res.json();
+    if (!res.ok || !result.crm) throw new Error(result.error || 'Мэдээлэл дутуу ирлээ');
+    return result;
+}
+
 export default function AdminDashboard() {
-    const [data, setData] = useState<DashboardData | null>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    const { shop, user } = useAuth();
+    const { data, error, isFetching, refetch } = useQuery({
+        meta: { inlineError: true },
+        queryKey: ['admin-dashboard', shop?.id, user?.id, user?.role],
+        queryFn: fetchDashboard,
+        enabled: !!user?.id,
+        staleTime: 30_000,
+    });
 
-    useEffect(() => {
-        fetchDashboard();
-    }, []);
-
-    async function fetchDashboard() {
-        setLoading(true);
-        setError(null);
-        try {
-            const res = await fetch('/api/admin/dashboard');
-            const result = await res.json();
-            if (!res.ok || !result.crm) throw new Error(result.error || 'Мэдээлэл дутуу ирлээ');
-            setData(result);
-        } catch (error) {
-            console.error('Dashboard error:', error);
-            setError('Хяналтын самбарын мэдээлэл ачаалагдсангүй. Дахин оролдоно уу.');
-        } finally {
-            setLoading(false);
-        }
-    }
-
-    if (loading) {
+    if (!data && isFetching) {
         return (
             <div className="flex items-center justify-center h-64">
                 <div className="animate-spin w-8 h-8 border-4 border-brand border-t-transparent rounded-full"></div>
@@ -49,8 +42,8 @@ export default function AdminDashboard() {
     if (!data) {
         return (
             <div className="text-center py-12">
-                <p className="text-muted-foreground">{error || 'Хяналтын самбар ачаалахад алдаа гарлаа'}</p>
-                <button onClick={fetchDashboard} className="mt-3 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Дахин ачаалах</button>
+                <p className="text-muted-foreground">{error ? 'Хяналтын самбарын мэдээлэл ачаалагдсангүй. Дахин оролдоно уу.' : 'Хяналтын самбар ачаалахад алдаа гарлаа'}</p>
+                <button onClick={() => void refetch()} className="mt-3 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Дахин ачаалах</button>
             </div>
         );
     }

@@ -1,9 +1,13 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import Link from 'next/link';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { InventoryImportPreview } from '@/lib/admin/import/units-import';
 import { unitCategoryLabel, unitStatusLabel } from '@/lib/inventory/labels';
+import { useAuth } from '@/contexts/AuthContext';
+import { Alert, AlertDescription } from '@/components/ui/Alert';
+import { Button } from '@/components/ui/Button';
 import {
     Upload, Building2, MessageSquare, CheckCircle2, AlertCircle,
     Download, Loader2, Users, FileText, CreditCard, MapPin,
@@ -263,7 +267,20 @@ interface AdminShop {
     name: string;
 }
 
+const NO_PROJECTS: AdminProject[] = [];
+const NO_SHOPS: AdminShop[] = [];
+
+/** Админы жагсаалт уншина; алдааг хоосон жагсаалт болгож нуухгүй. */
+async function fetchAdminList<T>(url: string, field: 'projects' | 'shops', fallbackError: string): Promise<T[]> {
+    const res = await fetch(url);
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data) throw new Error(data?.error || fallbackError);
+    return data[field] || [];
+}
+
 export default function AdminImportPage() {
+    const queryClient = useQueryClient();
+    const { shop, user } = useAuth();
     const [selected, setSelected] = useState<ImportCategory>(IMPORT_CATEGORIES[0]);
     const [file, setFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
@@ -272,40 +289,42 @@ export default function AdminImportPage() {
     const fileRef = useRef<HTMLInputElement>(null);
 
     // Project state
-    const [projects, setProjects] = useState<AdminProject[]>([]);
+    const projectsKey = ['admin-projects', 'import', shop?.id, user?.id, user?.role];
+    const projectsQuery = useQuery({
+        meta: { inlineError: true },
+        queryKey: projectsKey,
+        queryFn: () => fetchAdminList<AdminProject>('/api/admin/projects', 'projects', 'Төслүүд ачаалагдсангүй'),
+        enabled: !!user?.id,
+        staleTime: 30_000,
+    });
+    const projects = projectsQuery.data ?? NO_PROJECTS;
+    const projectsLoading = !projectsQuery.data && projectsQuery.isFetching;
     const [selectedProject, setSelectedProject] = useState<string>('');
-    const [projectsLoading, setProjectsLoading] = useState(true);
     const [showNewProject, setShowNewProject] = useState(false);
     const [newProjectName, setNewProjectName] = useState('');
     const [newProjectLocation, setNewProjectLocation] = useState('');
-    const [newProjectShopId, setNewProjectShopId] = useState('');
+    const [selectedNewProjectShopId, setNewProjectShopId] = useState('');
     const [creatingProject, setCreatingProject] = useState(false);
     const [createError, setCreateError] = useState<string | null>(null);
 
     // Shop state (шинэ төслийг аль shop-д харьяалуулахыг ил сонгоно)
-    const [shops, setShops] = useState<AdminShop[]>([]);
+    const shopsQuery = useQuery({
+        meta: { inlineError: true },
+        queryKey: ['admin-shops', 'import', shop?.id, user?.id, user?.role],
+        queryFn: () => fetchAdminList<AdminShop>('/api/admin/shops', 'shops', 'Байгууллагууд ачаалагдсангүй'),
+        enabled: !!user?.id,
+        staleTime: 30_000,
+    });
+    const shops = shopsQuery.data ?? NO_SHOPS;
+    const newProjectShopId = selectedNewProjectShopId || shops[0]?.id || '';
+    const listError = (!projectsQuery.isFetching && projectsQuery.error) || (!shopsQuery.isFetching && shopsQuery.error) || null;
 
-    useEffect(() => {
-        fetch('/api/admin/projects')
-            .then(res => res.json())
-            .then(data => {
-                if (data.projects) {
-                    setProjects(data.projects);
-                }
-            })
-            .catch(() => { })
-            .finally(() => setProjectsLoading(false));
-
-        fetch('/api/admin/shops')
-            .then(res => res.json())
-            .then(data => {
-                if (data.shops) {
-                    setShops(data.shops);
-                    if (data.shops.length > 0) setNewProjectShopId(data.shops[0].id);
-                }
-            })
-            .catch(() => { });
-    }, []);
+    // Импорт, шинэ төсөл бусад админ хуудасны тоо, жагсаалтыг өөрчилнө — дараагийн нээлтэд шинээр уншина.
+    const markAdminDataStale = () => {
+        for (const domain of ['admin-projects', 'admin-dashboard', 'admin-sales-targets']) {
+            void queryClient.invalidateQueries({ queryKey: [domain], refetchType: 'none' });
+        }
+    };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const f = e.target.files?.[0];
@@ -331,6 +350,7 @@ export default function AdminImportPage() {
             }
 
             const res = await fetch('/api/admin/import', { method: 'POST', body: formData });
+            if (res.ok && !preview) markAdminDataStale();
             const data = await res.json();
             // Auth/validation алдаа {error} хэлбэрээр ирдэг — үр дүнгийн картад ойлгомжтой харуулна
             if (!res.ok && data && !data.message && data.error) {
@@ -361,7 +381,9 @@ export default function AdminImportPage() {
             });
             const data = await res.json();
             if (res.ok && data.project) {
-                setProjects(prev => [data.project, ...prev]);
+                // Бусад жагсаалтыг хуучирсан гэж тэмдэглээд, энэ жагсаалтад шинэ төслийг дахин уншилгүй шууд нэмнэ.
+                markAdminDataStale();
+                queryClient.setQueryData<AdminProject[]>(projectsKey, prev => [data.project, ...(prev ?? [])]);
                 setSelectedProject(data.project.id);
                 setResult(null);
                 setNewProjectName('');
@@ -504,9 +526,26 @@ export default function AdminImportPage() {
                         </div>
                     )}
 
+                    {listError && (
+                        <Alert variant="danger" className="mb-3">
+                            <AlertDescription>{listError.message}</AlertDescription>
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                className="mt-1 self-start"
+                                onClick={() => {
+                                    if (projectsQuery.error) void projectsQuery.refetch();
+                                    if (shopsQuery.error) void shopsQuery.refetch();
+                                }}
+                            >
+                                Дахин оролдох
+                            </Button>
+                        </Alert>
+                    )}
+
                     {projectsLoading ? (
                         <div className="h-10 bg-surface-2 rounded-lg animate-pulse" />
-                    ) : projects.length === 0 ? (
+                    ) : !projectsQuery.data ? null : projects.length === 0 ? (
                         <div className="text-center py-6 bg-surface-2/40 rounded-lg border border-dashed border-border-strong">
                             <p className="text-sm text-muted-foreground">Төсөл байхгүй байна</p>
                             <button

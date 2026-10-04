@@ -1,14 +1,15 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { CalendarDays, UserPlus, Repeat, KeyRound, Landmark, Banknote, Home, Receipt, ArrowLeftRight } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/Alert';
+import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { DataTable, type DataTableColumn } from '@/components/ui/DataTable';
 import { ChartCard } from '@/components/ui/ChartCard';
 import { BarChart } from '@/components/charts/BarChart';
-import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 
 interface MonthRow {
     month: string;
@@ -42,28 +43,17 @@ const FIN = [
     { key: 'barter', label: 'Бартер', icon: <ArrowLeftRight className="w-4 h-4" /> },
 ] as const;
 
+const NO_MONTHS: MonthRow[] = [];
+
 export default function MeetingsReportPage() {
-    const [months, setMonths] = useState<MonthRow[]>([]);
-    const [totals, setTotals] = useState<Totals | null>(null);
-    const [loading, setLoading] = useState(true);
+    const { data, error, isFetching, refetch } = useDashboardQuery<{ months?: MonthRow[]; totals?: Totals | null }>(
+        ['meetings-report'],
+        '/api/dashboard/reports/meetings',
+    );
+    const months = data?.months || NO_MONTHS;
+    const loading = !data && isFetching;
 
-    useEffect(() => {
-        (async () => {
-            try {
-                setLoading(true);
-                const res = await dashboardFetch('/api/dashboard/reports/meetings');
-                const data = await res.json();
-                setMonths(data.months || []);
-                setTotals(data.totals || null);
-            } catch (e) {
-                console.error('[Meetings] fetch error', e);
-            } finally {
-                setLoading(false);
-            }
-        })();
-    }, []);
-
-    const t = totals;
+    const t = data?.totals || null;
 
     // Financing channel breakdown — same totals, rendered as a bar chart instead of tiles.
     const finData = FIN.map((f) => ({
@@ -84,13 +74,29 @@ export default function MeetingsReportPage() {
         { key: 'fin_mortgage', header: 'Ипотек', align: 'right', cell: (m) => <span className="tabular-nums text-muted-foreground">{m.fin_mortgage}</span> },
     ];
 
+    const header = (
+        <PageHeader
+            eyebrow="Аналитик"
+            title="Уулзалтын аналитик"
+            subtitle="Сар бүрийн уулзалт: шинэ / давтан / худалдан авагч ба санхүүжилтийн суваг"
+        />
+    );
+    const errorAlert = error && !isFetching && (
+        <Alert variant="danger" className="mb-4">
+            <AlertDescription>{error.message}</AlertDescription>
+            <Button variant="secondary" size="sm" className="mt-1 self-start" onClick={() => void refetch()}>Дахин оролдох</Button>
+        </Alert>
+    );
+
+    // Алдаа гарсан үед хоосон тайлан харуулахгүй — мэдээлэл байхгүй гэж ойлгогдоно.
+    if (errorAlert && !data) {
+        return <div>{header}{errorAlert}</div>;
+    }
+
     return (
         <div>
-            <PageHeader
-                eyebrow="Аналитик"
-                title="Уулзалтын аналитик"
-                subtitle="Сар бүрийн уулзалт: шинэ / давтан / худалдан авагч ба санхүүжилтийн суваг"
-            />
+            {header}
+            {errorAlert}
 
             <StatBar columns={4}>
                 <StatTile label="Нийт уулзалт" value={t?.total ?? 0} icon={<CalendarDays className="w-4 h-4" />} accent="info" helper={`${t?.completed ?? 0} дуусгасан`} />

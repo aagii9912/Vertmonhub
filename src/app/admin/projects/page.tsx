@@ -1,9 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Loader2, Pencil, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/Dialog';
+import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 
 type ProjectStatus = 'active' | 'planned' | 'on_hold' | 'completed';
@@ -20,45 +22,50 @@ type Project = {
 };
 type Unassigned = { shop_id: string; leads: number; units: number; contracts: number };
 type Form = { shop_id: string; name: string; location: string; district: string; description: string; status: ProjectStatus };
+type Overview = { shops: Array<{ id: string; name: string }>; projects: Project[]; unassigned: Unassigned[]; diagnosticsError: string | null };
 
 const STATUS: Record<ProjectStatus, string> = {
     active: 'Идэвхтэй', planned: 'Төлөвлөсөн', on_hold: 'Түр зогссон', completed: 'Дууссан',
 };
 const emptyForm = (shopId = ''): Form => ({ shop_id: shopId, name: '', location: '', district: '', description: '', status: 'active' });
+const NO_SHOPS: Overview['shops'] = [];
+const NO_PROJECTS: Project[] = [];
+const NO_UNASSIGNED: Unassigned[] = [];
+
+async function fetchOverview(): Promise<Overview> {
+    const [shopRes, projectRes] = await Promise.all([fetch('/api/admin/shops'), fetch('/api/admin/projects')]);
+    const [shopData, projectData] = await Promise.all([shopRes.json(), projectRes.json()]);
+    if (!shopRes.ok || !projectRes.ok) throw new Error(shopData.error || projectData.error || 'Төслүүд ачаалагдсангүй');
+    return {
+        shops: shopData.shops || [],
+        projects: projectData.projects || [],
+        unassigned: projectData.unassigned || [],
+        diagnosticsError: projectData.diagnosticsError || null,
+    };
+}
 
 export default function AdminProjectsPage() {
-    const [shops, setShops] = useState<Array<{ id: string; name: string }>>([]);
-    const [projects, setProjects] = useState<Project[]>([]);
-    const [unassigned, setUnassigned] = useState<Unassigned[]>([]);
-    const [diagnosticsError, setDiagnosticsError] = useState<string | null>(null);
+    const queryClient = useQueryClient();
+    const { shop, user } = useAuth();
+    const { data, error, isFetching, refetch } = useQuery({
+        meta: { inlineError: true },
+        queryKey: ['admin-projects', 'overview', shop?.id, user?.id, user?.role],
+        queryFn: fetchOverview,
+        enabled: !!user?.id,
+        staleTime: 30_000,
+    });
+    const shops = data?.shops ?? NO_SHOPS;
+    const projects = data?.projects ?? NO_PROJECTS;
+    const unassigned = data?.unassigned ?? NO_UNASSIGNED;
+    const diagnosticsError = data?.diagnosticsError ?? null;
+    const loading = !data && isFetching;
+    const loadError = error ? error.message : null;
     const [filter, setFilter] = useState('all');
-    const [loading, setLoading] = useState(true);
-    const [loadError, setLoadError] = useState<string | null>(null);
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [form, setForm] = useState<Form>(emptyForm());
     const [saving, setSaving] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
-
-    const load = useCallback(async () => {
-        setLoading(true);
-        setLoadError(null);
-        try {
-            const [shopRes, projectRes] = await Promise.all([fetch('/api/admin/shops'), fetch('/api/admin/projects')]);
-            const [shopData, projectData] = await Promise.all([shopRes.json(), projectRes.json()]);
-            if (!shopRes.ok || !projectRes.ok) throw new Error(shopData.error || projectData.error || 'Төслүүд ачаалагдсангүй');
-            setShops(shopData.shops || []);
-            setProjects(projectData.projects || []);
-            setUnassigned(projectData.unassigned || []);
-            setDiagnosticsError(projectData.diagnosticsError || null);
-        } catch (error) {
-            setLoadError(error instanceof Error ? error.message : 'Төслүүд ачаалагдсангүй');
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    useEffect(() => { void load(); }, [load]);
 
     function openCreate() {
         setEditingId(null);
@@ -95,7 +102,9 @@ export default function AdminProjectsPage() {
             if (!response.ok) throw new Error(result.error || 'Төсөл хадгалагдсангүй');
             setDialogOpen(false);
             toast.success(editingId ? 'Төсөл шинэчлэгдлээ' : 'Төсөл үүслээ');
-            await load();
+            // Төслийн нэр, жагсаалт борлуулалтын төлөвлөгөөний хуудсанд ч харагдана.
+            void queryClient.invalidateQueries({ queryKey: ['admin-sales-targets'] });
+            await queryClient.invalidateQueries({ queryKey: ['admin-projects'] });
         } catch (error) {
             setFormError(error instanceof Error ? error.message : 'Төсөл хадгалагдсангүй');
         } finally {
@@ -136,7 +145,7 @@ export default function AdminProjectsPage() {
             </div>}
 
             {loading ? <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-brand" /></div>
-                : loadError ? <div role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger-soft p-4 text-sm text-status-danger">{loadError} <button onClick={load} className="ml-2 font-semibold underline">Дахин ачаалах</button></div>
+                : loadError ? <div role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger-soft p-4 text-sm text-status-danger">{loadError} <button onClick={() => void refetch()} className="ml-2 font-semibold underline">Дахин ачаалах</button></div>
                 : visible.length === 0 ? <div className="rounded-xl border border-border bg-surface p-10 text-center text-sm text-muted-foreground">Төсөл бүртгэгдээгүй байна.</div>
                 : <div className="grid gap-3 sm:grid-cols-2">
                     {visible.map((project) => (

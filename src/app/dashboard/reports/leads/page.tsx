@@ -1,6 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Alert, AlertDescription } from '@/components/ui/Alert';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -56,16 +58,94 @@ const sourceBarClass: Record<string, string> = {
     other: 'bg-muted',
 };
 
+type Period = 'today' | 'week' | 'month' | 'quarter' | 'year';
+
+interface LeadsReportData {
+    stats: LeadStats;
+    sourceData: SourceData[];
+    projectData: ProjectData[];
+}
+
+const EMPTY_REPORT: LeadsReportData = { stats: { total: 0, won: 0, inProgress: 0, conversionRate: 0 }, sourceData: [], projectData: [] };
+
+async function fetchLeadsReport(period: Period): Promise<LeadsReportData> {
+    // Сонгосон хугацааны эхлэлийг тооцоолно
+    const now = new Date();
+    const start = new Date(now);
+    if (period === 'today') start.setHours(0, 0, 0, 0);
+    else if (period === 'week') start.setDate(now.getDate() - 7);
+    else if (period === 'month') start.setMonth(now.getMonth() - 1);
+    else if (period === 'quarter') start.setMonth(now.getMonth() - 3);
+    else start.setFullYear(now.getFullYear() - 1);
+
+    // API-аар (RBAC + shop scope сервер талд) — өмнө нь browser Supabase, зөвхөн RLS
+    const { leads } = await dashboardJson<{ leads: any[] }>(
+        `/api/dashboard/leads?from=${encodeURIComponent(start.toISOString())}&pageSize=1000`,
+    );
+
+    if (!leads || leads.length === 0) return EMPTY_REPORT;
+
+    const won = leads.filter((l) => l.status === 'closed_won').length;
+    const inProgress = leads.filter((l) =>
+        ['contacted', 'viewing_scheduled', 'offered', 'negotiating'].includes(l.status),
+    ).length;
+
+    const stats: LeadStats = {
+        total: leads.length,
+        won,
+        inProgress,
+        conversionRate: leads.length > 0 ? (won / leads.length) * 100 : 0,
+    };
+
+    const sourceCounts = new Map<string, number>();
+    for (const lead of leads) {
+        const src = lead.source || 'other';
+        sourceCounts.set(src, (sourceCounts.get(src) || 0) + 1);
+    }
+    const sourceData: SourceData[] = Array.from(sourceCounts.entries())
+        .map(([source, count]) => ({
+            source: sourceLabel(source),
+            count,
+            percentage: Math.round((count / leads.length) * 100),
+            barClass: sourceBarClass[source] || 'bg-muted',
+        }))
+        .sort((a, b) => b.count - a.count);
+
+    const projectMap = new Map<string, { leads: number; won: number; value: number }>();
+    for (const lead of leads) {
+        const project = lead.preferred_type || 'Бусад';
+        if (!projectMap.has(project)) {
+            projectMap.set(project, { leads: 0, won: 0, value: 0 });
+        }
+        const d = projectMap.get(project)!;
+        d.leads++;
+        if (lead.status === 'closed_won') {
+            d.won++;
+            d.value += lead.budget_max || lead.budget_min || 0;
+        }
+    }
+    const projectData = Array.from(projectMap.entries())
+        .map(([project, data]) => ({ project, ...data }))
+        .sort((a, b) => b.leads - a.leads)
+        .slice(0, 5);
+
+    return { stats, sourceData, projectData };
+}
+
 export default function LeadsReport() {
-    const { shop } = useAuth();
-    type Period = 'today' | 'week' | 'month' | 'quarter' | 'year';
+    const { shop, user } = useAuth();
     const [period, setPeriod] = useState<Period>('month');
     const sourceChartRef = useRef<HTMLDivElement>(null);
     const sourceBarChartRef = useRef<HTMLDivElement>(null);
-    const [loading, setLoading] = useState(true);
-    const [stats, setStats] = useState<LeadStats>({ total: 0, won: 0, inProgress: 0, conversionRate: 0 });
-    const [sourceData, setSourceData] = useState<SourceData[]>([]);
-    const [projectData, setProjectData] = useState<ProjectData[]>([]);
+    // `from` хүсэлт бүрт шинээр тооцогдоно — түлхүүрт зөвхөн хугацааны сонголт орно.
+    const { data, error, isPending, isFetching, refetch } = useQuery({
+        meta: { inlineError: true },
+        queryKey: ['leads-report', period, shop?.id, user?.id, user?.role],
+        queryFn: () => fetchLeadsReport(period),
+        enabled: !!shop?.id,
+        staleTime: 30_000,
+    });
+    const { stats, sourceData, projectData } = data ?? EMPTY_REPORT;
     const [exporting, setExporting] = useState(false);
 
     async function exportExcel() {
@@ -81,90 +161,9 @@ export default function LeadsReport() {
         } catch (e) { console.error('[LeadsReport] export error', e); } finally { setExporting(false); }
     }
 
-    useEffect(() => {
-        if (!shop?.id) return;
-
-        const fetchData = async () => {
-            setLoading(true);
-            try {
-                // Сонгосон хугацааны эхлэлийг тооцоолно
-                const now = new Date();
-                const start = new Date(now);
-                if (period === 'today') start.setHours(0, 0, 0, 0);
-                else if (period === 'week') start.setDate(now.getDate() - 7);
-                else if (period === 'month') start.setMonth(now.getMonth() - 1);
-                else if (period === 'quarter') start.setMonth(now.getMonth() - 3);
-                else start.setFullYear(now.getFullYear() - 1);
-
-                // API-аар (RBAC + shop scope сервер талд) — өмнө нь browser Supabase, зөвхөн RLS
-                const { leads } = await dashboardJson<{ leads: any[] }>(
-                    `/api/dashboard/leads?from=${encodeURIComponent(start.toISOString())}&pageSize=1000`,
-                );
-
-                if (!leads || leads.length === 0) {
-                    setLoading(false);
-                    return;
-                }
-
-                const won = leads.filter((l) => l.status === 'closed_won').length;
-                const inProgress = leads.filter((l) =>
-                    ['contacted', 'viewing_scheduled', 'offered', 'negotiating'].includes(l.status),
-                ).length;
-
-                setStats({
-                    total: leads.length,
-                    won,
-                    inProgress,
-                    conversionRate: leads.length > 0 ? (won / leads.length) * 100 : 0,
-                });
-
-                const sourceCounts = new Map<string, number>();
-                for (const lead of leads) {
-                    const src = lead.source || 'other';
-                    sourceCounts.set(src, (sourceCounts.get(src) || 0) + 1);
-                }
-                const srcData: SourceData[] = Array.from(sourceCounts.entries())
-                    .map(([source, count]) => ({
-                        source: sourceLabel(source),
-                        count,
-                        percentage: Math.round((count / leads.length) * 100),
-                        barClass: sourceBarClass[source] || 'bg-muted',
-                    }))
-                    .sort((a, b) => b.count - a.count);
-                setSourceData(srcData);
-
-                const projectMap = new Map<string, { leads: number; won: number; value: number }>();
-                for (const lead of leads) {
-                    const project = lead.preferred_type || 'Бусад';
-                    if (!projectMap.has(project)) {
-                        projectMap.set(project, { leads: 0, won: 0, value: 0 });
-                    }
-                    const d = projectMap.get(project)!;
-                    d.leads++;
-                    if (lead.status === 'closed_won') {
-                        d.won++;
-                        d.value += lead.budget_max || lead.budget_min || 0;
-                    }
-                }
-                setProjectData(
-                    Array.from(projectMap.entries())
-                        .map(([project, data]) => ({ project, ...data }))
-                        .sort((a, b) => b.leads - a.leads)
-                        .slice(0, 5),
-                );
-            } catch (error) {
-                console.error('Error fetching leads report:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchData();
-    }, [shop?.id, period]);
-
     const formatCurrency = (value: number) => formatMNT(value, { compact: true });
 
-    if (loading) {
+    if (isPending || (!data && isFetching)) {
         return (
             <Card>
                 <div className="flex items-center justify-center py-16 gap-3">
@@ -175,22 +174,8 @@ export default function LeadsReport() {
         );
     }
 
-    if (stats.total === 0) {
-        return (
-            <Card>
-                <div className="py-12">
-                    <EmptyState
-                        icon={<Users className="w-7 h-7" />}
-                        title="Мэдээлэл байхгүй"
-                        description="Сэжмийн тайлан харахын тулд лийд мэдээлэл оруулна уу."
-                    />
-                </div>
-            </Card>
-        );
-    }
-
-    return (
-        <div className="space-y-6">
+    const toolbar = (
+        <>
             {/* Sub header */}
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
@@ -231,6 +216,42 @@ export default function LeadsReport() {
                     </button>
                 ))}
             </div>
+
+            {error && !isFetching && (
+                <Alert variant="danger">
+                    <AlertDescription>{error.message}</AlertDescription>
+                    <Button variant="secondary" size="sm" className="mt-1 self-start" onClick={() => void refetch()}>Дахин оролдох</Button>
+                </Alert>
+            )}
+        </>
+    );
+
+    // Алдаа гарсан үед хоосон тайлан харуулахгүй.
+    if (!data) {
+        return <div className="space-y-6">{toolbar}</div>;
+    }
+
+    // Хугацааны сонголт харагдсан хэвээр — хоосон хугацаанаас өөр хугацаа руу буцаж болно.
+    if (stats.total === 0) {
+        return (
+            <div className="space-y-6">
+                {toolbar}
+                <Card>
+                    <div className="py-12">
+                        <EmptyState
+                            icon={<Users className="w-7 h-7" />}
+                            title="Мэдээлэл байхгүй"
+                            description="Сэжмийн тайлан харахын тулд лийд мэдээлэл оруулна уу."
+                        />
+                    </div>
+                </Card>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-6">
+            {toolbar}
 
             {/* KPI Cards */}
             <StatBar columns={4}>
