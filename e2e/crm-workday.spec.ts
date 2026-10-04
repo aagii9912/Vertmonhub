@@ -185,7 +185,7 @@ for (const mobile of [false, true]) {
         await page.goto('/dashboard/contracts');
         await expect(page.getByRole('heading', { name: 'Гэрээнүүд', exact: true })).toBeVisible();
         await expect(page.getByRole('link', { name: 'Гэрээ үүсгэх' })).toBeVisible();
-        await expect(page.getByText('VM-2026-001', { exact: true })).toBeVisible();
+        await expect(page.locator('#workspace-content').getByText('VM-2026-001', { exact: true })).toBeVisible();
         await shot('contracts');
         await page.getByRole('button', { name: 'Хоцролттой', exact: true }).click();
         await expect(page.getByRole('button', { name: 'Хоцролттой', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -232,7 +232,7 @@ test('гэрээний ачааллын алдаа болон экспортын
     await expect(page.getByText('Гэрээ олдсонгүй', { exact: true })).not.toBeVisible();
     state.failContracts = false;
     await page.getByRole('button', { name: 'Дахин оролдох', exact: true }).click();
-    await expect(page.getByText('VM-2026-001', { exact: true })).toBeVisible();
+    await expect(page.locator('#workspace-content').getByText('VM-2026-001', { exact: true })).toBeVisible();
     state.failExport = true;
     await page.getByRole('button', { name: 'Excel · бүгд', exact: true }).click();
     await expect(page.getByText('Экспорт түр боломжгүй', { exact: true })).toBeVisible();
@@ -242,7 +242,7 @@ test('гэрээний ачааллын алдаа болон экспортын
 test('гэрээг өөр хүнд шилжүүлж эзэмшигчийн түүхийг харна', async ({ page }) => {
     const state = await setup(page);
     await page.goto('/dashboard/contracts/contract-0');
-    await expect(page.getByText('VM-2026-001', { exact: true })).toBeVisible();
+    await expect(page.locator('#workspace-content').getByText('VM-2026-001', { exact: true })).toBeVisible();
     await expect(page.getByText('Эзэмшигчийн түүх', { exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Гэрээ шилжүүлэх', exact: true }).click();
     const dialog = page.getByRole('dialog', { name: 'Гэрээ шилжүүлэх' });
@@ -285,10 +285,10 @@ test('маркетингийн ханш дутуу үед өртөг тэг гэ
 test('унших эрхтэй хэрэглэгчид шинээр үүсгэх болон уулзалт өөрчлөх товч харагдахгүй', async ({ page }) => {
     await setup(page, true);
     await page.goto('/dashboard/contracts');
-    await expect(page.getByText('VM-2026-001', { exact: true })).toBeVisible();
+    await expect(page.locator('#workspace-content').getByText('VM-2026-001', { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Гэрээ үүсгэх' })).toHaveCount(0);
     await page.goto('/dashboard/contracts/contract-0');
-    await expect(page.getByText('VM-2026-001', { exact: true })).toBeVisible();
+    await expect(page.locator('#workspace-content').getByText('VM-2026-001', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Гэрээ шилжүүлэх' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Төлбөр бүртгэх' })).toHaveCount(0);
     await page.goto('/dashboard/viewings');
