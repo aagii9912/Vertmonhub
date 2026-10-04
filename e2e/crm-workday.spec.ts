@@ -354,9 +354,10 @@ test('лидийг ангиллаар шүүж, дэлгэрэнгүйгээс �
     await page.getByText('Г. Тэмүүлэн', { exact: true }).click();
     const panel = page.getByRole('dialog', { name: 'Лидийн дэлгэрэнгүй' });
     await panel.getByRole('button', { name: 'Ангилал солих', exact: true }).click();
+    const picker = page.getByRole('listbox', { name: 'Лидийн ангилал', exact: true });
     // Архивласан ангиллыг шинээр санал болгохгүй.
-    await expect(page.getByRole('option', { name: 'Бартер (архив)' })).toHaveCount(0);
-    await page.getByRole('option', { name: 'Хөрөнгө оруулагч' }).click();
+    await expect(picker.getByRole('option')).toHaveText(['Ангилалгүй', 'Хөрөнгө оруулагч']);
+    await picker.getByRole('option', { name: 'Хөрөнгө оруулагч' }).click();
     await expect.poll(() => state.requests.some(r => r.method === 'PATCH' && r.body?.category_id === investorId)).toBe(true);
     await expect(panel.getByRole('button', { name: 'Ангилал солих', exact: true })).toContainText('Хөрөнгө оруулагч');
     expect(state.errors).toEqual([]);
