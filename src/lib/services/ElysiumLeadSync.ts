@@ -365,7 +365,7 @@ export async function syncElysiumLeads(
         if (!dryRun) {
             await recordState(db, {
                 started, shopId, projectId: project.id, cursor: null, error: message,
-                result: { ...summary(result, options.trigger), failed: true },
+                result: { ...summary(result, options.trigger), aborted: true },
             }).catch(() => undefined);
         }
         throw error instanceof ElysiumSyncError ? error : new ElysiumSyncError(message, 502);

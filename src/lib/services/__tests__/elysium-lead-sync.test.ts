@@ -270,6 +270,7 @@ describe('syncElysiumLeads', () => {
             cursor_at: '2026-10-03T00:00:00.000Z', last_error: 'Elysium-ийн хүсэлтүүдийг уншиж чадсангүй.', last_success_at: null,
             last_attempt_at: NOW.toISOString(),
         });
+        expect(syncState().last_result).toMatchObject({ trigger: 'cron', aborted: true, failed: 0 });
         expect(leads()).toEqual([]);
     });
 
