@@ -24,6 +24,7 @@ import {
     DialogFooter,
 } from '@/components/ui/Dialog';
 import { FormField, FieldGroup } from '@/components/ui/FormField';
+import { ubDateStr } from '@/lib/utils/date';
 import {
     Select,
     SelectContent,
@@ -67,7 +68,7 @@ export default function CampaignsPage() {
     const [searchQuery, setSearchQuery] = useState('');
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [creating, setCreating] = useState(false);
-    const [newCampaign, setNewCampaign] = useState({ name: '', type: 'social', budget: 0, start_date: new Date().toISOString().split('T')[0], end_date: '' });
+    const [newCampaign, setNewCampaign] = useState({ name: '', type: 'social', budget: 0, start_date: ubDateStr(), end_date: '' });
 
     const handleCreate = async () => {
         if (!shop?.id || !newCampaign.name.trim()) return;
@@ -80,7 +81,7 @@ export default function CampaignsPage() {
             });
             setCampaigns(prev => [row, ...prev]);
             setShowCreateModal(false);
-            setNewCampaign({ name: '', type: 'social', budget: 0, start_date: new Date().toISOString().split('T')[0], end_date: '' });
+            setNewCampaign({ name: '', type: 'social', budget: 0, start_date: ubDateStr(), end_date: '' });
         } catch (err) { console.error('Create error:', err); }
         finally { setCreating(false); }
     };

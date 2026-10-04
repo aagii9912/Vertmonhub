@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { isAuthorizedCron } from '@/lib/auth/cron';
 import { sendDirectorDigestEmail } from '@/lib/email/email';
 import { logger } from '@/lib/utils/logger';
+import { ubDateStr } from '@/lib/utils/date';
 
 // ============================================
 // GET/POST /api/cron/director-digest
@@ -44,14 +45,14 @@ async function handler(request: Request) {
 
             const [{ count: newLeads }, { count: newContracts }, { count: activeContracts }, { count: overdueCount }] = await Promise.all([
                 supabase.from('leads').select('*', { count: 'exact', head: true }).eq('shop_id', shop.id).gte('created_at', since),
-                supabase.from('property_contracts').select('*', { count: 'exact', head: true }).eq('shop_id', shop.id).gte('order_date', since.slice(0, 10)),
+                supabase.from('property_contracts').select('*', { count: 'exact', head: true }).eq('shop_id', shop.id).gte('order_date', ubDateStr(new Date(since))),
                 supabase.from('property_contracts').select('*', { count: 'exact', head: true }).eq('shop_id', shop.id).eq('contract_status', 'active'),
                 supabase.from('property_contracts').select('*', { count: 'exact', head: true }).eq('shop_id', shop.id).gt('overdue_days', 0),
             ]);
 
             const digest = {
                 shopName: shop.name || 'Vertmon',
-                date: new Date(since).toISOString().slice(0, 10),
+                date: ubDateStr(new Date(since)),
                 newLeads: newLeads || 0,
                 newContracts: newContracts || 0,
                 activeContracts: activeContracts || 0,

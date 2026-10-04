@@ -1278,7 +1278,7 @@ export async function createContract(shopId: string, args: any, confirm = false,
         contract_number: args.contract_number || null,
         sales_channel: args.sales_channel || 'ПРОПЕРТИС',
         sales_manager: salesManagerName || null,
-        contract_date: new Date().toISOString().slice(0, 10),
+        contract_date: ubDateStr(),
         lead_id: args.lead_id || null,
         customer_id: customerId,
     };

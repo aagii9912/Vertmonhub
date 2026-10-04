@@ -5,6 +5,7 @@
  */
 
 import { supabaseAdmin as adminClient } from '@/lib/supabase';
+import { ubDateStr } from '@/lib/utils/date';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { resolveSalesProjectScope, UNRESTRICTED_SALES_SCOPE, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { computeKpiReport } from '@/lib/dashboard/kpi-report-build';
@@ -104,7 +105,7 @@ export async function mergeCustomersTool(shopId: string, args: Args, confirm: bo
 export async function logSpend(shopId: string, args: Args, confirm: boolean, userId: string) {
     const amount = Number(args.amount);
     if (!Number.isFinite(amount) || amount < 0) return { error: 'amount шаардлагатай' };
-    const spentAt = /^\d{4}-\d{2}-\d{2}$/.test(String(args.spent_at || '')) ? String(args.spent_at) : new Date().toISOString().slice(0, 10);
+    const spentAt = /^\d{4}-\d{2}-\d{2}$/.test(String(args.spent_at || '')) ? String(args.spent_at) : ubDateStr();
     const channel = SPEND_CHANNELS[args.channel] ? String(args.channel) : 'other';
     if (!confirm) return confirmNeeded('log_marketing_spend', { spent_at: spentAt, amount, channel, note: args.note || null }, 'Маркетингийн зарцуулалт бүртгэх', { Огноо: spentAt, Суваг: SPEND_CHANNELS[channel], Дүн: money(amount), Тэмдэглэл: args.note || '-' });
     const { data, error } = await logMarketingSpend(db(), shopId, userId, { spentAt, amount, channel, note: args.note });

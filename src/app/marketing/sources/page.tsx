@@ -19,7 +19,7 @@ import { PageHeader } from '@/components/dashboard/PageHeader';
 import { DataTable, StatusPill, type DataTableColumn } from '@/components/ui/DataTable';
 import { Money } from '@/components/ui/Money';
 import { daysUntil } from '@/lib/marketing/budget';
-import { formatShortDate } from '@/lib/utils/date';
+import { formatShortDate, ubDateStr } from '@/lib/utils/date';
 import { formatMNTShort } from '@/lib/utils/currency';
 import {
     Sheet,
@@ -135,7 +135,7 @@ export default function SourcesPage() {
     const [creatingContract, setCreatingContract] = useState(false);
     const [newContract, setNewContract] = useState({
         channel_id: '',
-        start_date: new Date().toISOString().slice(0, 10),
+        start_date: ubDateStr(),
         end_date: '',
         budget: '',
         kpi_target: '',
@@ -201,7 +201,7 @@ export default function SourcesPage() {
             setShowContractModal(false);
             setNewContract({
                 channel_id: '',
-                start_date: new Date().toISOString().slice(0, 10),
+                start_date: ubDateStr(),
                 end_date: '',
                 budget: '',
                 kpi_target: '',

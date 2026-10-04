@@ -24,6 +24,7 @@ import { dashboardFetch, dashboardJson } from '@/lib/api/dashboardFetch';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
 import { sourceLabel } from '@/lib/leads/labels';
+import { ubDateStr } from '@/lib/utils/date';
 
 interface LeadStats {
     total: number;
@@ -75,7 +76,7 @@ export default function LeadsReport() {
             const blob = await res.blob();
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url; a.download = `лийдүүд_${new Date().toISOString().slice(0, 10)}.xlsx`; a.click();
+            a.href = url; a.download = `лийдүүд_${ubDateStr()}.xlsx`; a.click();
             URL.revokeObjectURL(url);
         } catch (e) { console.error('[LeadsReport] export error', e); } finally { setExporting(false); }
     }

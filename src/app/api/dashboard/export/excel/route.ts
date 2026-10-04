@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
+import { ubDateStr } from '@/lib/utils/date';
 import { buildWorkbookBuffer, type WorkbookSheetSpec } from '@/lib/utils/xlsx';
 import { getManagerPerformance } from '@/lib/reports/manager-performance';
 import { fetchAllRows } from '@/lib/utils/pagination';
@@ -71,7 +72,7 @@ export async function GET(request: NextRequest) {
             }));
 
             sheet = { name: 'Нэгжүүд', rows: exportData };
-            filename = `нэгжүүд_${new Date().toISOString().split('T')[0]}.xlsx`;
+            filename = `нэгжүүд_${ubDateStr()}.xlsx`;
 
         } else if (type === 'leads') {
             // Export Leads
@@ -96,7 +97,7 @@ export async function GET(request: NextRequest) {
             })) || [];
 
             sheet = { name: 'Лийдүүд', rows: exportData };
-            filename = `лийдүүд_${new Date().toISOString().split('T')[0]}.xlsx`;
+            filename = `лийдүүд_${ubDateStr()}.xlsx`;
 
         } else if (type === 'customers') {
             // Export Customers
@@ -117,7 +118,7 @@ export async function GET(request: NextRequest) {
             })) || [];
 
             sheet = { name: 'Харилцагчид', rows: exportData };
-            filename = `харилцагчид_${new Date().toISOString().split('T')[0]}.xlsx`;
+            filename = `харилцагчид_${ubDateStr()}.xlsx`;
 
         } else if (type === 'contracts') {
             // Export Contracts (1600+ → paginate past Supabase 1000-row cap)
@@ -156,7 +157,7 @@ export async function GET(request: NextRequest) {
             }));
 
             sheet = { name: 'Гэрээнүүд', rows: exportData };
-            filename = `гэрээнүүд_${new Date().toISOString().split('T')[0]}.xlsx`;
+            filename = `гэрээнүүд_${ubDateStr()}.xlsx`;
 
         } else if (type === 'manager') {
             const { managers } = await getManagerPerformance(supabase, shopId);
@@ -173,7 +174,7 @@ export async function GET(request: NextRequest) {
             }));
 
             sheet = { name: 'Менежерийн гүйцэтгэл', rows: exportData };
-            filename = `менежер_гүйцэтгэл_${new Date().toISOString().split('T')[0]}.xlsx`;
+            filename = `менежер_гүйцэтгэл_${ubDateStr()}.xlsx`;
 
         } else {
             return NextResponse.json({ error: 'Invalid export type' }, { status: 400 });

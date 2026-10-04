@@ -9,6 +9,7 @@ import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { DataTable, type DataTableColumn, StatusPill } from '@/components/ui/DataTable';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { formatMNTShort } from '@/lib/utils/currency';
+import { ubDateStr } from '@/lib/utils/date';
 
 interface ManagerRow {
     sales_manager: string;
@@ -46,7 +47,7 @@ export default function ManagerPerformancePage() {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
-            a.download = `менежер_гүйцэтгэл_${new Date().toISOString().slice(0, 10)}.xlsx`;
+            a.download = `менежер_гүйцэтгэл_${ubDateStr()}.xlsx`;
             a.click();
             URL.revokeObjectURL(url);
         } catch (e) { console.error('[ManagerPerformance] export error', e); } finally { setExporting(false); }

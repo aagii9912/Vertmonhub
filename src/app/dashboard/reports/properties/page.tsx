@@ -14,6 +14,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Building2, Download, CheckCircle2, Layers, Home } from 'lucide-react';
 import { dashboardFetch, dashboardJson } from '@/lib/api/dashboardFetch';
+import { ubDateStr } from '@/lib/utils/date';
 
 interface Stats { total: number; available: number; sold: number; reserved: number; totalArea: number; }
 interface GroupRow { key: string; total: number; available: number; sold: number; }
@@ -59,7 +60,7 @@ export default function PropertiesReportPage() {
             const blob = await res.blob();
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
-            a.href = url; a.download = `нэгжүүд_${new Date().toISOString().slice(0, 10)}.xlsx`; a.click();
+            a.href = url; a.download = `нэгжүүд_${ubDateStr()}.xlsx`; a.click();
             URL.revokeObjectURL(url);
         } catch { toast.error('Тайлан татаж чадсангүй. Дахин оролдоно уу.'); } finally { setExporting(false); }
     }

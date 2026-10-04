@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { sendPushNotification } from '@/lib/notifications';
 import { sendWeeklyReportEmail } from '@/lib/email/email';
 import { logger } from '@/lib/utils/logger';
+import { ubDateStr } from '@/lib/utils/date';
 
 /**
  * Долоо хоногийн автомат тайлан. Даваа гараг бүр (vercel.json cron) төсөл бүрийн
@@ -39,7 +40,7 @@ async function run(request: Request) {
         const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
         const sinceISO = weekAgo.toISOString();
         const recipient = process.env.DIGEST_EMAIL || '';
-        const tag = `weekly-report-${now.toISOString().slice(0, 10)}`;
+        const tag = `weekly-report-${ubDateStr(now)}`;
 
         const { data: shops } = await db.from('shops').select('id, name');
         const results: Array<Record<string, unknown>> = [];
@@ -94,7 +95,7 @@ async function run(request: Request) {
                     emailed = await sendWeeklyReportEmail(recipient, {
                         shopName: shop.name || 'Vertmon',
                         weekStart: sinceISO.slice(0, 10),
-                        weekEnd: now.toISOString().slice(0, 10),
+                        weekEnd: ubDateStr(now),
                         newLeads,
                         meetings,
                         wonLeads,

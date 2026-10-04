@@ -5,6 +5,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { SPEND_CHANNELS } from '@/lib/marketing/budget';
+import { ubDateStr } from '@/lib/utils/date';
 
 export function isMissingMarketingTable(error: { code?: string; message?: string } | null): boolean {
     if (!error) return false;
@@ -30,7 +31,7 @@ export async function addMarketIndicator(db: SupabaseClient, shopId: string, d: 
     const category = ['mortgage', 'bank', 'macro', 'other'].includes(d.category || '') ? d.category : 'mortgage';
     return db.from('market_indicators').insert({
         shop_id: shopId, category, name: d.name, value: d.value, note: d.note?.trim() || null, source_url: d.sourceUrl || null,
-        recorded_at: d.recordedAt || new Date().toISOString().slice(0, 10),
+        recorded_at: d.recordedAt || ubDateStr(),
     }).select('id, category, name, value, note, source_url, recorded_at').single();
 }
 

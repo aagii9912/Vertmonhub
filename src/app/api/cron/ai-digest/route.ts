@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { ubStartOfDay } from '@/lib/utils/date';
+import { ubDateStr, ubStartOfDay } from '@/lib/utils/date';
 import { isAuthorizedCron } from '@/lib/auth/cron';
 import { supabaseAdmin } from '@/lib/supabase';
 import { sendPushNotification } from '@/lib/notifications';
@@ -20,7 +20,7 @@ async function run(request: Request) {
 
     const todayStart = ubStartOfDay(); // УБ-ийн өнөөдөр (сервер UTC)
     const nowIso = new Date().toISOString();
-    const tag = `ai-digest-${todayStart.toISOString().slice(0, 10)}`;
+    const tag = `ai-digest-${ubDateStr()}`;
 
     let sent = 0;
     for (const shopId of shopIds) {

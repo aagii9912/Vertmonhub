@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/Select';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { formatMNT } from '@/lib/utils/currency';
+import { ubDateStr } from '@/lib/utils/date';
 
 interface ContractData {
     contractNumber: string;
@@ -48,7 +49,7 @@ const empty: ContractData = {
     propertyName: '', propertyAddress: SELLER.address, propertySizeSqm: '', propertyFloor: '', propertyRooms: '',
     pricePerSqm: '', price: '', downPayment: '',
     paymentMethod: 'cash',
-    contractDate: new Date().toISOString().split('T')[0],
+    contractDate: ubDateStr(),
 };
 
 interface ContractRow {
