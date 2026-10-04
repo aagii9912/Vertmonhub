@@ -82,8 +82,9 @@ test('pipeline болон санал гомдлын уншилт унавал а
     state.failPipeline = false;
     await page.getByRole('button', { name: 'Дахин оролдох', exact: true }).click();
     await expect(page.getByText('Энхжин', { exact: true }).first()).toBeVisible();
-    // Картанд лидийн ангилал (саарал pill + өнгөт цэг) харагдана.
-    await expect(page.getByText('Хөрөнгө оруулагч', { exact: true }).first()).toBeVisible();
+    // Картанд лидийн ангилал (саарал pill + өнгөт цэг) харагдана; эхнийх нь шүүлтүүрийн сонголт.
+    await expect(page.getByRole('combobox', { name: 'Ангилал', exact: true })).toBeAttached();
+    await expect(page.getByText('Хөрөнгө оруулагч', { exact: true }).last()).toBeVisible();
 
     await page.goto('/dashboard/customer-service');
     await expect(page.getByText('Санал гомдлын бүртгэл татахад алдаа гарлаа', { exact: true })).toBeVisible();
