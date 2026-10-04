@@ -121,7 +121,7 @@ const readDefinitions: ToolDefinition[] = [
             type: SchemaType.OBJECT,
             properties: {
                 status: { type: SchemaType.STRING, enum: ['active', 'closed'], description: 'Гэрээний төлөв (active=идэвхтэй, closed=хаагдсан)' },
-                customer_search: { type: SchemaType.STRING, description: 'Харилцагчийн нэр/утас/регистер дугаараар хайх' },
+                customer_search: { type: SchemaType.STRING, description: 'Харилцагчийн нэр/утас/регистер дугаараар хайх (шилжүүлсэн гэрээний өмнөх эзэмшигч ч орно)' },
                 contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар' },
                 sales_manager: { type: SchemaType.STRING, description: 'Борлуулагч менежерийн нэр' },
                 sales_channel: { type: SchemaType.STRING, description: 'Борлуулалтын суваг (ПРОПЕРТИС, БАРТЕР, ТҮРЭЭС гэх мэт)' },
@@ -134,13 +134,13 @@ const readDefinitions: ToolDefinition[] = [
     },
     {
         name: 'get_contract_details',
-        description: 'Нэг гэрээний бүх мэдээлэл авах: үнийн задаргаа (1-р үнэ, м²-ийн үнэ, нийт, төлсөн, үлдэгдэл), төлбөрийн нөхцөл, урьдчилгаа, гарын үсэг/ашиглалтын огноо, борлуулагч менежер, банкны/бартерын төлөв.',
+        description: 'Нэг гэрээний бүх мэдээлэл авах: үнийн задаргаа (1-р үнэ, м²-ийн үнэ, нийт, төлсөн, үлдэгдэл), төлбөрийн нөхцөл, урьдчилгаа, гарын үсэг/ашиглалтын огноо, борлуулагч менежер, банкны/бартерын төлөв, эзэмшигчийн түүх (шилжүүлэг/нэр засвар, transfers).',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 contract_id: { type: SchemaType.STRING, description: 'Гэрээний ID (UUID)' },
                 contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар' },
-                customer_phone: { type: SchemaType.STRING, description: 'Харилцагчийн утсаар (нэг гэрээ олдоно)' }
+                customer_phone: { type: SchemaType.STRING, description: 'Харилцагчийн утсаар (нэг гэрээ олдоно; өмнөх эзэмшигчийн утсаар ч олдоно)' }
             }
         }
     },
@@ -459,6 +459,27 @@ const writeDefinitions: ToolDefinition[] = [
                 customer_id: { type: SchemaType.STRING, description: 'Холбогдох харилцагчийн ID' }
             },
             required: ['customer_name']
+        }
+    },
+    {
+        name: 'transfer_contract',
+        description: 'Гэрээг өөр хүний нэр дээр шилжүүлэх (kind=transfer) эсвэл ижил эзэмшигчийн нэрийг засах (kind=rename). Төлсөн дүн, төлбөрийн график, менежер, гэрээний огноо, дугаар хэвээр; түүх, аудит хадгалагдана. Шилжүүлэхэд шинэ эзэмшигчийн нэр, регистр, шалтгаан заавал — хэрэглэгчээс тодруул, бүү зохио. Шилжүүлгийн хураамжийг энд биш add_contract_payment (receipt_kind=other)-оор бүртгэнэ. Баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                contract_id: { type: SchemaType.STRING, description: 'Гэрээний ID' },
+                contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар' },
+                current_holder_name: { type: SchemaType.STRING, description: 'Одоогийн эзэмшигчийн нэрээр гэрээ хайх' },
+                kind: { type: SchemaType.STRING, enum: ['transfer', 'rename'], description: 'transfer = өөр хүнд шилжүүлэх, rename = ижил хүний нэр засах' },
+                customer_name: { type: SchemaType.STRING, description: 'Шинэ (эсвэл зассан) эзэмшигчийн бүтэн нэр' },
+                customer_last_name: { type: SchemaType.STRING, description: 'Овог' },
+                customer_first_name: { type: SchemaType.STRING, description: 'Нэр' },
+                customer_registration: { type: SchemaType.STRING, description: 'Шинэ эзэмшигчийн регистр/паспорт (transfer үед заавал)' },
+                customer_phone: { type: SchemaType.STRING, description: 'Шинэ эзэмшигчийн утас' },
+                effective_date: { type: SchemaType.STRING, description: 'Шилжүүлсэн огноо YYYY-MM-DD (default өнөөдөр)' },
+                reason: { type: SchemaType.STRING, description: 'Шалтгаан / тэмдэглэл (transfer үед заавал)' }
+            },
+            required: ['kind', 'customer_name']
         }
     },
     {

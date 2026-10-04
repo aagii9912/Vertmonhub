@@ -32,6 +32,7 @@ import {
 import { inviteUser, assignRole, createRole } from './admin-functions';
 import { getKpiReport, getManagerPerformanceTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
 import { logCall, setFollowup, assignLeadManager, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
+import { transferContractTool } from './actions-contract-transfer';
 
 /** AI Assistant-ийн RBAC эрхүүд (route-аас тооцоолж дамжуулна). */
 export interface AssistantPerms {
@@ -114,6 +115,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     schedule_viewing: ({ shopId, args, confirm, userName, userId, scope }) => scheduleViewing(shopId, args, confirm, userName, userId, scope),
     delete_viewing: ({ shopId, args, confirm, scope, userId }) => deleteViewing(shopId, args, confirm, scope, userId),
     create_contract: ({ shopId, args, confirm, userName, scope }) => createContract(shopId, args, confirm, userName, scope),
+    transfer_contract: ({ shopId, args, confirm, scope, userId, userName }) => transferContractTool(shopId, args, confirm, { userId, userName, scope }),
     delete_contract: ({ shopId, args, confirm }) => deleteContract(shopId, args, confirm),
     delete_customer: ({ shopId, args, confirm }) => deleteCustomer(shopId, args, confirm),
     attach_file: ({ shopId, args, confirm, userName, userId, perms, scope }) => attachFile(shopId, args, confirm, userName, userId, perms, scope),

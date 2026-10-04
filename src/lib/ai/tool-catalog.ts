@@ -72,6 +72,7 @@ const ENTRIES = {
     list_contract_payments: { kind: 'read', module: 'contracts' },
     process_contract_action: { kind: 'write', module: 'contracts', scoped: true, alwaysConfirm: true },
     create_contract: { kind: 'write', module: 'contracts', scoped: true, alwaysConfirm: true },
+    transfer_contract: { kind: 'write', module: 'contracts', scoped: true, alwaysConfirm: true },
     add_contract_payment: { kind: 'write', module: 'contracts', alwaysConfirm: true },
     mark_payment_paid: { kind: 'write', module: 'contracts', alwaysConfirm: true },
     delete_contract: { kind: 'delete', module: 'contracts' },

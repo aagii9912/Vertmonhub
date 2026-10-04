@@ -24,6 +24,7 @@ import { logLeadActivity } from '@/lib/leads/activities';
 import { STATUS_META, statusLabel, toLeadSource } from '@/lib/leads/labels';
 import type { LeadStatus } from '@/types/property';
 import { formatMNT } from '@/lib/utils/currency';
+import { contractIdsByPreviousHolder, listContractTransfers } from '@/lib/services/ContractService';
 
 /** Timeline-д «хэн өөрчилсөн»-ийг тэмдэглэх (UI-ийн PATCH /leads/[id]-тэй ижил). */
 export interface LeadActor { userId?: string | null; userName?: string | null }
@@ -361,6 +362,12 @@ const CONTRACT_DETAIL_FIELDS = `${CONTRACT_LIST_FIELDS}, customer_first_name, cu
 
 export async function fetchContracts(shopId: string, args: any) {
     const limit = Math.min(Math.max(Number(args.limit) || 20, 1), 100);
+    // Шилжүүлсэн гэрээ өмнөх эзэмшигчийн нэр/утас/регистрээр ч олдоно.
+    let previousHolderIds: string[] = [];
+    if (args.customer_search) {
+        try { previousHolderIds = await contractIdsByPreviousHolder(supabaseAdmin, shopId, String(args.customer_search)); }
+        catch (e: any) { return { error: `Алдаа: ${e?.message || e}` }; }
+    }
     const { data, error } = await runExcludingDeleted((excludeDeleted) => {
         let query = supabaseAdmin.from('property_contracts')
             .select(CONTRACT_LIST_FIELDS)
@@ -369,7 +376,7 @@ export async function fetchContracts(shopId: string, args: any) {
             .limit(limit);
         if (excludeDeleted) query = query.is('deleted_at', null);
         if (args.status) query = query.eq('contract_status', args.status);
-        if (args.customer_search) query = query.or(`customer_name.ilike.%${args.customer_search}%,customer_phone.ilike.%${args.customer_search}%,customer_registration.ilike.%${args.customer_search}%`);
+        if (args.customer_search) query = query.or(`customer_name.ilike.%${args.customer_search}%,customer_phone.ilike.%${args.customer_search}%,customer_registration.ilike.%${args.customer_search}%${previousHolderIds.length ? `,id.in.(${previousHolderIds.join(',')})` : ''}`);
         if (args.sales_manager) query = query.ilike('sales_manager', `%${args.sales_manager}%`);
         if (args.sales_channel) query = query.eq('sales_channel', args.sales_channel);
         if (args.block_name) query = query.ilike('block_name', `%${args.block_name}%`);
@@ -407,18 +414,42 @@ export async function fetchContractDetails(shopId: string, args: any) {
         return query.maybeSingle();
     });
     if (error) return { error: `Алдаа: ${error.message}` };
-    if (!data) return { error: 'Гэрээ олдсонгүй' };
+    let contract: any = data;
+    let matchedPreviousHolder = false;
+    if (!contract && !args.contract_id && !args.contract_number && args.customer_phone) {
+        // Утас нь өмнөх эзэмшигчийнх байж болно (гэрээ өөр хүнд шилжсэн).
+        let ids: string[];
+        try { ids = await contractIdsByPreviousHolder(supabaseAdmin, shopId, String(args.customer_phone)); }
+        catch (e: any) { return { error: `Алдаа: ${e?.message || e}` }; }
+        if (ids.length) {
+            const previous = await supabaseAdmin.from('property_contracts').select(CONTRACT_DETAIL_FIELDS)
+                .eq('shop_id', shopId).is('deleted_at', null).in('id', ids).limit(1).maybeSingle();
+            if (previous.error) return { error: `Алдаа: ${previous.error.message}` };
+            contract = previous.data;
+            matchedPreviousHolder = !!contract;
+        }
+    }
+    if (!contract) return { error: 'Гэрээ олдсонгүй' };
+    // Эзэмшигчийн сүүлийн 10 өөрчлөлт (хураангуй, регистргүй).
+    const history = await listContractTransfers(supabaseAdmin, shopId, contract.id, 10);
 
     return {
         contract: {
-            ...data,
-            total_price_fmt: data.total_price != null ? formatMNT(data.total_price) : '-',
-            paid_amount_fmt: data.paid_amount != null ? formatMNT(data.paid_amount) : '-',
-            balance_fmt: data.balance != null ? formatMNT(data.balance) : '-',
-            first_price_fmt: data.first_price != null ? formatMNT(data.first_price) : '-',
-            prepayment_due_fmt: data.prepayment_due != null ? formatMNT(data.prepayment_due) : '-',
-            prepayment_paid_fmt: data.prepayment_paid != null ? formatMNT(data.prepayment_paid) : '-',
+            ...contract,
+            total_price_fmt: contract.total_price != null ? formatMNT(contract.total_price) : '-',
+            paid_amount_fmt: contract.paid_amount != null ? formatMNT(contract.paid_amount) : '-',
+            balance_fmt: contract.balance != null ? formatMNT(contract.balance) : '-',
+            first_price_fmt: contract.first_price != null ? formatMNT(contract.first_price) : '-',
+            prepayment_due_fmt: contract.prepayment_due != null ? formatMNT(contract.prepayment_due) : '-',
+            prepayment_paid_fmt: contract.prepayment_paid != null ? formatMNT(contract.prepayment_paid) : '-',
         },
+        ...(matchedPreviousHolder ? { note: 'Утас нь гэрээний өмнөх эзэмшигчийнх. Гэрээ одоо өөр хүний нэр дээр байна.' } : {}),
+        ...('error' in history ? { transfers_error: history.error } : {
+            transfers: history.transfers.map(t => ({
+                kind: t.kind, effective_date: t.effective_date, from: t.from_customer_name, to: t.to_customer_name,
+                reason: t.reason, recorded_by: t.created_by_name,
+            })),
+        }),
     };
 }
 
