@@ -12,6 +12,8 @@
  * Бүх функц цэвэр тул __tests__/mappers.test.ts-д шууд тестлэгдэнэ.
  */
 
+import { leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
+
 export type ImportRow = Record<string, unknown>;
 
 export interface MappedRow<T> {
@@ -346,7 +348,8 @@ export function mapPropertyRow(row: ImportRow, rowNum: number): MappedRow<Proper
 // ============================================
 
 export interface LeadInsert {
-    customer_name: string;
+    /** null = нэргүй лид (хоосон нэр, «-», экспортын «Нэргүй харилцагч» шошго). */
+    customer_name: string | null;
     customer_phone: string;
     customer_email: string | null;
     budget_max: number | null;
@@ -356,11 +359,11 @@ export interface LeadInsert {
 }
 
 export function mapLeadRow(row: ImportRow, rowNum: number): MappedRow<LeadInsert> {
-    const name = getVal(row, 'Нэр', 'name', 'Name');
+    // Нэр заавал биш (нэргүй лид); утас давхардлын түлхүүр тул заавал хэвээр.
+    const name = normalizeLeadName(getVal(row, 'Нэр', 'name', 'Name'));
     const phone = getVal(row, 'Утас', 'phone', 'Phone', 'Утасны дугаар');
 
-    if (!name) return { error: `Мөр ${rowNum}: Нэр хоосон` };
-    if (!phone) return { error: `Мөр ${rowNum}: Утас хоосон (${name})` };
+    if (!phone) return { error: `Мөр ${rowNum}: Утас хоосон (${leadDisplayName(name)})` };
 
     const interestedIn = getVal(row, 'Сонирхож буй', 'interested_in', 'Interested In', 'Сонирхол');
     const notes = getVal(row, 'Тэмдэглэл', 'notes', 'Notes', 'Нэмэлт');
@@ -371,7 +374,7 @@ export function mapLeadRow(row: ImportRow, rowNum: number): MappedRow<LeadInsert
 
     return {
         data: {
-            customer_name: clamp(name, 255) as string,
+            customer_name: clamp(name, 255),
             customer_phone: clamp(phone, 50) as string,
             customer_email: clamp(getVal(row, 'Имэйл', 'email', 'Email') || null, 255),
             budget_max: getNum(row, 'Төсөв', 'budget', 'Budget'),

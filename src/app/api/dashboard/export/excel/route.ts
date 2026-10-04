@@ -7,7 +7,7 @@ import { ubDateStr } from '@/lib/utils/date';
 import { buildWorkbookBuffer, type WorkbookSheetSpec } from '@/lib/utils/xlsx';
 import { getManagerPerformance } from '@/lib/reports/manager-performance';
 import { fetchAllRows } from '@/lib/utils/pagination';
-import { sourceLabel, statusLabel } from '@/lib/leads/labels';
+import { leadDisplayName, sourceLabel, statusLabel } from '@/lib/leads/labels';
 import { UNIT_STATUS_LABEL, unitCategoryLabel } from '@/lib/inventory/labels';
 import { contractStatusLabel } from '@/lib/contracts/labels';
 
@@ -81,7 +81,8 @@ export async function GET(request: NextRequest) {
                 .order('id').range(from, to), scope));
 
             const exportData = leads?.map(lead => ({
-                'Нэр': lead.customer_name || '-',
+                // Нэргүй лид шошгоор; дахин импортлоход normalizeLeadName шошгыг null болгоно.
+                'Нэр': leadDisplayName(lead),
                 'Утас': lead.customer_phone || '-',
                 'Имэйл': lead.customer_email || '-',
                 'Эх сурвалж': lead.source ? sourceLabel(lead.source) : '-',

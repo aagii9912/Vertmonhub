@@ -138,12 +138,15 @@ export type InsertLeadResult =
 /**
  * Лидийг нэг удаа бичнэ. `client_request_id` өмнө ашиглагдсан бол ижил төслийн лидийг буцааж
  * (`duplicate`), өөр төсөлд ашиглагдсан бол `conflict`. `scope` өгвөл давтан уншилт хүрээндээ үлдэнэ.
+ * Бүх сувгийн нэрийг `normalizeLeadName`-ээр цэвэрлэнэ: хоосон, «-», «Facebook lead»,
+ * «Нэргүй харилцагч» шошго → null (нэргүй лид). Шошго DB-д хэзээ ч бичигдэхгүй.
  */
 export async function insertLeadOnce(
     db: SupabaseClient,
-    row: LeadRow,
+    input: LeadRow,
     options: { scope?: SalesProjectScope; select?: string } = {},
 ): Promise<InsertLeadResult> {
+    const row: LeadRow = 'customer_name' in input ? { ...input, customer_name: normalizeLeadName(input.customer_name) } : input;
     const select = options.select ?? '*';
     const requestId = row.client_request_id;
     const existing = async () => {

@@ -294,9 +294,13 @@ describe('mapLeadRow — leads хүснэгтийн жинхэнэ багану�
         expect(data).not.toHaveProperty('budget');
     });
 
-    it('нэр/утас дутууг алдаа болгоно', () => {
-        expect(mapLeadRow({ 'Утас': '99112233' }, 2).error).toContain('Нэр хоосон');
-        expect(mapLeadRow({ 'Нэр': 'Бат' }, 3).error).toContain('Утас хоосон');
+    it('нэргүй мөрийг null нэртэй (нэргүй лид), утасгүйг алдаа болгоно', () => {
+        expect(mapLeadRow({ 'Утас': '99112233' }, 2)).toMatchObject({ data: { customer_name: null, customer_phone: '99112233' } });
+        // Экспортын шошго/«-» буцаж импортлогдоход нэр болж хадгалагдахгүй.
+        expect(mapLeadRow({ 'Нэр': 'Нэргүй харилцагч', 'Утас': '99112233' }, 2).data?.customer_name).toBeNull();
+        expect(mapLeadRow({ 'Нэр': '-', 'Утас': '99112233' }, 2).data?.customer_name).toBeNull();
+        expect(mapLeadRow({ 'Нэр': 'Бат' }, 3).error).toContain('Утас хоосон (Бат)');
+        expect(mapLeadRow({}, 4).error).toBe('Мөр 4: Утас хоосон (Нэргүй харилцагч)');
     });
 });
 

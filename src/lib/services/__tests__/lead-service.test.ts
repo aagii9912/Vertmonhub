@@ -98,6 +98,13 @@ describe('insertLeadOnce', () => {
             .toEqual({ ok: false, conflict: true });
     });
 
+    it('normalizes every channel name so placeholders and the label are stored as anonymous', async () => {
+        await insertLeadOnce(db, { shop_id: 'shop-1', project_id: project, customer_name: 'Facebook lead' });
+        await insertLeadOnce(db, { shop_id: 'shop-1', project_id: project, customer_name: ` ${ANONYMOUS_LEAD_LABEL} ` });
+        await insertLeadOnce(db, { shop_id: 'shop-1', project_id: project, customer_name: '  Г.  Энхжин ' });
+        expect(state.tables.leads.map((lead) => lead.customer_name)).toEqual([null, null, 'Г. Энхжин']);
+    });
+
     it('resolves a concurrent unique violation and reports other errors', async () => {
         state.insertError = { code: '23505', message: 'duplicate key' };
         state.raceRow = { id: 'raced', shop_id: 'shop-1', project_id: project, client_request_id: requestId };
