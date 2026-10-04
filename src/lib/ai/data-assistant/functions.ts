@@ -2,7 +2,8 @@
  * Data Assistant Functions — Read, Write, and Chart generation
  */
 
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { supabaseAdmin as createServiceClient } from '@/lib/supabase';
 import { formatShortDate, formatTime, ubDateStr, ubStartOfDay } from '@/lib/utils/date';
 import { logger } from '@/lib/utils/logger';
 import { fetchAllRows } from '@/lib/utils/pagination';
@@ -33,26 +34,14 @@ function logStatusChange(shopId: string, leadId: string, from: string, to: strin
     });
 }
 
-// Lazy admin client — built on first property access so missing env at
-// module-evaluation time (e.g. Next.js page-data collection) does not
-// crash before any handler actually runs.
+// Lazy service-role client (`@/lib/supabase`) — эхний хандалтад үүснэ, тиймээс модуль
+// ачаалах үед env дутуу байсан ч (Next page-data цуглуулалт) унахгүй.
 let _adminClient: SupabaseClient | null = null;
-function getAdminClient(): SupabaseClient {
-    if (_adminClient) return _adminClient;
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-    if (!url || !serviceKey) {
-        throw new Error('Supabase admin env vars are not configured');
-    }
-    _adminClient = createClient<any>(url, serviceKey);
-    return _adminClient;
-}
-
 const supabaseAdmin: SupabaseClient = new Proxy({} as SupabaseClient, {
     get(_target, prop) {
-        const client = getAdminClient();
-        const value = Reflect.get(client, prop, client);
-        return typeof value === 'function' ? value.bind(client) : value;
+        _adminClient ??= createServiceClient();
+        const value = Reflect.get(_adminClient, prop, _adminClient);
+        return typeof value === 'function' ? value.bind(_adminClient) : value;
     },
 }) as SupabaseClient;
 
@@ -996,12 +985,19 @@ async function runExcludingDeleted(build: (excludeDeleted: boolean) => any) {
     return res;
 }
 
+/** AI-аас ирсэн мөнгөн дүн: сөрөг биш бодит тоо (preview-д «0₮» гэж буруу харагдахаас сэргийлнэ). */
+function isAmount(value: unknown): boolean {
+    const n = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+    return typeof n === 'number' && Number.isFinite(n) && n >= 0;
+}
+
 export async function createProperty(shopId: string, args: any, confirm = false) {
     if (!args.name || !args.type || args.price == null) {
         return { error: 'name, type, price талбарууд заавал шаардлагатай' };
     }
     const validTypes = ['apartment', 'house', 'office', 'land', 'commercial'];
     if (!validTypes.includes(args.type)) return { error: `type буруу байна. Зөвшөөрөгдсөн: ${validTypes.join(', ')}` };
+    if (!isAmount(args.price)) return { error: 'price-ийг төгрөгөөр, зөвхөн тоогоор өгнө үү' };
 
     const preview = {
         Нэр: args.name, Төрөл: args.type,
@@ -1013,7 +1009,7 @@ export async function createProperty(shopId: string, args: any, confirm = false)
 
     const insert = {
         shop_id: shopId,
-        name: args.name, type: args.type, price: args.price,
+        name: args.name, type: args.type, price: Number(args.price),
         description: args.description || null,
         price_per_sqm: args.price_per_sqm ?? null,
         currency: args.currency || 'MNT',
@@ -1078,6 +1074,9 @@ export async function createLead(shopId: string, args: any, confirm = false, sal
     if (managerName) {
         try { await assertProjectManager(supabaseAdmin, shopId, args.project_id, managerName); }
         catch (error) { return { error: error instanceof Error ? error.message : 'Менежерийн төсөл шалгахад алдаа гарлаа' }; }
+    }
+    if (![args.budget_min, args.budget_max].every((value) => value == null || isAmount(value))) {
+        return { error: 'Төсвийг төгрөгөөр, зөвхөн тоогоор өгнө үү' };
     }
     const preview = {
         Нэр: args.customer_name, Утас: args.customer_phone || '-', Статус: status, 'Эх сурвалж': source,
@@ -1258,6 +1257,7 @@ export async function createContract(shopId: string, args: any, confirm = false,
         if (customer.error || !customer.data) return { error: 'Харилцагч олдсонгүй' };
     }
 
+    if (args.total_price != null && !isAmount(args.total_price)) return { error: 'total_price-ийг төгрөгөөр, зөвхөн тоогоор өгнө үү' };
     const preview = {
         Харилцагч: args.customer_name, Утас: args.customer_phone || '-',
         'Нийт үнэ': args.total_price ? formatMNT(args.total_price) : '-',

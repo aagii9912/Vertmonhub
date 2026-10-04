@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cookies } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
-import { createClient } from '@supabase/supabase-js';
+import { createSupabaseServerClient, getAuthUser } from '@/lib/auth/supabase-auth';
+import { supabaseAdmin } from '@/lib/supabase';
 import { z } from 'zod';
 
 const LoginSchema = z.object({
@@ -27,29 +26,7 @@ export async function POST(request: NextRequest) {
         }
         const { email, password } = parsed.data;
 
-        const cookieStore = await cookies();
-
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!.trim(),
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!.trim(),
-            {
-                cookies: {
-                    getAll() {
-                        return cookieStore.getAll();
-                    },
-                    setAll(cookiesToSet) {
-                        try {
-                            cookiesToSet.forEach(({ name, value, options }) =>
-                                cookieStore.set(name, value, options),
-                            );
-                        } catch {
-                            // Route handler context — set should always succeed
-                        }
-                    },
-                },
-            },
-        );
-
+        const supabase = await createSupabaseServerClient();
         const { data, error } = await supabase.auth.signInWithPassword({
             email,
             password,
@@ -77,12 +54,7 @@ export async function POST(request: NextRequest) {
         const user = data.user;
 
         // Look up role with service-role client (bypasses RLS)
-        const adminSupabase = createClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!.trim(),
-            process.env.SUPABASE_SERVICE_ROLE_KEY!.trim(),
-        );
-
-        const { data: roleData } = await adminSupabase
+        const { data: roleData } = await supabaseAdmin()
             .from('user_roles')
             .select('role')
             .eq('user_id', user.id)
@@ -113,24 +85,7 @@ export async function POST(request: NextRequest) {
  */
 export async function GET() {
     try {
-        const cookieStore = await cookies();
-
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                cookies: {
-                    getAll() {
-                        return cookieStore.getAll();
-                    },
-                    setAll() {
-                        // No-op for GET
-                    },
-                },
-            },
-        );
-
-        const { data: { user } } = await supabase.auth.getUser();
+        const user = await getAuthUser();
         if (!user) {
             return NextResponse.json({ authenticated: false }, { status: 401 });
         }
@@ -144,25 +99,7 @@ export async function GET() {
  * DELETE /api/auth/login — Logout
  */
 export async function DELETE() {
-    const cookieStore = await cookies();
-
-    const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-            cookies: {
-                getAll() {
-                    return cookieStore.getAll();
-                },
-                setAll(cookiesToSet) {
-                    cookiesToSet.forEach(({ name, value, options }) =>
-                        cookieStore.set(name, value, options),
-                    );
-                },
-            },
-        },
-    );
-
+    const supabase = await createSupabaseServerClient();
     await supabase.auth.signOut();
 
     const response = NextResponse.json({ success: true });
