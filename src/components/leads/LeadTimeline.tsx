@@ -37,8 +37,8 @@ function ManagerTimeline({ timeline, onOpenLead }: { timeline: LeadTimelineData;
         <div className="flex flex-col gap-3">
             {timeline.conflicts.length > 0 && (
                 <div className="flex flex-col gap-2" aria-label="Менежерүүдийн зөрчил">
-                    {timeline.conflicts.map((c) => (
-                        <Alert key={`${c.kind}-${c.managers.join('|')}`} variant="warning" role="status" aria-live="polite" className="p-2.5 text-[12.5px]">
+                    {timeline.conflicts.map((c, i) => (
+                        <Alert key={`${c.kind}-${i}`} variant="warning" role="status" aria-live="polite" className="p-2.5 text-[12.5px]">
                             <AlertTitle className="text-[12.5px]">{TIMELINE_CONFLICT_LABEL[c.kind] ?? c.kind}</AlertTitle>
                             <AlertDescription className="text-[12px]">{c.message}</AlertDescription>
                         </Alert>
@@ -162,7 +162,7 @@ function EventItem({ event: e, latest }: { event: TimelineEvent; latest: boolean
                 <div className="flex items-center gap-2 text-[11.5px] text-fg-2">
                     <span className="font-medium text-foreground">Хариуцагч:</span>
                     <span>{e.ownerChange.from ?? '—'}</span>
-                    <ArrowRight className="h-3 w-3" aria-label="→" />
+                    <ArrowRight className="h-3 w-3" aria-hidden /><span className="sr-only">→</span>
                     <span className="font-medium text-foreground">{e.ownerChange.to ?? '—'}</span>
                     <span className="h-px flex-1 bg-border" />
                 </div>
