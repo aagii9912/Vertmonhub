@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAiContext, suggestionsFor, contextLabel } from '@/lib/ai/context';
 import { streamAssistant, approveAssistantAction, type StreamEvent, type StreamDone } from '@/lib/ai/client';
 import { addAllowedTool, isToolAllowed } from '@/lib/ai/allowedTools';
+import { classifyTypedConfirmation, planTypedConfirmation } from '@/lib/ai/typed-confirmation';
 import { MarkdownMessage } from '@/components/ai-assistant/MarkdownMessage';
 import { OrchestrationTrace } from '@/components/ai-assistant/OrchestrationTrace';
 import { AiComposer, type AiAttachment } from './AiComposer';
@@ -150,6 +151,7 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
     }, []);
 
     const send = async (text: string, attachments: AiAttachment[] | PendingRequest['attachments'], opts?: { hidden?: boolean }) => {
+        if (!opts?.hidden && !attachments.length && await resolveTypedConfirmation(text)) return;
         const atts = attachments.map((a) => ({ url: a.url!, name: a.name, mimeType: a.mimeType })).filter((a) => a.url);
         const content = text || (atts.length ? 'Хавсаргасан файлыг шинжилж туслаач.' : '');
         if (!content) return;
@@ -270,6 +272,30 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
         setMessages((prev) => prev.map((m) => (m.pendingActions && !m.interruption ? { ...m, pendingActions: m.pendingActions.map((x) => (x.id !== a.id && x.status === 'pending' && x.tool === a.tool && (x.shopId ?? shop?.id) === target ? { ...x, autoApproved: true } : x)) } : m)));
         void approve(a);
     };
+
+    /**
+     * Хүлээгдэж буй картыг «тийм» / «бүгдийг батал» / «үгүй» гэж бичиж шийдвэрлэнэ (картын товчтой ижил зам).
+     * Мөнгө, олон бичлэгт нөлөөлөх үйлдлийг зөвхөн карт дээр дарж батална.
+     */
+    async function resolveTypedConfirmation(text: string): Promise<boolean> {
+        const decision = classifyTypedConfirmation(text);
+        if (!decision) return false;
+        const owner = [...messagesRef.current].reverse().find((m) => m.role === 'assistant' && m.pendingActions?.some((a) => a.status === 'pending'));
+        if (!owner) return false;
+        const pending = (owner.pendingActions || []).filter((a) => a.status === 'pending');
+        const plan = planTypedConfirmation(pending, decision);
+        const note = (content: string) => setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content }]);
+        setMessages((prev) => [...prev, { id: uid(), role: 'user', content: text }]);
+        if (plan.ambiguous) {
+            note('Хэд хэдэн үйлдэл хүлээгдэж байна. «Бүгдийг батал» гэж бичих эсвэл картаас нэг нэгээр нь сонгоно уу.');
+            return true;
+        }
+        for (const id of plan.cancel) setAction(id, { status: 'cancelled' });
+        if (plan.cancel.length) { note('Үйлдлийг цуцаллаа.'); scheduleContinuation(owner.id); }
+        for (const action of pending.filter((a) => plan.approve.includes(a.id))) await approve(action);
+        if (plan.needsCard.length) note('Мөнгө эсвэл олон бичлэгт нөлөөлөх үйлдлийг карт дээрх «Зөвшөөрөх» товчоор батална уу.');
+        return true;
+    }
 
     // Цээжилсэн (үргэлж зөвшөөрсөн) tool-ыг автоматаар гүйцэтгэнэ — нэг л удаа.
     useEffect(() => {
