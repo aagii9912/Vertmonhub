@@ -26,7 +26,7 @@ import path from 'node:path';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const require = createRequire(path.join(root, 'package.json'));
 const { Client } = require('pg');
-const { planProjectShopSplit, printProjectShopSplit, applyProjectShopSplit } = await import('./lib/project-shop-split.mjs');
+const { planProjectShopSplit, printProjectShopSplit, applyProjectShopSplit, sweepProjectShopStragglers } = await import('./lib/project-shop-split.mjs');
 
 const APPLY = process.argv.includes('--apply');
 
@@ -49,6 +49,9 @@ try {
         const receipt = await applyProjectShopSplit(client, result);
         console.log('\nАмжилттай. Баримт:');
         console.log(JSON.stringify(receipt, null, 2));
+        // Гүйлгээ нээлттэй байхад орсон лидийг COMMIT-ийн дараа shop-д нь оруулна.
+        const swept = await sweepProjectShopStragglers(client, receipt.filter(row => row.project_id).map(row => row.project_id));
+        console.log(Object.keys(swept).length ? `\nХоцорсон мөр shop-д нь орлоо: ${JSON.stringify(swept)}` : '\nХоцорсон мөр алга.');
     }
 } finally {
     await client.end();

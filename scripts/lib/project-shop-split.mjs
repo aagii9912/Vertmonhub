@@ -18,6 +18,15 @@ const LEAD_TABLES = ['lead_activities', 'lead_attribution_events', 'property_vie
 async function one(client, sql, params = []) { return (await client.query(sql, params)).rows[0]; }
 async function count(client, sql, params = []) { return Number((await one(client, sql, params)).n); }
 
+/** Төсөлд холбох нь бизнесийн засвар биш: байрны updated_at (тайлангийн үлдэгдлийн огноо) хэвээр үлдэнэ. */
+async function withoutTrigger(client, table, trigger, run) {
+    const exists = await count(client, 'SELECT count(*) AS n FROM pg_trigger WHERE tgrelid = to_regclass($1) AND tgname = $2', [`public.${table}`, trigger]);
+    if (exists) await client.query(`ALTER TABLE public.${table} DISABLE TRIGGER ${trigger}`);
+    const result = await run();
+    if (exists) await client.query(`ALTER TABLE public.${table} ENABLE TRIGGER ${trigger}`);
+    return result;
+}
+
 export async function planProjectShopSplit(client, { apply = false, split = SPLIT } = {}) {
     const ready = await one(client, `SELECT
         to_regprocedure('public.create_project_shop(jsonb,uuid[],uuid)') IS NOT NULL AS rpc,
@@ -124,11 +133,12 @@ export async function applyProjectShopSplit(client, { steps, keep }) {
                 throw new Error(`${project.name}: өөр shop-д үлдсэн лид байна`);
             await client.query(`INSERT INTO admin_audit_log (actor_id, action, target_id, meta) VALUES (NULL, 'project.split_shop', $1, $2)`,
                 [project.id, JSON.stringify({ from_shop: project.shop_id, to_shop: shop.id, moved })]);
-            receipt.push({ project: project.name, shop_id: shop.id, moved });
+            receipt.push({ project: project.name, project_id: project.id, shop_id: shop.id, moved });
         }
         for (const row of keep) {
             if (row.skip) continue;
-            const units = (await client.query('UPDATE property_units SET project_id = $1 WHERE shop_id = $2 AND project_id IS NULL', [row.project.id, row.shopId])).rowCount;
+            const units = await withoutTrigger(client, 'property_units', 'property_units_updated_at', async () =>
+                (await client.query('UPDATE property_units SET project_id = $1 WHERE shop_id = $2 AND project_id IS NULL', [row.project.id, row.shopId])).rowCount);
             const contracts = (await client.query('UPDATE property_contracts SET project_id = $1 WHERE shop_id = $2 AND project_id IS NULL', [row.project.id, row.shopId])).rowCount;
             if (units !== row.units || contracts !== row.contracts) throw new Error(`${row.project.name}: холбох тоо зөрлөө`);
             receipt.push({ project: row.project.name, shop_id: row.shopId, linked: { property_units: units, property_contracts: contracts } });
@@ -141,5 +151,36 @@ export async function applyProjectShopSplit(client, { steps, keep }) {
         throw error;
     }
     return receipt;
+}
+
+/**
+ * Split-ийн гүйлгээ нээлттэй байхад орж ирсэн лид хуучин shop-той commit болж болно (гүйлгээ дотроос харагдахгүй).
+ * COMMIT-ийн дараа шилжсэн төслүүдийн shop-оос зөрсөн мөрийг олж, тусдаа гүйлгээнд shop-д нь оруулна.
+ */
+export async function sweepProjectShopStragglers(client, projectIds) {
+    const moved = {};
+    if (!projectIds.length) return moved;
+    await client.query('BEGIN');
+    try {
+        for (const table of PROJECT_TABLES) {
+            moved[table] = (await client.query(`UPDATE ${table} AS t SET shop_id = p.shop_id FROM projects p
+                WHERE t.project_id = p.id AND p.id = ANY($1::uuid[]) AND t.shop_id <> p.shop_id`, [projectIds])).rowCount;
+        }
+        for (const table of LEAD_TABLES) {
+            moved[table] = (await client.query(`UPDATE ${table} AS t SET shop_id = l.shop_id FROM leads l
+                WHERE t.lead_id = l.id AND l.project_id = ANY($1::uuid[]) AND t.shop_id <> l.shop_id`, [projectIds])).rowCount;
+        }
+        const left = await count(client, `SELECT count(*) AS n FROM leads l JOIN projects p ON p.id = l.project_id
+            WHERE p.id = ANY($1::uuid[]) AND l.shop_id <> p.shop_id`, [projectIds]);
+        if (left) throw new Error(`${left} лид төслийн shop-оос зөрсөн хэвээр`);
+        if (Object.values(moved).some(Boolean)) {
+            await client.query(`INSERT INTO admin_audit_log (actor_id, action, target_id, meta) VALUES (NULL, 'project.split_shop_sweep', NULL, $1)`, [JSON.stringify({ projects: projectIds, moved })]);
+        }
+        await client.query('COMMIT');
+    } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+    }
+    return Object.fromEntries(Object.entries(moved).filter(([, n]) => n));
 }
 

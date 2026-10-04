@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { expect, it } from 'vitest';
-import { applyProjectShopSplit, planProjectShopSplit } from '../../../../../scripts/lib/project-shop-split.mjs';
+import { applyProjectShopSplit, planProjectShopSplit, sweepProjectShopStragglers } from '../../../../../scripts/lib/project-shop-split.mjs';
 
 type SplitPlan = { migrationReady: boolean; steps: Array<{ split: string; skip?: string; tables?: Record<string, number> }>; keep: unknown[] };
 
@@ -44,6 +44,12 @@ it('splits sub-projects into their own shops and links the remaining shop invent
             'finance_transactions', 'vendor_bills']) {
             await db.exec(`CREATE TABLE ${table} (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), shop_id uuid NOT NULL, project_id uuid)`);
         }
+        // Production-ийн updated_at trigger: байрыг төсөлд холбоход огноо өөрчлөгдөх ёсгүй.
+        await db.exec(`
+            ALTER TABLE property_units ADD COLUMN updated_at timestamptz;
+            CREATE FUNCTION touch_updated_at() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END $$;
+            CREATE TRIGGER property_units_updated_at BEFORE UPDATE ON property_units FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
+        `);
         for (const table of ['lead_activities', 'lead_attribution_events', 'property_viewings']) {
             await db.exec(`CREATE TABLE ${table} (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), shop_id uuid NOT NULL, lead_id uuid REFERENCES leads(id))`);
         }
@@ -67,7 +73,7 @@ it('splits sub-projects into their own shops and links the remaining shop invent
         await db.query('INSERT INTO lead_activities (shop_id, lead_id) VALUES ($1,$2)', [legacy, elysiumLead]);
         await db.query(`INSERT INTO erp_imports (shop_id, source) VALUES ($1,'Elysium ERP'),($1,'Garden ERP')`, [legacy]);
         await db.query(`INSERT INTO shop_faqs (shop_id, question) VALUES ($1,'Elysium Урьдчилгаа хэд вэ?'),($1,'Mandala Garden хаана байрлах вэ?')`, [legacy]);
-        await db.query('INSERT INTO property_units (shop_id) VALUES ($1),($1),($1)', [legacy]);
+        await db.query(`INSERT INTO property_units (shop_id, updated_at) VALUES ($1,'2026-06-24T05:45:16Z'),($1,'2026-06-24T05:45:16Z'),($1,'2026-06-24T05:45:20Z')`, [legacy]);
         await db.query('INSERT INTO property_contracts (shop_id) VALUES ($1),($1)', [legacy]);
 
         const dryRun = await planProjectShopSplit(client) as SplitPlan;
@@ -99,11 +105,23 @@ it('splits sub-projects into their own shops and links the remaining shop invent
         expect((await db.query('SELECT user_id FROM shop_members WHERE shop_id = $1 ORDER BY user_id', [elysiumShop])).rows)
             .toEqual([{ user_id: director }, { user_id: marketer }]);
         expect((await db.query('SELECT count(*)::int AS n FROM property_units WHERE project_id = $1', [garden])).rows).toEqual([{ n: 3 }]);
+        expect((await db.query(`SELECT max(updated_at) = '2026-06-24T05:45:20Z' AS kept FROM property_units`)).rows).toEqual([{ kept: true }]);
+        expect((await db.query(`SELECT count(*)::int AS n FROM pg_trigger WHERE tgname = 'property_units_updated_at' AND tgenabled = 'O'`)).rows).toEqual([{ n: 1 }]);
         expect((await db.query('SELECT count(*)::int AS n FROM property_contracts WHERE project_id = $1', [garden])).rows).toEqual([{ n: 2 }]);
         // Төсөлгүй хуучин лидийн төслийг таахгүй.
         expect((await db.query('SELECT project_id FROM leads WHERE sales_manager_name = $1', ['Khongoroo'])).rows).toEqual([{ project_id: null }]);
         expect((await db.query(`SELECT count(*)::int AS n FROM admin_audit_log WHERE action = 'project.split_shop'`)).rows).toEqual([{ n: 2 }]);
         expect(receipt).toHaveLength(3);
+
+        // Гүйлгээ нээлттэй байхад хуучин shop-оор commit болсон лид (race) COMMIT-ийн дараа shop-доо орно.
+        expect(await sweepProjectShopStragglers(client, [elysium, tower])).toEqual({});
+        await db.exec('ALTER TABLE leads DISABLE TRIGGER lead_project_in_shop');
+        const straggler = (await db.query<{ id: string }>('INSERT INTO leads (shop_id, project_id) VALUES ($1,$2) RETURNING id', [legacy, elysium])).rows[0].id;
+        await db.exec('ALTER TABLE leads ENABLE TRIGGER lead_project_in_shop');
+        await db.query('INSERT INTO lead_activities (shop_id, lead_id) VALUES ($1,$2)', [legacy, straggler]);
+        expect(await sweepProjectShopStragglers(client, [elysium, tower])).toEqual({ leads: 1, lead_activities: 1 });
+        expect((await db.query('SELECT shop_id FROM leads WHERE id = $1', [straggler])).rows).toEqual([{ shop_id: elysiumShop }]);
+        expect((await db.query('SELECT count(*)::int AS n FROM lead_activities WHERE shop_id = $1', [elysiumShop])).rows).toEqual([{ n: 2 }]);
 
         // Дахин ажиллуулахад юу ч өөрчлөгдөхгүй.
         const again = await planProjectShopSplit(client, { apply: true }) as SplitPlan;

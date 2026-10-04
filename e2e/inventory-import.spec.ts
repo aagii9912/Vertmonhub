@@ -25,7 +25,7 @@ async function setup(page: Page) {
         imports: [] as ImportRequest[], commits: [] as ImportRequest[], errors: [] as string[], unhandled: [] as string[],
         failPreview: false, failCommit: false, failSummary: false, failUnits: false, existingOnly: false,
         summaryReads: 0, unitReads: 0,
-        deferCreate: false, deferPreview: false, createRequests: 0,
+        deferCreate: false, deferPreview: false, createRequests: 0, createBodies: [] as unknown[],
         releaseCreate: null as null | (() => void), releasePreview: null as null | (() => void),
     };
     page.on('pageerror', error => state.errors.push(error.message));
@@ -43,6 +43,7 @@ async function setup(page: Page) {
         if (path === '/api/admin/projects') {
             if (request.method() === 'POST') {
                 state.createRequests++;
+                state.createBodies.push(request.postDataJSON());
                 if (state.deferCreate) await new Promise<void>(resolve => { state.releaseCreate = resolve; });
                 return reply({ project: { id: createdProjectId, shop_id: shopId, name: request.postDataJSON().name } });
             }
@@ -213,6 +214,8 @@ for (const mobile of [false, true]) {
         await expect(page.getByPlaceholder('Байршил (заавал биш)', { exact: true })).toBeDisabled();
         await expect(project).toBeDisabled();
         expect(state.createRequests).toBe(1);
+        // Shop = төсөл: шинэ төсөл өөрийн shop-той үүсдэг тул shop сонголт илгээхгүй.
+        expect(state.createBodies).toEqual([{ name: 'Шинэ тест төсөл' }]);
         state.releasePreview!();
         await expect(page.getByLabel('Блокийн импортын урьдчилсан шалгалт', { exact: true })).toContainText('Шинэ тест төсөл');
         expect(state.commits).toEqual([]);

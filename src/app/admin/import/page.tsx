@@ -259,19 +259,12 @@ interface AdminProject {
     id: string;
     name: string;
     shop_id: string;
-    shops?: { name: string } | null;
-}
-
-interface AdminShop {
-    id: string;
-    name: string;
 }
 
 const NO_PROJECTS: AdminProject[] = [];
-const NO_SHOPS: AdminShop[] = [];
 
 /** Админы жагсаалт уншина; алдааг хоосон жагсаалт болгож нуухгүй. */
-async function fetchAdminList<T>(url: string, field: 'projects' | 'shops', fallbackError: string): Promise<T[]> {
+async function fetchAdminList<T>(url: string, field: 'projects', fallbackError: string): Promise<T[]> {
     const res = await fetch(url);
     const data = await res.json().catch(() => null);
     if (!res.ok || !data) throw new Error(data?.error || fallbackError);
@@ -280,7 +273,7 @@ async function fetchAdminList<T>(url: string, field: 'projects' | 'shops', fallb
 
 export default function AdminImportPage() {
     const queryClient = useQueryClient();
-    const { shop, user } = useAuth();
+    const { shop, user, refreshShops } = useAuth();
     const [selected, setSelected] = useState<ImportCategory>(IMPORT_CATEGORIES[0]);
     const [file, setFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
@@ -304,22 +297,10 @@ export default function AdminImportPage() {
     const [showNewProject, setShowNewProject] = useState(false);
     const [newProjectName, setNewProjectName] = useState('');
     const [newProjectLocation, setNewProjectLocation] = useState('');
-    const [selectedNewProjectShopId, setNewProjectShopId] = useState('');
     const [creatingProject, setCreatingProject] = useState(false);
     const [createError, setCreateError] = useState<string | null>(null);
 
-    // Shop state (шинэ төслийг аль shop-д харьяалуулахыг ил сонгоно)
-    const shopsQuery = useQuery({
-        meta: { inlineError: true },
-        queryKey: ['admin-shops', 'import', shop?.id, user?.id, user?.role],
-        queryFn: () => fetchAdminList<AdminShop>('/api/admin/shops', 'shops', 'Байгууллагууд ачаалагдсангүй'),
-        enabled: !!user?.id,
-        staleTime: 0,
-        refetchOnWindowFocus: false,
-    });
-    const shops = shopsQuery.data ?? NO_SHOPS;
-    const newProjectShopId = selectedNewProjectShopId || shops[0]?.id || '';
-    const listError = (!projectsQuery.isFetching && projectsQuery.error) || (!shopsQuery.isFetching && shopsQuery.error) || null;
+    const listError = (!projectsQuery.isFetching && projectsQuery.error) || null;
 
     // Импорт, шинэ төсөл бусад админ хуудасны тоо, жагсаалтыг өөрчилнө — дараагийн нээлтэд шинээр уншина.
     const markAdminDataStale = () => {
@@ -377,8 +358,8 @@ export default function AdminImportPage() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     name: newProjectName.trim(),
-                    location: newProjectLocation.trim() || null,
-                    shop_id: newProjectShopId || null,
+                    // Shop = төсөл: шинэ төсөл өөрийн shop-той үүснэ.
+                    location: newProjectLocation.trim() || undefined,
                 }),
             });
             const data = await res.json();
@@ -387,6 +368,7 @@ export default function AdminImportPage() {
                 // Явж буй (хуучин) уншилтыг эхлээд цуцална — эс бөгөөс хожуу ирсэн хариу шинэ төслийг арилгана.
                 await queryClient.cancelQueries({ queryKey: projectsKey });
                 markAdminDataStale();
+                void refreshShops();
                 queryClient.setQueryData<AdminProject[]>(projectsKey, prev => [data.project, ...(prev ?? []).filter(project => project.id !== data.project.id)]);
                 setSelectedProject(data.project.id);
                 setResult(null);
@@ -493,32 +475,12 @@ export default function AdminImportPage() {
                                 onChange={(e) => setNewProjectLocation(e.target.value)}
                                 className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand focus:border-transparent text-sm"
                             />
-                            {shops.length > 1 && (
-                                <div>
-                                    <label className="block text-xs font-medium text-muted-foreground mb-1">
-                                        Харьяалагдах shop *
-                                    </label>
-                                    <select
-                                        disabled={loading || creatingProject}
-                                        value={newProjectShopId}
-                                        onChange={(e) => setNewProjectShopId(e.target.value)}
-                                        className="w-full px-3 py-2 border border-border-strong rounded-lg focus:ring-2 focus:ring-brand focus:border-transparent text-sm"
-                                    >
-                                        {shops.map(s => (
-                                            <option key={s.id} value={s.id}>{s.name}</option>
-                                        ))}
-                                    </select>
-                                    <p className="text-[11px] text-muted-foreground mt-1">
-                                        Импортолсон бүх өгөгдөл энэ shop-ийн AI/CRM-д харьяалагдана
-                                    </p>
-                                </div>
-                            )}
                             {createError && (
                                 <p className="text-xs text-status-danger">{createError}</p>
                             )}
                             <button
                                 onClick={createProject}
-                                disabled={!newProjectName.trim() || loading || creatingProject || (shops.length > 1 && !newProjectShopId)}
+                                disabled={!newProjectName.trim() || loading || creatingProject}
                                 className="w-full py-2 bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2"
                             >
                                 {creatingProject ? (
@@ -538,8 +500,7 @@ export default function AdminImportPage() {
                                 size="sm"
                                 className="mt-1 self-start"
                                 onClick={() => {
-                                    if (projectsQuery.error) void projectsQuery.refetch();
-                                    if (shopsQuery.error) void shopsQuery.refetch();
+                                    void projectsQuery.refetch();
                                 }}
                             >
                                 Дахин оролдох
@@ -570,7 +531,7 @@ export default function AdminImportPage() {
                             <option value="">Төсөл сонгоно уу</option>
                             {projects.map(p => (
                                 <option key={p.id} value={p.id}>
-                                    {p.name}{shops.length > 1 && p.shops?.name ? ` — ${p.shops.name}` : ''}
+                                    {p.name}
                                 </option>
                             ))}
                         </select>
