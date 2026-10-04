@@ -33,6 +33,10 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/cron/elysium-leads-sync",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/cron/channel-expiry",
       "schedule": "15 1 * * *"
     },
