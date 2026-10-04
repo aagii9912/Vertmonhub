@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { logMarketingSpend, upsertMarketingBudget } from '@/lib/services/MarketingOps';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
-import { requireModule, requireModuleWrite, requireModuleDelete } from '@/lib/auth/require-permission';
+import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logger } from '@/lib/utils/logger';
@@ -21,6 +21,7 @@ import {
     allocateAnnualBudget,
     budgetAmountSchema,
 } from '@/lib/marketing/budget';
+import { withRoute } from '@/lib/api/route';
 
 /**
  * GET/PUT/POST/DELETE /api/marketing/budget — маркетингийн төсвийн хяналт.
@@ -144,43 +145,32 @@ export async function GET(request: NextRequest) {
     }
 }
 
-export async function PUT(request: NextRequest) {
-    try {
-        const denied = await requireModuleWrite('marketing-roi');
-        if (denied) return denied;
-        const authShop = await getUserShop();
-        if (!authShop) {
-            return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
-        }
-
-        const body = await request.json().catch(() => null);
-        const parsed = MarketingBudgetSchema.safeParse(body);
-        if (!parsed.success) {
-            return NextResponse.json(
-                { error: 'Буруу өгөгдөл', details: parsed.error.flatten() },
-                { status: 400 },
-            );
-        }
-
-        const db = supabaseAdmin();
-        const projectDenied = await checkProject(db, authShop.id, parsed.data.project_id);
-        if (projectDenied) return projectDenied;
-        const months = parsed.data.months ?? allocateAnnualBudget(parsed.data.annualAmount!);
-        const { error } = await upsertMarketingBudget(db, authShop.id, parsed.data.year, months, parsed.data.project_id);
-
-        if (error) {
-            if (isMissingTable(error)) {
-                return NextResponse.json({ error: parsed.data.project_id ? PROJECT_MIGRATION_HINT : MIGRATION_HINT }, { status: 503 });
-            }
-            logger.error('[MarketingBudget] upsert error', { error: error.message });
-            return NextResponse.json({ error: 'Төсөв хадгалах алдаа' }, { status: 500 });
-        }
-
-        return NextResponse.json({ success: true });
-    } catch (error) {
-        return safeErrorResponse(error, 'Төсөв хадгалах алдаа');
+export const PUT = withRoute({ module: 'marketing-roi', access: 'write', error: 'Төсөв хадгалах алдаа' }, async ({ request, shop: authShop }) => {
+    const body = await request.json().catch(() => null);
+    const parsed = MarketingBudgetSchema.safeParse(body);
+    if (!parsed.success) {
+        return NextResponse.json(
+            { error: 'Буруу өгөгдөл', details: parsed.error.flatten() },
+            { status: 400 },
+        );
     }
-}
+
+    const db = supabaseAdmin();
+    const projectDenied = await checkProject(db, authShop.id, parsed.data.project_id);
+    if (projectDenied) return projectDenied;
+    const months = parsed.data.months ?? allocateAnnualBudget(parsed.data.annualAmount!);
+    const { error } = await upsertMarketingBudget(db, authShop.id, parsed.data.year, months, parsed.data.project_id);
+
+    if (error) {
+        if (isMissingTable(error)) {
+            return NextResponse.json({ error: parsed.data.project_id ? PROJECT_MIGRATION_HINT : MIGRATION_HINT }, { status: 503 });
+        }
+        logger.error('[MarketingBudget] upsert error', { error: error.message });
+        return NextResponse.json({ error: 'Төсөв хадгалах алдаа' }, { status: 500 });
+    }
+
+    return NextResponse.json({ success: true });
+});
 
 export async function POST(request: NextRequest) {
     try {
@@ -219,42 +209,31 @@ export async function POST(request: NextRequest) {
     }
 }
 
-export async function DELETE(request: NextRequest) {
-    try {
-        const denied = await requireModuleDelete('marketing-roi');
-        if (denied) return denied;
-        const authShop = await getUserShop();
-        if (!authShop) {
-            return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
-        }
-
-        const { searchParams } = new URL(request.url);
-        const id = searchParams.get('id');
-        const projectId = searchParams.get('project');
-        if (!z.string().uuid().safeParse(id).success || (projectId && !z.string().uuid().safeParse(projectId).success)) {
-            return NextResponse.json({ error: 'ID эсвэл төсөл буруу байна' }, { status: 400 });
-        }
-
-        const db = supabaseAdmin();
-        const projectDenied = await checkProject(db, authShop.id, projectId);
-        if (projectDenied) return projectDenied;
-        let query = db
-            .from('marketing_spend_entries')
-            .update({ deleted_at: new Date().toISOString() })
-            .eq('id', id)
-            .eq('shop_id', authShop.id)
-            .is('deleted_at', null);
-        if (projectId) query = query.eq('project_id', projectId);
-        const { data, error } = await query.select('id').maybeSingle();
-
-        if (error) {
-            logger.error('[MarketingBudget] spend delete error', { error: error.message });
-            return NextResponse.json({ error: 'Устгах алдаа' }, { status: 500 });
-        }
-        if (!data) return NextResponse.json({ error: 'Зарцуулалт олдсонгүй' }, { status: 404 });
-
-        return NextResponse.json({ success: true });
-    } catch (error) {
-        return safeErrorResponse(error, 'Устгах алдаа');
+export const DELETE = withRoute({ module: 'marketing-roi', access: 'delete', error: 'Устгах алдаа' }, async ({ request, shop: authShop }) => {
+    const { searchParams } = new URL(request.url);
+    const id = searchParams.get('id');
+    const projectId = searchParams.get('project');
+    if (!z.string().uuid().safeParse(id).success || (projectId && !z.string().uuid().safeParse(projectId).success)) {
+        return NextResponse.json({ error: 'ID эсвэл төсөл буруу байна' }, { status: 400 });
     }
-}
+
+    const db = supabaseAdmin();
+    const projectDenied = await checkProject(db, authShop.id, projectId);
+    if (projectDenied) return projectDenied;
+    let query = db
+        .from('marketing_spend_entries')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', id)
+        .eq('shop_id', authShop.id)
+        .is('deleted_at', null);
+    if (projectId) query = query.eq('project_id', projectId);
+    const { data, error } = await query.select('id').maybeSingle();
+
+    if (error) {
+        logger.error('[MarketingBudget] spend delete error', { error: error.message });
+        return NextResponse.json({ error: 'Устгах алдаа' }, { status: 500 });
+    }
+    if (!data) return NextResponse.json({ error: 'Зарцуулалт олдсонгүй' }, { status: 404 });
+
+    return NextResponse.json({ success: true });
+});

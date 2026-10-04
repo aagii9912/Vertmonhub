@@ -1,7 +1,8 @@
-import { requireModule, requireModuleWrite, requireModuleDelete } from '@/lib/auth/require-permission';
-import { NextResponse, NextRequest } from 'next/server';
+import { requireModule } from '@/lib/auth/require-permission';
+import { NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
+import { withRoute } from '@/lib/api/route';
 import { logger } from '@/lib/utils/logger';
 
 // ============================================
@@ -54,69 +55,49 @@ export async function GET() {
 }
 
 // POST — нэмэх / шинэчлэх (нэрээр upsert)
-export async function POST(request: NextRequest) {
-    try {
-        const denied = await requireModuleWrite('marketing-roi');
-        if (denied) return denied;
-        const authShop = await getUserShop();
-        if (!authShop) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
+export const POST = withRoute({ module: 'marketing-roi', access: 'write', error: 'Хадгалахад алдаа гарлаа' }, async ({ request, shop: authShop }) => {
+    const body = await request.json();
+    const name = String(body.name || '').trim();
+    if (!name) return NextResponse.json({ error: 'Өрсөлдөгчийн нэр шаардлагатай' }, { status: 400 });
 
-        const body = await request.json();
-        const name = String(body.name || '').trim();
-        if (!name) return NextResponse.json({ error: 'Өрсөлдөгчийн нэр шаардлагатай' }, { status: 400 });
+    const value: CompetitorValue = {
+        name,
+        location: body.location || null,
+        district: body.district || null,
+        num_blocks: body.num_blocks != null && body.num_blocks !== '' ? Number(body.num_blocks) : null,
+        planning: body.planning || null,
+        payment_terms: body.payment_terms || null,
+        price_per_sqm: body.price_per_sqm != null && body.price_per_sqm !== '' ? Number(body.price_per_sqm) : null,
+        facebook_url: body.facebook_url || null,
+        notes: body.notes || null,
+        updated_at: new Date().toISOString(),
+    };
 
-        const value: CompetitorValue = {
-            name,
-            location: body.location || null,
-            district: body.district || null,
-            num_blocks: body.num_blocks != null && body.num_blocks !== '' ? Number(body.num_blocks) : null,
-            planning: body.planning || null,
-            payment_terms: body.payment_terms || null,
-            price_per_sqm: body.price_per_sqm != null && body.price_per_sqm !== '' ? Number(body.price_per_sqm) : null,
-            facebook_url: body.facebook_url || null,
-            notes: body.notes || null,
-            updated_at: new Date().toISOString(),
-        };
+    const supabase = supabaseAdmin();
+    const { error } = await supabase
+        .from('ai_knowledge_base')
+        .upsert(
+            { shop_id: authShop.id, category: CATEGORY, key: name, value, description: `Өрсөлдөгч: ${name}` },
+            { onConflict: 'shop_id,category,key' }
+        );
+    if (error) throw error;
 
-        const supabase = supabaseAdmin();
-        const { error } = await supabase
-            .from('ai_knowledge_base')
-            .upsert(
-                { shop_id: authShop.id, category: CATEGORY, key: name, value, description: `Өрсөлдөгч: ${name}` },
-                { onConflict: 'shop_id,category,key' }
-            );
-        if (error) throw error;
-
-        return NextResponse.json({ success: true });
-    } catch (error) {
-        logger.error('[Competitors API] POST error:', { error });
-        return NextResponse.json({ error: 'Хадгалахад алдаа гарлаа' }, { status: 500 });
-    }
-}
+    return NextResponse.json({ success: true });
+});
 
 // DELETE — id-аар устгах
-export async function DELETE(request: NextRequest) {
-    try {
-        const denied = await requireModuleDelete('marketing-roi');
-        if (denied) return denied;
-        const authShop = await getUserShop();
-        if (!authShop) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
+export const DELETE = withRoute({ module: 'marketing-roi', access: 'delete', error: 'Устгахад алдаа гарлаа' }, async ({ request, shop: authShop }) => {
+    const id = request.nextUrl.searchParams.get('id');
+    if (!id) return NextResponse.json({ error: 'id шаардлагатай' }, { status: 400 });
 
-        const id = request.nextUrl.searchParams.get('id');
-        if (!id) return NextResponse.json({ error: 'id шаардлагатай' }, { status: 400 });
+    const supabase = supabaseAdmin();
+    const { error } = await supabase
+        .from('ai_knowledge_base')
+        .delete()
+        .eq('id', id)
+        .eq('shop_id', authShop.id)
+        .eq('category', CATEGORY);
+    if (error) throw error;
 
-        const supabase = supabaseAdmin();
-        const { error } = await supabase
-            .from('ai_knowledge_base')
-            .delete()
-            .eq('id', id)
-            .eq('shop_id', authShop.id)
-            .eq('category', CATEGORY);
-        if (error) throw error;
-
-        return NextResponse.json({ success: true });
-    } catch (error) {
-        logger.error('[Competitors API] DELETE error:', { error });
-        return NextResponse.json({ error: 'Устгахад алдаа гарлаа' }, { status: 500 });
-    }
-}
+    return NextResponse.json({ success: true });
+});

@@ -1,12 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { z } from 'zod';
-import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
-import { requireModuleWrite, requireModule } from '@/lib/auth/require-permission';
+import { getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
-import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { listLeadActivities, recordLeadContact } from '@/lib/leads/activities';
-import { applyLeadScope, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
+import { withRoute } from '@/lib/api/route';
+import { applyLeadScope, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 
 const CreateSchema = z.object({
     type: z.enum(['note', 'call']).default('note'),
@@ -16,65 +15,46 @@ const CreateSchema = z.object({
 });
 
 /** GET /api/dashboard/leads/[id]/activities — сүүлийн 100 үйлдэл, шинэ нь дээр. */
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-    try {
-        const denied = await requireModule('leads');
-        if (denied) return denied;
-        const authShop = await getUserShop();
-        if (!authShop) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        const { id } = await params;
-        const db = supabaseAdmin();
-        const scope = await resolveSalesProjectScope(db, authShop.id);
-        const { data: lead, error } = await applyLeadScope(db.from('leads').select('id')
-            .eq('id', id).eq('shop_id', authShop.id).is('deleted_at', null), scope).maybeSingle();
-        if (error) throw error;
-        if (!lead) return NextResponse.json({ error: 'Лид олдсонгүй' }, { status: 404 });
-        const activities = await listLeadActivities(db, authShop.id, id);
-        return NextResponse.json({ activities });
-    } catch (error) {
-        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
-        return safeErrorResponse(error, 'Түүх татахад алдаа гарлаа');
-    }
-}
+export const GET = withRoute<{ id: string }>({ module: 'leads', error: 'Түүх татахад алдаа гарлаа' }, async ({ shop: authShop, params }) => {
+    const { id } = await params;
+    const db = supabaseAdmin();
+    const scope = await resolveSalesProjectScope(db, authShop.id);
+    const { data: lead, error } = await applyLeadScope(db.from('leads').select('id')
+        .eq('id', id).eq('shop_id', authShop.id).is('deleted_at', null), scope).maybeSingle();
+    if (error) throw error;
+    if (!lead) return NextResponse.json({ error: 'Лид олдсонгүй' }, { status: 404 });
+    const activities = await listLeadActivities(db, authShop.id, id);
+    return NextResponse.json({ activities });
+});
 
 /**
  * POST /api/dashboard/leads/[id]/activities
  * Тэмдэглэл / дуудлагын бүртгэл. Дуудлага бол last_contact_at-г шинэчилж,
  * next_followup_at өгсөн бол тавина («Өнөөдөр» жагсаалтад гарна).
  */
-export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-    try {
-        const denied = await requireModuleWrite('leads');
-        if (denied) return denied;
-        const authShop = await getUserShop();
-        if (!authShop) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-
-        const { id } = await params;
-        const parsed = CreateSchema.safeParse(await request.json().catch(() => ({})));
-        if (!parsed.success) {
-            return NextResponse.json({ error: parsed.error.issues[0]?.message || 'Буруу өгөгдөл' }, { status: 400 });
-        }
-        const p = parsed.data;
-
-        const db = supabaseAdmin();
-        const scope = await resolveSalesProjectScope(db, authShop.id);
-        const { data: lead, error } = await applyLeadScope(db.from('leads').select('id')
-            .eq('id', id).eq('shop_id', authShop.id).is('deleted_at', null), scope).maybeSingle();
-        if (error) throw error;
-        if (!lead) return NextResponse.json({ error: 'Лид олдсонгүй' }, { status: 404 });
-        const uid = await getUserId();
-        const identity = uid ? await resolveManagerIdentity(db, authShop.id, uid) : null;
-
-        const result = await recordLeadContact(db, {
-            scope,
-            shopId: authShop.id, leadId: id, type: p.type, content: p.content, nextFollowupAt: p.next_followup_at,
-            userId: uid, managerName: identity?.managerName ?? null,
-        });
-        if (!result.ok) return NextResponse.json({ error: result.error, partialSuccess: result.partialSuccess ?? false }, { status: result.status });
-
-        return NextResponse.json({ activity: result.activity }, { status: 201 });
-    } catch (error) {
-        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
-        return safeErrorResponse(error, 'Тэмдэглэл хадгалахад алдаа гарлаа');
+export const POST = withRoute<{ id: string }>({ module: 'leads', access: 'write', error: 'Тэмдэглэл хадгалахад алдаа гарлаа' }, async ({ request, shop: authShop, params }) => {
+    const { id } = await params;
+    const parsed = CreateSchema.safeParse(await request.json().catch(() => ({})));
+    if (!parsed.success) {
+        return NextResponse.json({ error: parsed.error.issues[0]?.message || 'Буруу өгөгдөл' }, { status: 400 });
     }
-}
+    const p = parsed.data;
+
+    const db = supabaseAdmin();
+    const scope = await resolveSalesProjectScope(db, authShop.id);
+    const { data: lead, error } = await applyLeadScope(db.from('leads').select('id')
+        .eq('id', id).eq('shop_id', authShop.id).is('deleted_at', null), scope).maybeSingle();
+    if (error) throw error;
+    if (!lead) return NextResponse.json({ error: 'Лид олдсонгүй' }, { status: 404 });
+    const uid = await getUserId();
+    const identity = uid ? await resolveManagerIdentity(db, authShop.id, uid) : null;
+
+    const result = await recordLeadContact(db, {
+        scope,
+        shopId: authShop.id, leadId: id, type: p.type, content: p.content, nextFollowupAt: p.next_followup_at,
+        userId: uid, managerName: identity?.managerName ?? null,
+    });
+    if (!result.ok) return NextResponse.json({ error: result.error, partialSuccess: result.partialSuccess ?? false }, { status: result.status });
+
+    return NextResponse.json({ activity: result.activity }, { status: 201 });
+});

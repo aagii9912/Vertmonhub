@@ -1,7 +1,8 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
+import { requireModule } from '@/lib/auth/require-permission';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
+import { withRoute } from '@/lib/api/route';
 import { logger } from '@/lib/utils/logger';
 
 // ============================================
@@ -61,49 +62,34 @@ export async function GET(request: NextRequest) {
 // POST /api/dashboard/handover
 // Шинэ handover акт үүсгэх
 // ============================================
-export async function POST(request: NextRequest) {
-    try {
-        const denied = await requireModuleWrite('customers');
-        if (denied) return denied;
-        const authShop = await getUserShop();
-        if (!authShop) {
-            return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
-        }
+export const POST = withRoute({ module: 'customers', access: 'write', error: 'Акт үүсгэхэд алдаа гарлаа' }, async ({ request, shop: authShop }) => {
+    const body = await request.json();
+    const supabase = supabaseAdmin();
 
-        const body = await request.json();
-        const supabase = supabaseAdmin();
-
-        if (!body.contract_id) {
-            return NextResponse.json({ error: 'contract_id шаардлагатай' }, { status: 400 });
-        }
-
-        const { data, error } = await supabase
-            .from('handover_records')
-            .insert({
-                contract_id: body.contract_id,
-                shop_id: authShop.id,
-                handover_date: body.handover_date || null,
-                status: body.status || 'scheduled',
-                checklist: body.checklist || {},
-                condition_notes: body.condition_notes || null,
-                photos: body.photos || [],
-                accepted_by: body.accepted_by || null,
-                delivered_by: body.delivered_by || null,
-            })
-            .select()
-            .single();
-
-        if (error) throw error;
-
-        return NextResponse.json(
-            { record: data, message: 'Хүлээлгэн өгөх акт үүсгэлээ' },
-            { status: 201 }
-        );
-    } catch (error) {
-        logger.error('[Handover API] POST error:', { error });
-        return NextResponse.json(
-            { error: 'Акт үүсгэхэд алдаа гарлаа' },
-            { status: 500 }
-        );
+    if (!body.contract_id) {
+        return NextResponse.json({ error: 'contract_id шаардлагатай' }, { status: 400 });
     }
-}
+
+    const { data, error } = await supabase
+        .from('handover_records')
+        .insert({
+            contract_id: body.contract_id,
+            shop_id: authShop.id,
+            handover_date: body.handover_date || null,
+            status: body.status || 'scheduled',
+            checklist: body.checklist || {},
+            condition_notes: body.condition_notes || null,
+            photos: body.photos || [],
+            accepted_by: body.accepted_by || null,
+            delivered_by: body.delivered_by || null,
+        })
+        .select()
+        .single();
+
+    if (error) throw error;
+
+    return NextResponse.json(
+        { record: data, message: 'Хүлээлгэн өгөх акт үүсгэлээ' },
+        { status: 201 }
+    );
+});

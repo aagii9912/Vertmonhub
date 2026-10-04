@@ -1,11 +1,11 @@
-import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { NextResponse } from 'next/server';
-import { assertShopAccess, getUserId, getUserShop } from '@/lib/auth/supabase-auth';
+import { assertShopAccess, getUserId } from '@/lib/auth/supabase-auth';
 import { resolvePermissions } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { canReadPrivateAttachment, parsePrivateAttachmentUrl, privateAttachmentUrl, PRIVATE_ATTACHMENT_BUCKET } from '@/lib/ai/private-attachments';
 import { ProjectScopeError } from '@/lib/sales/project-scope';
+import { withRoute } from '@/lib/api/route';
 
 /**
  * POST /api/dashboard/upload — AI туслахын хавсралт (зураг/PDF) upload.
@@ -23,54 +23,41 @@ const ALLOWED: Record<string, string> = {
 };
 const MAX_BYTES = 4 * 1024 * 1024;
 
-export async function POST(request: Request) {
-    try {
-        const denied = await requireModuleWrite('ai-assistant');
-        if (denied) return denied;
-        const authShop = await getUserShop();
+export const POST = withRoute({ module: 'ai-assistant', access: 'write', error: 'Файл upload хийхэд алдаа гарлаа' }, async ({ request, shop: authShop }) => {
+    const formData = await request.formData();
+    const file = formData.get('file');
 
-        if (!authShop) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-
-        const formData = await request.formData();
-        const file = formData.get('file');
-
-        if (!file || !(file instanceof File)) {
-            return NextResponse.json({ error: 'Файл олдсонгүй' }, { status: 400 });
-        }
-        const ext = ALLOWED[file.type];
-        if (!ext) {
-            return NextResponse.json({ error: 'Зөвшөөрөгдөөгүй файлын төрөл (зураг эсвэл PDF байх ёстой)' }, { status: 400 });
-        }
-        if (file.size > MAX_BYTES) {
-            return NextResponse.json({ error: 'Файлын хэмжээ 4MB-аас хэтэрсэн байна' }, { status: 400 });
-        }
-
-        const userId = await getUserId();
-        if (!userId) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
-        const supabase = supabaseAdmin();
-        const fileName = `${authShop.id}/${userId}/${crypto.randomUUID()}.${ext}`;
-
-        // Upload to Supabase Storage using Admin client (bypasses RLS)
-        const { error } = await supabase.storage
-            .from(PRIVATE_ATTACHMENT_BUCKET)
-            .upload(fileName, await file.arrayBuffer(), {
-                contentType: file.type,
-                upsert: false,
-            });
-
-        if (error) {
-            logger.error('[Upload API] storage error:', { error });
-            return NextResponse.json({ error: 'Файл хадгалахад алдаа гарлаа' }, { status: 500 });
-        }
-
-        return NextResponse.json({ url: privateAttachmentUrl(fileName) });
-    } catch (error) {
-        logger.error('[Upload API] error:', { error });
-        return NextResponse.json({ error: 'Файл upload хийхэд алдаа гарлаа' }, { status: 500 });
+    if (!file || !(file instanceof File)) {
+        return NextResponse.json({ error: 'Файл олдсонгүй' }, { status: 400 });
     }
-}
+    const ext = ALLOWED[file.type];
+    if (!ext) {
+        return NextResponse.json({ error: 'Зөвшөөрөгдөөгүй файлын төрөл (зураг эсвэл PDF байх ёстой)' }, { status: 400 });
+    }
+    if (file.size > MAX_BYTES) {
+        return NextResponse.json({ error: 'Файлын хэмжээ 4MB-аас хэтэрсэн байна' }, { status: 400 });
+    }
+
+    const userId = await getUserId();
+    if (!userId) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
+    const supabase = supabaseAdmin();
+    const fileName = `${authShop.id}/${userId}/${crypto.randomUUID()}.${ext}`;
+
+    // Upload to Supabase Storage using Admin client (bypasses RLS)
+    const { error } = await supabase.storage
+        .from(PRIVATE_ATTACHMENT_BUCKET)
+        .upload(fileName, await file.arrayBuffer(), {
+            contentType: file.type,
+            upsert: false,
+        });
+
+    if (error) {
+        logger.error('[Upload API] storage error:', { error });
+        return NextResponse.json({ error: 'Файл хадгалахад алдаа гарлаа' }, { status: 500 });
+    }
+
+    return NextResponse.json({ url: privateAttachmentUrl(fileName) });
+});
 
 /** Stable links recheck identity, membership and entity module on every download. */
 export async function GET(request: Request) {

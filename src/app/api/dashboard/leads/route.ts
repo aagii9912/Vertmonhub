@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
-import { requireModuleWrite, resolvePermissions, requireModule } from '@/lib/auth/require-permission';
+import { requireModuleWrite, resolvePermissions } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { ACTIVE_STATUSES } from '@/lib/leads/labels';
@@ -10,6 +10,7 @@ import { parsePagination, buildPageMeta } from '@/lib/utils/pagination';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { insertLeadOnce, resolveStaffLead } from '@/lib/services/LeadService';
 import { phoneIlikePattern } from '@/lib/utils/phone';
+import { withRoute } from '@/lib/api/route';
 import { applyLeadScope, canAccessProject, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 
 /** Хугацааны шүүлтүүр — гүйдэг цонх (өнөөдрөөс хойш N хоног). */
@@ -30,107 +31,95 @@ const PERIOD_DAYS: Record<string, number> = {
  * Soft-delete хийгдсэн лийдийг (deleted_at) хасна.
  * manager — хариуцагч менежерээр шүүнэ (sales_manager_name, contracts API-ийн жишиг).
  */
-export async function GET(request: NextRequest) {
-    try {
-        const denied = await requireModule('leads');
-        if (denied) return denied;
-        const authShop = await getUserShop();
-        if (!authShop) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+export const GET = withRoute({ module: 'leads', error: 'Лийд татахад алдаа гарлаа' }, async ({ request, shop: authShop }) => {
+    const { searchParams } = new URL(request.url);
+    const status = searchParams.get('status');
+    const source = searchParams.get('source');
+    const period = searchParams.get('period');
 
-        const { searchParams } = new URL(request.url);
-        const status = searchParams.get('status');
-        const source = searchParams.get('source');
-        const period = searchParams.get('period');
+    // Хуудаслалт: их өгөгдөлд бүгдийг татаж ~1000 мөрөнд чимээгүй тасрахаас
+    // сэргийлнэ. ?page&pageSize эсвэл ?limit&offset өгөөгүй бол аюулгүйн таг.
+    const pagination = parsePagination(searchParams);
 
-        // Хуудаслалт: их өгөгдөлд бүгдийг татаж ~1000 мөрөнд чимээгүй тасрахаас
-        // сэргийлнэ. ?page&pageSize эсвэл ?limit&offset өгөөгүй бол аюулгүйн таг.
-        const pagination = parsePagination(searchParams);
+    const SORTABLE = ['created_at', 'last_contact_at', 'customer_name', 'next_followup_at', 'status'] as const;
+    const sortRaw = searchParams.get('sort');
+    const sort = (SORTABLE as readonly string[]).includes(sortRaw || '') ? (sortRaw as string) : 'created_at';
+    const ascending = searchParams.get('dir') === 'asc';
 
-        const SORTABLE = ['created_at', 'last_contact_at', 'customer_name', 'next_followup_at', 'status'] as const;
-        const sortRaw = searchParams.get('sort');
-        const sort = (SORTABLE as readonly string[]).includes(sortRaw || '') ? (sortRaw as string) : 'created_at';
-        const ascending = searchParams.get('dir') === 'asc';
+    const db = supabaseAdmin();
+    const scope = await resolveSalesProjectScope(db, authShop.id);
+    const requestedProject = searchParams.get('project');
+    const projectId = requestedProject === 'all' ? null : requestedProject;
+    if (projectId && !z.string().uuid().safeParse(projectId).success) return NextResponse.json({ error: 'Буруу төсөл' }, { status: 400 });
+    if (projectId && !canAccessProject(scope, projectId)) return NextResponse.json({ error: 'Энэ төслийн лид харах эрхгүй' }, { status: 403 });
+    let query = applyLeadScope(db
+        .from('leads')
+        .select('*', { count: 'exact' })
+        .eq('shop_id', authShop.id)
+        .is('deleted_at', null)
+        .order(sort, { ascending, nullsFirst: false })
+        .order('created_at', { ascending: false })
+        .range(pagination.from, pagination.to), scope);
+    if (projectId) query = query.eq('project_id', projectId);
 
-        const db = supabaseAdmin();
-        const scope = await resolveSalesProjectScope(db, authShop.id);
-        const requestedProject = searchParams.get('project');
-        const projectId = requestedProject === 'all' ? null : requestedProject;
-        if (projectId && !z.string().uuid().safeParse(projectId).success) return NextResponse.json({ error: 'Буруу төсөл' }, { status: 400 });
-        if (projectId && !canAccessProject(scope, projectId)) return NextResponse.json({ error: 'Энэ төслийн лид харах эрхгүй' }, { status: 403 });
-        let query = applyLeadScope(db
-            .from('leads')
-            .select('*', { count: 'exact' })
-            .eq('shop_id', authShop.id)
-            .is('deleted_at', null)
-            .order(sort, { ascending, nullsFirst: false })
-            .order('created_at', { ascending: false })
-            .range(pagination.from, pagination.to), scope);
-        if (projectId) query = query.eq('project_id', projectId);
+    const queue = searchParams.get('queue');
+    if (queue && !isLeadWorkQueue(queue)) return NextResponse.json({ error: 'Буруу ажлын жагсаалт' }, { status: 400 });
+    if (isLeadWorkQueue(queue)) query = query.or(workQueueFilter(queue));
 
-        const queue = searchParams.get('queue');
-        if (queue && !isLeadWorkQueue(queue)) return NextResponse.json({ error: 'Буруу ажлын жагсаалт' }, { status: 400 });
-        if (isLeadWorkQueue(queue)) query = query.or(workQueueFilter(queue));
-
-        // Хадгалсан харагдац
-        const view = searchParams.get('view');
-        if (view === 'mine') {
-            const uid = await getUserId();
-            const identity = uid ? await resolveManagerIdentity(db, authShop.id, uid) : null;
-            if (identity?.managerName) query = query.eq('sales_manager_name', identity.managerName);
-            else query = query.eq('sales_manager_name', '__none__'); // менежер биш → хоосон
-        } else if (view === 'new') {
-            query = query.eq('status', 'new');
-        } else if (view === 'meetings') {
-            query = query.eq('status', 'viewing_scheduled');
-        } else if (view === 'active') {
-            query = query.in('status', ACTIVE_STATUSES);
-        }
-
-        if (status && status !== 'all') {
-            query = query.eq('status', status);
-        }
-        if (source && source !== 'all') {
-            query = query.eq('source', source);
-        }
-        const manager = searchParams.get('manager');
-        if (manager && manager !== 'all') {
-            query = query.eq('sales_manager_name', manager);
-        }
-        if (period && PERIOD_DAYS[period]) {
-            const start = new Date(Date.now() - PERIOD_DAYS[period] * 24 * 60 * 60 * 1000);
-            query = query.gte('created_at', start.toISOString());
-        }
-        // Тодорхой хугацааны цонх (ISO) — тайлангийн хуудсууд browser Supabase-гүйгээр ашиглана
-        const fromIso = searchParams.get('from');
-        const toIso = searchParams.get('to');
-        if (fromIso && !Number.isNaN(Date.parse(fromIso))) query = query.gte('created_at', new Date(fromIso).toISOString());
-        if (toIso && !Number.isNaN(Date.parse(toIso))) query = query.lt('created_at', new Date(toIso).toISOString());
-        // Давхардлын шалгалт: хадгалсан формат (+976, зай, зураас) ямар ч байсан таарна.
-        const phonePattern = phoneIlikePattern(searchParams.get('phone'));
-        if (phonePattern) query = query.ilike('customer_phone', phonePattern);
-        const q = searchParams.get('q')?.trim();
-        if (q) {
-            const safe = q.replace(/[%_,()]/g, ' ').trim();
-            if (safe) {
-                query = query.or(
-                    `customer_name.ilike.%${safe}%,customer_phone.ilike.%${safe}%,customer_email.ilike.%${safe}%`,
-                );
-            }
-        }
-
-        const { data, error, count } = await query;
-        if (error) {
-            return NextResponse.json({ error: 'Лийд татахад алдаа гарлаа' }, { status: 500 });
-        }
-
-        return NextResponse.json({ leads: data || [], pagination: buildPageMeta(count ?? 0, pagination) });
-    } catch (error) {
-        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
-        return safeErrorResponse(error, 'Лийд татахад алдаа гарлаа');
+    // Хадгалсан харагдац
+    const view = searchParams.get('view');
+    if (view === 'mine') {
+        const uid = await getUserId();
+        const identity = uid ? await resolveManagerIdentity(db, authShop.id, uid) : null;
+        if (identity?.managerName) query = query.eq('sales_manager_name', identity.managerName);
+        else query = query.eq('sales_manager_name', '__none__'); // менежер биш → хоосон
+    } else if (view === 'new') {
+        query = query.eq('status', 'new');
+    } else if (view === 'meetings') {
+        query = query.eq('status', 'viewing_scheduled');
+    } else if (view === 'active') {
+        query = query.in('status', ACTIVE_STATUSES);
     }
-}
+
+    if (status && status !== 'all') {
+        query = query.eq('status', status);
+    }
+    if (source && source !== 'all') {
+        query = query.eq('source', source);
+    }
+    const manager = searchParams.get('manager');
+    if (manager && manager !== 'all') {
+        query = query.eq('sales_manager_name', manager);
+    }
+    if (period && PERIOD_DAYS[period]) {
+        const start = new Date(Date.now() - PERIOD_DAYS[period] * 24 * 60 * 60 * 1000);
+        query = query.gte('created_at', start.toISOString());
+    }
+    // Тодорхой хугацааны цонх (ISO) — тайлангийн хуудсууд browser Supabase-гүйгээр ашиглана
+    const fromIso = searchParams.get('from');
+    const toIso = searchParams.get('to');
+    if (fromIso && !Number.isNaN(Date.parse(fromIso))) query = query.gte('created_at', new Date(fromIso).toISOString());
+    if (toIso && !Number.isNaN(Date.parse(toIso))) query = query.lt('created_at', new Date(toIso).toISOString());
+    // Давхардлын шалгалт: хадгалсан формат (+976, зай, зураас) ямар ч байсан таарна.
+    const phonePattern = phoneIlikePattern(searchParams.get('phone'));
+    if (phonePattern) query = query.ilike('customer_phone', phonePattern);
+    const q = searchParams.get('q')?.trim();
+    if (q) {
+        const safe = q.replace(/[%_,()]/g, ' ').trim();
+        if (safe) {
+            query = query.or(
+                `customer_name.ilike.%${safe}%,customer_phone.ilike.%${safe}%,customer_email.ilike.%${safe}%`,
+            );
+        }
+    }
+
+    const { data, error, count } = await query;
+    if (error) {
+        return NextResponse.json({ error: 'Лийд татахад алдаа гарлаа' }, { status: 500 });
+    }
+
+    return NextResponse.json({ leads: data || [], pagination: buildPageMeta(count ?? 0, pagination) });
+});
 
 const VALID_STATUSES = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'] as const;
 

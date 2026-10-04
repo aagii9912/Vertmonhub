@@ -1,9 +1,7 @@
 import { NextResponse } from 'next/server';
-import { requireModuleWrite } from '@/lib/auth/require-permission';
-import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
-import { logger } from '@/lib/utils/logger';
 import { syncShopSocial } from '@/lib/marketing/socialSync';
+import { withRoute } from '@/lib/api/route';
 
 /**
  * POST /api/dashboard/marketing/sync-social
@@ -11,28 +9,18 @@ import { syncShopSocial } from '@/lib/marketing/socialSync';
  * `social_insights`-д хадгална (trend боломжтой болгоно). Бодит ажлыг
  * `syncShopSocial` (cron-той хуваалцдаг) гүйцэтгэнэ.
  */
-export async function POST() {
-    try {
-        const denied = await requireModuleWrite('marketing-roi');
-        if (denied) return denied;
-        const authShop = await getUserShop();
-        if (!authShop) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+export const POST = withRoute({ module: 'marketing-roi', access: 'write', error: 'Sync хийхэд алдаа гарлаа' }, async ({ shop: authShop }) => {
+    const supabase = supabaseAdmin();
+    const { data: shop } = await supabase
+        .from('shops')
+        .select('id, facebook_page_id, facebook_page_access_token')
+        .eq('id', authShop.id)
+        .single();
 
-        const supabase = supabaseAdmin();
-        const { data: shop } = await supabase
-            .from('shops')
-            .select('id, facebook_page_id, facebook_page_access_token')
-            .eq('id', authShop.id)
-            .single();
-
-        if (!shop?.facebook_page_id || !shop?.facebook_page_access_token) {
-            return NextResponse.json({ error: 'Facebook page холбогдоогүй' }, { status: 400 });
-        }
-
-        const { postsStored } = await syncShopSocial(supabase, shop);
-        return NextResponse.json({ success: true, postsStored, message: `${postsStored} нийтлэл хадгаллаа` });
-    } catch (error) {
-        logger.error('[Sync Social] error', { error });
-        return NextResponse.json({ error: 'Sync хийхэд алдаа гарлаа' }, { status: 500 });
+    if (!shop?.facebook_page_id || !shop?.facebook_page_access_token) {
+        return NextResponse.json({ error: 'Facebook page холбогдоогүй' }, { status: 400 });
     }
-}
+
+    const { postsStored } = await syncShopSocial(supabase, shop);
+    return NextResponse.json({ success: true, postsStored, message: `${postsStored} нийтлэл хадгаллаа` });
+});

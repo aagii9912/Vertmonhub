@@ -1,9 +1,10 @@
 import { NextResponse, NextRequest } from 'next/server';
-import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
+import { requireModule } from '@/lib/auth/require-permission';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { fetchAllRows } from '@/lib/utils/pagination';
+import { withRoute } from '@/lib/api/route';
 
 // ============================================
 // GET /api/dashboard/service-logs
@@ -68,87 +69,72 @@ export async function GET(request: NextRequest) {
 // POST /api/dashboard/service-logs
 // Шинэ хүсэлт/гомдол нээх
 // ============================================
-export async function POST(request: NextRequest) {
-    try {
-        const denied = await requireModuleWrite('customer-service');
-        if (denied) return denied;
-        const authShop = await getUserShop();
-        if (!authShop) {
-            return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
-        }
+export const POST = withRoute({ module: 'customer-service', access: 'write', error: 'Хүсэлт бүртгэхэд алдаа гарлаа' }, async ({ request, shop: authShop }) => {
+    const body = await request.json().catch(() => ({}));
+    const supabase = supabaseAdmin();
 
-        const body = await request.json().catch(() => ({}));
-        const supabase = supabaseAdmin();
-
-        if (!body.subject || typeof body.subject !== 'string' || body.subject.length > 255) {
-            return NextResponse.json({ error: 'Гарчиг (subject) шаардлагатай (255 хүртэл тэмдэгт)' }, { status: 400 });
-        }
-        // DB CHECK constraint-тай таарахгүй утга 500 өгдөг байсан — урьдчилан шалгана.
-        const SL_TYPES = ['inquiry', 'complaint', 'maintenance', 'handover', 'payment', 'other'];
-        const SL_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
-        const SL_STATUSES = ['open', 'in_progress', 'resolved', 'closed'];
-        if (body.type !== undefined && !SL_TYPES.includes(body.type)) {
-            return NextResponse.json({ error: `Буруу төрөл. Боломжтой: ${SL_TYPES.join(', ')}` }, { status: 400 });
-        }
-        if (body.priority !== undefined && !SL_PRIORITIES.includes(body.priority)) {
-            return NextResponse.json({ error: `Буруу чухлал. Боломжтой: ${SL_PRIORITIES.join(', ')}` }, { status: 400 });
-        }
-        if (body.status !== undefined && !SL_STATUSES.includes(body.status)) {
-            return NextResponse.json({ error: `Буруу төлөв. Боломжтой: ${SL_STATUSES.join(', ')}` }, { status: 400 });
-        }
-
-        // Тэмдэглэгчийн нэрийг автоматаар тогтоох (assigned_to өгөгдөөгүй бол)
-        let actor: string | null = body.assigned_to || null;
-        if (!actor) {
-            const uid = await getUserId();
-            if (uid) {
-                const { data: prof } = await supabase
-                    .from('user_profiles')
-                    .select('full_name')
-                    .eq('id', uid)
-                    .maybeSingle();
-                actor = prof?.full_name || null;
-            }
-        }
-
-        const { data, error } = await supabase
-            .from('service_logs')
-            .insert({
-                shop_id: authShop.id,
-                contract_id: body.contract_id || null,
-                customer_id: body.customer_id || null,
-                customer_name: body.customer_name || null,
-                customer_phone: body.customer_phone || null,
-                type: body.type || 'inquiry',
-                priority: body.priority || 'medium',
-                subject: body.subject,
-                description: body.description || null,
-                status: body.status || 'open',
-                assigned_to: actor,
-            })
-            .select()
-            .single();
-
-        if (error) throw error;
-
-        // channel — 20260630150000 migration хэрэгжээгүй байж болзошгүй тул
-        // best-effort (үндсэн insert-ийг унагаахгүйгээр тусад нь шинэчилнэ).
-        if (body.channel) {
-            await supabase.from('service_logs').update({ channel: body.channel }).eq('id', data.id);
-        }
-
-        return NextResponse.json(
-            { log: data, message: 'Хүсэлт амжилттай бүртгэлээ' },
-            { status: 201 }
-        );
-    } catch (error) {
-        logger.error('[ServiceLogs API] POST error:', { error });
-        return NextResponse.json(
-            { error: 'Хүсэлт бүртгэхэд алдаа гарлаа' },
-            { status: 500 }
-        );
+    if (!body.subject || typeof body.subject !== 'string' || body.subject.length > 255) {
+        return NextResponse.json({ error: 'Гарчиг (subject) шаардлагатай (255 хүртэл тэмдэгт)' }, { status: 400 });
     }
-}
+    // DB CHECK constraint-тай таарахгүй утга 500 өгдөг байсан — урьдчилан шалгана.
+    const SL_TYPES = ['inquiry', 'complaint', 'maintenance', 'handover', 'payment', 'other'];
+    const SL_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
+    const SL_STATUSES = ['open', 'in_progress', 'resolved', 'closed'];
+    if (body.type !== undefined && !SL_TYPES.includes(body.type)) {
+        return NextResponse.json({ error: `Буруу төрөл. Боломжтой: ${SL_TYPES.join(', ')}` }, { status: 400 });
+    }
+    if (body.priority !== undefined && !SL_PRIORITIES.includes(body.priority)) {
+        return NextResponse.json({ error: `Буруу чухлал. Боломжтой: ${SL_PRIORITIES.join(', ')}` }, { status: 400 });
+    }
+    if (body.status !== undefined && !SL_STATUSES.includes(body.status)) {
+        return NextResponse.json({ error: `Буруу төлөв. Боломжтой: ${SL_STATUSES.join(', ')}` }, { status: 400 });
+    }
+
+    // Тэмдэглэгчийн нэрийг автоматаар тогтоох (assigned_to өгөгдөөгүй бол)
+    let actor: string | null = body.assigned_to || null;
+    if (!actor) {
+        const uid = await getUserId();
+        if (uid) {
+            const { data: prof } = await supabase
+                .from('user_profiles')
+                .select('full_name')
+                .eq('id', uid)
+                .maybeSingle();
+            actor = prof?.full_name || null;
+        }
+    }
+
+    const { data, error } = await supabase
+        .from('service_logs')
+        .insert({
+            shop_id: authShop.id,
+            contract_id: body.contract_id || null,
+            customer_id: body.customer_id || null,
+            customer_name: body.customer_name || null,
+            customer_phone: body.customer_phone || null,
+            type: body.type || 'inquiry',
+            priority: body.priority || 'medium',
+            subject: body.subject,
+            description: body.description || null,
+            status: body.status || 'open',
+            assigned_to: actor,
+        })
+        .select()
+        .single();
+
+    if (error) throw error;
+
+    // channel — 20260630150000 migration хэрэгжээгүй байж болзошгүй тул
+    // best-effort (үндсэн insert-ийг унагаахгүйгээр тусад нь шинэчилнэ).
+    if (body.channel) {
+        await supabase.from('service_logs').update({ channel: body.channel }).eq('id', data.id);
+    }
+
+    return NextResponse.json(
+        { log: data, message: 'Хүсэлт амжилттай бүртгэлээ' },
+        { status: 201 }
+    );
+});
 
 // ============================================
 // HELPERS

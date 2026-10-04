@@ -1,4 +1,4 @@
-import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
+import { requireModule } from '@/lib/auth/require-permission';
 import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
@@ -8,6 +8,7 @@ import { normalizePhone } from '@/lib/utils/phone';
 import { recomputeCustomerScore } from '@/lib/services/CustomerScoringService';
 import { parsePagination, buildPageMeta } from '@/lib/utils/pagination';
 import { recordAudit } from '@/lib/services/AuditService';
+import { withRoute } from '@/lib/api/route';
 
 export async function GET(request: NextRequest) {
   try {
@@ -89,165 +90,139 @@ export async function GET(request: NextRequest) {
 
 
 // Manually create a new customer (sales manager entry)
-export async function POST(request: NextRequest) {
-  try {
-    const denied = await requireModuleWrite('customers');
-    if (denied) return denied;
-    const authShop = await getUserShop();
-
-    if (!authShop) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
-
-    const body = await request.json();
-    const validation = validateBody(CreateCustomerSchema, body);
-    if (!validation.success) {
-      return validation.response;
-    }
-
-    const supabase = supabaseAdmin();
-    const { name, phone, email, address, notes, tags } = validation.data;
-
-    const phoneNormalized = normalizePhone(phone);
-    const cleanEmail = email || null;
-
-    // Dedup: тухайн shop дотор ижил утас эсвэл и-мэйлтэй харилцагч байгаа эсэхийг шалгана
-    if (phoneNormalized || cleanEmail) {
-      const orParts: string[] = [];
-      if (phoneNormalized) orParts.push(`phone_normalized.eq.${phoneNormalized}`);
-      if (cleanEmail) orParts.push(`email.eq.${cleanEmail}`);
-
-      const { data: dupe } = await supabase
-        .from('customers')
-        .select('id, name, phone, email')
-        .eq('shop_id', authShop.id)
-        .is('deleted_at', null)
-        .or(orParts.join(','))
-        .limit(1)
-        .maybeSingle();
-
-      if (dupe) {
-        return NextResponse.json({
-          error: 'Ийм утас эсвэл и-мэйлтэй харилцагч аль хэдийн бүртгэлтэй байна',
-          existing: dupe,
-        }, { status: 409 });
-      }
-    }
-
-    const baseTags = Array.isArray(tags) ? tags : [];
-    const finalTags = baseTags.includes('source:manual')
-      ? baseTags
-      : ['source:manual', ...baseTags];
-
-    const { data: customer, error } = await supabase
-      .from('customers')
-      .insert({
-        shop_id: authShop.id,
-        name,
-        phone: phone || null,
-        phone_normalized: phoneNormalized,
-        email: cleanEmail,
-        address: address || null,
-        notes: notes || null,
-        tags: finalTags,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      logger.error('[Customers POST] Insert failed:', { error });
-      return NextResponse.json({ error: 'Failed to create customer' }, { status: 500 });
-    }
-
-    // Шинэ харилцагчийн чанарын оноог тооцоолно (амжилтгүй болсон ч insert хүчинтэй)
-    try {
-      await recomputeCustomerScore(customer.id);
-    } catch (scoreErr) {
-      logger.warn('[Customers POST] scoring failed', { error: scoreErr });
-    }
-
-    await recordAudit({
-      shopId: authShop.id,
-      actorId: await getUserId(),
-      entity: 'customer',
-      entityId: customer.id,
-      action: 'create',
-      changes: { name, phone: phone || null, email: cleanEmail },
-    });
-
-    return NextResponse.json({ customer, message: 'Customer created' }, { status: 201 });
-  } catch (error) {
-    console.error('Customer create error:', error);
-    return NextResponse.json({ error: 'Failed to create customer' }, { status: 500 });
+export const POST = withRoute({ module: 'customers', access: 'write' }, async ({ request, shop: authShop }) => {
+  const body = await request.json();
+  const validation = validateBody(CreateCustomerSchema, body);
+  if (!validation.success) {
+    return validation.response;
   }
-}
 
-// Update customer info
-export async function PATCH(request: NextRequest) {
-  try {
-    const denied = await requireModuleWrite('customers');
-    if (denied) return denied;
-    const authShop = await getUserShop();
+  const supabase = supabaseAdmin();
+  const { name, phone, email, address, notes, tags } = validation.data;
 
-    if (!authShop) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    }
+  const phoneNormalized = normalizePhone(phone);
+  const cleanEmail = email || null;
 
-    const supabase = supabaseAdmin();
-    const body = await request.json();
+  // Dedup: тухайн shop дотор ижил утас эсвэл и-мэйлтэй харилцагч байгаа эсэхийг шалгана
+  if (phoneNormalized || cleanEmail) {
+    const orParts: string[] = [];
+    if (phoneNormalized) orParts.push(`phone_normalized.eq.${phoneNormalized}`);
+    if (cleanEmail) orParts.push(`email.eq.${cleanEmail}`);
 
-    const validation = validateBody(UpdateCustomerSchema, body);
-    if (!validation.success) {
-      return validation.response;
-    }
-    const { id, name, phone, email, address, notes, tags } = validation.data;
-
-    // Verify customer belongs to shop
-    const { data: existingCustomer } = await supabase
+    const { data: dupe } = await supabase
       .from('customers')
-      .select('id')
-      .eq('id', id)
+      .select('id, name, phone, email')
       .eq('shop_id', authShop.id)
       .is('deleted_at', null)
-      .single();
+      .or(orParts.join(','))
+      .limit(1)
+      .maybeSingle();
 
-    if (!existingCustomer) {
-      return NextResponse.json({ error: 'Customer not found' }, { status: 404 });
+    if (dupe) {
+      return NextResponse.json({
+        error: 'Ийм утас эсвэл и-мэйлтэй харилцагч аль хэдийн бүртгэлтэй байна',
+        existing: dupe,
+      }, { status: 409 });
     }
-
-    // Build update object (only include provided fields)
-    const updateData: Record<string, any> = {};
-    if (name !== undefined) updateData.name = name;
-    if (phone !== undefined) {
-      updateData.phone = phone;
-      updateData.phone_normalized = normalizePhone(phone);
-    }
-    if (email !== undefined) updateData.email = email || null;
-    if (address !== undefined) updateData.address = address || null;
-    if (notes !== undefined) updateData.notes = notes;
-    if (tags !== undefined) updateData.tags = tags;
-
-    const { data: customer, error } = await supabase
-      .from('customers')
-      .update(updateData)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    await recordAudit({
-      shopId: authShop.id,
-      actorId: await getUserId(),
-      entity: 'customer',
-      entityId: id,
-      action: 'update',
-      changes: updateData,
-    });
-
-    return NextResponse.json({ customer, message: 'Customer updated' });
-  } catch (error) {
-    console.error('Customer update error:', error);
-    return NextResponse.json({ error: 'Failed to update customer' }, { status: 500 });
   }
-}
+
+  const baseTags = Array.isArray(tags) ? tags : [];
+  const finalTags = baseTags.includes('source:manual')
+    ? baseTags
+    : ['source:manual', ...baseTags];
+
+  const { data: customer, error } = await supabase
+    .from('customers')
+    .insert({
+      shop_id: authShop.id,
+      name,
+      phone: phone || null,
+      phone_normalized: phoneNormalized,
+      email: cleanEmail,
+      address: address || null,
+      notes: notes || null,
+      tags: finalTags,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    logger.error('[Customers POST] Insert failed:', { error });
+    return NextResponse.json({ error: 'Failed to create customer' }, { status: 500 });
+  }
+
+  // Шинэ харилцагчийн чанарын оноог тооцоолно (амжилтгүй болсон ч insert хүчинтэй)
+  try {
+    await recomputeCustomerScore(customer.id);
+  } catch (scoreErr) {
+    logger.warn('[Customers POST] scoring failed', { error: scoreErr });
+  }
+
+  await recordAudit({
+    shopId: authShop.id,
+    actorId: await getUserId(),
+    entity: 'customer',
+    entityId: customer.id,
+    action: 'create',
+    changes: { name, phone: phone || null, email: cleanEmail },
+  });
+
+  return NextResponse.json({ customer, message: 'Customer created' }, { status: 201 });
+});
+
+// Update customer info
+export const PATCH = withRoute({ module: 'customers', access: 'write' }, async ({ request, shop: authShop }) => {
+  const supabase = supabaseAdmin();
+  const body = await request.json();
+
+  const validation = validateBody(UpdateCustomerSchema, body);
+  if (!validation.success) {
+    return validation.response;
+  }
+  const { id, name, phone, email, address, notes, tags } = validation.data;
+
+  // Verify customer belongs to shop
+  const { data: existingCustomer } = await supabase
+    .from('customers')
+    .select('id')
+    .eq('id', id)
+    .eq('shop_id', authShop.id)
+    .is('deleted_at', null)
+    .single();
+
+  if (!existingCustomer) {
+    return NextResponse.json({ error: 'Customer not found' }, { status: 404 });
+  }
+
+  // Build update object (only include provided fields)
+  const updateData: Record<string, any> = {};
+  if (name !== undefined) updateData.name = name;
+  if (phone !== undefined) {
+    updateData.phone = phone;
+    updateData.phone_normalized = normalizePhone(phone);
+  }
+  if (email !== undefined) updateData.email = email || null;
+  if (address !== undefined) updateData.address = address || null;
+  if (notes !== undefined) updateData.notes = notes;
+  if (tags !== undefined) updateData.tags = tags;
+
+  const { data: customer, error } = await supabase
+    .from('customers')
+    .update(updateData)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  await recordAudit({
+    shopId: authShop.id,
+    actorId: await getUserId(),
+    entity: 'customer',
+    entityId: id,
+    action: 'update',
+    changes: updateData,
+  });
+
+  return NextResponse.json({ customer, message: 'Customer updated' });
+});

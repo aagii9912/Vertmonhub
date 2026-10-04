@@ -1,9 +1,7 @@
-import { applyLeadScope, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
-import { requireModule } from '@/lib/auth/require-permission';
+import { applyLeadScope, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { NextResponse } from 'next/server';
-import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
-import { logger } from '@/lib/utils/logger';
+import { withRoute } from '@/lib/api/route';
 
 /**
  * GET /api/dashboard/marketing-roi/timeline
@@ -25,102 +23,89 @@ function monthKey(value: string | null): string | null {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-export async function GET() {
-    try {
-        const denied = await requireModule('marketing-roi');
-        if (denied) return denied;
-        const authShop = await getUserShop();
-        if (!authShop) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+export const GET = withRoute({ module: 'marketing-roi', error: 'Цуваа татахад алдаа гарлаа' }, async ({ shop: authShop }) => {
+    const supabase = supabaseAdmin();
+    const scope = await resolveSalesProjectScope(supabase, authShop.id);
+    const shopId = authShop.id;
 
-        const supabase = supabaseAdmin();
-        const scope = await resolveSalesProjectScope(supabase, authShop.id);
-        const shopId = authShop.id;
+    // Цонхны эхлэл: одоогоос N-1 сарын өмнөх сарын 1-ний өдөр.
+    const now = new Date();
+    const windowStart = new Date(now.getFullYear(), now.getMonth() - (MONTHS_BACK - 1), 1);
+    const startISO = windowStart.toISOString();
 
-        // Цонхны эхлэл: одоогоос N-1 сарын өмнөх сарын 1-ний өдөр.
-        const now = new Date();
-        const windowStart = new Date(now.getFullYear(), now.getMonth() - (MONTHS_BACK - 1), 1);
-        const startISO = windowStart.toISOString();
+    const [{ data: leads }, { data: viewings }, { data: posts }, { data: adCampaigns }, { data: mktCampaigns }] =
+        await Promise.all([
+            applyLeadScope(supabase
+                .from('leads')
+                .select('created_at')
+                .eq('shop_id', shopId)
+                .is('deleted_at', null)
+                .gte('created_at', startISO), scope),
+            applyLeadScope(supabase
+                .from('property_viewings')
+                .select(scope.projectIds === null ? 'scheduled_at' : 'scheduled_at,leads!inner(project_id,sales_manager_name)')
+                .eq('shop_id', shopId)
+                .gte('scheduled_at', startISO), scope, 'leads.project_id', 'leads.sales_manager_name'),
+            supabase
+                .from('social_posts')
+                .select('published_at, status')
+                .eq('shop_id', shopId)
+                .eq('status', 'published')
+                .gte('published_at', startISO),
+            supabase
+                .from('ad_campaigns')
+                .select('spend, start_date, created_at')
+                .eq('shop_id', shopId),
+            supabase
+                .from('marketing_campaigns')
+                .select('start_date, created_at')
+                .eq('shop_id', shopId),
+        ]);
 
-        const [{ data: leads }, { data: viewings }, { data: posts }, { data: adCampaigns }, { data: mktCampaigns }] =
-            await Promise.all([
-                applyLeadScope(supabase
-                    .from('leads')
-                    .select('created_at')
-                    .eq('shop_id', shopId)
-                    .is('deleted_at', null)
-                    .gte('created_at', startISO), scope),
-                applyLeadScope(supabase
-                    .from('property_viewings')
-                    .select(scope.projectIds === null ? 'scheduled_at' : 'scheduled_at,leads!inner(project_id,sales_manager_name)')
-                    .eq('shop_id', shopId)
-                    .gte('scheduled_at', startISO), scope, 'leads.project_id', 'leads.sales_manager_name'),
-                supabase
-                    .from('social_posts')
-                    .select('published_at, status')
-                    .eq('shop_id', shopId)
-                    .eq('status', 'published')
-                    .gte('published_at', startISO),
-                supabase
-                    .from('ad_campaigns')
-                    .select('spend, start_date, created_at')
-                    .eq('shop_id', shopId),
-                supabase
-                    .from('marketing_campaigns')
-                    .select('start_date, created_at')
-                    .eq('shop_id', shopId),
-            ]);
-
-        // Сүүлийн N сарын хоосон bucket-уудыг бэлдэнэ (өгөгдөлгүй сар 0-ээр харагдана).
-        const buckets = new Map<
-            string,
-            { month: string; label: string; leads: number; meetings: number; activity: number; spend: number }
-        >();
-        for (let i = 0; i < MONTHS_BACK; i++) {
-            const d = new Date(now.getFullYear(), now.getMonth() - (MONTHS_BACK - 1) + i, 1);
-            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-            buckets.set(key, {
-                month: key,
-                label: `${d.getMonth() + 1}-р сар`,
-                leads: 0,
-                meetings: 0,
-                activity: 0,
-                spend: 0,
-            });
-        }
-
-        const bump = (
-            key: string | null,
-            field: 'leads' | 'meetings' | 'activity',
-            amount = 1,
-        ) => {
-            if (!key) return;
-            const bucket = buckets.get(key);
-            if (bucket) bucket[field] += amount;
-        };
-
-        for (const l of leads || []) bump(monthKey(l.created_at), 'leads');
-        for (const v of (viewings || []) as unknown as { scheduled_at: string | null }[]) bump(monthKey(v.scheduled_at), 'meetings');
-        for (const p of posts || []) bump(monthKey(p.published_at), 'activity');
-        for (const c of mktCampaigns || []) bump(monthKey(c.start_date || c.created_at), 'activity');
-
-        // Зарын зардлыг кампанит ажлын эхэлсэн сард нь хамааруулна (сар тутмын
-        // задаргаа Meta-с ирдэггүй тул ойролцоо хуваарилалт).
-        for (const c of adCampaigns || []) {
-            const key = monthKey(c.start_date || c.created_at);
-            if (!key) continue;
-            const bucket = buckets.get(key);
-            if (bucket) {
-                bucket.spend += Number(c.spend) || 0;
-                bucket.activity += 1;
-            }
-        }
-
-        return NextResponse.json({ months: Array.from(buckets.values()) });
-    } catch (error) {
-        if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
-        logger.error('[Marketing timeline] error', { error });
-        return NextResponse.json({ error: 'Цуваа татахад алдаа гарлаа' }, { status: 500 });
+    // Сүүлийн N сарын хоосон bucket-уудыг бэлдэнэ (өгөгдөлгүй сар 0-ээр харагдана).
+    const buckets = new Map<
+        string,
+        { month: string; label: string; leads: number; meetings: number; activity: number; spend: number }
+    >();
+    for (let i = 0; i < MONTHS_BACK; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - (MONTHS_BACK - 1) + i, 1);
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        buckets.set(key, {
+            month: key,
+            label: `${d.getMonth() + 1}-р сар`,
+            leads: 0,
+            meetings: 0,
+            activity: 0,
+            spend: 0,
+        });
     }
-}
+
+    const bump = (
+        key: string | null,
+        field: 'leads' | 'meetings' | 'activity',
+        amount = 1,
+    ) => {
+        if (!key) return;
+        const bucket = buckets.get(key);
+        if (bucket) bucket[field] += amount;
+    };
+
+    for (const l of leads || []) bump(monthKey(l.created_at), 'leads');
+    for (const v of (viewings || []) as unknown as { scheduled_at: string | null }[]) bump(monthKey(v.scheduled_at), 'meetings');
+    for (const p of posts || []) bump(monthKey(p.published_at), 'activity');
+    for (const c of mktCampaigns || []) bump(monthKey(c.start_date || c.created_at), 'activity');
+
+    // Зарын зардлыг кампанит ажлын эхэлсэн сард нь хамааруулна (сар тутмын
+    // задаргаа Meta-с ирдэггүй тул ойролцоо хуваарилалт).
+    for (const c of adCampaigns || []) {
+        const key = monthKey(c.start_date || c.created_at);
+        if (!key) continue;
+        const bucket = buckets.get(key);
+        if (bucket) {
+            bucket.spend += Number(c.spend) || 0;
+            bucket.activity += 1;
+        }
+    }
+
+    return NextResponse.json({ months: Array.from(buckets.values()) });
+});

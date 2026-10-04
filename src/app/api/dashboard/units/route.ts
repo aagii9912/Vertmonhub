@@ -1,7 +1,8 @@
 import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
-import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
+import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
+import { withRoute } from '@/lib/api/route';
 import { logger } from '@/lib/utils/logger';
 
 const UNIT_STATUSES = ['available', 'reserved', 'ordered', 'sold', 'handed_over'];
@@ -91,54 +92,41 @@ export async function GET(request: NextRequest) {
 // PATCH /api/dashboard/units — нэгжийг гараар засах
 // body: { id, <editable fields...> }
 // ============================================
-export async function PATCH(request: NextRequest) {
-    try {
-        const denied = await requireModuleWrite('properties');
-        if (denied) return denied;
+export const PATCH = withRoute({ module: 'properties', access: 'write', error: 'Нэгж засахад алдаа гарлаа' }, async ({ request, shop: authShop }) => {
+    const body = await request.json();
+    const id: string | undefined = body.id;
+    if (!id) return NextResponse.json({ error: 'id шаардлагатай' }, { status: 400 });
 
-        const authShop = await getUserShop();
-        if (!authShop) {
-            return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
-        }
-
-        const body = await request.json();
-        const id: string | undefined = body.id;
-        if (!id) return NextResponse.json({ error: 'id шаардлагатай' }, { status: 400 });
-
-        if (body.status !== undefined && !UNIT_STATUSES.includes(body.status)) {
-            return NextResponse.json(
-                { error: `Төлөв буруу. Боломжтой: ${UNIT_STATUSES.join(', ')}` },
-                { status: 400 },
-            );
-        }
-
-        const updateData: Record<string, unknown> = {};
-        for (const key of EDITABLE_UNIT_FIELDS) {
-            if (body[key] !== undefined) updateData[key] = body[key] === '' ? null : body[key];
-        }
-        if (Object.keys(updateData).length === 0) {
-            return NextResponse.json({ error: 'Засах талбар алга' }, { status: 400 });
-        }
-        updateData.updated_at = new Date().toISOString();
-
-        const supabase = supabaseAdmin();
-        const { data, error } = await supabase
-            .from('property_units')
-            .update(updateData)
-            .eq('id', id)
-            .eq('shop_id', authShop.id)
-            .select()
-            .single();
-
-        if (error) throw error;
-        if (!data) return NextResponse.json({ error: 'Нэгж олдсонгүй' }, { status: 404 });
-
-        return NextResponse.json({ unit: data, message: 'Нэгж шинэчлэгдлээ' });
-    } catch (error) {
-        logger.error('[Units API] PATCH error:', { error });
-        return NextResponse.json({ error: 'Нэгж засахад алдаа гарлаа' }, { status: 500 });
+    if (body.status !== undefined && !UNIT_STATUSES.includes(body.status)) {
+        return NextResponse.json(
+            { error: `Төлөв буруу. Боломжтой: ${UNIT_STATUSES.join(', ')}` },
+            { status: 400 },
+        );
     }
-}
+
+    const updateData: Record<string, unknown> = {};
+    for (const key of EDITABLE_UNIT_FIELDS) {
+        if (body[key] !== undefined) updateData[key] = body[key] === '' ? null : body[key];
+    }
+    if (Object.keys(updateData).length === 0) {
+        return NextResponse.json({ error: 'Засах талбар алга' }, { status: 400 });
+    }
+    updateData.updated_at = new Date().toISOString();
+
+    const supabase = supabaseAdmin();
+    const { data, error } = await supabase
+        .from('property_units')
+        .update(updateData)
+        .eq('id', id)
+        .eq('shop_id', authShop.id)
+        .select()
+        .single();
+
+    if (error) throw error;
+    if (!data) return NextResponse.json({ error: 'Нэгж олдсонгүй' }, { status: 404 });
+
+    return NextResponse.json({ unit: data, message: 'Нэгж шинэчлэгдлээ' });
+});
 
 // "01","02","B1","B2" → дугаар (B давхрууд сөрөг)
 function floorNum(floor: string | null): number {
