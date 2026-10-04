@@ -112,3 +112,16 @@ test.describe('Performance', () => {
         expect(responseTime).toBeLessThan(500);
     });
 });
+
+test.describe('Business API gates (real route handlers, nothing mocked)', () => {
+    // withRoute-тай болон гараар хамгаалсан route-ууд нэвтрээгүй хүсэлтэд JSON 401 буцаах ёстой —
+    // 2026-10-04-нд withRoute production bundle-д хоосон 500 буцааж байсныг browser spec-ууд
+    // (API-г mock-лодог) барьж чадаагүй.
+    for (const path of ['/api/dashboard/conversations', '/api/properties', '/api/dashboard/customer-health', '/api/dashboard/contracts']) {
+        test(`${path} answers 401 with a JSON error`, async ({ request }) => {
+            const response = await request.get(path);
+            expect(response.status()).toBe(401);
+            expect(await response.json()).toHaveProperty('error');
+        });
+    }
+});
