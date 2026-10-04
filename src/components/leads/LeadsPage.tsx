@@ -11,7 +11,7 @@ import { canAccessModuleDynamic } from '@/lib/rbac';
 import { formatRelativeDays } from '@/lib/utils/date';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
 import { useLeadsList, useLeadSummary, useLeadProjects, useManagers, useUpdateLead, type LeadRow } from '@/hooks/useLeads';
-import { LEAD_VIEWS, LEAD_STATUSES, STATUS_META, SOURCES, SOURCE_LABEL, sourceLabel, interestLabel, isAnonymousLead, leadDisplayName, type LeadView } from '@/lib/leads/labels';
+import { LEAD_VIEWS, LEAD_STATUSES, STATUS_META, SOURCES, SOURCE_LABEL, sourceLabel, interestLabel, isAnonymousLead, leadDisplayName, normalizeLeadName, type LeadView } from '@/lib/leads/labels';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/Sheet';
 import { Avatar, Pill, Skeleton } from '@/components/dashboard/v2/primitives';
 import { StatusPicker, ManagerPicker } from './pickers';
@@ -381,7 +381,7 @@ function MobileList({ leads, projectNames, loading, onOpen }: { leads: LeadRow[]
                 return (
                     <div key={l.id} className="flex min-h-20 items-center gap-3 border-b border-border px-4 py-3 last:border-b-0 active:bg-surface-2">
                         <button type="button" onClick={() => onOpen(l.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-                            <Avatar name={l.customer_name} className="h-8 w-8 text-[11px]" />
+                            <Avatar name={normalizeLeadName(l.customer_name)} className="h-8 w-8 text-[11px]" />
                             <span className="min-w-0 flex-1">
                                 <span className={cn('block truncate text-[14px] font-medium', isAnonymousLead(l) ? 'text-muted-foreground' : 'text-foreground')}>{leadDisplayName(l)}</span>
                                 {(Object.keys(projectNames).length > 1 || !l.project_id) && <span className="block truncate text-xs text-fg-2">{l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй'}</span>}

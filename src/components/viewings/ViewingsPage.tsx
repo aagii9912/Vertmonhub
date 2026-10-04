@@ -268,7 +268,7 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
 
                 {leadId && leadDetail?.lead ? (
                     <div className="flex items-center gap-3 rounded-md border border-border bg-surface-2/60 px-3 py-2">
-                        <Avatar name={leadDetail.lead.customer_name} className="h-7 w-7 text-[11px]" />
+                        <Avatar name={normalizeLeadName(leadDetail.lead.customer_name)} className="h-7 w-7 text-[11px]" />
                         <div className="min-w-0 flex-1">
                             <div className={cn('truncate text-[13px] font-medium', isAnonymousLead(leadDetail.lead) ? 'text-muted-foreground' : 'text-foreground')}>{leadDisplayName(leadDetail.lead)}</div>
                             <div className="mono-label truncate text-[12px] text-muted-foreground">{leadDetail.lead.customer_phone || '—'}</div>
