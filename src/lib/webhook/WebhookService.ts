@@ -65,6 +65,13 @@ export async function getShopByInstagramId(instagramId: string): Promise<Webhook
     return toWebhookShop(data);
 }
 
+/** Жагсаалтаас хасагдсан (soft delete) харилцагч дахин бичвэл Inbox, CRM-д буцааж гаргана. */
+async function restoreIfDeleted(customer: { id: string; deleted_at?: string | null }): Promise<void> {
+    if (!customer.deleted_at) return;
+    const { error } = await supabaseAdmin().from('customers').update({ deleted_at: null }).eq('id', customer.id);
+    if (error) logger.warn('[Webhook] could not restore a deleted customer', { customerId: customer.id, error: error.message });
+}
+
 /**
  * Get or create customer from Facebook sender ID
  */
@@ -83,6 +90,7 @@ export async function getOrCreateCustomer(
         .single();
 
     if (existingCustomer) {
+        await restoreIfDeleted(existingCustomer);
         return {
             id: existingCustomer.id,
             name: existingCustomer.name,
@@ -149,6 +157,7 @@ export async function getOrCreateInstagramCustomer(
         .maybeSingle();
 
     if (existingCustomer) {
+        await restoreIfDeleted(existingCustomer);
         return {
             id: existingCustomer.id,
             name: existingCustomer.name,

@@ -32,16 +32,19 @@ export async function GET(request: NextRequest) {
         // Fetch customer names separately
         const customerIds = [...new Set((conversations || []).map((c: any) => c.customer_id).filter(Boolean))];
         const { data: customers } = customerIds.length > 0
-            ? await supabase.from('customers').select('id, name').in('id', customerIds)
+            ? await supabase.from('customers').select('id, name, deleted_at').eq('shop_id', shopId).in('id', customerIds)
             : { data: [] };
 
         const customerNameMap = new Map((customers || []).map((c: any) => [c.id, c.name]));
+        // Устгасан харилцагчийн яриа Inbox-д харагдахгүй (дахин мессеж бичвэл webhook сэргээнэ).
+        const deletedCustomers = new Set((customers || []).filter((c: any) => c.deleted_at).map((c: any) => c.id));
 
         // Group messages by customer_id and get latest info
         const customerMap = new Map<string, any>();
 
         conversations?.forEach((chat: any) => {
             const customerId = chat.customer_id;
+            if (deletedCustomers.has(customerId)) return;
             if (!customerMap.has(customerId)) {
                 customerMap.set(customerId, {
                     id: customerId,

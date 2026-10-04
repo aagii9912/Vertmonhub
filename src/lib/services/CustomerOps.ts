@@ -1,5 +1,5 @@
 /**
- * Харилцагчийн үйлдлүүд — таг, AI түр зогсоох, DM хариу, нэгтгэх.
+ * Харилцагчийн үйлдлүүд — таг, DM хариу, нэгтгэх, устгах.
  * API route ба AI tool хоёулаа энд дамжина.
  */
 
@@ -40,6 +40,19 @@ export async function replyToCustomer(db: SupabaseClient, shopId: string, custom
     await sendTextMessage({ recipientId: customer.facebook_id, message, pageAccessToken: token });
     await db.from('chat_history').insert({ shop_id: shopId, customer_id: customerId, message: '', response: message, intent: 'human_reply' });
     return { sent: true, customerName: customer.name as string | null };
+}
+
+/**
+ * Харилцагчийг жагсаалтаас хасна (`deleted_at`, сэргээх боломжтой). Чатны түүх хадгалагдаж,
+ * харилцагч дахин мессеж бичвэл webhook сэргээнэ.
+ */
+export async function softDeleteCustomer(db: SupabaseClient, shopId: string, customerId: string) {
+    const { data, error } = await db.from('customers').update({ deleted_at: new Date().toISOString() })
+        .eq('id', customerId).eq('shop_id', shopId).is('deleted_at', null)
+        .select('id, name').maybeSingle();
+    if (error) return { error: error.message, status: 500 as const };
+    if (!data) return { error: 'Харилцагч олдсонгүй', status: 404 as const };
+    return { customer: data as { id: string; name: string | null } };
 }
 
 const CHILD_TABLES = ['leads', 'chat_history', 'property_viewings', 'property_contracts', 'customer_surveys', 'service_logs'];

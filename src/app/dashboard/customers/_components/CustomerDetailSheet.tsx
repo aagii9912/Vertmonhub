@@ -12,6 +12,7 @@ import {
     AlertCircle,
     Users,
     X,
+    Trash2,
 } from 'lucide-react';
 import {
     Sheet,
@@ -123,6 +124,10 @@ interface CustomerDetailSheetProps {
 
     formatDate: (date: string | null) => string;
     formatTime: (date: string | null) => string;
+
+    /** Устгах эрхтэй үед л өгөгдөнө (сэргээх боломжтой устгалт). */
+    onDelete?: () => void;
+    deleting?: boolean;
 }
 
 export function CustomerDetailSheet({
@@ -157,6 +162,8 @@ export function CustomerDetailSheet({
     onSubmitServiceLog,
     formatDate,
     formatTime,
+    onDelete,
+    deleting = false,
 }: CustomerDetailSheetProps) {
     return (
         <Sheet
@@ -207,6 +214,12 @@ export function CustomerDetailSheet({
                                     <Users className="w-4 h-4" />
                                     Нэгтгэх
                                 </Button>
+                                {onDelete && (
+                                    <Button onClick={onDelete} variant="ghost" size="sm" isLoading={deleting} aria-label="Харилцагчийг устгах">
+                                        {!deleting && <Trash2 className="w-4 h-4" />}
+                                        Устгах
+                                    </Button>
+                                )}
                             </>
                         )}
                         <button

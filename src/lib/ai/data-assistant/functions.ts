@@ -7,7 +7,8 @@ import { supabaseAdmin as createServiceClient } from '@/lib/supabase';
 import { formatShortDate, formatTime, ubDateStr, ubStartOfDay } from '@/lib/utils/date';
 import { logger } from '@/lib/utils/logger';
 import { fetchAllRows } from '@/lib/utils/pagination';
-import { normalizePhone } from '@/lib/utils/phone';
+import { normalizePhone, phoneIlikePattern } from '@/lib/utils/phone';
+import { softDeleteCustomer } from '@/lib/services/CustomerOps';
 import { buildBudgetOverview, monthlySpendSeries, spendByChannel, SPEND_CHANNELS } from '@/lib/marketing/budget';
 import { loadMarketingSpend } from '@/lib/marketing/spend-load';
 import { spendQuality, SPEND_BASIS } from '@/lib/marketing/performance';
@@ -1318,8 +1319,11 @@ export async function deleteContract(shopId: string, args: any, confirm = false)
 export async function deleteCustomer(shopId: string, args: any, confirm = false) {
     let query = supabaseAdmin.from('customers').select('id, name, phone').eq('shop_id', shopId).is('deleted_at', null);
     if (args.customer_id) query = query.eq('id', args.customer_id);
-    else if (args.phone) query = query.ilike('phone', `%${args.phone}%`);
-    else if (args.name) query = query.ilike('name', `%${args.name}%`);
+    else if (args.phone) {
+        const phonePattern = phoneIlikePattern(String(args.phone), 8);
+        if (!phonePattern) return { error: 'Харилцагчийн утасны дугаарыг бүтэн оруулна уу' };
+        query = query.ilike('phone', phonePattern);
+    } else if (args.name) query = query.ilike('name', `%${args.name}%`);
     else return { error: 'customer_id, name эсвэл phone шаардлагатай' };
 
     const { data: customers } = await query;
@@ -1332,8 +1336,8 @@ export async function deleteCustomer(shopId: string, args: any, confirm = false)
             { Нэр: c.name, Утас: c.phone || '-', Шалтгаан: args.reason || '-' });
     }
 
-    const { error } = await supabaseAdmin.from('customers').update({ deleted_at: new Date().toISOString() }).eq('id', c.id);
-    if (error) return { error: `Алдаа: ${error.message}` };
+    const deleted = await softDeleteCustomer(supabaseAdmin, shopId, c.id);
+    if ('error' in deleted) return { error: `Алдаа: ${deleted.error}` };
     return { success: true, message: `"${c.name}" харилцагчийг устгалаа (сэргээх боломжтой).`, customerId: c.id };
 }
 

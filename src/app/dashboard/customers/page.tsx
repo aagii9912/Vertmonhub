@@ -23,7 +23,9 @@ import {
     Star,
 } from 'lucide-react';
 import { formatShortDate, formatRelativeDays } from '@/lib/utils/date';
-import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { dashboardFetch, dashboardMutate } from '@/lib/api/dashboardFetch';
+import { useAuth } from '@/contexts/AuthContext';
+import { confirmToast } from '@/components/ui/Toast';
 import { CustomerDetailSheet } from './_components/CustomerDetailSheet';
 import { CreateCustomerModal } from './_components/CreateCustomerModal';
 import { HubSpotImportModal } from './_components/HubSpotImportModal';
@@ -123,6 +125,9 @@ export default function CustomersPage() {
     const [mergeMode, setMergeMode] = useState(false);
     const [mergeTargetId, setMergeTargetId] = useState('');
     const [merging, setMerging] = useState(false);
+    const [deleting, setDeleting] = useState(false);
+    const { user } = useAuth();
+    const canDeleteCustomers = !!user?.permissions?.canDelete && (user.role === 'super_admin' || user.permissions.modules.includes('customers'));
     const [mergeError, setMergeError] = useState<string | null>(null);
 
     const [editForm, setEditForm] = useState({
@@ -449,6 +454,30 @@ export default function CustomersPage() {
             setCreateError(err instanceof Error ? err.message : 'Бүртгэхэд алдаа гарлаа');
         } finally {
             setCreating(false);
+        }
+    }
+
+    async function deleteSelectedCustomer() {
+        if (!selectedCustomer) return;
+        const ok = await confirmToast({
+            title: `«${selectedCustomer.name || 'Харилцагч'}»-ийг жагсаалтаас хасах уу?`,
+            description: 'Чатны түүх хадгалагдана. Харилцагч дахин мессеж бичвэл буцаж гарч ирнэ.',
+            confirmLabel: 'Устгах',
+            destructive: true,
+        });
+        if (!ok) return;
+        setDeleting(true);
+        try {
+            await dashboardMutate(`/api/dashboard/customers/${selectedCustomer.id}`, 'DELETE');
+            setIsDetailOpen(false);
+            setSelectedCustomer(null);
+            toast.success('Харилцагч устгагдлаа');
+            fetchCustomers();
+            fetchHealth();
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Харилцагчийг устгаж чадсангүй');
+        } finally {
+            setDeleting(false);
         }
     }
 
@@ -810,6 +839,8 @@ export default function CustomersPage() {
                     onSubmitServiceLog={submitServiceLog}
                     formatDate={formatDate}
                     formatTime={formatRelativeDays}
+                    onDelete={canDeleteCustomers ? deleteSelectedCustomer : undefined}
+                    deleting={deleting}
                 />
             )}
         </div>
