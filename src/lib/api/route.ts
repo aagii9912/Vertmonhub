@@ -45,10 +45,12 @@ export function withRoute<P extends Record<string, string | string[]> = Record<s
     if (typeof options.module !== 'string' && options.access && options.access !== 'read') {
         throw new Error('withRoute: write/delete access needs a single module');
     }
-    // Next үргэлж NextRequest дамжуулна; тест болон дотоод дуудлага энгийн Request өгч болно.
+    // Next үргэлж NextRequest дамжуулна — түүнийг ХЭЗЭЭ Ч дахин үүсгэхгүй (production bundle-д класс
+    // өөр тул `instanceof` худал, дахин үүсгэвэл унадаг). Тест/дотоод дуудлагын энгийн Request-ийг л хувиргана.
     return async (input?: Request, context?: { params: Promise<P> }): Promise<Response> => {
-        const request = input instanceof NextRequest ? input : new NextRequest(input ?? 'http://localhost/');
+        let request = input as NextRequest;
         try {
+            if (!input || !('nextUrl' in input)) request = new NextRequest(input ?? 'http://localhost/');
             const denied = await gate(options);
             if (denied) return denied;
             const shop = await getUserShop();
@@ -56,7 +58,7 @@ export function withRoute<P extends Record<string, string | string[]> = Record<s
             return await handler({ request, shop, params: context ? await context.params : ({} as P) });
         } catch (error) {
             if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
-            logger.error(`[API] ${request.method} ${request.nextUrl.pathname} failed`, { error });
+            logger.error(`[API] ${request?.method} ${request?.nextUrl?.pathname ?? request?.url} failed`, { error });
             return NextResponse.json({ error: options.error ?? 'Хүсэлтийг гүйцэтгэж чадсангүй. Дахин оролдоно уу.' }, { status: 500 });
         }
     };
