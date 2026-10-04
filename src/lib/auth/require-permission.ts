@@ -1,11 +1,45 @@
 import { NextResponse } from 'next/server';
+import { cookies } from 'next/headers';
 import { getUserId, supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { fetchRolePermissions, type RolePermissions } from '@/lib/rbac';
 
+type ResolvedPermissions = { role: string; permissions: RolePermissions };
+
 /**
- * Хэрэглэгчийн дүр + RBAC эрхийг тодорхойлно (user_roles → admins fallback → fetchRolePermissions).
+ * Нэг хүсэлтэд эрхийг нэг л удаа уншина (requireModule ба төслийн хүрээ хоёулаа дууддаг).
+ * Түлхүүр нь тухайн хүсэлтийн cookie store; хүсэлт хооронд кэш байхгүй тул strict
+ * эрх (DB-ийн одоогийн grant) хэвээр. Хүсэлтээс гадуур (скрипт, тест) memo алгасна.
  */
-export async function resolvePermissions(): Promise<{ role: string; permissions: RolePermissions } | null> {
+const requestPermissions = new WeakMap<object, Promise<ResolvedPermissions | null>>();
+
+async function currentRequestKey(): Promise<object | null> {
+    try {
+        return await cookies();
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Хэрэглэгчийн дүр + RBAC эрхийг тодорхойлно (user_roles → fetchRolePermissions, strict).
+ */
+export async function resolvePermissions(): Promise<ResolvedPermissions | null> {
+    const key = await currentRequestKey();
+    const cached = key ? requestPermissions.get(key) : undefined;
+    if (cached) return cached;
+    const pending = loadPermissions();
+    if (key) requestPermissions.set(key, pending);
+    try {
+        const resolved = await pending;
+        if (!resolved && key) requestPermissions.delete(key);
+        return resolved;
+    } catch (error) {
+        if (key) requestPermissions.delete(key);
+        throw error;
+    }
+}
+
+async function loadPermissions(): Promise<ResolvedPermissions | null> {
     const userId = await getUserId();
     if (!userId) return null;
 
