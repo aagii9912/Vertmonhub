@@ -255,6 +255,40 @@ const readDefinitions: ToolDefinition[] = [
             manager: { type: SchemaType.STRING, description: 'Менежерийн нэр (өөрийн тайланд хоосон)' } } }
     },
     {
+        name: 'get_weekly_sales_report',
+        description: 'Лхагва гарагийн хурлын долоо хоногийн борлуулалтын тайлан (идэвхтэй төсөл): энэ долоо хоногийн гэрээ (өмнөх долоо хоногтой), сарын явц ба төлөвлөгөө, менежерээр, мөнгөн орлого (ERP-ийн хоёр snapshot-ын зөрүү), авлага, блокоор үлдэгдэл. Эх сурвалж: ERP экспорт, байхгүй бол CRM — sources-ийг хэл. plainText-ийг хуулахад бэлэн.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                meeting_date: { type: SchemaType.STRING, description: 'Хурлын Лхагва гараг YYYY-MM-DD; орхивол ойрын хурал (Лхагва бол өнөөдөр)' }
+            }
+        }
+    },
+    {
+        name: 'get_weekly_updates',
+        description: '«Хурлын бэлтгэл»-ийн ажлын шинэчлэлүүд (хийсэн ажил, саад, дараагийн алхам): тайлан харах эрхтэй бол багийнх, эс бөгөөс өөрийнх.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                meeting_date: { type: SchemaType.STRING, description: 'Хурлын Лхагва гараг YYYY-MM-DD; орхивол ойрын хурал' }
+            }
+        }
+    },
+    {
+        name: 'save_weekly_update',
+        description: 'Хэрэглэгчийн өөрийн долоо хоногийн шинэчлэлийг «Хурлын бэлтгэл»-д хадгална. Анхдагчаар одоогийн текст дээр нэмнэ; mode=replace бол тухайн хэсгийг солино. Баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                meeting_date: { type: SchemaType.STRING, description: 'Хурлын Лхагва гараг YYYY-MM-DD; орхивол ойрын хурал' },
+                achievements: { type: SchemaType.STRING, description: 'Хийсэн ажил' },
+                blockers: { type: SchemaType.STRING, description: 'Саад, бэрхшээл' },
+                next_steps: { type: SchemaType.STRING, description: 'Дараагийн алхам' },
+                mode: { type: SchemaType.STRING, enum: ['append', 'replace'], description: 'append (анхдагч) эсвэл replace' }
+            }
+        }
+    },
+    {
         name: 'get_manager_performance',
         description: 'Бүх менежерийн гүйцэтгэлийн харьцуулалт: гэрээний тоо, борлуулалт, цуглуулалт, үлдэгдэл, цуглуулалтын %, багийн жилийн зорилт/гүйцэтгэл. Лидерборд, «хэн хамгийн сайн» асуултад.',
         parameters: { type: SchemaType.OBJECT, properties: {} }

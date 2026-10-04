@@ -27,6 +27,7 @@ const ENTRIES = {
     get_dashboard_stats: { kind: 'read', module: 'dashboard', scoped: true },
     get_operations_report: { kind: 'read', module: 'reports', scoped: true },
     get_kpi_report: { kind: 'read', module: 'reports', scoped: true },
+    get_weekly_sales_report: { kind: 'read', module: 'reports' },
     get_manager_performance: { kind: 'read', module: 'reports' },
     get_export_link: { kind: 'read', module: 'reports' },
     get_sales_summary: { kind: 'read', module: 'reports' },
@@ -81,6 +82,8 @@ const ENTRIES = {
     mark_payment_paid: { kind: 'write', module: 'contracts', alwaysConfirm: true },
     delete_contract: { kind: 'delete', module: 'contracts' },
     // Хувийн ажил
+    get_weekly_updates: { kind: 'read', module: 'dashboard' },
+    save_weekly_update: { kind: 'write', module: 'dashboard' },
     list_my_tasks: { kind: 'read', module: 'dashboard' },
     create_task: { kind: 'write', module: 'dashboard', auto: 'Ажил нэмэх' },
     complete_task: { kind: 'write', module: 'dashboard', auto: 'Ажил дуусгах' },

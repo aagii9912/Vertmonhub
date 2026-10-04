@@ -30,7 +30,7 @@ import {
     createSocialPost, rememberFact,
 } from './functions';
 import { inviteUser, assignRole, createRole } from './admin-functions';
-import { getKpiReport, getManagerPerformanceTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, updateCustomerTool, listConversationsTool, getConversationTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
+import { getKpiReport, getManagerPerformanceTool, getWeeklySalesReportTool, getWeeklyUpdatesTool, saveWeeklyUpdateTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, updateCustomerTool, listConversationsTool, getConversationTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
 import { logCall, setFollowup, assignLeadManager, updateLeadTool, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
 
 /** AI Assistant-ийн RBAC эрхүүд (route-аас тооцоолж дамжуулна). */
@@ -142,6 +142,9 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     mark_payment_paid: ({ shopId, args, confirm }) => markPaymentPaid(shopId, args, confirm),
     get_kpi_report: ({ shopId, args, userId, perms, scope }) => getKpiReport(shopId, args, userId, perms, scope),
     get_manager_performance: ({ shopId }) => getManagerPerformanceTool(shopId),
+    get_weekly_sales_report: ({ shopId, args, perms }) => getWeeklySalesReportTool(shopId, args, perms),
+    get_weekly_updates: ({ shopId, args, userId, perms }) => getWeeklyUpdatesTool(shopId, args, userId, perms),
+    save_weekly_update: ({ shopId, args, confirm, userId }) => saveWeeklyUpdateTool(shopId, args, confirm, userId),
     get_export_link: ({ shopId, args }) => getExportLink(shopId, args),
     add_customer_tag: ({ shopId, args }) => customerTag(shopId, args, false),
     remove_customer_tag: ({ shopId, args }) => customerTag(shopId, args, true),

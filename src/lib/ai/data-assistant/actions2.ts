@@ -12,6 +12,10 @@ import { resolveSalesProjectScope, UNRESTRICTED_SALES_SCOPE, type SalesProjectSc
 import { computeKpiReport } from '@/lib/dashboard/kpi-report-build';
 import { formatKpiReportText } from '@/lib/dashboard/kpi-report';
 import { getManagerPerformance } from '@/lib/reports/manager-performance';
+import { loadWeeklySales } from '@/lib/dashboard/weekly-sales-load';
+import { formatWeeklySalesText, meetingDateSchema, nextMeetingDate } from '@/lib/dashboard/weekly-review';
+import { listWeeklyUpdates, saveWeeklyUpdate } from '@/lib/dashboard/weekly-updates';
+import { logger } from '@/lib/utils/logger';
 import { addCustomerTag, removeCustomerTag, replyToCustomer, mergeCustomers, updateCustomerInfo } from '@/lib/services/CustomerOps';
 import { UpdateCustomerSchema } from '@/lib/validations/schemas';
 import { loadCustomerChat, loadInboxConversations } from '@/lib/inbox/conversations';
@@ -51,6 +55,76 @@ export async function getExportLink(_shopId: string, args: Args) {
     const types: Record<string, string> = { properties: 'Байр/нэгж', leads: 'Лид', customers: 'Харилцагч', contracts: 'Гэрээ', manager: 'Менежерийн гүйцэтгэл' };
     const type = types[args.type] ? String(args.type) : 'leads';
     return { url: `/api/dashboard/export/excel?type=${type}`, label: `${types[type]} — Excel`, note: 'Хэрэглэгчид энэ линкийг markdown холбоос хэлбэрээр өг: [Excel татах](url). Файл шууд татагдана.' };
+}
+
+function meetingDateArg(value: unknown): { date: string } | { error: string } {
+    if (value === undefined || value === null || value === '') return { date: nextMeetingDate() };
+    const parsed = meetingDateSchema.safeParse(String(value));
+    return parsed.success ? { date: parsed.data } : { error: 'meeting_date нь хурлын Лхагва гараг (YYYY-MM-DD) байна' };
+}
+
+/** Лхагвын хурлын долоо хоногийн борлуулалтын тайлан — /api/dashboard/reports/weekly-sales-тэй нэг уншилт. */
+export async function getWeeklySalesReportTool(shopId: string, args: Args, perms: AssistantPerms) {
+    const meeting = meetingDateArg(args.meeting_date);
+    if ('error' in meeting) return meeting;
+    // Захиалагчийн нэрийг зөвхөн гэрээ харах эрхтэй хүнд (route-тэй ижил).
+    const canSeeCustomers = perms.role === 'super_admin' || !!perms.modules?.includes('contracts');
+    try {
+        const report = await loadWeeklySales(db(), { shopId, meetingDate: meeting.date, canSeeCustomers });
+        const { inventory, week, ...rest } = report;
+        return {
+            ...rest,
+            week: { ...week, lines: week.lines.slice(0, 40), linesShown: Math.min(40, week.lines.length) },
+            // Давхрын зураглалын нүднүүд хэт том тул блокийн нийлбэрээр өгнө (бүтэн нь хуудсан дээр).
+            inventory: inventory ? { source: inventory.source, blocks: inventory.blocks, floorTotals: inventory.floorMaps.map((map) => ({ block: map.block, ...map.totals })) } : null,
+            plainText: formatWeeklySalesText(report).join('\n').trim(),
+            url: '/dashboard/weekly',
+        };
+    } catch (error) {
+        logger.error('[AI weekly sales] read failed', { error });
+        return { error: 'Долоо хоногийн борлуулалтын тайланг гаргаж чадсангүй. Дахин оролдоно уу.' };
+    }
+}
+
+/** «Хурлын бэлтгэл»-ийн ажлын шинэчлэлүүд: reports эрхтэй бол баг, эс бөгөөс өөрийн. */
+export async function getWeeklyUpdatesTool(shopId: string, args: Args, userId: string, perms: AssistantPerms) {
+    const meeting = meetingDateArg(args.meeting_date);
+    if ('error' in meeting) return meeting;
+    const canViewTeam = perms.role === 'super_admin' || !!perms.modules?.includes('reports');
+    const result = await listWeeklyUpdates(db(), shopId, meeting.date, { userId, canViewTeam });
+    if ('error' in result) return { error: 'Ажлын шинэчлэлийг уншиж чадсангүй.' };
+    return { meetingDate: meeting.date, canViewTeam, updates: result.updates.map((u) => ({ author: u.author_name, achievements: u.achievements, blockers: u.blockers, next_steps: u.next_steps, updated_at: u.updated_at })) };
+}
+
+const UPDATE_SECTIONS = [['achievements', 'achievements', 'Хийсэн ажил'], ['blockers', 'blockers', 'Саад'], ['next_steps', 'nextSteps', 'Дараагийн алхам']] as const;
+
+/** Өөрийн долоо хоногийн шинэчлэлийг хадгална; анхдагчаар одоогийн текст дээр нэмнэ (mode=replace бол солино). */
+export async function saveWeeklyUpdateTool(shopId: string, args: Args, confirm: boolean, userId: string) {
+    const meeting = meetingDateArg(args.meeting_date);
+    if ('error' in meeting) return meeting;
+    const provided = UPDATE_SECTIONS.filter(([key]) => typeof args[key] === 'string' && args[key].trim());
+    if (!provided.length) return { error: 'achievements, blockers эсвэл next_steps-ийн дор хаяж нэгийг бичнэ үү' };
+    const current = await listWeeklyUpdates(db(), shopId, meeting.date, { userId, canViewTeam: false });
+    if ('error' in current) return { error: 'Одоогийн шинэчлэлийг уншиж чадсангүй.' };
+    const existing = current.updates.find((u) => u.user_id === userId);
+    const replace = args.mode === 'replace';
+    const input: Record<string, string> = { meetingDate: meeting.date };
+    for (const [key, field] of UPDATE_SECTIONS) {
+        const before = existing?.[key] ?? '';
+        const added = typeof args[key] === 'string' ? args[key].trim() : '';
+        input[field] = !added ? before : replace || !before ? added : `${before}\n${added}`;
+    }
+    if (!confirm) {
+        const preview: Record<string, unknown> = { 'Хурлын өдөр': meeting.date };
+        for (const [, field, label] of UPDATE_SECTIONS) if (input[field]) preview[label] = input[field];
+        const action: Record<string, unknown> = { meeting_date: meeting.date, mode: args.mode === 'replace' ? 'replace' : 'append' };
+        for (const [key] of provided) action[key] = args[key].trim();
+        return confirmNeeded('save_weekly_update', action, `Долоо хоногийн шинэчлэл (${meeting.date})`, preview);
+    }
+    const result = await saveWeeklyUpdate(db(), shopId, userId, input);
+    if ('invalid' in result) return { error: `${result.invalid} Хэсэг тус бүр 4000 хүртэл тэмдэгт.` };
+    if ('error' in result) return { error: 'Ажлын шинэчлэлийг хадгалж чадсангүй.' };
+    return { success: true, message: `${meeting.date}-ны хурлын шинэчлэлийг хадгаллаа.` };
 }
 
 /* ---------------- Харилцагч ---------------- */
