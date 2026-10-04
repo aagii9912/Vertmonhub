@@ -57,7 +57,13 @@ export interface ChannelMetricDef { key: string; label: string; kind: MetricKind
 export type ChannelMapping = Record<string, string>;
 /** Үзүүлэлтийн түлхүүр → тоо; Meta-д `currency` текст. */
 export type ChannelTotals = Record<string, number | string>;
-export interface BreakdownRow { kind: BreakdownKind; label: string; values: Record<string, number | null> }
+export interface BreakdownRow {
+    kind: BreakdownKind;
+    label: string;
+    values: Record<string, number | null>;
+    /** Meta: тухайн мөрийн үр дүнгийн төрөл (`MetaResultType`), `values.results`-ийн нэгж. */
+    tag?: string;
+}
 export type WarningCode =
     | 'invalid_number' | 'invalid_duration' | 'invalid_date' | 'invalid_hour' | 'invalid_phone' | 'out_of_period'
     | 'non_additive' | 'no_values' | 'total_mismatch' | 'total_ignored' | 'duplicate_total' | 'mixed_currency'
