@@ -4,7 +4,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 const logger = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }));
 vi.mock('@/lib/utils/logger', () => ({ logger }));
 
-import { MetaApiError, isRetriableMetaError, metaRead, metaUsage } from '../daily-spend';
+import {
+    MetaApiError, isMetaRateLimitError, isRetriableMetaError, metaDeadlinePassed, metaRead, metaStepSignal, metaTimeLeft, metaUsage,
+} from '../daily-spend';
 import { fetchAdAccountCampaigns } from '../marketing-api';
 
 const http = vi.fn();
@@ -85,7 +87,7 @@ it('retries a dropped connection but not an aborted request', async () => {
     const controller = new AbortController();
     controller.abort();
     http.mockRejectedValue(new DOMException('aborted', 'AbortError'));
-    const { error } = await settle(metaRead('act_1', 'secret-token', {}, controller.signal));
+    const { error } = await settle(metaRead('act_1', 'secret-token', {}, { signal: controller.signal }));
     expect(http).toHaveBeenCalledTimes(1);
     expect((error as Error).message).toMatch(/холболт тасарлаа/);
 });
@@ -95,6 +97,37 @@ it('classifies retriable statuses and codes', () => {
     expect(isRetriableMetaError(503, 190)).toBe(true);
     for (const code of [1, 2, 4, 17, 32, 613, 80000, 80014]) expect(isRetriableMetaError(400, code)).toBe(true);
     for (const code of [10, 100, 190, 200, 80015]) expect(isRetriableMetaError(400, code)).toBe(false);
+});
+
+it('can skip retries for loops that stop on their own, and classifies rate-limit errors', async () => {
+    http.mockResolvedValue(reply({ error: { code: 17, message: 'User request limit reached' } }, 400));
+    const { error } = await settle(metaRead('42', 'secret-token', { fields: 'id' }, { retry: false }));
+    expect(http).toHaveBeenCalledTimes(1);
+    expect(isMetaRateLimitError(error)).toBe(true);
+    for (const code of [4, 17, 32, 613, 80000, 80014]) expect(isMetaRateLimitError(new MetaApiError('x', { code, status: 400 }))).toBe(true);
+    expect(isMetaRateLimitError(new MetaApiError('x', { status: 429 }))).toBe(true);
+    // Түр алдаа (1, 2, 5xx) ба байнгын алдаа нь хурдны хязгаар биш.
+    for (const details of [{ code: 1 }, { code: 2 }, { status: 503 }, { code: 100 }, { code: 190 }, { code: 80015 }]) {
+        expect(isMetaRateLimitError(new MetaApiError('x', details))).toBe(false);
+    }
+    expect(isMetaRateLimitError(new Error('code 17'))).toBe(false);
+});
+
+it('stops waiting and retrying when the shared sync deadline aborts, and step signals honour it', async () => {
+    const controller = new AbortController();
+    http.mockImplementation(async () => { controller.abort(); return reply({ error: { code: 2 } }, 500); });
+    const { error } = await settle(metaRead('act_1', 'secret-token', {}, { signal: metaStepSignal(20000, { at: Date.now() + 60_000, signal: controller.signal }) }));
+    expect(http).toHaveBeenCalledTimes(1);
+    expect(error).toBeInstanceOf(MetaApiError);
+    const passed = new AbortController();
+    passed.abort();
+    expect(metaStepSignal(20000, { at: Date.now() + 60_000, signal: passed.signal }).aborted).toBe(true);
+    expect(metaStepSignal(20000).aborted).toBe(false);
+    expect(metaDeadlinePassed({ at: Date.now() + 60_000, signal: passed.signal })).toBe(true);
+    expect(metaDeadlinePassed({ at: Date.now() - 1, signal: new AbortController().signal })).toBe(true);
+    expect(metaDeadlinePassed(undefined)).toBe(false);
+    expect(metaTimeLeft(undefined)).toBe(Infinity);
+    expect(metaTimeLeft({ at: Date.now() + 5000, signal: passed.signal })).toBeLessThanOrEqual(5000);
 });
 
 it('pages ad account campaigns by rebuilding the trusted URL with the cursor', async () => {

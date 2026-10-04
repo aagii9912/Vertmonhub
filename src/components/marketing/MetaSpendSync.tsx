@@ -29,6 +29,7 @@ export function MetaSpendSync({ shopId, canWrite, from, to }: { shopId?: string;
         const result = url.searchParams.get('meta_ads');
         if (!result) return;
         if (result === 'connected') toast.success('Meta Ads холбогдлоо.');
+        else if (result === 'system_token') toast.info('Системийн хэрэглэгчийн токен идэвхтэй тул Meta Ads-ийг хэрэглэгчээр холбох шаардлагагүй. Зарын дансыг админ сонгоно.');
         else setOauthError(true);
         url.searchParams.delete('meta_ads');
         window.history.replaceState(null, '', url);
@@ -41,6 +42,7 @@ export function MetaSpendSync({ shopId, canWrite, from, to }: { shopId?: string;
             });
             toast.success(`${result.rows} өдрийн зардлын мөр шинэчлэгдлээ.${result.needsRate ? ' Төгрөгийн ханшаа оруулна уу.' : ''}`);
             if (result.insights && 'error' in result.insights) toast.error(`Дэлгэрэнгүй үр дүн: ${result.insights.error}`);
+            else if (result.insights?.partial) toast.warning(`Дэлгэрэнгүй үр дүн: ${result.insights.partial}`);
             else if (result.insights) toast.success(`${result.insights.rows} ad set-өдрийн үр дүн, ${result.insights.weeks.length} хурлын долоо хоногийн Meta тайлан шинэчлэгдлээ.`);
             setRate('');
         } catch (error) { toast.error(error instanceof Error ? error.message : 'Meta синк амжилтгүй'); }

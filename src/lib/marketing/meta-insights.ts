@@ -9,7 +9,9 @@
  *    cost_per_link_click, ctr_link, cost_per_landing_page_view.
  *  - Үр дүнгийн төрөл T бүрт results_T, spend_T (кампанит ажлын зорилгоор: тухайн кампанит
  *    ажлын бүх зардал, үр дүнгүй өдрүүд ч), cost_per_result_T. Ганц төрөлтэй бол results /
- *    cost_per_result (хуучин түлхүүр).
+ *    cost_per_result (хуучин түлхүүр). Синкийн өөр долоо хоногт хүргэлттэй боловч энэ долоо
+ *    хоногт хүргэлтгүй төрөлд spend_T = 0, results_T = 0 (өртөггүй) — CSV импорттой адил.
+ *  - Хамралт (data_to) нь зөвхөн дууссан өдрүүд: дансны өнөөдрийг тайланд оруулахгүй.
  *  - Задаргаа: кампанит ажил (төрөл бүрээр тусдаа мөр), зардлаар буурахаар, 100 мөр.
  *
  * Өдрийн reach-ийг хэзээ ч нэмэхгүй; Meta-аас татаж чадаагүй бол reach-гүй (таамаглахгүй).
@@ -17,14 +19,17 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
 import { metaAdsToken } from '@/lib/facebook/ads-auth';
-import { fetchMetaAccount } from '@/lib/facebook/daily-spend';
+import {
+    MetaApiError, fetchMetaAccount, metaDeadline, metaDeadlinePassed, metaTimeLeft, type MetaDeadline,
+} from '@/lib/facebook/daily-spend';
 import { fetchMetaAdsetInsights, fetchMetaPeriodReach, type MetaPeriodReach } from '@/lib/facebook/ads-insights';
 import { reviewWeekOf, reviewWeeksBetween, shiftReviewDate } from '@/lib/dashboard/weekly-review';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { logger } from '@/lib/utils/logger';
 import { CHANNEL_LIMITS, type BreakdownRow, type ChannelTotals, type ChannelWarning } from './channel-reports';
 import {
-    META_RESULT_DEFS, META_RESULT_TYPES, metaResultCost, metaResultCostKey, metaResultKey, metaResultSpendKey, type MetaResultType,
+    META_RESULT_DEFS, META_RESULT_TYPES, metaResultCost, metaResultCostKey, metaResultKey, metaResultSpendKey, presentMetaResultTypes,
+    type MetaResultType,
 } from './meta-results';
 import { dateSchema } from './performance';
 
@@ -49,6 +54,8 @@ export interface MetaInsightRow {
     result_source: string;
 }
 export interface MetaChannelReport { totals: ChannelTotals; breakdown: BreakdownRow[]; warnings: ChannelWarning[]; rowCount: number }
+/** Хурлын долоо хоног Улаанбаатарын цагаар (Лхагва–Мягмар). */
+export const MEETING_TIMEZONE = 'Asia/Ulaanbaatar';
 
 const round = (value: number, digits = 6) => { const f = 10 ** digits; return Math.round(value * f) / f; };
 const num = (value: unknown) => { const n = typeof value === 'number' ? value : Number(value); return Number.isFinite(n) ? n : 0; };
@@ -78,12 +85,16 @@ function dominantType(rows: readonly Row[]): MetaResultType | null {
 /**
  * Хадгалсан ad set × өдрийн мөрүүдээс нэг хугацааны (хурлын 7 хоног) `meta_ads` тайлан.
  * `reach` = тухайн хугацааны Meta-гийн давхардалгүй reach; null бол reach-ийг тооцохгүй.
+ * `knownTypes` = синкийн мэдэгдэх үр дүнгийн төрлүүд: энэ хугацаанд хүргэлтгүй бол 0-ээр бичнэ.
+ * `timezone` = зарын дансны цагийн бүс (Улаанбаатар биш бол мэдээллийн тэмдэглэл).
  */
 export function buildMetaChannelReport(input: {
     rows: readonly MetaInsightRow[];
     currency: string;
     reach: MetaPeriodReach | null;
     breakdownLimit?: number;
+    knownTypes?: Iterable<MetaResultType>;
+    timezone?: string;
 }): MetaChannelReport {
     const warnings: ChannelWarning[] = [];
     const info = (code: ChannelWarning['code'], message: string, level: ChannelWarning['level'] = 'info') => warnings.push({ code, level, message });
@@ -211,10 +222,23 @@ export function buildMetaChannelReport(input: {
         // Хуучин «Нэг үр дүнгийн өртөг» нь нэг үр дүнд (CSV-тэй адил); reach-ийн өртөг 1000 хүнд тул зөвхөн cost_per_result_reach-д.
         if (type !== 'reach' && typeof totals[metaResultCostKey(type)] === 'number') totals.cost_per_result = totals[metaResultCostKey(type)];
     }
+    // Синкийн өөр долоо хоногт (эсвэл өмнөх хурлын долоо хоногт) хүргэлттэй боловч энд хүргэлтгүй төрөл = 0
+    // (өртөггүй): CSV импортын адил «0 дуудлага» гарч, дараагийн долоо хоног 0-ээс харьцуулагдана. Хүргэлтгүй
+    // үед хүрсэн хүн яг 0 тул reach-д ч results_reach = 0. Хуучин results/cost_per_result зөвхөн хүргэлттэй төрлөөс.
+    const known = new Set(input.knownTypes ?? []);
+    for (const type of META_RESULT_TYPES) {
+        if (present.includes(type) || !known.has(type)) continue;
+        totals[metaResultSpendKey(type)] = 0;
+        totals[metaResultKey(type)] = 0;
+    }
     // Reach-ийг давхардалгүйгээр тусад нь авдаг тул зорилгоор тооцсон үр дүнд оруулахгүй.
     const approximate = rows.filter(r => r.source === 'goal' && r.type && r.type !== 'reach' && (r.results ?? 0) > 0).length;
     if (approximate) {
         info('field_ignored', `${approximate} мөрийн үр дүнг Meta-гийн «results» талбаргүйгээр ad set-ийн зорилгоор (optimization goal) тооцсон — Ads Manager-ийн Results-аас бага зэрэг зөрж болно.`);
+    }
+
+    if (input.timezone && input.timezone !== MEETING_TIMEZONE) {
+        info('out_of_period', `Meta өдрийг зарын дансны цагийн бүсээр (${input.timezone}) тоолдог, хурлын долоо хоног Улаанбаатарын цагаар — долоо хоногийн эхлэл, төгсгөл хэдэн цагаар зөрнө.`);
     }
 
     const limit = input.breakdownLimit ?? CHANNEL_LIMITS.breakdown;
@@ -244,11 +268,21 @@ export interface MetaInsightsStatus {
 }
 export interface MetaInsightsResult {
     rows: number; from: string; to: string; currency: string;
-    /** Тайлан бичсэн хурлын долоо хоногууд (`dataTo` < `to` бол тухайн долоо хоног дуусаагүй). */
+    /** Тайлан бичсэн хурлын долоо хоногууд, эрт → хожуу (`dataTo` < `to` бол тухайн долоо хоног дуусаагүй). */
     weeks: Array<{ from: string; to: string; dataTo: string }>;
     /** false = Meta `results` талбарыг татгалзсан; үр дүнг зорилгоор тооцсон. */
     resultFields: boolean;
+    /** Хугацаа дутсан тул зарим долоо хоногийн тайланг энэ удаа шинэчлээгүй (тайлбар). */
+    partial?: string;
 }
+
+/** Route нийт хугацааг дамжуулаагүй үеийн анхдагч хязгаар. */
+export const META_INSIGHTS_DEFAULT_BUDGET_MS = 150_000;
+/** Данс, ad set-ийн хуудаснууд, хадгалалтыг эхлүүлэхэд үлдсэн байх ёстой хугацаа. */
+export const META_INSIGHTS_MIN_MS = 20_000;
+/** Нэг долоо хоногийн давхардалгүй reach (2+ дуудлага) ба тайлан хадгалахад үлдсэн байх ёстой хугацаа. */
+export const META_INSIGHTS_WEEK_MS = 10_000;
+const OUT_OF_TIME = 'Синкийн хугацаа дууссан тул Meta дэлгэрэнгүй үр дүнг энэ удаа шинэчилсэнгүй. Дараагийн синк (6 цаг) нөхнө; гараар бол хугацааг багасгаж дахин оролдоно уу.';
 
 /**
  * Татах эхлэл: cron/анхдагч — сүүлийн 35 өдөр. Гараар сонгосон хугацаа хурлын долоо хоногийн дундаас
@@ -290,14 +324,25 @@ async function recordInsightsStatus(db: SupabaseClient, status: Partial<MetaInsi
 /**
  * Сүүлийн 35 өдрийг (эсвэл 93 хүртэл өдрийн сонгосон хугацааг, эхний хурлын долоо хоногийг бүтнээр)
  * дансны цагийн бүсээр татаж хадгална, дараа нь [from, to] дотор эхэлсэн хурлын долоо хоног бүрийн
- * `meta_ads` тайланг дахин бодно. Өнөөдрийг агуулсан долоо хоног дуусаагүй ч бичигдэнэ
- * (data_to = өнөөдөр); өнгөрсөн хугацааны дунд дуусах долоо хоногийг хагасаар бичихгүй.
- * Мөргүй долоо хоногийг зөвхөн цонхонд түүнээс өмнө дансны өгөгдөл байгаа бол 0-ээр бичнэ
- * (шинээр холбосон/сольсон дансны өмнөх долоо хоногийг 0 болгохгүй), файлын тайланг хэзээ ч
- * 0-ээр дарахгүй.
+ * `meta_ads` тайланг дахин бодно.
+ *
+ *  - Хамралт зөвхөн дууссан өдрүүд: `to` нь дансны өнөөдөр бол тайланд өчигдөр хүртэлх мөр орно
+ *    (data_to = min(долоо хоногийн төгсгөл, өчигдөр)); өнөөдрийн мөр `meta_ad_insights_daily`-д
+ *    хадгалагдана. Дууссан өдөргүй долоо хоногийг (Лхагва) бичихгүй. Өнгөрсөн хугацааны дунд дуусах
+ *    долоо хоногийг хагасаар бичихгүй.
+ *  - Мөргүй долоо хоногийг зөвхөн цонхонд түүнээс өмнө дансны өгөгдөл байгаа бол 0-ээр бичнэ
+ *    (шинээр холбосон/сольсон дансны өмнөх долоо хоногийг 0 болгохгүй), файлын тайланг хэзээ ч
+ *    0-ээр дарахгүй.
+ *  - Мэдэгдэх үр дүнгийн төрөл = бичих долоо хоногуудын тайлан болон эхний долоо хоногийн өмнөх
+ *    хурлын долоо хоногийн (хадгалсан мөр) тайлангийн төрлүүд; тухайн долоо хоногт хүргэлтгүй бол 0.
+ *  - `deadline` = route-ийн нийт хугацаа: Graph хүсэлтүүдийг таслаж, хугацаа дутвал шинэ долоо хоног
+ *    эхлүүлэхгүй (хамгийн сүүлийн долоо хоногоос эхэлнэ). Ямар ч үр дүнд `meta_insights_sync`-д бичнэ.
  */
-export async function syncMetaInsights(db: SupabaseClient, shopId: string, options: MetaInsightsOptions = {}): Promise<MetaInsightsResult> {
+export async function syncMetaInsights(
+    db: SupabaseClient, shopId: string, options: MetaInsightsOptions = {}, run: { deadline?: MetaDeadline } = {},
+): Promise<MetaInsightsResult> {
     const input = MetaInsightsInput.parse(options);
+    const deadline = run.deadline ?? metaDeadline(META_INSIGHTS_DEFAULT_BUDGET_MS);
     const started = new Date().toISOString();
     const { data: shop, error } = await db.from('shops').select('facebook_ad_account_id,meta_ads_user_access_token,meta_ads_user_token_expires_at').eq('id', shopId).single();
     if (error) throw new Error('Meta тохиргоог уншиж чадсангүй.');
@@ -305,36 +350,56 @@ export async function syncMetaInsights(db: SupabaseClient, shopId: string, optio
     if (!/^act_\d+$/.test(accountId)) throw new Error('Эхлээд Meta зарын дансаа сонгоно уу.');
     try {
         const token = metaAdsToken(shop);
-        const account = await fetchMetaAccount(accountId, token);
+        if (metaTimeLeft(deadline) < META_INSIGHTS_MIN_MS) throw new Error(OUT_OF_TIME);
+        const account = await fetchMetaAccount(accountId, token, deadline);
         const today = new Intl.DateTimeFormat('en-CA', { timeZone: account.timezone_name, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
         const to = input.to && input.to < today ? input.to : today;
         if (input.from && input.from > to) throw new Error('Ирээдүйн өдрийн өгөгдлийг татах боломжгүй.');
         const from = insightsStart(input.from, to);
-        const { rows, resultFields } = await fetchMetaAdsetInsights(account, token, from, to);
+        // Дансны өнөөдөр дуусаагүй: тайлангийн хамралт өчигдөр хүртэл (өнөөдрийн мөрийг хадгална).
+        const lastFinished = to < today ? to : shiftReviewDate(today, -1);
+        const { rows, resultFields } = await fetchMetaAdsetInsights(account, token, from, to, deadline);
         const { data: saved, error: saveError } = await db.rpc('save_meta_ad_insights', { p_shop: shopId, p_account: accountId, p_from: from, p_to: to, p_rows: rows });
         if (saveError) throw new Error('Meta дэлгэрэнгүй үр дүнг хадгалж чадсангүй. Шинэчлэл суулгасан эсэх, сонгосон дансаа шалгаад дахин оролдоно уу.');
 
         const candidates = reviewWeeksBetween(from, to)
             .filter(week => week.from >= from && (week.to <= to || to === today))
-            .map(week => ({ ...week, dataTo: week.to < to ? week.to : to }));
+            .map(week => ({ ...week, dataTo: week.to < lastFinished ? week.to : lastFinished }))
+            .filter(week => week.dataTo >= week.from);
         const weeks: MetaInsightsResult['weeks'] = [];
+        let partial: string | undefined;
         if (candidates.length) {
-            const stored = await readStoredRows(db, shopId, accountId, candidates[0].from, to);
+            const firstWeek = candidates[0].from;
+            const stored = await readStoredRows(db, shopId, accountId, shiftReviewDate(firstWeek, -7), to);
             const plans = candidates.map(week => ({ week, rows: stored.filter(r => r.day >= week.from && r.day <= week.dataTo) }));
             // Мөргүй долоо хоног: тэг үү, эсвэл энэ дансны өгөгдөл биш үү (өөр данс, файл) — ялгах боломжгүй.
             const firstDataDay = rows.reduce<string | null>((first, r) => first === null || r.day < first ? r.day : first, null);
             const emptyAfterData = plans.filter(p => !p.rows.length && firstDataDay !== null && firstDataDay < p.week.from).map(p => p.week);
             const fileWeeks = await fileReportWeeks(db, shopId, emptyAfterData);
             const zeroWeeks = new Set(emptyAfterData.filter(w => !fileWeeks.has(`${w.from}:${w.to}`)).map(w => w.from));
-            for (const { week, rows: weekRows } of plans) {
-                if (!weekRows.length && !zeroWeeks.has(week.from)) continue;
+            const writes = plans.filter(p => p.rows.length || zeroWeeks.has(p.week.from));
+            // Мэдэгдэх төрлүүд — мөрийн result_type-аас биш, бичих тайлангуудаас (үр дүнгүй өөр зорилготой ad set
+            // кампанит ажлынхаа төрөлд ордог) болон өмнөх хурлын долоо хоногоос (хүргэлт цонхноос гарсны дараах 0).
+            const knownTypes = new Set<MetaResultType>();
+            for (const list of [stored.filter(r => r.day < firstWeek), ...writes.map(p => p.rows)]) {
+                if (!list.length) continue;
+                for (const type of presentMetaResultTypes(buildMetaChannelReport({ rows: list, currency: account.currency, reach: null }).totals)) knownTypes.add(type);
+            }
+            // Хамгийн сүүлийн (хуралд хэрэгтэй) долоо хоногоос эхэлнэ: хугацаа дутвал хуучин долоо хоногууд өмнөх тайлангаараа үлдэнэ.
+            for (const { week, rows: weekRows } of [...writes].reverse()) {
+                if (metaTimeLeft(deadline) < META_INSIGHTS_WEEK_MS) break;
                 let reach: MetaPeriodReach | null = { account: 0, campaigns: new Map() };
                 if (weekRows.length) {
-                    try { reach = await fetchMetaPeriodReach(account, token, week.from, week.dataTo); }
-                    catch { reach = null; logger.warn('[Meta insights] долоо хоногийн reach татагдсангүй', { shopId, week: week.from }); }
+                    try { reach = await fetchMetaPeriodReach(account, token, week.from, week.dataTo, deadline); }
+                    catch {
+                        // Нийт хугацаа дууссан бол reach-гүй тайлан бичихгүй — дараагийн синк.
+                        if (metaDeadlinePassed(deadline)) break;
+                        reach = null;
+                        logger.warn('[Meta insights] долоо хоногийн reach татагдсангүй', { shopId, week: week.from });
+                    }
                 }
-                const report = buildMetaChannelReport({ rows: weekRows, currency: account.currency, reach });
-                // API өгөгдөл тухайн долоо хоногийн файл импортыг зориуд орлоно (баримт бичигт тайлбартай).
+                const report = buildMetaChannelReport({ rows: weekRows, currency: account.currency, reach, knownTypes, timezone: account.timezone_name });
+                // API тайлан тухайн долоо хоногийн файл импортыг орлоно; файлыг API долоо хоногт хориглоно (баримт бичигт).
                 const { error: reportError } = await db.from('marketing_channel_reports').upsert({
                     shop_id: shopId, source: 'meta_ads', period_from: week.from, period_to: week.to,
                     origin: 'api', data_from: week.from, data_to: week.dataTo,
@@ -344,16 +409,23 @@ export async function syncMetaInsights(db: SupabaseClient, shopId: string, optio
                 if (reportError) throw new Error('Хурлын долоо хоногийн Meta тайланг хадгалж чадсангүй. Сувгийн тайлангийн шинэчлэл суулгасан эсэхийг шалгана уу.');
                 weeks.push(week);
             }
+            if (weeks.length < writes.length) {
+                partial = `Синкийн хугацаа хүрэлцээгүй тул хурлын ${writes.length} долоо хоногийн ${weeks.length}-ийн Meta тайланг (хамгийн сүүлийнхээс) шинэчиллээ; өдрийн мөрүүд хадгалагдсан, үлдсэнийг дараагийн синк нөхнө.`;
+                logger.warn('[Meta insights] хугацаа дутаж долоо хоногийн тайлан дутуу шинэчлэгдсэн', { shopId, written: weeks.length, planned: writes.length });
+            }
+            weeks.sort((a, b) => a.from.localeCompare(b.from));
         }
         const rowCount = Number(saved) || 0;
         await recordInsightsStatus(db, {
             shop_id: shopId, account_id: accountId, last_attempt_at: started, last_success_at: new Date().toISOString(),
-            last_from: from, last_to: to, last_error: null, row_count: rowCount, weeks: weeks.length, result_source: resultFields ? 'results' : 'goal',
+            last_from: from, last_to: to, last_error: partial ?? null, row_count: rowCount, weeks: weeks.length, result_source: resultFields ? 'results' : 'goal',
         });
-        return { rows: rowCount, from, to, currency: account.currency, weeks, resultFields };
+        return { rows: rowCount, from, to, currency: account.currency, weeks, resultFields, ...(partial ? { partial } : {}) };
     } catch (failure) {
-        const message = failure instanceof Error ? failure.message : 'Meta дэлгэрэнгүй синк амжилтгүй боллоо.';
+        // Нийт хугацаа дуусч Graph хүсэлт таслагдсан бол холболтын алдаа биш, хугацааны мессеж.
+        const outOfTime = failure instanceof MetaApiError && metaDeadlinePassed(deadline);
+        const message = outOfTime ? OUT_OF_TIME : failure instanceof Error ? failure.message : 'Meta дэлгэрэнгүй синк амжилтгүй боллоо.';
         await recordInsightsStatus(db, { shop_id: shopId, account_id: accountId, last_attempt_at: started, last_error: message.slice(0, 500) });
-        throw failure;
+        throw outOfTime ? new Error(OUT_OF_TIME) : failure;
     }
 }

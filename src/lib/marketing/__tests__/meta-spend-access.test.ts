@@ -30,12 +30,22 @@ it('takes shop/account from the server and validates the range/rate', async () =
     expect((await POST(request({ shopId: 'hostile', accountId: 'act_999', mntPerUnit: -1 }))).status).toBe(400);
     expect(mocks.sync).not.toHaveBeenCalled();
     expect((await POST(request({ shopId: 'hostile', accountId: 'act_999' }))).status).toBe(200);
-    expect(mocks.sync).toHaveBeenCalledWith(expect.anything(), 'allowed', {});
+    expect(mocks.sync).toHaveBeenCalledWith(expect.anything(), 'allowed', {}, expect.objectContaining({ at: expect.any(Number) }));
+});
+it('gives the spend and detailed steps one shared deadline inside the route\'s maxDuration', async () => {
+    const before = Date.now();
+    await POST(request({ from: '2026-09-01', to: '2026-09-30' }));
+    const deadline = mocks.sync.mock.calls[0][3];
+    expect(deadline.signal).toBeInstanceOf(AbortSignal);
+    // maxDuration 180 сек — 25 сек аюулгүйн зай (Vercel зогсоохоос өмнө төлөвөө бичнэ).
+    expect(deadline.at - before).toBeGreaterThan(150_000);
+    expect(deadline.at - Date.now()).toBeLessThanOrEqual(155_000);
+    expect(mocks.insights).toHaveBeenCalledWith(expect.anything(), 'allowed', { from: '2026-09-01', to: '2026-09-30' }, { deadline });
 });
 it('runs the detailed insights sync as a second step over the same range and reports its failure separately', async () => {
     const response = await POST(request({ from: '2026-09-01', to: '2026-09-30' }));
     expect(response.status).toBe(200);
-    expect(mocks.insights).toHaveBeenCalledWith(expect.anything(), 'allowed', { from: '2026-09-01', to: '2026-09-30' });
+    expect(mocks.insights).toHaveBeenCalledWith(expect.anything(), 'allowed', { from: '2026-09-01', to: '2026-09-30' }, { deadline: expect.objectContaining({ at: expect.any(Number) }) });
     expect(await response.json()).toMatchObject({ success: true, rows: 1, insights: { rows: 12, weeks: [{ from: '2026-09-30' }] } });
 
     mocks.insights.mockRejectedValueOnce(new Error('Meta дэлгэрэнгүй үр дүнг хадгалж чадсангүй.'));

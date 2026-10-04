@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
@@ -83,7 +83,9 @@ it('accepts only the same user, shop and OAuth state, then stores the encrypted 
     expect(mocks.read).toHaveBeenCalledWith('debug_token', 'new-app|new-secret', { input_token: 'short' });
     expect(mocks.read).toHaveBeenCalledWith('me/permissions', 'long');
     const saved = mocks.update.mock.calls[0][0];
-    expect(saved).toMatchObject({ meta_ads_user_access_token: 'enc:v1:stored', facebook_ad_account_id: null });
+    // Данс сонгоогүй тул дансны баганад хүрэхгүй.
+    expect(saved).toMatchObject({ meta_ads_user_access_token: 'enc:v1:stored' });
+    expect('facebook_ad_account_id' in saved).toBe(false);
     expect(Date.parse(saved.meta_ads_user_token_expires_at)).toBeGreaterThan(Date.now());
     expect(mocks.encrypt).toHaveBeenCalledWith('long');
 
@@ -121,6 +123,53 @@ it('records a system-user expiry when Meta reports one and resets an account the
     expect((await callback(request())).headers.get('location')).toContain('meta_ads=connected');
     expect(mocks.update.mock.calls[0][0]).toEqual({
         meta_ads_user_access_token: 'enc:v1:stored', meta_ads_user_token_expires_at: new Date(expires * 1000).toISOString(), facebook_ad_account_id: null,
+    });
+});
+
+it('keeps the selected ad account when the new user token\'s account listing fails (only a successful listing may reset it)', async () => {
+    const { request } = await oauth();
+    mocks.selected.mockReturnValue('act_222');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(graphResponse({ access_token: 'short' }))
+        .mockResolvedValueOnce(graphResponse({ access_token: 'long', expires_in: 3600 })));
+    graph();
+    const listing = mocks.read.getMockImplementation()!;
+    mocks.read.mockImplementation(async (path: string, ...rest: unknown[]) => {
+        if (path === 'me/adaccounts') throw new Error('Meta зардал татах алдаа (HTTP 400, code 17). Дахин оролдоно уу.');
+        return listing(path, ...rest);
+    });
+    expect((await callback(request())).headers.get('location')).toContain('meta_ads=connected');
+    expect(mocks.read).toHaveBeenCalledWith('me/adaccounts', 'long', expect.anything());
+    const saved = mocks.update.mock.calls[0][0];
+    expect(saved).toMatchObject({ meta_ads_user_access_token: 'enc:v1:stored' });
+    expect('facebook_ad_account_id' in saved).toBe(false);
+});
+
+describe('with META_ADS_SYSTEM_TOKEN set', () => {
+    beforeEach(() => { vi.stubEnv('META_ADS_SYSTEM_TOKEN', 'system-env-token'); });
+
+    it('refuses to start a user OAuth connection for a marketing writer (409, no state cookie)', async () => {
+        const response = await start(connection());
+        expect(response.status).toBe(409);
+        expect(await response.json()).toEqual({ error: 'Системийн хэрэглэгчийн токен идэвхтэй тул Meta Ads-ийг хэрэглэгчээр холбох шаардлагагүй. Зарын дансыг админ сонгоно.' });
+        expect(response.cookies.get('meta_ads_oauth')).toBeUndefined();
+        // Эрхийн шалгалт эхэлж хийгдэнэ.
+        expect(mocks.permission).toHaveBeenCalledWith('marketing-roi');
+    });
+
+    it('stops a callback with a state cookie issued before the system token was set: no token exchange, no write', async () => {
+        vi.stubEnv('META_ADS_SYSTEM_TOKEN', '');
+        const { request } = await oauth();
+        vi.stubEnv('META_ADS_SYSTEM_TOKEN', 'system-env-token');
+        mocks.selected.mockReturnValue('act_222');
+        const http = vi.fn();
+        vi.stubGlobal('fetch', http);
+        const response = await callback(request());
+        expect(response.headers.get('location')).toContain('meta_ads=system_token');
+        expect(response.headers.get('set-cookie')).toMatch(/meta_ads_oauth=;/);
+        expect(http).not.toHaveBeenCalled();
+        expect(mocks.read).not.toHaveBeenCalled();
+        expect(mocks.encrypt).not.toHaveBeenCalled();
+        expect(mocks.update).not.toHaveBeenCalled();
     });
 });
 

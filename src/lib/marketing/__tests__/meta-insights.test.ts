@@ -4,10 +4,12 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 const mocks = vi.hoisted(() => ({ account: vi.fn(), adsets: vi.fn(), reach: vi.fn() }));
 vi.mock('@/lib/facebook/ads-auth', () => ({ metaAdsToken: () => 'ads-token' }));
-vi.mock('@/lib/facebook/daily-spend', () => ({ fetchMetaAccount: mocks.account }));
+// Хугацааны туслахууд, MetaApiError жинхэнэ; зөвхөн Meta-д хандах функцийг орлуулна.
+vi.mock('@/lib/facebook/daily-spend', async original => ({ ...await original<typeof import('@/lib/facebook/daily-spend')>(), fetchMetaAccount: mocks.account }));
 vi.mock('@/lib/facebook/ads-insights', () => ({ fetchMetaAdsetInsights: mocks.adsets, fetchMetaPeriodReach: mocks.reach }));
 vi.mock('@/lib/utils/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 
+import { MetaApiError, type MetaDeadline } from '@/lib/facebook/daily-spend';
 import { buildMetaChannelReport, syncMetaInsights, type MetaInsightRow } from '../meta-insights';
 
 const row = (patch: Partial<MetaInsightRow>): MetaInsightRow => ({
@@ -119,6 +121,34 @@ it('reports spend without a count for result types Meta did not count, truncates
     });
 });
 
+it('zero-fills result types known to the sync but not delivered this week (reach included), without a cost or legacy key', () => {
+    // C1 «Дуудлага» (A2 постын оролцооны үр дүнгүй ad set нь дуудлагад): post_engagement нь энэ долоо хоногт хүргэлтгүй төрөл.
+    const report = buildMetaChannelReport({
+        rows: fixture.slice(0, 3), currency: 'USD', reach: { account: 1500, campaigns: new Map([['11', 1500]]) },
+        knownTypes: ['calls', 'post_engagement', 'reach', 'thruplay'],
+    });
+    expect(report.totals).toMatchObject({
+        spend_calls: 17, results_calls: 3, cost_per_result_calls: 5.67,
+        // Хуучин түлхүүр зөвхөн хүргэлттэй төрлөөс.
+        results: 3, cost_per_result: 5.67,
+        spend_post_engagement: 0, results_post_engagement: 0, spend_reach: 0, results_reach: 0, spend_thruplay: 0, results_thruplay: 0,
+    });
+    for (const type of ['post_engagement', 'reach', 'thruplay']) expect(report.totals).not.toHaveProperty(`cost_per_result_${type}`);
+    // Тайлангийн төрлөөр биш бол нөлөөлөхгүй; хоосон долоо хоногт зөвхөн мэдэгдэх төрлүүд 0.
+    expect(buildMetaChannelReport({ rows: fixture.slice(0, 3), currency: 'USD', reach: null }).totals).not.toHaveProperty('spend_post_engagement');
+    expect(buildMetaChannelReport({ rows: [], currency: 'USD', reach: { account: 0, campaigns: new Map() }, knownTypes: new Set(['calls'] as const) }).totals).toEqual({
+        spend: 0, currency: 'USD', impressions: 0, link_clicks: 0, clicks_all: 0, landing_page_views: 0, reach: 0, spend_calls: 0, results_calls: 0,
+    });
+});
+
+it('notes when the ad account counts days in a timezone other than Ulaanbaatar', () => {
+    const reach = { account: 0, campaigns: new Map<string, number>() };
+    expect(buildMetaChannelReport({ rows: [], currency: 'USD', reach, timezone: 'America/Los_Angeles' }).warnings).toEqual([
+        expect.objectContaining({ code: 'out_of_period', level: 'info', message: expect.stringContaining('America/Los_Angeles') }),
+    ]);
+    expect(buildMetaChannelReport({ rows: [], currency: 'USD', reach, timezone: 'Asia/Ulaanbaatar' }).warnings).toEqual([]);
+});
+
 // ---------------------------------------------------------------------------
 // syncMetaInsights: хадгалах → долоо хоног бүрийн тайлан → төлөв
 // ---------------------------------------------------------------------------
@@ -132,10 +162,16 @@ function database(stored: MetaInsightRow[], options: {
     const rpc = vi.fn(async (_name: string, args: { p_rows: unknown[] }) => options.saveError ? { data: null, error: { message: 'x' } } : { data: args.p_rows.length, error: null });
     const from = (table: string) => {
         const q: Record<string, unknown> = {};
+        const range = { gte: '', lte: '9999-12-31' };
         for (const method of ['select', 'order']) q[method] = () => q;
-        for (const method of ['eq', 'gte', 'lte']) q[method] = (column: string, value: unknown) => { filters.push([table, `${method}:${column}`, value]); return q; };
+        for (const method of ['eq', 'gte', 'lte']) q[method] = (column: string, value: unknown) => {
+            filters.push([table, `${method}:${column}`, value]);
+            if (column === 'day' && (method === 'gte' || method === 'lte')) range[method] = String(value);
+            return q;
+        };
         q.single = async () => ({ data: { facebook_ad_account_id: '123', meta_ads_user_access_token: null, meta_ads_user_token_expires_at: null }, error: null });
-        q.range = async () => options.readError ? { data: null, error: { message: 'canceling statement due to statement timeout' } } : { data: stored, error: null };
+        q.range = async () => options.readError ? { data: null, error: { message: 'canceling statement due to statement timeout' } }
+            : { data: stored.filter(r => r.day >= range.gte && r.day <= range.lte), error: null };
         q.in = async (column: string, value: unknown) => { filters.push([table, `in:${column}`, value]); return { data: options.existing ?? [], error: null }; };
         q.upsert = async (value: Record<string, unknown>, opts: { onConflict?: string }) => {
             upserts.push({ table, value, onConflict: opts?.onConflict });
@@ -143,10 +179,14 @@ function database(stored: MetaInsightRow[], options: {
         };
         return q;
     };
-    return { db: { from, rpc } as unknown as SupabaseClient, rpc, upserts, filters };
+    const reports = () => upserts.filter(u => u.table === 'marketing_channel_reports').map(u => u.value as Record<string, unknown> & { totals: Record<string, unknown> });
+    const week = (periodFrom: string) => reports().find(r => r.period_from === periodFrom)!;
+    return { db: { from, rpc } as unknown as SupabaseClient, rpc, upserts, filters, reports, week };
 }
 const account = { id: 'act_123', currency: 'USD', timezone_name: 'Asia/Ulaanbaatar' };
 const apiRow = { day: '2026-09-03', adset_id: '101' };
+const anyDeadline = expect.objectContaining({ at: expect.any(Number), signal: expect.any(AbortSignal) });
+const budget = (ms: number, signal = new AbortController().signal): MetaDeadline => ({ at: Date.now() + ms, signal });
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -158,68 +198,143 @@ beforeEach(() => {
 });
 afterEach(() => vi.useRealTimers());
 
-it('saves the 35-day window and rewrites every meeting week inside it, including the current partial week', async () => {
-    const stored = [row({ day: '2026-09-03', spend: 5, impressions: 100, result_type: 'calls', results: 1 }), row({ day: '2026-10-05', spend: 2, impressions: 50, result_type: 'calls', results: 1 })];
-    const { db, rpc, upserts, filters } = database(stored);
+it('saves the 35-day window with today and rewrites every meeting week from finished days only, newest first', async () => {
+    const stored = [
+        row({ day: '2026-09-03', spend: 5, impressions: 100, result_type: 'calls', results: 1 }),
+        row({ day: '2026-10-04', spend: 2, impressions: 50, result_type: 'calls', results: 1 }),
+        // Дансны өнөөдөр (дуусаагүй өдөр): хадгалагдана, тайланд орохгүй.
+        row({ day: '2026-10-05', spend: 7, impressions: 70, result_type: 'calls', results: 3 }),
+    ];
+    const { db, rpc, upserts, filters, reports, week } = database(stored);
     const result = await syncMetaInsights(db, 'shop-1');
 
-    expect(mocks.adsets).toHaveBeenCalledWith(account, 'ads-token', '2026-09-01', '2026-10-05');
+    expect(mocks.account).toHaveBeenCalledWith('act_123', 'ads-token', anyDeadline);
+    expect(mocks.adsets).toHaveBeenCalledWith(account, 'ads-token', '2026-09-01', '2026-10-05', anyDeadline);
     expect(rpc).toHaveBeenCalledWith('save_meta_ad_insights', { p_shop: 'shop-1', p_account: 'act_123', p_from: '2026-09-01', p_to: '2026-10-05', p_rows: [apiRow] });
-    // 2026-08-26-нд эхэлсэн долоо хоног [from, to]-оос өмнө эхэлсэн тул алгасна.
+    // 2026-08-26-нд эхэлсэн долоо хоног [from, to]-оос өмнө эхэлсэн тул бичихгүй (зөвхөн төрлийг нь уншина).
     expect(result.weeks).toEqual([
         { from: '2026-09-02', to: '2026-09-08', dataTo: '2026-09-08' }, { from: '2026-09-09', to: '2026-09-15', dataTo: '2026-09-15' },
         { from: '2026-09-16', to: '2026-09-22', dataTo: '2026-09-22' }, { from: '2026-09-23', to: '2026-09-29', dataTo: '2026-09-29' },
-        { from: '2026-09-30', to: '2026-10-06', dataTo: '2026-10-05' },
+        { from: '2026-09-30', to: '2026-10-06', dataTo: '2026-10-04' },
     ]);
-    expect(filters).toEqual(expect.arrayContaining([['meta_ad_insights_daily', 'eq:shop_id', 'shop-1'], ['meta_ad_insights_daily', 'eq:account_id', 'act_123'], ['meta_ad_insights_daily', 'gte:day', '2026-09-02']]));
-    // Давхардалгүй reach-ийг зөвхөн өгөгдөлтэй долоо хоногт асууна.
-    expect(mocks.reach.mock.calls.map(call => [call[2], call[3]])).toEqual([['2026-09-02', '2026-09-08'], ['2026-09-30', '2026-10-05']]);
+    expect(result).not.toHaveProperty('partial');
+    expect(filters).toEqual(expect.arrayContaining([
+        ['meta_ad_insights_daily', 'eq:shop_id', 'shop-1'], ['meta_ad_insights_daily', 'eq:account_id', 'act_123'],
+        ['meta_ad_insights_daily', 'gte:day', '2026-08-26'], ['meta_ad_insights_daily', 'lte:day', '2026-10-05'],
+    ]));
+    // Давхардалгүй reach-ийг зөвхөн өгөгдөлтэй долоо хоногт, дууссан өдрүүдээр асууна.
+    expect(mocks.reach.mock.calls.map(call => [call[2], call[3]])).toEqual([['2026-09-30', '2026-10-04'], ['2026-09-02', '2026-09-08']]);
+    expect(mocks.reach.mock.calls.every(call => call[4] === mocks.adsets.mock.calls[0][4])).toBe(true);
 
-    const reports = upserts.filter(u => u.table === 'marketing_channel_reports');
-    expect(reports).toHaveLength(5);
-    expect(reports.every(r => r.onConflict === 'shop_id,source,period_from,period_to')).toBe(true);
-    expect(reports[0].value).toMatchObject({
+    expect(reports().map(r => r.period_from)).toEqual(['2026-09-30', '2026-09-23', '2026-09-16', '2026-09-09', '2026-09-02']);
+    expect(upserts.filter(u => u.table === 'marketing_channel_reports').every(r => r.onConflict === 'shop_id,source,period_from,period_to')).toBe(true);
+    expect(week('2026-09-02')).toMatchObject({
         shop_id: 'shop-1', source: 'meta_ads', period_from: '2026-09-02', period_to: '2026-09-08', origin: 'api', data_from: '2026-09-02', data_to: '2026-09-08',
         file_name: null, content_hash: null, mapping: {}, row_count: 1, totals: { spend: 5, results_calls: 1, reach: 100 },
     });
-    expect(reports[1].value).toMatchObject({ period_from: '2026-09-09', row_count: 0, totals: { spend: 0, reach: 0 } });
-    expect(reports[4].value).toMatchObject({ period_from: '2026-09-30', period_to: '2026-10-06', data_to: '2026-10-05', totals: { spend: 2 } });
+    // Хүргэлтгүй долоо хоног: синкийн мэдэгдэх төрөл (дуудлага) 0, өртөггүй.
+    expect(week('2026-09-09')).toMatchObject({ row_count: 0, totals: { spend: 0, reach: 0, spend_calls: 0, results_calls: 0 } });
+    expect(week('2026-09-09').totals).not.toHaveProperty('cost_per_result_calls');
+    expect(week('2026-09-30')).toMatchObject({ period_to: '2026-10-06', data_to: '2026-10-04', row_count: 1, totals: { spend: 2, results_calls: 1 } });
     expect(upserts.at(-1)).toMatchObject({ table: 'meta_insights_sync', value: { shop_id: 'shop-1', account_id: 'act_123', last_error: null, row_count: 1, weeks: 5, result_source: 'results', last_from: '2026-09-01', last_to: '2026-10-05' } });
 });
 
+it('zero-fills types delivered in the window or in the meeting week before it, taking the types from the built reports', async () => {
+    const stored = [
+        // Өмнөх хурлын долоо хоног (08-26 – 09-01): ThruPlay — дахин бичихгүй, гэхдээ төрөл нь мэдэгдэнэ.
+        row({ day: '2026-08-28', campaign_id: '90', campaign_name: 'Видео', adset_id: '901', spend: 3, impressions: 300, result_type: 'thruplay', results: 50 }),
+        row({ day: '2026-09-03', spend: 5, impressions: 100, result_type: 'calls', results: 2 }),
+        // Дуудлагын кампанит ажлын үр дүнгүй өөр зорилготой ad set: мөрийн result_type нь тусдаа төрөл болохгүй.
+        row({ day: '2026-09-04', adset_id: '102', spend: 1, impressions: 10, result_type: 'post_engagement', results: 0, result_source: 'goal' }),
+        row({ day: '2026-09-10', campaign_id: '22', campaign_name: 'Пост', adset_id: '201', spend: 4, impressions: 400, result_type: 'post_interaction', results: 8 }),
+    ];
+    const { db, week, reports } = database(stored);
+    await syncMetaInsights(db, 'shop-1');
+    expect(reports().some(r => r.period_from === '2026-08-26')).toBe(false);
+    expect(week('2026-09-02').totals).toMatchObject({
+        spend_calls: 6, results_calls: 2, results: 2, cost_per_result: 3,
+        spend_post_interaction: 0, results_post_interaction: 0, spend_thruplay: 0, results_thruplay: 0,
+    });
+    for (const key of ['spend_post_engagement', 'results_post_engagement', 'cost_per_result_post_interaction', 'cost_per_result_thruplay']) {
+        expect(week('2026-09-02').totals).not.toHaveProperty(key);
+    }
+    expect(week('2026-09-09').totals).toMatchObject({
+        spend_post_interaction: 4, results_post_interaction: 8, results: 8, cost_per_result: 0.5, spend_calls: 0, results_calls: 0, spend_thruplay: 0, results_thruplay: 0,
+    });
+    for (const zero of ['2026-09-16', '2026-09-23', '2026-09-30']) {
+        expect(week(zero)).toMatchObject({ row_count: 0, totals: { spend: 0, spend_calls: 0, results_calls: 0, spend_post_interaction: 0, results_post_interaction: 0, spend_thruplay: 0, results_thruplay: 0 } });
+        expect(week(zero).totals).not.toHaveProperty('results');
+    }
+});
+
 it('does not overwrite a past week with a half week when a manual range ends mid-week', async () => {
-    const { db, upserts } = database([row({ day: '2026-09-03', spend: 1, impressions: 10 })]);
+    const { db, reports } = database([row({ day: '2026-09-03', spend: 1, impressions: 10 })]);
     const result = await syncMetaInsights(db, 'shop-1', { from: '2026-09-02', to: '2026-09-20' });
-    expect(mocks.adsets).toHaveBeenCalledWith(account, 'ads-token', '2026-09-02', '2026-09-20');
+    expect(mocks.adsets).toHaveBeenCalledWith(account, 'ads-token', '2026-09-02', '2026-09-20', anyDeadline);
     expect(result.weeks.map(w => w.from)).toEqual(['2026-09-02', '2026-09-09']);
-    expect(upserts.filter(u => u.table === 'marketing_channel_reports')).toHaveLength(2);
+    expect(reports()).toHaveLength(2);
 });
 
 it('fetches the whole meeting week when a manual range starts mid-week (the page\'s month range), within 93 days', async () => {
-    const { db, upserts } = database([row({ day: '2026-10-01', spend: 3, impressions: 30 })]);
+    const { db, reports } = database([row({ day: '2026-10-01', spend: 3, impressions: 30 })]);
     mocks.adsets.mockResolvedValue({ rows: [{ day: '2026-10-01', adset_id: '101' }], resultFields: true });
     const result = await syncMetaInsights(db, 'shop-1', { from: '2026-10-01', to: '2026-10-31' });
-    expect(mocks.adsets).toHaveBeenCalledWith(account, 'ads-token', '2026-09-30', '2026-10-05');
-    expect(result).toMatchObject({ from: '2026-09-30', to: '2026-10-05', weeks: [{ from: '2026-09-30', to: '2026-10-06', dataTo: '2026-10-05' }] });
-    expect(upserts.filter(u => u.table === 'marketing_channel_reports')).toHaveLength(1);
+    expect(mocks.adsets).toHaveBeenCalledWith(account, 'ads-token', '2026-09-30', '2026-10-05', anyDeadline);
+    expect(result).toMatchObject({ from: '2026-09-30', to: '2026-10-05', weeks: [{ from: '2026-09-30', to: '2026-10-06', dataTo: '2026-10-04' }] });
+    expect(reports()).toHaveLength(1);
 
     // 93 өдрийн хязгаарыг давахаар бол эхлэлийг сунгахгүй (тэр хагас долоо хоногийг алгасна).
     mocks.adsets.mockClear();
     await syncMetaInsights(database([]).db, 'shop-1', { from: '2026-07-05', to: '2026-10-05' });
-    expect(mocks.adsets).toHaveBeenCalledWith(account, 'ads-token', '2026-07-05', '2026-10-05');
+    expect(mocks.adsets).toHaveBeenCalledWith(account, 'ads-token', '2026-07-05', '2026-10-05', anyDeadline);
+});
+
+it('counts only finished account days: on Tuesday the week is written through Monday, on Wednesday morning the new week waits', async () => {
+    vi.setSystemTime(new Date('2026-09-29T06:00:00Z')); // Мягмар, УБ 14:00
+    const todayRow = { day: '2026-09-29', adset_id: '101' };
+    mocks.adsets.mockResolvedValue({ rows: [{ day: '2026-09-23', adset_id: '101' }, todayRow], resultFields: true });
+    const stored = [
+        row({ day: '2026-09-23', spend: 5, impressions: 50, result_type: 'calls', results: 1 }),
+        row({ day: '2026-09-29', spend: 9, impressions: 90, result_type: 'calls', results: 4 }),
+    ];
+    const tuesday = database(stored);
+    const result = await syncMetaInsights(tuesday.db, 'shop-1');
+    // Өнөөдрийн мөр хадгалагдана.
+    expect(tuesday.rpc.mock.calls[0][1]).toMatchObject({ p_to: '2026-09-29', p_rows: [{ day: '2026-09-23' }, todayRow] });
+    expect(result.weeks).toEqual([{ from: '2026-09-23', to: '2026-09-29', dataTo: '2026-09-28' }]);
+    expect(tuesday.week('2026-09-23')).toMatchObject({ data_from: '2026-09-23', data_to: '2026-09-28', row_count: 1, totals: { spend: 5, results_calls: 1 } });
+    expect(tuesday.week('2026-09-23').warnings).toEqual([]);
+    expect(mocks.reach).toHaveBeenCalledWith(account, 'ads-token', '2026-09-23', '2026-09-28', anyDeadline);
+
+    vi.setSystemTime(new Date('2026-09-30T00:30:00Z')); // Лхагва, УБ 08:30 — шинэ долоо хоногийн дууссан өдөр алга.
+    const wednesday = database([...stored, row({ day: '2026-09-30', spend: 1, impressions: 5, result_type: 'calls', results: 0 })]);
+    const next = await syncMetaInsights(wednesday.db, 'shop-1');
+    expect(next.weeks).toEqual([{ from: '2026-09-23', to: '2026-09-29', dataTo: '2026-09-29' }]);
+    expect(wednesday.week('2026-09-23')).toMatchObject({ data_to: '2026-09-29', row_count: 2, totals: { spend: 14, results_calls: 5 } });
+    expect(wednesday.reports().some(r => r.period_from === '2026-09-30')).toBe(false);
+});
+
+it('for an account behind Ulaanbaatar keeps the meeting week partial until the account day ends and notes the timezone', async () => {
+    vi.setSystemTime(new Date('2026-09-30T00:30:00Z')); // УБ Лхагва 08:30, Los Angeles Мягмар 17:30
+    mocks.account.mockResolvedValue({ ...account, timezone_name: 'America/Los_Angeles' });
+    mocks.adsets.mockResolvedValue({ rows: [{ day: '2026-09-23', adset_id: '101' }], resultFields: true });
+    const { db, week } = database(['2026-09-23', '2026-09-29'].map(day => row({ day, spend: 1, impressions: 10, result_type: 'calls', results: 1 })));
+    const result = await syncMetaInsights(db, 'shop-1');
+    expect(result.to).toBe('2026-09-29');
+    expect([week('2026-09-23').data_from, week('2026-09-23').data_to]).toEqual(['2026-09-23', '2026-09-28']);
+    expect(week('2026-09-23').warnings).toContainEqual(expect.objectContaining({ code: 'out_of_period', level: 'info', message: expect.stringContaining('America/Los_Angeles') }));
 });
 
 it('writes an empty week as zero only after the account\'s first data day and never over a file import', async () => {
     // Өгөгдөл 09-17-нөөс: 09-02, 09-09 долоо хоног (холбохоос өмнө) бичигдэхгүй; 09-23 файлтай тул дарахгүй; 09-30 тэг.
     mocks.adsets.mockResolvedValue({ rows: [{ day: '2026-09-17', adset_id: '101' }], resultFields: true });
-    const { db, upserts, filters } = database([row({ day: '2026-09-17', spend: 4, impressions: 40 })], {
+    const { db, upserts, filters, reports } = database([row({ day: '2026-09-17', spend: 4, impressions: 40 })], {
         existing: [{ period_from: '2026-09-23', period_to: '2026-09-29', origin: 'file' }, { period_from: '2026-09-30', period_to: '2026-10-06', origin: 'api' }],
     });
     const result = await syncMetaInsights(db, 'shop-1');
     expect(result.weeks.map(w => w.from)).toEqual(['2026-09-16', '2026-09-30']);
-    const reports = upserts.filter(u => u.table === 'marketing_channel_reports').map(u => u.value);
-    expect(reports.map(r => [r.period_from, r.row_count])).toEqual([['2026-09-16', 1], ['2026-09-30', 0]]);
-    expect(reports.every(r => r.note === null && r.origin === 'api')).toBe(true);
+    expect(reports().map(r => [r.period_from, r.row_count])).toEqual([['2026-09-30', 0], ['2026-09-16', 1]]);
+    expect(reports().every(r => r.note === null && r.origin === 'api')).toBe(true);
     // Зөвхөн өгөгдлийн дараах хоосон долоо хоногуудын тайланг шалгана.
     expect(filters).toContainEqual(['marketing_channel_reports', 'in:period_from', ['2026-09-23', '2026-09-30']]);
     expect(upserts.at(-1)).toMatchObject({ table: 'meta_insights_sync', value: { weeks: 2, last_error: null } });
@@ -228,7 +343,49 @@ it('writes an empty week as zero only after the account\'s first data day and ne
     mocks.adsets.mockResolvedValue({ rows: [], resultFields: true });
     const idle = database([]);
     expect((await syncMetaInsights(idle.db, 'shop-1')).weeks).toEqual([]);
-    expect(idle.upserts.filter(u => u.table === 'marketing_channel_reports')).toHaveLength(0);
+    expect(idle.reports()).toHaveLength(0);
+});
+
+it('stops starting weeks when the shared deadline runs low (newest first) and records the partial run', async () => {
+    const stored = ['2026-09-03', '2026-09-10', '2026-09-17', '2026-09-24', '2026-10-01']
+        .map(day => row({ day, spend: 1, impressions: 10, result_type: 'calls', results: 1 }));
+    // Долоо хоног бүрийн reach 20 сек: 45 → 25 → 5 сек (< 10) — хамгийн сүүлийн хоёр долоо хоног л.
+    mocks.reach.mockImplementation(async () => { vi.setSystemTime(Date.now() + 20_000); return { account: 10, campaigns: new Map() }; });
+    const deadline = budget(45_000);
+    const { db, upserts, reports } = database(stored);
+    const result = await syncMetaInsights(db, 'shop-1', {}, { deadline });
+    expect(mocks.adsets.mock.calls[0][4]).toBe(deadline);
+    expect(mocks.reach.mock.calls.every(call => call[4] === deadline)).toBe(true);
+    expect(result.weeks.map(w => w.from)).toEqual(['2026-09-23', '2026-09-30']);
+    expect(reports().map(r => r.period_from)).toEqual(['2026-09-30', '2026-09-23']);
+    expect(result.partial).toMatch(/хурлын 5 долоо хоногийн 2-ийн Meta тайланг/);
+    expect(upserts.at(-1)).toMatchObject({ table: 'meta_insights_sync', value: { weeks: 2, last_error: result.partial, last_success_at: expect.any(String), row_count: 1 } });
+
+    // Reach-ийн дуудлагыг нийт хугацаа тасалбал reach-гүй тайлан бичихгүй.
+    const controller = new AbortController();
+    mocks.reach.mockImplementation(async () => { controller.abort(); throw new MetaApiError('Meta холболт тасарлаа эсвэл хугацаа хэтэрлээ. Дахин синк хийнэ үү.'); });
+    const cut = database(stored);
+    const partial = await syncMetaInsights(cut.db, 'shop-1', {}, { deadline: budget(60_000, controller.signal) });
+    expect(partial.weeks).toEqual([]);
+    expect(cut.reports()).toHaveLength(0);
+    expect(cut.upserts.at(-1)).toMatchObject({ table: 'meta_insights_sync', value: { weeks: 0, last_error: expect.stringContaining('5 долоо хоногийн 0-ийн') } });
+});
+
+it('records a time-budget error, not a connection error, when the deadline cuts the Graph read or leaves too little time to start', async () => {
+    const controller = new AbortController();
+    mocks.adsets.mockImplementation(async () => { controller.abort(); throw new MetaApiError('Meta холболт тасарлаа эсвэл хугацаа хэтэрлээ. Дахин синк хийнэ үү.'); });
+    const cut = database([]);
+    await expect(syncMetaInsights(cut.db, 'shop-1', {}, { deadline: budget(60_000, controller.signal) })).rejects.toThrow(/Синкийн хугацаа дууссан/);
+    expect(cut.upserts.at(-1)).toMatchObject({ table: 'meta_insights_sync', value: { last_error: expect.stringContaining('Синкийн хугацаа дууссан') } });
+    expect(cut.upserts.at(-1)!.value).not.toHaveProperty('last_success_at');
+    expect(cut.rpc).not.toHaveBeenCalled();
+
+    // Эхлэхэд хугацаа хүрэлцэхгүй бол Meta-д хандахгүй, оролдлогыг бүртгэнэ.
+    mocks.account.mockClear();
+    const late = database([]);
+    await expect(syncMetaInsights(late.db, 'shop-1', {}, { deadline: budget(5_000) })).rejects.toThrow(/Синкийн хугацаа дууссан/);
+    expect(mocks.account).not.toHaveBeenCalled();
+    expect(late.upserts).toEqual([expect.objectContaining({ table: 'meta_insights_sync', value: expect.objectContaining({ last_error: expect.stringContaining('Синкийн хугацаа дууссан') }) })]);
 });
 
 it('answers a stored-row read failure in Mongolian without exposing the database message', async () => {
@@ -241,17 +398,17 @@ it('answers a stored-row read failure in Mongolian without exposing the database
 
 it('writes the report without reach when the deduplicated reach call fails', async () => {
     mocks.reach.mockRejectedValue(new Error('rate limited'));
-    const { db, upserts } = database([row({ day: '2026-09-03', spend: 5, impressions: 100 })]);
+    const { db, week } = database([row({ day: '2026-09-03', spend: 5, impressions: 100 })]);
     await syncMetaInsights(db, 'shop-1');
-    const first = upserts.find(u => u.table === 'marketing_channel_reports')!.value as { totals: Record<string, unknown>; warnings: Array<{ code: string }> };
+    const first = week('2026-09-02') as { totals: Record<string, unknown>; warnings: Array<{ code: string }> };
     expect(first.totals).not.toHaveProperty('reach');
     expect(first.warnings.map(w => w.code)).toContain('non_additive');
 });
 
 it('records the failure and writes no report when saving the rows fails', async () => {
-    const { db, upserts } = database([], { saveError: true });
+    const { db, upserts, reports } = database([], { saveError: true });
     await expect(syncMetaInsights(db, 'shop-1')).rejects.toThrow(/хадгалж чадсангүй/);
-    expect(upserts.filter(u => u.table === 'marketing_channel_reports')).toHaveLength(0);
+    expect(reports()).toHaveLength(0);
     expect(upserts.at(-1)).toMatchObject({ table: 'meta_insights_sync', value: { account_id: 'act_123', last_error: expect.stringContaining('хадгалж чадсангүй') } });
     expect(upserts.at(-1)!.value).not.toHaveProperty('last_success_at');
 
