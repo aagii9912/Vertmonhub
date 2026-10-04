@@ -6,15 +6,9 @@
  */
 
 import type Anthropic from '@anthropic-ai/sdk';
-import { readTools, writeTools, deleteTools, adminTools, canUseToolModule } from '@/lib/ai/data-assistant/tools';
+import { TOOL_DEFINITIONS, type ToolDefinition } from '@/lib/ai/data-assistant/tools';
+import { TOOL_CATALOG, canUseToolModule, isCatalogTool, toolKindDenial } from '@/lib/ai/tool-catalog';
 import type { AssistantPerms } from '@/lib/ai/data-assistant';
-
-/** Gemini маягийн tool тодорхойлолт (data-assistant/tools.ts). */
-export interface LegacyToolDef {
-    name: string;
-    description: string;
-    parameters?: Record<string, unknown>;
-}
 
 function normalizeSchema(node: unknown): unknown {
     if (Array.isArray(node)) return node.map(normalizeSchema);
@@ -29,7 +23,7 @@ function normalizeSchema(node: unknown): unknown {
 }
 
 /** Нэг legacy tool → Claude Tool. */
-export function toClaudeTool(def: LegacyToolDef): Anthropic.Tool {
+export function toClaudeTool(def: ToolDefinition): Anthropic.Tool {
     const params = (normalizeSchema(def.parameters || { type: 'object', properties: {} }) as Record<string, unknown>);
     const input_schema = {
         ...params,
@@ -39,15 +33,11 @@ export function toClaudeTool(def: LegacyToolDef): Anthropic.Tool {
     return { name: def.name, description: def.description, input_schema };
 }
 
-/** Хэрэглэгчийн эрхэд тохирсон data tool-уудын бүрэн жагсаалт (RBAC-аар шүүсэн). */
+/** Хэрэглэгчийн эрхэд тохирсон data tool-уудын бүрэн жагсаалт (эрхийн төрөл + модулиар шүүсэн). */
 export function dataToolsForPerms(perms: AssistantPerms): Anthropic.Tool[] {
-    const defs: LegacyToolDef[] = [
-        ...readTools,
-        ...(perms.canWrite ? writeTools : []),
-        ...(perms.canDelete ? deleteTools : []),
-        ...(perms.role === 'super_admin' ? adminTools : []),
-    ];
-    return defs.filter((d) => canUseToolModule(d.name, perms)).map(toClaudeTool);
+    return TOOL_DEFINITIONS
+        .filter((d) => isCatalogTool(d.name) && !toolKindDenial(TOOL_CATALOG[d.name].kind, perms) && canUseToolModule(d.name, perms))
+        .map(toClaudeTool);
 }
 
 /** Нэрсийн дэд олонлогоор шүүх (дэд агентад). */

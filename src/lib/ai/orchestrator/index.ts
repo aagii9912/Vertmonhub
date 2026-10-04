@@ -11,7 +11,7 @@ import { logger } from '@/lib/utils/logger';
 import { MAIN_MODEL } from '@/lib/ai/openai/client';
 import { dataToolsForPerms, ASK_USER_TOOL, buildDelegateTool, DELEGATE_TOOL_NAME } from '@/lib/ai/claude/tools';
 import { getShopMemory, formatShopMemory } from '@/lib/ai/data-assistant/functions';
-import { AGENTS, AGENT_LIST } from './agents';
+import { AGENTS, AGENT_LIST, isAdminOnlyAgent } from './agents';
 import { runAgent } from './runAgent';
 import { runLoop, buildHistory, buildUserContent } from './loop';
 import { buildSystemBlocks } from './prompt';
@@ -29,7 +29,7 @@ export async function runOrchestrator(message: string, ctx: OrchestratorContext)
     } catch { /* хүснэгт байхгүй бол алгасна */ }
 
     // 1. Tool-ууд: data (RBAC) + ask_user + delegate (super_admin биш бол admin агентыг жагсаалтаас хасна).
-    const roster = AGENT_LIST.filter((a) => ctx.perms.role === 'super_admin' || !(a.adminToolNames?.length && a.readToolNames.length <= 1));
+    const roster = AGENT_LIST.filter((a) => ctx.perms.role === 'super_admin' || !isAdminOnlyAgent(a));
     const tools = [...dataToolsForPerms(ctx.perms), ASK_USER_TOOL, buildDelegateTool(roster)];
 
     const steps: TraceStep[] = [];

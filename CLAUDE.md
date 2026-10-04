@@ -38,7 +38,7 @@ Browser specs run against `e2e/support/fixture-server.mjs` (fake GoTrue + `next 
 - `src/lib/sales` — `project-scope.ts`, `manager-identity.ts`, targets. `src/lib/leads` — `labels.ts`, `work-queue.ts`, `activities.ts`.
 - `src/lib/services` — `ViewingService`, `TaskService`, `PaymentService`, `CustomerOps`, `MarketingOps`: shared by API routes and AI tools (put new business logic here, not in both).
 - `src/lib/dashboard` — operations report loader, `my-stats`, `kpi-report(-build)`, weekly review. `src/lib/marketing` — performance(+load), budget, spend, Meta spend.
-- `src/lib/ai/orchestrator` (loop, prompt, memory, `shop-knowledge.ts`, `http.ts`), `src/lib/ai/data-assistant` (`tools.ts` lists + `functions.ts`/`actions*.ts`), `src/lib/ai/riskTiers.ts`.
+- `src/lib/ai/orchestrator` (loop, prompt, memory, `shop-knowledge.ts`, `http.ts`, agents), `src/lib/ai/tool-catalog.ts` (the one tool registry), `src/lib/ai/data-assistant` (`tools.ts` schemas, `index.ts` handlers, `functions.ts`/`actions*.ts`).
 - `src/lib/webhook/WebhookService.ts` + `src/lib/facebook/messenger.ts` — Meta DM persistence and staff replies.
 - `src/lib/navigation/nav.ts` (single nav source), `src/lib/api/dashboardFetch.ts` (browser → API), `src/lib/utils/date.ts` (Ulaanbaatar dates), `src/lib/utils/xlsx.ts` (Excel I/O).
 - Supabase clients: `lib/supabase.ts` `supabaseAdmin()` (service role, server only; `lib/auth/supabase-auth.ts` re-exports it), `lib/auth/supabase-auth.ts` (session + middleware clients, `getUserId`, `getUserShop`), `lib/supabase-browser.ts` (auth and realtime in the browser).
@@ -66,7 +66,7 @@ Browser specs run against `e2e/support/fixture-server.mjs` (fake GoTrue + `next 
 
 ### Dashboard AI assistant
 - OpenAI Responses (`OPENAI_API_KEY`; `OPENAI_MODEL`/`OPENAI_FAST_MODEL`, default `gpt-5.6-luna`). No key → 503; there is no fallback provider. `runLoop`: ≤ 8 rounds, parallel reads, sequential writes, `ask_user` clarifications, `delegate_to_specialists`.
-- Write tools return a preview; execution goes through `POST /api/ai-assistant/action`, which re-checks RBAC and audits. `AUTO_TOOL_NAMES` (reversible, low-risk) run directly with an audit entry; deletes, contracts, payments and outbound messages are never AUTO, and money tools are `NON_REMEMBERABLE`. `TOOL_MODULE` hides tools from the model and blocks execution per module. `riskTiers.ts` mirrors the `tools.ts` lists (drift test).
+- Each tool's kind (read/write/delete/admin), module, `auto`, `alwaysConfirm` and project `scoped` flag live only in `lib/ai/tool-catalog.ts` (client-safe); `tools.ts` holds schemas and `data-assistant/index.ts` a typed handler per catalog name (tests and the compiler keep the three aligned). Write tools return a preview; execution goes through `POST /api/ai-assistant/action`, which re-checks RBAC and audits. `auto` tools (reversible, low-risk) run directly with an audit entry; deletes, contracts, payments and outbound messages are never `auto`, and money tools are `alwaysConfirm` (never remembered). The module check hides tools from the model and blocks execution.
 - Development-only mock: `localStorage.vertmonhub_ai_mock = ok|error|delegate|clarify` (sent as `x-ai-mock`); never active in production.
 
 ### Other

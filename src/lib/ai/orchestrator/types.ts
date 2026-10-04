@@ -26,10 +26,8 @@ export interface AgentDefinition {
     color: 'emerald' | 'violet' | 'sky' | 'amber' | 'rose';
     /** Үндсэн туслах энэ агентыг хэзээ сонгохыг ойлгох тайлбар. */
     description: string;
-    readToolNames: string[];
-    writeToolNames: string[];
-    deleteToolNames?: string[];
-    adminToolNames?: string[];
+    /** Агентын ашиглах data tool-ууд; хэрэглэгчийн эрх (`dataToolsForPerms`) эцэст нь шүүнэ. */
+    toolNames: string[];
     buildInstruction: (shopKnowledge?: string) => string;
 }
 

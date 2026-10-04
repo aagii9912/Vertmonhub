@@ -8,7 +8,8 @@ import React from 'react';
 import { describe, it, expect, beforeAll } from 'vitest';
 import { render } from '@testing-library/react';
 
-import { readTools, writeTools, deleteTools, adminTools, MUTATING_TOOL_NAMES, WRITE_TOOL_NAMES, AUTO_TOOL_NAMES, TOOL_MODULE, canUseToolModule } from '@/lib/ai/data-assistant/tools';
+import { TOOL_DEFINITIONS } from '@/lib/ai/data-assistant/tools';
+import { MUTATING_TOOL_NAMES, WRITE_TOOL_NAMES, AUTO_TOOL_NAMES, canUseToolModule, isCatalogTool } from '@/lib/ai/tool-catalog';
 import { ROLE_PERMISSIONS } from '@/lib/rbac';
 import { paymentStatus } from '@/lib/services/PaymentService';
 import { AGENT_LIST } from '@/lib/ai/orchestrator/agents';
@@ -16,6 +17,8 @@ import { MarkdownMessage } from '@/components/ai-assistant/MarkdownMessage';
 import { toClaudeTool, dataToolsForPerms, buildDelegateTool, ASK_USER_TOOL } from '@/lib/ai/claude/tools';
 import { needsSummary, SUMMARY_TRIGGER, KEEP_RECENT } from '@/lib/ai/orchestrator/memory';
 import { buildSystemBlocks } from '@/lib/ai/orchestrator/prompt';
+
+const definition = (name: string) => TOOL_DEFINITIONS.find((tool) => tool.name === name)!;
 
 // data-assistant/index нь supabase env шаарддаг тул dynamic import.
 let executeDataTool: (typeof import('@/lib/ai/data-assistant'))['executeDataTool'];
@@ -46,7 +49,7 @@ describe('executeDataTool RBAC gating (DB-д хүрэхгүй)', () => {
 
 describe('Claude tool хөрвүүлэлт (Gemini schema → input_schema)', () => {
     it('SchemaType утгуудыг JSON Schema type болгож, parameters → input_schema', () => {
-        const t = toClaudeTool(readTools.find((x: { name: string }) => x.name === 'list_leads'));
+        const t = toClaudeTool(definition('list_leads'));
         expect(t.input_schema.type).toBe('object');
         const props = t.input_schema.properties as Record<string, { type: string; enum?: string[] }>;
         expect(props.status.type).toBe('string');
@@ -54,7 +57,7 @@ describe('Claude tool хөрвүүлэлт (Gemini schema → input_schema)', ()
         expect(props.limit.type).toBe('number');
     });
     it('required болон nested array item-үүдийг хадгална', () => {
-        const t = toClaudeTool(adminTools.find((x: { name: string }) => x.name === 'create_role'));
+        const t = toClaudeTool(definition('create_role'));
         expect(t.input_schema.required).toEqual(['name', 'display_name_mn']);
         const props = t.input_schema.properties as Record<string, { type: string; items?: { type: string } }>;
         expect(props.modules.type).toBe('array');
@@ -79,17 +82,13 @@ describe('Claude tool хөрвүүлэлт (Gemini schema → input_schema)', ()
 });
 
 describe('Agent registry бүрэн бүтэн байдал', () => {
-    const readNames = new Set(readTools.map((t: { name: string }) => t.name));
-    const writeNames = new Set(writeTools.map((t: { name: string }) => t.name));
-    const deleteNames = new Set(deleteTools.map((t: { name: string }) => t.name));
-    const adminNames = new Set(adminTools.map((t: { name: string }) => t.name));
-
-    it('agent бүрийн tool нэрс тодорхойлолтод бодитоор байна', () => {
+    it('agent бүрийн tool нэрс бүртгэл ба тодорхойлолтод бодитоор байна', () => {
+        const defined = new Set(TOOL_DEFINITIONS.map((tool) => tool.name));
         for (const agent of AGENT_LIST) {
-            agent.readToolNames.forEach((n) => expect(readNames.has(n), `${agent.id} read:${n}`).toBe(true));
-            agent.writeToolNames.forEach((n) => expect(writeNames.has(n), `${agent.id} write:${n}`).toBe(true));
-            (agent.deleteToolNames || []).forEach((n) => expect(deleteNames.has(n), `${agent.id} delete:${n}`).toBe(true));
-            (agent.adminToolNames || []).forEach((n) => expect(adminNames.has(n), `${agent.id} admin:${n}`).toBe(true));
+            agent.toolNames.forEach((n) => {
+                expect(isCatalogTool(n), `${agent.id}:${n}`).toBe(true);
+                expect(defined.has(n), `${agent.id}:${n}`).toBe(true);
+            });
         }
     });
     it('MUTATING_TOOL_NAMES шинэ tool-уудыг агуулна', () => {
@@ -104,10 +103,10 @@ describe('Wave 1 — өдөр тутмын tool-ууд', () => {
         ['delete_lead', 'add_contract_payment', 'mark_payment_paid', 'assign_lead_manager', 'reschedule_viewing', 'create_contract'].forEach((t) => expect(AUTO_TOOL_NAMES).not.toContain(t));
     });
     it('шинэ tool бүр тодорхойлолттой бөгөөд Claude schema болж хөрвөнө', () => {
-        const all = [...readTools, ...writeTools].map((t: { name: string }) => t.name);
+        const all = TOOL_DEFINITIONS.map((t) => t.name);
         ['list_viewings', 'list_my_tasks', 'list_contract_payments', 'log_call', 'set_followup', 'assign_lead_manager', 'record_viewing_outcome', 'reschedule_viewing', 'create_task', 'complete_task', 'add_contract_payment', 'mark_payment_paid']
             .forEach((t) => expect(all, t).toContain(t));
-        const t = toClaudeTool(writeTools.find((x: { name: string }) => x.name === 'log_call'));
+        const t = toClaudeTool(definition('log_call'));
         expect(t.input_schema.required).toEqual(['summary']);
     });
     it('wave 2–4: модулийн эрхгүй хэрэглэгч тайлан/маркетингийн tool-ыг харахгүй, super_admin бүгдийг', () => {
@@ -123,8 +122,6 @@ describe('Wave 1 — өдөр тутмын tool-ууд', () => {
         for (const removed of ['get_finance_summary', 'list_finance_transactions', 'add_finance_transaction', 'list_vendor_bills', 'pay_vendor_bill']) expect(sup).not.toContain(removed);
         // Missing permissions cannot silently grant access to legacy callers.
         expect(dataToolsForPerms(base)).toEqual([]);
-        const allNames = [...readTools, ...writeTools, ...deleteTools, ...adminTools].map((x: { name: string }) => x.name);
-        expect(Object.keys(TOOL_MODULE).sort()).toEqual(allNames.sort());
     });
     it('executeDataTool модулийн эрхийг шалгана (DB-д хүрэхгүй)', async () => {
         const r = await executeDataTool('get_kpi_report', {}, 'shop1', { canWrite: true, canDelete: false, role: 'admin', modules: ['dashboard'] }, 'u1', false, '');
@@ -146,13 +143,9 @@ describe('Wave 1 — өдөр тутмын tool-ууд', () => {
     it('fails closed for missing module permissions and unmapped tools, including new tools', async () => {
         expect(await executeDataTool('list_leads', {}, 'shop1', { role: 'admin', canWrite: true, canDelete: true }, 'u1')).toHaveProperty('error');
         expect(canUseToolModule('toString', { role: 'super_admin' })).toBe(false);
-        const original = TOOL_MODULE.create_task;
-        try {
-            delete TOOL_MODULE.create_task;
-            const perms = { role: 'super_admin', canWrite: true, canDelete: true, modules: [] };
-            expect(dataToolsForPerms(perms).map(t => t.name)).not.toContain('create_task');
-            expect(await executeDataTool('create_task', { title: 'Must not save' }, 'shop1', perms, 'u1', true)).toHaveProperty('error');
-        } finally { TOOL_MODULE.create_task = original; }
+        const perms = { role: 'super_admin', canWrite: true, canDelete: true, modules: [] };
+        expect(await executeDataTool('unregistered_tool', { title: 'Must not save' }, 'shop1', perms, 'u1', true)).toEqual({ error: 'Unknown tool: unregistered_tool' });
+        expect(await executeDataTool('toString', {}, 'shop1', perms, 'u1', true)).toHaveProperty('error');
     });
     it('paymentStatus: төлсөн/хагас/хүлээгдэж буй', () => {
         expect(paymentStatus(100, 100)).toBe('paid');

@@ -11,7 +11,7 @@
  * RBAC + shop scope-ыг сервер талд ДАХИН шалгах тул spoof хийсэн ч эрх нэмэгдэхгүй.
  */
 
-import { canRememberTool } from './riskTiers';
+import { canRememberTool } from './tool-catalog';
 
 const keyFor = (shopId: string, userId?: string | null) => `vertmonhub_ai_allowed_tools:${shopId}:${userId || 'anon'}`;
 

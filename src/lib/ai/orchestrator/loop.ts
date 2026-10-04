@@ -15,7 +15,7 @@ import { generateChartConfig } from '@/lib/ai/data-assistant/functions';
 import { streamResponse, responseText, toResponseInput, toResponseTools } from '@/lib/ai/openai/responses';
 import { describeOpenAIError } from '@/lib/ai/openai/client';
 import { ASK_USER_TOOL } from '@/lib/ai/claude/tools';
-import { AUTO_TOOL_NAMES, MUTATING_TOOL_NAMES } from '@/lib/ai/data-assistant/tools';
+import { AUTO_TOOL_NAMES, isMutatingTool } from '@/lib/ai/tool-catalog';
 import { supabaseAdmin } from '@/lib/supabase';
 import { canReadPrivateAttachment, isLegacyPublicAttachmentUrl, parsePrivateAttachmentUrl, PRIVATE_ATTACHMENT_BUCKET, type AttachmentAccess } from '@/lib/ai/private-attachments';
 
@@ -288,11 +288,11 @@ export async function runLoop(o: LoopOptions): Promise<LoopResult> {
                 // Хэт том үр дүнг таслана (контекст хамгаалалт, ~40k тэмдэгт).
                 if (content.length > 40_000) content = content.slice(0, 40_000) + '…[тасалсан]';
                 const output: Anthropic.ToolResultBlockParam = { type: 'tool_result', tool_use_id: tu.id, content, is_error: isError || !s.ok || undefined };
-                if (MUTATING_TOOL_NAMES.includes(tu.name)) mutationResults.set(mutationKey, output);
+                if (isMutatingTool(tu.name)) mutationResults.set(mutationKey, output);
                 return output;
             };
             // Reads can run together; writes execute in model order to avoid racing dependent changes.
-            const readsOnly = toolUses.every((tu) => !MUTATING_TOOL_NAMES.includes(tu.name) && !o.customTools?.[tu.name]);
+            const readsOnly = toolUses.every((tu) => !isMutatingTool(tu.name) && !o.customTools?.[tu.name]);
             const results: Anthropic.ToolResultBlockParam[] = [];
             const question = toolUses.find((tu) => tu.name === ASK_USER_TOOL.name);
             if (question) results.push(await execute(question));
@@ -340,7 +340,7 @@ export async function runLoop(o: LoopOptions): Promise<LoopResult> {
         }
     }
     if (interruption) {
-        const actions = traceTools.filter(t => MUTATING_TOOL_NAMES.includes(t.tool));
+        const actions = traceTools.filter(t => isMutatingTool(t.tool));
         finalText = [
             'Ажиллагаа бүрэн дууссангүй. Өмнө хийгдсэн үйлдлийг дахин ажиллуулахгүйгээр бүртгэлээ шалгаад үргэлжлүүлнэ үү.',
             ...actions.map(t => `- ${t.ok ? '✓' : '⚠'} ${t.summary}`),

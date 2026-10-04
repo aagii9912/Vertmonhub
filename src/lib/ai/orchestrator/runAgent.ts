@@ -15,21 +15,12 @@ import type { AgentDefinition, AgentRunResult, OrchestratorContext } from './typ
 export { buildHistory };
 export { isAllowedAttachmentUrl } from './loop';
 
-/** Агентад зөвшөөрөгдсөн tool-уудын нэрс (perms-ийг харгалзана). */
-export function agentToolNames(agent: AgentDefinition, perms: OrchestratorContext['perms']): string[] {
-    return [
-        ...agent.readToolNames,
-        ...(perms.canWrite ? agent.writeToolNames : []),
-        ...(perms.canDelete ? agent.deleteToolNames || [] : []),
-        ...(perms.role === 'super_admin' ? agent.adminToolNames || [] : []),
-    ];
-}
-
 export async function runAgent(agent: AgentDefinition, task: string, ctx: OrchestratorContext): Promise<AgentRunResult> {
     const started = Date.now();
     ctx.onEvent?.({ type: 'step_start', agentId: agent.id, agentName: agent.name, task });
     try {
-        const tools = pickTools(dataToolsForPerms(ctx.perms), agentToolNames(agent, ctx.perms));
+        // Агентын жагсаалтаас зөвхөн хэрэглэгчийн эрхэнд багтах tool-ууд үлдэнэ.
+        const tools = pickTools(dataToolsForPerms(ctx.perms), agent.toolNames);
         const system = buildSystemBlocks(ctx, { personaOverride: agent.buildInstruction(undefined), includeDomainNotes: true });
         const messages = [...buildHistory(ctx.history, 6), { role: 'user' as const, content: await buildUserContent(task, ctx.attachments, ctx) }];
         const r = await runLoop({

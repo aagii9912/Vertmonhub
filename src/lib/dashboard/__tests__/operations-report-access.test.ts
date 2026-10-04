@@ -12,7 +12,8 @@ import { GET } from '@/app/api/dashboard/reports/operations/route';
 import { executeDataTool, type AssistantPerms } from '@/lib/ai/data-assistant';
 import { buildOperationsReport } from '../operations-report';
 import { AGENTS } from '@/lib/ai/orchestrator/agents';
-import { TOOL_MODULE, readTools } from '@/lib/ai/data-assistant/tools';
+import { TOOL_DEFINITIONS } from '@/lib/ai/data-assistant/tools';
+import { TOOL_CATALOG } from '@/lib/ai/tool-catalog';
 
 const request = () => new NextRequest('http://localhost/api/dashboard/reports/operations?from=2026-09-01&to=2026-09-30');
 const perms = (modules?: string[]): AssistantPerms => ({ role: 'marketing', canWrite: true, canDelete: false, modules });
@@ -92,9 +93,9 @@ describe('operations report authorization in API and AI', () => {
         expect(mocks.load).toHaveBeenLastCalledWith(mocks.db, expected);
     });
     it('makes the report available to the agents answering reporting and cashflow questions', () => {
-        expect(readTools.some(tool => tool.name === 'get_operations_report')).toBe(true);
-        expect(TOOL_MODULE.get_operations_report).toBe('reports');
-        expect(AGENTS['data-analyst'].readToolNames).toContain('get_operations_report');
-        expect(AGENTS['finance-analyst'].readToolNames).toContain('get_operations_report');
+        expect(TOOL_DEFINITIONS.some(tool => tool.name === 'get_operations_report')).toBe(true);
+        expect(TOOL_CATALOG.get_operations_report).toMatchObject({ kind: 'read', module: 'reports' });
+        expect(AGENTS['data-analyst'].toolNames).toContain('get_operations_report');
+        expect(AGENTS['finance-analyst'].toolNames).toContain('get_operations_report');
     });
 });

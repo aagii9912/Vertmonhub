@@ -1,16 +1,22 @@
 /**
- * Data Assistant Tool Definitions — JSON Schema маягийн `parameters` (Claude-д
- * `lib/ai/claude/tools.ts` → `input_schema` болгож хөрвүүлнэ).
- *
- * Read tools: бүх ажилтан; write/delete: RBAC; admin: super_admin.
+ * Data Assistant tool-уудын schema — JSON Schema маягийн `parameters`
+ * (`lib/ai/claude/tools.ts` → model-ийн `input_schema` болгож хөрвүүлнэ).
+ * Эрхийн төрөл, модуль, AUTO, төслийн хүрээ нь `lib/ai/tool-catalog.ts`-д; доорх
+ * бүлэглэл зөвхөн уншихад хялбар болгох зорилготой.
  */
 
 import { SPEND_CHANNELS } from '@/lib/marketing/budget';
 
 const SchemaType = { OBJECT: 'object', STRING: 'string', NUMBER: 'number', INTEGER: 'integer', BOOLEAN: 'boolean', ARRAY: 'array' } as const;
 
+export interface ToolDefinition {
+    name: string;
+    description: string;
+    parameters?: Record<string, unknown>;
+}
+
  
-export const readTools: any[] = [
+const readDefinitions: ToolDefinition[] = [
     {
         name: 'list_lead_projects', description: 'Лид бүртгэхэд ашиглах эрхтэй төслийн UUID ба нэрийг авна. Төслийг таамгаар сонгохгүй; хэрэглэгчээс сонголтыг тодруулна.',
         parameters: { type: SchemaType.OBJECT, properties: {} },
@@ -267,7 +273,7 @@ export const readTools: any[] = [
 
 
  
-export const writeTools: any[] = [
+const writeDefinitions: ToolDefinition[] = [
     {
         name: 'update_property_status',
         description: 'Байрны статусыг өөрчлөх. ЗӨВХӨН Super Admin ашиглах боломжтой.',
@@ -716,7 +722,7 @@ export const writeTools: any[] = [
 
 
  
-export const deleteTools: any[] = [
+const deleteDefinitions: ToolDefinition[] = [
     {
         name: 'delete_property',
         description: 'Байрыг устгах (soft delete — сэргээх боломжтой). Устгах эрхтэй ажилтан ашиглана. Хэрэглэгчээс заавал баталгаажуулалт авна. Шалтгаан/гэрээний баримтын линк хавсаргаж болно.',
@@ -783,7 +789,7 @@ export const deleteTools: any[] = [
 ];
 
  
-export const adminTools: any[] = [
+const adminDefinitions: ToolDefinition[] = [
     {
         name: 'invite_user',
         description: 'Шинэ хэрэглэгчийг түр нууц үгтэй үүсгэж, дүр (role) болон төслийн гишүүнчлэл онооно. Имэйл автоматаар илгээгдэхгүй — нэвтрэх мэдээлэл (имэйл+түр нууц үг+линк) буцаж ирэх тул админ тухайн хүнд дамжуулна. ЗӨВХӨН super_admin. Баталгаажуулалт авна.',
@@ -829,51 +835,5 @@ export const adminTools: any[] = [
     }
 ];
 
-export const WRITE_TOOL_NAMES = ['update_property_status', 'update_unit_status', 'update_property_price', 'update_lead_status', 'add_lead_note', 'process_contract_action', 'create_property', 'create_lead', 'create_customer', 'schedule_viewing', 'create_contract', 'attach_file', 'bulk_update_leads', 'create_social_post', 'remember_fact',
-    'log_call', 'set_followup', 'assign_lead_manager', 'record_viewing_outcome', 'reschedule_viewing', 'create_task', 'complete_task', 'add_contract_payment', 'mark_payment_paid',
-    'add_customer_tag', 'remove_customer_tag', 'reply_to_customer', 'merge_customers', 'log_marketing_spend', 'set_marketing_budget', 'add_market_indicator'];
-
-/**
- * Буцаах боломжтой, эрсдэл багатай WRITE tool-ууд — баталгаажуулалтын картгүйгээр ШУУД
- * гүйцэтгэгдэнэ («хэлээд хийлгэх» мэдрэмж). Устгах, гэрээ, төлбөр, шилжүүлэлт энд ОРОХГҮЙ.
- */
-export const AUTO_TOOL_NAMES = ['add_lead_note', 'remember_fact', 'log_call', 'set_followup', 'record_viewing_outcome', 'create_task', 'complete_task', 'add_customer_tag', 'remove_customer_tag', 'add_market_indicator'];
-
-/**
- * API-тай ижил модулийн шаардлага. Бүртгэлгүй tool эсвэл тодорхойгүй эрх → хориглоно.
- * Array утга = эдгээрийн аль нэг модуль; attach_file гүйцэтгэхэд entity-ийн модулийг дахин шалгана.
- */
-const ATTACHMENT_MODULE: Record<string, string> = { property: 'properties', lead: 'leads', customer: 'customers', contract: 'contracts' };
-export const TOOL_MODULE: Record<string, string | string[]> = {
-    get_dashboard_stats: 'dashboard',
-    list_properties: 'properties', compare_properties: 'properties', update_property_status: 'properties', update_unit_status: 'properties', update_property_price: 'properties', create_property: 'properties', delete_property: 'properties',
-    list_lead_projects: ['leads', 'viewings'], list_leads: 'leads', get_lead_details: 'leads', update_lead_status: 'leads', add_lead_note: 'leads', create_lead: 'leads', delete_lead: 'leads', bulk_update_leads: 'leads', log_call: 'leads', set_followup: 'leads', assign_lead_manager: 'leads',
-    get_customer_insights: 'customers', create_customer: 'customers', delete_customer: 'customers', add_customer_tag: 'customers', remove_customer_tag: 'customers', merge_customers: 'customers',
-    list_viewings: 'viewings', schedule_viewing: 'viewings', delete_viewing: 'viewings', record_viewing_outcome: 'viewings', reschedule_viewing: 'viewings',
-    list_contracts: 'contracts', get_contract_details: 'contracts', get_contracts_summary: 'contracts', process_contract_action: 'contracts', create_contract: 'contracts', delete_contract: 'contracts', list_contract_payments: 'contracts', add_contract_payment: 'contracts', mark_payment_paid: 'contracts',
-    list_my_tasks: 'dashboard', create_task: 'dashboard', complete_task: 'dashboard',
-    attach_file: Object.values(ATTACHMENT_MODULE), remember_fact: 'ai-settings',
-    get_operations_report: 'reports',
-    get_kpi_report: 'reports', get_manager_performance: 'reports', get_export_link: 'reports', get_sales_summary: 'reports', get_sales_forecast: 'reports',
-    get_marketing_performance: 'marketing-roi', list_marketing_spend: 'marketing-roi', log_marketing_spend: 'marketing-roi', set_marketing_budget: 'marketing-roi', add_market_indicator: 'marketing-roi', get_market_indicators: 'marketing-roi', get_marketing_summary: 'marketing-roi', get_marketing_budget_status: 'marketing-roi', create_social_post: 'marketing-roi',
-    reply_to_customer: 'inbox',
-    invite_user: 'settings', assign_role: 'settings', create_role: 'settings',
-};
-
-/** Нэг шалгалтыг model-ийн tool жагсаалт болон бодит executor хоёул ашиглана. */
-export function canUseToolModule(tool: string, perms: { role: string; modules?: string[] }, args?: Record<string, unknown>): boolean {
-    if (!Object.hasOwn(TOOL_MODULE, tool)) return false;
-    let required = TOOL_MODULE[tool];
-    if (tool === 'attach_file' && args) {
-        const entityType = String(args.entity_type || '');
-        if (!Object.hasOwn(ATTACHMENT_MODULE, entityType)) return false;
-        required = ATTACHMENT_MODULE[entityType];
-    }
-    if (perms.role === 'super_admin') return true;
-    return (Array.isArray(required) ? required : [required]).some(module => perms.modules?.includes(module));
-}
-export const DELETE_TOOL_NAMES = ['delete_property', 'delete_lead', 'delete_viewing', 'delete_contract', 'delete_customer'];
-export const ADMIN_TOOL_NAMES = ['invite_user', 'assign_role', 'create_role'];
-
-/** Бодит өгөгдөл өөрчилдөг (баталгаажуулалт шаардах) бүх tool. */
-export const MUTATING_TOOL_NAMES = [...WRITE_TOOL_NAMES, ...DELETE_TOOL_NAMES, ...ADMIN_TOOL_NAMES];
+/** Бүх tool-ийн schema (нэр бүр `TOOL_CATALOG`-д бүртгэлтэй байх ёстой — тест шалгана). */
+export const TOOL_DEFINITIONS: ToolDefinition[] = [...readDefinitions, ...writeDefinitions, ...deleteDefinitions, ...adminDefinitions];

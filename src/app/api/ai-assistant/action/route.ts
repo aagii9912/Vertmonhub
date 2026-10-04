@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { executeDataTool } from '@/lib/ai/data-assistant';
 import { resolveSalesManagerName } from '@/lib/ai/data-assistant/functions';
-import { MUTATING_TOOL_NAMES } from '@/lib/ai/data-assistant/tools';
+import { isMutatingTool } from '@/lib/ai/tool-catalog';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { resolveApiUser } from '@/lib/auth/resolve-user';
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
         }
 
         const { shopId, tool, args, conversationId } = await req.json();
-        if (!tool || !MUTATING_TOOL_NAMES.includes(tool)) {
+        if (typeof tool !== 'string' || !isMutatingTool(tool)) {
             return NextResponse.json({ error: 'Буруу эсвэл зөвшөөрөгдөөгүй үйлдэл' }, { status: 400 });
         }
 

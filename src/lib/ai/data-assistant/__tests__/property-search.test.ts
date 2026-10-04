@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchProperties, generateChartConfig } from '../functions';
 import { dataToolsForPerms } from '@/lib/ai/claude/tools';
-import { canUseToolModule, readTools } from '../tools';
+import { TOOL_DEFINITIONS } from '../tools';
+import { canUseToolModule } from '@/lib/ai/tool-catalog';
 
 const mocks = vi.hoisted(() => ({ from: vi.fn() }));
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ from: mocks.from }) }));
@@ -207,8 +208,9 @@ describe('AI apartment inventory search', () => {
         expect(dataToolsForPerms(permitted).some(t => t.name === 'list_properties')).toBe(true);
         expect(dataToolsForPerms({ ...permitted, modules: ['dashboard'] }).some(t => t.name === 'list_properties')).toBe(false);
         expect(canUseToolModule('list_properties', { role: 'sales_manager', modules: ['dashboard'] })).toBe(false);
-        const tool = readTools.find(t => t.name === 'list_properties')!;
-        expect(tool.parameters?.properties?.status.enum).toEqual(expect.arrayContaining(['ordered', 'handed_over', 'all']));
-        expect(tool.parameters?.properties).toHaveProperty('code');
+        const tool = TOOL_DEFINITIONS.find(t => t.name === 'list_properties')!;
+        const properties = tool.parameters?.properties as Record<string, { enum?: string[] }>;
+        expect(properties.status.enum).toEqual(expect.arrayContaining(['ordered', 'handed_over', 'all']));
+        expect(properties).toHaveProperty('code');
     });
 });
