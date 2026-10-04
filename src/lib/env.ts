@@ -10,7 +10,8 @@ export const REQUIRED_PROD_ENV = [
     'NEXT_PUBLIC_SUPABASE_URL',
     'NEXT_PUBLIC_SUPABASE_ANON_KEY',
     'SUPABASE_SERVICE_ROLE_KEY',
-    'GEMINI_API_KEY',
+    // Dashboard AI туслах — түлхүүргүй бол 503.
+    'OPENAI_API_KEY',
     'FACEBOOK_APP_SECRET',
     'FACEBOOK_VERIFY_TOKEN',
     'CRON_SECRET',
@@ -19,6 +20,8 @@ export const REQUIRED_PROD_ENV = [
 
 /** Зөвлөмжтэй (байхгүй бол тухайн боломж унтарна, гэхдээ систем ажиллана). */
 export const RECOMMENDED_PROD_ENV = [
+    // Lead form-ийн угтах хариу, өрсөлдөгчийн шинжилгээ.
+    'GEMINI_API_KEY',
     'NEXT_PUBLIC_SENTRY_DSN',
     'TURNSTILE_SECRET_KEY',
     'RESEND_API_KEY',

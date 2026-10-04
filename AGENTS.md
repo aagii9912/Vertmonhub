@@ -4,7 +4,7 @@
 ямар ч AI агент **[CLAUDE.md](./CLAUDE.md)**-ийг ганц эх сурвалж болгон уншина.
 
 - Архитектур, дүрэм, командууд → `CLAUDE.md`
-- Сүүлийн бүрэн review + сайжруулах төлөвлөгөө → `docs/archive/REVIEW-2026-09-11.md`
+- Feature-ийн тайлбар → `docs/features/`; хуучин review, audit → `docs/archive/` (зөвхөн түүх)
 
 <!-- BEGIN:nextjs-agent-rules -->
 
