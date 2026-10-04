@@ -251,15 +251,18 @@ export async function recomputeShopScores(shopId: string): Promise<{ updated: nu
         }
     }
 
-    // Энэ shop-ийн lead-үүдийн viewings-ийг авч харилцагчаар бүлэглэнэ
+    // Харилцагчтай холбогдсон лидийн уулзалтуудыг харилцагчаар бүлэглэнэ. Shop-оор хуудаслан уншина —
+    // лидийн ID-уудыг URL-д (`in`) жагсаавал том shop дээр хүсэлт хэт урт болж уулзалт чимээгүй алга болдог.
     const viewingsByCustomer = new Map<string, Array<{ status: string; interest_level: number | null }>>();
-    const leadIds = leadRows.map(l => l.id);
-    if (leadIds.length > 0) {
-        const { data: viewings } = await supabase
+    if (leadToCustomer.size > 0) {
+        const viewings = await fetchAllRows<{ lead_id: string | null; status: string; interest_level: number | null }>((from, to) => supabase
             .from('property_viewings')
             .select('lead_id, status, interest_level')
-            .in('lead_id', leadIds);
-        for (const v of viewings || []) {
+            .eq('shop_id', shopId)
+            .is('deleted_at', null)
+            .order('id')
+            .range(from, to));
+        for (const v of viewings) {
             const customerId = v.lead_id ? leadToCustomer.get(v.lead_id) : undefined;
             if (!customerId) continue;
             const arr = viewingsByCustomer.get(customerId) || [];

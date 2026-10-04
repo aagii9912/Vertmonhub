@@ -7,6 +7,7 @@ export const CONTRACT_STATUS_META: Record<string, { label: string; tone: Tone }>
     active: { label: 'Идэвхтэй', tone: 'info' },
     closed: { label: 'Хаагдсан', tone: 'success' },
     cancelled: { label: 'Цуцалсан', tone: 'danger' },
+    transferred: { label: 'Тоот шилжсэн', tone: 'neutral' },
 };
 export const PAYMENT_STATUS_META: Record<string, { label: string; tone: Tone }> = {
     pending: { label: 'Хүлээгдэж буй', tone: 'neutral' },

@@ -38,8 +38,14 @@ export async function POST(request: NextRequest) {
         const results: Array<{ shopId: string; flagged: number }> = [];
 
         for (const shop of shops || []) {
-            // Оноог шинэчилнэ (lifecycle/score шинэ байх)
-            await recomputeShopScores(shop.id);
+            // Оноог шинэчилнэ (lifecycle/score шинэ байх). Нэг shop-ийн уншилтын алдаа бусдыг зогсоохгүй;
+            // дутуу өгөгдлөөр оноо хадгалахгүй тул тэр shop-ийн дагалтыг энэ удаа алгасна.
+            try {
+                await recomputeShopScores(shop.id);
+            } catch (error) {
+                logger.error('[Cron] customer score recompute failed', { shopId: shop.id, error });
+                continue;
+            }
 
             // Чанартай + чимээгүй + одоо дагалт хүлээгдээгүй харилцагчид
             const { data: candidates } = await supabase

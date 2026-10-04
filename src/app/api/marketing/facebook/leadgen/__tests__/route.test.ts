@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
     savedRequestIds: new Set<string>(),
     insertError: null as null | { code?: string; message: string },
     events: [] as Row[],
+    mappedProject: 'project-garden' as string | null,
 }));
 
 vi.mock('@/lib/utils/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
@@ -19,6 +20,7 @@ vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: (table: string)
         select: () => query,
         eq: () => query,
         insert: (row: Row) => { payload = row; return query; },
+        maybeSingle: async () => ({ data: table === 'marketing_campaigns' && state.mappedProject ? { project_id: state.mappedProject } : null, error: null }),
         single: async () => {
             if (table === 'shops') return { data: { id: 'shop-1', facebook_page_access_token: 'page-token' }, error: null };
             state.inserts.push(payload!);
@@ -40,7 +42,7 @@ const webhook = (leadgenId = '9001') => new NextRequest('https://app.example/api
 });
 
 beforeEach(() => {
-    state.inserts = []; state.savedRequestIds = new Set(); state.insertError = null; state.events = [];
+    state.inserts = []; state.savedRequestIds = new Set(); state.insertError = null; state.events = []; state.mappedProject = 'project-garden';
     vi.stubEnv('FACEBOOK_APP_SECRET', '');
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
         campaign_id: 'cmp-1',
@@ -59,10 +61,16 @@ describe('Facebook Lead Ads intake', () => {
         expect(await response.json()).toEqual({ success: true, ingested: 1 });
         expect(state.inserts[0]).toMatchObject({
             shop_id: 'shop-1', customer_name: 'Бат Дорж', customer_phone: '+976 9911 2233', customer_email: 'bat@example.mn',
-            source: 'facebook_ads', facebook_campaign_id: 'cmp-1',
+            source: 'facebook_ads', facebook_campaign_id: 'cmp-1', project_id: 'project-garden',
         });
         expect(state.inserts[0].client_request_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-8[0-9a-f]{3}-[0-9a-f]{12}$/);
         expect(state.events).toEqual([expect.objectContaining({ leadId: 'lead-1', eventType: 'lead' })]);
+    });
+
+    it('keeps leads from unmapped campaigns for an admin to assign a project', async () => {
+        state.mappedProject = null;
+        expect((await POST(webhook('9004'))).status).toBe(200);
+        expect(state.inserts[0]).toMatchObject({ project_id: null, customer_name: 'Бат Дорж' });
     });
 
     it('does not duplicate a lead when Meta delivers it again', async () => {

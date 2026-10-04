@@ -51,7 +51,8 @@ function leadgenRequestId(leadgenId: string): string {
 
 /**
  * POST — Facebook Lead Ads-ийн шинэ lead-ийг хүлээн авч `leads`-д оруулна (attribution-тай).
- * Төсөл нь кампанийн холбоосоос DB trigger-ээр (`stamp_marketing_attribution`) тодорхойлогдоно.
+ * Төслийг /marketing дээрх Meta кампанийн холбоосоос (`marketing_campaigns`) авна; холбоогүй
+ * кампанийн лид төсөлгүй хадгалагдаж, админ төсөл оноох хүртэл хязгаартай менежерт харагдахгүй.
  * Хадгалж чадаагүй бол 500 буцааж Meta-д дахин илгээлгэнэ; давтан илгээлт давхар лид үүсгэхгүй.
  */
 export async function POST(request: NextRequest) {
@@ -103,8 +104,20 @@ export async function POST(request: NextRequest) {
                 const { name, phone, email } = mapFields(lead.field_data || []);
 
                 const campaignId = lead.campaign_id || v.campaign_id || null;
+                const mapping = campaignId
+                    ? await supabase.from('marketing_campaigns').select('project_id')
+                        .eq('shop_id', shop.id).eq('external_campaign_id', campaignId).maybeSingle()
+                    : { data: null, error: null };
+                if (mapping.error) {
+                    failed++;
+                    logger.error('[Leadgen] campaign mapping lookup failed', { leadgenId, error: mapping.error });
+                    continue;
+                }
+                const projectId: string | null = mapping.data?.project_id ?? null;
+                if (!projectId) logger.warn('[Leadgen] campaign is not mapped to a project; saved for admin assignment', { leadgenId, campaignId });
                 const { data: inserted, error: insertError } = await supabase.from('leads').insert({
                     shop_id: shop.id,
+                    project_id: projectId,
                     client_request_id: leadgenRequestId(String(leadgenId)),
                     customer_name: name || 'Facebook lead',
                     customer_phone: phone,

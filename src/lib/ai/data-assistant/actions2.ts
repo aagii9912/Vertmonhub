@@ -57,7 +57,7 @@ async function findCustomer(shopId: string, a: Args) {
     let q = db().from('customers').select('id, name, phone, tags, facebook_id').eq('shop_id', shopId);
     if (a.customer_id) q = q.eq('id', a.customer_id);
     else if (a.phone) {
-        const phonePattern = phoneIlikePattern(String(a.phone));
+        const phonePattern = phoneIlikePattern(String(a.phone), 8);
         if (!phonePattern) return { error: 'Харилцагчийн утасны дугаарыг бүтэн оруулна уу' };
         q = q.ilike('phone', phonePattern);
     }
