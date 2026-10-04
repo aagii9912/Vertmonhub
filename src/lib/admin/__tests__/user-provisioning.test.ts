@@ -678,7 +678,8 @@ describe('staff name and phone (user setup)', () => {
     });
 
     it('AI tool schemas expose full name, phone and the manager project', () => {
-        const props = (name: string) => Object.keys(TOOL_DEFINITIONS.find(tool => tool.name === name)!.parameters.properties || {});
+        const props = (name: string) => Object.keys(
+            (TOOL_DEFINITIONS.find(tool => tool.name === name)?.parameters?.properties as Record<string, unknown> | undefined) || {});
         expect(props('invite_user')).toEqual(expect.arrayContaining(['email', 'full_name', 'phone', 'role', 'shop_id']));
         expect(props('assign_role')).toEqual(expect.arrayContaining(['email', 'role', 'shop_id']));
     });

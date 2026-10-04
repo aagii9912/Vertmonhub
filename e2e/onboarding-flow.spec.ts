@@ -14,6 +14,8 @@ const managers = [
 ];
 type Identity = typeof admin | typeof managers[number];
 const shop = { id: shopId, name: 'Тест байгууллага', setup_completed: true, is_active: true };
+/** «Утас» талбарт бичих утга → серверт очих нормчилсон 8 оронтой утас (хоосон бол илгээхгүй). */
+const managerPhones = [{ typed: '+976 9911-2233', sent: '99112233' }, { typed: '', sent: undefined }];
 
 function data() {
     return { projects: [] as Record<string, unknown>[], users: [] as Record<string, unknown>[],
@@ -232,11 +234,12 @@ for (const mobile of [false, true]) {
         await page.screenshot({ path: `output/onboarding/${mobile ? 'mobile' : 'desktop'}-project.png`, fullPage: true });
 
         await page.goto('/admin/users');
-        for (const manager of managers) {
+        for (const [index, manager] of managers.entries()) {
             await page.getByRole('button', { name: 'Хэрэглэгч нэмэх', exact: true }).click();
             const modal = page.getByRole('dialog', { name: 'Хэрэглэгч нэмэх', exact: true });
             await modal.getByPlaceholder('Нэр оруулах', { exact: true }).fill(manager.full_name);
             await modal.getByPlaceholder('email@example.com', { exact: true }).fill(manager.email);
+            await modal.getByLabel('Утас', { exact: true }).fill(managerPhones[index].typed);
             await modal.getByPlaceholder('Хамгийн багадаа 8 тэмдэгт', { exact: true }).fill(password);
             await modal.getByRole('button', { name: 'Борлуулалтын менежер', exact: true }).click();
             await expect(modal.locator('select')).toHaveValue(shopId);
@@ -250,9 +253,12 @@ for (const mobile of [false, true]) {
         expect(state.users).toHaveLength(2);
         const userWrites = state.writes.filter(write => write.path === '/api/admin/users');
         expect(userWrites).toHaveLength(2);
-        for (const [index, write] of userWrites.entries()) expect(write.body).toMatchObject({
-            email: managers[index].email, full_name: managers[index].full_name, role: 'sales_manager', shop_id: shopId,
-        });
+        for (const [index, write] of userWrites.entries()) {
+            expect(write.body).toMatchObject({
+                email: managers[index].email, full_name: managers[index].full_name, role: 'sales_manager', shop_id: shopId,
+            });
+            expect(write.body.phone).toBe(managerPhones[index].sent);
+        }
 
         const managerContext = await browser.newContext({ viewport, timezoneId: 'Asia/Ulaanbaatar', bypassCSP: true, serviceWorkers: 'block' });
         const managerPage = await managerContext.newPage();

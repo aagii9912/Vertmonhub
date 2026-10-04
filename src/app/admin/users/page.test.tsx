@@ -24,34 +24,71 @@ function mockApi(shops: Array<{ id: string; name: string }>) {
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
-it('requires an explicit shop choice and sends the selected multishop invitation scope', async () => {
-    const invitations = mockApi([shopA, shopB]);
+async function openInvite() {
     render(<Page />);
     await waitFor(() => expect(screen.getByRole('button', { name: 'Урих холбоос' })).toBeEnabled());
     fireEvent.click(screen.getByRole('button', { name: 'Урих холбоос' }));
+}
+
+it('requires an explicit project choice and sends the selected multishop invitation scope', async () => {
+    const invitations = mockApi([shopA, shopB]);
+    await openInvite();
     await screen.findByRole('option', { name: 'Shop B' });
-    const shopSelect = screen.getByRole('combobox', { name: 'Байгууллага' });
+    const shopSelect = screen.getByRole('combobox', { name: 'Төсөл' });
     const send = screen.getByRole('button', { name: 'Урилга илгээх' });
     fireEvent.change(screen.getByPlaceholderText('manager@example.com'), { target: { value: 'target@example.com' } });
+    fireEvent.change(screen.getByPlaceholderText('Бодит бүтэн нэр'), { target: { value: 'Тест Менежер' } });
     expect(shopSelect).toHaveValue('');
     expect(send).toBeDisabled();
     fireEvent.click(send);
     expect(invitations).toEqual([]);
 
     fireEvent.change(shopSelect, { target: { value: shopB.id } });
+    fireEvent.change(screen.getByLabelText('Утас'), { target: { value: '+976 9911-2233' } });
     fireEvent.click(send);
     await waitFor(() => expect(invitations).toEqual([{
-        email: 'target@example.com', full_name: '', role: 'sales_manager', shop_id: shopB.id,
+        email: 'target@example.com', full_name: 'Тест Менежер', phone: '99112233', role: 'sales_manager', shop_id: shopB.id,
     }]));
 });
 
-it('defaults to the only shop and includes its ID in the invitation payload', async () => {
+it('defaults to the only project and includes its ID in the invitation payload', async () => {
     const invitations = mockApi([shopA]);
-    render(<Page />);
-    await waitFor(() => expect(screen.getByRole('button', { name: 'Урих холбоос' })).toBeEnabled());
-    fireEvent.click(screen.getByRole('button', { name: 'Урих холбоос' }));
-    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Байгууллага' })).toHaveValue(shopA.id));
+    await openInvite();
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Төсөл' })).toHaveValue(shopA.id));
     fireEvent.change(screen.getByPlaceholderText('manager@example.com'), { target: { value: 'target@example.com' } });
+    fireEvent.change(screen.getByPlaceholderText('Бодит бүтэн нэр'), { target: { value: 'Тест Менежер' } });
     fireEvent.click(screen.getByRole('button', { name: 'Урилга илгээх' }));
     await waitFor(() => expect(invitations[0]).toMatchObject({ email: 'target@example.com', shop_id: shopA.id }));
+    expect(invitations[0]).not.toHaveProperty('phone');
+});
+
+it('keeps a sales manager invitation disabled until a real name is entered', async () => {
+    const invitations = mockApi([shopA]);
+    await openInvite();
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Төсөл' })).toHaveValue(shopA.id));
+    const send = screen.getByRole('button', { name: 'Урилга илгээх' });
+    fireEvent.change(screen.getByPlaceholderText('manager@example.com'), { target: { value: 'target@example.com' } });
+    expect(send).toBeDisabled();
+    fireEvent.change(screen.getByPlaceholderText('Бодит бүтэн нэр'), { target: { value: 'TARGET@example.com' } });
+    expect(send).toBeDisabled();
+    fireEvent.change(screen.getByPlaceholderText('Бодит бүтэн нэр'), { target: { value: 'Тест Менежер' } });
+    expect(send).toBeEnabled();
+    fireEvent.click(send);
+    await waitFor(() => expect(invitations).toHaveLength(1));
+});
+
+it('flags a malformed phone inline and blocks the invitation', async () => {
+    const invitations = mockApi([shopA]);
+    await openInvite();
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Төсөл' })).toHaveValue(shopA.id));
+    fireEvent.change(screen.getByPlaceholderText('manager@example.com'), { target: { value: 'target@example.com' } });
+    fireEvent.change(screen.getByPlaceholderText('Бодит бүтэн нэр'), { target: { value: 'Тест Менежер' } });
+    const phone = screen.getByLabelText('Утас');
+    fireEvent.change(phone, { target: { value: '9911-223' } });
+    expect(phone).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('Утасны дугаар 8 оронтой байх ёстой')).toBeInTheDocument();
+    const send = screen.getByRole('button', { name: 'Урилга илгээх' });
+    expect(send).toBeDisabled();
+    fireEvent.click(send);
+    expect(invitations).toEqual([]);
 });
