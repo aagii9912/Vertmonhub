@@ -5,6 +5,7 @@ import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { UpdateRoleSchema, validateBody } from '@/lib/validations/schemas';
 import { ALL_MODULES, clearPermissionsCache } from '@/lib/rbac';
 import { logAdminAudit } from '@/lib/admin/audit';
+import { roleSaveErrorResponse, saveRole } from '@/lib/admin/roles';
 
 /**
  * PATCH /api/admin/roles/[id]
@@ -23,76 +24,20 @@ export async function PATCH(
         const { id } = await params;
         const validation = validateBody(UpdateRoleSchema, await request.json());
         if (!validation.success) return validation.response;
-        const { display_name, display_name_mn, description, can_write, can_delete, can_access_admin, modules } = validation.data;
+        const { modules, ...fields } = validation.data;
         if (modules?.some((module) => !ALL_MODULES.includes(module as typeof ALL_MODULES[number])))
             return NextResponse.json({ error: 'Танигдаагүй модуль байна' }, { status: 400 });
         if (modules && new Set(modules).size !== modules.length)
             return NextResponse.json({ error: 'Модуль давхар сонгогдсон байна' }, { status: 400 });
+        const changed = Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined));
+        if (modules === undefined && Object.keys(changed).length === 0)
+            return NextResponse.json({ error: 'Шинэчлэх талбар алга' }, { status: 400 });
 
-        // Check role exists
-        const supabase = supabaseAdmin();
-        const { data: existingRole, error: fetchError } = await supabase
-            .from('roles')
-            .select('*')
-            .eq('id', id)
-            .single();
+        const { data: role, error } = await saveRole({ roleId: id, fields: changed, modules: modules ?? null, actorId: admin.id });
+        if (error) return roleSaveErrorResponse(error, 'Role шинэчлэхэд алдаа гарлаа');
+        clearPermissionsCache(role.name);
 
-        if (fetchError || !existingRole) {
-            return NextResponse.json({ error: 'Role not found' }, { status: 404 });
-        }
-
-        // Update role fields
-        const updateData: Record<string, string | boolean | null> = {};
-        if (display_name !== undefined) updateData.display_name = display_name;
-        if (display_name_mn !== undefined) updateData.display_name_mn = display_name_mn;
-        if (description !== undefined) updateData.description = description;
-        if (can_write !== undefined) updateData.can_write = can_write;
-        if (can_delete !== undefined) updateData.can_delete = can_delete;
-        if (can_access_admin !== undefined) updateData.can_access_admin = can_access_admin;
-        if (modules !== undefined && Object.keys(updateData).length > 0)
-            return NextResponse.json({ error: 'Модуль болон дүрийн талбарыг тус тусад нь шинэчилнэ үү' }, { status: 400 });
-
-        if (modules !== undefined) {
-            const { data: oldRows, error: readError } = await supabase.from('role_permissions')
-                .select('module').eq('role_id', id);
-            if (readError) return safeErrorResponse(readError, 'Модулийн эрх уншихад алдаа гарлаа');
-            const old = new Set((oldRows || []).map((row) => row.module));
-            const next = new Set(modules);
-            const added = modules.filter((module) => !old.has(module));
-            const removed = [...old].filter((module) => !next.has(module));
-
-            // Insert first so a failed insert cannot erase existing permissions.
-            if (added.length) {
-                const { error } = await supabase.from('role_permissions')
-                    .insert(added.map((module) => ({ role_id: id, module })));
-                if (error) return safeErrorResponse(error, 'Модулийн эрх нэмэхэд алдаа гарлаа');
-            }
-            if (removed.length) {
-                const { error } = await supabase.from('role_permissions')
-                    .delete().eq('role_id', id).in('module', removed);
-                if (error) {
-                    if (added.length) await supabase.from('role_permissions').delete().eq('role_id', id).in('module', added);
-                    return safeErrorResponse(error, 'Модулийн эрх хасахад алдаа гарлаа');
-                }
-            }
-        }
-
-        if (Object.keys(updateData).length > 0) {
-            const { error: updateError } = await supabase.from('roles').update(updateData).eq('id', id);
-            if (updateError) return safeErrorResponse(updateError, 'Дүр шинэчлэхэд алдаа гарлаа');
-        }
-
-        // Return fresh data
-        const { data: freshRole, error: freshError } = await supabase
-            .from('roles')
-            .select('*, role_permissions(id, module)')
-            .eq('id', id)
-            .single();
-        if (freshError) return safeErrorResponse(freshError, 'Дүрийг дахин уншихад алдаа гарлаа');
-        clearPermissionsCache(existingRole.name);
-        await logAdminAudit({ actorId: admin.id, action: 'role.update', targetId: id, meta: { name: existingRole.name } });
-
-        return NextResponse.json({ role: freshRole });
+        return NextResponse.json({ role });
     } catch (error) {
         return safeErrorResponse(error, 'Role шинэчлэхэд алдаа гарлаа');
     }

@@ -286,6 +286,8 @@ RBAC remediation (2026-09-28): `docs/RBAC-FIX-2026-09-28.md`. Migration `2026092
 
 Admin review remediation (2026-09-30): `docs/ADMIN-RBAC-FIX-2026-09-30.md`. Independent migration `20260930120000_admin_rbac_private_attachments.sql` closes browser role/membership writes and webhook/attachment metadata access, and creates the private attachment bucket. It was applied and recorded live on 2026-09-30; the broader `20260928120000` migration still requires its companion deployment. API and AI role changes share actor/self-change validation and checked provisioning with compensating cleanup; existing accounts keep passwords and profiles. Admin UI responses are identity/scope guarded and role saves serialize per role.
 
+Atomic role saves (2026-10-04): `POST /api/admin/roles` and `PATCH /api/admin/roles/[id]` call `save_role` (`lib/admin/roles.ts`, migration `20261004120000_save_role_rpc.sql`), which writes the role row, its module grants and the `admin_audit_log` entry in one transaction and returns the saved role with `role_permissions`. Apply the migration before deploying the routes; until then they return 503.
+
 ---
 
 ## Admin Data Import (`/admin/import`)

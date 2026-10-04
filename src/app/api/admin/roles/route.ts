@@ -4,7 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { CreateRoleSchema, validateBody } from '@/lib/validations/schemas';
 import { ALL_MODULES, clearPermissionsCache } from '@/lib/rbac';
-import { logAdminAudit } from '@/lib/admin/audit';
+import { roleSaveErrorResponse, saveRole } from '@/lib/admin/roles';
 
 /**
  * GET /api/admin/roles
@@ -56,59 +56,16 @@ export async function POST(request: Request) {
         if (modules && new Set(modules).size !== modules.length)
             return NextResponse.json({ error: 'Модуль давхар сонгогдсон байна' }, { status: 400 });
 
-        // Create role
-        const supabase = supabaseAdmin();
-        const { data: role, error: roleError } = await supabase
-            .from('roles')
-            .insert({
-                name,
-                display_name,
-                display_name_mn,
-                description: description || null,
-                can_write: can_write ?? false,
-                can_delete: can_delete ?? false,
-                can_access_admin: can_access_admin ?? false,
-                is_system: false,
-            })
-            .select()
-            .single();
-
-        if (roleError) {
-            if (roleError.code === '23505') {
-                return NextResponse.json({ error: 'Role name already exists' }, { status: 409 });
-            }
-            return safeErrorResponse(roleError, 'Role үүсгэхэд алдаа гарлаа');
-        }
-
-        // Add module permissions if provided
-        if (modules && Array.isArray(modules) && modules.length > 0) {
-            const permissionRows = modules.map((module: string) => ({
-                role_id: role.id,
-                module,
-            }));
-
-            const { error: permError } = await supabase
-                .from('role_permissions')
-                .insert(permissionRows);
-
-            if (permError) {
-                // Rollback role creation
-                await supabase.from('roles').delete().eq('id', role.id);
-                return safeErrorResponse(permError, 'Permission нэмэхэд алдаа гарлаа');
-            }
-        }
-
-        // Fetch fresh role with permissions
-        const { data: freshRole, error: freshError } = await supabase
-            .from('roles')
-            .select('*, role_permissions(id, module)')
-            .eq('id', role.id)
-            .single();
-        if (freshError) return safeErrorResponse(freshError, 'Дүрийг дахин уншихад алдаа гарлаа');
+        const { data: role, error } = await saveRole({
+            roleId: null,
+            fields: { name, display_name, display_name_mn, description: description || null, can_write, can_delete, can_access_admin },
+            modules: modules ?? [],
+            actorId: admin.id,
+        });
+        if (error) return roleSaveErrorResponse(error, 'Role үүсгэхэд алдаа гарлаа');
         clearPermissionsCache(name);
-        await logAdminAudit({ actorId: admin.id, action: 'role.create', targetId: role.id, meta: { name } });
 
-        return NextResponse.json({ role: freshRole }, { status: 201 });
+        return NextResponse.json({ role }, { status: 201 });
     } catch (error) {
         return safeErrorResponse(error, 'Role үүсгэхэд алдаа гарлаа');
     }
