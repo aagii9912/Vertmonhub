@@ -7,6 +7,7 @@ import { nextMeetingDate, shiftReviewDate, weeklyReviewRange } from '../src/lib/
 import { buildWeeklySales } from '../src/lib/dashboard/weekly-sales';
 import type { ErpProduct, ErpSale } from '../src/lib/erp/records';
 import { scoreKpi } from '../src/lib/sales/kpi';
+import { buildBudgetOverview } from '../src/lib/marketing/budget';
 
 const userId = '00000000-0000-4000-8000-000000000001';
 const shopId = '00000000-0000-4000-8000-000000000002';
@@ -91,6 +92,8 @@ async function setup(page: Page, restricted = false) {
                 managers: [card('Номин', { contract_amount: 1080000000, cash_collected: 240000000, overdue_collected: 0, new_meetings: 8, calls_chats: null, followup: 75 }, 4),
                     card('Сараа', { contract_amount: 400000000, cash_collected: 90000000, overdue_collected: 0, new_meetings: 3, calls_chats: null, followup: null }, null)] });
         }
+        if (path === '/api/marketing/budget') return reply({ year: Number(url.searchParams.get('year')), available: true,
+            overview: buildBudgetOverview(Array(12).fill(10000000), Array.from({ length: 12 }, (_, index) => index < 9 ? 8000000 : 0), Array(12).fill(0)) });
         if (path === '/api/dashboard/kpi-report') return reply({ manager: { name: 'Номин', isSelf: true }, shopName: 'Vertmon · Туршилтын өгөгдөл', year: 2026, month: 10, onboarding: true });
         if (path === '/api/dashboard/reports/weekly-sales') return reply({ meetingDate, projectName: 'Vertmon · Туршилтын өгөгдөл', ...weeklySalesFixture() });
         if (path === '/api/marketing/performance') {
@@ -173,6 +176,7 @@ for (const mobile of [false, true]) {
         await expect(weekContracts.getByRole('row')).toHaveCount(4);
         await expect(page.getByText('Мөнгөн орлого (ERP)', { exact: true })).toBeVisible();
         await expect(page.getByRole('region', { name: 'Б1 блокийн давхрын зураглал' })).toBeVisible();
+        await expect(page.getByText(/оны үндсэн төсөв$/)).toBeVisible();
         expect(copied).toContain('Энэ долоо хоног: 3 гэрээ');
         expect(copied).toContain('Б1 блок орон сууц: гэрээтэй');
         const products = page.getByRole('region', { name: 'Гэрээний бүтээгдэхүүний задаргаа' });

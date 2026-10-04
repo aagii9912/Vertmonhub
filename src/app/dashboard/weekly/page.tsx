@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
 import { Avatar, Skeleton } from '@/components/dashboard/v2/primitives';
 import { useWeeklySales, WeeklySalesDetails } from '@/components/weekly/WeeklySalesDetails';
+import { WeeklyMarketingBudget } from '@/components/weekly/WeeklyMarketingBudget';
 
 export default function WeeklyReviewPage() {
     const { shop, user } = useAuth();
@@ -189,6 +190,7 @@ function WeeklyReview() {
 
                     <section className="break-inside-avoid space-y-4">
                         <ReportHeading number="02" title="Маркетингийн үр дүн" href={can('marketing-roi') ? `/marketing?${params}` : undefined} />
+                        {can('marketing-roi') && <WeeklyMarketingBudget to={range.to} />}
                         {marketingQuery.isPending && can('marketing-roi') ? <Skeleton className="h-36" /> : marketing ? <>
                             <div className="grid grid-cols-2 gap-5 rounded-2xl border border-border p-5 sm:grid-cols-3">
                                 <Metric label="Шинэ лид" value={marketing.totals.leads} helper={formatReviewChange(marketing.totals.leads, marketing.previous.leads)} />
