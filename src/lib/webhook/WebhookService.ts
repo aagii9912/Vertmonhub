@@ -1,206 +1,68 @@
 /**
- * WebhookService - Handles Facebook webhook processing
- * Extracted from webhook/route.ts for better organization
+ * WebhookService — Meta webhook-оос ирсэн Messenger / Instagram DM-ийг
+ * харилцагч ба chat_history-д хадгална (dashboard Inbox уншина).
+ * Автомат (AI) хариу байхгүй — хариуг хүн Inbox-оос өгнө.
  */
 
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { extractPhoneFromText } from '@/lib/utils/phone';
-import { sendImage, sendImageGallery, appsecretProof } from '@/lib/facebook/messenger';
+import { appsecretProof } from '@/lib/facebook/messenger';
 import { decryptToken } from '@/lib/crypto/tokens';
-import { generateCommentReply } from '@/lib/ai/comment-detector';
-import type { AIFAQ, AIQuickReply, AISlogan, NotifySettings, ChatMessage as AIChatMessage } from '@/types/ai';
-import { IntentResult } from '@/lib/ai/intent-detector';
 
-/**
- * Shop data with products and settings
- */
-export interface ShopWithProducts {
+/** Webhook-д хэрэгтэй shop-ийн талбарууд (токенууд тайлагдсан). */
+export interface WebhookShop {
     id: string;
     name: string;
-    description?: string | null;
-    ai_instructions?: string | null;
-    ai_emotion?: 'friendly' | 'professional' | 'enthusiastic' | 'calm' | 'playful' | null;
-    facebook_page_id: string;
-    facebook_page_username?: string | null;
+    facebook_page_id: string | null;
     facebook_page_access_token?: string | null;
-    // Instagram fields
     instagram_business_account_id?: string | null;
     instagram_access_token?: string | null;
-    instagram_username?: string | null;
-    properties?: any[];
-    /** property_units нөөцийн хураангуй (properties хоосон үед) */
-    inventorySummary?: string | null;
-    notify_on_lead?: boolean | null;
-    notify_on_viewing?: boolean | null;
-    notify_on_contact?: boolean | null;
-    notify_on_support?: boolean | null;
-    is_ai_active?: boolean | null;
-    custom_knowledge?: Record<string, unknown> | null;
 }
 
-/**
- * Customer data
- */
 export interface CustomerData {
     id: string;
     name?: string | null;
     phone?: string | null;
-    ai_paused_until?: string | null;
-    // Message counting fields
     message_count?: number;
-    message_count_reset_at?: string | null;
-    // Platform fields
     instagram_id?: string | null;
     platform?: 'messenger' | 'instagram';
 }
 
-/**
- * AI Features data
- */
-export interface AIFeatures {
-    faqs: AIFAQ[];
-    quickReplies: AIQuickReply[];
-    slogans: AISlogan[];
+const SHOP_COLUMNS = 'id, name, facebook_page_id, facebook_page_access_token, instagram_business_account_id, instagram_access_token';
+
+function toWebhookShop(data: Record<string, unknown> | null): WebhookShop | null {
+    if (!data) return null;
+    return {
+        id: data.id as string,
+        name: data.name as string,
+        facebook_page_id: (data.facebook_page_id as string | null) ?? null,
+        facebook_page_access_token: decryptToken(data.facebook_page_access_token as string | null),
+        instagram_business_account_id: (data.instagram_business_account_id as string | null) ?? null,
+        instagram_access_token: decryptToken(data.instagram_access_token as string | null),
+    };
 }
 
-/**
- * Chat history entry
- */
-interface ChatHistoryEntry {
-    message: string;
-    response: string;
-}
-
-/**
- * Бодит нөөцийн (property_units) хураангуй — ээлж/блок бүрээр худалдаанд байгаа нэгжийн
- * тоо. `property_block_summary` view-ээс (security_invoker; service role уншина).
- * Listing (properties) хоосон үед л prompt-д орно; алдаа гарвал null (prompt-д нөлөөлөхгүй).
- */
-async function buildInventorySummary(
-    supabase: ReturnType<typeof supabaseAdmin>,
-    shopId: string,
-    properties: unknown[] | null | undefined,
-): Promise<string | null> {
-    if (properties && properties.length > 0) return null;
-    try {
-        const { data, error } = await supabase
-            .from('property_block_summary')
-            .select('phase, block, available_units')
-            .eq('shop_id', shopId)
-            .gt('available_units', 0)
-            .limit(200);
-        if (error || !data || data.length === 0) return null;
-        const byPhase = new Map<string, { total: number; blocks: string[] }>();
-        for (const row of data as Array<{ phase: string | null; block: string | null; available_units: number }>) {
-            const phase = row.phase || 'Бусад';
-            const cur = byPhase.get(phase) || { total: 0, blocks: [] };
-            cur.total += Number(row.available_units) || 0;
-            if (row.block) cur.blocks.push(`${row.block}×${row.available_units}`);
-            byPhase.set(phase, cur);
-        }
-        return [...byPhase.entries()]
-            .map(([phase, v]) => `- ${phase}: ${v.total} нэгж худалдаанд${v.blocks.length ? ` (блок: ${v.blocks.slice(0, 12).join(', ')})` : ''}`)
-            .join('\n');
-    } catch {
-        return null;
-    }
-}
-
-/**
- * Fetch shop data by Facebook page ID
- */
-export async function getShopByPageId(pageId: string): Promise<ShopWithProducts | null> {
-    const supabase = supabaseAdmin();
-
-    const { data } = await supabase
+/** Facebook page ID-аар идэвхтэй shop. */
+export async function getShopByPageId(pageId: string): Promise<WebhookShop | null> {
+    const { data } = await supabaseAdmin()
         .from('shops')
-        .select('*, properties(*)')
+        .select(SHOP_COLUMNS)
         .eq('facebook_page_id', pageId)
         .eq('is_active', true)
         .single();
-
-    if (!data) return null;
-
-    return {
-        id: data.id,
-        name: data.name,
-        description: data.description,
-        ai_instructions: data.ai_instructions,
-        ai_emotion: data.ai_emotion,
-        facebook_page_id: data.facebook_page_id,
-        facebook_page_username: data.facebook_page_username,
-        facebook_page_access_token: decryptToken(data.facebook_page_access_token),
-        properties: data.properties || [],
-        inventorySummary: await buildInventorySummary(supabase, data.id, data.properties),
-        notify_on_lead: data.notify_on_lead,
-        notify_on_viewing: data.notify_on_viewing,
-        notify_on_contact: data.notify_on_contact,
-        notify_on_support: data.notify_on_support,
-        is_ai_active: data.is_ai_active,
-        custom_knowledge: data.custom_knowledge,
-        // Instagram fields
-        instagram_business_account_id: data.instagram_business_account_id,
-        instagram_access_token: decryptToken(data.instagram_access_token),
-        instagram_username: data.instagram_username,
-    };
+    return toWebhookShop(data);
 }
 
-/**
- * Fetch shop data by Instagram Business Account ID
- */
-export async function getShopByInstagramId(instagramId: string): Promise<ShopWithProducts | null> {
-    const supabase = supabaseAdmin();
-
-    const { data } = await supabase
+/** Instagram Business Account ID-аар идэвхтэй shop. */
+export async function getShopByInstagramId(instagramId: string): Promise<WebhookShop | null> {
+    const { data } = await supabaseAdmin()
         .from('shops')
-        .select('*, properties(*)')
+        .select(SHOP_COLUMNS)
         .eq('instagram_business_account_id', instagramId)
         .eq('is_active', true)
         .single();
-
-    if (!data) return null;
-
-    return {
-        id: data.id,
-        name: data.name,
-        description: data.description,
-        ai_instructions: data.ai_instructions,
-        ai_emotion: data.ai_emotion,
-        facebook_page_id: data.facebook_page_id,
-        facebook_page_username: data.facebook_page_username,
-        facebook_page_access_token: decryptToken(data.facebook_page_access_token),
-        instagram_business_account_id: data.instagram_business_account_id,
-        instagram_access_token: decryptToken(data.instagram_access_token),
-        instagram_username: data.instagram_username,
-        properties: data.properties || [],
-        inventorySummary: await buildInventorySummary(supabase, data.id, data.properties),
-        notify_on_lead: data.notify_on_lead,
-        notify_on_viewing: data.notify_on_viewing,
-        notify_on_contact: data.notify_on_contact,
-        notify_on_support: data.notify_on_support,
-        is_ai_active: data.is_ai_active,
-        custom_knowledge: data.custom_knowledge,
-    };
-}
-
-/**
- * Fetch AI features for a shop
- */
-export async function getAIFeatures(shopId: string): Promise<AIFeatures> {
-    const supabase = supabaseAdmin();
-
-    const [faqRes, qrRes, sloganRes] = await Promise.all([
-        supabase.from('shop_faqs').select('question, answer').eq('shop_id', shopId).eq('is_active', true),
-        supabase.from('shop_quick_replies').select('trigger_words, response, is_exact_match').eq('shop_id', shopId).eq('is_active', true),
-        supabase.from('shop_slogans').select('slogan, usage_context').eq('shop_id', shopId).eq('is_active', true)
-    ]);
-
-    return {
-        faqs: (faqRes.data || []) as AIFAQ[],
-        quickReplies: (qrRes.data || []) as AIQuickReply[],
-        slogans: (sloganRes.data || []) as AISlogan[],
-    };
+    return toWebhookShop(data);
 }
 
 /**
@@ -225,9 +87,7 @@ export async function getOrCreateCustomer(
             id: existingCustomer.id,
             name: existingCustomer.name,
             phone: existingCustomer.phone,
-            ai_paused_until: existingCustomer.ai_paused_until,
             message_count: existingCustomer.message_count || 0,
-            message_count_reset_at: existingCustomer.message_count_reset_at,
         };
     }
 
@@ -262,9 +122,7 @@ export async function getOrCreateCustomer(
         id: newCustomer?.id || '',
         name: newCustomer?.name || userName,
         phone: newCustomer?.phone ?? null,
-        ai_paused_until: newCustomer?.ai_paused_until,
         message_count: newCustomer?.message_count || 0,
-        message_count_reset_at: newCustomer?.message_count_reset_at ?? null,
         platform: 'messenger',
     };
 }
@@ -295,9 +153,7 @@ export async function getOrCreateInstagramCustomer(
             id: existingCustomer.id,
             name: existingCustomer.name,
             phone: existingCustomer.phone,
-            ai_paused_until: existingCustomer.ai_paused_until,
             message_count: existingCustomer.message_count || 0,
-            message_count_reset_at: existingCustomer.message_count_reset_at,
             instagram_id: existingCustomer.instagram_id,
             platform: 'instagram',
         };
@@ -337,7 +193,6 @@ export async function getOrCreateInstagramCustomer(
         name: userName,
         phone: null,
         message_count: 0,
-        message_count_reset_at: null,
         instagram_id: instagramId,
         platform: 'instagram',
     };
@@ -424,258 +279,41 @@ export async function updateCustomerInfo(
     return updatedCustomer;
 }
 
-/**
- * Get recent chat history for AI context
- */
-export async function getChatHistory(shopId: string, customerId: string): Promise<AIChatMessage[]> {
-    const supabase = supabaseAdmin();
+const ATTACHMENT_LABELS: Record<string, string> = {
+    image: '[Зураг]',
+    video: '[Видео]',
+    audio: '[Дуут мессеж]',
+    file: '[Файл]',
+    location: '[Байршил]',
+};
 
-    const { data: historyData } = await supabase
-        .from('chat_history')
-        .select('message, response')
-        .eq('shop_id', shopId)
-        .eq('customer_id', customerId)
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-    const history: AIChatMessage[] = [];
-    if (historyData) {
-        historyData.reverse().forEach((h: ChatHistoryEntry) => {
-            if (h.message) {
-                history.push({ role: 'user', content: h.message });
-            }
-            if (h.response) {
-                history.push({ role: 'assistant', content: h.response });
-            }
-        });
-    }
-    return history;
+/** Inbox-д харуулах текст. Хавсралтын (хугацаатай) URL-ийг хадгалахгүй, зөвхөн төрлийг нь. */
+export function incomingMessageText(message?: { text?: string; attachments?: Array<{ type: string }> }): string {
+    const labels = (message?.attachments || []).map((attachment) => ATTACHMENT_LABELS[attachment.type] || '[Хавсралт]');
+    return [message?.text?.trim(), ...labels].filter(Boolean).join(' ');
 }
 
-/**
- * Save chat to history
- */
-export async function saveChatHistory(
-    shopId: string,
-    customerId: string | undefined,
-    message: string,
-    response: string,
-    intent: string
-): Promise<void> {
-    const supabase = supabaseAdmin();
-
-    await supabase.from('chat_history').insert({
+/** Харилцагчийн мессеж (response = null) эсвэл хүний хариуг chat_history-д бичнэ. */
+export async function saveChatHistory(shopId: string, customerId: string, message: string, response: string | null = null): Promise<void> {
+    const { error } = await supabaseAdmin().from('chat_history').insert({
         shop_id: shopId,
         customer_id: customerId,
         message,
         response,
-        intent
     });
+    if (error) logger.error('[Webhook] chat_history insert failed', { shopId, customerId, error: error.message });
 }
 
-/**
- * Increment customer message count for plan-based limiting
- * Uses database function for atomic increment with monthly reset
- */
-export async function incrementMessageCount(customerId: string): Promise<number> {
+/** Харилцагчийн нийт мессежийн тоог нэмэгдүүлнэ (atomic RPC, байхгүй бол энгийн update). */
+export async function incrementMessageCount(customerId: string): Promise<void> {
     const supabase = supabaseAdmin();
-
     try {
-        // Try to use the database function for atomic increment
-        const { data, error } = await supabase
-            .rpc('increment_customer_message_count', { p_customer_id: customerId });
-
-        if (error) {
-            logger.warn('RPC increment failed, using manual update:', { error: error.message });
-
-            // Fallback: manual increment
-            const { data: customer } = await supabase
-                .from('customers')
-                .select('message_count, message_count_reset_at')
-                .eq('id', customerId)
-                .single();
-
-            let newCount = (customer?.message_count || 0) + 1;
-            const resetAt = customer?.message_count_reset_at;
-
-            // Check if reset needed
-            if (resetAt && new Date(resetAt) <= new Date()) {
-                newCount = 1;
-                await supabase
-                    .from('customers')
-                    .update({
-                        message_count: newCount,
-                        message_count_reset_at: getNextMonthFirstDay()
-                    })
-                    .eq('id', customerId);
-            } else {
-                await supabase
-                    .from('customers')
-                    .update({ message_count: newCount })
-                    .eq('id', customerId);
-            }
-
-            return newCount;
-        }
-
-        return data || 0;
+        const { error } = await supabase.rpc('increment_customer_message_count', { p_customer_id: customerId });
+        if (!error) return;
+        logger.warn('RPC increment failed, using manual update:', { error: error.message });
+        const { data: customer } = await supabase.from('customers').select('message_count').eq('id', customerId).single();
+        await supabase.from('customers').update({ message_count: (customer?.message_count || 0) + 1 }).eq('id', customerId);
     } catch (error) {
         logger.error('Failed to increment message count:', { error, customerId });
-        return 0;
-    }
-}
-
-/**
- * Get first day of next month
- */
-function getNextMonthFirstDay(): string {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString();
-}
-
-/**
- * Build notify settings from shop data
- */
-export function buildNotifySettings(shop: ShopWithProducts): NotifySettings {
-    return {
-        lead: shop.notify_on_lead ?? true,
-        viewing: shop.notify_on_viewing ?? true,
-        contact: shop.notify_on_contact ?? true,
-        support: shop.notify_on_support ?? true,
-    };
-}
-
-/**
- * Generate fallback response when AI fails
- */
-export function generateFallbackResponse(
-    intent: IntentResult,
-    shopName: string,
-    properties?: any[]
-): string {
-    const propertyList = (properties || []).slice(0, 3)
-        .map((p: any) => `${p.name || p.title} (${Number(p.price).toLocaleString()}₮)`)
-        .join(', ');
-
-    switch (intent.intent) {
-        case 'GREETING':
-            return `Сайн байна уу! 😊 ${shopName}-д тавтай морил! Танд яаж туслах вэ?`;
-        case 'PRODUCT_INQUIRY':
-        case 'STOCK_CHECK':
-            return propertyList
-                ? `Манайд ${propertyList} зэрэг байрууд байна! 😊 Аль нь сонирхож байна вэ?`
-                : 'Байрны мэдээлэл удахгүй орно!';
-        case 'PRICE_CHECK':
-            return 'Ямар байрны үнийг мэдэхийг хүсч байна вэ? 💰';
-        case 'ORDER_CREATE':
-            return 'Байр үзэхийг хүсвэл нэр, утас, хүссэн цагаа бичнэ үү! 📋';
-        case 'ORDER_STATUS':
-            return 'Мэдээлэл авахын тулд нэр, утас дугаараа хэлнэ үү! 🔍';
-        case 'THANK_YOU':
-            return 'Баярлалаа! Дахиад хандаарай 😊';
-        case 'COMPLAINT':
-            return 'Уучлаарай, танд тохиромжгүй байдал үүссэнд харамсаж байна. Асуудлаа дэлгэрэнгүй хэлнэ үү 🙏';
-        default:
-            return 'Уучлаарай, одоо системд түр алдаа гарлаа. Удахгүй хариулах болно! 🙏';
-    }
-}
-
-/**
- * Process and send AI response with images
- */
-export async function processAIResponse(
-    response: { text: string; imageAction?: { type: 'single' | 'confirm' | 'attachment'; properties?: Array<{ name: string; price: number; imageUrl: string; description?: string }>; imageUrls?: string[] } },
-    senderId: string,
-    pageAccessToken: string
-): Promise<void> {
-    const { imageAction } = response;
-
-    if (!imageAction) return;
-
-    try {
-        // Handle attachment type for property images
-        if (imageAction.type === 'attachment' && imageAction.imageUrls && imageAction.imageUrls.length > 0) {
-            for (const imageUrl of imageAction.imageUrls.slice(0, 5)) {
-                await sendImage({
-                    recipientId: senderId,
-                    imageUrl,
-                    pageAccessToken,
-                });
-            }
-            logger.success(`Sent ${imageAction.imageUrls.length} property image(s)`);
-            return;
-        }
-
-        // Handle property gallery
-        if (imageAction.properties && imageAction.properties.length > 0) {
-            if (imageAction.properties.length === 1 && imageAction.type === 'single') {
-                await sendImage({
-                    recipientId: senderId,
-                    imageUrl: imageAction.properties[0].imageUrl,
-                    pageAccessToken,
-                });
-            } else {
-                await sendImageGallery({
-                    recipientId: senderId,
-                    products: imageAction.properties,
-                    pageAccessToken,
-                    confirmMode: imageAction.type === 'confirm',
-                });
-            }
-            logger.success(`Sent ${imageAction.properties.length} property image(s) in ${imageAction.type} mode`);
-        }
-    } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        logger.error('Failed to send images:', { message: errorMessage });
-    }
-}
-
-/**
- * Reply to Facebook comment
- */
-export async function replyToComment(
-    shopId: string,
-    shopName: string,
-    pageUsername: string | null | undefined,
-    commentId: string,
-    commentMessage: string,
-    pageAccessToken: string
-): Promise<boolean> {
-    const supabase = supabaseAdmin();
-    const replyMessage = generateCommentReply(shopName, pageUsername || undefined);
-
-    try {
-        const proof = appsecretProof(pageAccessToken);
-        const proofParam = proof ? `&appsecret_proof=${proof}` : '';
-        const response = await fetch(
-            `https://graph.facebook.com/v21.0/${commentId}/comments?access_token=${pageAccessToken}${proofParam}`,
-            {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    message: replyMessage,
-                }),
-            }
-        );
-
-        if (response.ok) {
-            logger.success(`[${shopName}] Comment reply sent successfully!`);
-
-            await supabase.from('chat_history').insert({
-                shop_id: shopId,
-                message: `[FB Comment] ${commentMessage}`,
-                response: replyMessage,
-                intent: 'COMMENT_REPLY'
-            });
-            return true;
-        } else {
-            const errorData = await response.json();
-            logger.error(`[${shopName}] Failed to reply to comment`, errorData);
-            return false;
-        }
-    } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-        logger.error(`[${shopName}] Error replying to comment`, { error: errorMessage });
-        return false;
     }
 }

@@ -3,7 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveApiUser } from '@/lib/auth/resolve-user';
 import { fetchRolePermissions } from '@/lib/rbac';
-import { buildDynamicKnowledge, buildFAQs } from '@/lib/ai/services/PromptService';
+import { loadShopKnowledge } from './shop-knowledge';
 import { resolveSalesManagerName } from '@/lib/ai/data-assistant/functions';
 import { hasOpenAIKey } from '@/lib/ai/openai/client';
 import { executeDataTool } from '@/lib/ai/data-assistant';
@@ -33,16 +33,6 @@ export interface PreparedAssistantRequest {
     effectiveShopId: string;
     userId: string;
     adminDb: SupabaseClient;
-}
-
-async function loadShopKnowledge(db: SupabaseClient, shopId: string): Promise<string> {
-    const [shopRes, faqRes] = await Promise.all([
-        db.from('shops').select('custom_knowledge').eq('id', shopId).single(),
-        db.from('shop_faqs').select('question, answer').eq('shop_id', shopId).eq('is_active', true),
-    ]);
-    const ck = (shopRes.data?.custom_knowledge as Record<string, unknown> | string | null) || null;
-    const faqs = (faqRes.data || []) as { question: string; answer: string }[];
-    return [buildDynamicKnowledge(ck), buildFAQs(faqs)].filter(Boolean).join('\n');
 }
 
 /** Контекстийн тэмдэглэл — model зөв tool-ыг зөв id-тай дуудна. */

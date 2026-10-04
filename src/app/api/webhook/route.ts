@@ -1,36 +1,26 @@
 import { randomUUID } from 'node:crypto';
 import { NextRequest, NextResponse, after } from 'next/server';
-
-/**
- * Meta 20с дотор 200 хүлээдэг; Gemini + Messenger retry нийлээд 60с давж болно.
- * after()-ээр ACK-ийн дараа боловсруулах тул функцийн дээд хугацааг тогтооно.
- */
-export const maxDuration = 60;
-import { verifyWebhook, sendTextMessage, sendSenderAction, sendMessageWithQuickReplies } from '@/lib/facebook/messenger';
-import { routeToAI, analyzeProductImageWithPlan } from '@/lib/ai/AIRouter';
-import { detectIntent } from '@/lib/ai/intent-detector';
-import { shouldReplyToComment } from '@/lib/ai/comment-detector';
-import { getCustomerMemory } from '@/lib/ai/tools/memory';
-import { isDuplicateWebhookEvent, queueWebhookJob } from '@/lib/webhook/retryService';
+import { verifyWebhook } from '@/lib/facebook/messenger';
+import { isDuplicateWebhookEvent } from '@/lib/webhook/retryService';
 import { logger } from '@/lib/utils/logger';
 import { verifyWebhookSignature } from '@/lib/utils/verify-webhook-signature';
 import {
     getShopByPageId,
     getShopByInstagramId,
-    getAIFeatures,
     getOrCreateCustomer,
     getOrCreateInstagramCustomer,
     updateCustomerInfo,
-    getChatHistory,
+    incomingMessageText,
     saveChatHistory,
     incrementMessageCount,
-    buildNotifySettings,
-    generateFallbackResponse,
-    processAIResponse,
-    replyToComment,
-    ShopWithProducts,
 } from '@/lib/webhook/WebhookService';
-import type { ChatMessage } from '@/types/ai';
+
+/**
+ * Meta webhook — Facebook Messenger / Instagram DM-ийг харилцагч ба chat_history-д
+ * хадгалж dashboard-ын Inbox-д харуулна. Автомат (AI) хариу байхгүй.
+ * Meta 20с дотор 200 хүлээдэг тул хадгалалтыг ACK-ийн дараа after()-д хийнэ.
+ */
+export const maxDuration = 60;
 
 const VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN;
 if (!VERIFY_TOKEN) {
@@ -39,30 +29,17 @@ if (!VERIFY_TOKEN) {
 
 const APP_SECRET = process.env.FACEBOOK_APP_SECRET;
 
-/**
- * Facebook webhook entry type
- */
+type Platform = 'messenger' | 'instagram';
+
 interface WebhookEntry {
     id: string;
-    changes?: Array<{
-        field: string;
-        value?: {
-            item?: string;
-            message?: string;
-            comment_id?: string;
-            post_id?: string;
-            from?: { id: string; name?: string };
-        };
-    }>;
     messaging?: Array<{
         sender: { id: string };
         message?: {
             mid?: string;
             text?: string;
-            attachments?: Array<{
-                type: string;
-                payload?: { url?: string };
-            }>;
+            is_echo?: boolean;
+            attachments?: Array<{ type: string }>;
         };
         postback?: { payload?: string };
     }>;
@@ -91,13 +68,8 @@ export async function GET(request: NextRequest) {
 }
 
 // Handle incoming messages (POST request from Facebook/Instagram)
-// Phase 1 (data-only) kill switch. When FACEBOOK_BOT_ENABLED is not "true",
-// the webhook acks Meta but skips all AI/auto-reply processing. Set to "true"
-// in Vercel ENV when Phase 2 (chatbot/comment automation) is ready.
-const BOT_ENABLED = process.env.FACEBOOK_BOT_ENABLED?.trim().toLowerCase() === 'true';
-
 export async function POST(request: NextRequest) {
-    // Correlation ID — webhook → AI → send гинжийг лог-д мөшгихөд тусална
+    // Correlation ID — webhook → хадгалалтын гинжийг лог-д мөшгихөд тусална
     const requestId = randomUUID();
     try {
         // Verify webhook signature (X-Hub-Signature-256)
@@ -115,318 +87,23 @@ export async function POST(request: NextRequest) {
 
         const body = JSON.parse(rawBody);
 
-        // Determine platform type: 'page' for Messenger, 'instagram' for Instagram
-        const platform: 'messenger' | 'instagram' = body.object === 'instagram' ? 'instagram' : 'messenger';
-
         // Validate object type (page or instagram)
         if (body.object !== 'page' && body.object !== 'instagram') {
             return NextResponse.json({ error: 'Invalid object type' }, { status: 400 });
         }
-
+        const platform: Platform = body.object === 'instagram' ? 'instagram' : 'messenger';
         logger.info(`Webhook received for platform: ${platform}`);
 
-        // Phase 1: ack the webhook but skip all auto-reply processing.
-        if (!BOT_ENABLED) {
-            logger.info('Bot disabled (FACEBOOK_BOT_ENABLED!=true); skipping AI processing');
-            return NextResponse.json({ ok: true, mode: 'data_only' });
-        }
-
-        // Meta-д ШУУД 200 өгч, боловсруулалтыг after()-д (ижил invocation, maxDuration хүртэл)
-        // үргэлжлүүлнэ. Өмнө нь Gemini дуусах хүртэл хүлээж 200 өгдөг тул Meta timeout →
-        // дахин илгээлт → dedup-д алгасагдаж мессеж бүрмөсөн алдагддаг байв (review H7).
+        // Meta-д ШУУД 200 өгч, хадгалалтыг after()-д (ижил invocation, maxDuration хүртэл)
+        // үргэлжлүүлнэ — удаан бол Meta timeout → дахин илгээлт → dedup-д алгасагддаг (review H7).
         after(async () => {
-        try {
-        for (const entry of body.entry as WebhookEntry[]) {
-            const accountId = entry.id; // Page ID for Messenger, or Instagram Business Account ID
-
-            // Get shop based on platform
-            let shop: ShopWithProducts | null = null;
-            if (platform === 'instagram') {
-                shop = await getShopByInstagramId(accountId);
-            } else {
-                shop = await getShopByPageId(accountId);
-            }
-
-            if (!shop) {
-                logger.warn(`No active shop found for ${platform} account ${accountId}`);
-                continue;
-            }
-
-            // Get AI features for this shop
-            const aiFeatures = await getAIFeatures(shop.id);
-
-            // Get access token based on platform
-            const accessToken = platform === 'instagram'
-                ? (shop.instagram_access_token || shop.facebook_page_access_token || process.env.FACEBOOK_PAGE_ACCESS_TOKEN)
-                : (shop.facebook_page_access_token || process.env.FACEBOOK_PAGE_ACCESS_TOKEN);
-
-            if (!accessToken) {
-                logger.warn(`No access token for shop ${shop.name} on ${platform}`);
-                continue;
-            }
-
-            // Process Facebook Page feed events (comments) - only for Messenger platform
-            if (platform === 'messenger') {
-                for (const change of entry.changes || []) {
-                    if (change.field === 'feed' && change.value?.item === 'comment') {
-                        const commentData = change.value;
-                        const commentMessage = commentData.message || '';
-                        const commentId = commentData.comment_id;
-                        const senderId = commentData.from?.id;
-
-                        // Don't reply to own comments (from page)
-                        if (senderId === accountId || !commentId) continue;
-                        // Meta дахин илгээлт → давхар нийтийн хариу бичихгүй
-                        if (await isDuplicateWebhookEvent(`comment:${commentId}`)) continue;
-
-                        logger.info(`[${shop.name}] New comment received`, {
-                            commentMessage,
-                            senderName: commentData.from?.name
-                        });
-
-                        // Check if comment is product-related and reply
-                        if (shouldReplyToComment(commentMessage)) {
-                            logger.info(`[${shop.name}] Comment is product-related, replying...`);
-                            await replyToComment(
-                                shop.id,
-                                shop.name,
-                                shop.facebook_page_username,
-                                commentId,
-                                commentMessage,
-                                accessToken
-                            );
-                        } else {
-                            logger.debug(`[${shop.name}] Comment not product-related, skipping`);
-                        }
-                    }
+            try {
+                for (const entry of (body.entry || []) as WebhookEntry[]) {
+                    await saveEntryMessages(platform, entry, requestId);
                 }
+            } catch (error) {
+                logger.error('[Webhook] background processing error', { requestId, error: error instanceof Error ? error.message : String(error) });
             }
-
-            // Process messaging events (works for both Messenger and Instagram)
-            for (const event of entry.messaging || []) {
-                const senderId = event.sender.id;
-
-                // Өөрийн (page-ийн) илгээсэн мессежийн echo — харилцагчийн мессеж биш
-                if ((event.message as { is_echo?: boolean } | undefined)?.is_echo || senderId === accountId) continue;
-
-                // Idempotency: Meta нэг мессежийг давхар илгээж болзошгүй тул
-                // message ID (mid)-аар давхардлыг таслана (давхар AI хариунаас сэргийлнэ)
-                if (event.message?.mid && await isDuplicateWebhookEvent(event.message.mid)) {
-                    logger.info(`[${shop.name}] Duplicate message skipped`, { mid: event.message.mid });
-                    continue;
-                }
-
-                // Handle text messages
-                if (event.message?.text) {
-                    const userMessage = event.message.text;
-                    logger.info(`[${shop.name}] Received ${platform} message`, { requestId, userMessage, senderId });
-
-                    // Mark Seen & Typing indicators
-                    await sendSenderAction(senderId, 'mark_seen', accessToken);
-                    await sendSenderAction(senderId, 'typing_on', accessToken);
-
-                    // Detect intent
-                    const intent = detectIntent(userMessage);
-                    logger.debug('Intent detected', { intent: intent.intent, confidence: intent.confidence });
-
-                    // Get or create customer based on platform
-                    let customer = platform === 'instagram'
-                        ? await getOrCreateInstagramCustomer(shop.id, senderId, accessToken)
-                        : await getOrCreateCustomer(shop.id, senderId, accessToken);
-
-                    // Update customer info if needed
-                    customer = await updateCustomerInfo(customer, senderId, accessToken, userMessage);
-
-                    // CHECK: Global AI Switch
-                    if (shop.is_ai_active === false) {
-                        logger.info(`[${shop.name}] AI is globally disabled. Skipping response.`);
-                        continue;
-                    }
-
-                    // CHECK: Admin Takeover (AI Paused)
-                    if (customer.ai_paused_until && new Date(customer.ai_paused_until) > new Date()) {
-                        logger.info(`[${shop.name}] AI paused for customer ${customer.id} until ${customer.ai_paused_until}. Skipping.`);
-                        continue;
-                    }
-
-                    // Generate AI response
-                    let aiResponse: string;
-                    let aiQuickReplies: Array<{ title: string; payload: string }> | undefined;
-                    try {
-                        logger.info(`[${shop.name}] Generating AI response...`);
-
-                        // Get chat history for context
-                        const previousHistory: ChatMessage[] = await getChatHistory(shop.id, customer.id);
-
-                        // Get customer memory (preferences saved by AI)
-                        const customerMemory = customer.id
-                            ? await getCustomerMemory(customer.id)
-                            : undefined;
-
-                        // Generate response with minimum delay for typing animation
-                        const [response] = await Promise.all([
-                            routeToAI(
-                                userMessage,
-                                {
-                                    shopId: shop.id,
-                                    customerId: customer.id,
-                                    shopName: shop.name,
-                                    shopDescription: shop.description || undefined,
-                                    aiInstructions: shop.ai_instructions || undefined,
-                                    aiEmotion: shop.ai_emotion || 'friendly',
-                                    customKnowledge: shop.custom_knowledge || undefined,
-                                    properties: shop.properties || [],
-                                    inventorySummary: shop.inventorySummary ?? null,
-                                    customerName: customer.name || undefined,
-                                    faqs: aiFeatures.faqs,
-                                    quickReplies: aiFeatures.quickReplies,
-                                    slogans: aiFeatures.slogans,
-                                    notifySettings: buildNotifySettings(shop),
-                                    customerMemory: customerMemory || undefined,
-                                },
-                                previousHistory
-                            ),
-                            new Promise(resolve => setTimeout(resolve, 1500))
-                        ]);
-
-                        aiResponse = response.text;
-                        aiQuickReplies = response.quickReplies;
-                        logger.success('AI response generated', {
-                            preview: aiResponse.substring(0, 100) + '...',
-                            hasImage: !!response.imageAction,
-                            hasQuickReplies: !!aiQuickReplies
-                        });
-
-                        // Process and send product images if AI requested
-                        await processAIResponse(response, senderId, accessToken);
-
-                    } catch (aiError) {
-                        const errorMessage = aiError instanceof Error ? aiError.message : 'Unknown error';
-                        const errorStack = aiError instanceof Error ? aiError.stack : undefined;
-                        logger.error('AI Error:', { requestId, shopId: shop.id, customerId: customer.id, message: errorMessage, stack: errorStack });
-
-                        // Generate fallback response based on intent
-                        aiResponse = generateFallbackResponse(intent, shop.name, shop.properties);
-                    }
-
-                    // Save chat history
-                    await saveChatHistory(shop.id, customer.id, userMessage, aiResponse, intent.intent);
-
-                    // Increment message count
-                    await incrementMessageCount(customer.id);
-
-                    // Send the AI response via Messenger API (works for both platforms).
-                    // Илгээлт (3 удаа retry хийсний дараа ч) бүрэн унавал хариу
-                    // алдагдахаас сэргийлж дараалалд оруулж, cron дахин оролдоно.
-                    try {
-                        if (aiQuickReplies && aiQuickReplies.length > 0) {
-                            await sendMessageWithQuickReplies({
-                                recipientId: senderId,
-                                message: aiResponse,
-                                pageAccessToken: accessToken,
-                                quickReplies: aiQuickReplies.map(qr => ({
-                                    content_type: 'text' as const,
-                                    title: qr.title,
-                                    payload: qr.payload,
-                                })),
-                            });
-                        } else {
-                            await sendTextMessage({
-                                recipientId: senderId,
-                                message: aiResponse,
-                                pageAccessToken: accessToken,
-                            });
-                        }
-                    } catch (sendError) {
-                        logger.error(`[${shop.name}] Send failed, queueing for retry`, { requestId, error: sendError instanceof Error ? sendError.message : String(sendError) });
-                        await queueWebhookJob('notification', {
-                            recipientId: senderId,
-                            message: aiResponse,
-                            pageAccessToken: accessToken,
-                        });
-                    }
-                }
-
-                // Handle image attachments
-                else if (event.message?.attachments) {
-                    for (const attachment of event.message.attachments) {
-                        if (attachment.type === 'image' && attachment.payload?.url) {
-                            const imageUrl = attachment.payload.url;
-                            logger.info(`[${shop.name}] Received image from ${platform}`, { imageUrl });
-
-                            // Get or create customer for image processing
-                            const customer = platform === 'instagram'
-                                ? await getOrCreateInstagramCustomer(shop.id, senderId, accessToken)
-                                : await getOrCreateCustomer(shop.id, senderId, accessToken);
-
-                            // Send typing indicator
-                            await sendSenderAction(senderId, 'typing_on', accessToken);
-
-                            try {
-                                // Analyze the image with shop properties for matching
-                                const propertiesForAnalysis = shop.properties?.map(p => ({
-                                    id: p.id,
-                                    name: p.name,
-                                    description: p.description || undefined,
-                                }));
-                                const imageAnalysis = await analyzeProductImageWithPlan(imageUrl, propertiesForAnalysis || [], 'ultimate');
-
-                                if (imageAnalysis.matchedProduct || imageAnalysis.description) {
-                                    // Try to match with shop products
-                                    const description = imageAnalysis.description || '';
-                                    const matchedProducts = shop.properties?.filter(p =>
-                                        description.toLowerCase().includes(p.name.toLowerCase())
-                                    );
-
-                                    let responseMessage: string;
-                                    if ((matchedProducts || []).length > 0) {
-                                        const product = (matchedProducts || [])[0];
-                                        responseMessage = `Зурагнаас "${product.name}" байрыг таньлаа! 🎯\n\n` +
-                                            `💰 Үнэ: ${product.price?.toLocaleString()}₮\n\n` +
-                                            `Үзэх уу? 📋`;
-                                    } else {
-                                        responseMessage = `Зурагт: ${description}\n\n` +
-                                            `Энэ байр манай жагсаалтад одоохондоо байхгүй байна. ` +
-                                            `Өөр байр хайж байна уу? 🔍`;
-                                    }
-
-                                    await sendTextMessage({
-                                        recipientId: senderId,
-                                        message: responseMessage,
-                                        pageAccessToken: accessToken,
-                                    });
-
-                                    // Save to chat history
-                                    await saveChatHistory(shop.id, customer.id, '[Зураг илгээсэн]', responseMessage, 'IMAGE_ANALYSIS');
-                                } else {
-                                    await sendTextMessage({
-                                        recipientId: senderId,
-                                        message: 'Зургийг таньж чадсангүй. Бүтээгдэхүүний нэрийг бичиж өгнө үү! 📝',
-                                        pageAccessToken: accessToken,
-                                    });
-                                }
-                            } catch (imageError) {
-                                logger.error('Image analysis error:', { error: imageError });
-                                await sendTextMessage({
-                                    recipientId: senderId,
-                                    message: 'Зургийг таньж чадсангүй. Бүтээгдэхүүний нэрийг бичиж өгнө үү! 📝',
-                                    pageAccessToken: accessToken,
-                                });
-                            }
-                        }
-                    }
-                }
-
-                // Postback (товч дарах) — хуучин e-commerce `ORDER_` зан төлөвийг хасав; одоогоор
-                // зөвхөн бүртгэнэ (үл хөдлөхөд тусгай postback байхгүй).
-                if (event.postback?.payload) {
-                    logger.info(`[${shop.name}] Postback received`, { payload: event.postback.payload });
-                }
-            }
-        }
-        } catch (error) {
-            logger.error('[Webhook] background processing error', { requestId, error: error instanceof Error ? error.message : String(error) });
-        }
         });
 
         return NextResponse.json({ status: 'ok' });
@@ -435,5 +112,55 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
             error: 'Internal server error',
         }, { status: 500 });
+    }
+}
+
+async function saveEntryMessages(platform: Platform, entry: WebhookEntry, requestId: string) {
+    const accountId = entry.id; // Page ID for Messenger, or Instagram Business Account ID
+    const shop = platform === 'instagram' ? await getShopByInstagramId(accountId) : await getShopByPageId(accountId);
+    if (!shop) {
+        logger.warn(`No active shop found for ${platform} account ${accountId}`);
+        return;
+    }
+
+    const accessToken = platform === 'instagram'
+        ? (shop.instagram_access_token || shop.facebook_page_access_token || process.env.FACEBOOK_PAGE_ACCESS_TOKEN)
+        : (shop.facebook_page_access_token || process.env.FACEBOOK_PAGE_ACCESS_TOKEN);
+    if (!accessToken) {
+        logger.warn(`No access token for shop ${shop.name} on ${platform}`);
+        return;
+    }
+
+    for (const event of entry.messaging || []) {
+        const senderId = event.sender.id;
+
+        // Өөрийн (page-ийн) илгээсэн мессежийн echo — харилцагчийн мессеж биш
+        if (event.message?.is_echo || senderId === accountId) continue;
+
+        if (event.postback?.payload) {
+            logger.info(`[${shop.name}] Postback received`, { payload: event.postback.payload });
+        }
+
+        const text = incomingMessageText(event.message);
+        if (!text) continue;
+
+        // Idempotency: Meta нэг мессежийг давхар илгээж болзошгүй тул message ID (mid)-аар таслана
+        if (event.message?.mid && await isDuplicateWebhookEvent(event.message.mid)) {
+            logger.info(`[${shop.name}] Duplicate message skipped`, { mid: event.message.mid });
+            continue;
+        }
+
+        let customer = platform === 'instagram'
+            ? await getOrCreateInstagramCustomer(shop.id, senderId, accessToken)
+            : await getOrCreateCustomer(shop.id, senderId, accessToken);
+        if (!customer.id) {
+            logger.error(`[${shop.name}] Could not resolve customer; message not saved`, { requestId, platform });
+            continue;
+        }
+
+        customer = await updateCustomerInfo(customer, senderId, accessToken, event.message?.text || '');
+        await saveChatHistory(shop.id, customer.id, text);
+        await incrementMessageCount(customer.id);
+        logger.info(`[${shop.name}] Saved ${platform} message`, { requestId, customerId: customer.id });
     }
 }

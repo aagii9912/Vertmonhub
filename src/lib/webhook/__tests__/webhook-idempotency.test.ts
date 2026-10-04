@@ -20,7 +20,6 @@ vi.mock('@/lib/utils/logger', () => ({
     logger: { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn(), success: vi.fn() },
 }));
 
-vi.mock('@/lib/monitoring/errorMonitoring', () => ({ captureException: vi.fn() }));
 
 import { isDuplicateWebhookEvent } from '@/lib/webhook/retryService';
 
