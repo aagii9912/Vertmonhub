@@ -49,6 +49,7 @@ vi.mock('@/lib/supabase', () => ({
             order: () => q,
             range: (a: number, b: number) => { range = [a, b]; return q; },
             update: (v: Record<string, unknown>) => { patch = v; return q; },
+            insert: (v: Record<string, unknown>) => { (state.rows[table] ||= []).push(v); return Promise.resolve({ data: null, error: null }); },
             maybeSingle: () => { single = true; return Promise.resolve(run()); },
             then: (resolve: (value: ReturnType<typeof run>) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve(run()).then(resolve, reject),
         };
@@ -173,5 +174,19 @@ describe('contract fields cannot bypass receipt accounting', () => {
         expect((await patch({ customer_phone: '99999999', remaining_payment_condition: 'Банкны шилжүүлэг' })).status).toBe(200);
         expect(state.rows.property_contracts[0]).toMatchObject({ paid_amount: 50, prepayment_paid: 20, balance: 150, customer_phone: '99999999' });
         expect((await patch({ contract_status: 'invented-status' })).status).toBe(400);
+    });
+    it('changes the holder name only through the transfer flow and audits contact corrections', async () => {
+        const response = await patch({ customer_name: 'Өөр хүн', customer_phone: '88888888' });
+        expect(response.status).toBe(400);
+        expect((await response.json()).error).toContain('Гэрээ шилжүүлэх');
+        expect(state.writes).toHaveLength(0);
+        expect((await patch({ customer_phone: '88888888' })).status).toBe(200);
+        expect(state.rows.data_audit_log).toEqual([expect.objectContaining({
+            shop_id: 'shop-1', actor_id: 'user-1', entity: 'contract', entity_id: 'contract-1', action: 'update',
+            changes: { customer_phone: { from: null, to: '88888888' } },
+        })]);
+        // Өөрчлөлтгүй хадгалалт аудит нэмэхгүй.
+        expect((await patch({ customer_phone: '88888888' })).status).toBe(200);
+        expect(state.rows.data_audit_log).toHaveLength(1);
     });
 });

@@ -95,6 +95,7 @@ export const PATCH = withRoute<{ id: string }>({ module: 'contracts', access: 'w
         .maybeSingle();
     if (beforeError) throw beforeError;
     if (!before) return NextResponse.json({ error: 'Гэрээ олдсонгүй' }, { status: 404 });
+    const previous = { ...(before as unknown as Record<string, unknown>) };
     const { data, error } = await supabase
         .from('property_contracts')
         .update(updateData)
@@ -106,7 +107,6 @@ export const PATCH = withRoute<{ id: string }>({ module: 'contracts', access: 'w
 
     if (error) throw error;
     if (!data) return NextResponse.json({ error: 'Гэрээ олдсонгүй' }, { status: 404 });
-    const previous = before as unknown as Record<string, unknown>;
     const changes = Object.fromEntries(Object.entries(updateData)
         .filter(([key, value]) => !sameValue(previous[key], value))
         .map(([key, value]) => [key, { from: previous[key] ?? null, to: value ?? null }]));
