@@ -293,8 +293,9 @@ export function buildLeadTimeline(input: BuildLeadTimelineInput): LeadTimeline {
 
     for (const c of input.contracts ?? []) {
         if (!hasRealContractFields(c)) continue;
-        const date = text(c.contract_date);
-        const created = text(c.created_at);
+        // DATE багана ('YYYY-MM-DD'); буруу утгыг алгасна (огноо зохиохгүй).
+        const date = /^\d{4}-\d{2}-\d{2}/.test(c.contract_date ?? '') ? c.contract_date!.slice(0, 10) : null;
+        const created = text(c.created_at) && !Number.isNaN(Date.parse(c.created_at!)) ? c.created_at! : null;
         if (!date && !created) continue;
         // Гэрээний өдөр бүртгэгдсэн бол яг цагийг, үгүй бол тухайн өдрийн УБ-ийн эхлэлийг авна.
         const sameDay = !!date && !!created && ubDateStr(new Date(created)) === date;

@@ -117,6 +117,9 @@ describe('buildLeadTimeline meetings and contracts', () => {
                 { id: 'c2', contract_number: 'MG-2', contract_status: 'active', contract_date: '2026-09-11', created_at: '2026-09-10T17:30:00Z', total_price: 1, sales_manager: 'Манда' },
                 { id: 'stub', contract_number: null, contract_status: 'active', contract_date: '2026-09-10', total_price: 0, sales_manager: 'Манда' },
                 { id: 'c3', contract_number: 'MG-3', contract_status: 'cancelled', contract_date: '2026-09-10', total_price: 5, sales_manager: 'Манда' },
+                // Буруу огноотой мөр алдаа шидэхгүй, огноо зохиохгүй.
+                { id: 'c4', contract_number: 'MG-4', contract_status: 'closed', contract_date: 'n/a', created_at: 'n/a', total_price: 5, sales_manager: 'Манда' },
+                { id: 'c5', contract_number: 'MG-5', contract_status: 'closed', contract_date: '2026-09-08T00:00:00', created_at: null, total_price: 5, sales_manager: 'Манда' },
             ],
         });
         const contracts = t.events.filter((e) => e.kind === 'contract');
@@ -124,6 +127,7 @@ describe('buildLeadTimeline meetings and contracts', () => {
             // УБ-ийн 2026-09-11 01:30 = created_at → яг цаг.
             ['contract:c2', '2026-09-10T17:30:00Z', false],
             ['contract:c1', '2026-09-09T16:00:00.000Z', true],
+            ['contract:c5', '2026-09-07T16:00:00.000Z', true],
         ]);
         expect(contracts[1]).toMatchObject({ title: 'Гэрээ MG-1', detail: 'A 1203 · 450,000,000₮', actor: 'Манда', contact: false });
     });
