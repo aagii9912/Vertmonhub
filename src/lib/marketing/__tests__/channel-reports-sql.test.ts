@@ -78,12 +78,35 @@ it('channel report tables are idempotent, service-role only and keep one report 
         await expect(week(`('${shop}','meta_ads','2026-10-07','2026-10-13','file','2026-10-07','2026-10-14')`)).rejects.toThrow(/data_range_check/);
         await expect(week(`('${shop}','meta_ads','2026-10-07','2026-10-13','file','2026-10-09',null)`)).rejects.toThrow(/data_range_check/);
         await expect(week(`('${shop}','meta_ads','2026-10-07','2026-10-13','file','2026-10-10','2026-10-09')`)).rejects.toThrow(/data_range_check/);
-        // Файлаар дахин хадгалахад API-гийн мөр дарагдахаас route хамгаална; ON CONFLICT нь хугацаагаар нэг мөр хэвээр.
+        // ON CONFLICT нь хугацаагаар нэг мөр хэвээр.
         await db.exec(`INSERT INTO public.marketing_channel_reports(shop_id,source,period_from,period_to,origin,data_from,data_to)
             VALUES ('${shop}','meta_ads','2026-09-16','2026-09-22','file','2026-09-17','2026-09-22')
             ON CONFLICT (shop_id,source,period_from,period_to) DO UPDATE SET data_from = excluded.data_from, data_to = excluded.data_to`);
         expect((await db.query(`SELECT count(*)::int AS n, min(data_from)::text AS data_from FROM public.marketing_channel_reports WHERE period_from = '2026-09-16'`)).rows)
             .toEqual([{ n: 1, data_from: '2026-09-17' }]);
+
+        // 20261005140000: API-ийн тайланг файлаар дарахыг өгөгдлийн сан ч татгалзана (route-ийн шалгалтын дараах race).
+        await db.exec('RESET ROLE');
+        const guard = readFileSync('supabase/migrations/20261005140000_channel_reports_api_guard.sql', 'utf8');
+        await db.exec(guard);
+        await db.exec(guard);
+        await db.exec('SET ROLE service_role');
+        const save = (origin: string, week: string, to: string) => `('${shop}','meta_ads','${week}','${to}','${origin}','${week}','${to}')`;
+        const upsert = (values: string) => db.exec(`INSERT INTO public.marketing_channel_reports(shop_id,source,period_from,period_to,origin,data_from,data_to)
+            VALUES ${values} ON CONFLICT (shop_id,source,period_from,period_to) DO UPDATE SET origin = excluded.origin, data_from = excluded.data_from, data_to = excluded.data_to`);
+        // Файлын хоёр долоо хоногийн нэг нь API-ийнх бол бүх statement буцна — файлын долоо хоног ч өөрчлөгдөхгүй.
+        await expect(upsert(`${save('file', '2026-09-16', '2026-09-22')},${save('file', '2026-09-30', '2026-10-06')}`)).rejects.toThrow(/channel_report_api_locked/);
+        expect((await db.query(`SELECT period_from::text, origin, data_from::text FROM public.marketing_channel_reports WHERE shop_id = '${shop}' AND source = 'meta_ads' AND period_from IN ('2026-09-16','2026-09-30','2026-10-07') ORDER BY period_from`)).rows)
+            .toEqual([{ period_from: '2026-09-16', origin: 'file', data_from: '2026-09-17' }, { period_from: '2026-09-30', origin: 'api', data_from: '2026-09-30' }]);
+        await expect(db.exec(`UPDATE public.marketing_channel_reports SET origin = 'file' WHERE origin = 'api'`)).rejects.toThrow(/channel_report_api_locked/);
+        // API синк файлын тайланг орлож, өөрийгөө шинэчилж болно; файл файлаа шинэчилнэ.
+        await upsert(`${save('api', '2026-09-16', '2026-09-22')},${save('api', '2026-09-30', '2026-10-06')}`);
+        await upsert(save('file', '2026-10-07', '2026-10-13'));
+        await upsert(save('file', '2026-10-07', '2026-10-13'));
+        expect((await db.query(`SELECT period_from::text, origin FROM public.marketing_channel_reports WHERE shop_id = '${shop}' AND source = 'meta_ads' AND period_from IN ('2026-09-16','2026-09-30','2026-10-07') ORDER BY period_from`)).rows)
+            .toEqual([{ period_from: '2026-09-16', origin: 'api' }, { period_from: '2026-09-30', origin: 'api' }, { period_from: '2026-10-07', origin: 'file' }]);
+        // Хэрэглэгч API-ийн тайланг устгаж болно (дараа нь файлаар оруулна).
+        await db.exec(`DELETE FROM public.marketing_channel_reports WHERE period_from = '2026-09-30'`);
 
         // Shop устгагдвал тайлан, холболт хамт устна.
         await db.exec('RESET ROLE');
