@@ -8,6 +8,7 @@ import { importInventoryUnits, type InventoryImportPreview } from '@/lib/admin/i
 import { z } from 'zod';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { normalizePhone } from '@/lib/utils/phone';
+import { soleShopProjectId } from '@/lib/projects/shop-project';
 import {
     ImportRow,
     mapPropertyRow,
@@ -729,17 +730,25 @@ async function importProject(
                 .eq('name', data.name)
                 .maybeSingle();
 
-            if (existing) {
+            // Shop = төсөл: өөр нэртэй мөр ирвэл дэд төсөл үүсгэхгүй, ажлын орчны ганц төслийг шинэчилнэ (нэрийг нь хадгална).
+            const sole = existing ? null : await soleShopProjectId(supabase, ctx.shopId);
+            if (existing || sole) {
+                // Файлд байгаа талбарыг л шинэчилнэ — хоосон баганаар одоогийн мэдээллийг арчихгүй.
+                const fields = Object.fromEntries(Object.entries(data.projectFields)
+                    .filter(([key, value]) => value !== null && value !== undefined && (existing || key !== 'name')));
                 const { error: upErr } = await supabase
                     .from('projects')
-                    .update(data.projectFields)
-                    .eq('id', existing.id);
+                    .update(fields)
+                    .eq('id', existing?.id ?? sole!);
                 if (!upErr) projectRowsUpserted++;
+                else errors.push(`Мөр ${i + 2}: төслийн мэдээлэл шинэчлэгдсэнгүй`);
+                if (!existing && !upErr) errors.push(`Мөр ${i + 2}: «${data.name}» нэрийг шинэ төсөл болгоогүй — энэ ажлын орчны төслийн мэдээллийг шинэчлэв`);
             } else {
                 const { error: insErr } = await supabase
                     .from('projects')
                     .insert({ shop_id: ctx.shopId, ...data.projectFields });
                 if (!insErr) projectRowsUpserted++;
+                else errors.push(`Мөр ${i + 2}: «${data.name}» төслийг бүртгэж чадсангүй`);
             }
         } catch {
             // projects хүснэгтгүй орчинд мэдлэгийн импортыг унагахгүй

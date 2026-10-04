@@ -73,6 +73,7 @@ const db = {
             range: (from: number, to: number) => { range = [from, to]; return query; },
             update: (value: Row) => { patch = value; return query; },
             insert: (value: Row[]) => { inserts = value; return query; },
+            upsert: (value: Row[]) => { state.writes.push({ table, payload: value[0] ?? {}, ids: [] }); return Promise.resolve({ data: null, error: null }); },
             maybeSingle: () => { single = true; return Promise.resolve(run()); },
             then: (resolve: (result: ReturnType<typeof run>) => unknown, reject: (error: unknown) => unknown) => Promise.resolve(run()).then(resolve, reject),
         };
@@ -278,5 +279,18 @@ describe('row-level calendar validation', () => {
         expect(result.errors).toEqual(['Мөр 2: Гэрээний огноо буруу (bad)']);
         expect(state.rows.property_contracts).toHaveLength(1);
         expect(state.rows.property_contracts[0]).toMatchObject({ contract_number: 'good', contract_date: '2024-02-29' });
+    });
+});
+
+describe('project info import (shop = project)', () => {
+    it('updates the workspace project instead of creating a sub-project for a different name', async () => {
+        state.rows.projects = [{ id: projectA, shop_id: shopId, name: 'Elysium Residence', district: null }];
+        state.rows.shops = [{ id: shopId, custom_knowledge: {} }];
+        const response = await runImport('project', [{ 'Төслийн нэр': 'Элизиум хотхон', 'Дүүрэг': 'Хан-Уул', 'Нийт байрны тоо': 242 }]);
+        const result = await response.json();
+        expect(response.status).toBe(200);
+        expect(state.rows.projects).toEqual([expect.objectContaining({ id: projectA, name: 'Elysium Residence', district: 'Хан-Уул', total_units: 242 })]);
+        expect(state.writes.filter((write) => write.table === 'projects' && write.ids.includes('new-0'))).toEqual([]);
+        expect(result.errors).toEqual([expect.stringContaining('«Элизиум хотхон» нэрийг шинэ төсөл болгоогүй')]);
     });
 });
