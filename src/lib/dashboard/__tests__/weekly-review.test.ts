@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nextMeetingDate, lastCompletedReviewRange, weeklyReviewRange, meetingDateSchema, WeeklyUpdateSchema, formatReviewChange, formatWeeklyReview, weeklyDiscussionItems, type WeeklyUpdate } from '../weekly-review';
+import { nextMeetingDate, lastCompletedReviewRange, weeklyReviewRange, reviewWeekOf, reviewWeeksBetween, meetingDateSchema, WeeklyUpdateSchema, formatReviewChange, formatWeeklyReview, weeklyDiscussionItems, type WeeklyUpdate } from '../weekly-review';
 import { formatWorkdayDate } from '@/lib/utils/date';
 import { buildMarketingPerformance, type MarketingSpend } from '@/lib/marketing/performance';
 
@@ -77,3 +77,16 @@ function marketingReport(spend: MarketingSpend[]) {
 function update(blockers: string): WeeklyUpdate {
     return { id: 'update', user_id: 'user', author_name: 'Номин', meeting_date: '2026-09-30', achievements: '', blockers, next_steps: '', updated_at: '2026-09-30T03:00:00Z' };
 }
+
+describe('review weeks', () => {
+    it('maps a day to its Wednesday–Tuesday week and lists overlapping weeks', () => {
+        expect(reviewWeekOf('2026-09-30')).toEqual({ from: '2026-09-30', to: '2026-10-06' });
+        expect(reviewWeekOf('2026-10-06')).toEqual({ from: '2026-09-30', to: '2026-10-06' });
+        expect(reviewWeekOf('2026-08-30')).toEqual({ from: '2026-08-26', to: '2026-09-01' });
+        expect(reviewWeeksBetween('2026-08-30', '2026-09-28')).toEqual([
+            { from: '2026-08-26', to: '2026-09-01' }, { from: '2026-09-02', to: '2026-09-08' }, { from: '2026-09-09', to: '2026-09-15' },
+            { from: '2026-09-16', to: '2026-09-22' }, { from: '2026-09-23', to: '2026-09-29' },
+        ]);
+        expect(reviewWeeksBetween('2026-09-30', '2026-09-30')).toEqual([{ from: '2026-09-30', to: '2026-10-06' }]);
+    });
+});
