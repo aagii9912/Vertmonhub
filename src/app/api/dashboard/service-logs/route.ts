@@ -3,6 +3,7 @@ import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { fetchAllRows } from '@/lib/utils/pagination';
 
 // ============================================
 // GET /api/dashboard/service-logs
@@ -49,23 +50,11 @@ export async function GET(request: NextRequest) {
                     `description.ilike.%${search}%`
                 );
             }
-            return q.order('created_at', { ascending: false });
+            return q.order('created_at', { ascending: false }).order('id');
         };
 
-        // Supabase 1000-мөрийн хязгаарыг хуудаслалтаар давах
-        const PAGE = 1000;
-        const logs: Array<Record<string, unknown>> = [];
-        for (let from = 0; ; from += PAGE) {
-            const { data, error } = await buildQuery().range(from, from + PAGE - 1);
-            if (error) throw error;
-            if (!data || data.length === 0) break;
-            logs.push(...data);
-            if (data.length < PAGE) break;
-        }
-
-        const stats = computeStats(logs || []);
-
-        return NextResponse.json({ logs: logs || [], stats });
+        const logs = await fetchAllRows<Record<string, unknown>>((from, to) => buildQuery().range(from, to));
+        return NextResponse.json({ logs, stats: computeStats(logs) });
     } catch (error) {
         logger.error('[ServiceLogs API] GET error:', { error });
         return NextResponse.json(

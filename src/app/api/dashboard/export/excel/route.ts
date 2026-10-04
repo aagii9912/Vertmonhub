@@ -9,6 +9,7 @@ import { getManagerPerformance } from '@/lib/reports/manager-performance';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { sourceLabel, statusLabel } from '@/lib/leads/labels';
 import { UNIT_STATUS_LABEL, unitCategoryLabel } from '@/lib/inventory/labels';
+import { contractStatusLabel } from '@/lib/contracts/labels';
 
 /** Export төрөл бүр өөрийн модулийн унших эрх шаардана (өмнө нь зөвхөн auth). */
 const EXPORT_MODULE: Record<string, string> = {
@@ -44,19 +45,13 @@ export async function GET(request: NextRequest) {
             // Export нэгжийн нөөц (property_units) — Мандалын 2544 нэгж (paginate)
             // Файлд «Худалдаанд» — импортын загвартай ижил нэр томьёо (UI-д «Чөлөөтэй»).
             const STAT: Record<string, string> = { ...UNIT_STATUS_LABEL, available: 'Худалдаанд' };
-            const PAGE = 1000;
-            const units: Array<Record<string, unknown>> = [];
-            for (let from = 0; ; from += PAGE) {
-                const { data } = await supabase
-                    .from('property_units')
-                    .select('*')
-                    .eq('shop_id', shopId)
-                    .order('phase', { ascending: true })
-                    .range(from, from + PAGE - 1);
-                if (!data || data.length === 0) break;
-                units.push(...data);
-                if (data.length < PAGE) break;
-            }
+            const units = await fetchAllRows<Record<string, unknown>>((from, to) => supabase
+                .from('property_units')
+                .select('*')
+                .eq('shop_id', shopId)
+                .order('phase', { ascending: true })
+                .order('id')
+                .range(from, to));
 
             const exportData = units.map((u) => ({
                 'Код': u.code || '-',
@@ -101,43 +96,37 @@ export async function GET(request: NextRequest) {
             filename = `лийдүүд_${ubDateStr()}.xlsx`;
 
         } else if (type === 'customers') {
-            // Export Customers
-            const { data: customers } = await supabase
+            const customers = await fetchAllRows<Record<string, any>>((from, to) => supabase
                 .from('customers')
                 .select('id, name, phone, email, address, notes, created_at')
                 .eq('shop_id', shopId)
+                .is('deleted_at', null)
                 .order('created_at', { ascending: false })
-                .limit(500);
+                .order('id')
+                .range(from, to));
 
-            const exportData = customers?.map(c => ({
+            const exportData = customers.map(c => ({
                 'Нэр': c.name || '-',
                 'Утас': c.phone || '-',
                 'Имэйл': c.email || '-',
                 'Хаяг': c.address || '-',
                 'Тэмдэглэл': c.notes || '-',
                 'Бүртгэгдсэн': new Date(c.created_at).toLocaleDateString('mn-MN'),
-            })) || [];
+            }));
 
             sheet = { name: 'Харилцагчид', rows: exportData };
             filename = `харилцагчид_${ubDateStr()}.xlsx`;
 
         } else if (type === 'contracts') {
-            // Export Contracts (1600+ → paginate past Supabase 1000-row cap)
-            const PAGE = 1000;
-            const rows: Array<Record<string, unknown>> = [];
-            for (let from = 0; ; from += PAGE) {
-                const { data } = await supabase
-                    .from('property_contracts')
-                    .select('*')
-                    .eq('shop_id', shopId)
-                    .order('contract_date', { ascending: false, nullsFirst: false })
-                    .range(from, from + PAGE - 1);
-                if (!data || data.length === 0) break;
-                rows.push(...data);
-                if (data.length < PAGE) break;
-            }
+            const rows = await fetchAllRows<Record<string, unknown>>((from, to) => supabase
+                .from('property_contracts')
+                .select('*')
+                .eq('shop_id', shopId)
+                .is('deleted_at', null)
+                .order('contract_date', { ascending: false, nullsFirst: false })
+                .order('id')
+                .range(from, to));
 
-            const statusLabel = (s: string) => s === 'closed' ? 'Хаасан' : s === 'cancelled' ? 'Цуцалсан' : s === 'transferred' ? 'Тоот шилжсэн' : 'Идэвхтэй';
             const exportData = rows.map((c) => ({
                 'Код': c.unit_label || '-',
                 'Ээлж/Блок': c.block_name || '-',
@@ -150,7 +139,7 @@ export async function GET(request: NextRequest) {
                 'Нийт дүн': Number(c.total_price) || 0,
                 'Төлсөн': Number(c.paid_amount) || 0,
                 'Үлдэгдэл': Number(c.balance) || 0,
-                'Төлөв': statusLabel(String(c.contract_status)),
+                'Төлөв': contractStatusLabel(c.contract_status as string | null),
                 'Менежер': c.sales_manager || '-',
                 'Худалдан авагч': c.customer_name || '-',
                 'Регистр': c.customer_registration || '-',

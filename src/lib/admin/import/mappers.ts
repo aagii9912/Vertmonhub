@@ -382,11 +382,6 @@ export function mapLeadRow(row: ImportRow, rowNum: number): MappedRow<LeadInsert
     };
 }
 
-/** Утасны дугаарыг давхардал шалгахад ашиглах хэлбэрт оруулна (зөвхөн цифр) */
-export function normalizePhoneKey(phone: string): string {
-    return phone.replace(/\D/g, '');
-}
-
 // ============================================
 // CONTRACTS (property_contracts хүснэгтийн ЖИНХЭНЭ баганууд)
 // ============================================

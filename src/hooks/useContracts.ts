@@ -125,22 +125,3 @@ export function useUpdatePayment(contractId: string) {
         },
     });
 }
-
-export const CONTRACT_STATUS_META: Record<string, { label: string; tone: 'info' | 'success' | 'danger' | 'neutral' }> = {
-    active: { label: 'Идэвхтэй', tone: 'info' },
-    closed: { label: 'Хаагдсан', tone: 'success' },
-    cancelled: { label: 'Цуцалсан', tone: 'danger' },
-};
-export const PAYMENT_STATUS_META: Record<string, { label: string; tone: 'info' | 'success' | 'danger' | 'neutral' | 'pending' }> = {
-    pending: { label: 'Хүлээгдэж буй', tone: 'neutral' },
-    paid: { label: 'Төлсөн', tone: 'success' },
-    partial: { label: 'Хагас төлсөн', tone: 'pending' },
-    overdue: { label: 'Хугацаа хэтэрсэн', tone: 'danger' },
-    cancelled: { label: 'Цуцалсан', tone: 'neutral' },
-};
-export const PAYMENT_METHOD_LABEL: Record<string, string> = {
-    cash: 'Бэлэн',
-    bank_transfer: 'Банк шилжүүлэг',
-    barter: 'Бартер',
-    mortgage: 'Ипотек',
-};

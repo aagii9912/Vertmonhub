@@ -17,7 +17,6 @@ import {
     mapLeadRow,
     mapContractRow,
     mapFaqRow,
-    normalizePhoneKey,
     buildCompanyKnowledge,
     buildProjectKnowledge,
     buildPaymentPolicyKnowledge,
@@ -298,11 +297,6 @@ describe('mapLeadRow — leads хүснэгтийн жинхэнэ багану�
     it('нэр/утас дутууг алдаа болгоно', () => {
         expect(mapLeadRow({ 'Утас': '99112233' }, 2).error).toContain('Нэр хоосон');
         expect(mapLeadRow({ 'Нэр': 'Бат' }, 3).error).toContain('Утас хоосон');
-    });
-
-    it('normalizePhoneKey зөвхөн цифр үлдээнэ', () => {
-        expect(normalizePhoneKey('9911-2233')).toBe('99112233');
-        expect(normalizePhoneKey('+976 9911 2233')).toBe('97699112233');
     });
 });
 

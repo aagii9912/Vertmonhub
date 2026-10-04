@@ -3,6 +3,7 @@ import { NextResponse, NextRequest } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { fetchAllRows } from '@/lib/utils/pagination';
 import { CreatePropertySchema, validateBody } from '@/lib/validations/schemas';
 
 export async function GET(request: NextRequest) {
@@ -34,21 +35,11 @@ export async function GET(request: NextRequest) {
       if (search) {
         q = q.or(`name.ilike.%${search}%,address.ilike.%${search}%,district.ilike.%${search}%`);
       }
-      return q.order('created_at', { ascending: false });
+      return q.order('created_at', { ascending: false }).order('id');
     };
 
-    // Supabase 1000-мөрийн хязгаарыг хуудаслалтаар давах
-    const PAGE = 1000;
-    const data: Array<Record<string, unknown>> = [];
-    for (let from = 0; ; from += PAGE) {
-      const { data: page, error } = await buildQuery().range(from, from + PAGE - 1);
-      if (error) throw error;
-      if (!page || page.length === 0) break;
-      data.push(...page);
-      if (page.length < PAGE) break;
-    }
-
-    return NextResponse.json({ properties: data });
+    const properties = await fetchAllRows<Record<string, unknown>>((from, to) => buildQuery().range(from, to));
+    return NextResponse.json({ properties });
   } catch (error) {
     logger.error('[Properties GET] error:', { error });
     return NextResponse.json({ error: 'Failed to fetch properties' }, { status: 500 });

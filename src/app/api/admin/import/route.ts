@@ -6,6 +6,8 @@ import { readSheetRows, readWorkbookSheets, XlsxUnsupportedFormatError } from '@
 import { mapInventoryRows } from '@/lib/admin/import/units';
 import { importInventoryUnits, type InventoryImportPreview } from '@/lib/admin/import/units-import';
 import { z } from 'zod';
+import { fetchAllRows } from '@/lib/utils/pagination';
+import { normalizePhone } from '@/lib/utils/phone';
 import {
     ImportRow,
     mapPropertyRow,
@@ -19,7 +21,6 @@ import {
     buildAmenitiesKnowledge,
     buildAiExtraEntries,
     knowledgeKey,
-    normalizePhoneKey,
     slugifyKey,
     findStaleKnowledgeKeys,
 } from '@/lib/admin/import/mappers';
@@ -287,51 +288,6 @@ async function insertWithOptionalColumns(
     return { count: 0, error: 'Insert бүтсэнгүй' };
 }
 
-/**
- * Давхардал шалгахад одоо байгаа утгуудыг татна. Soft-delete багана
- * байгаа орчинд устгагдсан мөрийг хасна; байхгүй бол энгийнээр татна.
- * PostgREST default 1000 мөрөөр хязгаарладаг тул page-лэн бүрэн татна —
- * эс бөгөөс 1000+ бичлэгтэй shop дээр давхардлын шалгалт дутуу болно.
- */
-async function fetchExistingValues(
-    supabase: ReturnType<typeof supabaseAdmin>,
-    table: string,
-    column: string,
-    shopId: string
-): Promise<Set<string>> {
-    const PAGE = 1000;
-
-    async function fetchAll(withSoftDelete: boolean): Promise<string[] | null> {
-        const values: string[] = [];
-        for (let from = 0; ; from += PAGE) {
-            let query = supabase
-                .from(table)
-                .select(column)
-                .eq('shop_id', shopId);
-            if (withSoftDelete) query = query.is('deleted_at', null);
-
-            const { data, error } = await query.range(from, from + PAGE - 1);
-            if (error) {
-                if (withSoftDelete && (error.code === '42703' || error.code === 'PGRST204')) return null;
-                throw new Error(errMessage(error));
-            }
-            const rows = (data || []) as unknown as Record<string, unknown>[];
-            for (const row of rows) {
-                const v = row[column];
-                if (v !== null && v !== undefined && String(v).trim() !== '') {
-                    values.push(String(v).trim());
-                }
-            }
-            if (rows.length < PAGE) break;
-        }
-        return values;
-    }
-
-    const withSoft = await fetchAll(true);
-    const all = withSoft ?? await fetchAll(false);
-    return new Set(all ?? []);
-}
-
 /** Update-уудыг хязгаарлагдсан зэрэгцээгээр гүйцэтгэнэ (Vercel timeout-оос сэргийлнэ) */
 async function runChunked<T>(items: T[], size: number, fn: (item: T) => Promise<void>): Promise<void> {
     for (let i = 0; i < items.length; i += size) {
@@ -364,19 +320,14 @@ async function loadImportRecords(
     key: string,
     shopId: string,
 ): Promise<Map<string, ExistingImportRecord[]>> {
+    const records = await fetchAllRows((from, to) => supabase.from(table).select(`id, ${key}, project_id`)
+        .eq('shop_id', shopId).is('deleted_at', null).order('id').range(from, to)) as unknown as ExistingImportRecord[];
     const byKey = new Map<string, ExistingImportRecord[]>();
-    const PAGE = 1000;
-    for (let from = 0; ; from += PAGE) {
-        const { data, error } = await supabase.from(table).select(`id, ${key}, project_id`)
-            .eq('shop_id', shopId).is('deleted_at', null).order('id').range(from, from + PAGE - 1);
-        if (error) throw new Error(errMessage(error));
-        const records = (data || []) as unknown as ExistingImportRecord[];
-        for (const record of records) {
-            const value = String(record[key] ?? '').trim();
-            if (value) byKey.set(value, [...(byKey.get(value) || []), record]);
-        }
-        if (records.length < PAGE) return byKey;
+    for (const record of records) {
+        const value = String(record[key] ?? '').trim();
+        if (value) byKey.set(value, [...(byKey.get(value) || []), record]);
     }
+    return byKey;
 }
 
 function matchImportRecord(
@@ -674,18 +625,14 @@ async function importFAQ(
 
     // Одоо байгаа асуултуудтай тааруулж update, шинийг insert (давхар FAQ үүсгэхгүй).
     // PostgREST 1000 мөрөөр хязгаарладаг тул page-лэн бүрэн татна.
-    const byQuestion = new Map<string, string>();
-    const PAGE = 1000;
-    for (let from = 0; ; from += PAGE) {
-        const { data: existingFaqs, error: exErr } = await supabase
-            .from('shop_faqs')
-            .select('id, question')
-            .eq('shop_id', ctx.shopId)
-            .range(from, from + PAGE - 1);
-        if (exErr) return { success: false, message: errMessage(exErr), errors };
-        for (const f of existingFaqs || []) byQuestion.set(String(f.question).trim(), f.id);
-        if (!existingFaqs || existingFaqs.length < PAGE) break;
+    let existingFaqs: Array<{ id: string; question: string }>;
+    try {
+        existingFaqs = await fetchAllRows((from, to) => supabase
+            .from('shop_faqs').select('id, question').eq('shop_id', ctx.shopId).order('id').range(from, to));
+    } catch (error) {
+        return { success: false, message: errMessage(error), errors };
     }
+    const byQuestion = new Map(existingFaqs.map((f) => [String(f.question).trim(), f.id]));
 
     const fresh = parsed.filter(p => !byQuestion.has(p.question));
     const toUpdate = parsed.filter(p => byQuestion.has(p.question));
@@ -954,15 +901,17 @@ async function importLeads(
     const seenPhones = new Set<string>();
     let skipped = 0;
 
-    const existingPhonesRaw = await fetchExistingValues(supabase, 'leads', 'customer_phone', ctx.shopId);
-    const existingPhones = new Set([...existingPhonesRaw].map(normalizePhoneKey));
+    // +976 / зай / зураастай хадгалсан дугаар ч ижил түлхүүрт буулгана.
+    const existingLeads = await fetchAllRows<{ customer_phone: string | null }>((from, to) => supabase
+        .from('leads').select('customer_phone').eq('shop_id', ctx.shopId).is('deleted_at', null).order('id').range(from, to));
+    const existingPhones = new Set(existingLeads.map((lead) => normalizePhone(lead.customer_phone)));
 
     for (let i = 0; i < rows.length; i++) {
         const { data, error } = mapLeadRow(rows[i], i + 2);
         if (error) { errors.push(error); continue; }
         if (!data) continue;
 
-        const phoneKey = normalizePhoneKey(data.customer_phone);
+        const phoneKey = normalizePhone(data.customer_phone);
 
         // CRM-д аль хэдийн байгаа лидийг дарж бичихгүй — pipeline статус нь үнэ цэнтэй.
         // Цифргүй "утас" (хоосон түлхүүр) давхардлын шалгалтад орохгүй — шууд оруулна.

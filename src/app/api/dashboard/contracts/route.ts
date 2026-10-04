@@ -3,6 +3,7 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { fetchAllRows } from '@/lib/utils/pagination';
 
 /** `?sortBy=` — зөвхөн эдгээр багана (өмнө нь дурын нэр `.order()`-т орж 500 өгдөг байв). */
 const SORTABLE = new Set([
@@ -70,23 +71,13 @@ export async function GET(request: NextRequest) {
                     `customer_registration.ilike.%${search}%`
                 );
             }
-            return q.order(sortBy, { ascending: sortOrder, nullsFirst: false });
+            return q.order(sortBy, { ascending: sortOrder, nullsFirst: false }).order('id');
         };
 
-        // Supabase 1000-мөрийн default хязгаарыг хуудаслалтаар давах
-        // (Мандала гэрээ 1600+ тул жагсаалт ба статистик бүрэн байх ёстой).
-        const PAGE = 1000;
-        const fetchAll = async (select: string) => {
-            const rows: Array<Record<string, unknown>> = [];
-            for (let from = 0; ; from += PAGE) {
-                const { data, error } = await buildQuery(select).range(from, from + PAGE - 1);
-                if (error) throw error;
-                if (!data || data.length === 0) break;
-                rows.push(...(data as unknown as Array<Record<string, unknown>>));
-                if (data.length < PAGE) break;
-            }
-            return rows;
-        };
+        // Мандала гэрээ 1600+ тул жагсаалт ба статистик 1000 мөрөөр таслагдахгүй байх ёстой.
+        // (`select` нь динамик тул Supabase мөрийн төрлийг гаргаж чадахгүй.)
+        const fetchAll = async (select: string) =>
+            (await fetchAllRows((from, to) => buildQuery(select).range(from, to))) as unknown as Array<Record<string, unknown>>;
 
         // v2 хуудаслалт: ?page&pageSize өгвөл зөвхөн тухайн хуудсыг серверээс (range) буцаана;
         // статистикийг зөвхөн тоон баганаар тооцно. Өгөөгүй бол v1-тэй адил бүгдийг буцаана.
