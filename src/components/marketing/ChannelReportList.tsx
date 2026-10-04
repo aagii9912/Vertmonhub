@@ -42,7 +42,8 @@ export function ChannelReportList({ data, filter, onFilter, canDelete, shopId }:
     async function remove(report: ChannelReportSummary) {
         const ok = await confirmToast({
             title: 'Тайланг устгах уу?',
-            description: `${CHANNEL_SOURCE_LABELS[report.source]} · ${report.period_from} – ${report.period_to}. Файлаа дахин импортлож сэргээнэ.`,
+            // Meta API-ийн тайланг файлаар солихын тулд эхлээд устгадаг; синк холбогдсон хэвээр бол буцааж бичнэ.
+            description: `${CHANNEL_SOURCE_LABELS[report.source]} · ${report.period_from} – ${report.period_to}. ${report.origin === 'api' ? 'Дараагийн Meta синк (35 хоногийн дотор) сэргээнэ.' : 'Файлаа дахин импортлож сэргээнэ.'}`,
             confirmLabel: 'Устгах', destructive: true,
         });
         if (!ok) return;

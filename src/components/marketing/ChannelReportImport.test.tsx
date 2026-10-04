@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, expect, it, vi } from 'vitest';
 import type { DashboardFetchInit } from '@/lib/api/dashboardFetch';
 import {
-    aggregateByReviewWeeks, aggregateChannelReport, channelSplitWeeks, splitWeekSummary, suggestMapping,
+    CHANNEL_API_WEEK_REPLACE_HINT, aggregateByReviewWeeks, aggregateChannelReport, channelSplitWeeks, splitWeekSummary, suggestMapping,
     type ChannelExistingReport, type ChannelMapping, type ChannelPreviewResponse,
 } from '@/lib/marketing/channel-reports';
 import { META_ADS_EXPORT_HEADERS, metaAdsDailyTable } from '../../../e2e/fixtures/meta-ads-daily';
@@ -211,7 +211,9 @@ it('saves only the chosen period when splitting is turned off and never picks we
     fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['x'], 'meta-daily.csv')] } });
     fireEvent.click(screen.getByRole('button', { name: 'Файл шалгах' }));
     const again = await screen.findByRole('region', { name: 'Импортын урьдчилсан дүн' });
-    expect(within(again).getByText('Meta API — солихгүй')).toBeInTheDocument();
+    expect(within(again).getByText('Meta API — солихгүй')).toHaveAttribute('title', CHANNEL_API_WEEK_REPLACE_HINT);
+    // Хамралт дутуу хуучирсан API долоо хоногийг ч солих арга: эхлээд API-ийн тайланг устгана.
+    expect(within(again).getByText(`Meta API-ийн 1 долоо хоног: ${CHANNEL_API_WEEK_REPLACE_HINT}`)).toBeInTheDocument();
     const apiWeek = within(again).getByRole('checkbox', { name: '2026-09-23 – 2026-09-29 долоо хоногийг хадгалах' });
     expect(apiWeek).not.toBeChecked();
     expect(apiWeek).toBeDisabled();

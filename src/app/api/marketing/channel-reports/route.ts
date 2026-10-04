@@ -6,7 +6,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { ubDateStr } from '@/lib/utils/date';
 import {
-    CHANNEL_SOURCE_LABELS, CHANNEL_SPLIT_MAX_WEEKS, ChannelMappingSchema, ChannelPeriodSchema, ChannelSourceSchema, aggregateByReviewWeeks,
+    CHANNEL_API_WEEK_REPLACE_HINT, CHANNEL_SOURCE_LABELS, CHANNEL_SPLIT_MAX_WEEKS, ChannelMappingSchema, ChannelPeriodSchema, ChannelSourceSchema, aggregateByReviewWeeks,
     aggregateChannelReport, applyRememberedMapping, channelSplitWeeks, headerSignature, mappedField, pickDuplicateReport, splitWeekSkip,
     splitWeekSummary, suggestMapping,
     type ChannelExistingReport, type ChannelMapping, type ChannelPreviewResponse, type ChannelSource, type ChannelSplitPreview, type ChannelSplitSkip,
@@ -29,8 +29,9 @@ import {
  *   split=1 бол долоо хоног бүрт нэг мөр (хугацаа = бүтэн долоо хоног, data_from/data_to = файлын
  *   хамарсан өдрүүд). `weeks` (долоо хоногийн эхлэх өдрүүд, таслалаар) өгвөл зөвхөн тэдгээрийг, үгүй бол
  *   алгасах шалтгаангүй (`splitWeekSkip`) долоо хоногуудыг хадгалж, бусдыг `skipped`-д буцаана.
- *   Meta API-аас татсан (origin='api') тайланг файлаар дарахгүй — 409 (өгөгдлийн санд ч trigger). Холболтыг сануулна.
- * DELETE ?id — идэвхтэй shop-ийн тайланг устгана.
+ *   Meta API-аас татсан (origin='api') тайланг файлаар дарахгүй — 409 (өгөгдлийн санд ч trigger); солих бол
+ *   эхлээд API-ийн тайланг устгана. Холболтыг сануулна.
+ * DELETE ?id — идэвхтэй shop-ийн тайланг (файл эсвэл Meta API) устгана.
  */
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -227,8 +228,9 @@ export const POST = withRoute({ module: MODULE, access: 'write', error: 'Фай�
     const locked = targets.filter(({ week }) => existing.get(periodKey(week))?.origin === 'api');
     if (locked.length) return apiLocked(locked.map(({ week }) => week), source);
     if (!targets.length) {
+        const api = skipped.some(week => week.reason === 'api');
         return NextResponse.json({
-            error: 'Хадгалах долоо хоног алга: бүх долоо хоногийн тайлан Meta API-аас татсан эсвэл илүү олон өдөр хамарсан файлаар хадгалагдсан байна. Солих бол долоо хоногоо сонгож хадгална уу.',
+            error: `Хадгалах долоо хоног алга: бүх долоо хоногийн тайлан Meta API-аас татсан эсвэл илүү олон өдөр хамарсан файлаар хадгалагдсан байна. Илүү бүрэн файлын долоо хоногийг солих бол долоо хоногоо сонгож хадгална уу.${api ? ` Meta API-ийн долоо хоног: ${CHANNEL_API_WEEK_REPLACE_HINT}` : ''}`,
             skipped,
         }, { status: 409 });
     }
@@ -264,12 +266,15 @@ export const POST = withRoute({ module: MODULE, access: 'write', error: 'Фай�
     return NextResponse.json(split ? { mode, reports: saved, skipped, mappingSaved: !remember.error } : { mode, report: saved, mappingSaved: !remember.error }, { headers: noStore });
 });
 
-/** Meta API-аас татсан тайланг файлаар дарахгүй — 409. `race` = шалгасны дараа синк бичсэн (өгөгдлийн сангийн trigger). */
+/**
+ * Meta API-аас татсан тайланг (хамралт дутуу ч) файлаар дарахгүй — 409. Солих арга: тэр долоо хоногийн
+ * API-ийн тайланг DELETE-ээр устгаад дахин хадгална. `race` = шалгасны дараа синк бичсэн (өгөгдлийн сангийн trigger).
+ */
 function apiLocked(weeks: Array<{ from: string; to: string }>, source: ChannelSource, race = false) {
     return NextResponse.json({
         error: race
             ? `Хадгалах үед ${CHANNEL_SOURCE_LABELS[source]}-ийн тайланг Meta API-аас шинэчилсэн тул юу ч хадгалсангүй. Файлаа дахин шалгаж хадгална уу.`
-            : `${weeks.map(week => `${week.from} – ${week.to}`).join(', ')} хугацааны ${CHANNEL_SOURCE_LABELS[source]} тайланг Meta API-аас автоматаар татсан тул файлаар дарж бичихгүй. Тэр хугацааг оруулалгүй (хуваахгүйгээр өөр хугацаагаар) хадгална уу.`,
+            : `${weeks.map(week => `${week.from} – ${week.to}`).join(', ')} хугацааны ${CHANNEL_SOURCE_LABELS[source]} тайланг Meta API-аас автоматаар татсан тул файлаар дарж бичихгүй. ${CHANNEL_API_WEEK_REPLACE_HINT} Эсвэл тэр хугацааг оруулалгүй хадгална уу.`,
         ...(race ? {} : { locked: weeks }),
     }, { status: 409 });
 }

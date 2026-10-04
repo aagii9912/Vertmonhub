@@ -42,7 +42,7 @@ it('shows the latest report against the previous week, keeps missing metrics una
 
     fireEvent.click(screen.getByRole('button', { name: 'CallPro дуудлага 2026-09-16 – 2026-09-22 тайланг устгах' }));
     await waitFor(() => expect(mocks.fetch).toHaveBeenCalledWith('/api/marketing/channel-reports?id=r1', { method: 'DELETE', shopId: 'shop-a' }));
-    expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ destructive: true }));
+    expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ destructive: true, description: 'CallPro дуудлага · 2026-09-16 – 2026-09-22. Файлаа дахин импортлож сэргээнэ.' }));
 });
 
 it('hides delete without permission and does not delete when cancelled', async () => {
@@ -70,4 +70,12 @@ it('shows Meta results per type, the API origin and partial day coverage', () =>
     expect(within(saved).getByText('Meta API')).toBeInTheDocument();
     expect(within(saved).getByText('6/7 өдөр')).toBeInTheDocument();
     expect(within(saved).getByText(/Дуудлага \(Meta\):/).parentElement).toHaveTextContent('76');
+});
+
+it('tells that the next Meta sync restores a deleted API report, which the user deletes to replace it with a file', async () => {
+    const meta: ChannelReportSummary = { ...summary('m1', '2026-09-23', '2026-09-29', { spend: 10, currency: 'USD' }), source: 'meta_ads', origin: 'api', file_name: null, data_from: '2026-09-23', data_to: '2026-09-25', warnings: [] };
+    render(<QueryClientProvider client={new QueryClient()}><ChannelReportList data={{ reports: [meta], latest: { ...latest, callpro: empty } }} filter="all" onFilter={vi.fn()} canDelete shopId="shop-a" /></QueryClientProvider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Meta Ads Manager 2026-09-23 – 2026-09-29 тайланг устгах' }));
+    await waitFor(() => expect(mocks.fetch).toHaveBeenCalledWith('/api/marketing/channel-reports?id=m1', { method: 'DELETE', shopId: 'shop-a' }));
+    expect(mocks.confirm).toHaveBeenCalledWith(expect.objectContaining({ description: 'Meta Ads Manager · 2026-09-23 – 2026-09-29. Дараагийн Meta синк (35 хоногийн дотор) сэргээнэ.' }));
 });
