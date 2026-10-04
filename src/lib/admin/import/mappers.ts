@@ -204,17 +204,26 @@ export function mapPropertyType(input: string): string {
     return map[lower] || 'apartment';
 }
 
-export function mapPropertyStatus(input: string): string {
-    const lower = String(input).toLowerCase().trim();
+/**
+ * properties.status (available | reserved | sold | rented | barter). Listing-д ordered,
+ * handed_over байхгүй тул: «Захиалга үүссэн» → reserved, «Хүлээлгэсэн» (зарагдаад
+ * хүлээлгэн өгсөн, эзэмшигч 2026-10-05) → sold. Хоосон → available; мэдэгдэхгүй утга
+ * → null (мөр алдаатай болно — чимээгүй «Чөлөөтэй» болгохгүй).
+ */
+export function mapPropertyStatus(input: string): string | null {
+    const lower = String(input ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+    if (!lower) return 'available';
     const map: Record<string, string> = {
         'available': 'available', 'боломжтой': 'available', 'чөлөөтэй': 'available',
         'зарагдаж байна': 'available', 'худалдаанд': 'available',
         'reserved': 'reserved', 'захиалсан': 'reserved', 'захиалагдсан': 'reserved', 'хадгалсан': 'reserved',
+        'ordered': 'reserved', 'захиалга үүссэн': 'reserved', 'гэрээ баталгаажаагүй': 'reserved',
         'sold': 'sold', 'зарагдсан': 'sold', 'гэрээ баталгаажсан': 'sold',
+        'handed_over': 'sold', 'хүлээлгэсэн': 'sold',
         'rented': 'rented', 'түрээслэсэн': 'rented', 'түрээслэгдсэн': 'rented',
         'barter': 'barter', 'бартер': 'barter', 'солилцоо': 'barter',
     };
-    return map[lower] || 'available';
+    return Object.hasOwn(map, lower) ? map[lower] : null;
 }
 
 /**
@@ -304,6 +313,10 @@ export function mapPropertyRow(row: ImportRow, rowNum: number): MappedRow<Proper
     const address = getVal(row, 'Хаяг', 'address', 'Address') || null;
     const district = clamp(getVal(row, 'Дүүрэг', 'district', 'District') || null, 100);
     const statusRaw = getVal(row, 'Статус', 'status', 'Status');
+    const status = mapPropertyStatus(statusRaw);
+    if (!status) {
+        return { error: `Мөр ${rowNum}: Тодорхойгүй төлөв «${clamp(statusRaw, 50)}» (${clamp(name, 100)}). Боломжтой: Худалдаанд, Хадгалсан, Захиалга үүссэн, Зарагдсан, Хүлээлгэсэн, Түрээслэсэн, Бартер` };
+    }
 
     const provided = ['name', 'price'];
     if (description) provided.push('description');
@@ -333,7 +346,7 @@ export function mapPropertyRow(row: ImportRow, rowNum: number): MappedRow<Proper
             floor,
             address,
             district,
-            status: mapPropertyStatus(statusRaw || 'available'),
+            status,
             features,
             is_active: true,
         },
