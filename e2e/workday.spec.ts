@@ -92,6 +92,20 @@ async function setup(page: Page, restricted = false) {
                 managers: [card('Номин', { contract_amount: 1080000000, cash_collected: 240000000, overdue_collected: 0, new_meetings: 8, calls_chats: null, followup: 75 }, 4),
                     card('Сараа', { contract_amount: 400000000, cash_collected: 90000000, overdue_collected: 0, new_meetings: 3, calls_chats: null, followup: null }, null)] });
         }
+        if (path === '/api/marketing/channel-reports') {
+            const report = (source: string, totals: Record<string, number | string>, breakdown: unknown[] = []) => ({ id: source, source, period_from: range.from, period_to: range.to,
+                file_name: `${source}.csv`, totals, warnings: [], row_count: 4, note: null, imported_by: userId, created_at: range.to, updated_at: range.to, breakdown, mapping: {} });
+            const none = { report: null, exact: false, previous: null, comparison: null };
+            return reply({ reports: [], latest: {
+                meta_ads: { report: report('meta_ads', { spend: 300.38, currency: 'USD', reach: 270214, impressions: 483209, link_clicks: 800 },
+                    [{ kind: 'campaign', label: '[Block contents] 201 мкв 5 өрөө', values: { spend: 124.41 } }]), exact: true, previous: null,
+                    comparison: { spend: { current: 300.38, previous: 250, delta: 50.38, pct: 20.2, comparable: true } } },
+                facebook_page: none,
+                callpro: { report: report('callpro', { answered: 16, missed: 6, abandoned: 1, answer_rate: 66.7, selected: 24 },
+                    [{ kind: 'hour', label: '12:00', values: { missed: 3 } }, { kind: 'hour', label: '15:00', values: { missed: 2 } }]), exact: true, previous: null, comparison: null },
+                sms: none,
+            } });
+        }
         if (path === '/api/marketing/budget') return reply({ year: Number(url.searchParams.get('year')), available: true,
             overview: buildBudgetOverview(Array(12).fill(10000000), Array.from({ length: 12 }, (_, index) => index < 9 ? 8000000 : 0), Array(12).fill(0)) });
         if (path === '/api/dashboard/kpi-report') return reply({ manager: { name: 'Номин', isSelf: true }, shopName: 'Vertmon · Туршилтын өгөгдөл', year: 2026, month: 10, onboarding: true });
@@ -177,6 +191,10 @@ for (const mobile of [false, true]) {
         await expect(page.getByText('Мөнгөн орлого (ERP)', { exact: true })).toBeVisible();
         await expect(page.getByRole('region', { name: 'Б1 блокийн давхрын зураглал' })).toBeVisible();
         await expect(page.getByText(/оны үндсэн төсөв$/)).toBeVisible();
+        const meta = page.getByRole('region', { name: 'Meta Ads Manager' });
+        await expect(meta.getByText('300.38 USD', { exact: true })).toBeVisible();
+        await expect(page.getByRole('region', { name: 'CallPro дуудлага' }).getByText(/Алдсан дуудлага их цаг: 12:00 \(3\)/)).toBeVisible();
+        await expect(page.getByText(/Экспорт оруулаагүй: Facebook хуудас, Масс SMS/)).toBeVisible();
         expect(copied).toContain('Энэ долоо хоног: 3 гэрээ');
         expect(copied).toContain('Б1 блок орон сууц: гэрээтэй');
         const products = page.getByRole('region', { name: 'Гэрээний бүтээгдэхүүний задаргаа' });
