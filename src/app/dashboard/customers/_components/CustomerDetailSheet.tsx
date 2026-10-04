@@ -21,10 +21,9 @@ import {
 } from '@/components/ui/Sheet';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { ServiceLogForm } from './ServiceLogForm';
-
-type ServiceLogType = 'inquiry' | 'complaint' | 'maintenance' | 'handover' | 'payment' | 'other';
-type ServiceLogStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+import { ServiceLogForm, type ServiceLogFormState } from './ServiceLogForm';
+import { serviceLogStatusLabel, serviceLogTypeLabel, serviceLogTypeTone, type ServiceLogStatus, type ServiceLogType } from '@/lib/service-logs/labels';
+import type { Tone } from '@/lib/leads/labels';
 
 interface ServiceLogEntry {
     id: string;
@@ -55,29 +54,9 @@ interface Customer {
     service_logs?: ServiceLogEntry[];
 }
 
-const SERVICE_LOG_TYPE_LABELS: Record<ServiceLogType, string> = {
-    inquiry: 'Хүсэлт',
-    complaint: 'Гомдол',
-    maintenance: 'Засвар',
-    handover: 'Хүлээлгэн өгөлт',
-    payment: 'Төлбөр',
-    other: 'Бичиг / Бусад',
-};
-
-const SERVICE_LOG_TYPE_VARIANT: Record<ServiceLogType, 'info' | 'danger' | 'warning' | 'success' | 'brand' | 'default'> = {
-    inquiry: 'info',
-    complaint: 'danger',
-    maintenance: 'warning',
-    handover: 'success',
-    payment: 'brand',
-    other: 'default',
-};
-
-const SERVICE_LOG_STATUS_LABELS: Record<ServiceLogStatus, string> = {
-    open: 'Шинэ',
-    in_progress: 'Шийдэгдэж байгаа',
-    resolved: 'Шийдэгдсэн',
-    closed: 'Хаасан',
+// Санал гомдлын толь: lib/service-logs/labels (санал гомдлын хуудастай ижил).
+const BADGE_VARIANT: Record<Tone, 'info' | 'danger' | 'warning' | 'success' | 'default'> = {
+    info: 'info', danger: 'danger', pending: 'warning', success: 'success', neutral: 'default',
 };
 
 interface EditForm {
@@ -116,8 +95,8 @@ interface CustomerDetailSheetProps {
     notesSaving: boolean;
     onSaveNotesOnly: () => void;
 
-    logForm: { type: ServiceLogType; subject: string; description: string };
-    setLogForm: React.Dispatch<React.SetStateAction<{ type: ServiceLogType; subject: string; description: string }>>;
+    logForm: ServiceLogFormState;
+    setLogForm: React.Dispatch<React.SetStateAction<ServiceLogFormState>>;
     logSubmitting: boolean;
     logError: string | null;
     onSubmitServiceLog: () => void;
@@ -448,13 +427,13 @@ export function CustomerDetailSheet({
                                         <div className="flex items-center justify-between mb-1">
                                             <div className="flex items-center gap-2">
                                                 <Badge
-                                                    variant={SERVICE_LOG_TYPE_VARIANT[log.type] || 'default'}
+                                                    variant={BADGE_VARIANT[serviceLogTypeTone(log.type)]}
                                                     size="sm"
                                                 >
-                                                    {SERVICE_LOG_TYPE_LABELS[log.type] || log.type}
+                                                    {serviceLogTypeLabel(log.type)}
                                                 </Badge>
                                                 <span className="text-xs text-muted-foreground">
-                                                    {SERVICE_LOG_STATUS_LABELS[log.status] || log.status}
+                                                    {serviceLogStatusLabel(log.status)}
                                                 </span>
                                             </div>
                                             <span className="text-xs text-muted-foreground/70">

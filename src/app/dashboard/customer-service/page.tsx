@@ -33,8 +33,14 @@ import {
 } from '@/components/ui/Dialog';
 import { FormField } from '@/components/ui/FormField';
 import { PageSkeleton } from '@/components/ui/LoadingSkeleton';
-import { dashboardFetch, dashboardMutate } from '@/lib/api/dashboardFetch';
+import { dashboardMutate } from '@/lib/api/dashboardFetch';
 import { useDashboardQuery } from '@/hooks/useDashboardQuery';
+import { useAuth } from '@/contexts/AuthContext';
+import {
+    SERVICE_LOG_CHANNELS, SERVICE_LOG_CHANNEL_LABELS, SERVICE_LOG_PRIORITIES, SERVICE_LOG_PRIORITY_META, SERVICE_LOG_STATUSES,
+    SERVICE_LOG_STATUS_META, SERVICE_LOG_TYPES, SERVICE_LOG_TYPE_META, serviceLogChannelLabel, type ServiceLogType,
+} from '@/lib/service-logs/labels';
+import { slaState } from '@/lib/service-logs/sla';
 
 type StatusPillVariant = 'success' | 'danger' | 'pending' | 'info' | 'active' | 'neutral' | 'brand';
 
@@ -74,15 +80,15 @@ interface ServiceLog {
     description: string | null;
     status: string;
     assigned_to: string | null;
+    /** Хариуцагч менежер (бүртгэлийн канон нэр) — шийдвэрлэлтийн KPI. */
+    manager_name: string | null;
     satisfaction_rating: number | null;
     created_at: string;
     resolved_at: string | null;
 }
 
-interface TeamMember {
-    id: string;
-    full_name: string;
-    role: string;
+interface ManagerOption {
+    name: string;
 }
 
 interface CustomerOption {
@@ -91,50 +97,32 @@ interface CustomerOption {
     phone: string | null;
 }
 
-const TYPE_LABELS: Record<string, { text: string; icon: React.ReactNode; variant: StatusPillVariant }> = {
-    inquiry: { text: 'Лавлагаа', icon: <MessageSquare className="w-3 h-3" />, variant: 'info' },
-    complaint: { text: 'Гомдол', icon: <AlertTriangle className="w-3 h-3" />, variant: 'danger' },
-    suggestion: { text: 'Санал', icon: <Lightbulb className="w-3 h-3" />, variant: 'brand' },
-    maintenance: { text: 'Засвар', icon: <Wrench className="w-3 h-3" />, variant: 'pending' },
-    handover: { text: 'Хүлээлцэх', icon: <ArrowRight className="w-3 h-3" />, variant: 'success' },
-    payment: { text: 'Төлбөр', icon: <DollarSign className="w-3 h-3" />, variant: 'brand' },
-    other: { text: 'Бусад', icon: <FileText className="w-3 h-3" />, variant: 'neutral' },
+// Төрөл, чухлал, төлөв, суваг, SLA-ийн толь: lib/service-logs (API-тай ижил). Энд зөвхөн дүрс.
+const TYPE_ICONS: Record<ServiceLogType, React.ReactNode> = {
+    inquiry: <MessageSquare className="w-3 h-3" />,
+    complaint: <AlertTriangle className="w-3 h-3" />,
+    suggestion: <Lightbulb className="w-3 h-3" />,
+    maintenance: <Wrench className="w-3 h-3" />,
+    handover: <ArrowRight className="w-3 h-3" />,
+    payment: <DollarSign className="w-3 h-3" />,
+    other: <FileText className="w-3 h-3" />,
 };
 
-const PRIORITY_LABELS: Record<string, { text: string; variant: StatusPillVariant }> = {
-    low: { text: 'Бага', variant: 'neutral' },
-    medium: { text: 'Дунд', variant: 'info' },
-    high: { text: 'Өндөр', variant: 'pending' },
-    urgent: { text: 'Яаралтай', variant: 'danger' },
-};
-
-const STATUS_LABELS: Record<string, { text: string; variant: StatusPillVariant }> = {
-    open: { text: 'Нээлттэй', variant: 'info' },
-    in_progress: { text: 'Ажиллаж буй', variant: 'pending' },
-    resolved: { text: 'Шийдвэрлэсэн', variant: 'success' },
-    closed: { text: 'Хаагдсан', variant: 'neutral' },
-};
-
-const CHANNEL_LABELS: Record<string, string> = {
-    facebook: 'Facebook',
-    instagram: 'Instagram',
-    phone: 'Утас',
-    in_person: 'Биечлэн',
-    app: 'Апп',
-    other: 'Бусад',
-};
-
-// Шийдвэрлэх зорилтот хугацаа (цаг) — чухлалаар (SLA).
-const SLA_TARGET_HOURS: Record<string, number> = { urgent: 24, high: 48, medium: 120, low: 240 };
+function typeInfoOf(type: string): { text: string; icon: React.ReactNode; variant: StatusPillVariant } {
+    const key = (type in SERVICE_LOG_TYPE_META ? type : 'other') as ServiceLogType;
+    return { text: SERVICE_LOG_TYPE_META[key].label, icon: TYPE_ICONS[key], variant: SERVICE_LOG_TYPE_META[key].tone };
+}
+function metaInfo<K extends string>(meta: Record<K, { label: string; tone: StatusPillVariant }>, value: string, fallback: K) {
+    const entry = meta[(value in meta ? value : fallback) as K];
+    return { text: entry.label, variant: entry.tone };
+}
 
 /** Нээлттэй бичлэгийн SLA төлөв — хугацаа хэтэрсэн эсвэл үлдсэн цаг. */
 function slaInfo(log: ServiceLog): { text: string; variant: StatusPillVariant } | null {
-    if (log.status === 'resolved' || log.status === 'closed') return null;
-    const target = SLA_TARGET_HOURS[log.priority] ?? 120;
-    const hoursOpen = (Date.now() - new Date(log.created_at).getTime()) / 3_600_000;
-    if (hoursOpen > target) return { text: 'Хугацаа хэтэрсэн', variant: 'danger' };
-    const remaining = Math.max(0, Math.round(target - hoursOpen));
-    return { text: `${remaining}ц үлдсэн`, variant: hoursOpen > target * 0.75 ? 'pending' : 'neutral' };
+    const state = slaState(log, new Date());
+    if (!state) return null;
+    if (state.kind === 'overdue') return { text: 'Хугацаа хэтэрсэн', variant: 'danger' };
+    return { text: `${state.hoursLeft}ц үлдсэн`, variant: state.warn ? 'pending' : 'neutral' };
 }
 
 export default function CustomerServicePage() {
@@ -164,44 +152,45 @@ export default function CustomerServicePage() {
         { keepPreviousData: true },
     );
     const logs = logsQuery.data?.logs ?? [];
+    const { user } = useAuth();
+    const canWrite = user?.role === 'super_admin' || (!!user?.permissions.canWrite && user.permissions.modules.includes('customer-service'));
+    // Хариуцагч = борлуулалтын менежерийн бүртгэл (канон нэр) — шийдвэрлэлтийн KPI үүгээр тооцогдоно.
+    const managersQuery = useDashboardQuery<{ managers?: ManagerOption[] }>(['service-logs', 'managers'], '/api/dashboard/managers', { staleTime: 300_000 });
+    const managers = managersQuery.data?.managers ?? [];
 
     /** Санал гомдлын жагсаалт, KPI болон харилцагчийн дэлгэрэнгүй дэх түүхийг шинэчилнэ. */
     function refreshLogs() {
         return Promise.all([
             queryClient.invalidateQueries({ queryKey: ['service-logs'] }),
             queryClient.invalidateQueries({ queryKey: ['customers', 'detail'] }),
+            // Хариуцагчийн шийдвэрлэлт өдрийн идэвх, сарын KPI-д тоологдоно.
+            queryClient.invalidateQueries({ queryKey: ['manager-activity'] }),
+            queryClient.invalidateQueries({ queryKey: ['sales-kpi'] }),
         ]);
     }
 
     async function createServiceLog(formData: Record<string, string>): Promise<boolean> {
         try {
-            const res = await dashboardFetch('/api/dashboard/service-logs', {
-                method: 'POST',
-                body: JSON.stringify(formData),
-            });
-            if (res.ok) {
-                setShowNewForm(false);
-                await refreshLogs();
-                toast.success('Хүсэлт бүртгэгдлээ');
-                return true;
-            }
-            toast.error('Хүсэлт бүртгэхэд алдаа гарлаа');
-            return false;
+            await dashboardMutate('/api/dashboard/service-logs', 'POST', formData);
+            setShowNewForm(false);
+            await refreshLogs();
+            toast.success('Хүсэлт бүртгэгдлээ');
+            return true;
         } catch (err) {
-            console.error('[CustomerService] create error:', err);
-            toast.error('Хүсэлт бүртгэхэд алдаа гарлаа');
+            toast.error(err instanceof Error && err.message ? err.message : 'Хүсэлт бүртгэхэд алдаа гарлаа');
             return false;
         }
     }
 
-    async function updateLogStatus(id: string, status: string) {
+    async function updateLog(id: string, patch: { status?: string; manager_name?: string | null }) {
         try {
-            await dashboardMutate(`/api/dashboard/service-logs/${id}`, 'PATCH', { status });
+            await dashboardMutate(`/api/dashboard/service-logs/${id}`, 'PATCH', patch);
             void refreshLogs();
         } catch (err) {
-            toast.error(err instanceof Error ? err.message : 'Төлөв шинэчилж чадсангүй');
+            toast.error(err instanceof Error ? err.message : 'Хүсэлт шинэчилж чадсангүй');
         }
     }
+    const updateLogStatus = (id: string, status: string) => updateLog(id, { status });
 
     if (kpiQuery.isPending || logsQuery.isPending) {
         return <PageSkeleton rows={6} showStats />;
@@ -281,10 +270,7 @@ export default function CustomerServicePage() {
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">Бүх төлөв</SelectItem>
-                            <SelectItem value="open">Нээлттэй</SelectItem>
-                            <SelectItem value="in_progress">Ажиллаж буй</SelectItem>
-                            <SelectItem value="resolved">Шийдвэрлэсэн</SelectItem>
-                            <SelectItem value="closed">Хаагдсан</SelectItem>
+                            {SERVICE_LOG_STATUSES.map((value) => <SelectItem key={value} value={value}>{SERVICE_LOG_STATUS_META[value].label}</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </label>
@@ -299,12 +285,7 @@ export default function CustomerServicePage() {
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">Бүх төрөл</SelectItem>
-                            <SelectItem value="complaint">Гомдол</SelectItem>
-                            <SelectItem value="suggestion">Санал</SelectItem>
-                            <SelectItem value="inquiry">Лавлагаа</SelectItem>
-                            <SelectItem value="maintenance">Засвар</SelectItem>
-                            <SelectItem value="payment">Төлбөр</SelectItem>
-                            <SelectItem value="handover">Хүлээлцэх</SelectItem>
+                            {SERVICE_LOG_TYPES.map((value) => <SelectItem key={value} value={value}>{SERVICE_LOG_TYPE_META[value].label}</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </label>
@@ -319,12 +300,7 @@ export default function CustomerServicePage() {
                         </SelectTrigger>
                         <SelectContent>
                             <SelectItem value="all">Бүх суваг</SelectItem>
-                            <SelectItem value="facebook">Facebook</SelectItem>
-                            <SelectItem value="instagram">Instagram</SelectItem>
-                            <SelectItem value="phone">Утас</SelectItem>
-                            <SelectItem value="in_person">Биечлэн</SelectItem>
-                            <SelectItem value="app">Апп</SelectItem>
-                            <SelectItem value="other">Бусад</SelectItem>
+                            {SERVICE_LOG_CHANNELS.map((value) => <SelectItem key={value} value={value}>{SERVICE_LOG_CHANNEL_LABELS[value]}</SelectItem>)}
                         </SelectContent>
                     </Select>
                 </label>
@@ -367,9 +343,9 @@ export default function CustomerServicePage() {
                             </thead>
                             <tbody>
                                 {logs.map(log => {
-                                    const typeInfo = TYPE_LABELS[log.type] || TYPE_LABELS.other;
-                                    const prioInfo = PRIORITY_LABELS[log.priority] || PRIORITY_LABELS.medium;
-                                    const statusInfo = STATUS_LABELS[log.status] || STATUS_LABELS.open;
+                                    const typeInfo = typeInfoOf(log.type);
+                                    const prioInfo = metaInfo(SERVICE_LOG_PRIORITY_META, log.priority, 'medium');
+                                    const statusInfo = metaInfo(SERVICE_LOG_STATUS_META, log.status, 'open');
 
                                     return (
                                         <tr key={log.id} className="border-b border-border hover:bg-surface-2">
@@ -406,10 +382,10 @@ export default function CustomerServicePage() {
                                                 </StatusPill>
                                             </td>
                                             <td className="px-4 py-3 text-muted-foreground text-xs">
-                                                {log.channel ? CHANNEL_LABELS[log.channel] || log.channel : '—'}
+                                                {log.channel ? serviceLogChannelLabel(log.channel) : '—'}
                                             </td>
                                             <td className="px-4 py-3 text-foreground text-xs">
-                                                {log.assigned_to || '—'}
+                                                <AssigneeCell log={log} managers={managers} canWrite={canWrite} onChange={(name) => updateLog(log.id, { manager_name: name })} />
                                             </td>
                                             <td className="px-4 py-3 text-muted-foreground text-xs">
                                                 {log.created_at ? formatTimeAgo(log.created_at) : '—'}
@@ -475,6 +451,10 @@ export default function CustomerServicePage() {
                 open={showNewForm}
                 onClose={() => setShowNewForm(false)}
                 onSubmit={createServiceLog}
+                managers={managers}
+                managersError={!!managersQuery.error}
+                managersLoading={managersQuery.isFetching}
+                onRetryManagers={() => void managersQuery.refetch()}
             />
         </div>
     );
@@ -484,10 +464,14 @@ export default function CustomerServicePage() {
 // Sub-components
 // ============================================
 
-function NewServiceLogModal({ open, onClose, onSubmit }: {
+function NewServiceLogModal({ open, onClose, onSubmit, managers, managersError, managersLoading, onRetryManagers }: {
     open: boolean;
     onClose: () => void;
     onSubmit: (data: Record<string, string>) => Promise<boolean>;
+    managers: ManagerOption[];
+    managersError: boolean;
+    managersLoading: boolean;
+    onRetryManagers: () => void;
 }) {
     const EMPTY_FORM = {
         subject: '',
@@ -498,14 +482,12 @@ function NewServiceLogModal({ open, onClose, onSubmit }: {
         customer_id: '',
         customer_name: '',
         customer_phone: '',
-        assigned_to: '',
+        // Хоосон бол сервер: холбосон гэрээний менежер → бүртгэсэн менежер.
+        manager_name: '',
     };
     const [form, setForm] = useState(EMPTY_FORM);
     const [submitting, setSubmitting] = useState(false);
 
-    // Форм нээлттэй үед багийн гишүүдийг татах (Хариуцагч сонголтод)
-    const teamQuery = useDashboardQuery<{ members?: TeamMember[] }>(['team'], open ? '/api/dashboard/team' : null);
-    const team = teamQuery.data?.members ?? [];
 
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
@@ -552,13 +534,7 @@ function NewServiceLogModal({ open, onClose, onSubmit }: {
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="complaint">Гомдол</SelectItem>
-                                    <SelectItem value="suggestion">Санал</SelectItem>
-                                    <SelectItem value="inquiry">Лавлагаа</SelectItem>
-                                    <SelectItem value="maintenance">Засвар</SelectItem>
-                                    <SelectItem value="payment">Төлбөр</SelectItem>
-                                    <SelectItem value="handover">Хүлээлцэх</SelectItem>
-                                    <SelectItem value="other">Бусад</SelectItem>
+                                    {SERVICE_LOG_TYPES.map((value) => <SelectItem key={value} value={value}>{SERVICE_LOG_TYPE_META[value].label}</SelectItem>)}
                                 </SelectContent>
                             </Select>
                         </FormField>
@@ -571,10 +547,7 @@ function NewServiceLogModal({ open, onClose, onSubmit }: {
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="low">Бага</SelectItem>
-                                    <SelectItem value="medium">Дунд</SelectItem>
-                                    <SelectItem value="high">Өндөр</SelectItem>
-                                    <SelectItem value="urgent">Яаралтай</SelectItem>
+                                    {SERVICE_LOG_PRIORITIES.map((value) => <SelectItem key={value} value={value}>{SERVICE_LOG_PRIORITY_META[value].label}</SelectItem>)}
                                 </SelectContent>
                             </Select>
                         </FormField>
@@ -589,12 +562,7 @@ function NewServiceLogModal({ open, onClose, onSubmit }: {
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
-                                <SelectItem value="facebook">Facebook</SelectItem>
-                                <SelectItem value="instagram">Instagram</SelectItem>
-                                <SelectItem value="phone">Утас</SelectItem>
-                                <SelectItem value="in_person">Биечлэн</SelectItem>
-                                <SelectItem value="app">Апп</SelectItem>
-                                <SelectItem value="other">Бусад</SelectItem>
+                                {SERVICE_LOG_CHANNELS.map((value) => <SelectItem key={value} value={value}>{SERVICE_LOG_CHANNEL_LABELS[value]}</SelectItem>)}
                             </SelectContent>
                         </Select>
                     </FormField>
@@ -630,42 +598,29 @@ function NewServiceLogModal({ open, onClose, onSubmit }: {
                     </div>
 
                     <FormField
-                        label="Хариуцагч"
-                        htmlFor="cs-assigned-to"
-                        error={teamQuery.error ? (
+                        label="Хариуцагч менежер"
+                        htmlFor="cs-manager"
+                        error={managersError ? (
                             <>
-                                Багийн гишүүдийг татаж чадсангүй.{' '}
-                                <button type="button" onClick={() => void teamQuery.refetch()} disabled={teamQuery.isFetching} className="underline">Дахин оролдох</button>
+                                Менежерийн жагсаалтыг татаж чадсангүй.{' '}
+                                <button type="button" onClick={onRetryManagers} disabled={managersLoading} className="underline">Дахин оролдох</button>
                             </>
                         ) : undefined}
                     >
-                        {team.length > 0 ? (
-                            <Select
-                                value={form.assigned_to || 'unassigned'}
-                                onValueChange={(value) => setForm({ ...form, assigned_to: value === 'unassigned' ? '' : value })}
-                            >
-                                <SelectTrigger id="cs-assigned-to" className="text-sm">
-                                    <SelectValue placeholder="Менежер сонгох" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="unassigned">Хариуцагчгүй</SelectItem>
-                                    {team.map((m) => (
-                                        <SelectItem key={m.id} value={m.full_name}>
-                                            {m.full_name}{m.role === 'owner' ? ' (эзэн)' : ''}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        ) : (
-                            <input
-                                id="cs-assigned-to"
-                                type="text"
-                                value={form.assigned_to}
-                                onChange={e => setForm({ ...form, assigned_to: e.target.value })}
-                                placeholder="Менежерийн нэр"
-                                className="w-full px-3 py-2 bg-surface-2 border border-border rounded-md text-sm text-foreground placeholder:text-muted-foreground/60 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-                            />
-                        )}
+                        <Select
+                            value={form.manager_name || 'auto'}
+                            onValueChange={(value) => setForm({ ...form, manager_name: value === 'auto' ? '' : value })}
+                        >
+                            <SelectTrigger id="cs-manager" className="text-sm">
+                                <SelectValue placeholder="Менежер сонгох" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="auto">Автоматаар (гэрээний / бүртгэсэн менежер)</SelectItem>
+                                {managers.map((m) => (
+                                    <SelectItem key={m.name} value={m.name}>{m.name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                     </FormField>
 
                     <FormField label="Дэлгэрэнгүй" htmlFor="cs-description">
@@ -696,6 +651,34 @@ function NewServiceLogModal({ open, onClose, onSubmit }: {
                 </form>
             </DialogContent>
         </Dialog>
+    );
+}
+
+/** Жагсаалтын «Хариуцагч»: бичих эрхтэй бол бүртгэлийн менежерээр солих, хуучин чөлөөт текстийг харуулна. */
+function AssigneeCell({ log, managers, canWrite, onChange }: {
+    log: ServiceLog;
+    managers: ManagerOption[];
+    canWrite: boolean;
+    onChange: (name: string | null) => void;
+}) {
+    const legacy = !log.manager_name && log.assigned_to ? log.assigned_to : null;
+    if (!canWrite || managers.length === 0) {
+        return <>{log.manager_name || log.assigned_to || '—'}</>;
+    }
+    const options = log.manager_name && !managers.some((m) => m.name === log.manager_name) ? [{ name: log.manager_name }, ...managers] : managers;
+    return (
+        <div className="min-w-36">
+            <Select value={log.manager_name || 'none'} onValueChange={(value) => onChange(value === 'none' ? null : value)}>
+                <SelectTrigger className="h-8 text-xs" aria-label={`«${log.subject}» хариуцагч`}>
+                    <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                    <SelectItem value="none">Хариуцагчгүй</SelectItem>
+                    {options.map((m) => <SelectItem key={m.name} value={m.name}>{m.name}</SelectItem>)}
+                </SelectContent>
+            </Select>
+            {legacy && <div className="mt-0.5 truncate text-2xs text-muted-foreground" title="Хуучин бүртгэлийн текст — KPI-д тооцогдохгүй">{legacy}</div>}
+        </div>
     );
 }
 

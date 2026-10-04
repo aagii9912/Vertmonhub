@@ -8,6 +8,8 @@ import { buildWeeklySales } from '../src/lib/dashboard/weekly-sales';
 import type { ErpProduct, ErpSale } from '../src/lib/erp/records';
 import { scoreKpi } from '../src/lib/sales/kpi';
 import { buildBudgetOverview } from '../src/lib/marketing/budget';
+import { ubParts } from '../src/lib/utils/date';
+import { managerActivityFixture } from './support/manager-activity';
 
 const userId = '00000000-0000-4000-8000-000000000001';
 const shopId = '00000000-0000-4000-8000-000000000002';
@@ -86,11 +88,22 @@ async function setup(page: Page, restricted = false) {
             if (request.method() === 'PUT') { state.kpiWrites.push(request.postDataJSON()); return reply({ success: true }); }
             const plans = state.kpiWrites.length ? { contract_amount: 900000000, cash_collected: 300000000, new_meetings: 10 } : { contract_amount: 900000000 };
             const card = (manager: string, actuals: Record<string, number | null>, management: number | null) => ({ manager, active: true, contracts: 2,
-                review: { management, note: '' }, plans, manual: { calls_chats: actuals.calls_chats ?? null }, ...scoreKpi({ plans, actuals, management }) });
+                review: { management, note: '' }, plans, manual: { calls_chats: actuals.calls_chats ?? null }, crm: { calls: 12, requests: null },
+                daily: { calls: null, meetings: null }, ...scoreKpi({ plans, actuals, management }) });
             return reply({ year: Number(url.searchParams.get('year')), month: Number(url.searchParams.get('month')), canEdit: true,
                 sources: { contracts: { date: range.to, source: 'Elysium гэрээ' }, cashFrom: { date: range.from, source: 'Elysium гэрээ' } },
                 managers: [card('Номин', { contract_amount: 1080000000, cash_collected: 240000000, overdue_collected: 0, new_meetings: 8, calls_chats: null, followup: 75 }, 4),
                     card('Сараа', { contract_amount: 400000000, cash_collected: 90000000, overdue_collected: 0, new_meetings: 3, calls_chats: null, followup: null }, null)] });
+        }
+        if (path === '/api/dashboard/reports/manager-activity') {
+            const now = new Date().toISOString();
+            const { year, month } = ubParts();
+            return reply(managerActivityFixture(url, 'Номин', {
+                roster: [{ name: 'Номин', user_id: userId, is_active: true }],
+                calls: [{ created_by: userId, created_by_name: 'Номин', created_at: now }, { created_by: userId, created_by_name: 'Номин', created_at: now }],
+                meetings: [{ sales_manager_name: 'Номин', scheduled_at: now, status: 'completed', meeting_type: 'new_customer' }],
+                targets: [{ manager_name: 'Номин', year, month, daily: { calls: 20, meetings: 2 } }],
+            }));
         }
         if (path === '/api/marketing/channel-reports') {
             const report = (source: string, totals: Record<string, number | string>, breakdown: unknown[] = []) => ({ id: source, source, period_from: range.from, period_to: range.to,
@@ -149,6 +162,7 @@ for (const mobile of [false, true]) {
         const state = await setup(page);
         await expect(page.getByRole('heading', { name: 'Сайн байна уу, Номин.' })).toBeVisible();
         await expect(page.getByText('Б. Энхжинтэй дахин холбогдох', { exact: true })).toBeVisible();
+        await expect(page.getByRole('group', { name: 'Өнөөдрийн идэвх' })).toContainText('дуудлага');
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         mkdirSync('output/workday', { recursive: true });
         await page.screenshot({ path: `output/workday/${mobile ? 'mobile' : 'desktop'}-today.png`, fullPage: true });
@@ -334,9 +348,18 @@ test('KPI карт: багийн оноо, менежерийн үзүүлэлт
     await page.getByLabel('Шинэ харилцагчтай уулзалт төлөвлөгөө', { exact: true }).fill('10');
     await page.getByLabel('Дуудлага, чатын гүйцэтгэл', { exact: true }).fill('42');
     await page.getByLabel('Удирдлагын үнэлгээ', { exact: true }).selectOption('5');
+    await page.getByLabel('Өдөрт дуудлагын зорилт', { exact: true }).fill('20');
     await page.getByRole('button', { name: 'Хадгалах', exact: true }).click();
     await expect.poll(() => state.kpiWrites.length).toBe(1);
-    expect(state.kpiWrites[0]).toMatchObject({ manager: 'Номин', plans: { contract_amount: 900000000, cash_collected: 300000000, new_meetings: 10 }, manual: { calls_chats: 42 }, review: { management: 5 } });
+    expect(state.kpiWrites[0]).toMatchObject({ manager: 'Номин', plans: { contract_amount: 900000000, cash_collected: 300000000, new_meetings: 10 }, manual: { calls_chats: 42 },
+        daily: { calls: 20, meetings: null }, review: { management: 5 } });
+    // Өдөр тутмын идэвх: CRM дуудлага, болсон уулзалт, нийт мөр.
+    const activity = page.getByRole('region', { name: 'Өдөр тутмын идэвх' });
+    const own = activity.getByRole('region', { name: 'Номин идэвх' });
+    await expect(own.getByRole('rowheader', { name: 'Нийт', exact: true })).toBeVisible();
+    await activity.getByRole('button', { name: 'Өдөр', exact: true }).click();
+    await expect(activity.getByRole('button', { name: 'Өдөр', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(own.getByRole('row').nth(1)).toContainText('2');
     mkdirSync('output/workday', { recursive: true });
     await page.screenshot({ path: 'output/workday/desktop-kpi-card.png', fullPage: true });
     expect(state.errors).toEqual([]);
