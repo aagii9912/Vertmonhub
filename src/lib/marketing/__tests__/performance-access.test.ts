@@ -11,6 +11,7 @@ import { GET } from '@/app/api/marketing/performance/route';
 import { GET as RECORDS_GET, POST } from '@/app/api/marketing/performance/records/route';
 import { executeDataTool } from '@/lib/ai/data-assistant';
 import { buildMarketingPerformance } from '../performance';
+import { anonymousLeadOrFilter } from '@/lib/leads/labels';
 
 const id = '00000000-0000-4000-8000-000000000001';
 const unrestricted = { projectIds: null, managerName: null };
@@ -76,7 +77,9 @@ it('finds attribution leads by name, phone or the anonymous keyword', async () =
     expect(calls).toContainEqual(['select', expect.stringContaining('customer_phone')]);
     calls.length = 0;
     expect((await (await get('Нэргүй')).json()).leads).toEqual([{ id, customer_name: null, customer_phone: '99112233' }]);
-    expect(calls).toContainEqual(['is', 'customer_name', null]);
+    // Нэмэлт: жинхэнэ нэр «Нэргүй» + нэргүй/хуучин орлуулагч нэртэй лидүүд.
+    expect(calls).toContainEqual(['or', `customer_name.ilike.%Нэргүй%,${anonymousLeadOrFilter()}`]);
+    expect(calls).not.toContainEqual(['is', 'customer_name', null]);
     calls.length = 0;
     await get('Бат');
     expect(calls).toContainEqual(['ilike', 'customer_name', '%Бат%']);

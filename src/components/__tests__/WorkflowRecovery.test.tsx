@@ -193,6 +193,21 @@ describe('workflow error and recovery states', () => {
         expect(mocks.update).toHaveBeenCalledWith({ id: 'lead', patch: { customer_name: 'Г. Бат' } }, expect.anything());
     });
 
+    it('warns instead of silently dropping a placeholder name and saves the real name «Нэргүй»', () => {
+        mocks.detail.isError = false;
+        mocks.detail.data = { lead: { id: 'lead', project_id: 'mandala', customer_name: null, customer_phone: '99112233', source: 'phone', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
+        render(<LeadPanel leadId="lead" canWrite={true} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Нэр нэмэх' }));
+        fireEvent.change(screen.getByRole('textbox', { name: 'Харилцагчийн нэр' }), { target: { value: ANONYMOUS_LEAD_LABEL } });
+        fireEvent.keyDown(screen.getByRole('textbox', { name: 'Харилцагчийн нэр' }), { key: 'Enter' });
+        expect(mocks.toastError).toHaveBeenCalledWith(expect.stringContaining('жинхэнэ нэрийг'));
+        expect(mocks.update).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Нэр нэмэх' }));
+        fireEvent.change(screen.getByRole('textbox', { name: 'Харилцагчийн нэр' }), { target: { value: 'Нэргүй' } });
+        fireEvent.keyDown(screen.getByRole('textbox', { name: 'Харилцагчийн нэр' }), { key: 'Enter' });
+        expect(mocks.update).toHaveBeenCalledWith({ id: 'lead', patch: { customer_name: 'Нэргүй' } }, expect.anything());
+    });
+
     it('lets a writer correct a named lead and ignores an unchanged name', () => {
         mocks.detail.isError = false;
         mocks.detail.data = { lead: { id: 'lead', project_id: 'mandala', customer_name: 'Болд', source: 'phone', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };

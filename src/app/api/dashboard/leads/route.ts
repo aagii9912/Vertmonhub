@@ -4,7 +4,7 @@ import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { requireModuleWrite, resolvePermissions } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
-import { ACTIVE_STATUSES, isAnonymousLeadQuery } from '@/lib/leads/labels';
+import { ACTIVE_STATUSES, anonymousLeadOrFilter, isAnonymousLeadQuery } from '@/lib/leads/labels';
 import { isLeadWorkQueue, workQueueFilter } from '@/lib/leads/work-queue';
 import { parsePagination, buildPageMeta } from '@/lib/utils/pagination';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
@@ -25,7 +25,7 @@ const PERIOD_DAYS: Record<string, number> = {
  * GET /api/dashboard/leads?status=<status>&source=<source>&period=<week|month|quarter|year>&manager=<нэр>&phone=<дугаар>&q=<хайлт>
  * Лийдийн жагсаалт (shop-scoped, сервер cookie auth + service role).
  * phone — утасны давхардал шалгах (форматаас үл хамааран: «9911 2233» / «99112233» / «9911-2233»).
- * q — нэр, утас, и-мэйлээр хайлт; «нэргүй»-ээр эхэлбэл нэргүй (customer_name null) лидүүд.
+ * q — нэр, утас, и-мэйлээр хайлт; «нэргүй»/«нэргүй харилцагч» бол нэргүй лидүүдийг нэмж буцаана.
  * view — хадгалсан харагдац: all | mine (миний лид) | new | meetings (уулзалт товлосон) | active (хаагдаагүй).
  * sort — created_at (анхдагч) | last_contact_at | customer_name | next_followup_at; dir — asc | desc.
  * Soft-delete хийгдсэн лийдийг (deleted_at) хасна.
@@ -104,16 +104,12 @@ export const GET = withRoute({ module: 'leads', error: 'Лийд татахад 
     const phonePattern = phoneIlikePattern(searchParams.get('phone'));
     if (phonePattern) query = query.ilike('customer_phone', phonePattern);
     const q = searchParams.get('q')?.trim();
-    // «нэргүй…» хайлт — нэр нь хоосон (нэргүй) лидүүд; нэрийг дараа нь нөхөхөд хэрэгтэй.
-    if (isAnonymousLeadQuery(q)) {
-        query = query.is('customer_name', null);
-    } else if (q) {
+    if (q) {
         const safe = q.replace(/[%_,()]/g, ' ').trim();
-        if (safe) {
-            query = query.or(
-                `customer_name.ilike.%${safe}%,customer_phone.ilike.%${safe}%,customer_email.ilike.%${safe}%`,
-            );
-        }
+        const clauses = safe ? [`customer_name.ilike.%${safe}%`, `customer_phone.ilike.%${safe}%`, `customer_email.ilike.%${safe}%`] : [];
+        // «нэргүй…» хайлт нэргүй лидүүдийг НЭМНЭ (нэрийг нөхөхөд); «Нэргүй» нэртэй хүн хэвээр олдоно.
+        if (isAnonymousLeadQuery(q)) clauses.push(anonymousLeadOrFilter());
+        if (clauses.length) query = query.or(clauses.join(','));
     }
 
     const { data, error, count } = await query;

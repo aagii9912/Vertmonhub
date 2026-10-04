@@ -112,9 +112,12 @@ export const LEAD_VIEWS: { key: LeadView; label: string }[] = [
  */
 export const ANONYMOUS_LEAD_LABEL = 'Нэргүй харилцагч';
 
-/** Нэр биш орлуулагч утгууд (экспортын «-», хуучин «Facebook lead», шошго өөрөө). */
+/**
+ * Нэр биш орлуулагч утгууд (экспортын «-», хуучин «Facebook lead», шошго өөрөө).
+ * Ганц «Нэргүй» энд БАЙХГҮЙ: энэ нь жинхэнэ монгол нэр тул нэр хэвээр хадгалагдана.
+ */
 const LEAD_NAME_PLACEHOLDERS = new Set([
-    '-', '—', 'нэргүй', 'нэргүй лид', 'нэргүй харилцагч', 'тодорхойгүй', 'facebook lead',
+    '-', '—', 'нэргүй лид', 'нэргүй харилцагч', 'тодорхойгүй', 'facebook lead',
 ]);
 
 /** Бичих бүх зам: хоосон эсвэл орлуулагч нэр → null; бусдыг trim хийж давхар зайг нэг болгоно. */
@@ -134,9 +137,25 @@ export function leadDisplayName(lead: { customer_name?: string | null } | string
     return normalizeLeadName(raw) ?? ANONYMOUS_LEAD_LABEL;
 }
 
-/** Лидийн хайлт «нэргүй»-ээр эхэлбэл нэргүй лидүүдийг (customer_name IS NULL) шүүнэ. */
+/** Нэргүй лидийг хайлтад НЭМЖ оруулах түлхүүр үгс («нэргүй», «нэргүй х…», бүтэн шошго). */
+const ANONYMOUS_QUERY_TERMS = ['нэргүй харилцагч', 'нэргүй лид'];
+
+/**
+ * Хайлт нь «нэргүй»-ээс эхэлсэн шошгын эхлэл бол (ж: «Нэргүй», «нэргүй харилцагч») true.
+ * «Нэргүйбаатар» шиг нэр энд орохгүй. Хайлт нэмэлт: нэрээр таарсан лид (жинхэнэ нэр
+ * «Нэргүй») хэвээр олдоно, нэргүй лидүүд (`anonymousLeadOrFilter`) нэмэгдэнэ.
+ */
 export function isAnonymousLeadQuery(q: string | null | undefined): boolean {
-    return !!q && q.trim().toLowerCase().startsWith('нэргүй');
+    const value = (q ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+    return value.startsWith('нэргүй') && ANONYMOUS_QUERY_TERMS.some((term) => term.startsWith(value));
+}
+
+/**
+ * PostgREST `.or()`-д нэмэх нөхцөл: `leadDisplayName` нь шошго гаргадаг бүх мөр — NULL, хоосон,
+ * хуучин орлуулагч нэр («Facebook lead», «-» …). Хайлтын бусад нөхцөлтэй таслалаар нийлүүлнэ.
+ */
+export function anonymousLeadOrFilter(column = 'customer_name'): string {
+    return [`${column}.is.null`, `${column}.eq.""`, ...[...LEAD_NAME_PLACEHOLDERS].map((name) => `${column}.ilike.${name}`)].join(',');
 }
 
 /** Ажилтны сувгийн нэргүй лидийн дүрэм (сервер: LeadService.resolveLeadIdentity, client формууд). */
@@ -149,4 +168,12 @@ export const ANONYMOUS_MEETING_PHONE = 'Нэргүй харилцагчийн у
 export function hasAnonymousLeadContact(phone: string | null | undefined, email: string | null | undefined): boolean {
     if ((normalizePhone(phone)?.length ?? 0) >= 8) return true;
     return !!email && z.email().safeParse(email.trim()).success;
+}
+
+/**
+ * Уулзалтын мөрийн харилцагч: лидийн жинхэнэ нэр, нэргүй лид бол шошго, лидгүй бол null.
+ * Тайлангийн мөр `customer_name`-д шошго бичихгүй — `anonymous_lead` тугаар ялгана.
+ */
+export function meetingCustomerName(row: { customer_name?: string | null; anonymous_lead?: boolean | null }): string | null {
+    return normalizeLeadName(row.customer_name) ?? (row.anonymous_lead ? ANONYMOUS_LEAD_LABEL : null);
 }

@@ -7,7 +7,7 @@ import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { ubDateStr } from '@/lib/utils/date';
 import { applyLeadScope, assertProjectManager, canAccessProject, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { withRoute } from '@/lib/api/route';
-import { isAnonymousLeadQuery } from '@/lib/leads/labels';
+import { anonymousLeadOrFilter, isAnonymousLeadQuery } from '@/lib/leads/labels';
 import { phoneIlikePattern } from '@/lib/utils/phone';
 
 export async function GET(request: NextRequest) {
@@ -23,11 +23,12 @@ export async function GET(request: NextRequest) {
         const scope = await resolveSalesProjectScope(db, shop.id);
         let query = applyLeadScope(db.from('leads').select('id,customer_name,customer_phone,project_id,marketing_campaign_id,marketing_owner_name,marketing_channel,sales_manager_name,sales_handoff_at')
             .eq('shop_id', shop.id).is('deleted_at', null).order('created_at', { ascending: false }).limit(30), scope);
-        // Нэр эсвэл утсаар; «нэргүй» бол нэргүй лидүүд (нэрээр хайж олдохгүй тул).
+        // Нэр эсвэл утсаар; «нэргүй» бол нэргүй лидүүдийг нэмнэ («Нэргүй» нэртэй хүн хэвээр олдоно).
         const phonePattern = phoneIlikePattern(search);
-        if (isAnonymousLeadQuery(search)) query = query.is('customer_name', null);
-        else if (phonePattern) query = query.or(`customer_name.ilike.%${search}%,customer_phone.ilike.${phonePattern}`);
-        else if (search) query = query.ilike('customer_name', `%${search}%`);
+        const anonymous = isAnonymousLeadQuery(search);
+        if (phonePattern || anonymous) {
+            query = query.or([`customer_name.ilike.%${search}%`, phonePattern && `customer_phone.ilike.${phonePattern}`, anonymous && anonymousLeadOrFilter()].filter(Boolean).join(','));
+        } else if (search) query = query.ilike('customer_name', `%${search}%`);
         const { data, error } = await query;
         if (error) throw error;
         return NextResponse.json({ leads: data }, { headers: { 'Cache-Control': 'private, no-store' } });

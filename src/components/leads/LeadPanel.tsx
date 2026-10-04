@@ -108,10 +108,12 @@ export function LeadPanel({
     const interestValue = INTEREST_CHIPS.find((c) => (c.rooms && c.rooms === lead.preferred_rooms) || (c.type && c.type === lead.preferred_type))?.label ?? '';
     const anonymous = isAnonymousLead(lead);
     // Нэр нэмэх/засах: хоосон эсвэл өөрчлөгдөөгүй бол юу ч илгээхгүй (нэрийг хоосолж болохгүй).
+    // «-», «Нэргүй харилцагч» зэрэг орлуулагч нэр хадгалагдахгүй тул чимээгүй хаяхгүй, сануулна.
     const commitName = () => {
         if (nameDraft === null) return;
         const next = normalizeLeadName(nameDraft);
         setNameDraft(null);
+        if (!next && nameDraft.trim()) { toast.error('Харилцагчийн жинхэнэ нэрийг оруулна уу. «-», «Нэргүй харилцагч» зэрэг орлуулагч нэр хадгалагдахгүй.'); return; }
         if (next && next !== normalizeLeadName(lead.customer_name)) patch({ customer_name: next });
     };
 
