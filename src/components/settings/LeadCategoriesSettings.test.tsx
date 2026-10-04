@@ -6,19 +6,23 @@ const mocks = vi.hoisted(() => ({
     permissions: { modules: ['settings', 'leads'], canWrite: true, canDelete: true },
     categories: [] as Record<string, unknown>[],
     counts: undefined as unknown,
-    create: vi.fn(), preset: vi.fn(), update: vi.fn(), updateAsync: vi.fn(), remove: vi.fn(),
+    create: vi.fn(), preset: vi.fn(), update: vi.fn(), updateAsync: vi.fn(), remove: vi.fn(), reorder: vi.fn(),
+    categoryOptions: [] as unknown[],
     toastError: vi.fn(), toastSuccess: vi.fn(), confirm: vi.fn(),
 }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ user: { id: 'admin', role: 'admin', permissions: mocks.permissions } }) }));
 vi.mock('sonner', () => ({ toast: { success: (...args: unknown[]) => mocks.toastSuccess(...args), error: (...args: unknown[]) => mocks.toastError(...args) } }));
 vi.mock('@/components/ui/Toast', () => ({ confirmToast: (...args: unknown[]) => mocks.confirm(...args) }));
-vi.mock('@/hooks/useLeads', () => ({ useLeadCategories: () => ({ data: mocks.categories, isLoading: false, isError: false }) }));
+vi.mock('@/hooks/useLeads', () => ({
+    useLeadCategories: (...args: unknown[]) => { mocks.categoryOptions.push(args[0]); return { data: mocks.categories, isLoading: false, isError: false }; },
+}));
 vi.mock('@/hooks/useLeadCategorySettings', () => ({
     useLeadCategoryCounts: () => ({ data: mocks.counts }),
     useCreateLeadCategory: () => ({ mutateAsync: mocks.create, isPending: false }),
     useAddDefaultLeadCategories: () => ({ mutateAsync: mocks.preset, isPending: false }),
     useUpdateLeadCategory: () => ({ mutate: mocks.update, mutateAsync: mocks.updateAsync, isPending: false }),
     useDeleteLeadCategory: () => ({ mutate: mocks.remove, isPending: false }),
+    useReorderLeadCategories: () => ({ mutate: mocks.reorder, isPending: false }),
 }));
 
 import { LeadCategoriesSettings } from './LeadCategoriesSettings';
@@ -31,6 +35,7 @@ beforeEach(() => {
     mocks.permissions = { modules: ['settings', 'leads'], canWrite: true, canDelete: true };
     mocks.categories = [];
     mocks.counts = undefined;
+    mocks.categoryOptions = [];
     mocks.create.mockResolvedValue({});
     mocks.preset.mockResolvedValue({ created: DEFAULT_LEAD_CATEGORIES, skipped: 0 });
     mocks.updateAsync.mockResolvedValue({});
@@ -40,6 +45,8 @@ beforeEach(() => {
 describe('lead category settings', () => {
     it('offers the suggested preset on an empty project and reports how many were added', async () => {
         render(<LeadCategoriesSettings />);
+        // Хуудас өөрөө Alert харуулдаг тул жагсаалтын алдаа давхар toast гаргахгүй.
+        expect(mocks.categoryOptions[0]).toEqual({ inlineError: true });
         expect(screen.getByText('Энэ төсөлд лидийн ангилал алга')).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Санал болгох ангиллууд нэмэх' }));
         await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith(`${DEFAULT_LEAD_CATEGORIES.length} ангилал нэмэгдлээ`));
@@ -73,7 +80,7 @@ describe('lead category settings', () => {
 
     it('archives, restores, reorders and deletes only unused categories', async () => {
         mocks.categories = [investor, barter];
-        mocks.counts = { byCategory: { investor: 4, barter: 0 }, uncategorized: 7 };
+        mocks.counts = { byCategory: { investor: 4, barter: 0 }, uncategorized: 7, referenced: ['investor'] };
         render(<LeadCategoriesSettings />);
         expect(screen.getByText('4 лид')).toBeInTheDocument();
         expect(screen.getByText('Бартер (архив)')).toBeInTheDocument();
@@ -88,10 +95,21 @@ describe('lead category settings', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Бартер устгах' }));
         await waitFor(() => expect(mocks.remove).toHaveBeenCalledWith('barter', expect.anything()));
 
+        // Дээш/доош нь бүх дарааллыг НЭГ хүсэлтээр илгээнэ (мөр бүрт PATCH биш).
         fireEvent.click(screen.getByRole('button', { name: 'Бартер дээш' }));
-        await waitFor(() => expect(mocks.updateAsync).toHaveBeenCalledTimes(2));
-        expect(mocks.updateAsync).toHaveBeenCalledWith({ id: 'barter', patch: { sort_order: 10 } });
-        expect(mocks.updateAsync).toHaveBeenCalledWith({ id: 'investor', patch: { sort_order: 20 } });
+        expect(mocks.reorder).toHaveBeenCalledTimes(1);
+        expect(mocks.reorder).toHaveBeenCalledWith(['barter', 'investor'], expect.anything());
+        expect(mocks.updateAsync).not.toHaveBeenCalled();
+    });
+
+    it('disables delete for a category used only by deleted leads', () => {
+        mocks.categories = [investor, barter];
+        mocks.counts = { byCategory: { investor: 0, barter: 0 }, uncategorized: 0, referenced: ['barter'] };
+        render(<LeadCategoriesSettings />);
+        expect(screen.getByRole('button', { name: 'Хөрөнгө оруулагч устгах' })).toBeEnabled();
+        const barterDelete = screen.getByRole('button', { name: 'Бартер устгах' });
+        expect(barterDelete).toBeDisabled();
+        expect(barterDelete).toHaveAttribute('title', 'Устгасан лидэд ашиглагдсан — архивлана уу');
     });
 
     it('hides delete without delete permission and edits in place', async () => {

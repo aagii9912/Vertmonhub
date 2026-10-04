@@ -46,21 +46,26 @@ ALTER TABLE public.lead_categories ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.lead_categories FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.lead_categories TO service_role;
 
--- updated_at + төсөл бүрт 30 ангиллын дээд хязгаар (архивласан нь орно). Advisory lock нь
--- зэрэг нэмэх хүсэлтийг дараалуулж хязгаарыг найдвартай болгоно.
+-- updated_at + төсөл бүрт 30 ангиллын дээд хязгаар (архивласан нь орно). Хязгаарыг шинэ мөр болон
+-- өөр shop руу шилжүүлсэн мөрөнд шалгана (UPDATE shop_id-аар тойрохгүй). Advisory lock нь зэрэг
+-- нэмэх хүсэлтийг дараалуулж хязгаарыг найдвартай болгоно.
 CREATE OR REPLACE FUNCTION public.lead_categories_before_write()
 RETURNS trigger
 LANGUAGE plpgsql
 SET search_path = ''
 AS $$
+DECLARE
+    v_check_limit boolean := true;
 BEGIN
-    IF TG_OP = 'INSERT' THEN
+    IF TG_OP = 'UPDATE' THEN
+        NEW.updated_at := now();
+        v_check_limit := NEW.shop_id IS DISTINCT FROM OLD.shop_id;
+    END IF;
+    IF v_check_limit THEN
         PERFORM pg_advisory_xact_lock(hashtext('lead_categories:' || NEW.shop_id::text));
         IF (SELECT count(*) FROM public.lead_categories WHERE shop_id = NEW.shop_id) >= 30 THEN
             RAISE EXCEPTION 'lead_category_limit' USING ERRCODE = 'check_violation';
         END IF;
-    ELSE
-        NEW.updated_at := now();
     END IF;
     RETURN NEW;
 END;

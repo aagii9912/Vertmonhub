@@ -37,7 +37,7 @@ vi.mock('@/lib/services/AuditService', () => ({ recordAudit: async () => {} }));
 
 import { createMemoryDb } from '@/test/memory-db';
 import { categoryNameKey, DEFAULT_LEAD_CATEGORIES } from '@/lib/leads/labels';
-import { GET, POST } from './route';
+import { GET, PATCH as REORDER, POST } from './route';
 import { DELETE, PATCH } from './[id]/route';
 
 const active = '20000000-0000-4000-8000-000000000001';
@@ -84,7 +84,8 @@ describe('GET /api/dashboard/lead-categories', () => {
 
     it('returns lead counts only to unrestricted settings users', async () => {
         const response = await GET(request('?include=archived&counts=1'));
-        expect(await response.json()).toMatchObject({ counts: { byCategory: { [active]: 1, [archived]: 0 }, uncategorized: 1 } });
+        // Бартер устгасан лидэд л ашиглагдсан: тоо 0 ч `referenced` — устгах товч идэвхгүй.
+        expect(await response.json()).toMatchObject({ counts: { byCategory: { [active]: 1, [archived]: 0 }, uncategorized: 1, referenced: [active, archived] } });
         state.role = 'sales_manager';
         expect((await GET(request('?counts=1'))).status).toBe(403);
         state.role = 'settings_editor';
@@ -135,12 +136,33 @@ describe('category settings writes', () => {
         expect((await PATCH(request(`/${foreign}`, 'PATCH', { name: 'Миний' }), context(foreign))).status).toBe(404);
         expect((await PATCH(request(`/${active}`, 'PATCH', { name: 'БАРТЕР' }), context(active))).status).toBe(409);
 
-        // Устгасан лидэд ашиглагдсан ч устгахгүй (FK) — архивлана.
+        // Устгасан лидэд ашиглагдсан ч устгахгүй (FK) — архивлана; мессежид лидийн тоо гарахгүй.
         const used = await DELETE(request(`/${archived}`, 'DELETE'), context(archived));
         expect(used.status).toBe(409);
+        expect((await used.json()).error).not.toMatch(/\d/);
         expect((await DELETE(request(`/${foreign}`, 'DELETE'), context(foreign))).status).toBe(404);
         state.db.tables.leads = [];
         expect((await DELETE(request(`/${archived}`, 'DELETE'), context(archived))).status).toBe(200);
         expect(state.db.tables.lead_categories.map((c) => c.id)).toEqual([active, foreign]);
+    });
+
+    it('reorders the whole list in one request with settings write access only', async () => {
+        for (const role of ['sales_manager', 'marketing', 'viewer']) {
+            state.role = role;
+            expect((await REORDER(request('', 'PATCH', { order: [archived, active] }))).status).toBe(403);
+        }
+        expect(state.db.writes).toEqual([]);
+        state.role = 'settings_editor';
+        expect((await REORDER(request('', 'PATCH', { order: [archived] }))).status).toBe(409);
+        expect((await REORDER(request('', 'PATCH', { order: [archived, foreign] }))).status).toBe(409);
+        expect((await REORDER(request('', 'PATCH', { order: [archived, active], shop_id: 'shop-2' }))).status).toBe(400);
+        expect((await REORDER(request('', 'PATCH', { order: 'x' }))).status).toBe(400);
+        expect(state.db.writes).toEqual([]);
+
+        const response = await REORDER(request('', 'PATCH', { order: [archived, active] }));
+        expect(response.status).toBe(200);
+        expect((await response.json()).categories.map((c: { id: string; sort_order: number }) => [c.id, c.sort_order])).toEqual([[archived, 10], [active, 20]]);
+        expect(state.db.writes.map((w) => [w.data.id, w.data.sort_order])).toEqual([[archived, 10], [active, 20]]);
+        expect(state.db.tables.lead_categories.find((c) => c.id === foreign)?.sort_order).toBe(10);
     });
 });

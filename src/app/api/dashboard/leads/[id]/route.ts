@@ -12,6 +12,12 @@ import { withRoute } from '@/lib/api/route';
 import { leadCategoryName, logLeadCategoryChange, resolveLeadCategory } from '@/lib/services/LeadCategoryService';
 
 const VALID_STATUS = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'];
+/** PATCH-ийн өмнөх утга (түүх, хүрээний шалгалтад); `category_id` зөвхөн ангилал өөрчлөхөд уншигдана. */
+const PATCH_LEAD_COLUMNS = 'id, project_id, status, sales_manager_name, lost_reason, customer_name';
+type PatchLeadRow = {
+    id: string; project_id: string | null; status: string; sales_manager_name: string | null;
+    lost_reason: string | null; customer_name: string | null; category_id?: string | null;
+};
 const LeadNameSchema = z.string().trim().min(1).max(200);
 
 /**
@@ -190,14 +196,18 @@ export const PATCH = withRoute<{ id: string }>({ module: 'leads', access: 'write
         if (!manager.ok) return NextResponse.json({ error: manager.error }, { status: manager.status });
         updates.sales_manager_name = manager.managerName;
     }
-    const { data: lead, error: readError } = await applyLeadScope(db
+    // category_id-г зөвхөн ангилал өөрчлөх үед уншина: ангиллын багана нэмэгдээгүй (migration
+    // 20261004161000-аас өмнөх) DB дээр бусад засвар (төлөв, менежер, тэмдэглэл) ажилласаар байна.
+    const leadColumns: string = categoryInput !== undefined ? `${PATCH_LEAD_COLUMNS}, category_id` : PATCH_LEAD_COLUMNS;
+    const { data: leadRow, error: readError } = await applyLeadScope(db
         .from('leads')
-        .select('id, project_id, status, sales_manager_name, lost_reason, customer_name, category_id')
+        .select(leadColumns)
         .eq('id', id)
         .eq('shop_id', authShop.id)
         .is('deleted_at', null), scope)
         .single();
     if (readError && readError.code !== 'PGRST116') throw readError;
+    const lead = leadRow as unknown as PatchLeadRow | null;
     if (!lead) {
         return NextResponse.json({ error: 'Лийд олдсонгүй' }, { status: 404 });
     }

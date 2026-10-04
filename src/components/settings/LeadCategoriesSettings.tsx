@@ -9,7 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { canAccessModuleDynamic } from '@/lib/rbac';
 import { useLeadCategories, type LeadCategoryRow } from '@/hooks/useLeads';
 import {
-    useAddDefaultLeadCategories, useCreateLeadCategory, useDeleteLeadCategory, useLeadCategoryCounts, useUpdateLeadCategory,
+    useAddDefaultLeadCategories, useCreateLeadCategory, useDeleteLeadCategory, useLeadCategoryCounts, useReorderLeadCategories, useUpdateLeadCategory,
 } from '@/hooks/useLeadCategorySettings';
 import {
     DEFAULT_LEAD_CATEGORIES, LEAD_CATEGORY_DESCRIPTION_MAX, LEAD_CATEGORY_LIMIT, LEAD_CATEGORY_NAME_MAX, LEAD_CATEGORY_TONES,
@@ -47,16 +47,17 @@ export function LeadCategoriesSettings() {
     const canEdit = hasSettings && !!perms?.canWrite;
     const canDelete = hasSettings && !!perms?.canDelete;
 
-    const { data: categories = [], isLoading, isError, refetch, isFetching } = useLeadCategories();
+    // Алдааг доорх Alert харуулна — давхар toast гаргахгүй.
+    const { data: categories = [], isLoading, isError, refetch, isFetching } = useLeadCategories({ inlineError: true });
     const { data: counts } = useLeadCategoryCounts(hasSettings);
     const create = useCreateLeadCategory();
     const preset = useAddDefaultLeadCategories();
     const update = useUpdateLeadCategory();
     const remove = useDeleteLeadCategory();
+    const reorder = useReorderLeadCategories();
 
     const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
     const [editing, setEditing] = useState<{ id: string; draft: Draft } | null>(null);
-    const [busy, setBusy] = useState(false);
 
     const existingKeys = new Set(categories.map((c) => categoryNameKey(c.name)));
     const missingDefaults = DEFAULT_LEAD_CATEGORIES.filter((p) => !existingKeys.has(categoryNameKey(p.name)));
@@ -112,19 +113,13 @@ export function LeadCategoriesSettings() {
         });
     };
 
-    /** Дээш/доош: шинэ дарааллаар 10, 20, … эрэмбэ онооно (зөвхөн өөрчлөгдсөнийг PATCH). */
-    const move = async (index: number, direction: -1 | 1) => {
+    /** Дээш/доош: бүх ангиллын шинэ дарааллыг нэг хүсэлтээр (сервер 10, 20, … эрэмбэ онооно). */
+    const move = (index: number, direction: -1 | 1) => {
         const target = index + direction;
         if (target < 0 || target >= categories.length) return;
-        const next = [...categories];
-        [next[index], next[target]] = [next[target], next[index]];
-        const changes = next.map((category, i) => ({ category, sort_order: Math.min(1000, (i + 1) * 10) }))
-            .filter(({ category, sort_order }) => category.sort_order !== sort_order);
-        setBusy(true);
-        try {
-            await Promise.all(changes.map(({ category, sort_order }) => update.mutateAsync({ id: category.id, patch: { sort_order } })));
-        } catch (error) { toast.error(errorMessage(error)); }
-        finally { setBusy(false); }
+        const order = categories.map((category) => category.id);
+        [order[index], order[target]] = [order[target], order[index]];
+        reorder.mutate(order, { onError: (error) => toast.error(errorMessage(error)) });
     };
 
     return (
@@ -153,6 +148,8 @@ export function LeadCategoriesSettings() {
                             <ul className="divide-y divide-border rounded-xl border border-border" aria-label="Лидийн ангиллууд">
                                 {categories.map((category, index) => {
                                     const count = counts?.byCategory[category.id];
+                                    // Устгасан лидэд ч холбогдсон бол устгах боломжгүй (FK) — архивлана.
+                                    const inUse = !!count || !!counts?.referenced?.includes(category.id);
                                     const isEditing = editing?.id === category.id;
                                     return (
                                         <li key={category.id} className={cn('flex flex-col gap-2 p-3 sm:flex-row sm:items-center', !category.is_active && 'bg-surface-2/40')}>
@@ -176,8 +173,8 @@ export function LeadCategoriesSettings() {
                                                         </>
                                                     ) : (
                                                         <>
-                                                            <Button size="iconSm" variant="ghost" aria-label={`${category.name} дээш`} disabled={busy || index === 0} onClick={() => void move(index, -1)}><ArrowUp /></Button>
-                                                            <Button size="iconSm" variant="ghost" aria-label={`${category.name} доош`} disabled={busy || index === categories.length - 1} onClick={() => void move(index, 1)}><ArrowDown /></Button>
+                                                            <Button size="iconSm" variant="ghost" aria-label={`${category.name} дээш`} disabled={reorder.isPending || index === 0} onClick={() => move(index, -1)}><ArrowUp /></Button>
+                                                            <Button size="iconSm" variant="ghost" aria-label={`${category.name} доош`} disabled={reorder.isPending || index === categories.length - 1} onClick={() => move(index, 1)}><ArrowDown /></Button>
                                                             <Button size="iconSm" variant="ghost" aria-label={`${category.name} засах`}
                                                                 onClick={() => setEditing({ id: category.id, draft: { name: category.name, description: category.description ?? '', tone: (category.tone as LeadCategoryTone) || 'neutral' } })}><Pencil /></Button>
                                                             <label className="ml-1 flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -185,7 +182,8 @@ export function LeadCategoriesSettings() {
                                                                 {category.is_active ? 'Идэвхтэй' : 'Архив'}
                                                             </label>
                                                             {canDelete && (
-                                                                <Button size="iconSm" variant="ghost" aria-label={`${category.name} устгах`} disabled={!!count} title={count ? 'Лидэд ашиглагдсан тул архивлана уу' : 'Устгах'}
+                                                                <Button size="iconSm" variant="ghost" aria-label={`${category.name} устгах`} disabled={inUse}
+                                                                    title={count ? 'Лидэд ашиглагдсан тул архивлана уу' : inUse ? 'Устгасан лидэд ашиглагдсан — архивлана уу' : 'Устгах'}
                                                                     onClick={() => void deleteCategory(category)}><Trash2 /></Button>
                                                             )}
                                                         </>

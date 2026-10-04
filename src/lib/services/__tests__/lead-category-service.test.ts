@@ -8,7 +8,8 @@ vi.mock('@/lib/services/AuditService', () => ({ recordAudit: async (entry: Recor
 
 import {
     CreateLeadCategorySchema, UpdateLeadCategorySchema, addDefaultLeadCategories, countLeadsByCategory, createLeadCategory,
-    deleteLeadCategory, leadCategoryInputError, listLeadCategories, resolveLeadCategory, updateLeadCategory,
+    ReorderLeadCategoriesSchema, deleteLeadCategory, leadCategoryInputError, listLeadCategories, reorderLeadCategories, resolveLeadCategory,
+    updateLeadCategory,
 } from '../LeadCategoryService';
 import { DEFAULT_LEAD_CATEGORIES, LEAD_CATEGORY_LIMIT, categoryNameKey } from '@/lib/leads/labels';
 
@@ -55,14 +56,20 @@ describe('LeadCategoryService reads', () => {
         await expect(listLeadCategories(db, shop)).rejects.toMatchObject({ code: '57014' });
     });
 
-    it('counts active leads per category and uncategorized leads', async () => {
+    it('counts active leads per category and uncategorized leads, and flags categories still referenced', async () => {
+        const unused = '10000000-0000-4000-8000-000000000004';
         memory.tables.leads = [
             { id: 'a', shop_id: shop, category_id: buyer, deleted_at: null },
             { id: 'b', shop_id: shop, category_id: buyer, deleted_at: '2026-10-01' },
             { id: 'c', shop_id: shop, category_id: null, deleted_at: null },
             { id: 'd', shop_id: 'shop-2', category_id: null, deleted_at: null },
+            // Зөвхөн устгасан лидэд ашиглагдсан — тоо 0 ч устгах боломжгүй (FK).
+            { id: 'e', shop_id: shop, category_id: barter, deleted_at: '2026-09-01' },
+            { id: 'f', shop_id: 'shop-2', category_id: unused, deleted_at: null },
         ];
-        expect(await countLeadsByCategory(db, shop, [buyer, barter])).toEqual({ byCategory: { [buyer]: 1, [barter]: 0 }, uncategorized: 1 });
+        expect(await countLeadsByCategory(db, shop, [buyer, barter, unused])).toEqual({
+            byCategory: { [buyer]: 1, [barter]: 0, [unused]: 0 }, uncategorized: 1, referenced: [buyer, barter],
+        });
     });
 });
 
@@ -148,12 +155,62 @@ describe('LeadCategoryService writes', () => {
     });
 
     it('deletes only unused categories, counting soft-deleted leads too', async () => {
-        memory.tables.leads = [{ id: 'gone', shop_id: shop, category_id: buyer, deleted_at: '2026-09-01' }];
-        expect(await deleteLeadCategory(db, shop, buyer, null)).toMatchObject({ ok: false, status: 409, error: expect.stringContaining('Архивлана') });
+        memory.tables.leads = [
+            { id: 'gone', shop_id: shop, category_id: buyer, deleted_at: '2026-09-01' },
+            { id: 'live', shop_id: shop, category_id: buyer, deleted_at: null },
+        ];
+        const used = await deleteLeadCategory(db, shop, buyer, null);
+        expect(used).toMatchObject({ ok: false, status: 409, error: expect.stringContaining('Архивлана') });
+        // Байгууллагын лидийн тоо мессежид гарахгүй (хувийн хүрээтэй хэрэглэгчид ил болохгүй).
+        expect((used as { error: string }).error).not.toMatch(/\d/);
         expect(await deleteLeadCategory(db, shop, foreign, null)).toMatchObject({ ok: false, status: 404 });
         expect(await deleteLeadCategory(db, shop, barter, 'admin-1')).toEqual({ ok: true, id: barter });
         expect(memory.tables.lead_categories.map((c) => c.id)).toEqual([buyer, foreign]);
         expect(audit.entries).toEqual([expect.objectContaining({ action: 'delete', entityId: barter })]);
+    });
+
+    it('reorders every category in one request, writing only changed rows and one audit entry', async () => {
+        const dealer = '10000000-0000-4000-8000-000000000005';
+        memory.tables.lead_categories.push(category(dealer, 'Дилер', { sort_order: 0 }));
+        // Одоогийн дараалал: Дилер (0), Бартер (10), Хөрөнгө оруулагч (20).
+        const result = await reorderLeadCategories(db, shop, [barter, dealer, buyer], 'admin-1');
+        expect(result).toMatchObject({ ok: true });
+        expect((result as { categories: { id: string; sort_order: number }[] }).categories.map((c) => [c.id, c.sort_order]))
+            .toEqual([[barter, 10], [dealer, 20], [buyer, 30]]);
+        expect(memory.writes.map((w) => [w.op, w.data.id, w.data.sort_order])).toEqual([['update', dealer, 20], ['update', buyer, 30]]);
+        expect(audit.entries).toEqual([expect.objectContaining({
+            entity: 'lead_category', action: 'update', actorId: 'admin-1',
+            changes: { sort_order: { [dealer]: { from: 0, to: 20 }, [buyer]: { from: 20, to: 30 } } },
+        })]);
+        expect((await listLeadCategories(db, shop, { includeArchived: true })).map((c) => c.id)).toEqual([barter, dealer, buyer]);
+
+        // Дахин ижил дараалал — бичилт, audit нэмэгдэхгүй.
+        expect(await reorderLeadCategories(db, shop, [barter, dealer, buyer], null)).toMatchObject({ ok: true });
+        expect(memory.writes).toHaveLength(2);
+        expect(audit.entries).toHaveLength(1);
+    });
+
+    it('refuses a stale, partial or foreign order and reports a partial write', async () => {
+        const stale = 'Ангиллын жагсаалт өөрчлөгдсөн байна. Хуудсаа шинэчлээд дахин оролдоно уу.';
+        for (const order of [[buyer], [buyer, barter, missing], [buyer, foreign], [buyer, buyer]]) {
+            expect(await reorderLeadCategories(db, shop, order, null)).toEqual({ ok: false, status: 409, error: stale });
+        }
+        expect(memory.writes).toEqual([]);
+        expect(ReorderLeadCategoriesSchema.safeParse({ order: [buyer, buyer] }).success).toBe(false);
+        expect(ReorderLeadCategoriesSchema.safeParse({ order: ['x'] }).success).toBe(false);
+        expect(ReorderLeadCategoriesSchema.safeParse({ order: [buyer], shop_id: shop }).success).toBe(false);
+        expect(ReorderLeadCategoriesSchema.safeParse({ order: [buyer, barter] }).success).toBe(true);
+
+        memory.failNext.lead_categories = { code: '57014', message: 'timeout' };
+        expect(await reorderLeadCategories(db, shop, [buyer, barter], null)).toMatchObject({ ok: false, status: 503 });
+
+        // Нэг мөр бичигдээгүй: бичигдсэнийг audit-д үлдээж, дахин оролдохыг хүснэ.
+        const partial = createMemoryDb({ lead_categories: [category(buyer, 'Хөрөнгө оруулагч', { sort_order: 20 }), category(barter, 'Бартер', { sort_order: 10 })] }, {
+            update: (_table, next) => (next.id === buyer ? { code: '57014', message: 'timeout' } : null),
+        });
+        expect(await reorderLeadCategories(partial as unknown as SupabaseClient, shop, [buyer, barter], null))
+            .toEqual({ ok: false, status: 503, error: 'Эрэмбийг бүрэн хадгалж чадсангүй. Дахин оролдоно уу.' });
+        expect(audit.entries).toEqual([expect.objectContaining({ changes: { sort_order: { [barter]: { from: 10, to: 20 } } } })]);
     });
 
     it('adds the suggested categories idempotently, skipping existing names and respecting the cap', async () => {

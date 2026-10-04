@@ -76,7 +76,27 @@ describe('lead category filter, create and edit', () => {
         expect(state.db.writes).toEqual([]);
         expect((await create(request('', 'POST', { ...base, category_id: investor }))).status).toBe(200);
         expect((await create(request('', 'POST', { ...base, customer_name: 'Ангилалгүй', category_id: null }))).status).toBe(200);
-        expect(state.db.writes.filter((w) => w.table === 'leads').map((w) => w.data.category_id)).toEqual([investor, null]);
+        const inserted = state.db.writes.filter((w) => w.table === 'leads').map((w) => w.data);
+        expect(inserted.map((row) => row.category_id)).toEqual([investor, undefined]);
+        // Ангилалгүй лид баганыг огт бичихгүй — migration-аас өмнөх DB дээр лид үүсгэх ажиллана.
+        expect('category_id' in inserted[1]).toBe(false);
+    });
+
+    it('keeps other lead edits independent of the category column', async () => {
+        const selects: string[] = [];
+        const from = state.db.from;
+        state.db.from = (table: string) => {
+            const query = from(table);
+            if (table !== 'leads') return query;
+            const select = query.select;
+            query.select = (columns?: string, options?: unknown) => { selects.push(columns ?? ''); return select(columns, options); };
+            return query;
+        };
+        expect((await patch(request('', 'PATCH', { notes: 'Залгана' }), context(ownLead))).status).toBe(200);
+        expect(selects.length).toBeGreaterThan(0);
+        expect(selects.every((columns) => !columns.includes('category_id'))).toBe(true);
+        expect((await patch(request('', 'PATCH', { category_id: investor }), context(ownLead))).status).toBe(200);
+        expect(selects.some((columns) => columns.includes('category_id'))).toBe(true);
     });
 
     it('changes the category of an own lead and records it in the lead history', async () => {

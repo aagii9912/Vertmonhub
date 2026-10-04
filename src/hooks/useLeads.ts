@@ -175,13 +175,15 @@ export interface LeadCategoryRow extends LeadCategoryOption {
     sort_order: number;
 }
 
-export function useLeadCategories() {
+/** `inlineError` — хуудас өөрөө анхны ачааллын алдааг (Alert) харуулдаг бол давхар toast гаргахгүй. */
+export function useLeadCategories(options: { inlineError?: boolean } = {}) {
     const { shop, user } = useAuth();
     return useQuery<LeadCategoryRow[]>({
         queryKey: ['lead-categories', shop?.id, user?.id, user?.role],
         queryFn: async () => (await dashboardJson<{ categories: LeadCategoryRow[] }>('/api/dashboard/lead-categories?include=archived')).categories,
         enabled: !!shop?.id,
         staleTime: 5 * 60_000,
+        ...(options.inlineError ? { meta: { inlineError: true } } : {}),
     });
 }
 

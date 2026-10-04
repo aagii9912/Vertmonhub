@@ -25,6 +25,7 @@ it('lead categories are per shop, service-role only, capped and protected by the
             await db.exec(`SET ROLE ${role}`);
             await expect(db.query('SELECT * FROM public.lead_categories')).rejects.toMatchObject({ code: '42501' });
             await expect(db.query(`INSERT INTO public.lead_categories (shop_id, name) VALUES ('${shop}', 'Хакер')`)).rejects.toMatchObject({ code: '42501' });
+            await expect(db.query(`SELECT public.lead_category_name_key('x')`)).rejects.toMatchObject({ code: '42501' });
             await db.exec('RESET ROLE');
         }
 
@@ -48,6 +49,13 @@ it('lead categories are per shop, service-role only, capped and protected by the
         await expect(db.query(`INSERT INTO public.lead_categories (shop_id, name, sort_order) VALUES ($1, 'Эрэмбэ', 1001)`, [shop]))
             .rejects.toMatchObject({ code: '23514' });
         await expect(insert('50000000-0000-4000-8000-000000000099', 'Байхгүй shop')).rejects.toMatchObject({ code: '23503' });
+
+        // Нэр солиход ч (UPDATE) өөр ангиллын нэртэй давхардахгүй; өөрийн нэрийн том/жижиг үсгийг сольж болно.
+        const rename = (id: string, name: string) => db.query('UPDATE public.lead_categories SET name = $1 WHERE id = $2', [name, id]);
+        await expect(rename(buyer, 'БАРТЕР')).rejects.toMatchObject({ code: '23505' });
+        await expect(rename(barter, 'хөрөнгө  ОРУУЛАГЧ')).rejects.toMatchObject({ code: '23505' });
+        await rename(buyer, 'хөрөнгө оруулагч');
+        await rename(buyer, 'Хөрөнгө оруулагч');
 
         // Лид зөвхөн өөрийн shop-ийн ангилалд холбогдоно; NULL = ангилалгүй.
         await db.query('UPDATE public.leads SET category_id = $1 WHERE id = $2', [buyer, lead]);
@@ -73,6 +81,19 @@ it('lead categories are per shop, service-role only, capped and protected by the
         await insert(fullShop, 'Сүүлчийн');
         await expect(insert(fullShop, 'Хэтэрсэн')).rejects.toMatchObject({ code: '23514', message: 'lead_category_limit' });
         expect((await db.query<{ n: number }>('SELECT count(*)::int AS n FROM public.lead_categories WHERE shop_id = $1', [fullShop])).rows).toEqual([{ n: 30 }]);
+
+        // Өөр shop руу шилжүүлж хязгаарыг тойрохгүй; багтах shop руу шилжүүлбэл updated_at шинэчлэгдэнэ.
+        const move = (id: string, shopId: string) => db.query('UPDATE public.lead_categories SET shop_id = $1 WHERE id = $2', [shopId, id]);
+        await expect(move(foreign, fullShop)).rejects.toMatchObject({ code: '23514', message: 'lead_category_limit' });
+        const dealer = (await insert(otherShop, 'Дилер')).rows[0].id;
+        const stamped = (await db.query<{ updated_at: string }>('SELECT updated_at FROM public.lead_categories WHERE id = $1', [dealer])).rows[0].updated_at;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        await move(dealer, shop);
+        const moved = (await db.query<{ shop_id: string; updated_at: string }>('SELECT shop_id, updated_at FROM public.lead_categories WHERE id = $1', [dealer])).rows[0];
+        expect(moved.shop_id).toBe(shop);
+        expect(new Date(moved.updated_at).getTime()).toBeGreaterThan(new Date(stamped).getTime());
+        // Нэр/эрэмбэ засах (shop өөрчлөхгүй) нь дүүрсэн төсөлд ч хэвийн.
+        await db.query(`UPDATE public.lead_categories SET sort_order = 500 WHERE shop_id = $1 AND name = 'Сүүлчийн'`, [fullShop]);
 
         // Shop устгагдвал лид, ангилал хамт устна (FK шалгалт statement-ийн төгсгөлд).
         await db.exec('RESET ROLE');

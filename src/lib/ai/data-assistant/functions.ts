@@ -1135,7 +1135,7 @@ export async function createLead(shopId: string, args: any, confirm: boolean, ac
         customer_phone: identity.customer_phone,
         customer_email: identity.customer_email,
         status, source, sales_manager_name: managerName,
-        category_id: resolved.category_id,
+        ...(resolved.category_id ? { category_id: resolved.category_id } : {}),
         notes: args.notes || null,
         budget_min: args.budget_min ?? null,
         budget_max: args.budget_max ?? null,

@@ -6,8 +6,8 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { withRoute } from '@/lib/api/route';
 import { resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import {
-    CreateLeadCategorySchema, addDefaultLeadCategories, countLeadsByCategory, createLeadCategory,
-    leadCategoryInputError, listLeadCategories, type CategoryFailure,
+    CreateLeadCategorySchema, ReorderLeadCategoriesSchema, addDefaultLeadCategories, countLeadsByCategory, createLeadCategory,
+    leadCategoryInputError, listLeadCategories, reorderLeadCategories, type CategoryFailure,
 } from '@/lib/services/LeadCategoryService';
 
 const NO_STORE = { 'Cache-Control': 'private, no-store' };
@@ -17,8 +17,9 @@ const fail = (result: CategoryFailure) => NextResponse.json({ error: result.erro
  * GET /api/dashboard/lead-categories — тухайн төслийн (shop) лидийн ангиллууд.
  * Лид, лидийн тайлан, тохиргоо уншигч бүрт (ангилал нь лидийн өгөгдөл биш, төслийн тохиргоо).
  *   ?include=archived — архивласныг нэмнэ (шүүлтүүр, тайлан, тохиргоо).
- *   ?counts=1 — ангилал бүрийн лидийн тоо: зөвхөн «Тохиргоо» эрхтэй, төслийн хүрээгээр
- *     хязгаарлагдаагүй хэрэглэгчид (хувийн хүрээтэй менежерт байгууллагын тоо ил гарахгүй).
+ *   ?counts=1 — ангилал бүрийн лидийн тоо + `referenced` (устгасан лид орно, устгах боломжгүй):
+ *     зөвхөн «Тохиргоо» эрхтэй, төслийн хүрээгээр хязгаарлагдаагүй хэрэглэгчид (хувийн хүрээтэй
+ *     менежерт байгууллагын тоо ил гарахгүй).
  */
 export const GET = withRoute({ module: ['leads', 'reports-leads', 'settings'], error: 'Лидийн ангилал татахад алдаа гарлаа' }, async ({ request, shop }) => {
     const { searchParams } = new URL(request.url);
@@ -56,4 +57,16 @@ export const POST = withRoute({ module: 'settings', access: 'write', error: 'Л�
     const result = await createLeadCategory(db, shop.id, parsed.data, actorId);
     if (!result.ok) return fail(result);
     return NextResponse.json({ category: result.category }, { status: 201 });
+});
+
+/**
+ * PATCH /api/dashboard/lead-categories — эрэмбэ (Тохиргоо бичих эрх): { order: uuid[] } нь төслийн
+ * бүх ангиллын шинэ дараалал → { categories }. Мөр бүрийг тусад нь PATCH-лахгүй (нэг audit).
+ */
+export const PATCH = withRoute({ module: 'settings', access: 'write', error: 'Ангиллын эрэмбэ хадгалахад алдаа гарлаа' }, async ({ request, shop }) => {
+    const parsed = ReorderLeadCategoriesSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) return NextResponse.json({ error: leadCategoryInputError(parsed.error) }, { status: 400 });
+    const result = await reorderLeadCategories(supabaseAdmin(), shop.id, parsed.data.order, await getUserId());
+    if (!result.ok) return fail(result);
+    return NextResponse.json({ categories: result.categories });
 });

@@ -209,7 +209,8 @@ export async function POST(request: NextRequest) {
             notes: input.notes || null,
             status: resolved.status,
             sales_manager_name: resolved.sales_manager_name,
-            category_id: resolved.category_id,
+            // Ангилалгүй бол баганыг огт бичихгүй (migration-аас өмнөх DB дээр лид үүсгэх ажиллана).
+            ...(resolved.category_id ? { category_id: resolved.category_id } : {}),
         }, { scope });
         if (result.ok) return NextResponse.json(result.duplicate ? { lead: result.lead, deduplicated: true } : { lead: result.lead });
         if (result.conflict) return NextResponse.json({ error: 'Энэ хүсэлтийн түлхүүр өмнө ашиглагдсан байна' }, { status: 409 });

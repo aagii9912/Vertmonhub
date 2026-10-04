@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type Query } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
 import type { LeadCategoryTone } from '@/lib/leads/labels';
@@ -13,6 +13,8 @@ import type { LeadCategoryRow } from '@/hooks/useLeads';
 export interface LeadCategoryCounts {
     byCategory: Record<string, number>;
     uncategorized: number;
+    /** Ямар нэг лидэд (устгасан лид орно) холбогдсон ангилал — устгах боломжгүй, архивлана. */
+    referenced: string[];
 }
 
 /**
@@ -70,6 +72,37 @@ export function useUpdateLeadCategory() {
         mutationFn: ({ id, patch }: { id: string; patch: Partial<LeadCategoryDraft> & { is_active?: boolean } }) =>
             dashboardMutate<{ category: LeadCategoryRow }>(`/api/dashboard/lead-categories/${id}`, 'PATCH', patch),
         onSettled,
+    });
+}
+
+/** Ангиллын жагсаалтын cache (`useLeadCategories`) — лидийн тооны query-г оруулахгүй. */
+const isCategoryList = (query: Query) => query.queryKey[0] === 'lead-categories' && query.queryKey[1] !== 'counts';
+
+/**
+ * Дээш/доош: бүх ангиллын шинэ дарааллыг НЭГ хүсэлтээр хадгална. Жагсаалтад шууд (optimistic)
+ * тусгаж, алдаа гарвал буцаана; дараа нь зөвхөн жагсаалт, үйл ажиллагааны тайланг шинэчилнэ
+ * (лидийн тоо эрэмбээс хамаарахгүй тул дахин тоолохгүй).
+ */
+export function useReorderLeadCategories() {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (order: string[]) => dashboardMutate<{ categories: LeadCategoryRow[] }>('/api/dashboard/lead-categories', 'PATCH', { order }),
+        onMutate: async (order) => {
+            await qc.cancelQueries({ predicate: isCategoryList });
+            const previous = qc.getQueriesData<LeadCategoryRow[]>({ predicate: isCategoryList });
+            const position = new Map(order.map((id, index) => [id, index]));
+            qc.setQueriesData<LeadCategoryRow[]>({ predicate: isCategoryList }, (rows) => rows && [...rows]
+                .sort((a, b) => (position.get(a.id) ?? rows.length) - (position.get(b.id) ?? rows.length))
+                .map((row) => (position.has(row.id) ? { ...row, sort_order: (position.get(row.id)! + 1) * 10 } : row)));
+            return { previous };
+        },
+        onError: (_error, _order, context) => {
+            for (const [key, rows] of context?.previous ?? []) qc.setQueryData(key, rows);
+        },
+        onSettled: () => {
+            void qc.invalidateQueries({ predicate: isCategoryList });
+            void qc.invalidateQueries({ queryKey: ['operations-report'] });
+        },
     });
 }
 

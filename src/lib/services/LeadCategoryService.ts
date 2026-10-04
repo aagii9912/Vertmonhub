@@ -7,6 +7,7 @@
  * • Оноох: идэвхтэй ангилал л сонгогдоно; лидийн одоогийн (архивласан) ангиллыг хэвээр үлдээж болно.
  *   Нэрээр (AI) хайхад том/жижиг үсэг, давхар зай ялгахгүй, яг таарсныг л авна — таамаглахгүй.
  * • Ашиглагдсан ангиллыг устгахгүй — архивлана. Төсөл бүрт ≤ 30 (DB trigger мөн шалгана).
+ * • Эрэмбэ нэг хүсэлтээр (`reorderLeadCategories`), мөр бүрийг PATCH-аар биш.
  * • Тохиргооны өөрчлөлт data_audit_log-д (best-effort), лидийн ангиллын өөрчлөлт lead_activities-д.
  */
 import { z } from 'zod';
@@ -67,6 +68,14 @@ export const UpdateLeadCategorySchema = z.object({
 }).strict().refine((value) => Object.values(value).some((field) => field !== undefined), 'Өөрчлөх талбар алга');
 export type UpdateLeadCategoryInput = z.infer<typeof UpdateLeadCategorySchema>;
 
+/** Тохиргооны дээш/доош: төслийн БҮХ ангиллын (архивласан орно) шинэ дараалал, нэг хүсэлтээр. */
+export const ReorderLeadCategoriesSchema = z.object({
+    order: z.array(z.uuid({ error: 'Буруу ангилал' }), { error: 'Эрэмбийн жагсаалт буруу' })
+        .min(1, 'Эрэмбийн жагсаалт хоосон байна')
+        .max(LEAD_CATEGORY_LIMIT, 'Эрэмбийн жагсаалт буруу')
+        .refine((ids) => new Set(ids).size === ids.length, 'Эрэмбийн жагсаалтад ангилал давхардсан байна'),
+}).strict();
+
 /** Zod-ийн алдааг хэрэглэгчид харуулах монгол мессеж болгоно. */
 export function leadCategoryInputError(error: z.ZodError): string {
     const issue = error.issues[0];
@@ -93,19 +102,34 @@ export function categoryNameMap(categories: readonly Pick<LeadCategory, 'id' | '
     return new Map(categories.map((category) => [category.id, category.name]));
 }
 
-/** Тохиргооны жагсаалтад: ангилал бүрийн (устгаагүй) лидийн тоо + ангилалгүй лид. */
+/**
+ * Тохиргооны жагсаалтад: ангилал бүрийн (устгаагүй) лидийн тоо + ангилалгүй лид. `referenced` —
+ * ямар нэг лидэд (устгасан лид орно, FK хэвээр) холбогдсон ангиллын id: устгах товчийг идэвхгүй
+ * болгоход. Идэвхтэй лидгүй ангиллыг л устгасан лидээр нэмж шалгана.
+ */
 export async function countLeadsByCategory(
     db: SupabaseClient, shopId: string, categoryIds: readonly string[],
-): Promise<{ byCategory: Record<string, number>; uncategorized: number }> {
-    const count = async (categoryId: string | null) => {
-        let query = db.from('leads').select('id', { count: 'exact', head: true }).eq('shop_id', shopId).is('deleted_at', null);
+): Promise<{ byCategory: Record<string, number>; uncategorized: number; referenced: string[] }> {
+    const count = async (categoryId: string | null, options: { includeDeleted?: boolean } = {}) => {
+        let query = db.from('leads').select('id', { count: 'exact', head: true }).eq('shop_id', shopId);
+        if (!options.includeDeleted) query = query.is('deleted_at', null);
         query = categoryId ? query.eq('category_id', categoryId) : query.is('category_id', null);
         const { count: n, error } = await query;
         if (error) throw error;
         return n ?? 0;
     };
     const [uncategorized, ...counts] = await Promise.all([count(null), ...categoryIds.map((id) => count(id))]);
-    return { byCategory: Object.fromEntries(categoryIds.map((id, index) => [id, counts[index]])), uncategorized };
+    const unused = categoryIds.filter((_, index) => counts[index] === 0);
+    const usedByDeleted = await Promise.all(unused.map((id) => count(id, { includeDeleted: true })));
+    const referenced = new Set([
+        ...categoryIds.filter((_, index) => counts[index] > 0),
+        ...unused.filter((_, index) => usedByDeleted[index] > 0),
+    ]);
+    return {
+        byCategory: Object.fromEntries(categoryIds.map((id, index) => [id, counts[index]])),
+        uncategorized,
+        referenced: categoryIds.filter((id) => referenced.has(id)),
+    };
 }
 
 /* ── Лидэд оноох ───────────────────────────────────────────────────────── */
@@ -267,18 +291,51 @@ export async function updateLeadCategory(
     return { ok: true, category };
 }
 
-/** Зөвхөн ашиглагдаагүй (устгасан лидэд ч) ангиллыг устгана; бусдыг архивлана. */
+/**
+ * Ангиллын нэг шинэ дараалал: 10, 20, … эрэмбийг зөвхөн өөрчлөгдсөн мөрт бичиж, нэг audit үлдээнэ.
+ * `order` нь төслийн бүх ангиллыг яг нэг удаа агуулна — өөр хэрэглэгч зэрэг нэмсэн/устгасан бол 409.
+ * Хэсэгчлэн бичигдсэн ч дахин илгээхэд бүрэн засагдана (эрэмбэ нь зөвхөн байрлалаас хамаарна).
+ */
+export async function reorderLeadCategories(
+    db: SupabaseClient, shopId: string, order: readonly string[], actorId: string | null,
+): Promise<CategoryResult<{ categories: LeadCategory[] }>> {
+    let existing: LeadCategory[];
+    try { existing = await listLeadCategories(db, shopId, { includeArchived: true }); }
+    catch { return failure(503, LOAD_ERROR); }
+    const byId = new Map(existing.map((category) => [category.id, category]));
+    if (order.length !== existing.length || new Set(order).size !== order.length || order.some((id) => !byId.has(id))) {
+        return failure(409, 'Ангиллын жагсаалт өөрчлөгдсөн байна. Хуудсаа шинэчлээд дахин оролдоно уу.');
+    }
+    const categories = order.map((id, index) => ({ ...byId.get(id)!, sort_order: Math.min(1000, (index + 1) * 10) }));
+    const changes = categories.filter((category) => byId.get(category.id)!.sort_order !== category.sort_order);
+    const results = await Promise.all(changes.map((category) => db.from('lead_categories')
+        .update({ sort_order: category.sort_order }).eq('shop_id', shopId).eq('id', category.id)));
+    const applied = changes.filter((_, index) => !results[index].error);
+    if (applied.length) {
+        await recordAudit({
+            shopId, actorId, entity: 'lead_category', action: 'update',
+            changes: { sort_order: Object.fromEntries(applied.map((category) => [category.id, { from: byId.get(category.id)!.sort_order, to: category.sort_order }])) },
+        });
+    }
+    if (applied.length !== changes.length) return failure(503, 'Эрэмбийг бүрэн хадгалж чадсангүй. Дахин оролдоно уу.');
+    return { ok: true, categories };
+}
+
+const IN_USE_ERROR = 'Лидэд (устгасан лид орно) ашиглагдсан тул устгах боломжгүй. Архивлана уу.';
+
+/**
+ * Зөвхөн ашиглагдаагүй (устгасан лидэд ч) ангиллыг устгана; бусдыг архивлана. Алдааны мессежид
+ * лидийн тоо бичихгүй — хувийн хүрээтэй хэрэглэгчид байгууллагын тоо ил гарахгүй.
+ */
 export async function deleteLeadCategory(
     db: SupabaseClient, shopId: string, id: string, actorId: string | null,
 ): Promise<CategoryResult<{ id: string }>> {
     if (!z.uuid().safeParse(id).success) return failure(400, 'Буруу ангилал');
     const usage = await db.from('leads').select('id', { count: 'exact', head: true }).eq('shop_id', shopId).eq('category_id', id);
     if (usage.error) return failure(503, LOAD_ERROR);
-    if ((usage.count ?? 0) > 0) {
-        return failure(409, `${usage.count} лидэд ашиглагдсан тул устгах боломжгүй. Архивлана уу.`);
-    }
+    if ((usage.count ?? 0) > 0) return failure(409, IN_USE_ERROR);
     const { data, error } = await db.from('lead_categories').delete().eq('shop_id', shopId).eq('id', id).select('id, name').maybeSingle();
-    if (error?.code === '23503') return failure(409, 'Лидэд ашиглагдсан тул устгах боломжгүй. Архивлана уу.');
+    if (error?.code === '23503') return failure(409, IN_USE_ERROR);
     if (error) throw error;
     if (!data) return failure(404, 'Ангилал олдсонгүй');
     await recordAudit({ shopId, actorId, entity: 'lead_category', entityId: id, action: 'delete', changes: { name: data.name } });
