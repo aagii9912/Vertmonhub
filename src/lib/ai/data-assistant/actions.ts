@@ -19,7 +19,7 @@ import { updateViewing, listViewings } from '@/lib/services/ViewingService';
 import { listTasks, createTask, updateTask, isMissingTaskTable, TASK_MIGRATION_HINT } from '@/lib/services/TaskService';
 import { listPayments, addPayment, updatePayment } from '@/lib/services/PaymentService';
 import { formatMNT } from '@/lib/utils/currency';
-import { ANONYMOUS_LEAD_LABEL, leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
+import { ANONYMOUS_LEAD_LABEL, isAnonymousLead, leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
 
 type Args = Record<string, any>;
 const db = () => adminClient();
@@ -111,7 +111,16 @@ export async function assignLeadManager(shopId: string, args: Args, confirm: boo
 /* ---------------- Уулзалт ---------------- */
 
 export async function listViewingsTool(shopId: string, args: Args, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
-    return listViewings(db(), shopId, { range: args.range, status: args.status, manager: args.manager, leadId: args.lead_id, limit: args.limit }, scope);
+    const result = await listViewings(db(), shopId, { range: args.range, status: args.status, manager: args.manager, leadId: args.lead_id, limit: args.limit }, scope);
+    if ('error' in result) return result;
+    // Загварт харагдах нэр + нэргүй тэмдэг (customer_name: null-ийг «null» гэж хэлэх/нэр зохиохгүй).
+    // Шинэ мөр үүсгэнэ; service-ийн мөр (UI ашигладаг) өөрчлөгдөхгүй.
+    return {
+        viewings: (result.viewings as Array<Record<string, unknown>>).map((viewing) => {
+            const lead = (Array.isArray(viewing.leads) ? viewing.leads[0] : viewing.leads) as { customer_name?: string | null } | null | undefined;
+            return { ...viewing, customer: lead ? leadDisplayName(lead) : null, anonymous: !!lead && isAnonymousLead(lead) };
+        }),
+    };
 }
 
 type ViewingRow = { id: string; scheduled_at: string; status: string; lead_id: string | null; leads?: { customer_name?: string } | { customer_name?: string }[] | null; properties?: { name?: string } | { name?: string }[] | null };
