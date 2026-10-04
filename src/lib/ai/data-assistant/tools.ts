@@ -463,7 +463,7 @@ const writeDefinitions: ToolDefinition[] = [
     },
     {
         name: 'transfer_contract',
-        description: 'Гэрээг өөр хүний нэр дээр шилжүүлэх (kind=transfer) эсвэл ижил эзэмшигчийн нэрийг засах (kind=rename). Төлсөн дүн, төлбөрийн график, менежер, гэрээний огноо, дугаар хэвээр; түүх, аудит хадгалагдана. Шилжүүлэхэд шинэ эзэмшигчийн нэр, регистр, шалтгаан заавал — хэрэглэгчээс тодруул, бүү зохио. Шилжүүлгийн хураамжийг энд биш add_contract_payment (receipt_kind=other)-оор бүртгэнэ. Баталгаажуулалт авна.',
+        description: 'Гэрээг өөр хүний нэр дээр шилжүүлэх (kind=transfer) эсвэл ижил эзэмшигчийн нэрийг засах (kind=rename). Төлсөн дүн, төлбөрийн график, менежер, гэрээний огноо, дугаар хэвээр; түүх, аудит хадгалагдана. Шилжүүлэхэд шинэ эзэмшигчийн нэр, регистр, шалтгаан заавал — хэрэглэгчээс тодруул, бүү зохио. Нэр засвар регистрийг солихгүй (регистр өөр бол kind=transfer). Шилжүүлгийн хураамжийг энд биш add_contract_payment (receipt_kind=other)-оор бүртгэнэ. Баталгаажуулалт авна.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
@@ -474,8 +474,8 @@ const writeDefinitions: ToolDefinition[] = [
                 customer_name: { type: SchemaType.STRING, description: 'Шинэ (эсвэл зассан) эзэмшигчийн бүтэн нэр' },
                 customer_last_name: { type: SchemaType.STRING, description: 'Овог' },
                 customer_first_name: { type: SchemaType.STRING, description: 'Нэр' },
-                customer_registration: { type: SchemaType.STRING, description: 'Шинэ эзэмшигчийн регистр/паспорт (transfer үед заавал)' },
-                customer_phone: { type: SchemaType.STRING, description: 'Шинэ эзэмшигчийн утас' },
+                customer_registration: { type: SchemaType.STRING, description: 'Шинэ эзэмшигчийн регистр/паспорт (transfer үед заавал; rename үед өгөхгүй)' },
+                customer_phone: { type: SchemaType.STRING, description: 'Шинэ эзэмшигчийн утас (rename үед зөвхөн хэрэглэгч утсаа солих гэвэл)' },
                 effective_date: { type: SchemaType.STRING, description: 'Шилжүүлсэн огноо YYYY-MM-DD (default өнөөдөр)' },
                 reason: { type: SchemaType.STRING, description: 'Шалтгаан / тэмдэглэл (transfer үед заавал)' }
             },

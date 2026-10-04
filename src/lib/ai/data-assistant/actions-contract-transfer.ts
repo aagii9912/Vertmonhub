@@ -12,10 +12,10 @@ import { formatMNT } from '@/lib/utils/currency';
 import { UNRESTRICTED_SALES_SCOPE, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { CONTRACT_TRANSFER_KIND_META } from '@/lib/contracts/labels';
 import {
-    TransferContractSchema, isTransferableContract, transferDateError, transferInputError,
+    TransferContractSchema, isTransferableContract, sameRegistration, transferDateError, transferInputError,
     type ContractTransferKind, type TransferContractInput,
 } from '@/lib/contracts/transfer';
-import { transferContract } from '@/lib/services/ContractService';
+import { latestContractChangeDate, transferContract } from '@/lib/services/ContractService';
 
 type Args = Record<string, any>;
 
@@ -27,13 +27,16 @@ interface TransferContractRow {
     contract_date: string | null;
     sales_manager: string | null;
     customer_name: string | null;
+    customer_first_name: string | null;
+    customer_last_name: string | null;
     customer_registration: string | null;
+    customer_phone: string | null;
     total_price: number | null;
     paid_amount: number | null;
     balance: number | null;
 }
 
-const CONTRACT_FIELDS = 'id, contract_number, unit_label, contract_status, contract_date, sales_manager, customer_name, customer_registration, total_price, paid_amount, balance';
+const CONTRACT_FIELDS = 'id, contract_number, unit_label, contract_status, contract_date, sales_manager, customer_name, customer_first_name, customer_last_name, customer_registration, customer_phone, total_price, paid_amount, balance';
 const OPTIONAL_KEYS = ['customer_last_name', 'customer_first_name', 'customer_registration', 'customer_phone', 'reason'] as const;
 const INPUT_KEYS = ['client_request_id', 'kind', 'customer_name', ...OPTIONAL_KEYS, 'effective_date', 'expected_customer_name'] as const;
 
@@ -44,12 +47,19 @@ function confirmNeeded(tool: string, args: Args, label: string, preview: Record<
 }
 
 async function findTransferContract(shopId: string, args: Args): Promise<{ contract: TransferContractRow } | { error: string; options?: unknown[] }> {
-    let query = supabaseAdmin().from('property_contracts').select(CONTRACT_FIELDS).eq('shop_id', shopId).is('deleted_at', null);
-    if (args.contract_id) query = query.eq('id', String(args.contract_id));
-    else if (args.contract_number) query = query.ilike('contract_number', likePattern(args.contract_number));
-    else if (args.current_holder_name) query = query.ilike('customer_name', likePattern(args.current_holder_name));
+    const base = () => supabaseAdmin().from('property_contracts').select(CONTRACT_FIELDS).eq('shop_id', shopId).is('deleted_at', null);
+    const run = (query: ReturnType<typeof base>) => query.order('contract_date', { ascending: false, nullsFirst: false }).limit(5);
+    /** Яг таарсан дугаар/нэрийг эхэлж — «MG-101» нь MG-1010, MG-1011-тэй хольж асуулт нэмэхгүй. */
+    const exactThenLike = async (column: 'contract_number' | 'customer_name', value: unknown) => {
+        const exact = await run(base().eq(column, String(value).trim()));
+        return exact.error || exact.data?.length ? exact : run(base().ilike(column, likePattern(value)));
+    };
+    let result;
+    if (args.contract_id) result = await run(base().eq('id', String(args.contract_id)));
+    else if (args.contract_number) result = await exactThenLike('contract_number', args.contract_number);
+    else if (args.current_holder_name) result = await exactThenLike('customer_name', args.current_holder_name);
     else return { error: 'contract_id, contract_number эсвэл одоогийн эзэмшигчийн нэр (current_holder_name) шаардлагатай' };
-    const { data, error } = await query.order('contract_date', { ascending: false, nullsFirst: false }).limit(5);
+    const { data, error } = result;
     if (error) return { error: 'Гэрээ хайхад алдаа гарлаа' };
     const rows = (data || []) as unknown as TransferContractRow[];
     if (!rows.length) return { error: 'Гэрээ олдсонгүй' };
@@ -114,11 +124,21 @@ export async function transferContractTool(
     for (const key of OPTIONAL_KEYS) {
         if (args[key] !== undefined && args[key] !== null && String(args[key]).trim() !== '') input[key] = String(args[key]);
     }
+    // Нэр засвар = ижил хүн: регистр өөр бол шилжүүлэг (шалтгаантай, шинэ харилцагч). Ижил бол бичих зүйлгүй.
+    if (kind === 'rename' && input.customer_registration !== undefined) {
+        if (!sameRegistration(input.customer_registration, c.customer_registration)) {
+            return { error: 'Нэр засвар (rename) зөвхөн ижил хүний нэрийг засна — регистр өөр бол энэ нь өөр хүнд шилжүүлэх (kind=transfer), шалтгаан шаардлагатай. Хэрэглэгчээс тодруулна уу; мэдээллийг бүү зохио.' };
+        }
+        delete input.customer_registration;
+    }
     const parsed = TransferContractSchema.safeParse(input);
     if (!parsed.success) {
         return { error: `${transferInputError(parsed.error)} Хэрэглэгчээс тодруулна уу; мэдээллийг бүү зохио.`, missingFields: [...new Set(parsed.error.issues.map(issue => String(issue.path[0])))] };
     }
-    const dateError = transferDateError(parsed.data.effective_date ?? today, c.contract_date, today);
+    let previousChange: string | null;
+    try { previousChange = await latestContractChangeDate(supabaseAdmin(), shopId, c.id); }
+    catch { return { error: 'Гэрээний эзэмшигчийн түүх уншиж чадсангүй. Дахин оролдоно уу.' }; }
+    const dateError = transferDateError(parsed.data.effective_date ?? today, c.contract_date, today, previousChange);
     if (dateError) return { error: dateError };
     if (parsed.data.customer_registration) input.customer_registration = parsed.data.customer_registration;
 
@@ -128,12 +148,35 @@ export async function transferContractTool(
         Гэрээ: contractLabel,
         Төрөл: meta.label,
         'Одоогийн эзэмшигч': c.customer_name || '—',
-        [kind === 'transfer' ? 'Шинэ эзэмшигч' : 'Зассан нэр']: parsed.data.customer_name,
-        ...(kind === 'transfer' ? { Регистр: input.customer_registration, Утас: input.customer_phone || '-' } : {}),
+        // Бичигдэх бүх эзэмшигчийн талбар: шилжүүлэгт бүгд шинэчлэгдэнэ (өгөөгүй нь хоосон), нэр засварт өгсөн нь л.
+        ...holderPreview(kind, parsed.data.customer_name, input, c),
         'Шилжүүлсэн огноо': input.effective_date,
         'Төлсөн дүн (хэвээр)': formatMNT(Number(c.paid_amount) || 0),
         Үлдэгдэл: formatMNT(Number(c.balance) || 0),
         Шалтгаан: input.reason || '-',
         Анхаар: 'Менежер, гэрээний огноо, дугаар, төлбөр өөрчлөгдөхгүй',
     });
+}
+
+const shown = (value: unknown) => (value === undefined || value === null || String(value).trim() === '' ? '-' : String(value));
+const kept = (value: string | null) => `${value || '-'} (хэвээр)`;
+
+/** Баталгаажуулах карт RPC-ийн бичих бүх эзэмшигчийн талбарыг харуулна (нуугдмал өөрчлөлтгүй). */
+function holderPreview(kind: ContractTransferKind, name: string, input: Args, c: TransferContractRow): Record<string, string> {
+    if (kind === 'transfer') {
+        return {
+            'Шинэ эзэмшигч': name,
+            Овог: shown(input.customer_last_name),
+            Нэр: shown(input.customer_first_name),
+            Регистр: shown(input.customer_registration),
+            Утас: shown(input.customer_phone),
+        };
+    }
+    return {
+        'Зассан нэр': name,
+        Овог: input.customer_last_name !== undefined ? shown(input.customer_last_name) : kept(c.customer_last_name),
+        Нэр: input.customer_first_name !== undefined ? shown(input.customer_first_name) : kept(c.customer_first_name),
+        Регистр: kept(c.customer_registration),
+        Утас: input.customer_phone !== undefined ? `${shown(input.customer_phone)} (өмнө нь ${c.customer_phone || '-'})` : kept(c.customer_phone),
+    };
 }
