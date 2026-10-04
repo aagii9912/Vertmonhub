@@ -49,7 +49,7 @@ vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: (table: string)
     const one = () => { const result = run(); return { ...result, data: result.data?.[0] || null }; };
     const query = {
         select: () => query,
-        insert: (rows: Row[]) => { payload = rows; return query; },
+        insert: (rows: Row[] | Row) => { payload = Array.isArray(rows) ? rows : [rows]; return query; },
         eq: (key: string, value: unknown) => { filters.push(row => row[key] === value); return query; },
         is: (key: string, value: unknown) => { filters.push(row => (row[key] ?? null) === value); return query; },
         in: (key: string, values: unknown[]) => { filters.push(row => values.includes(row[key])); return query; },

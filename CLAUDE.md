@@ -36,7 +36,7 @@ Browser specs run against `e2e/support/fixture-server.mjs` (fake GoTrue + `next 
 - `src/app/api/**` route handlers; `src/app/dashboard/**` staff UI; `src/app/admin/**` super-admin (users, roles, projects, sales targets/roster, import); `src/app/marketing/**` marketing; public `/`, `/help`, `/terms`, `/privacy`, `/contact`.
 - `src/lib/auth` — `require-permission.ts` (`requireModule*`, `resolvePermissions`), `supabase-auth.ts` (`getUserShop`, `supabaseAdmin`), `cron.ts`, admin auth.
 - `src/lib/sales` — `project-scope.ts`, `manager-identity.ts`, targets. `src/lib/leads` — `labels.ts`, `work-queue.ts`, `activities.ts`.
-- `src/lib/services` — `ViewingService`, `TaskService`, `PaymentService`, `CustomerOps`, `MarketingOps`: shared by API routes and AI tools (put new business logic here, not in both).
+- `src/lib/services` — `LeadService` (staff lead rules + idempotent `insertLeadOnce` for every intake channel), `ViewingService`, `TaskService`, `PaymentService`, `CustomerOps`, `MarketingOps`: shared by API routes and AI tools (put new business logic here, not in both).
 - `src/lib/dashboard` — operations report loader, `my-stats`, `kpi-report(-build)`, weekly review. `src/lib/marketing` — performance(+load), budget, spend, Meta spend.
 - `src/lib/ai/orchestrator` (loop, prompt, memory, `shop-knowledge.ts`, `http.ts`, agents), `src/lib/ai/tool-catalog.ts` (the one tool registry), `src/lib/ai/data-assistant` (`tools.ts` schemas, `index.ts` handlers, `functions.ts`/`actions*.ts`).
 - `src/lib/webhook/WebhookService.ts` + `src/lib/facebook/messenger.ts` — Meta DM persistence and staff replies.

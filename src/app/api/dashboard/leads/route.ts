@@ -3,13 +3,14 @@ import { z } from 'zod';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { requireModuleWrite, resolvePermissions, requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
-import { resolveManagerIdentity, resolveActiveManagerName } from '@/lib/sales/manager-identity';
-import { ACTIVE_STATUSES, toLeadSource } from '@/lib/leads/labels';
+import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
+import { ACTIVE_STATUSES } from '@/lib/leads/labels';
 import { isLeadWorkQueue, workQueueFilter } from '@/lib/leads/work-queue';
 import { parsePagination, buildPageMeta } from '@/lib/utils/pagination';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
+import { insertLeadOnce, resolveStaffLead } from '@/lib/services/LeadService';
 import { phoneIlikePattern } from '@/lib/utils/phone';
-import { applyLeadScope, assertProjectManager, canAccessProject, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
+import { applyLeadScope, canAccessProject, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 
 /** Хугацааны шүүлтүүр — гүйдэг цонх (өнөөдрөөс хойш N хоног). */
 const PERIOD_DAYS: Record<string, number> = {
@@ -181,76 +182,34 @@ export async function POST(request: NextRequest) {
         const input = parsed.data;
 
         const db = supabaseAdmin();
-        const scope = await resolveSalesProjectScope(db, authShop.id);
-        if (!canAccessProject(scope, input.project_id)) return NextResponse.json({ error: 'Энэ төсөлд лид үүсгэх эрхгүй' }, { status: 403 });
-        const { data: project, error: projectError } = await db.from('projects').select('id')
-            .eq('id', input.project_id).eq('shop_id', authShop.id).maybeSingle();
-        if (projectError) throw projectError;
-        if (!project) return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 400 });
-        const [perms, identity] = await Promise.all([
-            resolvePermissions(),
-            resolveManagerIdentity(db, authShop.id, uid),
-        ]);
-        const role = perms?.role || 'viewer';
-        const isAdmin = role === 'admin' || role === 'super_admin';
-        let salesManagerName = identity.isManager ? identity.managerName : null;
-        if (isAdmin && input.assignManager) {
-            const manager = await resolveActiveManagerName(db, authShop.id, input.assignManager);
-            if (!manager.ok) return NextResponse.json({ error: manager.error }, { status: manager.status });
-            salesManagerName = manager.managerName;
-        }
-        if (salesManagerName) await assertProjectManager(db, authShop.id, input.project_id, salesManagerName);
-        if (input.status === 'closed_won' || input.status === 'closed_lost') {
-            return NextResponse.json({ error: 'Шинэ лидийг идэвхтэй төлөвөөр бүртгэнэ. Гэрээ эсвэл алдсан шалтгаанаа дараа нь бүртгэнэ үү.' }, { status: 400 });
-        }
+        const [scope, perms] = await Promise.all([resolveSalesProjectScope(db, authShop.id), resolvePermissions()]);
+        const resolved = await resolveStaffLead(db, authShop.id, {
+            projectId: input.project_id, status: input.status, source: input.source, assignManager: input.assignManager,
+        }, { userId: uid, role: perms?.role || 'viewer', scope });
+        if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
 
-        // Idempotency: ижил client_request_id-тай лид аль хэдийн байвал түүнийг буцаана
-        // (сүлжээ тасарч outbox дахин илгээсэн / ⌘↵ давхар дарсан тохиолдол).
-        if (input.client_request_id) {
-            const { data: existing, error: replayError } = await applyLeadScope(db
-                .from('leads')
-                .select('*')
-                .eq('shop_id', authShop.id)
-                .eq('client_request_id', input.client_request_id)
-                .eq('project_id', input.project_id), scope)
-                .maybeSingle();
-            if (replayError) throw replayError;
-            if (existing) return NextResponse.json({ lead: existing, deduplicated: true });
-        }
-
-        const insert: Record<string, unknown> = {
+        // Idempotency: ижил client_request_id дахин ирвэл (outbox дахин илгээсэн / ⌘↵ давхар
+        // дарсан) аль хэдийн үүссэн лидийг буцаана.
+        const result = await insertLeadOnce(db, {
             shop_id: authShop.id,
-            project_id: input.project_id,
+            project_id: resolved.project_id,
             client_request_id: input.client_request_id || null,
             customer_name: input.customer_name,
             customer_phone: input.customer_phone || null,
             customer_email: input.customer_email || null,
-            source: toLeadSource(input.source),
+            source: resolved.source,
             preferred_type: input.preferred_type || null,
             preferred_rooms: input.preferred_rooms ?? null,
             financing_intent: input.financing_intent || null,
             budget_min: input.budget_min ?? null,
             budget_max: input.budget_max ?? null,
             notes: input.notes || null,
-            status: input.status || 'new',
-            sales_manager_name: salesManagerName,
-        };
-
-        const { data, error } = await db.from('leads').insert(insert).select('*').single();
-
-        // Unique (shop_id, client_request_id) зөрчил = давхар илгээлт → байгааг буцаана
-        if (error && error.code === '23505' && input.client_request_id) {
-            const { data: existing } = await applyLeadScope(db.from('leads').select('*')
-                .eq('shop_id', authShop.id).eq('client_request_id', input.client_request_id)
-                .eq('project_id', input.project_id), scope).maybeSingle();
-            if (existing) return NextResponse.json({ lead: existing, deduplicated: true });
-            return NextResponse.json({ error: 'Энэ хүсэлтийн түлхүүр өмнө ашиглагдсан байна' }, { status: 409 });
-        }
-        if (error) {
-            return NextResponse.json({ error: 'Лийд үүсгэхэд алдаа гарлаа' }, { status: 500 });
-        }
-
-        return NextResponse.json({ lead: data });
+            status: resolved.status,
+            sales_manager_name: resolved.sales_manager_name,
+        }, { scope });
+        if (result.ok) return NextResponse.json(result.duplicate ? { lead: result.lead, deduplicated: true } : { lead: result.lead });
+        if (result.conflict) return NextResponse.json({ error: 'Энэ хүсэлтийн түлхүүр өмнө ашиглагдсан байна' }, { status: 409 });
+        return NextResponse.json({ error: 'Лийд үүсгэхэд алдаа гарлаа' }, { status: 500 });
     } catch (error) {
         if (error instanceof ProjectScopeError) return NextResponse.json({ error: error.message }, { status: error.status });
         return safeErrorResponse(error, 'Лийд үүсгэхэд алдаа гарлаа');

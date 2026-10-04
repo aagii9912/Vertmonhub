@@ -108,7 +108,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     process_contract_action: ({ shopId, args, confirm, scope, userId, userName }) => processContractAction(shopId, args, confirm, scope, { userId, userName }),
     create_property: ({ shopId, args, confirm }) => createProperty(shopId, args, confirm),
     delete_property: ({ shopId, args, confirm }) => deleteProperty(shopId, args, confirm),
-    create_lead: ({ shopId, args, confirm, userName, userId, scope }) => createLead(shopId, args, confirm, userName, userId, scope),
+    create_lead: ({ shopId, args, confirm, userId, perms, scope }) => createLead(shopId, args, confirm, { userId, role: perms.role, scope }),
     delete_lead: ({ shopId, args, confirm, scope }) => deleteLead(shopId, args, confirm, scope),
     create_customer: ({ shopId, args, confirm, userName }) => createCustomer(shopId, args, confirm, userName),
     schedule_viewing: ({ shopId, args, confirm, userName, userId, scope }) => scheduleViewing(shopId, args, confirm, userName, userId, scope),

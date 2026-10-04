@@ -9,6 +9,7 @@ import { logger } from '@/lib/utils/logger';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { normalizePhone, phoneIlikePattern } from '@/lib/utils/phone';
 import { softDeleteCustomer } from '@/lib/services/CustomerOps';
+import { insertLeadOnce, resolveStaffLead, type StaffLeadActor } from '@/lib/services/LeadService';
 import { buildBudgetOverview, monthlySpendSeries, spendByChannel, SPEND_CHANNELS } from '@/lib/marketing/budget';
 import { loadMarketingSpend } from '@/lib/marketing/spend-load';
 import { spendQuality, SPEND_BASIS } from '@/lib/marketing/performance';
@@ -1052,33 +1053,15 @@ export async function deleteProperty(shopId: string, args: any, confirm = false)
     return { success: true, message: `"${prop.name}" байрыг устгалаа (сэргээх боломжтой).`, propertyId: prop.id };
 }
 
-export async function createLead(shopId: string, args: any, confirm = false, salesManagerName = '', userId?: string, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
+export async function createLead(shopId: string, args: any, confirm: boolean, actor: StaffLeadActor) {
     if (!z.string().uuid().safeParse(args.project_id).success) return { error: 'Лидийн төслийг project_id-аар сонгоно уу' };
-    if (!canAccessProject(scope, args.project_id)) return { error: 'Энэ төслийн лид үүсгэх эрх танд алга' };
-    const project = await supabaseAdmin.from('projects').select('id').eq('id', args.project_id).eq('shop_id', shopId).maybeSingle();
-    if (project.error || !project.data) return { error: 'Төсөл олдсонгүй эсвэл шалгаж чадсангүй' };
     if (typeof args.customer_name !== 'string' || !args.customer_name.trim()) return { error: 'customer_name шаардлагатай' };
-    if (args.status === 'closed_won' || args.status === 'closed_lost') return { error: 'Шинэ лидийг идэвхтэй төлөвөөр бүртгэнэ. Гэрээ эсвэл алдсан шалтгаанаа дараа нь бүртгэнэ үү.' };
-    const validStatus = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating'];
-    const status = args.status && validStatus.includes(args.status) ? args.status : 'new';
-    const source = toLeadSource(typeof args.source === 'string' ? args.source : null);
-    let managerName: string | null = null;
-    if (userId) {
-        const identity = await resolveManagerIdentity(supabaseAdmin, shopId, userId);
-        if (identity.isManager) managerName = identity.managerName;
-    } else if (salesManagerName) {
-        const resolved = await resolveActiveManagerName(supabaseAdmin, shopId, salesManagerName);
-        if (resolved.ok) managerName = resolved.managerName;
-        else if (resolved.status === 500) return { error: resolved.error };
-    }
-
-    if (managerName) {
-        try { await assertProjectManager(supabaseAdmin, shopId, args.project_id, managerName); }
-        catch (error) { return { error: error instanceof Error ? error.message : 'Менежерийн төсөл шалгахад алдаа гарлаа' }; }
-    }
+    const resolved = await resolveStaffLead(supabaseAdmin, shopId, { projectId: args.project_id, status: args.status, source: args.source }, actor);
+    if (!resolved.ok) return { error: resolved.error };
     if (![args.budget_min, args.budget_max].every((value) => value == null || isAmount(value))) {
         return { error: 'Төсвийг төгрөгөөр, зөвхөн тоогоор өгнө үү' };
     }
+    const { status, source, sales_manager_name: managerName } = resolved;
     const preview = {
         Нэр: args.customer_name, Утас: args.customer_phone || '-', Статус: status, 'Эх сурвалж': source,
         Төсөв: args.budget_max ? formatMNT(args.budget_max) : '-',
@@ -1086,8 +1069,8 @@ export async function createLead(shopId: string, args: any, confirm = false, sal
     };
     if (!confirm) return confirmNeeded('create_lead', { ...args, status, source }, `Шинэ лийд: ${args.customer_name}`, preview);
 
-    const insert = {
-        shop_id: shopId, project_id: args.project_id,
+    const result = await insertLeadOnce(supabaseAdmin, {
+        shop_id: shopId, project_id: resolved.project_id,
         customer_name: args.customer_name.trim(),
         customer_phone: args.customer_phone || null,
         customer_email: args.customer_email || null,
@@ -1097,10 +1080,9 @@ export async function createLead(shopId: string, args: any, confirm = false, sal
         budget_max: args.budget_max ?? null,
         preferred_district: args.preferred_district || null,
         preferred_rooms: args.preferred_rooms ?? null,
-    };
-    const { data, error } = await supabaseAdmin.from('leads').insert(insert).select('id, customer_name').single();
-    if (error || !data) return { error: 'Лид үүсгэхэд алдаа гарлаа' };
-    return { success: true, message: `"${data.customer_name}" лийд амжилттай үүсгэлээ (${managerName ? `менежер: ${managerName}` : 'хариуцагчгүй — идэвхтэй менежерт онооно'}).`, leadId: data.id };
+    }, { select: 'id, customer_name' });
+    if (!result.ok) return { error: 'Лид үүсгэхэд алдаа гарлаа' };
+    return { success: true, message: `"${result.lead.customer_name}" лийд амжилттай үүсгэлээ (${managerName ? `менежер: ${managerName}` : 'хариуцагчгүй — идэвхтэй менежерт онооно'}).`, leadId: result.lead.id };
 }
 
 export async function deleteLead(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {

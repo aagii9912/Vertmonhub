@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { bulkUpdateLeads, createLead, fetchLeads, processContractAction, updateLeadStatus } from '../functions';
+import { UNRESTRICTED_SALES_SCOPE } from '@/lib/sales/project-scope';
+
+const admin = { userId: 'admin-1', role: 'admin', scope: UNRESTRICTED_SALES_SCOPE };
 
 const { from } = vi.hoisted(() => ({ from: vi.fn() }));
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ from }) }));
@@ -52,7 +55,7 @@ describe('AI lead creation ownership', () => {
         query('user_profiles', { full_name: 'Маркетинг' });
         query('sales_managers', [{ name: 'Батаа', user_id: 'sales-1', is_active: true }]);
         const insert = query('leads', { id: lead.id, customer_name: lead.customer_name });
-        const result = await createLead('shop-1', { project_id: projectId, customer_name: lead.customer_name }, true, 'Маркетинг', 'marketing-1');
+        const result = await createLead('shop-1', { project_id: projectId, customer_name: lead.customer_name }, true, { userId: 'marketing-1', role: 'marketing', scope: UNRESTRICTED_SALES_SCOPE });
         expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({ shop_id: 'shop-1', project_id: projectId, sales_manager_name: null }));
         expect(project.eq).toHaveBeenCalledWith('id', projectId);
         expect(project.eq).toHaveBeenCalledWith('shop_id', 'shop-1');
@@ -66,7 +69,7 @@ describe('AI lead creation ownership', () => {
         const membership = query('sales_manager_projects', { project_id: projectId });
         query('sales_managers', { name: 'Батаа' });
         const insert = query('leads', { id: lead.id, customer_name: lead.customer_name });
-        expect(await createLead('shop-1', { project_id: projectId, customer_name: lead.customer_name }, true, 'Өөр нэр', 'sales-1', { projectIds: [projectId], managerName: 'Батаа' })).toMatchObject({ success: true });
+        expect(await createLead('shop-1', { project_id: projectId, customer_name: lead.customer_name }, true, { userId: 'sales-1', role: 'sales_manager', scope: { projectIds: [projectId], managerName: 'Батаа' } })).toMatchObject({ success: true });
         expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({ project_id: projectId, sales_manager_name: 'Батаа' }));
         expect(membership.eq).toHaveBeenCalledWith('shop_id', 'shop-1');
         expect(membership.eq).toHaveBeenCalledWith('project_id', projectId);
@@ -76,22 +79,22 @@ describe('AI lead creation ownership', () => {
         query('projects', { id: projectId });
         query('user_profiles', { full_name: 'Маркетинг' });
         query('sales_managers', [{ name: 'Батаа', user_id: 'sales-1', is_active: true }]);
-        expect(await createLead('shop-1', { project_id: projectId, customer_name: lead.customer_name }, false, 'Маркетинг', 'marketing-1'))
+        expect(await createLead('shop-1', { project_id: projectId, customer_name: lead.customer_name }, false, { userId: 'marketing-1', role: 'marketing', scope: UNRESTRICTED_SALES_SCOPE }))
             .toMatchObject({ requiresConfirmation: true, action: { args: { project_id: projectId, customer_name: lead.customer_name } } });
         expect(from).toHaveBeenCalledTimes(3);
     });
     it('rejects a missing, foreign or out-of-scope project before a lead insert', async () => {
-        expect(await createLead('shop-1', { customer_name: lead.customer_name }, true)).toHaveProperty('error', expect.stringContaining('project_id'));
+        expect(await createLead('shop-1', { customer_name: lead.customer_name }, true, admin)).toHaveProperty('error', expect.stringContaining('project_id'));
         expect(from).not.toHaveBeenCalled();
-        expect(await createLead('shop-1', { project_id: projectId, customer_name: lead.customer_name }, true, '', 'sales-1', { projectIds: [], managerName: 'Батаа' })).toHaveProperty('error', expect.stringContaining('эрх'));
+        expect(await createLead('shop-1', { project_id: projectId, customer_name: lead.customer_name }, true, { userId: 'sales-1', role: 'sales_manager', scope: { projectIds: [], managerName: 'Батаа' } })).toHaveProperty('error', expect.stringContaining('эрх'));
         expect(from).not.toHaveBeenCalled();
         query('projects', null);
-        expect(await createLead('shop-1', { project_id: projectId, customer_name: lead.customer_name }, true)).toHaveProperty('error', expect.stringContaining('Төсөл олдсонгүй'));
+        expect(await createLead('shop-1', { project_id: projectId, customer_name: lead.customer_name }, true, admin)).toHaveProperty('error', expect.stringContaining('Төсөл олдсонгүй'));
         expect(from).toHaveBeenCalledTimes(1);
     });
     it.each(['closed_won', 'closed_lost'])('rejects closed creation %s before any write', async (status) => {
         const project = query('projects', { id: projectId });
-        expect(await createLead('shop-1', { project_id: projectId, customer_name: 'Болд', status }, true)).toHaveProperty('error', expect.stringContaining('идэвхтэй төлөвөөр'));
+        expect(await createLead('shop-1', { project_id: projectId, customer_name: 'Болд', status }, true, admin)).toHaveProperty('error', expect.stringContaining('идэвхтэй төлөвөөр'));
         expect(project.insert).not.toHaveBeenCalled();
         expect(from).toHaveBeenCalledTimes(1);
     });

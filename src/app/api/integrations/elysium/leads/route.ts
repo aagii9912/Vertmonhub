@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { safeEqual } from '@/lib/crypto/safe-equal';
 import { supabaseAdmin } from '@/lib/supabase';
+import { insertLeadOnce } from '@/lib/services/LeadService';
 import { logger } from '@/lib/utils/logger';
 
 export const runtime = 'nodejs';
@@ -52,25 +53,12 @@ export async function POST(request: NextRequest) {
         }
 
         const lead = parsed.data;
-        const existing = await db.from('leads')
-            .select('id, project_id')
-            .eq('shop_id', project.shop_id)
-            .eq('client_request_id', lead.requestId)
-            .maybeSingle();
-        if (existing.error) throw existing.error;
-        if (existing.data) {
-            if (existing.data.project_id !== project.id) {
-                return NextResponse.json({ error: 'Request ID conflict' }, { status: 409 });
-            }
-            return NextResponse.json({ ok: true, leadId: existing.data.id, duplicate: true });
-        }
-
         const notes = [
             lead.message || null,
             lead.event ? `Арга хэмжээ: ${lead.event}` : null,
             lead.source ? `Сайтын эх сурвалж: ${lead.source}` : null,
         ].filter(Boolean).join('\n\n') || null;
-        const { data: created, error } = await db.from('leads').insert({
+        const result = await insertLeadOnce(db, {
             shop_id: project.shop_id,
             project_id: project.id,
             client_request_id: lead.requestId,
@@ -79,25 +67,10 @@ export async function POST(request: NextRequest) {
             customer_email: lead.email || null,
             source: 'website',
             notes,
-        }).select('id').single();
-        if (!error) {
-            return NextResponse.json({ ok: true, leadId: created.id, duplicate: false });
-        }
-
-        // Давхар илгээлт нэгэн зэрэг ирсэн үед unique index нөгөө хүсэлтийг батална.
-        if (error.code === '23505') {
-            const duplicate = await db.from('leads')
-                .select('id, project_id')
-                .eq('shop_id', project.shop_id)
-                .eq('client_request_id', lead.requestId)
-                .maybeSingle();
-            if (!duplicate.error && duplicate.data) {
-                return duplicate.data.project_id === project.id
-                    ? NextResponse.json({ ok: true, leadId: duplicate.data.id, duplicate: true })
-                    : NextResponse.json({ error: 'Request ID conflict' }, { status: 409 });
-            }
-        }
-        throw error;
+        }, { select: 'id, project_id' });
+        if (result.ok) return NextResponse.json({ ok: true, leadId: result.lead.id, duplicate: result.duplicate });
+        if (result.conflict) return NextResponse.json({ error: 'Request ID conflict' }, { status: 409 });
+        throw result.error;
     } catch (error) {
         logger.error('Elysium lead intake failed', { error });
         return NextResponse.json({ error: 'Хүсэлт бүртгэхэд алдаа гарлаа' }, { status: 500 });

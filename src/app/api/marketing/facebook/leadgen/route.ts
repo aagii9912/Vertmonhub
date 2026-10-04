@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { verifyWebhookSignature } from '@/lib/utils/verify-webhook-signature';
 import { logAttributionEvent } from '@/lib/marketing/attribution-events';
+import { insertLeadOnce } from '@/lib/services/LeadService';
 import { decryptToken } from '@/lib/crypto/tokens';
 
 export const dynamic = 'force-dynamic';
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest) {
                 }
                 const projectId: string | null = mapping.data?.project_id ?? null;
                 if (!projectId) logger.warn('[Leadgen] campaign is not mapped to a project; saved for admin assignment', { leadgenId, campaignId });
-                const { data: inserted, error: insertError } = await supabase.from('leads').insert({
+                const saved = await insertLeadOnce(supabase, {
                     shop_id: shop.id,
                     project_id: projectId,
                     client_request_id: leadgenRequestId(String(leadgenId)),
@@ -126,17 +127,17 @@ export async function POST(request: NextRequest) {
                     facebook_campaign_id: campaignId,
                     facebook_adset_id: lead.adset_id || v.adset_id || null,
                     facebook_ad_id: lead.ad_id || v.ad_id || null,
-                }).select('id').single();
-                if (insertError?.code === '23505') continue; // Meta-ийн давтан илгээлт — аль хэдийн хадгалсан
-                if (insertError || !inserted) {
+                }, { select: 'id, project_id' });
+                if (!saved.ok && !saved.conflict) {
                     failed++;
-                    logger.error('[Leadgen] lead insert failed', { leadgenId, error: insertError });
+                    logger.error('[Leadgen] lead insert failed', { leadgenId, error: saved.error });
                     continue;
                 }
+                if (!saved.ok || saved.duplicate) continue; // Meta-ийн давтан илгээлт — аль хэдийн хадгалсан
 
                 await logAttributionEvent({
                     shopId: shop.id,
-                    leadId: inserted.id,
+                    leadId: saved.lead.id as string,
                     eventType: 'lead',
                     source: 'facebook_ads',
                     facebook_campaign_id: campaignId,

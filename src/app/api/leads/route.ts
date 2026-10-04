@@ -13,7 +13,8 @@ import { sendLeadWelcomeEmail } from '@/lib/email/email';
 import { toLeadSource } from '@/lib/leads/labels';
 import { getUserId, getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModuleWrite, resolvePermissions } from '@/lib/auth/require-permission';
-import { assertProjectManager, canAccessProject, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
+import { ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
+import { insertLeadOnce, resolveStaffLead } from '@/lib/services/LeadService';
 import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
@@ -204,30 +205,34 @@ async function handleLeadPost(request: NextRequest): Promise<NextResponse> {
             }
         }
 
-        const projectId = staffUserId && validation.data.project_id
-            ? validation.data.project_id : configuredProjectId(request);
-        const { data: project, error: projectError } = await supabase.from('projects')
-            .select('id, shop_id').eq('id', projectId).maybeSingle();
-        if (projectError) throw new ProjectScopeError(503, 'Лидийн төслийг шалгаж чадсангүй');
-        if (!project) throw new ProjectScopeError(staffUserId ? 400 : 503, 'Лид хүлээн авах төсөл олдсонгүй');
-
+        let projectId: string;
+        let shopId: string;
         let salesManagerName: string | null = null;
         if (staffUserId) {
+            // Ажилтны бүртгэл dashboard-тай ижил дүрмээр: төсөл (shop + хүрээ), хариуцагч менежер.
             const [shop, permissions] = await Promise.all([getUserShop(), resolvePermissions()]);
             if (!shop || !permissions) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
-            if (project.shop_id !== shop.id) return NextResponse.json({ error: 'Төсөл энэ байгууллагад харьяалагдахгүй байна' }, { status: 403 });
             const scope = await resolveSalesProjectScope(supabase, shop.id, { userId: staffUserId, role: permissions.role });
-            if (!canAccessProject(scope, projectId)) return NextResponse.json({ error: 'Энэ төсөлд лид бүртгэх эрхгүй' }, { status: 403 });
-            salesManagerName = scope.managerName;
-            if (salesManagerName) await assertProjectManager(supabase, shop.id, projectId, salesManagerName);
+            const resolved = await resolveStaffLead(supabase, shop.id, { projectId: validation.data.project_id ?? configuredProjectId(request) },
+                { userId: staffUserId, role: permissions.role, scope });
+            if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
+            projectId = resolved.project_id;
+            shopId = shop.id;
+            salesManagerName = resolved.sales_manager_name;
         } else {
+            projectId = configuredProjectId(request);
+            const { data: project, error: projectError } = await supabase.from('projects')
+                .select('id, shop_id').eq('id', projectId).maybeSingle();
+            if (projectError) throw new ProjectScopeError(503, 'Лидийн төслийг шалгаж чадсангүй');
+            if (!project) throw new ProjectScopeError(503, 'Лид хүлээн авах төсөл олдсонгүй');
             const configuredShop = process.env.LEAD_SHOP_ID?.trim();
             if (configuredShop && (!z.uuid().safeParse(configuredShop).success || configuredShop !== project.shop_id)) {
                 throw new ProjectScopeError(503, 'Лид хүлээн авах байгууллага болон төсөл зөрж байна');
             }
+            shopId = project.shop_id;
         }
         const { data: primaryShop, error: shopError } = await supabase.from('shops')
-            .select('id, name, phone').eq('id', project.shop_id).maybeSingle();
+            .select('id, name, phone').eq('id', shopId).maybeSingle();
         if (shopError || !primaryShop) throw new ProjectScopeError(503, 'Лид хүлээн авах байгууллага олдсонгүй');
 
         // Менежерийн түргэн бүртгэлд (staffUserId) AI хариу шаардлагагүй —
@@ -286,41 +291,38 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
             aiResponse ? `AI хариу: ${aiResponse}` : null,
         ].filter(Boolean).join('\n\n') || null;
 
-        const { data, error } = await supabase
-            .from('leads')
-            .insert([{
-                shop_id: primaryShop.id,
-                project_id: projectId,
-                sales_manager_name: salesManagerName,
-                customer_name: name,
-                customer_phone: phone,
-                customer_email: email || null,
-                notes: notesComposed,
-                internal_notes: internalNotes,
-                source: inferredSource,
-                preferred_type: preferred_type || null,
-                preferred_rooms: preferred_rooms ?? null,
-                financing_intent: financing_intent || null,
-                fbclid: fbclid || null,
-                utm_source: utm_source || null,
-                utm_medium: utm_medium || null,
-                utm_campaign: utm_campaign || null,
-                utm_content: utm_content || null,
-                utm_term: utm_term || null,
-                facebook_campaign_id: facebook_campaign_id || null,
-                facebook_adset_id: facebook_adset_id || null,
-                facebook_ad_id: facebook_ad_id || null,
-            }])
-            .select('id')
-            .single();
+        const saved = await insertLeadOnce(supabase, {
+            shop_id: primaryShop.id,
+            project_id: projectId,
+            sales_manager_name: salesManagerName,
+            customer_name: name,
+            customer_phone: phone,
+            customer_email: email || null,
+            notes: notesComposed,
+            internal_notes: internalNotes,
+            source: inferredSource,
+            preferred_type: preferred_type || null,
+            preferred_rooms: preferred_rooms ?? null,
+            financing_intent: financing_intent || null,
+            fbclid: fbclid || null,
+            utm_source: utm_source || null,
+            utm_medium: utm_medium || null,
+            utm_campaign: utm_campaign || null,
+            utm_content: utm_content || null,
+            utm_term: utm_term || null,
+            facebook_campaign_id: facebook_campaign_id || null,
+            facebook_adset_id: facebook_adset_id || null,
+            facebook_ad_id: facebook_ad_id || null,
+        }, { select: 'id' });
 
-        if (error) {
-            logger.error('Lead insert error', { error });
+        if (!saved.ok) {
+            logger.error('Lead insert error', { error: saved.conflict ? 'request id conflict' : saved.error });
             return NextResponse.json(
                 { error: 'Хүсэлт илгээхэд алдаа гарлаа' },
                 { status: 500 }
             );
         }
+        const data = saved.lead as { id: string };
 
         // Угталтын имэйл (Resend, EMAIL_FROM домэйнээс) — best-effort,
         // алдаа гарсан ч лидийн бүртгэлийг унагахгүй.
