@@ -7,7 +7,7 @@ const sections = [
     { href: '/admin/roles', title: 'Дүр ба эрх', description: 'Модуль, бичих болон устгах эрх тохируулах', icon: Shield },
     { href: '/admin/landing', title: 'Нүүр хуудасны контент', description: 'Олон нийтэд харагдах агуулгыг засах', icon: Globe },
     { href: '/dashboard/settings', title: 'Байгууллагын тохиргоо', description: 'Сонгосон байгууллагын мэдээлэл, холболтууд', icon: SlidersHorizontal },
-    { href: '/dashboard/ai-settings', title: 'AI ба мэдэгдэл', description: 'Бодитоор ашиглагддаг AI заавар, FAQ, мэдэгдэл', icon: Bot },
+    { href: '/dashboard/ai-settings', title: 'AI мэдлэг ба FAQ', description: 'AI туслахын ашиглах байгууллагын мэдээлэл, FAQ', icon: Bot },
     { href: '/admin/import', title: 'Өгөгдөл оруулах', description: 'Төсөл болон CRM өгөгдлийг импортлох', icon: Upload },
 ];
 

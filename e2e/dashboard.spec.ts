@@ -9,8 +9,7 @@ test.describe('Dashboard Audit', () => {
         const authed = await gotoAuthed(page, '/dashboard/ai-settings');
         test.skip(!authed, SKIP_MSG);
 
-        // AI toggle нь custom button (w-14 h-8 rounded-full)
-        await expect(page.locator('button.rounded-full.w-14.h-8')).toBeVisible({ timeout: 15000 });
+        await expect(page.getByRole('button', { name: /AI Мэдээлэл/ })).toBeVisible({ timeout: 15000 });
         await page.screenshot({ path: 'e2e-screenshots/dashboard_ai_settings.png' });
     });
 

@@ -60,7 +60,7 @@ const IMPORT_OPTIONS: ImportOption[] = [
         value: 'faq',
         label: 'FAQ',
         labelMN: 'Түгээмэл асуулт',
-        description: 'Асуулт-хариулт (AI chatbot-д зориулсан)',
+        description: 'Асуулт-хариулт (AI туслахын мэдлэг)',
         icon: HelpCircle,
         color: 'bg-status-pending-soft text-status-pending',
     },

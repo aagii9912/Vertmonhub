@@ -7,7 +7,7 @@
 
 ## Project Overview
 
-**Vertmon Hub** is an AI-powered Real Estate Sales & CRM Platform. Real estate sales managers use it to manage properties, handle Facebook/Instagram DM leads via an AI agent, schedule viewings, track contracts, and run marketing.
+**Vertmon Hub** is an AI-powered Real Estate Sales & CRM Platform. Real estate sales managers use it to manage properties, follow Facebook/Instagram DMs in the Inbox, schedule viewings, track contracts, and run marketing.
 
 - **Repo:** https://github.com/aagii9912/Vertmonhub.git
 - **UI Language:** Mongolian (all labels, comments and content)
@@ -24,7 +24,7 @@
 | Language | TypeScript | 5.x |
 | Styling | Tailwind CSS (v4 — CSS-first config, no `tailwind.config.ts`) | 4.x |
 | Database / Auth | Supabase (PostgreSQL + RLS, Email + Google + Facebook OAuth) | — |
-| AI | OpenAI Responses via `openai` (dashboard туслах) · Google Gemini via `@google/generative-ai` (FB/IG DM) | package.json |
+| AI | OpenAI Responses via `openai` (dashboard туслах) · Google Gemini via `@google/generative-ai` (public lead-form welcome reply, competitor analysis, survey summaries) | package.json |
 | Validation | Zod | 4.x |
 | Email | Resend | 6.7.0 |
 | Push notifications | web-push (VAPID) | 3.6.7 |
@@ -59,8 +59,7 @@ Payment migrations `20260913160000` and `20260913170000` must be applied before 
 src/
 ├── app/
 │   ├── api/
-│   │   ├── webhook/                # Facebook/Instagram webhook → routes DMs into the AI router and saves leads
-│   │   ├── chat/                   # Inbox AI chat endpoint
+│   │   ├── webhook/                # Facebook/Instagram webhook → saves DMs for the Inbox (no auto-reply)
 │   │   ├── dashboard/              # Dashboard data APIs (leads, contracts, customers, export, etc.)
 │   │   │   ├── customers/          # CRM contacts API (PATCH for edits)
 │   │   │   ├── export/excel/       # Properties / leads / customers Excel export
@@ -103,18 +102,11 @@ src/
 │
 ├── lib/
 │   ├── ai/
-│   │   ├── AIRouter.ts             # Main entry — `routeToAI()` and `analyzeProductImageWithPlan()`
-│   │   ├── services/
-│   │   │   ├── PromptService.ts    # Builds the real-estate system prompt
-│   │   │   └── ToolExecutor.ts     # Executes tool calls (real-estate only)
-│   │   ├── tools/
-│   │   │   ├── definitions.ts      # 8 Gemini tool definitions
-│   │   │   └── memory.ts           # Customer preference memory
-│   │   ├── config/plans.ts         # Plan-tier feature gates (still gates AI features)
-│   │   ├── intent-detector.ts
-│   │   └── comment-detector.ts
+│   │   ├── orchestrator/           # Dashboard AI assistant: Responses loop, prompt, shop knowledge
+│   │   ├── data-assistant/         # Assistant tools (reads + confirm-gated writes)
+│   │   └── openai/                 # Responses client and tool-schema conversion
 │   ├── webhook/
-│   │   └── WebhookService.ts       # FB/IG webhook helpers — getShopByPageId, getOrCreateCustomer, processAIResponse, etc.
+│   │   └── WebhookService.ts       # Saves Meta DMs — shop lookup, customer get/create, chat_history
 │   ├── facebook/messenger.ts       # Meta Graph send helpers
 │   ├── services/                   # Viewing/Task/Payment + Customer/Marketing/Finance ops shared by API routes and AI tools
 │   ├── auth/                       # Supabase auth helpers
@@ -197,7 +189,7 @@ Meeting-driven marketing analytics layer (migration `20260721140000`):
 - **Lead sources**: `radio` added to `LeadSource` union + all label maps (types/property.ts, leads/new select, leads page, reports/leads, marketing-roi, weekly-report cron, kpi-report lib); `board` relabeled «Билборд / Самбар». Adding a source value requires touching ALL these maps.
 
 ### Dashboard AI туслах — GPT Responses orchestrator (`/dashboard/ai-assistant`)
-Модель: **OpenAI GPT** (`openai`, `OPENAI_API_KEY`; `OPENAI_MODEL` анхдагч `gpt-5.6-luna`, `OPENAI_FAST_MODEL` анхдагч `gpt-5.6-luna`). Хуучин `AI_MODEL` / `AI_FAST_MODEL` нь GPT routing-д нөлөөлөхгүй. Түлхүүргүй бол 503; өөр provider руу автоматаар шилжихгүй. Холболтын тайлбар: `docs/AI-GPT-MIGRATION.md`. Gemini зөвхөн FB/IG DM AI (`AIRouter`)-д үлдсэн. Бүрэн review: `docs/AI-REVIEW-2026-09-12.md`.
+Модель: **OpenAI GPT** (`openai`, `OPENAI_API_KEY`; `OPENAI_MODEL` анхдагч `gpt-5.6-luna`, `OPENAI_FAST_MODEL` анхдагч `gpt-5.6-luna`). Хуучин `AI_MODEL` / `AI_FAST_MODEL` нь GPT routing-д нөлөөлөхгүй. Түлхүүргүй бол 503; өөр provider руу автоматаар шилжихгүй. Холболтын тайлбар: `docs/AI-GPT-MIGRATION.md`. Gemini нь зөвхөн public lead form-ийн угтах хариу, өрсөлдөгчийн шинжилгээ, судалгааны хураангуйд ашиглагдана (FB/IG DM бот 2026-10-04-нд хасагдсан). Бүрэн review: `docs/AI-REVIEW-2026-09-12.md`.
 - **Бүтэц** (`src/lib/ai/orchestrator/`): `index.ts` (`runOrchestrator`) → `loop.ts` (`runLoop` — Responses streaming agentic loop, parallel reads / sequential writes, ≤8 раунд, `ask_user` дээр зогсоно) → `executeDataTool` (`lib/ai/data-assistant`, confirm=false → preview → pendingAction). Planner/synthesizer байхгүй: үндсэн туслах RBAC-д тохирсон БҮХ data tool-той (`lib/ai/claude/tools.ts` `dataToolsForPerms`, Gemini schema → `input_schema` хөрвүүлэлт) + `ask_user` (тодруулга → UI chip) + `delegate_to_specialists` (нарийн олон домэйны асуултад `agents.ts` registry-ийн дэд агентуудыг `runAgent.ts`-ээр GPT-5.6 Luna дээр ЗЭРЭГ ажиллуулж, үр дүнг өөрөө нэгтгэнэ).
 - **Prompt** (`prompt.ts`): тогтмол persona+домэйн блок `cache_control`-той эхэнд, shop мэдлэг + `ai_shop_memory` дараа нь, огноо/хэрэглэгч/ярианы хураангуй ХАМГИЙН СҮҮЛД. `lib/ai/openai/responses.ts` нь хуучин input/tool бүтцийг Responses хэлбэрт хөрвүүлнэ; `cache_control` provider руу явахгүй. `reasoning.effort` хэрэглэнэ, `temperature` илгээхгүй. Алдааг `lib/ai/openai/client.ts` `describeOpenAIError` ялгана.
 - **Санах ой** (`memory.ts`): 24+ мессежтэй яриаг Sonnet-оор хураангуйлж `ai_conversations.summary`/`summary_message_count`-д (migration `20260912120000`, best-effort) хадгална; хүсэлт бүрт хураангуй + сүүлийн 20 мессеж. `http.ts` `prepareAssistantRequest` уншина, `persistAssistantExchange` → `maybeUpdateSummary`.
@@ -209,14 +201,11 @@ Meeting-driven marketing analytics layer (migration `20260721140000`):
 - **Дуу хоолой**: `AiComposer` микрофон товч — Web Speech API (`mn-MN`, `useVoiceInput`), SSR-д `useSyncExternalStore`-оор нуугдана; дэмжихгүй browser-т товч гарахгүй.
 - **Хэвээр**: confirm-gated үйлдлийн урсгал (`POST /api/ai-assistant/action`, RBAC дахин шалгана, soft delete, `logAiAudit`), tool нэрсийн олонлог (`WRITE/DELETE/ADMIN/MUTATING_TOOL_NAMES`), хавсралт (зураг/PDF base64 блок), `remember_fact` shop memory, контекст тэмдэглэл (`buildContextNote`). Unit test: `src/lib/ai/orchestrator/__tests__`.
 
-### Inbound message flow (lead generation)
+### Inbound message flow (FB/IG DMs → Inbox)
 1. Customer DMs the shop's Facebook Page or Instagram account.
-2. Meta posts to `/api/webhook` (signature-verified).
-3. `WebhookService` resolves the shop, gets/creates a `Customer`, and gathers AI features.
-4. `AIRouter.routeToAI()` calls Gemini with the real-estate system prompt and 8 function-calling tools.
-5. `ToolExecutor` runs tools that hit `properties`, `leads`, `customers`, etc.
-6. The final response is sent back via `messenger.ts` (text, gallery, or property images).
-7. Notable handover: when a tool fires `request_human_support`, the platform pushes a notification to the sales manager via `/api/push`.
+2. Meta posts to `/api/webhook`; the signature is verified and Meta gets 200 immediately.
+3. In `after()`, `WebhookService` resolves the shop, gets/creates the `Customer` (name/phone enrichment) and stores the message in `chat_history` (`response` null; attachments as type labels such as `[Зураг]`, never their CDN URLs). Echoes and duplicate `mid`s are skipped.
+4. Staff answer from the dashboard Inbox (`POST /api/dashboard/conversations/reply` → `messenger.sendTextMessage`, Meta's 24h `RESPONSE` window). There is no auto-reply, automatic lead creation or DM push notification: the Gemini DM bot was removed on 2026-10-04.
 
 ### Supabase clients
 | File | Purpose |
@@ -237,7 +226,7 @@ The «Editorial Terracotta» direction (docs/UI-REDESIGN-PLAN.md) is **supersede
 
 ### Navigation v2 — one sidebar, 8 items
 `src/lib/navigation/nav.ts` is the single source of truth (the three-workspace `workspaces.ts` + `WorkspaceSwitcher` were deleted). `PRIMARY_NAV` = Өнөөдөр · Лид · Уулзалт · Гэрээ · Байр · Inbox · Тайлан · Маркетинг; `BOTTOM_NAV` = AI туслах · Тохиргоо; `MOBILE_TABS` = first three + a centre «+» FAB + «Бусад» sheet. Rarely used pages (finance/ERP, procurement, surveys, competitor research, customer-service, marketing sub-pages, AI settings, tasks) are **not in the sidebar** — they live in `SECONDARY_ROUTES` and are reachable via ⌘K (`CommandPalette`), the mobile «Бусад» sheet, or direct URL. RBAC filtering happens in `Sidebar`/`MobileNav`/`CommandPalette` via `canAccessModule(Dynamic)`. Helpers: `isNavItemActive`, `findNavItem`, `getBreadcrumb` (max 3 crumbs, rendered in `Header` on every breakpoint), `getNavTitle`. Unit tests: `src/lib/navigation/__tests__/nav.test.ts`.
-- Live sidebar counts come from `GET /api/dashboard/nav-counts` (`useNavCounts`, react-query, 60s stale): new leads, today's scheduled viewings, customers with `ai_paused_until > now` (= human handling inbox).
+- Live sidebar counts come from `GET /api/dashboard/nav-counts` (`useNavCounts`, react-query, 60s stale): new leads, today's scheduled viewings.
 - **Quick create**: `openQuickCreate('lead'|'meeting'|…)` (`src/lib/navigation/commandPalette.ts`, window events) is fired by the header «Шинэ» button, the `N` key, the mobile FAB and ⌘K. `QuickCreateSheet` (mounted once in `AppShell`) posts to `POST /api/dashboard/leads` and checks duplicates with `GET /api/dashboard/leads?phone=…` (format-agnostic match) before saving. `?q=` is a name/phone/email search on the same endpoint.
 - All browser → dashboard API calls should go through `src/lib/api/dashboardFetch.ts` (`dashboardFetch` / `dashboardJson` / `dashboardMutate`), which attaches `x-shop-id` automatically — stop hand-writing the header.
 
@@ -258,8 +247,8 @@ The «Editorial Terracotta» direction (docs/UI-REDESIGN-PLAN.md) is **supersede
 - **Context awareness**: pages call `useRegisterAiContext({type:'lead'|'contract'|'today'|'dashboard', id, label})` (LeadPanel, ContractDetail, TodayDashboard, DirectorDashboard). The panel shows a context chip + `suggestionsFor(ctx)` one-click prompts, and the server prepends a `[КОНТЕКСТ]` note with the entity id so agents call `get_lead_details` / `get_contract_details` with the right id (`buildContextNote` in `lib/ai/orchestrator/http.ts`).
 - **Streaming**: `POST /api/ai-assistant/stream` (SSE) runs the orchestrator with `ctx.onEvent` (`OrchestratorEvent`: plan → step_start → tool → step_done → synthesis_start → token/token_reset) and ends with `done` (same payload as the JSON route) or `error`. Single-agent plans stream the agent's final text (`streamFinal`), multi-agent plans stream the synthesis. The JSON `POST /api/ai-assistant` still works; both share `prepareAssistantRequest` / `persistAssistantExchange` in `lib/ai/orchestrator/http.ts`. Client: `streamAssistant` in `lib/ai/client.ts` (90s timeout, abort, friendly errors).
 - **Actions**: mutating tools still return previews; `AiChat` renders them as cards (Зөвшөөрөх / Болих / Үргэлж зөвшөөрөх → `POST /api/ai-assistant/action`, RBAC re-checked server-side). `lib/ai/allowedTools.ts` remembers «always allow» per session.
-- **Dev mock**: in development only, a request header `x-ai-mock: ok|error` makes the stream route emit a scripted run without calling Gemini — use it to exercise the UI. Never available in production.
-- **Environment (2026-09-12)**: dashboard туслах Claude руу шилжсэн (`ANTHROPIC_API_KEY`). `GEMINI_API_KEY` одоогоор хүчингүй (`API key not valid`) тул FB/IG DM AI ажиллахгүй — тусад нь шийдэх.
+- **Dev mock**: in development only, a request header `x-ai-mock: ok|error` makes the stream route emit a scripted run without calling the model — use it to exercise the UI. Never available in production.
+- **Environment**: the dashboard assistant uses `OPENAI_API_KEY`. `GEMINI_API_KEY` only serves the public lead-form welcome reply, competitor analysis and survey summaries; it was reported invalid on 2026-09-12, so verify it before relying on those.
 - `/dashboard/ai-assistant/agents` lists the real orchestrator agents from `GET /api/ai-assistant/agents` (static `AGENTS` definitions, tool permissions per agent); the old `ai_agents` table page is gone.
 - Байрны хайлт (2026-10-01, local): dashboard `list_properties` reads scoped `property_units` as well as active, nondeleted `properties`, defaults to available inventory, and supports explicit `status=all`. Missing unit prices stay unknown and are excluded from price charts; budget searches label unpriced candidates separately. Database failures return errors rather than empty stock. Prompt accepts Cyrillic/Latin room queries without requiring budget or district first. Regression tests: `data-assistant/__tests__/property-search.test.ts`, `orchestrator/__tests__/property-query.test.ts`. Live provider/database behavior and deployment are not verified by this local fix.
 
@@ -272,7 +261,6 @@ Vercel runs in UTC, so `new Date().setHours(0,0,0,0)` on the server is 08:00 Ula
 - Cron routes use `isAuthorizedCron()` (`src/lib/auth/cron.ts`): timing-safe compare, **fails closed** unless `NODE_ENV === 'development'`. `CRON_SECRET` must be set in Vercel prod. Secrets/signatures are compared with `safeEqual` (`src/lib/crypto/safe-equal.ts`).
 - `PATCH` bodies never go straight into `.update()` — use a Zod allow-list (see `UpdatePaymentScheduleSchema`).
 - Storage: public listing images use `/api/properties/upload`. AI images/PDFs use `/api/dashboard/upload` (MIME allow-list, ≤4MB) and the private `ai-attachments` bucket. Stable private links recheck identity, shop membership and the linked entity module on every download; unlinked uploads require their uploader plus AI access. Private attachments never enter public `properties.images`. Attachment metadata and private Storage objects are server-only.
-- DM bot (`ToolExecutor.check_payment_status`) only reveals contract finances when **contract number + registered phone both match**; `request_human_support` pauses the bot (`ai_paused_until` +30 min).
 - Browser code never hand-writes `x-shop-id` or reads `vertmonhub_active_shop_id` — use `dashboardFetch`/`dashboardJson`/`dashboardMutate` (lint-enforced).
 
 ### Rate limiting (middleware)
@@ -300,23 +288,6 @@ Admin review remediation (2026-09-30): `docs/ADMIN-RBAC-FIX-2026-09-30.md`. Inde
 
 ---
 
-## AI Tools (Gemini function calling)
-
-Defined in [src/lib/ai/tools/definitions.ts](src/lib/ai/tools/definitions.ts), executed in [ToolExecutor.ts](src/lib/ai/services/ToolExecutor.ts).
-
-| Tool | Purpose |
-|------|---------|
-| `search_properties` | Search by type, price, district, rooms, size |
-| `show_property_images` | Send property images to the customer |
-| `calculate_loan` | Mortgage payment calculator |
-| `schedule_viewing` | Book a property viewing |
-| `create_lead` | Create a lead record |
-| `collect_contact_info` | Save a name + phone for follow-up |
-| `request_human_support` | Page the sales manager |
-| `remember_preference` | Save customer preferences (district, rooms, budget...) for next session |
-
----
-
 ## Admin Data Import (`/admin/import`)
 
 Bulk CSV/Excel import for onboarding a new project's data. UI: `src/app/admin/import/page.tsx`; API: `POST /api/admin/import`; pure row-mappers (unit-tested) in `src/lib/admin/import/mappers.ts`.
@@ -325,16 +296,16 @@ Bulk CSV/Excel import for onboarding a new project's data. UI: `src/app/admin/im
 
 | Category | Destination | Read by |
 |----------|-------------|---------|
-| `units` | `property_units` (validated project/phase/block/code; one insert for new rows, existing rows preserved) | `/dashboard/properties/blocks`, inventory fallback for DM AI |
-| `properties` | `properties` table (insert; re-import resolves an active row by shop/project/name and updates by scoped ID) | DM AI `search_properties`, dashboard |
+| `units` | `property_units` (validated project/phase/block/code; one insert for new rows, existing rows preserved) | `/dashboard/properties/blocks`, assistant `list_properties` |
+| `properties` | `properties` table (insert; re-import resolves an active row by shop/project/name and updates by scoped ID) | dashboard, assistant `list_properties` |
 | `leads` | `leads` table — real columns (`customer_name`/`customer_phone`/`customer_email`/`budget_max`, `status` = `lead_status` enum). Existing phones are skipped, never overwritten | CRM |
 | `contracts` | `property_contracts` — real columns (`customer_name`/`unit_number`/`prepayment_paid`/`paid_amount`/`balance`, `contract_status` = `active\|closed\|cancelled`). Re-import updates the active scoped ID and preserves existing paid/advance values | dashboard/contracts |
-| `faq` | `shop_faqs` (upsert by question) | `WebhookService.getAIFeatures` → DM AI |
-| `company`, `project`, `payment_policy`, `loan_info`, `amenities`, `ai_extra` | `shops.custom_knowledge` JSONB (merge, keys prefixed by project slug e.g. `mandala_garden_payment`) + `ai_knowledge_base` as structured archive | `PromptService.buildDynamicKnowledge` → DM AI prompt |
+| `faq` | `shop_faqs` (upsert by question) | AI assistant prompt (`orchestrator/shop-knowledge.ts`) |
+| `company`, `project`, `payment_policy`, `loan_info`, `amenities`, `ai_extra` | `shops.custom_knowledge` JSONB (merge, keys prefixed by project slug e.g. `mandala_garden_payment`) + `ai_knowledge_base` as structured archive | AI assistant prompt (`orchestrator/shop-knowledge.ts`) |
 
 Rules that must not regress:
 - Block inventory import (2026-10-01, local): `/admin/import` → «Блокийн байр» explicitly selects a project and previews phase/block/category/status counts before adding new units. CSV codes keep leading zeros. Invalid rows or project/block collisions stop the entire file; existing unassigned units are never reassigned and repeated imports never overwrite live status. `scripts/import-elysium-b1-units.ts` uses the same mapper/service, dry-run by default with explicit `SHOP_ID` and `ELYSIUM_PROJECT_ID`. ERP snapshots remain separate. No production data import or deployment was performed by this fix; the actual product export and configured connection are still required.
-- **DM AI reads `shops.custom_knowledge`, `shop_faqs`, and `properties`, with `property_units` as the inventory fallback.** `ai_knowledge_base` is an archive (only competitors routes read it) — never write AI-facing knowledge only there.
+- **The dashboard AI assistant reads `shops.custom_knowledge` and `shop_faqs` (`orchestrator/shop-knowledge.ts`).** `ai_knowledge_base` is an archive (only competitors routes read it) — never write AI-facing knowledge only there.
 - `projectId` is validated server-side against `projects` (must belong to the posted `shopId`) and stamped onto `properties`/`leads`/`property_contracts` (`project_id`, migration `20260707120000`). Missing scope columns stop import; retries never remove `project_id`. Ambiguous legacy/duplicate matches become row errors. Contract re-import reads paid totals before writes and compares the paid value during update so concurrent receipts win.
 - The `project` import category also upserts into the `projects` table (by `shop_id`+`name`) so imported projects appear in the project dropdown.
 - `POST /api/admin/projects` requires an explicit `shop_id` when more than one shop exists (never silently attaches to the first shop).
@@ -352,7 +323,7 @@ Key real-estate tables: `shops`, `properties`, `leads`, `property_viewings`, `cu
 Notes (verified against the live DB on 2026-09-11):
 - Legacy e-commerce/SaaS objects are **gone** (migration `20260911140000`: `orders`, `order_items`, `products`, `discount_schedules`, `pending_messages`, `ai_documents`, `ai_agents`, `satisfaction_surveys`, `email_logs`, `facebook_tokens`, `user_facebook_pages`, `hubspot_contacts`, `ai_analytics`, `conversion_funnel`, `ab_experiments*`, views `lead_funnel`/`customer_service_dashboard`, 11 dead functions). Backup JSON/SQL lives in `supabase/backups/2026-09-11-legacy/` (git-ignored). `customers.total_orders/total_spent/is_vip` were dropped in `20260608160000`. The phantom SaaS objects (`admins`, `plans`, `subscriptions`, `invoices`, `ai_memory`, `exec_sql`) never existed — do not write code that queries any of these.
 - `node scripts/rls-audit.mjs` — read-only RLS/view audit against `DATABASE_URL` (exit 1 when a table lacks RLS or a view is not `security_invoker`).
-- `properties` (listing with images) was **empty** in the production review; the real inventory is `property_units` (2 500+ units, `property_block_summary` view). Dashboard `list_properties` reads both sources; the DM bot's `search_properties` / `schedule_viewing` and the prompt's inventory summary fall back to `property_units`.
+- `properties` (listing with images) was **empty** in the production review; the real inventory is `property_units` (2 500+ units, `property_block_summary` view). Dashboard `list_properties` reads both sources.
 - Migrations are applied with node + `pg` over `DATABASE_URL` (no CLI). **Always record the version in `supabase_migrations.schema_migrations`** (the apply script in the 2026-09-11 session did this; history was stale before). Schema-only, additive DDL; data changes are separate, explicitly approved statements.
 - `rate_limits` is cleaned by the `data-cleanup` cron (pg_cron was not running); `leads.client_request_id` is the idempotency key for lead creation.
 
@@ -402,6 +373,8 @@ If you need to bring any of this back, do it intentionally — these were remove
 
 **Removed in the 2026-10-04 simplification (branch `chore/simplify-phase-0-1`):** zero-importer modules (`lib/ai/{helpers/memoryTTL,i18n/messages,validation/schemas,claude/client,tools/definitions/core}`, `lib/services/{CustomerService,ChatHistoryService}`, `lib/errors/errorHandler`, `lib/constants/ai-setup`, `lib/utils/index`, `types/{database,errors,facebook,index}`, `components/chat/*`, the eight unused `dashboard/ai-settings/components/*` tabs (the page renders its own) and `src/test/mocks`); the `/auth/register` page with the whole i18n stack (`i18n/*`, `lib/i18n`, `LanguageContext`, `LanguageSwitcher`; `proxy.ts` still redirects `/auth/register` to login); `/docs` + `/api/docs` (they documented removed e-commerce APIs); API routes nothing called (`dashboard/{stats,posts,prefs,my-target,connect-instagram,customers/[id]/tags}`, `marketing/{channels,facebook/health}`, `auth/instagram/accounts`); and the uncalled `POST /api/dashboard/contracts` Excel importer (it overwrote `paid_amount` outside the payment RPC; `/admin/import` is the importer). `dashboard/leads/[id]/convert`, `dashboard/inbox/remind` and `dashboard/handover` also have no UI but were kept pending an owner decision. Repo hygiene in the same pass: the identical root `sentry.{server,edge}.config.ts` were folded into `src/instrumentation.ts`; two `.bak` migrations; broken or destructive scripts (`scripts/{delete-users,run-feature-migration,fix-rls}.ts`, `scripts/eval/run-agent-evals.ts`, `data/{run-migrations,set-super-admin-aagii9912}.mjs` — they targeted nonexistent `admins`/`plans`/`exec_sql` or wiped users); 27 legacy Syncly/SmartHub docs and the old agent kit (`.agent/`, `skills/`, `REVIEW.md`); unused deps `@dnd-kit/{sortable,modifiers,utilities}`, `@radix-ui/react-dialog`, `@tanstack/react-table`, `vaul`, `react-hook-form`, `msw`, `@testing-library/user-event`. Ignored files that had been committed (`supabase/.temp`, `playwright/.auth`, `test-results`, `*.xlsx`) were untracked.
 
+**Removed with the DM bot (2026-10-04, branch `chore/remove-dm-bot`):** `lib/ai/{AIRouter,intent-detector,comment-detector}`, `lib/ai/services/{PromptService,ToolExecutor}`, `lib/ai/tools/{definitions,memory}`, `lib/ai/config/plans`, `types/ai`, the failed-reply job queue and `cron/process-webhook-jobs`, bot-only Messenger senders, `lib/monitoring/errorMonitoring` + `lib/utils/errorUtils`, the AI-pause feature (`set_customer_ai_pause`, Inbox AI mode select, nav inbox badge), and the AI settings tone/instructions/switch/notifications plus the quick-reply/slogan/stats APIs. The tables and columns they used (`shop_quick_replies`, `shop_slogans`, `ai_question_stats`, `webhook_jobs`, `customers.ai_paused_until`, `shops.ai_*`/`notify_on_*`/`is_ai_active`/`description`) remain; dropping them needs a separately approved migration.
+
 ---
 
 ## Environment Variables
@@ -416,7 +389,7 @@ SUPABASE_SERVICE_ROLE_KEY=
 OPENAI_API_KEY=
 # OPENAI_MODEL=gpt-5.6-luna / OPENAI_FAST_MODEL=gpt-5.6-luna (заавал биш)
 
-# Gemini (FB/IG DM AI)
+# Gemini (public lead-form welcome reply, competitor analysis, surveys)
 GEMINI_API_KEY=
 
 # Facebook / Instagram

@@ -479,7 +479,7 @@ export function CustomerDetailSheet({
                                             {chat.message}
                                         </p>
                                         <p className="text-brand">
-                                            <span className="font-medium">AI:</span> {chat.response}
+                                            <span className="font-medium">Хариу:</span> {chat.response}
                                         </p>
                                     </div>
                                 ))}

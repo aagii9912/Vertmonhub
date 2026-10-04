@@ -8,11 +8,10 @@
 
 ## ✨ Онцлог
 
-### 🤖 AI Борлуулагч
-- **Gemini 3 Pro** (Google) ашигласан ухаалаг харилцаа
-- 8 AI tool: байр хайх, зээлийн тооцоо, үзлэг товлох, lead үүсгэх
-- Харилцагчийн санах ой (Memory) — өмнөх сонирхлыг санаж ажиллана
-- Зураг таних (Vision API)
+### 🤖 AI туслах
+- OpenAI GPT дээр ажилладаг dashboard туслах (`/dashboard/ai-assistant`, ⌘J)
+- Лид, уулзалт, гэрээ, байр, тайлангийн мэдээллээс хариулж, үйлдлийг баталгаажуулалттай гүйцэтгэнэ (RBAC)
+- Байгууллагын мэдлэг ба FAQ-г «AI тохируулга»-аас удирдана
 - Монгол хэлний бүрэн дэмжлэг
 
 ### 🏠 Үл Хөдлөх Хөрөнгө
@@ -43,7 +42,7 @@
 - Бренд тохиргоо, хуанли
 
 ### 🔔 Мэдэгдэл & Чат
-- Facebook Messenger webhook
+- Facebook/Instagram DM-ийг Inbox-д хадгалдаг webhook (автомат хариугүй)
 - Push notification (Web Push)
 - Бодит цагийн мэдэгдэл (Realtime)
 - Inbox — бүх ярилцлагыг нэг дороос
@@ -139,11 +138,7 @@ vertmonhub/
 │   ├── contexts/              # AuthContext (хэрэглэгч + role)
 │   ├── hooks/                 # React Query hooks (10)
 │   ├── lib/
-│   │   ├── ai/                # AI систем (30 файл)
-│   │   │   ├── AIRouter.ts    # AI чиглүүлэгч
-│   │   │   ├── gemini.ts      # Google Gemini интеграц
-│   │   │   ├── tools/         # 8 AI tool
-│   │   │   └── config/        # AI config (Gemini 3 Pro)
+│   │   ├── ai/                # Dashboard AI туслах (orchestrator, data-assistant, openai)
 │   │   ├── rbac.ts            # Дүрд суурилсан хандалт (RBAC)
 │   │   ├── services/          # Backend services (5)
 │   │   ├── webhook/           # FB/IG webhook
@@ -182,10 +177,9 @@ vertmonhub/
 
 ## 🤖 AI Тохиргоо
 
-**Model:** Gemini 3 Pro (Google) — бүх ажилчдад бүрэн хандалт  
-**Max Tokens:** 1,500  
-**Features:** Tool calling, Vision, Memory, Sales Intelligence  
-**Backend model:** `gemini-2.5-flash` (Google API)
+**Model:** OpenAI GPT (`OPENAI_MODEL`, анхдагч `gpt-5.6-luna`) — dashboard AI туслах  
+**Gemini:** зөвхөн lead form-ийн угтах хариу, өрсөлдөгчийн шинжилгээ, судалгааны хураангуй  
+FB/IG DM-ийн автомат хариулагч (бот) 2026-10-04-нд хасагдсан; DM-ийг Inbox-оос хүн хариулна.
 
 ---
 
