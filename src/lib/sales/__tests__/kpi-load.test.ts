@@ -25,7 +25,7 @@ function fakeDb(tables: Record<string, Row[]>) {
             then: (resolve: (value: unknown) => unknown) => {
                 let rows = (tables[table] ?? []).filter(row => filters.every(filter => filter(row)));
                 // Бодит query шиг: шинэ snapshot эхэнд.
-                if (selected.includes('columns:datasets->0->columns')) rows = rows.map(row => ({ ...row, columns: (row.datasets as Array<{ columns: string[] }>)[0].columns }))
+                if (selected.includes('columns:datasets->0->columns')) rows = rows.map((row): Row => ({ ...row, columns: (row.datasets as Array<{ columns: string[] }>)[0].columns }))
                     .sort((a, b) => String(b.report_date).localeCompare(String(a.report_date)));
                 return Promise.resolve({ data: rows, error: null }).then(resolve);
             },

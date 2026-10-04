@@ -6,6 +6,7 @@ import { buildMarketingPerformance, previousRange, type MarketingActivity, type 
 import { nextMeetingDate, shiftReviewDate, weeklyReviewRange } from '../src/lib/dashboard/weekly-review';
 import { buildWeeklySales } from '../src/lib/dashboard/weekly-sales';
 import type { ErpProduct, ErpSale } from '../src/lib/erp/records';
+import { scoreKpi } from '../src/lib/sales/kpi';
 
 const userId = '00000000-0000-4000-8000-000000000001';
 const shopId = '00000000-0000-4000-8000-000000000002';
@@ -42,7 +43,8 @@ const weeklySalesFixture = () => {
 };
 
 async function setup(page: Page, restricted = false) {
-    const state = { updates: [] as Record<string, unknown>[], failure: false, failSave: false, missingFx: false, requests: [] as string[], errors: [] as string[], writes: 0 };
+    const state = { updates: [] as Record<string, unknown>[], failure: false, failSave: false, missingFx: false, requests: [] as string[], errors: [] as string[], writes: 0,
+        kpiWrites: [] as Record<string, unknown>[] };
     page.on('pageerror', error => state.errors.push(error.message));
     await page.route('**/api/**', async route => {
         const request = route.request();
@@ -79,6 +81,17 @@ async function setup(page: Page, restricted = false) {
                 viewings: (selected.from === range.from ? ['new_customer', 'repeat_customer', 'existing_buyer'] : ['new_customer']).map(meeting_type => ({ scheduled_at: `${selected.from}T03:00:00Z`, status: 'completed', meeting_type })),
                 leads: Array.from({ length: 18 }, (_, index) => ({ created_at: `${selected.from}T03:00:00Z`, status: 'new', source: index < 12 ? 'facebook' : 'website', sales_manager_name: index < 15 ? 'Номин' : null, last_contact_at: null, next_followup_at: null, viewing_scheduled_at: null })) }), shopName: 'Vertmon · Туршилтын өгөгдөл' });
         }
+        if (path === '/api/dashboard/reports/sales-kpi') {
+            if (request.method() === 'PUT') { state.kpiWrites.push(request.postDataJSON()); return reply({ success: true }); }
+            const plans = state.kpiWrites.length ? { contract_amount: 900000000, cash_collected: 300000000, new_meetings: 10 } : { contract_amount: 900000000 };
+            const card = (manager: string, actuals: Record<string, number | null>, management: number | null) => ({ manager, active: true, contracts: 2,
+                review: { management, note: '' }, plans, manual: { calls_chats: actuals.calls_chats ?? null }, ...scoreKpi({ plans, actuals, management }) });
+            return reply({ year: Number(url.searchParams.get('year')), month: Number(url.searchParams.get('month')), canEdit: true,
+                sources: { contracts: { date: range.to, source: 'Elysium гэрээ' }, cashFrom: { date: range.from, source: 'Elysium гэрээ' } },
+                managers: [card('Номин', { contract_amount: 1080000000, cash_collected: 240000000, overdue_collected: 0, new_meetings: 8, calls_chats: null, followup: 75 }, 4),
+                    card('Сараа', { contract_amount: 400000000, cash_collected: 90000000, overdue_collected: 0, new_meetings: 3, calls_chats: null, followup: null }, null)] });
+        }
+        if (path === '/api/dashboard/kpi-report') return reply({ manager: { name: 'Номин', isSelf: true }, shopName: 'Vertmon · Туршилтын өгөгдөл', year: 2026, month: 10, onboarding: true });
         if (path === '/api/dashboard/reports/weekly-sales') return reply({ meetingDate, projectName: 'Vertmon · Туршилтын өгөгдөл', ...weeklySalesFixture() });
         if (path === '/api/marketing/performance') {
             const selected = { from: url.searchParams.get('from')!, to: url.searchParams.get('to')! };
@@ -283,4 +296,26 @@ test('хадгалалт бүтэлгүйтвэл бичвэр үлдэж, да�
     await page.getByRole('button', { name: 'Тайланд оруулах', exact: true }).click();
     await expect(page.getByText('Таны шинэчлэл хадгалагдсан.')).toBeVisible();
     expect(state.updates).toHaveLength(1);
+});
+
+test('KPI карт: багийн оноо, менежерийн үзүүлэлт, төлөвлөгөө хадгалах', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    const state = await setup(page);
+    await page.goto('/dashboard/reports/kpi');
+    const team = page.getByRole('region', { name: 'Багийн KPI' });
+    await expect(team.getByRole('row')).toHaveCount(3);
+    const card = page.getByRole('region', { name: 'Номин KPI' });
+    await expect(card.getByRole('rowheader', { name: /^Гэрээний дүн/ })).toBeVisible();
+    await expect(card.getByText('төлөвлөгөөгүй').first()).toBeVisible();
+    await page.getByRole('button', { name: 'Төлөвлөгөө, үнэлгээ', exact: true }).click();
+    await page.getByLabel('Орсон мөнгө (урьдчилгаа + төлбөр) төлөвлөгөө', { exact: true }).fill('300000000');
+    await page.getByLabel('Шинэ харилцагчтай уулзалт төлөвлөгөө', { exact: true }).fill('10');
+    await page.getByLabel('Дуудлага, чатын гүйцэтгэл', { exact: true }).fill('42');
+    await page.getByLabel('Удирдлагын үнэлгээ', { exact: true }).selectOption('5');
+    await page.getByRole('button', { name: 'Хадгалах', exact: true }).click();
+    await expect.poll(() => state.kpiWrites.length).toBe(1);
+    expect(state.kpiWrites[0]).toMatchObject({ manager: 'Номин', plans: { contract_amount: 900000000, cash_collected: 300000000, new_meetings: 10 }, manual: { calls_chats: 42 }, review: { management: 5 } });
+    mkdirSync('output/workday', { recursive: true });
+    await page.screenshot({ path: 'output/workday/desktop-kpi-card.png', fullPage: true });
+    expect(state.errors).toEqual([]);
 });
