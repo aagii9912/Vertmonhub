@@ -58,6 +58,12 @@ it('keeps legacy results keys only for a single result type', () => {
     expect(buildMetaChannelReport({ rows: fixture, currency: 'USD', reach: periodReach }).totals).not.toHaveProperty('results');
 });
 
+it('for a reach-only week keeps the per-1000 cost only in cost_per_result_reach, never in the legacy per-result key', () => {
+    const report = buildMetaChannelReport({ rows: fixture.slice(5, 7), currency: 'USD', reach: { account: 6000, campaigns: new Map([['33', 6000]]) } });
+    expect(report.totals).toMatchObject({ spend_reach: 9, results_reach: 6000, cost_per_result_reach: 1.5, results: 6000 });
+    expect(report.totals).not.toHaveProperty('cost_per_result');
+});
+
 it('never sums daily reach: without Meta deduplicated reach there is no reach, frequency or reach result', () => {
     const report = buildMetaChannelReport({ rows: fixture, currency: 'USD', reach: null });
     for (const key of ['reach', 'frequency', 'results_reach', 'cost_per_result_reach']) expect(report.totals).not.toHaveProperty(key);
@@ -79,6 +85,19 @@ it('splits a campaign whose ad sets have different result types and does not gue
     // Reach төрлийн нэг мөр тодорхойгүй тул results_reach-ийг таамаглахгүй.
     expect(report.totals).toMatchObject({ spend_calls: 6, results_calls: 2, spend_reach: 4 });
     expect(report.totals).not.toHaveProperty('results_reach');
+});
+
+it('in a mixed-type campaign gives a result-less ad set of another goal to the campaign\'s main result type', () => {
+    // A1 дуудлага 2 (6$), A2 мессеж 1 (4$), A3 постын оролцоо 0 (3$, зорилгоор) → A3-ийн зардал дуудлагад (хамгийн их зардалтай).
+    const rows = [
+        row({ campaign_id: '77', campaign_name: 'Холимог 2', adset_id: '701', spend: 6, impressions: 600, result_type: 'calls', results: 2 }),
+        row({ campaign_id: '77', campaign_name: 'Холимог 2', adset_id: '702', spend: 4, impressions: 400, result_type: 'messages', results: 1 }),
+        row({ campaign_id: '77', campaign_name: 'Холимог 2', adset_id: '703', spend: 3, impressions: 300, result_type: 'post_engagement', results: 0, result_source: 'goal' }),
+    ];
+    const report = buildMetaChannelReport({ rows, currency: 'USD', reach: { account: 900, campaigns: new Map([['77', 900]]) } });
+    expect(report.totals).toMatchObject({ spend_calls: 9, results_calls: 2, cost_per_result_calls: 4.5, spend_messages: 4, results_messages: 1 });
+    for (const key of ['spend_post_engagement', 'results_post_engagement', 'cost_per_result_post_engagement']) expect(report.totals).not.toHaveProperty(key);
+    expect(report.breakdown.map(r => [r.tag, r.values.spend, r.values.results])).toEqual([['calls', 9, 2], ['messages', 4, 1]]);
 });
 
 it('reports spend without a count for result types Meta did not count, truncates the breakdown, and handles an empty week', () => {
@@ -104,7 +123,10 @@ it('reports spend without a count for result types Meta did not count, truncates
 // syncMetaInsights: хадгалах → долоо хоног бүрийн тайлан → төлөв
 // ---------------------------------------------------------------------------
 
-function database(stored: MetaInsightRow[], options: { saveError?: boolean; reportError?: boolean } = {}) {
+function database(stored: MetaInsightRow[], options: {
+    saveError?: boolean; reportError?: boolean; readError?: boolean;
+    existing?: Array<{ period_from: string; period_to: string; origin: string }>;
+} = {}) {
     const upserts: Array<{ table: string; value: Record<string, unknown>; onConflict?: string }> = [];
     const filters: Array<[string, string, unknown]> = [];
     const rpc = vi.fn(async (_name: string, args: { p_rows: unknown[] }) => options.saveError ? { data: null, error: { message: 'x' } } : { data: args.p_rows.length, error: null });
@@ -113,7 +135,8 @@ function database(stored: MetaInsightRow[], options: { saveError?: boolean; repo
         for (const method of ['select', 'order']) q[method] = () => q;
         for (const method of ['eq', 'gte', 'lte']) q[method] = (column: string, value: unknown) => { filters.push([table, `${method}:${column}`, value]); return q; };
         q.single = async () => ({ data: { facebook_ad_account_id: '123', meta_ads_user_access_token: null, meta_ads_user_token_expires_at: null }, error: null });
-        q.range = async () => ({ data: stored, error: null });
+        q.range = async () => options.readError ? { data: null, error: { message: 'canceling statement due to statement timeout' } } : { data: stored, error: null };
+        q.in = async (column: string, value: unknown) => { filters.push([table, `in:${column}`, value]); return { data: options.existing ?? [], error: null }; };
         q.upsert = async (value: Record<string, unknown>, opts: { onConflict?: string }) => {
             upserts.push({ table, value, onConflict: opts?.onConflict });
             return { error: options.reportError && table === 'marketing_channel_reports' ? { message: 'column origin does not exist' } : null };
@@ -165,11 +188,55 @@ it('saves the 35-day window and rewrites every meeting week inside it, including
 });
 
 it('does not overwrite a past week with a half week when a manual range ends mid-week', async () => {
-    const { db, upserts } = database([]);
+    const { db, upserts } = database([row({ day: '2026-09-03', spend: 1, impressions: 10 })]);
     const result = await syncMetaInsights(db, 'shop-1', { from: '2026-09-02', to: '2026-09-20' });
     expect(mocks.adsets).toHaveBeenCalledWith(account, 'ads-token', '2026-09-02', '2026-09-20');
     expect(result.weeks.map(w => w.from)).toEqual(['2026-09-02', '2026-09-09']);
     expect(upserts.filter(u => u.table === 'marketing_channel_reports')).toHaveLength(2);
+});
+
+it('fetches the whole meeting week when a manual range starts mid-week (the page\'s month range), within 93 days', async () => {
+    const { db, upserts } = database([row({ day: '2026-10-01', spend: 3, impressions: 30 })]);
+    mocks.adsets.mockResolvedValue({ rows: [{ day: '2026-10-01', adset_id: '101' }], resultFields: true });
+    const result = await syncMetaInsights(db, 'shop-1', { from: '2026-10-01', to: '2026-10-31' });
+    expect(mocks.adsets).toHaveBeenCalledWith(account, 'ads-token', '2026-09-30', '2026-10-05');
+    expect(result).toMatchObject({ from: '2026-09-30', to: '2026-10-05', weeks: [{ from: '2026-09-30', to: '2026-10-06', dataTo: '2026-10-05' }] });
+    expect(upserts.filter(u => u.table === 'marketing_channel_reports')).toHaveLength(1);
+
+    // 93 өдрийн хязгаарыг давахаар бол эхлэлийг сунгахгүй (тэр хагас долоо хоногийг алгасна).
+    mocks.adsets.mockClear();
+    await syncMetaInsights(database([]).db, 'shop-1', { from: '2026-07-05', to: '2026-10-05' });
+    expect(mocks.adsets).toHaveBeenCalledWith(account, 'ads-token', '2026-07-05', '2026-10-05');
+});
+
+it('writes an empty week as zero only after the account\'s first data day and never over a file import', async () => {
+    // Өгөгдөл 09-17-нөөс: 09-02, 09-09 долоо хоног (холбохоос өмнө) бичигдэхгүй; 09-23 файлтай тул дарахгүй; 09-30 тэг.
+    mocks.adsets.mockResolvedValue({ rows: [{ day: '2026-09-17', adset_id: '101' }], resultFields: true });
+    const { db, upserts, filters } = database([row({ day: '2026-09-17', spend: 4, impressions: 40 })], {
+        existing: [{ period_from: '2026-09-23', period_to: '2026-09-29', origin: 'file' }, { period_from: '2026-09-30', period_to: '2026-10-06', origin: 'api' }],
+    });
+    const result = await syncMetaInsights(db, 'shop-1');
+    expect(result.weeks.map(w => w.from)).toEqual(['2026-09-16', '2026-09-30']);
+    const reports = upserts.filter(u => u.table === 'marketing_channel_reports').map(u => u.value);
+    expect(reports.map(r => [r.period_from, r.row_count])).toEqual([['2026-09-16', 1], ['2026-09-30', 0]]);
+    expect(reports.every(r => r.note === null && r.origin === 'api')).toBe(true);
+    // Зөвхөн өгөгдлийн дараах хоосон долоо хоногуудын тайланг шалгана.
+    expect(filters).toContainEqual(['marketing_channel_reports', 'in:period_from', ['2026-09-23', '2026-09-30']]);
+    expect(upserts.at(-1)).toMatchObject({ table: 'meta_insights_sync', value: { weeks: 2, last_error: null } });
+
+    // Цонхонд өгөгдөлгүй (идэвхгүй/шинэ данс) бол ямар ч долоо хоногийг 0-ээр бичихгүй.
+    mocks.adsets.mockResolvedValue({ rows: [], resultFields: true });
+    const idle = database([]);
+    expect((await syncMetaInsights(idle.db, 'shop-1')).weeks).toEqual([]);
+    expect(idle.upserts.filter(u => u.table === 'marketing_channel_reports')).toHaveLength(0);
+});
+
+it('answers a stored-row read failure in Mongolian without exposing the database message', async () => {
+    const { db, upserts } = database([], { readError: true });
+    await expect(syncMetaInsights(db, 'shop-1')).rejects.toThrow('Хадгалсан Meta үр дүнг уншиж чадсангүй. Дахин оролдоно уу.');
+    const status = upserts.at(-1)!;
+    expect(status).toMatchObject({ table: 'meta_insights_sync', value: { last_error: 'Хадгалсан Meta үр дүнг уншиж чадсангүй. Дахин оролдоно уу.' } });
+    expect(JSON.stringify(status)).not.toContain('statement timeout');
 });
 
 it('writes the report without reach when the deduplicated reach call fails', async () => {
