@@ -3,7 +3,11 @@ import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { expect, it } from 'vitest';
 
-it('checks live contact ownership and canonical identity and rolls back timestamps with activity failures', async () => {
+// Үнийн саналын migration (20261004162000) нь функцийг дахин тодорхойлдог тул хуучин бүх дүрэм хоёр хувилбарт хэвээр байх ёстой.
+it.each([
+    ['contact RPC', ['20261001134000_scoped_lead_contact.sql']],
+    ['quote-aware contact RPC', ['20261001134000_scoped_lead_contact.sql', '20261004162000_lead_activity_quotes.sql']],
+])('%s checks live contact ownership and canonical identity and rolls back timestamps with activity failures', async (_name, migrations) => {
     const db = new PGlite();
     const shop = '10000000-0000-4000-8000-000000000001';
     const user = '20000000-0000-4000-8000-000000000001';
@@ -33,8 +37,10 @@ it('checks live contact ownership and canonical identity and rolls back timestam
         await db.query('INSERT INTO sales_managers VALUES ($1,$2,$3,true)', [shop, 'Бат', user]);
         await db.query('INSERT INTO sales_manager_projects VALUES ($1,$2,$3)', [shop, 'Бат', garden]);
         await db.query("INSERT INTO leads(id,shop_id,project_id,sales_manager_name,status,updated_at) VALUES ($1,$2,$3,$4,'closed_won','2026-09-30T00:00:00Z')", [lead, shop, garden, 'Бат']);
-        const migration = readFileSync('supabase/migrations/20261001134000_scoped_lead_contact.sql', 'utf8');
-        await db.exec(migration); await db.exec(migration);
+        for (const file of migrations) {
+            const migration = readFileSync(`supabase/migrations/${file}`, 'utf8');
+            await db.exec(migration); await db.exec(migration);
+        }
         await db.exec('SET ROLE authenticated');
         await expect(record({ type: 'note', content: 'Тэмдэглэл' })).rejects.toMatchObject({ code: '42501' });
         await db.exec('RESET ROLE; SET ROLE service_role');
