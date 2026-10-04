@@ -353,13 +353,17 @@ export function suggestMapping(headers: readonly string[], source: ChannelSource
     const shape: ChannelShape = source === 'callpro' ? guessCallproShape(normalized) : 'rows';
     const allowed = new Set(channelFields(source, shape).map(f => f.key));
     const used = new Set<string>();
-    const mapping: ChannelMapping = {};
-    headers.forEach((header, i) => {
+    return Object.fromEntries(headers.map((header, i) => {
         const field = (aliases(source).get(normalized[i]) ?? []).find(f => allowed.has(f.key) && !used.has(f.key));
-        mapping[header] = field?.key ?? '';
         if (field) used.add(field.key);
-    });
-    return mapping;
+        return [header, field?.key ?? ''];
+    }));
+}
+
+/** Толгойн холболт (прототипийн нэр — `constructor`, `toString` — толгойд ч аюулгүй). */
+export function mappedField(mapping: ChannelMapping | null | undefined, header: string): string {
+    const key = mapping && Object.hasOwn(mapping, header) ? mapping[header] : '';
+    return typeof key === 'string' ? key : '';
 }
 
 /** Хадгалсан холболтыг (толгойг normalize хийж) шинэ файлд хэрэгжүүлж, үлдсэнийг санал болгоно. */
@@ -370,24 +374,20 @@ export function applyRememberedMapping(headers: readonly string[], source: Chann
     for (const [header, key] of Object.entries(remembered ?? {})) {
         if (key === '' || valid.has(key)) memory.set(normalizeHeader(header), key);
     }
-    let hits = 0;
-    const mapping: ChannelMapping = {};
+    const chosen = new Map<string, string>();
     const used = new Set<string>();
-    headers.forEach(header => {
-        const key = memory.get(normalizeHeader(header));
-        if (key === undefined) return;
-        hits++;
-        mapping[header] = key && !used.has(key) ? key : '';
+    const assign = (header: string, key: string) => {
+        chosen.set(header, key && !used.has(key) ? key : '');
         if (key) used.add(key);
-    });
+    };
     for (const header of headers) {
-        if (header in mapping) continue;
-        const key = suggested[header];
-        mapping[header] = key && !used.has(key) ? key : '';
-        if (key) used.add(key);
+        const key = memory.get(normalizeHeader(header));
+        if (key !== undefined) assign(header, key);
     }
-    const origin: 'remembered' | 'mixed' | 'suggested' = !hits ? 'suggested' : hits === headers.length ? 'remembered' : 'mixed';
-    return { mapping, origin };
+    const hits = chosen.size;
+    for (const header of headers) if (!chosen.has(header)) assign(header, mappedField(suggested, header));
+    const origin: Exclude<MappingOrigin, 'client'> = !hits ? 'suggested' : hits === headers.length ? 'remembered' : 'mixed';
+    return { mapping: Object.fromEntries(headers.map(header => [header, chosen.get(header) ?? ''])), origin };
 }
 
 /** Толгойн багцын тогтвортой тэмдэг (дараалал, том жижиг үсэг үл хамаарна). */
@@ -426,11 +426,7 @@ export function buildTable(matrix: readonly (readonly unknown[])[], headerIndex:
         while (headers.includes(name)) name = `${base} (${++n})`;
         headers.push(name);
     }
-    const rows = matrix.slice(headerIndex + 1).map(values => {
-        const row: Record<string, unknown> = {};
-        headers.forEach((header, c) => { row[header] = values[c] ?? ''; });
-        return row;
-    });
+    const rows = matrix.slice(headerIndex + 1).map(values => Object.fromEntries(headers.map((header, c) => [header, values[c] ?? ''])));
     // Excel-ийн мөрийн дугаар: толгой (1-ээс) + 1.
     return { headers, rows, firstLine: headerIndex + 2 };
 }
@@ -658,7 +654,7 @@ class AggregateContext {
         this.fieldByKey = new Map(this.spec.fields.map(f => [f.key, f]));
         const duplicates = new Map<string, string[]>();
         for (const [header, key] of Object.entries(mapping)) {
-            if (!key) continue;
+            if (!key || typeof key !== 'string') continue;
             if (!this.fieldByKey.has(key)) {
                 this.warn('unknown_field', `«${header}» баганын холболт (${key}) энэ эх үүсвэрт байхгүй тул алгаслаа.`, undefined, 'info');
             } else if (this.mapped.has(key)) duplicates.set(key, [...(duplicates.get(key) ?? [this.mapped.get(key)!]), header]);

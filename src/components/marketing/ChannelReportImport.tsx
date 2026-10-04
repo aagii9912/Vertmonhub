@@ -89,13 +89,15 @@ export function ChannelReportImport({ shopId }: { shopId: string }) {
 
     function submit(event: FormEvent) { event.preventDefault(); void check(); }
     const result = preview?.result;
+    const detected = result?.detectedPeriod ?? null;
+    const outside = !!detected && (detected.from < period.from || detected.to > period.to);
     const blocked = !preview || stale || !!result?.errors.length || !preview.storageReady || !!busy;
 
     return <div className="space-y-5">
         <form onSubmit={submit} className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <label className="grid gap-1.5 text-sm">Эх үүсвэр
-                    <select className={marketingInputClass} value={source} disabled={!!busy}
+                    <select aria-label="Эх үүсвэр" className={marketingInputClass} value={source} disabled={!!busy}
                         onChange={event => { setSource(event.target.value as ChannelSource); setSheet(undefined); reset(); }}>
                         {CHANNEL_SOURCES.map(s => <option key={s} value={s}>{CHANNEL_SOURCE_LABELS[s]}</option>)}
                     </select>
@@ -144,9 +146,13 @@ export function ChannelReportImport({ shopId }: { shopId: string }) {
             {!preview.storageReady && <Alert variant="warning">Тайлан хадгалах хүснэгт үүсээгүй байна. Урьдчилан харж болно, хадгалахын тулд миграци шаардлагатай.</Alert>}
             {preview.existing && <Alert variant="info">Энэ хугацааны {CHANNEL_SOURCE_LABELS[source]} тайлан ({preview.existing.file_name || 'файл'}) хадгалагдсан байна. Хадгалбал шинэ файлаар солигдоно.</Alert>}
             {preview.duplicate && <Alert variant="warning">Энэ файлыг өмнө нь {CHANNEL_SOURCE_LABELS[preview.duplicate.source]}-д {preview.duplicate.period_from} – {preview.duplicate.period_to} хугацаагаар хадгалсан байна. Хугацаа, файлаа шалгана уу.</Alert>}
-            {result.detectedPeriod && (result.detectedPeriod.from !== period.from || result.detectedPeriod.to !== period.to) && <Alert variant="warning">
-                Файлын огноо {result.detectedPeriod.from} – {result.detectedPeriod.to}, сонгосон хугацаа {period.from} – {period.to}.
-                {' '}<Button type="button" size="sm" variant="secondary" disabled={!!busy || !ChannelPeriodSchema.safeParse(result.detectedPeriod).success} onClick={() => changePeriod(result.detectedPeriod!)}>Файлын хугацааг сонгох</Button>
+            {detected && (detected.from !== period.from || detected.to !== period.to) && <Alert variant={outside ? 'warning' : 'info'}>
+                <div className="flex flex-wrap items-center gap-2">
+                    <span>{outside
+                        ? `Файлд сонгосон хугацаанаас (${period.from} – ${period.to}) гадуурх огноо байна: ${detected.from} – ${detected.to}. Гадуурх мөрүүд тооцоонд ороогүй.`
+                        : `Файлын мөрүүд ${detected.from} – ${detected.to} хооронд байна (сонгосон ${period.from} – ${period.to}).`}</span>
+                    <Button type="button" size="sm" variant="secondary" disabled={!!busy || !ChannelPeriodSchema.safeParse(detected).success} onClick={() => changePeriod(detected)}>Файлын хугацааг сонгох</Button>
+                </div>
             </Alert>}
 
             <div className="space-y-2">

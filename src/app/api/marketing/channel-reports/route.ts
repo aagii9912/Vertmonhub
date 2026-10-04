@@ -7,7 +7,7 @@ import { logger } from '@/lib/utils/logger';
 import { ubDateStr } from '@/lib/utils/date';
 import {
     ChannelMappingSchema, ChannelPeriodSchema, ChannelSourceSchema, aggregateChannelReport, applyRememberedMapping,
-    headerSignature, suggestMapping, type ChannelMapping,
+    headerSignature, mappedField, suggestMapping, type ChannelMapping,
 } from '@/lib/marketing/channel-reports';
 import { CHANNEL_FILE_LIMITS, ChannelFileError, channelFileHash, readChannelFile, sampleValues } from '@/lib/marketing/channel-reports-file';
 import {
@@ -122,7 +122,7 @@ export const POST = withRoute({ module: MODULE, access: 'write', error: 'Фай�
     } else remembered = (memory.data?.mapping as ChannelMapping | undefined) ?? null;
 
     const { mapping, origin } = clientMapping
-        ? { mapping: Object.fromEntries(table.headers.map(header => [header, clientMapping[header] ?? ''])), origin: 'client' as const }
+        ? { mapping: Object.fromEntries(table.headers.map(header => [header, mappedField(clientMapping, header)])), origin: 'client' as const }
         : applyRememberedMapping(table.headers, source, remembered);
     const result = aggregateChannelReport(table.rows, mapping, source, { period: period.data, firstLine: table.firstLine });
     const contentHash = channelFileHash(bytes);

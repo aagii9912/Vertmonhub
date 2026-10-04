@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     CHANNEL_SOURCES, aggregateChannelReport, applyRememberedMapping, buildTable, channelFields, compareWithPrevious,
     detectHeaderRow, formatChannelValue, headerSignature, normalizeHeader, parseCount, parseDateTime, parseDuration,
-    durationHint, parseHourBucket, peakMissedHours, suggestMapping, ChannelPeriodSchema, type ChannelMapping,
+    durationHint, mappedField, parseHourBucket, peakMissedHours, suggestMapping, ChannelPeriodSchema, type ChannelMapping,
 } from '../channel-reports';
 
 const table = (header: string[], ...rows: unknown[][]) => rows.map(values => Object.fromEntries(header.map((h, i) => [h, values[i] ?? ''])));
@@ -58,6 +58,18 @@ describe('header matching', () => {
         expect(mixed).toEqual({ mapping: { 'хүрсэн  хүн': 'reach', 'Зардал $': 'spend', Frequency: '', Impressions: 'impressions' }, origin: 'mixed' });
         expect(applyRememberedMapping(['Reach'], 'meta_ads', { Reach: 'retired_metric' }).origin).toBe('suggested');
         expect(applyRememberedMapping(['Reach'], 'meta_ads', null)).toEqual({ mapping: { Reach: 'reach' }, origin: 'suggested' });
+    });
+
+    it('treats headers named like object prototype members as plain columns', () => {
+        const headers = ['constructor', 'toString', '__proto__', 'Илгээсэн'];
+        const mapping = suggestMapping(headers, 'sms');
+        expect(mapping).toEqual({ constructor: '', toString: '', ['__proto__']: '', 'Илгээсэн': 'sent' });
+        expect(Object.getPrototypeOf(mapping)).toBe(Object.prototype);
+        expect(applyRememberedMapping(headers, 'sms', { toString: 'planned' }).mapping).toMatchObject({ toString: 'planned', constructor: '', 'Илгээсэн': 'sent' });
+        const { rows } = buildTable([headers, [1, 2, 3, 4]], 0);
+        expect(Object.keys(rows[0])).toEqual(headers);
+        expect(aggregateChannelReport(rows, { toString: 'planned', 'Илгээсэн': 'sent' }, 'sms').totals).toMatchObject({ planned: 2, sent: 4 });
+        expect(mappedField({}, 'constructor')).toBe('');
     });
 
     it('builds a stable header signature regardless of order and case', () => {
