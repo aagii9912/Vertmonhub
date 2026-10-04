@@ -50,6 +50,12 @@ export function weeklyReviewRange(meetingDate: string) {
     return { from: shiftReviewDate(meetingDate, -7), to: shiftReviewDate(meetingDate, -1) };
 }
 
+/** Хамгийн сүүлд бүрэн дууссан хурлын долоо хоног (Лхагва–Мягмар, УБ): Лхагва гарагт өчигдөр дууссан долоо хоног. */
+export function lastCompletedReviewRange(now = new Date()) {
+    const next = nextMeetingDate(now);
+    return weeklyReviewRange(next === ubDateStr(now) ? next : shiftReviewDate(next, -7));
+}
+
 export function formatReviewChange(current: number, previous?: number): string {
     if (previous === undefined) return 'Өмнөх хугацааны мэдээлэл байхгүй';
     const delta = current - previous;

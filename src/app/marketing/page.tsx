@@ -157,7 +157,7 @@ function MarketingReport({ initialFilter, initialTab, invalidUrl }: { initialFil
             </SectionCard>
             <details className="rounded-lg border border-border p-3 text-xs text-muted-foreground"><summary className="cursor-pointer font-medium">Тооцох дүрэм</summary><p className="mt-3 leading-relaxed">{r.basis}</p><p className="mt-2">Одоо цуцалсан / устгасан бүртгэл тайланд орохгүй.</p></details>
         </>}
-        <div className="flex flex-wrap gap-4 border-t border-border pt-3 text-xs text-muted-foreground">{[['/marketing/newsletter', 'Email / Newsletter'], ['/marketing/ads', 'Зар сурталчилгаа'], ['/marketing/social', 'Сошиал медиа'], ['/marketing/calendar', 'Контент календарь'], ['/marketing/budget', 'Жилийн төсөв'], ['/marketing/sources', 'Сувгийн гэрээ']].map(([href, label]) => <Link key={href} href={href} className="hover:text-brand hover:underline">{label}</Link>)}</div>
+        <div className="flex flex-wrap gap-4 border-t border-border pt-3 text-xs text-muted-foreground">{[['/marketing/newsletter', 'Email / Newsletter'], ['/marketing/ads', 'Зар сурталчилгаа'], ['/marketing/social', 'Сошиал медиа'], ['/marketing/calendar', 'Контент календарь'], ['/marketing/budget', 'Жилийн төсөв'], ['/marketing/sources', 'Сувгийн гэрээ'], ['/marketing/channel-reports', 'Сувгийн экспорт импорт']].map(([href, label]) => <Link key={href} href={href} className="hover:text-brand hover:underline">{label}</Link>)}</div>
         {canWrite && editing && shop && data && <PerformanceEditor key={`${shop.id}-${editing.kind}-${editing.id || ''}`} record={editing} projects={data.projects} activities={data.activities} shopId={shop.id} onClose={() => setEditing(null)} onSaved={refresh} />}
     </div>;
 }
