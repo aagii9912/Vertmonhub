@@ -13,6 +13,7 @@
  */
 import { UB_OFFSET_MS, ubDateStr } from '@/lib/utils/date';
 import { WEEKDAYS_MN } from '@/lib/viewings/labels';
+import type { Tone } from '@/lib/leads/labels';
 import {
     emptyTally, isOpenOverdue, tallyServiceLog, toResolutionSummary, addTally,
     type ResolutionSummary, type ResolutionTally, type SlaLog,
@@ -80,6 +81,14 @@ export function periodLabel(from: string, to: string, group: ActivityGroup): str
     if (group === 'day') return `${from.slice(5)} · ${WEEKDAYS_MN[weekdayOf(from)]}`;
     if (group === 'week') return `${from.slice(5)} – ${to.slice(5)}`;
     return `${from.slice(0, 4)} оны ${Number(from.slice(5, 7))}-р сар`;
+}
+
+/** Зорилтын биелэлтийн өнгө: ≥100% амжилттай, ≥70% анхааруулга, бусад нь муу; зорилтгүй бол саармаг. */
+export function attainmentTone(pct: number | null): Tone {
+    if (pct === null) return 'neutral';
+    if (pct >= 100) return 'success';
+    if (pct >= 70) return 'pending';
+    return 'danger';
 }
 
 /** Хугацааны алдааны монгол мессеж (зөв бол null). */

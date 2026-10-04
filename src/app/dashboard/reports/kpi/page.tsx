@@ -34,6 +34,7 @@ import {
 } from '@/lib/dashboard/kpi-report';
 import { formatShortDate } from '@/lib/utils/date';
 import { SalesKpiCard } from '@/components/reports/SalesKpiCard';
+import { ManagerActivityCard } from '@/components/reports/ManagerActivityCard';
 import {
     CheckCircle2,
     ChevronLeft,
@@ -173,7 +174,7 @@ export default function KpiReportPage() {
                 <PageHeader
                     eyebrow="Аналитик"
                     title="Сарын KPI тайлан"
-                    subtitle="KPI карт (төлөвлөгөө · гүйцэтгэл · оноо) болон сарын бүх ажил — ERP экспорт, CRM-ээс автоматаар нэгтгэгдэнэ"
+                    subtitle="KPI карт (төлөвлөгөө · гүйцэтгэл · оноо), өдөр тутмын идэвх болон сарын бүх ажил — ERP экспорт, CRM-ээс автоматаар нэгтгэгдэнэ"
                     secondaryActions={
                         <div className="flex items-center gap-2">
                             <Button variant="secondary" size="sm" onClick={copyReport} disabled={!reportText}>
@@ -229,6 +230,7 @@ export default function KpiReportPage() {
             </div>
 
             <SalesKpiCard year={year} month={month} manager={manager || data?.manager.name || null} />
+            <ManagerActivityCard key={`${year}-${month}`} year={year} month={month} manager={manager || data?.manager.name || null} />
 
             {isLoading || !data ? (
                 <KpiGridSkeleton />

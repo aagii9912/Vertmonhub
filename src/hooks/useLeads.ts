@@ -223,6 +223,9 @@ export function useAddLeadActivity(leadId: string | null) {
             void qc.invalidateQueries({ queryKey: ['leads', 'summary'] });
             void qc.invalidateQueries({ queryKey: ['operations-report'] });
             void qc.invalidateQueries({ queryKey: ['my-stats'] });
+            // Дуудлага өдрийн идэвх, сарын KPI-д тоологдоно.
+            void qc.invalidateQueries({ queryKey: ['manager-activity'] });
+            void qc.invalidateQueries({ queryKey: ['sales-kpi'] });
         },
     });
 }

@@ -22,6 +22,7 @@ vi.mock('@/lib/api/dashboardFetch', () => ({ dashboardMutate: (...args: unknown[
 vi.mock('@/lib/offline/outbox', () => ({ enqueue: (...args: unknown[]) => mocks.enqueue(...args), isNetworkError: () => mocks.isNetworkError() }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: (...args: unknown[]) => mocks.toastError(...args) } }));
 vi.mock('@/hooks/useMyStats', () => ({ useMyStats: () => ({ ...mocks.myStats, isLoading: false, error: new Error('Өгөгдөл татаж чадсангүй'), refetch: mocks.refetch }) }));
+vi.mock('@/hooks/useManagerActivity', () => ({ useManagerActivity: () => ({ data: undefined, isPending: false, refetch: mocks.refetch }) }));
 vi.mock('@/hooks/useDirector', () => ({ useDirector: () => ({ data: undefined, isLoading: false, isError: true, error: new Error('Өгөгдөл татаж чадсангүй'), refetch: mocks.refetch }) }));
 vi.mock('@/hooks/useLeads', () => ({
     useLeadProjects: () => ({ data: [{ id: 'mandala', name: 'Mandala Garden', status: 'active' }, { id: 'elysium', name: 'Elysium', status: 'active' }], isLoading: false }),
