@@ -1,14 +1,16 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Megaphone, Plus, Search, Play, DollarSign } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
+import { dashboardMutate } from '@/lib/api/dashboardFetch';
+import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { Spinner } from '@/components/ui/Spinner';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
 import {
     DataTable,
     type DataTableColumn,
@@ -63,8 +65,11 @@ const statusLabels: Record<string, string> = {
 
 export default function CampaignsPage() {
     const { shop } = useAuth();
-    const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { data, isLoading, error, isFetching, refetch } = useDashboardQuery<{ rows: Campaign[] }>(
+        ['marketing-campaigns'],
+        '/api/marketing/data/marketing_campaigns?order=created_at.desc',
+    );
+    const campaigns = data?.rows ?? [];
     const [searchQuery, setSearchQuery] = useState('');
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [creating, setCreating] = useState(false);
@@ -74,35 +79,17 @@ export default function CampaignsPage() {
         if (!shop?.id || !newCampaign.name.trim()) return;
         setCreating(true);
         try {
-            const { row } = await dashboardMutate<{ row: Campaign }>('/api/marketing/data/marketing_campaigns', 'POST', {
+            await dashboardMutate('/api/marketing/data/marketing_campaigns', 'POST', {
                 name: newCampaign.name.trim(), type: newCampaign.type,
                 status: 'draft', budget: newCampaign.budget, spend: 0,
                 start_date: newCampaign.start_date || null, end_date: newCampaign.end_date || null, metrics: {},
             });
-            setCampaigns(prev => [row, ...prev]);
+            void refetch();
             setShowCreateModal(false);
             setNewCampaign({ name: '', type: 'social', budget: 0, start_date: ubDateStr(), end_date: '' });
         } catch (err) { console.error('Create error:', err); }
         finally { setCreating(false); }
     };
-
-    useEffect(() => {
-        if (!shop?.id) return;
-
-        const fetchCampaigns = async () => {
-            setLoading(true);
-            try {
-                const { rows } = await dashboardJson<{ rows: Campaign[] }>('/api/marketing/data/marketing_campaigns?order=created_at.desc');
-                setCampaigns(rows || []);
-            } catch (error) {
-                console.error('Error fetching campaigns:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchCampaigns();
-    }, [shop?.id]);
 
     const filteredCampaigns = campaigns.filter(c =>
         c.name.toLowerCase().includes(searchQuery.toLowerCase())
@@ -159,7 +146,7 @@ export default function CampaignsPage() {
         },
     ];
 
-    if (loading) {
+    if (isLoading) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
                 <div className="flex items-center gap-3">
@@ -196,26 +183,36 @@ export default function CampaignsPage() {
                 }
             />
 
-            {/* Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <StatsCard title="Нийт кампани" value={campaigns.length} icon={Megaphone} iconColor="info" />
-                <StatsCard title="Идэвхтэй" value={activeCampaigns} icon={Play} iconColor="success" />
-                <StatsCard
-                    title="Нийт зарцуулалт"
-                    value={<Money value={totalSpend} compact />}
-                    icon={DollarSign}
-                    iconColor="brand"
-                />
-            </div>
+            {error ? (
+                <Alert variant="danger">
+                    <AlertTitle>Кампанит ажлууд татахад алдаа гарлаа</AlertTitle>
+                    <AlertDescription>{error.message}</AlertDescription>
+                    <Button variant="secondary" size="sm" className="mt-1 self-start" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</Button>
+                </Alert>
+            ) : (
+                <>
+                    {/* Stats */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        <StatsCard title="Нийт кампани" value={campaigns.length} icon={Megaphone} iconColor="info" />
+                        <StatsCard title="Идэвхтэй" value={activeCampaigns} icon={Play} iconColor="success" />
+                        <StatsCard
+                            title="Нийт зарцуулалт"
+                            value={<Money value={totalSpend} compact />}
+                            icon={DollarSign}
+                            iconColor="brand"
+                        />
+                    </div>
 
-            {/* Campaigns Table */}
-            <DataTable
-                columns={columns}
-                data={filteredCampaigns}
-                getRowId={(c) => c.id}
-                caption="Кампанит ажлууд"
-                emptyMessage="Кампанит ажил нэмэхийн тулд “Шинэ кампани” товчийг дарна уу."
-            />
+                    {/* Campaigns Table */}
+                    <DataTable
+                        columns={columns}
+                        data={filteredCampaigns}
+                        getRowId={(c) => c.id}
+                        caption="Кампанит ажлууд"
+                        emptyMessage="Кампанит ажил нэмэхийн тулд “Шинэ кампани” товчийг дарна уу."
+                    />
+                </>
+            )}
 
             {/* Create Modal */}
             <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>

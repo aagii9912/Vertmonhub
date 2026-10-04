@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
 import {
     DataTable,
     type DataTableColumn,
@@ -30,7 +31,8 @@ import {
 } from '@/components/ui/Select';
 import { BarChart3, Plus, DollarSign, Target, TrendingUp, MousePointer } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
+import { dashboardMutate } from '@/lib/api/dashboardFetch';
+import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 
 interface AdCampaign {
     id: string;
@@ -48,8 +50,11 @@ interface AdCampaign {
 
 export default function AdsPage() {
     const { shop } = useAuth();
-    const [ads, setAds] = useState<AdCampaign[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { data, isLoading, error, isFetching, refetch } = useDashboardQuery<{ rows: AdCampaign[] }>(
+        ['marketing-ads'],
+        '/api/marketing/data/ad_campaigns?order=created_at.desc',
+    );
+    const ads = data?.rows ?? [];
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [creating, setCreating] = useState(false);
     const [newAd, setNewAd] = useState({ name: '', platform: 'facebook', budget: 0 });
@@ -58,32 +63,16 @@ export default function AdsPage() {
         if (!shop?.id || !newAd.name.trim()) return;
         setCreating(true);
         try {
-            const { row } = await dashboardMutate<{ row: AdCampaign }>('/api/marketing/data/ad_campaigns', 'POST', {
+            await dashboardMutate('/api/marketing/data/ad_campaigns', 'POST', {
                 name: newAd.name.trim(), platform: newAd.platform,
                 status: 'draft', budget: newAd.budget, spend: 0, impressions: 0, clicks: 0, conversions: 0, ctr: 0, cpc: 0,
             });
-            setAds(prev => [row, ...prev]);
+            void refetch();
             setShowCreateModal(false);
             setNewAd({ name: '', platform: 'facebook', budget: 0 });
         } catch (err) { console.error('Create error:', err); }
         finally { setCreating(false); }
     };
-
-    useEffect(() => {
-        if (!shop?.id) return;
-        const fetch = async () => {
-            setLoading(true);
-            try {
-                const { rows } = await dashboardJson<{ rows: AdCampaign[] }>('/api/marketing/data/ad_campaigns?order=created_at.desc');
-                setAds(rows || []);
-            } catch (error) {
-                console.error('Error:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetch();
-    }, [shop?.id]);
 
     const totalSpend = ads.reduce((s, a) => s + (a.spend || 0), 0);
     const totalClicks = ads.reduce((s, a) => s + (a.clicks || 0), 0);
@@ -143,7 +132,7 @@ export default function AdsPage() {
         },
     ];
 
-    if (loading) {
+    if (isLoading) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
                 <Spinner size="md" label="Татаж байна..." />
@@ -164,49 +153,57 @@ export default function AdsPage() {
                 }
             />
 
-            <div className="space-y-6">
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-                    <StatsCard
-                        icon={DollarSign}
-                        iconColor="warning"
-                        title="Нийт зарцуулалт"
-                        value={<Money value={totalSpend} compact />}
-                    />
-                    <StatsCard
-                        icon={TrendingUp}
-                        iconColor="info"
-                        title="CTR"
-                        value={`${avgCtr.toFixed(2)}%`}
-                    />
-                    <StatsCard
-                        icon={MousePointer}
-                        iconColor="brand"
-                        title="CPC"
-                        value={<Money value={avgCpc} compact />}
-                    />
-                    <StatsCard
-                        icon={Target}
-                        iconColor="success"
-                        title="Хөрвүүлэлт"
-                        value={totalConversions}
-                    />
-                </div>
+            {error ? (
+                <Alert variant="danger">
+                    <AlertTitle>Зар сурталчилгааны мэдээлэл татахад алдаа гарлаа</AlertTitle>
+                    <AlertDescription>{error.message}</AlertDescription>
+                    <Button variant="secondary" size="sm" className="mt-1 self-start" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</Button>
+                </Alert>
+            ) : (
+                <div className="space-y-6">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                        <StatsCard
+                            icon={DollarSign}
+                            iconColor="warning"
+                            title="Нийт зарцуулалт"
+                            value={<Money value={totalSpend} compact />}
+                        />
+                        <StatsCard
+                            icon={TrendingUp}
+                            iconColor="info"
+                            title="CTR"
+                            value={`${avgCtr.toFixed(2)}%`}
+                        />
+                        <StatsCard
+                            icon={MousePointer}
+                            iconColor="brand"
+                            title="CPC"
+                            value={<Money value={avgCpc} compact />}
+                        />
+                        <StatsCard
+                            icon={Target}
+                            iconColor="success"
+                            title="Хөрвүүлэлт"
+                            value={totalConversions}
+                        />
+                    </div>
 
-                {ads.length === 0 ? (
-                    <EmptyState
-                        icon={<BarChart3 className="w-7 h-7" />}
-                        title="Мэдээлэл байхгүй"
-                        description="Зар сурталчилгааны мэдээлэл энд харагдана."
-                    />
-                ) : (
-                    <DataTable
-                        columns={columns}
-                        data={ads}
-                        getRowId={(ad) => ad.id}
-                        caption="Зар сурталчилгааны кампанит ажлууд"
-                    />
-                )}
-            </div>
+                    {ads.length === 0 ? (
+                        <EmptyState
+                            icon={<BarChart3 className="w-7 h-7" />}
+                            title="Мэдээлэл байхгүй"
+                            description="Зар сурталчилгааны мэдээлэл энд харагдана."
+                        />
+                    ) : (
+                        <DataTable
+                            columns={columns}
+                            data={ads}
+                            getRowId={(ad) => ad.id}
+                            caption="Зар сурталчилгааны кампанит ажлууд"
+                        />
+                    )}
+                </div>
+            )}
 
             <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
                 <DialogContent className="sm:max-w-md">

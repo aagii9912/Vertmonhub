@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import {
@@ -8,13 +8,15 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardFetch, dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
+import { dashboardFetch, dashboardMutate } from '@/lib/api/dashboardFetch';
+import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { FormField } from '@/components/ui/FormField';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { DataTable, StatusPill, type DataTableColumn } from '@/components/ui/DataTable';
 import { Money } from '@/components/ui/Money';
@@ -122,9 +124,22 @@ function TimelineBar({ contract, year }: { contract: ChannelContract; year: numb
 
 export default function SourcesPage() {
     const { shop } = useAuth();
-    const [channels, setChannels] = useState<MarketingChannel[]>([]);
-    const [contracts, setContracts] = useState<ChannelContract[]>([]);
-    const [loading, setLoading] = useState(true);
+    const channelsQuery = useDashboardQuery<{ rows: MarketingChannel[] }>(
+        ['marketing-channels'],
+        '/api/marketing/data/marketing_channels?order=created_at.desc',
+    );
+    const contractsQuery = useDashboardQuery<{ rows: ChannelContract[] }>(
+        ['marketing-channel-contracts'],
+        '/api/marketing/data/channel_contracts?order=end_date.asc',
+    );
+    const channels = channelsQuery.data?.rows ?? [];
+    const contracts = contractsQuery.data?.rows ?? [];
+    const loading = channelsQuery.isLoading || contractsQuery.isLoading;
+    const loadError = channelsQuery.error ?? contractsQuery.error;
+    const refetchAll = () => {
+        void channelsQuery.refetch();
+        void contractsQuery.refetch();
+    };
     const [searchQuery, setSearchQuery] = useState('');
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [creating, setCreating] = useState(false);
@@ -141,37 +156,15 @@ export default function SourcesPage() {
         kpi_target: '',
     });
 
-    const fetchData = useCallback(async () => {
-        if (!shop?.id) return;
-        setLoading(true);
-        try {
-            // ЗААВАЛ shop_id-гаар шүүнэ (өмнө нь шүүлтгүй байсан — cross-tenant алдаа)
-            const [channelsRes, contractsRes] = await Promise.all([
-                dashboardJson<{ rows: MarketingChannel[] }>('/api/marketing/data/marketing_channels?order=created_at.desc'),
-                dashboardJson<{ rows: ChannelContract[] }>('/api/marketing/data/channel_contracts?order=end_date.asc'),
-            ]);
-            setChannels(channelsRes.rows || []);
-            setContracts(contractsRes.rows || []);
-        } catch (error) {
-            console.error('Error:', error);
-        } finally {
-            setLoading(false);
-        }
-    }, [shop?.id]);
-
-    useEffect(() => {
-        fetchData();
-    }, [fetchData]);
-
     const handleCreate = async () => {
         if (!newChannel.name.trim() || !shop?.id) return;
         setCreating(true);
         try {
-            const { row } = await dashboardMutate<{ row: MarketingChannel }>('/api/marketing/data/marketing_channels', 'POST', {
+            await dashboardMutate('/api/marketing/data/marketing_channels', 'POST', {
                 name: newChannel.name.trim(), type: newChannel.type,
                 status: 'active', description: newChannel.description || null,
             });
-            setChannels(prev => [row, ...prev]);
+            void channelsQuery.refetch();
             setShowCreateModal(false);
             setNewChannel({ name: '', type: 'social', description: '' });
             toast.success('Суваг нэмэгдлээ');
@@ -207,7 +200,7 @@ export default function SourcesPage() {
                 kpi_target: '',
             });
             toast.success('Гэрээ бүртгэгдлээ — дуусахаас 7 хоногийн өмнө сануулга ирнэ');
-            fetchData();
+            refetchAll();
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Гэрээ үүсгэж чадсангүй');
         } finally {
@@ -330,6 +323,12 @@ export default function SourcesPage() {
 
             {loading ? (
                 <div className="flex items-center justify-center py-24"><Spinner size="lg" /></div>
+            ) : loadError ? (
+                <Alert variant="danger">
+                    <AlertTitle>Маркетингийн сувгийн мэдээлэл татахад алдаа гарлаа</AlertTitle>
+                    <AlertDescription>{loadError.message}</AlertDescription>
+                    <Button variant="secondary" size="sm" className="mt-1 self-start" disabled={channelsQuery.isFetching || contractsQuery.isFetching} onClick={refetchAll}>Дахин оролдох</Button>
+                </Alert>
             ) : (
                 <>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">

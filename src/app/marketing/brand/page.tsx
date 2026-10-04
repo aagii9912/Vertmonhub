@@ -1,17 +1,18 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { ChartCard } from '@/components/ui/ChartCard';
 import { BarChart } from '@/components/charts/BarChart';
+import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { StatusPill } from '@/components/ui/StatusPill';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
 import { Sparkles, ThumbsUp, ThumbsDown, Minus, Globe, Megaphone } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { dashboardJson } from '@/lib/api/dashboardFetch';
+import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 
 interface BrandMention {
     id: string;
@@ -25,25 +26,11 @@ interface BrandMention {
 }
 
 export default function BrandPage() {
-    const { shop } = useAuth();
-    const [mentions, setMentions] = useState<BrandMention[]>([]);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-        if (!shop?.id) return;
-        const fetch = async () => {
-            setLoading(true);
-            try {
-                const { rows } = await dashboardJson<{ rows: BrandMention[] }>('/api/marketing/data/brand_mentions?order=mentioned_at.desc&limit=50');
-                setMentions(rows || []);
-            } catch (error) {
-                console.error('Error:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetch();
-    }, [shop?.id]);
+    const { data, isLoading, error, isFetching, refetch } = useDashboardQuery<{ rows: BrandMention[] }>(
+        ['marketing-brand-mentions'],
+        '/api/marketing/data/brand_mentions?order=mentioned_at.desc&limit=50',
+    );
+    const mentions = data?.rows ?? [];
 
     const positive = mentions.filter(m => m.sentiment === 'positive').length;
     const neutral = mentions.filter(m => m.sentiment === 'neutral').length;
@@ -53,7 +40,7 @@ export default function BrandPage() {
     const sentimentIcon = (s: string) => s === 'positive' ? <ThumbsUp className="w-3 h-3" /> : s === 'negative' ? <ThumbsDown className="w-3 h-3" /> : <Minus className="w-3 h-3" />;
     const sentimentVariant = (s: string): 'success' | 'danger' | 'neutral' => s === 'positive' ? 'success' : s === 'negative' ? 'danger' : 'neutral';
 
-    if (loading) {
+    if (isLoading) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
                 <Spinner size="md" label="Татаж байна..." />
@@ -69,91 +56,99 @@ export default function BrandPage() {
                 subtitle="Брэндийн дурдагдал болон сэтгэгдэл"
             />
 
-            <div className="space-y-6">
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-                    <StatsCard
-                        icon={Megaphone}
-                        iconColor="info"
-                        title="Нийт дурдагдал"
-                        value={mentions.length}
-                    />
-                    <StatsCard
-                        icon={ThumbsUp}
-                        iconColor="success"
-                        title="Эерэг"
-                        value={positive}
-                    />
-                    <StatsCard
-                        icon={ThumbsDown}
-                        iconColor="danger"
-                        title="Сөрөг"
-                        value={negative}
-                    />
-                    <StatsCard
-                        icon={Globe}
-                        iconColor="brand"
-                        title="Хүрэлт"
-                        value={totalReach.toLocaleString()}
-                    />
-                </div>
-
-                {/* Sentiment distribution */}
-                {mentions.length > 0 && (
-                    <ChartCard
-                        title="Сэтгэгдлийн хуваарилалт"
-                        subtitle={`Эерэг ${Math.round((positive / mentions.length) * 100)}% · Төвийг сахисан ${Math.round((neutral / mentions.length) * 100)}% · Сөрөг ${Math.round((negative / mentions.length) * 100)}%`}
-                        height={140}
-                    >
-                        <BarChart
-                            data={[{ label: 'Сэтгэгдэл', positive, neutral, negative }]}
-                            xKey="label"
-                            series={[
-                                { key: 'positive', name: 'Эерэг' },
-                                { key: 'neutral', name: 'Төвийг сахисан' },
-                                { key: 'negative', name: 'Сөрөг' },
-                            ]}
-                            horizontal
-                            stacked
-                            valueFormatter={(v) => v.toLocaleString()}
+            {error ? (
+                <Alert variant="danger">
+                    <AlertTitle>Брэндийн дурдагдал татахад алдаа гарлаа</AlertTitle>
+                    <AlertDescription>{error.message}</AlertDescription>
+                    <Button variant="secondary" size="sm" className="mt-1 self-start" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</Button>
+                </Alert>
+            ) : (
+                <div className="space-y-6">
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
+                        <StatsCard
+                            icon={Megaphone}
+                            iconColor="info"
+                            title="Нийт дурдагдал"
+                            value={mentions.length}
                         />
-                    </ChartCard>
-                )}
+                        <StatsCard
+                            icon={ThumbsUp}
+                            iconColor="success"
+                            title="Эерэг"
+                            value={positive}
+                        />
+                        <StatsCard
+                            icon={ThumbsDown}
+                            iconColor="danger"
+                            title="Сөрөг"
+                            value={negative}
+                        />
+                        <StatsCard
+                            icon={Globe}
+                            iconColor="brand"
+                            title="Хүрэлт"
+                            value={totalReach.toLocaleString()}
+                        />
+                    </div>
 
-                {/* Mentions List */}
-                {mentions.length === 0 ? (
-                    <EmptyState
-                        icon={<Sparkles className="w-7 h-7" />}
-                        title="Мэдээлэл байхгүй"
-                        description="Брэндийн дурдагдлын мэдээлэл энд харагдана."
-                    />
-                ) : (
-                    <Card>
-                        <CardContent className="p-0">
-                            <div className="divide-y divide-border">
-                                {mentions.map(m => (
-                                    <div key={m.id} className="p-4 hover:bg-surface-2/40 transition-colors">
-                                        <div className="flex items-start justify-between">
-                                            <div className="flex-1">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <Globe className="w-3 h-3 text-muted-foreground/70" />
-                                                    <span className="text-xs text-muted-foreground">{m.source}</span>
-                                                    <StatusPill variant={sentimentVariant(m.sentiment)}>
-                                                        {sentimentIcon(m.sentiment)}
-                                                        {m.sentiment === 'positive' ? 'Эерэг' : m.sentiment === 'negative' ? 'Сөрөг' : 'Төвийг сахисан'}
-                                                    </StatusPill>
+                    {/* Sentiment distribution */}
+                    {mentions.length > 0 && (
+                        <ChartCard
+                            title="Сэтгэгдлийн хуваарилалт"
+                            subtitle={`Эерэг ${Math.round((positive / mentions.length) * 100)}% · Төвийг сахисан ${Math.round((neutral / mentions.length) * 100)}% · Сөрөг ${Math.round((negative / mentions.length) * 100)}%`}
+                            height={140}
+                        >
+                            <BarChart
+                                data={[{ label: 'Сэтгэгдэл', positive, neutral, negative }]}
+                                xKey="label"
+                                series={[
+                                    { key: 'positive', name: 'Эерэг' },
+                                    { key: 'neutral', name: 'Төвийг сахисан' },
+                                    { key: 'negative', name: 'Сөрөг' },
+                                ]}
+                                horizontal
+                                stacked
+                                valueFormatter={(v) => v.toLocaleString()}
+                            />
+                        </ChartCard>
+                    )}
+
+                    {/* Mentions List */}
+                    {mentions.length === 0 ? (
+                        <EmptyState
+                            icon={<Sparkles className="w-7 h-7" />}
+                            title="Мэдээлэл байхгүй"
+                            description="Брэндийн дурдагдлын мэдээлэл энд харагдана."
+                        />
+                    ) : (
+                        <Card>
+                            <CardContent className="p-0">
+                                <div className="divide-y divide-border">
+                                    {mentions.map(m => (
+                                        <div key={m.id} className="p-4 hover:bg-surface-2/40 transition-colors">
+                                            <div className="flex items-start justify-between">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2 mb-1">
+                                                        <Globe className="w-3 h-3 text-muted-foreground/70" />
+                                                        <span className="text-xs text-muted-foreground">{m.source}</span>
+                                                        <StatusPill variant={sentimentVariant(m.sentiment)}>
+                                                            {sentimentIcon(m.sentiment)}
+                                                            {m.sentiment === 'positive' ? 'Эерэг' : m.sentiment === 'negative' ? 'Сөрөг' : 'Төвийг сахисан'}
+                                                        </StatusPill>
+                                                    </div>
+                                                    <p className="text-sm text-foreground line-clamp-2">{m.content}</p>
+                                                    {m.author && <p className="text-xs text-muted-foreground/70 mt-1">— {m.author}</p>}
                                                 </div>
-                                                <p className="text-sm text-foreground line-clamp-2">{m.content}</p>
-                                                {m.author && <p className="text-xs text-muted-foreground/70 mt-1">— {m.author}</p>}
+                                                <span className="text-xs text-muted-foreground/70 ml-4">{new Date(m.mentioned_at).toLocaleDateString('mn-MN')}</span>
                                             </div>
-                                            <span className="text-xs text-muted-foreground/70 ml-4">{new Date(m.mentioned_at).toLocaleDateString('mn-MN')}</span>
                                         </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </CardContent>
-                    </Card>
-                )}
-            </div>
+                                    ))}
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

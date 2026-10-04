@@ -1,14 +1,17 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { CalendarDays, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
+import { dashboardMutate } from '@/lib/api/dashboardFetch';
+import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
 import { cn } from '@/lib/utils';
 import {
     Dialog,
@@ -51,49 +54,38 @@ const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 
 export default function CalendarPage() {
     const { shop } = useAuth();
-    const [items, setItems] = useState<CalendarItem[]>([]);
-    const [loading, setLoading] = useState(true);
+    const queryClient = useQueryClient();
     const [currentDate, setCurrentDate] = useState(new Date());
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [creating, setCreating] = useState(false);
     const [newItem, setNewItem] = useState({ title: '', type: 'post', platform: 'facebook', scheduled_date: ymd(new Date()), color: '#3B82F6' });
 
+    const startOfMonth = ymd(new Date(currentDate.getFullYear(), currentDate.getMonth(), 1));
+    const endOfMonth = ymd(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0));
+    // Сар солиход өмнөх сарын мөрүүд түр үлдэнэ (шинэ сарын өдрүүдтэй таарахгүй тул нүдэнд гарахгүй) — хуудас бүхэлдээ spinner болж анивчихгүй.
+    const { data, isLoading, isPlaceholderData, error, isFetching, refetch } = useDashboardQuery<{ rows: CalendarItem[] }>(
+        ['marketing-calendar', startOfMonth, endOfMonth],
+        `/api/marketing/data/content_calendar?gte.scheduled_date=${startOfMonth}&lte.scheduled_date=${endOfMonth}&order=scheduled_date.asc`,
+        { keepPreviousData: true },
+    );
+    const items = data?.rows ?? [];
+
     const handleCreate = async () => {
         if (!shop?.id || !newItem.title.trim()) return;
         setCreating(true);
         try {
-            const { row } = await dashboardMutate<{ row: CalendarItem }>('/api/marketing/data/content_calendar', 'POST', {
+            await dashboardMutate('/api/marketing/data/content_calendar', 'POST', {
                 title: newItem.title.trim(), type: newItem.type,
                 platform: newItem.platform, scheduled_date: newItem.scheduled_date,
                 status: 'planned', color: newItem.color,
             });
-            setItems(prev => [...prev, row].sort((a: CalendarItem, b: CalendarItem) => a.scheduled_date.localeCompare(b.scheduled_date)));
+            // Шинэ контент өөр сард байж болох тул бүх сарын кэшийг шинэчилнэ.
+            void queryClient.invalidateQueries({ queryKey: ['marketing-calendar'] });
             setShowCreateModal(false);
             setNewItem({ title: '', type: 'post', platform: 'facebook', scheduled_date: ymd(new Date()), color: '#3B82F6' });
         } catch (err) { console.error('Create error:', err); }
         finally { setCreating(false); }
     };
-
-    useEffect(() => {
-        if (!shop?.id) return;
-        const fetch = async () => {
-            setLoading(true);
-            try {
-                const startOfMonth = ymd(new Date(currentDate.getFullYear(), currentDate.getMonth(), 1));
-                const endOfMonth = ymd(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0));
-
-                const { rows } = await dashboardJson<{ rows: CalendarItem[] }>(
-                    `/api/marketing/data/content_calendar?gte.scheduled_date=${startOfMonth}&lte.scheduled_date=${endOfMonth}&order=scheduled_date.asc`,
-                );
-                setItems(rows || []);
-            } catch (error) {
-                console.error('Error:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetch();
-    }, [shop?.id, currentDate]);
 
     const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
     const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
@@ -107,7 +99,7 @@ export default function CalendarPage() {
         return items.filter(item => item.scheduled_date === dateStr);
     };
 
-    if (loading) {
+    if (isLoading) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
                 <div className="flex items-center gap-3">
@@ -145,39 +137,49 @@ export default function CalendarPage() {
                         </Button>
                     </div>
 
-                    {/* Calendar grid */}
-                    <div className="grid grid-cols-7 gap-px bg-border rounded-lg overflow-hidden">
-                        {['Да', 'Мя', 'Лх', 'Пү', 'Ба', 'Бя', 'Ня'].map(d => (
-                            <div key={d} className="bg-surface-2 p-2 text-center text-2xs font-semibold uppercase tracking-wide text-muted-2">{d}</div>
-                        ))}
-                        {Array.from({ length: firstDayOfMonth === 0 ? 6 : firstDayOfMonth - 1 }).map((_, i) => (
-                            <div key={`empty-${i}`} className="bg-surface p-2 min-h-[80px]" />
-                        ))}
-                        {Array.from({ length: daysInMonth }).map((_, i) => {
-                            const day = i + 1;
-                            const dayItems = getItemsForDay(day);
-                            const isToday = new Date().getDate() === day && new Date().getMonth() === currentDate.getMonth() && new Date().getFullYear() === currentDate.getFullYear();
-                            return (
-                                <div key={day} className={cn('bg-surface p-2 min-h-[80px]', isToday && 'ring-2 ring-brand ring-inset')}>
-                                    <span className={cn('text-sm tabular-nums', isToday ? 'font-bold text-brand-strong' : 'text-foreground')}>{day}</span>
-                                    <div className="mt-1 space-y-1">
-                                        {dayItems.slice(0, 2).map(item => (
-                                            <div key={item.id} className="text-xs px-1 py-0.5 rounded truncate" style={{ backgroundColor: item.color + '20', color: item.color || '#3B82F6' }}>
-                                                {item.title}
+                    {error ? (
+                        <Alert variant="danger">
+                            <AlertTitle>Контент календарь татахад алдаа гарлаа</AlertTitle>
+                            <AlertDescription>{error.message}</AlertDescription>
+                            <Button variant="secondary" size="sm" className="mt-1 self-start" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</Button>
+                        </Alert>
+                    ) : (
+                        <>
+                            {/* Calendar grid */}
+                            <div className="grid grid-cols-7 gap-px bg-border rounded-lg overflow-hidden">
+                                {['Да', 'Мя', 'Лх', 'Пү', 'Ба', 'Бя', 'Ня'].map(d => (
+                                    <div key={d} className="bg-surface-2 p-2 text-center text-2xs font-semibold uppercase tracking-wide text-muted-2">{d}</div>
+                                ))}
+                                {Array.from({ length: firstDayOfMonth === 0 ? 6 : firstDayOfMonth - 1 }).map((_, i) => (
+                                    <div key={`empty-${i}`} className="bg-surface p-2 min-h-[80px]" />
+                                ))}
+                                {Array.from({ length: daysInMonth }).map((_, i) => {
+                                    const day = i + 1;
+                                    const dayItems = getItemsForDay(day);
+                                    const isToday = new Date().getDate() === day && new Date().getMonth() === currentDate.getMonth() && new Date().getFullYear() === currentDate.getFullYear();
+                                    return (
+                                        <div key={day} className={cn('bg-surface p-2 min-h-[80px]', isToday && 'ring-2 ring-brand ring-inset')}>
+                                            <span className={cn('text-sm tabular-nums', isToday ? 'font-bold text-brand-strong' : 'text-foreground')}>{day}</span>
+                                            <div className="mt-1 space-y-1">
+                                                {dayItems.slice(0, 2).map(item => (
+                                                    <div key={item.id} className="text-xs px-1 py-0.5 rounded truncate" style={{ backgroundColor: item.color + '20', color: item.color || '#3B82F6' }}>
+                                                        {item.title}
+                                                    </div>
+                                                ))}
+                                                {dayItems.length > 2 && <p className="text-xs text-muted-foreground">+{dayItems.length - 2}</p>}
                                             </div>
-                                        ))}
-                                        {dayItems.length > 2 && <p className="text-xs text-muted-foreground">+{dayItems.length - 2}</p>}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
 
-                    {items.length === 0 && (
-                        <div className="flex flex-col items-center justify-center py-8 mt-4">
-                            <CalendarDays className="w-12 h-12 text-muted-foreground/60 mb-3" />
-                            <p className="text-muted-foreground">Энэ сард контент төлөвлөгдөөгүй байна</p>
-                        </div>
+                            {!isPlaceholderData && items.length === 0 && (
+                                <div className="flex flex-col items-center justify-center py-8 mt-4">
+                                    <CalendarDays className="w-12 h-12 text-muted-foreground/60 mb-3" />
+                                    <p className="text-muted-foreground">Энэ сард контент төлөвлөгдөөгүй байна</p>
+                                </div>
+                            )}
+                        </>
                     )}
                 </CardContent>
             </Card>

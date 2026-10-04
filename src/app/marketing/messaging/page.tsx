@@ -1,14 +1,16 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Mail, Plus, MessageSquare, Send, Eye, MousePointer } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
+import { dashboardMutate } from '@/lib/api/dashboardFetch';
+import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { Spinner } from '@/components/ui/Spinner';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/Tabs';
 import {
     DataTable,
@@ -40,9 +42,14 @@ interface MessageCampaign {
 
 export default function MessagingPage() {
     const { shop } = useAuth();
-    const [campaigns, setCampaigns] = useState<MessageCampaign[]>([]);
-    const [loading, setLoading] = useState(true);
     const [tab, setTab] = useState<'email' | 'sms'>('email');
+    // Таб солиход өмнөх табын тоо түр үлдэж, хүснэгтэд spinner харагдана (шинэ таб ачаалагдтал).
+    const { data, isLoading, isPlaceholderData, error, isFetching, refetch } = useDashboardQuery<{ rows: MessageCampaign[] }>(
+        ['marketing-messages', tab],
+        `/api/marketing/data/message_campaigns?eq.type=${tab}&order=created_at.desc`,
+        { keepPreviousData: true },
+    );
+    const campaigns = data?.rows ?? [];
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [creating, setCreating] = useState(false);
     const [newCamp, setNewCamp] = useState({ name: '', subject: '' });
@@ -51,32 +58,16 @@ export default function MessagingPage() {
         if (!shop?.id || !newCamp.name.trim()) return;
         setCreating(true);
         try {
-            const { row } = await dashboardMutate<{ row: MessageCampaign }>('/api/marketing/data/message_campaigns', 'POST', {
+            await dashboardMutate('/api/marketing/data/message_campaigns', 'POST', {
                 name: newCamp.name.trim(), subject: newCamp.subject || null,
                 type: tab, status: 'draft', recipients: 0, delivered: 0, opened: 0, clicked: 0,
             });
-            setCampaigns(prev => [row, ...prev]);
+            void refetch();
             setShowCreateModal(false);
             setNewCamp({ name: '', subject: '' });
         } catch (err) { console.error('Create error:', err); }
         finally { setCreating(false); }
     };
-
-    useEffect(() => {
-        if (!shop?.id) return;
-        const fetch = async () => {
-            setLoading(true);
-            try {
-                const { rows } = await dashboardJson<{ rows: MessageCampaign[] }>(`/api/marketing/data/message_campaigns?eq.type=${tab}&order=created_at.desc`);
-                setCampaigns(rows || []);
-            } catch (error) {
-                console.error('Error:', error);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetch();
-    }, [shop?.id, tab]);
 
     const totalSent = campaigns.reduce((s, c) => s + (c.recipients || 0), 0);
     const totalDelivered = campaigns.reduce((s, c) => s + (c.delivered || 0), 0);
@@ -167,30 +158,40 @@ export default function MessagingPage() {
                 </TabsList>
             </Tabs>
 
-            {/* Stats */}
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <StatsCard title="Илгээсэн" value={totalSent.toLocaleString()} icon={Send} iconColor="info" />
-                <StatsCard title="Хүргэсэн" value={totalDelivered.toLocaleString()} icon={MousePointer} iconColor="success" />
-                <StatsCard title="Нээсэн хувь" value={`${openRate.toFixed(1)}%`} icon={Eye} iconColor="brand" />
-                <StatsCard title="Click хувь" value={`${clickRate.toFixed(1)}%`} icon={MousePointer} iconColor="warning" />
-            </div>
-
-            {/* Campaigns Table */}
-            {loading ? (
-                <div className="flex items-center justify-center min-h-[300px]">
-                    <div className="flex items-center gap-3">
-                        <Spinner />
-                        <span className="text-muted-foreground">Татаж байна...</span>
-                    </div>
-                </div>
+            {error ? (
+                <Alert variant="danger">
+                    <AlertTitle>{tab === 'email' ? 'Имэйл' : 'SMS'} кампанит ажлууд татахад алдаа гарлаа</AlertTitle>
+                    <AlertDescription>{error.message}</AlertDescription>
+                    <Button variant="secondary" size="sm" className="mt-1 self-start" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</Button>
+                </Alert>
             ) : (
-                <DataTable
-                    columns={columns}
-                    data={campaigns}
-                    getRowId={(c) => c.id}
-                    caption={`${tab === 'email' ? 'Имэйл' : 'SMS'} кампанит ажлууд`}
-                    emptyMessage={`${tab === 'email' ? 'Имэйл' : 'SMS'} кампанит ажлууд энд харагдана.`}
-                />
+                <>
+                    {/* Stats */}
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+                        <StatsCard title="Илгээсэн" value={totalSent.toLocaleString()} icon={Send} iconColor="info" />
+                        <StatsCard title="Хүргэсэн" value={totalDelivered.toLocaleString()} icon={MousePointer} iconColor="success" />
+                        <StatsCard title="Нээсэн хувь" value={`${openRate.toFixed(1)}%`} icon={Eye} iconColor="brand" />
+                        <StatsCard title="Click хувь" value={`${clickRate.toFixed(1)}%`} icon={MousePointer} iconColor="warning" />
+                    </div>
+
+                    {/* Campaigns Table */}
+                    {isLoading || isPlaceholderData ? (
+                        <div className="flex items-center justify-center min-h-[300px]">
+                            <div className="flex items-center gap-3">
+                                <Spinner />
+                                <span className="text-muted-foreground">Татаж байна...</span>
+                            </div>
+                        </div>
+                    ) : (
+                        <DataTable
+                            columns={columns}
+                            data={campaigns}
+                            getRowId={(c) => c.id}
+                            caption={`${tab === 'email' ? 'Имэйл' : 'SMS'} кампанит ажлууд`}
+                            emptyMessage={`${tab === 'email' ? 'Имэйл' : 'SMS'} кампанит ажлууд энд харагдана.`}
+                        />
+                    )}
+                </>
             )}
 
             {/* Create Modal */}
