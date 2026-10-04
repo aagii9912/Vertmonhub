@@ -57,15 +57,20 @@ export function isClosedServiceStatus(status: string | null | undefined): boolea
     return status === 'resolved' || status === 'closed';
 }
 
+/** Зөвхөн толийн өөрийн түлхүүр (прототипийн `toString` г.м биш). */
+function own<T>(map: Record<string, T>, key: string | null | undefined): T | undefined {
+    return key && Object.hasOwn(map, key) ? map[key] : undefined;
+}
+
 export function serviceLogTypeLabel(type: string | null | undefined): string {
-    return (type && SERVICE_LOG_TYPE_META[type as ServiceLogType]?.label) || type || '—';
+    return own(SERVICE_LOG_TYPE_META, type)?.label || type || '—';
 }
 export function serviceLogTypeTone(type: string | null | undefined): Tone {
-    return (type && SERVICE_LOG_TYPE_META[type as ServiceLogType]?.tone) || 'neutral';
+    return own(SERVICE_LOG_TYPE_META, type)?.tone || 'neutral';
 }
 export function serviceLogStatusLabel(status: string | null | undefined): string {
-    return (status && SERVICE_LOG_STATUS_META[status as ServiceLogStatus]?.label) || status || '—';
+    return own(SERVICE_LOG_STATUS_META, status)?.label || status || '—';
 }
 export function serviceLogChannelLabel(channel: string | null | undefined): string {
-    return (channel && SERVICE_LOG_CHANNEL_LABELS[channel as ServiceLogChannel]) || channel || '—';
+    return own(SERVICE_LOG_CHANNEL_LABELS, channel) || channel || '—';
 }

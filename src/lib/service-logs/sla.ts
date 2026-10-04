@@ -25,7 +25,7 @@ export interface SlaLog {
 }
 
 export function slaTargetHours(priority: string | null | undefined): number {
-    return SLA_TARGET_HOURS[priority as ServiceLogPriority] ?? SLA_TARGET_HOURS.medium;
+    return priority && Object.hasOwn(SLA_TARGET_HOURS, priority) ? SLA_TARGET_HOURS[priority as ServiceLogPriority] : SLA_TARGET_HOURS.medium;
 }
 
 export function slaDeadline(log: Pick<SlaLog, 'priority' | 'created_at'>): Date {

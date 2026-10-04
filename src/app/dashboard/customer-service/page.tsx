@@ -109,11 +109,11 @@ const TYPE_ICONS: Record<ServiceLogType, React.ReactNode> = {
 };
 
 function typeInfoOf(type: string): { text: string; icon: React.ReactNode; variant: StatusPillVariant } {
-    const key = (type in SERVICE_LOG_TYPE_META ? type : 'other') as ServiceLogType;
+    const key = (Object.hasOwn(SERVICE_LOG_TYPE_META, type) ? type : 'other') as ServiceLogType;
     return { text: SERVICE_LOG_TYPE_META[key].label, icon: TYPE_ICONS[key], variant: SERVICE_LOG_TYPE_META[key].tone };
 }
 function metaInfo<K extends string>(meta: Record<K, { label: string; tone: StatusPillVariant }>, value: string, fallback: K) {
-    const entry = meta[(value in meta ? value : fallback) as K];
+    const entry = meta[(Object.hasOwn(meta, value) ? value : fallback) as K];
     return { text: entry.label, variant: entry.tone };
 }
 

@@ -228,6 +228,8 @@ export function buildManagerActivity(input: BuildActivityInput): ManagerActivity
         return bucket;
     };
     for (const entry of input.roster) if (entry.is_active) managerOf(entry.name);
+    // Хувийн харагдац идэвхгүй бүртгэлтэй ч өөрийн (тэг) мөрөө харна.
+    if (input.only) managerOf(input.only);
     const unattributed = { calls: 0, meetings: 0, requests: 0, openOverdue: 0 };
 
     for (const call of input.calls) {
