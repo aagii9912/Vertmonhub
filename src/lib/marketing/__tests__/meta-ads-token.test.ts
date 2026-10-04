@@ -3,14 +3,20 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const mocks = vi.hoisted(() => ({
-    read: vi.fn(), write: vi.fn(), shop: vi.fn(), accounts: vi.fn(), update: vi.fn(),
+    read: vi.fn(), write: vi.fn(), shop: vi.fn(), accounts: vi.fn(), update: vi.fn(), role: vi.fn(),
     config: null as Record<string, unknown> | null, insights: { data: null, error: null } as { data: unknown; error: unknown },
+    linked: [] as Array<{ id: string; facebook_ad_account_id: string }>,
 }));
 vi.mock('@/lib/crypto/tokens', () => ({ decryptToken: (value: string | null) => value || null, encryptToken: (value: string) => `enc:v1:${value}` }));
-vi.mock('@/lib/auth/require-permission', () => ({ requireModule: mocks.read, requireModuleWrite: mocks.write, requireAnyModule: mocks.read, requireModuleDelete: mocks.write }));
+vi.mock('@/lib/auth/require-permission', () => ({
+    requireModule: mocks.read, requireModuleWrite: mocks.write, requireAnyModule: mocks.read, requireModuleDelete: mocks.write,
+    resolvePermissions: async () => ({ role: mocks.role(), permissions: {} }),
+}));
 function table(name: string) {
     const q: Record<string, unknown> = {};
-    q.select = () => q; q.eq = () => q;
+    q.select = () => q; q.eq = () => q; q.not = () => q;
+    // Өөр төсөлд холбогдсон дансууд (shops.neq(id, тухайн төсөл)).
+    q.neq = async () => ({ data: mocks.linked, error: null });
     q.single = async () => ({ data: name === 'shops' ? mocks.config : null, error: null });
     q.maybeSingle = async () => name === 'meta_insights_sync' ? mocks.insights : { data: null, error: null };
     q.update = (data: unknown) => mocks.update(name, data);
@@ -24,7 +30,7 @@ vi.mock('@/lib/utils/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), e
 
 import { metaAdsToken, metaAdsTokenSource } from '@/lib/facebook/ads-auth';
 import { GET as syncState } from '@/app/api/marketing/facebook/ads/spend-sync/route';
-import { POST as selectAccount } from '@/app/api/marketing/facebook/ads/accounts/route';
+import { GET as listAccounts, POST as selectAccount } from '@/app/api/marketing/facebook/ads/accounts/route';
 import { PATCH as patchShop } from '@/app/api/shop/route';
 import { RECOMMENDED_PROD_ENV, REQUIRED_PROD_ENV } from '@/lib/env';
 
@@ -35,6 +41,8 @@ beforeEach(() => {
     mocks.read.mockResolvedValue(null); mocks.write.mockResolvedValue(null); mocks.shop.mockResolvedValue({ id: 'shop-1' });
     mocks.config = { facebook_ad_account_id: 'act_123', meta_ads_user_access_token: null, meta_ads_user_token_expires_at: null };
     mocks.insights = { data: null, error: null };
+    mocks.linked = [];
+    mocks.role.mockReturnValue('admin');
     mocks.update.mockReturnValue({ eq: async () => ({ error: null }) });
 });
 afterEach(() => vi.unstubAllEnvs());
@@ -83,6 +91,7 @@ it('reports connection state and token source without ever returning a token', a
 
 it('maps the one-account-per-project unique index to 409 and validates the body', async () => {
     vi.stubEnv('META_ADS_SYSTEM_TOKEN', 'system-token');
+    mocks.config = { facebook_ad_account_id: null, meta_ads_user_access_token: null, meta_ads_user_token_expires_at: null };
     mocks.accounts.mockResolvedValue({ data: [{ id: 'act_555', account_id: '555' }] });
     const post = (body: unknown) => selectAccount(new NextRequest('http://localhost/api/marketing/facebook/ads/accounts', { method: 'POST', body: JSON.stringify(body) }));
 
@@ -100,6 +109,43 @@ it('maps the one-account-per-project unique index to 409 and validates the body'
     const ok = await post({ ad_account_id: 'act_555' });
     expect(ok.status).toBe(200);
     expect(mocks.update).toHaveBeenLastCalledWith('shops', { facebook_ad_account_id: 'act_555' });
+});
+
+it('with the system token only admins choose a project ad account, and other projects\' accounts are never listed', async () => {
+    vi.stubEnv('META_ADS_SYSTEM_TOKEN', 'system-token');
+    mocks.accounts.mockResolvedValue({ data: [{ id: 'act_123', name: 'Mandala' }, { id: 'act_555', name: 'Elysium' }, { id: 'act_777', name: 'Шинэ' }] });
+    mocks.linked = [{ id: 'shop-2', facebook_ad_account_id: '555' }];
+    const post = (body: unknown) => selectAccount(new NextRequest('http://localhost/api/marketing/facebook/ads/accounts', { method: 'POST', body: JSON.stringify(body) }));
+
+    // Админ: системийн хэрэглэгчийн бүх данс, өөр төсөлд холбогдсоныг хассан.
+    let body = await (await listAccounts(new NextRequest('http://localhost/api/marketing/facebook/ads/accounts'))).json();
+    expect(body).toMatchObject({ selected_id: 'act_123', can_select: true });
+    expect(body.accounts.map((a: { id: string }) => a.id)).toEqual(['act_123', 'act_777']);
+
+    // Маркетингийн ажилтан: зөвхөн төслийнхөө сонгосон данс; өөр данс сонгох/солих 403.
+    mocks.role.mockReturnValue('marketing');
+    body = await (await listAccounts(new NextRequest('http://localhost/api/marketing/facebook/ads/accounts'))).json();
+    expect(body).toMatchObject({ accounts: [{ id: 'act_123' }], can_select: false });
+    expect(JSON.stringify(body)).not.toContain('Elysium');
+    const denied = await post({ ad_account_id: 'act_777' });
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toMatchObject({ admin_required: true });
+    expect(mocks.update).not.toHaveBeenCalled();
+    // Кампанит ажил татахын өмнө ижил дансаа дахин илгээх нь өөрчлөлтгүй OK.
+    expect((await post({ ad_account_id: 'act_123' })).status).toBe(200);
+    expect(mocks.update).not.toHaveBeenCalled();
+
+    // Данс сонгоогүй төсөлд админ бус хэрэглэгч жагсаалт харахгүй (бүх төслийн дансны нэр задрахгүй).
+    mocks.config = { facebook_ad_account_id: null, meta_ads_user_access_token: null, meta_ads_user_token_expires_at: null };
+    const blocked = await listAccounts(new NextRequest('http://localhost/api/marketing/facebook/ads/accounts'));
+    expect(blocked.status).toBe(403);
+    expect(mocks.accounts).toHaveBeenCalledTimes(2);
+
+    // Хэрэглэгчийн OAuth токенд жагсаалт тухайн хүний Meta эрхээр хязгаарлагдана — админ шаардахгүй.
+    vi.stubEnv('META_ADS_SYSTEM_TOKEN', '');
+    mocks.config = { facebook_ad_account_id: null, meta_ads_user_access_token: 'user-token', meta_ads_user_token_expires_at: null };
+    expect((await post({ ad_account_id: 'act_777' })).status).toBe(200);
+    expect(mocks.update).toHaveBeenLastCalledWith('shops', { facebook_ad_account_id: 'act_777' });
 });
 
 it('the generic shop PATCH can no longer set the ad account (bypassing the Meta ownership check)', async () => {
