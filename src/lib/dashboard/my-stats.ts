@@ -1,5 +1,5 @@
 import { ubStartOfDay } from '@/lib/utils/date';
-import { leadDisplayName } from '@/lib/leads/labels';
+import { leadDisplayName, meetingCustomerName } from '@/lib/leads/labels';
 
 /**
  * «Миний самбар» (менежерийн хувийн дашбоард)-ын цэвэр aggregation туслахууд.
@@ -25,6 +25,8 @@ export interface ViewingLite {
     status?: string | null;
     property_name?: string | null;
     customer_name?: string | null;
+    /** Нэргүй лидийн уулзалт: харагдахдаа шошго (`meetingCustomerName`), өгөгдөлд бичихгүй. */
+    anonymous_lead?: boolean | null;
 }
 
 /** Лидүүдийг статусаар нь тоолно. */
@@ -114,11 +116,12 @@ export function buildTaskList(
         if (viewing.status && viewing.status !== 'scheduled') continue;
         const at = new Date(viewing.scheduled_at);
         if (at.getTime() < dayStart.getTime() || at.getTime() >= dayEnd.getTime()) continue;
+        const customer = meetingCustomerName(viewing);
         tasks.push({
             type: 'viewing',
             id: viewing.id,
-            title: viewing.property_name || viewing.customer_name || 'Үзүүлэлт',
-            subtitle: viewing.customer_name ? `Уулзалт · ${viewing.customer_name}` : 'Уулзалт',
+            title: viewing.property_name || customer || 'Үзүүлэлт',
+            subtitle: customer ? `Уулзалт · ${customer}` : 'Уулзалт',
             dueAt: at.toISOString(),
             overdue: at.getTime() < now.getTime(),
             href: '/dashboard/viewings',

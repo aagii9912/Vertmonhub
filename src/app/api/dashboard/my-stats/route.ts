@@ -8,6 +8,7 @@ import { getStartOfPeriod } from '@/lib/utils/date';
 import { checkRateLimit, createRateLimitResponse, getClientIdentifier } from '@/lib/utils/rate-limiter';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
+import { isAnonymousLead } from '@/lib/leads/labels';
 import {
     getTeamTargets,
     getMonthlyActualsByManager,
@@ -215,6 +216,7 @@ export async function GET(request: NextRequest) {
                 status: (row.status as string) || null,
                 property_name: property?.name || null,
                 customer_name: lead?.customer_name || null,
+                anonymous_lead: !!lead && isAnonymousLead(lead),
             };
         });
 
