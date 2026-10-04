@@ -253,8 +253,15 @@ describe('admin user safety', () => {
         const result = await response.json();
         expect(result.actor_id).toBe(actorId);
         expect(result.users[0]).toMatchObject({ id: targetId, full_name: 'Бат', phone: '99112233', email_confirmed: false,
-            shops: [{ id: shopId, name: 'Байгууллага', is_owner: true }], manager_shops: [{ shop_id: shopId, name: 'Бат' }] });
-        expect(result.users[1]).toMatchObject({ id: actorId, phone: null, email_confirmed: true, last_sign_in_at: '2026-10-01T00:00:00Z', shops: [{ is_owner: false }] });
+            shops: [{ id: shopId, name: 'Байгууллага', is_owner: true }], manager_shops: [{ shop_id: shopId, name: 'Бат' }], manager_linked: true });
+        expect(result.users[1]).toMatchObject({ id: actorId, phone: null, email_confirmed: true, last_sign_in_at: '2026-10-01T00:00:00Z', shops: [{ is_owner: false }], manager_linked: false });
+    });
+
+    it('flags an inactive roster link (name locked) without counting it as an active manager project', async () => {
+        const shopId = '20000000-0000-4000-8000-000000000001';
+        state.managers = [{ user_id: targetId, shop_id: shopId, name: 'Бат', is_active: false }];
+        const result = await (await GET()).json();
+        expect(result.users[0]).toMatchObject({ id: targetId, manager_shops: [], manager_linked: true });
     });
 
     it('does not return partial or misleading user status after a membership read failure', async () => {

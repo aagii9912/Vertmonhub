@@ -98,6 +98,8 @@ export async function GET() {
                 .map(shop => ({ id: shop.id, name: shop.name, is_owner: shop.user_id === u.id })),
             manager_shops: managers.filter(manager => manager.user_id === u.id && manager.is_active)
                 .map(manager => ({ shop_id: manager.shop_id, name: manager.name })),
+            // Идэвхгүй мөрийг оролцуулсан холбоос: профайлын нэрийг «Засах»-аар солихгүй (PATCH profile 409).
+            manager_linked: managers.some(manager => manager.user_id === u.id),
         }));
 
         // Sort by created_at desc

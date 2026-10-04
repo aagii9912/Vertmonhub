@@ -17,6 +17,21 @@ interface UserWithRole {
     last_sign_in_at?: string | null;
     shops?: Array<{ id: string; name: string; is_owner: boolean }>;
     manager_shops?: Array<{ shop_id: string; name: string }>;
+    /** Менежерийн бүртгэлд (идэвхгүй мөр ч) холбогдсон эсэх — нэр нь canonical, «Засах»-аар солихгүй. */
+    manager_linked?: boolean;
+}
+
+type ProfileEdit = { user: UserWithRole; full_name: string; phone: string };
+
+/**
+ * «Засах» цонхны нэрийн төлөв: түгжээтэй (менежерийн холбоос) / илгээхгүй (нэргүй профайлын
+ * зөвхөн утсыг засна) / буруу / илгээнэ. Бичсэн нэрийг хоосолж арилгахгүй.
+ */
+function profileNameState(edit: ProfileEdit): 'locked' | 'omit' | 'invalid' | 'send' {
+    if (edit.user.manager_linked || edit.user.manager_shops?.length) return 'locked';
+    if (!edit.full_name.trim())
+        return !(edit.user.full_name || '').trim() && edit.user.role !== 'sales_manager' ? 'omit' : 'invalid';
+    return managerNameMissing(edit.user.role, edit.full_name, edit.user.email) ? 'invalid' : 'send';
 }
 
 interface RoleOption {
@@ -50,7 +65,7 @@ export default function AdminUsersPage() {
     const [actorId, setActorId] = useState<string | null>(null);
     const [roleChange, setRoleChange] = useState<{ user: UserWithRole; role: string; shop_id: string } | null>(null);
     const [projectEdit, setProjectEdit] = useState<{ user: UserWithRole; shopIds: string[] } | null>(null);
-    const [profileEdit, setProfileEdit] = useState<{ user: UserWithRole; full_name: string; phone: string } | null>(null);
+    const [profileEdit, setProfileEdit] = useState<ProfileEdit | null>(null);
     const [saving, setSaving] = useState(false);
     const [deleteConfirm, setDeleteConfirm] = useState<UserWithRole | null>(null);
     const [deleting, setDeleting] = useState(false);
@@ -84,6 +99,10 @@ export default function AdminUsersPage() {
     const [inviteError, setInviteError] = useState<string | null>(null);
     const [inviteResult, setInviteResult] = useState<{ link: string; mode: string; emailed: boolean } | null>(null);
     const [copied, setCopied] = useState(false);
+    // Урих имэйл бүртгэлтэй хэрэглэгчийнх эсэх (жагсаалтаас; сервер профайлаар нь дахин шалгана).
+    const inviteEmail = inviteForm.email.trim().toLowerCase();
+    const inviteExisting = inviteEmail ? users.find(user => user.email.toLowerCase() === inviteEmail) ?? null : null;
+    const inviteExistingNameMissing = Boolean(inviteExisting && managerNameMissing(inviteForm.role, inviteExisting.full_name, inviteExisting.email));
 
     useEffect(() => {
         Promise.all([fetchUsers(), fetchRoles(), fetchShops()]).finally(() => setLoading(false));
@@ -196,17 +215,18 @@ export default function AdminUsersPage() {
         }
     }
 
-    /** Нэр, утас засах. Идэвхтэй менежерийн нэрийг сервер 409-өөр хамгаална. */
+    /** Нэр, утас засах. Менежерийн холбоостой акаунтын нэрийг сервер 409-өөр хамгаална. */
     async function saveProfile() {
         if (!profileEdit) return;
         const { user, full_name, phone } = profileEdit;
-        const nameLocked = Boolean(user.manager_shops?.length);
+        const nameState = profileNameState(profileEdit);
+        if (nameState === 'invalid') return;
         setSaving(true);
         try {
             const res = await fetch('/api/admin/users/profile', {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: user.id, ...(nameLocked ? {} : { full_name }), phone: parseStaffPhone(phone) || null }),
+                body: JSON.stringify({ userId: user.id, ...(nameState === 'send' ? { full_name } : {}), phone: parseStaffPhone(phone) || null }),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) { toast.error(data.error || 'Профайл хадгалагдсангүй'); return; }
@@ -279,8 +299,12 @@ export default function AdminUsersPage() {
             setInviteError('Төсөл сонгоно уу');
             return;
         }
-        if (managerNameMissing(inviteForm.role, inviteForm.full_name, inviteForm.email)) {
+        if (!inviteExisting && managerNameMissing(inviteForm.role, inviteForm.full_name, inviteForm.email)) {
             setInviteError(MANAGER_NAME_REQUIRED);
+            return;
+        }
+        if (inviteExistingNameMissing) {
+            setInviteError('Бүртгэлтэй хэрэглэгчийн профайлд бодит нэр алга. Эхлээд «Засах»-аар нэр оруулна уу.');
             return;
         }
         const phone = parseStaffPhone(inviteForm.phone);
@@ -387,12 +411,12 @@ export default function AdminUsersPage() {
     const newPhoneInvalid = parseStaffPhone(newUser.phone) === false;
     const newNameMissing = managerNameMissing(newUser.role, newUser.full_name, newUser.email);
     const invitePhoneInvalid = parseStaffPhone(inviteForm.phone) === false;
-    const inviteNameMissing = managerNameMissing(inviteForm.role, inviteForm.full_name, inviteForm.email);
+    // Бүртгэлтэй акаунтыг урихад профайлын нэр хүчинтэй (сервер бичсэн нэр, утсыг ашиглахгүй).
+    const inviteNameMissing = !inviteExisting && managerNameMissing(inviteForm.role, inviteForm.full_name, inviteForm.email);
     const profilePhoneInvalid = profileEdit ? parseStaffPhone(profileEdit.phone) === false : false;
-    const profileNameLocked = Boolean(profileEdit?.user.manager_shops?.length);
-    const profileNameInvalid = profileEdit && !profileNameLocked
-        ? !profileEdit.full_name.trim() || managerNameMissing(profileEdit.user.role, profileEdit.full_name, profileEdit.user.email)
-        : false;
+    const profileName = profileEdit ? profileNameState(profileEdit) : 'send';
+    const profileNameLocked = profileName === 'locked';
+    const profileNameInvalid = profileName === 'invalid';
 
     const getRoleBadge = (role: string) => {
         const r = roles.find(r => r.value === role);
@@ -659,9 +683,10 @@ export default function AdminUsersPage() {
                             aria-describedby={profileNameLocked ? 'admin-profile-name-hint' : undefined}
                             className="rounded-lg border border-border bg-surface p-2.5 text-sm disabled:bg-surface-2 disabled:text-muted-foreground" />
                         {profileNameLocked && <p id="admin-profile-name-hint" className="text-xs text-muted-foreground">
-                            Идэвхтэй борлуулалтын менежерийн нэрээр ERP, KPI болон лидийн хариуцагч холбогддог тул энд солихгүй.
-                            Нэрийг <a href="/admin/sales-targets" className="text-brand-strong underline">Борлуулалтын төлөвлөгөө</a> хэсэгт менежерийн холбоосоор удирдана.
+                            Борлуулалтын менежерийн бүртгэлтэй (идэвхгүй мөр ч) холбогдсон нэрээр ERP, KPI болон лидийн хариуцагч холбогддог тул энд солихгүй.
+                            Эхлээд <a href="/admin/sales-targets" className="text-brand-strong underline">Борлуулалтын төлөвлөгөө</a> хэсэгт «Акаунтын холбоос салгах»-аар холбоосыг салгана.
                         </p>}
+                        {profileName === 'omit' && <p className="text-xs text-muted-foreground">Нэр хоосон бол зөвхөн утсыг хадгална.</p>}
                         {profileNameInvalid && <p className="text-xs text-status-danger">{profileEdit.full_name.trim() ? MANAGER_NAME_REQUIRED : 'Нэр оруулна уу'}</p>}
                         <label htmlFor="admin-profile-phone" className="text-sm font-medium">Утас</label>
                         <input id="admin-profile-phone" type="tel" inputMode="numeric" autoComplete="off" value={profileEdit.phone} disabled={saving}
@@ -710,7 +735,7 @@ export default function AdminUsersPage() {
                                         Имэйл оруулахад ажилтанд урилга (нэвтрэх холбоос) <b>имэйлээр автоматаар илгээгдэнэ</b> — нэвтрэхэд нууц үг шаардахгүй. Шаардвал холбоосыг доор хуулж болно.
                                     </p>
                                     <div>
-                                        <label htmlFor="invite-full-name" className="block text-sm font-medium text-foreground mb-1">Нэр{inviteForm.role === 'sales_manager' && <span className="text-status-danger"> *</span>}</label>
+                                        <label htmlFor="invite-full-name" className="block text-sm font-medium text-foreground mb-1">Нэр{inviteForm.role === 'sales_manager' && !inviteExisting && <span className="text-status-danger"> *</span>}</label>
                                         <input
                                             id="invite-full-name"
                                             type="text"
@@ -720,8 +745,15 @@ export default function AdminUsersPage() {
                                             placeholder="Бодит бүтэн нэр"
                                         />
                                     </div>
-                                    {inviteForm.role === 'sales_manager' && <p className="text-xs text-muted-foreground">Борлуулалтын менежерт бодит бүтэн нэр заавал — ERP-ийн «Борлуулалтын менежер» бичлэгтэй яг ижил бичнэ. Бүртгэлтэй хүний профайлын нэрээр менежер холбогдоно.
+                                    {inviteForm.role === 'sales_manager' && !inviteExisting && <p className="text-xs text-muted-foreground">Борлуулалтын менежерт бодит бүтэн нэр заавал — ERP-ийн «Борлуулалтын менежер» бичлэгтэй яг ижил бичнэ.
                                         Менежерийн холбоосыг <a href="/admin/sales-targets" className="ml-1 text-brand-strong underline">Борлуулалтын төлөвлөгөө</a> хэсэгт шалгана.</p>}
+                                    {inviteExisting && <p id="invite-existing-hint" className="text-xs text-muted-foreground">
+                                        Бүртгэлтэй хэрэглэгч{inviteExisting.full_name ? ` «${inviteExisting.full_name}»` : ''}: профайлын нэр, утас хэвээр үлдэнэ — энд бичсэн нэр, утсыг ашиглахгүй.
+                                        {inviteForm.role === 'sales_manager' && ' Менежер профайлын нэрээр холбогдоно.'} Засахдаа жагсаалтын «Засах»-ыг ашиглана.
+                                    </p>}
+                                    {inviteExistingNameMissing && <p className="text-xs text-status-danger">
+                                        Энэ хэрэглэгчийн профайлд бодит нэр алга. Эхлээд жагсаалтын «Засах»-аар нэр оруулсны дараа менежерээр урина уу.
+                                    </p>}
                                     <div>
                                         <label htmlFor="invite-email" className="block text-sm font-medium text-foreground mb-1">Имэйл <span className="text-status-danger">*</span></label>
                                         <input
@@ -821,7 +853,7 @@ export default function AdminUsersPage() {
                             {!inviteResult && (
                                 <button
                                     onClick={sendInvite}
-                                    disabled={inviting || !inviteForm.email || !inviteForm.shop_id || !roles.some(role => role.value === inviteForm.role) || inviteNameMissing || invitePhoneInvalid}
+                                    disabled={inviting || !inviteForm.email || !inviteForm.shop_id || !roles.some(role => role.value === inviteForm.role) || inviteNameMissing || inviteExistingNameMissing || invitePhoneInvalid}
                                     className="flex items-center gap-2 px-5 py-2.5 text-sm bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                                 >
                                     {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}

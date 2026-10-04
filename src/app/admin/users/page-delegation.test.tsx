@@ -17,9 +17,12 @@ let failSave: boolean;
 let owner: boolean;
 let emptyRoles: boolean;
 let linkedManager: boolean;
+let inactiveLink: boolean;
+let targetName: string | null;
 
 beforeEach(() => {
     writes = []; patchUrls = []; failSave = false; owner = false; emptyRoles = false; linkedManager = false;
+    inactiveLink = false; targetName = 'Бат';
     notices.error.mockClear(); notices.success.mockClear();
     vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
         if (init?.method === 'PATCH') {
@@ -36,9 +39,9 @@ beforeEach(() => {
         ] });
         if (url === '/api/admin/users') return json({ actor_id: actorId, users: [
             { id: actorId, email: 'actor@example.invalid', full_name: 'Админ', role: 'super_admin', created_at: '2026-10-01T00:00:00Z', shops: [{ id: shopId, name: 'Байгууллага А', is_owner: true }] },
-            { id: targetId, email: 'target@example.invalid', full_name: 'Бат', phone: '99112233', role: linkedManager ? 'sales_manager' : 'viewer', created_at: '2026-10-01T00:00:00Z', shops: [
+            { id: targetId, email: 'target@example.invalid', full_name: targetName, phone: '99112233', role: linkedManager || inactiveLink ? 'sales_manager' : 'viewer', created_at: '2026-10-01T00:00:00Z', shops: [
                 { id: shopId, name: 'Байгууллага А', is_owner: owner }, { id: otherShopId, name: 'Байгууллага Б', is_owner: false },
-            ], manager_shops: linkedManager ? [{ shop_id: shopId, name: 'Бат' }] : [] },
+            ], manager_shops: linkedManager ? [{ shop_id: shopId, name: 'Бат' }] : [], manager_linked: linkedManager || inactiveLink },
         ] });
         throw new Error(`Unexpected request ${url}`);
     }));
@@ -138,6 +141,42 @@ it('locks the name of an active roster manager and only sends the phone', async 
     fireEvent.change(within(dialog).getByLabelText('Утас'), { target: { value: '' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Хадгалах' }));
     await waitFor(() => expect(writes).toEqual([{ userId: targetId, phone: null }]));
+});
+
+it('also locks the name when the only roster link is inactive (it would reactivate under the old name)', async () => {
+    inactiveLink = true;
+    render(<Page />);
+    const row = (await screen.findByText('target@example.invalid')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'Бат: профайл засах' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByLabelText('Нэр')).toBeDisabled();
+    expect(within(dialog).getByText(/Акаунтын холбоос салгах/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Хадгалах' }));
+    await waitFor(() => expect(writes).toEqual([{ userId: targetId, phone: '99112233' }]));
+});
+
+it('saves only the phone of a nameless non-manager profile instead of blocking the dialog', async () => {
+    targetName = null;
+    render(<Page />);
+    const row = (await screen.findByText('target@example.invalid')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: /профайл засах/ }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Нэр хоосон бол зөвхөн утсыг хадгална.')).toBeInTheDocument();
+    fireEvent.change(within(dialog).getByLabelText('Утас'), { target: { value: '8811 2233' } });
+    const save = within(dialog).getByRole('button', { name: 'Хадгалах' });
+    expect(save).toBeEnabled();
+    fireEvent.click(save);
+    await waitFor(() => expect(writes).toEqual([{ userId: targetId, phone: '88112233' }]));
+});
+
+it('does not let an existing name be blanked out', async () => {
+    render(<Page />);
+    const row = (await screen.findByText('target@example.invalid')).closest('tr')!;
+    fireEvent.click(within(row).getByRole('button', { name: 'Бат: профайл засах' }));
+    const dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Нэр'), { target: { value: '  ' } });
+    expect(within(dialog).getByText('Нэр оруулна уу')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Хадгалах' })).toBeDisabled();
 });
 
 it('requires a real manager name when creating a sales manager', async () => {
