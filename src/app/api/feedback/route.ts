@@ -3,12 +3,13 @@
  */
 
 import { NextResponse } from 'next/server';
-import { getAuthUser, supabaseAdmin } from '@/lib/auth/auth';
+import { getUserId } from '@/lib/auth/supabase-auth';
+import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
 export async function POST(request: Request) {
     try {
-        const userId = await getAuthUser();
+        const userId = await getUserId();
         const supabase = supabaseAdmin();
         const body = await request.json();
 

@@ -26,7 +26,7 @@ const PUBLIC_ROUTES: Record<string, string> = {
     'feedback': 'нийтийн feedback widget',
 };
 
-const GATE = /\b(requireModule|requireAnyModule|requireModuleWrite|requireModuleDelete|requireWrite|requireDelete|resolvePermissions|getUserShop|getUserId|getAuthUser|resolveApiUser|prepareAssistantRequest|getAuthUserShop|getAdminUser|requireAdmin|isAuthorizedCron|verifyWebhookSignature|assertShopAccess)\s*\(/;
+const GATE = /\b(requireModule|requireAnyModule|requireModuleWrite|requireModuleDelete|requireWrite|requireDelete|resolvePermissions|getUserShop|getUserId|getAuthUser|resolveApiUser|prepareAssistantRequest|getAdminUser|requireAdmin|isAuthorizedCron|verifyWebhookSignature|assertShopAccess)\s*\(/;
 
 function walk(dir: string, out: string[] = []): string[] {
     for (const name of readdirSync(dir)) {

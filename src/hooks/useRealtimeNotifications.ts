@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { toast } from 'sonner';
-import { supabase } from '@/lib/supabase';
+import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
 import { useAuth } from '@/contexts/AuthContext';
 import { useRouter } from 'next/navigation';
 
@@ -13,8 +13,7 @@ export function useRealtimeNotifications() {
     useEffect(() => {
         if (!shop?.id) return;
 
-        // Realtime notifications subscription active for shop
-
+        const supabase = createSupabaseBrowserClient();
         const channel = supabase
             .channel(`shop-updates-${shop.id}`)
             // 💬 Шинэ мессеж (chat_history-д шинэ мөр = ирсэн харилцаа)

@@ -26,14 +26,13 @@ vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ from: (table: s
 vi.mock('@/lib/utils/logger', () => ({ logger: { error: vi.fn() } }));
 
 import { getUserShop, assertShopAccess } from '../supabase-auth';
-import { getAuthUserShop } from '../auth';
 
 beforeEach(() => { Object.assign(state, { signedIn: true, header: '', member: true, membershipError: false }); });
 
-it('resolves the owner default and requested member shop through both helper names', async () => {
+it('resolves the owner default and a requested member shop', async () => {
     expect((await getUserShop())?.id).toBe('owned-shop');
     state.header = 'member-shop';
-    expect((await getAuthUserShop())?.id).toBe('member-shop');
+    expect((await getUserShop())?.id).toBe('member-shop');
     expect(await assertShopAccess('member-shop')).toBe('member-shop');
 });
 it('rejects a forged shop header and explicit foreign ID', async () => {

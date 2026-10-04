@@ -1,23 +1,29 @@
 /**
- * Supabase Auth Utilities for Vertmon Hub
- * Replaces Clerk authentication
+ * Сервер талын Supabase Auth: session client (Server Component / Route Handler),
+ * middleware client, хэрэглэгч ба shop-ийн хандалтын шалгалт.
  */
 
 import { createServerClient } from '@supabase/ssr';
-import { createClient, type User } from '@supabase/supabase-js';
+import type { User } from '@supabase/supabase-js';
 import { cookies, headers } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/utils/logger';
+import { supabaseAdmin } from '@/lib/supabase';
+import { requireSupabaseAnon } from '@/lib/supabase-env';
+
+// Service-role client-ийн нэг хэрэгжүүлэлт нь `@/lib/supabase`; auth helper-тэй хамт импортлогддог газруудад зориулж дамжуулна.
+export { supabaseAdmin };
 
 /**
- * Create Supabase client for server components
+ * Session (cookie) client — Server Components, Route Handlers, Server Actions.
  */
 export async function createSupabaseServerClient() {
     const cookieStore = await cookies();
+    const { url, anonKey } = requireSupabaseAnon();
 
     return createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!.trim(),
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!.trim(),
+        url,
+        anonKey,
         {
             cookies: {
                 getAll() {
@@ -79,17 +85,6 @@ export async function getUserId(): Promise<string | null> {
 }
 
 /**
- * Auth helper for API routes - throws if not authenticated
- */
-export async function requireAuth() {
-    const user = await getAuthUser();
-    if (!user) {
-        throw new Error('Unauthorized');
-    }
-    return user;
-}
-
-/**
  * Create Supabase client for middleware
  */
 export function createSupabaseMiddlewareClient(request: NextRequest) {
@@ -99,9 +94,10 @@ export function createSupabaseMiddlewareClient(request: NextRequest) {
         },
     });
 
+    const { url, anonKey } = requireSupabaseAnon();
     const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!.trim(),
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!.trim(),
+        url,
+        anonKey,
         {
             cookies: {
                 getAll() {
@@ -125,27 +121,6 @@ export function createSupabaseMiddlewareClient(request: NextRequest) {
     );
 
     return { supabase, response };
-}
-
-// ============================================
-// Legacy Compatibility (for existing API routes)
-// These mirror the old clerk-auth.ts exports
-// ============================================
-
-/**
- * Create Supabase admin client (service role for server operations)
- */
-export function supabaseAdmin() {
-    return createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!.trim(),
-        process.env.SUPABASE_SERVICE_ROLE_KEY!.trim(),
-        {
-            auth: {
-                autoRefreshToken: false,
-                persistSession: false,
-            },
-        }
-    );
 }
 
 /**
@@ -229,10 +204,3 @@ export async function getUserShop() {
 
     return shop;
 }
-
-// Legacy aliases — re-export for backward compat during migration
-/** @deprecated Use getUserId instead */
-export const getClerkUser = getUserId;
-/** @deprecated Use getUserShop instead */
-export const getClerkUserShop = getUserShop;
-

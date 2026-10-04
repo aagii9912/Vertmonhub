@@ -41,7 +41,7 @@ Browser specs run against `e2e/support/fixture-server.mjs` (fake GoTrue + `next 
 - `src/lib/ai/orchestrator` (loop, prompt, memory, `shop-knowledge.ts`, `http.ts`), `src/lib/ai/data-assistant` (`tools.ts` lists + `functions.ts`/`actions*.ts`), `src/lib/ai/riskTiers.ts`.
 - `src/lib/webhook/WebhookService.ts` + `src/lib/facebook/messenger.ts` — Meta DM persistence and staff replies.
 - `src/lib/navigation/nav.ts` (single nav source), `src/lib/api/dashboardFetch.ts` (browser → API), `src/lib/utils/date.ts` (Ulaanbaatar dates), `src/lib/utils/xlsx.ts` (Excel I/O).
-- Supabase clients: `lib/supabase.ts` `supabaseAdmin()` (service role, server only), `lib/supabase-server.ts` (session), `lib/supabase-browser.ts` (auth only in the browser).
+- Supabase clients: `lib/supabase.ts` `supabaseAdmin()` (service role, server only; `lib/auth/supabase-auth.ts` re-exports it), `lib/auth/supabase-auth.ts` (session + middleware clients, `getUserId`, `getUserShop`), `lib/supabase-browser.ts` (auth and realtime in the browser).
 
 ## Rules that must not regress
 

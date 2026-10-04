@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { defaultLandingContent } from '@/lib/landing/defaults';
 import type { LandingContent } from '@/lib/landing/types';
-import { getAuthUser } from '@/lib/auth/auth';
+import { getUserId } from '@/lib/auth/supabase-auth';
 import { resolvePermissions } from '@/lib/auth/require-permission';
 import { logger } from '@/lib/utils/logger';
 import { getAdminUser } from '@/lib/admin/auth';
@@ -62,7 +62,7 @@ export async function GET(request: NextRequest) {
 // 2026-09 review: өмнө нь нэвтэрсэн дурын хэрэглэгч (viewer ч) өөрчилж чаддаг байв.
 export async function PUT(request: NextRequest) {
     try {
-        const userId = await getAuthUser();
+        const userId = await getUserId();
         if (!userId) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
