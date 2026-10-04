@@ -7,7 +7,8 @@
 
 import { randomBytes } from 'node:crypto';
 import { supabaseAdmin } from '@/lib/supabase';
-import { adminUserInput, checkRoleAssignment, isAssignableRole, provisionUserAccess, resolveTargetShop } from '@/lib/admin/user-provisioning';
+import { adminUserInput, adminUserInputError, checkRoleAssignment, isAssignableRole, provisionUserAccess, resolveTargetShop } from '@/lib/admin/user-provisioning';
+import { MANAGER_NAME_REQUIRED, formatStaffPhone, managerNameMissing } from '@/lib/admin/staff-profile';
 import { ALL_MODULES, clearPermissionsCache } from '@/lib/rbac';
 import { CreateRoleSchema } from '@/lib/validations/schemas';
 
@@ -35,8 +36,8 @@ export async function inviteUser(shopId: string, args: any, confirm = false, act
     try {
         if (!actingUserId) return { error: 'Үйлдэл хийж буй хэрэглэгч тодорхойгүй байна' };
         const parsed = adminUserInput.safeParse({ ...args, shop_id: args.shop_id || shopId });
-        if (!parsed.success) return { error: 'Имэйл, дүр эсвэл байгууллагын мэдээлэл буруу байна' };
-        const { email, role, full_name } = parsed.data;
+        if (!parsed.success) return { error: adminUserInputError(parsed.error) };
+        const { email, role, full_name, phone = null } = parsed.data;
         const db = supabaseAdmin();
         if (!await isAssignableRole(db, role)) return { error: 'Сонгосон дүр олдсонгүй' };
         const shop = await resolveTargetShop(db, parsed.data.shop_id);
@@ -52,15 +53,19 @@ export async function inviteUser(shopId: string, args: any, confirm = false, act
             const { data, error } = await db.auth.admin.getUserById(profile.id);
             if (error || !data?.user) return { error: 'Бүртгэлтэй хэрэглэгчийн Auth мэдээлэл уншигдсангүй' };
         }
-        if (!confirm) return confirmNeeded('invite_user', { email, role, full_name, shop_id: shop.id },
+        // Шинэ менежерийн нэрийг баталгаажуулалтаас ӨМНӨ шалгана (бүртгэлтэй бол профайлын нэр хүчинтэй).
+        if (!profile && managerNameMissing(role, full_name, email)) return { error: MANAGER_NAME_REQUIRED };
+        if (!confirm) return confirmNeeded('invite_user', { email, role, full_name, phone, shop_id: shop.id },
             `Хэрэглэгч нэмэх: ${email}`,
-            { Имэйл: email, 'Дүр (role)': role, 'Төсөл': shop.id });
+            {
+                Имэйл: email, 'Дүр (role)': role, 'Төсөл': shop.id,
+                ...(profile ? { Профайл: 'Бүртгэлтэй — нэр, утас өөрчлөгдөхгүй' }
+                    : { Нэр: full_name || '-', Утас: formatStaffPhone(phone) || '-' }),
+            });
 
         let uid = profile?.id;
         let tempPassword: string | undefined;
         if (!uid) {
-            if (role === 'sales_manager' && (!full_name || full_name === email))
-                return { error: 'Борлуулалтын менежерийн бодит нэрийг оруулна уу' };
             tempPassword = `Vh1${randomBytes(18).toString('base64url')}!`;
             const { data, error } = await db.auth.admin.createUser({
                 email, password: tempPassword, email_confirm: true, user_metadata: { full_name: full_name || email },
@@ -69,7 +74,7 @@ export async function inviteUser(shopId: string, args: any, confirm = false, act
             uid = data.user.id;
         }
         const provisioningError = await provisionUserAccess(db, {
-            actorId: actingUserId, userId: uid, email, fullName: full_name, role, shopId: shop.id, isNew: !profile,
+            actorId: actingUserId, userId: uid, email, fullName: full_name, phone, role, shopId: shop.id, isNew: !profile,
         });
         if (provisioningError) return provisioningError;
         if (profile) return {
@@ -80,7 +85,7 @@ export async function inviteUser(shopId: string, args: any, confirm = false, act
             success: true, userId: uid,
             message: `Хэрэглэгч амжилттай үүсгэлээ. Доорх мэдээллийг тухайн хүнд дамжуулна уу (имэйл автоматаар илгээгдэхгүй):\n\n` +
                 `- **Имэйл:** ${email}\n- **Түр нууц үг:** \`${tempPassword}\`\n- **Нэвтрэх хаяг:** ${loginUrl()}\n- **Эрх:** ${role}\n\n` +
-                'Тухайн хүн анх нэвтэрсний дараа нууц үгээ солихыг зөвлөж байна.',
+                'Түр нууц үгийг имэйлээр бус утсаар эсвэл биечлэн дамжуулна уу. Нууц үгийг админ «Хэрэглэгчид → Нууц үг» хэсгээс шинэчилнэ.',
         };
     } catch (error) {
         console.error('AI user invite failed:', error);
@@ -102,15 +107,20 @@ export async function assignRole(shopId: string, args: any, confirm = false, act
         if (denied) return { error: denied.error };
         const { data: target, error: targetError } = await db.auth.admin.getUserById(profile.id);
         if (targetError || !target?.user) return { error: 'Хэрэглэгчийн Auth мэдээлэл уншигдсангүй' };
-        if (!confirm) return confirmNeeded('assign_role', { email, role },
-            `Дүр оноох: ${email} → ${role}`, { Хэрэглэгч: email, 'Шинэ дүр': role });
+        // Менежерийн төслийг баталгаажуулалтаас өмнө тогтоож, баталсан үйлдэл ижил төсөлд ажиллана.
+        let managerShopId: string | undefined;
         if (role === 'sales_manager') {
-            const shop = await resolveTargetShop(db, args.shop_id || shopId);
+            const shop = await resolveTargetShop(db, parsed.data.shop_id || shopId);
             if (!shop.id) return { error: shop.error };
             if (!await userCanAccessShop(db, actingUserId!, shop.id))
-                return { error: 'Та энэ байгууллагад харьяалагдахгүй байна' };
+                return { error: 'Та энэ төсөлд харьяалагдахгүй байна' };
+            managerShopId = shop.id;
+        }
+        if (!confirm) return confirmNeeded('assign_role', { email, role, ...(managerShopId ? { shop_id: managerShopId } : {}) },
+            `Дүр оноох: ${email} → ${role}`, { Хэрэглэгч: email, 'Шинэ дүр': role, ...(managerShopId ? { Төсөл: managerShopId } : {}) });
+        if (managerShopId) {
             const provisioningError = await provisionUserAccess(db, {
-                actorId: actingUserId!, userId: profile.id, email, role, shopId: shop.id, isNew: false,
+                actorId: actingUserId!, userId: profile.id, email, role, shopId: managerShopId, isNew: false,
             });
             if (provisioningError) return provisioningError;
         } else {

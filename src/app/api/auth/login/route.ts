@@ -4,7 +4,8 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { z } from 'zod';
 
 const LoginSchema = z.object({
-    email: z.string().trim().pipe(z.email().max(254)),
+    // Админ хэрэглэгч үүсгэхдээ имэйлийг жижиг үсгээр хадгалдаг; нэвтрэлт ч мөн адил.
+    email: z.string().trim().toLowerCase().pipe(z.email().max(254)),
     password: z.string().min(1).max(1024),
 });
 

@@ -26,6 +26,12 @@ describe('password login', () => {
         expect(auth.signIn).toHaveBeenCalledWith({ email: 'test@example.invalid', password: ' Exact password ' });
     });
 
+    it('lowercases a mixed-case email like admin user creation does', async () => {
+        const response = await login({ email: '  Test.Manager@Example.Invalid ', password: 'password' });
+        expect(response.status).toBe(200);
+        expect(auth.signIn).toHaveBeenCalledWith({ email: 'test.manager@example.invalid', password: 'password' });
+    });
+
     it.each([
         null, [], { email: { hostile: true }, password: 'password' },
         { email: 'test@example.invalid', password: ['password'] },
