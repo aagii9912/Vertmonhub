@@ -61,6 +61,8 @@ const ENTRIES = {
     remove_customer_tag: { kind: 'write', module: 'customers', auto: 'Таг хасах' },
     merge_customers: { kind: 'write', module: 'customers', scoped: true, alwaysConfirm: true },
     delete_customer: { kind: 'delete', module: 'customers' },
+    list_conversations: { kind: 'read', module: 'inbox' },
+    get_conversation: { kind: 'read', module: 'inbox' },
     reply_to_customer: { kind: 'write', module: 'inbox', alwaysConfirm: true },
     // Уулзалт
     list_viewings: { kind: 'read', module: 'viewings', scoped: true },

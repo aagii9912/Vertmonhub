@@ -732,6 +732,30 @@ const writeDefinitions: ToolDefinition[] = [
             tag: { type: SchemaType.STRING, description: 'Таг' } }, required: ['tag'] }
     },
     {
+        name: 'list_conversations',
+        description: 'Inbox (Messenger/Instagram)-ийн сүүлийн яриануудыг харилцагчаар: сүүлийн мессеж, цаг, хариу хүлээж буй эсэх (awaiting_reply). unanswered_only=true бол зөвхөн хариугүй чатууд. Сүүлийн 200 мессежийн цонх.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                unanswered_only: { type: SchemaType.BOOLEAN, description: 'Зөвхөн хариу хүлээж буй чатууд' },
+                limit: { type: SchemaType.NUMBER, description: 'Хэдэн яриа (default 10, дээд 50)' }
+            }
+        }
+    },
+    {
+        name: 'get_conversation',
+        description: 'Нэг харилцагчийн Inbox чатын түүх (хуучнаас шинэ рүү): from = customer / staff / bot. Хариу бичихээс өмнө юу асуусныг уншихад ашигла.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                customer_id: { type: SchemaType.STRING, description: 'Харилцагчийн ID (list_conversations-оос)' },
+                customer_name: { type: SchemaType.STRING, description: 'Нэрээр хайх' },
+                phone: { type: SchemaType.STRING, description: 'Утсаар хайх' },
+                limit: { type: SchemaType.NUMBER, description: 'Сүүлийн хэдэн мөр (default 30, дээд 100)' }
+            }
+        }
+    },
+    {
         name: 'reply_to_customer',
         description: 'Харилцагчид Facebook Messenger-ээр ХҮНИЙ хариу илгээх (chat_history-д бичигдэнэ). Гадагш илгээгддэг тул баталгаажуулалт авна.',
         parameters: { type: SchemaType.OBJECT, properties: {

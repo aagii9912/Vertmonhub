@@ -53,7 +53,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         emoji: '🤝',
         color: 'violet',
         description: 'Лийд/сонирхогчид, харилцагч, УУЛЗАЛТ (meeting) товлох/цуцлах, тагууд, тэмдэглэл. Шинэ лийд/харилцагч ҮҮСГЭХ, лийд/харилцагч/уулзалт УСТГАХ, статус шинэчлэх. Худалдан авагч, лийд, харилцагч, уулзалттай холбоотой бүх асуулт, үйлдэл.',
-        toolNames: ['list_lead_projects', 'list_leads', 'get_lead_details', 'get_customer_insights', 'list_properties', 'update_lead_status', 'update_lead', 'add_lead_note', 'create_lead', 'create_customer', 'update_customer', 'schedule_viewing', 'attach_file', 'bulk_update_leads', 'delete_lead', 'delete_customer', 'delete_viewing'],
+        toolNames: ['list_lead_projects', 'list_leads', 'get_lead_details', 'get_customer_insights', 'list_properties', 'update_lead_status', 'update_lead', 'add_lead_note', 'create_lead', 'create_customer', 'update_customer', 'list_conversations', 'get_conversation', 'schedule_viewing', 'attach_file', 'bulk_update_leads', 'delete_lead', 'delete_customer', 'delete_viewing'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн CRM МЭРГЭЖИЛТЭН agent. Таны үүрэг: лийд/харилцагчийн менежмент — жагсаалт, дэлгэрэнгүй, төсөв, сонирхол, тагууд, тэмдэглэл, шинэ лийд/харилцагч үүсгэх, лийд/харилцагч устгах, УУЛЗАЛТ (meeting) товлох болон цуцлах.
 Хэрэв танд бичих/устгах эрх олгогдсон бол лийд/харилцагч үүсгэх, уулзалт товлох, статус солих, тэмдэглэл нэмэх, устгаж болно. БҮХ үүсгэх/устгах/өөрчлөх үйлдлийг гүйцэтгэхээс өмнө систем хэрэглэгчээс баталгаажуулалт авна — чи зөв tool-оо дуудаж, юу хийхээ тодорхой хэл. Үйлдэл нь нэвтэрсэн борлуулалтын менежерийн нэрээр хадгалагдана.${COMMON_RULES}`, k),

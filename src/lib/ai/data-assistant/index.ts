@@ -30,7 +30,7 @@ import {
     createSocialPost, rememberFact,
 } from './functions';
 import { inviteUser, assignRole, createRole } from './admin-functions';
-import { getKpiReport, getManagerPerformanceTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, updateCustomerTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
+import { getKpiReport, getManagerPerformanceTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, updateCustomerTool, listConversationsTool, getConversationTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
 import { logCall, setFollowup, assignLeadManager, updateLeadTool, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
 
 /** AI Assistant-ийн RBAC эрхүүд (route-аас тооцоолж дамжуулна). */
@@ -145,6 +145,8 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     get_export_link: ({ shopId, args }) => getExportLink(shopId, args),
     add_customer_tag: ({ shopId, args }) => customerTag(shopId, args, false),
     remove_customer_tag: ({ shopId, args }) => customerTag(shopId, args, true),
+    list_conversations: ({ shopId, args }) => listConversationsTool(shopId, args),
+    get_conversation: ({ shopId, args }) => getConversationTool(shopId, args),
     reply_to_customer: ({ shopId, args, confirm }) => replyCustomer(shopId, args, confirm),
     merge_customers: ({ shopId, args, confirm, scope }) => mergeCustomersTool(shopId, args, confirm, scope),
     log_marketing_spend: ({ shopId, args, confirm, userId }) => logSpend(shopId, args, confirm, userId),

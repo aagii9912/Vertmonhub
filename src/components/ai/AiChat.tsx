@@ -82,7 +82,7 @@ interface PendingRequest {
 const TOOL_LABEL: Record<string, string> = {
     delegate_to_specialists: 'Мэргэжилтнүүдэд хуваарилах', ask_user: 'Тодруулга', list_viewings: 'Уулзалт хайх', list_my_tasks: 'Миний ажлууд', list_contract_payments: 'Төлбөрийн хуваарь',
     log_call: 'Дуудлага бүртгэх', set_followup: 'Follow-up тавих', assign_lead_manager: 'Лид шилжүүлэх', record_viewing_outcome: 'Уулзалтын үр дүн', reschedule_viewing: 'Уулзалт зөөх', create_task: 'Ажил нэмэх', complete_task: 'Ажил дуусгах', add_contract_payment: 'Төлбөр нэмэх', mark_payment_paid: 'Төлбөр төлсөн',
-    get_kpi_report: 'KPI тайлан', get_manager_performance: 'Менежерийн гүйцэтгэл', get_export_link: 'Excel линк', add_customer_tag: 'Таг нэмэх', remove_customer_tag: 'Таг хасах', reply_to_customer: 'Messenger хариу', merge_customers: 'Харилцагч нэгтгэх',
+    get_kpi_report: 'KPI тайлан', get_manager_performance: 'Менежерийн гүйцэтгэл', get_export_link: 'Excel линк', add_customer_tag: 'Таг нэмэх', remove_customer_tag: 'Таг хасах', reply_to_customer: 'Messenger хариу', list_conversations: 'Inbox', get_conversation: 'Чат унших', merge_customers: 'Харилцагч нэгтгэх',
     log_marketing_spend: 'Зарцуулалт бүртгэх', set_marketing_budget: 'Төсөв тавих', list_marketing_spend: 'Зарцуулалт', add_market_indicator: 'Зах зээлийн үзүүлэлт',
     update_unit_status: 'Нэгжийн статус', in_project: 'Өөр төсөл', update_unit: 'Нэгж засах', update_lead: 'Лид засах', update_customer: 'Харилцагч засах', delete_property: 'Байр устгах', delete_viewing: 'Уулзалт цуцлах', delete_customer: 'Харилцагч устгах', create_role: 'Дүр үүсгэх',
     get_dashboard_stats: 'Самбарын тоо', list_properties: 'Байр хайх', list_leads: 'Лид хайх', get_lead_details: 'Лидийн мэдээлэл',
