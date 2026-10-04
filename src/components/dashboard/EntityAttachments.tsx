@@ -5,9 +5,10 @@
  * файлуудыг (зураг thumbnail / файл чип) харуулах панель.
  */
 
-import React, { useEffect, useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import React from 'react';
+import { useDashboardQuery } from '@/hooks/useDashboardQuery';
+import { Alert } from '@/components/ui/Alert';
+import { Button } from '@/components/ui/Button';
 import { Paperclip, FileText, Loader2 } from 'lucide-react';
 
 interface Attachment {
@@ -25,35 +26,27 @@ interface Props {
 }
 
 export function EntityAttachments({ entityType, entityId }: Props) {
-    const { shop } = useAuth();
-    const [items, setItems] = useState<Attachment[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { data, error, isFetching, refetch } = useDashboardQuery<{ attachments?: Attachment[] }>(
+        ['ai-attachments', entityType, entityId],
+        entityId ? `/api/dashboard/ai-attachments?entity_type=${entityType}&entity_id=${entityId}` : null,
+    );
 
-    useEffect(() => {
-        if (!shop?.id || !entityId) return;
-        let active = true;
-        (async () => {
-            setLoading(true);
-            try {
-                const res = await dashboardFetch(`/api/dashboard/ai-attachments?entity_type=${entityType}&entity_id=${entityId}`);
-                const data = await res.json();
-                if (active) setItems(data.attachments || []);
-            } catch {
-                if (active) setItems([]);
-            } finally {
-                if (active) setLoading(false);
-            }
-        })();
-        return () => { active = false; };
-    }, [shop?.id, entityType, entityId]);
-
-    if (loading) {
+    if (error && !data) {
+        return (
+            <Alert variant="danger">
+                Хавсралт ачаалж чадсангүй.
+                <Button size="sm" variant="secondary" className="self-start" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</Button>
+            </Alert>
+        );
+    }
+    if (!data) {
         return (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
                 <Loader2 className="w-4 h-4 animate-spin" /> Хавсралт ачаалж байна...
             </div>
         );
     }
+    const items = data.attachments ?? [];
     if (items.length === 0) return null;
 
     return (

@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
     Headphones, AlertTriangle, CheckCircle2,
-    DollarSign, Star, Loader2, Plus,
+    DollarSign, Star, Plus,
     Phone, User, FileText, MessageSquare, Wrench, ArrowRight,
     ThumbsUp, Lightbulb, X,
 } from 'lucide-react';
@@ -12,6 +13,7 @@ import { formatTimeAgo } from '@/lib/utils/date';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { FilterBar } from '@/components/dashboard/FilterBar';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
 import { StatusPill } from '@/components/ui/StatusPill';
 import {
@@ -32,6 +34,7 @@ import {
 import { FormField } from '@/components/ui/FormField';
 import { PageSkeleton } from '@/components/ui/LoadingSkeleton';
 import { dashboardFetch, dashboardMutate } from '@/lib/api/dashboardFetch';
+import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 
 type StatusPillVariant = 'success' | 'danger' | 'pending' | 'info' | 'active' | 'neutral' | 'brand';
 
@@ -74,6 +77,18 @@ interface ServiceLog {
     satisfaction_rating: number | null;
     created_at: string;
     resolved_at: string | null;
+}
+
+interface TeamMember {
+    id: string;
+    full_name: string;
+    role: string;
+}
+
+interface CustomerOption {
+    id: string;
+    name: string;
+    phone: string | null;
 }
 
 const TYPE_LABELS: Record<string, { text: string; icon: React.ReactNode; variant: StatusPillVariant }> = {
@@ -123,44 +138,40 @@ function slaInfo(log: ServiceLog): { text: string; variant: StatusPillVariant } 
 }
 
 export default function CustomerServicePage() {
-    const [kpi, setKpi] = useState<KPI | null>(null);
-    const [logs, setLogs] = useState<ServiceLog[]>([]);
-    const [loading, setLoading] = useState(true);
+    const queryClient = useQueryClient();
     const [statusFilter, setStatusFilter] = useState('');
     const [typeFilter, setTypeFilter] = useState('');
     const [channelFilter, setChannelFilter] = useState('');
     const [search, setSearch] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
     const [showNewForm, setShowNewForm] = useState(false);
 
-    const fetchData = useCallback(async () => {
-        try {
-            setLoading(true);
-            const [kpiRes, logsRes] = await Promise.all([
-                dashboardFetch('/api/dashboard/contracts/stats/service'),
-                dashboardFetch(`/api/dashboard/service-logs?${new URLSearchParams({
-                    ...(statusFilter ? { status: statusFilter } : {}),
-                    ...(typeFilter ? { type: typeFilter } : {}),
-                    ...(channelFilter ? { channel: channelFilter } : {}),
-                    ...(search ? { search } : {}),
-                })}`),
-            ]);
-
-            const kpiData = await kpiRes.json();
-            const logsData = await logsRes.json();
-
-            setKpi(kpiData.stats);
-            setLogs(logsData.logs || []);
-        } catch (err) {
-            console.error('[CustomerService] fetch error:', err);
-        } finally {
-            setLoading(false);
-        }
-    }, [statusFilter, typeFilter, channelFilter, search]);
-
+    // Хайлтыг 300мс хүлээж хэрэглэнэ (цэвэрлэхэд шууд).
     useEffect(() => {
-        const t = setTimeout(fetchData, search ? 300 : 0);
+        const t = setTimeout(() => setSearchTerm(search), search ? 300 : 0);
         return () => clearTimeout(t);
-    }, [fetchData, search]);
+    }, [search]);
+
+    const kpiQuery = useDashboardQuery<{ stats?: KPI }>(['service-logs', 'kpi'], '/api/dashboard/contracts/stats/service');
+    const logsQuery = useDashboardQuery<{ logs?: ServiceLog[] }>(
+        ['service-logs', 'list', statusFilter, typeFilter, channelFilter, searchTerm],
+        `/api/dashboard/service-logs?${new URLSearchParams({
+            ...(statusFilter ? { status: statusFilter } : {}),
+            ...(typeFilter ? { type: typeFilter } : {}),
+            ...(channelFilter ? { channel: channelFilter } : {}),
+            ...(searchTerm ? { search: searchTerm } : {}),
+        })}`,
+        { keepPreviousData: true },
+    );
+    const logs = logsQuery.data?.logs ?? [];
+
+    /** Санал гомдлын жагсаалт, KPI болон харилцагчийн дэлгэрэнгүй дэх түүхийг шинэчилнэ. */
+    function refreshLogs() {
+        return Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['service-logs'] }),
+            queryClient.invalidateQueries({ queryKey: ['customers', 'detail'] }),
+        ]);
+    }
 
     async function createServiceLog(formData: Record<string, string>): Promise<boolean> {
         try {
@@ -170,7 +181,7 @@ export default function CustomerServicePage() {
             });
             if (res.ok) {
                 setShowNewForm(false);
-                await fetchData();
+                await refreshLogs();
                 toast.success('Хүсэлт бүртгэгдлээ');
                 return true;
             }
@@ -186,17 +197,17 @@ export default function CustomerServicePage() {
     async function updateLogStatus(id: string, status: string) {
         try {
             await dashboardMutate(`/api/dashboard/service-logs/${id}`, 'PATCH', { status });
-            fetchData();
+            void refreshLogs();
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Төлөв шинэчилж чадсангүй');
         }
     }
 
-    if (loading && !kpi) {
+    if (kpiQuery.isPending || logsQuery.isPending) {
         return <PageSkeleton rows={6} showStats />;
     }
 
-    const k = kpi || {} as KPI;
+    const k = kpiQuery.data?.stats || {} as KPI;
 
     return (
         <div>
@@ -212,36 +223,44 @@ export default function CustomerServicePage() {
             />
 
             {/* KPI Cards: Санал гомдол & Сэтгэл ханамж */}
-            <StatBar columns={4}>
-                <StatTile
-                    icon={<AlertTriangle className="w-4 h-4" />}
-                    accent="danger"
-                    label="Нээлттэй гомдол"
-                    value={String(k.open_complaints || 0)}
-                    helper={k.avg_resolution_hours ? `Дундаж шийдвэрлэх: ${k.avg_resolution_hours} цаг` : `Нийт ${k.total_requests || 0} бичлэг`}
-                />
-                <StatTile
-                    icon={<Lightbulb className="w-4 h-4" />}
-                    accent="brand"
-                    label="Санал"
-                    value={String(k.suggestions_count || 0)}
-                    helper={`Нээлттэй ${k.open_requests || 0} хүсэлт`}
-                />
-                <StatTile
-                    icon={<ThumbsUp className="w-4 h-4" />}
-                    accent="success"
-                    label="NPS"
-                    value={k.nps !== null ? String(k.nps) : '—'}
-                    helper={k.total_surveys > 0 ? `${k.total_surveys} судалгааны хариулт` : 'Судалгаа алга'}
-                />
-                <StatTile
-                    icon={<Star className="w-4 h-4" />}
-                    accent="warning"
-                    label="CSAT"
-                    value={k.avg_csat !== null ? `${k.avg_csat}/5` : '—'}
-                    helper={k.avg_service_rating ? `Гомдлын үнэлгээ: ${k.avg_service_rating}/5` : undefined}
-                />
-            </StatBar>
+            {kpiQuery.error && !kpiQuery.data ? (
+                <Alert variant="danger" className="mb-4">
+                    <AlertTitle>Үзүүлэлт татахад алдаа гарлаа</AlertTitle>
+                    <AlertDescription>{kpiQuery.error.message}</AlertDescription>
+                    <Button size="sm" variant="secondary" className="self-start" disabled={kpiQuery.isFetching} onClick={() => void kpiQuery.refetch()}>Дахин оролдох</Button>
+                </Alert>
+            ) : (
+                <StatBar columns={4}>
+                    <StatTile
+                        icon={<AlertTriangle className="w-4 h-4" />}
+                        accent="danger"
+                        label="Нээлттэй гомдол"
+                        value={String(k.open_complaints || 0)}
+                        helper={k.avg_resolution_hours ? `Дундаж шийдвэрлэх: ${k.avg_resolution_hours} цаг` : `Нийт ${k.total_requests || 0} бичлэг`}
+                    />
+                    <StatTile
+                        icon={<Lightbulb className="w-4 h-4" />}
+                        accent="brand"
+                        label="Санал"
+                        value={String(k.suggestions_count || 0)}
+                        helper={`Нээлттэй ${k.open_requests || 0} хүсэлт`}
+                    />
+                    <StatTile
+                        icon={<ThumbsUp className="w-4 h-4" />}
+                        accent="success"
+                        label="NPS"
+                        value={k.nps !== null ? String(k.nps) : '—'}
+                        helper={k.total_surveys > 0 ? `${k.total_surveys} судалгааны хариулт` : 'Судалгаа алга'}
+                    />
+                    <StatTile
+                        icon={<Star className="w-4 h-4" />}
+                        accent="warning"
+                        label="CSAT"
+                        value={k.avg_csat !== null ? `${k.avg_csat}/5` : '—'}
+                        helper={k.avg_service_rating ? `Гомдлын үнэлгээ: ${k.avg_service_rating}/5` : undefined}
+                    />
+                </StatBar>
+            )}
 
             {/* Filters */}
             <FilterBar
@@ -312,10 +331,12 @@ export default function CustomerServicePage() {
             </FilterBar>
 
             {/* Service Logs Table */}
-            <div className="bg-surface rounded-xl border border-border overflow-hidden">
-                {loading ? (
-                    <div className="flex items-center justify-center py-20">
-                        <Loader2 className="w-6 h-6 animate-spin text-brand" />
+            <div className="bg-surface rounded-xl border border-border overflow-hidden" aria-busy={logsQuery.isFetching}>
+                {logsQuery.error && !logsQuery.data ? (
+                    <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
+                        <AlertTriangle className="w-8 h-8 text-status-danger" />
+                        <p className="text-sm text-muted-foreground">Санал гомдлын бүртгэл татахад алдаа гарлаа</p>
+                        <Button variant="secondary" size="sm" disabled={logsQuery.isFetching} onClick={() => void logsQuery.refetch()}>Дахин оролдох</Button>
                     </div>
                 ) : logs.length === 0 ? (
                     <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -481,21 +502,10 @@ function NewServiceLogModal({ open, onClose, onSubmit }: {
     };
     const [form, setForm] = useState(EMPTY_FORM);
     const [submitting, setSubmitting] = useState(false);
-    const [team, setTeam] = useState<Array<{ id: string; full_name: string; role: string }>>([]);
 
-    // Форм нээгдэх бүрд багийн гишүүдийг татах (Хариуцагч сонголтод)
-    useEffect(() => {
-        if (!open) return;
-        let cancel = false;
-        (async () => {
-            try {
-                const res = await dashboardFetch('/api/dashboard/team');
-                const d = await res.json();
-                if (!cancel) setTeam(d.members || []);
-            } catch { /* ignore */ }
-        })();
-        return () => { cancel = true; };
-    }, [open]);
+    // Форм нээлттэй үед багийн гишүүдийг татах (Хариуцагч сонголтод)
+    const teamQuery = useDashboardQuery<{ members?: TeamMember[] }>(['team'], open ? '/api/dashboard/team' : null);
+    const team = teamQuery.data?.members ?? [];
 
     async function handleSubmit(e: React.FormEvent) {
         e.preventDefault();
@@ -619,7 +629,16 @@ function NewServiceLogModal({ open, onClose, onSubmit }: {
                         </FormField>
                     </div>
 
-                    <FormField label="Хариуцагч" htmlFor="cs-assigned-to">
+                    <FormField
+                        label="Хариуцагч"
+                        htmlFor="cs-assigned-to"
+                        error={teamQuery.error ? (
+                            <>
+                                Багийн гишүүдийг татаж чадсангүй.{' '}
+                                <button type="button" onClick={() => void teamQuery.refetch()} disabled={teamQuery.isFetching} className="underline">Дахин оролдох</button>
+                            </>
+                        ) : undefined}
+                    >
                         {team.length > 0 ? (
                             <Select
                                 value={form.assigned_to || 'unassigned'}
@@ -682,28 +701,28 @@ function NewServiceLogModal({ open, onClose, onSubmit }: {
 
 // CRM харилцагч хайх typeahead — service_logs.customer_id-д холбоно (заавал биш).
 function CustomerSearch({ onSelect }: {
-    onSelect: (c: { id: string; name: string; phone: string | null } | null) => void;
+    onSelect: (c: CustomerOption | null) => void;
 }) {
     const [q, setQ] = useState('');
+    // Хайх үг: 300мс хүлээнэ, 2-оос богино бол шууд. `fresh` — 2-оос богино үгнээс шинээр
+    // эхэлсэн хайлт тул өмнөх хайлтын үр дүнг (keepPreviousData) харуулахгүй.
+    const [search, setSearch] = useState({ term: '', fresh: true });
     const [picked, setPicked] = useState('');
-    const [results, setResults] = useState<Array<{ id: string; name: string; phone: string | null }>>([]);
     const [open, setOpen] = useState(false);
 
     useEffect(() => {
-        if (picked) return;
-        const term = q.trim();
-        if (term.length < 2) { setResults([]); return; }
-        let cancel = false;
-        const t = setTimeout(async () => {
-            try {
-                const res = await dashboardFetch(`/api/dashboard/customers?search=${encodeURIComponent(term)}&limit=8`);
-                const d = await res.json();
-                const list = (d.customers || d.data || d.rows || []) as Array<{ id: string; name: string; phone: string | null }>;
-                if (!cancel) { setResults(list.slice(0, 8)); setOpen(true); }
-            } catch { /* ignore */ }
-        }, 300);
-        return () => { cancel = true; clearTimeout(t); };
-    }, [q, picked]);
+        const next = q.trim();
+        const t = setTimeout(() => setSearch((prev) => prev.term === next ? prev : { term: next, fresh: prev.term.length < 2 }), next.length < 2 ? 0 : 300);
+        return () => clearTimeout(t);
+    }, [q]);
+
+    const searchQuery = useDashboardQuery<{ customers?: CustomerOption[]; data?: CustomerOption[]; rows?: CustomerOption[] }>(
+        ['customers', 'search', search.term],
+        !picked && search.term.length >= 2 ? `/api/dashboard/customers?search=${encodeURIComponent(search.term)}&limit=8` : null,
+        { keepPreviousData: true },
+    );
+    const found = search.term.length >= 2 && !(search.fresh && searchQuery.isPlaceholderData) ? searchQuery.data : undefined;
+    const results = (found?.customers || found?.data || found?.rows || []).slice(0, 8);
 
     if (picked) {
         return (
@@ -721,13 +740,22 @@ function CustomerSearch({ onSelect }: {
     }
 
     return (
-        <FormField label="Харилцагч холбох (заавал биш)" htmlFor="cs-cust-search">
+        <FormField
+            label="Харилцагч холбох (заавал биш)"
+            htmlFor="cs-cust-search"
+            error={searchQuery.error ? (
+                <>
+                    Харилцагч хайж чадсангүй.{' '}
+                    <button type="button" onClick={() => void searchQuery.refetch()} disabled={searchQuery.isFetching} className="underline">Дахин оролдох</button>
+                </>
+            ) : undefined}
+        >
             <div className="relative">
                 <input
                     id="cs-cust-search"
                     type="text"
                     value={q}
-                    onChange={(e) => setQ(e.target.value)}
+                    onChange={(e) => { setQ(e.target.value); setOpen(true); }}
                     onFocus={() => results.length && setOpen(true)}
                     placeholder="CRM харилцагчийг нэрээр хайх..."
                     className="w-full px-3 py-2 bg-surface-2 border border-border rounded-md text-sm text-foreground placeholder:text-muted-foreground/60 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background"

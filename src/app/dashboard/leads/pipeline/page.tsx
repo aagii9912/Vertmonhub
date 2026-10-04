@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+import { useQueryClient } from '@tanstack/react-query';
+import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { toast } from 'sonner';
 import {
@@ -34,6 +35,7 @@ import {
 import { motion } from 'motion/react';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { PageHeader } from '@/components/dashboard/PageHeader';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
 import { StatusPill } from '@/components/ui/StatusPill';
 import {
@@ -87,6 +89,15 @@ const PIPELINE_STAGES: Stage[] = [
 ];
 
 const STAGE_MAP: Record<string, Stage> = Object.fromEntries(PIPELINE_STAGES.map(s => [s.key, s]));
+
+interface PipelineData {
+    leads?: Lead[];
+    pagination?: { total?: number };
+}
+
+const PIPELINE_KEY = ['leads', 'pipeline'] as const;
+// pageSize=1000 — pipeline самбар бүх лийдийг харуулна (аюулгүйн таг).
+const PIPELINE_URL = '/api/dashboard/leads?pageSize=1000';
 
 const LOST_REASONS = [
     'Үнэ тохироогүй',
@@ -320,14 +331,16 @@ function StageColumn({
 }
 
 export default function PipelinePage() {
-    const { shop } = useAuth();
+    const queryClient = useQueryClient();
     const reduced = useReducedMotion();
-    const [leads, setLeads] = useState<Lead[]>([]);
-    const [loading, setLoading] = useState(true);
+    const { data, error, isFetching, refetch, dataUpdatedAt } = useDashboardQuery<PipelineData>(PIPELINE_KEY, PIPELINE_URL);
+    const leads = data?.leads ?? [];
+    const total = data?.pagination?.total ?? leads.length;
     const [activeDragId, setActiveDragId] = useState<string | null>(null);
     const [lostModal, setLostModal] = useState<{ leadId: string; name: string } | null>(null);
-    const [now, setNow] = useState<number>(() => Date.now());
-    const [total, setTotal] = useState(0);
+    // Өгөгдөл ирэх бүрд (dataUpdatedAt) "хоног" тооцоо ч шинэчлэгдэнэ.
+    const [clock, setClock] = useState<number>(() => Date.now());
+    const now = Math.max(clock, dataUpdatedAt);
 
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -335,11 +348,9 @@ export default function PipelinePage() {
     );
 
     useEffect(() => {
-        if (!shop?.id) return;
-        fetchLeads();
         // "хоног" тооцоог цагийн дагуу шинэчлэх (1 цаг тутам) + таб руу буцахад шууд.
-        const t = setInterval(() => setNow(Date.now()), 3600_000);
-        const refresh = () => { if (!document.hidden) setNow(Date.now()); };
+        const t = setInterval(() => setClock(Date.now()), 3600_000);
+        const refresh = () => { if (!document.hidden) setClock(Date.now()); };
         window.addEventListener('focus', refresh);
         document.addEventListener('visibilitychange', refresh);
         return () => {
@@ -347,24 +358,12 @@ export default function PipelinePage() {
             window.removeEventListener('focus', refresh);
             document.removeEventListener('visibilitychange', refresh);
         };
-    }, [shop?.id]);
+    }, []);
 
-    async function fetchLeads() {
-        if (!shop?.id) return;
-        setLoading(true);
-        try {
-            // pageSize=1000 — pipeline самбар бүх лийдийг харуулна (аюулгүйн таг).
-            const res = await dashboardFetch('/api/dashboard/leads?pageSize=1000');
-            if (!res.ok) throw new Error('Failed');
-            const json = await res.json();
-            setLeads(json.leads || []);
-            setTotal(json.pagination?.total ?? (json.leads?.length || 0));
-            setNow(Date.now());
-        } catch {
-            toast.error('Лийд татахад алдаа');
-        } finally {
-            setLoading(false);
-        }
+    /** Самбарын cache-ийг синхрон засна — буулгасан карт тэр даруй шинэ баганад харагдана. */
+    function updateCachedLeads(update: (lead: Lead) => Lead) {
+        queryClient.setQueriesData<PipelineData>({ queryKey: PIPELINE_KEY }, (current) =>
+            current ? { ...current, leads: (current.leads ?? []).map(update) } : current);
     }
 
     async function moveToStage(leadId: string, newStatus: string, lostReason?: string) {
@@ -372,23 +371,30 @@ export default function PipelinePage() {
         // зөөлтийг устгахгүйгээр энэ нэг картыг л буцаана.
         const original = leads.find(l => l.id === leadId);
         const stampedAt = new Date().toISOString();
-        setLeads(p => p.map(l => l.id === leadId
+        const applyMove = (l: Lead): Lead => l.id === leadId
             ? {
                 ...l,
                 status: newStatus,
                 stage_changed_at: stampedAt,
                 lost_reason: newStatus === 'closed_lost' ? (lostReason ?? l.lost_reason) : null,
             }
-            : l));
+            : l;
+        // Явж буй дахин таталтыг (хуучин төлөвтэй байж болзошгүй) цуцалж, дараа нь зөөлтийг тусгана.
+        void queryClient.cancelQueries({ queryKey: PIPELINE_KEY });
+        updateCachedLeads(applyMove);
         try {
             const res = await dashboardFetch(`/api/dashboard/leads/${leadId}`, {
                 method: 'PATCH',
                 body: JSON.stringify({ status: newStatus, ...(lostReason ? { lost_reason: lostReason } : {}) }),
             });
             if (!res.ok) throw new Error('Failed');
+            // Хүсэлтийн явцад самбар дахин татагдаж эхэлсэн бол серверийн шинэ төлвөөр дахин татна.
+            if (queryClient.isFetching({ queryKey: PIPELINE_KEY })) void queryClient.invalidateQueries({ queryKey: PIPELINE_KEY });
+            // Лидийн бусад жагсаалт/тоо дараагийн нээлтэд шинэчлэгдэнэ (самбарыг дахин татахгүй).
+            void queryClient.invalidateQueries({ queryKey: ['leads'], predicate: (query) => query.queryKey[1] !== 'pipeline' });
             toast.success('Статус солигдлоо');
         } catch {
-            if (original) setLeads(p => p.map(l => l.id === leadId ? original : l));
+            if (original) updateCachedLeads(l => l.id === leadId ? original : l);
             toast.error('Статус солиход алдаа');
         }
     }
@@ -422,7 +428,17 @@ export default function PipelinePage() {
 
     const activeLead = activeDragId ? leads.find(l => l.id === activeDragId) ?? null : null;
 
-    if (loading) {
+    if (error && !data) {
+        return (
+            <Alert variant="danger">
+                <AlertTitle>Лийд татахад алдаа</AlertTitle>
+                <AlertDescription>{error.message}</AlertDescription>
+                <Button size="sm" variant="secondary" className="self-start" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</Button>
+            </Alert>
+        );
+    }
+
+    if (!data) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
                 <Loader2 className="w-8 h-8 animate-spin text-brand-strong" />

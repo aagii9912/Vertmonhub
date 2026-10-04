@@ -1,7 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, type SetStateAction } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -25,6 +27,7 @@ import {
 import { formatShortDate, formatRelativeDays } from '@/lib/utils/date';
 import { dashboardFetch, dashboardMutate } from '@/lib/api/dashboardFetch';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 import { confirmToast } from '@/components/ui/Toast';
 import { CustomerDetailSheet } from './_components/CustomerDetailSheet';
 import { CreateCustomerModal } from './_components/CreateCustomerModal';
@@ -66,6 +69,16 @@ interface Customer {
     service_logs?: ServiceLogEntry[];
 }
 
+interface CustomerHealth {
+    total: number;
+    newThisMonth: number;
+    dormant: number;
+    avgQualityScore: number;
+    tiers: { A: number; B: number; C: number };
+    needFollowup: number;
+    avgDaysToConvert: number | null;
+}
+
 const STAGE_LABELS: Record<LifecycleStage, string> = {
     prospect: 'Шинэ сонирхогч',
     engaged: 'Идэвхтэй',
@@ -97,27 +110,36 @@ const TIER_VARIANT: Record<'A' | 'B' | 'C', 'success' | 'warning' | 'default'> =
 const PREDEFINED_TAGS = ['New', 'Lead', 'Inactive', 'Hot', 'Regular'];
 
 export default function CustomersPage() {
-    const [customers, setCustomers] = useState<Customer[]>([]);
+    const queryClient = useQueryClient();
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedTag, setSelectedTag] = useState<string | null>(null);
     const [tierFilter, setTierFilter] = useState('');
     const [stageFilter, setStageFilter] = useState('');
     const [sortBy, setSortBy] = useState('created_at');
-    const [loading, setLoading] = useState(true);
-    const [loadError, setLoadError] = useState(false);
     const [recomputing, setRecomputing] = useState(false);
 
-    const [health, setHealth] = useState<{
-        total: number;
-        newThisMonth: number;
-        dormant: number;
-        avgQualityScore: number;
-        tiers: { A: number; B: number; C: number };
-        needFollowup: number;
-        avgDaysToConvert: number | null;
-    } | null>(null);
-    const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
-    const [isDetailOpen, setIsDetailOpen] = useState(false);
+    const listParams = new URLSearchParams();
+    if (selectedTag) listParams.set('tag', selectedTag);
+    if (tierFilter) listParams.set('tier', tierFilter);
+    if (stageFilter) listParams.set('stage', stageFilter);
+    listParams.set('sortBy', sortBy);
+    const customersQuery = useDashboardQuery<{ customers?: Customer[] }>(
+        ['customers', 'list', selectedTag, tierFilter, stageFilter, sortBy],
+        `/api/dashboard/customers?${listParams}`,
+        { keepPreviousData: true },
+    );
+    const customers = customersQuery.data?.customers ?? [];
+
+    const healthQuery = useDashboardQuery<{ health?: CustomerHealth | null }>(['customer-health'], '/api/dashboard/customer-health');
+    const health = healthQuery.data?.health ?? null;
+
+    // Дэлгэрэнгүй: сонгосон харилцагчийн id-аар татна; өгөгдөл ирмэгц хуудас нээгдэнэ.
+    const [detailId, setDetailId] = useState<string | null>(null);
+    const detailQuery = useDashboardQuery<{ customer: Customer }>(
+        ['customers', 'detail', detailId],
+        detailId ? `/api/dashboard/customers/${detailId}` : null,
+    );
+    const selectedCustomer = detailId ? detailQuery.data?.customer ?? null : null;
     const [editMode, setEditMode] = useState(false);
     const [saving, setSaving] = useState(false);
 
@@ -179,47 +201,12 @@ export default function CustomersPage() {
     const [hubspotError, setHubspotError] = useState<string | null>(null);
     const [hubspotResult, setHubspotResult] = useState<{ total: number; imported: number; skipped: number; errors: Array<{ name: string; reason: string }> } | null>(null);
 
-    useEffect(() => {
-        fetchCustomers();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedTag, sortBy, tierFilter, stageFilter]);
-
-    useEffect(() => {
-        fetchHealth();
-         
-    }, []);
-
-    async function fetchHealth() {
-        try {
-            const res = await dashboardFetch('/api/dashboard/customer-health');
-            if (!res.ok) throw new Error('Failed to fetch customer health');
-            const data = await res.json();
-            setHealth(data.health || null);
-        } catch (error) {
-            console.error('Failed to fetch customer health:', error);
-        }
-    }
-
-    async function fetchCustomers() {
-        try {
-            setLoading(true);
-            setLoadError(false);
-            const params = new URLSearchParams();
-            if (selectedTag) params.set('tag', selectedTag);
-            if (tierFilter) params.set('tier', tierFilter);
-            if (stageFilter) params.set('stage', stageFilter);
-            params.set('sortBy', sortBy);
-
-            const res = await dashboardFetch(`/api/dashboard/customers?${params}`);
-            if (!res.ok) throw new Error('Харилцагчдын мэдээлэл татаж чадсангүй');
-            const data = await res.json();
-            setCustomers(data.customers || []);
-        } catch (error) {
-            console.error('Failed to fetch customers:', error);
-            setLoadError(true);
-        } finally {
-            setLoading(false);
-        }
+    /** Жагсаалт, дэлгэрэнгүй, хайлт болон эрүүл мэндийн үзүүлэлтийг шинэчилнэ. */
+    function refreshCustomers() {
+        return Promise.all([
+            queryClient.invalidateQueries({ queryKey: ['customers'] }),
+            queryClient.invalidateQueries({ queryKey: ['customer-health'] }),
+        ]);
     }
 
     async function recomputeScores() {
@@ -229,7 +216,7 @@ export default function CustomersPage() {
                 method: 'POST',
             });
             if (res.ok) {
-                await Promise.all([fetchCustomers(), fetchHealth()]);
+                await refreshCustomers();
             }
         } catch (error) {
             console.error('Failed to recompute scores:', error);
@@ -238,23 +225,30 @@ export default function CustomersPage() {
         }
     }
 
-    async function fetchCustomerDetail(id: string) {
-        try {
-            const res = await dashboardFetch(`/api/dashboard/customers/${id}`);
-            if (!res.ok) throw new Error('Харилцагчийн мэдээлэл татаж чадсангүй');
-            const data = await res.json();
-            setSelectedCustomer(data.customer);
+    function openCustomer(id: string) {
+        // Ижил мөрийг дахин дарвал (ачаалж/алдаа гарсан үед) дахин татна.
+        if (id === detailId) void detailQuery.refetch();
+        setDetailId(id);
+    }
+
+    function closeCustomer() {
+        setDetailId(null);
+        setEditMode(false);
+        setMergeMode(false);
+    }
+
+    /** Засах горимд орохдоо маягтыг харилцагчийн одоогийн мэдээллээр дүүргэнэ. */
+    function changeEditMode(value: SetStateAction<boolean>) {
+        const next = typeof value === 'function' ? value(editMode) : value;
+        if (next && !editMode && selectedCustomer) {
             setEditForm({
-                name: data.customer.name || '',
-                phone: data.customer.phone || '',
-                email: data.customer.email || '',
-                notes: data.customer.notes || '',
+                name: selectedCustomer.name || '',
+                phone: selectedCustomer.phone || '',
+                email: selectedCustomer.email || '',
+                notes: selectedCustomer.notes || '',
             });
-            setIsDetailOpen(true);
-        } catch (error) {
-            console.error('Failed to fetch customer detail:', error);
-            toast.error('Харилцагчийн мэдээлэл татахад алдаа гарлаа');
         }
+        setEditMode(next);
     }
 
     async function submitServiceLog() {
@@ -283,7 +277,8 @@ export default function CustomersPage() {
                 throw new Error(err?.error || 'Бүртгэхэд алдаа гарлаа');
             }
             setLogForm({ type: 'complaint', subject: '', description: '' });
-            await fetchCustomerDetail(selectedCustomer.id);
+            await detailQuery.refetch();
+            void queryClient.invalidateQueries({ queryKey: ['service-logs'] });
         } catch (err) {
             setLogError(err instanceof Error ? err.message : 'Бүртгэхэд алдаа гарлаа');
         } finally {
@@ -309,8 +304,7 @@ export default function CustomersPage() {
             }
             setMergeMode(false);
             setMergeTargetId('');
-            await fetchCustomers();
-            await fetchCustomerDetail(selectedCustomer.id);
+            await refreshCustomers();
         } catch (err) {
             setMergeError(err instanceof Error ? err.message : 'Нэгтгэхэд алдаа гарлаа');
         } finally {
@@ -358,7 +352,7 @@ export default function CustomersPage() {
             if (!res.ok) throw new Error(data?.error || 'Импорт амжилтгүй');
             setImportResult(data);
             setImportPreview(null);
-            await fetchCustomers();
+            await refreshCustomers();
         } catch (err) {
             setImportError(err instanceof Error ? err.message : 'Импорт амжилтгүй');
         } finally {
@@ -417,7 +411,7 @@ export default function CustomersPage() {
             if (!res.ok) throw new Error(data?.error || 'Sync алдаа');
             setHubspotResult(data);
             setHubspotPreview(null);
-            await fetchCustomers();
+            await refreshCustomers();
         } catch (err) {
             setHubspotError(err instanceof Error ? err.message : 'Sync алдаа');
         } finally {
@@ -449,7 +443,7 @@ export default function CustomersPage() {
             }
             setCreateForm({ name: '', phone: '', email: '', address: '', notes: '' });
             setIsCreateOpen(false);
-            await fetchCustomers();
+            await refreshCustomers();
         } catch (err) {
             setCreateError(err instanceof Error ? err.message : 'Бүртгэхэд алдаа гарлаа');
         } finally {
@@ -469,11 +463,11 @@ export default function CustomersPage() {
         setDeleting(true);
         try {
             await dashboardMutate(`/api/dashboard/customers/${selectedCustomer.id}`, 'DELETE');
-            setIsDetailOpen(false);
-            setSelectedCustomer(null);
+            setDetailId(null);
+            // Устгасан харилцагчийн дэлгэрэнгүйг дахин татахгүй (404) — cache-ээс хасна.
+            queryClient.removeQueries({ queryKey: ['customers', 'detail', selectedCustomer.id] });
             toast.success('Харилцагч устгагдлаа');
-            fetchCustomers();
-            fetchHealth();
+            void refreshCustomers();
         } catch (error) {
             toast.error(error instanceof Error ? error.message : 'Харилцагчийг устгаж чадсангүй');
         } finally {
@@ -490,7 +484,10 @@ export default function CustomersPage() {
                 body: JSON.stringify({ id: selectedCustomer.id, notes: notesDraft }),
             });
             if (!res.ok) throw new Error('Тэмдэглэл хадгалахад алдаа');
-            setSelectedCustomer({ ...selectedCustomer, notes: notesDraft });
+            queryClient.setQueriesData<{ customer: Customer }>(
+                { queryKey: ['customers', 'detail', selectedCustomer.id] },
+                (current) => current && { ...current, customer: { ...current.customer, notes: notesDraft } },
+            );
             setNotesEditing(false);
         } catch (err) {
             console.error(err);
@@ -516,8 +513,7 @@ export default function CustomersPage() {
             }
             toast.success('Хадгаллаа');
             setEditMode(false);
-            fetchCustomers();
-            fetchCustomerDetail(selectedCustomer.id);
+            void queryClient.invalidateQueries({ queryKey: ['customers'] });
         } catch (error) {
             console.error('Failed to save customer:', error);
             toast.error('Хадгалахад алдаа гарлаа');
@@ -642,6 +638,14 @@ export default function CustomersPage() {
                 }
             />
 
+            {healthQuery.error && !healthQuery.data && (
+                <Alert variant="danger" className="mb-4">
+                    <AlertTitle>Харилцагчийн үзүүлэлт татахад алдаа гарлаа</AlertTitle>
+                    <AlertDescription>{healthQuery.error.message}</AlertDescription>
+                    <Button size="sm" variant="secondary" className="self-start" disabled={healthQuery.isFetching} onClick={() => void healthQuery.refetch()}>Дахин оролдох</Button>
+                </Alert>
+            )}
+
             {health && health.total > 0 && (
                 <StatBar columns={4}>
                     <StatTile
@@ -724,18 +728,29 @@ export default function CustomersPage() {
                 </FilterSelect>
             </FilterBar>
 
-            {loading ? (
+            {detailId && detailQuery.error && !detailQuery.data && (
+                <Alert variant="danger" className="mb-4">
+                    <AlertTitle>Харилцагчийн мэдээлэл татахад алдаа гарлаа</AlertTitle>
+                    <AlertDescription>{detailQuery.error.message}</AlertDescription>
+                    <div className="flex gap-2">
+                        <Button size="sm" variant="secondary" disabled={detailQuery.isFetching} onClick={() => void detailQuery.refetch()}>Дахин оролдох</Button>
+                        <Button size="sm" variant="ghost" onClick={closeCustomer}>Хаах</Button>
+                    </div>
+                </Alert>
+            )}
+
+            {customersQuery.isPending ? (
                 <Card>
                     <div className="flex items-center justify-center py-16">
                         <Spinner size="lg" />
                     </div>
                 </Card>
-            ) : loadError ? (
+            ) : customersQuery.error && !customersQuery.data ? (
                 <Card>
                     <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
                         <AlertCircle className="w-8 h-8 text-status-danger" />
                         <p className="text-sm text-muted-foreground">Харилцагчдын мэдээлэл татахад алдаа гарлаа</p>
-                        <Button variant="secondary" size="sm" onClick={fetchCustomers}>Дахин оролдох</Button>
+                        <Button variant="secondary" size="sm" disabled={customersQuery.isFetching} onClick={() => void customersQuery.refetch()}>Дахин оролдох</Button>
                     </div>
                 </Card>
             ) : filteredCustomers.length === 0 ? (
@@ -750,7 +765,7 @@ export default function CustomersPage() {
                     data={filteredCustomers}
                     getRowId={(c) => c.id}
                     caption="Харилцагчдын хүснэгт"
-                    onRowClick={(customer) => fetchCustomerDetail(customer.id)}
+                    onRowClick={(customer) => openCustomer(customer.id)}
                     pageSize={filteredCustomers.length || 1}
                     hidePagination
                     showDensityToggle={false}
@@ -802,18 +817,14 @@ export default function CustomersPage() {
             />
 
             {/* Customer Detail Sheet */}
-            {isDetailOpen && selectedCustomer && (
+            {selectedCustomer && (
                 <CustomerDetailSheet
-                    open={isDetailOpen}
-                    onClose={() => {
-                        setIsDetailOpen(false);
-                        setEditMode(false);
-                        setMergeMode(false);
-                    }}
+                    open
+                    onClose={closeCustomer}
                     selectedCustomer={selectedCustomer}
                     customers={customers}
                     editMode={editMode}
-                    setEditMode={setEditMode}
+                    setEditMode={changeEditMode}
                     editForm={editForm}
                     setEditForm={setEditForm}
                     saving={saving}
