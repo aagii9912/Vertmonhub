@@ -1,14 +1,16 @@
 'use client';
 
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import Link from 'next/link';
-import { Phone, CalendarPlus, FileText, StickyNote, X, ExternalLink, PhoneCall, Check, UserPen } from 'lucide-react';
+import { Phone, CalendarPlus, FileText, StickyNote, X, ExternalLink, PhoneCall, Check, UserPen, BadgeDollarSign } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
 import { formatShortDate, formatTime, formatRelativeDays } from '@/lib/utils/date';
 import { useLeadDetail, useUpdateLead, useAddLeadActivity, useLeadProjects, useManagers } from '@/hooks/useLeads';
-import { INTEREST_CHIPS, ACTIVITY_LABEL, sourceLabel, interestLabel, isAnonymousLead, leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
+import { INTEREST_CHIPS, sourceLabel, interestLabel, isAnonymousLead, leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
+import { QUOTE_UNIT_MAX, parseQuoteAmount } from '@/lib/leads/quotes';
+import { LeadTimeline } from './LeadTimeline';
 import { propertyStatusLabel, propertyStatusTone } from '@/lib/inventory/labels';
 import { Pill, Skeleton, GhostButton } from '@/components/dashboard/v2/primitives';
 import { StatusPicker, ManagerPicker } from './pickers';
@@ -27,11 +29,14 @@ export function LeadPanel({
     leadId,
     canWrite,
     onClose,
+    onOpenLead,
     className,
 }: {
     leadId: string;
     canWrite: boolean;
     onClose?: () => void;
+    /** Ижил утастай өөр лидийг нээх (жагсаалтын сонголт). */
+    onOpenLead?: (id: string) => void;
     className?: string;
 }) {
     const { user } = useAuth();
@@ -41,6 +46,10 @@ export function LeadPanel({
     const noteRef = useRef<HTMLTextAreaElement>(null);
     const [note, setNote] = useState('');
     const [isCall, setIsCall] = useState(false);
+    // «Үнийн санал»: ₮ дүн (цифр) + байр/тоот — дуудлагатай зэрэг сонгогдохгүй.
+    const [isQuote, setIsQuote] = useState(false);
+    const [quoteAmount, setQuoteAmount] = useState('');
+    const [quoteUnit, setQuoteUnit] = useState('');
     const [followup, setFollowup] = useState<number | null>(null); // хоног
     const [budgetDraft, setBudgetDraft] = useState<string | null>(null);
     const [nameDraft, setNameDraft] = useState<string | null>(null);
@@ -53,31 +62,22 @@ export function LeadPanel({
         && (projects.length > 1 || !lead?.project_id);
     useRegisterAiContext(lead ? { type: 'lead', id: lead.id, label: leadDisplayName(lead) } : null);
 
-    const timeline = useMemo(() => {
-        if (!data) return [];
-        const items: { at: string; kind: string; title: string; sub?: string; by?: string | null }[] = [];
-        for (const a of data.activities) {
-            items.push({ at: a.created_at, kind: a.type, title: a.type === 'note' || a.type === 'call' ? a.content || '' : `${ACTIVITY_LABEL[a.type] ?? a.type}: ${a.content ?? ''}`, by: a.created_by_name });
-        }
-        for (const v of data.viewings) {
-            items.push({ at: v.scheduled_at, kind: 'meeting', title: `Уулзалт ${v.status === 'completed' ? 'болов' : v.status === 'cancelled' ? 'цуцлагдав' : v.status === 'no_show' ? '— ирээгүй' : 'товлов'}`, sub: [formatTime(v.scheduled_at), v.property_name].filter(Boolean).join(' · '), by: v.sales_manager_name });
-        }
-        for (const c of data.contracts) {
-            if (c.contract_date) items.push({ at: c.contract_date, kind: 'contract', title: `Гэрээ ${c.contract_number || ''}`.trim(), sub: c.total_price ? formatMNT(c.total_price) : undefined });
-        }
-        items.push({ at: data.lead.created_at, kind: 'system', title: 'Лид үүсгэв', sub: sourceLabel(data.lead.source) });
-        return items.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
-    }, [data]);
-
+    const amountValue = parseQuoteAmount(quoteAmount);
+    const canSave = isQuote ? amountValue !== null : !!note.trim() || isCall;
     const saveNote = async () => {
         const content = note.trim();
-        if (!content && !isCall) return;
+        if (!canSave) return;
         try {
             const next = followup ? new Date(Date.now() + followup * 86_400_000) : undefined;
             if (next) next.setHours(10, 0, 0, 0);
-            await addActivity.mutateAsync({ type: isCall ? 'call' : 'note', content: content || 'Залгав', next_followup_at: next ? next.toISOString() : undefined });
-            setNote(''); setIsCall(false); setFollowup(null);
-            toast.success(isCall ? 'Дуудлага бүртгэгдлээ' : 'Тэмдэглэл хадгалагдлаа');
+            const next_followup_at = next ? next.toISOString() : undefined;
+            if (isQuote && amountValue !== null) {
+                await addActivity.mutateAsync({ type: 'quote', amount: amountValue, unit_label: quoteUnit.trim() || null, content, next_followup_at });
+            } else {
+                await addActivity.mutateAsync({ type: isCall ? 'call' : 'note', content: content || 'Залгав', next_followup_at });
+            }
+            toast.success(isQuote ? 'Үнийн санал бүртгэгдлээ' : isCall ? 'Дуудлага бүртгэгдлээ' : 'Тэмдэглэл хадгалагдлаа');
+            setNote(''); setIsCall(false); setIsQuote(false); setQuoteAmount(''); setQuoteUnit(''); setFollowup(null);
         } catch (e) {
             toast.error(e instanceof Error ? e.message : 'Хадгалж чадсангүй');
         }
@@ -102,7 +102,7 @@ export function LeadPanel({
             </div>
         </Alert></div>;
     }
-    const partialNames: Record<string, string> = { viewings: 'уулзалт', contracts: 'гэрээ', activities: 'түүх', property: 'байр', property_names: 'байрны нэр' };
+    const partialNames: Record<string, string> = { viewings: 'уулзалт', contracts: 'гэрээ', activities: 'түүх', timeline: 'менежерийн түүх', property: 'байр', property_names: 'байрны нэр' };
 
     const phoneDigits = lead.customer_phone?.replace(/\D/g, '') || '';
     const interestValue = INTEREST_CHIPS.find((c) => (c.rooms && c.rooms === lead.preferred_rooms) || (c.type && c.type === lead.preferred_type))?.label ?? '';
@@ -245,7 +245,31 @@ export function LeadPanel({
                 {/* Тэмдэглэл бичих */}
                 {canWrite && (
                     <div className="border-b border-border px-4 py-3">
-                        <div className={cn('rounded-md border bg-surface transition-shadow', note || isCall ? 'border-brand shadow-[0_0_0_3px_var(--brand-soft)]' : 'border-border-strong')}>
+                        <div className={cn('rounded-md border bg-surface transition-shadow', note || isCall || isQuote ? 'border-brand shadow-[0_0_0_3px_var(--brand-soft)]' : 'border-border-strong')}>
+                            {isQuote && (
+                                <div className="flex flex-wrap items-center gap-2 border-b border-border px-2.5 py-2">
+                                    <label className="flex items-center gap-1.5 text-[12px] text-fg-2">
+                                        Дүн
+                                        <input
+                                            aria-label="Үнийн саналын дүн (₮)"
+                                            value={quoteAmount ? Number(quoteAmount).toLocaleString('en-US') : ''}
+                                            onChange={(e) => setQuoteAmount(e.target.value.replace(/[^0-9]/g, '').slice(0, 14))}
+                                            inputMode="numeric"
+                                            placeholder="450,000,000"
+                                            className="num h-7 w-36 rounded-md border border-border bg-surface px-2 text-right text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground focus-ring"
+                                        />
+                                        <span>₮</span>
+                                    </label>
+                                    <input
+                                        aria-label="Байр/тоот (заавал биш)"
+                                        value={quoteUnit}
+                                        onChange={(e) => setQuoteUnit(e.target.value)}
+                                        maxLength={QUOTE_UNIT_MAX}
+                                        placeholder="Байр/тоот (заавал биш)"
+                                        className="h-7 min-w-0 flex-1 rounded-md border border-border bg-surface px-2 text-[12.5px] text-foreground outline-none placeholder:text-muted-foreground focus-ring"
+                                    />
+                                </div>
+                            )}
                             <textarea
                                 aria-label="Тэмдэглэл эсвэл дуудлагын үр дүн"
                                 ref={noteRef}
@@ -253,12 +277,15 @@ export function LeadPanel({
                                 onChange={(e) => setNote(e.target.value)}
                                 onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void saveNote(); }}
                                 rows={2}
-                                placeholder="Тэмдэглэл бичих… (⌘↵ хадгална)"
+                                placeholder={isQuote ? 'Саналын тайлбар (заавал биш)…' : 'Тэмдэглэл бичих… (⌘↵ хадгална)'}
                                 className="w-full resize-none bg-transparent px-2.5 pt-2 text-[13px] outline-none placeholder:text-muted-foreground"
                             />
                             <div className="flex flex-wrap items-center gap-1.5 px-2 pb-2">
-                                <button type="button" onClick={() => setIsCall((v) => !v)} className={cn('inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[11.5px] focus-ring', isCall ? 'border-brand bg-brand-soft text-brand' : 'border-border text-fg-2 hover:border-border-strong')}>
+                                <button type="button" aria-pressed={isCall} onClick={() => { setIsCall((v) => !v); setIsQuote(false); }} className={cn('inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[11.5px] focus-ring', isCall ? 'border-brand bg-brand-soft text-brand' : 'border-border text-fg-2 hover:border-border-strong')}>
                                     <PhoneCall className="h-3 w-3" /> Залгав
+                                </button>
+                                <button type="button" aria-pressed={isQuote} onClick={() => { setIsQuote((v) => !v); setIsCall(false); }} className={cn('inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[11.5px] focus-ring', isQuote ? 'border-brand bg-brand-soft text-brand' : 'border-border text-fg-2 hover:border-border-strong')}>
+                                    <BadgeDollarSign className="h-3 w-3" /> Үнийн санал
                                 </button>
                                 <span className="mx-1 text-[11px] text-muted-foreground">Дараа:</span>
                                 {[1, 3, 7].map((d) => (
@@ -266,7 +293,7 @@ export function LeadPanel({
                                         {d === 1 ? 'Маргааш' : `${d} хоног`}
                                     </button>
                                 ))}
-                                <button type="button" disabled={addActivity.isPending || (!note.trim() && !isCall)} onClick={() => void saveNote()} className="ml-auto inline-flex h-7 items-center gap-1 rounded-md bg-brand px-2.5 text-[12px] font-medium text-brand-fg hover:bg-brand-strong disabled:opacity-50 focus-ring">
+                                <button type="button" disabled={addActivity.isPending || !canSave} onClick={() => void saveNote()} className="ml-auto inline-flex h-7 items-center gap-1 rounded-md bg-brand px-2.5 text-[12px] font-medium text-brand-fg hover:bg-brand-strong disabled:opacity-50 focus-ring">
                                     <Check className="h-3.5 w-3.5" /> Хадгалах
                                 </button>
                             </div>
@@ -274,20 +301,12 @@ export function LeadPanel({
                     </div>
                 )}
 
-                {/* Түүх */}
-                <div className="px-4 py-3">
-                    <div className="mb-2 flex items-center gap-2 text-[12.5px] font-semibold text-foreground">Түүх <span className="mono-label text-[11px] font-normal text-muted-foreground">{timeline.length}</span></div>
-                    <ol className="relative flex flex-col gap-3 border-l border-border pl-4">
-                        {timeline.map((t, i) => (
-                            <li key={`${t.kind}-${t.at}-${i}`} className="relative">
-                                <span className={cn('absolute -left-[21px] top-1.5 h-2 w-2 rounded-full', i === 0 ? 'bg-brand' : 'bg-border-strong')} />
-                                <div className="mono-label text-[11px] text-muted-foreground">{formatShortDate(t.at)} {t.kind === 'meeting' ? '' : formatTime(t.at)}{t.by ? ` · ${t.by}` : ''}</div>
-                                <div className="text-[13px] text-foreground">{t.title}</div>
-                                {t.sub && <div className="text-[12px] text-muted-foreground">{t.sub}</div>}
-                            </li>
-                        ))}
-                    </ol>
-                </div>
+                {/* Түүх — менежерүүдийн Time-line */}
+                {data && (
+                    <div className="px-4 py-3">
+                        <LeadTimeline detail={data} onOpenLead={onOpenLead} />
+                    </div>
+                )}
 
                 {/* Сонирхсон байр */}
                 {(data?.property || (data?.viewings.some((v) => v.property_id && v.property_id !== data.property?.id) ?? false)) && (
