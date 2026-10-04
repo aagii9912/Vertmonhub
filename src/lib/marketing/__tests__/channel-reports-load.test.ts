@@ -2,8 +2,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-    ChannelReportsUnavailableError, isLongerReport, isMissingChannelTables, loadChannelReports, pickBestReport, pickPreviousReport, reportCoverage,
-    type ChannelReportSummary,
+    ChannelReportsUnavailableError, isApiReportLockError, isLongerReport, isMissingChannelTables, isMissingOriginColumns, loadChannelReports, pickBestReport,
+    pickPreviousReport, reportCoverage, type ChannelReportSummary,
 } from '../channel-reports-load';
 import type { ChannelSource } from '../channel-reports';
 
@@ -52,7 +52,7 @@ describe('report matching', () => {
     });
 });
 
-function fakeDb(summaries: ChannelReportSummary[], details: Array<{ id: string; breakdown: unknown[]; mapping: object }>, error?: { code: string; message: string }) {
+function fakeDb(summaries: ChannelReportSummary[], details: Array<{ id: string; breakdown: unknown[]; mapping: object }>, error?: { code: string; message: string }, columnError?: (columns: string) => { code: string; message: string } | null) {
     const calls: Array<Array<[string, unknown[]]>> = [];
     const db = {
         from: () => {
@@ -62,7 +62,8 @@ function fakeDb(summaries: ChannelReportSummary[], details: Array<{ id: string; 
                 get(_t, prop: string) {
                     if (prop === 'then') {
                         const byId = ops.some(([op, args]) => op === 'in' && args[0] === 'id');
-                        const result = error ? { data: null, error } : { data: byId ? details : summaries, error: null };
+                        const failed = error ?? columnError?.(String(ops.find(([op]) => op === 'select')?.[1][0] ?? '')) ?? null;
+                        const result = failed ? { data: null, error: failed } : { data: byId ? details : summaries, error: null };
                         return (ok: (v: unknown) => unknown) => Promise.resolve(result).then(ok);
                     }
                     return (...args: unknown[]) => { ops.push([prop, args]); return builder; };
@@ -112,6 +113,21 @@ describe('loadChannelReports', () => {
         expect(isMissingChannelTables({ code: 'PGRST204', message: "Could not find the 'data_from' column of 'marketing_channel_reports' in the schema cache" })).toBe(true);
         expect(isMissingChannelTables({ code: '42703', message: 'column leads.origin_x does not exist' })).toBe(false);
         expect(isMissingChannelTables({ code: '23505', message: 'duplicate key value violates unique constraint' })).toBe(false);
+    });
+
+    it('reads with the old columns until the origin/coverage migration is applied', async () => {
+        const { origin: _origin, data_from: _from, data_to: _to, ...legacy } = report('m2', 'meta_ads', '2026-09-23', '2026-09-29', { spend: 70, currency: 'USD' });
+        const { db, calls } = fakeDb([legacy as ChannelReportSummary], [{ id: 'm2', breakdown: [], mapping: {} }], undefined,
+            columns => /origin/.test(columns) ? { code: '42703', message: 'column marketing_channel_reports.origin does not exist' } : null);
+        const result = await loadChannelReports(db, 'shop-1', week, { sources: ['meta_ads'] });
+        expect(result.meta_ads).toMatchObject({ exact: true, report: { id: 'm2', origin: 'file', data_from: null, data_to: null } });
+        expect(calls.map(ops => ops.find(([op]) => op === 'select')?.[1][0])).toEqual([
+            expect.stringContaining('origin,data_from,data_to'), expect.not.stringContaining('origin'), 'id,breakdown,mapping',
+        ]);
+        expect(isMissingOriginColumns({ code: 'PGRST204', message: "Could not find the 'data_to' column of 'marketing_channel_reports' in the schema cache" })).toBe(true);
+        expect(isMissingOriginColumns({ code: '42P01', message: 'relation "public.marketing_channel_reports" does not exist' })).toBe(false);
+        expect(isApiReportLockError({ code: '23514', message: 'channel_report_api_locked: meta_ads 2026-09-23 – 2026-09-29' })).toBe(true);
+        expect(isApiReportLockError({ code: '23514', message: 'new row violates check constraint "marketing_channel_reports_data_range_check"' })).toBe(false);
     });
 
     it('surfaces a missing migration instead of returning empty reports', async () => {

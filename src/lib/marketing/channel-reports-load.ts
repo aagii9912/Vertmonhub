@@ -1,7 +1,9 @@
 /**
  * Хадгалсан сувгийн тайлангуудаас тухайн хугацаанд хамгийн тохирохыг (эх үүсвэр бүрт) олж,
  * ижил урттай өмнөх тайлантай харьцуулна. Долоо хоногийн хурлын тайлан болон API ашиглана.
- * Алдааг хоосон өгөгдөл болгож нуухгүй — хүснэгт (эсвэл шинэ багана) үүсээгүй бол `ChannelReportsUnavailableError`.
+ * Алдааг хоосон өгөгдөл болгож нуухгүй — хүснэгт үүсээгүй бол `ChannelReportsUnavailableError`.
+ * Зөвхөн 20261005120000-ийн багана (origin, data_from, data_to) дутуу бол хуучин багануудаар уншина
+ * (код миграциас өмнө байршсан ч хурлын тайлан ажиллана; хадгалах нь миграци шаардана).
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fetchAllRows } from '@/lib/utils/pagination';
@@ -14,6 +16,8 @@ import {
 export const CHANNEL_REPORTS_TABLE = 'marketing_channel_reports';
 export const CHANNEL_MAPPINGS_TABLE = 'marketing_channel_mappings';
 export const CHANNEL_REPORT_SUMMARY_COLUMNS = 'id,source,period_from,period_to,file_name,origin,data_from,data_to,totals,warnings,row_count,note,imported_by,created_at,updated_at';
+/** 20261005120000-аас өмнөх хураангуй баганууд (origin, data_from, data_to-гүй). */
+export const CHANNEL_REPORT_LEGACY_COLUMNS = 'id,source,period_from,period_to,file_name,totals,warnings,row_count,note,imported_by,created_at,updated_at';
 export const CHANNEL_REPORTS_MIGRATION_HINT = 'Сувгийн тайлангийн хүснэгт эсвэл багана үүсээгүй байна — 20261004140000_marketing_channel_reports.sql, 20261005120000_channel_reports_origin.sql миграци шаардлагатай.';
 /** Өмнөх тайланг хайх хугацаа (өдөр). */
 const LOOKBACK_DAYS = 400;
@@ -63,8 +67,25 @@ export function isMissingChannelTables(error: { code?: string; message?: string 
     const message = error.message || '';
     if (/marketing_channel_(?:reports|mappings)/i.test(message)
         && (error.code === '42P01' || error.code === 'PGRST205' || /does not exist|could not find .*table/i.test(message))) return true;
+    return isMissingOriginColumns(error);
+}
+
+/** Зөвхөн 20261005120000-ийн багана (origin, data_from, data_to) байхгүй алдаа — хүснэгт өөрөө байгаа. */
+export function isMissingOriginColumns(error: { code?: string; message?: string } | null | undefined): boolean {
+    if (!error) return false;
+    const message = error.message || '';
     return (error.code === '42703' || error.code === 'PGRST204' || /column .* does not exist|could not find the .* column/i.test(message))
         && /\b(?:origin|data_from|data_to)\b/.test(message);
+}
+
+/** Хуучин багануудаар уншсан мөр: эх сурвалж 'file', өдрийн хамралт тодорхойгүй. */
+export function legacyChannelSummary(row: Omit<ChannelReportSummary, 'origin' | 'data_from' | 'data_to'>): ChannelReportSummary {
+    return { ...row, origin: 'file', data_from: null, data_to: null };
+}
+
+/** 20261005140000-ийн trigger: Meta API-аас татсан тайланг файлаар дарахыг өгөгдлийн сан татгалзсан. */
+export function isApiReportLockError(error: { code?: string; message?: string } | null | undefined): boolean {
+    return /channel_report_api_locked/.test(error?.message ?? '');
 }
 
 /**
@@ -131,14 +152,21 @@ export async function loadChannelReports(
 ): Promise<ChannelReportMatches> {
     const sources = options.sources?.length ? options.sources : CHANNEL_SOURCES;
     const since = shift(range?.from ?? options.today ?? ubDateStr(), -LOOKBACK_DAYS);
+    const page = (columns: string) => (from: number, to: number): PromiseLike<{ data: unknown[] | null; error: { message: string } | null }> => {
+        let query = db.from(CHANNEL_REPORTS_TABLE).select(columns)
+            .eq('shop_id', shopId).in('source', [...sources]).gte('period_to', since);
+        if (range) query = query.lte('period_from', range.to);
+        return query.order('period_to', { ascending: false }).order('id').range(from, to);
+    };
     let summaries: ChannelReportSummary[];
     try {
-        summaries = await fetchAllRows<ChannelReportSummary>((from, to) => {
-            let query = db.from(CHANNEL_REPORTS_TABLE).select(CHANNEL_REPORT_SUMMARY_COLUMNS)
-                .eq('shop_id', shopId).in('source', [...sources]).gte('period_to', since);
-            if (range) query = query.lte('period_from', range.to);
-            return query.order('period_to', { ascending: false }).order('id').range(from, to);
-        });
+        try {
+            summaries = await fetchAllRows(page(CHANNEL_REPORT_SUMMARY_COLUMNS)) as ChannelReportSummary[];
+        } catch (error) {
+            if (!isMissingOriginColumns(error as Error)) throw error;
+            const legacy = await fetchAllRows(page(CHANNEL_REPORT_LEGACY_COLUMNS)) as Array<Omit<ChannelReportSummary, 'origin' | 'data_from' | 'data_to'>>;
+            summaries = legacy.map(legacyChannelSummary);
+        }
     } catch (error) {
         if (isMissingChannelTables(error as Error)) throw new ChannelReportsUnavailableError();
         throw error;
