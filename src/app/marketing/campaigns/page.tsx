@@ -183,7 +183,7 @@ export default function CampaignsPage() {
                 }
             />
 
-            {error ? (
+            {error && !data ? (
                 <Alert variant="danger">
                     <AlertTitle>Кампанит ажлууд татахад алдаа гарлаа</AlertTitle>
                     <AlertDescription>{error.message}</AlertDescription>

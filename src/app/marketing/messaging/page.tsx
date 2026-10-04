@@ -158,7 +158,7 @@ export default function MessagingPage() {
                 </TabsList>
             </Tabs>
 
-            {error ? (
+            {error && !data ? (
                 <Alert variant="danger">
                     <AlertTitle>{tab === 'email' ? 'Имэйл' : 'SMS'} кампанит ажлууд татахад алдаа гарлаа</AlertTitle>
                     <AlertDescription>{error.message}</AlertDescription>

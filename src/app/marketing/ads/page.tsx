@@ -153,7 +153,7 @@ export default function AdsPage() {
                 }
             />
 
-            {error ? (
+            {error && !data ? (
                 <Alert variant="danger">
                     <AlertTitle>Зар сурталчилгааны мэдээлэл татахад алдаа гарлаа</AlertTitle>
                     <AlertDescription>{error.message}</AlertDescription>

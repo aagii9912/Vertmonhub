@@ -135,7 +135,8 @@ export default function SourcesPage() {
     const channels = channelsQuery.data?.rows ?? [];
     const contracts = contractsQuery.data?.rows ?? [];
     const loading = channelsQuery.isLoading || contractsQuery.isLoading;
-    const loadError = channelsQuery.error ?? contractsQuery.error;
+    // Өгөгдөл харагдаж байхад дэвсгэрт шинэчлэл унавал (toast) агуулгыг нуухгүй.
+    const loadError = (!channelsQuery.data && channelsQuery.error) || (!contractsQuery.data && contractsQuery.error) || null;
     const refetchAll = () => {
         void channelsQuery.refetch();
         void contractsQuery.refetch();

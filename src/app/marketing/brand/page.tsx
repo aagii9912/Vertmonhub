@@ -56,7 +56,7 @@ export default function BrandPage() {
                 subtitle="Брэндийн дурдагдал болон сэтгэгдэл"
             />
 
-            {error ? (
+            {error && !data ? (
                 <Alert variant="danger">
                     <AlertTitle>Брэндийн дурдагдал татахад алдаа гарлаа</AlertTitle>
                     <AlertDescription>{error.message}</AlertDescription>

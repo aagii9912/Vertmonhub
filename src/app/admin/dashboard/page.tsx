@@ -28,7 +28,8 @@ export default function AdminDashboard() {
         queryKey: ['admin-dashboard', shop?.id, user?.id, user?.role],
         queryFn: fetchDashboard,
         enabled: !!user?.id,
-        staleTime: 30_000,
+        staleTime: 0,
+        refetchOnWindowFocus: false,
     });
 
     if (!data && isFetching) {

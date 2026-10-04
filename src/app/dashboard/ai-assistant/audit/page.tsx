@@ -41,7 +41,7 @@ export default function AiAuditPage() {
                 <CardContent className="p-0">
                     {isPending ? (
                         <div className="flex items-center justify-center py-16 text-muted-foreground gap-2"><Loader2 className="w-5 h-5 animate-spin" /> Татаж байна...</div>
-                    ) : error ? (
+                    ) : error && !data ? (
                         <div className="py-16 text-center text-status-danger text-sm">{error.message}</div>
                     ) : entries.length === 0 ? (
                         <div className="py-16 text-center text-muted-foreground text-sm">Одоогоор бүртгэл алга</div>

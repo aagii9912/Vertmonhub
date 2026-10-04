@@ -131,13 +131,16 @@ export default function CalendarPage() {
                         <Button variant="ghost" size="iconSm" aria-label="Өмнөх сар" onClick={prevMonth}>
                             <ChevronLeft className="w-5 h-5" />
                         </Button>
-                        <h2 className="heading-section text-lg text-foreground capitalize">{monthName}</h2>
+                        <h2 className="heading-section flex items-center gap-2 text-lg text-foreground capitalize">
+                            {monthName}
+                            {isPlaceholderData && <Spinner size="sm" label="Сарын контент ачаалж байна" />}
+                        </h2>
                         <Button variant="ghost" size="iconSm" aria-label="Дараах сар" onClick={nextMonth}>
                             <ChevronRight className="w-5 h-5" />
                         </Button>
                     </div>
 
-                    {error ? (
+                    {error && !data ? (
                         <Alert variant="danger">
                             <AlertTitle>Контент календарь татахад алдаа гарлаа</AlertTitle>
                             <AlertDescription>{error.message}</AlertDescription>

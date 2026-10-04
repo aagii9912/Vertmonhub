@@ -274,7 +274,7 @@ export default function CompetitorResearchPage() {
 
             {competitorsQuery.isPending ? (
                 <div className="flex items-center justify-center py-24"><Spinner size="lg" /></div>
-            ) : competitorsQuery.error ? (
+            ) : competitorsQuery.error && !competitorsQuery.data ? (
                 <Alert variant="danger">
                     <AlertTitle>Өрсөлдөгчдийн мэдээллийг ачаалж чадсангүй</AlertTitle>
                     <AlertDescription>{competitorsQuery.error.message}</AlertDescription>

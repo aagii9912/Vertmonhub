@@ -65,6 +65,20 @@ describe('ads', () => {
         expect(calls(URL)).toBe(2);
     });
 
+    it('keeps loaded rows on screen when a later refresh fails', async () => {
+        mocks.json.mockResolvedValueOnce({ rows: [ad('a1', 'Зар нэг')] });
+        renderPage(<AdsPage />);
+        expect((await screen.findAllByText('Зар нэг')).length).toBeGreaterThan(0);
+        mocks.mutate.mockResolvedValueOnce({ row: ad('a2', 'Зар хоёр') });
+        mocks.json.mockRejectedValueOnce(new Error('Сүлжээ тасарлаа'));
+        fireEvent.click(screen.getByRole('button', { name: /Шинэ зар/ }));
+        fireEvent.change(await screen.findByPlaceholderText('Зарын нэр'), { target: { value: 'Зар хоёр' } });
+        fireEvent.click(screen.getByRole('button', { name: /Үүсгэх/ }));
+        await waitFor(() => expect(calls(URL)).toBe(2));
+        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        expect(screen.getAllByText('Зар нэг').length).toBeGreaterThan(0);
+    });
+
     it('shows a failed read as an error with retry, not as the empty state', async () => {
         mocks.json.mockRejectedValueOnce(new Error('Маркетингийн өгөгдөл уншихад алдаа гарлаа'));
         renderPage(<AdsPage />);
@@ -101,7 +115,8 @@ describe('calendar', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Дараах сар' }));
         expect(mocks.json).toHaveBeenLastCalledWith(monthUrl(1));
         expect(screen.getByText('Контент календарь')).toBeInTheDocument();
-        expect(screen.queryByRole('status')).not.toBeInTheDocument();
+        // Хуудас бүтнээрээ spinner болохгүй — зөвхөн сарын гарчгийн дэргэд жижиг заагч.
+        expect(screen.getByRole('status', { name: 'Сарын контент ачаалж байна' })).toBeInTheDocument();
         expect(screen.queryByText('Пост нэг')).not.toBeInTheDocument();
         expect(screen.queryByText('Энэ сард контент төлөвлөгдөөгүй байна')).not.toBeInTheDocument();
         await act(async () => next.resolve({ rows: [] }));

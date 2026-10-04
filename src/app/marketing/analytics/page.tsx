@@ -84,7 +84,7 @@ export default function AnalyticsPage() {
                 subtitle="Вэбсайтын хандалтын статистик"
             />
 
-            {error ? (
+            {error && !result ? (
                 <Alert variant="danger">
                     <AlertTitle>Вэб аналитик татахад алдаа гарлаа</AlertTitle>
                     <AlertDescription>{error.message}</AlertDescription>

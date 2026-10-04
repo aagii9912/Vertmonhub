@@ -73,7 +73,8 @@ export default function SalesTargetsAdminPage() {
             return d.shops || [];
         },
         enabled: !!user?.id,
-        staleTime: 30_000,
+        staleTime: 0,
+        refetchOnWindowFocus: false,
     });
     const shops = shopsQuery.data ?? NO_SHOPS;
     const shopId = selectedShopId || shops[0]?.id || '';
@@ -94,7 +95,8 @@ export default function SalesTargetsAdminPage() {
             };
         },
         enabled: !!user?.id && !!shopId,
-        staleTime: 30_000,
+        staleTime: 0,
+        refetchOnWindowFocus: false,
     });
     const data = targetsQuery.data;
 
@@ -116,7 +118,8 @@ export default function SalesTargetsAdminPage() {
     const shopsError = shopsQuery.data
         ? (shopsQuery.data.length ? null : 'Байгууллага бүртгэгдээгүй байна')
         : shopsQuery.error?.message ?? null;
-    const error = (!shopsQuery.isFetching && shopsError) || (!targetsQuery.isFetching && targetsQuery.error?.message) || null;
+    // Өгөгдөл ачаалагдсан бол дэвсгэрт шинэчлэл унахад (toast) хадгалаагүй засварыг нуухгүй.
+    const error = (!shopsQuery.isFetching && shopsError) || (!targetsQuery.data && !targetsQuery.isFetching && targetsQuery.error?.message) || null;
     const scopeReady = !!data && !error;
 
     function setMonth(idx: number, value: string) {

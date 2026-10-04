@@ -295,7 +295,8 @@ export default function AdminImportPage() {
         queryKey: projectsKey,
         queryFn: () => fetchAdminList<AdminProject>('/api/admin/projects', 'projects', 'Төслүүд ачаалагдсангүй'),
         enabled: !!user?.id,
-        staleTime: 30_000,
+        staleTime: 0,
+        refetchOnWindowFocus: false,
     });
     const projects = projectsQuery.data ?? NO_PROJECTS;
     const projectsLoading = !projectsQuery.data && projectsQuery.isFetching;
@@ -313,7 +314,8 @@ export default function AdminImportPage() {
         queryKey: ['admin-shops', 'import', shop?.id, user?.id, user?.role],
         queryFn: () => fetchAdminList<AdminShop>('/api/admin/shops', 'shops', 'Байгууллагууд ачаалагдсангүй'),
         enabled: !!user?.id,
-        staleTime: 30_000,
+        staleTime: 0,
+        refetchOnWindowFocus: false,
     });
     const shops = shopsQuery.data ?? NO_SHOPS;
     const newProjectShopId = selectedNewProjectShopId || shops[0]?.id || '';
@@ -382,8 +384,10 @@ export default function AdminImportPage() {
             const data = await res.json();
             if (res.ok && data.project) {
                 // Бусад жагсаалтыг хуучирсан гэж тэмдэглээд, энэ жагсаалтад шинэ төслийг дахин уншилгүй шууд нэмнэ.
+                // Явж буй (хуучин) уншилтыг эхлээд цуцална — эс бөгөөс хожуу ирсэн хариу шинэ төслийг арилгана.
+                await queryClient.cancelQueries({ queryKey: projectsKey });
                 markAdminDataStale();
-                queryClient.setQueryData<AdminProject[]>(projectsKey, prev => [data.project, ...(prev ?? [])]);
+                queryClient.setQueryData<AdminProject[]>(projectsKey, prev => [data.project, ...(prev ?? []).filter(project => project.id !== data.project.id)]);
                 setSelectedProject(data.project.id);
                 setResult(null);
                 setNewProjectName('');

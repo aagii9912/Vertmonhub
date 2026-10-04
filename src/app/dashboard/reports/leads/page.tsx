@@ -143,7 +143,8 @@ export default function LeadsReport() {
         queryKey: ['leads-report', period, shop?.id, user?.id, user?.role],
         queryFn: () => fetchLeadsReport(period),
         enabled: !!shop?.id,
-        staleTime: 30_000,
+        staleTime: 0,
+        refetchOnWindowFocus: false,
     });
     const { stats, sourceData, projectData } = data ?? EMPTY_REPORT;
     const [exporting, setExporting] = useState(false);

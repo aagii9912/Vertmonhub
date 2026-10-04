@@ -511,7 +511,7 @@ export default function MarketingROIPage() {
                             </Button>
                         </div>
                         <div className="p-4">
-                            {socialQuery.error ? (
+                            {socialQuery.error && !socialQuery.data ? (
                                 <Alert variant="danger">
                                     <AlertTitle>Хадгалсан сошиал түүхийг ачаалж чадсангүй</AlertTitle>
                                     <AlertDescription>{socialQuery.error.message}</AlertDescription>
@@ -639,7 +639,7 @@ export default function MarketingROIPage() {
                     </Card>
 
                     {/* Marketing impact: идэвхжүүлэлт vs лид/уулзалт */}
-                    {timelineQuery.error ? (
+                    {timelineQuery.error && !timelineQuery.data ? (
                         <Alert variant="danger" className="mb-6">
                             <AlertTitle>Маркетингийн нөлөөллийн цувааг ачаалж чадсангүй</AlertTitle>
                             <AlertDescription>{timelineQuery.error.message}</AlertDescription>

@@ -52,14 +52,16 @@ export default function AdminProjectsPage() {
         queryKey: ['admin-projects', 'overview', shop?.id, user?.id, user?.role],
         queryFn: fetchOverview,
         enabled: !!user?.id,
-        staleTime: 30_000,
+        staleTime: 0,
+        refetchOnWindowFocus: false,
     });
     const shops = data?.shops ?? NO_SHOPS;
     const projects = data?.projects ?? NO_PROJECTS;
     const unassigned = data?.unassigned ?? NO_UNASSIGNED;
     const diagnosticsError = data?.diagnosticsError ?? null;
     const loading = !data && isFetching;
-    const loadError = error ? error.message : null;
+    // Өгөгдөл харагдаж байхад дэвсгэрт шинэчлэл унавал (toast) жагсаалтыг нуухгүй.
+    const loadError = error && !data ? error.message : null;
     const [filter, setFilter] = useState('all');
     const [dialogOpen, setDialogOpen] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);

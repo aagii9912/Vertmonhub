@@ -118,7 +118,8 @@ export default function BlocksPage() {
             return data;
         },
         enabled: !!shop?.id,
-        staleTime: 30_000,
+        staleTime: 0,
+        refetchOnWindowFocus: false,
         retry: false,
         meta: { inlineError: true },
     });
@@ -160,7 +161,8 @@ export default function BlocksPage() {
             return data.units;
         },
         enabled: !!shop?.id && !!selectedBlock,
-        staleTime: 30_000,
+        staleTime: 0,
+        refetchOnWindowFocus: false,
         retry: false,
         meta: { inlineError: true },
     });
@@ -301,7 +303,7 @@ export default function BlocksPage() {
 
                         {unitsLoading ? (
                             <div className="flex items-center justify-center py-16"><Spinner size="md" /></div>
-                        ) : unitsQuery.error ? (
+                        ) : unitsQuery.error && !unitsQuery.data ? (
                             <div role="alert">
                                 <EmptyState
                                     icon={<DoorOpen className="w-7 h-7" />}

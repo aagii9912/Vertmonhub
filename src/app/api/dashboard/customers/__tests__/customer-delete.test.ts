@@ -19,12 +19,16 @@ vi.mock('@/lib/utils/logger', () => ({ logger: { error: vi.fn(), warn: vi.fn() }
 vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: (table: string) => {
     const filters: Array<(row: Row) => boolean> = [];
     let patch: Row | null = null;
-    const matches = () => (table === 'customers' ? state.rows : state.chats).filter((row) => filters.every((filter) => filter(row)));
+    // chat_history нь `customers!inner(...)` embed-ийг дуурайна.
+    const source = () => table === 'customers' ? state.rows
+        : state.chats.map((chat) => ({ ...chat, customers: state.rows.find((row) => row.id === chat.customer_id) ?? null }));
+    const matches = () => source().filter((row) => filters.every((filter) => filter(row)));
+    const read = (row: Row, key: string) => key.split('.').reduce<unknown>((value, part) => (value as Row | null)?.[part], row);
     const query = {
         select: () => query,
         update: (values: Row) => { patch = values; return query; },
         eq: (key: string, value: unknown) => { filters.push((row) => row[key] === value); return query; },
-        is: (key: string, value: unknown) => { filters.push((row) => (row[key] ?? null) === value); return query; },
+        is: (key: string, value: unknown) => { filters.push((row) => (read(row, key) ?? null) === value); return query; },
         in: (key: string, values: unknown[]) => { filters.push((row) => values.includes(row[key])); return query; },
         order: () => query,
         limit: () => query,

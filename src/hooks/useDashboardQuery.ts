@@ -5,7 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { dashboardJson } from '@/lib/api/dashboardFetch';
 
 export interface DashboardQueryOptions {
-    /** Анхдагч 30 секунд. */
+    /** Анхдагч 0: хуудас нээгдэх бүрт шинээр уншина (кэшийг шууд харуулаад шинэчилнэ). */
     staleTime?: number;
     /** false бол асуухгүй (жишээ нь сонголт хийгдээгүй үед). */
     enabled?: boolean;
@@ -27,7 +27,9 @@ export function useDashboardQuery<T>(key: readonly unknown[], url: string | null
         queryKey: [...key, ...scope, url],
         queryFn: () => dashboardJson<T>(url as string),
         enabled: !!shop?.id && !!url && (options.enabled ?? true),
-        staleTime: options.staleTime ?? 30_000,
+        staleTime: options.staleTime ?? 0,
+        // Хуучин хуудсууд шиг цонхонд буцаж ороход өөрөө уншихгүй; нээх, хадгалах үед л шинэчилнэ.
+        refetchOnWindowFocus: false,
         // Анхны ачаалалтын алдааг хуудас өөрөө харуулна (QueryProvider давхар toast гаргахгүй).
         meta: { inlineError: true },
         placeholderData: options.keepPreviousData
