@@ -72,6 +72,11 @@ const statuses: Record<string, InventoryStatus> = {
 };
 
 const normalize = (value: string) => value.trim().replace(/\s+/g, ' ').toLowerCase();
+
+/** ERP/Excel-ийн бүтээгдэхүүний төлөв → нөөцийн нэг толь (`lib/inventory/labels`). Мэдэгдэхгүй бол null. */
+export function inventoryStatusOf(raw: string | null | undefined): InventoryStatus | null {
+    return raw && Object.hasOwn(statuses, normalize(raw)) ? statuses[normalize(raw)] : null;
+}
 const characterCount = (value: string) => Array.from(value).length;
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
