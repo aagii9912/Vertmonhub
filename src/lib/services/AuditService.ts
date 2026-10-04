@@ -9,7 +9,7 @@
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 
-export type AuditEntity = 'customer' | 'lead' | 'contract' | 'property' | 'viewing';
+export type AuditEntity = 'customer' | 'lead' | 'lead_category' | 'contract' | 'property' | 'viewing';
 export type AuditAction = 'create' | 'update' | 'delete';
 
 export interface AuditEntry {

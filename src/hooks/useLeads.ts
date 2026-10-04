@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
 import type { Lead } from '@/types/property';
-import type { LeadView } from '@/lib/leads/labels';
+import type { LeadCategoryOption, LeadView } from '@/lib/leads/labels';
 import type { LeadActivity } from '@/lib/leads/activities';
 import type { LeadTimeline } from '@/lib/leads/timeline';
 import type { LeadWorkQueue } from '@/lib/leads/work-queue';
@@ -18,6 +18,8 @@ export interface LeadsListParams {
     source?: string;
     manager?: string;
     project?: string;
+    /** Лидийн ангилал: id эсвэл `none` (ангилалгүй). */
+    category?: string;
     period?: string;
     q?: string;
     sort?: string;
@@ -39,6 +41,7 @@ function buildQuery(p: LeadsListParams): string {
     if (p.source && p.source !== 'all') sp.set('source', p.source);
     if (p.manager && p.manager !== 'all') sp.set('manager', p.manager);
     if (p.project && p.project !== 'all') sp.set('project', p.project);
+    if (p.category && p.category !== 'all') sp.set('category', p.category);
     if (p.period && p.period !== 'all') sp.set('period', p.period);
     if (p.q) sp.set('q', p.q);
     if (p.sort) sp.set('sort', p.sort);
@@ -170,6 +173,24 @@ export function useManagers(projectId?: string | null) {
     });
 }
 
+/** Төслийн лидийн ангиллууд (архивласан нь орно — хуучин лидийн нэрийг харуулна; сонгогч идэвхтэйг л санал болгоно). */
+export interface LeadCategoryRow extends LeadCategoryOption {
+    description: string | null;
+    sort_order: number;
+}
+
+/** `inlineError` — хуудас өөрөө анхны ачааллын алдааг (Alert) харуулдаг бол давхар toast гаргахгүй. */
+export function useLeadCategories(options: { inlineError?: boolean } = {}) {
+    const { shop, user } = useAuth();
+    return useQuery<LeadCategoryRow[]>({
+        queryKey: ['lead-categories', shop?.id, user?.id, user?.role],
+        queryFn: async () => (await dashboardJson<{ categories: LeadCategoryRow[] }>('/api/dashboard/lead-categories?include=archived')).categories,
+        enabled: !!shop?.id,
+        staleTime: 5 * 60_000,
+        ...(options.inlineError ? { meta: { inlineError: true } } : {}),
+    });
+}
+
 export type LeadPatch = Partial<{
     /** Нэр нэмэх/засах (хоосолж болохгүй). */
     customer_name: string;
@@ -183,6 +204,8 @@ export type LeadPatch = Partial<{
     preferred_rooms: number | null;
     preferred_type: string | null;
     budget_max: number | null;
+    /** Лидийн ангилал (null = ангилалгүй). */
+    category_id: string | null;
 }>;
 
 /**

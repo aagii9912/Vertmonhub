@@ -186,3 +186,91 @@ export function hasAnonymousLeadContact(phone: string | null | undefined, email:
 export function meetingCustomerName(row: { customer_name?: string | null; anonymous_lead?: boolean | null }): string | null {
     return normalizeLeadName(row.customer_name) ?? (row.anonymous_lead ? ANONYMOUS_LEAD_LABEL : null);
 }
+
+/* ── Лидийн ангилал ──────────────────────────────────────────────────────
+ * Ангиллын НЭР нь төсөл (= shop) бүрийн DB өгөгдөл (`lead_categories`, Тохиргоо → «Лидийн
+ * ангилал»); энд зөвхөн өнгө, «Ангилалгүй» шошго, санал болгох жагсаалт, нэрийн дүрэм байна.
+ * Сервер (LeadCategoryService), хуудас, экспорт, AI бүгд эдгээрийг ашиглана.
+ */
+export type LeadCategoryTone = Exclude<Tone, 'danger'>;
+
+/** Ангиллын өнгө — саарал pill дээрх цэг (--status-* токен). Алдааны (danger) өнгө ашиглахгүй. */
+export const LEAD_CATEGORY_TONES: { key: LeadCategoryTone; label: string }[] = [
+    { key: 'neutral', label: 'Саарал' },
+    { key: 'info', label: 'Цэнхэр' },
+    { key: 'success', label: 'Ногоон' },
+    { key: 'pending', label: 'Шар' },
+];
+export const LEAD_CATEGORY_TONE_KEYS = ['neutral', 'info', 'success', 'pending'] as const satisfies readonly LeadCategoryTone[];
+
+/** Шүүлтүүрийн түлхүүр, шошго: ангилалгүй лид (`category_id IS NULL`). */
+export const UNCATEGORIZED_KEY = 'none';
+export const UNCATEGORIZED_LABEL = 'Ангилалгүй';
+/** Төсөл бүрт хамгийн ихдээ (архивласан нь орно) — DB trigger мөн шалгана. */
+export const LEAD_CATEGORY_LIMIT = 30;
+export const LEAD_CATEGORY_NAME_MAX = 60;
+export const LEAD_CATEGORY_DESCRIPTION_MAX = 300;
+
+/** Тохиргооны «Санал болгох ангиллууд нэмэх» — харилцагчийн төрөл/зорилго (байрны төрөл биш). */
+export const DEFAULT_LEAD_CATEGORIES: { name: string; description: string; tone: LeadCategoryTone; sort_order: number }[] = [
+    { name: 'Орон сууц худалдан авагч', description: 'Өөрөө амьдрах зорилгоор орон сууц авах харилцагч', tone: 'info', sort_order: 10 },
+    { name: 'Хөрөнгө оруулагч', description: 'Дахин зарах эсвэл түрээслүүлэх зорилгоор авах харилцагч', tone: 'success', sort_order: 20 },
+    { name: 'Оффис / арилжааны талбай', description: 'Оффис, үйлчилгээ, худалдааны талбай сонирхож буй харилцагч', tone: 'pending', sort_order: 30 },
+    { name: 'Түрээслэгч', description: 'Худалдан авахын оронд эсвэл өмнө нь түрээслэх сонирхолтой', tone: 'neutral', sort_order: 40 },
+    { name: 'Бартер', description: 'Төлбөрийн тодорхой хэсгийг бартераар хийх санал тавьсан', tone: 'neutral', sort_order: 50 },
+    { name: 'Дилер / Агент', description: 'Үйлчлүүлэгчийн өмнөөс ажилладаг зуучлагч, агент', tone: 'neutral', sort_order: 60 },
+];
+
+/** Сонгогч, шүүлтүүр, тайланд хэрэгтэй хамгийн бага хэлбэр. */
+export interface LeadCategoryOption {
+    id: string;
+    name: string;
+    tone: string;
+    is_active: boolean;
+    description?: string | null;
+    sort_order?: number;
+}
+
+/** Ангиллын нэр: trim + давхар зайг нэг болгоно; хоосон бол null. */
+export function normalizeCategoryName(raw: unknown): string | null {
+    if (typeof raw !== 'string') return null;
+    const value = raw.trim().replace(/\s+/g, ' ');
+    return value || null;
+}
+
+/** Давхардлын түлхүүр (DB `lead_category_name_key`-тэй ижил): том/жижиг үсэг ялгахгүй. */
+export function categoryNameKey(raw: unknown): string {
+    return (normalizeCategoryName(raw) ?? '').toLowerCase();
+}
+
+/** «Ангилалгүй» гэсэн утга (хоосон, `none`, шошго өөрөө) — ангиллыг цэвэрлэнэ. */
+export function isUncategorizedInput(raw: unknown): boolean {
+    if (raw === null || raw === undefined) return true;
+    if (typeof raw !== 'string') return false;
+    const key = categoryNameKey(raw);
+    return !key || key === UNCATEGORIZED_KEY || key === categoryNameKey(UNCATEGORIZED_LABEL);
+}
+
+export function categoryTone(tone: string | null | undefined): LeadCategoryTone {
+    return (LEAD_CATEGORY_TONE_KEYS as readonly string[]).includes(tone ?? '') ? tone as LeadCategoryTone : 'neutral';
+}
+
+/** Сонгогч, шүүлтүүрийн нэр: архивласан бол «(архив)» нэмнэ. */
+export function categoryOptionLabel(category: Pick<LeadCategoryOption, 'name' | 'is_active'>): string {
+    return category.is_active ? category.name : `${category.name} (архив)`;
+}
+
+/**
+ * Лидийн ангиллын нэр: null → «Ангилалгүй», жагсаалтад байхгүй (ачаалаагүй) id → «—».
+ * `markArchived` бол архивласан ангилалд «(архив)» нэмнэ (шүүлтүүр, экспорт).
+ */
+export function leadCategoryLabel(
+    categories: readonly Pick<LeadCategoryOption, 'id' | 'name' | 'is_active'>[],
+    categoryId: string | null | undefined,
+    options: { markArchived?: boolean } = {},
+): string {
+    if (!categoryId) return UNCATEGORIZED_LABEL;
+    const category = categories.find((item) => item.id === categoryId);
+    if (!category) return '—';
+    return options.markArchived ? categoryOptionLabel(category) : category.name;
+}

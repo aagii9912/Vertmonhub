@@ -33,6 +33,7 @@ import { inviteUser, assignRole, createRole } from './admin-functions';
 import { getKpiReport, getManagerActivityTool, getManagerPerformanceTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
 import { logCall, setFollowup, logPriceQuote, assignLeadManager, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
 import { transferContractTool } from './actions-contract-transfer';
+import { listLeadCategoriesTool, setLeadCategory } from './actions-lead-category';
 
 /** AI Assistant-ийн RBAC эрхүүд (route-аас тооцоолж дамжуулна). */
 export interface AssistantPerms {
@@ -88,6 +89,7 @@ async function operationsReportTool({ shopId, args, scope, perms }: ToolCall) {
 const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     list_lead_projects: async ({ shopId, scope }) => ({ projects: await fetchAllRows((from, to) => applyProjectScope(supabaseAdmin().from('projects')
         .select('id,name').eq('shop_id', shopId).order('id').range(from, to), scope, 'id')) }),
+    list_lead_categories: ({ shopId }) => listLeadCategoriesTool(shopId),
     get_marketing_performance: marketingPerformanceTool,
     get_operations_report: operationsReportTool,
     get_dashboard_stats: ({ shopId, args, scope }) => fetchDashboardStats(shopId, args.timeRange || 'month', scope),
@@ -131,6 +133,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     log_call: ({ shopId, args, userId, userName, scope }) => logCall(shopId, args, userId, userName, scope),
     set_followup: ({ shopId, args, userId, userName, scope }) => setFollowup(shopId, args, userId, userName, scope),
     log_price_quote: ({ shopId, args, confirm, userId, userName, scope }) => logPriceQuote(shopId, args, confirm, userId, userName, scope),
+    set_lead_category: ({ shopId, args, userId, userName, scope }) => setLeadCategory(shopId, args, userId, userName, scope),
     assign_lead_manager: ({ shopId, args, confirm, userId, userName, scope }) => assignLeadManager(shopId, args, confirm, userId, userName, scope),
     record_viewing_outcome: ({ shopId, args, userId, userName, scope }) => recordViewingOutcome(shopId, args, userId, userName, scope),
     reschedule_viewing: ({ shopId, args, confirm, userId, userName, scope }) => rescheduleViewing(shopId, args, confirm, userId, userName, scope),

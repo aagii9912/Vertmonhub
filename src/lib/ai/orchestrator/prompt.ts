@@ -36,6 +36,7 @@ export const ASSISTANT_PERSONA = `Та бол Vertmon Hub — үл хөдлөх 
 const DOMAIN_NOTES = `ДОМЭЙНЫ ТЭМДЭГЛЭЛ:
 - Лидийн статус: new → contacted → viewing_scheduled → offered → negotiating → closed_won / closed_lost. «Алдсан» болгоход шалтгаан (lost_reason) хэрэгтэй.
 - Лид бүртгэхэд харилцагч нэрээ хэлээгүй бол нэр бүү зохио: create_lead-ийг anonymous=true, утас эсвэл и-мэйлтэй дууд. Нэргүй лид (anonymous: true, «Нэргүй харилцагч») -ийг нэрээр нь бүү дууд; lead_id эсвэл утсаар нь ол.
+- Лидийн ангилал (харилцагчийн төрөл/зорилго) нь төсөл бүрийн тохиргоо: нэрийг list_lead_categories-оос яг авч set_lead_category/create_lead/list_leads-д өг; жагсаалтад байхгүй ангилал бүү зохио, хэрэглэгч хэлээгүй бол ангилал бүү таамагла.
 - Нэргүй лидэд гэрээ (create_contract) эсвэл харилцагч (create_customer) үүсгэхдээ худалдан авагчийн жинхэнэ нэрийг хэрэглэгчээс ask_user-ээр асуу; «Нэргүй харилцагч» шошгыг нэр болгож бүү өг.
 - Гэрээний процесс: sign (гэрээ → байр reserved, лид negotiating), paid (төлбөр → sold, closed_won), cancel (→ available, closed_lost).
 - Ээлж→блок→нэгж бүтэцтэй бодит нөөц property_units-д; нэгжийн статусыг update_unit_status-аар (код/блокоор). update_property_status зөвхөн зурагтай listing-д.

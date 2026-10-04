@@ -27,6 +27,7 @@ async function fixtures(page: Page) {
         if (path === '/api/dashboard/managers') return reply({ managers: [], mineName: 'Тест Менежер' });
         if (path === '/api/dashboard/reports/manager-activity') return reply(managerActivityFixture(url, 'Тест Менежер'));
         if (path === '/api/dashboard/leads/projects') return reply({ projects: [{ id: projectId, name: 'Мандала Гарден' }] });
+        if (path === '/api/dashboard/lead-categories') return reply({ categories: [] });
         if (path === '/api/dashboard/my-stats') {
             if (state.failStats) return reply({ error: 'Туршилтын түр алдаа' }, 503);
             return reply({ manager: { name: 'Тест Менежер', isSelf: true, inRoster: true, hasAccount: true }, onboarding: false, period: 'today',
@@ -109,6 +110,7 @@ for (const mobile of [false, true]) {
         expect(state.requests).toHaveLength(2);
         expect(state.requests[0].body.client_request_id).toMatch(/^[0-9a-f-]{36}$/);
         expect(state.requests[0].body.project_id).toBe(projectId);
+        expect(state.requests[0].body.category_id).toBeNull();
         expect(state.requests[1].body).toMatchObject({ lead_id: leadId, property_id: null, scheduled_at: '2027-01-10T03:00:00.000Z', meeting_type: 'new_customer' });
         await page.goto('/dashboard/reports/operations?from=2026-09-01&to=2026-09-30');
         await expect(page.getByText('Гэрээний бүртгэлтэй дүн', { exact: true })).toBeVisible();

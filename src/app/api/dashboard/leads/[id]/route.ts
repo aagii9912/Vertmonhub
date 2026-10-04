@@ -10,8 +10,15 @@ import { logger } from '@/lib/utils/logger';
 import { z } from 'zod';
 import { applyLeadScope, assertProjectManager, canAccessProject, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { withRoute } from '@/lib/api/route';
+import { leadCategoryName, logLeadCategoryChange, resolveLeadCategory } from '@/lib/services/LeadCategoryService';
 
 const VALID_STATUS = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'];
+/** PATCH-ийн өмнөх утга (түүх, хүрээний шалгалтад); `category_id` зөвхөн ангилал өөрчлөхөд уншигдана. */
+const PATCH_LEAD_COLUMNS = 'id, project_id, status, sales_manager_name, lost_reason, customer_name';
+type PatchLeadRow = {
+    id: string; project_id: string | null; status: string; sales_manager_name: string | null;
+    lost_reason: string | null; customer_name: string | null; category_id?: string | null;
+};
 const LeadNameSchema = z.string().trim().min(1).max(200);
 
 /**
@@ -99,8 +106,8 @@ export const GET = withRoute<{ id: string }>({ module: 'leads', error: 'Лид �
 
 /**
  * PATCH /api/dashboard/leads/[id]
- * Лийдийн нэр/төлөв/тэмдэглэл/менежер/дараагийн холбоог шинэчилнэ (leads модулийн
- * бичих эрх). Статус, менежер, нэрийн өөрчлөлтийг lead_activities-д автоматаар бичнэ.
+ * Лийдийн нэр/төлөв/тэмдэглэл/менежер/ангилал/дараагийн холбоог шинэчилнэ (leads модулийн
+ * бичих эрх). Статус, менежер, нэр, ангиллын өөрчлөлтийг lead_activities-д автоматаар бичнэ.
  */
 export const PATCH = withRoute<{ id: string }>({ module: 'leads', access: 'write', error: 'Лийд шинэчлэхэд алдаа гарлаа' }, async ({ request, shop: authShop, params }) => {
     const { id } = await params;
@@ -176,6 +183,11 @@ export const PATCH = withRoute<{ id: string }>({ module: 'leads', access: 'write
         if (n !== null && (!Number.isFinite(n) || n < 0)) return NextResponse.json({ error: 'Буруу төсөв' }, { status: 400 });
         updates.budget_max = n;
     }
+    // Лидийн ангилал (null = ангилалгүй) — энэ төслийн ангилал эсэхийг лидийг уншсаны дараа шалгана.
+    const categoryInput = body.category_id;
+    if (categoryInput !== undefined && categoryInput !== null && !z.string().uuid().safeParse(categoryInput).success) {
+        return NextResponse.json({ error: 'Буруу ангилал' }, { status: 400 });
+    }
 
     const db = supabaseAdmin();
     const scope = await resolveSalesProjectScope(db, authShop.id);
@@ -195,14 +207,18 @@ export const PATCH = withRoute<{ id: string }>({ module: 'leads', access: 'write
         if (!manager.ok) return NextResponse.json({ error: manager.error }, { status: manager.status });
         updates.sales_manager_name = manager.managerName;
     }
-    const { data: lead, error: readError } = await applyLeadScope(db
+    // category_id-г зөвхөн ангилал өөрчлөх үед уншина: ангиллын багана нэмэгдээгүй (migration
+    // 20261004161000-аас өмнөх) DB дээр бусад засвар (төлөв, менежер, тэмдэглэл) ажилласаар байна.
+    const leadColumns: string = categoryInput !== undefined ? `${PATCH_LEAD_COLUMNS}, category_id` : PATCH_LEAD_COLUMNS;
+    const { data: leadRow, error: readError } = await applyLeadScope(db
         .from('leads')
-        .select('id, project_id, status, sales_manager_name, lost_reason, customer_name')
+        .select(leadColumns)
         .eq('id', id)
         .eq('shop_id', authShop.id)
         .is('deleted_at', null), scope)
         .single();
     if (readError && readError.code !== 'PGRST116') throw readError;
+    const lead = leadRow as unknown as PatchLeadRow | null;
     if (!lead) {
         return NextResponse.json({ error: 'Лийд олдсонгүй' }, { status: 404 });
     }
@@ -214,6 +230,12 @@ export const PATCH = withRoute<{ id: string }>({ module: 'leads', access: 'write
             return NextResponse.json({ error: 'Лидийн төслийг өөрчлөх эрхгүй' }, { status: 403 });
         }
     }
+    // Шинээр зөвхөн идэвхтэй ангилал; одоогийн (архивласан) ангиллыг хэвээр үлдээж болно.
+    const category = categoryInput !== undefined
+        ? await resolveLeadCategory(db, authShop.id, { id: categoryInput }, { current: lead.category_id ?? null })
+        : null;
+    if (category && !category.ok) return NextResponse.json({ error: category.error }, { status: category.status });
+    if (category) updates.category_id = category.categoryId;
     const projectId = updates.project_id !== undefined ? updates.project_id as string | null : lead.project_id;
     const managerName = updates.sales_manager_name !== undefined ? updates.sales_manager_name : lead.sales_manager_name;
     if (typeof managerName === 'string' && (updates.sales_manager_name !== undefined || updates.project_id !== undefined)) {
@@ -247,6 +269,8 @@ export const PATCH = withRoute<{ id: string }>({ module: 'leads', access: 'write
     const changedManager = updates.sales_manager_name !== undefined && updates.sales_manager_name !== lead.sales_manager_name;
     const previousName: string | null = lead.customer_name ?? null;
     const changedName = updates.customer_name !== undefined && updates.customer_name !== previousName;
+    const previousCategory: string | null = lead.category_id ?? null;
+    const changedCategory = updates.category_id !== undefined && updates.category_id !== previousCategory;
 
     let write = applyLeadScope(db.from('leads').update(updates).eq('id', id).eq('shop_id', authShop.id).is('deleted_at', null), scope);
     write = lead.project_id ? write.eq('project_id', lead.project_id) : write.is('project_id', null);
@@ -257,7 +281,7 @@ export const PATCH = withRoute<{ id: string }>({ module: 'leads', access: 'write
     if (!updated) return NextResponse.json({ error: 'Лидийн төсөл өөрчлөгдсөн байна. Дахин уншаад оролдоно уу.' }, { status: 409 });
 
     // Түүх: статус / менежер / нэрийн өөрчлөлт (best-effort)
-    if (changedStatus || changedManager || changedName) {
+    if (changedStatus || changedManager || changedName || changedCategory) {
         const uid = await getUserId();
         const identity = uid ? await resolveManagerIdentity(db, authShop.id, uid) : null;
         const by = identity?.managerName ?? null;
@@ -280,6 +304,13 @@ export const PATCH = withRoute<{ id: string }>({ module: 'leads', access: 'write
                 shopId: authShop.id, leadId: id, type: 'system', createdBy: uid, createdByName: by,
                 content: `Нэр: ${leadDisplayName(previousName)} → ${updates.customer_name as string}`,
                 meta: { field: 'customer_name', from: previousName, to: updates.customer_name },
+            });
+        }
+        if (changedCategory && category?.ok) {
+            await logLeadCategoryChange(db, {
+                shopId: authShop.id, leadId: id, userId: uid, userName: by,
+                from: { id: previousCategory, name: await leadCategoryName(db, authShop.id, previousCategory) },
+                to: { id: category.categoryId, name: category.category?.name ?? null },
             });
         }
     }

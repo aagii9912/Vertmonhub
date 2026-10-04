@@ -17,8 +17,9 @@ vi.mock('@/hooks/useLeads', () => ({
     useLeadDetail: () => ({ ...mocks.detail, refetch: vi.fn() }),
     useUpdateLead: () => ({ mutate: vi.fn() }),
     useAddLeadActivity: () => ({ mutateAsync: mocks.addActivity, isPending: false }),
+    useLeadCategories: () => ({ data: [] }),
 }));
-vi.mock('./pickers', () => ({ StatusPicker: () => null, ManagerPicker: () => null }));
+vi.mock('./pickers', () => ({ StatusPicker: () => null, ManagerPicker: () => null, CategoryPicker: () => null }));
 vi.mock('./LeadWorkActions', () => ({ LeadWorkActions: () => null }));
 
 beforeEach(() => {

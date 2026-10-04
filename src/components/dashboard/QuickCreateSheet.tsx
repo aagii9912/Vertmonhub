@@ -9,12 +9,12 @@ import { cn } from '@/lib/utils';
 import { dashboardFetch, dashboardMutate } from '@/lib/api/dashboardFetch';
 import { onQuickCreate, type QuickCreateKind } from '@/lib/navigation/commandPalette';
 import {
-    ANONYMOUS_LEAD_CONTACT, ANONYMOUS_LEAD_LABEL, INTEREST_CHIPS, LEAD_NAME_OR_ANONYMOUS, SOURCES, SOURCE_LABEL,
+    ANONYMOUS_LEAD_CONTACT, ANONYMOUS_LEAD_LABEL, INTEREST_CHIPS, LEAD_NAME_OR_ANONYMOUS, SOURCES, SOURCE_LABEL, UNCATEGORIZED_LABEL,
     hasAnonymousLeadContact, leadDisplayName, normalizeLeadName,
 } from '@/lib/leads/labels';
 import { enqueue, isNetworkError } from '@/lib/offline/outbox';
 import { useAuth } from '@/contexts/AuthContext';
-import { useLeadProjects } from '@/hooks/useLeads';
+import { useLeadCategories, useLeadProjects } from '@/hooks/useLeads';
 import { Checkbox } from '@/components/ui/Checkbox';
 
 /**
@@ -91,6 +91,9 @@ function LeadForm({ onClose }: { onClose: () => void }) {
     const phoneRef = useRef<HTMLInputElement>(null);
     const projectRef = useRef<HTMLSelectElement>(null);
     const { data: projects = [], isLoading: projectsLoading, error: projectsError, refetch: refetchProjects } = useLeadProjects();
+    const { data: allCategories = [] } = useLeadCategories();
+    // Шинэ лидэд зөвхөн идэвхтэй ангилал (заавал биш; төсөлд ангилал үүсгээгүй бол талбар харагдахгүй).
+    const categories = allCategories.filter((c) => c.is_active);
     /** Давхар submit хамгаалалт (state биш ref — ⌘↵ хоёр дарахад closure хоцордог) */
     const submittingRef = useRef(false);
 
@@ -103,6 +106,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
     const soleProject = projects.length === 1 ? projects[0].id : null;
     const projectId = soleProject ?? chosenProjectId;
     const [interest, setInterest] = useState<string>('');
+    const [categoryId, setCategoryId] = useState('');
     const [source, setSource] = useState('phone');
     const [showMore, setShowMore] = useState(false);
     const [email, setEmail] = useState('');
@@ -186,6 +190,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                 preferred_type: INTEREST_CHIPS.find((c) => c.label === interest)?.type ?? null,
                 budget_max: budgetMax && budgetMax > 0 ? budgetMax : null,
                 notes: notes.trim() || null,
+                category_id: categoryId || null,
             };
             try {
                 const created = await dashboardMutate<{ lead?: { id: string } }>('/api/dashboard/leads', 'POST', payload);
@@ -216,7 +221,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                 setSaving(false);
             }
         },
-        [name, anonymous, phone, email, source, interest, budget, notes, qc, onClose, router, user, shop, requestId, projectId, projects],
+        [name, anonymous, phone, email, source, interest, categoryId, budget, notes, qc, onClose, router, user, shop, requestId, projectId, projects],
     );
 
     // ⌘↵ — хадгалах
@@ -330,6 +335,44 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                         ))}
                     </div>
                 </Field>
+
+                {/* Ангилал (заавал биш). Чипүүдийг <label>-д ороохгүй — шошгыг дарахад эхний чип сонгогдохгүй. */}
+                {categories.length > 0 && categories.length <= 8 && (
+                    <div className="flex flex-col gap-1.5">
+                        <span id="quick-lead-category" className="text-[11.5px] font-medium text-muted-foreground">Ангилал</span>
+                        <div className="flex flex-wrap gap-1.5" role="group" aria-labelledby="quick-lead-category">
+                            {categories.map((c) => (
+                                <button
+                                    key={c.id}
+                                    type="button"
+                                    aria-pressed={categoryId === c.id}
+                                    title={c.description ?? undefined}
+                                    onClick={() => setCategoryId(categoryId === c.id ? '' : c.id)}
+                                    className={cn(
+                                        'h-[26px] rounded-md border px-2.5 text-[12px] transition-colors focus-ring',
+                                        categoryId === c.id
+                                            ? 'border-brand bg-brand-soft text-brand'
+                                            : 'border-border bg-surface text-fg-2 hover:border-border-strong',
+                                    )}
+                                >
+                                    {c.name}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
+                {categories.length > 8 && (
+                    <Field label="Ангилал">
+                        <select
+                            value={categoryId}
+                            onChange={(e) => setCategoryId(e.target.value)}
+                            className="h-[34px] w-full rounded-md border border-border-strong bg-surface px-2 text-[13px] text-foreground outline-none focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]"
+                        >
+                            <option value="">{UNCATEGORIZED_LABEL}</option>
+                            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                    </Field>
+                )}
 
                 <Field label="Эх үүсвэр">
                     <select
