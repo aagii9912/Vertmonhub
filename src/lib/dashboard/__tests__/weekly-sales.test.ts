@@ -29,6 +29,19 @@ describe('monthWeeks', () => {
 });
 
 describe('buildWeeklySales', () => {
+    it('counts a manager\'s week even when the week starts in the previous month', () => {
+        const report = buildWeeklySales({
+            range: { from: '2026-09-30', to: '2026-10-06' },
+            sales: { info: { date: '2026-10-06', source: 'ERP' }, rows: [sale('A|1', { orderDate: '2026-09-30' }), sale('B|1', { orderDate: '2026-10-02', manager: 'Менежер.Б' })] },
+            previousSales: null, crmContracts: null, inventory: null, monthTarget: null,
+        });
+        expect(report.month.month).toBe('2026-10');
+        expect(report.byManager).toEqual([
+            expect.objectContaining({ manager: 'Менежер.Б', weekCount: 1, monthCount: 1 }),
+            expect.objectContaining({ manager: 'Менежер.А', weekCount: 1, monthCount: 0 }),
+        ]);
+    });
+
     it('lists the week and month from the ERP export without cancelled contracts', () => {
         const report = buildWeeklySales({
             range,

@@ -20,6 +20,7 @@ import { PerformanceKpis, PerformanceChannelTable } from '@/components/marketing
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/ui/Alert';
 import { Avatar, Skeleton } from '@/components/dashboard/v2/primitives';
+import { useWeeklySales, WeeklySalesDetails } from '@/components/weekly/WeeklySalesDetails';
 
 export default function WeeklyReviewPage() {
     const { shop, user } = useAuth();
@@ -57,26 +58,29 @@ function WeeklyReview() {
         queryFn: ({ signal }) => dashboardJson(`/api/dashboard/weekly-updates?meetingDate=${meetingDate}`, { signal, shopId: shop?.id }),
         enabled: !!shop?.id, staleTime: 30_000, retry: 1,
     });
+    const weeklySalesQuery = useWeeklySales(meetingDate, can('reports'));
     const tasksQuery = useMyTasks();
     const sales = can('reports') && !salesQuery.isError ? salesQuery.data : undefined;
     const previousSales = can('reports') && !previousSalesQuery.isError ? previousSalesQuery.data : undefined;
     const marketing = can('marketing-roi') && !marketingQuery.isError ? marketingQuery.data : undefined;
     const updates = updatesQuery.isError ? undefined : updatesQuery.data;
     const completedTasks = (tasksQuery.data?.tasks || []).filter(task => task.status === 'done' && task.completed_at && ubDateStr(new Date(task.completed_at)) >= range.from && ubDateStr(new Date(task.completed_at)) <= range.to);
-    const loading = salesQuery.isFetching || previousSalesQuery.isFetching || marketingQuery.isFetching || updatesQuery.isFetching;
+    const weeklySales = can('reports') && !weeklySalesQuery.isError ? weeklySalesQuery.data : undefined;
+    const loading = salesQuery.isFetching || previousSalesQuery.isFetching || marketingQuery.isFetching || updatesQuery.isFetching || weeklySalesQuery.isFetching;
     const notices = [
         ...(range.to >= ubDateStr() ? ['Тайлант хугацаа дуусаагүй. Одоогоор бүртгэсэн мэдээллийг харуулж байна.'] : []),
         ...(!can('reports') ? ['Борлуулалтын нэгдсэн тоонд тайлангийн эрх шаардлагатай.'] : salesQuery.error ? [`Борлуулалт: ${salesQuery.error.message}`] : []),
         ...(can('reports') && previousSalesQuery.error ? [`Өмнөх борлуулалтын харьцуулалт боломжгүй: ${previousSalesQuery.error.message}`] : []),
+        ...(can('reports') && weeklySalesQuery.error ? [`Гэрээ, үлдэгдлийн дэлгэрэнгүй: ${weeklySalesQuery.error.message}`] : []),
         ...(!can('marketing-roi') ? ['Маркетингийн үзүүлэлтэд маркетингийн эрх шаардлагатай.'] : marketingQuery.error ? [`Маркетинг: ${marketingQuery.error.message}`] : []),
         ...(updatesQuery.error ? [`Ажлын шинэчлэл: ${updatesQuery.error.message}`] : []),
         ...(!updatesQuery.data?.canViewTeam ? ['Ажлын шинэчлэл: зөвхөн миний оруулсан мэдээлэл.'] : []),
     ];
     const discussionItems = weeklyDiscussionItems({ sales, marketing, updates: updates?.updates });
-    const text = formatWeeklyReview({ shopName: shop?.name || 'Vertmon Hub', meetingDate, sales, previousSales, marketing, updates: updates?.updates, notices });
+    const text = formatWeeklyReview({ shopName: shop?.name || 'Vertmon Hub', meetingDate, sales, previousSales, weeklySales, marketing, updates: updates?.updates, notices });
     const exportable = !loading && !dirty && !!(sales || marketing || updates);
     const refresh = () => {
-        if (can('reports')) { void salesQuery.refetch(); void previousSalesQuery.refetch(); }
+        if (can('reports')) { void salesQuery.refetch(); void previousSalesQuery.refetch(); void weeklySalesQuery.refetch(); }
         if (can('marketing-roi')) void marketingQuery.refetch();
         void updatesQuery.refetch();
     };
@@ -177,6 +181,11 @@ function WeeklyReview() {
                             <p className="text-xs text-muted-foreground">Одоогийн ажлын дараалал; дээрх ангиллууд давхцаж болно.</p>
                         </> : <Unavailable>{can('reports') ? 'Борлуулалтын мэдээлэл түр боломжгүй. Шинэчлэх товчоор дахин оролдоно уу.' : 'Нэгдсэн борлуулалтын тайлан харах эрх шаардлагатай.'}</Unavailable>}
                     </section>
+
+                    {can('reports') && <section className="space-y-4">
+                        <ReportHeading number="01·2" title="Гэрээ, үлдэгдэл, давхрын зураглал" href={can('erp-imports') ? '/dashboard/reports/erp' : undefined} />
+                        <WeeklySalesDetails query={weeklySalesQuery} canOpenErp={can('erp-imports')} />
+                    </section>}
 
                     <section className="break-inside-avoid space-y-4">
                         <ReportHeading number="02" title="Маркетингийн үр дүн" href={can('marketing-roi') ? `/marketing?${params}` : undefined} />

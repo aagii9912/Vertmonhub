@@ -148,18 +148,22 @@ export function buildWeeklySales(input: WeeklySalesInput) {
     }
 
     // Менежерээр (долоо хоног, сар, мөнгөн орлого).
+    // Долоо хоног хоёр сар дамнаж болох тул долоо хоног, сарыг тус тусад нь тоолно.
     const managers = new Map<string, { manager: string; weekCount: number; weekTotal: number; monthCount: number; monthTotal: number }>();
+    const managerRow = (name: string) => managers.get(name) ?? managers.set(name, { manager: name, weekCount: 0, weekTotal: 0, monthCount: 0, monthTotal: 0 }).get(name)!;
+    for (const line of weekLines) {
+        const row = managerRow(line.manager ?? 'Менежергүй');
+        row.weekCount++;
+        row.weekTotal += line.total ?? 0;
+    }
     for (const line of monthLines) {
-        const name = line.manager ?? 'Менежергүй';
-        const row = managers.get(name) ?? { manager: name, weekCount: 0, weekTotal: 0, monthCount: 0, monthTotal: 0 };
+        const row = managerRow(line.manager ?? 'Менежергүй');
         row.monthCount++;
         row.monthTotal += line.total ?? 0;
-        if (within(line.date, range.from, range.to)) { row.weekCount++; row.weekTotal += line.total ?? 0; }
-        managers.set(name, row);
     }
-    for (const name of cash?.perManager.keys() ?? []) if (!managers.has(name)) managers.set(name, { manager: name, weekCount: 0, weekTotal: 0, monthCount: 0, monthTotal: 0 });
+    for (const name of cash?.perManager.keys() ?? []) managerRow(name);
     const byManager = [...managers.values()].map(row => ({ ...row, cash: cash ? cash.perManager.get(row.manager) ?? 0 : null }))
-        .sort((a, b) => b.monthTotal - a.monthTotal || a.manager.localeCompare(b.manager, 'mn'));
+        .sort((a, b) => b.monthTotal - a.monthTotal || b.weekTotal - a.weekTotal || a.manager.localeCompare(b.manager, 'mn'));
 
     // Авлага: одоогийн ERP snapshot-ын идэвхтэй гэрээ.
     const active = input.sales?.rows.filter(sale => sale.status === 'active') ?? [];

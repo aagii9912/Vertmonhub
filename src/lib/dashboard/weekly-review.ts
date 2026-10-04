@@ -4,6 +4,7 @@ import { formatMNT } from '@/lib/utils/currency';
 import { dateSchema, performanceChange, type MarketingPerformance } from '@/lib/marketing/performance';
 import { formatDepartmentKpisText } from '@/lib/marketing/department-kpi';
 import { formatOperationsReportText, type OperationsReport } from './operations-report';
+import type { WeeklySalesReport } from './weekly-sales';
 
 export const meetingDateSchema = dateSchema.refine(
     value => new Date(`${value}T00:00:00Z`).getUTCDay() === 3,
@@ -75,6 +76,7 @@ export function formatWeeklyReview(input: {
     meetingDate: string;
     sales?: OperationsReport;
     previousSales?: OperationsReport;
+    weeklySales?: WeeklySalesReport;
     marketing?: MarketingPerformance;
     updates?: WeeklyUpdate[];
     notices: string[];
@@ -99,6 +101,7 @@ export function formatWeeklyReview(input: {
             ...(input.sales.meetings ? [`Болсон уулзалт: ${formatReviewChange(input.sales.meetings.completed, input.previousSales?.meetings?.completed)}`] : []),
             ...(input.previousSales ? [`Өмнөх гэрээний бүртгэлтэй дүн: ${formatMNT(input.previousSales.contracts.value)}${input.previousSales.contracts.missingAmounts ? ' · дүн дутуу' : ''}`] : []),
         ] : []),
+        ...(input.weeklySales ? formatWeeklySalesText(input.weeklySales) : []),
         '', '2. Маркетинг',
         ...(input.marketing ? [
             `Шинэ лид: ${input.marketing.totals.leads} · Менежерт шилжсэн: ${input.marketing.totals.sales} · Гэрээтэй лид: ${input.marketing.totals.deals}`,
@@ -126,4 +129,21 @@ export function formatWeeklyReview(input: {
             `Дараагийн алхам: ${update.next_steps || 'Тэмдэглээгүй'}`, '',
         ]) : [input.updates ? 'Хадгалсан ажлын шинэчлэл алга.' : 'Ажлын шинэчлэлийн мэдээлэл түр боломжгүй.']),
     ].join('\n');
+}
+
+/** Хурлын текстэд орох гэрээ, мөнгөн орлого, үлдэгдлийн товч. */
+export function formatWeeklySalesText(report: WeeklySalesReport): string[] {
+    const money = (value: number) => formatMNT(value);
+    return [
+        '', 'Гэрээ, үлдэгдэл',
+        `Эх сурвалж: ${report.sources.contracts === 'erp' && report.sources.sales ? `ERP «${report.sources.sales.source}» ${report.sources.sales.date}` : report.sources.contracts === 'crm' ? 'CRM-ийн гэрээ' : 'гэрээний мэдээлэл алга'}`,
+        `Энэ долоо хоног: ${report.week.count} гэрээ · ${money(report.week.total)} (өмнөх ${report.previousWeek.count} · ${money(report.previousWeek.total)})`,
+        ...report.week.byKind.map(kind => `  ${kind.label}: ${kind.count} · ${money(kind.total)}`),
+        `${report.month.month} сар: ${report.month.count} гэрээ · ${money(report.month.total)}${report.month.target ? ` / төлөвлөгөө ${money(report.month.target)} (${report.month.attainmentPct}%)` : ' · сарын төлөвлөгөө тохируулаагүй'}`,
+        report.cash ? `Мөнгөн орлого (ERP ${report.cash.from} → ${report.cash.to}): ${money(report.cash.delta)}` : 'Мөнгөн орлого: хоёр долоо хоногийн ERP экспорт хэрэгтэй',
+        ...(report.receivables ? [`Төлбөрийн хоцролт: ${money(report.receivables.overdue)} · ${report.receivables.overdueContracts} гэрээ · нийт үлдэгдэл ${money(report.receivables.balance)}`] : []),
+        ...report.byManager.map(row => `  ${row.manager}: 7 хоногт ${row.weekCount} (${money(row.weekTotal)}), сард ${row.monthCount} (${money(row.monthTotal)})${row.cash !== null ? `, мөнгө ${money(row.cash)}` : ''}`),
+        ...(report.inventory ? report.inventory.floorMaps.map(map => `${map.block} блок орон сууц: гэрээтэй ${map.totals.sold}, худалдаанд ${map.totals.available}, бусад ${map.totals.other}, бартер ${map.totals.barter}`) : []),
+        ...report.notes,
+    ];
 }

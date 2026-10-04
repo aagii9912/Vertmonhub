@@ -3,12 +3,43 @@ import { mkdirSync } from 'node:fs';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import { buildOperationsReport } from '../src/lib/dashboard/operations-report';
 import { buildMarketingPerformance, previousRange, type MarketingActivity, type MarketingSpend } from '../src/lib/marketing/performance';
-import { nextMeetingDate, weeklyReviewRange } from '../src/lib/dashboard/weekly-review';
+import { nextMeetingDate, shiftReviewDate, weeklyReviewRange } from '../src/lib/dashboard/weekly-review';
+import { buildWeeklySales } from '../src/lib/dashboard/weekly-sales';
+import type { ErpProduct, ErpSale } from '../src/lib/erp/records';
 
 const userId = '00000000-0000-4000-8000-000000000001';
 const shopId = '00000000-0000-4000-8000-000000000002';
 const meetingDate = nextMeetingDate();
 const range = weeklyReviewRange(meetingDate);
+
+// Synthetic ERP export (Elysium-like): 3 contracts this week, previous snapshot for cash, Б1 floor map.
+const sale = (key: string, overrides: Partial<ErpSale>): ErpSale => ({
+    key, contractNumber: key.split('|')[0], orderDate: range.from, manager: 'Номин.Менежер', product: key, unitCode: 'Б1-1', model: 'E1', kind: 'residential',
+    block: 'Б1', channel: 'Пропертис', condition: 'Энгийн', customer: 'Б. Энхжин', advanceCondition: '30%', advanceAmount: 120000000, status: 'active',
+    statusLabel: 'Гэрээ үүссэн', bankStatus: null, pricePerSqm: 5000000, area: 80, total: 400000000, paid: 120000000, refund: 0, balance: 280000000,
+    overdue: 0, overdueDays: 0, penalty: 0, ...overrides,
+});
+const weeklySalesFixture = () => {
+    const units: ErpProduct[] = [];
+    for (const floor of [2, 3, 4, 5]) for (const model of ['E1', 'E2', 'E3']) {
+        const index = units.length;
+        units.push({ key: `u${index}`, code: `Б1-${index + 1}`, block: 'Б1', floor, model, kind: 'residential', rooms: 3, area: 60 + index, price: null,
+            status: index % 4 === 0 ? 'sold' : index % 5 === 0 ? 'reserved' : 'available', statusLabel: '', barter: index === 7, manager: index % 4 === 0 ? 'Номин.Менежер' : null });
+    }
+    units[7].status = 'sold';
+    return buildWeeklySales({
+        range,
+        sales: { info: { date: range.to, source: 'Elysium гэрээ' }, rows: [
+            sale('EL-1|Б1-1', { paid: 180000000 }),
+            sale('EL-2|Б1-76', { kind: 'parking', unitCode: 'Б1-76', total: 72600000, advanceAmount: 21780000, paid: 21780000, area: 12.5 }),
+            sale('EL-3|Б1-32', { kind: 'industry', unitCode: 'Б1-32', total: 10700000, advanceAmount: null, paid: 0, area: 3.4, channel: 'Бартер', manager: 'Сараа.Менежер' }),
+        ] },
+        previousSales: { info: { date: shiftReviewDate(range.to, -7), source: 'Elysium гэрээ' }, rows: [sale('EL-1|Б1-1', { paid: 120000000 })] },
+        crmContracts: null,
+        inventory: { info: { date: range.to, source: 'Elysium ERP', kind: 'erp' }, rows: units },
+        monthTarget: 900000000,
+    });
+};
 
 async function setup(page: Page, restricted = false) {
     const state = { updates: [] as Record<string, unknown>[], failure: false, failSave: false, missingFx: false, requests: [] as string[], errors: [] as string[], writes: 0 };
@@ -48,6 +79,7 @@ async function setup(page: Page, restricted = false) {
                 viewings: (selected.from === range.from ? ['new_customer', 'repeat_customer', 'existing_buyer'] : ['new_customer']).map(meeting_type => ({ scheduled_at: `${selected.from}T03:00:00Z`, status: 'completed', meeting_type })),
                 leads: Array.from({ length: 18 }, (_, index) => ({ created_at: `${selected.from}T03:00:00Z`, status: 'new', source: index < 12 ? 'facebook' : 'website', sales_manager_name: index < 15 ? 'Номин' : null, last_contact_at: null, next_followup_at: null, viewing_scheduled_at: null })) }), shopName: 'Vertmon · Туршилтын өгөгдөл' });
         }
+        if (path === '/api/dashboard/reports/weekly-sales') return reply({ meetingDate, projectName: 'Vertmon · Туршилтын өгөгдөл', ...weeklySalesFixture() });
         if (path === '/api/marketing/performance') {
             const selected = { from: url.searchParams.get('from')!, to: url.searchParams.get('to')! };
             const prior = previousRange(selected);
@@ -122,6 +154,14 @@ for (const mobile of [false, true]) {
         expect(copied).toContain('Дууссан кампанит ажил: Өмнөх 1 · 0 (0%)');
         expect(copied).toContain('Дууссан контент: Өмнөх 0 · +1');
         await expect(page.getByRole('heading', { name: 'Болсон уулзалтын төрөл', exact: true })).toBeVisible();
+        // ERP экспортоос: долоо хоногийн гэрээ, мөнгөн орлого, давхрын зураглал.
+        await expect(page.getByRole('heading', { name: 'Гэрээ, үлдэгдэл, давхрын зураглал', exact: true })).toBeVisible();
+        const weekContracts = page.getByRole('region', { name: 'Энэ долоо хоногийн гэрээ' });
+        await expect(weekContracts.getByRole('row')).toHaveCount(4);
+        await expect(page.getByText('Мөнгөн орлого (ERP)', { exact: true })).toBeVisible();
+        await expect(page.getByRole('region', { name: 'Б1 блокийн давхрын зураглал' })).toBeVisible();
+        expect(copied).toContain('Энэ долоо хоног: 3 гэрээ');
+        expect(copied).toContain('Б1 блок орон сууц: гэрээтэй');
         const products = page.getByRole('region', { name: 'Гэрээний бүтээгдэхүүний задаргаа' });
         await expect(products.getByRole('rowheader', { name: 'Орон сууц', exact: true })).toBeVisible();
         const agenda = copied.split('1. Борлуулалт')[0];
