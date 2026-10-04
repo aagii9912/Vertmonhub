@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { buildOperationsReport } from '../src/lib/dashboard/operations-report';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
+import { managerActivityFixture } from './support/manager-activity';
 
 const leadId = '00000000-0000-4000-8000-000000000010';
 const shopId = '00000000-0000-4000-8000-000000000002';
@@ -24,6 +25,7 @@ async function fixtures(page: Page) {
         if (path === '/api/dashboard/mode') return reply({ mode: 'personal', managerName: 'Тест Менежер', isManager: true, canViewTeam: false });
         if (path === '/api/dashboard/nav-counts') return reply({ leads: state.lead ? 1 : 0, inbox: 0, meetings: state.viewings.length });
         if (path === '/api/dashboard/managers') return reply({ managers: [], mineName: 'Тест Менежер' });
+        if (path === '/api/dashboard/reports/manager-activity') return reply(managerActivityFixture(url, 'Тест Менежер'));
         if (path === '/api/dashboard/leads/projects') return reply({ projects: [{ id: projectId, name: 'Мандала Гарден' }] });
         if (path === '/api/dashboard/my-stats') {
             if (state.failStats) return reply({ error: 'Туршилтын түр алдаа' }, 503);

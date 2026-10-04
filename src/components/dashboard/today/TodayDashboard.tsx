@@ -14,6 +14,8 @@ import { leadDisplayName, normalizeLeadName, sourceLabel } from '@/lib/leads/lab
 import { dashboardMutate } from '@/lib/api/dashboardFetch';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
 import { useMyStats, type MyStatsTask, type MyStatsLead } from '@/hooks/useMyStats';
+import { useManagerActivity } from '@/hooks/useManagerActivity';
+import { attainmentTone, type ManagerActivity } from '@/lib/sales/activity';
 import { Panel, Progress, Avatar, Pill, GhostButton, EmptyRow, Skeleton } from '@/components/dashboard/v2/primitives';
 import { useRegisterAiContext } from '@/lib/ai/context';
 
@@ -34,6 +36,12 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
     const [busy, setBusy] = useState<string | null>(null);
 
     const now = useMemo(() => new Date(), []);
+    const today = ubDateStr(now);
+    // «Өнөөдрийн идэвх»: хувийн горимд сервер зөвхөн өөрийн мөрийг, админы drill-in-д сонгосон менежерийг буцаана.
+    const activity = useManagerActivity({ from: today, to: today, group: 'day', manager: managerName ?? null });
+    const ownActivity = activity.data && (activity.data.personal || managerName)
+        ? activity.data.managers.find((row) => !managerName || row.manager === managerName) ?? null
+        : null;
     const tasks = data?.tasks ?? [];
     const missing = data?.missing ?? [];
     const incompleteTasks = (kind: Filter) => TASK_SOURCES[kind].some((source) => missing.includes(source));
@@ -53,6 +61,8 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
         void qc.invalidateQueries({ queryKey: ['my-stats'] });
         void qc.invalidateQueries({ queryKey: ['nav-counts'] });
         void qc.invalidateQueries({ queryKey: ['my-tasks'] });
+        void qc.invalidateQueries({ queryKey: ['manager-activity'] });
+        void qc.invalidateQueries({ queryKey: ['sales-kpi'] });
     };
 
     async function complete(t: MyStatsTask) {
@@ -64,7 +74,12 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
                 warning = result.warning;
             }
             else if (t.type === 'personal') await dashboardMutate(`/api/dashboard/tasks/${t.id}`, 'PATCH', { status: 'done' });
-            else await dashboardMutate(`/api/dashboard/leads/${t.id}`, 'PATCH', { next_followup_at: null, last_contact_at: new Date().toISOString() });
+            else {
+                // «Залгах» ажлыг дуусгах = дуудлага: түүхэнд менежерийн нэрээр бүртгэгдэж өдрийн KPI-д тоологдоно
+                // (last_contact_at, next_followup_at-г recordLeadContact хамт шинэчилнэ).
+                await dashboardMutate(`/api/dashboard/leads/${t.id}/activities`, 'POST', { type: 'call', content: 'Залгасан («Өнөөдөр» жагсаалтаас)', next_followup_at: null });
+                void qc.invalidateQueries({ queryKey: ['leads'] });
+            }
             if (warning) toast.warning(warning);
             else toast.success('Дууссан');
             invalidate();
@@ -190,6 +205,14 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
 
             {/* ---------------- Баруун багана ---------------- */}
             <div className="flex flex-col gap-4">
+                <TodayActivity
+                    loading={activity.isPending}
+                    failed={!activity.data && !activity.isPending}
+                    onboarding={!!activity.data?.onboarding}
+                    targetDays={activity.data?.targetDays ?? 0}
+                    row={ownActivity}
+                    hidden={!!activity.data && !activity.data.personal && !managerName}
+                />
                 <Panel
                     title={`Миний ${monthLabel}`}
                     right={
@@ -340,6 +363,53 @@ function LeadRow({ lead }: { lead: MyStatsLead }) {
                 </a>
             )}
         </div>
+    );
+}
+
+/** «Өнөөдрийн идэвх»: CRM-ийн дуудлага, болсон уулзалт (өдрийн зорилттой), хэтэрсэн санал хүсэлт. */
+function TodayActivity({ loading, failed, onboarding, targetDays, row, hidden }: {
+    loading: boolean;
+    failed: boolean;
+    onboarding: boolean;
+    targetDays: number;
+    row: ManagerActivity | null;
+    hidden: boolean;
+}) {
+    if (hidden) return null;
+    const total = row?.totals;
+    const targetText = (target: number | null) => target !== null ? `/ ${target}` : targetDays === 0 ? 'ажлын бус өдөр' : 'зорилтгүй';
+    return (
+        <Panel
+            title="Өнөөдрийн идэвх"
+            right={
+                <Link href="/dashboard/reports/kpi" className="inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline">
+                    Дэлгэрэнгүй <ChevronRight className="h-3.5 w-3.5" />
+                </Link>
+            }
+            bodyClassName="p-3.5"
+        >
+            {loading ? <Skeleton className="h-14" />
+                : failed ? <p className="text-[12px] text-muted-foreground">Өнөөдрийн идэвхийг ачаалж чадсангүй.</p>
+                    : onboarding || !total ? <p className="text-[12px] text-muted-foreground">Менежерийн бүртгэлд холбогдоогүй тул идэвх тооцогдохгүй.</p>
+                        : (
+                            <div className="grid grid-cols-3 gap-2" role="group" aria-label="Өнөөдрийн идэвх">
+                                <div className="flex flex-col gap-0.5">
+                                    <span className="num text-[20px] font-semibold tracking-[-0.02em] text-foreground">{total.calls} <span className="text-[12px] font-normal text-muted-foreground">{targetText(total.target.calls)}</span></span>
+                                    <span className="text-[11.5px] text-muted-foreground">дуудлага</span>
+                                    {total.attainment.calls !== null && <Pill tone={attainmentTone(total.attainment.calls)} className="self-start">{total.attainment.calls}%</Pill>}
+                                </div>
+                                <div className="flex flex-col gap-0.5">
+                                    <span className="num text-[20px] font-semibold tracking-[-0.02em] text-foreground">{total.meetingsHeld} <span className="text-[12px] font-normal text-muted-foreground">{targetText(total.target.meetings)}</span></span>
+                                    <span className="text-[11.5px] text-muted-foreground">болсон уулзалт</span>
+                                    {total.attainment.meetings !== null && <Pill tone={attainmentTone(total.attainment.meetings)} className="self-start">{total.attainment.meetings}%</Pill>}
+                                </div>
+                                <div className="flex flex-col gap-0.5">
+                                    <span className={cn('num text-[20px] font-semibold tracking-[-0.02em]', row.openOverdue > 0 ? 'text-status-danger' : 'text-foreground')}>{row.openOverdue}</span>
+                                    <span className="text-[11.5px] text-muted-foreground">хэтэрсэн санал хүсэлт</span>
+                                </div>
+                            </div>
+                        )}
+        </Panel>
     );
 }
 

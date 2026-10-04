@@ -27,6 +27,7 @@ const ENTRIES = {
     get_dashboard_stats: { kind: 'read', module: 'dashboard', scoped: true },
     get_operations_report: { kind: 'read', module: 'reports', scoped: true },
     get_kpi_report: { kind: 'read', module: 'reports', scoped: true },
+    get_manager_activity: { kind: 'read', module: 'reports', scoped: true },
     get_manager_performance: { kind: 'read', module: 'reports' },
     get_export_link: { kind: 'read', module: 'reports' },
     get_sales_summary: { kind: 'read', module: 'reports' },

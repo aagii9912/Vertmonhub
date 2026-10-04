@@ -30,7 +30,7 @@ import {
     createSocialPost, rememberFact,
 } from './functions';
 import { inviteUser, assignRole, createRole } from './admin-functions';
-import { getKpiReport, getManagerPerformanceTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
+import { getKpiReport, getManagerActivityTool, getManagerPerformanceTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
 import { logCall, setFollowup, assignLeadManager, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
 import { transferContractTool } from './actions-contract-transfer';
 
@@ -138,6 +138,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     add_contract_payment: ({ shopId, args, confirm }) => addContractPayment(shopId, args, confirm),
     mark_payment_paid: ({ shopId, args, confirm }) => markPaymentPaid(shopId, args, confirm),
     get_kpi_report: ({ shopId, args, userId, perms, scope }) => getKpiReport(shopId, args, userId, perms, scope),
+    get_manager_activity: ({ shopId, args, userId, perms, scope }) => getManagerActivityTool(shopId, args, userId, perms, scope),
     get_manager_performance: ({ shopId }) => getManagerPerformanceTool(shopId),
     get_export_link: ({ shopId, args }) => getExportLink(shopId, args),
     add_customer_tag: ({ shopId, args }) => customerTag(shopId, args, false),

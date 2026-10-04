@@ -67,6 +67,9 @@ function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
     void qc.invalidateQueries({ queryKey: ['nav-counts'] });
     void qc.invalidateQueries({ queryKey: ['director'] });
     void qc.invalidateQueries({ queryKey: ['operations-report'] });
+    // Болсон/ирээгүй уулзалт өдрийн идэвх, сарын KPI-д тоологдоно.
+    void qc.invalidateQueries({ queryKey: ['manager-activity'] });
+    void qc.invalidateQueries({ queryKey: ['sales-kpi'] });
 }
 
 export function useCreateViewing() {

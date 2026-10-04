@@ -4,6 +4,7 @@ import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import { buildMarketingPerformance, type MarketingSpend } from '../src/lib/marketing/performance';
 import { nextMeetingDate, weeklyReviewRange } from '../src/lib/dashboard/weekly-review';
 import { ubDateStr } from '../src/lib/utils/date';
+import { managerActivityFixture } from './support/manager-activity';
 
 const shopId = '00000000-0000-4000-8000-000000000002';
 const leadId = '00000000-0000-4000-8000-000000000010';
@@ -54,6 +55,7 @@ async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admi
         if (path === '/api/dashboard/nav-counts') return reply({ leads: 3, inbox: 0, meetings: 2 });
         if (path === '/api/dashboard/my-stats') return reply({ manager: { name: 'Номин', isSelf: true, inRoster: true, hasAccount: true }, onboarding: false, missing: [], period: 'today',
             kpis: { activeLeads: 3, newLeads: 2, viewingsToday: 0, viewingsThisWeek: 2, activeContracts: 3, salesThisMonth: 860000000 }, target: null, tasks: [], recentLeads: [], upcomingViewings: [], revenueTrend: [] });
+        if (path === '/api/dashboard/reports/manager-activity') return reply(managerActivityFixture(url, 'Номин'));
         if (path === '/api/dashboard/leads/projects') return reply({ projects: [{ id: projectId, name: 'Мандала Гарден' }, ...(role === 'admin' ? [{ id: elysiumId, name: 'Элизиум' }] : [])] });
         if (path === '/api/dashboard/managers') {
             const managers = [

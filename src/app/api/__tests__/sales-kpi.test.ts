@@ -14,9 +14,14 @@ vi.mock('@/lib/auth/require-permission', () => ({
     resolvePermissions: async () => ({ role: state.role, permissions: { modules: ['reports'], canWrite: state.canWrite } }),
 }));
 vi.mock('@/lib/auth/supabase-auth', () => ({ getUserShop: async () => ({ id: 'shop-1', name: 'Elysium Residence' }), getUserId: async () => 'user-1' }));
-vi.mock('@/lib/sales/manager-identity', () => ({ resolveManagerIdentity: async () => ({ isManager: state.isManager, managerName: state.managerName }) }));
+vi.mock('@/lib/sales/manager-identity', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@/lib/sales/manager-identity')>();
+    return { ...actual, resolveReportViewer: async (_db: unknown, _shop: string, input: { userId: string | null; role: string; modules: string[] }) => ({
+        ...actual.reportViewerRule({ role: input.role, modules: input.modules, isManager: state.isManager }), userId: input.userId, managerName: state.managerName, identity: null }) };
+});
 vi.mock('@/lib/sales/kpi-load', () => ({ loadSalesKpi: async (_db: unknown, options: Record<string, unknown>) => { state.loads.push(options); return { year: options.year, month: options.month, sources: null, managers: [] }; } }));
-vi.mock('@/lib/admin/audit', () => ({ logAdminAudit: vi.fn(async () => undefined) }));
+const audit = vi.hoisted(() => vi.fn(async (_entry: Record<string, unknown>) => undefined));
+vi.mock('@/lib/admin/audit', () => ({ logAdminAudit: audit }));
 vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: (table: string) => {
     const filters: Array<(row: Row) => boolean> = [];
     const query = {
@@ -61,10 +66,21 @@ describe('sales KPI API', () => {
         expect(state.upserts[0]).toMatchObject({ shop_id: 'shop-1', year: 2026, month: 10, manager_name: 'Номин',
             plans: { cash_collected: 5, contract_amount: 900 }, review: { note: 'хуучин', management: 4 }, updated_by: 'user-1' });
 
+        expect(audit).toHaveBeenLastCalledWith(expect.objectContaining({ action: 'kpi.update', targetId: 'Номин', meta: expect.objectContaining({ fields: ['plans', 'review'] }) }));
         expect((await put({ year: 2026, month: 10, manager: 'Бүртгэлгүй', plans: { contract_amount: 1 } })).status).toBe(404);
         expect((await put({ year: 2026, month: 10, manager: 'Номин', plans: { unknown: 1 } })).status).toBe(400);
         Object.assign(state, { role: 'sales_manager', isManager: true, managerName: 'Номин' });
         expect((await put({ year: 2026, month: 10, manager: 'Номин', plans: { contract_amount: 1 } })).status).toBe(403);
         expect(state.upserts).toHaveLength(1);
+    });
+
+    it('merges daily targets and lets a cleared manual call count fall back to CRM', async () => {
+        state.current = { plans: {}, manual: { calls_chats: 40 }, daily: { calls: 15, meetings: 2 }, review: {} };
+        const response = await put({ year: 2026, month: 10, manager: 'Номин', manual: { calls_chats: null }, daily: { calls: 20, meetings: null } });
+        expect(response.status).toBe(200);
+        expect(state.upserts[0]).toMatchObject({ manual: {}, daily: { calls: 20 } });
+        expect(audit).toHaveBeenLastCalledWith(expect.objectContaining({ meta: expect.objectContaining({ fields: ['manual', 'daily'] }) }));
+        expect((await put({ year: 2026, month: 10, manager: 'Номин', daily: { calls: 0 } })).status).toBe(400);
+        expect((await put({ year: 2026, month: 10, manager: 'Номин', daily: { calls: 5, visits: 1 } })).status).toBe(400);
     });
 });

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
+import { managerActivityFixture } from './support/manager-activity';
 
 // react-query руу шилжсэн хуудсууд: анхны уншилт унавал хоосон биш алдаа + «Дахин оролдох»,
 // сэргээгээд өгөгдөл харагдана; харилцагчийг жагсаалтаас (сэргээх боломжтой) хасна.
@@ -23,6 +24,9 @@ async function setup(page: Page) {
         if (path === '/api/dashboard/nav-counts') return reply({ leads: 1, inbox: 0, meetings: 0 });
         if (path === '/api/dashboard/my-stats') return reply({ manager: { name: 'Номин', isSelf: true, inRoster: true, hasAccount: true }, onboarding: false, missing: [], period: 'today',
             kpis: { activeLeads: 1, newLeads: 1, viewingsToday: 0, viewingsThisWeek: 0, activeContracts: 0, salesThisMonth: 0 }, target: null, tasks: [], recentLeads: [], upcomingViewings: [], revenueTrend: [] });
+        if (path === '/api/dashboard/reports/manager-activity') return reply(managerActivityFixture(url, 'Номин'));
+        // Санал гомдлын хариуцагч = борлуулалтын менежерийн бүртгэл.
+        if (path === '/api/dashboard/managers') return reply({ managers: [{ name: 'Номин', user_id: null, is_active: true, hasAccount: false, assignable: true, project_ids: [] }] });
         if (path === '/api/dashboard/customers' && request.method() === 'GET') {
             if (state.failCustomers) return reply({ error: 'Түр алдаа' }, 500);
             return reply({ customers: state.deleted.includes(customerId) ? [] : [customer] });
