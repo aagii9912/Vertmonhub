@@ -93,6 +93,9 @@ describe('buildWeeklySales', () => {
                 unit('Б1-2', { model: 'E2', status: 'sold', statusLabel: 'Гэрээ баталгаажсан', manager: 'Менежер.А' }),
                 unit('Б1-3', { model: 'E3', status: 'reserved', statusLabel: 'Хадгалсан' }),
                 unit('Б1-90', { floor: 15, model: 'E4', status: 'sold', barter: true }),
+                // «Хүлээлгэсэн» = зарагдаад хүлээлгэн өгсөн (2026-10-05): зарагдсанд, бартер бол бартерт; хэзээ ч худалдаанд биш.
+                unit('Б1-4', { model: 'E4', status: 'handed_over', statusLabel: 'Хүлээлгэсэн', manager: 'Менежер.Б' }),
+                unit('Б1-91', { floor: 15, model: 'E4', status: 'handed_over', statusLabel: 'Хүлээлгэсэн', barter: true }),
                 unit('Б1-200', { kind: 'parking', floor: null, model: 'A-1' }),
             ] },
             monthTarget: null,
@@ -101,14 +104,16 @@ describe('buildWeeklySales', () => {
         expect(report.sources.contracts).toBe('crm');
         expect(report.inventory!.blocks).toEqual([
             expect.objectContaining({ block: 'Б1', kind: 'parking', total: 1, statuses: { available: 1 } }),
-            expect.objectContaining({ block: 'Б1', kind: 'residential', total: 4, barter: 1, statuses: { available: 1, sold: 2, reserved: 1 } }),
+            expect.objectContaining({ block: 'Б1', kind: 'residential', total: 6, barter: 2, statuses: { available: 1, sold: 2, reserved: 1, handed_over: 2 } }),
         ]);
+        expect(report.inventory!.statusLabels.handed_over).toBe('Хүлээлгэсэн');
         const [map] = report.inventory!.floorMaps;
         expect(map.models).toEqual(['E1', 'E2', 'E3', 'E4']);
         expect(map.floors.map(row => [row.floor, row.counts])).toEqual([
-            [15, { sold: 0, available: 0, other: 0, barter: 1 }],
-            [2, { sold: 1, available: 1, other: 1, barter: 0 }],
+            [15, { sold: 0, available: 0, other: 0, barter: 2 }],
+            [2, { sold: 2, available: 1, other: 1, barter: 0 }],
         ]);
-        expect(map.totals).toEqual({ sold: 1, available: 1, other: 1, barter: 1 });
+        expect(map.totals).toEqual({ sold: 2, available: 1, other: 1, barter: 2 });
+        expect(map.floors[1].cells.E4).toEqual([expect.objectContaining({ code: 'Б1-4', status: 'handed_over', manager: 'Менежер.Б' })]);
     });
 });
