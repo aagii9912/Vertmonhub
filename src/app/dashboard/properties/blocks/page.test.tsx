@@ -1,8 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import BlocksPage from './page';
 
+vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ shop: { id: 'shop-1' }, user: { id: 'user-1', role: 'admin' } }) }));
+
 const fetchMock = vi.mocked(fetch);
+let client: QueryClient;
+
+function renderPage() {
+    return render(<QueryClientProvider client={client}><BlocksPage /></QueryClientProvider>);
+}
+
 const summary = {
     phases: ['Elysium', 'Mandala'],
     summary: [
@@ -31,6 +40,7 @@ function deferredResponse() {
 
 beforeEach(() => {
     fetchMock.mockReset();
+    client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
 
 describe('блокийн мэдээлэл ачаалах', () => {
@@ -39,7 +49,7 @@ describe('блокийн мэдээлэл ачаалах', () => {
             .mockResolvedValueOnce(Response.json({ error: 'Байр харах эрх хүрэлцэхгүй' }, { status: 403 }))
             .mockResolvedValueOnce(Response.json(summary));
 
-        render(<BlocksPage />);
+        renderPage();
         const alert = await screen.findByRole('alert');
         expect(within(alert).getByText('Блокийн мэдээллийг ачаалж чадсангүй')).toBeInTheDocument();
         expect(within(alert).getByText('Байр харах эрх хүрэлцэхгүй')).toBeInTheDocument();
@@ -57,7 +67,7 @@ describe('блокийн мэдээлэл ачаалах', () => {
             .mockResolvedValueOnce(Response.json({ error: 'Мэдээллийн сан түр ажиллахгүй байна' }, { status: 503 }))
             .mockResolvedValueOnce(Response.json({ units: [unit('ELY-A-1', 'A')] }));
 
-        render(<BlocksPage />);
+        renderPage();
         fireEvent.click(await screen.findByRole('button', { name: /^A/ }));
         const alert = await screen.findByRole('alert');
         expect(within(alert).getByText('Нэгжийн мэдээллийг ачаалж чадсангүй')).toBeInTheDocument();
@@ -78,7 +88,7 @@ describe('блокийн мэдээлэл ачаалах', () => {
             .mockReturnValueOnce(first.promise)
             .mockReturnValueOnce(second.promise);
 
-        render(<BlocksPage />);
+        renderPage();
         fireEvent.click(await screen.findByRole('button', { name: /^A/ }));
         const firstSignal = fetchMock.mock.calls[1][1]?.signal;
         fireEvent.click(screen.getByRole('button', { name: /^B/ }));
@@ -97,7 +107,7 @@ describe('блокийн мэдээлэл ачаалах', () => {
             .mockResolvedValueOnce(Response.json({ mode: 'summary', phases: [], summary: [] }))
             .mockResolvedValueOnce(Response.json({ units: [unit('ELY-A-1', 'A')] }));
 
-        render(<BlocksPage />);
+        renderPage();
         fireEvent.click(await screen.findByRole('button', { name: /^A/ }));
         const alert = await screen.findByRole('alert');
         expect(within(alert).getByText('Нэгжийн мэдээллийг ачаалж чадсангүй. Дахин оролдоно уу.')).toBeInTheDocument();
@@ -113,7 +123,7 @@ describe('блокийн мэдээлэл ачаалах', () => {
             .mockReturnValueOnce(old.promise)
             .mockResolvedValueOnce(Response.json({ units: [unit('CURRENT-A-1', 'A', filter === 'phase' ? 'Mandala' : 'Elysium', filter === 'category' ? 'parking' : 'residential')] }));
 
-        render(<BlocksPage />);
+        renderPage();
         fireEvent.click(await screen.findByRole('button', { name: /^A/ }));
         const oldSignal = fetchMock.mock.calls[1][1]?.signal;
         fireEvent.click(screen.getByRole('button', { name: filter === 'phase' ? /^Mandala/ : /^Зогсоол / }));

@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardFetch, dashboardJson } from '@/lib/api/dashboardFetch';
+import { useDashboardQuery } from '@/hooks/useDashboardQuery';
+import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { TrendingUp, Users, Target, BarChart3, RefreshCw, Megaphone, DollarSign, Heart, MessageCircle, Share2 } from 'lucide-react';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
@@ -10,7 +12,7 @@ import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { Alert } from '@/components/ui/Alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
 import { Progress } from '@/components/ui/Progress';
 import { DataTable, Money, StatusPill, type DataTableColumn } from '@/components/ui/DataTable';
 import { ChartCard } from '@/components/ui/ChartCard';
@@ -73,6 +75,9 @@ interface RoiData { campaigns: CampaignRoi[]; sources: unknown[]; totals: RoiTot
 interface SocialPost { id: string; content: string | null; likes: number; comments: number; shares: number; published_at: string | null; }
 interface SocialInsight { captured_at: string; reach: number; impressions: number; followers: number; }
 
+/** Эх үүсвэрийн шинжилгээнд хэрэглэх лидийн талбарууд (/api/dashboard/leads). */
+interface LeadStat { source: string | null; status: string | null; created_at: string; }
+
 /** Маркетингийн нөлөөллийн сар бүрийн цуваа (/api/dashboard/marketing-roi/timeline) */
 interface TimelineMonth {
     month: string;
@@ -86,6 +91,11 @@ interface TimelineMonth {
 }
 
 const fmtMNT = (n: number): string => formatMNT(n, { compact: true });
+
+const NO_LEADS: LeadStat[] = [];
+const NO_CAMPAIGNS: AdCampaign[] = [];
+const NO_ACCOUNTS: AdAccount[] = [];
+const NO_MONTHS: TimelineMonth[] = [];
 
 interface SourceRow {
     source: string;
@@ -153,90 +163,36 @@ const campaignStatusVariant = (status: string) =>
 
 export default function MarketingROIPage() {
     const { shop } = useAuth();
-    const [leads, setLeads] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [loadError, setLoadError] = useState(false);
-    const [adAccounts, setAdAccounts] = useState<AdAccount[]>([]);
-    const [selectedAdAccount, setSelectedAdAccount] = useState<string | null>(null);
-    const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
+    const queryClient = useQueryClient();
+    // API-аар (RBAC + shop scope сервер талд) — өмнө нь browser Supabase, зөвхөн RLS
+    const leadsQuery = useDashboardQuery<{ leads?: LeadStat[] }>(['marketing-roi', 'leads'], '/api/dashboard/leads?pageSize=1000');
+    // Хадгалсан Facebook кампаниуд (Meta-аас синк хийхгүй)
+    const campaignsQuery = useDashboardQuery<{ rows?: AdCampaign[] }>(['marketing-roi', 'campaigns'], '/api/marketing/data/ad_campaigns?eq.platform=facebook&order=updated_at.desc');
+    const roiQuery = useDashboardQuery<{ roi?: RoiData | null }>(['marketing-roi', 'roi'], '/api/dashboard/marketing-roi');
+    const socialQuery = useDashboardQuery<{ posts?: SocialPost[]; insights?: SocialInsight[] }>(['marketing-roi', 'social'], '/api/dashboard/marketing/social-history');
+    const timelineQuery = useDashboardQuery<{ months?: TimelineMonth[] }>(['marketing-roi', 'timeline'], '/api/dashboard/marketing-roi/timeline');
+    // Зарын дансыг «Ad account-уудыг ачаалах» дарахад л татна.
+    const adAccountsQuery = useDashboardQuery<{ accounts?: AdAccount[]; selected_id?: string | null }>(
+        ['marketing-roi', 'ad-accounts'], '/api/marketing/facebook/ads/accounts', { enabled: false },
+    );
+    const refetchCampaigns = campaignsQuery.refetch;
+
+    const leads = leadsQuery.data?.leads ?? NO_LEADS;
+    const campaigns = campaignsQuery.data?.rows ?? NO_CAMPAIGNS;
+    // Таталт алдагдвал хуучин/тэг дүнг одоогийн тайлан мэт харуулахгүй.
+    const roi = roiQuery.isError ? null : roiQuery.data?.roi ?? null;
+    const socialPosts = socialQuery.data?.posts ?? [];
+    const socialInsights = socialQuery.data?.insights ?? [];
+    const timeline = timelineQuery.data?.months ?? NO_MONTHS;
+    const adAccounts = adAccountsQuery.data?.accounts ?? NO_ACCOUNTS;
+    const [pickedAdAccount, setPickedAdAccount] = useState<string | null>(null);
+    const selectedAdAccount = pickedAdAccount
+        ?? adAccountsQuery.data?.selected_id
+        ?? (adAccounts.length === 1 ? adAccounts[0].id : null);
     const [campaignsLoading, setCampaignsLoading] = useState(false);
     const [campaignsError, setCampaignsError] = useState<string | null>(null);
-    const [roi, setRoi] = useState<RoiData | null>(null);
-    const [roiError, setRoiError] = useState(false);
-    const [social, setSocial] = useState<{ posts: SocialPost[]; insights: SocialInsight[] } | null>(null);
-    const [timeline, setTimeline] = useState<TimelineMonth[]>([]);
+    const adsError = campaignsError || adAccountsQuery.error?.message;
     const [syncingSocial, setSyncingSocial] = useState(false);
-
-    useEffect(() => {
-        if (!shop?.id) return;
-        fetchData();
-    }, [shop?.id]);
-
-    async function fetchData() {
-        setLoadError(false);
-        setRoiError(false);
-        setRoi(null);
-        try {
-            // API-аар (RBAC + shop scope сервер талд) — өмнө нь browser Supabase, зөвхөн RLS
-            const { leads: leadRows } = await dashboardJson<{ leads: any[] }>('/api/dashboard/leads?pageSize=1000');
-            setLeads(leadRows || []);
-
-            // Load already-stored Facebook campaigns from DB (no remote sync)
-            const { rows: stored } = await dashboardJson<{ rows: AdCampaign[] }>('/api/marketing/data/ad_campaigns?eq.platform=facebook&order=updated_at.desc');
-            setCampaigns(stored || []);
-
-            // Таталт алдагдвал хуучин/тэг дүнг одоогийн тайлан мэт харуулахгүй.
-            try {
-                const res = await dashboardFetch('/api/dashboard/marketing-roi');
-                if (!res.ok) throw new Error('ROI унших алдаа');
-                const roiJson = await res.json();
-                setRoi(roiJson.roi || null);
-            } catch {
-                setRoiError(true);
-            }
-
-            // Хадгалсан organic social түүх — best-effort
-            try {
-                const res = await dashboardFetch('/api/dashboard/marketing/social-history');
-                if (res.ok) {
-                    const socialJson = await res.json();
-                    setSocial({ posts: socialJson.posts || [], insights: socialJson.insights || [] });
-                }
-            } catch {
-                // best-effort
-            }
-
-            // Маркетингийн нөлөөллийн сар бүрийн цуваа — best-effort
-            try {
-                const res = await dashboardFetch('/api/dashboard/marketing-roi/timeline');
-                if (res.ok) {
-                    const json = await res.json();
-                    setTimeline(json.months || []);
-                }
-            } catch {
-                // best-effort
-            }
-        } catch {
-            setLoadError(true);
-        } finally {
-            setLoading(false);
-        }
-    }
-
-    const fetchAdAccounts = useCallback(async () => {
-        try {
-            const res = await dashboardFetch('/api/marketing/facebook/ads/accounts');
-            const data = await res.json();
-            if (!res.ok) {
-                throw new Error(data?.error || 'Ad account татахад алдаа');
-            }
-            setAdAccounts(data.accounts || []);
-            if (data.selected_id) setSelectedAdAccount(data.selected_id);
-            else if ((data.accounts || []).length === 1) setSelectedAdAccount(data.accounts[0].id);
-        } catch (err) {
-            setCampaignsError(err instanceof Error ? err.message : 'Алдаа');
-        }
-    }, []);
 
     async function syncSocial() {
         setSyncingSocial(true);
@@ -244,9 +200,7 @@ export default function MarketingROIPage() {
             const res = await dashboardFetch('/api/dashboard/marketing/sync-social', { method: 'POST' });
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || 'Sync алдаа');
-            const h = await dashboardFetch('/api/dashboard/marketing/social-history');
-            const hist = await h.json();
-            setSocial({ posts: hist.posts || [], insights: hist.insights || [] });
+            await socialQuery.refetch();
             toast.success(data.message || 'Social хадгаллаа');
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Sync алдаа');
@@ -275,7 +229,7 @@ export default function MarketingROIPage() {
             const res = await dashboardFetch(`/api/marketing/facebook/ads/campaigns?ad_account_id=${encodeURIComponent(selectedAdAccount)}`);
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || 'Sync алдаа');
-            setCampaigns(data.campaigns || []);
+            await refetchCampaigns();
             toast.success(`${data.synced} кампанит ажил татлаа`);
         } catch (err) {
             const msg = err instanceof Error ? err.message : 'Sync алдаа';
@@ -286,21 +240,19 @@ export default function MarketingROIPage() {
         }
     }
 
-    async function syncInsights(campaign: AdCampaign) {
+    const syncInsights = useCallback(async (campaign: AdCampaign) => {
         if (!campaign.external_id) return;
         try {
             const res = await dashboardFetch(`/api/marketing/facebook/ads/insights?campaign_id=${encodeURIComponent(campaign.external_id)}`);
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || 'Insights алдаа');
-            // refetch list
-            const listRes = await dashboardFetch('/api/marketing/facebook/ads/campaigns');
-            const listData = await listRes.json();
-            if (listRes.ok) setCampaigns(listData.campaigns || []);
+            // Insights ad_campaigns мөрийг шинэчилсэн тул хадгалсан жагсаалтыг дахин уншина.
+            await refetchCampaigns();
             toast.success('Insights шинэчлэгдлээ');
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Insights алдаа');
         }
-    }
+    }, [refetchCampaigns]);
 
     const analytics = useMemo(() => {
         if (leads.length === 0) return null;
@@ -442,9 +394,14 @@ export default function MarketingROIPage() {
                 ),
             },
         ],
-         
-        [],
+        [syncInsights],
     );
+
+    // Хуучин шигээ эхний ачаалалт бүх уншилтыг хүлээнэ. Лид/кампанит ажлын өгөгдөлгүй үед л алдааны
+    // карт (дахин оролдох үед spinner); өгөгдөл байхад фон шинэчлэлтийн алдааг QueryProvider toast мэдэгдэнэ.
+    const baseQueries = [leadsQuery, campaignsQuery];
+    const loadError = baseQueries.some((q) => !q.data && q.isError && !q.isFetching);
+    const loading = !loadError && (baseQueries.some((q) => !q.data) || [roiQuery, socialQuery, timelineQuery].some((q) => q.isPending));
 
     if (loading)
         return (
@@ -460,7 +417,7 @@ export default function MarketingROIPage() {
             <Card>
                 <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
                     <p className="font-medium text-foreground">Маркетингийн мэдээлэл ачаалахад алдаа гарлаа</p>
-                    <Button onClick={() => { setLoading(true); fetchData(); }} variant="secondary" size="sm">
+                    <Button onClick={() => void queryClient.invalidateQueries({ queryKey: ['marketing-roi'] })} variant="secondary" size="sm">
                         <RefreshCw className="w-4 h-4 mr-2" /> Дахин оролдох
                     </Button>
                 </div>
@@ -513,7 +470,7 @@ export default function MarketingROIPage() {
                         />
                     </StatBar>
 
-                    {roiError && <Alert variant="warning">Маркетингийн гэрээ, зардлын тайланг уншиж чадсангүй. Дахин шинэчилнэ үү.</Alert>}
+                    {roiQuery.isError && <Alert variant="warning">Маркетингийн гэрээ, зардлын тайланг уншиж чадсангүй. Дахин шинэчилнэ үү.</Alert>}
                     {roi && (
                         <>
                             {roi.basis?.note && <p className="text-sm text-muted-foreground mb-4">{roi.basis.note}</p>}
@@ -554,28 +511,38 @@ export default function MarketingROIPage() {
                             </Button>
                         </div>
                         <div className="p-4">
-                            {social && social.insights[0] && (
-                                <div className="flex flex-wrap gap-4 mb-4 text-sm">
-                                    <span className="text-muted-foreground">Дагагч: <span className="font-semibold text-foreground tabular-nums">{social.insights[0].followers.toLocaleString()}</span></span>
-                                    <span className="text-muted-foreground">Хүртээмж: <span className="font-semibold text-foreground tabular-nums">{social.insights[0].reach.toLocaleString()}</span></span>
-                                    <span className="text-muted-foreground">Snapshot: <span className="font-semibold text-foreground tabular-nums">{social.insights.length}</span></span>
-                                </div>
-                            )}
-                            {!social || social.posts.length === 0 ? (
-                                <p className="text-sm text-muted-foreground py-4 text-center">Хадгалсан нийтлэл алга. "Хадгалах" дарж Facebook-аас татна уу.</p>
+                            {socialQuery.error ? (
+                                <Alert variant="danger">
+                                    <AlertTitle>Хадгалсан сошиал түүхийг ачаалж чадсангүй</AlertTitle>
+                                    <AlertDescription>{socialQuery.error.message}</AlertDescription>
+                                    <Button variant="secondary" size="sm" className="mt-1 self-start" onClick={() => void socialQuery.refetch()} isLoading={socialQuery.isFetching}>Дахин оролдох</Button>
+                                </Alert>
                             ) : (
-                                <div className="divide-y divide-border/60">
-                                    {social.posts.slice(0, 5).map((p) => (
-                                        <div key={p.id} className="py-2.5 flex items-start justify-between gap-3">
-                                            <p className="text-sm text-foreground line-clamp-2 flex-1">{p.content || '(зураг)'}</p>
-                                            <span className="flex items-center gap-3 text-xs text-muted-foreground whitespace-nowrap tabular-nums">
-                                                <span className="flex items-center gap-1"><Heart className="w-3.5 h-3.5" /> {p.likes}</span>
-                                                <span className="flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5" /> {p.comments}</span>
-                                                <span className="flex items-center gap-1"><Share2 className="w-3.5 h-3.5" /> {p.shares}</span>
-                                            </span>
+                                <>
+                                    {socialInsights[0] && (
+                                        <div className="flex flex-wrap gap-4 mb-4 text-sm">
+                                            <span className="text-muted-foreground">Дагагч: <span className="font-semibold text-foreground tabular-nums">{socialInsights[0].followers.toLocaleString()}</span></span>
+                                            <span className="text-muted-foreground">Хүртээмж: <span className="font-semibold text-foreground tabular-nums">{socialInsights[0].reach.toLocaleString()}</span></span>
+                                            <span className="text-muted-foreground">Snapshot: <span className="font-semibold text-foreground tabular-nums">{socialInsights.length}</span></span>
                                         </div>
-                                    ))}
-                                </div>
+                                    )}
+                                    {socialPosts.length === 0 ? (
+                                        <p className="text-sm text-muted-foreground py-4 text-center">Хадгалсан нийтлэл алга. "Хадгалах" дарж Facebook-аас татна уу.</p>
+                                    ) : (
+                                        <div className="divide-y divide-border/60">
+                                            {socialPosts.slice(0, 5).map((p) => (
+                                                <div key={p.id} className="py-2.5 flex items-start justify-between gap-3">
+                                                    <p className="text-sm text-foreground line-clamp-2 flex-1">{p.content || '(зураг)'}</p>
+                                                    <span className="flex items-center gap-3 text-xs text-muted-foreground whitespace-nowrap tabular-nums">
+                                                        <span className="flex items-center gap-1"><Heart className="w-3.5 h-3.5" /> {p.likes}</span>
+                                                        <span className="flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5" /> {p.comments}</span>
+                                                        <span className="flex items-center gap-1"><Share2 className="w-3.5 h-3.5" /> {p.shares}</span>
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     </Card>
@@ -610,14 +577,14 @@ export default function MarketingROIPage() {
                             <div className="flex items-center gap-2">
                                 {shop?.id && <Button variant="secondary" size="sm" href={`/api/marketing/facebook/ads/connect?shop_id=${encodeURIComponent(shop.id)}`}>Meta Ads холбох</Button>}
                                 {adAccounts.length === 0 ? (
-                                    <Button variant="secondary" size="sm" onClick={fetchAdAccounts}>
+                                    <Button variant="secondary" size="sm" onClick={() => void adAccountsQuery.refetch()}>
                                         Ad account-уудыг ачаалах
                                     </Button>
                                 ) : (
                                     <>
                                         <Select
                                             value={selectedAdAccount || ''}
-                                            onValueChange={(v) => setSelectedAdAccount(v || null)}
+                                            onValueChange={(v) => setPickedAdAccount(v || null)}
                                         >
                                             <SelectTrigger className="h-9 w-56 text-sm">
                                                 <SelectValue placeholder="Ad account сонгоно уу" />
@@ -644,9 +611,9 @@ export default function MarketingROIPage() {
                                 )}
                             </div>
                         </div>
-                        {campaignsError && (
+                        {adsError && (
                             <div className="px-4 pt-3">
-                                <Alert variant="danger">{campaignsError}</Alert>
+                                <Alert variant="danger">{adsError}</Alert>
                             </div>
                         )}
                         {campaigns.length === 0 ? (
@@ -672,7 +639,13 @@ export default function MarketingROIPage() {
                     </Card>
 
                     {/* Marketing impact: идэвхжүүлэлт vs лид/уулзалт */}
-                    {timeline.length > 0 && (
+                    {timelineQuery.error ? (
+                        <Alert variant="danger" className="mb-6">
+                            <AlertTitle>Маркетингийн нөлөөллийн цувааг ачаалж чадсангүй</AlertTitle>
+                            <AlertDescription>{timelineQuery.error.message}</AlertDescription>
+                            <Button variant="secondary" size="sm" className="mt-1 self-start" onClick={() => void timelineQuery.refetch()} isLoading={timelineQuery.isFetching}>Дахин оролдох</Button>
+                        </Alert>
+                    ) : timeline.length > 0 && (
                         <ChartCard
                             title="Маркетингийн нөлөөлөл"
                             subtitle="Идэвхжүүлэлт (пост, кампанит ажил) лид ба уулзалтын тоонд хэрхэн нөлөөлж буй харьцуулалт"

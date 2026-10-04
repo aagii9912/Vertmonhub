@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
     Building2,
     Layers,
@@ -24,6 +25,7 @@ import { PageHeader } from '@/components/dashboard/PageHeader';
 import { toast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
+import { useAuth } from '@/contexts/AuthContext';
 import { dashboardFetch, dashboardJson } from '@/lib/api/dashboardFetch';
 import { UNIT_CATEGORIES, UNIT_STATUSES, UNIT_STATUS_LABEL, unitCategoryLabel, type InventoryStatus } from '@/lib/inventory/labels';
 
@@ -62,6 +64,15 @@ interface UnitRow {
     contract_status: string | null;
 }
 
+interface UnitSummary {
+    summary: SummaryRow[];
+    phases: string[];
+}
+
+const NO_SUMMARY: SummaryRow[] = [];
+const NO_PHASES: string[] = [];
+const NO_UNITS: UnitRow[] = [];
+
 type DotVariant = 'success' | 'danger' | 'pending' | 'info' | 'active' | 'neutral' | 'brand';
 
 const STATUS_STYLE: Record<InventoryStatus, { cell: string; dot: DotVariant; variant: 'success' | 'info' | 'warning' | 'default' | 'danger' }> = {
@@ -87,74 +98,47 @@ function floorNum(floor: string | null): number {
 }
 
 export default function BlocksPage() {
-    const [summary, setSummary] = useState<SummaryRow[]>([]);
-    const [phases, setPhases] = useState<string[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [summaryError, setSummaryError] = useState<string | null>(null);
-    const [summaryAttempt, setSummaryAttempt] = useState(0);
+    const { shop, user } = useAuth();
+    const scope = [shop?.id, user?.id, user?.role] as const;
 
-    const [activePhase, setActivePhase] = useState<string>('');
-    const [activeCategory, setActiveCategory] = useState<string>('residential');
+    const [phaseChoice, setPhaseChoice] = useState<string>('');
+    const [categoryChoice, setCategoryChoice] = useState<string>('residential');
     const [selectedBlock, setSelectedBlock] = useState<string | null>(null);
-
-    const [units, setUnits] = useState<UnitRow[]>([]);
-    const [unitsLoading, setUnitsLoading] = useState(false);
-    const [unitsError, setUnitsError] = useState<string | null>(null);
     const [selectedUnit, setSelectedUnit] = useState<UnitRow | null>(null);
-    const blockRequest = useRef<AbortController | null>(null);
 
-    const clearBlock = useCallback(() => {
-        blockRequest.current?.abort();
-        blockRequest.current = null;
+    // Ирсэн хариуг шалгадаг тул useDashboardQuery биш. signal ашигладаг тул хуудаснаас гарахад
+    // хүсэлт цуцлагдана; хуучин шигээ автоматаар дахин оролдохгүй («Дахин оролдох» товчоор).
+    const summaryQuery = useQuery<UnitSummary>({
+        queryKey: ['units', 'summary', ...scope],
+        queryFn: async ({ signal }) => {
+            const data = await dashboardJson<UnitSummary>('/api/dashboard/units', { signal });
+            if (!Array.isArray(data.summary) || !Array.isArray(data.phases)) {
+                throw new Error('Блокийн мэдээллийг ачаалж чадсангүй. Дахин оролдоно уу.');
+            }
+            return data;
+        },
+        enabled: !!shop?.id,
+        staleTime: 30_000,
+        retry: false,
+        meta: { inlineError: true },
+    });
+    const summary = summaryQuery.data?.summary ?? NO_SUMMARY;
+    const phases = summaryQuery.data?.phases ?? NO_PHASES;
+    // Сонгоогүй (эсвэл алга болсон) ээлж бол эхний ээлж.
+    const activePhase = phases.includes(phaseChoice) ? phaseChoice : (phases[0] ?? '');
+
+    const clearBlock = () => {
         setSelectedBlock(null);
         setSelectedUnit(null);
-        setUnits([]);
-        setUnitsError(null);
-        setUnitsLoading(false);
-    }, []);
-
-    useEffect(() => () => blockRequest.current?.abort(), []);
-
-    // Initial summary
-    useEffect(() => {
-        const controller = new AbortController();
-        (async () => {
-            try {
-                setLoading(true);
-                setSummaryError(null);
-                const data = await dashboardJson<{ summary: SummaryRow[]; phases: string[] }>(
-                    '/api/dashboard/units', { signal: controller.signal },
-                );
-                if (controller.signal.aborted) return;
-                if (!Array.isArray(data.summary) || !Array.isArray(data.phases)) {
-                    throw new Error('Блокийн мэдээллийг ачаалж чадсангүй. Дахин оролдоно уу.');
-                }
-                setSummary(data.summary);
-                setPhases(data.phases);
-                setActivePhase(data.phases[0] || '');
-            } catch (e) {
-                if (!controller.signal.aborted) {
-                    setSummaryError(e instanceof Error ? e.message : 'Блокийн мэдээллийг ачаалж чадсангүй.');
-                }
-            } finally {
-                if (!controller.signal.aborted) setLoading(false);
-            }
-        })();
-        return () => controller.abort();
-    }, [summaryAttempt]);
+    };
 
     // Categories available in the active phase
     const categories = useMemo<string[]>(() => {
         const set = new Set(summary.filter((r) => r.phase === activePhase).map((r) => r.category));
         return UNIT_CATEGORIES.filter((c) => set.has(c));
     }, [summary, activePhase]);
-
-    useEffect(() => {
-        if (categories.length && !categories.includes(activeCategory)) {
-            clearBlock();
-            setActiveCategory(categories[0]);
-        }
-    }, [categories, activeCategory, clearBlock]);
+    // Ээлжид сонгосон ангилал байхгүй бол эхний ангилал (ээлж солиход харагдаж буй ангиллаа хадгална).
+    const activeCategory = categories.length > 0 && !categories.includes(categoryChoice) ? categories[0] : categoryChoice;
 
     // Blocks for active phase + category
     const blocks = useMemo(() => {
@@ -163,43 +147,41 @@ export default function BlocksPage() {
             .sort((a, b) => String(a.block).localeCompare(String(b.block), undefined, { numeric: true }));
     }, [summary, activePhase, activeCategory]);
 
-    const loadBlock = useCallback(async (block: string) => {
-        blockRequest.current?.abort();
-        const controller = new AbortController();
-        blockRequest.current = controller;
-        setSelectedBlock(block);
-        setUnits([]);
-        setUnitsError(null);
-        setUnitsLoading(true);
-        try {
-            const params = new URLSearchParams({ phase: activePhase, block, category: activeCategory });
-            const data = await dashboardJson<{ units: UnitRow[] }>(
-                `/api/dashboard/units?${params}`, { signal: controller.signal },
-            );
+    // Сонгосон блокийн нэгжүүд. Блок, ээлж эсвэл ангилал солигдоход өмнөх хүсэлт signal-аар
+    // цуцлагдаж, хоцорч ирсэн хариу шинэ блокийг дарахгүй.
+    const unitsQuery = useQuery<UnitRow[]>({
+        queryKey: ['units', 'block', activePhase, activeCategory, selectedBlock, ...scope],
+        queryFn: async ({ signal }) => {
+            const params = new URLSearchParams({ phase: activePhase, block: selectedBlock ?? '', category: activeCategory });
+            const data = await dashboardJson<{ units: UnitRow[] }>(`/api/dashboard/units?${params}`, { signal });
             if (!Array.isArray(data.units)) {
                 throw new Error('Нэгжийн мэдээллийг ачаалж чадсангүй. Дахин оролдоно уу.');
             }
-            if (!controller.signal.aborted && blockRequest.current === controller) setUnits(data.units);
-        } catch (e) {
-            if (!controller.signal.aborted && blockRequest.current === controller) {
-                setUnitsError(e instanceof Error ? e.message : 'Нэгжийн мэдээллийг ачаалж чадсангүй.');
-            }
-        } finally {
-            if (!controller.signal.aborted && blockRequest.current === controller) setUnitsLoading(false);
-        }
-    }, [activePhase, activeCategory]);
+            return data.units;
+        },
+        enabled: !!shop?.id && !!selectedBlock,
+        staleTime: 30_000,
+        retry: false,
+        meta: { inlineError: true },
+    });
+    const units = unitsQuery.data ?? NO_UNITS;
+    // «Дахин оролдох» дарахад хуучин шигээ spinner.
+    const unitsLoading = unitsQuery.isPending || (unitsQuery.isError && unitsQuery.isFetching);
 
-    if (loading || summaryError) {
+    // Нэгтгэлгүй үед л бүтэн хуудсаар ачаалалт/алдаа харуулна: фон шинэчлэлт амжилтгүй
+    // болбол нээлттэй нэгж, засварын форм алга болохгүй (алдааг QueryProvider toast мэдэгдэнэ).
+    if (!summaryQuery.data) {
+        const summaryError = summaryQuery.isFetching ? null : summaryQuery.error;
         return (
             <div>
                 <PageHeader eyebrow="Үл хөдлөх" title="Блокийн харагдац" subtitle="Ээлж, блок бүрээр зарагдсан / зарагдаагүй нэгж" />
-                {loading ? <div className="flex items-center justify-center py-24"><Spinner size="lg" /></div> : (
+                {!summaryError ? <div className="flex items-center justify-center py-24"><Spinner size="lg" /></div> : (
                     <div role="alert">
                         <EmptyState
                             icon={<Building2 className="w-7 h-7" />}
                             title="Блокийн мэдээллийг ачаалж чадсангүй"
-                            description={summaryError ?? undefined}
-                            action={<Button onClick={() => setSummaryAttempt((attempt) => attempt + 1)}>Дахин оролдох</Button>}
+                            description={summaryError.message}
+                            action={<Button onClick={() => void summaryQuery.refetch()}>Дахин оролдох</Button>}
                         />
                     </div>
                 )}
@@ -224,7 +206,7 @@ export default function BlocksPage() {
                     return (
                         <button
                             key={p}
-                            onClick={() => { clearBlock(); setActivePhase(p); }}
+                            onClick={() => { clearBlock(); setPhaseChoice(p); setCategoryChoice(activeCategory); }}
                             className={cn(
                                 'flex min-h-11 items-center gap-2 rounded-md border px-3 text-xs font-medium transition-colors md:min-h-[34px]',
                                 activePhase === p
@@ -248,7 +230,7 @@ export default function BlocksPage() {
                     return (
                         <button
                             key={c}
-                            onClick={() => { clearBlock(); setActiveCategory(c); }}
+                            onClick={() => { clearBlock(); setCategoryChoice(c); }}
                             className={cn(
                                 'min-h-9 rounded-md border px-3 text-xs font-medium transition-colors',
                                 activeCategory === c
@@ -273,7 +255,12 @@ export default function BlocksPage() {
                         return (
                             <button
                                 key={b.block}
-                                onClick={() => { setSelectedUnit(null); loadBlock(b.block); }}
+                                onClick={() => {
+                                    setSelectedUnit(null);
+                                    // Сонгосон блокийг дахин дарвал хуучин шигээ нэгжүүдийг дахин ачаална.
+                                    if (isSel) void unitsQuery.refetch();
+                                    else setSelectedBlock(b.block);
+                                }}
                                 aria-pressed={isSel}
                                 className={cn(
                                     'focus-ring min-h-32 rounded-md border p-3 text-left transition-colors',
@@ -314,13 +301,13 @@ export default function BlocksPage() {
 
                         {unitsLoading ? (
                             <div className="flex items-center justify-center py-16"><Spinner size="md" /></div>
-                        ) : unitsError ? (
+                        ) : unitsQuery.error ? (
                             <div role="alert">
                                 <EmptyState
                                     icon={<DoorOpen className="w-7 h-7" />}
                                     title="Нэгжийн мэдээллийг ачаалж чадсангүй"
-                                    description={unitsError}
-                                    action={<Button onClick={() => loadBlock(selectedBlock)}>Дахин оролдох</Button>}
+                                    description={unitsQuery.error.message}
+                                    action={<Button onClick={() => void unitsQuery.refetch()}>Дахин оролдох</Button>}
                                 />
                             </div>
                         ) : units.length === 0 ? (
@@ -338,7 +325,7 @@ export default function BlocksPage() {
                     onClose={() => setSelectedUnit(null)}
                     onUpdated={(patch) => {
                         setSelectedUnit((u) => (u ? { ...u, ...patch } : u));
-                        if (selectedBlock) loadBlock(selectedBlock);
+                        if (selectedBlock) void unitsQuery.refetch();
                     }}
                 />
             )}

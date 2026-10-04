@@ -1,9 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/Card';
-import { useAuth } from '@/contexts/AuthContext';
-import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 import { ShieldCheck, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 
 interface AuditEntry {
@@ -25,27 +23,8 @@ const TOOL_LABEL: Record<string, string> = {
 };
 
 export default function AiAuditPage() {
-    const { shop } = useAuth();
-    const [entries, setEntries] = useState<AuditEntry[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-
-    useEffect(() => {
-        if (!shop?.id) return;
-        (async () => {
-            setLoading(true); setError(null);
-            try {
-                const res = await dashboardFetch('/api/dashboard/ai-audit');
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error || 'Алдаа');
-                setEntries(data.entries || []);
-            } catch (e) {
-                setError(e instanceof Error ? e.message : 'Алдаа гарлаа');
-            } finally {
-                setLoading(false);
-            }
-        })();
-    }, [shop?.id]);
+    const { data, isPending, error } = useDashboardQuery<{ entries?: AuditEntry[] }>(['ai-audit'], '/api/dashboard/ai-audit');
+    const entries = data?.entries ?? [];
 
     const fmt = (d: string) => new Date(d).toLocaleString('mn-MN');
 
@@ -60,10 +39,10 @@ export default function AiAuditPage() {
 
             <Card>
                 <CardContent className="p-0">
-                    {loading ? (
+                    {isPending ? (
                         <div className="flex items-center justify-center py-16 text-muted-foreground gap-2"><Loader2 className="w-5 h-5 animate-spin" /> Татаж байна...</div>
                     ) : error ? (
-                        <div className="py-16 text-center text-status-danger text-sm">{error}</div>
+                        <div className="py-16 text-center text-status-danger text-sm">{error.message}</div>
                     ) : entries.length === 0 ? (
                         <div className="py-16 text-center text-muted-foreground text-sm">Одоогоор бүртгэл алга</div>
                     ) : (

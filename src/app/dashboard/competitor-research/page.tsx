@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { Building2, Plus, Trash2, MapPin, Layers, CreditCard, DollarSign, Facebook, Pencil, BarChart3, ExternalLink, Sparkles, X } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { MarkdownMessage } from '@/components/ai-assistant/MarkdownMessage';
@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { FormField } from '@/components/ui/FormField';
 import { Input } from '@/components/ui/Input';
@@ -27,6 +28,7 @@ import { confirmToast } from '@/components/ui/Toast';
 import { MarketIndicators } from '@/components/marketing/MarketIndicators';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { useAuth } from '@/contexts/AuthContext';
+import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 
 interface Competitor {
     id: string;
@@ -49,28 +51,14 @@ export default function CompetitorResearchPage() {
     const hasModule = user?.role === 'super_admin' || !!user?.permissions.modules.includes('marketing-roi');
     const canWrite = hasModule && !!user?.permissions.canWrite;
     const canDelete = hasModule && !!user?.permissions.canDelete;
-    const [competitors, setCompetitors] = useState<Competitor[]>([]);
-    const [loading, setLoading] = useState(true);
+    // Алдааг хоосон жагсаалт болгож нуухгүй — доор «Дахин оролдох»-той харуулна.
+    const competitorsQuery = useDashboardQuery<{ competitors?: Competitor[] }>(['competitors'], '/api/dashboard/competitors');
+    const competitors = competitorsQuery.data?.competitors ?? [];
     const [showForm, setShowForm] = useState(false);
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState<Record<string, string>>({ ...EMPTY });
     const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
     const [aiLoading, setAiLoading] = useState(false);
-
-    const fetchData = useCallback(async () => {
-        try {
-            setLoading(true);
-            const res = await dashboardFetch('/api/dashboard/competitors');
-            const data = await res.json();
-            setCompetitors(data.competitors || []);
-        } catch (e) {
-            console.error('[Competitors] fetch error', e);
-        } finally {
-            setLoading(false);
-        }
-    }, []);
-
-    useEffect(() => { fetchData(); }, [fetchData]);
 
     function openNew() { setForm({ ...EMPTY }); setShowForm(true); }
     function openEdit(c: Competitor) {
@@ -88,7 +76,7 @@ export default function CompetitorResearchPage() {
         setSaving(true);
         try {
             const res = await dashboardFetch('/api/dashboard/competitors', { method: 'POST', body: JSON.stringify(form) });
-            if (res.ok) { setShowForm(false); fetchData(); }
+            if (res.ok) { setShowForm(false); void competitorsQuery.refetch(); }
         } catch (e) { console.error(e); } finally { setSaving(false); }
     }
 
@@ -98,7 +86,7 @@ export default function CompetitorResearchPage() {
         if (!ok) return;
         try {
             const res = await dashboardFetch(`/api/dashboard/competitors?id=${id}`, { method: 'DELETE' });
-            if (res.ok) fetchData();
+            if (res.ok) void competitorsQuery.refetch();
         } catch (e) { console.error(e); }
     }
 
@@ -284,8 +272,14 @@ export default function CompetitorResearchPage() {
                 </Card>
             )}
 
-            {loading ? (
+            {competitorsQuery.isPending ? (
                 <div className="flex items-center justify-center py-24"><Spinner size="lg" /></div>
+            ) : competitorsQuery.error ? (
+                <Alert variant="danger">
+                    <AlertTitle>Өрсөлдөгчдийн мэдээллийг ачаалж чадсангүй</AlertTitle>
+                    <AlertDescription>{competitorsQuery.error.message}</AlertDescription>
+                    <Button variant="secondary" size="sm" className="mt-1 self-start" onClick={() => void competitorsQuery.refetch()} isLoading={competitorsQuery.isFetching}>Дахин оролдох</Button>
+                </Alert>
             ) : competitors.length === 0 ? (
                 <Card><CardContent className="py-12">
                     <EmptyState
