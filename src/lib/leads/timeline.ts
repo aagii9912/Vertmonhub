@@ -117,7 +117,7 @@ export interface TimelineDuplicates {
     managers: string[];
     masked: boolean;
     leads: TimelineDuplicateLead[];
-    /** Хайлтын дээд хязгаарт хүрсэн (тоо доод үнэлгээ). */
+    /** Хайлтын хязгаарт хүрсэн эсвэл бүх нэр дэвшигчийг шалгаагүй — тоо нь доод үнэлгээ («дор хаяж»). */
     truncated?: boolean;
 }
 
@@ -440,7 +440,7 @@ function duplicateConflicts(duplicates: TimelineDuplicates | null, currentOwner:
     if (!duplicates || duplicates.count < 1) return [];
     const others = duplicates.managers.filter((name) => name !== currentOwner);
     if (!others.length) return [];
-    const count = `${duplicates.count}${duplicates.truncated ? '+' : ''}`;
+    const count = `${duplicates.truncated ? 'дор хаяж ' : ''}${duplicates.count}`;
     return [{
         kind: 'duplicate_phone', managers: others, at: null,
         message: `Энэ утсаар өөр ${count} лид бүртгэлтэй (${others.join(', ')})`,

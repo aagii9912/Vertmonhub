@@ -75,7 +75,7 @@ function ManagerTimeline({ timeline, onOpenLead }: { timeline: LeadTimelineData;
                     </ul>
                 </section>
             ) : !duplicateWarned && (
-                <p className="text-[12px] text-muted-foreground">Энэ утсаар өөр <span className="num">{duplicates.count}</span> лид бүртгэлтэй.</p>
+                <p className="text-[12px] text-muted-foreground">Энэ утсаар өөр {duplicates.truncated ? 'дор хаяж ' : ''}<span className="num">{duplicates.count}</span> лид бүртгэлтэй.</p>
             ))}
 
             {timeline.managers.length > 0 && (

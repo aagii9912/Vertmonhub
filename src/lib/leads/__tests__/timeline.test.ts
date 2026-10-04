@@ -259,8 +259,8 @@ describe('buildLeadTimeline conflicts', () => {
         const other = build({ duplicates: { count: 2, managers: ['Сараа'], masked: true, leads: [] } });
         expect(other.conflicts).toEqual([{ kind: 'duplicate_phone', managers: ['Сараа'], at: null, message: 'Энэ утсаар өөр 2 лид бүртгэлтэй (Сараа)' }]);
         expect(build({ duplicates: { count: 1, managers: ['Манда'], masked: false, leads: [] } }).conflicts).toEqual([]);
-        expect(build({ duplicates: { count: 51, managers: ['Сараа'], masked: true, leads: [], truncated: true } }).conflicts[0].message)
-            .toBe('Энэ утсаар өөр 51+ лид бүртгэлтэй (Сараа)');
+        expect(build({ duplicates: { count: 50, managers: ['Сараа'], masked: true, leads: [], truncated: true } }).conflicts[0].message)
+            .toBe('Энэ утсаар өөр дор хаяж 50 лид бүртгэлтэй (Сараа)');
     });
 });
 

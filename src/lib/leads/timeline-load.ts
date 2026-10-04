@@ -13,6 +13,11 @@ import {
 
 /** Ижил утастай лидийн хайлтын дээд хязгаар (утасны баганад индексгүй тул хязгаартай). */
 export const TIMELINE_DUPLICATE_LIMIT = 50;
+/** `ilike` нэр дэвшигчийн хуудас ба бүтэн дугаараар шүүхээс өмнө шалгах дээд тоо. */
+export const TIMELINE_DUPLICATE_PAGE = 100;
+export const TIMELINE_DUPLICATE_SCAN_MAX = 500;
+
+type DuplicateRow = { id: string; customer_name: string | null; customer_phone: string | null; status: string | null; sales_manager_name: string | null; created_at: string | null };
 
 export interface TimelineLeadRow extends TimelineLeadInput {
     customer_phone?: string | null;
@@ -81,7 +86,12 @@ export async function loadLeadTimeline(
     return { timeline, activities };
 }
 
-/** Ижил (нормчилсон) утастай, устгаагүй бусад лид — тухайн shop дотор. 8-аас цөөн оронтой утсанд хайхгүй. */
+/**
+ * Ижил (нормчилсон) утастай, устгаагүй бусад лид — тухайн shop дотор. 8-аас цөөн оронтой утсанд хайхгүй.
+ * `ilike` нь зөвхөн нэр дэвшигч (улсын код, зай, өөр цифр хооронд нь) — бүтэн дугаараар шүүж, хязгаарт
+ * хүртэл эсвэл нэр дэвшигч дуустал хуудаслана. Хязгаар давсан эсвэл бүгдийг шалгаж амжаагүй бол
+ * `truncated` (тоо нь доод үнэлгээ).
+ */
 export async function loadPhoneDuplicates(
     db: SupabaseClient,
     shopId: string,
@@ -91,21 +101,28 @@ export async function loadPhoneDuplicates(
     const phone = normalizePhone(lead.customer_phone);
     const pattern = phone && phone.length >= 8 ? phoneIlikePattern(phone, 8) : null;
     if (!phone || !pattern) return null;
-    const { data, error } = await db.from('leads')
-        .select('id, customer_name, customer_phone, status, sales_manager_name, created_at')
-        .eq('shop_id', shopId).is('deleted_at', null).neq('id', lead.id)
-        .ilike('customer_phone', pattern)
-        .order('created_at', { ascending: false })
-        .limit(TIMELINE_DUPLICATE_LIMIT + 1);
-    if (error) throw error;
-    const rows = (data ?? []) as Array<{ id: string; customer_name: string | null; customer_phone: string | null; status: string | null; sales_manager_name: string | null; created_at: string | null }>;
-    // ilike нь зөвхөн нэр дэвшигч; улсын код/зайнаас үүссэн цифрийн давхцлыг бүтэн дугаараар шүүнэ.
-    const matches = rows.filter((row) => normalizePhone(row.customer_phone) === phone).slice(0, TIMELINE_DUPLICATE_LIMIT);
+    const found: DuplicateRow[] = [];
+    let scanned = 0;
+    let exhausted = false;
+    while (found.length <= TIMELINE_DUPLICATE_LIMIT && scanned < TIMELINE_DUPLICATE_SCAN_MAX) {
+        const { data, error } = await db.from('leads')
+            .select('id, customer_name, customer_phone, status, sales_manager_name, created_at')
+            .eq('shop_id', shopId).is('deleted_at', null).neq('id', lead.id)
+            .ilike('customer_phone', pattern)
+            .order('created_at', { ascending: false }).order('id')
+            .range(scanned, scanned + TIMELINE_DUPLICATE_PAGE - 1);
+        if (error) throw error;
+        const rows = (data ?? []) as DuplicateRow[];
+        scanned += rows.length;
+        found.push(...rows.filter((row) => normalizePhone(row.customer_phone) === phone));
+        if (rows.length < TIMELINE_DUPLICATE_PAGE) { exhausted = true; break; }
+    }
+    const truncated = found.length > TIMELINE_DUPLICATE_LIMIT || !exhausted;
+    const matches = found.slice(0, TIMELINE_DUPLICATE_LIMIT);
     if (!matches.length) return null;
     const owner = lead.sales_manager_name?.trim() || null;
     const managers = [...new Set(matches.map((row) => row.sales_manager_name?.trim()).filter((name): name is string => !!name && name !== owner))]
         .sort((a, b) => a.localeCompare(b, 'mn'));
-    const truncated = rows.length > TIMELINE_DUPLICATE_LIMIT;
     if (scope.projectIds !== null) return { count: matches.length, managers, masked: true, leads: [], truncated };
     return {
         count: matches.length, managers, masked: false, truncated,

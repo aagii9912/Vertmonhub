@@ -1,17 +1,18 @@
 // @vitest-environment node
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { describe, expect, it, vi } from 'vitest';
-import { loadLeadTimeline, loadPhoneDuplicates, TIMELINE_DUPLICATE_LIMIT } from '../timeline-load';
+import { loadLeadTimeline, loadPhoneDuplicates, TIMELINE_DUPLICATE_LIMIT, TIMELINE_DUPLICATE_PAGE, TIMELINE_DUPLICATE_SCAN_MAX } from '../timeline-load';
 
 vi.mock('@/lib/utils/logger', () => ({ logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() } }));
 
 type Result = { data: unknown; error: { message: string } | null };
 
-/** Хүснэгт бүрт нэг хариу; дуудлагын шүүлтүүдийг тэмдэглэнэ. */
-function fakeDb(results: Record<string, Result>) {
+/** Хүснэгт бүрт нэг хариу (эсвэл дуудлага бүрт дараалсан хариу); дуудлагын шүүлтүүдийг тэмдэглэнэ. */
+function fakeDb(results: Record<string, Result | Result[]>) {
     const calls: Array<{ table: string; method: string; args: unknown[] }> = [];
     const from = vi.fn((table: string) => {
-        const result = results[table] ?? { data: [], error: null };
+        const entry = results[table];
+        const result = (Array.isArray(entry) ? entry.shift() : entry) ?? { data: [], error: null };
         const chain: Record<string, unknown> = {};
         for (const method of ['select', 'eq', 'is', 'in', 'neq', 'ilike', 'order', 'range', 'limit']) {
             chain[method] = (...args: unknown[]) => { calls.push({ table, method, args }); return chain; };
@@ -72,7 +73,7 @@ describe('loadPhoneDuplicates', () => {
         expect(masked).toEqual({ count: 2, managers: ['Сараа'], masked: true, leads: [], truncated: false });
         expect(calls).toContainEqual({ table: 'leads', method: 'ilike', args: ['customer_phone', '%9911%2233%'] });
         expect(calls).toContainEqual({ table: 'leads', method: 'neq', args: ['id', 'lead-1'] });
-        expect(calls).toContainEqual({ table: 'leads', method: 'limit', args: [TIMELINE_DUPLICATE_LIMIT + 1] });
+        expect(calls).toContainEqual({ table: 'leads', method: 'range', args: [0, TIMELINE_DUPLICATE_PAGE - 1] });
         // Хүрээний шүүлтгүй — зориуд тухайн shop-ийн бүх лид.
         expect(calls.some((c) => c.table === 'leads' && c.method === 'in')).toBe(false);
 
@@ -81,6 +82,29 @@ describe('loadPhoneDuplicates', () => {
             { id: 'dup-1', name: 'Болд', anonymous: false, status: 'new', sales_manager_name: 'Сараа', created_at: '2026-09-05T00:00:00Z' },
             { id: 'dup-2', name: 'Нэргүй харилцагч', anonymous: true, status: 'contacted', sales_manager_name: 'Манда', created_at: '2026-09-04T00:00:00Z' },
         ]);
+    });
+
+    it('pages past loose candidates so exact matches are not missed, and flags only an incomplete count', async () => {
+        const loose = (page: number) => Array.from({ length: TIMELINE_DUPLICATE_PAGE }, (_, i) => ({
+            id: `loose-${page}-${i}`, customer_name: 'Өөр', customer_phone: `9911${String(page)}2233${i}`, status: 'new', sales_manager_name: 'Дорж', created_at: null,
+        }));
+        // Эхний хуудас бүхэлдээ ойролцоо дугаар — бүтэн таарах лид 2-р хуудсанд.
+        const { db, calls } = fakeDb({ leads: [{ data: loose(1), error: null }, { data: [rows[0]], error: null }] });
+        expect(await loadPhoneDuplicates(db, 'shop-1', lead, { projectIds: ['p1'], managerName: 'Манда' }))
+            .toEqual({ count: 1, managers: ['Сараа'], masked: true, leads: [], truncated: false });
+        expect(calls.filter((c) => c.method === 'range').map((c) => c.args)).toEqual([[0, TIMELINE_DUPLICATE_PAGE - 1], [TIMELINE_DUPLICATE_PAGE, 2 * TIMELINE_DUPLICATE_PAGE - 1]]);
+
+        // Шалгах дээд хэмжээнд хүрвэл тоо нь доод үнэлгээ.
+        const pages = TIMELINE_DUPLICATE_SCAN_MAX / TIMELINE_DUPLICATE_PAGE;
+        const capped = fakeDb({ leads: Array.from({ length: pages }, (_, i) => ({ data: i ? loose(i) : [rows[0], ...loose(0).slice(1)], error: null })) });
+        expect(await loadPhoneDuplicates(capped.db, 'shop-1', lead, { projectIds: null, managerName: null })).toMatchObject({ count: 1, truncated: true });
+        expect(capped.from).toHaveBeenCalledTimes(pages);
+
+        // Хязгаараас олон бүтэн таарвал хязгаараар таслаад доод үнэлгээ.
+        const many = Array.from({ length: TIMELINE_DUPLICATE_LIMIT + 5 }, (_, i) => ({ ...rows[0], id: `dup-${i}` }));
+        const full = await loadPhoneDuplicates(fakeDb({ leads: { data: many, error: null } }).db, 'shop-1', lead, { projectIds: null, managerName: null });
+        expect(full).toMatchObject({ count: TIMELINE_DUPLICATE_LIMIT, truncated: true });
+        expect(full?.leads).toHaveLength(TIMELINE_DUPLICATE_LIMIT);
     });
 
     it('skips short or missing phones without querying', async () => {
