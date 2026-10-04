@@ -27,6 +27,8 @@ export function useLeadCategoryCounts(enabled: boolean) {
         enabled: enabled && !!shop?.id,
         staleTime: 30_000,
         retry: false,
+        // Хувийн хүрээтэй хэрэглэгчид 403 ердийн — toast гаргахгүй, тоо л харагдахгүй.
+        meta: { inlineError: true },
     });
 }
 
