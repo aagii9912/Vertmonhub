@@ -2,12 +2,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
-    ChannelReportsUnavailableError, loadChannelReports, pickBestReport, pickPreviousReport, type ChannelReportSummary,
+    ChannelReportsUnavailableError, isLongerReport, isMissingChannelTables, loadChannelReports, pickBestReport, pickPreviousReport, reportCoverage,
+    type ChannelReportSummary,
 } from '../channel-reports-load';
 import type { ChannelSource } from '../channel-reports';
 
-const report = (id: string, source: ChannelSource, from: string, to: string, totals: Record<string, number | string> = {}, updated = '2026-10-01T00:00:00Z'): ChannelReportSummary =>
-    ({ id, source, period_from: from, period_to: to, file_name: `${id}.csv`, totals, warnings: [], row_count: 1, note: null, imported_by: null, created_at: updated, updated_at: updated });
+const report = (id: string, source: ChannelSource, from: string, to: string, totals: Record<string, number | string> = {}, updated = '2026-10-01T00:00:00Z', data: { from: string; to: string } | null = null): ChannelReportSummary =>
+    ({ id, source, period_from: from, period_to: to, file_name: `${id}.csv`, origin: 'file', data_from: data?.from ?? null, data_to: data?.to ?? null, totals, warnings: [], row_count: 1, note: null, imported_by: null, created_at: updated, updated_at: updated });
 const week = { from: '2026-09-23', to: '2026-09-29' };
 
 describe('report matching', () => {
@@ -25,6 +26,23 @@ describe('report matching', () => {
         expect(pickBestReport(reports.filter(r => !['exact', 'partial'].includes(r.id)), week)?.id).toBe('month');
         expect(pickBestReport(reports, { from: '2026-10-01', to: '2026-10-07' })).toBeNull();
         expect(pickBestReport(reports, null)?.id).toBe('month');
+    });
+
+    it('flags a report longer than the meeting week instead of passing it off as the week', () => {
+        const month = reports[0];
+        expect(pickBestReport([month], week)?.id).toBe('month');
+        expect(isLongerReport(month, week)).toBe(true);
+        expect(isLongerReport(reports[2], week)).toBe(false);
+        // Ижил зөрүүтэй бол хугацаанаас уртгүй тайланг сонгоно.
+        const eightDays = report('eight', 'sms', '2026-09-22', '2026-09-29');
+        const sixDays = report('six', 'sms', '2026-09-24', '2026-09-29');
+        expect(pickBestReport([eightDays, sixDays], week)?.id).toBe('six');
+    });
+
+    it('measures day coverage from data_from/data_to and never assumes a full week when unknown', () => {
+        expect(reportCoverage(report('a', 'meta_ads', '2026-09-23', '2026-09-29', {}, undefined, { from: '2026-09-23', to: '2026-09-28' }))).toEqual({ days: 7, covered: 6, partial: true });
+        expect(reportCoverage(report('b', 'meta_ads', '2026-09-23', '2026-09-29', {}, undefined, { from: '2026-09-23', to: '2026-09-29' }))).toEqual({ days: 7, covered: 7, partial: false });
+        expect(reportCoverage(report('c', 'meta_ads', '2026-09-23', '2026-09-29'))).toBeNull();
     });
 
     it('compares only with an earlier report of the same length', () => {
@@ -68,10 +86,32 @@ describe('loadChannelReports', () => {
         expect(result.meta_ads.comparison).toMatchObject({ spend: { delta: 20, pct: 40 }, reach: { delta: 500, pct: 50 } });
         expect(result.callpro).toMatchObject({ exact: false, report: { id: 'c1' }, previous: null });
         expect(result.callpro.comparison?.answered).toEqual({ current: 400, previous: null, delta: null, pct: null, comparable: true });
-        expect(result.sms).toEqual({ report: null, exact: false, previous: null, comparison: null });
+        expect(result.sms).toEqual({ report: null, exact: false, longer: false, previous: null, comparison: null });
+        expect(result.callpro.longer).toBe(true);
+        expect(result.meta_ads.longer).toBe(false);
         const [list, detail] = calls;
         expect(list).toEqual(expect.arrayContaining([['eq', ['shop_id', 'shop-1']], ['gte', ['period_to', '2025-08-19']], ['lte', ['period_from', '2026-09-29']]]));
         expect(detail).toEqual(expect.arrayContaining([['eq', ['shop_id', 'shop-1']], ['in', ['id', ['m2', 'c1']]]]));
+    });
+
+    it('marks the comparison not comparable when either week is partially covered and compares per-type results', async () => {
+        const totals = (calls: number, spend: number) => ({ spend, currency: 'USD', results_calls: calls, spend_calls: spend, cost_per_result_calls: spend / calls });
+        const partial = report('m2', 'meta_ads', '2026-09-23', '2026-09-29', totals(76, 141.09), undefined, { from: '2026-09-23', to: '2026-09-28' });
+        const full = report('m1', 'meta_ads', '2026-09-16', '2026-09-22', totals(59, 106.38), undefined, { from: '2026-09-16', to: '2026-09-22' });
+        const { db } = fakeDb([partial, full], []);
+        const result = await loadChannelReports(db, 'shop-1', week, { sources: ['meta_ads'] });
+        expect(result.meta_ads.comparison?.results_calls).toEqual({ current: 76, previous: 59, delta: null, pct: null, comparable: false, reason: 'coverage' });
+        const { db: complete } = fakeDb([{ ...partial, data_to: '2026-09-29' }, full], []);
+        const compared = await loadChannelReports(complete, 'shop-1', week, { sources: ['meta_ads'] });
+        expect(compared.meta_ads.comparison?.results_calls).toEqual({ current: 76, previous: 59, delta: 17, pct: 28.8, comparable: true });
+        expect(compared.meta_ads.comparison?.spend_calls).toMatchObject({ delta: 34.71, comparable: true });
+    });
+
+    it('treats the missing origin/coverage columns as a missing migration', () => {
+        expect(isMissingChannelTables({ code: '42703', message: 'column marketing_channel_reports.origin does not exist' })).toBe(true);
+        expect(isMissingChannelTables({ code: 'PGRST204', message: "Could not find the 'data_from' column of 'marketing_channel_reports' in the schema cache" })).toBe(true);
+        expect(isMissingChannelTables({ code: '42703', message: 'column leads.origin_x does not exist' })).toBe(false);
+        expect(isMissingChannelTables({ code: '23505', message: 'duplicate key value violates unique constraint' })).toBe(false);
     });
 
     it('surfaces a missing migration instead of returning empty reports', async () => {

@@ -6,8 +6,9 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { ubDateStr } from '@/lib/utils/date';
 import {
-    ChannelMappingSchema, ChannelPeriodSchema, ChannelSourceSchema, aggregateChannelReport, applyRememberedMapping,
-    headerSignature, mappedField, suggestMapping, type ChannelMapping,
+    CHANNEL_SOURCE_LABELS, ChannelMappingSchema, ChannelPeriodSchema, ChannelSourceSchema, aggregateByReviewWeeks, aggregateChannelReport,
+    applyRememberedMapping, channelSplitWeeks, headerSignature, mappedField, splitWeekSummary, suggestMapping,
+    type ChannelExistingReport, type ChannelMapping, type ChannelPreviewResponse, type ChannelSplitPreview,
 } from '@/lib/marketing/channel-reports';
 import { CHANNEL_FILE_LIMITS, ChannelFileError, channelFileHash, readChannelFile, sampleValues } from '@/lib/marketing/channel-reports-file';
 import {
@@ -20,9 +21,12 @@ import {
  *
  * GET ?from&to&source — хадгалсан тайлангууд (сүүлийнх нь эхэнд) + эх үүсвэр бүрийн хугацаанд
  *   тохирох тайлан, өмнөх тайлантай харьцуулалт.
- * POST multipart { file, source, period_from, period_to, mode=preview|save, sheet?, mapping? (JSON), note? } —
+ * POST multipart { file, source, period_from, period_to, mode=preview|save, sheet?, mapping? (JSON), note?, split?=0|1 } —
  *   файлыг серверт уншиж, толгой, санал болгосон / сануулсан холболт, нэгтгэл, анхааруулгыг буцаана;
- *   save үед ижил хугацааны тайланг дарж хадгалж (upsert), холболтыг сануулна.
+ *   өдрөөр задалсан Meta файл олон хурлын долоо хоног (Лхагва–Мягмар) хамарвал долоо хоног бүрийн
+ *   урьдчилсан дүнг (`split`) нэмж өгнө. save үед ижил хугацааны тайланг дарж хадгална (upsert);
+ *   split=1 бол долоо хоног бүрт нэг мөр (хугацаа = бүтэн долоо хоног, data_from/data_to = файлын
+ *   хамарсан өдрүүд). Meta API-аас татсан (origin='api') тайланг файлаар дарахгүй — 409. Холболтыг сануулна.
  * DELETE ?id — идэвхтэй shop-ийн тайланг устгана.
  */
 export const runtime = 'nodejs';
@@ -48,7 +52,9 @@ const UploadFields = z.object({
     period_to: z.string(),
     sheet: z.string().trim().max(100).optional(),
     note: z.string().trim().max(2000).optional(),
-});
+    split: z.enum(['0', '1']).optional(),
+}).strict();
+const periodKey = (period: { from: string; to: string }) => `${period.from}|${period.to}`;
 
 export const GET = withRoute({ module: MODULE, error: 'Сувгийн тайлан уншиж чадсангүй.' }, async ({ request, shop }) => {
     const params = request.nextUrl.searchParams;
@@ -88,12 +94,14 @@ export const POST = withRoute({ module: MODULE, access: 'write', error: 'Фай�
     if (file.size > CHANNEL_FILE_LIMITS.bytes) return NextResponse.json({ error: '4 MB хүртэл файл оруулна уу.' }, { status: 413 });
 
     const text = (key: string) => { const value = form.get(key); return typeof value === 'string' && value.trim() ? value : undefined; };
-    const fields = UploadFields.safeParse({ source: text('source'), mode: text('mode'), period_from: text('period_from'), period_to: text('period_to'), sheet: text('sheet'), note: text('note') });
+    const fields = UploadFields.safeParse({ source: text('source'), mode: text('mode'), period_from: text('period_from'), period_to: text('period_to'), sheet: text('sheet'), note: text('note'), split: text('split') });
     if (!fields.success) return badRequest('Эх үүсвэр, хугацаа эсвэл үйлдэл буруу байна.');
     const { source, mode, sheet, note } = fields.data;
+    const split = fields.data.split === '1';
     const period = ChannelPeriodSchema.safeParse({ from: fields.data.period_from, to: fields.data.period_to });
     if (!period.success) return badRequest(period.error.issues[0]?.message ?? 'Хугацаа буруу байна.');
-    if (period.data.from > ubDateStr()) return badRequest('Ирээдүйн хугацааны тайлан оруулах боломжгүй.');
+    const today = ubDateStr();
+    if (period.data.from > today) return badRequest('Ирээдүйн хугацааны тайлан оруулах боломжгүй.');
 
     let clientMapping: ChannelMapping | null = null;
     const rawMapping = text('mapping');
@@ -124,43 +132,96 @@ export const POST = withRoute({ module: MODULE, access: 'write', error: 'Фай�
     const { mapping, origin } = clientMapping
         ? { mapping: Object.fromEntries(table.headers.map(header => [header, mappedField(clientMapping, header)])), origin: 'client' as const }
         : applyRememberedMapping(table.headers, source, remembered);
-    const result = aggregateChannelReport(table.rows, mapping, source, { period: period.data, firstLine: table.firstLine });
+    const options = { firstLine: table.firstLine };
+    const result = aggregateChannelReport(table.rows, mapping, source, { ...options, period: period.data });
+    // Өдрөөр задалсан Meta файл олон хурлын долоо хоног хамарвал долоо хоног бүрээр тусад нь нэгтгэнэ.
+    const weeks = channelSplitWeeks(result);
+    const weekResults = weeks.length && (mode === 'preview' || split) ? aggregateByReviewWeeks(table.rows, mapping, source, weeks, options) : [];
     const contentHash = channelFileHash(bytes);
-    const periodKey = { shop_id: shop.id, source, period_from: period.data.from, period_to: period.data.to };
+
+    /** Ижил shop, эх үүсвэр, хугацааны хадгалсан тайлангууд (`from|to` → тайлан). */
+    const findExisting = async (periods: ReadonlyArray<{ from: string; to: string }>) => {
+        const { data, error } = await db.from(CHANNEL_REPORTS_TABLE).select('id,period_from,period_to,file_name,updated_at,origin,content_hash')
+            .eq('shop_id', shop.id).eq('source', source).in('period_from', [...new Set(periods.map(p => p.from))]);
+        if (error) throw error;
+        const wanted = new Set(periods.map(periodKey));
+        return new Map((data ?? []).filter(row => wanted.has(periodKey({ from: row.period_from, to: row.period_to })))
+            .map(row => [periodKey({ from: row.period_from, to: row.period_to }), {
+                id: row.id, file_name: row.file_name, updated_at: row.updated_at, origin: row.origin, sameFile: row.content_hash === contentHash,
+            } satisfies ChannelExistingReport]));
+    };
 
     if (mode === 'preview') {
-        let existing = null, duplicate = null;
+        let existing: Map<string, ChannelExistingReport> = new Map();
+        let duplicate = null;
         if (storageReady) {
-            const [same, hash] = await Promise.all([
-                db.from(CHANNEL_REPORTS_TABLE).select('id,file_name,updated_at').match(periodKey).maybeSingle(),
-                db.from(CHANNEL_REPORTS_TABLE).select('id,source,period_from,period_to').eq('shop_id', shop.id).eq('content_hash', contentHash).limit(5),
-            ]);
-            if (same.error || hash.error) throw new Error((same.error ?? hash.error)!.message);
-            existing = same.data;
-            duplicate = (hash.data ?? []).find(r => r.id !== same.data?.id) ?? null;
+            try {
+                const [found, hash] = await Promise.all([
+                    findExisting([period.data, ...weekResults.map(w => w.week)]),
+                    // Ижил агуулгатай файл ИЖИЛ хугацаанд өөр эх үүсвэрт хадгалагдсан эсэх (нэг файлыг өөр долоо хоногт ашиглах нь давхар биш).
+                    db.from(CHANNEL_REPORTS_TABLE).select('id,source,period_from,period_to').eq('shop_id', shop.id).eq('content_hash', contentHash)
+                        .eq('period_from', period.data.from).eq('period_to', period.data.to).neq('source', source).limit(1),
+                ]);
+                if (hash.error) throw hash.error;
+                existing = found;
+                duplicate = hash.data?.[0] ?? null;
+            } catch (error) {
+                if (!isMissingChannelTables(error as { code?: string; message?: string })) throw error instanceof Error ? error : new Error((error as { message?: string }).message);
+                storageReady = false;
+            }
         }
+        const detected = result.detectedPeriod;
+        const splitPreview: ChannelSplitPreview | null = weekResults.length && detected ? {
+            period: detected,
+            weeks: weekResults.map(({ week, result: weekResult }) => splitWeekSummary(week, weekResult, existing.get(periodKey(week)) ?? null)),
+            result: aggregateChannelReport(table.rows, mapping, source, { ...options, period: detected }),
+        } : null;
         return NextResponse.json({
             mode, storageReady, file: { name: file.name, size: file.size },
             sheets: table.sheets, sheet: table.sheet, headerRow: table.headerRow, headers: table.headers,
             sample: sampleValues(table), mapping, suggested: suggestMapping(table.headers, source), mappingOrigin: origin,
-            result, existing, duplicate,
-        }, { headers: noStore });
+            result, existing: existing.get(periodKey(period.data)) ?? null, duplicate, split: splitPreview,
+        } satisfies ChannelPreviewResponse, { headers: noStore });
     }
 
     if (!storageReady) return unavailable();
     if (result.errors.length) return badRequest(result.errors[0], { errors: result.errors });
-    const { data: report, error } = await db.from(CHANNEL_REPORTS_TABLE).upsert({
-        ...periodKey,
+    if (split && !weekResults.length) return badRequest('Энэ файлыг хурлын долоо хоногоор хуваах боломжгүй: өдрөөр задалсан, нэгээс олон долоо хоног хамарсан Meta экспорт шаардлагатай.');
+    if (weekResults.some(({ week }) => week.from > today)) return badRequest('Ирээдүйн хугацааны тайлан оруулах боломжгүй.');
+    const targets = split ? weekResults : [{ week: period.data, result }];
+
+    let existing: Map<string, ChannelExistingReport>;
+    try { existing = await findExisting(targets.map(t => t.week)); } catch (error) {
+        if (isMissingChannelTables(error as { code?: string; message?: string })) return unavailable();
+        throw error instanceof Error ? error : new Error((error as { message?: string }).message);
+    }
+    // Meta API-аас автоматаар татсан тайланг файлаар дарж бичихгүй.
+    const locked = targets.filter(({ week }) => existing.get(periodKey(week))?.origin === 'api');
+    if (locked.length) {
+        return NextResponse.json({
+            error: `${locked.map(({ week }) => `${week.from} – ${week.to}`).join(', ')} хугацааны ${CHANNEL_SOURCE_LABELS[source]} тайланг Meta API-аас автоматаар татсан тул файлаар дарж бичихгүй. Тэр хугацааг оруулалгүй (хуваахгүйгээр өөр хугацаагаар) хадгална уу.`,
+            locked: locked.map(({ week }) => week),
+        }, { status: 409 });
+    }
+
+    const importedBy = await getUserId();
+    const rows = targets.map(({ week, result: weekResult }) => ({
+        shop_id: shop.id, source, period_from: week.from, period_to: week.to,
         file_name: file.name.slice(0, 255),
         content_hash: contentHash,
-        totals: result.totals,
-        breakdown: result.breakdown,
+        origin: 'file' as const,
+        data_from: weekResult.dataPeriod?.from ?? null,
+        data_to: weekResult.dataPeriod?.to ?? null,
+        totals: weekResult.totals,
+        breakdown: weekResult.breakdown,
         mapping,
-        warnings: result.warnings,
-        row_count: result.rowCount,
+        warnings: weekResult.warnings,
+        row_count: weekResult.rowCount,
         note: note || null,
-        imported_by: await getUserId(),
-    }, { onConflict: 'shop_id,source,period_from,period_to' }).select(CHANNEL_REPORT_SUMMARY_COLUMNS).single();
+        imported_by: importedBy,
+    }));
+    const upsert = db.from(CHANNEL_REPORTS_TABLE).upsert(split ? rows : rows[0], { onConflict: 'shop_id,source,period_from,period_to' }).select(CHANNEL_REPORT_SUMMARY_COLUMNS);
+    const { data: saved, error } = split ? await upsert : await upsert.single();
     if (error) {
         if (isMissingChannelTables(error)) return unavailable();
         throw new Error(error.message);
@@ -169,7 +230,7 @@ export const POST = withRoute({ module: MODULE, access: 'write', error: 'Фай�
     const remember = await db.from(CHANNEL_MAPPINGS_TABLE)
         .upsert({ shop_id: shop.id, source, mapping, header_signature: headerSignature(table.headers) }, { onConflict: 'shop_id,source' });
     if (remember.error) logger.warn('[ChannelReports] mapping not remembered', { error: remember.error.message });
-    return NextResponse.json({ mode, report, mappingSaved: !remember.error }, { headers: noStore });
+    return NextResponse.json(split ? { mode, reports: saved, mappingSaved: !remember.error } : { mode, report: saved, mappingSaved: !remember.error }, { headers: noStore });
 });
 
 export const DELETE = withRoute({ module: MODULE, access: 'delete', error: 'Тайланг устгаж чадсангүй.' }, async ({ request, shop }) => {
