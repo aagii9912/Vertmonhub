@@ -414,7 +414,7 @@ const writeDefinitions: ToolDefinition[] = [
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
-                name: { type: SchemaType.STRING, description: 'Харилцагчийн нэр' },
+                name: { type: SchemaType.STRING, description: 'Харилцагчийн жинхэнэ нэр («Нэргүй харилцагч» шошго биш)' },
                 phone: { type: SchemaType.STRING, description: 'Утас' },
                 email: { type: SchemaType.STRING, description: 'Имэйл' },
                 address: { type: SchemaType.STRING, description: 'Хаяг' },
@@ -448,7 +448,7 @@ const writeDefinitions: ToolDefinition[] = [
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
-                customer_name: { type: SchemaType.STRING, description: 'Харилцагчийн нэр' },
+                customer_name: { type: SchemaType.STRING, description: 'Худалдан авагчийн жинхэнэ нэр («Нэргүй харилцагч» шошго биш)' },
                 customer_phone: { type: SchemaType.STRING, description: 'Утас' },
                 total_price: { type: SchemaType.NUMBER, description: 'Нийт үнэ (MNT)' },
                 block_name: { type: SchemaType.STRING, description: 'Төсөл/блокийн нэр' },

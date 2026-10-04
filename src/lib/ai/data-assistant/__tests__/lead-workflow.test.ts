@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { bulkUpdateLeads, createLead, fetchLeads, processContractAction, updateLeadStatus } from '../functions';
+import {
+    ANONYMOUS_BUYER_NAME_REQUIRED, ANONYMOUS_CUSTOMER_NAME_REQUIRED, bulkUpdateLeads, createContract, createCustomer, createLead, fetchLeads, processContractAction, updateLeadStatus,
+} from '../functions';
 import { UNRESTRICTED_SALES_SCOPE } from '@/lib/sales/project-scope';
 import { ANONYMOUS_LEAD_CONTACT, ANONYMOUS_LEAD_LABEL } from '@/lib/leads/labels';
 
@@ -114,6 +116,19 @@ describe('AI lead creation ownership', () => {
     it('marks anonymous leads in list results with the display label', async () => {
         query('leads', [{ ...lead, id: 'anon-1', customer_name: null, customer_phone: '99112233', created_at: '2026-09-10T00:00:00Z' }]);
         expect(await fetchLeads('shop-1', {})).toMatchObject([{ id: 'anon-1', name: ANONYMOUS_LEAD_LABEL, anonymous: true, phone: '99112233' }]);
+    });
+    it.each([ANONYMOUS_LEAD_LABEL, 'Нэргүй лид', '-', ' Facebook lead '])('never writes the anonymous label %s as a contract buyer or customer', async (label) => {
+        for (const confirm of [false, true]) {
+            expect(await createContract('shop-1', { customer_name: label, lead_id: lead.id, total_price: 100 }, confirm)).toEqual({ error: ANONYMOUS_BUYER_NAME_REQUIRED });
+            expect(await createCustomer('shop-1', { name: label, phone: '99112233' }, confirm)).toEqual({ error: ANONYMOUS_CUSTOMER_NAME_REQUIRED });
+        }
+        expect(from).not.toHaveBeenCalled();
+    });
+    it('previews a contract with the real, trimmed buyer name (including «Нэргүй» as a given name)', async () => {
+        expect(await createContract('shop-1', { customer_name: '  Нэргүй  ', total_price: 100 })).toMatchObject({
+            requiresConfirmation: true, action: { args: { customer_name: 'Нэргүй' } }, preview: { Харилцагч: 'Нэргүй' },
+        });
+        expect(from).not.toHaveBeenCalled();
     });
     it.each(['closed_won', 'closed_lost'])('rejects closed creation %s before any write', async (status) => {
         const project = query('projects', { id: projectId });

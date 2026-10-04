@@ -21,7 +21,7 @@ import { applyLeadScope, assertProjectManager, canAccessProject, UNRESTRICTED_SA
 import { z } from 'zod';
 import { canReadPrivateAttachment, isLegacyPublicAttachmentUrl, parsePrivateAttachmentUrl } from '@/lib/ai/private-attachments';
 import { logLeadActivity } from '@/lib/leads/activities';
-import { LEAD_NAME_OR_ANONYMOUS, STATUS_META, isAnonymousLead, leadDisplayName, statusLabel, toLeadSource } from '@/lib/leads/labels';
+import { LEAD_NAME_OR_ANONYMOUS, STATUS_META, isAnonymousLead, leadDisplayName, normalizeLeadName, statusLabel, toLeadSource } from '@/lib/leads/labels';
 import type { LeadStatus } from '@/types/property';
 import { formatMNT } from '@/lib/utils/currency';
 
@@ -1120,8 +1120,15 @@ export async function deleteLead(shopId: string, args: any, confirm = false, sco
     return { success: true, message: `"${leadDisplayName(lead)}" лийдийг устгалаа (сэргээх боломжтой).`, leadId: lead.id };
 }
 
+export const ANONYMOUS_CUSTOMER_NAME_REQUIRED = 'Харилцагчийн жинхэнэ нэрийг хэрэглэгчээс асууна уу (нэргүй лидийн шошгыг нэр болгож ашиглахгүй)';
+export const ANONYMOUS_BUYER_NAME_REQUIRED = 'Гэрээний худалдан авагчийн жинхэнэ нэрийг асууна уу (нэргүй лидийн шошгыг ашиглахгүй)';
+
 export async function createCustomer(shopId: string, args: any, confirm = false, salesManagerName = '') {
     if (!args.name) return { error: 'name шаардлагатай' };
+    // Нэргүй лидийн шошго («Нэргүй харилцагч», «-» …) харилцагчийн нэр болж хадгалагдахгүй.
+    const name = normalizeLeadName(args.name);
+    if (!name) return { error: ANONYMOUS_CUSTOMER_NAME_REQUIRED };
+    args = { ...args, name };
     const phoneNorm = normalizePhone(args.phone ? String(args.phone) : null);
 
     // Давхардал шалгах (утас/имэйлээр)
@@ -1231,6 +1238,10 @@ export async function deleteViewing(shopId: string, args: any, confirm = false, 
 
 export async function createContract(shopId: string, args: any, confirm = false, salesManagerName = '', scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
     if (!args.customer_name) return { error: 'customer_name шаардлагатай' };
+    // get_lead_details нэргүй лидэд шошго буцаадаг — гэрээний худалдан авагч болгож хэзээ ч бичихгүй.
+    const buyerName = normalizeLeadName(args.customer_name);
+    if (!buyerName) return { error: ANONYMOUS_BUYER_NAME_REQUIRED };
+    args = { ...args, customer_name: buyerName };
     let projectId: string | null = null;
     let customerId = args.customer_id || null;
     if (args.lead_id) {
