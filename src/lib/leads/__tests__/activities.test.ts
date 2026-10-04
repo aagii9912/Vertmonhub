@@ -1,6 +1,6 @@
 // @vitest-environment node
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { recordLeadContact } from '../activities';
 
 const scope = { projectIds: ['project'], managerName: 'Канон менежер' };
@@ -76,27 +76,45 @@ it.each([
     expect(rpc).not.toHaveBeenCalled(); expect(from).not.toHaveBeenCalled();
 });
 
-it('records an unrestricted quote as a contact with amount meta', async () => {
+describe('unrestricted quotes', () => {
     const calls: Array<[string, string, unknown]> = [];
-    const chain = (table: string, data: unknown) => {
+    const chain = (table: string, data: unknown, error: { message: string } | null = null) => {
         const c: Record<string, unknown> = {};
         for (const method of ['select', 'eq', 'is', 'in']) c[method] = vi.fn(() => c);
         c.update = vi.fn((value: unknown) => { calls.push([table, 'update', value]); return c; });
         c.insert = vi.fn((value: unknown) => { calls.push([table, 'insert', value]); return c; });
-        c.maybeSingle = vi.fn(async () => ({ data, error: null }));
-        c.single = vi.fn(async () => ({ data, error: null }));
+        c.maybeSingle = vi.fn(async () => ({ data, error }));
+        c.single = vi.fn(async () => ({ data, error }));
         return c;
     };
-    const tables = [chain('leads', { id: 'lead' }), chain('leads', { id: 'lead' }), chain('lead_activities', { ...activity, type: 'quote' })];
-    const db = { from: vi.fn(() => tables.shift()) } as unknown as SupabaseClient;
-    const result = await recordLeadContact(db, {
-        shopId: 'shop', leadId: 'lead', type: 'quote', content: '', quote: { amount: 430_000_000 }, userId: 'admin', managerName: 'Админ',
+    const quoteInput = {
+        shopId: 'shop', leadId: 'lead', type: 'quote' as const, content: '', quote: { amount: 430_000_000 }, userId: 'admin', managerName: 'Админ',
         nextFollowupAt: '2026-10-06T02:00:00.000Z',
+    };
+
+    it('writes the quote history first, then marks the lead as contacted', async () => {
+        calls.length = 0;
+        const tables = [chain('leads', { id: 'lead' }), chain('lead_activities', { ...activity, type: 'quote' }), chain('leads', { id: 'lead' })];
+        const db = { from: vi.fn(() => tables.shift()) } as unknown as SupabaseClient;
+        expect(await recordLeadContact(db, quoteInput)).toMatchObject({ ok: true });
+        expect(calls[0]).toEqual(['lead_activities', 'insert', expect.objectContaining({
+            type: 'quote', content: 'Үнийн санал: 430,000,000₮', created_by: 'admin', created_by_name: 'Админ',
+            meta: { next_followup_at: '2026-10-06T02:00:00.000Z', amount: 430_000_000 },
+        })]);
+        expect(calls[1]).toEqual(['leads', 'update', expect.objectContaining({ last_contact_at: expect.any(String), next_followup_at: '2026-10-06T02:00:00.000Z' })]);
     });
-    expect(result).toMatchObject({ ok: true });
-    expect(calls[0]).toEqual(['leads', 'update', expect.objectContaining({ last_contact_at: expect.any(String), next_followup_at: '2026-10-06T02:00:00.000Z' })]);
-    expect(calls[1]).toEqual(['lead_activities', 'insert', expect.objectContaining({
-        type: 'quote', content: 'Үнийн санал: 430,000,000₮', created_by: 'admin', created_by_name: 'Админ',
-        meta: { next_followup_at: '2026-10-06T02:00:00.000Z', amount: 430_000_000 },
-    })]);
+
+    it('changes nothing on the lead when the history row is rejected (migration not applied)', async () => {
+        calls.length = 0;
+        const tables = [chain('leads', { id: 'lead' }), chain('lead_activities', null, { message: 'violates check constraint "lead_activities_type_check"' })];
+        const db = { from: vi.fn(() => tables.shift()) } as unknown as SupabaseClient;
+        expect(await recordLeadContact(db, quoteInput)).toEqual({ ok: false, status: 500, error: 'Үнийн санал хадгалагдсангүй. Дахин оролдоно уу.' });
+        expect(calls.map(([table, method]) => `${table}.${method}`)).toEqual(['lead_activities.insert']);
+    });
+
+    it('reports a saved quote whose lead update failed as a partial save', async () => {
+        const tables = [chain('leads', { id: 'lead' }), chain('lead_activities', { ...activity, type: 'quote' }), chain('leads', null, { message: 'timeout' })];
+        const db = { from: vi.fn(() => tables.shift()) } as unknown as SupabaseClient;
+        expect(await recordLeadContact(db, quoteInput)).toMatchObject({ ok: false, status: 500, partialSuccess: true });
+    });
 });

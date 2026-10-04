@@ -80,7 +80,8 @@ export async function listLeadActivities(db: SupabaseClient, shopId: string, lea
  * `log_price_quote`) бүгд энд дамжина. Дуудлага ба үнийн санал нь холбоо барилт (last_contact_at);
  * үнийн санал статус өөрчлөхгүй, орлого/гэрээний дүнд орохгүй.
  * ok=true зөвхөн бүх хадгалалт амжилттай үед. partialSuccess=true бол лидийн цаг
- * шинэчлэгдсэн ч түүх хадгалагдаагүй; дуудагч алдааг харуулж, дэлгэцийн өгөгдлийг шинэчилнэ.
+ * шинэчлэгдсэн ч түүх хадгалагдаагүй (үнийн саналд эсрэгээр: түүх хадгалагдсан ч лидийн цаг
+ * шинэчлэгдээгүй); дуудагч алдааг харуулж, дэлгэцийн өгөгдлийг шинэчилнэ.
  */
 export async function recordLeadContact(
     db: SupabaseClient,
@@ -137,28 +138,43 @@ export async function recordLeadContact(
     if (input.type === 'call' || input.type === 'quote') updates.last_contact_at = now;
     if (input.nextFollowupAt !== undefined) updates.next_followup_at = input.nextFollowupAt;
     const changesLead = Object.keys(updates).length > 1;
-    if (changesLead) {
-        const { data, error } = await applyLeadScope(db.from('leads').update(updates)
-            .eq('id', input.leadId).eq('shop_id', input.shopId).is('deleted_at', null), scope).select('id').maybeSingle();
-        if (error) return { ok: false, error: 'Лидийн холбооны мэдээлэл шинэчлэгдсэнгүй. Бүртгэл хадгалагдаагүй.', status: 500 };
-        if (!data) return { ok: false, error: 'Лид олдсонгүй. Бүртгэл хадгалагдаагүй.', status: 404 };
-    }
-
+    const updateLead = () => applyLeadScope(db.from('leads').update(updates)
+        .eq('id', input.leadId).eq('shop_id', input.shopId).is('deleted_at', null), scope).select('id').maybeSingle();
     const meta: Record<string, unknown> = input.nextFollowupAt !== undefined ? { next_followup_at: input.nextFollowupAt } : {};
     if (quote) {
         meta.amount = quote.amount;
         if (quote.unit_label) meta.unit_label = quote.unit_label;
     }
-    const activity = await logLeadActivity(db, {
+    const writeHistory = () => logLeadActivity(db, {
         shopId: input.shopId, leadId: input.leadId, type: input.type, content, meta,
         createdBy: input.userId ?? null, createdByName: input.managerName ?? null,
     });
+
+    // Үнийн саналын үндсэн бүртгэл нь түүх — ЭХЛЭЭД бичнэ. Бичигдэхгүй бол (жишээ нь 20261004162000
+    // migration-ий CHECK хэрэглэгдээгүй) лидэд юу ч өөрчлөгдөхгүй, хэсэгчилсэн хадгалалт үүсэхгүй.
+    if (quote) {
+        const activity = await writeHistory();
+        if (!activity) return { ok: false, status: 500, error: 'Үнийн санал хадгалагдсангүй. Дахин оролдоно уу.' };
+        const { data, error } = await updateLead();
+        if (error || !data) {
+            return { ok: false, status: 500, partialSuccess: true,
+                error: 'Үнийн санал түүхэнд хадгалагдсан боловч лидийн холбооны цаг шинэчлэгдсэнгүй. Дахин бүү бүртгэ — лидээ нээж шалгана уу.' };
+        }
+        return { ok: true, activity };
+    }
+
+    if (changesLead) {
+        const { data, error } = await updateLead();
+        if (error) return { ok: false, error: 'Лидийн холбооны мэдээлэл шинэчлэгдсэнгүй. Бүртгэл хадгалагдаагүй.', status: 500 };
+        if (!data) return { ok: false, error: 'Лид олдсонгүй. Бүртгэл хадгалагдаагүй.', status: 404 };
+    }
+    const activity = await writeHistory();
     if (!activity) {
         return {
             ok: false, status: 500, partialSuccess: changesLead,
             error: changesLead
-                ? `Лидийн холбооны цаг шинэчлэгдсэн боловч ${input.type === 'quote' ? 'үнийн саналын' : 'дуудлага/тэмдэглэлийн'} түүх хадгалагдсангүй. Лидээ нээж шалгана уу.`
-                : `${input.type === 'quote' ? 'Үнийн санал' : 'Тэмдэглэл'} хадгалагдсангүй. Дахин оролдоно уу.`,
+                ? 'Лидийн холбооны цаг шинэчлэгдсэн боловч дуудлага/тэмдэглэлийн түүх хадгалагдсангүй. Лидээ нээж шалгана уу.'
+                : 'Тэмдэглэл хадгалагдсангүй. Дахин оролдоно уу.',
         };
     }
     return { ok: true, activity };
