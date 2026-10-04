@@ -86,9 +86,11 @@ describe('buildLeadTimeline meetings and contracts', () => {
     it('shows one meeting per viewing history entry and adds legacy viewings without history', () => {
         const t = build({
             activities: [
-                act('meeting', '2026-09-05T02:00:00Z', 'u-admin', { created_by_name: 'Ресепшн', content: 'Уулзалт товлов · A блок', meta: { viewing_id: 'v1', scheduled_at: '2026-09-06T02:00:00Z', walk_in: false } }),
-                act('meeting', '2026-09-06T03:00:00Z', 'u-manda', { content: 'Уулзалт болов', meta: { viewing_id: 'v1', status: 'completed', scheduled_at: '2026-09-06T02:00:00Z' } }),
-                act('meeting', '2026-09-07T03:00:00Z', 'u-manda', { content: 'Уулзалтад ирээгүй', meta: { viewing_id: 'v3', status: 'no_show' } }),
+                act('meeting', '2026-09-05T02:00:00Z', 'u-admin', { id: 'v1-booked', created_by_name: 'Ресепшн', content: 'Уулзалт товлов · A блок', meta: { viewing_id: 'v1', scheduled_at: '2026-09-06T02:00:00Z', walk_in: false } }),
+                act('meeting', '2026-09-06T03:00:00Z', 'u-manda', { id: 'v1-held', content: 'Уулзалт болов', meta: { viewing_id: 'v1', status: 'completed', scheduled_at: '2026-09-06T02:00:00Z' } }),
+                // Үүсгэх үйлдэл (ViewingService / create_scoped_sales_viewing) төлөвгүй meta-тай бичигддэг.
+                act('meeting', '2026-09-06T05:00:00Z', 'u-manda', { id: 'v3-booked', content: 'Уулзалт товлов', meta: { viewing_id: 'v3', scheduled_at: '2026-09-07T02:00:00Z', walk_in: false } }),
+                act('meeting', '2026-09-07T03:00:00Z', 'u-manda', { id: 'v3-no-show', content: 'Уулзалтад ирээгүй', meta: { viewing_id: 'v3', status: 'no_show' } }),
             ],
             viewings: [
                 { id: 'v1', scheduled_at: '2026-09-06T02:00:00Z', status: 'completed', created_at: '2026-09-05T02:00:00Z', completed_at: '2026-09-06T03:00:00Z', sales_manager_name: 'Манда' },
@@ -97,17 +99,69 @@ describe('buildLeadTimeline meetings and contracts', () => {
             ],
         });
         const meetings = t.events.filter((e) => e.kind === 'meeting');
-        expect(meetings.map((e) => [e.id, e.actor, e.manager, e.contact])).toEqual([
-            ['a' + String(seq).padStart(3, '0'), 'Манда', 'Манда', false],
-            ['a' + String(seq - 1).padStart(3, '0'), 'Манда', 'Манда', true],
-            // Ресепшн товлосон уулзалт уулзалтын менежерт тооцогдоно.
-            ['a' + String(seq - 2).padStart(3, '0'), 'Ресепшн', 'Манда', true],
-            ['viewing:v2', 'Сараа', 'Сараа', true],
+        expect(meetings.map((e) => [e.id, e.actor, e.manager, e.contact, e.meetingStatus, e.managerInferred])).toEqual([
+            ['v3-no-show', 'Манда', 'Манда', false, 'no_show', false],
+            // Өөрөө товлосон нь холбоо барилт (харилцагчтай цаг тохирсон), гэхдээ болоогүй тул уулзалт биш.
+            ['v3-booked', 'Манда', 'Манда', true, 'no_show', false],
+            ['v1-held', 'Манда', 'Манда', true, 'completed', false],
+            // Ресепшн товлосон хүчинтэй уулзалт уулзалтын менежерт (тэр үеийн хариуцагч) тооцогдоно.
+            ['v1-booked', 'Ресепшн', 'Манда', true, 'completed', true],
+            ['viewing:v2', 'Сараа', 'Сараа', true, 'completed', true],
         ]);
         // Түүхгүй уулзалт тухайн үеийн хариуцагчаар тамгалагддаг тул «хариуцагч биш» биш.
         expect(meetings.find((e) => e.id === 'viewing:v2')).toMatchObject({ title: 'Уулзалт болов', offOwner: false, at: '2026-08-20T03:00:00Z' });
-        expect(t.managers.find((m) => m.name === 'Манда')).toMatchObject({ meetings: 1 });
+        // Ирээгүй v3 уулзалтын тоонд орохгүй; v1-ийн товлох + болсон нь нэг уулзалт.
+        expect(t.managers.find((m) => m.name === 'Манда')).toMatchObject({ meetings: 1, firstAt: '2026-09-05T02:00:00Z', lastAt: '2026-09-06T05:00:00Z' });
         expect(t.managers.find((m) => m.name === 'Сараа')).toMatchObject({ meetings: 1 });
+    });
+
+    it('drops cancelled and deleted meetings from the meeting count and deleted ones from contacts', () => {
+        const t = build({
+            activities: [
+                act('meeting', '2026-09-02T02:00:00Z', 'u-manda', { id: 'cancelled-booked', meta: { viewing_id: 'v-cancelled', scheduled_at: '2026-09-03T02:00:00Z', walk_in: false } }),
+                act('meeting', '2026-09-02T04:00:00Z', 'u-manda', { id: 'cancelled', content: 'Уулзалт цуцлагдав', meta: { viewing_id: 'v-cancelled', status: 'cancelled' } }),
+                // Устгасан уулзалт (жагсаалтад байхгүй) — алдаатай бүртгэл.
+                act('meeting', '2026-09-04T02:00:00Z', 'u-saraa', { id: 'deleted-booked', content: 'Уулзалт товлов', meta: { viewing_id: 'v-deleted', scheduled_at: '2026-09-05T02:00:00Z', walk_in: false } }),
+            ],
+            viewings: [{ id: 'v-cancelled', scheduled_at: '2026-09-03T02:00:00Z', status: 'cancelled', created_at: '2026-09-02T02:00:00Z', sales_manager_name: 'Манда' }],
+        });
+        expect(t.managers.map((m) => [m.name, m.meetings, m.firstAt])).toEqual([['Манда', 0, '2026-09-02T02:00:00Z'], ['Сараа', 0, null]]);
+        expect(t.events.find((e) => e.id === 'deleted-booked')).toMatchObject({ contact: false, offOwner: false, meetingStatus: 'deleted', detail: 'Уулзалт устгагдсан' });
+        expect(t.conflicts).toEqual([]);
+
+        // Уулзалт уншигдаагүй бол устгасан гэж таамаглахгүй — үйлдлийн өөрийн төлөвөөр.
+        const unknown = build({ activities: [act('meeting', '2026-09-04T02:00:00Z', 'u-manda', { meta: { viewing_id: 'v-x', walk_in: false } })], viewings: [], partial: ['viewings'] });
+        expect(unknown.events[0]).toMatchObject({ contact: true, meetingStatus: null });
+        expect(unknown.managers[0]).toMatchObject({ name: 'Манда', meetings: 1 });
+    });
+
+    it('never blames the viewing manager for an admin action after the lead was reassigned', () => {
+        const t = build({
+            lead: { ...lead, sales_manager_name: 'Сараа' },
+            activities: [
+                act('meeting', '2026-09-02T02:00:00Z', 'u-manda', { id: 'booked', meta: { viewing_id: 'v1', scheduled_at: '2026-09-08T02:00:00Z', walk_in: false } }),
+                act('manager', '2026-09-03T02:00:00Z', 'u-admin', { created_by_name: 'Админ', meta: { from: 'Манда', to: 'Сараа' } }),
+                act('meeting', '2026-09-08T03:00:00Z', 'u-admin', { id: 'held', created_by_name: 'Админ', content: 'Уулзалт болов', meta: { viewing_id: 'v1', status: 'completed' } }),
+            ],
+            viewings: [{ id: 'v1', scheduled_at: '2026-09-08T02:00:00Z', status: 'completed', created_at: '2026-09-02T02:00:00Z', completed_at: '2026-09-08T03:00:00Z', sales_manager_name: 'Манда' }],
+        });
+        expect(t.events.find((e) => e.id === 'held')).toMatchObject({ actor: 'Админ', manager: null, offOwner: false, managerInferred: false });
+        expect(t.conflicts).toEqual([]);
+        expect(t.managers.map((m) => [m.name, m.meetings, m.lastAt])).toEqual([['Сараа', 0, null], ['Манда', 1, '2026-09-02T02:00:00Z']]);
+    });
+
+    it('keeps meetings booked by reception for the owner out of the conflict checks', () => {
+        const t = build({
+            activities: [
+                act('meeting', '2026-09-02T02:00:00Z', 'u-admin', { id: 'reception', created_by_name: 'Ресепшн', meta: { viewing_id: 'v1', scheduled_at: '2026-09-09T02:00:00Z', walk_in: false } }),
+                act('call', '2026-09-03T02:00:00Z', 'u-saraa'),
+            ],
+            viewings: [{ id: 'v1', scheduled_at: '2026-09-09T02:00:00Z', status: 'scheduled', created_at: '2026-09-02T02:00:00Z', sales_manager_name: 'Манда' }],
+        });
+        expect(t.events.find((e) => e.id === 'reception')).toMatchObject({ manager: 'Манда', managerInferred: true, offOwner: false });
+        // Сараа хариуцагч биш — тэмдэглэнэ; Манда өөрөө холбогдоогүй тул «зэрэг холбогдсон» биш.
+        expect(kinds(t)).toEqual(['non_owner_contact']);
+        expect(t.managers.find((m) => m.name === 'Манда')).toMatchObject({ meetings: 1 });
     });
 
     it('places date-only contracts at the Ulaanbaatar start of day and skips stub or cancelled contracts', () => {

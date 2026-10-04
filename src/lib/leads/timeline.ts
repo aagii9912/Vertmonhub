@@ -7,9 +7,15 @@
  *
  * • Менежерт оноох: lead_activities.created_by → sales_managers.user_id, дараа нь бүртгэлийн нэртэй
  *   яг таарсан created_by_name (KPI-ийн `attributeCall`-тай ижил дүрэм). Таараагүй (админ, бусад
- *   ажилтан) үйлдэл түүхэнд нэрээрээ харагдах ч менежерийн товчоо, зөрчилд орохгүй.
- * • Холбоо барилт = дуудлага, уулзалт (цуцалсан/ирээгүйгээс бусад), үнийн санал. Тэмдэглэл харагдана,
- *   зөрчил үүсгэхгүй. Үнийн санал гэрээний дүн, орлого биш.
+ *   ажилтан) үйлдэл түүхэнд нэрээрээ харагдах ч менежерийн товчоо, зөрчилд орохгүй. Ганц үл хамаарал:
+ *   админ/ресепшний бүртгэсэн хүчинтэй уулзалтыг уулзалтын менежерт (property_viewings.sales_manager_name)
+ *   тооцно — зөвхөн тэр менежер тухайн үед хариуцагч хэвээр байвал (`managerInferred`); ийм үйлдэл
+ *   товчоонд орох ч зөрчилд (хариуцагч биш, зэрэг холбогдсон) хэзээ ч орохгүй.
+ * • Холбоо барилт = дуудлага, уулзалт, үнийн санал. Уулзалтын тоонд зөвхөн одоо хүчинтэй уулзалт
+ *   (устгаагүй, цуцлагдаагүй, ирээгүй биш) орно. Менежер өөрөө товлосон уулзалт дараа нь цуцлагдсан ч
+ *   товлосон нь холбоо барилт хэвээр (харилцагчтай ярьж цаг тохирсон) — уулзалт гэж тоологдохгүй.
+ *   Цуцалсан/ирээгүй тэмдэглэл, устгасан (алдаатай бүртгэсэн) уулзалт холбоо биш. Тэмдэглэл
+ *   харагдана, зөрчил үүсгэхгүй. Үнийн санал гэрээний дүн, орлого биш.
  * • Хариуцагчийг 'manager' үйлдлүүдээс ({from,to} эсвэл {action:'claim',to}) сэргээнэ; үйлдэлгүй бол
  *   лидийн одоогийн хариуцагч.
  * • Зөрчил: хариуцагч биш менежер холбогдсон; TIMELINE_CONFLICT_WINDOW_DAYS хоногт 2+ менежер
@@ -47,6 +53,11 @@ export interface TimelineEvent {
     owner: string | null;
     /** Хариуцагч биш менежерийн холбоо барилт. */
     offOwner: boolean;
+    /**
+     * Менежерийг үйлдэл бүртгэгчээс биш уулзалтын бүртгэлээс (property_viewings.sales_manager_name)
+     * тооцсон — товчоонд орно, зөрчилд орохгүй.
+     */
+    managerInferred: boolean;
     /** Дуудлага / уулзалт / үнийн санал. */
     contact: boolean;
     title: string;
@@ -56,6 +67,11 @@ export interface TimelineEvent {
     scheduledAt: string | null;
     /** Уулзалтын property_viewings.id (нэг уулзалтын товлох/болсон үйлдлийг нэг уулзалт гэж тоолно). */
     viewingId: string | null;
+    /**
+     * Уулзалтын ОДООГИЙН төлөв (scheduled, completed, cancelled, no_show; устгагдсан бол 'deleted').
+     * Уулзалт уншигдаагүй эсвэл холбоосгүй бол null — тэр үед үйлдлийн өөрийн төлөвөөр тооцно.
+     */
+    meetingStatus: string | null;
     ownerChange: { from: string | null; to: string | null } | null;
     source: TimelineSource;
 }
@@ -169,6 +185,10 @@ export interface BuildLeadTimelineInput {
 }
 
 const CONTACT_MEETING_EXCLUDED = new Set(['cancelled', 'no_show']);
+/** Уулзалт болоогүй / хүчингүй (уулзалтын тоонд орохгүй). */
+const MEETING_NOT_HELD = new Set(['cancelled', 'no_show', 'deleted']);
+const countsAsMeeting = (e: Pick<TimelineEvent, 'kind' | 'contact' | 'meetingStatus'>) =>
+    e.kind === 'meeting' && e.contact && !MEETING_NOT_HELD.has(e.meetingStatus ?? '');
 
 const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
 const time = (iso: string) => {
@@ -188,7 +208,13 @@ function viewingTitle(status: string | null | undefined): string {
     return 'Уулзалт товлов';
 }
 
-type Draft = Omit<TimelineEvent, 'owner' | 'offOwner'> & { order: number };
+type Draft = Omit<TimelineEvent, 'owner' | 'offOwner' | 'managerInferred'> & {
+    order: number;
+    /** Админ бүртгэсэн уулзалтын үйлдэлд оноож болох уулзалтын менежер (хариуцагчтай тулгаж шийднэ). */
+    viewingManager?: string | null;
+    /** Менежер нь уулзалтын бүртгэлээс (хуучин уулзалт). */
+    fromViewing?: boolean;
+};
 
 export function buildLeadTimeline(input: BuildLeadTimelineInput): LeadTimeline {
     const { lead, roster } = input;
@@ -200,6 +226,11 @@ export function buildLeadTimeline(input: BuildLeadTimelineInput): LeadTimeline {
         return value && rosterByName.has(value) ? value : null;
     };
     const viewingManager = new Map((input.viewings ?? []).map((v) => [v.id, managerByName(v.sales_manager_name)]));
+    // Уулзалт уншигдсан бол жагсаалтад байхгүй нь устгагдсан гэсэн үг (loader deleted_at IS NULL-ээр уншина).
+    const viewingsKnown = input.viewings !== undefined && !(input.partial ?? []).includes('viewings');
+    const viewingStatus = new Map((input.viewings ?? []).map((v) => [v.id, text(v.status) ?? 'scheduled']));
+    const currentMeetingStatus = (viewingId: string | null) =>
+        !viewingId || !viewingsKnown ? null : viewingStatus.get(viewingId) ?? 'deleted';
 
     const activities = [...input.activities].sort((a, b) => time(a.created_at) - time(b.created_at) || a.id.localeCompare(b.id));
     const managerChanges = activities.filter((a) => a.type === 'manager');
@@ -213,7 +244,7 @@ export function buildLeadTimeline(input: BuildLeadTimelineInput): LeadTimeline {
     drafts.push({
         id: `lead:${lead.id}`, at: lead.created_at, dateOnly: false, kind: 'created', actor: null, manager: null, contact: false,
         title: 'Лид үүсгэв', detail: [lead.source ? sourceLabel(lead.source) : null, initialOwner ? `Хариуцагч: ${initialOwner}` : null].filter(Boolean).join(' · ') || null,
-        amount: null, unitLabel: null, scheduledAt: null, viewingId: null, ownerChange: null, source: 'lead', order: order++,
+        amount: null, unitLabel: null, scheduledAt: null, viewingId: null, meetingStatus: null, ownerChange: null, source: 'lead', order: order++,
     });
 
     const viewingIdsWithHistory = new Set<string>();
@@ -225,7 +256,7 @@ export function buildLeadTimeline(input: BuildLeadTimelineInput): LeadTimeline {
         const base = {
             id: a.id, at: a.created_at, dateOnly: false, actor, manager: attributed, contact: false, detail: null as string | null,
             amount: null as number | null, unitLabel: null as string | null, scheduledAt: null as string | null, viewingId: null as string | null,
-            ownerChange: null as TimelineEvent['ownerChange'], source: 'activity' as const, order: order++,
+            meetingStatus: null as string | null, ownerChange: null as TimelineEvent['ownerChange'], source: 'activity' as const, order: order++,
         };
         switch (a.type) {
             case 'manager': {
@@ -254,11 +285,15 @@ export function buildLeadTimeline(input: BuildLeadTimelineInput): LeadTimeline {
                 const viewingId = text(meta.viewing_id);
                 if (viewingId) viewingIdsWithHistory.add(viewingId);
                 const status = text(meta.status);
+                const meetingStatus = currentMeetingStatus(viewingId);
+                const deleted = meetingStatus === 'deleted';
                 drafts.push({
-                    ...base, kind: 'meeting', contact: !status || !CONTACT_MEETING_EXCLUDED.has(status),
-                    // Админ товлосон уулзалт уулзалтын менежерт (property_viewings.sales_manager_name) тооцогдоно.
-                    manager: attributed ?? (viewingId ? viewingManager.get(viewingId) ?? null : null),
-                    title: content ?? 'Уулзалт', scheduledAt: text(meta.scheduled_at), viewingId,
+                    ...base, kind: 'meeting', meetingStatus,
+                    // Цуцалсан/ирээгүй тэмдэглэл, устгасан уулзалт холбоо биш; товлосон/болсон нь холбоо.
+                    contact: !deleted && !(status && CONTACT_MEETING_EXCLUDED.has(status)),
+                    // Админ бүртгэсэн бол уулзалтын менежерийг дараа нь (хариуцагчтай тулгаж) онооно.
+                    viewingManager: !attributed && viewingId ? viewingManager.get(viewingId) ?? null : null,
+                    title: content ?? 'Уулзалт', detail: deleted ? 'Уулзалт устгагдсан' : null, scheduledAt: text(meta.scheduled_at), viewingId,
                 });
                 break;
             }
@@ -285,9 +320,10 @@ export function buildLeadTimeline(input: BuildLeadTimelineInput): LeadTimeline {
         if (!at) continue;
         const manager = managerByName(v.sales_manager_name);
         drafts.push({
-            id: `viewing:${v.id}`, at, dateOnly: false, kind: 'meeting', actor: text(v.sales_manager_name), manager,
+            id: `viewing:${v.id}`, at, dateOnly: false, kind: 'meeting', actor: text(v.sales_manager_name), manager, fromViewing: true,
             contact: !CONTACT_MEETING_EXCLUDED.has(v.status ?? ''), title: viewingTitle(v.status), detail: null,
-            amount: null, unitLabel: null, scheduledAt: text(v.scheduled_at), viewingId: v.id, ownerChange: null, source: 'viewing', order: order++,
+            amount: null, unitLabel: null, scheduledAt: text(v.scheduled_at), viewingId: v.id, meetingStatus: text(v.status) ?? 'scheduled',
+            ownerChange: null, source: 'viewing', order: order++,
         });
     }
 
@@ -305,17 +341,22 @@ export function buildLeadTimeline(input: BuildLeadTimelineInput): LeadTimeline {
             id: `contract:${c.id}`, at, dateOnly: !!date && !sameDay, kind: 'contract', actor: text(c.sales_manager),
             manager: managerByName(c.sales_manager), contact: false, title: `Гэрээ ${text(c.contract_number) ?? ''}`.trim(),
             detail: [unit || null, formatMNT(Number(c.total_price))].filter(Boolean).join(' · '),
-            amount: null, unitLabel: null, scheduledAt: null, viewingId: null, ownerChange: null, source: 'contract', order: order++,
+            amount: null, unitLabel: null, scheduledAt: null, viewingId: null, meetingStatus: null, ownerChange: null, source: 'contract', order: order++,
         });
     }
 
     // Хариуцагчийг цагийн дарааллаар дагана.
     drafts.sort((a, b) => time(a.at) - time(b.at) || a.order - b.order);
     let owner = initialOwner;
-    const ascending: TimelineEvent[] = drafts.map(({ order: _order, ...draft }) => {
+    const ascending: TimelineEvent[] = drafts.map(({ order: _order, viewingManager: candidate, fromViewing, ...draft }) => {
         if (draft.ownerChange) owner = draft.ownerChange.to;
-        const offOwner = draft.contact && draft.source === 'activity' && !!draft.manager && !!owner && draft.manager !== owner;
-        return { ...draft, owner, offOwner };
+        // property_viewings.sales_manager_name нь товлох үеийн хариуцагч бөгөөд дахин хуваарилахад шинэчлэгддэггүй:
+        // админы үйлдлийг тэр менежерт зөвхөн хүчинтэй уулзалтад, тэр үед хариуцагч хэвээр бол онооно.
+        const inferred = !draft.manager && !!candidate && candidate === owner && countsAsMeeting(draft);
+        const manager = inferred && candidate ? candidate : draft.manager;
+        const managerInferred = inferred || !!fromViewing;
+        const offOwner = draft.contact && draft.source === 'activity' && !managerInferred && !!manager && !!owner && manager !== owner;
+        return { ...draft, manager, owner, offOwner, managerInferred };
     });
 
     const managers = summarizeManagers(ascending, currentOwner, rosterByName);
@@ -358,7 +399,7 @@ function summarizeManagers(events: TimelineEvent[], currentOwner: string | null,
         r.firstAt ??= e.at;
         r.lastAt = e.at;
         if (e.kind === 'call') r.calls++;
-        if (e.kind === 'meeting') r.meetingKeys.add(e.viewingId ?? e.id);
+        if (countsAsMeeting(e)) r.meetingKeys.add(e.viewingId ?? e.id);
         if (e.kind === 'quote') {
             r.quotes++;
             if (e.amount !== null) r.lastQuote = { amount: e.amount, unitLabel: e.unitLabel, at: e.at };
@@ -420,9 +461,12 @@ function nonOwnerConflicts(events: TimelineEvent[]): TimelineConflict[] {
     });
 }
 
-/** Дараалсан хоёр холбоо барилт өөр менежерийнх бөгөөд цонхонд багтвал «зэрэг холбогдсон». */
+/**
+ * Дараалсан хоёр холбоо барилт өөр менежерийнх бөгөөд цонхонд багтвал «зэрэг холбогдсон».
+ * Уулзалтын бүртгэлээс тооцсон (менежер өөрөө бүртгээгүй) үйлдэл оролцохгүй.
+ */
 function parallelConflicts(events: TimelineEvent[]): TimelineConflict[] {
-    const contacts = events.filter((e) => e.contact && e.manager);
+    const contacts = events.filter((e) => e.contact && e.manager && !e.managerInferred);
     const involved = new Set<string>();
     let at: string | null = null;
     for (let i = 1; i < contacts.length; i++) {
