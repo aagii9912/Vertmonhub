@@ -79,7 +79,6 @@ export default function AdminDashboard() {
                     { href: '/admin/projects', label: 'Төслүүд' },
                     { href: '/admin/sales-targets', label: 'Борлуулалтын төлөвлөгөө' },
                     { href: '/admin/import', label: 'Дата импорт' },
-                    { href: '/admin/landing', label: 'Нүүр хуудас' },
                 ].map((action) => <Link key={action.href} href={action.href} className="rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-foreground hover:border-brand">{action.label}</Link>)}
             </div>
 

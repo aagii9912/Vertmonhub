@@ -91,7 +91,7 @@ Browser specs run against `e2e/support/fixture-server.mjs` (fake GoTrue + `next 
 ## Removed — do not reintroduce
 
 - The Syncly e-commerce product (products, orders, carts, QPay, comment automation, plans/subscriptions), the `vertmon-session` cookie, Clerk helpers and `/api/admin/setup`.
-- 2026-10-04: the Gemini FB/IG DM bot (auto-replies, AI pause, bot tools/prompts, retry queue), the finance/procurement and survey UIs with their APIs and AI tools, `/auth/register` + i18n, `/docs`, uncalled API routes and the legacy contracts Excel importer. Their tables remain until an approved migration drops them.
+- 2026-10-04: the Gemini FB/IG DM bot (auto-replies, AI pause, bot tools/prompts, retry queue), the finance/procurement and survey UIs with their APIs and AI tools, `/auth/register` + i18n, `/docs`, uncalled API routes, the legacy contracts Excel importer and the landing CMS editor (`/admin/landing`, `/api/dashboard/landing-content`; `/` never read it — public copy lives in `src/components/landing`). Their tables remain until an approved migration drops them.
 - Still present without a UI, pending an owner decision: `leads/[id]/convert`, `inbox/remind` and `handover` APIs.
 
 ## Environment
