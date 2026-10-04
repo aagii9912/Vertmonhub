@@ -70,7 +70,7 @@ Excel ба AI гүйцэтгэл ижил performance loader ашиглана. �
 ```sh
 npx vitest run src/lib/marketing/__tests__
 node scripts/test-meta-spend.mjs
-E2E_BROWSER_CHANNEL=chrome npx playwright test --config=playwright.marketing.config.ts
+E2E_BROWSER_CHANNEL=chrome npx playwright test --project=marketing
 npm run typecheck
 ```
 

@@ -76,7 +76,7 @@
 npm run typecheck
 npx vitest run src/lib/marketing/__tests__ src/lib/ai/orchestrator/__tests__/orchestrator.test.tsx
 node scripts/test-marketing-performance.mjs
-E2E_BROWSER_CHANNEL=chrome npx playwright test --config=playwright.marketing.config.ts
+E2E_BROWSER_CHANNEL=chrome npx playwright test --project=marketing
 NEXT_BUILD_DIR=.next-marketing-check npm run build
 ```
 

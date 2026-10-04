@@ -45,7 +45,7 @@ CRM төслийн холбоос бол ERP snapshot-аас тусдаа. Од�
 
 Өмнөх shared workspace дээр нийт 117 test файл, 1,094 unit тест амжилттай. Release нь `origin/main` (`a12de45`)-аас тусгаарласан checkout-д зөвхөн энэ ажлын өөрчлөлтөөр бэлтгэгдсэн. `npx tsc --noEmit` болон production build амжилттай. `test:rbac` нь тусгаарласан PostgreSQL дээр 19 эрхийн шалгалт давсан. Жилийн төсвийн SQL нь PGlite дээр бодитоор ажиллуулсан migration-тэй шалгагдсан.
 
-Шинэ browser suite `playwright.admin-project-budget.config.ts` нь жинхэнэ Next login/cookie/UI-г тусгаарласан Auth болон business API fixture-тэй шалгана. Desktop/mobile тус бүр ERP багц/суурь, жилийн төсвийн preview/алдаа/retry, Super Admin-ийн explicit confirmation шалгана. Энэ нь production DB write, бодит урилга/email delivery, нэвтэрсэн production E2E-ийн нотолгоо биш.
+Шинэ browser suite `playwright.config.ts` (project `admin`) нь жинхэнэ Next login/cookie/UI-г тусгаарласан Auth болон business API fixture-тэй шалгана. Desktop/mobile тус бүр ERP багц/суурь, жилийн төсвийн preview/алдаа/retry, Super Admin-ийн explicit confirmation шалгана. Энэ нь production DB write, бодит урилга/email delivery, нэвтэрсэн production E2E-ийн нотолгоо биш.
 
 Өмнөх shared workspace-ийн browser suite-ийн 6 болон ERP suite-ийн нэмэлт 2 desktop/mobile шалгалт бүгд амжилттай. Тусгаарласан release checkout дээр 107 файл, 1,012 unit тест; browser suite-ийн 6 desktop/mobile шалгалт; disposable PostgreSQL-ийн 19 RBAC шалгалт болон production build бүгд амжилттай. Шалгасан үр дүн `output/admin-project-budget-release/`-т хадгалагдсан. Screenshot-ууд `test-results/admin-project-budget/`-т, unit үр дүн `output/admin-project-audit-2026-10-01/unit-results.json`-д хадгалагдана.
 
@@ -58,5 +58,5 @@ rtk npm run test
 rtk npm run typecheck
 rtk npm run test:rbac
 rtk npm run build
-E2E_BROWSER_CHANNEL=chrome rtk npx playwright test --config=playwright.admin-project-budget.config.ts
+E2E_BROWSER_CHANNEL=chrome rtk npx playwright test --project=admin
 ```

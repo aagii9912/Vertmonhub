@@ -76,7 +76,7 @@
 ```sh
 npm run typecheck
 npx vitest run src/lib/dashboard/__tests__/weekly-review.test.ts src/lib/dashboard/__tests__/weekly-updates-sql.test.ts src/app/api/__tests__/weekly-updates.test.ts src/lib/navigation/__tests__/nav.test.ts src/components/ai/__tests__/AiChat.test.tsx src/components/dashboard/__tests__/AppShell-rbac.test.tsx
-E2E_BROWSER_CHANNEL=chrome npx playwright test --config=playwright.workday.config.ts
+E2E_BROWSER_CHANNEL=chrome npx playwright test --project=workday
 NEXT_BUILD_DIR=output/workday/build npm run build
 ```
 

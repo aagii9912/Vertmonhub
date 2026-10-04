@@ -70,7 +70,7 @@ spend migration-ууд дээр нэмэгдэнэ. Файл импортлох�
 npx vitest run src/lib/marketing/__tests__
 node scripts/test-meta-spend-import.mjs
 node scripts/test-meta-spend.mjs
-E2E_BROWSER_CHANNEL=chrome npx playwright test --config=playwright.meta-import.config.ts
+E2E_BROWSER_CHANNEL=chrome npx playwright test --project=marketing
 npm run typecheck
 ```
 

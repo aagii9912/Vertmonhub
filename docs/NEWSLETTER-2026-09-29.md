@@ -16,7 +16,7 @@ Production uses the existing `RESEND_API_KEY`. Each project has its own sender s
 
 - `npx vitest run src/lib/marketing/__tests__/newsletter.test.ts src/app/api/__tests__/newsletter.test.ts`
 - `node scripts/test-newsletter.mjs`
-- `E2E_BROWSER_CHANNEL=chrome npx playwright test --config=playwright.newsletter.config.ts`
+- `E2E_BROWSER_CHANNEL=chrome npx playwright test --project=marketing`
 - `npm run build`
 
 Browser checks use isolated authentication and fixture recipients. A separate browser context retains the actual newsletter page CSP to verify the public production logo in the script-disabled iframe; this check requires network access. Node 22 is used for local Next.js checks.

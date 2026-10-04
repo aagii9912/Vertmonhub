@@ -30,7 +30,7 @@ async function setup(page: Page) {
                     native_amount: 100, currency: 'USD', exclusion: state.metaRate ? null : 'missing_fx', note: 'Meta campaign 123 · act_456' }];
                 return reply({ success: true, rows: 1, needsRate: !state.metaRate });
             }
-            return reply({ accountId: 'act_456', status: { account_id: 'act_456', currency: 'USD', timezone: 'Asia/Ulaanbaatar', mnt_per_unit: state.metaRate,
+            return reply({ accountId: 'act_456', connected: true, expiresAt: null, status: { account_id: 'act_456', currency: 'USD', timezone: 'Asia/Ulaanbaatar', mnt_per_unit: state.metaRate,
                 last_success_at: state.metaSynced ? '2026-09-21T00:00:00Z' : null, last_error: state.metaFailure ? 'Meta холболт тасарлаа' : null,
                 last_from: state.metaSynced ? '2026-09-01' : null, last_to: state.metaSynced ? '2026-09-21' : null } });
         }
@@ -67,15 +67,17 @@ async function setup(page: Page) {
     await page.goto('/marketing');
     await page.getByLabel('Эхлэх өдөр', { exact: true }).fill('2026-09-01');
     await page.getByLabel('Дуусах өдөр', { exact: true }).fill('2026-09-30');
-    await expect(page.getByText('Төсөл бүрийн маркетингийн гүйцэтгэл', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Нэгдсэн самбар', exact: true })).toBeVisible();
+    await expect(page.getByText('Шинэ лид', { exact: true }).first()).toBeVisible();
     return state;
 }
 for (const mobile of [false, true]) {
     test(`Meta daily spend → FX → failed sync preserves report (${mobile ? 'mobile' : 'desktop'})`, async ({ page }, testInfo) => {
         if (mobile) await page.setViewportSize({ width: 390, height: 844 });
         const state = await setup(page);
-        await page.getByRole('button', { name: 'Meta зардал татах', exact: true }).click();
+        // Meta sync and the spend table live on the «Бүртгэл» tab.
         await page.getByRole('button', { name: 'Бүртгэл', exact: true }).click();
+        await page.getByRole('button', { name: 'Meta зардал татах', exact: true }).click();
         const row = page.getByRole('row').filter({ hasText: 'Meta campaign 123' });
         await expect(row).toContainText('100 USD');
         await expect(row).toContainText('Нийтэд ороогүй');
@@ -110,6 +112,7 @@ for (const mobile of [false, true]) {
         state.failSave = false;
         await form.getByRole('button', { name: 'Хадгалах', exact: true }).click();
         await expect(form).not.toBeVisible();
+        await page.getByRole('button', { name: 'Бүртгэл', exact: true }).click();
         await page.getByRole('button', { name: 'Лидийн холбоос нөхөх', exact: true }).click();
         form = page.getByRole('dialog');
         await form.getByLabel('Лид', { exact: true }).selectOption(lead);
@@ -155,6 +158,7 @@ for (const mobile of [false, true]) {
         await expect(page.getByRole('alert').filter({ hasText: 'эх үүсвэр' })).toBeVisible();
         state.failRead = false;
         await page.getByRole('button', { name: 'Дахин оролдох', exact: true }).click();
-        await expect(page.getByText('Төсөл бүрийн маркетингийн гүйцэтгэл', { exact: true })).toBeVisible();
+        await expect(page.getByRole('alert').filter({ hasText: 'эх үүсвэр' })).not.toBeVisible();
+        await expect(page.getByText('Шинэ лид', { exact: true }).first()).toBeVisible();
     });
 }

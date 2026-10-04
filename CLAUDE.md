@@ -44,7 +44,9 @@ npm run lint           # eslint . (flat config; Next 16 removed `next lint`)
 npm run typecheck      # tsc --noEmit
 npm run test           # vitest run
 npm run test:payments  # disposable PostgreSQL; no live database
-npm run test:workflow  # isolated login + desktop/mobile workflow browser checks
+npm run test:workflow  # isolated login + desktop/mobile workflow browser checks (CI)
+npm run test:e2e       # every isolated browser project on one fixture server (playwright.config.ts)
+npm run test:rbac      # RLS/privilege regressions on disposable PostgreSQL (CI)
 ```
 
 Current local hardening and release evidence: `docs/APP-READINESS-2026-09-13.md`.
@@ -140,7 +142,7 @@ src/
 
 ### Internal operations workflow (2026-09-13)
 
-Workday UI/UX (2026-09-28): `/dashboard/weekly` combines existing operations + marketing reports for the previous Wednesday–Tuesday window, explicit staff updates, text export, print/PDF and native fullscreen. `weekly_updates` is server-only; reads require dashboard, team reads additionally require reports, and writes require dashboard/write and are always self-scoped. Apply `20260928150000_weekly_updates.sql` before enabling persistence; this task did not apply it to production. Shared neutral shell, larger page headings and ChatGPT-inspired AI composer are documented in `docs/WORKDAY-DESIGN-SYSTEM-2026-09-28.md`. UI fixtures: `E2E_BROWSER_CHANNEL=chrome npx playwright test --config=playwright.workday.config.ts` (isolated ports 3107/4327).
+Workday UI/UX (2026-09-28): `/dashboard/weekly` combines existing operations + marketing reports for the previous Wednesday–Tuesday window, explicit staff updates, text export, print/PDF and native fullscreen. `weekly_updates` is server-only; reads require dashboard, team reads additionally require reports, and writes require dashboard/write and are always self-scoped. Apply `20260928150000_weekly_updates.sql` before enabling persistence; this task did not apply it to production. Shared neutral shell, larger page headings and ChatGPT-inspired AI composer are documented in `docs/WORKDAY-DESIGN-SYSTEM-2026-09-28.md`. UI fixtures: `E2E_BROWSER_CHANNEL=chrome npx playwright test --project=workday` (one fixture server, `e2e/support/fixture-server.mjs`).
 
 Wednesday report + marketing KPI (2026-09-30, local): the weekly view compares the previous week, lists saved blockers and current lead queues for discussion, and shares conversion/cost KPIs and channel spending with `/marketing`. Costs divide recorded period spend by created-cohort leads, recorded handoffs or unique valid contracted leads; absent spend, missing FX or zero denominators return `null`, while explicitly recorded zero remains zero. Spend-only channels stay visible. Previous-only team rows retain their decline comparisons without invalidating current monthly targets. Clipboard/AI text and Excel exports include the same KPI values. `/marketing?from=&to=&project=` validates linked filters; report query keys distinguish result shapes and user/shop identities. No new schema is required for these improvements.
 

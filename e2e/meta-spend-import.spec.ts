@@ -45,7 +45,8 @@ async function setup(page: Page, readonly = false) {
     await page.getByLabel('Нууц үг', { exact: true }).fill('workflow-test-only');
     await page.getByRole('button', { name: 'Нэвтрэх', exact: true }).click();
     await expect(page).toHaveURL(/\/dashboard$/);
-    await page.goto('/marketing');
+    // The Meta import lives on the «Бүртгэл» tab.
+    await page.goto('/marketing?tab=records');
     return state;
 }
 async function preview(page: Page) {
@@ -101,6 +102,6 @@ test('stale preview requires a fresh check; unchanged file cannot be committed',
 });
 test('read-only marketing access has no import action', async ({ page }) => {
     await setup(page, true);
-    await expect(page.getByRole('heading', { name: 'Маркетингийн самбар', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Маркетинг', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Meta файл импортлох', exact: true })).toHaveCount(0);
 });

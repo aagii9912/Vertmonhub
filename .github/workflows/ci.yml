@@ -34,6 +34,9 @@ jobs:
       - name: Atomic payment migration checks
         run: npm run test:payments
 
+      - name: RBAC policy checks (disposable PostgreSQL)
+        run: npm run test:rbac
+
       - name: Install browser
         run: npx playwright install --with-deps chromium
 
@@ -45,7 +48,7 @@ jobs:
         with:
           name: browser-workflow-failures
           path: |
-            test-results/workflow/
+            test-results/e2e/
             playwright-report/
           retention-days: 7
 

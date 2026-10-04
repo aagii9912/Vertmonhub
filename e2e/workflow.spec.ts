@@ -72,10 +72,10 @@ async function login(page: Page) {
     await expect(page).toHaveURL(/\/dashboard$/);
 }
 
-test('protected pages reject missing and invalid sessions', async ({ page, context }) => {
+test('protected pages reject missing and invalid sessions', async ({ page, context, baseURL }) => {
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/auth\/login\?redirect_url=/);
-    await context.addCookies([{ name: 'vertmon-session', value: 'forged', domain: '127.0.0.1', path: '/' }]);
+    await context.addCookies([{ name: 'vertmon-session', value: 'forged', domain: new URL(baseURL!).hostname, path: '/' }]);
     await page.goto('/dashboard/leads');
     await expect(page).toHaveURL(/\/auth\/login/);
     await page.getByLabel('Имэйл', { exact: true }).fill('workflow@example.invalid');

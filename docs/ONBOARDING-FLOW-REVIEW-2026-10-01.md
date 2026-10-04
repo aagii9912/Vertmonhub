@@ -58,7 +58,7 @@ rtk npm run test
 rtk npm run test:rbac
 rtk npm run typecheck
 rtk npm run build
-E2E_BROWSER_CHANNEL=chrome rtk npx playwright test --config=playwright.onboarding.config.ts
+E2E_BROWSER_CHANNEL=chrome rtk npx playwright test --project=onboarding
 E2E_BROWSER_CHANNEL=chrome rtk npm run test:workflow
 ```
 

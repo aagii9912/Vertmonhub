@@ -13,12 +13,11 @@
     "analyze": "ANALYZE=true next build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage",
-    "test:workflow": "playwright test --config=playwright.workflow.config.ts",
+    "test:workflow": "playwright test --project=workflow",
     "test:payments": "node scripts/test-atomic-payments.mjs && node scripts/test-atomic-vendor-payments.mjs",
     "test:rbac": "node scripts/test-rbac.mjs",
     "typecheck": "tsc --noEmit",
-    "test:agent": "./scripts/agent-browser-test.sh"
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.125.0",
