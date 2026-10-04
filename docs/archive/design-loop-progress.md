@@ -1,6 +1,6 @@
 # Design Loop progress — Attio-inspired dashboard
 
-Reference bar: [`docs/bar.md`](./bar.md). System baseline: [`docs/design-system.md`](./design-system.md).
+Reference bar: [`docs/archive/bar.md`](./bar.md). System baseline: [`docs/archive/design-system.md`](./design-system.md).
 
 | Piece | Builder | Brief critic | System critic | Craft critic | Rounds | Biggest open gap |
 | --- | --- | --- | --- | --- | ---: | --- |
@@ -14,4 +14,4 @@ Reference bar: [`docs/bar.md`](./bar.md). System baseline: [`docs/design-system.
 - Attio web reference was fetched and visually inspected on 2026-09-14.
 - The dashboard needs a local authenticated session in the ordinary dev server. The repository's isolated workflow fixture supplied an authenticated render for the login → lead → schedule → report desktop and mobile flows; it passed 4/4 after the final change.
 - No image, video, or voice generation is required for this redesign.
-- No standalone brand guide was supplied. `docs/design-system.md` is the critic baseline derived from the project's active tokens and shared shell.
+- No standalone brand guide was supplied. `docs/archive/design-system.md` is the critic baseline derived from the project's active tokens and shared shell.

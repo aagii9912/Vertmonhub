@@ -1,6 +1,6 @@
 -- ============================================================
 -- 2026-09-11 Wave 2: хуучин Syncly e-commerce / SaaS объектуудыг устгана
--- (docs/REVIEW-2026-09-11.md §4 «Legacy e-commerce үлдэгдэл», CLAUDE.md «Recently Removed»).
+-- (docs/archive/REVIEW-2026-09-11.md §4 «Legacy e-commerce үлдэгдэл», CLAUDE.md «Recently Removed»).
 --
 -- Устгахын өмнө шалгасан (2026-09-11, prod):
 --   • src/ дотор эдгээр хүснэгт/функцийг уншдаг код 0 (grep .from()/.rpc())

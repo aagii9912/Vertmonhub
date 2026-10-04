@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * RLS аудит (READ-ONLY) — docs/REVIEW-2026-09-11.md Wave 3.
+ * RLS аудит (READ-ONLY) — docs/archive/REVIEW-2026-09-11.md Wave 3.
  *
  *   node scripts/rls-audit.mjs
  *

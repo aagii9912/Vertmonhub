@@ -3,7 +3,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 /**
- * Wave 3 (docs/REVIEW-2026-09-11.md): API route бүр өөрөө auth шалгадаг байх ёстой —
+ * Wave 3 (docs/archive/REVIEW-2026-09-11.md): API route бүр өөрөө auth шалгадаг байх ёстой —
  * middleware /api/*-г хамгаалдаггүй. 2026-09 review-д `analyze-messages` шиг auth-гүй,
  * service-role route олдсон тул статик хамгаалалт: route.ts бүрт дор хаяж нэг auth/gate
  * дуудлага байх ёстой (нийтийн/гарын үсэгтэй route-уудыг ил allow-list-ээр).

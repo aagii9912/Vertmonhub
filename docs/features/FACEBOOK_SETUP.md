@@ -4,7 +4,7 @@
 >
 > **Цар хүрээ:** Development / Test mode (App Review-гүй, App Roles → Tester хүмүүстэй ажиллана). Зөвхөн Facebook Messenger + Page comments. Instagram алхмууд хасагдсан.
 >
-> **Production-ы тохиргоо:** Одоо ажиллаж байгаа production App-ыг өөрчлөх бол `docs/FACEBOOK_OAUTH_SETUP.md`-ийг үз.
+> **Production-ы тохиргоо:** Одоо ажиллаж байгаа production App-ыг өөрчлөх бол `docs/features/FACEBOOK_OAUTH_SETUP.md`-ийг үз.
 
 ---
 
@@ -330,7 +330,7 @@ Facebook App Dashboard → Messenger → **API Settings → Webhooks → Test** 
   - Use case description
   - Step-by-step screencast
   - Test user credentials
-- илүү дэлгэрэнгүй: `docs/FACEBOOK_OAUTH_SETUP.md` нь production-д өмнө деплой хийсэн App-ы конфигийг харуулна.
+- илүү дэлгэрэнгүй: `docs/features/FACEBOOK_OAUTH_SETUP.md` нь production-д өмнө деплой хийсэн App-ы конфигийг харуулна.
 
 ---
 
