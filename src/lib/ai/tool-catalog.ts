@@ -50,6 +50,7 @@ const ENTRIES = {
     bulk_update_leads: { kind: 'write', module: 'leads', scoped: true, alwaysConfirm: true },
     log_call: { kind: 'write', module: 'leads', scoped: true, auto: 'Дуудлага бүртгэх' },
     set_followup: { kind: 'write', module: 'leads', scoped: true, auto: 'Follow-up тавих' },
+    log_price_quote: { kind: 'write', module: 'leads', scoped: true, alwaysConfirm: true },
     assign_lead_manager: { kind: 'write', module: 'leads', scoped: true },
     delete_lead: { kind: 'delete', module: 'leads', scoped: true },
     // Харилцагч, Inbox

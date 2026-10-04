@@ -38,6 +38,12 @@ describe('risk rules', () => {
         }
     });
 
+    it('always confirms a price quote and keeps it inside the lead scope', () => {
+        expect(TOOL_CATALOG.log_price_quote).toEqual({ kind: 'write', module: 'leads', scoped: true, alwaysConfirm: true });
+        expect(AUTO_TOOL_NAMES).not.toContain('log_price_quote');
+        expect(canRememberTool('log_price_quote')).toBe(false);
+    });
+
     it('denies kinds the role cannot perform', () => {
         const viewer = { canWrite: false, canDelete: false, role: 'viewer' };
         expect(toolKindDenial('read', viewer)).toBeNull();

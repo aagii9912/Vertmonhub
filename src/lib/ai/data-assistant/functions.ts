@@ -20,7 +20,9 @@ import { createViewing, resolveViewingInput, updateViewing } from '@/lib/service
 import { applyLeadScope, assertProjectManager, canAccessProject, UNRESTRICTED_SALES_SCOPE, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { z } from 'zod';
 import { canReadPrivateAttachment, isLegacyPublicAttachmentUrl, parsePrivateAttachmentUrl } from '@/lib/ai/private-attachments';
-import { logLeadActivity } from '@/lib/leads/activities';
+import { logLeadActivity, recordLeadContact } from '@/lib/leads/activities';
+import { loadLeadTimeline } from '@/lib/leads/timeline-load';
+import { compactLeadTimeline } from '@/lib/leads/timeline';
 import { LEAD_NAME_OR_ANONYMOUS, STATUS_META, isAnonymousLead, leadDisplayName, normalizeLeadName, statusLabel, toLeadSource } from '@/lib/leads/labels';
 import type { LeadStatus } from '@/types/property';
 import { formatMNT } from '@/lib/utils/currency';
@@ -285,13 +287,22 @@ export async function fetchLeadDetails(shopId: string, args: any, scope: SalesPr
         matchingProperties = props || [];
     }
 
-    const { data: viewings } = await runExcludingDeleted((excludeDeleted) => {
-        let q = supabaseAdmin.from('property_viewings')
-            .select('id, scheduled_at, status, property_id, customer_feedback, agent_notes')
-            .eq('lead_id', data.id).order('scheduled_at', { ascending: false }).limit(5);
-        if (excludeDeleted) q = q.is('deleted_at', null);
-        return q;
-    });
+    const [{ data: viewings }, managerHistory] = await Promise.all([
+        runExcludingDeleted((excludeDeleted) => {
+            let q = supabaseAdmin.from('property_viewings')
+                .select('id, scheduled_at, status, property_id, customer_feedback, agent_notes')
+                .eq('lead_id', data.id).order('scheduled_at', { ascending: false }).limit(5);
+            if (excludeDeleted) q = q.is('deleted_at', null);
+            return q;
+        }),
+        // Менежерүүдийн Time-line (хэн хэзээ холбогдсон, үнийн санал, зөрчил) — UI-тай ижил loader, товч хэлбэрээр.
+        loadLeadTimeline(supabaseAdmin, shopId, data, scope)
+            .then(({ timeline }) => compactLeadTimeline(timeline))
+            .catch((error: unknown) => {
+                logger.warn('[AI get_lead_details] manager history failed', { error });
+                return { error: 'Менежерийн түүх уншигдсангүй. Холбоо бариагүй гэж бүү дүгнэ.' };
+            }),
+    ]);
 
     return {
         lead: {
@@ -301,7 +312,9 @@ export async function fetchLeadDetails(shopId: string, args: any, scope: SalesPr
             preferred_rooms: data.preferred_rooms, urgency: data.urgency, notes: data.notes,
             internal_notes: data.internal_notes, created_at: data.created_at,
             last_contact_at: data.last_contact_at, next_followup_at: data.next_followup_at,
+            sales_manager_name: data.sales_manager_name ?? null,
         },
+        manager_history: managerHistory,
         linkedProperty: data.properties || null,
         matchingProperties,
         viewings: viewings || [],
@@ -827,16 +840,21 @@ export async function updateLeadStatus(shopId: string, args: any, confirm = fals
     return { success: true, lead: leadDisplayName(lead), oldStatus, newStatus: args.new_status };
 }
 
-export async function addLeadNote(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
-    const note = typeof args.note === 'string' ? args.note.trim() : '';
+/**
+ * Лидэд тэмдэглэл — UI-тай ижил үйл ажиллагааны түүхэнд (lead_activities 'note') нэвтэрсэн
+ * хэрэглэгчийн нэрээр бичнэ (менежерийн Time-line-д харагдана). leads.notes-ийг өөрчлөхгүй.
+ */
+export async function addLeadNote(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE, actor?: LeadActor) {
+    const note = typeof args.note === 'string' ? args.note.trim().slice(0, 4000) : '';
     if (!note) return { error: 'note (тэмдэглэлийн текст) шаардлагатай' };
-    let query = supabaseAdmin.from('leads').select('id, project_id, customer_name, notes').eq('shop_id', shopId).is('deleted_at', null);
+    let query = supabaseAdmin.from('leads').select('id, project_id, customer_name').eq('shop_id', shopId).is('deleted_at', null);
     query = applyLeadScope(query, scope);
     if (args.lead_id) query = query.eq('id', args.lead_id);
     else if (args.customer_name) query = query.ilike('customer_name', `%${args.customer_name}%`);
     else return { error: 'lead_id эсвэл customer_name шаардлагатай' };
 
-    const { data: leads } = await query.limit(20);
+    const { data: leads, error: readError } = await query.limit(20);
+    if (readError) return { error: 'Лид шалгахад алдаа гарлаа' };
     if (!leads || leads.length === 0) return { error: 'Лийд олдсонгүй' };
     // Өмнө нь нэр давхцвал чимээгүй эхний лийдэд бичдэг байсан — одоо тодруулна.
     if (leads.length > 1) return { error: `${leads.length} лийд олдлоо, тодруулна уу`, options: leads.map(l => ({ id: l.id, project_id: l.project_id, name: leadDisplayName(l) })) };
@@ -848,15 +866,11 @@ export async function addLeadNote(shopId: string, args: any, confirm = false, sc
             `Лийдэд тэмдэглэл нэмэх: ${leadDisplayName(lead)}`,
             { Лийд: leadDisplayName(lead), Тэмдэглэл: note.slice(0, 200) });
     }
-    const timestamp = new Date().toLocaleString('mn-MN');
-    const existingNotes = lead.notes || '';
-    const updatedNotes = existingNotes ? `${existingNotes}\n[${timestamp}] ${note}` : `[${timestamp}] ${note}`;
-
-    const { error } = await applyLeadScope(supabaseAdmin.from('leads')
-        .update({ notes: updatedNotes, updated_at: new Date().toISOString() })
-        .eq('id', lead.id)
-        .eq('shop_id', shopId), scope);
-    if (error) return { error: `Алдаа: ${error.message}` };
+    const result = await recordLeadContact(supabaseAdmin, {
+        shopId, leadId: lead.id, type: 'note', content: note, scope,
+        userId: actor?.userId ?? null, managerName: actor?.userName || null,
+    });
+    if (!result.ok) return { error: result.error };
     return { success: true, lead: leadDisplayName(lead), note };
 }
 

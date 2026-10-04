@@ -20,6 +20,7 @@ import { listTasks, createTask, updateTask, isMissingTaskTable, TASK_MIGRATION_H
 import { listPayments, addPayment, updatePayment } from '@/lib/services/PaymentService';
 import { formatMNT } from '@/lib/utils/currency';
 import { ANONYMOUS_LEAD_LABEL, isAnonymousLead, leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
+import { QuoteAmountSchema, QuoteUnitSchema } from '@/lib/leads/quotes';
 
 type Args = Record<string, any>;
 const db = () => adminClient();
@@ -87,6 +88,35 @@ export async function setFollowup(shopId: string, args: Args, userId: string, us
     const result = await recordLeadContact(db(), { shopId, leadId: f.lead.id, type: 'note', content, nextFollowupAt: next, userId, managerName: userName || null, scope });
     if (!result.ok) return { error: result.error, partialSuccess: result.partialSuccess ?? false, leadId: f.lead.id };
     return { success: true, message, leadId: f.lead.id };
+}
+
+/** AI-ийн дүн: тоо эсвэл «450,000,000» / «450 000 000» хэлбэрийн цифрийн мөр (₮, «сая»-г модель өөрөө хөрвүүлнэ). */
+function quoteAmountArg(value: unknown): unknown {
+    if (typeof value === 'string' && /^[\d\s,]+$/.test(value.trim())) return Number(value.replace(/[\s,]/g, ''));
+    return value;
+}
+
+/**
+ * Харилцагчид хэлсэн үнийг («Үнийн санал») менежерийн түүхэнд бүртгэнэ — UI-ийн «Үнийн санал»-тай ижил
+ * recordLeadContact. Гэрээний дүн, орлого биш; мөнгөтэй тул үргэлж картаар батална (alwaysConfirm).
+ */
+export async function logPriceQuote(shopId: string, args: Args, confirm: boolean, userId: string, userName: string, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
+    const amount = QuoteAmountSchema.safeParse(quoteAmountArg(args.amount));
+    if (!amount.success) return { error: `${amount.error.issues[0]?.message ?? 'Үнийн саналын дүн буруу'} (amount: бүхэл ₮, жишээ 450000000)` };
+    const unit = QuoteUnitSchema.safeParse(typeof args.unit_label === 'string' ? args.unit_label : null);
+    if (!unit.success) return { error: unit.error.issues[0]?.message ?? 'Байр/тоот буруу байна' };
+    const note = typeof args.note === 'string' ? args.note.trim().slice(0, 4000) : '';
+    const f = await findLead(shopId, args, scope);
+    if ('error' in f) return f;
+    const name = leadDisplayName(f.lead);
+    if (!confirm) {
+        return confirmNeeded('log_price_quote', { lead_id: f.lead.id, amount: amount.data, unit_label: unit.data, note },
+            `Үнийн санал бүртгэх: ${name}`,
+            { Лид: name, 'Үнийн санал': formatMNT(amount.data), 'Байр/тоот': unit.data ?? '—', ...(note ? { Тайлбар: note.slice(0, 200) } : {}), Анхаар: 'Гэрээний дүн, орлого биш — менежерийн түүхэнд л хадгалагдана' });
+    }
+    const result = await recordLeadContact(db(), { shopId, leadId: f.lead.id, type: 'quote', content: note, quote: { amount: amount.data, unitLabel: unit.data }, userId, managerName: userName || null, scope });
+    if (!result.ok) return { error: result.error, partialSuccess: result.partialSuccess ?? false, leadId: f.lead.id };
+    return { success: true, message: `«${name}»-д ${formatMNT(amount.data)}${unit.data ? ` (${unit.data})` : ''} үнийн санал бүртгэлээ.`, leadId: f.lead.id };
 }
 
 export async function assignLeadManager(shopId: string, args: Args, confirm: boolean, userId: string, userName: string, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
