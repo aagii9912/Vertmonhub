@@ -152,13 +152,18 @@ describe('current manager onboarding route integration', () => {
         await provisionManager();
         const outsideId = '50000000-0000-4000-8000-000000000001';
         const assignedId = '50000000-0000-4000-8000-000000000002';
+        const ownId = '50000000-0000-4000-8000-000000000003';
         state.rows.leads.push(
-            { id: outsideId, shop_id: shopId, project_id: '40000000-0000-4000-8000-000000000002', status: 'new', deleted_at: null, sales_manager_name: null },
+            // Already this manager's lead, but in a project they are not registered for: only the project boundary hides it.
+            { id: outsideId, shop_id: shopId, project_id: '40000000-0000-4000-8000-000000000002', status: 'new', deleted_at: null, sales_manager_name: 'Бат' },
             { id: assignedId, shop_id: shopId, project_id: projectId, status: 'new', deleted_at: null, sales_manager_name: 'Өөр менежер' },
+            // Control: the same owner inside the manager's project is visible, so it fails as already owned (409), not hidden (404).
+            { id: ownId, shop_id: shopId, project_id: projectId, status: 'new', deleted_at: null, sales_manager_name: 'Бат' },
         );
+        expect((await claim(ownId)).status).toBe(409);
         expect((await claim(outsideId)).status).toBe(404);
         expect((await claim(assignedId)).status).toBe(404);
-        expect(state.rows.leads.map(lead => lead.sales_manager_name)).toEqual([null, 'Өөр менежер']);
+        expect(state.rows.leads.map(lead => lead.sales_manager_name)).toEqual(['Бат', 'Өөр менежер', 'Бат']);
         expect(state.rows.lead_activities).toEqual([]);
     });
     it('provisioning activates the manager and explicit project setup enables attribution while unassigned claims remain denied', async () => {
