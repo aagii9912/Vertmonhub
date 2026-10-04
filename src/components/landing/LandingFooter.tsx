@@ -19,7 +19,7 @@ export function LandingFooter() {
                 <div className="space-y-3">
                     <BrandMark />
                     <p className="max-w-xs text-sm text-muted-foreground">
-                        Монголын үл хөдлөхийн AI борлуулалт ба CRM платформ.
+                        Монголын үл хөдлөхийн AI туслахтай борлуулалт ба CRM платформ.
                     </p>
                 </div>
 

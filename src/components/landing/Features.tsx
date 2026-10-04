@@ -7,8 +7,8 @@ import { Reveal, RevealStagger, RevealStaggerItem } from './Reveal';
 const FEATURES = [
     {
         icon: MessageSquare,
-        title: 'AI хариулагч',
-        desc: 'Facebook, Instagram Messenger дээр 24/7 хариулж, лийд цуглуулж, уулзалт товлоно.',
+        title: 'Нэгдсэн Inbox',
+        desc: 'Facebook, Instagram-ийн захиаг нэг дор харж, багаараа хариулна.',
     },
     {
         icon: Building2,
@@ -22,8 +22,8 @@ const FEATURES = [
     },
     {
         icon: Wallet,
-        title: 'Санхүү / ERP',
-        desc: 'Гэрээний төлбөрийн хуваарь, орлого, хоцрогдсон төлбөрийн хяналт нэг дороос.',
+        title: 'Төлбөр ба ERP',
+        desc: 'Гэрээний төлбөрийн хуваарь, бодит орлого, хоцрогдлыг хянаж, ERP-ээс импортолно.',
     },
     {
         icon: BarChart3,
@@ -50,7 +50,7 @@ export function Features() {
                         Борлуулалтад хэрэгтэй бүхэн нэг дор
                     </h2>
                     <p className="mt-4 text-base text-muted-foreground">
-                        AI борлуулагчаас санхүүгийн тайлан хүртэл — салангид хэрэгслүүдийг нэгтгэв.
+                        Лийдээс гэрээ, тайлан хүртэл — салангид хэрэгслүүдийг нэгтгэв.
                     </p>
                 </Reveal>
 

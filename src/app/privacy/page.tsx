@@ -22,7 +22,7 @@ export default function PrivacyPolicyPage() {
                         Нууцлалын бодлого
                     </h1>
                     <p className="mt-4 text-lg text-muted-foreground dark:text-muted-foreground/70">
-                        Сүүлд шинэчилсэн: 2026 оны 9-р сарын 23
+                        Сүүлд шинэчилсэн: 2026 оны 10-р сарын 4
                     </p>
                 </div>
 
@@ -57,7 +57,7 @@ export default function PrivacyPolicyPage() {
                             Цуглуулсан мэдээллээ дараах зорилгоор ашигладаг:
                         </p>
                         <ul className="list-disc pl-6 text-foreground dark:text-muted-foreground/60 space-y-2 mb-4">
-                            <li>AI туслахаар автомат хариулт үүсгэх</li>
+                            <li>Ажилтны AI туслахаар өгөгдөлд дүн шинжилгээ хийх, тайлан бэлтгэх</li>
                             <li>Харилцагчийн үйлчилгээ үзүүлэх</li>
                             <li>Үл хөдлөх хөрөнгийн сонирхогч, борлуулалтын ажлыг удирдах</li>
                             <li>Бизнесийн статистик, тайлан гаргах</li>
@@ -69,11 +69,11 @@ export default function PrivacyPolicyPage() {
                     <section className="mb-12">
                         <h2 className="text-2xl font-bold text-foreground  mb-4">4. Meta холболт</h2>
                         <p className="text-foreground dark:text-muted-foreground/60 mb-4">
-                            Манай AI туслах Facebook Messenger болон Instagram мессежид ажилладаг. Мессеж солилцох үед:
+                            Та Facebook Messenger эсвэл Instagram-аар бидэнд мессеж бичихэд:
                         </p>
                         <ul className="list-disc pl-6 text-foreground dark:text-muted-foreground/60 space-y-2 mb-4">
-                            <li>Таны мессежүүд манай AI системд боловсруулагдана</li>
-                            <li>Чат түүх манай датабаазад хадгалагдана</li>
+                            <li>Мессеж болон таны нийтэд харагдах нэр манай CRM-д хадгалагдаж, борлуулалтын ажилтан хариулна</li>
+                            <li>Автомат (AI) хариу илгээгдэхгүй</li>
                             <li>Facebook болон Instagram-ийн нууцлалын бодлого мөн хамаарна</li>
                             <li>Та Meta дахь тохиргоогоор мессеж солилцохыг зогсоож болно</li>
                         </ul>
@@ -92,7 +92,7 @@ export default function PrivacyPolicyPage() {
                         <ul className="list-disc pl-6 text-foreground dark:text-muted-foreground/60 space-y-2 mb-4">
                             <li><strong>Supabase:</strong> Өгөгдлийн сан; Meta Ads холболтын эрхийг хадгалахаас өмнө шифрлэдэг</li>
                             <li><strong>Vercel:</strong> Hosting үйлчилгээ, SSL сертификаттай</li>
-                            <li><strong>AI туслах:</strong> Хариулт үүсгэх боловсруулалт</li>
+                            <li><strong>AI туслах:</strong> Ажилтны хүсэлтээр CRM өгөгдөлд дүн шинжилгээ хийх боловсруулалт</li>
                         </ul>
                     </section>
 
@@ -103,7 +103,8 @@ export default function PrivacyPolicyPage() {
                         </p>
                         <ul className="list-disc pl-6 text-foreground dark:text-muted-foreground/60 space-y-2 mb-4">
                             <li><strong>Facebook/Meta:</strong> Messenger, Instagram болон зарын тайлангийн API</li>
-                            <li><strong>AI систем:</strong> Хариулт үүсгэх боловсруулалт</li>
+                            <li><strong>OpenAI:</strong> Ажилтны AI туслахын боловсруулалт</li>
+                            <li><strong>Google (Gemini):</strong> Вэб формоор ирсэн хүсэлтийн угтах хариу, өрсөлдөгчийн мэдээллийн шинжилгээ</li>
                             <li><strong>Supabase:</strong> Database хостинг</li>
                             <li><strong>Vercel:</strong> Веб хостинг</li>
                         </ul>

@@ -23,10 +23,10 @@ export function FinalCTA() {
                 />
                 <div className="relative">
                     <h2 className="heading-display text-3xl text-foreground sm:text-4xl lg:text-5xl">
-                        Борлуулалтаа автоматжуулахад бэлэн үү?
+                        Борлуулалтаа нэг дор удирдахад бэлэн үү?
                     </h2>
                     <p className="mx-auto mt-4 max-w-xl text-base text-muted-foreground sm:text-lg">
-                        Хэдхэн минутын дотор нэвтэрч, AI борлуулагчаа ажиллуулж эхлээрэй.
+                        Хэдхэн минутын дотор нэвтэрч, багаараа ажиллаж эхлээрэй.
                     </p>
                     <div className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row">
                         <Button href="/auth/login" variant="primary" size="lg" className="w-full sm:w-auto">

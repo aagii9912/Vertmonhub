@@ -125,7 +125,7 @@ export function DashboardMock() {
                 </div>
             </div>
 
-            {/* Хөвж буй "AI хариулав" карт */}
+            {/* Хөвж буй "шинэ захиа" карт */}
             <motion.div
                 className="absolute -bottom-5 -left-4 hidden items-center gap-2.5 rounded-xl border border-border bg-surface px-3.5 py-2.5 shadow-lg sm:flex"
                 initial={reduced ? false : { opacity: 0, y: 12 }}
@@ -136,7 +136,7 @@ export function DashboardMock() {
                     <MessageSquare className="h-3.5 w-3.5" />
                 </span>
                 <div>
-                    <p className="text-2xs font-medium text-foreground">AI шинэ лийд бүртгэв</p>
+                    <p className="text-2xs font-medium text-foreground">Шинэ захиа Inbox-д ирлээ</p>
                     <p className="font-mono text-2xs text-muted-foreground">Messenger · одоо</p>
                 </div>
             </motion.div>

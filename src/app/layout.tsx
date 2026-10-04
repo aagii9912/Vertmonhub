@@ -36,8 +36,8 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "Vertmon Hub - AI Борлуулагч",
-  description: "Moncon Construction Group-ийн AI платформ. Үл хөдлөх хөрөнгийн борлуулалтыг автоматжуулна.",
+  title: "Vertmon Hub - Үл хөдлөхийн борлуулалтын CRM",
+  description: "Moncon Construction Group-ийн үл хөдлөх хөрөнгийн борлуулалт, CRM, маркетингийн платформ.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,

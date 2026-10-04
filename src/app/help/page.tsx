@@ -9,24 +9,24 @@ import {
 export default function HelpPage() {
   const faqs = [
     {
-      question: 'AI чатбот хэрхэн ажилладаг вэ?',
-      answer: 'Vertmon Hub AI чатбот нь таны Facebook Page-тэй холбогдож, Messenger-ээр ирсэн мессежүүдэд автоматаар хариулна. Google Gemini AI ашиглан хэрэглэгчийн асуултад зөв хариулт өгнө.'
+      question: 'AI туслах юу хийдэг вэ?',
+      answer: 'Хянах самбарын AI туслах (⌘J) нь лийд, уулзалт, гэрээ, тайлангийн мэдээллээс таны асуултад хариулж, эрх тань хүрэх үйлдлийг баталгаажуулалттайгаар гүйцэтгэнэ. Харилцагчдад автоматаар мессеж илгээдэггүй.'
     },
     {
       question: 'Facebook Page-ээ хэрхэн холбох вэ?',
-      answer: 'Тохиргоо хуудсанд орж "Facebook-ээр холбох" товчийг дарна уу. Facebook бүртгэлээрээ нэвтэрч, чатбот ажиллуулах Page-ээ сонгоно.'
+      answer: 'Тохиргоо хуудсанд орж "Facebook-ээр холбох" товчийг дарна уу. Facebook бүртгэлээрээ нэвтэрч, Page-ээ сонгоно. Холбосны дараа Messenger, Instagram-ийн захиа Inbox-д ирнэ.'
     },
     {
       question: 'Үл хөдлөх хөрөнгө нэмж болох уу?',
-      answer: 'Тийм! Хянах самбар дээрх "Үл хөдлөх" хэсэгт орж шинэ зар нэмэх боломжтой. Чатбот эдгээр үл хөдлөх хөрөнгийг сонирхогчдод танилцуулна.'
+      answer: 'Тийм! Хянах самбар дээрх "Үл хөдлөх" хэсэгт орж шинэ зар нэмэх боломжтой.'
     },
     {
       question: 'Лийд хэрхэн үүсдэг вэ?',
-      answer: 'Сонирхогч Messenger эсвэл вэбсайтаар хүсэлт илгээхэд системд автоматаар лийд бүртгэгдэнэ. Хянах самбарын "Лийд" хэсэгт лийдүүдийг удирдах боломжтой.'
+      answer: 'Вэб форм болон Facebook Lead Ads-аар ирсэн хүсэлтээс лийд автоматаар үүснэ. Messenger, Instagram-ийн захиаг Inbox-оос шалгаад лийд болгон бүртгэнэ. Хянах самбарын "Лийд" хэсэгт лийдүүдийг удирдах боломжтой.'
     },
     {
-      question: 'Чатбот ажиллахгүй байна?',
-      answer: 'Facebook Page зөв холбогдсон эсэхийг шалгана уу. Тохиргоо хуудсанд очиж "Чатбот идэвхтэй" гэсэн тэмдэглэгээ байгаа эсэхийг шалгаарай.'
+      question: 'Messenger-ийн захиа Inbox-д ирэхгүй байна?',
+      answer: 'Тохиргоо хуудсанд Facebook Page зөв холбогдсон эсэхийг шалгана уу. Холболт хэвийн боловч захиа ирэхгүй бол админд хандана уу.'
     },
   ];
 
@@ -54,7 +54,7 @@ export default function HelpPage() {
               <Facebook className="w-6 h-6 text-status-info" />
             </div>
             <h3 className="font-semibold text-foreground mb-2">Facebook холбох</h3>
-            <p className="text-sm text-muted-foreground mb-3">Page-ээ холбож чатбот идэвхжүүлэх</p>
+            <p className="text-sm text-muted-foreground mb-3">Page-ээ холбож Inbox-д захиа хүлээн авах</p>
             <span className="text-brand-strong text-sm font-medium flex items-center gap-1 group-hover:gap-2 transition-all">
               Тохируулах <ArrowRight className="w-4 h-4" />
             </span>

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { DashboardMock } from './DashboardMock';
 
-const TRUST = ['Монгол хэлтэй', '24/7 Messenger AI', 'Лийдээс гэрээ хүртэл'];
+const TRUST = ['Монгол хэлтэй', 'Messenger, Instagram Inbox', 'Лийдээс гэрээ хүртэл'];
 
 /**
  * Hero — гол үнэ цэнийн мессеж + CTA + бүтээгдэхүүний дүрслэл.
@@ -47,7 +47,7 @@ export function Hero() {
                         className="inline-flex items-center gap-2 rounded-full border border-brand/30 bg-brand-soft px-3.5 py-1.5 text-xs font-medium text-brand-strong"
                     >
                         <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-                        Монголын үл хөдлөхийн AI борлуулалтын платформ
+                        Монголын үл хөдлөхийн AI туслахтай борлуулалтын платформ
                     </motion.div>
 
                     <motion.h1
@@ -63,8 +63,8 @@ export function Hero() {
                         {...fade(0.16)}
                         className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg lg:mx-0"
                     >
-                        Facebook болон Instagram Messenger дээр AI борлуулагч 24/7 хариулж, лийд цуглуулна. Уулзалт товлох,
-                        гэрээ хянах, санхүүгийн тайлан — бүгд нэг дороос.
+                        Facebook, Instagram-ийн захиаг нэг Inbox-д цуглуулж, лийдээ бүртгэнэ. Уулзалт товлох,
+                        гэрээ, төлбөр хянах, тайлан — бүгд нэг дороос.
                     </motion.p>
 
                     <motion.div

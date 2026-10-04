@@ -1,16 +1,15 @@
 import type { Metadata } from 'next';
 import { LandingNav } from '@/components/landing/LandingNav';
 import { Hero } from '@/components/landing/Hero';
-import { ChatDemo } from '@/components/landing/ChatDemo';
 import { Journey } from '@/components/landing/Journey';
 import { Features } from '@/components/landing/Features';
 import { SocialProof } from '@/components/landing/SocialProof';
 import { FinalCTA } from '@/components/landing/FinalCTA';
 import { LandingFooter } from '@/components/landing/LandingFooter';
 
-const TITLE = 'Vertmon Hub — Үл хөдлөхийн AI борлуулалт ба CRM платформ';
+const TITLE = 'Vertmon Hub — Үл хөдлөхийн борлуулалт ба CRM платформ';
 const DESCRIPTION =
-    'Facebook, Instagram Messenger дээр AI борлуулагч 24/7 хариулж, лийд цуглуулна. Уулзалт товлох, гэрээ хянах, санхүү, тайлан — бүгд нэг ухаалаг системд.';
+    'Facebook, Instagram-ийн захиаг нэг Inbox-д цуглуулж, лийдээ бүртгэнэ. Уулзалт товлох, гэрээ, төлбөр хянах, тайлан — бүгд нэг ухаалаг системд.';
 
 export const metadata: Metadata = {
     title: TITLE,
@@ -40,7 +39,6 @@ export default function LandingPage() {
             <LandingNav />
             <main>
                 <Hero />
-                <ChatDemo />
                 <Journey />
                 <Features />
                 <SocialProof />

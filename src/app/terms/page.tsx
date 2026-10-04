@@ -22,7 +22,7 @@ export default function TermsOfServicePage() {
                         Үйлчилгээний нөхцөл
                     </h1>
                     <p className="mt-4 text-lg text-muted-foreground dark:text-muted-foreground/70">
-                        Сүүлд шинэчилсэн: 2026 оны 9-р сарын 23
+                        Сүүлд шинэчилсэн: 2026 оны 10-р сарын 4
                     </p>
                 </div>
 
@@ -33,8 +33,9 @@ export default function TermsOfServicePage() {
                         <p className="text-foreground dark:text-muted-foreground/60 mb-4">
                             Vertmon Hub нь үл хөдлөх хөрөнгийн борлуулалт, харилцагчийн удирдлага (CRM) болон
                             маркетингийн тайлангийн платформ юм. Үйлчилгээ нь үл хөдлөх хөрөнгийн мэдээлэл,
-                            харилцагч, лийд, үзлэг, гэрээний явцыг удирдах, Facebook болон Instagram мессежид
-                            AI туслахаар хариулах боломжтой. Meta Ads данс холбогдож, шаардлагатай API эрх
+                            харилцагч, лийд, үзлэг, гэрээний явцыг удирдах, Facebook болон Instagram-ийн мессежийг
+                            нэг Inbox-д хүлээн авч ажилтан хариулах боломжтой. Ажилтнууд AI туслахаар өгөгдөлдөө
+                            дүн шинжилгээ хийж болно. Meta Ads данс холбогдож, шаардлагатай API эрх
                             нээгдсэн үед зарын зардлын тайланг харуулна.
                         </p>
                     </section>
@@ -63,7 +64,7 @@ export default function TermsOfServicePage() {
                             <li>Бусдын эрхийг зөрчих</li>
                             <li>Хуурамч мэдээлэл тараах</li>
                             <li>Систем, сүлжээнд халдлага хийх</li>
-                            <li>Spam эсвэл автомат мессеж илгээх (манай AI-аас бусад)</li>
+                            <li>Spam эсвэл автомат мессеж илгээх</li>
                             <li>Үйлчилгээг урвуулан инженерчлэх, хуулбарлах</li>
                         </ul>
                     </section>
@@ -71,11 +72,12 @@ export default function TermsOfServicePage() {
                     <section className="mb-12">
                         <h2 className="text-2xl font-bold text-foreground  mb-4">4. AI туслахын ашиглалт</h2>
                         <p className="text-foreground dark:text-muted-foreground/60 mb-4">
-                            Манай AI chatbot нь:
+                            Хянах самбарын AI туслах нь:
                         </p>
                         <ul className="list-disc pl-6 text-foreground dark:text-muted-foreground/60 space-y-2 mb-4">
-                            <li>Vertmon Hub-ийн хөгжүүлсэн AI систем ашиглан хариулт үүсгэдэг</li>
-                            <li>Автоматаар мессежүүдэд хариулдаг</li>
+                            <li>Хэрэглэгчийн эрхийн хүрээн дэх өгөгдлөөс хариулт, дүгнэлт гаргадаг</li>
+                            <li>Өгөгдөл өөрчлөх эрсдэлтэй үйлдлийг хэрэглэгчийн баталгаажуулалтаар гүйцэтгэдэг</li>
+                            <li>Харилцагчдад автоматаар мессеж илгээдэггүй</li>
                             <li>100% үнэн зөв байхыг баталгаажуулж чаддаггүй</li>
                             <li>Эмнэлэг, хууль зүй, санхүүгийн зөвлөгөө өгөхгүй</li>
                             <li>Сургаж, сайжруулж байгаа процесст байна</li>
@@ -134,7 +136,7 @@ export default function TermsOfServicePage() {
                         </p>
                         <ul className="list-disc pl-6 text-foreground dark:text-muted-foreground/60 space-y-2 mb-4">
                             <li><strong>Facebook/Meta:</strong> Та Facebook-ийн Terms of Service-ийг мөрдөх ёстой</li>
-                            <li><strong>AI систем:</strong> Vertmon Hub-ийн хөгжүүлсэн AI үйлчилгээний нөхцөл</li>
+                            <li><strong>AI систем:</strong> AI загвар нийлүүлэгч (OpenAI, Google)-ийн үйлчилгээний нөхцөл</li>
                             <li><strong>Vercel, Supabase:</strong> Тэдний үйлчилгээний нөхцөл хамаарна</li>
                         </ul>
                     </section>
