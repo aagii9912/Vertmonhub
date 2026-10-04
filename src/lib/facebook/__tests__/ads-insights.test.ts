@@ -137,4 +137,13 @@ it('fetches deduplicated period reach for the account and per campaign', async (
     http.mockReset();
     http.mockResolvedValueOnce(reply({ data: [{ account_id: '123', reach: '5000', date_start: '2026-09-22', date_stop: '2026-09-29' }] }));
     await expect(fetchMetaPeriodReach(account, 'secret-token', '2026-09-23', '2026-09-29')).rejects.toThrow();
+
+    // Хүргэлттэй ч reach ирээгүй бол 0 гэж таамаглахгүй; reach-гүй кампанит ажил тодорхойгүй хэвээр.
+    http.mockReset();
+    http.mockResolvedValueOnce(reply({ data: [{ account_id: '123', impressions: '10' }] }));
+    await expect(fetchMetaPeriodReach(account, 'secret-token', '2026-09-23', '2026-09-29')).rejects.toThrow(/reach/);
+    http.mockReset();
+    http.mockResolvedValueOnce(reply({ data: [{ account_id: '123', reach: '10' }] }))
+        .mockResolvedValueOnce(reply({ data: [{ campaign_id: '11' }, { campaign_id: '22', reach: '4' }] }));
+    expect([...(await fetchMetaPeriodReach(account, 'secret-token', '2026-09-23', '2026-09-29')).campaigns]).toEqual([['22', 4]]);
 });

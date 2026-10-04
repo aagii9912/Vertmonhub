@@ -226,9 +226,11 @@ export async function fetchMetaPeriodReach(account: MetaAccount, token: string, 
     if (!Array.isArray(total.data) || total.data.length > 1) throw new Error('Meta reach-ийн хариу дутуу байна.');
     const accountRow = total.data[0] as Raw | undefined;
     if (accountRow) checkRow(accountRow);
-    const accountReach = accountRow ? count(accountRow.reach, 0)! : 0;
+    // Хүргэлтгүй хугацаа = мөргүй (0). Мөр байгаа ч reach ирээгүй бол 0 гэж таамаглахгүй.
+    const accountReach = accountRow ? count(accountRow.reach, null) : 0;
+    if (accountReach === null) throw new Error('Meta reach-ийн хариу дутуу байна.');
 
-    const campaigns = new Map<string, number>(), cursors = new Set<string>();
+    const campaigns = new Map<string, number>(), seen = new Set<string>(), cursors = new Set<string>();
     let after: string | undefined;
     for (let page = 0; page < PAGE_LIMIT; page++) {
         const result = await metaRead<Page>(`${account.id}/insights`, token, {
@@ -238,8 +240,11 @@ export async function fetchMetaPeriodReach(account: MetaAccount, token: string, 
         for (const item of result.data) {
             const r = (item ?? {}) as Raw;
             checkRow(r);
-            if (typeof r.campaign_id !== 'string' || !/^\d{1,40}$/.test(r.campaign_id) || campaigns.has(r.campaign_id)) throw invalid();
-            campaigns.set(r.campaign_id, count(r.reach, 0)!);
+            if (typeof r.campaign_id !== 'string' || !/^\d{1,40}$/.test(r.campaign_id) || seen.has(r.campaign_id)) throw invalid();
+            seen.add(r.campaign_id);
+            // reach ирээгүй кампанит ажлыг орхино (тайланд тодорхойгүй гэж үлдэнэ).
+            const reach = count(r.reach, null);
+            if (reach !== null) campaigns.set(r.campaign_id, reach);
         }
         if (!result.paging?.next) return { account: accountReach, campaigns };
         after = result.paging.cursors?.after;
