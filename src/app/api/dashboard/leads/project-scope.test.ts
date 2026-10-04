@@ -59,7 +59,7 @@ vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: (table: string)
             const tests = clauses.map(clause => {
                 const [, key, op, raw] = clause!;
                 if (op === 'is') return (row: Record<string, any>) => (valueAt(row, key) ?? null) === null;
-                if (op === 'eq') return (row: Record<string, any>) => valueAt(row, key) === (raw === '""' ? '' : raw);
+                if (op === 'eq') return (row: Record<string, any>) => (valueAt(row, key) as unknown) === (raw === '""' ? '' : raw);
                 const pattern = new RegExp(`^${raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*')}$`, 'iu');
                 return (row: Record<string, any>) => pattern.test(String(valueAt(row, key) ?? ''));
             });
