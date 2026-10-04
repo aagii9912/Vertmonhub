@@ -94,7 +94,8 @@ for (const mobile of [false, true]) {
         const form = page.getByRole('dialog', { name: 'Түргэн бүртгэл' });
         await form.getByPlaceholder('Ж: Г. Энхжин').fill('Туршилтын Харилцагч');
         await form.getByPlaceholder('9911 2233').fill('99112233');
-        await form.getByLabel('Төсөл', { exact: true }).selectOption(projectId);
+        // Shop = төсөл: ганц төсөлтэй ажлын орчинд төслийг автоматаар сонгоно.
+        await expect(form.getByLabel('Төсөл', { exact: true })).toHaveCount(0);
         await form.getByRole('button', { name: 'Хадгалаад уулзалт товлох' }).click();
         // The page consumes the deep link; the dialog and submitted lead ID below are the durable contract.
         await expect(page).toHaveURL(/\/dashboard\/viewings(?:\?|$)/);

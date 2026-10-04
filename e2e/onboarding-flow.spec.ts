@@ -263,7 +263,7 @@ for (const mobile of [false, true]) {
         const leadForm = managerPage.getByRole('dialog', { name: 'Түргэн бүртгэл', exact: true });
         await leadForm.getByPlaceholder('Ж: Г. Энхжин').fill('Тест харилцагч');
         await leadForm.getByPlaceholder('9911 2233').fill('99112233');
-        await leadForm.getByLabel('Төсөл', { exact: true }).selectOption(projectId);
+        await expect(leadForm.getByLabel('Төсөл', { exact: true })).toHaveCount(0);
         await leadForm.getByRole('button', { name: 'Хадгалаад уулзалт товлох', exact: true }).click();
         const meeting = managerPage.getByRole('dialog', { name: 'Уулзалт товлох', exact: true });
         await expect(meeting).toBeVisible();

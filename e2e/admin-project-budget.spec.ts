@@ -96,10 +96,9 @@ for (const mobile of [false, true]) {
         if (mobile) await page.setViewportSize({ width: 390, height: 844 });
         const state = await setup(page);
         await page.goto('/marketing/budget');
-        const scope = page.getByRole('combobox', { name: /Төсвийн хамрах хүрээ/ });
-        await scope.selectOption(projectId);
+        // Shop = төсөл: ганц төсөлтэй ажлын орчинд хамрах хүрээ сонгохгүй — төслийн жилийн үндсэн төсөв.
+        await expect(page.getByRole('combobox', { name: /Төсвийн хамрах хүрээ/ })).toHaveCount(0);
         await page.getByRole('button', { name: 'Төсөв засах', exact: true }).click();
-        await expect(scope).toBeDisabled();
         await page.getByLabel('Жилийн төсөв (₮)', { exact: true }).fill('120001');
         await page.getByRole('button', { name: '12 сард тэнцүү хуваарилах', exact: true }).click();
         expect(state.writes).toEqual([]);
@@ -112,7 +111,7 @@ for (const mobile of [false, true]) {
         await expect(page.getByRole('button', { name: 'Төсөв засах', exact: true })).toBeVisible();
         expect(state.writes).toHaveLength(2);
         const saved = state.writes[1];
-        expect(saved.body.project_id).toBe(projectId); expect(saved.shop).toBe(shopId);
+        expect(saved.body.project_id).toBeNull(); expect(saved.shop).toBe(shopId);
         expect(saved.body.months).toHaveLength(12);
         expect(saved.body.months.reduce((total: number, month: { amount: number }) => total + month.amount, 0)).toBe(120001);
         expect(state.errors).toEqual([]); expect(state.unhandled).toEqual([]);

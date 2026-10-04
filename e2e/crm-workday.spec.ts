@@ -249,8 +249,8 @@ test('менежер өөрийн төслийн зөвхөн өөрт оноо�
     await expect(page.getByText('Б. Энхжин', { exact: true })).toBeVisible();
     await expect(page.getByText('Г. Тэмүүлэн', { exact: true })).toBeVisible();
     for (const name of ['Д. Болормаа', 'Өөр менежерийн лид', 'Өөр төслийн лид']) await expect(page.getByText(name, { exact: true })).toHaveCount(0);
-    await page.getByLabel('Төсөл', { exact: true }).selectOption(projectId);
-    await expect.poll(() => state.requests.some(r => r.path === '/api/dashboard/leads' && r.search.includes(`project=${projectId}`))).toBe(true);
+    // Ганц төсөлтэй ажлын орчинд төслийн шүүлтүүр шаардлагагүй.
+    await expect(page.getByLabel('Төсөл', { exact: true })).toHaveCount(0);
     await page.getByText('Б. Энхжин', { exact: true }).click();
     const panel = page.getByRole('dialog', { name: 'Лидийн дэлгэрэнгүй' });
     await expect(panel).toBeVisible();
