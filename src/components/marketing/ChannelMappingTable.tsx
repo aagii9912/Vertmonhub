@@ -1,6 +1,6 @@
 'use client';
 
-import { channelFields, type ChannelField, type ChannelMapping, type ChannelSource } from '@/lib/marketing/channel-reports';
+import { channelFields, mappedField, type ChannelField, type ChannelMapping, type ChannelSource } from '@/lib/marketing/channel-reports';
 import { marketingInputClass } from './PerformanceEditor';
 
 /** CallPro-гийн талбаруудыг файлын хэлбэрээр, бусдыг үзүүлэлт / ангиллаар бүлэглэнэ. */
@@ -40,7 +40,7 @@ export function ChannelMappingTable({ source, headers, mapping, sample, disabled
                 <tr><th scope="col" className="px-3 py-2 font-medium">Файлын багана</th><th scope="col" className="px-3 py-2 font-medium">Жишээ утга</th><th scope="col" className="px-3 py-2 font-medium">Үзүүлэлт</th></tr>
             </thead>
             <tbody>{headers.map(header => {
-                const key = mapping[header] ?? '';
+                const key = mappedField(mapping, header);
                 const duplicate = !!key && (used.get(key) ?? 0) > 1;
                 return <tr key={header} className="border-t border-border align-top">
                     <th scope="row" className="max-w-56 break-words px-3 py-2 font-medium">{header}</th>
