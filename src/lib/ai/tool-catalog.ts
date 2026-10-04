@@ -28,6 +28,7 @@ const ENTRIES = {
     get_operations_report: { kind: 'read', module: 'reports', scoped: true },
     get_kpi_report: { kind: 'read', module: 'reports', scoped: true },
     get_weekly_sales_report: { kind: 'read', module: 'reports' },
+    import_erp_file: { kind: 'write', module: 'erp-imports', alwaysConfirm: true },
     get_manager_performance: { kind: 'read', module: 'reports' },
     get_export_link: { kind: 'read', module: 'reports' },
     get_sales_summary: { kind: 'read', module: 'reports' },

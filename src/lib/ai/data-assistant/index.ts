@@ -30,6 +30,7 @@ import {
     createSocialPost, rememberFact,
 } from './functions';
 import { inviteUser, assignRole, createRole } from './admin-functions';
+import { importErpFileTool } from './erp-import';
 import { getKpiReport, getManagerPerformanceTool, getWeeklySalesReportTool, getWeeklyUpdatesTool, saveWeeklyUpdateTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, updateCustomerTool, listConversationsTool, getConversationTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
 import { logCall, setFollowup, assignLeadManager, updateLeadTool, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
 
@@ -143,6 +144,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     get_kpi_report: ({ shopId, args, userId, perms, scope }) => getKpiReport(shopId, args, userId, perms, scope),
     get_manager_performance: ({ shopId }) => getManagerPerformanceTool(shopId),
     get_weekly_sales_report: ({ shopId, args, perms }) => getWeeklySalesReportTool(shopId, args, perms),
+    import_erp_file: ({ shopId, args, confirm, userId, perms }) => importErpFileTool(shopId, args, confirm, userId, perms),
     get_weekly_updates: ({ shopId, args, userId, perms }) => getWeeklyUpdatesTool(shopId, args, userId, perms),
     save_weekly_update: ({ shopId, args, confirm, userId }) => saveWeeklyUpdateTool(shopId, args, confirm, userId),
     get_export_link: ({ shopId, args }) => getExportLink(shopId, args),

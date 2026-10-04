@@ -255,6 +255,20 @@ const readDefinitions: ToolDefinition[] = [
             manager: { type: SchemaType.STRING, description: 'Менежерийн нэр (өөрийн тайланд хоосон)' } } }
     },
     {
+        name: 'import_erp_file',
+        description: 'Чатад хавсаргасан ERP экспортыг (.xlsx/.csv/.tsv — гэрээний property.sale эсвэл бүтээгдэхүүний экспорт) идэвхтэй төслийн ERP snapshot болгон импортлоно. Өмнөх импорттой харьцуулсан тоог картаар харуулж, батлагдсаны дараа хадгална. file_url-д [Хавсаргасан файлууд]-ын URL-ийг яг өг. Эх үүсвэр олон бол хэрэглэгчээс асуу.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                file_url: { type: SchemaType.STRING, description: 'Хавсаргасан файлын URL (яг өгөгдсөнөөр)' },
+                file_name: { type: SchemaType.STRING, description: 'Хавсаргасан файлын нэр' },
+                source: { type: SchemaType.STRING, description: 'ERP эх үүсвэрийн нэр (жишээ: Elysium ERP); ганц бол орхиж болно' },
+                report_date: { type: SchemaType.STRING, description: 'Экспортын огноо YYYY-MM-DD; орхивол өнөөдөр' }
+            },
+            required: ['file_url']
+        }
+    },
+    {
         name: 'get_weekly_sales_report',
         description: 'Лхагва гарагийн хурлын долоо хоногийн борлуулалтын тайлан (идэвхтэй төсөл): энэ долоо хоногийн гэрээ (өмнөх долоо хоногтой), сарын явц ба төлөвлөгөө, менежерээр, мөнгөн орлого (ERP-ийн хоёр snapshot-ын зөрүү), авлага, блокоор үлдэгдэл. Эх сурвалж: ERP экспорт, байхгүй бол CRM — sources-ийг хэл. plainText-ийг хуулахад бэлэн.',
         parameters: {

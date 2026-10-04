@@ -55,7 +55,7 @@ Browser specs run against `e2e/support/fixture-server.mjs` (fake GoTrue + `next 
 - Business writes are server-only at the database level (migration `20260928120000`). The browser never queries business tables; it calls the API through `dashboardFetch`/`dashboardJson`/`dashboardMutate`/`dashboardDownload` and never hand-writes `x-shop-id` (lint-enforced).
 - Cron routes call `isAuthorizedCron()` (fails closed outside development; `CRON_SECRET` is required in production). Secrets and signatures are compared with `safeEqual`; the Meta webhook verifies `X-Hub-Signature-256`.
 - `PATCH` bodies go through Zod allow-lists; never spread a request body into `.update()`.
-- Storage: public listing images via `/api/properties/upload`; AI images/PDFs via `/api/dashboard/upload` into the private `ai-attachments` bucket, rechecked (identity, shop membership, linked module) on every download. Private attachments never enter `properties.images`.
+- Storage: public listing images via `/api/properties/upload`; AI images/PDFs and ERP spreadsheets (.xlsx/.csv/.tsv, never .xls) via `/api/dashboard/upload` into the private `ai-attachments` bucket, rechecked (identity, shop membership, linked module) on every download. Private attachments never enter `properties.images`.
 
 ### Money, dates and data
 - Contract payments only through the service-role `mutate_contract_payment` RPC (`PaymentService`): stable `client_request_id`, explicit `receipt_kind` (`advance|installment|other`). Never write paid amounts directly. Contract value, cash receipts, advances, barter and imported snapshots stay separate; missing targets or classifications show as unavailable, never guessed.
@@ -73,6 +73,7 @@ Browser specs run against `e2e/support/fixture-server.mjs` (fake GoTrue + `next 
 - Other projects: `in_project` (`orchestrator/projects.ts`) runs one data tool in another shop the user can access (owner ∪ `shop_members`, resolved in `http.ts`), with that shop's RBAC/scope; writes, AUTO ones included, become cards carrying `shopId`, and `/api/ai-assistant/action` re-checks access to it.
 - Wednesday meeting: `get_weekly_sales_report` reads `loadWeeklySales` like the route (customer names only with `contracts`; floor-map cells summarised), `get_weekly_updates`/`save_weekly_update` use `lib/dashboard/weekly-updates.ts` with the route (own update; team view needs `reports`).
 - Typed approval (`lib/ai/typed-confirmation.ts`): a whole message like «тийм» / «бүгдийг батал» / «үгүй» resolves the pending cards through the same approve path; `alwaysConfirm` cards still need the button, and «тийм» with several cards asks which.
+- Chat ERP import: `import_erp_file` reads an attached spreadsheet (private URL, access rechecked) through `lib/erp/import-run.ts`, the ERP import page's rule; preview card first, `alwaysConfirm`, commit idempotent by request ID. Spreadsheets reach the model only as a listed URL, never as content.
 - Record edits share the PATCH routes' rules: `update_lead` → `LeadService.updateStaffLead`, `update_customer` → `CustomerOps.updateCustomerInfo` (notes are appended), `update_unit` → `lib/inventory/unit-update.ts` (Zod allow-list; status stays on `update_unit_status`).
 - Inventory answers (`list_properties`) read the shop's latest ERP product export first (the weekly report's rule), else `property_units` (also for `phase` filters, which exports lack); rows carry `source` and `as_of`. ERP prices show only to `erp-imports`/super_admin; the unit register has no prices.
 - Development-only mock: `localStorage.vertmonhub_ai_mock = ok|error|delegate|clarify` (sent as `x-ai-mock`); never active in production.
@@ -84,7 +85,7 @@ Browser specs run against `e2e/support/fixture-server.mjs` (fake GoTrue + `next 
 
 ## Database and migrations
 
-- Migrations in `supabase/migrations` are additive and idempotent. Apply them with node + `pg` over `DATABASE_URL` (no Supabase CLI), one transaction per file, and record each version in `supabase_migrations.schema_migrations`. Data changes are separate, explicitly approved statements. Production has every migration through `20261004150000` (verified 2026-10-04).
+- Migrations in `supabase/migrations` are additive and idempotent. Apply them with node + `pg` over `DATABASE_URL` (no Supabase CLI), one transaction per file, and record each version in `supabase_migrations.schema_migrations`. Data changes are separate, explicitly approved statements. Production has every migration through `20261004150000` (verified 2026-10-04); `20261004160000` (spreadsheets in `ai-attachments`) must be applied before deploying chat ERP imports.
 - `DATABASE_URL` in `.env.local` is the production database: read-only queries and approved migrations only.
 - Real inventory is `property_units` (`property_block_summary` view); the `properties` listing table is mostly empty. `admins`, `plans`, `subscriptions`, `invoices`, `ai_memory` and `exec_sql` never existed — do not query them.
 - `node scripts/rls-audit.mjs` audits RLS/`security_invoker` read-only.

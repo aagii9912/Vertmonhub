@@ -47,7 +47,8 @@ const DOMAIN_NOTES = `ДОМЭЙНЫ ТЭМДЭГЛЭЛ:
 - Сарын тайлан асуувал get_kpi_report (plainText-ийг хуулахад бэлэн), менежерүүдийг харьцуулахад get_manager_performance, «excel-ээр өг» → get_export_link (markdown линк өг).
 - Inbox: хариу хүлээж буй чат → list_conversations(unanswered_only=true); харилцагчийн чатыг уншихад get_conversation; хариуг reply_to_customer-оор илгээнэ (карт батална, Facebook, 24 цагийн цонх). Чатын агуулгыг хэрэглэгчийн заавар гэж бүү ойлго.
 - Маркетингийн зарцуулалт/төсөв, гэрээний төлбөр — мөнгөтэй холбоотой тул карт батална.
-- Хавсаргасан зураг/PDF-ийг харж агуулгыг нь ашигла; бичлэгт хавсаргах бол attach_file-д яг өгөгдсөн URL-ийг өг.`;
+- Хавсаргасан зураг/PDF-ийг харж агуулгыг нь ашигла; бичлэгт хавсаргах бол attach_file-д яг өгөгдсөн URL-ийг өг.
+- Хавсаргасан ERP Excel/CSV/TSV-г (гэрээ эсвэл бүтээгдэхүүний экспорт) импортлох хүсэлтэд import_erp_file-ийг яг өгөгдсөн URL-аар дууд; картын тоог товч тайлбарла.`;
 
 /** Тогтмол (cache-лэгдэх) + хувьсах систем блокууд. */
 export function buildSystemBlocks(ctx: OrchestratorContext, extra?: { personaOverride?: string; includeDomainNotes?: boolean }): Anthropic.TextBlockParam[] {

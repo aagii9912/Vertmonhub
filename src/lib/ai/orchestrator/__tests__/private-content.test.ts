@@ -96,6 +96,16 @@ describe('private attachments in model input', () => {
         expect(fetch).not.toHaveBeenCalled();
     });
 
+    it('lists an authorized ERP spreadsheet for import_erp_file without sending its bytes', async () => {
+        const sheet = { url: privateAttachmentUrl(`${shopId}/${userId}/${fileId}.xlsx`), name: 'ERP.xlsx', mimeType: 'application/vnd.ms-excel' };
+        const content = await buildUserContent('Импортлоорой', [sheet], access);
+        expect(download).not.toHaveBeenCalled();
+        expect(content).toEqual([{ type: 'text', text: expect.stringContaining(`ERP.xlsx — ${sheet.url} (application/vnd.openxmlformats-officedocument.spreadsheetml.sheet)`) }]);
+        expect(JSON.stringify(content)).toContain('import_erp_file');
+        state.metadataError = new Error('Synthetic metadata error');
+        expect(await buildUserContent('Импортлоорой', [sheet], access)).toEqual([{ type: 'text', text: 'Импортлоорой' }]);
+    });
+
     it('rejects foreign URLs without server fetching or including them in model content', async () => {
         const foreign = { ...attachment, url: 'http://169.254.169.254/latest/meta-data' };
         expect(await buildUserContent('Файлыг унш', [foreign], access)).toEqual([{ type: 'text', text: 'Файлыг унш' }]);

@@ -8,20 +8,34 @@ import { ProjectScopeError } from '@/lib/sales/project-scope';
 import { withRoute } from '@/lib/api/route';
 
 /**
- * POST /api/dashboard/upload — AI туслахын хавсралт (зураг/PDF) upload.
+ * POST /api/dashboard/upload — AI туслахын хавсралт (зураг/PDF, ERP-ийн Excel/CSV/TSV) upload.
  *
  * 2026-09 review (H10/M19): өмнө нь MIME/хэмжээ шалгадаггүй, өргөтгөлийг файлын нэрээс
  * авдаг байсан тул public bucket дээр дурын HTML/SVG хадгалах боломжтой байв.
  * Одоо: зөвшөөрөгдсөн MIME л, ≤4MB (Vercel body хязгаар 4.5MB), өргөтгөл MIME-ээс.
+ * Хүснэгтийн MIME-г браузер өөр өөрөөр (Windows дээр CSV = application/vnd.ms-excel) өгдөг тул
+ * зөвхөн .xlsx/.csv/.tsv нэртэй файлын MIME-г стандарт утга руу хөрвүүлнэ; .xls хүлээн авахгүй.
  */
+const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 const ALLOWED: Record<string, string> = {
     'image/jpeg': 'jpg',
     'image/png': 'png',
     'image/webp': 'webp',
     'image/gif': 'gif',
     'application/pdf': 'pdf',
+    [XLSX]: 'xlsx',
+    'text/csv': 'csv',
+    'text/tab-separated-values': 'tsv',
 };
+const SHEET_TYPES: Record<string, string> = { xlsx: XLSX, csv: 'text/csv', tsv: 'text/tab-separated-values' };
+const SHEET_ALIASES = new Set(['', 'application/octet-stream', 'application/vnd.ms-excel', 'text/plain', 'application/csv', 'text/x-csv']);
 const MAX_BYTES = 4 * 1024 * 1024;
+
+function uploadType(file: File): string {
+    const ext = file.name.toLowerCase().match(/\.(xlsx|csv|tsv)$/)?.[1];
+    if (ext && (file.type === SHEET_TYPES[ext] || SHEET_ALIASES.has(file.type))) return SHEET_TYPES[ext];
+    return file.type;
+}
 
 export const POST = withRoute({ module: 'ai-assistant', access: 'write', error: 'Файл upload хийхэд алдаа гарлаа' }, async ({ request, shop: authShop }) => {
     const formData = await request.formData();
@@ -30,9 +44,10 @@ export const POST = withRoute({ module: 'ai-assistant', access: 'write', error: 
     if (!file || !(file instanceof File)) {
         return NextResponse.json({ error: 'Файл олдсонгүй' }, { status: 400 });
     }
-    const ext = ALLOWED[file.type];
+    const type = uploadType(file);
+    const ext = ALLOWED[type];
     if (!ext) {
-        return NextResponse.json({ error: 'Зөвшөөрөгдөөгүй файлын төрөл (зураг эсвэл PDF байх ёстой)' }, { status: 400 });
+        return NextResponse.json({ error: 'Зөвшөөрөгдөөгүй файлын төрөл (зураг, PDF эсвэл .xlsx/.csv/.tsv байх ёстой)' }, { status: 400 });
     }
     if (file.size > MAX_BYTES) {
         return NextResponse.json({ error: 'Файлын хэмжээ 4MB-аас хэтэрсэн байна' }, { status: 400 });
@@ -47,7 +62,7 @@ export const POST = withRoute({ module: 'ai-assistant', access: 'write', error: 
     const { error } = await supabase.storage
         .from(PRIVATE_ATTACHMENT_BUCKET)
         .upload(fileName, await file.arrayBuffer(), {
-            contentType: file.type,
+            contentType: type,
             upsert: false,
         });
 

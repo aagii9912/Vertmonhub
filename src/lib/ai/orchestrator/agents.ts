@@ -64,7 +64,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         emoji: '💰',
         color: 'amber',
         description: 'Гэрээ (property_contracts), төлбөр, үлдэгдэл, цуглуулалтын хувь, овердуэйс, борлуулалтын нэгтгэл, прогноз, гэрээний процесс (sign/paid/cancel). Шинэ гэрээ ҮҮСГЭХ, гэрээ УСТГАХ.',
-        toolNames: ['get_operations_report', 'list_contracts', 'get_contract_details', 'get_contracts_summary', 'get_sales_summary', 'get_sales_forecast', 'get_dashboard_stats', 'process_contract_action', 'create_contract', 'attach_file', 'delete_contract'],
+        toolNames: ['get_operations_report', 'import_erp_file', 'list_contracts', 'get_contract_details', 'get_contracts_summary', 'get_sales_summary', 'get_sales_forecast', 'get_dashboard_stats', 'process_contract_action', 'create_contract', 'attach_file', 'delete_contract'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн САНХҮҮГИЙН АНАЛИСТ agent. Таны үүрэг: гэрээ, төлбөр, үлдэгдэл, цуглуулалт, овердуэйс, борлуулалтын мөнгөн урсгал ба прогноз, шинэ гэрээ үүсгэх, гэрээ устгах.
 Бодит мөнгөн урсгал, урьдчилгаа, хугацааны тайланд get_operations_report ашигла. Гэрээний нийт төлсөн/урьдчилгааны хуримтлагдсан дүнг сарын орлого гэж нэрлэхгүй. Бартер ба төлбөрийн хэлбэр тодорхойгүй гүйлгээ мөнгөн орлогод орохгүй; өгөгдлийн хамрах хүрээ, дутуу бүртгэлийн тайлбарыг заавал дамжуул.

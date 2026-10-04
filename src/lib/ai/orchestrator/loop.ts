@@ -54,12 +54,27 @@ function isImage(mime?: string): mime is 'image/jpeg' | 'image/png' | 'image/gif
     return mime === 'image/jpeg' || mime === 'image/png' || mime === 'image/gif' || mime === 'image/webp';
 }
 
-/** Хэрэглэгчийн мессеж + хавсралт (зураг/PDF inline base64) → content блокууд. */
+const SHEET_MIME: Record<string, string> = {
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', csv: 'text/csv', tsv: 'text/tab-separated-values',
+};
+
+/** Хувийн хавсралтын хүснэгт (ERP экспорт) — агуулгыг модельд өгөхгүй, import_erp_file уншина. */
+async function spreadsheetAttachment(att: OrchestratorAttachment, access?: AttachmentAccess): Promise<OrchestratorAttachment | null> {
+    const parsed = parsePrivateAttachmentUrl(att.url);
+    const ext = parsed?.path.toLowerCase().match(/\.(xlsx|csv|tsv)$/)?.[1];
+    if (!parsed || !ext || !access) return null;
+    const allowed = await canReadPrivateAttachment(supabaseAdmin(), att.url, access).catch(() => false);
+    return allowed ? { ...att, mimeType: SHEET_MIME[ext] } : null;
+}
+
+/** Хэрэглэгчийн мессеж + хавсралт (зураг/PDF inline base64, хүснэгтийг зөвхөн жагсаалтад) → content блокууд. */
 export async function buildUserContent(text: string, attachments?: OrchestratorAttachment[], access?: AttachmentAccess): Promise<Anthropic.ContentBlockParam[]> {
     if (!attachments || attachments.length === 0) return [{ type: 'text', text }];
     const accessible: OrchestratorAttachment[] = [];
     const blocks: Anthropic.ContentBlockParam[] = [];
     for (const att of attachments) {
+        const sheet = await spreadsheetAttachment(att, access);
+        if (sheet) { accessible.push(sheet); continue; }
         if (!isImage(att.mimeType) && att.mimeType !== 'application/pdf') continue;
         if (!isAllowedAttachmentUrl(att.url)) continue;
         try {
@@ -85,7 +100,8 @@ export async function buildUserContent(text: string, attachments?: OrchestratorA
         } catch { /* Unauthorized or unavailable files are excluded from model input. */ }
     }
     const list = accessible.map((a, i) => `${i + 1}. ${a.name || 'файл'} — ${a.url}${a.mimeType ? ` (${a.mimeType})` : ''}`).join('\n');
-    blocks.push({ type: 'text', text: list ? `${text}\n\n[Хавсаргасан файлууд]:\n${list}\n(Бичлэгт хавсаргах бол attach_file-д яг дээрх URL-ийг өг.)` : text });
+    const sheetHint = accessible.some((a) => Object.values(SHEET_MIME).includes(a.mimeType ?? '')) ? ' ERP-ийн Excel/CSV экспортыг импортлох бол import_erp_file-д яг тэр URL, file_name-ийг өг.' : '';
+    blocks.push({ type: 'text', text: list ? `${text}\n\n[Хавсаргасан файлууд]:\n${list}\n(Бичлэгт хавсаргах бол attach_file-д яг дээрх URL-ийг өг.${sheetHint})` : text });
     return blocks;
 }
 
