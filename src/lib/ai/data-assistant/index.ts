@@ -29,7 +29,7 @@ import {
     fetchMarketingSummary, fetchMarketingBudgetStatus, fetchMarketIndicators,
     createSocialPost, rememberFact,
 } from './functions';
-import { inviteUser, assignRole, createRole } from './admin-functions';
+import { inviteUser, assignRole, createRole, setUserProjects, setSalesTarget } from './admin-functions';
 import { importErpFileTool } from './erp-import';
 import { getKpiReport, getManagerPerformanceTool, getWeeklySalesReportTool, getWeeklyUpdatesTool, saveWeeklyUpdateTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, updateCustomerTool, listConversationsTool, getConversationTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
 import { logCall, setFollowup, assignLeadManager, updateLeadTool, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
@@ -161,6 +161,8 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     invite_user: ({ shopId, args, confirm, userId }) => inviteUser(shopId, args, confirm, userId),
     assign_role: ({ shopId, args, confirm, userId }) => assignRole(shopId, args, confirm, userId),
     create_role: ({ shopId, args, confirm }) => createRole(shopId, args, confirm),
+    set_user_projects: ({ args, confirm, userId }) => setUserProjects(args, confirm, userId),
+    set_sales_target: ({ shopId, args, confirm }) => setSalesTarget(shopId, args, confirm),
 };
 
 // ============================================

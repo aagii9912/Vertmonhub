@@ -943,6 +943,32 @@ const adminDefinitions: ToolDefinition[] = [
         }
     },
     {
+        name: 'set_user_projects',
+        description: 'Хэрэглэгчийг төсөлд (shop = төсөл) нэмэх эсвэл хасах — Админ → Хэрэглэгчид → Төслүүд-тэй адил. Борлуулалтын менежерийг нэмэхэд менежерийн бүртгэл, төслийн харьяалал хамт үүснэ; хасахад холбоос салж идэвхгүй болно. ЗӨВХӨН super_admin; баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                user: { type: SchemaType.STRING, description: 'Хэрэглэгчийн имэйл эсвэл нэр' },
+                add_projects: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: 'Нэмэх төслийн нэрс' },
+                remove_projects: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: 'Хасах төслийн нэрс' }
+            },
+            required: ['user']
+        }
+    },
+    {
+        name: 'set_sales_target',
+        description: 'Идэвхтэй төслийн сарын борлуулалтын (гэрээний) төлөвлөгөөг тавих (₮) — Лхагвын тайлан, KPI-д ашиглагдана. ЗӨВХӨН super_admin; баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                year: { type: SchemaType.NUMBER, description: 'Он; орхивол энэ он' },
+                month: { type: SchemaType.NUMBER, description: 'Сар (1–12)' },
+                amount: { type: SchemaType.NUMBER, description: 'Төлөвлөгөө (₮)' }
+            },
+            required: ['month', 'amount']
+        }
+    },
+    {
         name: 'create_role',
         description: 'Шинэ дүр (role) ба модулийн эрхүүдийг үүсгэх. ЗӨВХӨН super_admin. Хэрэглэгчээс баталгаажуулалт авна.',
         parameters: {

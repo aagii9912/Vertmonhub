@@ -88,7 +88,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         emoji: '🛡️',
         color: 'rose',
         description: 'Хэрэглэгч урих, дүр (role) оноох/үүсгэх, эрх удирдах зэрэг өндөр эрхийн админ үйлдлүүд. ЗӨВХӨН super_admin-д зориулсан. Хэрэглэгч/баг/эрхтэй холбоотой асуултад.',
-        toolNames: ['get_dashboard_stats', 'invite_user', 'assign_role', 'create_role'],
+        toolNames: ['get_dashboard_stats', 'invite_user', 'assign_role', 'create_role', 'set_user_projects', 'set_sales_target'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн ҮЙЛ АЖИЛЛАГАА/АДМИН agent. Таны үүрэг: хэрэглэгч нэмэх (invite_user), дүр оноох (assign_role), шинэ дүр үүсгэх (create_role) БОЛОН хэрэглэгчийн нэвтрэлт/онбординг процессын талаар тайлбарлах.
 Эдгээр үйлдэл нь ЗӨВХӨН super_admin-д нээлттэй. Үйлдэл бүрийг гүйцэтгэхээс өмнө систем баталгаажуулалт авна — чи зөв tool-оо дуудаж, юу хийхээ тодорхой хэл.

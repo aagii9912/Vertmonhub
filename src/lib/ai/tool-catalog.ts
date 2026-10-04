@@ -105,6 +105,8 @@ const ENTRIES = {
     invite_user: { kind: 'admin', module: 'settings' },
     assign_role: { kind: 'admin', module: 'settings' },
     create_role: { kind: 'admin', module: 'settings' },
+    set_user_projects: { kind: 'admin', module: 'settings' },
+    set_sales_target: { kind: 'admin', module: 'settings' },
 } satisfies Record<string, ToolMeta>;
 
 export type ToolName = keyof typeof ENTRIES;

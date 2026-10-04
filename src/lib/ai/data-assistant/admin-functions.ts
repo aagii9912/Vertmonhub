@@ -10,6 +10,10 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { adminUserInput, checkRoleAssignment, isAssignableRole, provisionUserAccess, resolveTargetShop } from '@/lib/admin/user-provisioning';
 import { ALL_MODULES, clearPermissionsCache } from '@/lib/rbac';
 import { CreateRoleSchema } from '@/lib/validations/schemas';
+import { updateUserProjects } from '@/lib/admin/user-projects';
+import { getTeamTargets, upsertTeamTargets } from '@/lib/sales/targets';
+import { ubParts } from '@/lib/utils/date';
+import { formatMNT } from '@/lib/utils/currency';
 
 function confirmNeeded(tool: string, args: any, label: string, preview: Record<string, unknown>) {
     return { requiresConfirmation: true, action: { tool, args }, label, preview };
@@ -162,5 +166,95 @@ export async function createRole(_shopId: string, args: any, confirm = false) {
     } catch (error) {
         console.error('AI role creation failed:', error);
         return { error: 'Дүр үүсгэх мэдээллийг бүрэн шалгаж чадсангүй. Дахин оролдоно уу.' };
+    }
+}
+
+const projectNames = (value: unknown) => (Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : [])
+    .map((name) => String(name).trim()).filter(Boolean);
+
+/** Хэрэглэгчийг төсөлд нэмэх/хасах — Admin → Хэрэглэгчид → Төслүүд-тэй нэг дүрэм (`updateUserProjects`). */
+export async function setUserProjects(args: any, confirm = false, actingUserId?: string) {
+    try {
+        if (!actingUserId) return { error: 'Үйлдэл хийж буй хэрэглэгч тодорхойгүй байна' };
+        const add = projectNames(args.add_projects);
+        const remove = projectNames(args.remove_projects);
+        if (!add.length && !remove.length) return { error: 'add_projects эсвэл remove_projects шаардлагатай' };
+        const db = supabaseAdmin();
+
+        let users: Array<{ id: string; full_name: string | null; email: string | null }>;
+        const who = String(args.user || '').trim();
+        if (typeof args.user_id === 'string' && args.user_id) {
+            const { data, error } = await db.from('user_profiles').select('id, full_name, email').eq('id', args.user_id).limit(1);
+            if (error) throw error;
+            users = data || [];
+        } else if (who) {
+            const pattern = who.replace(/[\\%_]/g, '\\$&');
+            const { data, error } = await db.from('user_profiles').select('id, full_name, email')
+                .ilike(who.includes('@') ? 'email' : 'full_name', who.includes('@') ? pattern : `%${pattern}%`).limit(5);
+            if (error) throw error;
+            users = data || [];
+        } else {
+            return { error: 'user (имэйл эсвэл нэр) шаардлагатай' };
+        }
+        if (!users.length) return { error: 'Хэрэглэгч олдсонгүй' };
+        if (users.length > 1) return { error: 'Олон хэрэглэгч таарлаа — имэйлээр тодруулна уу', options: users.map((u) => ({ name: u.full_name, email: u.email })) };
+        const target = users[0];
+
+        const [{ data: shops, error: shopError }, { data: members, error: memberError }] = await Promise.all([
+            db.from('shops').select('id, name'),
+            db.from('shop_members').select('shop_id').eq('user_id', target.id),
+        ]);
+        if (shopError) throw shopError;
+        if (memberError) throw memberError;
+        const byName = (name: string) => (shops || []).find((shop) => String(shop.name || '').trim().toLowerCase() === name.toLowerCase());
+        const unknown = [...add, ...remove].filter((name) => !byName(name));
+        if (unknown.length) return { error: `Төсөл олдсонгүй: ${unknown.join(', ')}`, options: (shops || []).map((shop) => shop.name) };
+        const wanted = new Set((members || []).map((row) => row.shop_id as string));
+        for (const name of add) wanted.add(byName(name)!.id);
+        for (const name of remove) wanted.delete(byName(name)!.id);
+
+        const label = target.full_name || target.email || 'хэрэглэгч';
+        if (!confirm) {
+            return confirmNeeded('set_user_projects', { user_id: target.id, add_projects: add, remove_projects: remove }, `Төслийн эрх: ${label}`, {
+                Хэрэглэгч: `${label}${target.email && target.full_name ? ` (${target.email})` : ''}`,
+                Нэмэх: add.join(', ') || '—', Хасах: remove.join(', ') || '—',
+            });
+        }
+        const result = await updateUserProjects(db, { actorId: actingUserId, userId: target.id, shopIds: [...wanted] });
+        if (!result.ok) return { error: result.error, ...(result.partial_failure ? { partial_failure: true } : {}) };
+        return { success: true, message: `${label}-ийн төслийн эрхийг шинэчиллээ${add.length ? ` · нэмсэн: ${add.join(', ')}` : ''}${remove.length ? ` · хассан: ${remove.join(', ')}` : ''}.` };
+    } catch (error) {
+        console.error('AI user projects update failed:', error);
+        return { error: 'Хэрэглэгчийн төслийн эрхийг хадгалж чадсангүй. Дахин оролдоно уу.' };
+    }
+}
+
+/** Идэвхтэй төслийн сарын борлуулалтын төлөвлөгөө — /admin/sales-targets-тэй нэг (`upsertTeamTargets`). */
+export async function setSalesTarget(shopId: string, args: any, confirm = false) {
+    try {
+        const year = args.year === undefined ? ubParts().year : Number(args.year);
+        const month = Number(args.month);
+        const amount = Number(args.amount);
+        if (!Number.isInteger(year) || year < 2000 || year > 2100 || !Number.isInteger(month) || month < 1 || month > 12) {
+            return { error: 'year (2000–2100) ба month (1–12) зөв байх ёстой' };
+        }
+        if (!Number.isFinite(amount) || amount < 0) return { error: 'amount нь 0-ээс их буюу тэнцүү дүн (₮) байна' };
+        const db = supabaseAdmin();
+        if (!confirm) {
+            const [current, { data: shop }] = await Promise.all([
+                getTeamTargets(db, shopId, year, (error) => { throw error; }),
+                db.from('shops').select('name').eq('id', shopId).maybeSingle(),
+            ]);
+            return confirmNeeded('set_sales_target', { year, month, amount }, `Борлуулалтын төлөвлөгөө: ${year}-${String(month).padStart(2, '0')}`, {
+                Төсөл: shop?.name || '-', Сар: `${year} оны ${month}-р сар`,
+                Одоогийн: current[month - 1] ? formatMNT(current[month - 1]) : 'тохируулаагүй', Шинэ: formatMNT(amount),
+            });
+        }
+        const { error } = await upsertTeamTargets(db, shopId, year, [{ month, amount }]);
+        if (error) return { error: 'Төлөвлөгөө хадгалахад алдаа гарлаа' };
+        return { success: true, message: `${year} оны ${month}-р сарын төлөвлөгөөг ${formatMNT(amount)} болголоо.` };
+    } catch (error) {
+        console.error('AI sales target update failed:', error);
+        return { error: 'Төлөвлөгөөг шалгаж чадсангүй. Дахин оролдоно уу.' };
     }
 }
