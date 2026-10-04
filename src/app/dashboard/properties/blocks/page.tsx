@@ -272,7 +272,7 @@ export default function BlocksPage() {
             {blocks.length === 0 ? (
                 <EmptyState icon={<Building2 className="w-7 h-7" />} title="Энэ ангилалд блок алга" />
             ) : (
-                <div className="mb-4 grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                <div className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
                     {blocks.map((b) => {
                         const pctSold = b.total_units > 0 ? Math.round((b.sold_units / b.total_units) * 100) : 0;
                         const isSel = selectedBlock === b.block;
@@ -280,9 +280,10 @@ export default function BlocksPage() {
                             <button
                                 key={b.block}
                                 onClick={() => { setSelectedUnit(null); loadBlock(b.block); }}
+                                aria-pressed={isSel}
                                 className={cn(
-                                    'min-h-32 bg-surface p-3 text-left transition-colors',
-                                    isSel ? 'bg-brand-soft ring-2 ring-inset ring-brand/30' : 'hover:bg-surface-2',
+                                    'focus-ring min-h-32 rounded-md border p-3 text-left transition-colors',
+                                    isSel ? 'border-brand bg-brand-soft' : 'border-border bg-surface hover:bg-surface-2',
                                 )}
                             >
                                 <div className="flex items-center justify-between mb-2">
