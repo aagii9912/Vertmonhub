@@ -1,6 +1,6 @@
 /**
  * Лид үүсгэх нэг дүрэм. Ажилтны оруулсан лид (dashboard, AI, нийтийн формын ажилтны
- * горим) `resolveStaffLead`-ээр төсөл, хариуцагч менежер, төлөв, эх үүсвэрээ тодорхойлно.
+ * горим) `resolveStaffLead`-ээр төсөл, хариуцагч менежер, төлөв, эх үүсвэр, ангиллаа тодорхойлно.
  * Харилцагчийн нэр/холбоо барих мэдээллийг `resolveLeadIdentity` нэг дүрмээр шийднэ
  * (dashboard, AI, уулзалтын хуудас): нэргүй лид = `customer_name` null, ажилтан
  * `anonymous: true`-г илт сонгоно, утас эсвэл и-мэйл заавал. Гадны суваг нэрийг
@@ -18,6 +18,7 @@ import {
 import { resolveActiveManagerName, resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { applyLeadScope, assertProjectManager, canAccessProject, ProjectScopeError, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
+import { resolveLeadCategory, type LeadCategoryInput } from '@/lib/services/LeadCategoryService';
 import type { LeadSource, LeadStatus } from '@/types/property';
 
 export interface StaffLeadActor {
@@ -33,6 +34,8 @@ export interface StaffLeadRequest {
     source?: unknown;
     /** Админ өөр идэвхтэй менежерт шууд оноох нэр (бусдад үл хэрэгсэнэ). */
     assignManager?: string | null;
+    /** Лидийн ангилал (заавал биш): сонгогчийн id эсвэл AI-ийн яг нэр. Зөвхөн энэ төслийн идэвхтэй ангилал. */
+    category?: LeadCategoryInput;
 }
 
 export interface ResolvedStaffLead {
@@ -40,6 +43,7 @@ export interface ResolvedStaffLead {
     status: LeadStatus;
     source: LeadSource;
     sales_manager_name: string | null;
+    category_id: string | null;
 }
 
 export type Failure = { ok: false; status: number; error: string };
@@ -105,6 +109,9 @@ export async function resolveStaffLead(
     }
     const status = (ACTIVE_STATUSES as string[]).includes(request.status as string) ? request.status as LeadStatus : 'new';
 
+    const category = request.category ? await resolveLeadCategory(db, shopId, request.category) : null;
+    if (category && !category.ok) return category;
+
     const identity = await resolveManagerIdentity(db, shopId, actor.userId);
     let managerName = identity.isManager ? identity.managerName : null;
     if ((actor.role === 'admin' || actor.role === 'super_admin') && request.assignManager) {
@@ -125,6 +132,7 @@ export async function resolveStaffLead(
         status,
         source: toLeadSource(typeof request.source === 'string' ? request.source : null),
         sales_manager_name: managerName,
+        category_id: category?.categoryId ?? null,
     };
 }
 

@@ -85,6 +85,17 @@ describe('resolveStaffLead', () => {
         expect(await resolveStaffLead(db, 'shop-1', { projectId: project, assignManager: 'Сараа' }, admin)).toMatchObject({ ok: true, sales_manager_name: 'Сараа' });
         expect(await resolveStaffLead(db, 'shop-1', { projectId: project, assignManager: 'Байхгүй' }, admin)).toMatchObject({ ok: false, status: 400 });
     });
+
+    it('accepts an optional active category of the same project shop', async () => {
+        const category = '00000000-0000-4000-8000-0000000000c1';
+        state.tables.lead_categories = [{ id: category, shop_id: 'shop-1', name: 'Бартер', tone: 'neutral', sort_order: 10, is_active: true }];
+        expect(await resolveStaffLead(db, 'shop-1', { projectId: project }, admin)).toMatchObject({ ok: true, category_id: null });
+        expect(await resolveStaffLead(db, 'shop-1', { projectId: project, category: { id: category } }, admin)).toMatchObject({ ok: true, category_id: category });
+        expect(await resolveStaffLead(db, 'shop-1', { projectId: project, category: { name: 'бартер' } }, admin)).toMatchObject({ ok: true, category_id: category });
+        expect(await resolveStaffLead(db, 'shop-2', { projectId: other, category: { id: category } }, admin)).toMatchObject({ ok: false, status: 400 });
+        expect(await resolveStaffLead(db, 'shop-1', { projectId: project, category: { name: 'Таамаг' } }, admin))
+            .toMatchObject({ ok: false, status: 400, error: expect.stringContaining('Боломжтой ангилал: Бартер') });
+    });
 });
 
 describe('insertLeadOnce', () => {
