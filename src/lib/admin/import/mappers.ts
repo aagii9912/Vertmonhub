@@ -12,7 +12,7 @@
  * Бүх функц цэвэр тул __tests__/mappers.test.ts-д шууд тестлэгдэнэ.
  */
 
-import { leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
+import { hasAnonymousLeadContact, leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
 
 export type ImportRow = Record<string, unknown>;
 
@@ -362,8 +362,11 @@ export function mapLeadRow(row: ImportRow, rowNum: number): MappedRow<LeadInsert
     // Нэр заавал биш (нэргүй лид); утас давхардлын түлхүүр тул заавал хэвээр.
     const name = normalizeLeadName(getVal(row, 'Нэр', 'name', 'Name'));
     const phone = getVal(row, 'Утас', 'phone', 'Phone', 'Утасны дугаар');
+    const email = getVal(row, 'Имэйл', 'email', 'Email') || null;
 
     if (!phone) return { error: `Мөр ${rowNum}: Утас хоосон (${leadDisplayName(name)})` };
+    // Нэргүй лидийг дахин олох холбоо заавал (экспортын «-» утас давхардлын шалгалтаас ч гардаг).
+    if (!name && !hasAnonymousLeadContact(phone, email)) return { error: `Мөр ${rowNum}: Нэргүй мөрөнд утас (8+ орон) эсвэл и-мэйл заавал` };
 
     const interestedIn = getVal(row, 'Сонирхож буй', 'interested_in', 'Interested In', 'Сонирхол');
     const notes = getVal(row, 'Тэмдэглэл', 'notes', 'Notes', 'Нэмэлт');
@@ -376,7 +379,7 @@ export function mapLeadRow(row: ImportRow, rowNum: number): MappedRow<LeadInsert
         data: {
             customer_name: clamp(name, 255),
             customer_phone: clamp(phone, 50) as string,
-            customer_email: clamp(getVal(row, 'Имэйл', 'email', 'Email') || null, 255),
+            customer_email: clamp(email, 255),
             budget_max: getNum(row, 'Төсөв', 'budget', 'Budget'),
             source: clamp(getVal(row, 'Эх сурвалж', 'source', 'Source') || 'import', 50),
             notes: composedNotes,
