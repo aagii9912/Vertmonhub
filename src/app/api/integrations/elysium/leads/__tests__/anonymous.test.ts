@@ -3,7 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { POST } from '../route';
 
 vi.mock('@/lib/supabase', () => ({ supabaseAdmin: vi.fn() }));
-vi.mock('@/lib/utils/logger', () => ({ logger: { error: vi.fn() } }));
+vi.mock('@/lib/utils/logger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 
 const projectId = '7e96e44e-32e3-4fec-b1f7-2205d2064e7c';
 const shopId = '00000000-0000-0000-0000-000000000001';
@@ -29,6 +29,13 @@ describe('Elysium anonymous lead intake', () => {
                 if (table === 'projects') return {
                     select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: projectId, shop_id: shopId }, error: null }) }) }),
                 };
+                // Татан авалтаар орсон лид байхгүй: push-ийн давхардлын хамгаалалт шинэ лид үүсгэхийг зөвшөөрнө.
+                if (table === 'external_lead_imports') {
+                    const chain: Record<string, unknown> = {};
+                    for (const method of ['select', 'eq', 'not', 'gte']) chain[method] = () => chain;
+                    chain.limit = async () => ({ data: [], error: null });
+                    return chain;
+                }
                 return {
                     select: () => ({ eq: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }),
                     insert: (record: Record<string, unknown>) => ({ select: () => ({ single: async () => {
