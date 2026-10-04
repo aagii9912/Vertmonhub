@@ -87,7 +87,7 @@ const TOOL_LABEL: Record<string, string> = {
     get_customer_insights: 'Харилцагчийн дүн', list_contracts: 'Гэрээ хайх', get_contract_details: 'Гэрээний мэдээлэл', get_contracts_summary: 'Гэрээний нэгтгэл',
     get_sales_summary: 'Борлуулалтын нэгтгэл', get_sales_forecast: 'Прогноз', compare_properties: 'Байр харьцуулах', get_marketing_summary: 'Маркетингийн нэгтгэл',
     get_marketing_budget_status: 'Төсвийн байдал', get_market_indicators: 'Зах зээлийн үзүүлэлт', update_lead_status: 'Лидийн статус', add_lead_note: 'Тэмдэглэл',
-    schedule_viewing: 'Уулзалт товлох', create_lead: 'Лид үүсгэх', create_customer: 'Харилцагч үүсгэх', create_contract: 'Гэрээ үүсгэх', process_contract_action: 'Гэрээний үйлдэл',
+    schedule_viewing: 'Уулзалт товлох', create_lead: 'Лид үүсгэх', create_customer: 'Харилцагч үүсгэх', create_contract: 'Гэрээ үүсгэх', transfer_contract: 'Гэрээ шилжүүлэх', process_contract_action: 'Гэрээний үйлдэл',
     update_property_status: 'Байрны статус', update_property_price: 'Байрны үнэ', create_property: 'Байр үүсгэх', bulk_update_leads: 'Олон лид шинэчлэх', attach_file: 'Файл хавсаргах',
     remember_fact: 'Санах', create_social_post: 'Пост үүсгэх', delete_lead: 'Лид устгах', delete_contract: 'Гэрээ устгах', invite_user: 'Хэрэглэгч урих', assign_role: 'Эрх оноох',
 };

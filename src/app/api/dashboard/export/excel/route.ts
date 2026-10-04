@@ -10,6 +10,7 @@ import { fetchAllRows } from '@/lib/utils/pagination';
 import { sourceLabel, statusLabel } from '@/lib/leads/labels';
 import { UNIT_STATUS_LABEL, unitCategoryLabel } from '@/lib/inventory/labels';
 import { contractStatusLabel } from '@/lib/contracts/labels';
+import { loadContractTransferSummaries } from '@/lib/services/ContractService';
 
 /** Export төрөл бүр өөрийн модулийн унших эрх шаардана (өмнө нь зөвхөн auth). */
 const EXPORT_MODULE: Record<string, string> = {
@@ -118,33 +119,42 @@ export async function GET(request: NextRequest) {
             filename = `харилцагчид_${ubDateStr()}.xlsx`;
 
         } else if (type === 'contracts') {
-            const rows = await fetchAllRows<Record<string, unknown>>((from, to) => supabase
-                .from('property_contracts')
-                .select('*')
-                .eq('shop_id', shopId)
-                .is('deleted_at', null)
-                .order('contract_date', { ascending: false, nullsFirst: false })
-                .order('id')
-                .range(from, to));
+            // Шилжүүлсэн гэрээ: одоогийн эзэмшигч + анхны худалдан авагч, сүүлийн шилжүүлгийн огноо.
+            const [rows, transfers] = await Promise.all([
+                fetchAllRows<Record<string, unknown>>((from, to) => supabase
+                    .from('property_contracts')
+                    .select('*')
+                    .eq('shop_id', shopId)
+                    .is('deleted_at', null)
+                    .order('contract_date', { ascending: false, nullsFirst: false })
+                    .order('id')
+                    .range(from, to)),
+                loadContractTransferSummaries(supabase, shopId),
+            ]);
 
-            const exportData = rows.map((c) => ({
-                'Код': c.unit_label || '-',
-                'Ээлж/Блок': c.block_name || '-',
-                'Давхар': c.floor || '-',
-                'Айлын төрөл': c.unit_type || '-',
-                'Загвар': c.model || '-',
-                'Өрөө': c.rooms || '-',
-                'Талбай (м²)': c.contracted_area || '-',
-                'М.кв үнэ': Number(c.price_per_sqm) || 0,
-                'Нийт дүн': Number(c.total_price) || 0,
-                'Төлсөн': Number(c.paid_amount) || 0,
-                'Үлдэгдэл': Number(c.balance) || 0,
-                'Төлөв': contractStatusLabel(c.contract_status as string | null),
-                'Менежер': c.sales_manager || '-',
-                'Худалдан авагч': c.customer_name || '-',
-                'Регистр': c.customer_registration || '-',
-                'Огноо': c.contract_date ? new Date(String(c.contract_date)).toLocaleDateString('mn-MN') : '-',
-            }));
+            const exportData = rows.map((c) => {
+                const transfer = transfers.get(String(c.id));
+                return {
+                    'Код': c.unit_label || '-',
+                    'Ээлж/Блок': c.block_name || '-',
+                    'Давхар': c.floor || '-',
+                    'Айлын төрөл': c.unit_type || '-',
+                    'Загвар': c.model || '-',
+                    'Өрөө': c.rooms || '-',
+                    'Талбай (м²)': c.contracted_area || '-',
+                    'М.кв үнэ': Number(c.price_per_sqm) || 0,
+                    'Нийт дүн': Number(c.total_price) || 0,
+                    'Төлсөн': Number(c.paid_amount) || 0,
+                    'Үлдэгдэл': Number(c.balance) || 0,
+                    'Төлөв': contractStatusLabel(c.contract_status as string | null),
+                    'Менежер': c.sales_manager || '-',
+                    'Худалдан авагч': c.customer_name || '-',
+                    'Регистр': c.customer_registration || '-',
+                    'Анхны худалдан авагч': transfer?.originalHolder || '-',
+                    'Шилжүүлсэн огноо': transfer?.lastTransferDate || '-',
+                    'Огноо': c.contract_date ? new Date(String(c.contract_date)).toLocaleDateString('mn-MN') : '-',
+                };
+            });
 
             sheet = { name: 'Гэрээнүүд', rows: exportData };
             filename = `гэрээнүүд_${ubDateStr()}.xlsx`;

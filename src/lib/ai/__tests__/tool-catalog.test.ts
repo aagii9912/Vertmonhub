@@ -14,7 +14,7 @@ describe('tool catalog ↔ schema definitions', () => {
 
     it('keeps AUTO tools reversible writes and never auto-runs money, delete or outbound tools', () => {
         for (const tool of AUTO_TOOL_NAMES) expect(WRITE_TOOL_NAMES, tool).toContain(tool);
-        for (const tool of ['delete_lead', 'add_contract_payment', 'mark_payment_paid', 'create_contract', 'reply_to_customer', 'assign_lead_manager']) {
+        for (const tool of ['delete_lead', 'add_contract_payment', 'mark_payment_paid', 'create_contract', 'transfer_contract', 'reply_to_customer', 'assign_lead_manager']) {
             expect(AUTO_TOOL_NAMES, tool).not.toContain(tool);
         }
     });
@@ -33,7 +33,7 @@ describe('risk rules', () => {
         expect(canRememberTool('create_lead')).toBe(true);
         expect(canRememberTool('schedule_viewing')).toBe(true);
         for (const tool of ['delete_property', 'invite_user', 'list_leads', 'bulk_update_leads', 'process_contract_action', 'update_property_price',
-            'create_contract', 'create_property', 'add_contract_payment', 'mark_payment_paid', 'merge_customers', 'reply_to_customer', 'set_marketing_budget']) {
+            'create_contract', 'transfer_contract', 'create_property', 'add_contract_payment', 'mark_payment_paid', 'merge_customers', 'reply_to_customer', 'set_marketing_budget']) {
             expect(canRememberTool(tool), tool).toBe(false);
         }
     });

@@ -2,14 +2,18 @@
 
 import React, { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Download, Plus, Check, Loader2, X, FileText, Phone } from 'lucide-react';
+import { ArrowLeft, ArrowLeftRight, Download, Plus, Check, Loader2, X, FileText, Phone } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatMNT, formatMNTShort } from '@/lib/utils/currency';
 import { formatShortDate, formatTime, ubDateStr } from '@/lib/utils/date';
 import { usePageTitle } from '@/lib/navigation/pageTitle';
-import { useContract, usePayments, useAddPayment, useUpdatePayment, type PaymentRow } from '@/hooks/useContracts';
-import { CONTRACT_STATUS_META, PAYMENT_STATUS_META, PAYMENT_METHOD_LABEL } from '@/lib/contracts/labels';
+import { useContract, useContractTransfers, usePayments, useAddPayment, useUpdatePayment, type PaymentRow } from '@/hooks/useContracts';
+import { CONTRACT_STATUS_META, CONTRACT_TRANSFER_KIND_META, PAYMENT_STATUS_META, PAYMENT_METHOD_LABEL } from '@/lib/contracts/labels';
+import { isTransferableContract, latestTransferDate, summarizeContractTransfers } from '@/lib/contracts/transfer';
+import { useAuth } from '@/contexts/AuthContext';
+import { ContractTransferDialog } from '@/components/contracts/ContractTransferDialog';
+import type { ContractTransfer } from '@/types/property';
 import { useLeadDetail } from '@/hooks/useLeads';
 import { parseLocalDate } from '@/lib/dashboard/director';
 import { Panel, Pill, Progress, Skeleton, Avatar, GhostButton } from '@/components/dashboard/v2/primitives';
@@ -20,9 +24,11 @@ const RECEIPT_KIND_LABEL = { advance: 'Урьдчилгаа', installment: 'Ху
 
 /**
  * Гэрээний дэлгэрэнгүй — бүтэн хуудас (мокап 5).
- * Зүүн: ерөнхий мэдээлэл, төлбөрийн график (+ бүртгэх). Баруун: явц, хавсралт, түүх.
+ * Зүүн: ерөнхий мэдээлэл, төлбөрийн график (+ бүртгэх). Баруун: явц, эзэмшигчийн түүх, хавсралт, түүх.
  */
 export function ContractDetail({ id }: { id: string }) {
+    const { user } = useAuth();
+    const canWrite = user?.role === 'super_admin' || !!(user?.permissions.canWrite && user.permissions.modules.includes('contracts'));
     const { data, isLoading } = useContract(id);
     const c = data?.contract;
     usePageTitle(c?.contract_number ? c.contract_number : 'Гэрээ');
@@ -30,7 +36,10 @@ export function ContractDetail({ id }: { id: string }) {
     const { data: pay } = usePayments(id);
     const payments = useMemo(() => (pay?.payments ?? []).slice().sort((a, b) => a.installment_number - b.installment_number), [pay]);
     const { data: leadDetail } = useLeadDetail(c?.lead_id ?? null);
+    const { data: transferData, isError: transfersFailed } = useContractTransfers(id);
+    const transfers = useMemo(() => transferData?.transfers ?? [], [transferData]);
     const [adding, setAdding] = useState(false);
+    const [transferring, setTransferring] = useState(false);
 
     if (isLoading || !c) {
         return <div className="grid gap-4 xl:grid-cols-3"><div className="flex flex-col gap-4 xl:col-span-2"><Skeleton className="h-40" /><Skeleton className="h-64" /></div><Skeleton className="h-80" /></div>;
@@ -57,9 +66,12 @@ export function ContractDetail({ id }: { id: string }) {
                 <span className="mono-label text-[16px] font-semibold text-foreground">{c.contract_number || c.unit_label || '—'}</span>
                 <Pill tone={st.tone}>{st.label}</Pill>
                 {c.contract_date && <span className="mono-label text-[12px] text-muted-foreground">{formatShortDate(c.contract_date)}</span>}
-                <div className="ml-auto flex items-center gap-2">
+                <div className="ml-auto flex flex-wrap items-center gap-2">
                     <Link href={genLink} className="inline-flex h-[30px] items-center gap-1.5 rounded-md border border-border-strong bg-surface px-2.5 text-[12.5px] font-medium text-foreground hover:bg-surface-2 focus-ring"><Download className="h-4 w-4" /> PDF татах</Link>
-                    <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-2.5 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>
+                    {canWrite && isTransferableContract(c.contract_status) && (
+                        <button type="button" onClick={() => setTransferring(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md border border-border-strong bg-surface px-2.5 text-[12.5px] font-medium text-foreground hover:bg-surface-2 focus-ring"><ArrowLeftRight className="h-4 w-4" /> Гэрээ шилжүүлэх</button>
+                    )}
+                    {canWrite && <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-2.5 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>}
                 </div>
             </div>
 
@@ -83,7 +95,7 @@ export function ContractDetail({ id }: { id: string }) {
                             <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
                                 <div className="text-[13px] font-medium text-foreground">Төлбөрийн график оруулаагүй</div>
                                 <p className="max-w-sm text-[12.5px] text-muted-foreground">Урьдчилгаа болон сар бүрийн төлөлтийг энд бүртгэвэл захирлын самбар авлага, хоцролтыг автоматаар харуулна.</p>
-                                <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>
+                                {canWrite && <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>}
                             </div>
                         ) : (
                             <div className="overflow-x-auto">
@@ -100,8 +112,8 @@ export function ContractDetail({ id }: { id: string }) {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {payments.map((p) => <PaymentTr key={p.id} p={p} contractId={id} now={now} />)}
-                                        {adding && <AddPaymentRow contractId={id} next={(payments.at(-1)?.installment_number ?? 0) + 1} defaultAmount={nextDue ? 0 : Math.round(balance / 6)} onDone={() => setAdding(false)} />}
+                                        {payments.map((p) => <PaymentTr key={p.id} p={p} contractId={id} now={now} canWrite={canWrite} />)}
+                                        {adding && canWrite && <AddPaymentRow contractId={id} next={(payments.at(-1)?.installment_number ?? 0) + 1} defaultAmount={nextDue ? 0 : Math.round(balance / 6)} onDone={() => setAdding(false)} />}
                                     </tbody>
                                     {payments.length > 0 && (
                                         <tfoot>
@@ -133,12 +145,17 @@ export function ContractDetail({ id }: { id: string }) {
                         </div>
                     </Panel>
 
+                    {(transfers.length > 0 || transfersFailed) && <HolderHistory transfers={transfers} failed={transfersFailed} />}
+
                     <Panel title="Хавсралт" bodyClassName="p-3"><EntityAttachments entityType="contract" entityId={id} /></Panel>
 
                     <Panel title="Түүх" bodyClassName="p-4">
                         <ol className="relative flex flex-col gap-3 border-l border-border pl-4">
                             {[
-                                ...(leadDetail?.activities ?? []).map((a) => ({ at: a.created_at, title: a.content || a.type, by: a.created_by_name })),
+                                // Шилжүүлгийн лидийн бичлэгийг давхардуулахгүй — эзэмшигчийн түүхээс нэг удаа харуулна.
+                                ...(leadDetail?.activities ?? []).filter((a) => !transfers.some((t) => t.id === a.meta?.transfer_id))
+                                    .map((a) => ({ at: a.created_at, title: a.content || a.type, by: a.created_by_name })),
+                                ...transfers.map((t) => ({ at: t.created_at, title: `${t.kind === 'rename' ? 'Эзэмшигчийн нэр засав' : 'Гэрээ шилжүүлэв'}: ${t.from_customer_name || '—'} → ${t.to_customer_name}`, by: t.created_by_name })),
                                 ...payments.filter((p) => p.paid_date).map((p) => ({ at: p.paid_date as string, title: `${p.label || `${p.installment_number}-р төлөлт`} · ${formatMNTShort(Number(p.paid_amount || 0))} төлсөн`, by: null })),
                                 ...(c.contract_date ? [{ at: c.contract_date, title: 'Гэрээ байгуулав', by: c.sales_manager }] : []),
                             ]
@@ -156,7 +173,41 @@ export function ContractDetail({ id }: { id: string }) {
                     </Panel>
                 </div>
             </div>
+            {canWrite && <ContractTransferDialog contract={c} open={transferring} onOpenChange={setTransferring} previousChangeDate={latestTransferDate(transfers)} />}
         </div>
+    );
+}
+
+/** «Эзэмшигчийн түүх»: анхны худалдан авагч ба шилжүүлэг / нэр засвар бүр (шинэ нь эхэнд). */
+function HolderHistory({ transfers, failed }: { transfers: ContractTransfer[]; failed: boolean }) {
+    const summary = summarizeContractTransfers(transfers);
+    return (
+        <Panel title="Эзэмшигчийн түүх" sub={transfers.length ? `${transfers.length} өөрчлөлт` : undefined} bodyClassName="flex flex-col gap-3 p-4">
+            {failed && <p role="alert" className="text-[12.5px] text-status-danger">Эзэмшигчийн түүхийг уншиж чадсангүй.</p>}
+            {summary.originalHolder && (
+                <div className="grid grid-cols-[1fr_auto] gap-2 text-[12.5px]">
+                    <span className="text-muted-foreground">Анхны худалдан авагч</span>
+                    <span className="text-right font-medium text-foreground">{summary.originalHolder}</span>
+                </div>
+            )}
+            <ol className="flex flex-col gap-2.5">
+                {transfers.map((t) => {
+                    const meta = CONTRACT_TRANSFER_KIND_META[t.kind] ?? CONTRACT_TRANSFER_KIND_META.transfer;
+                    return (
+                        <li key={t.id} className="flex flex-col gap-1 border-t border-border pt-2.5 first:border-t-0 first:pt-0">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="mono-label text-[11px] text-muted-foreground">{formatShortDate(t.effective_date)}</span>
+                                <Pill tone={meta.tone}>{meta.label}</Pill>
+                            </div>
+                            <div className="text-[13px] text-foreground">{t.from_customer_name || '—'} → <span className="font-medium">{t.to_customer_name}</span></div>
+                            {t.to_registration && t.kind === 'transfer' && <div className="mono-label text-[11.5px] text-muted-foreground">{t.to_registration}</div>}
+                            {t.reason && <p className="text-[12px] text-fg-2">{t.reason}</p>}
+                            {t.created_by_name && <div className="text-[11px] text-muted-foreground">Бүртгэсэн: {t.created_by_name}</div>}
+                        </li>
+                    );
+                })}
+            </ol>
+        </Panel>
     );
 }
 
@@ -169,7 +220,7 @@ function F({ label, children }: { label: string; children: React.ReactNode }) {
     );
 }
 
-function PaymentTr({ p, contractId, now }: { p: PaymentRow; contractId: string; now: Date }) {
+function PaymentTr({ p, contractId, now, canWrite }: { p: PaymentRow; contractId: string; now: Date; canWrite: boolean }) {
     const update = useUpdatePayment(contractId);
     const [method, setMethod] = useState(p.payment_method || '');
     const [kind, setKind] = useState<keyof typeof RECEIPT_KIND_LABEL | ''>(p.receipt_kind || '');
@@ -196,7 +247,7 @@ function PaymentTr({ p, contractId, now }: { p: PaymentRow; contractId: string; 
             <td className="num px-2 text-right text-fg-2">{Number(p.paid_amount) > 0 ? formatMNT(Number(p.paid_amount)) : '—'}</td>
             <td className="px-2"><Pill tone={meta.tone}>{meta.label}</Pill></td>
             <td className="px-2 py-1 text-fg-2">
-                {remaining > 0 && p.status !== 'cancelled' ? (
+                {canWrite && remaining > 0 && p.status !== 'cancelled' ? (
                     <div className="flex flex-col gap-1">
                         <input type="date" aria-label="Төлсөн огноо" value={receivedAt} onChange={e => setReceivedAt(e.target.value)} className="h-7 rounded border border-border bg-surface text-xs" />
                         <select aria-label="Төлбөрийн хэлбэр" value={method} onChange={e => setMethod(e.target.value)} className="h-7 rounded border border-border bg-surface text-xs">
@@ -211,7 +262,7 @@ function PaymentTr({ p, contractId, now }: { p: PaymentRow; contractId: string; 
                 ) : <><span className="mono-label">{p.paid_date || '—'}</span><span className="ml-1 text-[11px] text-muted-foreground">{p.payment_method ? PAYMENT_METHOD_LABEL[p.payment_method] ?? p.payment_method : 'Хэлбэр тодорхойгүй'} · {p.receipt_kind ? RECEIPT_KIND_LABEL[p.receipt_kind] : 'Төрөл тодорхойгүй'}</span></>}
             </td>
             <td className="px-2 text-right">
-                {remaining > 0 && p.status !== 'cancelled' && (
+                {canWrite && remaining > 0 && p.status !== 'cancelled' && (
                     <GhostButton onClick={markPaid} disabled={update.isPending || !method || !kind || !receivedAt} className="text-brand hover:bg-brand-soft"><Check className="h-3.5 w-3.5" /> Төлсөн</GhostButton>
                 )}
             </td>

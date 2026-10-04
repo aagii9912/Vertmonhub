@@ -9,6 +9,7 @@ import { sendTextMessage } from '@/lib/facebook/messenger';
 import { decryptToken } from '@/lib/crypto/tokens';
 import { recomputeCustomerScore } from '@/lib/services/CustomerScoringService';
 import { resolveSalesProjectScope, type SalesProjectScope } from '@/lib/sales/project-scope';
+import { isMissingTransfersTable } from '@/lib/services/ContractService';
 
 export async function addCustomerTag(db: SupabaseClient, shopId: string, customerId: string, tag: string) {
     const { data: customer } = await db.from('customers').select('tags').eq('id', customerId).eq('shop_id', shopId).single();
@@ -71,6 +72,11 @@ export async function mergeCustomers(db: SupabaseClient, shopId: string, primary
     for (const table of CHILD_TABLES) {
         const { error } = await db.from(table).update({ customer_id: primaryId }).eq('shop_id', shopId).eq('customer_id', duplicateId);
         if (error) repointWarnings.push(`${table}: ${error.message}`);
+    }
+    // Гэрээний эзэмшигчийн түүх: устгах харилцагчийн холбоос (ON DELETE SET NULL) алга болохоос өмнө шилжүүлнэ.
+    for (const column of ['from_customer_id', 'to_customer_id'] as const) {
+        const { error } = await db.from('contract_transfers').update({ [column]: primaryId }).eq('shop_id', shopId).eq(column, duplicateId);
+        if (error && !isMissingTransfersTable(error)) repointWarnings.push(`contract_transfers.${column}: ${error.message}`);
     }
     const mergedTags = Array.from(new Set([...(Array.isArray(primary.tags) ? primary.tags : []), ...(Array.isArray(duplicate.tags) ? duplicate.tags : [])]));
     const mergedAiMemory = { ...(duplicate.ai_memory && typeof duplicate.ai_memory === 'object' ? duplicate.ai_memory : {}), ...(primary.ai_memory && typeof primary.ai_memory === 'object' ? primary.ai_memory : {}) };
