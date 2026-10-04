@@ -90,7 +90,10 @@ function LeadForm({ onClose }: { onClose: () => void }) {
     const [name, setName] = useState('');
     const [requestId] = useState(() => crypto.randomUUID());
     const [phone, setPhone] = useState('');
-    const [projectId, setProjectId] = useState('');
+    const [chosenProjectId, setProjectId] = useState('');
+    // Shop = төсөл: ганц төсөлтэй бол автоматаар сонгоно (сонгох талбар харагдахгүй).
+    const soleProject = projects.length === 1 ? projects[0].id : null;
+    const projectId = soleProject ?? chosenProjectId;
     const [interest, setInterest] = useState<string>('');
     const [source, setSource] = useState('phone');
     const [showMore, setShowMore] = useState(false);
@@ -104,11 +107,6 @@ function LeadForm({ onClose }: { onClose: () => void }) {
         nameRef.current?.focus();
     }, []);
 
-    // Shop = төсөл: ганц төсөлтэй бол автоматаар сонгоно (сонгох талбар харагдахгүй).
-    const soleProject = projects.length === 1 ? projects[0].id : null;
-    useEffect(() => {
-        if (soleProject) setProjectId(soleProject);
-    }, [soleProject]);
 
     // Утас бүрэн болмогц давхардлыг шалгана (400ms debounce).
     useEffect(() => {

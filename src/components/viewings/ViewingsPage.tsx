@@ -191,10 +191,10 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
     const [walkIn, setWalkIn] = useState(false);
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
-    const [projectId, setProjectId] = useState('');
+    const [chosenProjectId, setProjectId] = useState('');
     // Shop = төсөл: ганц төсөлтэй бол автоматаар сонгоно.
     const soleProject = projects.length === 1 ? projects[0].id : null;
-    useEffect(() => { if (soleProject) setProjectId(soleProject); }, [soleProject]);
+    const projectId = soleProject ?? chosenProjectId;
     const [propQ, setPropQ] = useState('');
     const [property, setProperty] = useState<PropertyOption | null>(null);
     const [when, setWhen] = useState(() => defaultWhen());
