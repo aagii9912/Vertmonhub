@@ -40,6 +40,7 @@ function database() {
         const query = {
             select: () => query,
             eq: (column: string, value: unknown) => { record.filters[column] = value; return query; },
+            is: (column: string, value: unknown) => { record.filters[column] = value; return query; },
             in: () => query,
             update: () => { record.operation = 'update'; return query; },
             delete: () => { record.operation = 'delete'; return query; },

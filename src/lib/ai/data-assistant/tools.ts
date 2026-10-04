@@ -305,6 +305,27 @@ const writeDefinitions: ToolDefinition[] = [
         }
     },
     {
+        name: 'update_unit',
+        description: 'Байрны бүртгэлийн нэгжийн (property_units) мэдээллийг засах: өрөөний тоо, борлуулах талбай, айлын төрөл, загвар, цонхны харагдац, борлуулалтын суваг/менежер. Төлөвийг update_unit_status-аар солино. ERP экспортоос (source=erp_products) харагдсан нэгжийг энд засахгүй — ERP-д засаад дараагийн экспортыг оруулна. Баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                unit_id: { type: SchemaType.STRING, description: 'Нэгжийн ID' },
+                code: { type: SchemaType.STRING, description: 'Нэгжийн код (жишээ: 201-440)' },
+                unit_number: { type: SchemaType.STRING, description: 'Шинэ тоот' },
+                block: { type: SchemaType.STRING, description: 'Блок — олон нэгж олдвол тодруулахад' },
+                phase: { type: SchemaType.STRING, description: 'Ээлж — олон нэгж олдвол тодруулахад' },
+                rooms: { type: SchemaType.NUMBER, description: 'Шинэ өрөөний тоо' },
+                sale_area: { type: SchemaType.NUMBER, description: 'Шинэ борлуулах талбай (м²)' },
+                unit_type: { type: SchemaType.STRING, description: 'Айлын төрөл' },
+                model: { type: SchemaType.STRING, description: 'Загвар' },
+                window_view: { type: SchemaType.STRING, description: 'Цонхны харагдац' },
+                sales_channel: { type: SchemaType.STRING, description: 'Борлуулалтын суваг' },
+                sales_manager: { type: SchemaType.STRING, description: 'Борлуулалтын менежер' }
+            }
+        }
+    },
+    {
         name: 'update_property_price',
         description: 'Байрны үнийг өөрчлөх. ЗӨВХӨН Super Admin.',
         parameters: {
@@ -329,6 +350,22 @@ const writeDefinitions: ToolDefinition[] = [
                 lost_reason: { type: SchemaType.STRING, description: 'closed_lost үед алдсан бодит шалтгаан; хэрэглэгчээс тодруулна, таамаглахгүй' }
             },
             required: ['new_status']
+        }
+    },
+    {
+        name: 'update_lead',
+        description: 'Лидийн сонирхол ба төслийг засах: сонирхож буй өрөө (preferred_rooms), байрны төрөл (preferred_type), дээд төсөв (budget_max), төсөл (project_id — list_lead_projects-оос). Статусыг update_lead_status, менежерийг assign_lead_manager, follow-up-ийг set_followup, тэмдэглэлийг add_lead_note-оор хийнэ. Баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                lead_id: { type: SchemaType.STRING, description: 'Лидийн ID' },
+                customer_name: { type: SchemaType.STRING, description: 'Хэрэглэгчийн нэрээр хайх' },
+                customer_phone: { type: SchemaType.STRING, description: 'Утасны дугаараар хайх' },
+                preferred_rooms: { type: SchemaType.NUMBER, description: 'Сонирхож буй өрөөний тоо (1–20)' },
+                preferred_type: { type: SchemaType.STRING, enum: ['apartment', 'house', 'office', 'land', 'commercial'], description: 'Сонирхож буй байрны төрөл' },
+                budget_max: { type: SchemaType.NUMBER, description: 'Дээд төсөв (MNT)' },
+                project_id: { type: SchemaType.STRING, description: 'Лидийн төслийн UUID (list_lead_projects-оос)' }
+            }
         }
     },
     {
@@ -420,6 +457,23 @@ const writeDefinitions: ToolDefinition[] = [
                 notes: { type: SchemaType.STRING, description: 'Тэмдэглэл' }
             },
             required: ['name']
+        }
+    },
+    {
+        name: 'update_customer',
+        description: 'Харилцагчийн нэр, утас, имэйл, хаягийг засах; note өгвөл одоогийн тэмдэглэлд нэмнэ (дарж бичихгүй). Тагийг add_customer_tag/remove_customer_tag-аар. Баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                customer_id: { type: SchemaType.STRING, description: 'Харилцагчийн ID' },
+                customer_name: { type: SchemaType.STRING, description: 'Нэрээр хайх' },
+                phone: { type: SchemaType.STRING, description: 'Одоогийн утсаар хайх' },
+                new_name: { type: SchemaType.STRING, description: 'Шинэ нэр' },
+                new_phone: { type: SchemaType.STRING, description: 'Шинэ утасны дугаар' },
+                email: { type: SchemaType.STRING, description: 'Шинэ имэйл' },
+                address: { type: SchemaType.STRING, description: 'Шинэ хаяг' },
+                note: { type: SchemaType.STRING, description: 'Тэмдэглэлд нэмэх текст' }
+            }
         }
     },
     {

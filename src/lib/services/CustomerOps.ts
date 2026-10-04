@@ -8,7 +8,10 @@ import { logger } from '@/lib/utils/logger';
 import { sendTextMessage } from '@/lib/facebook/messenger';
 import { decryptToken } from '@/lib/crypto/tokens';
 import { recomputeCustomerScore } from '@/lib/services/CustomerScoringService';
+import { recordAudit } from '@/lib/services/AuditService';
 import { resolveSalesProjectScope, type SalesProjectScope } from '@/lib/sales/project-scope';
+import { UpdateCustomerSchema } from '@/lib/validations/schemas';
+import { normalizePhone } from '@/lib/utils/phone';
 
 export async function addCustomerTag(db: SupabaseClient, shopId: string, customerId: string, tag: string) {
     const { data: customer } = await db.from('customers').select('tags').eq('id', customerId).eq('shop_id', shopId).single();
@@ -27,6 +30,38 @@ export async function removeCustomerTag(db: SupabaseClient, shopId: string, cust
     const { data, error } = await db.from('customers').update({ tags: current.filter((t) => t !== tag) }).eq('id', customerId).select('tags').single();
     if (error) return { error: error.message, status: 500 as const };
     return { tags: data.tags as string[] };
+}
+
+/**
+ * Харилцагчийн нэр, утас, имэйл, хаяг, тэмдэглэл, тагийг засна (PATCH /api/dashboard/customers,
+ * AI `update_customer`). Хасагдсан харилцагчийг засахгүй; өөрчлөлтийг audit-д бичнэ.
+ */
+export async function updateCustomerInfo(db: SupabaseClient, shopId: string, input: unknown, actorId: string | null) {
+    const parsed = UpdateCustomerSchema.safeParse(input);
+    if (!parsed.success) return { error: parsed.error.issues[0]?.message || 'Харилцагчийн мэдээлэл буруу байна', status: 400 as const };
+    const { id, name, phone, email, address, notes, tags } = parsed.data;
+    const updateData: Record<string, unknown> = {};
+    if (name !== undefined) updateData.name = name;
+    if (phone !== undefined) {
+        updateData.phone = phone;
+        updateData.phone_normalized = normalizePhone(phone);
+    }
+    if (email !== undefined) updateData.email = email || null;
+    if (address !== undefined) updateData.address = address || null;
+    if (notes !== undefined) updateData.notes = notes;
+    if (tags !== undefined) updateData.tags = tags;
+    if (!Object.keys(updateData).length) return { error: 'Засах талбар алга', status: 400 as const };
+
+    const { data: customer, error } = await db.from('customers').update(updateData)
+        .eq('id', id).eq('shop_id', shopId).is('deleted_at', null)
+        .select().maybeSingle();
+    if (error) {
+        logger.error('[CustomerOps] update failed', { error });
+        return { error: 'Харилцагчийг шинэчилж чадсангүй', status: 500 as const };
+    }
+    if (!customer) return { error: 'Харилцагч олдсонгүй', status: 404 as const };
+    await recordAudit({ shopId, actorId, entity: 'customer', entityId: id, action: 'update', changes: updateData });
+    return { customer: customer as Record<string, unknown> & { id: string; name: string | null } };
 }
 
 /** Messenger-ээр хүнээс хариу илгээж, chat_history-д бичнэ. */

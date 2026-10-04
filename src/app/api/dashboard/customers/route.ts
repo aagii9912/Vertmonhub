@@ -8,6 +8,7 @@ import { normalizePhone } from '@/lib/utils/phone';
 import { recomputeCustomerScore } from '@/lib/services/CustomerScoringService';
 import { parsePagination, buildPageMeta } from '@/lib/utils/pagination';
 import { recordAudit } from '@/lib/services/AuditService';
+import { updateCustomerInfo } from '@/lib/services/CustomerOps';
 import { withRoute } from '@/lib/api/route';
 
 export async function GET(request: NextRequest) {
@@ -170,59 +171,16 @@ export const POST = withRoute({ module: 'customers', access: 'write' }, async ({
   return NextResponse.json({ customer, message: 'Customer created' }, { status: 201 });
 });
 
-// Update customer info
+// Update customer info — дүрэм нь AI `update_customer`-тэй нэг (`CustomerOps.updateCustomerInfo`).
 export const PATCH = withRoute({ module: 'customers', access: 'write' }, async ({ request, shop: authShop }) => {
-  const supabase = supabaseAdmin();
   const body = await request.json();
 
   const validation = validateBody(UpdateCustomerSchema, body);
   if (!validation.success) {
     return validation.response;
   }
-  const { id, name, phone, email, address, notes, tags } = validation.data;
+  const result = await updateCustomerInfo(supabaseAdmin(), authShop.id, validation.data, await getUserId());
+  if ('error' in result) return NextResponse.json({ error: result.error }, { status: result.status });
 
-  // Verify customer belongs to shop
-  const { data: existingCustomer } = await supabase
-    .from('customers')
-    .select('id')
-    .eq('id', id)
-    .eq('shop_id', authShop.id)
-    .is('deleted_at', null)
-    .single();
-
-  if (!existingCustomer) {
-    return NextResponse.json({ error: 'Customer not found' }, { status: 404 });
-  }
-
-  // Build update object (only include provided fields)
-  const updateData: Record<string, any> = {};
-  if (name !== undefined) updateData.name = name;
-  if (phone !== undefined) {
-    updateData.phone = phone;
-    updateData.phone_normalized = normalizePhone(phone);
-  }
-  if (email !== undefined) updateData.email = email || null;
-  if (address !== undefined) updateData.address = address || null;
-  if (notes !== undefined) updateData.notes = notes;
-  if (tags !== undefined) updateData.tags = tags;
-
-  const { data: customer, error } = await supabase
-    .from('customers')
-    .update(updateData)
-    .eq('id', id)
-    .select()
-    .single();
-
-  if (error) throw error;
-
-  await recordAudit({
-    shopId: authShop.id,
-    actorId: await getUserId(),
-    entity: 'customer',
-    entityId: id,
-    action: 'update',
-    changes: updateData,
-  });
-
-  return NextResponse.json({ customer, message: 'Customer updated' });
+  return NextResponse.json({ customer: result.customer, message: 'Customer updated' });
 });

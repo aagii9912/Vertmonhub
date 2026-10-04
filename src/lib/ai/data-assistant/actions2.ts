@@ -12,7 +12,8 @@ import { resolveSalesProjectScope, UNRESTRICTED_SALES_SCOPE, type SalesProjectSc
 import { computeKpiReport } from '@/lib/dashboard/kpi-report-build';
 import { formatKpiReportText } from '@/lib/dashboard/kpi-report';
 import { getManagerPerformance } from '@/lib/reports/manager-performance';
-import { addCustomerTag, removeCustomerTag, replyToCustomer, mergeCustomers } from '@/lib/services/CustomerOps';
+import { addCustomerTag, removeCustomerTag, replyToCustomer, mergeCustomers, updateCustomerInfo } from '@/lib/services/CustomerOps';
+import { UpdateCustomerSchema } from '@/lib/validations/schemas';
 import { logMarketingSpend, upsertMarketingBudget, addMarketIndicator, listMarketingSpend, isMissingMarketingTable, MARKETING_MIGRATION_HINT } from '@/lib/services/MarketingOps';
 import { SPEND_CHANNELS } from '@/lib/marketing/budget';
 import type { AssistantPerms } from './index';
@@ -54,7 +55,7 @@ export async function getExportLink(_shopId: string, args: Args) {
 /* ---------------- Харилцагч ---------------- */
 
 async function findCustomer(shopId: string, a: Args) {
-    let q = db().from('customers').select('id, name, phone, tags, facebook_id').eq('shop_id', shopId);
+    let q = db().from('customers').select('id, name, phone, tags, facebook_id, notes').eq('shop_id', shopId).is('deleted_at', null);
     if (a.customer_id) q = q.eq('id', a.customer_id);
     else if (a.phone) {
         const phonePattern = phoneIlikePattern(String(a.phone), 8);
@@ -77,6 +78,42 @@ export async function customerTag(shopId: string, args: Args, remove: boolean) {
     const r = remove ? await removeCustomerTag(db(), shopId, f.customer.id, tag) : await addCustomerTag(db(), shopId, f.customer.id, tag);
     if ('error' in r) return { error: r.error };
     return { success: true, message: remove ? `«${f.customer.name}»-аас «${tag}» тагийг хаслаа.` : `«${f.customer.name}»-д «${tag}» таг нэмлээ.`, tags: r.tags, customerId: f.customer.id };
+}
+
+const CustomerChangesSchema = UpdateCustomerSchema.omit({ id: true, tags: true });
+
+/** Харилцагчийн нэр, утас, имэйл, хаягийг засах; `note`-ийг одоогийн тэмдэглэлд нэмнэ (дарж бичихгүй). */
+export async function updateCustomerTool(shopId: string, args: Args, confirm: boolean, userId: string) {
+    const changes: Record<string, unknown> = {};
+    if (args.new_name !== undefined) changes.name = String(args.new_name).trim();
+    if (args.new_phone !== undefined) changes.phone = args.new_phone === '' || args.new_phone === null ? null : String(args.new_phone).trim();
+    if (args.email !== undefined) changes.email = args.email === '' || args.email === null ? null : String(args.email).trim();
+    if (args.address !== undefined) changes.address = args.address === '' || args.address === null ? null : String(args.address).trim();
+    const note = typeof args.note === 'string' ? args.note.trim() : '';
+    if (!Object.keys(changes).length && !note) return { error: 'Засах талбар алга: new_name, new_phone, email, address, note' };
+    const checked = CustomerChangesSchema.safeParse(changes);
+    if (!checked.success) return { error: checked.error.issues[0]?.message || 'Харилцагчийн мэдээлэл буруу байна' };
+    const f = await findCustomer(shopId, args);
+    if ('error' in f) return f;
+    if (note) changes.notes = [f.customer.notes, note].filter(Boolean).join('\n').slice(0, 10000);
+    if (!confirm) {
+        const labels: Record<string, string> = { name: 'Нэр', phone: 'Утас', email: 'Имэйл', address: 'Хаяг' };
+        const preview: Record<string, unknown> = { Харилцагч: `${f.customer.name || '-'} (${f.customer.phone || '-'})` };
+        for (const [key, value] of Object.entries(changes)) if (labels[key]) preview[labels[key]] = value ?? '—';
+        if (note) preview['Тэмдэглэл нэмэх'] = note;
+        const { notes: _ignored, ...fields } = changes;
+        return confirmNeeded('update_customer', {
+            customer_id: f.customer.id,
+            ...(fields.name !== undefined ? { new_name: fields.name } : {}),
+            ...(fields.phone !== undefined ? { new_phone: fields.phone } : {}),
+            ...(fields.email !== undefined ? { email: fields.email } : {}),
+            ...(fields.address !== undefined ? { address: fields.address } : {}),
+            ...(note ? { note } : {}),
+        }, `Харилцагч засах: ${f.customer.name || f.customer.phone || ''}`, preview);
+    }
+    const r = await updateCustomerInfo(db(), shopId, { id: f.customer.id, ...changes }, userId);
+    if ('error' in r) return { error: r.error };
+    return { success: true, message: `«${r.customer.name || f.customer.name}» харилцагчийн мэдээллийг шинэчиллээ.`, customerId: f.customer.id };
 }
 
 export async function replyCustomer(shopId: string, args: Args, confirm: boolean) {

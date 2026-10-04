@@ -21,7 +21,7 @@ import {
     fetchProperties, fetchLeads, fetchLeadDetails, fetchCustomerInsights,
     fetchContracts, fetchContractDetails, fetchContractsSummary,
     fetchSalesSummary, fetchSalesForecast, compareProperties,
-    updatePropertyStatus, updateUnitStatus, updatePropertyPrice, updateLeadStatus,
+    updatePropertyStatus, updateUnitStatus, updateUnitDetails, updatePropertyPrice, updateLeadStatus,
     addLeadNote, processContractAction,
     createProperty, deleteProperty, createLead, deleteLead, createCustomer,
     scheduleViewing, deleteViewing, createContract, deleteContract, deleteCustomer,
@@ -30,8 +30,8 @@ import {
     createSocialPost, rememberFact,
 } from './functions';
 import { inviteUser, assignRole, createRole } from './admin-functions';
-import { getKpiReport, getManagerPerformanceTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
-import { logCall, setFollowup, assignLeadManager, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
+import { getKpiReport, getManagerPerformanceTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, updateCustomerTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
+import { logCall, setFollowup, assignLeadManager, updateLeadTool, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
 
 /** AI Assistant-ийн RBAC эрхүүд (route-аас тооцоолж дамжуулна). */
 export interface AssistantPerms {
@@ -104,8 +104,10 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     compare_properties: ({ shopId, args }) => compareProperties(shopId, args),
     update_property_status: ({ shopId, args, confirm }) => updatePropertyStatus(shopId, args, confirm),
     update_unit_status: ({ shopId, args, confirm }) => updateUnitStatus(shopId, args, confirm),
+    update_unit: ({ shopId, args, confirm }) => updateUnitDetails(shopId, args, confirm),
     update_property_price: ({ shopId, args, confirm }) => updatePropertyPrice(shopId, args, confirm),
     update_lead_status: ({ shopId, args, confirm, scope, userId, userName }) => updateLeadStatus(shopId, args, confirm, scope, { userId, userName }),
+    update_lead: ({ shopId, args, confirm, scope, userId }) => updateLeadTool(shopId, args, confirm, userId, scope),
     add_lead_note: ({ shopId, args, confirm, scope }) => addLeadNote(shopId, args, confirm, scope),
     process_contract_action: ({ shopId, args, confirm, scope, userId, userName }) => processContractAction(shopId, args, confirm, scope, { userId, userName }),
     create_property: ({ shopId, args, confirm }) => createProperty(shopId, args, confirm),
@@ -113,6 +115,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     create_lead: ({ shopId, args, confirm, userId, perms, scope }) => createLead(shopId, args, confirm, { userId, role: perms.role, scope }),
     delete_lead: ({ shopId, args, confirm, scope }) => deleteLead(shopId, args, confirm, scope),
     create_customer: ({ shopId, args, confirm, userName }) => createCustomer(shopId, args, confirm, userName),
+    update_customer: ({ shopId, args, confirm, userId }) => updateCustomerTool(shopId, args, confirm, userId),
     schedule_viewing: ({ shopId, args, confirm, userName, userId, scope }) => scheduleViewing(shopId, args, confirm, userName, userId, scope),
     delete_viewing: ({ shopId, args, confirm, scope, userId }) => deleteViewing(shopId, args, confirm, scope, userId),
     create_contract: ({ shopId, args, confirm, userName, scope }) => createContract(shopId, args, confirm, userName, scope),

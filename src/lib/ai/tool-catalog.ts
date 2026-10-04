@@ -36,6 +36,7 @@ const ENTRIES = {
     compare_properties: { kind: 'read', module: 'properties' },
     update_property_status: { kind: 'write', module: 'properties' },
     update_unit_status: { kind: 'write', module: 'properties' },
+    update_unit: { kind: 'write', module: 'properties' },
     update_property_price: { kind: 'write', module: 'properties', alwaysConfirm: true },
     create_property: { kind: 'write', module: 'properties', alwaysConfirm: true },
     delete_property: { kind: 'delete', module: 'properties' },
@@ -44,6 +45,7 @@ const ENTRIES = {
     list_leads: { kind: 'read', module: 'leads', scoped: true },
     get_lead_details: { kind: 'read', module: 'leads', scoped: true },
     update_lead_status: { kind: 'write', module: 'leads', scoped: true },
+    update_lead: { kind: 'write', module: 'leads', scoped: true },
     add_lead_note: { kind: 'write', module: 'leads', scoped: true, auto: 'Тэмдэглэл нэмэх' },
     create_lead: { kind: 'write', module: 'leads', scoped: true },
     bulk_update_leads: { kind: 'write', module: 'leads', scoped: true, alwaysConfirm: true },
@@ -54,6 +56,7 @@ const ENTRIES = {
     // Харилцагч, Inbox
     get_customer_insights: { kind: 'read', module: 'customers', scoped: true },
     create_customer: { kind: 'write', module: 'customers' },
+    update_customer: { kind: 'write', module: 'customers' },
     add_customer_tag: { kind: 'write', module: 'customers', auto: 'Таг нэмэх' },
     remove_customer_tag: { kind: 'write', module: 'customers', auto: 'Таг хасах' },
     merge_customers: { kind: 'write', module: 'customers', scoped: true, alwaysConfirm: true },

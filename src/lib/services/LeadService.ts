@@ -8,7 +8,10 @@
 
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { ACTIVE_STATUSES, toLeadSource } from '@/lib/leads/labels';
+import { ACTIVE_STATUSES, LEAD_STATUSES, statusLabel, toLeadSource } from '@/lib/leads/labels';
+import { PROPERTY_TYPES } from '@/lib/inventory/labels';
+import { hasRealContractFields } from '@/lib/leads/contracts';
+import { logLeadActivity } from '@/lib/leads/activities';
 import { resolveActiveManagerName, resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { applyLeadScope, assertProjectManager, canAccessProject, ProjectScopeError, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
@@ -131,4 +134,181 @@ export async function insertLeadOnce(
         return (!raced.error && replay(raced.data)) || { ok: false, conflict: true };
     }
     return { ok: false, conflict: false, error: error as PostgrestError };
+}
+
+/** Ажилтны лидийн засварын талбарууд (PATCH /api/dashboard/leads/[id], AI `update_lead`). Бусад түлхүүрийг үл хэрэгсэнэ. */
+export interface StaffLeadPatch {
+    project_id?: unknown;
+    status?: unknown;
+    notes?: unknown;
+    next_followup_at?: unknown;
+    last_contact_at?: unknown;
+    lost_reason?: unknown;
+    sales_manager_name?: unknown;
+    preferred_rooms?: unknown;
+    preferred_type?: unknown;
+    budget_max?: unknown;
+}
+
+const leadFailure = (status: number, error: string): Failure => ({ ok: false, status, error });
+
+/** Засварын талбаруудыг шалгаж DB-ийн шинэчлэл болгоно (AI урьдчилан харахад мөн ашиглана). */
+export function parseStaffLeadPatch(body: StaffLeadPatch): { ok: true; updates: Record<string, unknown> } | Failure {
+    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (body.project_id !== undefined) {
+        if (body.project_id !== null && !z.string().uuid().safeParse(body.project_id).success) return leadFailure(400, 'Буруу төсөл');
+        updates.project_id = body.project_id;
+    }
+    if (body.status !== undefined) {
+        if (!(LEAD_STATUSES as string[]).includes(body.status as string)) return leadFailure(400, 'Буруу төлөв');
+        updates.status = body.status;
+        // closed_lost-аас өөр шат руу шилжвэл алдсан шалтгааныг цэвэрлэнэ.
+        if (body.status !== 'closed_lost' && body.lost_reason === undefined) updates.lost_reason = null;
+    }
+    if (typeof body.notes === 'string') updates.notes = body.notes;
+    // «Өнөөдөр» дэлгэц: дараагийн холбоо барих цагийг хойшлуулах / дуусгах (null).
+    if (body.next_followup_at !== undefined) {
+        if (body.next_followup_at === null) updates.next_followup_at = null;
+        else if (typeof body.next_followup_at === 'string' && !Number.isNaN(Date.parse(body.next_followup_at))) {
+            updates.next_followup_at = new Date(body.next_followup_at).toISOString();
+        } else {
+            return leadFailure(400, 'Буруу огноо');
+        }
+    }
+    if (typeof body.last_contact_at === 'string' && !Number.isNaN(Date.parse(body.last_contact_at))) {
+        updates.last_contact_at = new Date(body.last_contact_at).toISOString();
+    }
+    if (typeof body.lost_reason === 'string') updates.lost_reason = body.lost_reason.slice(0, 300) || null;
+    // Хариуцагч менежер хуваарилах/чөлөөлөх (null = хуваарилаагүй)
+    if (body.sales_manager_name !== undefined) {
+        const name = body.sales_manager_name;
+        if (name !== null && typeof name !== 'string') return leadFailure(400, 'Буруу менежерийн нэр');
+        const trimmed = typeof name === 'string' ? name.trim().slice(0, 120) : null;
+        updates.sales_manager_name = trimmed || null;
+    }
+    // Сонирхол (inline засвар)
+    if (body.preferred_rooms !== undefined) {
+        const n = body.preferred_rooms === null ? null : Number(body.preferred_rooms);
+        if (n !== null && (!Number.isInteger(n) || n < 1 || n > 20)) return leadFailure(400, 'Буруу өрөөний тоо');
+        updates.preferred_rooms = n;
+    }
+    if (body.preferred_type !== undefined) {
+        // `property_type` enum — дурын string 500 өгдөг байсан.
+        if (body.preferred_type !== null && !(PROPERTY_TYPES as string[]).includes(body.preferred_type as string)) return leadFailure(400, 'Буруу байрны төрөл');
+        updates.preferred_type = body.preferred_type;
+    }
+    if (body.budget_max !== undefined) {
+        const n = body.budget_max === null ? null : Number(body.budget_max);
+        if (n !== null && (!Number.isFinite(n) || n < 0)) return leadFailure(400, 'Буруу төсөв');
+        updates.budget_max = n;
+    }
+
+    return { ok: true, updates };
+}
+
+/**
+ * Лидийн засварын нэг дүрэм: талбарын шалгалт, төсөл/менежерийн хүрээ, «Амжилттай»-д бодит гэрээ,
+ * «Алдсан»-д шалтгаан, уншсанаас хойш төсөл өөрчлөгдсөн бол 409. Статус/менежерийн өөрчлөлтийг
+ * lead_activities-д бичнэ. `actor.scope`-ийг сервер тооцоолно (хүсэлтээс авахгүй).
+ */
+export async function updateStaffLead(
+    db: SupabaseClient,
+    shopId: string,
+    leadId: string,
+    body: StaffLeadPatch,
+    actor: { userId: string | null; scope: SalesProjectScope },
+): Promise<{ ok: true } | Failure> {
+    const fail = leadFailure;
+    const parsed = parseStaffLeadPatch(body);
+    if (!parsed.ok) return parsed;
+    const { updates } = parsed;
+
+    const { scope } = actor;
+    if (updates.project_id !== undefined) {
+        if (!canAccessProject(scope, updates.project_id as string | null)) return fail(403, 'Энэ төсөлд лид шилжүүлэх эрхгүй');
+        if (updates.project_id) {
+            const { data: project, error } = await db.from('projects').select('id')
+                .eq('id', updates.project_id).eq('shop_id', shopId).maybeSingle();
+            if (error) throw error;
+            if (!project) return fail(400, 'Төсөл олдсонгүй');
+        }
+    }
+    if (typeof updates.sales_manager_name === 'string') {
+        const manager = await resolveActiveManagerName(db, shopId, updates.sales_manager_name);
+        if (!manager.ok) return fail(manager.status, manager.error);
+        updates.sales_manager_name = manager.managerName;
+    }
+    // Лид энэ shop-д, хэрэглэгчийн хүрээнд байгааг шалгана (өмнөх утгыг түүхэнд бичихэд ашиглана).
+    const { data: lead, error: readError } = await applyLeadScope(db
+        .from('leads')
+        .select('id, project_id, status, sales_manager_name, lost_reason')
+        .eq('id', leadId)
+        .eq('shop_id', shopId)
+        .is('deleted_at', null), scope)
+        .single();
+    if (readError && readError.code !== 'PGRST116') throw readError;
+    if (!lead) return fail(404, 'Лийд олдсонгүй');
+    if (scope.projectIds !== null) {
+        if (updates.sales_manager_name !== undefined && updates.sales_manager_name !== lead.sales_manager_name) {
+            return fail(403, 'Лидийг өөр менежерт хуваарилах эрхгүй');
+        }
+        if (updates.project_id !== undefined && updates.project_id !== lead.project_id) return fail(403, 'Лидийн төслийг өөрчлөх эрхгүй');
+    }
+    const projectId = updates.project_id !== undefined ? updates.project_id as string | null : lead.project_id;
+    const managerName = updates.sales_manager_name !== undefined ? updates.sales_manager_name : lead.sales_manager_name;
+    if (typeof managerName === 'string' && (updates.sales_manager_name !== undefined || updates.project_id !== undefined)) {
+        try { await assertProjectManager(db, shopId, projectId, managerName); }
+        catch (error) {
+            if (error instanceof ProjectScopeError) return fail(error.status, error.message);
+            throw error;
+        }
+    }
+
+    // «Амжилттай» — зөвхөн бодит гэрээтэй лид. DB trigger (create_contract_on_lead_won)
+    // гэрээгүй closed_won-д үнэгүй stub гэрээ үүсгэж статистикийг өсгөдөг байв (review H5).
+    if (updates.status === 'closed_won' && lead.status !== 'closed_won') {
+        const { data: contracts, error: contractError } = await db
+            .from('property_contracts')
+            .select('contract_number, total_price, contract_status')
+            .eq('lead_id', leadId)
+            .eq('shop_id', shopId)
+            .is('deleted_at', null);
+        if (contractError) return fail(500, 'Гэрээ шалгахад алдаа гарлаа');
+        if (!contracts?.some(hasRealContractFields)) {
+            return fail(400, 'Гэрээгүй лидийг «Амжилттай» болгох боломжгүй. Эхлээд «Гэрээ үүсгэх»-ээр гэрээ бүртгэнэ үү.');
+        }
+    }
+    // «Алдсан» — шалтгаан заавал.
+    if (updates.status === 'closed_lost' && lead.status !== 'closed_lost' && !updates.lost_reason && !lead.lost_reason) {
+        return fail(400, 'Алдсан шалтгаанаа (lost_reason) заана уу');
+    }
+
+    let write = applyLeadScope(db.from('leads').update(updates).eq('id', leadId).eq('shop_id', shopId).is('deleted_at', null), scope);
+    write = lead.project_id ? write.eq('project_id', lead.project_id) : write.is('project_id', null);
+    const { data: updated, error } = await write.select('id').maybeSingle();
+    if (error) return fail(500, 'Шинэчлэхэд алдаа гарлаа');
+    if (!updated) return fail(409, 'Лидийн төсөл өөрчлөгдсөн байна. Дахин уншаад оролдоно уу.');
+
+    // Түүх: статус / менежерийн өөрчлөлт (best-effort)
+    const changedStatus = updates.status !== undefined && updates.status !== lead.status;
+    const changedManager = updates.sales_manager_name !== undefined && updates.sales_manager_name !== lead.sales_manager_name;
+    if (changedStatus || changedManager) {
+        const identity = actor.userId ? await resolveManagerIdentity(db, shopId, actor.userId) : null;
+        const by = identity?.managerName ?? null;
+        if (changedStatus) {
+            await logLeadActivity(db, {
+                shopId, leadId, type: 'status', createdBy: actor.userId, createdByName: by,
+                content: `${statusLabel(lead.status)} → ${statusLabel(updates.status as string)}${updates.lost_reason ? ` · ${updates.lost_reason}` : ''}`,
+                meta: { from: lead.status, to: updates.status, lost_reason: updates.lost_reason ?? null },
+            });
+        }
+        if (changedManager) {
+            await logLeadActivity(db, {
+                shopId, leadId, type: 'manager', createdBy: actor.userId, createdByName: by,
+                content: `${lead.sales_manager_name || '—'} → ${(updates.sales_manager_name as string | null) || '—'}`,
+                meta: { from: lead.sales_manager_name, to: updates.sales_manager_name },
+            });
+        }
+    }
+    return { ok: true };
 }

@@ -25,6 +25,7 @@ import { STATUS_META, statusLabel, toLeadSource } from '@/lib/leads/labels';
 import type { LeadStatus } from '@/types/property';
 import { formatMNT } from '@/lib/utils/currency';
 import { loadLatestErpProducts } from '@/lib/erp/snapshots';
+import { parseUnitUpdate, unitFieldLabel, updateInventoryUnit } from '@/lib/inventory/unit-update';
 
 /** Timeline-д «хэн өөрчилсөн»-ийг тэмдэглэх (UI-ийн PATCH /leads/[id]-тэй ижил). */
 export interface LeadActor { userId?: string | null; userName?: string | null }
@@ -749,15 +750,11 @@ const UNIT_STATUSES = ['available', 'reserved', 'ordered', 'sold', 'handed_over'
  * property_units бол Мандала Гарден маягийн ээлж→блок→нэгж бүтэцтэй бодит нөөц;
  * `properties` (зурагтай listing) хүснэгтээс тусдаа тул энэ tool-оор шинэчилнэ.
  */
-export async function updateUnitStatus(shopId: string, args: any, confirm = false) {
-    const newStatus = args.new_status;
-    if (!UNIT_STATUSES.includes(newStatus)) {
-        return { error: `Төлөв буруу. Боломжтой: ${UNIT_STATUSES.join(', ')}` };
-    }
-
+/** Нэгжийг id / код / тоот (+блок, ээлж)-оор олно. Олон таарвал сонголтуудыг буцаана (модель тодруулна). */
+async function findUnit(shopId: string, args: any) {
     let query = supabaseAdmin
         .from('property_units')
-        .select('id, code, unit_number, block, phase, status')
+        .select('id, code, unit_number, block, phase, status, rooms, sale_area, unit_type, model, window_view, sales_channel, sales_manager')
         .eq('shop_id', shopId);
 
     if (args.unit_id) query = query.eq('id', args.unit_id);
@@ -768,7 +765,8 @@ export async function updateUnitStatus(shopId: string, args: any, confirm = fals
     if (args.block) query = query.eq('block', args.block);
     if (args.phase) query = query.ilike('phase', `%${args.phase}%`);
 
-    const { data: units } = await query.limit(50);
+    const { data: units, error } = await query.limit(50);
+    if (error) return { error: 'Нэгж хайхад алдаа гарлаа. Дахин оролдоно уу.' };
     if (!units || units.length === 0) return { error: 'Нэгж олдсонгүй' };
     if (units.length > 1) {
         return {
@@ -776,8 +774,18 @@ export async function updateUnitStatus(shopId: string, args: any, confirm = fals
             options: units.slice(0, 10).map(u => ({ id: u.id, code: u.code, unit_number: u.unit_number, block: u.block, phase: u.phase, status: u.status })),
         };
     }
+    return { unit: units[0] as Record<string, any> };
+}
 
-    const unit = units[0];
+export async function updateUnitStatus(shopId: string, args: any, confirm = false) {
+    const newStatus = args.new_status;
+    if (!UNIT_STATUSES.includes(newStatus)) {
+        return { error: `Төлөв буруу. Боломжтой: ${UNIT_STATUSES.join(', ')}` };
+    }
+    const found = await findUnit(shopId, args);
+    if ('error' in found) return found;
+
+    const unit = found.unit;
     const oldStatus = unit.status;
     const label = unit.code || unit.unit_number;
     if (!confirm) {
@@ -794,6 +802,35 @@ export async function updateUnitStatus(shopId: string, args: any, confirm = fals
     if (error) return { error: `Алдаа: ${error.message}` };
 
     return { success: true, unit: label, block: unit.block, oldStatus, newStatus };
+}
+
+// UI-ийн нэгж засах формтой ижил талбарууд (төлөвийг update_unit_status солино).
+const UNIT_EDIT_FIELDS = ['rooms', 'sale_area', 'unit_type', 'model', 'window_view', 'sales_channel', 'sales_manager'];
+
+/** Байрны бүртгэлийн нэгжийн мэдээллийг засна — PATCH /api/dashboard/units-тэй нэг дүрэм (`updateInventoryUnit`). */
+export async function updateUnitDetails(shopId: string, args: any, confirm = false) {
+    const body: Record<string, unknown> = {};
+    for (const key of UNIT_EDIT_FIELDS) {
+        if (args[key] === undefined) continue;
+        const numeric = key === 'rooms' || key === 'sale_area';
+        body[key] = numeric && typeof args[key] === 'string' && args[key].trim() !== '' ? Number(args[key]) : args[key];
+    }
+    if (!Object.keys(body).length) return { error: `Засах талбар алга: ${UNIT_EDIT_FIELDS.join(', ')}` };
+    const parsed = parseUnitUpdate(body);
+    if (!parsed.ok) return { error: parsed.error };
+    const found = await findUnit(shopId, args);
+    if ('error' in found) return found;
+
+    const unit = found.unit;
+    const label = unit.code || unit.unit_number;
+    if (!confirm) {
+        const preview: Record<string, unknown> = { Нэгж: label, Блок: unit.block || '-' };
+        for (const [key, value] of Object.entries(parsed.changes)) preview[unitFieldLabel(key)] = `${unit[key] ?? '—'} → ${value ?? '—'}`;
+        return confirmNeeded('update_unit', { unit_id: unit.id, ...parsed.changes }, `Нэгж засах: ${label}`, preview);
+    }
+    const result = await updateInventoryUnit(supabaseAdmin, shopId, unit.id, parsed.changes);
+    if ('error' in result) return { error: result.error };
+    return { success: true, unit: label, block: unit.block, changes: parsed.changes, message: `${label} нэгжийн мэдээллийг шинэчиллээ.` };
 }
 
 export async function updateLeadStatus(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE, actor?: LeadActor) {
