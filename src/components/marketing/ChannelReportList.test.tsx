@@ -11,18 +11,18 @@ vi.mock('@/components/ui/Toast', () => ({ confirmToast: mocks.confirm }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 import { ChannelReportList } from './ChannelReportList';
 
-const summary = (id: string, from: string, to: string, totals: Record<string, number>): ChannelReportSummary => ({
-    id, source: 'callpro', period_from: from, period_to: to, file_name: 'callpro.xlsx', totals, row_count: 12, note: null, imported_by: null,
+const summary = (id: string, from: string, to: string, totals: Record<string, number | string>): ChannelReportSummary => ({
+    id, source: 'callpro', period_from: from, period_to: to, file_name: 'callpro.xlsx', origin: 'file', data_from: null, data_to: null, totals, row_count: 12, note: null, imported_by: null,
     warnings: [{ code: 'non_additive', level: 'warning', message: 'Хариулах хүртэл алдсан хугацааг тооцоогүй.' }], created_at: '2026-10-01T02:00:00Z', updated_at: '2026-10-01T02:00:00Z',
 });
 const current = summary('r2', '2026-09-23', '2026-09-29', { answered: 120, missed: 10, abandoned: 4 });
 const previous = summary('r1', '2026-09-16', '2026-09-22', { answered: 100, missed: 20, abandoned: 4 });
-const empty = { report: null, exact: false, previous: null, comparison: null };
+const empty = { report: null, exact: false, longer: false, previous: null, comparison: null };
 const latest: ChannelReportMatches = {
     meta_ads: empty, facebook_page: empty, sms: empty,
     callpro: {
         report: { ...current, mapping: {}, breakdown: Array.from({ length: 24 }, (_, h) => ({ kind: 'hour' as const, label: `${String(h).padStart(2, '0')}:00`, values: { missed: h === 13 ? 5 : 0, abandoned: 0 } })) },
-        exact: false, previous, comparison: compareWithPrevious(current.totals, previous.totals, 'callpro'),
+        exact: false, longer: false, previous, comparison: compareWithPrevious(current.totals, previous.totals, 'callpro'),
     },
 };
 
@@ -53,4 +53,21 @@ it('hides delete without permission and does not delete when cancelled', async (
     fireEvent.click(screen.getByRole('button', { name: /тайланг устгах/ }));
     await waitFor(() => expect(mocks.confirm).toHaveBeenCalled());
     expect(mocks.fetch).not.toHaveBeenCalled();
+});
+
+it('shows Meta results per type, the API origin and partial day coverage', () => {
+    const totals = { spend: 233.1, currency: 'USD', impressions: 153074, link_clicks: 734, results_calls: 76, spend_calls: 141.09, cost_per_result_calls: 1.86, results_post_engagement: 11604, spend_post_engagement: 43.21, cost_per_result_post_engagement: 0.0037, spend_reach: 6.2 };
+    const meta: ChannelReportSummary = { ...summary('m1', '2026-09-23', '2026-09-29', totals), source: 'meta_ads', origin: 'api', file_name: null, data_from: '2026-09-23', data_to: '2026-09-28', warnings: [] };
+    const data = { reports: [meta], latest: { ...latest, callpro: empty, meta_ads: { report: { ...meta, mapping: {}, breakdown: [] }, exact: true, longer: false, previous: null, comparison: null } } };
+    render(<QueryClientProvider client={new QueryClient()}><ChannelReportList data={data} filter="all" onFilter={vi.fn()} canDelete={false} shopId="shop-a" /></QueryClientProvider>);
+    const card = screen.getByRole('article', { name: 'Meta Ads Manager сүүлийн тайлан' });
+    expect(within(card).getByText(/2026-09-23 – 2026-09-29 · 6\/7 өдөр · Meta API/)).toBeInTheDocument();
+    const types = within(card).getByRole('region', { name: 'Үр дүн төрлөөр' });
+    expect(within(types).getByRole('row', { name: /Дуудлага \(Meta\)/ })).toHaveTextContent(/76.*141[.,]09 USD.*1[.,]86 USD/);
+    expect(within(types).getByRole('row', { name: /Постын оролцоо/ })).toHaveTextContent(/0[.,]0037 USD/);
+    expect(within(types).getByRole('row', { name: /Хүрсэн хүн/ })).toHaveTextContent('—');
+    const saved = screen.getByRole('region', { name: 'Хадгалсан тайлангууд' });
+    expect(within(saved).getByText('Meta API')).toBeInTheDocument();
+    expect(within(saved).getByText('6/7 өдөр')).toBeInTheDocument();
+    expect(within(saved).getByText(/Дуудлага \(Meta\):/).parentElement).toHaveTextContent('76');
 });

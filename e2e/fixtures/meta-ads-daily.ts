@@ -53,8 +53,9 @@ function campaigns(day: number): Array<[name: string, delivery: string, budget: 
 const num = (value: number | null | undefined, digits = 6) => value === null || value === undefined ? '' : value.toFixed(digits).replace(/\.?0+$/, '');
 const day = (index: number) => new Date(Date.UTC(2026, 8, 12 + index)).toISOString().slice(0, 10);
 
-function buildCsv(): string {
-    const lines = [META_ADS_EXPORT_HEADERS.map(header => header.includes(' ') ? `"${header}"` : header).join(',')];
+/** Өгөгдлийн мөрүүд (толгойгүй), CSV-ийн нүдний текстээр. */
+function buildRows(): string[][] {
+    const lines: string[][] = [];
     for (let index = 12; index >= 0; index--) {
         const date = day(index);
         for (const [name, delivery, budget, budgetType, ends, v] of campaigns(index)) {
@@ -65,10 +66,14 @@ function buildCsv(): string {
                 v.impressions ? num(v.spend / v.impressions * 1000) : '0', num(v.link), '', v.link && v.spend ? ratio(v.spend, v.link) : '',
                 v.link && v.impressions ? num(v.link / v.impressions * 100) : '', num(v.clicks), v.impressions ? num(v.clicks / v.impressions * 100) : '0',
                 v.clicks && v.spend ? ratio(v.spend, v.clicks) : '0', num(v.lpv), v.lpv && v.spend ? ratio(v.spend, v.lpv) : '', '', '',
-            ].join(','));
+            ]);
         }
     }
-    return `${lines.join('\n')}\n`;
+    return lines;
 }
 
-export const META_ADS_DAILY_CSV = buildCsv();
+export const META_ADS_DAILY_ROWS = buildRows();
+/** Ads Manager шиг: олон үгтэй толгойг л хашилтад. */
+export const META_ADS_DAILY_CSV = `${[META_ADS_EXPORT_HEADERS.map(header => header.includes(' ') ? `"${header}"` : header), ...META_ADS_DAILY_ROWS].map(row => row.join(',')).join('\n')}\n`;
+/** Файлыг уншсантай ижил мөрийн объектууд (толгой → нүд). */
+export const metaAdsDailyTable = () => META_ADS_DAILY_ROWS.map(row => Object.fromEntries(META_ADS_EXPORT_HEADERS.map((header, i) => [header, row[i]])));
