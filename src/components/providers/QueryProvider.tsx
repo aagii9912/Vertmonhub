@@ -6,9 +6,12 @@ import { toast } from 'sonner';
 
 export function QueryProvider({ children }: { children: ReactNode }) {
     const [queryClient] = useState(() => new QueryClient({
-        // Аливаа query алдааг чимээгүй залгилгүйгээр хэрэглэгчид мэдэгдэнэ
+        // Аливаа query алдааг чимээгүй залгилгүйгээр хэрэглэгчид мэдэгдэнэ. `meta.inlineError`
+        // query-ийн анхны ачаалалтын алдааг хуудас өөрөө (Alert + «Дахин оролдох») харуулдаг тул
+        // давхар toast гаргахгүй; өгөгдөл харагдаж байхад дэвсгэрт шинэчлэл унавал toast гарна.
         queryCache: new QueryCache({
-            onError: (error) => {
+            onError: (error, query) => {
+                if (query.meta?.inlineError && query.state.data === undefined) return;
                 toast.error(error instanceof Error ? error.message : 'Мэдээлэл ачаалахад алдаа гарлаа');
             },
         }),
