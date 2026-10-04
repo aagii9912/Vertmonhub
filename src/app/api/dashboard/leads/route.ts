@@ -4,11 +4,11 @@ import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { requireModuleWrite, resolvePermissions } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
-import { ACTIVE_STATUSES } from '@/lib/leads/labels';
+import { ACTIVE_STATUSES, isAnonymousLeadQuery } from '@/lib/leads/labels';
 import { isLeadWorkQueue, workQueueFilter } from '@/lib/leads/work-queue';
 import { parsePagination, buildPageMeta } from '@/lib/utils/pagination';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
-import { insertLeadOnce, resolveStaffLead } from '@/lib/services/LeadService';
+import { insertLeadOnce, resolveLeadIdentity, resolveStaffLead } from '@/lib/services/LeadService';
 import { phoneIlikePattern } from '@/lib/utils/phone';
 import { withRoute } from '@/lib/api/route';
 import { applyLeadScope, canAccessProject, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
@@ -25,7 +25,7 @@ const PERIOD_DAYS: Record<string, number> = {
  * GET /api/dashboard/leads?status=<status>&source=<source>&period=<week|month|quarter|year>&manager=<нэр>&phone=<дугаар>&q=<хайлт>
  * Лийдийн жагсаалт (shop-scoped, сервер cookie auth + service role).
  * phone — утасны давхардал шалгах (форматаас үл хамааран: «9911 2233» / «99112233» / «9911-2233»).
- * q — нэр, утас, и-мэйлээр хайлт.
+ * q — нэр, утас, и-мэйлээр хайлт; «нэргүй»-ээр эхэлбэл нэргүй (customer_name null) лидүүд.
  * view — хадгалсан харагдац: all | mine (миний лид) | new | meetings (уулзалт товлосон) | active (хаагдаагүй).
  * sort — created_at (анхдагч) | last_contact_at | customer_name | next_followup_at; dir — asc | desc.
  * Soft-delete хийгдсэн лийдийг (deleted_at) хасна.
@@ -104,7 +104,10 @@ export const GET = withRoute({ module: 'leads', error: 'Лийд татахад 
     const phonePattern = phoneIlikePattern(searchParams.get('phone'));
     if (phonePattern) query = query.ilike('customer_phone', phonePattern);
     const q = searchParams.get('q')?.trim();
-    if (q) {
+    // «нэргүй…» хайлт — нэр нь хоосон (нэргүй) лидүүд; нэрийг дараа нь нөхөхөд хэрэгтэй.
+    if (isAnonymousLeadQuery(q)) {
+        query = query.is('customer_name', null);
+    } else if (q) {
         const safe = q.replace(/[%_,()]/g, ' ').trim();
         if (safe) {
             query = query.or(
@@ -126,7 +129,9 @@ const VALID_STATUSES = ['new', 'contacted', 'viewing_scheduled', 'offered', 'neg
 const CreateLeadSchema = z.object({
     // Shop = төсөл: өгөөгүй бол resolveStaffLead shop-ийн ганц төслийг авна.
     project_id: z.string().uuid('Төслөө сонгоно уу').optional(),
-    customer_name: z.string().trim().min(1, 'Нэр шаардлагатай').max(200),
+    // Нэргүй лид: нэр хоосон + anonymous=true (resolveLeadIdentity утас/и-мэйл шаардана).
+    customer_name: z.string().trim().max(200).nullish(),
+    anonymous: z.boolean().optional(),
     customer_phone: z.string().trim().max(30).nullish(),
     customer_email: z.string().trim().max(200).nullish(),
     source: z.string().trim().max(50).optional(),
@@ -170,6 +175,8 @@ export async function POST(request: NextRequest) {
             );
         }
         const input = parsed.data;
+        const identity = resolveLeadIdentity(input);
+        if (!identity.ok) return NextResponse.json({ error: identity.error }, { status: identity.status });
 
         const db = supabaseAdmin();
         const [scope, perms] = await Promise.all([resolveSalesProjectScope(db, authShop.id), resolvePermissions()]);
@@ -184,9 +191,9 @@ export async function POST(request: NextRequest) {
             shop_id: authShop.id,
             project_id: resolved.project_id,
             client_request_id: input.client_request_id || null,
-            customer_name: input.customer_name,
-            customer_phone: input.customer_phone || null,
-            customer_email: input.customer_email || null,
+            customer_name: identity.customer_name,
+            customer_phone: identity.customer_phone,
+            customer_email: identity.customer_email,
             source: resolved.source,
             preferred_type: input.preferred_type || null,
             preferred_rooms: input.preferred_rooms ?? null,

@@ -3,7 +3,7 @@ import { getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveManagerIdentity, resolveActiveManagerName } from '@/lib/sales/manager-identity';
 import { logLeadActivity, listLeadActivities } from '@/lib/leads/activities';
-import { statusLabel } from '@/lib/leads/labels';
+import { leadDisplayName, normalizeLeadName, statusLabel } from '@/lib/leads/labels';
 import { hasRealContractFields } from '@/lib/leads/contracts';
 import { logger } from '@/lib/utils/logger';
 import { z } from 'zod';
@@ -11,6 +11,7 @@ import { applyLeadScope, assertProjectManager, canAccessProject, resolveSalesPro
 import { withRoute } from '@/lib/api/route';
 
 const VALID_STATUS = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'];
+const LeadNameSchema = z.string().trim().min(1).max(200);
 
 /**
  * GET /api/dashboard/leads/[id]
@@ -87,8 +88,8 @@ export const GET = withRoute<{ id: string }>({ module: 'leads', error: 'Лид �
 
 /**
  * PATCH /api/dashboard/leads/[id]
- * Лийдийн төлөв/тэмдэглэл/менежер/дараагийн холбоог шинэчилнэ (leads модулийн
- * бичих эрх). Статус ба менежерийн өөрчлөлтийг lead_activities-д автоматаар бичнэ.
+ * Лийдийн нэр/төлөв/тэмдэглэл/менежер/дараагийн холбоог шинэчилнэ (leads модулийн
+ * бичих эрх). Статус, менежер, нэрийн өөрчлөлтийг lead_activities-д автоматаар бичнэ.
  */
 export const PATCH = withRoute<{ id: string }>({ module: 'leads', access: 'write', error: 'Лийд шинэчлэхэд алдаа гарлаа' }, async ({ request, shop: authShop, params }) => {
     const { id } = await params;
@@ -110,6 +111,13 @@ export const PATCH = withRoute<{ id: string }>({ module: 'leads', access: 'write
         if (body.status !== 'closed_lost' && body.lost_reason === undefined) {
             updates.lost_reason = null;
         }
+    }
+    // Харилцагчийн нэр нэмэх/засах (нэргүй лидийг дараа нь нэрлэнэ). Нэрийг хоосолж болохгүй.
+    if (body.customer_name !== undefined) {
+        const parsedName = LeadNameSchema.safeParse(body.customer_name);
+        const name = parsedName.success ? normalizeLeadName(parsedName.data) : null;
+        if (!name) return NextResponse.json({ error: 'Харилцагчийн нэрийг оруулна уу. Нэрийг хоосолж болохгүй.' }, { status: 400 });
+        updates.customer_name = name;
     }
     if (typeof body.notes === 'string') updates.notes = body.notes;
     // «Өнөөдөр» дэлгэц: дараагийн холбоо барих цагийг хойшлуулах / дуусгах (null).
@@ -178,7 +186,7 @@ export const PATCH = withRoute<{ id: string }>({ module: 'leads', access: 'write
     }
     const { data: lead, error: readError } = await applyLeadScope(db
         .from('leads')
-        .select('id, project_id, status, sales_manager_name, lost_reason')
+        .select('id, project_id, status, sales_manager_name, lost_reason, customer_name')
         .eq('id', id)
         .eq('shop_id', authShop.id)
         .is('deleted_at', null), scope)
@@ -223,6 +231,12 @@ export const PATCH = withRoute<{ id: string }>({ module: 'leads', access: 'write
         return NextResponse.json({ error: 'Алдсан шалтгаанаа (lost_reason) заана уу' }, { status: 400 });
     }
 
+    // Түүхэнд бичих өөрчлөлтийг бичилтээс өмнөх утгаар тодорхойлно.
+    const changedStatus = updates.status !== undefined && updates.status !== lead.status;
+    const changedManager = updates.sales_manager_name !== undefined && updates.sales_manager_name !== lead.sales_manager_name;
+    const previousName: string | null = lead.customer_name ?? null;
+    const changedName = updates.customer_name !== undefined && updates.customer_name !== previousName;
+
     let write = applyLeadScope(db.from('leads').update(updates).eq('id', id).eq('shop_id', authShop.id).is('deleted_at', null), scope);
     write = lead.project_id ? write.eq('project_id', lead.project_id) : write.is('project_id', null);
     const { data: updated, error } = await write.select('id').maybeSingle();
@@ -231,10 +245,8 @@ export const PATCH = withRoute<{ id: string }>({ module: 'leads', access: 'write
     }
     if (!updated) return NextResponse.json({ error: 'Лидийн төсөл өөрчлөгдсөн байна. Дахин уншаад оролдоно уу.' }, { status: 409 });
 
-    // Түүх: статус / менежерийн өөрчлөлт (best-effort)
-    const changedStatus = updates.status !== undefined && updates.status !== lead.status;
-    const changedManager = updates.sales_manager_name !== undefined && updates.sales_manager_name !== lead.sales_manager_name;
-    if (changedStatus || changedManager) {
+    // Түүх: статус / менежер / нэрийн өөрчлөлт (best-effort)
+    if (changedStatus || changedManager || changedName) {
         const uid = await getUserId();
         const identity = uid ? await resolveManagerIdentity(db, authShop.id, uid) : null;
         const by = identity?.managerName ?? null;
@@ -250,6 +262,13 @@ export const PATCH = withRoute<{ id: string }>({ module: 'leads', access: 'write
                 shopId: authShop.id, leadId: id, type: 'manager', createdBy: uid, createdByName: by,
                 content: `${lead.sales_manager_name || '—'} → ${(updates.sales_manager_name as string | null) || '—'}`,
                 meta: { from: lead.sales_manager_name, to: updates.sales_manager_name },
+            });
+        }
+        if (changedName) {
+            await logLeadActivity(db, {
+                shopId: authShop.id, leadId: id, type: 'system', createdBy: uid, createdByName: by,
+                content: `Нэр: ${leadDisplayName(previousName)} → ${updates.customer_name as string}`,
+                meta: { field: 'customer_name', from: previousName, to: updates.customer_name },
             });
         }
     }
