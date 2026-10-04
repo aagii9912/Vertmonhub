@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { nextMeetingDate, weeklyReviewRange, meetingDateSchema, WeeklyUpdateSchema, formatReviewChange, formatWeeklyReview, weeklyDiscussionItems, type WeeklyUpdate } from '../weekly-review';
+import { nextMeetingDate, lastCompletedReviewRange, weeklyReviewRange, meetingDateSchema, WeeklyUpdateSchema, formatReviewChange, formatWeeklyReview, weeklyDiscussionItems, type WeeklyUpdate } from '../weekly-review';
 import { formatWorkdayDate } from '@/lib/utils/date';
 import { buildMarketingPerformance, type MarketingSpend } from '@/lib/marketing/performance';
 
@@ -10,6 +10,13 @@ describe('Лхагва гарагийн тайлангийн хугацаа', ()
         expect(weeklyReviewRange('2026-09-30')).toEqual({ from: '2026-09-23', to: '2026-09-29' });
         expect(weeklyReviewRange('2026-01-07')).toEqual({ from: '2025-12-31', to: '2026-01-06' });
         expect(formatWorkdayDate(new Date('2026-09-29T16:00:00Z'))).toBe('9-р сарын 30, Лхагва');
+    });
+    it('хамгийн сүүлд бүрэн дууссан Лхагва–Мягмар долоо хоногийг УБ-ийн өдрөөр сонгоно', () => {
+        // УБ Мягмар 23:59 — тухайн долоо хоног дуусаагүй тул өмнөх долоо хоног.
+        expect(lastCompletedReviewRange(new Date('2026-09-29T15:59:00Z'))).toEqual({ from: '2026-09-16', to: '2026-09-22' });
+        // УБ Лхагва 00:00 (UTC-д Мягмар) — өчигдөр дууссан долоо хоног.
+        expect(lastCompletedReviewRange(new Date('2026-09-29T16:00:00Z'))).toEqual({ from: '2026-09-23', to: '2026-09-29' });
+        expect(lastCompletedReviewRange(new Date('2026-10-04T04:00:00Z'))).toEqual({ from: '2026-09-23', to: '2026-09-29' });
     });
     it('буруу өдөр, хоосон тэмдэглэл, бусдын ID-г зөвшөөрөхгүй', () => {
         expect(meetingDateSchema.safeParse('2026-09-31').success).toBe(false);

@@ -35,6 +35,7 @@ import {
     Palette,
     Bot,
     HelpCircle,
+    FileSpreadsheet,
 } from 'lucide-react';
 
 type IconType = ComponentType<SVGAttributes<SVGSVGElement>>;
@@ -158,6 +159,7 @@ export const PRIMARY_NAV: NavItem[] = [
             { name: 'Сувгууд', href: '/marketing/sources' },
             { name: 'Кампанит ажил', href: '/marketing/campaigns' },
             { name: 'Newsletter', href: '/marketing/newsletter' },
+            { name: 'Экспорт импорт', href: '/marketing/channel-reports' },
         ],
     },
 ];
@@ -200,6 +202,7 @@ export const SECONDARY_ROUTES: SecondaryRoute[] = [
     { name: 'Email / Newsletter', href: '/marketing/newsletter', icon: Mail, module: 'marketing-roi', group: 'Маркетинг', keywords: ['resend', 'имэйл', 'товхимол'] },
     { name: 'Мессеж', href: '/marketing/messaging', icon: Mail, module: 'marketing-roi', group: 'Маркетинг' },
     { name: 'Брэнд', href: '/marketing/brand', icon: Palette, module: 'marketing-roi', group: 'Маркетинг' },
+    { name: 'Сувгийн экспорт импорт', href: '/marketing/channel-reports', icon: FileSpreadsheet, module: 'marketing-roi', group: 'Маркетинг', keywords: ['meta', 'facebook', 'callpro', 'sms', 'экспорт', 'импорт', 'excel', 'csv', 'дуудлага', 'хурал'] },
 
     { name: 'AI агентууд', href: '/dashboard/ai-assistant/agents', icon: Bot, module: 'ai-assistant', group: 'AI' },
     { name: 'AI тохиргоо', href: '/dashboard/ai-settings', icon: Settings, module: 'ai-settings', group: 'AI' },

@@ -89,6 +89,25 @@ export interface ChannelAggregate {
     detectedPeriod: { from: string; to: string } | null;
 }
 export interface MetricDelta { current: number | null; previous: number | null; delta: number | null; pct: number | null; comparable: boolean }
+export type MappingOrigin = 'remembered' | 'mixed' | 'suggested' | 'client';
+/** POST /api/marketing/channel-reports (mode=preview) хариу. */
+export interface ChannelPreviewResponse {
+    mode: 'preview';
+    /** false = миграци ороогүй: урьдчилан харж болно, хадгалахгүй. */
+    storageReady: boolean;
+    file: { name: string; size: number };
+    sheets: string[];
+    sheet: string;
+    headerRow: number;
+    headers: string[];
+    sample: Record<string, string[]>;
+    mapping: ChannelMapping;
+    suggested: ChannelMapping;
+    mappingOrigin: MappingOrigin;
+    result: ChannelAggregate;
+    existing: { id: string; file_name: string | null; updated_at: string } | null;
+    duplicate: { id: string; source: ChannelSource; period_from: string; period_to: string } | null;
+}
 
 export const CHANNEL_LIMITS = { breakdown: 100, headerScan: 20 } as const;
 export const CHANNEL_PERIOD_MAX_DAYS = 92;
