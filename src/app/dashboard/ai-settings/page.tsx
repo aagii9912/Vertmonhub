@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { HelpCircle, BookOpen, Upload, Database, X, Save, Plus, Trash2, Edit2, Check } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Card, CardContent } from '@/components/ui/Card';
 import { SectionCard } from '@/components/ui/SectionCard';
@@ -11,14 +13,13 @@ import { Textarea } from '@/components/ui/Textarea';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/Alert';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
-import ImportTab from './components/ImportTab';
 import { SessionApprovalsReset } from '@/components/ai-assistant/SessionApprovalsReset';
 import { dashboardFetch, dashboardMutate } from '@/lib/api/dashboardFetch';
 
 // ============================================
 // TYPES
 // ============================================
-type Tab = 'knowledge' | 'faq' | 'import';
+type Tab = 'knowledge' | 'faq';
 
 interface FAQ {
     id: string;
@@ -36,7 +37,7 @@ export default function AISettingsPage() {
     const [activeTab, setActiveTab] = useState<Tab>('knowledge');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-    const [canImport, setCanImport] = useState(false);
+    const { user } = useAuth();
 
     // Knowledge
     const [customKnowledge, setCustomKnowledge] = useState<Array<{ key: string; value: string }>>([]);
@@ -63,17 +64,6 @@ export default function AISettingsPage() {
                 const aiData = await aiRes.json();
                 setFaqs(aiData.faqs || []);
             }
-            // Check import permission
-            try {
-                const adminRes = await dashboardFetch('/api/admin/settings');
-                if (adminRes.ok) {
-                    const adminData = await adminRes.json();
-                    const currentAdmin = adminData.admin;
-                    if (currentAdmin?.role === 'super_admin' || currentAdmin?.permissions?.can_import_data) {
-                        setCanImport(true);
-                    }
-                }
-            } catch { }
         } catch (err) { console.error('Failed to fetch:', err); }
         finally { setLoading(false); }
     }
@@ -82,7 +72,6 @@ export default function AISettingsPage() {
     const tabs = [
         { id: 'knowledge' as Tab, label: 'AI Мэдээлэл', icon: Database },
         { id: 'faq' as Tab, label: 'FAQ', icon: HelpCircle },
-        ...(canImport ? [{ id: 'import' as Tab, label: 'Өгөгдөл оруулах', icon: Upload }] : []),
     ];
 
     if (loading) {
@@ -120,6 +109,11 @@ export default function AISettingsPage() {
                         <tab.icon className="w-4 h-4" />{tab.label}
                     </button>
                 ))}
+                {user?.role === 'super_admin' && (
+                    <Link href="/admin/import" className="ml-auto flex items-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-medium text-brand-strong hover:bg-surface-2 focus-ring">
+                        <Upload className="w-4 h-4" />Excel-ээр оруулах (төсөл сонгож)
+                    </Link>
+                )}
             </div>
 
             {/* Success / Error */}
@@ -147,7 +141,6 @@ export default function AISettingsPage() {
             {activeTab === 'faq' && (
                 <FAQSection faqs={faqs} setFaqs={setFaqs} editingFaq={editingFaq} setEditingFaq={setEditingFaq} setError={setError} />
             )}
-            {activeTab === 'import' && canImport && <ImportTab />}
         </div>
     );
 }
