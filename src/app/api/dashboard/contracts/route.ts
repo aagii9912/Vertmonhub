@@ -4,6 +4,7 @@ import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { fetchAllRows } from '@/lib/utils/pagination';
+import { contractIdsByPreviousHolder } from '@/lib/services/ContractService';
 
 /** `?sortBy=` — зөвхөн эдгээр багана (өмнө нь дурын нэр `.order()`-т орж 500 өгдөг байв). */
 const SORTABLE = new Set([
@@ -40,6 +41,8 @@ export async function GET(request: NextRequest) {
         const dateTo = sp.get('to');     // YYYY-MM-DD
         const sortBy = SORTABLE.has(sp.get('sortBy') || '') ? (sp.get('sortBy') as string) : 'contract_date';
         const sortOrder = sp.get('sortOrder') === 'asc';
+        // Шилжүүлсэн гэрээ өмнөх эзэмшигчийн нэр, утас, регистрээр ч олдоно.
+        const previousHolderIds = search ? await contractIdsByPreviousHolder(supabase, shopId, search) : [];
 
         // Шүүлттэй query-г дахин барих туслах (хуудаслалт бүрт шинээр).
         // `select` — статистикт зөвхөн 5 тоон багана татна (бүх баганыг 1600+ мөрөөр
@@ -68,7 +71,8 @@ export async function GET(request: NextRequest) {
                     `customer_first_name.ilike.%${search}%,` +
                     `customer_last_name.ilike.%${search}%,` +
                     `customer_phone.ilike.%${search}%,` +
-                    `customer_registration.ilike.%${search}%`
+                    `customer_registration.ilike.%${search}%` +
+                    (previousHolderIds.length ? `,id.in.(${previousHolderIds.join(',')})` : '')
                 );
             }
             return q.order(sortBy, { ascending: sortOrder, nullsFirst: false }).order('id');

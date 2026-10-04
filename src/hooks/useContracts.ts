@@ -3,9 +3,10 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
-import type { PropertyContract } from '@/types/property';
+import type { ContractTransfer, PropertyContract } from '@/types/property';
+import type { TransferContractInput } from '@/lib/contracts/transfer';
 
-export type ContractRow = PropertyContract & { lead_id?: string | null; project_id?: string | null };
+export type ContractRow = PropertyContract;
 
 export interface ContractStats {
     total: number;
@@ -122,6 +123,31 @@ export function useUpdatePayment(contractId: string) {
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: ['contracts'] });
             void qc.invalidateQueries({ queryKey: ['director'] });
+        },
+    });
+}
+
+/** Эзэмшигчийн түүх (шилжүүлэг, нэр засвар). available=false — migration хараахан ороогүй. */
+export function useContractTransfers(contractId: string | null) {
+    const { shop } = useAuth();
+    return useQuery<{ transfers: ContractTransfer[]; available: boolean }>({
+        queryKey: ['contracts', 'transfers', shop?.id, contractId],
+        queryFn: () => dashboardJson<{ transfers: ContractTransfer[]; available: boolean }>(`/api/dashboard/contracts/${contractId}/transfer`),
+        enabled: !!shop?.id && !!contractId,
+        staleTime: 15_000,
+    });
+}
+
+/** Гэрээ шилжүүлэх / нэр засах. Гэрээ, захирлын самбар, лидийн түүхийг шинэчилнэ. */
+export function useTransferContract(contractId: string) {
+    const qc = useQueryClient();
+    return useMutation({
+        mutationFn: (input: TransferContractInput) =>
+            dashboardMutate<{ transfer: ContractTransfer; replayed: boolean; message: string }>(`/api/dashboard/contracts/${contractId}/transfer`, 'POST', input),
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: ['contracts'] });
+            void qc.invalidateQueries({ queryKey: ['director'] });
+            void qc.invalidateQueries({ queryKey: ['leads'] });
         },
     });
 }
