@@ -10,11 +10,13 @@ const state = vi.hoisted(() => ({
     deletes: 0,
     creates: 0,
     passwords: [] as string[],
+    createdEmails: [] as string[],
+    upserted: [] as Array<{ table: string; payload: unknown }>,
     authenticated: true,
     superAdmin: true,
     readErrorTable: '',
     audits: [] as Array<{ action: string; targetId: string; meta?: unknown }>,
-    profiles: [] as Array<{ id: string; full_name: string }>,
+    profiles: [] as Array<{ id: string; full_name: string; phone?: string | null }>,
     userRoles: [] as Array<{ user_id: string; role: string }>,
     members: [] as Array<{ user_id: string; shop_id: string }>,
     managers: [] as Array<{ user_id: string; shop_id: string; name: string; is_active: boolean }>,
@@ -41,8 +43,8 @@ const db = {
         ] }, error: null }),
         getUserById: async () => ({ data: { user: { id: 'target' } }, error: null }),
         deleteUser: async () => { state.deletes++; return { error: null }; },
-        createUser: async (input: { password: string }) => {
-            state.creates++; state.passwords.push(input.password);
+        createUser: async (input: { email: string; password: string }) => {
+            state.creates++; state.passwords.push(input.password); state.createdEmails.push(input.email);
             return { data: { user: { id: targetId } }, error: null };
         },
         updateUserById: async (_id: string, input: { password: string }) => {
@@ -65,7 +67,7 @@ const db = {
                     : table === 'shops' ? state.shops.find(shop => shop.id === selectedShopId) ?? null : null,
                 error: null,
             }),
-            upsert: async () => { state.upserts++; return { error: null }; },
+            upsert: async (payload: unknown) => { state.upserts++; state.upserted.push({ table, payload }); return { error: null }; },
             insert: async () => ({ error: null }),
             range: () => { batch = true; return query; },
             then: (resolve: (result: { data: unknown[]; error: { message: string } | null }) => unknown) => {
@@ -97,7 +99,7 @@ beforeEach(() => {
     state.upserts = 0;
     state.deletes = 0;
     state.creates = 0;
-    state.passwords = [];
+    state.passwords = []; state.createdEmails = []; state.upserted = [];
     state.authenticated = true; state.superAdmin = true; state.readErrorTable = '';
     state.audits = []; state.profiles = []; state.userRoles = []; state.members = []; state.managers = [];
 });
@@ -178,6 +180,41 @@ describe('admin user safety', () => {
         expect(state.creates).toBe(0);
     });
 
+    it('stores a normalized staff phone and lowercases a mixed-case email on create', async () => {
+        const response = await POST(jsonRequest('POST', {
+            email: '  New.Manager@Example.com ', password: 'strong-pass-123', role: 'viewer', full_name: 'Тест Ажилтан', phone: '+976 9911-2233',
+        }));
+        expect(response.status).toBe(201);
+        expect(state.createdEmails).toEqual(['new.manager@example.com']);
+        expect(state.upserted.find(entry => entry.table === 'user_profiles')?.payload).toEqual({
+            id: targetId, email: 'new.manager@example.com', full_name: 'Тест Ажилтан', phone: '99112233',
+        });
+        expect((await response.json()).user).toMatchObject({ email: 'new.manager@example.com', phone: '99112233' });
+        // Утас (хувийн мэдээлэл) audit-д бичигдэхгүй.
+        expect(JSON.stringify(state.audits)).not.toContain('99112233');
+    });
+
+    it.each(['9911223', '991122330', 'утас', 12345678])('rejects a malformed staff phone (%s) before Auth', async phone => {
+        const response = await POST(jsonRequest('POST', { email: 'new@example.com', password: 'strong-pass-123', role: 'viewer', phone }));
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({ error: 'Утасны дугаар 8 оронтой байх ёстой' });
+        expect(state.creates).toBe(0);
+    });
+
+    it('treats a blank phone as no phone', async () => {
+        const response = await POST(jsonRequest('POST', { email: 'new@example.com', password: 'strong-pass-123', role: 'viewer', phone: ' ' }));
+        expect(response.status).toBe(201);
+        expect(state.upserted.find(entry => entry.table === 'user_profiles')?.payload).not.toHaveProperty('phone');
+    });
+
+    it('requires a manager name different from the email regardless of case', async () => {
+        const response = await POST(jsonRequest('POST', {
+            email: 'new@example.com', password: 'strong-pass-123', role: 'sales_manager', full_name: 'NEW@example.com',
+        }));
+        expect(response.status).toBe(400);
+        expect(state.creates).toBe(0);
+    });
+
     it('rejects malformed account IDs before hitting Auth or role mutation', async () => {
         const response = await PATCH(jsonRequest('PATCH', { userId: 'invalid-id', role: 'super_admin' }));
         expect(response.status).toBe(400);
@@ -207,7 +244,7 @@ describe('admin user safety', () => {
     it('returns the acting user plus owner/member, login and active manager status', async () => {
         const shopId = '20000000-0000-4000-8000-000000000001';
         state.shops = [{ id: shopId, name: 'Байгууллага', user_id: targetId }];
-        state.profiles = [{ id: targetId, full_name: 'Бат' }];
+        state.profiles = [{ id: targetId, full_name: 'Бат', phone: '99112233' }];
         state.userRoles = [{ user_id: targetId, role: 'sales_manager' }];
         state.members = [{ user_id: actorId, shop_id: shopId }];
         state.managers = [{ user_id: targetId, shop_id: shopId, name: 'Бат', is_active: true }];
@@ -215,9 +252,16 @@ describe('admin user safety', () => {
         expect(response.status).toBe(200);
         const result = await response.json();
         expect(result.actor_id).toBe(actorId);
-        expect(result.users[0]).toMatchObject({ id: targetId, full_name: 'Бат', email_confirmed: false,
-            shops: [{ id: shopId, name: 'Байгууллага', is_owner: true }], manager_shops: [{ shop_id: shopId, name: 'Бат' }] });
-        expect(result.users[1]).toMatchObject({ id: actorId, email_confirmed: true, last_sign_in_at: '2026-10-01T00:00:00Z', shops: [{ is_owner: false }] });
+        expect(result.users[0]).toMatchObject({ id: targetId, full_name: 'Бат', phone: '99112233', email_confirmed: false,
+            shops: [{ id: shopId, name: 'Байгууллага', is_owner: true }], manager_shops: [{ shop_id: shopId, name: 'Бат' }], manager_linked: true });
+        expect(result.users[1]).toMatchObject({ id: actorId, phone: null, email_confirmed: true, last_sign_in_at: '2026-10-01T00:00:00Z', shops: [{ is_owner: false }], manager_linked: false });
+    });
+
+    it('flags an inactive roster link (name locked) without counting it as an active manager project', async () => {
+        const shopId = '20000000-0000-4000-8000-000000000001';
+        state.managers = [{ user_id: targetId, shop_id: shopId, name: 'Бат', is_active: false }];
+        const result = await (await GET()).json();
+        expect(result.users[0]).toMatchObject({ id: targetId, manager_shops: [], manager_linked: true });
     });
 
     it('does not return partial or misleading user status after a membership read failure', async () => {

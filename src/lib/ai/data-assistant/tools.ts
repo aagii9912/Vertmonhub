@@ -814,11 +814,13 @@ const deleteDefinitions: ToolDefinition[] = [
 const adminDefinitions: ToolDefinition[] = [
     {
         name: 'invite_user',
-        description: 'Шинэ хэрэглэгчийг түр нууц үгтэй үүсгэж, дүр (role) болон төслийн гишүүнчлэл онооно. Имэйл автоматаар илгээгдэхгүй — нэвтрэх мэдээлэл (имэйл+түр нууц үг+линк) буцаж ирэх тул админ тухайн хүнд дамжуулна. ЗӨВХӨН super_admin. Баталгаажуулалт авна.',
+        description: 'Шинэ хэрэглэгчийг түр нууц үгтэй үүсгэж, дүр (role) болон төслийн гишүүнчлэл онооно. Имэйл автоматаар илгээгдэхгүй — нэвтрэх мэдээлэл (имэйл+түр нууц үг+линк) буцаж ирэх тул админ тухайн хүнд дамжуулна. sales_manager-т бодит бүтэн нэр ЗААВАЛ (ERP-ийн «Борлуулалтын менежер» бичлэгтэй яг ижил; нэр бүү зохио — мэдэхгүй бол хэрэглэгчээс асуу). ЗӨВХӨН super_admin. Баталгаажуулалт авна.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 email: { type: SchemaType.STRING, description: 'Урих хэрэглэгчийн имэйл' },
+                full_name: { type: SchemaType.STRING, description: 'Бодит бүтэн нэр (кирилл). Борлуулалтын менежерт заавал; лид, KPI энэ нэрээр холбогдоно' },
+                phone: { type: SchemaType.STRING, description: 'Ажилтны утас, 8 оронтой (заавал биш; +976, зай, зураасыг систем хасна)' },
                 role: { type: SchemaType.STRING, description: 'Оноох дүр: admin, sales_manager, marketing, finance_manager, accountant, viewer гэх мэт (default: viewer)' },
                 shop_id: { type: SchemaType.STRING, description: 'Төслийн ID (default: одоогийн төсөл)' }
             },
@@ -827,12 +829,13 @@ const adminDefinitions: ToolDefinition[] = [
     },
     {
         name: 'assign_role',
-        description: 'Бүртгэлтэй хэрэглэгчид (имэйлээр) дүр оноох/солих. ЗӨВХӨН super_admin. Хэрэглэгчээс баталгаажуулалт авна.',
+        description: 'Бүртгэлтэй хэрэглэгчид (имэйлээр) дүр оноох/солих. sales_manager болгох бол тухайн төсөлд менежерийн бүртгэл, гишүүнчлэл хамт үүснэ. ЗӨВХӨН super_admin. Хэрэглэгчээс баталгаажуулалт авна.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 email: { type: SchemaType.STRING, description: 'Хэрэглэгчийн имэйл' },
-                role: { type: SchemaType.STRING, description: 'Шинэ дүр (role нэр)' }
+                role: { type: SchemaType.STRING, description: 'Шинэ дүр (role нэр)' },
+                shop_id: { type: SchemaType.STRING, description: 'sales_manager-ийн төслийн ID (default: одоогийн төсөл)' }
             },
             required: ['email', 'role']
         }
