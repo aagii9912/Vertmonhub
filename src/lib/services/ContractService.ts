@@ -156,6 +156,21 @@ export async function contractIdsByPreviousHolder(db: SupabaseClient, shopId: st
     return [...new Set((data || []).map(row => String(row.contract_id)))];
 }
 
+/**
+ * Эзэмшигч нь шилжүүлэг/нэр засвараар солигдсон гэрээний ID-ууд. Админ импорт эдгээрийн
+ * эзэмшигчийг хуучин Excel-ээр буцааж дарахгүй.
+ */
+export async function loadTransferredContractIds(db: SupabaseClient, shopId: string): Promise<Set<string>> {
+    try {
+        const rows = await fetchAllRows<{ contract_id: string }>((from, to) => db.from('contract_transfers')
+            .select('contract_id').eq('shop_id', shopId).order('contract_id').order('id').range(from, to));
+        return new Set(rows.map(row => row.contract_id));
+    } catch (error) {
+        if (isMissingTransfersTable({ message: error instanceof Error ? error.message : String(error) })) return new Set();
+        throw error;
+    }
+}
+
 /** Экспорт: shop-ийн бүх гэрээний шилжүүлгийн хураангуй (анхны худалдан авагч, сүүлийн огноо). */
 export async function loadContractTransferSummaries(db: SupabaseClient, shopId: string): Promise<Map<string, ContractTransferSummary>> {
     let rows: Array<Pick<ContractTransfer, 'contract_id' | 'kind' | 'effective_date' | 'from_customer_name' | 'created_at'>>;

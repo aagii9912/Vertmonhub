@@ -9,6 +9,7 @@ import { z } from 'zod';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { normalizePhone } from '@/lib/utils/phone';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
+import { loadTransferredContractIds } from '@/lib/services/ContractService';
 import {
     ImportRow,
     mapPropertyRow,
@@ -54,6 +55,8 @@ interface ImportResult {
     updated?: number;
     skipped?: number;
     errors?: string[];
+    /** Алдаа биш мэдэгдэл (мөр хадгалагдсан, зарим талбарыг санаатай алгассан). */
+    notes?: string[];
     message: string;
     preview?: InventoryImportPreview;
 }
@@ -509,7 +512,8 @@ function summarize(
     imported: number,
     updated: number,
     skipped: number,
-    errors: string[]
+    errors: string[],
+    notes: string[] = [],
 ): ImportResult {
     const parts = [`${imported} шинэ`];
     if (updated > 0) parts.push(`${updated} шинэчлэгдсэн`);
@@ -521,6 +525,7 @@ function summarize(
         updated,
         skipped,
         errors: errors.length > 0 ? errors : undefined,
+        notes: notes.length > 0 ? notes : undefined,
         message: `${label}: ${parts.join(', ')}`,
     };
 }
@@ -953,19 +958,23 @@ async function importLeads(
 //     гэрээний дугаараар давхардал шалгаж, дахин импортод update
 // ============================================
 
+const CONTRACT_HOLDER_FIELDS = ['customer_name', 'customer_first_name', 'customer_last_name', 'customer_registration', 'customer_phone', 'customer_mobile'];
+
 async function importContracts(
     supabase: ReturnType<typeof supabaseAdmin>,
     rows: ImportRow[],
     ctx: ImportContext
 ): Promise<ImportResult> {
     const errors: string[] = [];
+    const notes: string[] = [];
     const fresh: Array<Record<string, unknown>> = [];
     const toUpdate: Array<{ id: string; contract_number: string; fields: Record<string, unknown>; paidAmount?: number | null }> = [];
     const seen = new Set<string>();
 
-    const [existingByNumber, hasNotes] = await Promise.all([
+    const [existingByNumber, hasNotes, transferred] = await Promise.all([
         loadImportRecords(supabase, 'property_contracts', 'contract_number', ctx.shopId),
         columnExists(supabase, 'property_contracts', 'notes'),
+        loadTransferredContractIds(supabase, ctx.shopId),
     ]);
 
     for (let i = 0; i < rows.length; i++) {
@@ -987,6 +996,12 @@ async function importContracts(
             const fields = pickFields(data as unknown as Record<string, unknown>, provided,
                 ['contract_number', 'prepayment_paid', 'paid_amount', 'balance']);
             if (!hasNotes) delete fields.notes;
+            // Шилжүүлсэн/нэр зассан гэрээний эзэмшигчийг хуучин файлаар буцааж дарахгүй
+            // (эзэмшигч зөвхөн transfer_contract-аар, түүхтэй солигдоно).
+            if (transferred.has(match.record.id) && CONTRACT_HOLDER_FIELDS.some(key => key in fields)) {
+                for (const key of CONTRACT_HOLDER_FIELDS) delete fields[key];
+                notes.push(`Мөр ${i + 2}: "${data.contract_number}" — шилжүүлсэн гэрээний эзэмшигчийг импортоор өөрчлөхгүй`);
+            }
             toUpdate.push({ id: match.record.id, contract_number: data.contract_number, fields });
         } else {
             // Active contract numbers are unique across a shop, including other projects.
@@ -1060,5 +1075,5 @@ async function importContracts(
         }
     });
 
-    return summarize('Гэрээ', imported, updated, 0, errors);
+    return summarize('Гэрээ', imported, updated, 0, errors, notes);
 }

@@ -188,6 +188,21 @@ describe('contract import preserves payment accounting', () => {
         expect(state.rows.property_contracts[0]).toMatchObject({ paid_amount: 50, balance: 50 });
     });
 
+    it('keeps the holder of a transferred contract while other fields still update', async () => {
+        state.rows.property_contracts = [contract({ customer_name: 'Шинэ эзэмшигч', customer_phone: '88114455' }), contract({ id: 'other', contract_number: 'C-002', customer_name: 'Old' })];
+        state.rows.contract_transfers = [{ id: 'transfer-1', shop_id: shopId, contract_id: 'live' }];
+        const response = await runImport('contracts', [
+            { ...contractRow, total_price: 200, buyer_phone: '99112233' },
+            { ...contractRow, contract_number: 'C-002', buyer_name: 'New Buyer' },
+        ], projectA);
+        expect(response.status).toBe(200);
+        expect(state.rows.property_contracts[0]).toMatchObject({ customer_name: 'Шинэ эзэмшигч', customer_phone: '88114455', total_price: 200, paid_amount: 50 });
+        expect(state.rows.property_contracts[1]).toMatchObject({ customer_name: 'New Buyer' });
+        const body = await response.json();
+        expect(body.errors).toBeUndefined();
+        expect(body.notes).toEqual([expect.stringContaining('шилжүүлсэн гэрээний эзэмшигчийг импортоор өөрчлөхгүй')]);
+    });
+
     it('preserves a concurrent receipt and rejects stale balance updates', async () => {
         state.rows.property_contracts = [contract()];
         state.beforeUpdate = () => Object.assign(state.rows.property_contracts[0], { paid_amount: 60, balance: 40 });

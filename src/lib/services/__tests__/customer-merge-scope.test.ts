@@ -109,6 +109,17 @@ describe('customer merge preserves lead ownership', () => {
         expect(state.scope).not.toHaveBeenCalled();
     });
 
+    it('repoints contract holder history to the primary before the duplicate is deleted', async () => {
+        await mergeCustomers(database(), 'shop', primaryId, duplicateId, UNRESTRICTED_SALES_SCOPE);
+        const relinks = state.queries.filter(query => query.table === 'contract_transfers');
+        expect(relinks).toEqual([
+            { table: 'contract_transfers', operation: 'update', filters: { shop_id: 'shop', from_customer_id: duplicateId } },
+            { table: 'contract_transfers', operation: 'update', filters: { shop_id: 'shop', to_customer_id: duplicateId } },
+        ]);
+        const deleteIndex = state.queries.findIndex(query => query.table === 'customers' && query.operation === 'delete');
+        expect(deleteIndex).toBeGreaterThan(state.queries.lastIndexOf(relinks[1]));
+    });
+
     it('organization AI calls retain confirmation previews', async () => {
         expect(await mergeCustomersTool('shop', { primary_id: primaryId, duplicate_id: duplicateId }, false, UNRESTRICTED_SALES_SCOPE)).toMatchObject({ requiresConfirmation: true });
         expect(state.queries.some(query => query.operation !== 'select')).toBe(false);
