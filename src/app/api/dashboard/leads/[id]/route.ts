@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveManagerIdentity, resolveActiveManagerName } from '@/lib/sales/manager-identity';
-import { logLeadActivity, listLeadActivities } from '@/lib/leads/activities';
+import { logLeadActivity } from '@/lib/leads/activities';
+import { loadLeadTimeline } from '@/lib/leads/timeline-load';
 import { leadDisplayName, normalizeLeadName, statusLabel } from '@/lib/leads/labels';
 import { hasRealContractFields } from '@/lib/leads/contracts';
 import { logger } from '@/lib/utils/logger';
@@ -16,7 +17,9 @@ const LeadNameSchema = z.string().trim().min(1).max(200);
 /**
  * GET /api/dashboard/leads/[id]
  * Хажуугийн панелд хэрэгтэй бүх зүйл нэг дуудлагаар: лид, уулзалтууд, гэрээнүүд,
- * үйл ажиллагааны түүх, сонирхсон байр. Дэд хэсэг бүр тусдаа уналтад тэсвэртэй.
+ * үйл ажиллагааны түүх, менежерүүдийн Time-line (`timeline`), сонирхсон байр.
+ * Дэд хэсэг бүр тусдаа уналтад тэсвэртэй (`partial`). `activities` нь хуучин client-д
+ * зориулсан сүүлийн 100 үйлдэл (шинэ нь дээр) хэвээр.
  */
 export const GET = withRoute<{ id: string }>({ module: 'leads', error: 'Лид татахад алдаа гарлаа' }, async ({ shop: authShop, params }) => {
     const { id } = await params;
@@ -39,7 +42,7 @@ export const GET = withRoute<{ id: string }>({ module: 'leads', error: 'Лид �
         if (r.error) { partial.push(name); return fallback; }
         return r.data ?? fallback;
     };
-    const [viewings, contracts, activities, property] = await Promise.all([
+    const [viewings, contracts, history, property] = await Promise.all([
         db
             .from('property_viewings')
             .select('id, scheduled_at, status, meeting_type, property_id, agent_notes, customer_feedback, interest_level, sales_manager_name')
@@ -51,14 +54,17 @@ export const GET = withRoute<{ id: string }>({ module: 'leads', error: 'Лид �
             .then((r) => soft('viewings', r, [] as Record<string, unknown>[])),
         db
             .from('property_contracts')
-            .select('id, contract_number, contract_status, contract_date, total_price, paid_amount, balance, unit_number, block_name')
+            .select('id, contract_number, contract_status, contract_date, total_price, paid_amount, balance, unit_number, block_name, sales_manager')
             .eq('lead_id', id)
             .eq('shop_id', authShop.id)
             .is('deleted_at', null)
             .order('contract_date', { ascending: false })
             .limit(10)
             .then((r) => soft('contracts', r, [] as Record<string, unknown>[])),
-        listLeadActivities(db, authShop.id, id),
+        loadLeadTimeline(db, authShop.id, lead, scope).catch((timelineError: unknown) => {
+            logger.warn('[leads/[id]] timeline failed', { id, error: timelineError });
+            return null;
+        }),
         lead.property_id
             ? db
                   .from('properties')
@@ -82,8 +88,13 @@ export const GET = withRoute<{ id: string }>({ module: 'leads', error: 'Лид �
         property_name: v.property_id ? propNames.get(v.property_id as string) ?? null : null,
     }));
 
+    // Түүх уншигдаагүй бол «түүх» (activities), бусад эх сурвалж дутуу бол «менежерийн түүх» (timeline).
+    if (!history?.activities) partial.push('activities');
+    if (!history || history.timeline.partial.some((name) => name !== 'activities')) partial.push('timeline');
+    const activities = history?.activities ? [...history.activities].reverse().slice(0, 100) : [];
+
     if (partial.length) logger.warn('[leads/[id]] partial sub-queries failed', { id, partial });
-    return NextResponse.json({ lead, viewings: viewingsOut, contracts, activities, property, partial });
+    return NextResponse.json({ lead, viewings: viewingsOut, contracts, activities, timeline: history?.timeline ?? null, property, partial });
 });
 
 /**

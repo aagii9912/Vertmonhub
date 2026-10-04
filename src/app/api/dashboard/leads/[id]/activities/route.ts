@@ -6,15 +6,33 @@ import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { listLeadActivities, recordLeadContact } from '@/lib/leads/activities';
 import { withRoute } from '@/lib/api/route';
 import { applyLeadScope, resolveSalesProjectScope } from '@/lib/sales/project-scope';
+import { QuoteAmountSchema, QuoteUnitSchema } from '@/lib/leads/quotes';
 
-const CreateSchema = z.object({
-    type: z.enum(['note', 'call']).default('note'),
+/** Залгасны/санал тавьсны дараа дараагийн холбоо барих цаг (заавал биш) */
+const FollowupSchema = z.string().datetime({ offset: true }).nullable().optional();
+
+const ContactSchema = z.object({
+    type: z.enum(['note', 'call']),
     content: z.string().trim().min(1, 'Тэмдэглэл хоосон байна').max(4000),
-    /** Залгасны дараа дараагийн холбоо барих цаг (заавал биш) */
-    next_followup_at: z.string().datetime({ offset: true }).nullable().optional(),
+    next_followup_at: FollowupSchema,
 });
 
-/** GET /api/dashboard/leads/[id]/activities — сүүлийн 100 үйлдэл, шинэ нь дээр. */
+/** «Үнийн санал»: ₮ бүхэл дүн + байр/тоот (заавал биш) + тайлбар (хоосон бол автомат). Орлого биш. */
+const QuoteSchema = z.object({
+    type: z.literal('quote'),
+    amount: QuoteAmountSchema,
+    unit_label: QuoteUnitSchema,
+    content: z.string().trim().max(4000).optional(),
+    next_followup_at: FollowupSchema,
+});
+
+// `type` орхивол тэмдэглэл (хуучин client-ууд).
+const CreateSchema = z.preprocess(
+    (body) => (body && typeof body === 'object' && !Array.isArray(body) && (body as { type?: unknown }).type === undefined ? { ...body, type: 'note' } : body),
+    z.discriminatedUnion('type', [ContactSchema, QuoteSchema], { error: 'Бүртгэлийн төрөл буруу байна' }),
+);
+
+/** GET /api/dashboard/leads/[id]/activities — сүүлийн 100 үйлдэл, шинэ нь дээр (уншилтын алдаа → 500). */
 export const GET = withRoute<{ id: string }>({ module: 'leads', error: 'Түүх татахад алдаа гарлаа' }, async ({ shop: authShop, params }) => {
     const { id } = await params;
     const db = supabaseAdmin();
@@ -29,8 +47,8 @@ export const GET = withRoute<{ id: string }>({ module: 'leads', error: 'Түүх
 
 /**
  * POST /api/dashboard/leads/[id]/activities
- * Тэмдэглэл / дуудлагын бүртгэл. Дуудлага бол last_contact_at-г шинэчилж,
- * next_followup_at өгсөн бол тавина («Өнөөдөр» жагсаалтад гарна).
+ * Тэмдэглэл / дуудлага / үнийн саналын бүртгэл. Дуудлага ба үнийн санал last_contact_at-г
+ * шинэчилж, next_followup_at өгсөн бол тавина («Өнөөдөр» жагсаалтад гарна).
  */
 export const POST = withRoute<{ id: string }>({ module: 'leads', access: 'write', error: 'Тэмдэглэл хадгалахад алдаа гарлаа' }, async ({ request, shop: authShop, params }) => {
     const { id } = await params;
@@ -51,7 +69,8 @@ export const POST = withRoute<{ id: string }>({ module: 'leads', access: 'write'
 
     const result = await recordLeadContact(db, {
         scope,
-        shopId: authShop.id, leadId: id, type: p.type, content: p.content, nextFollowupAt: p.next_followup_at,
+        shopId: authShop.id, leadId: id, type: p.type, content: p.content ?? '', nextFollowupAt: p.next_followup_at,
+        ...(p.type === 'quote' ? { quote: { amount: p.amount, unitLabel: p.unit_label } } : {}),
         userId: uid, managerName: identity?.managerName ?? null,
     });
     if (!result.ok) return NextResponse.json({ error: result.error, partialSuccess: result.partialSuccess ?? false }, { status: result.status });

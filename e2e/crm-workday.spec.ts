@@ -4,6 +4,7 @@ import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import { buildMarketingPerformance, type MarketingSpend } from '../src/lib/marketing/performance';
 import { nextMeetingDate, weeklyReviewRange } from '../src/lib/dashboard/weekly-review';
 import { ubDateStr } from '../src/lib/utils/date';
+import { buildLeadTimeline } from '../src/lib/leads/timeline';
 import { managerActivityFixture } from './support/manager-activity';
 
 const shopId = '00000000-0000-4000-8000-000000000002';
@@ -28,6 +29,17 @@ async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admi
         { ...leads[0], id: '00000000-0000-4000-8000-000000000015', customer_name: 'Өөр төслийн лид', project_id: elysiumId },
     ];
     const visibleLeads = () => role === 'admin' ? [...leads, ...privateLeads] : leads.filter(lead => lead.sales_manager_name === 'Номин' && lead.project_id === projectId);
+    // Менежерүүдийн Time-line: Сараа хариуцаж байхад үнэ хэлээд, Номинд шилжсэний дараа өөр үнэ хэлсэн.
+    const timeline = buildLeadTimeline({
+        lead: leads[0],
+        roster: [{ name: 'Номин', user_id: 'user-nomin', is_active: true }, { name: 'Сараа', user_id: 'user-saraa', is_active: true }],
+        activities: [
+            { id: 'activity-1', type: 'quote', content: 'Үнийн санал', meta: { amount: 280000000, unit_label: 'B-1201' }, created_by: 'user-saraa', created_by_name: 'Сараа', created_at: `${today}T01:10:00Z` },
+            { id: 'activity-2', type: 'manager', content: 'Сараа → Номин', meta: { from: 'Сараа', to: 'Номин' }, created_by: 'user-admin', created_by_name: 'Админ', created_at: `${today}T01:20:00Z` },
+            { id: 'activity-3', type: 'call', content: 'Үнийн нөхцөл ярилаа', meta: {}, created_by: 'user-nomin', created_by_name: 'Номин', created_at: `${today}T02:00:00Z` },
+            { id: 'activity-4', type: 'quote', content: 'Үнийн санал', meta: { amount: 286000000, unit_label: 'B-1201' }, created_by: 'user-nomin', created_by_name: 'Номин', created_at: `${today}T02:05:00Z` },
+        ],
+    });
     const viewings = leads.slice(0, 2).map((lead, i) => ({
         id: `viewing-${i}`, scheduled_at: `${tomorrow}T${i ? '15' : '11'}:00:00+08:00`, status: 'scheduled',
         lead, lead_id: lead.id, sales_manager_name: 'Номин', meeting_type: 'new_customer', agent_notes: i ? null : '3 өрөө байрны зохион байгуулалт танилцуулах',
@@ -81,7 +93,7 @@ async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admi
                 if (role !== 'admin' && ('project_id' in body || 'sales_manager_name' in body)) return reply({ error: 'Хуваарилах эрхгүй' }, 403);
                 Object.assign(lead, body);
             }
-            return reply({ lead, viewings: [], contracts: [], activities: [], property: null });
+            return reply({ lead, viewings: [], contracts: [], activities: [], property: null, timeline: lead.id === leadId ? timeline : null });
         }
         if (path.startsWith('/api/dashboard/viewings/') && request.method() === 'PATCH') {
             const item = state.viewings.find(item => path.endsWith(item.id));
@@ -165,6 +177,10 @@ for (const mobile of [false, true]) {
         await page.getByRole('button', { name: 'Цэвэрлэх', exact: true }).click();
         await page.getByText('Б. Энхжин', { exact: true }).click();
         await expect(page.getByRole('dialog', { name: 'Лидийн дэлгэрэнгүй' })).toBeVisible();
+        const leadPanel = page.getByRole('dialog', { name: 'Лидийн дэлгэрэнгүй' });
+        await expect(leadPanel.getByRole('region', { name: 'Холбогдсон менежерүүд' })).toBeVisible();
+        await expect(leadPanel.getByText('Үнийн санал зөрүүтэй (B-1201): Сараа 280,000,000₮ · Номин 286,000,000₮', { exact: true })).toBeVisible();
+        await expect(leadPanel.getByRole('button', { name: 'Үнийн санал', exact: true })).toBeVisible();
         await page.getByRole('dialog', { name: 'Лидийн дэлгэрэнгүй' }).getByRole('button', { name: 'Хаах', exact: true }).click();
         const download = page.waitForEvent('download');
         await page.getByRole('button', { name: 'Excel · бүгд', exact: true }).click();

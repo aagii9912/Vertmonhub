@@ -4,7 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { resolveApiUser } from '@/lib/auth/resolve-user';
 import { fetchRolePermissions } from '@/lib/rbac';
 import { loadShopKnowledge } from './shop-knowledge';
-import { resolveSalesManagerName } from '@/lib/ai/data-assistant/functions';
+import { AI_PREFETCH_MAX_CHARS, resolveSalesManagerName } from '@/lib/ai/data-assistant/functions';
 import { hasOpenAIKey } from '@/lib/ai/openai/client';
 import { executeDataTool } from '@/lib/ai/data-assistant';
 import { loadConversationSummary, maybeUpdateSummary } from './memory';
@@ -68,7 +68,7 @@ async function prefetchContext(c: AssistantUiContext | null, shopId: string, per
         const r = await executeDataTool(tool, args, shopId, perms, userId, false, '');
         if (!r || r.error) return '';
         const json = JSON.stringify(r);
-        return json.length > 6000 ? json.slice(0, 6000) + '…' : json;
+        return json.length > AI_PREFETCH_MAX_CHARS ? json.slice(0, AI_PREFETCH_MAX_CHARS) + '…' : json;
     } catch { return ''; }
 }
 

@@ -91,7 +91,7 @@ const readDefinitions: ToolDefinition[] = [
     },
     {
         name: 'get_lead_details',
-        description: 'Нэг лийдийн дэлгэрэнгүй мэдээллийг авах: харилцагчийн мэдээлэл, төсөв, сонирхол, тэмдэглэлүүд, холбогдох байр.',
+        description: 'Нэг лийдийн дэлгэрэнгүй мэдээллийг авах: харилцагчийн мэдээлэл, төсөв, сонирхол, тэмдэглэлүүд, холбогдох байр, менежерүүдийн холбогдсон түүх (manager_history: хэн хэзээ залгасан/уулзсан/үнийн санал өгсөн, хариуцагч, давхцал ба үнийн зөрүүний сануулга). Үнийн санал нь гэрээний дүн биш.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
@@ -342,7 +342,7 @@ const writeDefinitions: ToolDefinition[] = [
     },
     {
         name: 'add_lead_note',
-        description: 'Лийдэд тэмдэглэл нэмэх. ЗӨВХӨН Super Admin.',
+        description: 'Лийдэд тэмдэглэл нэмэх — лидийн түүхэнд нэвтэрсэн хэрэглэгчийн нэрээр хадгалагдана.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
@@ -562,6 +562,22 @@ const writeDefinitions: ToolDefinition[] = [
                 next_followup_at: { type: SchemaType.STRING, description: 'Дараагийн холбоо барих огноо/цаг (ISO 8601, Улаанбаатар +08:00)' }
             },
             required: ['summary']
+        }
+    },
+    {
+        name: 'log_price_quote',
+        description: 'Харилцагчид хэлсэн ҮНИЙН САНАЛЫГ лидийн менежерийн түүхэнд бүртгэх (₮ бүхэл дүн + байр/тоот). Гэрээний дүн, орлого, зорилт БИШ — менежерүүдийн үнийн зөрүүг илрүүлэхэд. Дүнг хэрэглэгчээс тодруул, бүү зохио. Үргэлж баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                lead_id: { type: SchemaType.STRING, description: 'Лидийн ID (мэдэгдэж байвал)' },
+                customer_name: { type: SchemaType.STRING, description: 'Лидийн нэрээр хайх' },
+                customer_phone: { type: SchemaType.STRING, description: 'Утасны дугаараар хайх' },
+                amount: { type: SchemaType.INTEGER, description: 'Санал болгосон үнэ, бүхэл төгрөг (жишээ: 450 сая → 450000000)' },
+                unit_label: { type: SchemaType.STRING, description: 'Байр/тоот, блок (заавал биш, жишээ: A-1203)' },
+                note: { type: SchemaType.STRING, description: 'Тайлбар (заавал биш, жишээ: хөнгөлөлтийн нөхцөл)' }
+            },
+            required: ['amount']
         }
     },
     {

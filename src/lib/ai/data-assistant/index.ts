@@ -31,7 +31,7 @@ import {
 } from './functions';
 import { inviteUser, assignRole, createRole } from './admin-functions';
 import { getKpiReport, getManagerActivityTool, getManagerPerformanceTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
-import { logCall, setFollowup, assignLeadManager, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
+import { logCall, setFollowup, logPriceQuote, assignLeadManager, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
 import { transferContractTool } from './actions-contract-transfer';
 
 /** AI Assistant-ийн RBAC эрхүүд (route-аас тооцоолж дамжуулна). */
@@ -105,7 +105,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     update_unit_status: ({ shopId, args, confirm }) => updateUnitStatus(shopId, args, confirm),
     update_property_price: ({ shopId, args, confirm }) => updatePropertyPrice(shopId, args, confirm),
     update_lead_status: ({ shopId, args, confirm, scope, userId, userName }) => updateLeadStatus(shopId, args, confirm, scope, { userId, userName }),
-    add_lead_note: ({ shopId, args, confirm, scope }) => addLeadNote(shopId, args, confirm, scope),
+    add_lead_note: ({ shopId, args, confirm, scope, userId, userName }) => addLeadNote(shopId, args, confirm, scope, { userId, userName }),
     process_contract_action: ({ shopId, args, confirm, scope, userId, userName }) => processContractAction(shopId, args, confirm, scope, { userId, userName }),
     create_property: ({ shopId, args, confirm }) => createProperty(shopId, args, confirm),
     delete_property: ({ shopId, args, confirm }) => deleteProperty(shopId, args, confirm),
@@ -130,6 +130,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     list_contract_payments: ({ shopId, args }) => listContractPayments(shopId, args),
     log_call: ({ shopId, args, userId, userName, scope }) => logCall(shopId, args, userId, userName, scope),
     set_followup: ({ shopId, args, userId, userName, scope }) => setFollowup(shopId, args, userId, userName, scope),
+    log_price_quote: ({ shopId, args, confirm, userId, userName, scope }) => logPriceQuote(shopId, args, confirm, userId, userName, scope),
     assign_lead_manager: ({ shopId, args, confirm, userId, userName, scope }) => assignLeadManager(shopId, args, confirm, userId, userName, scope),
     record_viewing_outcome: ({ shopId, args, userId, userName, scope }) => recordViewingOutcome(shopId, args, userId, userName, scope),
     reschedule_viewing: ({ shopId, args, confirm, userId, userName, scope }) => rescheduleViewing(shopId, args, confirm, userId, userName, scope),

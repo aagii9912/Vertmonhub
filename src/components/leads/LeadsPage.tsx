@@ -313,7 +313,7 @@ function LeadsWorkspace() {
                 {showSplit && (
                     <aside aria-label="Сонгосон лид" className="sticky top-[calc(var(--header-h)+1rem)] h-[calc(100dvh-var(--header-h)-2rem)] min-h-0 self-start overflow-hidden rounded-2xl border border-border bg-surface">
                         {selectedId ? (
-                            <LeadPanel leadId={selectedId} canWrite={canWrite} onClose={() => select(null)} />
+                            <LeadPanel key={selectedId} leadId={selectedId} canWrite={canWrite} onClose={() => select(null)} onOpenLead={select} />
                         ) : (
                             <div className="flex h-full min-h-[300px] flex-col items-center justify-center gap-2 p-6 text-center">
                                 <PanelRight className="h-6 w-6 text-muted-foreground" />
@@ -331,7 +331,7 @@ function LeadsWorkspace() {
                     <SheetContent side="right" showCloseButton={false} className="w-full p-0 sm:max-w-[520px]">
                         <SheetTitle className="sr-only">Лидийн дэлгэрэнгүй</SheetTitle>
                         <SheetDescription className="sr-only">Сонгосон лидийн мэдээлэл болон дараагийн үйлдлүүд.</SheetDescription>
-                        {selectedId && <LeadPanel leadId={selectedId} canWrite={canWrite} onClose={() => select(null)} />}
+                        {selectedId && <LeadPanel key={selectedId} leadId={selectedId} canWrite={canWrite} onClose={() => select(null)} onOpenLead={select} />}
                     </SheetContent>
                 </Sheet>
             )}
