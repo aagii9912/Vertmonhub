@@ -12,6 +12,7 @@ import { useSidebarCollapsed } from '@/hooks/useSidebarCollapsed';
 import { useDashboardMode } from '@/hooks/useDashboardMode';
 import { useNavCounts } from '@/hooks/useNavCounts';
 import { openCommandPalette } from '@/lib/navigation/commandPalette';
+import { ProjectSwitcher } from '@/components/dashboard/ProjectSwitcher';
 import {
     DropdownMenu,
     DropdownMenuTrigger,
@@ -32,7 +33,7 @@ export function initialsOf(name?: string | null): string {
 
 export function Sidebar() {
     const pathname = usePathname() || '';
-    const { shop, user, signOut } = useAuth();
+    const { user, signOut } = useAuth();
     const { collapsed, toggle } = useSidebarCollapsed();
     const counts = useNavCounts();
     const { data: dashboardMode } = useDashboardMode();
@@ -76,7 +77,7 @@ export function Sidebar() {
                 {!collapsed && (
                     <div className="min-w-0 flex-1 leading-tight">
                         <div className="truncate text-[15px] font-semibold tracking-tight text-foreground">Vertmon Hub</div>
-                        <div className="mt-0.5 truncate text-[11.5px] text-muted-foreground">{shop?.name || 'Ажлын орчин'}</div>
+                        <ProjectSwitcher />
                     </div>
                 )}
             </div>

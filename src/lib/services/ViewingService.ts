@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { ubDayRange } from '@/lib/utils/date';
 import { normalizePhone } from '@/lib/utils/phone';
 import { applyLeadScope, assertProjectManager, canAccessProject, UNRESTRICTED_SALES_SCOPE, type SalesProjectScope } from '@/lib/sales/project-scope';
+import { soleShopProjectId } from '@/lib/projects/shop-project';
 
 export interface Actor {
     userId: string | null;
@@ -43,8 +44,7 @@ export const CreateViewingSchema = z.object({
     interest_level: z.number().int().min(1).max(5).nullish(),
     feedback: z.string().trim().max(4000).nullish(),
 }).refine(p => p.walk_in || !!p.scheduled_at, { message: 'Уулзалтын огноо, цаг шаардлагатай' })
-    .refine(p => !!(p.lead_id || p.customer_name || p.customer_phone), { message: 'Лид эсвэл харилцагчийн мэдээлэл шаардлагатай' })
-    .refine(p => !!(p.lead_id || p.project_id), { message: 'Шинэ харилцагчийн төслийг сонгоно уу' });
+    .refine(p => !!(p.lead_id || p.customer_name || p.customer_phone), { message: 'Лид эсвэл харилцагчийн мэдээлэл шаардлагатай' });
 
 /** Баталгаажуулах мэдээллийг зөвхөн уншина; preview хэзээ ч лид/уулзалт үүсгэхгүй. */
 export async function resolveViewingInput(db: SupabaseClient, shopId: string, input: unknown, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
@@ -85,7 +85,13 @@ export async function resolveViewingInput(db: SupabaseClient, shopId: string, in
         lead = matches[0] ?? null;
         if (!lead && !p.customer_name) return { ok: false as const, error: 'Энэ утсаар лид олдсонгүй. Шинэ харилцагчийн нэрийг оруулна уу.', status: 400 };
     }
-    const projectId = lead?.project_id || p.project_id;
+    let projectId = lead?.project_id || p.project_id;
+    // Shop = төсөл: шинэ харилцагчийн уулзалтад төсөл заагаагүй бол shop-ийн ганц төслийг авна.
+    if (!projectId && !lead) {
+        try { projectId = await soleShopProjectId(db, shopId) ?? undefined; }
+        catch { return { ok: false as const, error: 'Төсөл шалгахад алдаа гарлаа', status: 503 }; }
+        if (!projectId) return { ok: false as const, error: 'Шинэ харилцагчийн төслийг сонгоно уу', status: 400 };
+    }
     if (!canAccessProject(scope, projectId)) return { ok: false as const, error: 'Лид олдсонгүй', status: 404 };
     if (lead && p.project_id && lead.project_id !== p.project_id) return { ok: false as const, error: 'Лидийн төсөлтэй ижил төслийг сонгоно уу', status: 400 };
     if (projectId) {

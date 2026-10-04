@@ -104,6 +104,12 @@ function LeadForm({ onClose }: { onClose: () => void }) {
         nameRef.current?.focus();
     }, []);
 
+    // Shop = төсөл: ганц төсөлтэй бол автоматаар сонгоно (сонгох талбар харагдахгүй).
+    const soleProject = projects.length === 1 ? projects[0].id : null;
+    useEffect(() => {
+        if (soleProject) setProjectId(soleProject);
+    }, [soleProject]);
+
     // Утас бүрэн болмогц давхардлыг шалгана (400ms debounce).
     useEffect(() => {
         const digits = phone.replace(/\D/g, '');
@@ -223,14 +229,14 @@ function LeadForm({ onClose }: { onClose: () => void }) {
             </header>
 
             <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
-                <Field label="Төсөл" required>
+                {!soleProject && <Field label="Төсөл" required>
                     <select ref={projectRef} aria-label="Төсөл" required value={projectId} onChange={(e) => setProjectId(e.target.value)} disabled={projectsLoading || !!projectsError}
                         className="h-[34px] w-full rounded-md border border-border-strong bg-surface px-2.5 text-[13px] text-foreground focus-ring">
                         <option value="">{projectsLoading ? 'Төсөл ачаалж байна…' : 'Төсөл сонгох'}</option>
                         {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                     {projectsError ? <p role="alert" className="mt-1 text-xs text-status-danger">Төслүүдийг уншиж чадсангүй. <button type="button" className="underline" onClick={() => void refetchProjects()}>Дахин оролдох</button></p> : !projectsLoading && !projects.length && <p role="status" className="mt-1 text-xs text-muted-foreground">Лид бүртгэх төслийн эрх олгогдоогүй байна.</p>}
-                </Field>
+                </Field>}
                 <Field label="Нэр" required>
                     <input
                         ref={nameRef}

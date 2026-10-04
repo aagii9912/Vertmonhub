@@ -47,7 +47,9 @@ export function LeadPanel({
     const lead = data?.lead;
     const { data: managers = [] } = useManagers(lead?.project_id ?? null);
     const { data: projects = [] } = useLeadProjects();
-    const canEditProject = canWrite && (user?.role === 'admin' || user?.role === 'super_admin');
+    // Shop = төсөл: ганц төсөлтэй бол зөвхөн төсөлгүй хуучин лидэд төсөл оноох сонголт гарна.
+    const canEditProject = canWrite && (user?.role === 'admin' || user?.role === 'super_admin')
+        && (projects.length > 1 || !lead?.project_id);
     useRegisterAiContext(lead ? { type: 'lead', id: lead.id, label: lead.customer_name || 'Нэргүй лид' } : null);
 
     const timeline = useMemo(() => {

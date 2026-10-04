@@ -50,7 +50,16 @@ function currentRole(): string {
 }
 
 const db = {
-    async rpc(name: string, input: { p_shop_id: string; p_managers: Row[] }) {
+    async rpc(name: string, input: { p_shop_id: string; p_managers: Row[]; p_fields?: Row; p_member_ids?: string[]; p_actor?: string }) {
+        if (name === 'create_project_shop') {
+            // Fixture of the RPC: a project is its own shop with the actor and chosen staff as members.
+            const shop = { id: `60000000-0000-4000-8000-${String(++state.sequence).padStart(12, '0')}`, name: input.p_fields!.name };
+            (state.rows.shops ||= []).push(shop);
+            const project = { id: `40000000-0000-4000-8000-${String(++state.sequence).padStart(12, '0')}`, shop_id: shop.id, ...input.p_fields };
+            state.rows.projects.push(project);
+            for (const user_id of new Set([...(input.p_member_ids || []), input.p_actor])) (state.rows.shop_members ||= []).push({ shop_id: shop.id, user_id });
+            return { data: { ...project, shops: { name: shop.name } }, error: null };
+        }
         if (name !== 'save_sales_manager_roster') throw new Error(`Unsupported fixture RPC: ${name}`);
         for (const { project_ids: _projectIds, ...manager } of input.p_managers) {
             await db.from('sales_managers').upsert({ ...manager, shop_id: input.p_shop_id }, { onConflict: 'shop_id,name' });
@@ -216,14 +225,17 @@ describe('current manager onboarding route integration', () => {
         expect(state.rows.projects).toEqual([{ id: projectId, shop_id: shopId, name: 'Менежерийн төсөл' }]);
     });
 
-    it('a super admin must explicitly choose a shop when creating a project in a multi-shop installation', async () => {
+    it('a super admin creates a project as its own shop and can never add a sub-project to an existing shop', async () => {
         state.rows.shops.push({ id: otherShopId, name: 'Өөр байгууллага' });
-        expect((await createProject(request('/api/admin/projects', { name: 'Шинэ төсөл' }))).status).toBe(400);
+        expect((await createProject(request('/api/admin/projects', { name: 'Шинэ төсөл', shop_id: otherShopId }))).status).toBe(400);
         expect(state.rows.projects).toEqual([{ id: projectId, shop_id: shopId, name: 'Менежерийн төсөл' }]);
 
-        const response = await createProject(request('/api/admin/projects', { name: 'Шинэ төсөл', shop_id: otherShopId }));
+        const response = await createProject(request('/api/admin/projects', { name: 'Шинэ төсөл' }));
         expect(response.status).toBe(201);
-        expect((await response.json()).project).toMatchObject({ name: 'Шинэ төсөл', shop_id: otherShopId });
+        const { project } = await response.json();
+        expect(project).toMatchObject({ name: 'Шинэ төсөл', shops: { name: 'Шинэ төсөл' } });
+        expect([shopId, otherShopId]).not.toContain(project.shop_id);
+        expect(state.rows.shop_members.filter(row => row.shop_id === project.shop_id)).toEqual([{ shop_id: project.shop_id, user_id: adminId }]);
         expect(state.rows.projects).toHaveLength(2);
     });
 });

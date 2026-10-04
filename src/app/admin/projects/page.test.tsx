@@ -5,7 +5,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import AdminProjectsPage from './page';
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn() } }));
-vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ shop: { id: 'shop-1' }, user: { id: 'admin-1', role: 'super_admin' } }) }));
+const refreshShops = vi.hoisted(() => vi.fn());
+vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ shop: { id: 'shop-1' }, user: { id: 'admin-1', role: 'super_admin' }, refreshShops }) }));
 
 const renderPage = () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -32,10 +33,16 @@ describe('admin project management', () => {
         expect(screen.getByText(/Энэ төсөлд нэгж, гэрээ холбогдоогүй/)).toBeInTheDocument();
     });
 
-    it('creates a project in the selected shop and reloads the list', async () => {
+    it('creates a project as its own workspace with management access and reloads the list', async () => {
         let projects: object[] = [];
         vi.stubGlobal('fetch', vi.fn(async (input: string, init?: RequestInit) => {
             if (input === '/api/admin/shops') return { ok: true, json: async () => ({ shops: [{ id: shopId, name: 'Мандала' }] }) };
+            if (input === '/api/admin/users') return { ok: true, json: async () => ({ actor_id: 'admin-1', users: [
+                { id: 'admin-1', email: 'me@example.mn', full_name: 'Би', role: 'super_admin' },
+                { id: 'director', email: 'd@example.mn', full_name: 'Батаа', role: 'super_admin' },
+                { id: 'marketer', email: 'm@example.mn', full_name: 'Анужин', role: 'marketing' },
+                { id: 'seller', email: 's@example.mn', full_name: 'Номин', role: 'sales_manager' },
+            ] }) };
             if (input === '/api/admin/projects' && init?.method === 'POST') {
                 const body = JSON.parse(String(init.body));
                 savedBodies.push(body);
@@ -51,9 +58,18 @@ describe('admin project management', () => {
         await waitFor(() => expect(createButton).toBeEnabled());
         fireEvent.click(createButton);
         fireEvent.change(screen.getByLabelText('Төслийн нэр'), { target: { value: 'Шинэ хотхон' } });
+        expect(screen.queryByLabelText('Байгууллага')).not.toBeInTheDocument();
+        // Удирдлага, маркетинг анхнаасаа сонгогдсон; борлуулалтын менежерийг тусад нь нэмнэ.
+        expect(screen.getByRole('checkbox', { name: /Батаа/ })).toBeChecked();
+        expect(screen.getByRole('checkbox', { name: /Анужин/ })).toBeChecked();
+        expect(screen.getByRole('checkbox', { name: /Номин/ })).not.toBeChecked();
+        expect(screen.queryByRole('checkbox', { name: /Би/ })).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('checkbox', { name: /Номин/ }));
         fireEvent.click(screen.getByRole('button', { name: 'Хадгалах' }));
 
-        await waitFor(() => expect(savedBodies).toMatchObject([{ shop_id: shopId, name: 'Шинэ хотхон' }]));
+        await waitFor(() => expect(savedBodies).toEqual([expect.objectContaining({ name: 'Шинэ хотхон', member_ids: ['director', 'marketer', 'seller'] })]));
+        expect(savedBodies[0]).not.toHaveProperty('shop_id');
         expect(await screen.findByText('Шинэ хотхон')).toBeInTheDocument();
+        expect(refreshShops).toHaveBeenCalled();
     });
 });

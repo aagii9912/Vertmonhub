@@ -11,6 +11,7 @@ import { z } from 'zod';
 import { ACTIVE_STATUSES, toLeadSource } from '@/lib/leads/labels';
 import { resolveActiveManagerName, resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { applyLeadScope, assertProjectManager, canAccessProject, ProjectScopeError, type SalesProjectScope } from '@/lib/sales/project-scope';
+import { soleShopProjectId } from '@/lib/projects/shop-project';
 import type { LeadSource, LeadStatus } from '@/types/property';
 
 export interface StaffLeadActor {
@@ -20,7 +21,8 @@ export interface StaffLeadActor {
 }
 
 export interface StaffLeadRequest {
-    projectId: unknown;
+    /** Өгөөгүй бол shop-ийн ганц төсөл (shop = төсөл). */
+    projectId?: unknown;
     status?: unknown;
     source?: unknown;
     /** Админ өөр идэвхтэй менежерт шууд оноох нэр (бусдад үл хэрэгсэнэ). */
@@ -46,7 +48,13 @@ export async function resolveStaffLead(
     request: StaffLeadRequest,
     actor: StaffLeadActor,
 ): Promise<({ ok: true } & ResolvedStaffLead) | Failure> {
-    const projectId = typeof request.projectId === 'string' ? request.projectId : '';
+    // Shop = төсөл: төсөл заагаагүй бол тухайн shop-ийн ганц төслийг авна.
+    const requested = typeof request.projectId === 'string' && request.projectId ? request.projectId : null;
+    let projectId = requested ?? '';
+    if (!requested) {
+        try { projectId = await soleShopProjectId(db, shopId) ?? ''; }
+        catch { return { ok: false, status: 503, error: 'Төслийг шалгаж чадсангүй' }; }
+    }
     if (!z.uuid().safeParse(projectId).success) return { ok: false, status: 400, error: 'Лидийн төслийг сонгоно уу' };
     if (!canAccessProject(actor.scope, projectId)) return { ok: false, status: 403, error: 'Энэ төсөлд лид үүсгэх эрхгүй' };
     const { data: project, error: projectError } = await db.from('projects').select('id')

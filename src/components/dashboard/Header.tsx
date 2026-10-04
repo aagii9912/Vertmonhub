@@ -9,6 +9,7 @@ import { getBreadcrumb, getNavTitle } from '@/lib/navigation/nav';
 import { openCommandPalette, openQuickCreate } from '@/lib/navigation/commandPalette';
 import { onPageTitle } from '@/lib/navigation/pageTitle';
 import { FeedbackWidget } from '@/components/feedback/FeedbackWidget';
+import { ProjectSwitcher } from '@/components/dashboard/ProjectSwitcher';
 import { useDashboardMode } from '@/hooks/useDashboardMode';
 import { useNavCounts } from '@/hooks/useNavCounts';
 
@@ -55,6 +56,8 @@ export function Header() {
             >
                 V
             </Link>
+            {/* Гар утсанд sidebar байхгүй тул төсөл солих цэсийг толгойд харуулна. */}
+            <div className="md:hidden"><ProjectSwitcher variant="compact" /></div>
 
             <nav aria-label="Замын мөр" className="flex min-w-0 items-center gap-1.5">
                 {crumbs.length > 1 ? (

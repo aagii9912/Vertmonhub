@@ -16,6 +16,7 @@ import { requireModuleWrite, resolvePermissions } from '@/lib/auth/require-permi
 import { ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { insertLeadOnce, resolveStaffLead } from '@/lib/services/LeadService';
 import { z } from 'zod';
+import { soleShopProjectId } from '@/lib/projects/shop-project';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -213,7 +214,9 @@ async function handleLeadPost(request: NextRequest): Promise<NextResponse> {
             const [shop, permissions] = await Promise.all([getUserShop(), resolvePermissions()]);
             if (!shop || !permissions) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
             const scope = await resolveSalesProjectScope(supabase, shop.id, { userId: staffUserId, role: permissions.role });
-            const resolved = await resolveStaffLead(supabase, shop.id, { projectId: validation.data.project_id ?? configuredProjectId(request) },
+            // Shop = төсөл: ажилтны идэвхтэй төсөл эхэлж, дараа нь сайтын тохиргоо.
+            const staffProjectId = validation.data.project_id ?? await soleShopProjectId(supabase, shop.id) ?? configuredProjectId(request);
+            const resolved = await resolveStaffLead(supabase, shop.id, { projectId: staffProjectId },
                 { userId: staffUserId, role: permissions.role, scope });
             if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
             projectId = resolved.project_id;

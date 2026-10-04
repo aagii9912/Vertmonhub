@@ -192,6 +192,9 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
     const [name, setName] = useState('');
     const [phone, setPhone] = useState('');
     const [projectId, setProjectId] = useState('');
+    // Shop = төсөл: ганц төсөлтэй бол автоматаар сонгоно.
+    const soleProject = projects.length === 1 ? projects[0].id : null;
+    useEffect(() => { if (soleProject) setProjectId(soleProject); }, [soleProject]);
     const [propQ, setPropQ] = useState('');
     const [property, setProperty] = useState<PropertyOption | null>(null);
     const [when, setWhen] = useState(() => defaultWhen());
@@ -249,7 +252,7 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                     <span className="text-foreground">Талбай дээр ирсэн — шууд «болсон» гэж бүртгэх</span>
                 </label>
 
-                {!leadId && <Field label="Төсөл" required>
+                {!leadId && !soleProject && <Field label="Төсөл" required>
                     <select aria-label="Төсөл" required value={projectId} onChange={e => { setProjectId(e.target.value); setProperty(null); }} disabled={projectsLoading || !!projectsError} className={inputCls}>
                         <option value="">{projectsLoading ? 'Төсөл ачаалж байна…' : 'Төсөл сонгох'}</option>
                         {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}

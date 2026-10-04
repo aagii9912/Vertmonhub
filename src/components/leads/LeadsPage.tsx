@@ -212,7 +212,7 @@ function LeadsWorkspace() {
             </div>
 
             <FilterBar className="mb-0" search={{ value: qInput, onChange: setQInput, label: 'Лидийг нэр, утсаар хайх', placeholder: 'Нэр, утас, имэйлээр хайх…' }} showClear={filtered} onClear={resetFilters}>
-                <FilterChip value={project} onChange={(v) => { setProject(v); setManager('all'); setPage(1); setChecked(new Set()); select(null); }} label="Төсөл" options={projects.map((p) => [p.id, p.name])} />
+                {projects.length > 1 && <FilterChip value={project} onChange={(v) => { setProject(v); setManager('all'); setPage(1); setChecked(new Set()); select(null); }} label="Төсөл" options={projects.map((p) => [p.id, p.name])} />}
                 <FilterChip value={status} onChange={(v) => { setStatus(v); setPage(1); }} label="Статус" options={LEAD_STATUSES.map((s) => [s, STATUS_META[s].label])} />
                 <FilterChip value={source} onChange={(v) => { setSource(v); setPage(1); }} label="Эх үүсвэр" options={SOURCES.map((s) => [s, SOURCE_LABEL[s]])} />
                 {filterManagers.length > 0 && <FilterChip value={manager} onChange={(v) => { setManager(v); setPage(1); }} label="Менежер" options={filterManagers.map((m) => [m.name, m.name])} />}
@@ -284,7 +284,7 @@ function LeadsWorkspace() {
                                                 <td className="px-2" onClick={(e) => e.stopPropagation()}>
                                                     <CheckBox label="Сонгох" checked={checked.has(l.id)} onChange={(v) => setChecked((prev) => { const n = new Set(prev); if (v) n.add(l.id); else n.delete(l.id); return n; })} />
                                                 </td>
-                                                <td className="px-2"><span className={cn('block max-w-[220px] truncate font-medium', sel ? 'text-brand' : 'text-foreground')}>{l.customer_name || 'Нэргүй'}</span><span className="block max-w-[220px] truncate text-xs text-muted-foreground">{l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй'}</span></td>
+                                                <td className="px-2"><span className={cn('block max-w-[220px] truncate font-medium', sel ? 'text-brand' : 'text-foreground')}>{l.customer_name || 'Нэргүй'}</span>{(projects.length > 1 || !l.project_id) && <span className="block max-w-[220px] truncate text-xs text-muted-foreground">{l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй'}</span>}</td>
                                                 <td className="mono-label px-2 text-fg-2">{l.customer_phone || '—'}</td>
                                                 <td className="px-2"><StatusPicker value={l.status} disabled={!canWrite} onChange={(s, reason) => patchLead(l.id, { status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} /></td>
                                                 {!showSplit && <td className="px-2 text-fg-2">{sourceLabel(l.source)}</td>}
@@ -384,7 +384,7 @@ function MobileList({ leads, projectNames, loading, onOpen }: { leads: LeadRow[]
                             <Avatar name={l.customer_name} className="h-8 w-8 text-[11px]" />
                             <span className="min-w-0 flex-1">
                                 <span className="block truncate text-[14px] font-medium text-foreground">{l.customer_name || 'Нэргүй'}</span>
-                                <span className="block truncate text-xs text-fg-2">{l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй'}</span>
+                                {(Object.keys(projectNames).length > 1 || !l.project_id) && <span className="block truncate text-xs text-fg-2">{l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй'}</span>}
                                 <span className="block truncate text-[12px] text-muted-foreground">{[interestLabel(l) !== '—' ? interestLabel(l) : null, sourceLabel(l.source), l.last_contact_at ? `Холбогдсон: ${formatRelativeDays(l.last_contact_at)}` : 'Холбоо бүртгээгүй'].filter(Boolean).join(' · ')}</span>
                                 <span className="mt-1 block text-xs text-fg-2">{nextStep(l)}</span>
                             </span>

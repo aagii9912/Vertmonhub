@@ -31,6 +31,8 @@ const db = { from: (table: string) => {
         eq: (key: string, value: unknown) => { filters.push((row) => row[key] === value); return query; },
         in: () => query,
         is: () => query,
+        order: () => query,
+        limit: async (count: number) => ({ data: (state.tables[table] || []).filter((row) => filters.every((filter) => filter(row))).slice(0, count), error: null }),
         insert: (row: Row) => { payload = row; return query; },
         maybeSingle: async () => ({ data: first(), error: null }),
         single: async () => {
@@ -63,6 +65,15 @@ describe('resolveStaffLead', () => {
         expect(await resolveStaffLead(db, 'shop-1', { projectId: project }, { ...admin, scope: { projectIds: [], managerName: 'Батаа' } }))
             .toMatchObject({ ok: false, status: 403 });
         expect(await resolveStaffLead(db, 'shop-1', { projectId: project, status: 'closed_won' }, admin)).toMatchObject({ ok: false, status: 400 });
+    });
+
+    it('uses the single project of the shop when none is chosen (shop = project)', async () => {
+        expect(await resolveStaffLead(db, 'shop-1', {}, admin)).toMatchObject({ ok: true, project_id: project });
+        expect(await resolveStaffLead(db, 'shop-1', { projectId: '' }, admin)).toMatchObject({ ok: true, project_id: project });
+        // Хуучин олон төсөлтэй shop-д төслийг ил сонгоно.
+        state.tables.projects.push({ id: '00000000-0000-4000-8000-000000000003', shop_id: 'shop-1' });
+        expect(await resolveStaffLead(db, 'shop-1', {}, admin)).toMatchObject({ ok: false, status: 400, error: 'Лидийн төслийг сонгоно уу' });
+        expect(await resolveStaffLead(db, 'shop-3', {}, admin)).toMatchObject({ ok: false, status: 400 });
     });
 
     it('stamps the creator as manager, lets only admins reassign, and normalizes status and source', async () => {
