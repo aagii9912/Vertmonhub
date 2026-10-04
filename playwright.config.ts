@@ -43,7 +43,7 @@ export default defineConfig({
     projects: [
         { name: 'public', testMatch: 'smoke.spec.ts' },
         { name: 'workflow', testMatch: 'workflow.spec.ts' },
-        { name: 'workday', testMatch: ['workday.spec.ts', 'crm-workday.spec.ts'] },
+        { name: 'workday', testMatch: ['workday.spec.ts', 'crm-workday.spec.ts', 'data-pages.spec.ts'] },
         { name: 'onboarding', testMatch: 'onboarding-flow.spec.ts' },
         { name: 'admin', testMatch: ['admin-project-budget.spec.ts', 'inventory-import.spec.ts'] },
         { name: 'marketing', testMatch: ['marketing-performance.spec.ts', 'meta-spend-import.spec.ts', 'newsletter.spec.ts'] },
