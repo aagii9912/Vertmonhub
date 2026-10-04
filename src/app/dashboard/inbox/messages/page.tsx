@@ -2,13 +2,12 @@
 
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Inbox, Loader2, MessageSquare, RefreshCw, Search, Send, Trash2 } from 'lucide-react';
+import { ArrowLeft, Inbox, Loader2, MessageSquare, RefreshCw, Search, Send } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useConversations, type Conversation } from '@/hooks/useConversations';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { formatTime, formatTimeAgo } from '@/lib/utils/date';
-import { confirmToast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 
 export default function InboxMessagesPage() {
@@ -81,7 +80,6 @@ function InboxWorkspace() {
 function ConversationThread({ conversation, onBack, onRefresh }: { conversation: Conversation; onBack: () => void; onRefresh: () => Promise<unknown> }) {
     const { user } = useAuth();
     const canWrite = !!user?.permissions?.canWrite;
-    const canDelete = !!user?.permissions?.canDelete;
     const [draft, setDraft] = useState('');
     const [sending, setSending] = useState(false);
     const [sendError, setSendError] = useState<string | null>(null);
@@ -108,22 +106,10 @@ function ConversationThread({ conversation, onBack, onRefresh }: { conversation:
         } finally { setSending(false); }
     }
 
-    async function remove() {
-        if (!await confirmToast({ title: 'Харилцагч болон яриаг устгах уу?', description: 'Чатны түүх устна. Энэ үйлдлийг буцаах боломжгүй.', confirmLabel: 'Устгах', destructive: true })) return;
-        try {
-            const res = await dashboardFetch(`/api/dashboard/customers?id=${encodeURIComponent(conversation.id)}`, { method: 'DELETE' });
-            if (!res.ok) throw new Error('Устгахад алдаа гарлаа.');
-            onBack();
-            await onRefresh();
-            toast.success('Харилцагч устгагдлаа');
-        } catch (error) { toast.error(error instanceof Error ? error.message : 'Устгахад алдаа гарлаа.'); }
-    }
-
     return <>
         <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
             <button type="button" onClick={onBack} aria-label="Ярианы жагсаалт руу буцах" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md hover:bg-surface-2 focus-ring md:hidden"><ArrowLeft className="h-5 w-5" /></button>
             <div className="min-w-0"><h2 className="truncate text-sm font-semibold">{conversation.customer_name || 'Зочин'}</h2><p className="text-xs text-muted-foreground">{messages.length} мессеж</p></div>
-            {canDelete && <button type="button" disabled={sending} onClick={() => void remove()} aria-label="Харилцагч болон яриаг устгах" className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-status-danger-soft hover:text-status-danger focus-ring"><Trash2 className="h-4 w-4" /></button>}
         </header>
         <div role="log" aria-label="Ярианы түүх" className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 md:p-5">
             {messages.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">Ярианы түүх хоосон байна.</p>}
