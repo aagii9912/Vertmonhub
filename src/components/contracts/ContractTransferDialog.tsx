@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
@@ -39,6 +39,22 @@ const composeName = (lastName: string, firstName: string) => [lastName.trim(), f
  */
 export function ContractTransferDialog({ contract, open, onOpenChange }: { contract: ContractRow; open: boolean; onOpenChange: (open: boolean) => void }) {
     const transfer = useTransferContract(contract.id);
+    return (
+        <Dialog open={open} onOpenChange={(next) => { if (!transfer.isPending) onOpenChange(next); }}>
+            <DialogContent className="max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                    <DialogTitle>Гэрээ шилжүүлэх</DialogTitle>
+                    <DialogDescription>Төлсөн дүн, төлбөрийн график, менежерийн борлуулалт, гэрээний дугаар хэвээр үлдэж, гэрээ шинэ эзэмшигчид шилжинэ.</DialogDescription>
+                </DialogHeader>
+                {/* Цонх хаагдахад маягт unmount болно — дараагийн нээлт шинэ төлөв, шинэ хүсэлтийн UUID-тай эхэлнэ. */}
+                <TransferForm contract={contract} transfer={transfer} onClose={() => onOpenChange(false)} />
+            </DialogContent>
+        </Dialog>
+    );
+}
+
+/** Нэг нээлтэд нэг UUID — давтан дарах/дахин оролдох нь давхар шилжүүлэг үүсгэхгүй. */
+function TransferForm({ contract, transfer, onClose }: { contract: ContractRow; transfer: ReturnType<typeof useTransferContract>; onClose: () => void }) {
     const requestId = useRef<string | null>(null);
     const [kind, setKind] = useState<ContractTransferKind>('transfer');
     const [form, setForm] = useState<Form>(emptyForm);
@@ -48,16 +64,6 @@ export function ContractTransferDialog({ contract, open, onOpenChange }: { contr
     const paid = Number(contract.paid_amount) || 0;
     const total = Number(contract.total_price) || 0;
     const balance = contract.balance ?? Math.max(0, total - paid);
-
-    // Цонх нээх бүрт шинэ хүсэлт (нэг цонхонд нэг UUID — давтан дарах нь давхар шилжүүлэг үүсгэхгүй).
-    useEffect(() => {
-        if (!open) return;
-        requestId.current = null;
-        setKind('transfer');
-        setForm(emptyForm());
-        setNameEdited(false);
-        setError(null);
-    }, [open]);
 
     const chooseKind = (next: ContractTransferKind) => {
         setKind(next);
@@ -98,7 +104,7 @@ export function ContractTransferDialog({ contract, open, onOpenChange }: { contr
         try {
             const result = await transfer.mutateAsync(input);
             toast.success(result.message || 'Гэрээ шилжүүлэгдлээ');
-            onOpenChange(false);
+            onClose();
         } catch (e) {
             const message = e instanceof Error ? e.message : 'Гэрээ шилжүүлж чадсангүй';
             setError(message);
@@ -107,64 +113,56 @@ export function ContractTransferDialog({ contract, open, onOpenChange }: { contr
     };
 
     return (
-        <Dialog open={open} onOpenChange={(next) => { if (!transfer.isPending) onOpenChange(next); }}>
-            <DialogContent className="max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                    <DialogTitle>Гэрээ шилжүүлэх</DialogTitle>
-                    <DialogDescription>Төлсөн дүн, төлбөрийн график, менежерийн борлуулалт, гэрээний дугаар хэвээр үлдэж, гэрээ шинэ эзэмшигчид шилжинэ.</DialogDescription>
-                </DialogHeader>
-                <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-4" noValidate>
-                    <dl className="grid grid-cols-3 gap-3 rounded-md border border-border bg-surface-2 p-3 text-[12.5px]">
-                        <div className="col-span-3 min-w-0 sm:col-span-1"><dt className="text-muted-foreground">Одоогийн эзэмшигч</dt><dd className="truncate font-medium text-foreground">{current}</dd></div>
-                        <div><dt className="text-muted-foreground">Төлсөн (хэвээр)</dt><dd className="num font-medium text-foreground">{formatMNT(paid)}</dd></div>
-                        <div><dt className="text-muted-foreground">Үлдэгдэл</dt><dd className="num font-medium text-foreground">{formatMNT(balance)}</dd></div>
-                    </dl>
+        <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-4" noValidate>
+            <dl className="grid grid-cols-3 gap-3 rounded-md border border-border bg-surface-2 p-3 text-[12.5px]">
+                <div className="col-span-3 min-w-0 sm:col-span-1"><dt className="text-muted-foreground">Одоогийн эзэмшигч</dt><dd className="truncate font-medium text-foreground">{current}</dd></div>
+                <div><dt className="text-muted-foreground">Төлсөн (хэвээр)</dt><dd className="num font-medium text-foreground">{formatMNT(paid)}</dd></div>
+                <div><dt className="text-muted-foreground">Үлдэгдэл</dt><dd className="num font-medium text-foreground">{formatMNT(balance)}</dd></div>
+            </dl>
 
-                    <fieldset className="flex flex-col gap-1.5">
-                        <legend className="mb-1.5 text-sm font-medium text-foreground">Төрөл</legend>
-                        <div className="grid gap-2 sm:grid-cols-2" role="radiogroup">
-                            {(Object.keys(CONTRACT_TRANSFER_KIND_META) as ContractTransferKind[]).map((value) => (
-                                <label key={value} className={cn('flex min-h-11 cursor-pointer items-center gap-2 rounded-md border px-3 text-[13px] focus-within:ring-[3px] focus-within:ring-ring/40',
-                                    kind === value ? 'border-brand bg-brand-soft text-foreground' : 'border-border-strong text-fg-2 hover:bg-surface-2')}>
-                                    <input type="radio" name="transfer-kind" value={value} checked={kind === value} onChange={() => chooseKind(value)} className="size-4 accent-brand" />
-                                    {CONTRACT_TRANSFER_KIND_META[value].action}
-                                </label>
-                            ))}
-                        </div>
-                    </fieldset>
+            <fieldset className="flex flex-col gap-1.5">
+                <legend className="mb-1.5 text-sm font-medium text-foreground">Төрөл</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                    {(Object.keys(CONTRACT_TRANSFER_KIND_META) as ContractTransferKind[]).map((value) => (
+                        <label key={value} className={cn('flex min-h-11 cursor-pointer items-center gap-2 rounded-md border px-3 text-[13px] focus-within:ring-[3px] focus-within:ring-ring/40',
+                            kind === value ? 'border-brand bg-brand-soft text-foreground' : 'border-border-strong text-fg-2 hover:bg-surface-2')}>
+                            <input type="radio" name="transfer-kind" value={value} checked={kind === value} onChange={() => chooseKind(value)} className="size-4 accent-brand" />
+                            {CONTRACT_TRANSFER_KIND_META[value].action}
+                        </label>
+                    ))}
+                </div>
+            </fieldset>
 
-                    <div className="grid gap-3 sm:grid-cols-2">
-                        <FormField label="Овог" htmlFor="transfer-last-name"><Input id="transfer-last-name" value={form.lastName} onChange={set('lastName')} maxLength={100} autoComplete="off" /></FormField>
-                        <FormField label="Нэр" htmlFor="transfer-first-name"><Input id="transfer-first-name" value={form.firstName} onChange={set('firstName')} maxLength={100} autoComplete="off" /></FormField>
-                    </div>
-                    <FormField label={kind === 'transfer' ? 'Шинэ эзэмшигчийн нэр' : 'Зассан нэр'} htmlFor="transfer-name" required hint="Гэрээнд харагдах бүтэн нэр">
-                        <Input id="transfer-name" value={form.name} onChange={set('name')} maxLength={255} required autoComplete="off" />
+            <div className="grid gap-3 sm:grid-cols-2">
+                <FormField label="Овог" htmlFor="transfer-last-name"><Input id="transfer-last-name" value={form.lastName} onChange={set('lastName')} maxLength={100} autoComplete="off" /></FormField>
+                <FormField label="Нэр" htmlFor="transfer-first-name"><Input id="transfer-first-name" value={form.firstName} onChange={set('firstName')} maxLength={100} autoComplete="off" /></FormField>
+            </div>
+            <FormField label={kind === 'transfer' ? 'Шинэ эзэмшигчийн нэр' : 'Зассан нэр'} htmlFor="transfer-name" required hint="Гэрээнд харагдах бүтэн нэр">
+                <Input id="transfer-name" value={form.name} onChange={set('name')} maxLength={255} required autoComplete="off" />
+            </FormField>
+            {kind === 'transfer' && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                    <FormField label="Регистр / паспорт" htmlFor="transfer-registration" required>
+                        <Input id="transfer-registration" value={form.registration} onChange={set('registration')} maxLength={24} className="mono-label uppercase" autoComplete="off" required />
                     </FormField>
-                    {kind === 'transfer' && (
-                        <div className="grid gap-3 sm:grid-cols-2">
-                            <FormField label="Регистр / паспорт" htmlFor="transfer-registration" required>
-                                <Input id="transfer-registration" value={form.registration} onChange={set('registration')} maxLength={24} className="mono-label uppercase" autoComplete="off" required />
-                            </FormField>
-                            <FormField label="Утас" htmlFor="transfer-phone">
-                                <Input id="transfer-phone" type="tel" inputMode="tel" value={form.phone} onChange={set('phone')} maxLength={50} className="mono-label" autoComplete="off" />
-                            </FormField>
-                        </div>
-                    )}
-                    <FormField label="Шилжүүлсэн огноо" htmlFor="transfer-date" required>
-                        <Input id="transfer-date" type="date" value={form.effectiveDate} onChange={set('effectiveDate')} max={ubDateStr()} min={contract.contract_date?.slice(0, 10) || undefined} className="mono-label" required />
+                    <FormField label="Утас" htmlFor="transfer-phone">
+                        <Input id="transfer-phone" type="tel" inputMode="tel" value={form.phone} onChange={set('phone')} maxLength={50} className="mono-label" autoComplete="off" />
                     </FormField>
-                    <FormField label="Шалтгаан / тэмдэглэл" htmlFor="transfer-reason" required={kind === 'transfer'}
-                        hint="Шилжүүлгийн хураамжийг «Төлбөр бүртгэх»-ээр «Бусад төлбөр» төрлөөр бүртгэнэ.">
-                        <Textarea id="transfer-reason" value={form.reason} onChange={set('reason')} maxLength={2000} rows={3} />
-                    </FormField>
+                </div>
+            )}
+            <FormField label="Шилжүүлсэн огноо" htmlFor="transfer-date" required>
+                <Input id="transfer-date" type="date" value={form.effectiveDate} onChange={set('effectiveDate')} max={ubDateStr()} min={contract.contract_date?.slice(0, 10) || undefined} className="mono-label" required />
+            </FormField>
+            <FormField label="Шалтгаан / тэмдэглэл" htmlFor="transfer-reason" required={kind === 'transfer'}
+                hint="Шилжүүлгийн хураамжийг «Төлбөр бүртгэх»-ээр «Бусад төлбөр» төрлөөр бүртгэнэ.">
+                <Textarea id="transfer-reason" value={form.reason} onChange={set('reason')} maxLength={2000} rows={3} />
+            </FormField>
 
-                    {error && <p role="alert" className="text-[12.5px] text-status-danger">{error}</p>}
-                    <DialogFooter>
-                        <Button type="button" variant="secondary" onClick={() => onOpenChange(false)} disabled={transfer.isPending}>Цуцлах</Button>
-                        <Button type="submit" isLoading={transfer.isPending}>{kind === 'transfer' ? 'Шилжүүлэх' : 'Нэр засах'}</Button>
-                    </DialogFooter>
-                </form>
-            </DialogContent>
-        </Dialog>
+            {error && <p role="alert" className="text-[12.5px] text-status-danger">{error}</p>}
+            <DialogFooter>
+                <Button type="button" variant="secondary" onClick={onClose} disabled={transfer.isPending}>Цуцлах</Button>
+                <Button type="submit" isLoading={transfer.isPending}>{kind === 'transfer' ? 'Шилжүүлэх' : 'Нэр засах'}</Button>
+            </DialogFooter>
+        </form>
     );
 }
