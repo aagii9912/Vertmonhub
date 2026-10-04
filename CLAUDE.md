@@ -70,6 +70,7 @@ Browser specs run against `e2e/support/fixture-server.mjs` (fake GoTrue + `next 
 ### Dashboard AI assistant
 - OpenAI Responses (`OPENAI_API_KEY`; `OPENAI_MODEL`/`OPENAI_FAST_MODEL`, default `gpt-5.6-luna`). No key → 503; there is no fallback provider. `runLoop`: ≤ 8 rounds, parallel reads, sequential writes, `ask_user` clarifications, `delegate_to_specialists`.
 - Each tool's kind (read/write/delete/admin), module, `auto`, `alwaysConfirm` and project `scoped` flag live only in `lib/ai/tool-catalog.ts` (client-safe); `tools.ts` holds schemas and `data-assistant/index.ts` a typed handler per catalog name (tests and the compiler keep the three aligned). Write tools return a preview; execution goes through `POST /api/ai-assistant/action`, which re-checks RBAC and audits. `auto` tools (reversible, low-risk) run directly with an audit entry; deletes, contracts, payments and outbound messages are never `auto`, and money tools are `alwaysConfirm` (never remembered). The module check hides tools from the model and blocks execution.
+- Inventory answers (`list_properties`) read the shop's latest ERP product export first (the weekly report's rule), else `property_units` (also for `phase` filters, which exports lack); rows carry `source` and `as_of`. ERP prices show only to `erp-imports`/super_admin; the unit register has no prices.
 - Development-only mock: `localStorage.vertmonhub_ai_mock = ok|error|delegate|clarify` (sent as `x-ai-mock`); never active in production.
 
 ### Other

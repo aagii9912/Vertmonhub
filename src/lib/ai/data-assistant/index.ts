@@ -90,7 +90,9 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     get_marketing_performance: marketingPerformanceTool,
     get_operations_report: operationsReportTool,
     get_dashboard_stats: ({ shopId, args, scope }) => fetchDashboardStats(shopId, args.timeRange || 'month', scope),
-    list_properties: ({ shopId, args }) => fetchProperties(shopId, args),
+    list_properties: ({ shopId, args, perms }) => fetchProperties(shopId, args, {
+        canSeeErpPrice: perms.role === 'super_admin' || !!perms.modules?.includes('erp-imports'),
+    }),
     list_leads: ({ shopId, args, scope }) => fetchLeads(shopId, args, scope),
     get_lead_details: ({ shopId, args, scope }) => fetchLeadDetails(shopId, args, scope),
     get_customer_insights: ({ shopId, args, scope }) => fetchCustomerInsights(shopId, args, scope),
