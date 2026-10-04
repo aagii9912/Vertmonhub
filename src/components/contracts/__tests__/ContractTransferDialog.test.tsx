@@ -16,9 +16,15 @@ const contract = {
     total_price: 300000000, paid_amount: 120000000, balance: 180000000,
 } as unknown as ContractRow;
 
-function renderDialog(onOpenChange = vi.fn()) {
-    render(<ContractTransferDialog contract={contract} open onOpenChange={onOpenChange} />);
-    return onOpenChange;
+function renderDialog(onOpenChange = vi.fn(), previousChangeDate: string | null = null) {
+    const view = render(<ContractTransferDialog contract={contract} open onOpenChange={onOpenChange} previousChangeDate={previousChangeDate} />);
+    return Object.assign(onOpenChange, { rerender: (next: ContractRow) => view.rerender(<ContractTransferDialog contract={next} open onOpenChange={onOpenChange} previousChangeDate={previousChangeDate} />) });
+}
+
+function fillTransfer() {
+    fireEvent.change(screen.getByLabelText(/Шинэ эзэмшигчийн нэр/), { target: { value: 'Дорж Сараа' } });
+    fireEvent.change(screen.getByLabelText(/Регистр/), { target: { value: 'чб88020202' } });
+    fireEvent.change(screen.getByLabelText(/Шалтгаан/), { target: { value: 'Худалдсан' } });
 }
 
 beforeEach(() => {
@@ -57,6 +63,47 @@ describe('ContractTransferDialog', () => {
             effective_date: ubDateStr(), expected_customer_name: 'Бат Болд',
         });
         expect(second.client_request_id).toBe(first.client_request_id);
+    });
+
+    it('after a 409 sends a fresh request against the refreshed holder instead of the stale one', async () => {
+        const onOpenChange = renderDialog();
+        fillTransfer();
+        hooks.mutateAsync.mockRejectedValueOnce(Object.assign(new Error('Гэрээний эзэмшигч өөрчлөгдсөн байна'), { status: 409 }));
+        fireEvent.click(screen.getByRole('button', { name: 'Шилжүүлэх' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent('Гэрээний эзэмшигч өөрчлөгдсөн байна');
+        // Хук алдааны үед гэрээг дахин уншина — цонх шинэ эзэмшигчийг харуулна.
+        onOpenChange.rerender({ ...contract, customer_name: 'Ганаа' } as ContractRow);
+        expect(screen.getByRole('dialog')).toHaveTextContent('Ганаа');
+        fireEvent.click(screen.getByRole('button', { name: 'Шилжүүлэх' }));
+        await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+        const [first, second] = hooks.mutateAsync.mock.calls.map(call => call[0]);
+        expect(first.expected_customer_name).toBe('Бат Болд');
+        expect(second.expected_customer_name).toBe('Ганаа');
+        expect(second.client_request_id).not.toBe(first.client_request_id);
+    });
+
+    it('keeps the retry payload identical after other errors, so a committed transfer replays', async () => {
+        const onOpenChange = renderDialog();
+        fillTransfer();
+        hooks.mutateAsync.mockRejectedValueOnce(Object.assign(new Error('Гэрээ шилжүүлснийг баталгаажуулж чадсангүй'), { status: 500 }));
+        fireEvent.click(screen.getByRole('button', { name: 'Шилжүүлэх' }));
+        await screen.findByRole('alert');
+        onOpenChange.rerender({ ...contract, customer_name: 'Дорж Сараа' } as ContractRow);
+        fireEvent.click(screen.getByRole('button', { name: 'Шилжүүлэх' }));
+        await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+        const [first, second] = hooks.mutateAsync.mock.calls.map(call => call[0]);
+        expect(second).toEqual(first);
+    });
+
+    it('does not allow a date before the latest holder change', async () => {
+        renderDialog(vi.fn(), '2026-09-30');
+        const date = screen.getByLabelText(/Шилжүүлсэн огноо/);
+        expect(date).toHaveAttribute('min', '2026-09-30');
+        fillTransfer();
+        fireEvent.change(date, { target: { value: '2026-06-01' } });
+        fireEvent.click(screen.getByRole('button', { name: 'Шилжүүлэх' }));
+        expect(await screen.findByRole('alert')).toHaveTextContent('өмнөх өөрчлөлтийн огнооноос (2026-09-30)');
+        expect(hooks.mutateAsync).not.toHaveBeenCalled();
     });
 
     it('prefills the current name for a same-person rename and sends no registration or phone', async () => {

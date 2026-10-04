@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
+import { dashboardFetch, dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
 import type { ContractTransfer, PropertyContract } from '@/types/property';
 import type { TransferContractInput } from '@/lib/contracts/transfer';
 
@@ -138,16 +138,32 @@ export function useContractTransfers(contractId: string | null) {
     });
 }
 
-/** Гэрээ шилжүүлэх / нэр засах. Гэрээ, захирлын самбар, лидийн түүхийг шинэчилнэ. */
+export interface ContractTransferResponse { transfer: ContractTransfer; replayed: boolean; message: string }
+
+/**
+ * Гэрээ шилжүүлэх / нэр засах. Гэрээ, захирлын самбар, лидийн түүхийг шинэчилнэ.
+ * Алдааны HTTP төлөвийг `status`-аар дамжуулна (409 = хуучирсан эзэмшигч эсвэл ашиглагдсан хүсэлт).
+ * Алдаа гарвал гэрээ, эзэмшигчийн түүхийг дахин уншина — цонх шинэ эзэмшигчийг харуулж, хуучин
+ * `expected_customer_name`-ээр 409-д гацахгүй.
+ */
 export function useTransferContract(contractId: string) {
     const qc = useQueryClient();
+    const { shop } = useAuth();
     return useMutation({
-        mutationFn: (input: TransferContractInput) =>
-            dashboardMutate<{ transfer: ContractTransfer; replayed: boolean; message: string }>(`/api/dashboard/contracts/${contractId}/transfer`, 'POST', input),
+        mutationFn: async (input: TransferContractInput) => {
+            const res = await dashboardFetch(`/api/dashboard/contracts/${contractId}/transfer`, { method: 'POST', body: JSON.stringify(input) });
+            const body = await res.json().catch(() => null) as (Partial<ContractTransferResponse> & { error?: string }) | null;
+            if (!res.ok) throw Object.assign(new Error(body?.error || `Хүсэлт амжилтгүй (${res.status})`), { status: res.status });
+            return body as ContractTransferResponse;
+        },
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: ['contracts'] });
             void qc.invalidateQueries({ queryKey: ['director'] });
             void qc.invalidateQueries({ queryKey: ['leads'] });
+        },
+        onError: () => {
+            void qc.invalidateQueries({ queryKey: ['contracts', 'detail', shop?.id, contractId] });
+            void qc.invalidateQueries({ queryKey: ['contracts', 'transfers', shop?.id, contractId] });
         },
     });
 }

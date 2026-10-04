@@ -10,7 +10,7 @@ import { formatShortDate, formatTime, ubDateStr } from '@/lib/utils/date';
 import { usePageTitle } from '@/lib/navigation/pageTitle';
 import { useContract, useContractTransfers, usePayments, useAddPayment, useUpdatePayment, type PaymentRow } from '@/hooks/useContracts';
 import { CONTRACT_STATUS_META, CONTRACT_TRANSFER_KIND_META, PAYMENT_STATUS_META, PAYMENT_METHOD_LABEL } from '@/lib/contracts/labels';
-import { isTransferableContract, summarizeContractTransfers } from '@/lib/contracts/transfer';
+import { isTransferableContract, latestTransferDate, summarizeContractTransfers } from '@/lib/contracts/transfer';
 import { useAuth } from '@/contexts/AuthContext';
 import { ContractTransferDialog } from '@/components/contracts/ContractTransferDialog';
 import type { ContractTransfer } from '@/types/property';
@@ -173,7 +173,7 @@ export function ContractDetail({ id }: { id: string }) {
                     </Panel>
                 </div>
             </div>
-            {canWrite && <ContractTransferDialog contract={c} open={transferring} onOpenChange={setTransferring} />}
+            {canWrite && <ContractTransferDialog contract={c} open={transferring} onOpenChange={setTransferring} previousChangeDate={latestTransferDate(transfers)} />}
         </div>
     );
 }

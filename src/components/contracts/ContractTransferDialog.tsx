@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/Button';
 import { useTransferContract, type ContractRow } from '@/hooks/useContracts';
 import { CONTRACT_TRANSFER_KIND_META } from '@/lib/contracts/labels';
 import {
-    TransferContractSchema, transferDateError, transferInputError,
+    TransferContractSchema, isTransferConflict, transferDateError, transferInputError,
     type ContractTransferKind, type TransferContractInput,
 } from '@/lib/contracts/transfer';
 
@@ -37,7 +37,13 @@ const composeName = (lastName: string, firstName: string) => [lastName.trim(), f
  * Гэрээний мөр, төлсөн дүн, график, менежерийн борлуулалт, дугаар хэвээр үлдэнэ;
  * зөвхөн эзэмшигч солигдож түүх, аудит хадгалагдана (transfer_contract RPC).
  */
-export function ContractTransferDialog({ contract, open, onOpenChange }: { contract: ContractRow; open: boolean; onOpenChange: (open: boolean) => void }) {
+export function ContractTransferDialog({ contract, open, onOpenChange, previousChangeDate = null }: {
+    contract: ContractRow;
+    open: boolean;
+    onOpenChange: (open: boolean) => void;
+    /** Эзэмшигчийн сүүлийн өөрчлөлтийн огноо — шинэ огноо үүнээс өмнө байж болохгүй. */
+    previousChangeDate?: string | null;
+}) {
     const transfer = useTransferContract(contract.id);
     return (
         <Dialog open={open} onOpenChange={(next) => { if (!transfer.isPending) onOpenChange(next); }}>
@@ -47,19 +53,30 @@ export function ContractTransferDialog({ contract, open, onOpenChange }: { contr
                     <DialogDescription>Төлсөн дүн, төлбөрийн график, менежерийн борлуулалт, гэрээний дугаар хэвээр үлдэж, гэрээ шинэ эзэмшигчид шилжинэ.</DialogDescription>
                 </DialogHeader>
                 {/* Цонх хаагдахад маягт unmount болно — дараагийн нээлт шинэ төлөв, шинэ хүсэлтийн UUID-тай эхэлнэ. */}
-                <TransferForm contract={contract} transfer={transfer} onClose={() => onOpenChange(false)} />
+                <TransferForm contract={contract} previousChangeDate={previousChangeDate} transfer={transfer} onClose={() => onOpenChange(false)} />
             </DialogContent>
         </Dialog>
     );
 }
 
-/** Нэг нээлтэд нэг UUID — давтан дарах/дахин оролдох нь давхар шилжүүлэг үүсгэхгүй. */
-function TransferForm({ contract, transfer, onClose }: { contract: ContractRow; transfer: ReturnType<typeof useTransferContract>; onClose: () => void }) {
-    const requestId = useRef<string | null>(null);
+/**
+ * Нэг хүсэлтэд нэг UUID ба харсан эзэмшигч — давтан дарах/дахин оролдох нь ижил payload илгээж
+ * давхар шилжүүлэг үүсгэхгүй (сервер өмнөх үр дүнг буцаана). 409 үед гэрээ дахин уншигдаж,
+ * дараагийн илгээлт шинэ хүсэлт болно.
+ */
+function TransferForm({ contract, previousChangeDate, transfer, onClose }: {
+    contract: ContractRow;
+    previousChangeDate: string | null;
+    transfer: ReturnType<typeof useTransferContract>;
+    onClose: () => void;
+}) {
+    const request = useRef<{ id: string; expectedHolder: string | null } | null>(null);
     const [kind, setKind] = useState<ContractTransferKind>('transfer');
     const [form, setForm] = useState<Form>(emptyForm);
     const [nameEdited, setNameEdited] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const signed = contract.contract_date?.slice(0, 10) || null;
+    const minDate = (previousChangeDate && (!signed || previousChangeDate > signed) ? previousChangeDate.slice(0, 10) : signed) || undefined;
     const current = contract.customer_name || composeName(contract.customer_last_name || '', contract.customer_first_name || '') || '—';
     const paid = Number(contract.paid_amount) || 0;
     const total = Number(contract.total_price) || 0;
@@ -86,26 +103,30 @@ function TransferForm({ contract, transfer, onClose }: { contract: ContractRow; 
 
     const submit = async (event: React.FormEvent) => {
         event.preventDefault();
-        requestId.current ??= crypto.randomUUID();
+        // Илгээгдсэн хүсэлтийг (UUID + харсан эзэмшигч) л хадгална; шалгалт унасан оролдлого тоологдохгүй.
+        const pending = request.current ?? { id: crypto.randomUUID(), expectedHolder: contract.customer_name ?? null };
         const input: TransferContractInput = {
-            client_request_id: requestId.current,
+            client_request_id: pending.id,
             kind,
             customer_name: form.name,
             customer_last_name: form.lastName.trim() || null,
             customer_first_name: form.firstName.trim() || null,
             effective_date: form.effectiveDate,
             reason: form.reason.trim() || null,
-            expected_customer_name: contract.customer_name ?? null,
+            expected_customer_name: pending.expectedHolder,
             ...(kind === 'transfer' ? { customer_registration: form.registration, customer_phone: form.phone.trim() || null } : {}),
         };
         const parsed = TransferContractSchema.safeParse(input);
-        const problem = !parsed.success ? transferInputError(parsed.error) : transferDateError(form.effectiveDate, contract.contract_date, ubDateStr());
+        const problem = !parsed.success ? transferInputError(parsed.error) : transferDateError(form.effectiveDate, contract.contract_date, ubDateStr(), previousChangeDate);
         if (problem) { setError(problem); return; }
+        request.current = pending;
         try {
             const result = await transfer.mutateAsync(input);
             toast.success(result.message || 'Гэрээ шилжүүлэгдлээ');
             onClose();
         } catch (e) {
+            // Эзэмшигч өөрчлөгдсөн / хүсэлт ашиглагдсан: шинэчлэгдсэн гэрээгээр шинэ хүсэлт илгээнэ.
+            if (isTransferConflict(e)) request.current = null;
             const message = e instanceof Error ? e.message : 'Гэрээ шилжүүлж чадсангүй';
             setError(message);
             toast.error(message);
@@ -151,7 +172,7 @@ function TransferForm({ contract, transfer, onClose }: { contract: ContractRow; 
                 </div>
             )}
             <FormField label="Шилжүүлсэн огноо" htmlFor="transfer-date" required>
-                <Input id="transfer-date" type="date" value={form.effectiveDate} onChange={set('effectiveDate')} max={ubDateStr()} min={contract.contract_date?.slice(0, 10) || undefined} className="mono-label" required />
+                <Input id="transfer-date" type="date" value={form.effectiveDate} onChange={set('effectiveDate')} max={ubDateStr()} min={minDate} className="mono-label" required />
             </FormField>
             <FormField label="Шалтгаан / тэмдэглэл" htmlFor="transfer-reason" required={kind === 'transfer'}
                 hint="Шилжүүлгийн хураамжийг «Төлбөр бүртгэх»-ээр «Бусад төлбөр» төрлөөр бүртгэнэ.">
