@@ -199,3 +199,13 @@ export function parseErpProduct(row: ErpRow): ErpProduct | null {
 export function readErpRecords<T>(datasets: ErpDataset[], detect: (dataset: ErpDataset) => boolean, parse: (row: ErpRow) => T | null): T[] {
     return datasets.filter(detect).flatMap(dataset => dataset.rows.map(parse).filter((row): row is T => row !== null));
 }
+
+/**
+ * Шинэ эх сурвалжийн ID баганын санал: гэрээний экспорт → «Гэрээний дугаар» + «Бүтээгдэхүүн»
+ * (нэг гэрээнд хэд хэдэн бүтээгдэхүүн байж болно); бүтээгдэхүүний экспорт → төрөл + загвар + код.
+ */
+export function suggestErpKeyColumns(columns: string[]): string[] {
+    if (isSalesDataset({ columns })) return ['Гэрээний дугаар', 'Бүтээгдэхүүн'];
+    if (isProductsDataset({ columns })) return columns.includes('Загвар') ? ['Бүтээгдэхүүний төрөл', 'Загвар', 'Код'] : ['Бүтээгдэхүүний төрөл', 'Код'];
+    return [];
+}

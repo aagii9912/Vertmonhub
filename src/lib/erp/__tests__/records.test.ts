@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    blockOfCode, erpDate, erpNumber, isProductsDataset, isSalesDataset, parseErpProduct, parseErpSale,
+    suggestErpKeyColumns, blockOfCode, erpDate, erpNumber, isProductsDataset, isSalesDataset, parseErpProduct, parseErpSale,
     parseProductLabel, productKind, readErpRecords,
 } from '../records';
 
@@ -87,5 +87,13 @@ describe('product rows', () => {
         ];
         expect(readErpRecords(datasets, isProductsDataset, parseErpProduct)).toHaveLength(1);
         expect(readErpRecords(datasets, isSalesDataset, parseErpSale)).toHaveLength(1);
+    });
+});
+
+describe('suggestErpKeyColumns', () => {
+    it('suggests stable keys for the two weekly exports only', () => {
+        expect(suggestErpKeyColumns(Object.keys(sale()))).toEqual(['Гэрээний дугаар', 'Бүтээгдэхүүн']);
+        expect(suggestErpKeyColumns(Object.keys(product()))).toEqual(['Бүтээгдэхүүний төрөл', 'Загвар', 'Код']);
+        expect(suggestErpKeyColumns(['Огноо', 'Дүн'])).toEqual([]);
     });
 });
