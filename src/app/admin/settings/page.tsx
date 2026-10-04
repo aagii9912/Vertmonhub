@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowUpRight, Bot, Building2, Shield, SlidersHorizontal, Upload, Users } from 'lucide-react';
+import { ArrowUpRight, Bot, Building2, Plug, Shield, SlidersHorizontal, Upload, Users } from 'lucide-react';
 
 const sections = [
     { href: '/admin/users', title: 'Хэрэглэгчид', description: 'Ажилтан нэмэх, урих, дүр оноох', icon: Users },
@@ -8,6 +8,7 @@ const sections = [
     { href: '/dashboard/settings', title: 'Байгууллагын тохиргоо', description: 'Сонгосон байгууллагын мэдээлэл, холболтууд', icon: SlidersHorizontal },
     { href: '/dashboard/ai-settings', title: 'AI мэдлэг ба FAQ', description: 'AI туслахын ашиглах байгууллагын мэдээлэл, FAQ', icon: Bot },
     { href: '/admin/import', title: 'Өгөгдөл оруулах', description: 'Төсөл болон CRM өгөгдлийг импортлох', icon: Upload },
+    { href: '/admin/integrations', title: 'Холболтууд', description: 'Elysium сайтын лидийн дамжуулалт, автомат татах', icon: Plug },
 ];
 
 export default function AdminSettingsPage() {
