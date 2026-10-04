@@ -92,6 +92,22 @@ it.each([
     await expect(fetchMetaAdsetInsights(account, 'secret-token', '2026-09-23', '2026-09-29')).rejects.toThrow();
 });
 
+it('accepts full-precision ratios from Graph (frequency, action values, costs, results) instead of failing the sync', async () => {
+    http.mockResolvedValueOnce(reply({ data: [{
+        ...callRow, frequency: '1.3076923076923',
+        actions: [{ action_type: 'click_to_call_native_call_placed', value: '3' }, { action_type: 'video_view', value: '3.3333333333333' }],
+        cost_per_action_type: [{ action_type: 'click_to_call_native_call_placed', value: '3.3333333333333' }],
+        results: [{ indicator: 'actions:click_to_call_native_call_placed', values: [{ value: '2.6666666666667' }] }],
+    }] }));
+    const { rows } = await fetchMetaAdsetInsights(account, 'secret-token', '2026-09-23', '2026-09-29');
+    expect(rows[0]).toMatchObject({ calls_placed: 3, results: 2.6666666666667, result_type: 'calls' });
+    expect(rows[0].cost_per_action_type).toEqual([{ action_type: 'click_to_call_native_call_placed', value: 3.3333333333333 }]);
+    expect(rows[0].actions[1]).toEqual({ action_type: 'video_view', value: 3.3333333333333 });
+    // `frequency` хадгалагдахгүй тул ямар ч хэлбэртэй ирсэн синкийг унагахгүй.
+    http.mockResolvedValueOnce(reply({ data: [{ ...callRow, frequency: 'n/a' }] }));
+    await expect(fetchMetaAdsetInsights(account, 'secret-token', '2026-09-23', '2026-09-29')).resolves.toMatchObject({ rows: [{ adset_id: '101' }] });
+});
+
 it('rejects duplicate ad set days and non-advancing cursors', async () => {
     http.mockResolvedValueOnce(reply({ data: [callRow, callRow] }));
     await expect(fetchMetaAdsetInsights(account, 'secret-token', '2026-09-23', '2026-09-29')).rejects.toThrow(/зөрүүтэй/);

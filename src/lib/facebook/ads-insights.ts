@@ -44,6 +44,7 @@ export interface MetaAdsetDay {
     cost_per_action_type: MetaActionValue[];
 }
 
+// `frequency`-г асуудаг ч хадгалахгүй, шалгахгүй: өдрийн харьцаа нэмэгддэггүй, долоо хоногийнхыг reach-ээс бодно.
 const BASE_FIELDS = [
     'account_id', 'account_currency', 'campaign_id', 'campaign_name', 'adset_id', 'adset_name', 'objective', 'optimization_goal',
     'date_start', 'date_stop', 'spend', 'impressions', 'reach', 'frequency', 'clicks', 'inline_link_clicks', 'actions', 'cost_per_action_type',
@@ -65,10 +66,21 @@ function count(value: unknown, fallback: number | null): number | null {
     if (typeof text !== 'string' || !/^\d{1,15}$/.test(text)) throw invalid();
     return Number(text);
 }
+/**
+ * Сөрөг биш, төгсгөлөг аравтын тоо (Graph string эсвэл number). Бутархайн оронг хязгаарлахгүй —
+ * Meta харьцаа/өртгийг (жишээ нь 3.3333333333333) бүрэн нарийвчлалаар буцааж болно. Буруу бол null.
+ */
+function decimalValue(value: unknown): number | null {
+    if (typeof value === 'number') return Number.isFinite(value) && value >= 0 && value < 1e15 ? value : null;
+    const text = typeof value === 'string' ? value.trim() : '';
+    if (text.length > 64 || !/^\d{1,15}(\.\d+)?$/.test(text)) return null;
+    const parsed = Number(text);
+    return Number.isFinite(parsed) ? parsed : null;
+}
 function decimal(value: unknown): number {
-    const text = typeof value === 'number' ? String(value) : value;
-    if (typeof text !== 'string' || !/^\d{1,15}(\.\d{1,9})?$/.test(text)) throw invalid();
-    return Number(text);
+    const parsed = decimalValue(value);
+    if (parsed === null) throw invalid();
+    return parsed;
 }
 function name(value: unknown, fallback: string): string {
     const text = typeof value === 'string' ? value.trim().slice(0, 500) : '';
@@ -102,9 +114,7 @@ export function parseMetaResults(value: unknown): { indicator: string; value: nu
         if (!indicator) continue;
         const values = Array.isArray(entry.values) ? entry.values.filter((v): v is Raw => !!v && typeof v === 'object') : [];
         const pick = values.find(v => Array.isArray(v.attribution_windows) && v.attribution_windows.includes('default')) ?? values[0];
-        const raw = pick?.value;
-        const parsed = typeof raw === 'number' ? raw : typeof raw === 'string' && /^\d{1,15}(\.\d{1,9})?$/.test(raw.trim()) ? Number(raw) : null;
-        return { indicator, value: parsed !== null && Number.isFinite(parsed) && parsed >= 0 ? parsed : null };
+        return { indicator, value: decimalValue(pick?.value) };
     }
     return null;
 }
@@ -141,7 +151,6 @@ function parseAdsetRow(r: Raw, account: MetaAccount, from: string, to: string, w
         || typeof r.campaign_id !== 'string' || !/^\d{1,40}$/.test(r.campaign_id) || typeof r.adset_id !== 'string' || !/^\d{1,40}$/.test(r.adset_id)
         || typeof day !== 'string' || !dateSchema.safeParse(day).success || day !== r.date_stop || day < from || day > to
         || typeof r.spend !== 'string' || !/^\d+(\.\d{1,6})?$/.test(r.spend) || Number(r.spend) >= 1e12) throw invalid();
-    if (r.frequency !== undefined && r.frequency !== null) decimal(r.frequency);
     const actions = parseMetaActions(r.actions);
     const costs = parseMetaActions(r.cost_per_action_type);
     const thruplay = withResultFields ? parseMetaActions(r.video_thruplay_watched_actions) : null;
