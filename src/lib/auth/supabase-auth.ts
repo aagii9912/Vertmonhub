@@ -4,7 +4,7 @@
  */
 
 import { createServerClient } from '@supabase/ssr';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type User } from '@supabase/supabase-js';
 import { cookies, headers } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { logger } from '@/lib/utils/logger';
@@ -38,17 +38,36 @@ export async function createSupabaseServerClient() {
 }
 
 /**
+ * Нэг хүсэлтийн доторх Supabase getUser-ийг дахин ашиглана: requireModule → getUserShop →
+ * төслийн хүрээ тус бүр Auth руу дахин хандаж байсан (хүсэлт бүрт ~4 round trip).
+ * Түлхүүр нь Next-ийн тухайн хүсэлтийн cookie store — хүсэлт бүрт шинэ объект тул
+ * хэрэглэгч хооронд хуваалцагдахгүй. Зөвхөн олдсон хэрэглэгчийг санана: null/алдаа үед
+ * дараагийн дуудлага (жишээ нь нэвтэрсний дараа) дахин шалгана.
+ */
+const requestUsers = new WeakMap<object, Promise<User | null>>();
+
+/**
  * Get authenticated user from server
  */
-export async function getAuthUser() {
-    const supabase = await createSupabaseServerClient();
-    const { data: { user }, error } = await supabase.auth.getUser();
+export async function getAuthUser(): Promise<User | null> {
+    const cookieStore = await cookies();
+    const cached = requestUsers.get(cookieStore);
+    if (cached) return cached;
 
-    if (error || !user) {
-        return null;
+    const pending = (async () => {
+        const supabase = await createSupabaseServerClient();
+        const { data: { user }, error } = await supabase.auth.getUser();
+        return error || !user ? null : user;
+    })();
+    requestUsers.set(cookieStore, pending);
+    try {
+        const user = await pending;
+        if (!user) requestUsers.delete(cookieStore);
+        return user;
+    } catch (error) {
+        requestUsers.delete(cookieStore);
+        throw error;
     }
-
-    return user;
 }
 
 /**
