@@ -7,10 +7,11 @@ import { ubDateStr } from '@/lib/utils/date';
 import { buildWorkbookBuffer, type WorkbookSheetSpec } from '@/lib/utils/xlsx';
 import { getManagerPerformance } from '@/lib/reports/manager-performance';
 import { fetchAllRows } from '@/lib/utils/pagination';
-import { leadDisplayName, sourceLabel, statusLabel } from '@/lib/leads/labels';
+import { leadCategoryLabel, leadDisplayName, sourceLabel, statusLabel } from '@/lib/leads/labels';
 import { UNIT_STATUS_LABEL, unitCategoryLabel } from '@/lib/inventory/labels';
 import { contractStatusLabel } from '@/lib/contracts/labels';
 import { loadContractTransferSummaries } from '@/lib/services/ContractService';
+import { listLeadCategories } from '@/lib/services/LeadCategoryService';
 
 /** Export төрөл бүр өөрийн модулийн унших эрх шаардана (өмнө нь зөвхөн auth). */
 const EXPORT_MODULE: Record<string, string> = {
@@ -72,14 +73,17 @@ export async function GET(request: NextRequest) {
             filename = `нэгжүүд_${ubDateStr()}.xlsx`;
 
         } else if (type === 'leads') {
-            // Export Leads
-            const leads = await fetchAllRows<Record<string, any>>((from, to) => applyLeadScope(supabase
-                .from('leads')
-                .select('*')
-                .eq('shop_id', shopId)
-                .is('deleted_at', null)
-                .order('created_at', { ascending: false })
-                .order('id').range(from, to), scope));
+            // Export Leads (+ төслийн лидийн ангилал — архивласан нь «(архив)»-тай)
+            const [leads, categories] = await Promise.all([
+                fetchAllRows<Record<string, any>>((from, to) => applyLeadScope(supabase
+                    .from('leads')
+                    .select('*')
+                    .eq('shop_id', shopId)
+                    .is('deleted_at', null)
+                    .order('created_at', { ascending: false })
+                    .order('id').range(from, to), scope)),
+                listLeadCategories(supabase, shopId, { includeArchived: true }),
+            ]);
 
             const exportData = leads?.map(lead => ({
                 // Нэргүй лид шошгоор; дахин импортлоход normalizeLeadName шошгыг null болгоно.
@@ -87,6 +91,7 @@ export async function GET(request: NextRequest) {
                 'Утас': lead.customer_phone || '-',
                 'Имэйл': lead.customer_email || '-',
                 'Эх сурвалж': lead.source ? sourceLabel(lead.source) : '-',
+                'Ангилал': leadCategoryLabel(categories, lead.category_id, { markArchived: true }),
                 'Төлөв': statusLabel(lead.status),
                 'Менежер': lead.sales_manager_name || '-',
                 'Төсөл ID': lead.project_id || '-',
