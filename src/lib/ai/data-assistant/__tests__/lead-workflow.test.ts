@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { bulkUpdateLeads, createLead, fetchLeads, processContractAction, updateLeadStatus } from '../functions';
 import { UNRESTRICTED_SALES_SCOPE } from '@/lib/sales/project-scope';
+import { ANONYMOUS_LEAD_CONTACT, ANONYMOUS_LEAD_LABEL } from '@/lib/leads/labels';
 
 const admin = { userId: 'admin-1', role: 'admin', scope: UNRESTRICTED_SALES_SCOPE };
 
@@ -91,6 +92,28 @@ describe('AI lead creation ownership', () => {
         query('projects', null);
         expect(await createLead('shop-1', { project_id: projectId, customer_name: lead.customer_name }, true, admin)).toHaveProperty('error', expect.stringContaining('Төсөл олдсонгүй'));
         expect(from).toHaveBeenCalledTimes(1);
+    });
+    it('never invents a name: a missing name needs anonymous=true and a contact', async () => {
+        expect(await createLead('shop-1', { project_id: projectId, customer_phone: '99112233' }, true, admin)).toHaveProperty('error', expect.stringContaining('anonymous=true'));
+        expect(await createLead('shop-1', { project_id: projectId, anonymous: true }, true, admin)).toEqual({ error: ANONYMOUS_LEAD_CONTACT });
+        expect(from).not.toHaveBeenCalled();
+    });
+    it('previews and inserts an anonymous lead with a null name', async () => {
+        const actor = () => { query('projects', { id: projectId }); query('user_profiles', { full_name: 'Админ' }); query('sales_managers', []); };
+        actor();
+        const args = { project_id: projectId, anonymous: true, customer_name: 'Зохиосон', customer_phone: 99112233 };
+        expect(await createLead('shop-1', args, false, admin)).toMatchObject({
+            requiresConfirmation: true, label: `Шинэ лийд: ${ANONYMOUS_LEAD_LABEL}`,
+            preview: { Нэр: ANONYMOUS_LEAD_LABEL, Утас: '99112233' }, action: { args: { anonymous: true } },
+        });
+        actor();
+        const insert = query('leads', { id: 'anon-1', customer_name: null });
+        expect(await createLead('shop-1', args, true, admin)).toMatchObject({ success: true, message: expect.stringContaining(ANONYMOUS_LEAD_LABEL) });
+        expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({ customer_name: null, customer_phone: '99112233' }));
+    });
+    it('marks anonymous leads in list results with the display label', async () => {
+        query('leads', [{ ...lead, id: 'anon-1', customer_name: null, customer_phone: '99112233', created_at: '2026-09-10T00:00:00Z' }]);
+        expect(await fetchLeads('shop-1', {})).toMatchObject([{ id: 'anon-1', name: ANONYMOUS_LEAD_LABEL, anonymous: true, phone: '99112233' }]);
     });
     it.each(['closed_won', 'closed_lost'])('rejects closed creation %s before any write', async (status) => {
         const project = query('projects', { id: projectId });

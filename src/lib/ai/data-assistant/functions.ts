@@ -9,7 +9,7 @@ import { logger } from '@/lib/utils/logger';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { normalizePhone, phoneIlikePattern } from '@/lib/utils/phone';
 import { softDeleteCustomer } from '@/lib/services/CustomerOps';
-import { insertLeadOnce, resolveStaffLead, type StaffLeadActor } from '@/lib/services/LeadService';
+import { insertLeadOnce, resolveLeadIdentity, resolveStaffLead, type StaffLeadActor } from '@/lib/services/LeadService';
 import { buildBudgetOverview, monthlySpendSeries, spendByChannel, SPEND_CHANNELS } from '@/lib/marketing/budget';
 import { loadMarketingSpend } from '@/lib/marketing/spend-load';
 import { spendQuality, SPEND_BASIS } from '@/lib/marketing/performance';
@@ -21,7 +21,7 @@ import { applyLeadScope, assertProjectManager, canAccessProject, UNRESTRICTED_SA
 import { z } from 'zod';
 import { canReadPrivateAttachment, isLegacyPublicAttachmentUrl, parsePrivateAttachmentUrl } from '@/lib/ai/private-attachments';
 import { logLeadActivity } from '@/lib/leads/activities';
-import { STATUS_META, statusLabel, toLeadSource } from '@/lib/leads/labels';
+import { LEAD_NAME_OR_ANONYMOUS, STATUS_META, isAnonymousLead, leadDisplayName, statusLabel, toLeadSource } from '@/lib/leads/labels';
 import type { LeadStatus } from '@/types/property';
 import { formatMNT } from '@/lib/utils/currency';
 
@@ -248,7 +248,8 @@ export async function fetchLeads(shopId: string, args: any, scope: SalesProjectS
     if (error) { logger.error('Lead fetch error:', { error }); return { error: 'Лидийн жагсаалт уншиж чадсангүй. Дахин оролдоно уу.' }; }
 
     return data?.map(l => ({
-        id: l.id, project_id: l.project_id, name: l.customer_name || 'Тодорхойгүй', phone: l.customer_phone, email: l.customer_email,
+        // Нэргүй лидэд шошго + anonymous: true — загвар нэр зохиож харилцагчийг нэрээр дуудахгүй.
+        id: l.id, project_id: l.project_id, name: leadDisplayName(l), anonymous: isAnonymousLead(l), phone: l.customer_phone, email: l.customer_email,
         status: l.status, source: l.source, sales_manager_name: l.sales_manager_name ?? null,
         budget: l.budget_min && l.budget_max ? `${formatMNT(l.budget_min)} - ${formatMNT(l.budget_max)}` : l.budget_min ? `${formatMNT(l.budget_min)}+` : 'Тодорхойгүй',
         preferred_type: l.preferred_type, preferred_district: l.preferred_district, preferred_rooms: l.preferred_rooms,
@@ -293,7 +294,7 @@ export async function fetchLeadDetails(shopId: string, args: any, scope: SalesPr
 
     return {
         lead: {
-            id: data.id, project_id: data.project_id, name: data.customer_name, phone: data.customer_phone, email: data.customer_email,
+            id: data.id, project_id: data.project_id, name: leadDisplayName(data), anonymous: isAnonymousLead(data), phone: data.customer_phone, email: data.customer_email,
             status: data.status, source: data.source, budget_min: data.budget_min, budget_max: data.budget_max,
             preferred_type: data.preferred_type, preferred_district: data.preferred_district,
             preferred_rooms: data.preferred_rooms, urgency: data.urgency, notes: data.notes,
@@ -763,7 +764,7 @@ export async function updateLeadStatus(shopId: string, args: any, confirm = fals
     const { data: leads, error: readError } = await query.limit(20);
     if (readError) return { error: 'Лид шалгахад алдаа гарлаа' };
     if (!leads || leads.length === 0) return { error: 'Лийд олдсонгүй' };
-    if (leads.length > 1) return { error: `${leads.length} лийд олдлоо, тодруулна уу`, options: leads.map(l => ({ id: l.id, name: l.customer_name, status: l.status })) };
+    if (leads.length > 1) return { error: `${leads.length} лийд олдлоо, тодруулна уу`, options: leads.map(l => ({ id: l.id, name: leadDisplayName(l), status: l.status })) };
 
     const lead = leads[0];
     const oldStatus = lead.status;
@@ -775,13 +776,13 @@ export async function updateLeadStatus(shopId: string, args: any, confirm = fals
             .select('contract_number, total_price, contract_status')
             .eq('lead_id', lead.id).eq('shop_id', shopId).is('deleted_at', null);
         if (contractError) return { error: 'Лидийн гэрээ шалгахад алдаа гарлаа' };
-        if (!contracts?.some(hasRealContractFields)) return { error: `"${lead.customer_name}" лидэд хүчинтэй, дугаартай, дүнтэй гэрээ бүртгэгдээгүй байна. Эхлээд гэрээг бүртгээд дараа нь статусыг closed_won болго.` };
+        if (!contracts?.some(hasRealContractFields)) return { error: `"${leadDisplayName(lead)}" лидэд хүчинтэй, дугаартай, дүнтэй гэрээ бүртгэгдээгүй байна. Эхлээд гэрээг бүртгээд дараа нь статусыг closed_won болго.` };
     }
     if (!confirm) {
         return confirmNeeded('update_lead_status',
             { lead_id: lead.id, new_status: args.new_status, lost_reason: args.new_status === 'closed_lost' ? lostReason : null },
-            `Лийдийн төлөв өөрчлөх: ${lead.customer_name}`,
-            { Лийд: lead.customer_name, 'Одоогийн төлөв': oldStatus, 'Шинэ төлөв': args.new_status, ...(args.new_status === 'closed_lost' ? { 'Алдсан шалтгаан': lostReason } : {}) });
+            `Лийдийн төлөв өөрчлөх: ${leadDisplayName(lead)}`,
+            { Лийд: leadDisplayName(lead), 'Одоогийн төлөв': oldStatus, 'Шинэ төлөв': args.new_status, ...(args.new_status === 'closed_lost' ? { 'Алдсан шалтгаан': lostReason } : {}) });
     }
     const { data, error } = await applyLeadScope(supabaseAdmin.from('leads')
         .update({ status: args.new_status, lost_reason: args.new_status === 'closed_lost' ? lostReason : null, updated_at: new Date().toISOString() })
@@ -792,7 +793,7 @@ export async function updateLeadStatus(shopId: string, args: any, confirm = fals
     if (oldStatus !== args.new_status) {
         await logStatusChange(shopId, lead.id, oldStatus, args.new_status, args.new_status === 'closed_lost' ? lostReason : null, actor);
     }
-    return { success: true, lead: lead.customer_name, oldStatus, newStatus: args.new_status };
+    return { success: true, lead: leadDisplayName(lead), oldStatus, newStatus: args.new_status };
 }
 
 export async function addLeadNote(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
@@ -807,14 +808,14 @@ export async function addLeadNote(shopId: string, args: any, confirm = false, sc
     const { data: leads } = await query.limit(20);
     if (!leads || leads.length === 0) return { error: 'Лийд олдсонгүй' };
     // Өмнө нь нэр давхцвал чимээгүй эхний лийдэд бичдэг байсан — одоо тодруулна.
-    if (leads.length > 1) return { error: `${leads.length} лийд олдлоо, тодруулна уу`, options: leads.map(l => ({ id: l.id, project_id: l.project_id, name: l.customer_name })) };
+    if (leads.length > 1) return { error: `${leads.length} лийд олдлоо, тодруулна уу`, options: leads.map(l => ({ id: l.id, project_id: l.project_id, name: leadDisplayName(l) })) };
 
     const lead = leads[0];
     if (!confirm) {
         return confirmNeeded('add_lead_note',
             { lead_id: lead.id, note },
-            `Лийдэд тэмдэглэл нэмэх: ${lead.customer_name}`,
-            { Лийд: lead.customer_name, Тэмдэглэл: note.slice(0, 200) });
+            `Лийдэд тэмдэглэл нэмэх: ${leadDisplayName(lead)}`,
+            { Лийд: leadDisplayName(lead), Тэмдэглэл: note.slice(0, 200) });
     }
     const timestamp = new Date().toLocaleString('mn-MN');
     const existingNotes = lead.notes || '';
@@ -825,7 +826,7 @@ export async function addLeadNote(shopId: string, args: any, confirm = false, sc
         .eq('id', lead.id)
         .eq('shop_id', shopId), scope);
     if (error) return { error: `Алдаа: ${error.message}` };
-    return { success: true, lead: lead.customer_name, note };
+    return { success: true, lead: leadDisplayName(lead), note };
 }
 
 /** Гэрээний (property_contracts) статусыг код/дугаараар өөрчилнө (confirm-gated). */
@@ -1055,7 +1056,15 @@ export async function deleteProperty(shopId: string, args: any, confirm = false)
 
 export async function createLead(shopId: string, args: any, confirm: boolean, actor: StaffLeadActor) {
     if (!z.string().uuid().safeParse(args.project_id).success) return { error: 'Лидийн төслийг project_id-аар сонгоно уу' };
-    if (typeof args.customer_name !== 'string' || !args.customer_name.trim()) return { error: 'customer_name шаардлагатай' };
+    // Нэр/нэргүй дүрэм dashboard-тай ижил (LeadService): нэргүй лид зөвхөн anonymous=true, утас/и-мэйлтэй.
+    const text = (value: unknown) => (value == null ? null : String(value));
+    const identity = resolveLeadIdentity({
+        customer_name: args.customer_name, customer_phone: text(args.customer_phone), customer_email: text(args.customer_email), anonymous: args.anonymous === true,
+    });
+    if (!identity.ok) {
+        return { error: identity.error === LEAD_NAME_OR_ANONYMOUS ? 'customer_name шаардлагатай. Харилцагч нэрээ хэлээгүй бол нэр зохиохгүй, anonymous=true өгнө.' : identity.error };
+    }
+    const displayName = leadDisplayName(identity.customer_name);
     const resolved = await resolveStaffLead(supabaseAdmin, shopId, { projectId: args.project_id, status: args.status, source: args.source }, actor);
     if (!resolved.ok) return { error: resolved.error };
     if (![args.budget_min, args.budget_max].every((value) => value == null || isAmount(value))) {
@@ -1063,17 +1072,17 @@ export async function createLead(shopId: string, args: any, confirm: boolean, ac
     }
     const { status, source, sales_manager_name: managerName } = resolved;
     const preview = {
-        Нэр: args.customer_name, Утас: args.customer_phone || '-', Статус: status, 'Эх сурвалж': source,
+        Нэр: displayName, Утас: identity.customer_phone || '-', ...(identity.customer_email ? { Имэйл: identity.customer_email } : {}), Статус: status, 'Эх сурвалж': source,
         Төсөв: args.budget_max ? formatMNT(args.budget_max) : '-',
         Менежер: managerName || 'Хариуцагчгүй — идэвхтэй менежерт онооно',
     };
-    if (!confirm) return confirmNeeded('create_lead', { ...args, status, source }, `Шинэ лийд: ${args.customer_name}`, preview);
+    if (!confirm) return confirmNeeded('create_lead', { ...args, status, source }, `Шинэ лийд: ${displayName}`, preview);
 
     const result = await insertLeadOnce(supabaseAdmin, {
         shop_id: shopId, project_id: resolved.project_id,
-        customer_name: args.customer_name.trim(),
-        customer_phone: args.customer_phone || null,
-        customer_email: args.customer_email || null,
+        customer_name: identity.customer_name,
+        customer_phone: identity.customer_phone,
+        customer_email: identity.customer_email,
         status, source, sales_manager_name: managerName,
         notes: args.notes || null,
         budget_min: args.budget_min ?? null,
@@ -1082,7 +1091,7 @@ export async function createLead(shopId: string, args: any, confirm: boolean, ac
         preferred_rooms: args.preferred_rooms ?? null,
     }, { select: 'id, customer_name' });
     if (!result.ok) return { error: 'Лид үүсгэхэд алдаа гарлаа' };
-    return { success: true, message: `"${result.lead.customer_name}" лийд амжилттай үүсгэлээ (${managerName ? `менежер: ${managerName}` : 'хариуцагчгүй — идэвхтэй менежерт онооно'}).`, leadId: result.lead.id };
+    return { success: true, message: `"${displayName}" лийд амжилттай үүсгэлээ (${managerName ? `менежер: ${managerName}` : 'хариуцагчгүй — идэвхтэй менежерт онооно'}).`, leadId: result.lead.id };
 }
 
 export async function deleteLead(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
@@ -1094,21 +1103,21 @@ export async function deleteLead(shopId: string, args: any, confirm = false, sco
 
     const { data: leads } = await query;
     if (!leads || leads.length === 0) return { error: 'Лийд олдсонгүй' };
-    if (leads.length > 1) return { error: `${leads.length} лийд олдлоо, тодруулна уу`, options: leads.map(l => ({ id: l.id, project_id: l.project_id, name: l.customer_name })) };
+    if (leads.length > 1) return { error: `${leads.length} лийд олдлоо, тодруулна уу`, options: leads.map(l => ({ id: l.id, project_id: l.project_id, name: leadDisplayName(l) })) };
 
     const lead = leads[0];
     if (!confirm) {
         return confirmNeeded('delete_lead',
             { lead_id: lead.id, reason: args.reason },
-            `Лийд устгах: ${lead.customer_name}`,
-            { Нэр: lead.customer_name, Статус: lead.status, Шалтгаан: args.reason || '-' });
+            `Лийд устгах: ${leadDisplayName(lead)}`,
+            { Нэр: leadDisplayName(lead), Статус: lead.status, Шалтгаан: args.reason || '-' });
     }
 
     const { error } = await applyLeadScope(supabaseAdmin.from('leads')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', lead.id), scope);
     if (error) return { error: `Алдаа: ${error.message}` };
-    return { success: true, message: `"${lead.customer_name}" лийдийг устгалаа (сэргээх боломжтой).`, leadId: lead.id };
+    return { success: true, message: `"${leadDisplayName(lead)}" лийдийг устгалаа (сэргээх боломжтой).`, leadId: lead.id };
 }
 
 export async function createCustomer(shopId: string, args: any, confirm = false, salesManagerName = '') {
@@ -1162,9 +1171,10 @@ export async function scheduleViewing(shopId: string, args: any, confirm = false
     const { input: p, lead, property } = resolved.data;
     const payload = { ...p, lead_id: lead?.id ?? null };
     const when = p.walk_in ? 'Ирсэн уулзалт' : `${formatShortDate(p.scheduled_at!)} ${formatTime(p.scheduled_at!)}`;
-    if (!confirm) return confirmNeeded('schedule_viewing', payload, `Уулзалт товлох: ${lead?.customer_name || p.customer_name || property?.name || when}`, {
+    const customer = lead ? leadDisplayName(lead) : p.customer_name;
+    if (!confirm) return confirmNeeded('schedule_viewing', payload, `Уулзалт товлох: ${customer || property?.name || when}`, {
         Байр: property?.name || 'Сонгоогүй', Огноо: when,
-        Харилцагч: lead?.customer_name || p.customer_name || '-', Менежер: salesManagerName || '-',
+        Харилцагч: customer || '-', Менежер: salesManagerName || '-',
     });
     const identity = userId ? await resolveManagerIdentity(supabaseAdmin, shopId, userId) : null;
     const result = await createViewing(supabaseAdmin, shopId, payload, {
@@ -1348,7 +1358,7 @@ export async function bulkUpdateLeads(shopId: string, args: any, confirm = false
 
     if (!confirm) {
         return confirmNeeded('bulk_update_leads', { lead_ids: leads.map(l => l.id).join(','), new_status: args.new_status }, `${leads.length} лийдийн статус → ${args.new_status}`,
-            { 'Лийд тоо': leads.length, 'Шинэ статус': args.new_status, 'Жишээ': leads.slice(0, 5).map((l) => l.customer_name).join(', ') || '-' });
+            { 'Лийд тоо': leads.length, 'Шинэ статус': args.new_status, 'Жишээ': leads.slice(0, 5).map((l) => leadDisplayName(l)).join(', ') || '-' });
     }
 
     const ids = leads.map((l) => l.id);
@@ -1546,8 +1556,8 @@ async function resolveEntity(shopId: string, entityType: string, args: any, scop
         q = byId ? q.eq('id', byId) : q.ilike('customer_name', `%${args.entity_name || ''}%`);
         const { data } = await q;
         if (!data || !data.length) return { error: 'Лийд олдсонгүй' };
-        if (data.length > 1) return { error: `${data.length} лийд олдлоо, тодруулна уу`, options: data.map(d => ({ id: d.id, name: d.customer_name })) };
-        return { id: data[0].id, label: data[0].customer_name };
+        if (data.length > 1) return { error: `${data.length} лийд олдлоо, тодруулна уу`, options: data.map(d => ({ id: d.id, name: leadDisplayName(d) })) };
+        return { id: data[0].id, label: leadDisplayName(data[0]) };
     }
     if (entityType === 'customer') {
         let q = supabaseAdmin.from('customers').select('id, name').eq('shop_id', shopId).is('deleted_at', null);

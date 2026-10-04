@@ -388,12 +388,13 @@ const writeDefinitions: ToolDefinition[] = [
     },
     {
         name: 'create_lead',
-        description: 'Шинэ лид үүсгэх. Нэвтэрсэн ажилтан идэвхтэй борлуулалтын менежер бол өөрт нь хариуцуулна; бусад ажилтан үүсгэвэл хариуцагчгүй үлдээнэ. Үйлдэл хийхээс өмнө баталгаажуулалт авна.',
+        description: 'Шинэ лид үүсгэх. Нэвтэрсэн ажилтан идэвхтэй борлуулалтын менежер бол өөрт нь хариуцуулна; бусад ажилтан үүсгэвэл хариуцагчгүй үлдээнэ. Харилцагч нэрээ хэлээгүй бол нэр зохиохгүй: anonymous=true, утас эсвэл и-мэйлтэй. Үйлдэл хийхээс өмнө баталгаажуулалт авна.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 project_id: { type: SchemaType.STRING, description: 'Төслийн UUID; list_lead_projects-оос авч хэрэглэгчээр сонгуулна' },
-                customer_name: { type: SchemaType.STRING, description: 'Харилцагчийн нэр' },
+                customer_name: { type: SchemaType.STRING, description: 'Харилцагчийн нэр; мэдэгдэхгүй бол орхиж anonymous=true. Нэр зохиохгүй' },
+                anonymous: { type: SchemaType.BOOLEAN, description: 'Харилцагч нэрээ хэлээгүй үед true (нэргүй лид); утас (8+ орон) эсвэл и-мэйл заавал' },
                 customer_phone: { type: SchemaType.STRING, description: 'Утасны дугаар' },
                 customer_email: { type: SchemaType.STRING, description: 'Имэйл' },
                 status: { type: SchemaType.STRING, enum: ACTIVE_STATUSES, description: 'Идэвхтэй төлөв (default: new); үүсгэхдээ хаахгүй' },
@@ -404,7 +405,7 @@ const writeDefinitions: ToolDefinition[] = [
                 preferred_rooms: { type: SchemaType.NUMBER, description: 'Сонирхсон өрөөний тоо' },
                 notes: { type: SchemaType.STRING, description: 'Тэмдэглэл' }
             },
-            required: ['customer_name', 'project_id']
+            required: ['project_id']
         }
     },
     {

@@ -41,6 +41,16 @@ beforeEach(() => {
     from.mockImplementation((table: string) => { throw new Error(`Unexpected query: ${table}`); });
 });
 
+describe('anonymous leads in AI lookups', () => {
+    it('never searches by the display label and names anonymous leads by the label', async () => {
+        const byLabel = query('leads', [{ ...lead, customer_name: null }]);
+        expect(await findLead('shop-1', { customer_name: 'Нэргүй харилцагч' })).toHaveProperty('error', expect.stringContaining('lead_id'));
+        expect(byLabel.ilike).not.toHaveBeenCalled();
+        query('leads', [{ ...lead, customer_name: null }, { ...lead, id: 'lead-2', customer_name: null }]);
+        expect(await findLead('shop-1', { customer_phone: '99112233' })).toMatchObject({ options: [{ name: 'Нэргүй харилцагч' }, { name: 'Нэргүй харилцагч' }] });
+    });
+});
+
 describe('lead contact persistence shared by AI and API', () => {
     it('records a call and follow-up only after the scoped lead update succeeds', async () => {
         query('leads', [lead]);
