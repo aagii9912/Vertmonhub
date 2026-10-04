@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-    TransferContractSchema, isTransferableContract, normalizeRegistration, summarizeContractTransfers,
-    transferDateError, transferInputError,
+    TransferContractSchema, isTransferConflict, isTransferableContract, latestTransferDate, normalizeRegistration,
+    sameRegistration, summarizeContractTransfers, transferDateError, transferInputError,
 } from '../transfer';
 import { contractTransferKindLabel } from '../labels';
 
@@ -54,6 +54,25 @@ describe('transfer rules', () => {
         expect(transferDateError('2026-01-15', '2026-01-15', '2026-10-04')).toBeNull();
     });
 
+    it('keeps the holder chain in order: no change dated before the latest recorded one', () => {
+        expect(transferDateError('2026-06-01', '2026-01-15', '2026-10-04', '2026-09-30')).toBe('Шилжүүлсэн огноо өмнөх өөрчлөлтийн огнооноос (2026-09-30) өмнө байж болохгүй');
+        expect(transferDateError('2026-09-30', '2026-01-15', '2026-10-04', '2026-09-30')).toBeNull();
+        expect(transferDateError('2026-10-04', '2026-01-15', '2026-10-04', null)).toBeNull();
+        expect(latestTransferDate([{ effective_date: '2026-06-01' }, { effective_date: '2026-09-30' }, { effective_date: '2026-07-01' }])).toBe('2026-09-30');
+        expect(latestTransferDate([])).toBeNull();
+    });
+
+    it('compares registrations ignoring spaces and case, and recognises a 409 conflict', () => {
+        expect(sameRegistration('уб 99010101', 'УБ99010101')).toBe(true);
+        expect(sameRegistration(null, '')).toBe(true);
+        expect(sameRegistration('ЧБ88020202', 'УБ99010101')).toBe(false);
+        expect(sameRegistration('ЧБ88020202', null)).toBe(false);
+        expect(isTransferConflict(Object.assign(new Error('x'), { status: 409 }))).toBe(true);
+        expect(isTransferConflict(Object.assign(new Error('x'), { status: 500 }))).toBe(false);
+        expect(isTransferConflict(new Error('409'))).toBe(false);
+        expect(isTransferConflict(null)).toBe(false);
+    });
+
     it('summarizes the original buyer and latest transfer date, ignoring rename-only history', () => {
         const rows = [
             { kind: 'rename' as const, effective_date: '2026-10-02', from_customer_name: 'Ганаа', created_at: '2026-10-02T01:00:00Z' },
@@ -63,6 +82,19 @@ describe('transfer rules', () => {
         expect(summarizeContractTransfers(rows)).toEqual({ originalHolder: 'Бат Болд', lastTransferDate: '2026-09-01', transfers: 2 });
         expect(summarizeContractTransfers([rows[0]])).toEqual({ originalHolder: null, lastTransferDate: null, transfers: 0 });
         expect(summarizeContractTransfers([])).toEqual({ originalHolder: null, lastTransferDate: null, transfers: 0 });
+    });
+
+    it('takes the original buyer from the first transfer, after any earlier name correction', () => {
+        const rows = [
+            { kind: 'transfer' as const, effective_date: '2026-09-01', from_customer_name: 'Бат Болд', created_at: '2026-09-01T01:00:00Z' },
+            { kind: 'rename' as const, effective_date: '2026-03-01', from_customer_name: 'Бат', created_at: '2026-03-01T01:00:00Z' },
+        ];
+        expect(summarizeContractTransfers(rows)).toEqual({ originalHolder: 'Бат Болд', lastTransferDate: '2026-09-01', transfers: 1 });
+        // Огноо бүртгэлийн дарааллаас үл хамааран хамгийн сүүлийн шилжүүлгийн огноо.
+        expect(summarizeContractTransfers([
+            ...rows,
+            { kind: 'transfer' as const, effective_date: '2026-06-01', from_customer_name: 'Дорж', created_at: '2026-09-02T01:00:00Z' },
+        ])).toEqual({ originalHolder: 'Бат Болд', lastTransferDate: '2026-09-01', transfers: 2 });
     });
 
     it('labels holder changes separately from the ERP «Тоот шилжсэн» status', () => {

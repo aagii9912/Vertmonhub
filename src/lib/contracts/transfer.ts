@@ -70,12 +70,37 @@ export function transferInputError(error: z.ZodError): string {
     return /[А-Яа-яӨөҮүЁё]/.test(issue.message) ? issue.message : 'Гэрээ шилжүүлэх өгөгдөл буруу байна';
 }
 
-/** Шилжүүлсэн огноо гэрээний огнооноос хойш, өнөөдрөөс (УБ) хэтрэхгүй. Бүх утга YYYY-MM-DD. */
-export function transferDateError(effectiveDate: string, contractDate: string | null | undefined, today: string): string | null {
+/**
+ * Шилжүүлсэн огноо гэрээний огнооноос хойш, өмнөх шилжүүлэг/нэр засварын огнооноос
+ * хойш (эзэмшигчийн дараалал зөрчигдөхгүй), өнөөдрөөс (УБ) хэтрэхгүй. Бүх утга YYYY-MM-DD.
+ */
+export function transferDateError(
+    effectiveDate: string,
+    contractDate: string | null | undefined,
+    today: string,
+    previousChangeDate?: string | null,
+): string | null {
     if (effectiveDate > today) return 'Шилжүүлсэн огноо өнөөдрөөс хэтрэхгүй';
     const signed = contractDate ? contractDate.slice(0, 10) : null;
     if (signed && effectiveDate < signed) return 'Шилжүүлсэн огноо гэрээ байгуулсан огнооноос өмнө байж болохгүй';
+    const latest = previousChangeDate ? previousChangeDate.slice(0, 10) : null;
+    if (latest && effectiveDate < latest) return `Шилжүүлсэн огноо өмнөх өөрчлөлтийн огнооноос (${latest}) өмнө байж болохгүй`;
     return null;
+}
+
+/** Түүхийн хамгийн сүүлийн огноо (бүх төрөл) — шинэ өөрчлөлт үүнээс өмнө байж болохгүй. */
+export function latestTransferDate(rows: ReadonlyArray<Pick<ContractTransfer, 'effective_date'>>): string | null {
+    return rows.reduce<string | null>((latest, row) => (row.effective_date && (!latest || row.effective_date > latest) ? row.effective_date : latest), null);
+}
+
+/** Нэр засвар регистрийг солихгүй: хоосон зай, үсгийн том/жижгийг үл тооцон харьцуулна (SQL-ийн дүрэмтэй ижил). */
+export function sameRegistration(a: string | null | undefined, b: string | null | undefined): boolean {
+    return normalizeRegistration(a ?? '') === normalizeRegistration(b ?? '');
+}
+
+/** API-ийн 409 (хуучирсан цонх эсвэл ашиглагдсан хүсэлтийн UUID) — шинэ хүсэлтээр дахин илгээнэ. */
+export function isTransferConflict(error: unknown): boolean {
+    return typeof error === 'object' && error !== null && (error as { status?: unknown }).status === 409;
 }
 
 export interface ContractTransferSummary {
@@ -90,11 +115,11 @@ export interface ContractTransferSummary {
 export function summarizeContractTransfers(
     rows: ReadonlyArray<Pick<ContractTransfer, 'kind' | 'effective_date' | 'from_customer_name' | 'created_at'>>,
 ): ContractTransferSummary {
-    const ordered = [...rows].sort((a, b) => a.created_at.localeCompare(b.created_at));
-    const transfers = ordered.filter(row => row.kind === 'transfer');
+    const transfers = rows.filter(row => row.kind === 'transfer').sort((a, b) => a.created_at.localeCompare(b.created_at));
+    // Анхны худалдан авагч = эхний шилжүүлгийн өмнөх эзэмшигч (түүнээс өмнөх нэр засварыг тооцсон нэр).
     return {
-        originalHolder: transfers.length ? ordered[0].from_customer_name || null : null,
-        lastTransferDate: transfers.length ? transfers[transfers.length - 1].effective_date : null,
+        originalHolder: transfers.length ? transfers[0].from_customer_name || null : null,
+        lastTransferDate: latestTransferDate(transfers),
         transfers: transfers.length,
     };
 }

@@ -132,6 +132,22 @@ export async function listContractTransfers(db: SupabaseClient, shopId: string, 
     return { transfers: (data || []) as unknown as ContractTransfer[], available: true };
 }
 
+/**
+ * Гэрээний эзэмшигчийн хамгийн сүүлийн өөрчлөлтийн огноо (шилжүүлэг/нэр засвар). Шинэ өөрчлөлт
+ * үүнээс өмнө огноологдохгүй (RPC мөн шалгана). Migration ороогүй бол null.
+ */
+export async function latestContractChangeDate(db: SupabaseClient, shopId: string, contractId: string): Promise<string | null> {
+    const { data, error } = await db.from('contract_transfers').select('effective_date')
+        .eq('shop_id', shopId).eq('contract_id', contractId)
+        .order('effective_date', { ascending: false }).limit(1);
+    if (error) {
+        if (isMissingTransfersTable(error)) return null;
+        throw new Error(`Эзэмшигчийн түүх уншиж чадсангүй: ${error.message}`);
+    }
+    const latest = (data?.[0] as { effective_date?: string | null } | undefined)?.effective_date;
+    return latest ?? null;
+}
+
 /** Хайлтын үгийг PostgREST `.or()`-д аюулгүй болгоно (таслал, хаалт, %/_ хасна). */
 function sanitizeTerm(term: string): string {
     return term.replace(/[%_,()\\*]/g, ' ').replace(/\s+/g, ' ').trim();
