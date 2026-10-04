@@ -25,6 +25,7 @@ export async function GET(
             .select('*')
             .eq('id', id)
             .eq('shop_id', authShop.id)
+            .is('deleted_at', null)
             .single();
 
         if (error || !customer) {

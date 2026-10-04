@@ -7,6 +7,7 @@
 
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { fetchAllRows } from '@/lib/utils/pagination';
 import {
     SCORE_MAX,
     RECENCY_BUCKETS,
@@ -220,19 +221,23 @@ async function persistScore(
 export async function recomputeShopScores(shopId: string): Promise<{ updated: number }> {
     const supabase = supabaseAdmin();
 
-    const [{ data: customers }, { data: leads }] = await Promise.all([
-        supabase
+    // 1000+ харилцагчтай shop — бүгдийг хуудаслан уншина (өмнө нь 1000-аас хойшхи нь оноогүй үлддэг байв).
+    const [customerRows, leadRows] = await Promise.all([
+        fetchAllRows<CustomerRow>((from, to) => supabase
             .from('customers')
             .select('id, created_at, last_contact_at, message_count, ai_memory, tags')
-            .eq('shop_id', shopId),
-        supabase
+            .eq('shop_id', shopId)
+            .is('deleted_at', null)
+            .order('id')
+            .range(from, to)),
+        fetchAllRows<{ id: string; customer_id: string | null; status: string; budget_max: number | null; urgency: string | null }>((from, to) => supabase
             .from('leads')
             .select('id, customer_id, status, budget_max, urgency')
-            .eq('shop_id', shopId),
+            .eq('shop_id', shopId)
+            .is('deleted_at', null)
+            .order('id')
+            .range(from, to)),
     ]);
-
-    const customerRows = (customers || []) as CustomerRow[];
-    const leadRows = (leads || []) as Array<{ id: string; customer_id: string | null; status: string; budget_max: number | null; urgency: string | null }>;
 
     // lead_id → customer_id зураглал (viewings-ийг харилцагчтай холбоход)
     const leadToCustomer = new Map<string, string>();

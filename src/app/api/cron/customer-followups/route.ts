@@ -46,6 +46,7 @@ export async function POST(request: NextRequest) {
                 .from('customers')
                 .select('id, name, last_contact_at, next_followup_at, quality_score, lifecycle_stage')
                 .eq('shop_id', shop.id)
+                .is('deleted_at', null)
                 .gte('quality_score', FOLLOWUP_MIN_SCORE)
                 .not('lifecycle_stage', 'in', '("won","lost")')
                 .or(`last_contact_at.is.null,last_contact_at.lte.${quietCutoff}`);

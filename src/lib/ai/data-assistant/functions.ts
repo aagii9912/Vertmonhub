@@ -1140,7 +1140,7 @@ export async function createCustomer(shopId: string, args: any, confirm = false,
         if (phoneNorm) ors.push(`phone_normalized.eq.${phoneNorm}`);
         if (args.email) ors.push(`email.eq.${args.email}`);
         const { data: dupes } = await supabaseAdmin.from('customers')
-            .select('id, name').eq('shop_id', shopId).or(ors.join(','));
+            .select('id, name').eq('shop_id', shopId).is('deleted_at', null).or(ors.join(','));
         if (dupes && dupes.length > 0) {
             return { error: `Ийм харилцагч аль хэдийн бүртгэлтэй: ${dupes[0].name}`, existing: dupes };
         }

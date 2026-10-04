@@ -12,10 +12,12 @@ vi.mock('@/lib/sales/project-scope', () => ({
 vi.mock('@/lib/supabase', () => ({
     supabaseAdmin: () => ({
         from: (table: string) => {
-            const result = { data: table === 'customers' ? state.customers : [], error: null };
+            let rows = table === 'customers' ? state.customers : [];
             const chain: Record<string, unknown> = {};
-            for (const method of ['select', 'eq', 'not']) chain[method] = () => chain;
-            chain.then = (resolve: (value: typeof result) => unknown) => Promise.resolve(result).then(resolve);
+            for (const method of ['select', 'eq', 'not', 'is', 'order']) chain[method] = () => chain;
+            chain.range = (from: number, to: number) => { rows = rows.slice(from, to + 1); return chain; };
+            // PostgREST нэг хариунд дээд тал нь 1000 мөр өгдөг.
+            chain.then = (resolve: (value: { data: typeof rows; error: null }) => unknown) => Promise.resolve({ data: rows.slice(0, 1000), error: null }).then(resolve);
             return chain;
         },
     }),
@@ -45,5 +47,13 @@ describe('customer health month boundary', () => {
         ];
         const body = await (await GET()).json();
         expect(body.health.newThisMonth).toBe(1);
+    });
+
+    it('counts every customer past the 1000-row response cap', async () => {
+        vi.setSystemTime(new Date('2026-10-04T04:00:00Z'));
+        state.customers = Array.from({ length: 1006 }, () => ({ created_at: '2026-01-01T00:00:00Z', quality_tier: 'A' }));
+        const body = await (await GET()).json();
+        expect(body.health.total).toBe(1006);
+        expect(body.health.tiers.A).toBe(1006);
     });
 });

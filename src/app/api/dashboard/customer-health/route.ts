@@ -5,6 +5,7 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { ubMonthRange, ubParts } from '@/lib/utils/date';
+import { fetchAllRows } from '@/lib/utils/pagination';
 
 /**
  * GET /api/dashboard/customer-health
@@ -28,19 +29,26 @@ export async function GET() {
         const monthStart = ubMonthRange(year, month - 1).start;
         const nowIso = new Date().toISOString();
 
-        const [{ data: customers }, { data: convertedLeads }] = await Promise.all([
-            supabase
+        // Сан 1000+ харилцагчтай — нэг хүсэлтийн 1000 мөрийн хязгаарт таслахгүй.
+        const [customers, convertedLeads] = await Promise.all([
+            fetchAllRows<{ created_at: string | null; lifecycle_stage: string | null; quality_score: number | null; quality_tier: string | null; next_followup_at: string | null }>((from, to) => supabase
                 .from('customers')
                 .select('created_at, lifecycle_stage, quality_score, quality_tier, next_followup_at')
-                .eq('shop_id', shopId),
-            applyLeadScope(supabase
+                .eq('shop_id', shopId)
+                .is('deleted_at', null)
+                .order('id')
+                .range(from, to)),
+            fetchAllRows<{ created_at: string | null; converted_at: string | null }>((from, to) => applyLeadScope(supabase
                 .from('leads')
                 .select('created_at, converted_at')
                 .eq('shop_id', shopId)
-                .not('converted_at', 'is', null), scope),
+                .is('deleted_at', null)
+                .not('converted_at', 'is', null)
+                .order('id')
+                .range(from, to), scope)),
         ]);
 
-        const rows = customers || [];
+        const rows = customers;
         const total = rows.length;
         const newThisMonth = rows.filter(c => c.created_at && new Date(c.created_at) >= monthStart).length;
         const dormant = rows.filter(c => c.lifecycle_stage === 'dormant').length;
@@ -63,7 +71,7 @@ export async function GET() {
         ).length;
 
         // Дундаж хөрвөх хугацаа (өдрөөр): converted_at - created_at
-        const durations = (convertedLeads || [])
+        const durations = convertedLeads
             .map(l => {
                 if (!l.created_at || !l.converted_at) return null;
                 const ms = new Date(l.converted_at).getTime() - new Date(l.created_at).getTime();
