@@ -54,3 +54,49 @@ it('preserves the distinction between omitted and explicitly cleared follow-up d
     expect(rpc.mock.calls[0][1].p_input).not.toHaveProperty('next_followup_at');
     expect(rpc.mock.calls[1][1].p_input).toHaveProperty('next_followup_at', null);
 });
+
+it('sends a quote with its amount and unit through the scoped RPC and fills a default history text', async () => {
+    const { db, rpc, from } = database({ data: { ...activity, type: 'quote' }, error: null });
+    expect(await recordLeadContact(db, { ...input, type: 'quote', content: '  ', quote: { amount: 450_000_000, unitLabel: ' A-1203 ' } })).toMatchObject({ ok: true });
+    expect(rpc.mock.calls[0][1].p_input).toEqual({ type: 'quote', content: 'Үнийн санал: 450,000,000₮ · A-1203', quote: { amount: 450_000_000, unit_label: 'A-1203' } });
+    await recordLeadContact(db, { ...input, type: 'quote', content: 'Хөнгөлөлттэй үнэ', quote: { amount: 1, unitLabel: '' } });
+    expect(rpc.mock.calls[1][1].p_input).toEqual({ type: 'quote', content: 'Хөнгөлөлттэй үнэ', quote: { amount: 1 } });
+    expect(from).not.toHaveBeenCalled();
+});
+
+it.each([
+    ['missing quote', undefined],
+    ['zero amount', { amount: 0 }],
+    ['fractional amount', { amount: 12.5 }],
+    ['amount over the database limit', { amount: 1e14 }],
+    ['long unit', { amount: 10, unitLabel: 'x'.repeat(61) }],
+])('rejects a quote with %s before any database call', async (_name, quote) => {
+    const { db, rpc, from } = database();
+    expect(await recordLeadContact(db, { ...input, type: 'quote', content: '', quote })).toMatchObject({ ok: false, status: 400 });
+    expect(rpc).not.toHaveBeenCalled(); expect(from).not.toHaveBeenCalled();
+});
+
+it('records an unrestricted quote as a contact with amount meta', async () => {
+    const calls: Array<[string, string, unknown]> = [];
+    const chain = (table: string, data: unknown) => {
+        const c: Record<string, unknown> = {};
+        for (const method of ['select', 'eq', 'is', 'in']) c[method] = vi.fn(() => c);
+        c.update = vi.fn((value: unknown) => { calls.push([table, 'update', value]); return c; });
+        c.insert = vi.fn((value: unknown) => { calls.push([table, 'insert', value]); return c; });
+        c.maybeSingle = vi.fn(async () => ({ data, error: null }));
+        c.single = vi.fn(async () => ({ data, error: null }));
+        return c;
+    };
+    const tables = [chain('leads', { id: 'lead' }), chain('leads', { id: 'lead' }), chain('lead_activities', { ...activity, type: 'quote' })];
+    const db = { from: vi.fn(() => tables.shift()) } as unknown as SupabaseClient;
+    const result = await recordLeadContact(db, {
+        shopId: 'shop', leadId: 'lead', type: 'quote', content: '', quote: { amount: 430_000_000 }, userId: 'admin', managerName: 'Админ',
+        nextFollowupAt: '2026-10-06T02:00:00.000Z',
+    });
+    expect(result).toMatchObject({ ok: true });
+    expect(calls[0]).toEqual(['leads', 'update', expect.objectContaining({ last_contact_at: expect.any(String), next_followup_at: '2026-10-06T02:00:00.000Z' })]);
+    expect(calls[1]).toEqual(['lead_activities', 'insert', expect.objectContaining({
+        type: 'quote', content: 'Үнийн санал: 430,000,000₮', created_by: 'admin', created_by_name: 'Админ',
+        meta: { next_followup_at: '2026-10-06T02:00:00.000Z', amount: 430_000_000 },
+    })]);
+});

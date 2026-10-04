@@ -93,6 +93,15 @@ export const ACTIVITY_LABEL: Record<string, string> = {
     meeting: 'Уулзалт',
     contract: 'Гэрээ',
     system: 'Систем',
+    quote: 'Үнийн санал',
+};
+
+/** Менежерийн Time-line-ийн сануулгын гарчиг (зөрчлийн төрөл: lib/leads/timeline.ts). */
+export const TIMELINE_CONFLICT_LABEL: Record<string, string> = {
+    quote_mismatch: 'Үнийн санал зөрүүтэй',
+    duplicate_phone: 'Ижил утастай өөр лид',
+    non_owner_contact: 'Хариуцагч биш менежер холбогдсон',
+    parallel_managers: 'Олон менежер зэрэг холбогдсон',
 };
 
 /** Хадгалсан харагдац (таб) — сервер `view` параметрээр ойлгоно. */
