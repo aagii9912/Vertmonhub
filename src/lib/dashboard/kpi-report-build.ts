@@ -61,6 +61,9 @@ export async function computeKpiReport(db: SupabaseClient, { shopId, shopName, i
     const { start: prevStart, end: prevEnd } = monthRange(prev.year, prev.month);
     const startIso = start.toISOString();
     const endIso = end.toISOString();
+    // contract_date нь DATE: УБ-ын instant-аар харьцуулбал өмнөх сарын сүүлийн өдөр орж, сүүлийн өдөр хасагддаг.
+    const firstDay = `${year}-${String(month).padStart(2, '0')}-01`;
+    const nextFirstDay = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`;
 
     // Дууссан ажлын эзэн: өөрөө бол uid, өөр менежер бол roster-ийн данс холбоос
     const targetUserId = isSelf
@@ -110,8 +113,8 @@ export async function computeKpiReport(db: SupabaseClient, { shopId, shopName, i
                 .select('id, contract_number, customer_name, total_price, contract_status, contract_date')
                 .eq('shop_id', shopId)
                 .eq('sales_manager', targetName)
-                .gte('contract_date', startIso)
-                .lt('contract_date', endIso)
+                .gte('contract_date', firstDay)
+                .lt('contract_date', nextFirstDay)
                 .order('contract_date', { ascending: true })
                 .limit(500);
             if (excludeDeleted) q = q.is('deleted_at', null);

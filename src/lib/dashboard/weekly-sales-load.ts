@@ -1,16 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { ErpDataset } from '@/lib/erp/import';
 import {
-    blockOfCode, erpNumber, isProductsDataset, isSalesDataset, parseErpProduct, parseErpSale, PRODUCT_KIND_LABEL,
-    productKind, readErpRecords, type ErpProduct,
+    blockOfCode, erpNumber, parseErpProduct, parseErpSale, PRODUCT_KIND_LABEL, productKind, type ErpProduct,
 } from '@/lib/erp/records';
+import { listErpSnapshots, loadErpDatasets, snapshotRecords } from '@/lib/erp/snapshots';
 import { inventoryStatusOf } from '@/lib/admin/import/units';
 import type { InventoryStatus } from '@/lib/inventory/labels';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { buildWeeklySales, type ContractLine } from './weekly-sales';
 import { shiftReviewDate, weeklyReviewRange } from './weekly-review';
 
-type SnapshotMeta = { id: string; source: string; report_date: string; columns: string[] | null };
 type CrmContract = {
     id: string; contract_number: string | null; contract_date: string | null; product_type: string | null; block_name: string | null;
     unit_label: string | null; unit_number: string | null; contracted_area: number | string | null; price_per_sqm: number | string | null;
@@ -39,33 +37,16 @@ export async function loadWeeklySales(db: SupabaseClient, options: { shopId: str
     const monthNumber = Number(month.slice(5, 7));
 
     // Хурлын өдөр хүртэлх сүүлийн snapshot-ууд (эхний sheet-ийн баганаар төрлийг танина).
-    const { data: metas, error: metaError } = await db.from('erp_imports')
-        .select('id, source, report_date, columns:datasets->0->columns')
-        .eq('shop_id', shopId).lte('report_date', meetingDate)
-        .order('report_date', { ascending: false }).order('sequence', { ascending: false })
-        .range(0, 59);
-    if (metaError) throw metaError;
-    const kindOf = (meta: SnapshotMeta) => !Array.isArray(meta.columns) ? null
-        : isSalesDataset({ columns: meta.columns }) ? 'sales' : isProductsDataset({ columns: meta.columns }) ? 'products' : null;
-    const list = (metas ?? []) as SnapshotMeta[];
-    const salesMeta = list.find(meta => kindOf(meta) === 'sales') ?? null;
+    const metas = await listErpSnapshots(db, shopId, meetingDate);
+    const salesMeta = metas.find(meta => meta.kind === 'sales') ?? null;
     const previousMeta = salesMeta
-        ? list.find(meta => kindOf(meta) === 'sales' && meta.report_date < salesMeta.report_date && meta.report_date <= shiftReviewDate(meetingDate, -7)) ?? null
+        ? metas.find(meta => meta.kind === 'sales' && meta.report_date < salesMeta.report_date && meta.report_date <= shiftReviewDate(meetingDate, -7)) ?? null
         : null;
-    const productsMeta = list.find(meta => kindOf(meta) === 'products') ?? null;
-
-    const ids = [salesMeta, previousMeta, productsMeta].flatMap(meta => meta ? [meta.id] : []);
-    const datasets = new Map<string, ErpDataset[]>();
-    if (ids.length) {
-        const { data, error } = await db.from('erp_imports').select('id, datasets').eq('shop_id', shopId).in('id', ids);
-        if (error) throw error;
-        for (const row of data ?? []) datasets.set(row.id as string, (row.datasets ?? []) as ErpDataset[]);
-    }
-    const snapshot = <T>(meta: SnapshotMeta | null, detect: (dataset: ErpDataset) => boolean, parse: (row: Record<string, string>) => T | null) =>
-        meta ? { info: { date: meta.report_date, source: meta.source }, rows: readErpRecords(datasets.get(meta.id) ?? [], detect, parse) } : null;
-    const sales = snapshot(salesMeta, isSalesDataset, parseErpSale);
-    const previousSales = snapshot(previousMeta, isSalesDataset, parseErpSale);
-    const products = snapshot(productsMeta, isProductsDataset, parseErpProduct);
+    const productsMeta = metas.find(meta => meta.kind === 'products') ?? null;
+    const datasets = await loadErpDatasets(db, shopId, [salesMeta, previousMeta, productsMeta].flatMap(meta => meta ? [meta.id] : []));
+    const sales = snapshotRecords(salesMeta, datasets, parseErpSale);
+    const previousSales = snapshotRecords(previousMeta, datasets, parseErpSale);
+    const products = snapshotRecords(productsMeta, datasets, parseErpProduct);
 
     // ERP гэрээ алга бол CRM-ийн гэрээ (сар болон өмнөх долоо хоногийг хамруулна).
     let crmContracts: ContractLine[] | null = null;

@@ -3,6 +3,7 @@
  * (`get_manager_performance`) хоёулаа энд дамжина.
  */
 
+import { ubParts } from '@/lib/utils/date';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getTeamTargets, getMonthlyActualsByManager, sumYear } from '@/lib/sales/targets';
 
@@ -19,7 +20,7 @@ export async function getManagerPerformance(supabase: SupabaseClient, shopId: st
     if (error) throw error;
 
     // Багийн жилийн төлөвлөгөө + идэвхтэй менежерийн бүртгэл
-    const year = new Date().getFullYear();
+    const year = ubParts().year;
     const [teamTargets, byManager, rosterRes] = await Promise.all([
         getTeamTargets(supabase, shopId, year),
         getMonthlyActualsByManager(supabase, shopId, year),
