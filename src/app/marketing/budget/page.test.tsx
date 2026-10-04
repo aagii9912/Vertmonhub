@@ -13,8 +13,9 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 import Page from './page';
 
 const project = '00000000-0000-4000-8000-000000000001';
-const body = (budget = 0) => ({ year: ubParts().year, available: true,
-    projects: [{ id: project, name: 'Elysium' }], channels: { board: 'Билборд' }, entries: [],
+const legacyProjects = [{ id: project, name: 'Elysium' }, { id: '00000000-0000-4000-8000-000000000002', name: 'Mandala Garden' }];
+const body = (budget = 0, projects = legacyProjects) => ({ year: ubParts().year, available: true,
+    projects, channels: { board: 'Билборд' }, entries: [],
     overview: buildBudgetOverview(Array(12).fill(budget), Array(12).fill(0), Array(12).fill(0)) });
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 const client = () => new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
@@ -23,6 +24,23 @@ beforeEach(() => {
     mocks.auth.shop.id = 'shop-a'; mocks.auth.user.id = 'user-a';
     mocks.auth.user.permissions = { modules: ['marketing-roi'], canWrite: true, canDelete: false };
     mocks.fetch.mockResolvedValue(response(body()));
+});
+
+it('single-project workspace (shop = project): no scope picker; the annual base budget saves to the project workspace', async () => {
+    const writes: Array<DashboardFetchInit> = [];
+    mocks.fetch.mockImplementation(async (_url: string, init?: DashboardFetchInit) => {
+        if (init?.method === 'PUT') { writes.push(init); return response({ success: true }); }
+        return response(body(0, [{ id: project, name: 'Elysium Residence' }]));
+    });
+    render(<QueryClientProvider client={client()}><Page /></QueryClientProvider>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Төсөв засах' }));
+    expect(screen.queryByRole('combobox', { name: 'Төсвийн хамрах хүрээ' })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Жилийн төсөв (₮)'), { target: { value: '1200' } });
+    fireEvent.click(screen.getByRole('button', { name: '12 сард тэнцүү хуваарилах' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Хадгалах' }));
+    await waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes[0].shopId).toBe('shop-a');
+    expect(JSON.parse(String(writes[0].body))).toMatchObject({ project_id: null, annualAmount: 1200 });
 });
 
 it('previews exact annual allocation before saving once to the selected project and explicit shop', async () => {

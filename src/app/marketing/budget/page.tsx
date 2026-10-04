@@ -220,7 +220,7 @@ function MarketingBudgetWorkspace({ shopId, userId, canWrite, canDelete }: { sho
             <PageHeader
                 eyebrow="Маркетинг"
                 title="Төсвийн хяналт"
-                subtitle="Байгууллага эсвэл төслийн жилийн төсөв оруулж, сар бүрийн бүртгэсэн зарцуулалт, гэрээний дүнтэй харьцуулна"
+                subtitle="Төслийн маркетингийн жилийн үндсэн төсвийг сараар хуваарилж, бүртгэсэн зарцуулалт, гэрээний дүнтэй харьцуулна"
                 secondaryActions={
                     <div className="flex items-center gap-1">
                         <Button variant="secondary" size="iconSm" disabled={scopeBusy || year <= 2020} onClick={() => { setYear((y) => y - 1); resetSpendDraft(); }} title="Өмнөх он">
@@ -240,15 +240,16 @@ function MarketingBudgetWorkspace({ shopId, userId, canWrite, canDelete }: { sho
                 }
             />
 
-            <label className="mb-5 grid max-w-sm gap-1.5 text-sm">
+            {/* Shop = төсөл: ганц төсөлтэй ажлын орчинд энэ төсөв нь тухайн төслийн жилийн үндсэн төсөв. */}
+            {(data?.projects?.length ?? 0) > 1 && <label className="mb-5 grid max-w-sm gap-1.5 text-sm">
                 Төсвийн хамрах хүрээ
                 <select aria-label="Төсвийн хамрах хүрээ" className="h-10 rounded-md border border-border bg-surface px-3 text-sm" value={project}
                     disabled={scopeBusy || isLoading} onChange={e => { setProject(e.target.value); resetSpendDraft(); }}>
-                    <option value="">Байгууллагын нийт төсөв</option>
+                    <option value="">Ажлын орчны нийт төсөв</option>
                     {data?.projects?.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
-                <span className="text-xs text-muted-foreground">Төслийн төсвүүд тусдаа хадгалагдана. Байгууллагын нийт төсөвт автоматаар нэмэгдэхгүй.</span>
-            </label>
+                <span className="text-xs text-muted-foreground">Хуучин олон төсөлтэй ажлын орчин. Төсөл бүрийг тусдаа ажлын орчин болгосны дараа энэ сонголт алга болно.</span>
+            </label>}
 
             {error ? <Alert variant="danger"><AlertTitle>Төсөв татахад алдаа гарлаа</AlertTitle><AlertDescription>{error.message}</AlertDescription><Button variant="secondary" size="sm" onClick={() => void refetch()}>Дахин оролдох</Button></Alert> : isLoading || !data ? (
                 <div className="flex items-center justify-center py-24">
