@@ -63,10 +63,12 @@ const categories: Record<string, InventoryCategory> = {
     'агуулах': 'industry', industry: 'industry', storage: 'industry',
     'үйлчилгээ': 'commercial', commercial: 'commercial',
 };
+// Excel экспорт (`/api/dashboard/export/excel`) нэгжийн төлөвийг UNIT_STATUS_LABEL-ээр
+// («Чөлөөтэй»-г «Худалдаанд» болгож) бичдэг тул тэр файлыг дахин импортлоход таарна.
 const statuses: Record<string, InventoryStatus> = {
-    'худалдаанд': 'available', available: 'available',
+    'худалдаанд': 'available', 'чөлөөтэй': 'available', available: 'available',
     'хадгалсан': 'reserved', reserved: 'reserved',
-    'захиалга үүссэн': 'ordered', 'гэрээ баталгаажаагүй': 'ordered', ordered: 'ordered',
+    'захиалга үүссэн': 'ordered', 'гэрээ баталгаажаагүй': 'ordered', 'захиалсан': 'ordered', ordered: 'ordered',
     'гэрээ баталгаажсан': 'sold', 'зарагдсан': 'sold', sold: 'sold',
     'хүлээлгэсэн': 'handed_over', handed_over: 'handed_over',
 };
