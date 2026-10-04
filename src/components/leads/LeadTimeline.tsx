@@ -23,8 +23,10 @@ export function LeadTimeline({ detail, onOpenLead }: { detail: LeadDetail; onOpe
 }
 
 function ManagerTimeline({ timeline, onOpenLead }: { timeline: LeadTimelineData; onOpenLead?: (id: string) => void }) {
-    const [filter, setFilter] = useState<string | null>(null);
-    const showFilter = timeline.managers.length > 1;
+    const [selected, setFilter] = useState<string | null>(null);
+    // Товчоонд байхгүй менежерээр шүүхгүй (өгөгдөл шинэчлэгдсэн / өөр лид) — «Түүх 0» болж гацахгүй.
+    const filter = selected && timeline.managers.some((m) => m.name === selected) ? selected : null;
+    const showFilter = timeline.managers.length > 1 || !!filter;
     const events = useMemo(() => {
         if (!filter) return timeline.events;
         return timeline.events.filter((e) => e.manager === filter || e.actor === filter

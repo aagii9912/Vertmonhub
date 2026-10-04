@@ -24,6 +24,8 @@ import { useAuth } from '@/contexts/AuthContext';
  * Лидийн хажуугийн панел — жагсаалтаас гаралгүй бүх ажлыг хийнэ:
  * статус/менежер/сонирхол/төсөв inline, уулзалт товлох, гэрээ үүсгэх,
  * тэмдэглэл + дуудлага бүртгэх, түүх, сонирхсон байр.
+ * Дуудагч `key={leadId}`-тай mount хийнэ: лид солиход ноорог (тэмдэглэл, үнийн санал) болон
+ * түүхийн шүүлтүүр өмнөх лидээс үлдэхгүй (кэшлэгдсэн лид skeleton-гүй шууд нээгддэг).
  */
 export function LeadPanel({
     leadId,
@@ -304,7 +306,7 @@ export function LeadPanel({
                 {/* Түүх — менежерүүдийн Time-line */}
                 {data && (
                     <div className="px-4 py-3">
-                        <LeadTimeline detail={data} onOpenLead={onOpenLead} />
+                        <LeadTimeline key={data.lead.id} detail={data} onOpenLead={onOpenLead} />
                     </div>
                 )}
 

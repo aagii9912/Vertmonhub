@@ -62,6 +62,18 @@ describe('LeadTimeline', () => {
         expect(screen.getByText('Анх ярьсан')).toBeInTheDocument();
     });
 
+    it('ignores a manager filter that the new history no longer lists', () => {
+        const { rerender } = render(<LeadTimeline detail={detail(timeline)} />);
+        fireEvent.click(within(screen.getByRole('group', { name: 'Менежерээр шүүх' })).getByRole('button', { name: 'Сараа' }));
+        expect(screen.queryByText('Анх ярьсан')).not.toBeInTheDocument();
+        const single = buildLeadTimeline({ lead, roster, activities: [
+            { id: 'b1', type: 'call', content: 'Өөр лидийн дуудлага', meta: {}, created_by: 'u-manda', created_by_name: 'Манда', created_at: '2026-09-02T02:00:00Z' },
+        ] });
+        rerender(<LeadTimeline detail={detail(single)} />);
+        expect(screen.getByText('Өөр лидийн дуудлага')).toBeInTheDocument();
+        expect(screen.queryByRole('group', { name: 'Менежерээр шүүх' })).not.toBeInTheDocument();
+    });
+
     it('lists phone duplicates for organization users and opens them in place', () => {
         const open = vi.fn();
         const withLeads = buildLeadTimeline({
