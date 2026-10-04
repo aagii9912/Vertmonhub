@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
@@ -42,8 +43,16 @@ function mapFields(fieldData: LeadFieldDatum[]): { name: string | null; phone: s
     return { name, phone, email };
 }
 
+/** Meta нэг lead-ийг дахин илгээхэд ижил `client_request_id` (UUID хэлбэрт оруулсан hash) өгнө. */
+function leadgenRequestId(leadgenId: string): string {
+    const hex = createHash('sha256').update(`facebook-leadgen:${leadgenId}`).digest('hex');
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
 /**
  * POST — Facebook Lead Ads-ийн шинэ lead-ийг хүлээн авч `leads`-д оруулна (attribution-тай).
+ * Төсөл нь кампанийн холбоосоос DB trigger-ээр (`stamp_marketing_attribution`) тодорхойлогдоно.
+ * Хадгалж чадаагүй бол 500 буцааж Meta-д дахин илгээлгэнэ; давтан илгээлт давхар лид үүсгэхгүй.
  */
 export async function POST(request: NextRequest) {
     const raw = await request.text();
@@ -61,6 +70,7 @@ export async function POST(request: NextRequest) {
         const body = JSON.parse(raw);
         const supabase = supabaseAdmin();
         let ingested = 0;
+        let failed = 0;
 
         for (const entry of body.entry || []) {
             const pageId = entry.id;
@@ -85,6 +95,7 @@ export async function POST(request: NextRequest) {
                     `${GRAPH}/${leadgenId}?fields=field_data,campaign_id,adset_id,ad_id&access_token=${pageToken}`
                 );
                 if (!res.ok) {
+                    failed++;
                     logger.warn('[Leadgen] fetch failed', { leadgenId, status: res.status });
                     continue;
                 }
@@ -92,20 +103,27 @@ export async function POST(request: NextRequest) {
                 const { name, phone, email } = mapFields(lead.field_data || []);
 
                 const campaignId = lead.campaign_id || v.campaign_id || null;
-                const { data: inserted } = await supabase.from('leads').insert([{
+                const { data: inserted, error: insertError } = await supabase.from('leads').insert({
                     shop_id: shop.id,
-                    name: name || 'Facebook lead',
-                    phone,
-                    email,
+                    client_request_id: leadgenRequestId(String(leadgenId)),
+                    customer_name: name || 'Facebook lead',
+                    customer_phone: phone,
+                    customer_email: email,
                     source: 'facebook_ads',
                     facebook_campaign_id: campaignId,
                     facebook_adset_id: lead.adset_id || v.adset_id || null,
                     facebook_ad_id: lead.ad_id || v.ad_id || null,
-                }]).select('id').single();
+                }).select('id').single();
+                if (insertError?.code === '23505') continue; // Meta-ийн давтан илгээлт — аль хэдийн хадгалсан
+                if (insertError || !inserted) {
+                    failed++;
+                    logger.error('[Leadgen] lead insert failed', { leadgenId, error: insertError });
+                    continue;
+                }
 
                 await logAttributionEvent({
                     shopId: shop.id,
-                    leadId: inserted?.id,
+                    leadId: inserted.id,
                     eventType: 'lead',
                     source: 'facebook_ads',
                     facebook_campaign_id: campaignId,
@@ -114,7 +132,8 @@ export async function POST(request: NextRequest) {
             }
         }
 
-        logger.info('[Leadgen] ingested', { ingested });
+        logger.info('[Leadgen] ingested', { ingested, failed });
+        if (failed > 0) return NextResponse.json({ success: false, ingested, failed }, { status: 500 });
         return NextResponse.json({ success: true, ingested });
     } catch (error) {
         logger.error('[Leadgen] error', { error });
