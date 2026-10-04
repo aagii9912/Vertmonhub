@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 vi.mock('@/lib/utils/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 import { fetchMetaAdsetInsights, fetchMetaPeriodReach, metaRowResult, parseMetaResults } from '../ads-insights';
+import { fetchMetaAccount, fetchMetaDailySpend } from '../daily-spend';
 
 const account = { id: 'act_123', currency: 'USD', timezone_name: 'Asia/Ulaanbaatar' };
 const callRow = {
@@ -162,4 +163,30 @@ it('fetches deduplicated period reach for the account and per campaign', async (
     http.mockResolvedValueOnce(reply({ data: [{ account_id: '123', reach: '10' }] }))
         .mockResolvedValueOnce(reply({ data: [{ campaign_id: '11' }, { campaign_id: '22', reach: '4' }] }));
     expect([...(await fetchMetaPeriodReach(account, 'secret-token', '2026-09-23', '2026-09-29')).campaigns]).toEqual([['22', 4]]);
+});
+
+it('passes the shared sync deadline into ad set pages, period reach, the daily spend pages and the account read', async () => {
+    const controller = new AbortController();
+    const deadline = { at: Date.now() + 60_000, signal: controller.signal };
+    const seen: AbortSignal[] = [];
+    http.mockImplementation(async (_url: URL, init: RequestInit) => {
+        seen.push(init.signal as AbortSignal);
+        return reply({ data: [] });
+    });
+    await fetchMetaAdsetInsights(account, 'secret-token', '2026-09-23', '2026-09-29', deadline);
+    await fetchMetaPeriodReach(account, 'secret-token', '2026-09-23', '2026-09-29', deadline);
+    await fetchMetaDailySpend(account, 'secret-token', '2026-09-23', '2026-09-29', deadline);
+    http.mockImplementationOnce(async (_url: URL, init: RequestInit) => { seen.push(init.signal as AbortSignal); return reply(account); });
+    await fetchMetaAccount('act_123', 'secret-token', deadline);
+    expect(seen).toHaveLength(5);
+    expect(seen.some(signal => signal.aborted)).toBe(false);
+    // Нийт хугацаа дуусахад алхам бүрийн (90/60/20 сек) signal ч таслагдана.
+    controller.abort();
+    expect(seen.every(signal => signal.aborted)).toBe(true);
+
+    // Таслагдсан хугацаанд шинэ хуудас татахгүй: fetch нэг удаа, дахин оролдлогогүй.
+    http.mockReset();
+    http.mockRejectedValue(new DOMException('aborted', 'AbortError'));
+    await expect(fetchMetaAdsetInsights(account, 'secret-token', '2026-09-23', '2026-09-29', deadline)).rejects.toThrow(/холболт тасарлаа/);
+    expect(http).toHaveBeenCalledTimes(1);
 });

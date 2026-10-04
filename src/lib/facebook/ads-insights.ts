@@ -14,7 +14,7 @@ import { dateSchema } from '@/lib/marketing/performance';
 import {
     META_RESULT_ACTION_TYPES, metaResultTypeForGoal, metaResultTypeOf, type MetaResultType,
 } from '@/lib/marketing/meta-results';
-import { MetaApiError, metaRead, type MetaAccount } from './daily-spend';
+import { MetaApiError, metaRead, metaStepSignal, type MetaAccount, type MetaDeadline } from './daily-spend';
 
 export type MetaResultSource = 'results' | 'goal';
 export interface MetaActionValue { action_type: string; value: number }
@@ -169,16 +169,16 @@ function parseAdsetRow(r: Raw, account: MetaAccount, from: string, to: string, w
     };
 }
 
-async function readAdsetPages(account: MetaAccount, token: string, from: string, to: string, withResultFields: boolean): Promise<MetaAdsetDay[]> {
+async function readAdsetPages(account: MetaAccount, token: string, from: string, to: string, withResultFields: boolean, deadline?: MetaDeadline): Promise<MetaAdsetDay[]> {
     const rows: MetaAdsetDay[] = [], keys = new Set<string>(), cursors = new Set<string>();
-    const signal = AbortSignal.timeout(90000);
+    const signal = metaStepSignal(90000, deadline);
     const fields = [...BASE_FIELDS, ...(withResultFields ? RESULT_FIELDS : [])].join(',');
     let after: string | undefined;
     for (let page = 0; page < PAGE_LIMIT; page++) {
         const result = await metaRead<Page>(`${account.id}/insights`, token, {
             fields, level: 'adset', time_increment: '1', time_range: JSON.stringify({ since: from, until: to }), limit: '500',
             ...(after ? { after } : {}),
-        }, signal);
+        }, { signal });
         if (!Array.isArray(result.data)) throw new Error('Meta дэлгэрэнгүй insights-ийн хариу дутуу байна.');
         for (const item of result.data) {
             if (!item || typeof item !== 'object') throw invalid();
@@ -201,13 +201,14 @@ async function readAdsetPages(account: MetaAccount, token: string, from: string,
  * `{act}/insights` level=adset, time_increment=1 — [from, to] (дансны цагийн бүсийн өдрүүд).
  * Meta `results`/ThruPlay талбарыг (code 100) татгалзвал тэдгээргүйгээр нэг удаа дахин татна;
  * тэр үед бүх мөрийн үр дүн `optimization_goal`-оор (`result_source = 'goal'`).
+ * `deadline` = синкийн нийт хугацаа: алхам бүрийн 90 сек-ээс эрт дуусвал хүсэлтийг таслана.
  */
-export async function fetchMetaAdsetInsights(account: MetaAccount, token: string, from: string, to: string): Promise<{ rows: MetaAdsetDay[]; resultFields: boolean }> {
+export async function fetchMetaAdsetInsights(account: MetaAccount, token: string, from: string, to: string, deadline?: MetaDeadline): Promise<{ rows: MetaAdsetDay[]; resultFields: boolean }> {
     try {
-        return { rows: await readAdsetPages(account, token, from, to, true), resultFields: true };
+        return { rows: await readAdsetPages(account, token, from, to, true, deadline), resultFields: true };
     } catch (error) {
         if (!(error instanceof MetaApiError) || error.code !== 100) throw error;
-        return { rows: await readAdsetPages(account, token, from, to, false), resultFields: false };
+        return { rows: await readAdsetPages(account, token, from, to, false, deadline), resultFields: false };
     }
 }
 
@@ -222,8 +223,8 @@ export interface MetaPeriodReach {
  * Хугацааны (жишээ нь хурлын 7 хоног) давхардалгүй reach: level=account ба level=campaign,
  * time_increment-гүй. Өдрийн reach-ийг нэмж болохгүй тул Meta-гаас шууд авна.
  */
-export async function fetchMetaPeriodReach(account: MetaAccount, token: string, from: string, to: string): Promise<MetaPeriodReach> {
-    const signal = AbortSignal.timeout(60000);
+export async function fetchMetaPeriodReach(account: MetaAccount, token: string, from: string, to: string, deadline?: MetaDeadline): Promise<MetaPeriodReach> {
+    const signal = metaStepSignal(60000, deadline);
     const timeRange = JSON.stringify({ since: from, until: to });
     const checkRow = (r: Raw) => {
         if (r.account_id !== undefined && r.account_id !== account.id.slice(4)) throw invalid();
@@ -231,7 +232,7 @@ export async function fetchMetaPeriodReach(account: MetaAccount, token: string, 
     };
     const total = await metaRead<Page>(`${account.id}/insights`, token, {
         fields: 'account_id,reach,frequency,impressions,spend', level: 'account', time_range: timeRange,
-    }, signal);
+    }, { signal });
     if (!Array.isArray(total.data) || total.data.length > 1) throw new Error('Meta reach-ийн хариу дутуу байна.');
     const accountRow = total.data[0] as Raw | undefined;
     if (accountRow) checkRow(accountRow);
@@ -244,7 +245,7 @@ export async function fetchMetaPeriodReach(account: MetaAccount, token: string, 
     for (let page = 0; page < PAGE_LIMIT; page++) {
         const result = await metaRead<Page>(`${account.id}/insights`, token, {
             fields: 'account_id,campaign_id,reach', level: 'campaign', time_range: timeRange, limit: '500', ...(after ? { after } : {}),
-        }, signal);
+        }, { signal });
         if (!Array.isArray(result.data)) throw new Error('Meta reach-ийн хариу дутуу байна.');
         for (const item of result.data) {
             const r = (item ?? {}) as Raw;

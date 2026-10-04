@@ -26,10 +26,43 @@ export class MetaApiError extends Error {
 /** Түр зуурын алдаанд дахин оролдох хүлээлт: ихдээ 2 дахин, нийт ~4 сек. */
 export const META_RETRY_DELAYS_MS = [1000, 3000] as const;
 // 1/2 = түр алдаа, 4/17/32/613 = хурдны хязгаар, 80000–80014 = business use case хязгаар.
-const RETRY_CODES = new Set([1, 2, 4, 17, 32, 613]);
+const RATE_LIMIT_CODES = new Set([4, 17, 32, 613]);
+const isRateLimitCode = (code: number | null) => code !== null && (RATE_LIMIT_CODES.has(code) || (code >= 80000 && code <= 80014));
 export function isRetriableMetaError(status: number | null, code: number | null): boolean {
-    return status === 429 || (status !== null && status >= 500)
-        || (code !== null && (RETRY_CODES.has(code) || (code >= 80000 && code <= 80014)));
+    return status === 429 || (status !== null && status >= 500) || code === 1 || code === 2 || isRateLimitCode(code);
+}
+/** Meta хурдны хязгаарт хүрсэн (HTTP 429, code 4/17/32/613, 80000–80014): тэр давталтыг зогсооно. */
+export function isMetaRateLimitError(error: unknown): boolean {
+    return error instanceof MetaApiError && (error.status === 429 || isRateLimitCode(error.code));
+}
+
+/**
+ * Синкийн нийт хугацааны хязгаар: route-ийн `maxDuration`-аас аюулгүйн зайтай. `at` (Date.now()-ийн
+ * цаг) нь шинэ алхам эхлүүлэх эсэхийг, `signal` нь яг тэр мөчид Graph хүсэлтийг таслахыг шийднэ.
+ */
+export interface MetaDeadline { readonly at: number; readonly signal: AbortSignal }
+export function metaDeadline(ms: number): MetaDeadline {
+    return { at: Date.now() + ms, signal: AbortSignal.timeout(ms) };
+}
+/** Үлдсэн хугацаа (мс); хязгааргүй бол Infinity. */
+export function metaTimeLeft(deadline?: MetaDeadline | null): number {
+    return deadline ? deadline.at - Date.now() : Infinity;
+}
+/** Алхмын өөрийн timeout ба синкийн нийт хугацааны аль эрт дуусахаар таслах signal. */
+export function metaStepSignal(ms: number, deadline?: MetaDeadline | null): AbortSignal {
+    const step = AbortSignal.timeout(ms);
+    return deadline ? AbortSignal.any([step, deadline.signal]) : step;
+}
+/** Нийт хугацаа дууссан эсэх (signal таслагдсан эсвэл цаг өнгөрсөн). */
+export function metaDeadlinePassed(deadline?: MetaDeadline | null): boolean {
+    return !!deadline && (deadline.signal.aborted || metaTimeLeft(deadline) <= 0);
+}
+
+export interface MetaReadOptions {
+    /** Бүх дахин оролдлогыг оролцуулсан хугацааны хязгаар; өгөөгүй бол 20 сек. */
+    signal?: AbortSignal;
+    /** false = түр алдаанд дахин оролдохгүй (олон дуудлагатай давталт өөрөө зогсоно). */
+    retry?: boolean;
 }
 
 const USAGE_HEADERS = ['x-business-use-case-usage', 'x-fb-ads-insights-throttle', 'x-ad-account-usage', 'x-app-usage'] as const;
@@ -76,15 +109,16 @@ function pause(ms: number, signal: AbortSignal): Promise<boolean> {
 }
 
 // Never log a URL, response body or token. Even Graph paging.next can contain credentials.
-export async function metaRead<T>(path: string, token: string, params: Record<string, string> = {}, signal?: AbortSignal): Promise<T> {
+export async function metaRead<T>(path: string, token: string, params: Record<string, string> = {}, options: MetaReadOptions = {}): Promise<T> {
     const secret = process.env.META_ADS_APP_SECRET?.trim();
     if (!secret) throw new MetaApiError('Meta Ads app-ийн нууц түлхүүр тохируулаагүй байна.');
     const url = new URL(`${BASE}/${path}`);
     const proof = crypto.createHmac('sha256', secret).update(token).digest('hex');
     for (const [key, value] of Object.entries({ ...params, appsecret_proof: proof })) url.searchParams.set(key, value);
-    const abort = signal ?? AbortSignal.timeout(20000);
+    const abort = options.signal ?? AbortSignal.timeout(20000);
+    const retries = options.retry === false ? 0 : META_RETRY_DELAYS_MS.length;
     for (let attempt = 0; ; attempt++) {
-        const canRetry = attempt < META_RETRY_DELAYS_MS.length;
+        const canRetry = attempt < retries;
         let response: Response;
         try { response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store', signal: abort }); }
         catch {
@@ -106,24 +140,24 @@ export async function metaRead<T>(path: string, token: string, params: Record<st
         throw metaError(response.status, code, subcode);
     }
 }
-export async function fetchMetaAccount(account: string, token: string): Promise<MetaAccount> {
+export async function fetchMetaAccount(account: string, token: string, deadline?: MetaDeadline): Promise<MetaAccount> {
     if (!/^act_\d+$/.test(account)) throw new Error('Meta зарын данс сонгоно уу.');
-    const data = await metaRead<MetaAccount>(account, token, { fields: 'id,currency,timezone_name' });
+    const data = await metaRead<MetaAccount>(account, token, { fields: 'id,currency,timezone_name' }, { signal: metaStepSignal(20000, deadline) });
     if (data.id !== account || !/^[A-Z]{3}$/.test(data.currency)) throw new Error('Meta дансны валют тодорхойгүй байна.');
     try { new Intl.DateTimeFormat('en', { timeZone: data.timezone_name }).format(); }
     catch { throw new Error('Meta дансны цагийн бүс тодорхойгүй байна.'); }
     if (!data.timezone_name) throw new Error('Meta дансны цагийн бүс тодорхойгүй байна.');
     return data;
 }
-export async function fetchMetaDailySpend(account: MetaAccount, token: string, from: string, to: string): Promise<MetaDailyRow[]> {
+export async function fetchMetaDailySpend(account: MetaAccount, token: string, from: string, to: string, deadline?: MetaDeadline): Promise<MetaDailyRow[]> {
     const rows: MetaDailyRow[] = [], keys = new Set<string>(), cursors = new Set<string>();
-    const signal = AbortSignal.timeout(90000);
+    const signal = metaStepSignal(90000, deadline);
     let after: string | undefined;
     for (let page = 0; page < 100; page++) {
         const result = await metaRead<{ data: Array<Record<string, string>>; paging?: { next?: string; cursors?: { after?: string } } }>(`${account.id}/insights`, token, {
             fields: 'account_id,account_currency,campaign_id,campaign_name,date_start,date_stop,spend', level: 'campaign', time_increment: '1',
             time_range: JSON.stringify({ since: from, until: to }), limit: '500', ...(after ? { after } : {}),
-        }, signal);
+        }, { signal });
         if (!Array.isArray(result.data)) throw new Error('Meta өдрийн зардлын хариу дутуу байна.');
         for (const r of result.data) {
             const key = `${r.campaign_id}:${r.date_start}`;

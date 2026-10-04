@@ -3,8 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getUserId, assertShopAccess, supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { encryptToken } from '@/lib/crypto/tokens';
+import { metaAdsSystemToken } from '@/lib/facebook/ads-auth';
 import { metaRead } from '@/lib/facebook/daily-spend';
 import { getAdAccounts } from '@/lib/facebook/marketing-api';
+import { logger } from '@/lib/utils/logger';
 import { META_ADS_CALLBACK_PATH, META_ADS_OAUTH_COOKIE } from '../route';
 
 export const dynamic = 'force-dynamic';
@@ -35,6 +37,9 @@ export async function GET(request: NextRequest) {
     const userId = await getUserId();
     const shopId = await assertShopAccess(saved.shopId);
     if (!userId || userId !== saved.userId || shopId !== saved.shopId) return finish('session_error');
+    // System User токентой үед (env-ийг state cookie олгосны дараа тохируулсан ч) токен солих, хадгалах,
+    // дансны сонголтод хүрэхгүй: синк хэрэглэгчийн токеныг ашигладаггүй, дансыг админ сонгоно.
+    if (metaAdsSystemToken()) return finish('system_token');
 
     const appId = process.env.META_ADS_APP_ID?.trim();
     const appSecret = process.env.META_ADS_APP_SECRET?.trim();
@@ -84,14 +89,15 @@ export async function GET(request: NextRequest) {
         if (!encrypted?.startsWith('enc:v1:')) return finish('save_error');
 
         const db = supabaseAdmin();
-        // Шинэ токен сонгосон дансыг уншиж чадвал сонголтыг хадгална; эс бөгөөс дахин сонгуулна.
+        // Сонгосон дансыг зөвхөн шинэ токены АМЖИЛТТАЙ жагсаалтад байхгүй бол дахин сонгуулна. Жагсаалт
+        // татагдаагүй (хурдны хязгаар, сүлжээ) бол сонголт хэвээр — синк Meta-гийн эрхийн алдааг өөрөө харуулна.
         const { data: current, error: readError } = await db.from('shops').select('facebook_ad_account_id').eq('id', shopId).single();
         if (readError) return finish('save_error');
         const selected = current?.facebook_ad_account_id ? `act_${String(current.facebook_ad_account_id).replace(/^act_/, '')}` : null;
-        let keepAccount = false;
+        let keepAccount = true;
         if (selected) {
             try { keepAccount = (await getAdAccounts(token)).data.some(account => account.id === selected); }
-            catch { keepAccount = false; }
+            catch { logger.warn('[Meta Ads OAuth] зарын дансны жагсаалт татагдсангүй — сонгосон дансыг хэвээр үлдээв', { shopId }); }
         }
         const { error } = await db.from('shops').update({
             meta_ads_user_access_token: encrypted,
