@@ -92,12 +92,13 @@ it('changes only the contract holder, keeps money/attribution and writes history
             has_function_privilege('authenticated', 'transfer_contract(uuid,uuid,jsonb,uuid,uuid,text,text)', 'EXECUTE') AS auth_exec,
             has_function_privilege('anon', 'transfer_contract(uuid,uuid,jsonb,uuid,uuid,text,text)', 'EXECUTE') AS anon_exec,
             has_function_privilege('service_role', 'transfer_contract(uuid,uuid,jsonb,uuid,uuid,text,text)', 'EXECUTE') AS service_exec,
+            has_function_privilege('authenticated', 'contract_registration_key(text)', 'EXECUTE') AS auth_key,
             has_table_privilege('authenticated', 'contract_transfers', 'SELECT') AS auth_read,
             has_table_privilege('service_role', 'contract_transfers', 'INSERT') AS service_insert,
             has_table_privilege('service_role', 'contract_transfers', 'DELETE') AS service_delete,
             has_column_privilege('service_role', 'contract_transfers', 'to_customer_name', 'UPDATE') AS service_rewrite,
             has_column_privilege('service_role', 'contract_transfers', 'to_customer_id', 'UPDATE') AS service_relink`)).rows[0];
-        expect(privileges).toEqual({ auth_exec: false, anon_exec: false, service_exec: true, auth_read: false,
+        expect(privileges).toEqual({ auth_exec: false, anon_exec: false, service_exec: true, auth_key: false, auth_read: false,
             service_insert: true, service_delete: false, service_rewrite: false, service_relink: true });
         await db.exec('SET ROLE authenticated');
         await expect(transfer(contract, { kind: 'rename', customer_name: 'Бат-Болд' }, request(99))).rejects.toMatchObject({ code: '42501' });
@@ -165,6 +166,18 @@ it('changes only the contract holder, keeps money/attribution and writes history
         await expect(transfer(contract, { ...payload, customer_name: 'Өөр' }, request(1))).rejects.toMatchObject({ code: '23505' });
         await expect(transfer(cancelled, payload, request(1))).rejects.toMatchObject({ code: '23505' });
         expect(await snapshot()).toEqual(after);
+
+        // Эзэмшигчийн дараалал: өмнөх өөрчлөлтийн огнооноос өмнө огноолохгүй (гэрээний огнооноос хойш ч гэсэн).
+        await expect(transfer(contract, { kind: 'rename', customer_name: 'Дорж С.', effective_date: '2026-05-31' }, request(6)))
+            .rejects.toMatchObject({ code: '22023', message: expect.stringContaining('2026-06-01') });
+        // Нэр засвар регистрийг солихгүй — өөр хүн бол шалтгаантай шилжүүлэг (шинэ харилцагч).
+        await expect(transfer(contract, { kind: 'rename', customer_name: 'Дорж С.', customer_registration: 'УБ11223344', customer_phone: '88000000' }, request(7)))
+            .rejects.toMatchObject({ code: '22023', message: expect.stringContaining('Өөр хүнд шилжүүлэх') });
+        await expect(transfer(contract, { kind: 'rename', customer_name: 'Дорж С.', customer_registration: null }, request(7)))
+            .rejects.toMatchObject({ code: '22023' });
+        expect(await snapshot()).toEqual(after);
+        // Регистрийн түлхүүр locale-оос үл хамааран кирилл үсгийг томруулж, зайг хасна.
+        expect((await db.query<{ key: string }>("SELECT contract_registration_key(' уб 99 0101өү ') AS key")).rows).toEqual([{ key: 'УБ990101ӨҮ' }]);
 
         // Шилжүүлсэн гэрээнд төлбөр хэвийн бүртгэгдэж, дүн нь нэг гэрээнд хуримтлагдана.
         await db.query('SELECT mutate_contract_payment($1::uuid,$2::uuid,NULL,$3::jsonb,$4::uuid)', [shop, contract, JSON.stringify({

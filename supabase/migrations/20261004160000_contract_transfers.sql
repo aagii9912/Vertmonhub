@@ -63,6 +63,18 @@ REVOKE ALL ON TABLE public.contract_transfers FROM PUBLIC, anon, authenticated, 
 GRANT SELECT, INSERT ON TABLE public.contract_transfers TO service_role;
 GRANT UPDATE (from_customer_id, to_customer_id) ON TABLE public.contract_transfers TO service_role;
 
+-- Регистрийн харьцуулалтын түлхүүр: зайг хасаж том үсгээр. Кирилл үсгийг translate()-аар
+-- шууд хувиргана — upper() нь өгөгдлийн сангийн locale-оос үл хамааран ижил ажиллана.
+CREATE OR REPLACE FUNCTION public.contract_registration_key(p_value text)
+RETURNS text
+LANGUAGE sql IMMUTABLE SET search_path = public
+AS $$
+    SELECT upper(translate(regexp_replace(coalesce(p_value, ''), '\s', '', 'g'),
+        'абвгдеёжзийклмноөпрстуүфхцчшщъыьэюя', 'АБВГДЕЁЖЗИЙКЛМНОӨПРСТУҮФХЦЧШЩЪЫЬЭЮЯ'));
+$$;
+REVOKE ALL ON FUNCTION public.contract_registration_key(text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.contract_registration_key(text) TO service_role;
+
 CREATE OR REPLACE FUNCTION public.transfer_contract(
     p_shop_id uuid,
     p_contract_id uuid,
@@ -82,6 +94,7 @@ DECLARE
     v_today date := (now() AT TIME ZONE 'Asia/Ulaanbaatar')::date;
     v_kind text;
     v_date date;
+    v_previous_date date;
     v_name text;
     v_first text;
     v_last text;
@@ -169,6 +182,11 @@ BEGIN
         v_reg := CASE WHEN p_payload ? 'customer_registration' THEN nullif(btrim(p_payload->>'customer_registration'), '') ELSE v_contract.customer_registration END;
         v_phone := CASE WHEN p_payload ? 'customer_phone' THEN nullif(btrim(p_payload->>'customer_phone'), '') ELSE v_contract.customer_phone END;
         v_mobile := CASE WHEN p_payload ? 'customer_mobile' THEN nullif(btrim(p_payload->>'customer_mobile'), '') ELSE v_contract.customer_mobile END;
+        -- Нэр засвар = ижил хүн: регистр өөр бол энэ нь шилжүүлэг (шинэ харилцагч, шалтгаантай).
+        IF p_payload ? 'customer_registration'
+           AND public.contract_registration_key(v_reg) <> public.contract_registration_key(v_contract.customer_registration) THEN
+            RAISE EXCEPTION 'Нэр засвараар регистр солихгүй. Өөр хүн бол «Өөр хүнд шилжүүлэх»-ийг сонгоно уу' USING ERRCODE = '22023';
+        END IF;
     END IF;
     v_phone_norm := nullif(p_payload->>'phone_normalized', '');
     v_reason := nullif(btrim(p_payload->>'reason'), '');
@@ -184,7 +202,7 @@ BEGIN
         IF v_reg IS NULL OR v_reason IS NULL THEN
             RAISE EXCEPTION 'Өөр хүнд шилжүүлэхэд шинэ эзэмшигчийн регистр, шалтгааныг заавал оруулна' USING ERRCODE = '22023';
         END IF;
-        IF upper(regexp_replace(coalesce(v_contract.customer_registration, ''), '\s', '', 'g')) = upper(v_reg) THEN
+        IF public.contract_registration_key(v_contract.customer_registration) = public.contract_registration_key(v_reg) THEN
             RAISE EXCEPTION 'Регистр одоогийн эзэмшигчийнхтэй ижил байна. Ижил хүний нэрийг засах бол «Нэр засах»-ыг сонгоно уу' USING ERRCODE = '22023';
         END IF;
     END IF;
@@ -212,6 +230,13 @@ BEGIN
     END IF;
     IF v_date > v_today OR (v_contract.contract_date IS NOT NULL AND v_date < v_contract.contract_date) THEN
         RAISE EXCEPTION 'Шилжүүлсэн огноо гэрээний огнооноос хойш, өнөөдрөөс хэтрэхгүй байна' USING ERRCODE = '22023';
+    END IF;
+    -- Эзэмшигчийн дараалал: өмнөх шилжүүлэг/нэр засварын огнооноос өмнө байж болохгүй (гэрээ түгжигдсэн).
+    SELECT max(effective_date) INTO v_previous_date FROM public.contract_transfers
+    WHERE shop_id = p_shop_id AND contract_id = p_contract_id;
+    IF v_previous_date IS NOT NULL AND v_date < v_previous_date THEN
+        RAISE EXCEPTION 'Шилжүүлсэн огноо өмнөх өөрчлөлтийн огнооноос (%) өмнө байж болохгүй', to_char(v_previous_date, 'YYYY-MM-DD')
+            USING ERRCODE = '22023';
     END IF;
 
     -- Шинэ эзэмшигчийн харилцагч: утсаар (өмнөх эзэмшигчээс бусад) олдвол холбоно, эс бөгөөс үүсгэнэ.
