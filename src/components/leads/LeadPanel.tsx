@@ -137,7 +137,7 @@ export function LeadPanel({
                 ) : (
                     <h2 className={cn('min-w-0 truncate text-[16px] font-semibold', anonymous ? 'text-muted-foreground' : 'text-foreground')}>
                         {canWrite && !anonymous ? (
-                            <button type="button" title="Нэр засах" onClick={() => setNameDraft(lead.customer_name ?? '')} className="max-w-full truncate rounded-sm text-left hover:underline focus-ring">
+                            <button type="button" title="Нэр засах" onClick={() => setNameDraft(leadDisplayName(lead))} className="max-w-full truncate rounded-sm text-left hover:underline focus-ring">
                                 {leadDisplayName(lead)}
                             </button>
                         ) : leadDisplayName(lead)}
