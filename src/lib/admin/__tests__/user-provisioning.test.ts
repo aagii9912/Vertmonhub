@@ -28,6 +28,7 @@ const state = vi.hoisted(() => ({
     authUpdates: 0,
     emails: 0,
     emailLinks: [] as string[],
+    emailNames: [] as Array<string | undefined>,
     projects: [] as Array<{ id: string }>,
 }));
 const shopId = '10000000-0000-4000-8000-000000000001';
@@ -36,9 +37,10 @@ vi.mock('@/lib/auth/supabase-auth', () => ({ supabaseAdmin: () => db, getUserId:
 vi.mock('@/lib/admin/auth', () => ({ getAdminUser: async () => ({ id: 'actor', email: 'actor@example.com', role: 'super_admin' }) }));
 vi.mock('@/lib/admin/audit', () => ({ logAdminAudit: async () => {} }));
 vi.mock('@/lib/ai/data-assistant/audit', () => ({ logAiAudit: async () => {} }));
-vi.mock('@/lib/email/email', () => ({ sendInviteEmail: async (input: { actionLink: string }) => {
+vi.mock('@/lib/email/email', () => ({ sendInviteEmail: async (input: { actionLink: string; fullName?: string }) => {
     state.emails++;
     state.emailLinks.push(input.actionLink);
+    state.emailNames.push(input.fullName);
     return true;
 } }));
 
@@ -147,7 +149,7 @@ beforeEach(() => {
     state.wrongVerificationType = false; state.tokenHash = 'synthetic-token-hash';
     state.linkTypes = []; state.linkInputs = []; state.authCreates = [];
     state.passwords = []; state.authDeletes = []; state.authUpdates = 0; state.emails = 0; state.emailLinks = [];
-    state.projects = [];
+    state.emailNames = []; state.projects = [];
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -489,6 +491,19 @@ describe('sales manager access provisioning', () => {
         expect(state.authUpdates).toBe(0);
         expect(writesTo('user_profiles')).toEqual([]);
         expect(state.emails).toBe(1);
+        // Имэйлийн мэндчилгээ профайлд хадгалагдсан нэрээр (бичсэн нэр ашиглагдахгүй).
+        expect(state.emailNames).toEqual(['Бат']);
+    });
+
+    it('API re-invites a registered manager without a typed name (the profile name links the roster)', async () => {
+        state.linkMode = 'magiclink';
+        const response = await inviteApi(new NextRequest('http://localhost/api/admin/users/invite', {
+            method: 'POST', body: JSON.stringify({ ...invite, role: 'sales_manager' }),
+        }));
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ success: true, mode: 'magiclink' });
+        expect(state.roster).toEqual([row({ user_id: 'target', is_active: true })]);
+        expect(state.emailNames).toEqual(['Бат']);
     });
 
     it('creates an active roster linked to the existing profile name and selected shop', async () => {
@@ -605,7 +620,8 @@ describe('staff name and phone (user setup)', () => {
         method: 'POST', body: JSON.stringify(body),
     }));
 
-    it.each([{}, { full_name: '   ' }, { full_name: 'TARGET@example.com' }])('API invite refuses a nameless sales manager before Auth or links (%j)', async extra => {
+    it.each([{}, { full_name: '   ' }, { full_name: 'TARGET@example.com' }])('API invite refuses a nameless new sales manager before Auth or links (%j)', async extra => {
+        state.profileId = null;
         const response = await inviteRequest({ ...managerInvite, ...extra });
         expect(response.status).toBe(400);
         expect(await response.json()).toEqual({ error: 'Борлуулалтын менежерийн бодит нэрийг оруулна уу' });
@@ -631,6 +647,7 @@ describe('staff name and phone (user setup)', () => {
             id: state.createdUserId, email: 'new.manager@example.com', full_name: 'Шинэ Менежер', phone: '99112233',
         });
         expect(state.roster).toEqual([{ shop_id: shopId, name: 'Шинэ Менежер', user_id: state.createdUserId, is_active: true }]);
+        expect(state.emailNames).toEqual(['Шинэ Менежер']);
     });
 
     it('a new profile without a phone does not write the phone column', async () => {

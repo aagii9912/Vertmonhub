@@ -35,8 +35,12 @@ export async function POST(request: NextRequest) {
         if (email === admin.email.trim().toLowerCase())
             return NextResponse.json({ error: 'Өөрийн дүрийг өөрчлөх боломжгүй' }, { status: 409 });
         // Нэргүй менежерийн урилга Auth бүртгэл, холбоос үүсгээд дараа нь буцаагддаг байв —
-        // хэрэглэгч нэмэх замтай адил Auth-д хүрэхээс өмнө шалгана.
-        if (managerNameMissing(role, full_name, email))
+        // шинэ акаунтад Auth-д хүрэхээс өмнө шалгана. Профайлтай (бүртгэлтэй) акаунтад
+        // бичсэн нэрийг ашиглахгүй (provisioning профайлын нэрийг уншина) тул шаардахгүй.
+        const { data: existingProfile, error: existingError } = await supabase.from('user_profiles')
+            .select('id, full_name').eq('email', email).maybeSingle();
+        if (existingError) throw existingError;
+        if (!existingProfile && managerNameMissing(role, full_name, email))
             return NextResponse.json({ error: MANAGER_NAME_REQUIRED }, { status: 400 });
         if (!await isAssignableRole(supabase, role))
             return NextResponse.json({ error: 'Сонгосон дүр олдсонгүй' }, { status: 400 });
@@ -92,8 +96,9 @@ export async function POST(request: NextRequest) {
         callbackLink.searchParams.set('type', mode);
         const actionLink = callbackLink.toString();
         if (createdUserId && invitedUserId !== createdUserId) throw new Error('Урих холбоосын хэрэглэгч шинэ бүртгэлтэй таарахгүй байна');
+        const isNew = createdUserId === invitedUserId;
         const provisioningError = await provisionUserAccess(supabase, {
-            actorId: userId, userId: invitedUserId, email, fullName: full_name, phone, role, shopId: shop.id, isNew: createdUserId === invitedUserId,
+            actorId: userId, userId: invitedUserId, email, fullName: full_name, phone, role, shopId: shop.id, isNew,
         });
         // Холболтын алдааг helper буцаана. Дараах имэйл/audit алдаа олгосон эрхийг устгахгүй.
         createdUserId = undefined;
@@ -104,7 +109,12 @@ export async function POST(request: NextRequest) {
         // Урилгыг Resend-ээр имэйлээр илгээх (best-effort — амжилтгүй бол action_link fallback).
         let emailed = false;
         if (actionLink) {
-            emailed = await sendInviteEmail({ to: email, actionLink, mode, fullName: full_name || undefined });
+            // Бүртгэлтэй акаунтыг профайлын нэрээр нь мэндэлнэ (бичсэн нэр профайлд ордоггүй).
+            const greetingName = (isNew ? full_name : existingProfile?.full_name || '').trim();
+            emailed = await sendInviteEmail({
+                to: email, actionLink, mode,
+                fullName: greetingName && greetingName.toLowerCase() !== email ? greetingName : undefined,
+            });
             if (!emailed) warnings.push('Имэйл илгээгдсэнгүй (RESEND_API_KEY / илгээгчийн домэйн шалгана уу) — холбоосыг гараар илгээнэ үү.');
         }
 
