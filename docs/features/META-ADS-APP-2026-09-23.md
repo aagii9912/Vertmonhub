@@ -43,3 +43,7 @@ User token хугацаатай тул автоматаар удаан хуга�
 заавар автомат Ads Insights-д system-user token зөвлөдөг; түүнд зөв бизнес
 портфель болон asset access хэрэгтэй. Одоогийн app бизнес портфельгүй тул
 system-user сонголт нээгдээгүй.
+
+**2026-10-05 шинэчлэл:** код System User токенийг (`META_ADS_SYSTEM_TOKEN`) дэмждэг
+болсон; app-ийг бизнес портфельд холбох, system user үүсгэх алхмууд болон дэлгэрэнгүй
+insights синк: `docs/features/META-INSIGHTS-API-2026-10-05.md`.
