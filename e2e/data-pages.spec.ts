@@ -36,10 +36,11 @@ async function setup(page: Page) {
             if (request.method() === 'DELETE') { state.deleted.push(customerId); return reply({ success: true }); }
             return reply({ customer: { ...customer, chat_history: [], service_logs: [] } });
         }
+        if (path === '/api/dashboard/lead-categories') return reply({ categories: [{ id: 'investor', name: 'Хөрөнгө оруулагч', description: null, tone: 'success', sort_order: 10, is_active: true }] });
         if (path === '/api/dashboard/leads' && url.searchParams.get('pageSize') === '1000') {
             if (state.failPipeline) return reply({ error: 'Түр алдаа' }, 500);
             return reply({ leads: [{ id: leadId, customer_name: 'Энхжин', customer_phone: '88112233', status: 'new', source: 'facebook', sales_manager_name: 'Номин',
-                project_id: null, budget_max: 300000000, created_at: '2026-10-02T02:00:00Z', updated_at: '2026-10-02T02:00:00Z', stage_changed_at: '2026-10-02T02:00:00Z' }], pagination: { total: 1 } });
+                project_id: null, budget_max: 300000000, category_id: 'investor', created_at: '2026-10-02T02:00:00Z', updated_at: '2026-10-02T02:00:00Z', stage_changed_at: '2026-10-02T02:00:00Z' }], pagination: { total: 1 } });
         }
         if (path === '/api/dashboard/contracts/stats/service') return reply({ stats: { total_contracts: 1, active_contracts: 1, closed_contracts: 0, total_sales: 286000000, total_collected: 80000000,
             collection_rate: 28, overdue_contract_count: 0, total_overdue_amount: 0, open_requests: 1, resolved_requests: 0, avg_resolution_hours: null, by_type: {} } });
@@ -81,6 +82,8 @@ test('pipeline болон санал гомдлын уншилт унавал а
     state.failPipeline = false;
     await page.getByRole('button', { name: 'Дахин оролдох', exact: true }).click();
     await expect(page.getByText('Энхжин', { exact: true }).first()).toBeVisible();
+    // Картанд лидийн ангилал (саарал pill + өнгөт цэг) харагдана.
+    await expect(page.getByText('Хөрөнгө оруулагч', { exact: true }).first()).toBeVisible();
 
     await page.goto('/dashboard/customer-service');
     await expect(page.getByText('Санал гомдлын бүртгэл татахад алдаа гарлаа', { exact: true })).toBeVisible();

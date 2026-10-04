@@ -10,6 +10,7 @@ const shopId = '00000000-0000-4000-8000-000000000002';
 const leadId = '00000000-0000-4000-8000-000000000010';
 const projectId = '00000000-0000-4000-8000-000000000030';
 const elysiumId = '00000000-0000-4000-8000-000000000031';
+const investorId = '00000000-0000-4000-8000-000000000041';
 const today = ubDateStr();
 const tomorrow = ubDateStr(new Date(Date.now() + 86_400_000));
 
@@ -19,6 +20,7 @@ async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admi
         customer_email: null, status: i === 0 ? 'contacted' : 'new', source: i === 2 ? 'website' : 'facebook',
         sales_manager_name: i === 2 ? null : 'Номин', notes: null, interest_type: 'apartment', interest_rooms: 3,
         project_id: i === 2 ? null : projectId,
+        category_id: i === 0 ? investorId : null as string | null,
         created_at: `${today}T01:00:00Z`, updated_at: `${today}T01:00:00Z`,
         last_contact_at: i === 0 ? `${today}T02:00:00Z` : null,
         next_followup_at: i === 0 ? '2026-01-01T01:00:00Z' : null,
@@ -57,6 +59,10 @@ async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admi
             kpis: { activeLeads: 3, newLeads: 2, viewingsToday: 0, viewingsThisWeek: 2, activeContracts: 3, salesThisMonth: 860000000 }, target: null, tasks: [], recentLeads: [], upcomingViewings: [], revenueTrend: [] });
         if (path === '/api/dashboard/reports/manager-activity') return reply(managerActivityFixture(url, 'Номин'));
         if (path === '/api/dashboard/leads/projects') return reply({ projects: [{ id: projectId, name: 'Мандала Гарден' }, ...(role === 'admin' ? [{ id: elysiumId, name: 'Элизиум' }] : [])] });
+        if (path === '/api/dashboard/lead-categories') return reply({ categories: [
+            { id: investorId, name: 'Хөрөнгө оруулагч', description: null, tone: 'success', sort_order: 10, is_active: true },
+            { id: '00000000-0000-4000-8000-000000000042', name: 'Бартер', description: null, tone: 'neutral', sort_order: 20, is_active: false },
+        ] });
         if (path === '/api/dashboard/managers') {
             const managers = [
                 { id: 'manager-1', name: 'Номин', is_active: true, project_ids: [projectId], assignable: role === 'admin' },
@@ -70,6 +76,7 @@ async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admi
             const matches = visibleLeads().filter(lead => (!url.searchParams.get('q') || lead.customer_name.includes(url.searchParams.get('q')!))
                 && (!url.searchParams.get('project') || lead.project_id === url.searchParams.get('project'))
                 && (!url.searchParams.get('status') || lead.status === url.searchParams.get('status'))
+                && (!url.searchParams.get('category') || (url.searchParams.get('category') === 'none' ? !lead.category_id : lead.category_id === url.searchParams.get('category')))
                 && (url.searchParams.get('queue') !== 'overdue' || !!lead.next_followup_at));
             return reply({ leads: matches, pagination: { page: 1, pageSize: 25, total: matches.length, totalPages: 1, hasMore: false } });
         }
@@ -332,6 +339,26 @@ test('админ төслийг ил тод сонгоод зөв төслийн
     await page.getByRole('button', { name: 'Элизиум Менежер', exact: true }).click();
     await expect.poll(() => state.requests.some(r => r.method === 'PATCH' && r.body?.sales_manager_name === 'Элизиум Менежер')).toBe(true);
     await expect(panel.getByText('Элизиум Менежер', { exact: true })).toBeVisible();
+    expect(state.errors).toEqual([]);
+    expect(state.unhandled).toEqual([]);
+});
+
+test('лидийг ангиллаар шүүж, дэлгэрэнгүйгээс ангилал тавина', async ({ page }) => {
+    const state = await setup(page);
+    await page.goto('/dashboard/leads');
+    await expect(page.getByText('Б. Энхжин', { exact: true })).toBeVisible();
+    await page.getByRole('combobox', { name: 'Ангилал', exact: true }).selectOption('none');
+    await expect.poll(() => state.requests.some(r => r.path === '/api/dashboard/leads' && r.search.includes('category=none'))).toBe(true);
+    await expect(page.getByText('Б. Энхжин', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Цэвэрлэх', exact: true }).click();
+    await page.getByText('Г. Тэмүүлэн', { exact: true }).click();
+    const panel = page.getByRole('dialog', { name: 'Лидийн дэлгэрэнгүй' });
+    await panel.getByRole('button', { name: 'Ангилал солих', exact: true }).click();
+    // Архивласан ангиллыг шинээр санал болгохгүй.
+    await expect(page.getByRole('option', { name: 'Бартер (архив)' })).toHaveCount(0);
+    await page.getByRole('option', { name: 'Хөрөнгө оруулагч' }).click();
+    await expect.poll(() => state.requests.some(r => r.method === 'PATCH' && r.body?.category_id === investorId)).toBe(true);
+    await expect(panel.getByRole('button', { name: 'Ангилал солих', exact: true })).toContainText('Хөрөнгө оруулагч');
     expect(state.errors).toEqual([]);
     expect(state.unhandled).toEqual([]);
 });
