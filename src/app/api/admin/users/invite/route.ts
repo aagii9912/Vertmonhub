@@ -4,7 +4,8 @@ import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logAdminAudit } from '@/lib/admin/audit';
 import { sendInviteEmail } from '@/lib/email/email';
 import { getAdminUser } from '@/lib/admin/auth';
-import { adminUserInput, isAssignableRole, provisionUserAccess, resolveTargetShop } from '@/lib/admin/user-provisioning';
+import { adminUserInput, adminUserInputError, isAssignableRole, provisionUserAccess, resolveTargetShop } from '@/lib/admin/user-provisioning';
+import { MANAGER_NAME_REQUIRED, managerNameMissing } from '@/lib/admin/staff-profile';
 
 /**
  * POST /api/admin/users/invite — урих / нэвтрэх холбоос үүсгэж имэйлээр илгээх (super_admin).
@@ -28,11 +29,15 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Super admin эрх шаардлагатай' }, { status: 403 });
         }
 
-        const parsed = adminUserInput.safeParse(await request.json());
-        if (!parsed.success) return NextResponse.json({ error: 'Имэйл, дүр эсвэл байгууллагын мэдээлэл буруу байна' }, { status: 400 });
-        const { email, role, full_name } = parsed.data;
+        const parsed = adminUserInput.safeParse(await request.json().catch(() => null));
+        if (!parsed.success) return NextResponse.json({ error: adminUserInputError(parsed.error) }, { status: 400 });
+        const { email, role, full_name, phone = null } = parsed.data;
         if (email === admin.email.trim().toLowerCase())
             return NextResponse.json({ error: 'Өөрийн дүрийг өөрчлөх боломжгүй' }, { status: 409 });
+        // Нэргүй менежерийн урилга Auth бүртгэл, холбоос үүсгээд дараа нь буцаагддаг байв —
+        // хэрэглэгч нэмэх замтай адил Auth-д хүрэхээс өмнө шалгана.
+        if (managerNameMissing(role, full_name, email))
+            return NextResponse.json({ error: MANAGER_NAME_REQUIRED }, { status: 400 });
         if (!await isAssignableRole(supabase, role))
             return NextResponse.json({ error: 'Сонгосон дүр олдсонгүй' }, { status: 400 });
         const shop = await resolveTargetShop(supabase, parsed.data.shop_id);
@@ -88,7 +93,7 @@ export async function POST(request: NextRequest) {
         const actionLink = callbackLink.toString();
         if (createdUserId && invitedUserId !== createdUserId) throw new Error('Урих холбоосын хэрэглэгч шинэ бүртгэлтэй таарахгүй байна');
         const provisioningError = await provisionUserAccess(supabase, {
-            actorId: userId, userId: invitedUserId, email, fullName: full_name, role, shopId: shop.id, isNew: createdUserId === invitedUserId,
+            actorId: userId, userId: invitedUserId, email, fullName: full_name, phone, role, shopId: shop.id, isNew: createdUserId === invitedUserId,
         });
         // Холболтын алдааг helper буцаана. Дараах имэйл/audit алдаа олгосон эрхийг устгахгүй.
         createdUserId = undefined;

@@ -19,8 +19,8 @@ it('adds the staff phone column with an 8-digit check idempotently when it is mi
         expect((await db.query(`SELECT count(*)::int AS n FROM pg_constraint WHERE conname = 'user_profiles_phone_format'`)).rows)
             .toEqual([{ n: 1 }]);
         expect((await db.query('SELECT full_name, phone FROM user_profiles')).rows).toEqual([{ full_name: 'Бат', phone: null }]);
-        await db.query('UPDATE user_profiles SET phone = $1 WHERE id = $2', ['88883375', userA]);
-        for (const invalid of ['8888337', '888833750', '+97688883375', '8888 3375', '']) {
+        await db.query('UPDATE user_profiles SET phone = $1 WHERE id = $2', ['99112233', userA]);
+        for (const invalid of ['9911223', '991122330', '+97699112233', '9911 2233', '']) {
             await expect(db.query('UPDATE user_profiles SET phone = $1 WHERE id = $2', [invalid, userA]))
                 .rejects.toMatchObject({ code: '23514' });
         }
