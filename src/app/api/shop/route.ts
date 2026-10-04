@@ -12,12 +12,7 @@ const optionalExpiry = z.number().nonnegative().max(315360000).nullable().option
 const ShopPatchSchema = z.object({
   name: z.string().trim().min(1).max(200).optional(), owner_name: optionalText, phone: optionalText,
   bank_name: optionalText, account_number: optionalText, account_name: optionalText,
-  description: optionalText, ai_emotion: optionalText, ai_instructions: optionalText,
   custom_knowledge: z.record(z.string(), z.string()).optional(),
-  is_ai_active: z.boolean().optional(),
-  notify_on_lead: z.boolean().optional(), notify_on_viewing: z.boolean().optional(),
-  notify_on_contact: z.boolean().optional(), notify_on_support: z.boolean().optional(),
-  notify_on_cancel: z.boolean().optional(),
   facebook_page_id: optionalText, facebook_page_name: optionalText, facebook_page_username: optionalText,
   facebook_page_access_token: optionalText, facebook_ad_account_id: optionalText,
   facebook_token_expires_at: optionalText, facebook_token_expires_in: optionalExpiry,
@@ -28,10 +23,8 @@ const ShopPatchSchema = z.object({
   instagram_token_expires_in: optionalExpiry,
 }).strict();
 
-const AI_FIELDS = new Set([
-  'description', 'ai_emotion', 'ai_instructions', 'custom_knowledge', 'is_ai_active',
-  'notify_on_lead', 'notify_on_viewing', 'notify_on_contact', 'notify_on_support', 'notify_on_cancel',
-]);
+/** Dashboard AI туслахын байгууллагын мэдлэг (ai-settings эрх). */
+const AI_FIELDS = new Set(['custom_knowledge']);
 
 const COMMON_FIELDS = new Set(['id', 'name', 'owner_name', 'phone', 'is_active', 'setup_completed', 'created_at']);
 const SETTINGS_FIELDS = new Set(['bank_name', 'account_number', 'account_name']);
@@ -40,7 +33,7 @@ function publicShop(shop: Record<string, unknown> | null, modules: Iterable<stri
   return shop && Object.fromEntries(Object.entries(shop).filter(([key]) => {
     if (key.endsWith('_access_token')) return false;
     if (COMMON_FIELDS.has(key)) return true;
-    if (AI_FIELDS.has(key) || ['ai_total_conversations', 'ai_total_messages', 'ai_conversion_rate'].includes(key)) return allowed.has('ai-settings');
+    if (AI_FIELDS.has(key)) return allowed.has('ai-settings');
     if (key.startsWith('facebook_') || key.startsWith('instagram_')) return allowed.has('marketing-roi');
     return SETTINGS_FIELDS.has(key) && allowed.has('settings');
   }));

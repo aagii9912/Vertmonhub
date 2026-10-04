@@ -1,16 +1,13 @@
 'use client';
-import { Smile, Briefcase, Leaf, Gamepad2 } from 'lucide-react';
 
 import { useState, useEffect } from 'react';
-import { Bot, HelpCircle, BookOpen, Bell, Upload, Database, X, Save, Zap, Plus, Trash2, Edit2, Check, MessageSquareHeart, Building2, FileText, BellRing } from 'lucide-react';
+import { HelpCircle, BookOpen, Upload, Database, X, Save, Plus, Trash2, Edit2, Check } from 'lucide-react';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Card, CardContent } from '@/components/ui/Card';
 import { SectionCard } from '@/components/ui/SectionCard';
-import { SettingRow } from '@/components/ui/SettingRow';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
-import { Switch } from '@/components/ui/Switch';
 import { Alert, AlertTitle, AlertDescription } from '@/components/ui/Alert';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
@@ -21,8 +18,7 @@ import { dashboardFetch } from '@/lib/api/dashboardFetch';
 // ============================================
 // TYPES
 // ============================================
-type Tab = 'general' | 'knowledge' | 'faq' | 'notifications' | 'import';
-type AiEmotion = 'friendly' | 'professional' | 'enthusiastic' | 'calm' | 'playful';
+type Tab = 'knowledge' | 'faq' | 'import';
 
 interface FAQ {
     id: string;
@@ -33,33 +29,14 @@ interface FAQ {
     usage_count: number;
 }
 
-const emotionOptions: Array<{ value: AiEmotion; label: string; emoji: string; example: string }> = [
-    { value: 'friendly', label: 'Найрсаг', emoji: 'smile', example: 'Сайн байна уу! 😊 Mandala Garden-ий талаар мэдээлэл хэрэгтэй юу? Би танд туслахдаа баяртай!' },
-    { value: 'professional', label: 'Мэргэжлийн', emoji: 'briefcase', example: 'Сайн байна уу. Vertmon Hub-д тавтай морил. Ямар байрны мэдээлэл хэрэгтэй байна вэ?' },
-    { value: 'enthusiastic', label: 'Урам зоригтой', emoji: 'zap', example: 'Сайн уу!! 🎉 Та үнэхээр зөв газар ирлээ! Mandala Garden — хотын төв дээрх шилдэг сонголт!' },
-    { value: 'calm', label: 'Тайван', emoji: 'leaf', example: 'Сайн байна уу. Та тайван сонголтоо хийгээрэй. Асуух зүйл байвал би энд байна.' },
-    { value: 'playful', label: 'Тоглоомтой', emoji: 'gamepad', example: 'Хөөх, сайн уу! 🏠 Шинэ байр хайж байна гэж үү? Гоё юмнууд их байгаа шүү!' },
-];
-
 // ============================================
 // MAIN PAGE
 // ============================================
 export default function AISettingsPage() {
-    const [activeTab, setActiveTab] = useState<Tab>('general');
+    const [activeTab, setActiveTab] = useState<Tab>('knowledge');
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [canImport, setCanImport] = useState(false);
-
-    // General
-    const [isAiActive, setIsAiActive] = useState(true);
-    const [aiEmotion, setAiEmotion] = useState<AiEmotion>('friendly');
-    const [shopDescription, setShopDescription] = useState('');
-    const [aiInstructions, setAiInstructions] = useState('');
-
-    // Notifications
-    const [notifyOnContact, setNotifyOnContact] = useState(true);
-    const [notifyOnSupport, setNotifyOnSupport] = useState(true);
-    const [notifyOnCancel, setNotifyOnCancel] = useState(true);
 
     // Knowledge
     const [customKnowledge, setCustomKnowledge] = useState<Array<{ key: string; value: string }>>([]);
@@ -78,17 +55,8 @@ export default function AISettingsPage() {
         try {
             const shopRes = await dashboardFetch('/api/shop');
             const shopData = await shopRes.json();
-            if (shopData.shop) {
-                setShopDescription(shopData.shop.description || '');
-                setAiInstructions(shopData.shop.ai_instructions || '');
-                setAiEmotion(shopData.shop.ai_emotion || 'friendly');
-                setNotifyOnContact(shopData.shop.notify_on_contact ?? true);
-                setNotifyOnSupport(shopData.shop.notify_on_support ?? true);
-                setNotifyOnCancel(shopData.shop.notify_on_cancel ?? true);
-                setIsAiActive(shopData.shop.is_ai_active ?? true);
-                if (shopData.shop.custom_knowledge) {
-                    setCustomKnowledge(Object.entries(shopData.shop.custom_knowledge).map(([key, value]) => ({ key, value: String(value) })));
-                }
+            if (shopData.shop?.custom_knowledge) {
+                setCustomKnowledge(Object.entries(shopData.shop.custom_knowledge).map(([key, value]) => ({ key, value: String(value) })));
             }
             const aiRes = await dashboardFetch('/api/ai-settings');
             if (aiRes.ok) {
@@ -110,31 +78,10 @@ export default function AISettingsPage() {
         finally { setLoading(false); }
     }
 
-    async function handleSaveGeneral() {
-        setSaving(true);
-        try {
-            const res = await dashboardFetch('/api/shop', {
-                method: 'PATCH',
-                body: JSON.stringify({
-                    description: shopDescription, ai_instructions: aiInstructions, ai_emotion: aiEmotion,
-                    notify_on_contact: notifyOnContact, notify_on_support: notifyOnSupport,
-                    notify_on_cancel: notifyOnCancel, is_ai_active: isAiActive,
-                }),
-            });
-            if (!res.ok) throw new Error('Хадгалах алдаа');
-            setSuccess(true);
-            toast.success('Амжилттай хадгалагдлаа');
-            setTimeout(() => setSuccess(false), 3000);
-        } catch (err: any) { setError(err.message); toast.error(err.message); }
-        finally { setSaving(false); }
-    }
-
     // Tab definitions
     const tabs = [
-        { id: 'general' as Tab, label: 'Үндсэн', icon: Bot },
         { id: 'knowledge' as Tab, label: 'AI Мэдээлэл', icon: Database },
         { id: 'faq' as Tab, label: 'FAQ', icon: HelpCircle },
-        { id: 'notifications' as Tab, label: 'Мэдэгдэл', icon: Bell },
         ...(canImport ? [{ id: 'import' as Tab, label: 'Өгөгдөл оруулах', icon: Upload }] : []),
     ];
 
@@ -153,8 +100,11 @@ export default function AISettingsPage() {
         <div className="space-y-6 max-w-5xl">
             <PageHeader
                 title="AI Тохируулга"
-                subtitle="Chatbot-ийн мэдээлэл, зан байдал, FAQ-г удирдах"
+                subtitle="AI туслахын ашиглах байгууллагын мэдээлэл, FAQ"
             />
+
+            {/* AI туслахын session-ийн автомат зөвшөөрлүүд */}
+            <SessionApprovalsReset />
 
             {/* Tabs */}
             <div className="flex gap-2 overflow-x-auto pb-2">
@@ -188,15 +138,6 @@ export default function AISettingsPage() {
             )}
 
             {/* Tab Content */}
-            {activeTab === 'general' && (
-                <GeneralSection
-                    isAiActive={isAiActive} setIsAiActive={setIsAiActive}
-                    aiEmotion={aiEmotion} setAiEmotion={setAiEmotion}
-                    shopDescription={shopDescription} setShopDescription={setShopDescription}
-                    aiInstructions={aiInstructions} setAiInstructions={setAiInstructions}
-                    saving={saving} onSave={handleSaveGeneral}
-                />
-            )}
             {activeTab === 'knowledge' && (
                 <KnowledgeSection
                     customKnowledge={customKnowledge} setCustomKnowledge={setCustomKnowledge}
@@ -206,108 +147,7 @@ export default function AISettingsPage() {
             {activeTab === 'faq' && (
                 <FAQSection faqs={faqs} setFaqs={setFaqs} editingFaq={editingFaq} setEditingFaq={setEditingFaq} setError={setError} />
             )}
-            {activeTab === 'notifications' && (
-                <NotificationsSection
-                    notifyOnContact={notifyOnContact} setNotifyOnContact={setNotifyOnContact}
-                    notifyOnSupport={notifyOnSupport} setNotifyOnSupport={setNotifyOnSupport}
-                    notifyOnCancel={notifyOnCancel} setNotifyOnCancel={setNotifyOnCancel}
-                    saving={saving} onSave={handleSaveGeneral}
-                />
-            )}
             {activeTab === 'import' && canImport && <ImportTab />}
-        </div>
-    );
-}
-
-// ============================================
-// GENERAL SECTION
-// ============================================
-function GeneralSection({ isAiActive, setIsAiActive, aiEmotion, setAiEmotion, shopDescription, setShopDescription, aiInstructions, setAiInstructions, saving, onSave }: {
-    isAiActive: boolean; setIsAiActive: (v: boolean) => void;
-    aiEmotion: AiEmotion; setAiEmotion: (v: AiEmotion) => void;
-    shopDescription: string; setShopDescription: (v: string) => void;
-    aiInstructions: string; setAiInstructions: (v: string) => void;
-    saving: boolean; onSave: () => void;
-}) {
-    return (
-        <div className="space-y-5">
-            {/* AI Toggle */}
-            <Card className={cn('border', isAiActive ? 'border-status-success-soft' : 'border-status-danger-soft bg-status-danger-soft/30')}>
-                <CardContent className="p-5">
-                    <div className="flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-3">
-                            <div className={cn('w-10 h-10 rounded-xl flex items-center justify-center', isAiActive ? 'bg-status-success-soft text-status-success' : 'bg-status-danger-soft text-status-danger')}>
-                                <Zap className="w-5 h-5" />
-                            </div>
-                            <div>
-                                <h3 className="font-semibold text-foreground">AI Chatbot {isAiActive ? 'Идэвхтэй' : 'Унтарсан'}</h3>
-                                <p className="text-sm text-muted-foreground">{isAiActive ? 'Messenger-ээр хэрэглэгчдэд автомат хариу өгч байна' : 'Зөвхөн админ хариу өгнө'}</p>
-                            </div>
-                        </div>
-                        <Switch checked={isAiActive} onCheckedChange={setIsAiActive} aria-label="AI Chatbot идэвхжүүлэх" />
-                    </div>
-                </CardContent>
-            </Card>
-
-            {/* AI Orchestrator-ийн session-ийн автомат зөвшөөрлүүд */}
-            <SessionApprovalsReset />
-
-            {/* AI Emotion */}
-            <SectionCard title="AI Зан байдал" icon={MessageSquareHeart}>
-                <div className="grid grid-cols-5 gap-2 mb-4">
-                    {emotionOptions.map((opt) => (
-                        <button key={opt.value} onClick={() => setAiEmotion(opt.value)}
-                            className={cn(
-                                'p-3 rounded-xl border text-center transition-colors',
-                                'outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
-                                aiEmotion === opt.value ? 'border-brand bg-brand-soft shadow-sm' : 'border-border hover:border-border-strong'
-                            )}>
-                            <div className="text-2xl mb-1"><ToneIcon name={opt.emoji} /></div>
-                            <p className={cn('text-xs font-medium', aiEmotion === opt.value ? 'text-brand-strong' : 'text-muted-foreground')}>{opt.label}</p>
-                        </button>
-                    ))}
-                </div>
-                <div className="bg-surface-2/40 rounded-xl p-4 border border-border/60">
-                    <div className="flex gap-3 items-start">
-                        <div className="w-8 h-8 rounded-full bg-brand-soft text-brand-strong flex items-center justify-center flex-shrink-0">
-                            <Bot className="w-4 h-4" />
-                        </div>
-                        <div>
-                            <p className="text-xs font-medium text-muted-2 mb-1">Жишээ хариулт:</p>
-                            <p className="text-sm text-foreground italic">"{emotionOptions.find(e => e.value === aiEmotion)?.example}"</p>
-                        </div>
-                    </div>
-                </div>
-            </SectionCard>
-
-            {/* Business Description */}
-            <SectionCard title="Төслийн тайлбар" icon={Building2} description="AI энэ мэдээллийг ашиглан төслийн талаар хариулна">
-                <Textarea
-                    value={shopDescription}
-                    onChange={(e) => setShopDescription(e.target.value)}
-                    placeholder="Жишээ: Монкон Констракшн нь 2010 оноос хойш 15+ орон сууцны хороолол барьсан тэргүүлэх барилгын төсөл..."
-                    rows={4}
-                    className="resize-none"
-                />
-            </SectionCard>
-
-            {/* AI Instructions */}
-            <SectionCard title="AI Заавар" icon={FileText} description="AI хэрхэн ярих, яаж хариулахыг заана">
-                <Textarea
-                    value={aiInstructions}
-                    onChange={(e) => setAiInstructions(e.target.value)}
-                    placeholder="Жишээ: Хэрэглэгчтэй монголоор ярих. Байрны үнэ асуухад 1м²-ийн үнийг хэлж, нийт талбайгаар үржүүлж тайлбарлах..."
-                    rows={5}
-                    className="resize-none"
-                />
-            </SectionCard>
-
-            <div className="flex justify-end">
-                <Button onClick={onSave} disabled={saving} className="px-6">
-                    <Save className="w-4 h-4 mr-2" />
-                    {saving ? 'Хадгалж байна...' : 'Хадгалах'}
-                </Button>
-            </div>
         </div>
     );
 }
@@ -357,7 +197,7 @@ function KnowledgeSection({ customKnowledge, setCustomKnowledge, saving, setSavi
             <Alert variant="brand" icon={<Database className="size-5" />}>
                 <AlertTitle>AI Мэдээллийн Сан</AlertTitle>
                 <AlertDescription>
-                    AI chatbot хэрэглэгчдэд хариулахдаа энд оруулсан мэдээллийг ашиглана.
+                    AI туслах хариулахдаа энд оруулсан байгууллагын мэдээллийг ашиглана.
                     Жишээ: утасны дугаар, ажлын цаг, урьдчилгаа гэх мэт.
                 </AlertDescription>
             </Alert>
@@ -478,7 +318,7 @@ function FAQSection({ faqs, setFaqs, editingFaq, setEditingFaq, setError }: {
             <div className="flex justify-between items-center">
                 <div>
                     <h3 className="heading-section text-lg text-foreground">Түгээмэл асуултууд (FAQ)</h3>
-                    <p className="text-sm text-muted-foreground">AI chatbot эдгээр асуулт-хариултуудыг ашиглан хэрэглэгчдэд хариулна</p>
+                    <p className="text-sm text-muted-foreground">AI туслах эдгээр асуулт-хариултыг байгууллагын мэдлэг болгон ашиглана</p>
                 </div>
                 <Button onClick={() => setEditingFaq({ question: '', answer: '', category: 'general' })}>
                     <Plus className="w-4 h-4 mr-2" /> Нэмэх
@@ -546,51 +386,4 @@ function FAQSection({ faqs, setFaqs, editingFaq, setEditingFaq, setError }: {
             )}
         </div>
     );
-}
-
-// ============================================
-// NOTIFICATIONS SECTION
-// ============================================
-function NotificationsSection({ notifyOnContact, setNotifyOnContact, notifyOnSupport, setNotifyOnSupport, notifyOnCancel, setNotifyOnCancel, saving, onSave }: {
-    notifyOnContact: boolean; setNotifyOnContact: (v: boolean) => void;
-    notifyOnSupport: boolean; setNotifyOnSupport: (v: boolean) => void;
-    notifyOnCancel: boolean; setNotifyOnCancel: (v: boolean) => void;
-    saving: boolean; onSave: () => void;
-}) {
-    const items = [
-        { label: 'Холбогдох хүсэлт', desc: 'Хэрэглэгч утасны дугаар эсвэл имэйл үлдээх үед', value: notifyOnContact, onChange: setNotifyOnContact },
-        { label: 'Тусламж хүсэх', desc: 'Хэрэглэгч борлуулагчтай холбогдохыг хүсэх үед', value: notifyOnSupport, onChange: setNotifyOnSupport },
-        { label: 'Уулзалт цуцлах', desc: 'Хэрэглэгч товлосон уулзалтаа цуцлах үед', value: notifyOnCancel, onChange: setNotifyOnCancel },
-    ];
-
-    return (
-        <div className="space-y-5">
-            <SectionCard title="Мэдэгдлийн тохиргоо" icon={BellRing} description="AI ямар тохиолдолд танд мэдэгдэл илгээхийг тохируулна">
-                <div className="space-y-3">
-                    {items.map((item) => (
-                        <SettingRow
-                            key={item.label}
-                            label={item.label}
-                            description={item.desc}
-                            control={
-                                <Switch checked={item.value} onCheckedChange={item.onChange} aria-label={item.label} />
-                            }
-                        />
-                    ))}
-                </div>
-                <div className="flex justify-end mt-5">
-                    <Button onClick={onSave} disabled={saving}>
-                        <Save className="w-4 h-4 mr-2" /> {saving ? 'Хадгалж байна...' : 'Хадгалах'}
-                    </Button>
-                </div>
-            </SectionCard>
-        </div>
-    );
-}
-
-
-/** v2: зан байдлын сонголт — emoji-гүй, lucide дүрс. */
-function ToneIcon({ name }: { name: string }) {
-    const Icon = { smile: Smile, briefcase: Briefcase, zap: Zap, leaf: Leaf, gamepad: Gamepad2 }[name] ?? Smile;
-    return <Icon className="mx-auto h-5 w-5 text-brand" strokeWidth={1.75} />;
 }

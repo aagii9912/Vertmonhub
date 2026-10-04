@@ -174,14 +174,14 @@ describe('security expectations: current routes must reject these calls', () => 
 
 const params = { params: Promise.resolve({ id: 'fixture-id' }) };
 const moduleCases: [string, () => Promise<Response>][] = [
-    ['AI settings read', () => aiSettings.GET(request('/api/ai-settings'))],
+    ['AI settings read', () => aiSettings.GET()],
     ['AI settings update', () => aiSettings.PATCH(request('/api/ai-settings', 'PATCH', {}))],
     ['property read', () => propertyDetail.GET(request('/api/properties/fixture-id'), params)],
     ['property update', () => propertyDetail.PATCH(request('/api/properties/fixture-id', 'PATCH', {}), params)],
     ['property delete', () => propertyDetail.DELETE(request('/api/properties/fixture-id', 'DELETE'), params)],
     ['shop read', () => shop.GET()],
     ['shop creation', () => shop.POST(request('/api/shop', 'POST', {}))],
-    ['shop AI edit', () => shop.PATCH(request('/api/shop', 'PATCH', { ai_instructions: 'fixture' }))],
+    ['shop AI edit', () => shop.PATCH(request('/api/shop', 'PATCH', { custom_knowledge: { fixture: 'text' } }))],
     ['shop creation alternative', () => userShops.POST(request('/api/user/shops', 'POST', {}))],
     ['social disconnect', () => disconnect.POST(request('/api/shop/disconnect', 'POST', { platform: 'facebook' }))],
     ['property attachments', () => attachments.GET(request('/api/dashboard/ai-attachments?entity_type=property&entity_id=fixture-id'))],
@@ -252,7 +252,7 @@ describe('allowed operations, field permissions and tenant boundaries', () => {
     });
     it('mixed shop edits require permission for every touched module', async () => {
         asRole('marketing');
-        const response = await shop.PATCH(request('/api/shop', 'PATCH', { ai_instructions: 'Fixture', bank_name: 'Unauthorized bank change' }));
+        const response = await shop.PATCH(request('/api/shop', 'PATCH', { custom_knowledge: { fixture: 'Text' }, bank_name: 'Unauthorized bank change' }));
         expect(response.status).toBe(403);
         expect(state.mutations).toEqual([]);
     });
@@ -265,18 +265,18 @@ describe('allowed operations, field permissions and tenant boundaries', () => {
     it('authorized AI shop edits preserve member scope and hide stored tokens', async () => {
         asRole('marketing');
         state.rows.shops = { id: 'fixture-shop', facebook_page_access_token: 'secret', instagram_access_token: 'secret', facebook_user_access_token: 'secret', meta_ads_user_access_token: 'secret', name: 'Fixture' };
-        const response = await shop.PATCH(request('/api/shop', 'PATCH', { custom_knowledge: { fixture: 'Text' }, is_ai_active: true, notify_on_cancel: false }));
+        const response = await shop.PATCH(request('/api/shop', 'PATCH', { custom_knowledge: { fixture: 'Text' } }));
         expect(response.status).toBe(200);
         expect((await response.json()).shop).toEqual({ id: 'fixture-shop', name: 'Fixture' });
         expect(state.filters).toContainEqual({ table: 'shops', column: 'id', value: 'fixture-shop' });
-        expect(state.writes).toContainEqual({ table: 'shops', data: { custom_knowledge: { fixture: 'Text' }, is_ai_active: true, notify_on_cancel: false } });
+        expect(state.writes).toContainEqual({ table: 'shops', data: { custom_knowledge: { fixture: 'Text' } } });
         expect((await (await shop.GET()).json()).shop).not.toHaveProperty('facebook_page_access_token');
     });
     it('shop update rejects ownership fields and revoked membership', async () => {
         asRole('marketing');
         expect((await shop.PATCH(request('/api/shop', 'PATCH', { user_id: 'other-user' }))).status).toBe(400);
         state.shopAccess = false;
-        expect((await shop.PATCH(request('/api/shop', 'PATCH', { ai_instructions: 'Fixture' }))).status).toBe(404);
+        expect((await shop.PATCH(request('/api/shop', 'PATCH', { custom_knowledge: { fixture: 'Text' } }))).status).toBe(404);
         expect(state.mutations).toEqual([]);
     });
     it('marketing contract rejects a channel from another tenant', async () => {
