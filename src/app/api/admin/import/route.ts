@@ -968,13 +968,20 @@ async function importContracts(
     const errors: string[] = [];
     const notes: string[] = [];
     const fresh: Array<Record<string, unknown>> = [];
-    const toUpdate: Array<{ id: string; contract_number: string; fields: Record<string, unknown>; paidAmount?: number | null }> = [];
+    const toUpdate: Array<{
+        id: string;
+        contract_number: string;
+        rowNumber: number;
+        fields: Record<string, unknown>;
+        paidAmount?: number | null;
+        /** Уншсан эзэмшигч — UPDATE зөвхөн хооронд нь солигдоогүй үед (optimistic). */
+        holder?: Record<string, unknown>;
+    }> = [];
     const seen = new Set<string>();
 
-    const [existingByNumber, hasNotes, transferred] = await Promise.all([
+    const [existingByNumber, hasNotes] = await Promise.all([
         loadImportRecords(supabase, 'property_contracts', 'contract_number', ctx.shopId),
         columnExists(supabase, 'property_contracts', 'notes'),
-        loadTransferredContractIds(supabase, ctx.shopId),
     ]);
 
     for (let i = 0; i < rows.length; i++) {
@@ -996,13 +1003,7 @@ async function importContracts(
             const fields = pickFields(data as unknown as Record<string, unknown>, provided,
                 ['contract_number', 'prepayment_paid', 'paid_amount', 'balance']);
             if (!hasNotes) delete fields.notes;
-            // Шилжүүлсэн/нэр зассан гэрээний эзэмшигчийг хуучин файлаар буцааж дарахгүй
-            // (эзэмшигч зөвхөн transfer_contract-аар, түүхтэй солигдоно).
-            if (transferred.has(match.record.id) && CONTRACT_HOLDER_FIELDS.some(key => key in fields)) {
-                for (const key of CONTRACT_HOLDER_FIELDS) delete fields[key];
-                notes.push(`Мөр ${i + 2}: "${data.contract_number}" — шилжүүлсэн гэрээний эзэмшигчийг импортоор өөрчлөхгүй`);
-            }
-            toUpdate.push({ id: match.record.id, contract_number: data.contract_number, fields });
+            toUpdate.push({ id: match.record.id, contract_number: data.contract_number, rowNumber: i + 2, fields });
         } else {
             // Active contract numbers are unique across a shop, including other projects.
             if (existing.length) {
@@ -1022,27 +1023,40 @@ async function importContracts(
     // Resolve every paid total before any insert/write; failed reads cannot become a zero balance input.
     if (toUpdate.length > 0) {
         const paidById = new Map<string, number | null>();
+        const holderById = new Map<string, Record<string, unknown>>();
         for (let i = 0; i < toUpdate.length; i += 200) {
             const ids = toUpdate.slice(i, i + 200).map(u => u.id);
             let query = supabase
                 .from('property_contracts')
-                .select('id, paid_amount')
+                .select(`id, paid_amount, ${CONTRACT_HOLDER_FIELDS.join(', ')}`)
                 .eq('shop_id', ctx.shopId)
                 .is('deleted_at', null)
                 .in('id', ids);
             query = ctx.projectId ? query.eq('project_id', ctx.projectId) : query.is('project_id', null);
             const { data, error } = await query;
             if (error) throw new Error(`Төлсөн дүн уншихад алдаа: ${errMessage(error)}`);
-            for (const r of data || []) {
+            for (const r of (data || []) as unknown as Array<Record<string, unknown> & { id: string; paid_amount: number | null }>) {
                 if (r.paid_amount !== null && (!Number.isFinite(Number(r.paid_amount)) || Number(r.paid_amount) < 0))
                     return { success: false, message: 'Гэрээний төлсөн дүн буруу байна', errors };
                 paidById.set(r.id, r.paid_amount === null ? null : Number(r.paid_amount));
+                holderById.set(r.id, Object.fromEntries(CONTRACT_HOLDER_FIELDS.map(key => [key, r[key] ?? null])));
             }
         }
+        // Шилжүүлсэн/нэр зассан гэрээний эзэмшигчийг хуучин файлаар буцааж дарахгүй (эзэмшигч зөвхөн
+        // transfer_contract-аар, түүхтэй солигдоно). Түүхийг эзэмшигч уншсаны ДАРАА шалгана: өмнө нь
+        // бүртгэгдсэн шилжүүлэг энд харагдана, дараа нь бүртгэгдвэл UPDATE-ийн эзэмшигчийн нөхцөл татгалзана.
+        const transferred = await loadTransferredContractIds(supabase, ctx.shopId);
         for (const u of toUpdate) {
             if (!paidById.has(u.id)) return { success: false, message: 'Гэрээ эсвэл төслийн харьяалал өөрчлөгдсөн. Дахин импортлоно уу', errors };
             u.paidAmount = paidById.get(u.id)!;
             u.fields.balance = Math.max(0, (u.fields.total_price as number) - (u.paidAmount ?? 0));
+            if (!CONTRACT_HOLDER_FIELDS.some(key => key in u.fields)) continue;
+            if (transferred.has(u.id)) {
+                for (const key of CONTRACT_HOLDER_FIELDS) delete u.fields[key];
+                notes.push(`Мөр ${u.rowNumber}: "${u.contract_number}" — шилжүүлсэн гэрээний эзэмшигчийг импортоор өөрчлөхгүй`);
+            } else {
+                u.holder = holderById.get(u.id);
+            }
         }
     }
 
@@ -1054,7 +1068,7 @@ async function importContracts(
     }
 
     let updated = 0;
-    await runChunked(toUpdate, 20, async ({ id, contract_number, fields, paidAmount }) => {
+    await runChunked(toUpdate, 20, async ({ id, contract_number, fields, paidAmount, holder }) => {
         let query = supabase
             .from('property_contracts')
             .update(fields)
@@ -1065,11 +1079,13 @@ async function importContracts(
         query = ctx.projectId ? query.eq('project_id', ctx.projectId) : query.is('project_id', null);
         // A concurrent receipt must win; retry rather than overwrite its freshly computed balance.
         query = paidAmount === null ? query.is('paid_amount', null) : query.eq('paid_amount', paidAmount);
+        // A concurrent holder transfer must win too: write holder columns only over the holder that was read.
+        for (const [key, value] of Object.entries(holder ?? {})) query = value === null ? query.is(key, null) : query.eq(key, value);
         const { data, error } = await query.select('id');
         if (error) {
             errors.push(`"${contract_number}": шинэчлэхэд алдаа — ${errMessage(error)}`);
         } else if (data?.length !== 1) {
-            errors.push(`"${contract_number}": гэрээ эсвэл төлбөр өөрчлөгдсөн. Дахин импортлоно уу`);
+            errors.push(`"${contract_number}": гэрээ, эзэмшигч эсвэл төлбөр өөрчлөгдсөн. Дахин импортлоно уу`);
         } else {
             updated++;
         }

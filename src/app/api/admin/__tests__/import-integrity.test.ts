@@ -40,7 +40,7 @@ const db = {
         const run = () => {
             if (state.missingProjectColumn && ['properties', 'property_contracts'].includes(table) && fields.includes('project_id'))
                 return { data: null, error: { code: '42703', message: 'column project_id does not exist' } };
-            if (state.failPaidRead && table === 'property_contracts' && fields === 'id, paid_amount')
+            if (state.failPaidRead && table === 'property_contracts' && fields.startsWith('id, paid_amount'))
                 return { data: null, error: { message: 'paid total lookup failed' } };
             if (inserts) {
                 if (state.failProjectInsert && inserts.some((row) => row.project_id))
@@ -201,6 +201,23 @@ describe('contract import preserves payment accounting', () => {
         const body = await response.json();
         expect(body.errors).toBeUndefined();
         expect(body.notes).toEqual([expect.stringContaining('шилжүүлсэн гэрээний эзэмшигчийг импортоор өөрчлөхгүй')]);
+    });
+
+    it('never writes the spreadsheet holder over a transfer that commits during the import', async () => {
+        state.rows.property_contracts = [contract({ customer_name: 'Buyer' })];
+        state.beforeUpdate = () => {
+            Object.assign(state.rows.property_contracts[0], { customer_name: 'Шинэ эзэмшигч', customer_registration: 'ЧБ88020202' });
+            state.rows.contract_transfers = [{ id: 'transfer-1', shop_id: shopId, contract_id: 'live' }];
+        };
+        const response = await runImport('contracts', [{ ...contractRow, total_price: 200 }], projectA);
+        expect(response.status).toBe(400);
+        expect(state.rows.property_contracts[0]).toMatchObject({ customer_name: 'Шинэ эзэмшигч', customer_registration: 'ЧБ88020202', total_price: 100 });
+        expect((await response.json()).errors).toEqual([expect.stringContaining('эзэмшигч')]);
+        // Дахин импорт шилжүүлгийг харж, эзэмшигчээс бусдыг шинэчилнэ.
+        const retry = await runImport('contracts', [{ ...contractRow, total_price: 200 }], projectA);
+        expect(retry.status).toBe(200);
+        expect(state.rows.property_contracts[0]).toMatchObject({ customer_name: 'Шинэ эзэмшигч', customer_registration: 'ЧБ88020202', total_price: 200 });
+        expect((await retry.json()).notes).toEqual([expect.stringContaining('шилжүүлсэн гэрээний эзэмшигчийг импортоор өөрчлөхгүй')]);
     });
 
     it('preserves a concurrent receipt and rejects stale balance updates', async () => {
