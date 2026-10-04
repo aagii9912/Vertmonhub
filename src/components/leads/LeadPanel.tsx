@@ -9,6 +9,7 @@ import { formatMNT } from '@/lib/utils/currency';
 import { formatShortDate, formatTime, formatRelativeDays } from '@/lib/utils/date';
 import { useLeadDetail, useUpdateLead, useAddLeadActivity, useLeadProjects, useManagers } from '@/hooks/useLeads';
 import { INTEREST_CHIPS, ACTIVITY_LABEL, sourceLabel, interestLabel } from '@/lib/leads/labels';
+import { propertyStatusLabel, propertyStatusTone } from '@/lib/inventory/labels';
 import { Pill, Skeleton, GhostButton } from '@/components/dashboard/v2/primitives';
 import { StatusPicker, ManagerPicker } from './pickers';
 import { useRegisterAiContext } from '@/lib/ai/context';
@@ -258,8 +259,8 @@ export function LeadPanel({
                                     {data.property.rooms && <span className="text-[12px] text-fg-2">{data.property.rooms} өрөө</span>}
                                     {data.property.size_sqm && <span className="mono-label text-[12px] text-fg-2">{data.property.size_sqm} м²</span>}
                                     <span className="num ml-auto text-[12.5px] text-foreground">{data.property.price ? formatMNT(data.property.price) : ''}</span>
-                                    <Pill tone={data.property.status === 'available' ? 'success' : data.property.status === 'reserved' ? 'pending' : 'neutral'}>
-                                        {data.property.status === 'available' ? 'Боломжтой' : data.property.status === 'reserved' ? 'Захиалагдсан' : data.property.status === 'sold' ? 'Зарагдсан' : data.property.status || '—'}
+                                    <Pill tone={propertyStatusTone(data.property.status)}>
+                                        {propertyStatusLabel(data.property.status)}
                                     </Pill>
                                 </Link>
                             )}

@@ -23,18 +23,8 @@ import { PropertyTags } from '@/components/dashboard/PropertyTags';
 import { EntityAttachments } from '@/components/dashboard/EntityAttachments';
 import { MortgageCalculator } from '@/components/dashboard/MortgageCalculator';
 import { VirtualTour } from '@/components/dashboard/VirtualTour';
-import type { Property, PropertyStatus, PropertyType } from '@/types/property';
-
-const statusLabels: Record<PropertyStatus, string> = {
-    available: 'Чөлөөтэй', reserved: 'Захиалсан', sold: 'Зарагдсан', rented: 'Түрээслэсэн', barter: 'Бартер',
-};
-const statusVariants: Record<PropertyStatus, 'success' | 'pending' | 'neutral' | 'info'> = {
-    available: 'success', reserved: 'pending',
-    sold: 'neutral', rented: 'info', barter: 'pending',
-};
-const typeLabels: Record<PropertyType, string> = {
-    apartment: 'Орон сууц', house: 'Хувийн байшин', office: 'Оффис', land: 'Газар', commercial: 'Худалдааны',
-};
+import type { Property } from '@/types/property';
+import { propertyStatusLabel, propertyStatusTone, propertyTypeLabel } from '@/lib/inventory/labels';
 
 export default function PropertyDetailPage() {
     const params = useParams();
@@ -82,8 +72,8 @@ export default function PropertyDetailPage() {
                 title={property.name}
                 subtitle={property.district ? `${property.district}, ${property.city}` : undefined}
                 secondaryActions={
-                    <StatusPill variant={statusVariants[property.status]} dot>
-                        {statusLabels[property.status]}
+                    <StatusPill variant={propertyStatusTone(property.status)} dot>
+                        {propertyStatusLabel(property.status)}
                     </StatusPill>
                 }
                 primaryAction={
@@ -205,11 +195,11 @@ export default function PropertyDetailPage() {
                                 <div className="grid grid-cols-2 gap-3 text-sm">
                                     <div className="flex justify-between py-2 border-b border-border/60">
                                         <span className="text-muted-foreground">Төрөл</span>
-                                        <span className="font-medium text-foreground">{typeLabels[property.type]}</span>
+                                        <span className="font-medium text-foreground">{propertyTypeLabel(property.type)}</span>
                                     </div>
                                     <div className="flex justify-between py-2 border-b border-border/60">
                                         <span className="text-muted-foreground">Статус</span>
-                                        <span className="font-medium text-foreground">{statusLabels[property.status]}</span>
+                                        <span className="font-medium text-foreground">{propertyStatusLabel(property.status)}</span>
                                     </div>
                                     {property.bedrooms && (
                                         <div className="flex justify-between py-2 border-b border-border/60">

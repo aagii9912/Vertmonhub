@@ -5,29 +5,13 @@ import { sendPushNotification } from '@/lib/notifications';
 import { sendWeeklyReportEmail } from '@/lib/email/email';
 import { logger } from '@/lib/utils/logger';
 import { ubDateStr } from '@/lib/utils/date';
+import { sourceLabel } from '@/lib/leads/labels';
 
 /**
  * Долоо хоногийн автомат тайлан. Даваа гараг бүр (vercel.json cron) төсөл бүрийн
  * өнгөрсөн 7 хоногийн лийд, уулзалт, гэрээний нэгтгэлийг push-аар мэдэгдэж,
  * DIGEST_EMAIL тохируулсан бол Resend имэйлээр илгээнэ. CRON_SECRET-ээр хамгаалагдсан.
  */
-
-const SOURCE_LABELS: Record<string, string> = {
-    messenger: 'Messenger',
-    facebook: 'Facebook',
-    instagram: 'Instagram',
-    website: 'Вэбсайт',
-    referral: 'Зөвлөмж',
-    phone: 'Утас',
-    facebook_ads: 'Facebook Ads',
-    google_ads: 'Google Ads',
-    tv: 'ТВ',
-    radio: 'Радио',
-    meeting: 'Уулзалт',
-    event: 'Өдөрлөг',
-    board: 'Билборд / Самбар',
-    other: 'Бусад',
-};
 
 async function run(request: Request) {
     if (!isAuthorizedCron(request)) {
@@ -79,7 +63,7 @@ async function run(request: Request) {
                     bySource.set(src, (bySource.get(src) || 0) + 1);
                 }
                 const topSources = Array.from(bySource.entries())
-                    .map(([source, count]) => ({ source: SOURCE_LABELS[source] || source, count }))
+                    .map(([source, count]) => ({ source: sourceLabel(source), count }))
                     .sort((a, b) => b.count - a.count)
                     .slice(0, 5);
 

@@ -17,7 +17,8 @@ import { applyLeadScope, assertProjectManager, canAccessProject, UNRESTRICTED_SA
 import { z } from 'zod';
 import { canReadPrivateAttachment, isLegacyPublicAttachmentUrl, parsePrivateAttachmentUrl } from '@/lib/ai/private-attachments';
 import { logLeadActivity } from '@/lib/leads/activities';
-import { statusLabel } from '@/lib/leads/labels';
+import { STATUS_META, statusLabel } from '@/lib/leads/labels';
+import type { LeadStatus } from '@/types/property';
 
 /** Timeline-д «хэн өөрчилсөн»-ийг тэмдэглэх (UI-ийн PATCH /leads/[id]-тэй ижил). */
 export interface LeadActor { userId?: string | null; userName?: string | null }
@@ -1655,18 +1656,7 @@ export function generateChartConfig(toolName: string, args: any, data: any): any
             if (Array.isArray(data) && data.length > 0) {
                 const statusCounts: Record<string, number> = {};
                 data.forEach((l: any) => { statusCounts[l.status] = (statusCounts[l.status] || 0) + 1; });
-                const statusLabels: Record<string, string> = { new: 'Шинэ', contacted: 'Холбогдсон', viewing_scheduled: 'Уулзалт', offered: 'Санал', negotiating: 'Хэлэлцээр', closed_won: 'Амжилттай', closed_lost: 'Алдсан' };
-                return { type: 'bar', data: Object.entries(statusCounts).map(([status, count]) => ({ name: statusLabels[status] || status, value: count })) };
-            }
-            return null;
-        case 'list_orders':
-            if (Array.isArray(data) && data.length > 0) {
-                return { type: 'bar', data: data.slice(0, 8).map((o: any) => ({ name: o.customerName?.substring(0, 10) || o.id, value: Number(o.amount) || 0 })) };
-            }
-            return null;
-        case 'get_product_stats':
-            if (Array.isArray(data) && data.length > 0) {
-                return { type: 'bar', data: data.slice(0, 8).map((p: any) => ({ name: p.name?.substring(0, 15) || 'Бүтээгдэхүүн', value: args.type === 'low_stock' ? (p.stock || 0) : (p.price || 0) })) };
+                return { type: 'bar', data: Object.entries(statusCounts).map(([status, count]) => ({ name: STATUS_META[status as LeadStatus]?.short ?? status, value: count })) };
             }
             return null;
         default: return null;

@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import type { InventoryImportPreview } from '@/lib/admin/import/units-import';
+import { unitCategoryLabel, unitStatusLabel } from '@/lib/inventory/labels';
 import {
     Upload, Building2, MessageSquare, CheckCircle2, AlertCircle,
     Download, Loader2, Users, FileText, CreditCard, MapPin,
@@ -249,9 +250,6 @@ interface ImportResult {
     message: string;
     preview?: InventoryImportPreview;
 }
-
-const UNIT_CATEGORY_LABELS: Record<string, string> = { residential: 'Орон сууц', parking: 'Зогсоол', industry: 'Агуулах', commercial: 'Үйлчилгээ' };
-const UNIT_STATUS_LABELS: Record<string, string> = { available: 'Чөлөөтэй', reserved: 'Хадгалсан', ordered: 'Захиалсан', sold: 'Зарагдсан', handed_over: 'Хүлээлгэсэн' };
 
 interface AdminProject {
     id: string;
@@ -630,8 +628,8 @@ export default function AdminImportPage() {
                         <ul className="space-y-2 text-sm max-h-64 overflow-y-auto">
                             {inventoryPreview.groups.map(group => (
                                 <li key={JSON.stringify([group.phase, group.block, group.category])}>
-                                    <span className="font-medium">{group.phase} / {group.block} / {UNIT_CATEGORY_LABELS[group.category] || group.category}: {group.total}</span>
-                                    <p className="text-xs text-muted-foreground">Файлын төлөв: {Object.entries(group.statuses).map(([status, count]) => `${UNIT_STATUS_LABELS[status] || status} ${count}`).join(' · ')}</p>
+                                    <span className="font-medium">{group.phase} / {group.block} / {unitCategoryLabel(group.category)}: {group.total}</span>
+                                    <p className="text-xs text-muted-foreground">Файлын төлөв: {Object.entries(group.statuses).map(([status, count]) => `${unitStatusLabel(status)} ${count}`).join(' · ')}</p>
                                 </li>
                             ))}
                         </ul>

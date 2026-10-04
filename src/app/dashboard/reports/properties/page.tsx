@@ -15,11 +15,11 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Building2, Download, CheckCircle2, Layers, Home } from 'lucide-react';
 import { dashboardFetch, dashboardJson } from '@/lib/api/dashboardFetch';
 import { ubDateStr } from '@/lib/utils/date';
+import { unitCategoryLabel } from '@/lib/inventory/labels';
 
 interface Stats { total: number; available: number; sold: number; reserved: number; totalArea: number; }
 interface GroupRow { key: string; total: number; available: number; sold: number; }
 
-const CAT_LABEL: Record<string, string> = { residential: 'Орон сууц', parking: 'Зогсоол', industry: 'Агуулах', commercial: 'Үйлчилгээ' };
 
 export default function PropertiesReportPage() {
     const { shop, loading: authLoading } = useAuth();
@@ -42,7 +42,7 @@ export default function PropertiesReportPage() {
             stats.totalArea += Number(row.total_area) || 0;
             for (const [map, key] of [
                 [phaseMap, String(row.phase || '—')],
-                [catMap, CAT_LABEL[String(row.category)] || String(row.category || '—')],
+                [catMap, unitCategoryLabel(row.category == null ? null : String(row.category))],
             ] as const) {
                 const group = map.get(key) || { key, total: 0, available: 0, sold: 0 };
                 group.total += total; group.available += available; group.sold += sold;

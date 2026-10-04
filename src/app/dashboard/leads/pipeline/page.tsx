@@ -46,6 +46,7 @@ import {
 import { cn } from '@/lib/utils';
 import { formatShortDate } from '@/lib/utils/date';
 import { formatMNTShort } from '@/lib/utils/currency';
+import { statusLabel } from '@/lib/leads/labels';
 
 interface Lead {
     id: string;
@@ -65,7 +66,6 @@ interface Lead {
 
 interface Stage {
     key: string;
-    label: string;
     /** толгойн цэгийн өнгө (token) */
     dot: string;
     /** баганын дэвсгэр + хүрээ (token) */
@@ -77,13 +77,13 @@ interface Stage {
 }
 
 const PIPELINE_STAGES: Stage[] = [
-    { key: 'new', label: 'Шинэ', dot: 'bg-status-info', bg: 'bg-surface-2/50 border-border', probability: 0.1, stalledDays: 3 },
-    { key: 'contacted', label: 'Холбогдсон', dot: 'bg-status-pending', bg: 'bg-surface-2/50 border-border', probability: 0.2, stalledDays: 5 },
-    { key: 'viewing_scheduled', label: 'Уулзалт товлосон', dot: 'bg-brand', bg: 'bg-brand-soft border-brand/30', probability: 0.4, stalledDays: 7 },
-    { key: 'offered', label: 'Санал илгээсэн', dot: 'bg-status-pending', bg: 'bg-surface-2/50 border-border', probability: 0.6, stalledDays: 7 },
-    { key: 'negotiating', label: 'Хэлэлцэж байна', dot: 'bg-status-info', bg: 'bg-surface-2/50 border-border', probability: 0.8, stalledDays: 10 },
-    { key: 'closed_won', label: 'Амжилттай', dot: 'bg-status-success', bg: 'bg-surface-2/50 border-border', probability: 1, stalledDays: 0 },
-    { key: 'closed_lost', label: 'Алдсан', dot: 'bg-status-neutral-soft', bg: 'bg-surface-2/50 border-border', probability: 0, stalledDays: 0 },
+    { key: 'new', dot: 'bg-status-info', bg: 'bg-surface-2/50 border-border', probability: 0.1, stalledDays: 3 },
+    { key: 'contacted', dot: 'bg-status-pending', bg: 'bg-surface-2/50 border-border', probability: 0.2, stalledDays: 5 },
+    { key: 'viewing_scheduled', dot: 'bg-brand', bg: 'bg-brand-soft border-brand/30', probability: 0.4, stalledDays: 7 },
+    { key: 'offered', dot: 'bg-status-pending', bg: 'bg-surface-2/50 border-border', probability: 0.6, stalledDays: 7 },
+    { key: 'negotiating', dot: 'bg-status-info', bg: 'bg-surface-2/50 border-border', probability: 0.8, stalledDays: 10 },
+    { key: 'closed_won', dot: 'bg-status-success', bg: 'bg-surface-2/50 border-border', probability: 1, stalledDays: 0 },
+    { key: 'closed_lost', dot: 'bg-status-neutral-soft', bg: 'bg-surface-2/50 border-border', probability: 0, stalledDays: 0 },
 ];
 
 const STAGE_MAP: Record<string, Stage> = Object.fromEntries(PIPELINE_STAGES.map(s => [s.key, s]));
@@ -294,7 +294,7 @@ function StageColumn({
                 <span className="text-sm font-semibold text-foreground flex items-center gap-1">
                     {stage.key === 'closed_won' && <CheckCircle2 className="w-3.5 h-3.5 text-status-success" />}
                     {stage.key === 'closed_lost' && <XCircle className="w-3.5 h-3.5 text-muted-foreground" />}
-                    {stage.label}
+                    {statusLabel(stage.key)}
                 </span>
                 <span className="text-xs text-muted-foreground/70 ml-auto tabular-nums">{stageLeads.length}</span>
             </div>

@@ -27,22 +27,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Property, PropertyType, PropertyStatus } from '@/types/property';
-
-const TYPE_OPTIONS: Array<{ value: PropertyType; label: string }> = [
-  { value: 'apartment', label: 'Орон сууц' },
-  { value: 'house', label: 'Хувийн байшин' },
-  { value: 'office', label: 'Оффис' },
-  { value: 'land', label: 'Газар' },
-  { value: 'commercial', label: 'Худалдааны' },
-];
-
-const STATUS_OPTIONS: Array<{ value: PropertyStatus; label: string }> = [
-  { value: 'available', label: 'Зарагдаж байна' },
-  { value: 'reserved', label: 'Захиалагдсан' },
-  { value: 'sold', label: 'Зарагдсан' },
-  { value: 'rented', label: 'Түрээслэгдсэн' },
-  { value: 'barter', label: 'Бартер' },
-];
+import { PROPERTY_STATUSES, PROPERTY_STATUS_META, PROPERTY_TYPES, PROPERTY_TYPE_LABEL } from '@/lib/inventory/labels';
 
 const DISTRICT_OPTIONS = [
   'Сүхбаатар',
@@ -256,8 +241,8 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {TYPE_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    {PROPERTY_TYPES.map((value) => (
+                      <SelectItem key={value} value={value}>{PROPERTY_TYPE_LABEL[value]}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -271,8 +256,8 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {STATUS_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    {PROPERTY_STATUSES.map((value) => (
+                      <SelectItem key={value} value={value}>{PROPERTY_STATUS_META[value].label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

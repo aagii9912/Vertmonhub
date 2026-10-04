@@ -47,9 +47,7 @@ export function dataToolsForPerms(perms: AssistantPerms): Anthropic.Tool[] {
         ...(perms.canDelete ? deleteTools : []),
         ...(perms.role === 'super_admin' ? adminTools : []),
     ];
-    // Хуучин e-commerce tool-ууд (list_orders, get_product_stats) — үл хөдлөхөд утгагүй, нуух.
-    const hidden = new Set(['list_orders', 'get_product_stats']);
-    return defs.filter((d) => !hidden.has(d.name) && canUseToolModule(d.name, perms)).map(toClaudeTool);
+    return defs.filter((d) => canUseToolModule(d.name, perms)).map(toClaudeTool);
 }
 
 /** Нэрсийн дэд олонлогоор шүүх (дэд агентад). */

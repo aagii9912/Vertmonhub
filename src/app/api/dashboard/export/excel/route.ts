@@ -7,7 +7,8 @@ import { ubDateStr } from '@/lib/utils/date';
 import { buildWorkbookBuffer, type WorkbookSheetSpec } from '@/lib/utils/xlsx';
 import { getManagerPerformance } from '@/lib/reports/manager-performance';
 import { fetchAllRows } from '@/lib/utils/pagination';
-import { statusLabel } from '@/lib/leads/labels';
+import { sourceLabel, statusLabel } from '@/lib/leads/labels';
+import { UNIT_STATUS_LABEL, unitCategoryLabel } from '@/lib/inventory/labels';
 
 /** Export төрөл бүр өөрийн модулийн унших эрх шаардана (өмнө нь зөвхөн auth). */
 const EXPORT_MODULE: Record<string, string> = {
@@ -41,8 +42,8 @@ export async function GET(request: NextRequest) {
 
         if (type === 'properties') {
             // Export нэгжийн нөөц (property_units) — Мандалын 2544 нэгж (paginate)
-            const CAT: Record<string, string> = { residential: 'Орон сууц', parking: 'Зогсоол', industry: 'Агуулах', commercial: 'Үйлчилгээ' };
-            const STAT: Record<string, string> = { available: 'Худалдаанд', reserved: 'Хадгалсан', ordered: 'Захиалсан', sold: 'Зарагдсан', handed_over: 'Хүлээлгэсэн' };
+            // Файлд «Худалдаанд» — импортын загвартай ижил нэр томьёо (UI-д «Чөлөөтэй»).
+            const STAT: Record<string, string> = { ...UNIT_STATUS_LABEL, available: 'Худалдаанд' };
             const PAGE = 1000;
             const units: Array<Record<string, unknown>> = [];
             for (let from = 0; ; from += PAGE) {
@@ -62,7 +63,7 @@ export async function GET(request: NextRequest) {
                 'Ээлж': u.phase || '-',
                 'Блок': u.block || '-',
                 'Давхар': u.floor || '-',
-                'Ангилал': CAT[String(u.category)] || u.category || '-',
+                'Ангилал': u.category ? unitCategoryLabel(String(u.category)) : '-',
                 'Айлын төрөл': u.unit_type || '-',
                 'Загвар': u.model || '-',
                 'Өрөө': u.rooms || '-',
@@ -88,7 +89,7 @@ export async function GET(request: NextRequest) {
                 'Нэр': lead.customer_name || '-',
                 'Утас': lead.customer_phone || '-',
                 'Имэйл': lead.customer_email || '-',
-                'Эх сурвалж': lead.source || '-',
+                'Эх сурвалж': lead.source ? sourceLabel(lead.source) : '-',
                 'Төлөв': statusLabel(lead.status),
                 'Менежер': lead.sales_manager_name || '-',
                 'Төсөл ID': lead.project_id || '-',

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ACTIVE_STATUSES, sourceLabel } from '@/lib/leads/labels';
+import { unitCategoryLabel } from '@/lib/inventory/labels';
 import { getLeadWorkQueues } from '@/lib/leads/work-queue';
 import { formatMNT } from '@/lib/utils/currency';
 import { ubDateStr, ubMonthRange } from '@/lib/utils/date';
@@ -128,12 +129,11 @@ export function buildOperationsReport(input: {
     const periodContracts = contracts.filter(c => within(c.contract_date));
     let contractValue = 0;
     let missingContractAmounts = 0;
-    const productLabels: Record<string, string> = { residential: 'Орон сууц', parking: 'Зогсоол', industry: 'Агуулах', commercial: 'Үйлчилгээ' };
     const products = new Map<string, { productType: string; label: string; count: number; value: number; missingAmounts: number }>();
     for (const c of periodContracts) {
         const value = amount(c.total_price);
         const productType = c.product_type?.trim() || 'unknown';
-        const product = products.get(productType) || { productType, label: Object.hasOwn(productLabels, productType) ? productLabels[productType] : productType === 'unknown' ? 'Төрөл тодорхойгүй' : productType, count: 0, value: 0, missingAmounts: 0 };
+        const product = products.get(productType) || { productType, label: productType === 'unknown' ? 'Төрөл тодорхойгүй' : unitCategoryLabel(productType), count: 0, value: 0, missingAmounts: 0 };
         product.count++;
         if (value === null) product.missingAmounts++;
         else product.value += value;

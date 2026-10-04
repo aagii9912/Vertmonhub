@@ -25,6 +25,7 @@ import { toast } from '@/components/ui/Toast';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
 import { dashboardFetch, dashboardJson } from '@/lib/api/dashboardFetch';
+import { UNIT_CATEGORIES, UNIT_STATUSES, UNIT_STATUS_LABEL, unitCategoryLabel, type InventoryStatus } from '@/lib/inventory/labels';
 
 interface SummaryRow {
     phase: string;
@@ -61,27 +62,20 @@ interface UnitRow {
     contract_status: string | null;
 }
 
-const CATEGORY_LABEL: Record<string, string> = {
-    residential: 'Орон сууц',
-    parking: 'Зогсоол',
-    industry: 'Агуулах',
-    commercial: 'Үйлчилгээ',
-};
-const CATEGORY_ORDER = ['residential', 'parking', 'industry', 'commercial'];
-
 type DotVariant = 'success' | 'danger' | 'pending' | 'info' | 'active' | 'neutral' | 'brand';
 
-const STATUS_META: Record<string, { label: string; cell: string; dot: DotVariant; variant: 'success' | 'info' | 'warning' | 'default' | 'danger' }> = {
-    available:   { label: 'Чөлөөтэй',   cell: 'bg-status-success-soft border-status-success/40 text-status-success hover:bg-status-success/20', dot: 'success', variant: 'success' },
-    sold:        { label: 'Зарагдсан',  cell: 'bg-surface-3 border-border text-muted-foreground hover:bg-surface-2', dot: 'neutral', variant: 'default' },
-    handed_over: { label: 'Хүлээлгэсэн', cell: 'bg-status-info-soft border-status-info/40 text-status-info hover:bg-status-info/20', dot: 'info', variant: 'info' },
-    reserved:    { label: 'Хадгалсан',  cell: 'bg-status-pending-soft border-status-pending/40 text-status-pending hover:bg-status-pending/20', dot: 'pending', variant: 'warning' },
-    ordered:     { label: 'Захиалсан',  cell: 'bg-status-pending-soft border-status-pending/50 text-status-pending hover:bg-status-pending/20', dot: 'pending', variant: 'warning' },
+const STATUS_STYLE: Record<InventoryStatus, { cell: string; dot: DotVariant; variant: 'success' | 'info' | 'warning' | 'default' | 'danger' }> = {
+    available:   { cell: 'bg-status-success-soft border-status-success/40 text-status-success hover:bg-status-success/20', dot: 'success', variant: 'success' },
+    sold:        { cell: 'bg-surface-3 border-border text-muted-foreground hover:bg-surface-2', dot: 'neutral', variant: 'default' },
+    handed_over: { cell: 'bg-status-info-soft border-status-info/40 text-status-info hover:bg-status-info/20', dot: 'info', variant: 'info' },
+    reserved:    { cell: 'bg-status-pending-soft border-status-pending/40 text-status-pending hover:bg-status-pending/20', dot: 'pending', variant: 'warning' },
+    ordered:     { cell: 'bg-status-pending-soft border-status-pending/50 text-status-pending hover:bg-status-pending/20', dot: 'pending', variant: 'warning' },
 };
-const STATUS_ORDER = ['available', 'ordered', 'reserved', 'sold', 'handed_over'];
 
+/** Мэдэгдэхгүй төлөв «Зарагдсан» шиг харагдана (сонгох боломжгүй). */
 function meta(status: string) {
-    return STATUS_META[status] || STATUS_META.sold;
+    const key = (Object.hasOwn(STATUS_STYLE, status) ? status : 'sold') as InventoryStatus;
+    return { label: UNIT_STATUS_LABEL[key], ...STATUS_STYLE[key] };
 }
 function floorNum(floor: string | null): number {
     if (!floor) return 999;
@@ -150,9 +144,9 @@ export default function BlocksPage() {
     }, [summaryAttempt]);
 
     // Categories available in the active phase
-    const categories = useMemo(() => {
+    const categories = useMemo<string[]>(() => {
         const set = new Set(summary.filter((r) => r.phase === activePhase).map((r) => r.category));
-        return CATEGORY_ORDER.filter((c) => set.has(c));
+        return UNIT_CATEGORIES.filter((c) => set.has(c));
     }, [summary, activePhase]);
 
     useEffect(() => {
@@ -262,7 +256,7 @@ export default function BlocksPage() {
                                     : 'bg-surface border-border text-muted-foreground hover:bg-surface-2',
                             )}
                         >
-                            {CATEGORY_LABEL[c] || c} ({total})
+                            {unitCategoryLabel(c)} ({total})
                         </button>
                     );
                 })}
@@ -313,7 +307,7 @@ export default function BlocksPage() {
                         <div className="mb-2 flex items-center justify-between border-b border-border pb-2">
                             <h3 className="font-semibold text-foreground flex items-center gap-2">
                                 <Building2 className="w-5 h-5 text-brand-strong" />
-                                {activePhase} · Блок {selectedBlock} · {CATEGORY_LABEL[activeCategory]}
+                                {activePhase} · Блок {selectedBlock} · {unitCategoryLabel(activeCategory)}
                             </h3>
 
                         </div>
@@ -373,7 +367,7 @@ function UnitBrowser({ units, category, onSelect, selectedId }: {
     const inputClass = 'h-11 rounded-md border border-border bg-surface px-2 text-sm focus-ring md:h-[34px]';
     return <div className="space-y-3">
         <div className="flex flex-wrap gap-1 border-y border-border py-2" role="group" aria-label="Нэгжийн төлөвөөр шүүх">
-            {['all', ...STATUS_ORDER].map(value => {
+            {['all', ...UNIT_STATUSES].map(value => {
                 const count = value === 'all' ? units.length : units.filter(u => u.status === value).length;
                 return <button key={value} type="button" aria-pressed={status === value} onClick={() => setStatus(value)} className={cn('flex min-h-11 items-center gap-2 rounded-md border px-3 text-xs focus-ring md:min-h-[34px]', status === value ? 'border-brand bg-brand-soft text-brand-strong' : 'border-border text-fg-2 hover:bg-surface-2')}>
                     {value !== 'all' && <StatusDot variant={meta(value).dot} />}{value === 'all' ? 'Бүгд' : meta(value).label} <span className="tabular-nums">{count}</span>
@@ -468,13 +462,6 @@ function UnitGrid({ units, category, onSelect, selectedId }: {
 // Unit detail drawer
 // ============================================
 const UNIT_INPUT_CLS = 'w-full px-3 py-2 bg-surface-2 border border-border rounded-md text-sm text-foreground outline-none placeholder:text-muted-foreground/60 focus-visible:ring-[3px] focus-visible:ring-ring/40';
-const UNIT_STATUS_OPTIONS = [
-    { value: 'available', label: 'Чөлөөтэй' },
-    { value: 'reserved', label: 'Хадгалсан' },
-    { value: 'ordered', label: 'Захиалсан' },
-    { value: 'sold', label: 'Зарагдсан' },
-    { value: 'handed_over', label: 'Хүлээлгэсэн' },
-];
 
 function UnitDrawer({ unit: u, onClose, onUpdated }: {
     unit: UnitRow;
@@ -520,7 +507,7 @@ function UnitDrawer({ unit: u, onClose, onUpdated }: {
                     ) : (
                         <>
                             <Section icon={<DoorOpen className="w-4 h-4 text-status-success" />} title="Нэгж">
-                                <Field label="Ангилал" value={CATEGORY_LABEL[u.category] || u.category} />
+                                <Field label="Ангилал" value={unitCategoryLabel(u.category)} />
                                 <Field label="Айлын төрөл / Загвар" value={`${u.unit_type || '—'} / ${u.model || '—'}`} />
                                 <Field label="Өрөөний тоо" value={u.rooms ? `${u.rooms} өрөө` : null} icon={<DoorOpen className="w-3 h-3" />} />
                                 <Field label="Талбай" value={u.sale_area ? `${u.sale_area} м²` : null} icon={<Ruler className="w-3 h-3" />} />
@@ -615,7 +602,7 @@ function UnitEditForm({ unit: u, onCancel, onSaved }: {
             <label className="block">
                 {label('Төлөв')}
                 <select value={form.status} onChange={(e) => set('status', e.target.value)} className={UNIT_INPUT_CLS}>
-                    {UNIT_STATUS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    {UNIT_STATUSES.map((value) => <option key={value} value={value}>{UNIT_STATUS_LABEL[value]}</option>)}
                 </select>
             </label>
 

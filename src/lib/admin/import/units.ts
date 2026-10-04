@@ -1,7 +1,5 @@
 import type { ImportRow } from '@/lib/admin/import/mappers';
-
-export type InventoryCategory = 'residential' | 'parking' | 'industry' | 'commercial';
-export type InventoryStatus = 'available' | 'reserved' | 'ordered' | 'sold' | 'handed_over';
+import type { InventoryCategory, InventoryStatus } from '@/lib/inventory/labels';
 
 /** The caller validates that projectId belongs to shopId before any write. */
 export interface InventoryImportContext {

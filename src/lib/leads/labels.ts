@@ -4,6 +4,7 @@
  * ЗӨВХӨН энд нэмнэ; хуудсууд өөрсдийн map-гүй.
  */
 import type { LeadStatus, LeadSource } from '@/types/property';
+import { propertyTypeLabel } from '@/lib/inventory/labels';
 
 export type Tone = 'info' | 'pending' | 'success' | 'danger' | 'neutral';
 
@@ -52,20 +53,10 @@ export function sourceLabel(s: string | null | undefined): string {
     return (s && SOURCE_LABEL[s as LeadSource]) || s || '—';
 }
 
-const PROPERTY_TYPE_LABEL: Record<string, string> = {
-    apartment: 'Орон сууц',
-    house: 'Хаус',
-    office: 'Оффис',
-    land: 'Газар',
-    commercial: 'Худалдаа',
-};
-
 /** Сонирхол: «3 өрөө» (preferred_rooms) эсвэл төрлийн нэр (preferred_type). */
 export function interestLabel(lead: { preferred_rooms?: number | null; preferred_type?: string | null }): string {
     if (lead.preferred_rooms) return `${lead.preferred_rooms} өрөө`;
-    const t = lead.preferred_type;
-    if (!t) return '—';
-    return PROPERTY_TYPE_LABEL[t] ?? t;
+    return propertyTypeLabel(lead.preferred_type);
 }
 
 /** Түргэн бүртгэлийн «Сонирхол» чипүүд → DB утга. */
