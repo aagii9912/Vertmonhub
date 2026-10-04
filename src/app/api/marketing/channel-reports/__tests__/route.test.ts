@@ -128,12 +128,27 @@ describe('POST preview', () => {
         const body = await (await POST(upload({ mapping: JSON.stringify({ Reach: 'reach', Impressions: 'impressions', Unknown: 'spend' }) }))).json();
         expect(body.mappingOrigin).toBe('client');
         expect(body.mapping).toEqual({ 'Campaign name': '', 'Reporting starts': '', 'Reporting ends': '', Reach: 'reach', Impressions: 'impressions', 'Link clicks': '', 'Amount spent (USD)': '' });
-        expect(body.existing).toEqual({ id: 'same', file_name: 'old.csv', updated_at: '2026-10-01', origin: 'file', sameFile: false });
+        expect(body.existing).toEqual({ id: 'same', file_name: 'old.csv', updated_at: '2026-10-01', origin: 'file', sameFile: false, data_from: null, data_to: null });
         expect(body.duplicate).toMatchObject({ source: 'callpro', period_from: '2026-09-23' });
-        // Давхар файлыг агуулга БА ижил хугацаагаар (өөр эх үүсвэрт) хайна — өөр долоо хоногт ашиглах нь давхар биш.
         const hash = mocks.calls.find(c => c.ops.some(([op, args]) => op === 'eq' && args[0] === 'content_hash'))!;
-        expect(has(hash, 'eq', 'period_from', '2026-09-23') && has(hash, 'eq', 'period_to', '2026-09-29') && has(hash, 'neq', 'source', 'meta_ads')).toBe(true);
+        expect(has(hash, 'eq', 'shop_id', SHOP)).toBe(true);
         expect(body.split).toBeNull();
+    });
+
+    it('warns when a date-less file was saved for another period, but not when a dated file is reused for another week', async () => {
+        const saved = (source: string, from: string, to: string) => ({ id: `${source}:${from}`, source, period_from: from, period_to: to });
+        mocks.resolve.mockImplementation((table, ops) => {
+            if (table === 'marketing_channel_mappings') return { data: null, error: null };
+            if (ops.some(([op, args]) => op === 'eq' && args[0] === 'content_hash')) return { data: [saved('callpro', '2026-09-16', '2026-09-22'), saved('meta_ads', '2026-09-16', '2026-09-22')], error: null };
+            return { data: [], error: null };
+        });
+        // CallPro-ийн бүлгийн тайланд огноо байхгүй: өнгөрсөн долоо хоногийн файлыг андуурч дахин оруулсан байж болно.
+        const group = 'Бүлэг,Бүлгийг сонгосон,Хариулсан\nБорлуулалт,40,30';
+        const callpro = await (await POST(upload({ source: 'callpro' }, { contents: group, name: 'group.csv' }))).json();
+        expect(callpro.duplicate).toMatchObject({ source: 'callpro', period_from: '2026-09-16' });
+        // Огноотой Meta файлыг өөр долоо хоногт ашиглах нь хэвийн (мөрүүд хугацаагаар шүүгдэнэ).
+        const meta = await (await POST(upload())).json();
+        expect(meta.duplicate).toBeNull();
     });
 
     it('offers a meeting-week split for a daily Meta export with per-week totals, coverage and saved state', async () => {
@@ -216,6 +231,7 @@ describe('POST save', () => {
     });
 
     it('saves a daily Meta export as one report per meeting week with the covered days', async () => {
+        // Хадгалсан тайлангүй үед бүх долоо хоног хадгалагдана.
         mocks.resolve.mockImplementation((table, ops) => {
             if (ops.some(([op]) => op === 'upsert')) return { data: table === 'marketing_channel_reports' ? [{ id: 'w1' }, { id: 'w2' }, { id: 'w3' }] : null, error: null };
             if (ops.some(([op]) => op === 'maybeSingle')) return { data: null, error: null };
@@ -223,7 +239,7 @@ describe('POST save', () => {
         });
         const response = await POST(upload({ mode: 'save', split: '1' }, { contents: META_DAILY, name: 'Meta-Campaigns-daily.csv' }));
         expect(response.status).toBe(200);
-        expect(await response.json()).toEqual({ mode: 'save', reports: [{ id: 'w1' }, { id: 'w2' }, { id: 'w3' }], mappingSaved: true });
+        expect(await response.json()).toEqual({ mode: 'save', reports: [{ id: 'w1' }, { id: 'w2' }, { id: 'w3' }], skipped: [], mappingSaved: true });
         const [report] = writes();
         const [rows, options] = report.ops.find(([op]) => op === 'upsert')![1] as [Array<Record<string, unknown> & { totals: Record<string, number>; breakdown: Array<{ label: string }> }>, unknown];
         expect(options).toEqual({ onConflict: 'shop_id,source,period_from,period_to' });
@@ -236,6 +252,8 @@ describe('POST save', () => {
         expect(rows.every(r => r.shop_id === SHOP && r.source === 'meta_ads' && r.file_name === 'Meta-Campaigns-daily.csv' && /^[0-9a-f]{64}$/.test(String(r.content_hash)))).toBe(true);
         expect(rows[2].breakdown.map(b => b.label)).toEqual(['Дуудлагын кампанит ажил', 'Постын урамшуулал', 'Давхар нэр']);
         expect((rows[0].warnings as Array<{ code: string }>).map(w => w.code)).toContain('partial_coverage');
+        // Файлд байгаа боловч тухайн долоо хоногт хүргэлтгүй төрөл 0.
+        expect(rows[0].totals).toMatchObject({ results_thruplay: 0, spend_thruplay: 0 });
         expect((rows[1].warnings as Array<{ code: string }>).map(w => w.code)).not.toContain('partial_coverage');
         // Хуваах үед сонгосон хугацаа (файлын гадна байсан ч) хадгалалтыг хаахгүй.
         const elsewhere = await POST(upload({ mode: 'save', split: '1', period_from: '2026-08-01', period_to: '2026-08-07' }, { contents: META_DAILY, name: 'Meta-Campaigns-daily.csv' }));
@@ -243,19 +261,82 @@ describe('POST save', () => {
         expect(await POST(upload({ mode: 'save', period_from: '2026-08-01', period_to: '2026-08-07' }, { contents: META_DAILY, name: 'Meta-Campaigns-daily.csv' })).then(r => r.status)).toBe(400);
     });
 
-    it('refuses to overwrite a report synced from the Meta API', async () => {
-        const apiRow = (from: string, to: string) => ({ id: 'api', period_from: from, period_to: to, file_name: null, updated_at: '2026-10-01', origin: 'api', content_hash: null });
-        mocks.resolve.mockImplementation((_table, ops) => {
-            if (ops.some(([op, args]) => op === 'in' && args[0] === 'period_from')) return { data: [apiRow('2026-09-23', '2026-09-29')], error: null };
-            if (ops.some(([op]) => op === 'maybeSingle')) return { data: null, error: null };
-            return { data: [], error: null };
-        });
+    const savedRow = (from: string, to: string, origin: 'file' | 'api', data: [string, string] | null = [from, to]) =>
+        ({ id: `${origin}:${from}`, period_from: from, period_to: to, file_name: origin === 'api' ? null : 'old.csv', updated_at: '2026-10-01', origin, content_hash: null, data_from: data?.[0] ?? null, data_to: data?.[1] ?? null });
+    const withExisting = (existing: ReturnType<typeof savedRow>[], upsertError: unknown = null) => mocks.resolve.mockImplementation((table, ops) => {
+        if (ops.some(([op]) => op === 'upsert')) {
+            if (table !== 'marketing_channel_reports') return { data: null, error: null };
+            return upsertError ? { data: null, error: upsertError } : { data: (ops.find(([op]) => op === 'upsert')![1][0] as Array<{ period_from: string }>).map(r => ({ id: r.period_from })), error: null };
+        }
+        if (ops.some(([op, args]) => op === 'in' && args[0] === 'period_from')) return { data: existing, error: null };
+        if (ops.some(([op]) => op === 'maybeSingle')) return { data: null, error: null };
+        return { data: [], error: null };
+    });
+    const upserted = () => (writes().find(c => c.table === 'marketing_channel_reports')?.ops.find(([op]) => op === 'upsert')?.[1][0] ?? []) as Array<{ period_from: string; data_from: string }>;
+
+    it('refuses to overwrite a report synced from the Meta API and leaves such weeks out of a split', async () => {
+        withExisting([savedRow('2026-09-23', '2026-09-29', 'api')]);
         const single = await POST(upload({ mode: 'save' }));
         expect(single.status).toBe(409);
         expect((await single.json()).error).toMatch(/2026-09-23 – 2026-09-29 хугацааны Meta Ads Manager тайланг Meta API-аас автоматаар татсан/);
+        expect(writes()).toEqual([]);
+        // Хуваахад API-ийн долоо хоногийг алгасаад бусдыг нь хадгална.
         const split = await POST(upload({ mode: 'save', split: '1' }, { contents: META_DAILY, name: 'daily.csv' }));
-        expect(split.status).toBe(409);
-        expect((await split.json()).locked).toEqual([{ from: '2026-09-23', to: '2026-09-29' }]);
+        expect(split.status).toBe(200);
+        expect((await split.json()).skipped).toEqual([{ from: '2026-09-23', to: '2026-09-29', reason: 'api' }]);
+        expect(upserted().map(r => r.period_from)).toEqual(['2026-09-09', '2026-09-16']);
+        // API-ийн долоо хоногийг тусгайлан сонговол 409.
+        mocks.calls.length = 0;
+        const chosen = await POST(upload({ mode: 'save', split: '1', weeks: '2026-09-16,2026-09-23' }, { contents: META_DAILY, name: 'daily.csv' }));
+        expect(chosen.status).toBe(409);
+        expect((await chosen.json()).locked).toEqual([{ from: '2026-09-23', to: '2026-09-29' }]);
+        expect(writes()).toEqual([]);
+    });
+
+    it('answers 409 when the database trigger refuses an API week synced after the check', async () => {
+        withExisting([], { code: '23514', message: 'channel_report_api_locked: meta_ads 2026-09-23 – 2026-09-29 тайланг Meta API-аас татсан тул файлаар дарж бичихгүй' });
+        const response = await POST(upload({ mode: 'save', split: '1' }, { contents: META_DAILY, name: 'daily.csv' }));
+        expect(response.status).toBe(409);
+        expect((await response.json()).error).toMatch(/Meta API-аас шинэчилсэн тул юу ч хадгалсангүй/);
+        // Холболтыг ч сануулаагүй (хадгалалт амжилтгүй).
+        expect(writes().map(c => c.table)).toEqual(['marketing_channel_reports']);
+    });
+
+    it('keeps a fuller saved week instead of replacing it with a partial week of a rolling export', async () => {
+        // 09-09 долоо хоногийг өмнө нь 7/7-оор хадгалсан; шинэ файл 09-12-ноос (4/7). 09-23-ыг ижил хамралттай, 09-16-г хамралт тодорхойгүй хадгалсан.
+        withExisting([savedRow('2026-09-09', '2026-09-15', 'file'), savedRow('2026-09-16', '2026-09-22', 'file', null), savedRow('2026-09-23', '2026-09-29', 'file', ['2026-09-23', '2026-09-24'])]);
+        const preview = await (await POST(upload({}, { contents: META_DAILY, name: 'daily.csv' }))).json();
+        expect(preview.split.weeks.map((w: { from: string; skip: string | null; existing: { data_from: string | null } }) => [w.from, w.skip, w.existing.data_from]))
+            .toEqual([['2026-09-09', 'fuller', '2026-09-09'], ['2026-09-16', null, null], ['2026-09-23', null, '2026-09-23']]);
+        const response = await POST(upload({ mode: 'save', split: '1' }, { contents: META_DAILY, name: 'daily.csv' }));
+        expect(response.status).toBe(200);
+        expect((await response.json()).skipped).toEqual([{ from: '2026-09-09', to: '2026-09-15', reason: 'fuller' }]);
+        expect(upserted().map(r => r.period_from)).toEqual(['2026-09-16', '2026-09-23']);
+        // Хэрэглэгч долоо хоногийг тусгайлан сонговол солино; сонгоогүйг алгасна.
+        mocks.calls.length = 0;
+        const replace = await POST(upload({ mode: 'save', split: '1', weeks: '2026-09-09' }, { contents: META_DAILY, name: 'daily.csv' }));
+        expect(await replace.json()).toMatchObject({ skipped: [{ from: '2026-09-16', reason: 'unselected' }, { from: '2026-09-23', reason: 'unselected' }] });
+        expect(upserted().map(r => [r.period_from, r.data_from])).toEqual([['2026-09-09', '2026-09-12']]);
+        // Бүх долоо хоног алгасагдвал юу ч бичихгүй.
+        mocks.calls.length = 0;
+        withExisting([savedRow('2026-09-09', '2026-09-15', 'api'), savedRow('2026-09-16', '2026-09-22', 'api'), savedRow('2026-09-23', '2026-09-29', 'file', ['2026-09-23', '2026-09-29'])]);
+        const nothing = await POST(upload({ mode: 'save', split: '1' }, { contents: META_DAILY, name: 'daily.csv' }));
+        expect(nothing.status).toBe(409);
+        expect((await nothing.json()).skipped.map((w: { reason: string }) => w.reason)).toEqual(['api', 'api', 'fuller']);
+        expect(writes()).toEqual([]);
+    });
+
+    it('validates the chosen weeks', async () => {
+        for (const [fields, message] of [
+            [{ split: '1', weeks: '2026-09-02' }, /файлд алга/],
+            [{ weeks: '2026-09-16' }, /зөвхөн хурлын долоо хоногоор хуваах/],
+            [{ split: '1', weeks: '2026-09-16;2026-09-23' }, /буруу/],
+            [{ split: '1', weeks: Array.from({ length: 15 }, (_, i) => `2026-09-${String(i + 1).padStart(2, '0')}`).join(',') }, /буруу/],
+        ] as Array<[Record<string, string>, RegExp]>) {
+            const response = await POST(upload({ mode: 'save', ...fields }, { contents: META_DAILY, name: 'daily.csv' }));
+            expect(response.status).toBe(400);
+            expect((await response.json()).error).toMatch(message);
+        }
         expect(writes()).toEqual([]);
     });
 
@@ -318,6 +399,21 @@ describe('GET and DELETE', () => {
         expect(body.latest.callpro.comparison.missed.pct).toBe(-50);
         expect(body.latest.meta_ads).toEqual({ report: null, exact: false, longer: false, previous: null, comparison: null });
         for (const call of mocks.calls) expect(has(call, 'eq', 'shop_id', SHOP)).toBe(true);
+    });
+
+    it('keeps listing reports before the origin/coverage migration is applied', async () => {
+        const legacy = { id: 'r1', source: 'meta_ads', period_from: '2026-09-23', period_to: '2026-09-29', file_name: 'x.csv', totals: { spend: 5 }, warnings: [], row_count: 1, note: null, imported_by: null, created_at: '2026-10-01', updated_at: '2026-10-01' };
+        mocks.resolve.mockImplementation((_table, ops) => {
+            const columns = String(ops.find(([op]) => op === 'select')?.[1][0] ?? '');
+            if (columns.includes('origin')) return { data: null, error: { code: '42703', message: 'column marketing_channel_reports.origin does not exist' } };
+            if (ops.some(([op, args]) => op === 'in' && args[0] === 'id')) return { data: [{ id: 'r1', breakdown: [], mapping: {} }], error: null };
+            return { data: [legacy], error: null };
+        });
+        const response = await GET(new Request(`${URL_BASE}?from=2026-09-23&to=2026-09-29&source=meta_ads`));
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        expect(body.reports).toEqual([{ ...legacy, origin: 'file', data_from: null, data_to: null }]);
+        expect(body.latest.meta_ads).toMatchObject({ exact: true, report: { id: 'r1', origin: 'file', data_from: null } });
     });
 
     it('validates the list filter and reports a missing migration', async () => {

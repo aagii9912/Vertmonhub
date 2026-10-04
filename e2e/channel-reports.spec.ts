@@ -21,7 +21,8 @@ const empty = { report: null, exact: false, longer: false, previous: null, compa
 /** API route-ын адил: файлыг уншиж, нэгтгэж, өдрөөр задалсан Meta файлыг хурлын долоо хоногоор хуваана. */
 async function setup(page: Page) {
     const state = {
-        reports: [] as ChannelReportSummary[], latest: {} as Record<string, unknown>, modes: [] as string[], splits: [] as Array<string | null>, errors: [] as string[],
+        reports: [] as ChannelReportSummary[], latest: {} as Record<string, unknown>, modes: [] as string[], splits: [] as Array<string | null>,
+        weeks: [] as Array<string | null>, errors: [] as string[],
     };
     page.on('pageerror', e => state.errors.push(e.message));
     await page.route('**/api/**', async route => {
@@ -48,8 +49,11 @@ async function setup(page: Page) {
             const mode = String(form.get('mode'));
             state.modes.push(mode);
             state.splits.push(form.get('split') as string | null);
+            state.weeks.push(form.get('weeks') as string | null);
             if (mode === 'save') {
-                const targets: Array<{ week: { from: string; to: string }; result: ChannelAggregate }> = form.get('split') === '1' ? weeks : [{ week: period, result }];
+                const chosen = form.get('weeks') ? String(form.get('weeks')).split(',') : null;
+                const targets: Array<{ week: { from: string; to: string }; result: ChannelAggregate }> = form.get('split') === '1'
+                    ? weeks.filter(({ week }) => !chosen || chosen.includes(week.from)) : [{ week: period, result }];
                 const saved = targets.map(({ week, result: r }, i) => ({
                     id: `${source}-${i}`, source, period_from: week.from, period_to: week.to, file_name: file.name, origin: 'file' as const,
                     data_from: r.dataPeriod?.from ?? null, data_to: r.dataPeriod?.to ?? null, totals: r.totals, warnings: r.warnings, row_count: r.rowCount,
@@ -58,7 +62,7 @@ async function setup(page: Page) {
                 state.reports = [...saved].reverse();
                 const last = saved[saved.length - 1], previous = saved.length > 1 ? saved[saved.length - 2] : null;
                 state.latest[source] = { report: { ...last, breakdown: targets[targets.length - 1].result.breakdown, mapping }, exact: false, longer: false, previous, comparison: compareReports(last, previous) };
-                return reply(saved.length > 1 ? { mode, reports: saved, mappingSaved: true } : { mode, report: saved[0], mappingSaved: true });
+                return reply(form.get('split') === '1' ? { mode, reports: saved, skipped: [], mappingSaved: true } : { mode, report: saved[0], mappingSaved: true });
             }
             const detected = result.detectedPeriod;
             return reply({ mode, storageReady: true, file: { name: file.name, size: file.size }, sheets: table.sheets, sheet: table.sheet, headerRow: table.headerRow, headers: table.headers,
@@ -126,6 +130,8 @@ test('splits a daily Meta Ads export into meeting weeks and shows results per ty
     await expect(weeks.getByRole('row')).toHaveCount(4);
     await expect(weeks.getByRole('row', { name: /2026-09-09 – 2026-09-15/ })).toContainText('4/7 өдөр');
     await expect(weeks.getByRole('row', { name: /2026-09-23 – 2026-09-29/ })).toContainText('2/7 өдөр');
+    await expect(weeks.getByRole('checkbox', { name: '2026-09-16 – 2026-09-22 долоо хоногийг хадгалах' })).toBeChecked();
+    await expect(preview.getByText(/3\/3 долоо хоногийг хадгална/)).toBeVisible();
     const types = preview.getByRole('region', { name: 'Үр дүн төрлөөр' });
     await expect(types.getByRole('row', { name: /Дуудлага \(Meta\)/ })).toContainText('28');
     await expect(types.getByRole('row', { name: /Постын оролцоо/ })).toContainText('0.0027 USD');
@@ -136,6 +142,7 @@ test('splits a daily Meta Ads export into meeting weeks and shows results per ty
     await expect(page.getByText(/Meta Ads Manager: 3 хурлын долоо хоногийн \(2026-09-09 – 2026-09-29\) тайлан хадгалагдлаа/)).toBeVisible();
     expect(state.modes).toEqual(['preview', 'save']);
     expect(state.splits).toEqual([null, '1']);
+    expect(state.weeks).toEqual([null, '2026-09-09,2026-09-16,2026-09-23']);
     const saved = page.getByRole('region', { name: 'Хадгалсан тайлангууд' });
     await expect(saved.getByRole('row')).toHaveCount(4);
     await expect(saved.getByRole('row', { name: /2026-09-23 – 2026-09-29/ })).toContainText('2/7 өдөр');

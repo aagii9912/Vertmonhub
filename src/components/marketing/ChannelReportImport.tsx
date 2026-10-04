@@ -12,7 +12,7 @@ import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { lastCompletedReviewRange, shiftReviewDate } from '@/lib/dashboard/weekly-review';
 import {
     CHANNEL_SOURCES, CHANNEL_SOURCE_HELP, CHANNEL_SOURCE_LABELS, ChannelPeriodSchema, SHAPE_LABELS,
-    type ChannelMapping, type ChannelPreviewResponse, type ChannelSource, type MappingOrigin,
+    type ChannelMapping, type ChannelPreviewResponse, type ChannelSource, type ChannelSplitSkip, type MappingOrigin,
 } from '@/lib/marketing/channel-reports';
 import { ChannelMappingTable } from './ChannelMappingTable';
 import { metaResultKey } from '@/lib/marketing/meta-results';
@@ -27,11 +27,15 @@ const ORIGIN_LABELS: Record<MappingOrigin, string> = {
     client: 'Таны сонгосон холболт',
 };
 type Period = { from: string; to: string };
+type SaveResponse = { mappingSaved: boolean; skipped?: Array<Period & { reason: ChannelSplitSkip | 'unselected' }> };
+/** Анхдагчаар хадгалах долоо хоногууд: Meta API-ийнх эсвэл илүү бүрэн хадгалсан долоо хоногоос бусад. */
+const defaultWeeks = (preview: ChannelPreviewResponse) => new Set(preview.split?.weeks.filter(week => !week.skip).map(week => week.from) ?? []);
 
 /**
  * Экспорт файл → баганын холболт → урьдчилсан нийт дүн → хадгалах.
  * Файлыг серверт уншиж нэгтгэнэ; холболт өөрчлөгдвөл дахин тооцоолсны дараа л хадгална.
- * Өдрөөр задалсан Meta файл олон хурлын долоо хоног хамарвал анхдагчаар долоо хоног бүрт тусад нь хадгална.
+ * Өдрөөр задалсан Meta файл олон хурлын долоо хоног хамарвал анхдагчаар долоо хоног бүрт тусад нь хадгална:
+ * Meta API-аас татсан болон илүү олон өдөр хамарч хадгалсан долоо хоногийг анхдагчаар алгасна (сонгож болно).
  */
 export function ChannelReportImport({ shopId }: { shopId: string }) {
     const cache = useQueryClient();
@@ -47,12 +51,16 @@ export function ChannelReportImport({ shopId }: { shopId: string }) {
     const [busy, setBusy] = useState<'preview' | 'save' | null>(null);
     const [error, setError] = useState('');
     const [splitOn, setSplitOn] = useState(true);
+    const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
     const periodCheck = ChannelPeriodSchema.safeParse(period);
 
-    function reset() { setPreview(null); setMapping({}); setStale(false); setError(''); setSplitOn(true); }
+    function reset() { setPreview(null); setMapping({}); setStale(false); setError(''); setSplitOn(true); setChosen(new Set()); }
+    function toggleWeek(from: string, on: boolean) {
+        setChosen(current => { const next = new Set(current); if (on) next.add(from); else next.delete(from); return next; });
+    }
     function changePeriod(next: Period) { setPeriod(next); if (preview) setStale(true); }
 
-    async function send<T>(mode: 'preview' | 'save', options: { sheet?: string; mapping?: ChannelMapping; split?: boolean } = {}): Promise<T> {
+    async function send<T>(mode: 'preview' | 'save', options: { sheet?: string; mapping?: ChannelMapping; weeks?: string[] } = {}): Promise<T> {
         const body = new FormData();
         body.set('file', file!);
         body.set('source', source);
@@ -61,7 +69,7 @@ export function ChannelReportImport({ shopId }: { shopId: string }) {
         body.set('mode', mode);
         if (options.sheet) body.set('sheet', options.sheet);
         if (options.mapping) body.set('mapping', JSON.stringify(options.mapping));
-        if (options.split) body.set('split', '1');
+        if (options.weeks) { body.set('split', '1'); body.set('weeks', options.weeks.join(',')); }
         if (mode === 'save' && note.trim()) body.set('note', note.trim());
         const response = await dashboardFetch(CHANNEL_REPORTS_ENDPOINT, { method: 'POST', body, shopId });
         const result = await response.json().catch(() => ({}));
@@ -74,7 +82,7 @@ export function ChannelReportImport({ shopId }: { shopId: string }) {
         setBusy('preview'); setError('');
         try {
             const data = await send<ChannelPreviewResponse>('preview', { sheet: options.sheet ?? sheet, mapping: options.withMapping ? mapping : undefined });
-            setPreview(data); setMapping(data.mapping); setSheet(data.sheet); setStale(false);
+            setPreview(data); setMapping(data.mapping); setSheet(data.sheet); setStale(false); setChosen(defaultWeeks(data));
         } catch (e) { setError(e instanceof Error ? e.message : 'Файлыг боловсруулж чадсангүй.'); }
         finally { setBusy(null); }
     }
@@ -83,11 +91,12 @@ export function ChannelReportImport({ shopId }: { shopId: string }) {
         if (!file || !preview || stale) return;
         setBusy('save'); setError('');
         try {
-            const weeks = preview.split && splitOn ? preview.split.weeks : null;
-            const data = await send<{ mappingSaved: boolean }>('save', { sheet, mapping, split: !!weeks });
+            const weeks = preview.split && splitOn ? preview.split.weeks.filter(week => chosen.has(week.from)) : null;
+            const data = await send<SaveResponse>('save', { sheet, mapping, weeks: weeks?.map(week => week.from) });
             await cache.invalidateQueries({ queryKey: ['marketing-channel-reports'] });
             const saved = weeks ? `${weeks.length} хурлын долоо хоногийн (${weeks[0].from} – ${weeks[weeks.length - 1].to}) тайлан` : `${period.from} – ${period.to} тайлан`;
-            toast.success(`${CHANNEL_SOURCE_LABELS[source]}: ${saved} хадгалагдлаа.${data.mappingSaved ? ' Баганын холболтыг дараагийн импортод сануулав.' : ''}`);
+            const skipped = data.skipped?.length ? ` ${data.skipped.length} долоо хоногийг алгасав.` : '';
+            toast.success(`${CHANNEL_SOURCE_LABELS[source]}: ${saved} хадгалагдлаа.${skipped}${data.mappingSaved ? ' Баганын холболтыг дараагийн импортод сануулав.' : ''}`);
             reset(); setFile(null); setSheet(undefined); setNote(''); setFileInput(n => n + 1);
         } catch (e) { setError(e instanceof Error ? e.message : 'Хадгалж чадсангүй.'); }
         finally { setBusy(null); }
@@ -100,8 +109,10 @@ export function ChannelReportImport({ shopId }: { shopId: string }) {
     const shown = splitting ? preview!.split!.period : period;
     const detected = preview?.result.detectedPeriod ?? null;
     const outside = !!detected && (detected.from < period.from || detected.to > period.to);
-    const apiLocked = splitting ? preview!.split!.weeks.filter(week => week.existing?.origin === 'api') : preview?.existing?.origin === 'api' ? [period] : [];
-    const blocked = !preview || stale || !!result?.errors.length || !preview.storageReady || !!busy || apiLocked.length > 0;
+    // Хуваахгүй үед сонгосон хугацааны API-ийн тайланг дарахгүй; хуваах үед API-ийн долоо хоногийг сонгох боломжгүй.
+    const apiLocked = !splitting && preview?.existing?.origin === 'api';
+    const chosenCount = splitting ? preview!.split!.weeks.filter(week => chosen.has(week.from)).length : 0;
+    const blocked = !preview || stale || !!result?.errors.length || !preview.storageReady || !!busy || apiLocked || (splitting && !chosenCount);
     const currency = typeof result?.totals.currency === 'string' ? result.totals.currency : null;
 
     return <div className="space-y-5">
@@ -161,13 +172,17 @@ export function ChannelReportImport({ shopId }: { shopId: string }) {
                     Хурлын долоо хоногоор хуваах
                 </label>
                 <p className="text-xs text-muted-foreground">Файл өдрөөр задалсан бөгөөд {preview.split.period.from} – {preview.split.period.to} хооронд {preview.split.weeks.length} хурлын долоо хоног (Лхагва–Мягмар) хамарна. {splitOn ? 'Долоо хоног бүрийг тусад нь тайлан болгож хадгална — кампанит ажлын задаргаа ч долоо хоногоор.' : `Хуваахгүй бол зөвхөн сонгосон ${period.from} – ${period.to} хугацааг хадгална.`}</p>
-                {splitOn && <ChannelSplitWeeks weeks={preview.split.weeks} currency={currency} showCalls={typeof preview.split.result.totals[metaResultKey('calls')] === 'number'} />}
+                {splitOn && <>
+                    <ChannelSplitWeeks weeks={preview.split.weeks} currency={currency} showCalls={typeof preview.split.result.totals[metaResultKey('calls')] === 'number'}
+                        selected={chosen} onToggle={toggleWeek} disabled={!!busy} />
+                    <p className="text-xs text-muted-foreground">{chosenCount}/{preview.split.weeks.length} долоо хоногийг хадгална. Meta API-аас татсан долоо хоногийг файлаар солихгүй; өмнө нь илүү олон өдрөөр хадгалсан долоо хоногийг анхдагчаар алгасна (сонговол энэ файлаар солигдоно).</p>
+                    {!chosenCount && <p className="text-xs text-status-pending">Хадгалах долоо хоногоо сонгоно уу.</p>}
+                </>}
             </div>}
             {!splitting && preview.existing && (preview.existing.origin === 'api'
                 ? <Alert variant="danger">Энэ хугацааны {CHANNEL_SOURCE_LABELS[source]} тайланг Meta API-аас автоматаар татсан тул файлаар дарж бичихгүй. Өөр хугацаа сонгоно уу.</Alert>
                 : <Alert variant="info">Энэ хугацааны {CHANNEL_SOURCE_LABELS[source]} тайлан ({preview.existing.file_name || 'файл'}) хадгалагдсан байна. {preview.existing.sameFile ? 'Яг энэ файлаар хадгалсан тул дахин хадгалахад дүн өөрчлөгдөхгүй.' : 'Хадгалбал шинэ файлаар солигдоно.'}</Alert>)}
-            {splitting && apiLocked.length > 0 && <Alert variant="danger">{apiLocked.map(week => `${week.from} – ${week.to}`).join(', ')} долоо хоногийн тайланг Meta API-аас татсан тул файлаар дарж бичихгүй. Хуваахаа болиод өөр хугацаа сонгоно уу.</Alert>}
-            {!splitting && preview.duplicate && <Alert variant="warning">Энэ файлыг ижил хугацаагаар ({preview.duplicate.period_from} – {preview.duplicate.period_to}) {CHANNEL_SOURCE_LABELS[preview.duplicate.source]}-д хадгалсан байна. Эх үүсвэрээ шалгана уу.</Alert>}
+            {!splitting && preview.duplicate && <Alert variant="warning">Яг энэ файлыг {preview.duplicate.period_from} – {preview.duplicate.period_to} хугацааны {CHANNEL_SOURCE_LABELS[preview.duplicate.source]} тайланд хадгалсан байна. {preview.duplicate.source === source ? 'Өөр долоо хоногийн файл мөн эсэхийг шалгана уу.' : 'Эх үүсвэрээ шалгана уу.'}</Alert>}
             {!splitting && detected && (detected.from !== period.from || detected.to !== period.to) && <Alert variant={outside ? 'warning' : 'info'}>
                 <div className="flex flex-wrap items-center gap-2">
                     <span>{outside

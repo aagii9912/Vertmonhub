@@ -155,14 +155,44 @@ it('splits a daily Meta export into meeting weeks by default and shows results p
     await waitFor(() => expect(mocks.success).toHaveBeenCalledWith(expect.stringContaining('3 хурлын долоо хоногийн (2026-09-09 – 2026-09-29) тайлан хадгалагдлаа')));
     expect(sent[1].get('mode')).toBe('save');
     expect(sent[1].get('split')).toBe('1');
+    expect(sent[1].get('weeks')).toBe('2026-09-09,2026-09-16,2026-09-23');
 });
 
-it('saves only the chosen period when splitting is turned off and blocks weeks synced from the Meta API', async () => {
+it('leaves a fuller saved week out by default and lets the user replace it', async () => {
+    mocks.fetch.mockImplementation(async (_url: string, init: DashboardFetchInit) => {
+        const form = init.body as FormData;
+        sent.push(form);
+        if (form.get('mode') === 'save') return json({ mode: 'save', reports: [{ id: 'w1' }], skipped: [{ from: '2026-09-09', to: '2026-09-15', reason: 'unselected' }], mappingSaved: true });
+        // 09-09 долоо хоногийг өмнө нь 7/7-оор хадгалсан; энэ файл түүний 4 өдрийг л хамарна.
+        return json(dailyPreview({ '2026-09-09': { id: 'full', file_name: 'week.csv', updated_at: '2026-09-16', origin: 'file', sameFile: false, data_from: '2026-09-09', data_to: '2026-09-15' } }));
+    });
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const { container } = render(<QueryClientProvider client={client}><ChannelReportImport shopId="shop-a" /></QueryClientProvider>);
+    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(['x'], 'meta-daily.csv')] } });
+    fireEvent.click(screen.getByRole('button', { name: 'Файл шалгах' }));
+    const section = await screen.findByRole('region', { name: 'Импортын урьдчилсан дүн' });
+    const first = within(section).getByRole('checkbox', { name: '2026-09-09 – 2026-09-15 долоо хоногийг хадгалах' });
+    expect(first).not.toBeChecked();
+    expect(within(section).getByText('Хадгалсан нь илүү бүрэн (7/7 өдөр)')).toBeInTheDocument();
+    expect(within(section).getByText(/2\/3 долоо хоногийг хадгална/)).toBeInTheDocument();
+
+    // Бусад долоо хоногийг болиулбал хадгалах долоо хоног алга.
+    fireEvent.click(within(section).getByRole('checkbox', { name: '2026-09-16 – 2026-09-22 долоо хоногийг хадгалах' }));
+    fireEvent.click(within(section).getByRole('checkbox', { name: '2026-09-23 – 2026-09-29 долоо хоногийг хадгалах' }));
+    expect(within(section).getByRole('button', { name: 'Хадгалах' })).toBeDisabled();
+    fireEvent.click(first);
+    expect(within(section).getByText('Солигдоно (7/7 өдөр)')).toBeInTheDocument();
+    fireEvent.click(within(section).getByRole('button', { name: 'Хадгалах' }));
+    await waitFor(() => expect(mocks.success).toHaveBeenCalledWith(expect.stringMatching(/1 хурлын долоо хоногийн \(2026-09-09 – 2026-09-15\) тайлан хадгалагдлаа\. 1 долоо хоногийг алгасав\./)));
+    expect(sent[1].get('weeks')).toBe('2026-09-09');
+});
+
+it('saves only the chosen period when splitting is turned off and never picks weeks synced from the Meta API', async () => {
     let locked = false;
     mocks.fetch.mockImplementation(async (_url: string, init: DashboardFetchInit) => {
         const form = init.body as FormData;
         sent.push(form);
-        if (form.get('mode') === 'save') return json({ mode: 'save', report: { id: 'r1' }, mappingSaved: true });
+        if (form.get('mode') === 'save') return json(form.get('split') ? { mode: 'save', reports: [{ id: 'w1' }, { id: 'w2' }], skipped: [{ from: '2026-09-23', to: '2026-09-29', reason: 'unselected' }], mappingSaved: true } : { mode: 'save', report: { id: 'r1' }, mappingSaved: true });
         return json(dailyPreview(locked ? { '2026-09-23': { id: 'api', file_name: null, updated_at: '2026-10-01', origin: 'api' } } : {}));
     });
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -182,6 +212,11 @@ it('saves only the chosen period when splitting is turned off and blocks weeks s
     fireEvent.click(screen.getByRole('button', { name: 'Файл шалгах' }));
     const again = await screen.findByRole('region', { name: 'Импортын урьдчилсан дүн' });
     expect(within(again).getByText('Meta API — солихгүй')).toBeInTheDocument();
-    expect(within(again).getByText(/2026-09-23 – 2026-09-29 долоо хоногийн тайланг Meta API-аас татсан/)).toBeInTheDocument();
-    expect(within(again).getByRole('button', { name: 'Хадгалах' })).toBeDisabled();
+    const apiWeek = within(again).getByRole('checkbox', { name: '2026-09-23 – 2026-09-29 долоо хоногийг хадгалах' });
+    expect(apiWeek).not.toBeChecked();
+    expect(apiWeek).toBeDisabled();
+    // API-ийн долоо хоногийг алгасаад бусдыг нь хадгална.
+    fireEvent.click(within(again).getByRole('button', { name: 'Хадгалах' }));
+    await waitFor(() => expect(mocks.success).toHaveBeenCalledTimes(2));
+    expect(sent[3].get('weeks')).toBe('2026-09-09,2026-09-16');
 });

@@ -2,7 +2,7 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import {
     aggregateByReviewWeeks, aggregateChannelReport, applyRememberedMapping, channelSplitWeeks, compareWithPrevious, formatChannelValue,
-    formatDayRanges, suggestMapping, type ChannelMapping,
+    formatDayRanges, pickDuplicateReport, splitWeekSkip, suggestMapping, type ChannelMapping,
 } from '../channel-reports';
 import { readChannelFile, type ChannelFileTable } from '../channel-reports-file';
 // Хиймэл өдрийн экспорт (2026-09-12 – 09-24, 9 кампанит ажил × 13 өдөр): дуудлага, постын харилцаа/оролцоо,
@@ -117,12 +117,23 @@ describe('Meta Ads Manager daily campaign export', () => {
         expect(formatChannelValue(0, 'money', 'USD')).toBe('0 USD');
     });
 
-    it('sums untyped Results as before but says the type is unknown', () => {
-        const header = ['Campaign name', 'Results', 'Amount spent (USD)'];
-        const result = aggregateChannelReport(table(header, ['A', 1000, 2.5], ['B', 500, 1]), suggestMapping(header, 'meta_ads'), 'meta_ads');
-        expect(result.totals).toMatchObject({ results: 1500, cost_per_result: 0.0023 });
-        expect(result.warnings.map(w => w.code)).toContain('unknown_result_type');
-        expect(result.breakdown.map(row => [row.label, row.tag, row.values.results])).toEqual([['A', undefined, 1000], ['B', undefined, 500]]);
+    it('never adds up untyped Results across rows and asks to map the Result indicator', () => {
+        const header = ['Campaign name', 'Reporting starts', 'Reporting ends', 'Results', 'Amount spent (USD)'];
+        const map = suggestMapping(header, 'meta_ads');
+        // Нэг нь дуудлага (2), нөгөө нь хүрсэн хүн (100) байж болно — 102 гэж нэмэхгүй.
+        const mixed = aggregateChannelReport(table(header, ['Дуудлага', '2026-09-23', '2026-09-29', 2, 0.5], ['Хүрэлт', '2026-09-23', '2026-09-29', 100, 0.3]), map, 'meta_ads');
+        expect(mixed.totals).toEqual({ spend: 0.8, currency: 'USD' });
+        expect(mixed.warnings.find(w => w.code === 'unknown_result_type')).toMatchObject({ level: 'warning', message: expect.stringContaining('«Result indicator» баганыг «Үр дүнгийн төрөл»-д холбоно уу') });
+        // Кампанит ажил бүрийн ганц мөрийн үр дүн хэвээр, олон өдрийнхийг (хүрсэн хүн байж болно) нэмэхгүй.
+        expect(mixed.breakdown.map(row => [row.label, row.tag, row.values.results, row.values.cost_per_result])).toEqual([['Дуудлага', undefined, 2, 0.25], ['Хүрэлт', undefined, 100, 0.003]]);
+        const daily = aggregateChannelReport(table(header, ['A', '2026-09-23', '2026-09-23', 3, 1], ['A', '2026-09-24', '2026-09-24', 4, 1]), map, 'meta_ads');
+        expect(daily.breakdown[0].values).toMatchObject({ spend: 2, results: null, cost_per_result: null });
+        // Ганц мөр эсвэл файлын «нийт» мөрийн Results-ийг (нэг төрөлтэй үед Meta бөглөдөг) авна.
+        const single = aggregateChannelReport(table(header, ['A', '2026-09-23', '2026-09-29', 1000, 2.5]), map, 'meta_ads');
+        expect(single.totals).toMatchObject({ results: 1000, cost_per_result: 0.0025 });
+        expect(single.warnings.find(w => w.code === 'unknown_result_type')?.level).toBe('info');
+        const summary = aggregateChannelReport(table(header, ['A', '2026-09-23', '2026-09-29', 1000, 2.5], ['B', '2026-09-23', '2026-09-29', 500, 1], ['Results from 2 campaigns', '2026-09-23', '2026-09-29', 1500, 3.5]), map, 'meta_ads');
+        expect(summary.totals).toMatchObject({ results: 1500, cost_per_result: 0.0023 });
     });
 
     it('separates same-named campaigns by Campaign ID and labels them by name', () => {
@@ -153,7 +164,8 @@ describe('meeting-week split', () => {
         }))).toEqual([
             { week: '2026-09-09', data: { from: '2026-09-12', to: '2026-09-15' }, missing: ['2026-09-09', '2026-09-10', '2026-09-11'], rows: [8, 28], spend: 34.8, calls: 6, perCall: 5, reach: 4.8 },
             { week: '2026-09-16', data: { from: '2026-09-16', to: '2026-09-22' }, missing: [], rows: [23, 40], spend: 120.1, calls: 18, perCall: 4.17, reach: 3.6 },
-            { week: '2026-09-23', data: { from: '2026-09-23', to: '2026-09-24' }, missing: ['2026-09-25', '2026-09-26', '2026-09-27', '2026-09-28', '2026-09-29'], rows: [5, 13], spend: 29, calls: 4, perCall: 5, reach: undefined },
+            // Хүрсэн хүний кампанит ажил энэ долоо хоногт хүргэлтгүй — зардал 0.
+            { week: '2026-09-23', data: { from: '2026-09-23', to: '2026-09-24' }, missing: ['2026-09-25', '2026-09-26', '2026-09-27', '2026-09-28', '2026-09-29'], rows: [5, 13], spend: 29, calls: 4, perCall: 5, reach: 0 },
         ]);
         // Долоо хоногуудын зардал файлын нийттэй тэнцүү; кампанит ажлын задаргаа долоо хоногоор.
         expect(split.reduce((total, { result }) => total + (result.totals.spend as number), 0)).toBeCloseTo(183.9, 6);
@@ -161,6 +173,51 @@ describe('meeting-week split', () => {
         for (const { result } of split) expect(result.warnings.map(w => w.code)).not.toContain('out_of_period');
         expect(split[0].result.warnings.find(w => w.code === 'partial_coverage')?.message).toContain('7 өдрөөс 4-д л өгөгдөл байна — өгөгдөлгүй: 2026-09-09 – 2026-09-11');
         expect(split[1].result.warnings.map(w => w.code)).not.toContain('partial_coverage');
+    });
+
+    it('stores 0 for a result type of the file without delivery in that week, so the next week compares with 0', () => {
+        const weeks = aggregateByReviewWeeks(file.rows, mapping, 'meta_ads', channelSplitWeeks(aggregateChannelReport(file.rows, mapping, 'meta_ads')), { firstLine: file.firstLine });
+        const [first, second, third] = weeks.map(({ result }) => result.totals);
+        // ThruPlay зөвхөн 09-17, 09-18-нд: эхний долоо хоногт 0 (өртөггүй), хүрсэн хүний тоог (давхцдаг) 0 гэж бичихгүй.
+        expect(first).toMatchObject({ results_thruplay: 0, spend_thruplay: 0, results_post_engagement: 0, spend_post_engagement: 0, results_post_interaction: 0, spend_post_interaction: 0 });
+        expect(first.cost_per_result_thruplay).toBeUndefined();
+        expect(third).toMatchObject({ results_thruplay: 0, spend_reach: 0 });
+        expect(third.results_reach).toBeUndefined();
+        // Хуучин нийт `results` нь хүргэлттэй төрөл нэг байхад л (энд 2 төрөл: дуудлага, хүрсэн хүн).
+        expect(first.results).toBeUndefined();
+        expect(compareWithPrevious(second, first, 'meta_ads').results_thruplay).toEqual({ current: 1200, previous: 0, delta: 1200, pct: null, comparable: true });
+        // Файлд огт хүргэлтгүй төрлийг (хоосон мөрийн indicator) 0-ээр нэмэхгүй.
+        expect(Object.keys(first).filter(key => key.startsWith('results_')).sort()).toEqual(['results_calls', 'results_post_engagement', 'results_post_interaction', 'results_thruplay']);
+    });
+
+    it('notes the whole-file summary row as info only when splitting into weeks', () => {
+        const header = ['Campaign name', 'Reporting starts', 'Reporting ends', 'Results', 'Result indicator', 'Amount spent (USD)'];
+        const rows = table(header,
+            ['A', '2026-09-14', '2026-09-14', 2, 'actions:click_to_call_native_call_placed', 5],
+            ['B', '2026-09-17', '2026-09-17', 3, 'actions:click_to_call_native_call_placed', 7],
+            ['Results from 2 campaigns', '2026-09-14', '2026-09-17', 5, 'actions:click_to_call_native_call_placed', 12]);
+        const map = suggestMapping(header, 'meta_ads');
+        const weeks = channelSplitWeeks(aggregateChannelReport(rows, map, 'meta_ads'));
+        const split = aggregateByReviewWeeks(rows, map, 'meta_ads', weeks);
+        expect(split.map(({ result }) => [result.totals.spend, result.totals.results_calls])).toEqual([[5, 2], [7, 3]]);
+        for (const { result } of split) expect(result.warnings.find(w => w.code === 'total_ignored')).toMatchObject({ level: 'info' });
+        const single = aggregateChannelReport(rows, map, 'meta_ads', { period: weeks[0] });
+        expect(single.warnings.find(w => w.code === 'total_ignored')).toMatchObject({ level: 'warning' });
+    });
+
+    it('keeps a fuller saved week and never replaces a Meta API week by default', () => {
+        const week = { from: '2026-09-02', to: '2026-09-08' };
+        const saved = (data: { from: string; to: string } | null, origin: 'file' | 'api' = 'file', sameFile = false) =>
+            ({ id: 'r', file_name: 'old.csv', updated_at: '2026-09-09', origin, sameFile, data_from: data?.from ?? null, data_to: data?.to ?? null });
+        // «Сүүлийн 30 хоног»-ийн дараагийн экспорт 09-07-ноос эхэлбэл 7/7 хадгалсныг 2/7-оор дарахгүй.
+        expect(splitWeekSkip(week, { from: '2026-09-07', to: '2026-09-08' }, saved(week))).toBe('fuller');
+        expect(splitWeekSkip(week, { from: '2026-09-07', to: '2026-09-08' }, saved(null))).toBe('fuller');
+        expect(splitWeekSkip(week, { from: '2026-09-02', to: '2026-09-07' }, saved({ from: '2026-09-02', to: '2026-09-08' }))).toBe('fuller');
+        expect(splitWeekSkip(week, { from: '2026-09-02', to: '2026-09-08' }, saved({ from: '2026-09-05', to: '2026-09-08' }))).toBeNull();
+        expect(splitWeekSkip(week, week, saved(null))).toBeNull();
+        expect(splitWeekSkip(week, { from: '2026-09-07', to: '2026-09-08' }, saved(week, 'file', true))).toBeNull();
+        expect(splitWeekSkip(week, week, saved(week, 'api'))).toBe('api');
+        expect(splitWeekSkip(week, { from: '2026-09-07', to: '2026-09-08' }, null)).toBeNull();
     });
 
     it('warns about uncovered days for a single period and stores the covered days', () => {
@@ -184,6 +241,21 @@ describe('meeting-week split', () => {
 
     it('formats missing days as ranges', () => {
         expect(formatDayRanges(['2026-09-29', '2026-09-26', '2026-09-27', '2026-09-30', '2026-10-02'])).toBe('2026-09-26 – 2026-09-27, 2026-09-29 – 2026-09-30, 2026-10-02');
+    });
+});
+
+describe('duplicate file', () => {
+    const saved = (source: string, from: string, to: string) => ({ id: `${source}:${from}`, source, period_from: from, period_to: to });
+    it('flags a dated file only for another source of the same period, a date-less file for any other report', () => {
+        const week = { from: '2026-09-23', to: '2026-09-29' };
+        const rows = [saved('meta_ads', '2026-09-16', '2026-09-22'), saved('meta_ads', '2026-09-23', '2026-09-29')];
+        // Нэг өдрийн Meta файлыг өөр долоо хоногт ашиглах нь давхар биш; ижил хугацаа, эх үүсвэрийнх нь «хадгалсан тайлан».
+        expect(pickDuplicateReport(rows, { source: 'meta_ads', period: week, dated: true })).toBeNull();
+        expect(pickDuplicateReport([...rows, saved('callpro', '2026-09-23', '2026-09-29')], { source: 'meta_ads', period: week, dated: true })?.id).toBe('callpro:2026-09-23');
+        // Огноогүй CallPro бүлгийн тайланг дараагийн долоо хоногт андуурч дахин оруулбал анхааруулна.
+        const group = [saved('callpro', '2026-09-16', '2026-09-22')];
+        expect(pickDuplicateReport(group, { source: 'callpro', period: week, dated: false })?.id).toBe('callpro:2026-09-16');
+        expect(pickDuplicateReport(group, { source: 'callpro', period: { from: '2026-09-16', to: '2026-09-22' }, dated: false })).toBeNull();
     });
 });
 

@@ -163,31 +163,55 @@ export function ChannelBreakdownTable({ source, rows, totals, limit = 20 }: { so
     </div>;
 }
 
+/** Хадгалсан тайлангийн төлөв: шинэ, Meta API (солихгүй), илүү бүрэн (анхдагчаар алгасна), ижил файл, солигдоно. */
+function SavedWeekState({ week, chosen }: { week: ChannelSplitWeek; chosen: boolean }) {
+    const existing = week.existing;
+    if (!existing) return <span className="text-muted-foreground">Шинэ</span>;
+    const saved = existing.data_from && existing.data_to ? coverageText(week, { from: existing.data_from, to: existing.data_to }) : null;
+    if (existing.origin === 'api') return <Badge variant="danger">Meta API — солихгүй</Badge>;
+    if (existing.sameFile) return <Badge variant="neutral">Ижил файл</Badge>;
+    if (week.skip === 'fuller' && !chosen) return <Badge variant="neutral" title="Хадгалсан тайлан энэ файлаас олон өдөр хамарсан тул анхдагчаар алгасна. Сонговол энэ файлаар солигдоно.">Хадгалсан нь илүү бүрэн{saved ? ` (${saved})` : ''}</Badge>;
+    return <Badge variant="warning">Солигдоно{saved ? ` (${saved})` : ''}</Badge>;
+}
+
 /**
  * Хурлын долоо хоногоор хуваах урьдчилсан харагдац: долоо хоног бүрийн зардал, Meta-гийн дуудлага,
  * өдрийн хамралт, хадгалсан тайлантай эсэх. Файлд дуудлагын кампанит ажил байвал тухайн долоо хоногт
- * хүргэлтгүй бол 0 (файлыг бүхэлд нь уншсан тул).
+ * хүргэлтгүй бол 0. `selected` өгвөл долоо хоног бүрийг хадгалах эсэхийг сонгоно — Meta API-ийн
+ * долоо хоногийг сонгох боломжгүй, илүү бүрэн хадгалсан долоо хоног анхдагчаар сонгогдоогүй.
  */
-export function ChannelSplitWeeks({ weeks, currency, showCalls }: { weeks: ChannelSplitWeek[]; currency: string | null; showCalls: boolean }) {
+export function ChannelSplitWeeks({ weeks, currency, showCalls, selected, onToggle, disabled }: {
+    weeks: ChannelSplitWeek[];
+    currency: string | null;
+    showCalls: boolean;
+    selected?: ReadonlySet<string>;
+    onToggle?: (from: string, on: boolean) => void;
+    disabled?: boolean;
+}) {
+    const pick = !!selected && !!onToggle;
+    const labels = [...(pick ? ['Хадгалах'] : []), 'Долоо хоног (Лхагва–Мягмар)', 'Зардал', ...(showCalls ? ['Дуудлага (Meta)', 'Нэг дуудлагын өртөг'] : []), 'Өдөр', 'Хадгалсан'];
+    const numeric = new Set(['Зардал', 'Дуудлага (Meta)', 'Нэг дуудлагын өртөг']);
     return <div className="max-w-full overflow-x-auto rounded-lg border border-border" tabIndex={0} role="region" aria-label="Хурлын долоо хоногууд">
-        <table className="w-full min-w-[560px] text-left text-xs">
+        <table className={`w-full text-left text-xs ${pick ? 'min-w-[640px]' : 'min-w-[560px]'}`}>
             <thead className="bg-surface-2 text-muted-foreground"><tr>
-                {['Долоо хоног (Лхагва–Мягмар)', 'Зардал', ...(showCalls ? ['Дуудлага (Meta)', 'Нэг дуудлагын өртөг'] : []), 'Өдөр', 'Хадгалсан'].map((label, i) => <th key={label} scope="col" className={`px-3 py-2 font-medium ${i && i < (showCalls ? 4 : 2) ? 'text-right' : ''}`}>{label}</th>)}
+                {labels.map(label => <th key={label} scope="col" className={`px-3 py-2 font-medium ${numeric.has(label) ? 'text-right' : ''}`}>{label}</th>)}
             </tr></thead>
             <tbody>{weeks.map(week => {
                 const coverage = coverageText(week, week.dataPeriod);
                 const partial = !!week.dataPeriod && periodDays(week.dataPeriod) < periodDays(week);
                 const calls = week.totals[metaResultKey('calls')];
+                const chosen = !!selected?.has(week.from);
                 return <tr key={week.from} className="border-t border-border">
+                    {pick && <td className="px-3 py-2">
+                        <input type="checkbox" className="size-4 accent-brand" checked={chosen} disabled={disabled || week.skip === 'api'}
+                            aria-label={`${week.from} – ${week.to} долоо хоногийг хадгалах`} onChange={event => onToggle!(week.from, event.target.checked)} />
+                    </td>}
                     <th scope="row" className="num whitespace-nowrap px-3 py-2 font-medium">{week.from} – {week.to}</th>
                     <td className="num px-3 py-2 text-right">{typeof week.totals.spend === 'number' ? formatChannelValue(week.totals.spend, 'money', currency) : '—'}</td>
                     {showCalls && <td className="num px-3 py-2 text-right">{typeof calls === 'number' ? formatChannelValue(calls, 'count') : '0'}</td>}
                     {showCalls && <td className="num px-3 py-2 text-right">{costText('calls', week.totals[metaResultCostKey('calls')], currency)}</td>}
                     <td className="whitespace-nowrap px-3 py-2">{coverage ? <span className={partial ? 'text-status-pending' : undefined} title={week.missingDays.length ? `Өгөгдөлгүй: ${week.missingDays.join(', ')}` : undefined}>{coverage}</span> : '—'}</td>
-                    <td className="px-3 py-2">{!week.existing ? <span className="text-muted-foreground">Шинэ</span>
-                        : week.existing.origin === 'api' ? <Badge variant="danger">Meta API — солихгүй</Badge>
-                        : week.existing.sameFile ? <Badge variant="neutral">Ижил файл</Badge>
-                        : <Badge variant="warning">Солигдоно</Badge>}</td>
+                    <td className="px-3 py-2"><SavedWeekState week={week} chosen={pick ? chosen : !week.skip} /></td>
                 </tr>;
             })}</tbody>
         </table>
