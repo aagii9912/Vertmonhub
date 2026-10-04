@@ -14,9 +14,11 @@ import { logLeadActivity, recordLeadContact } from '@/lib/leads/activities';
 import { resolveActiveManagerName } from '@/lib/sales/manager-identity';
 import { applyLeadScope, assertProjectManager, UNRESTRICTED_SALES_SCOPE, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { formatShortDate, formatTime, ubDateStr } from '@/lib/utils/date';
+import { phoneIlikePattern } from '@/lib/utils/phone';
 import { updateViewing, listViewings } from '@/lib/services/ViewingService';
 import { listTasks, createTask, updateTask, isMissingTaskTable, TASK_MIGRATION_HINT } from '@/lib/services/TaskService';
 import { listPayments, addPayment, updatePayment } from '@/lib/services/PaymentService';
+import { formatMNT } from '@/lib/utils/currency';
 
 type Args = Record<string, any>;
 const db = () => adminClient();
@@ -31,9 +33,9 @@ export async function findLead(shopId: string, a: { lead_id?: string; customer_n
     q = applyLeadScope(q, scope);
     if (a.lead_id) q = q.eq('id', a.lead_id);
     else if (a.customer_phone) {
-        const phone = String(a.customer_phone).replace(/\D/g, '').slice(-8);
-        if (phone.length < 8) return { error: 'Лидийн бүтэн утасны дугаарыг оруулна уу' };
-        q = q.ilike('customer_phone', `%${phone}%`);
+        const phonePattern = phoneIlikePattern(String(a.customer_phone), 8);
+        if (!phonePattern) return { error: 'Лидийн бүтэн утасны дугаарыг оруулна уу' };
+        q = q.ilike('customer_phone', phonePattern);
     } else if (a.customer_name) {
         const name = String(a.customer_name).trim().replace(/[\\%_]/g, '\\$&');
         if (!name) return { error: 'Лидийн нэрийг оруулна уу' };
@@ -226,10 +228,10 @@ export async function addContractPayment(shopId: string, args: Args, confirm: bo
     if (!z.string().uuid().safeParse(requestId).success) return { error: 'Төлбөрийн баталгаажуулах мэдээлэл дутуу байна. Урьдчилсан мэдээллийг дахин гаргана уу.' };
     const due = String(args.due_date || ubDateStr()).slice(0, 10);
     const payload = { contract_id: c.contract.id, client_request_id: requestId as string, due_date: due, amount, paid_amount: paid, paid_date: paid > 0 ? (args.paid_date || ubDateStr()) : null, payment_method: paymentMethod, receipt_kind: receiptKind, label: args.label || null, installment_number: args.installment_number || undefined };
-    if (!confirm) return confirmNeeded('add_contract_payment', payload, `Төлбөр бүртгэх: ${c.contract.contract_number || c.contract.customer_name}`, { Гэрээ: c.contract.contract_number || '-', Харилцагч: c.contract.customer_name, 'Төлөх огноо': due, Дүн: `${amount.toLocaleString()}₮`, Төлсөн: `${paid.toLocaleString()}₮`, 'Төлсөн огноо': payload.paid_date || '-', 'Төлөлтийн төрөл': receiptKind ? RECEIPT_LABELS[receiptKind] : '-', Хэлбэр: paymentMethod || '-' });
+    if (!confirm) return confirmNeeded('add_contract_payment', payload, `Төлбөр бүртгэх: ${c.contract.contract_number || c.contract.customer_name}`, { Гэрээ: c.contract.contract_number || '-', Харилцагч: c.contract.customer_name, 'Төлөх огноо': due, Дүн: formatMNT(amount), Төлсөн: formatMNT(paid), 'Төлсөн огноо': payload.paid_date || '-', 'Төлөлтийн төрөл': receiptKind ? RECEIPT_LABELS[receiptKind] : '-', Хэлбэр: paymentMethod || '-' });
     const r = await addPayment(db(), shopId, c.contract.id, payload);
     if ('error' in r) return { error: r.error };
-    return { success: true, message: `${c.contract.customer_name}-ийн гэрээнд ${amount.toLocaleString()}₮ төлбөрийн мөр нэмэгдлээ${paid > 0 ? ` (${paid.toLocaleString()}₮ ${payload.payment_method === 'barter' ? 'бартерын төлөлт бүртгэгдлээ' : 'төлсөн, кассад орлого бичигдлээ'})` : ''}.`, paymentId: r.payment.id };
+    return { success: true, message: `${c.contract.customer_name}-ийн гэрээнд ${formatMNT(amount)} төлбөрийн мөр нэмэгдлээ${paid > 0 ? ` (${formatMNT(paid)} ${payload.payment_method === 'barter' ? 'бартерын төлөлт бүртгэгдлээ' : 'төлсөн, кассад орлого бичигдлээ'})` : ''}.`, paymentId: r.payment.id };
 }
 
 export async function markPaymentPaid(shopId: string, args: Args, confirm: boolean) {
@@ -259,8 +261,8 @@ export async function markPaymentPaid(shopId: string, args: Args, confirm: boole
         paid_date: args.paid_date ?? (paidAmount > Number(row.paid_amount || 0) ? ubDateStr() : row.paid_date ?? null),
         payment_method: paymentMethod, receipt_kind: receiptKind,
     };
-    if (!confirm) return confirmNeeded('mark_payment_paid', payload, `Төлбөр төлсөн гэж тэмдэглэх`, { Мөр: `#${row.installment_number}${row.label ? ` ${row.label}` : ''}`, Дүн: `${Number(row.amount).toLocaleString()}₮`, 'Төлсөн болгох': `${paidAmount.toLocaleString()}₮`, Огноо: payload.paid_date, 'Төлөлтийн төрөл': RECEIPT_LABELS[receiptKind as keyof typeof RECEIPT_LABELS] || '-', Хэлбэр: payload.payment_method || '-' });
+    if (!confirm) return confirmNeeded('mark_payment_paid', payload, `Төлбөр төлсөн гэж тэмдэглэх`, { Мөр: `#${row.installment_number}${row.label ? ` ${row.label}` : ''}`, Дүн: formatMNT(row.amount), 'Төлсөн болгох': formatMNT(paidAmount), Огноо: payload.paid_date, 'Төлөлтийн төрөл': RECEIPT_LABELS[receiptKind as keyof typeof RECEIPT_LABELS] || '-', Хэлбэр: payload.payment_method || '-' });
     const r = await updatePayment(db(), shopId, row.id, { paid_amount: paidAmount, paid_date: payload.paid_date, payment_method: payload.payment_method, receipt_kind: payload.receipt_kind }, { recordReceiptDelta: true });
     if ('error' in r) return { error: r.error };
-    return { success: true, message: `Төлбөрийн мөр #${row.installment_number} ${paidAmount.toLocaleString()}₮ ${payload.payment_method === 'barter' ? 'бартерын төлөлтөөр' : 'төлсөн гэж'} бүртгэгдлээ.`, paymentId: row.id };
+    return { success: true, message: `Төлбөрийн мөр #${row.installment_number} ${formatMNT(paidAmount)} ${payload.payment_method === 'barter' ? 'бартерын төлөлтөөр' : 'төлсөн гэж'} бүртгэгдлээ.`, paymentId: row.id };
 }

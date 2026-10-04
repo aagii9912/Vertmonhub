@@ -5,6 +5,7 @@ import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { withRetry } from '@/lib/ai/orchestrator/retry';
 import { logger } from '@/lib/utils/logger';
+import { formatMNT } from '@/lib/utils/currency';
 
 // ============================================
 // POST /api/dashboard/competitors/analyze
@@ -84,7 +85,7 @@ export async function POST() {
                     c.location ? `Байршил: ${c.location}` : null,
                     c.num_blocks != null ? `Блок: ${c.num_blocks}` : null,
                     c.planning ? `Төлөвлөлт: ${c.planning}` : null,
-                    c.price_per_sqm ? `М.кв үнэ: ${Number(c.price_per_sqm).toLocaleString('mn-MN')}₮` : null,
+                    c.price_per_sqm ? `М.кв үнэ: ${formatMNT(c.price_per_sqm)}` : null,
                     c.payment_terms ? `Төлбөрийн нөхцөл: ${c.payment_terms}` : null,
                     c.notes ? `Тэмдэглэл: ${c.notes}` : null,
                 ].filter(Boolean);
@@ -94,7 +95,7 @@ export async function POST() {
 
         const ownContext = [
             `Төслийн нэр: ${authShop.name || 'Манай төсөл'}`,
-            ownAvgPrice ? `Гэрээнүүдийн м.кв дундаж үнэ: ${ownAvgPrice.toLocaleString('mn-MN')}₮` : null,
+            ownAvgPrice ? `Гэрээнүүдийн м.кв дундаж үнэ: ${formatMNT(ownAvgPrice)}` : null,
             totalUnits > 0 ? `Нийт нэгж: ${totalUnits}, боломжит (зарагдаагүй): ${availableUnits}` : null,
         ]
             .filter(Boolean)

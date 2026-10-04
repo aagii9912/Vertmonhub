@@ -6,6 +6,7 @@
 
 import { supabaseAdmin as adminClient } from '@/lib/supabase';
 import { ubDateStr } from '@/lib/utils/date';
+import { phoneIlikePattern } from '@/lib/utils/phone';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { resolveSalesProjectScope, UNRESTRICTED_SALES_SCOPE, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { computeKpiReport } from '@/lib/dashboard/kpi-report-build';
@@ -15,10 +16,10 @@ import { addCustomerTag, removeCustomerTag, replyToCustomer, mergeCustomers } fr
 import { logMarketingSpend, upsertMarketingBudget, addMarketIndicator, listMarketingSpend, isMissingMarketingTable, MARKETING_MIGRATION_HINT } from '@/lib/services/MarketingOps';
 import { SPEND_CHANNELS } from '@/lib/marketing/budget';
 import type { AssistantPerms } from './index';
+import { formatMNT } from '@/lib/utils/currency';
 
 type Args = Record<string, any>;
 const db = () => adminClient();
-const money = (n: number) => `${Math.round(n).toLocaleString()}₮`;
 const confirmNeeded = (tool: string, args: Args, label: string, preview: Record<string, unknown>) => ({ requiresConfirmation: true, action: { tool, args }, label, preview });
 
 /* ---------------- Менежер / тайлан ---------------- */
@@ -55,7 +56,11 @@ export async function getExportLink(_shopId: string, args: Args) {
 async function findCustomer(shopId: string, a: Args) {
     let q = db().from('customers').select('id, name, phone, tags, facebook_id').eq('shop_id', shopId);
     if (a.customer_id) q = q.eq('id', a.customer_id);
-    else if (a.phone) q = q.ilike('phone', `%${String(a.phone).replace(/\D/g, '').slice(-8)}%`);
+    else if (a.phone) {
+        const phonePattern = phoneIlikePattern(String(a.phone));
+        if (!phonePattern) return { error: 'Харилцагчийн утасны дугаарыг бүтэн оруулна уу' };
+        q = q.ilike('phone', phonePattern);
+    }
     else if (a.customer_name) q = q.ilike('name', `%${a.customer_name}%`);
     else return { error: 'customer_id, customer_name эсвэл phone шаардлагатай' };
     const { data } = await q.limit(5);
@@ -107,10 +112,10 @@ export async function logSpend(shopId: string, args: Args, confirm: boolean, use
     if (!Number.isFinite(amount) || amount < 0) return { error: 'amount шаардлагатай' };
     const spentAt = /^\d{4}-\d{2}-\d{2}$/.test(String(args.spent_at || '')) ? String(args.spent_at) : ubDateStr();
     const channel = SPEND_CHANNELS[args.channel] ? String(args.channel) : 'other';
-    if (!confirm) return confirmNeeded('log_marketing_spend', { spent_at: spentAt, amount, channel, note: args.note || null }, 'Маркетингийн зарцуулалт бүртгэх', { Огноо: spentAt, Суваг: SPEND_CHANNELS[channel], Дүн: money(amount), Тэмдэглэл: args.note || '-' });
+    if (!confirm) return confirmNeeded('log_marketing_spend', { spent_at: spentAt, amount, channel, note: args.note || null }, 'Маркетингийн зарцуулалт бүртгэх', { Огноо: spentAt, Суваг: SPEND_CHANNELS[channel], Дүн: formatMNT(amount), Тэмдэглэл: args.note || '-' });
     const { data, error } = await logMarketingSpend(db(), shopId, userId, { spentAt, amount, channel, note: args.note });
     if (error) return { error: isMissingMarketingTable(error) ? MARKETING_MIGRATION_HINT : error.message };
-    return { success: true, message: `${SPEND_CHANNELS[channel]} сувагт ${money(amount)} зарцуулалт бүртгэлээ (${spentAt}).`, entryId: data.id };
+    return { success: true, message: `${SPEND_CHANNELS[channel]} сувагт ${formatMNT(amount)} зарцуулалт бүртгэлээ (${spentAt}).`, entryId: data.id };
 }
 
 export async function setBudget(shopId: string, args: Args, confirm: boolean) {
@@ -119,7 +124,7 @@ export async function setBudget(shopId: string, args: Args, confirm: boolean) {
         .map((m: Args) => ({ month: Number(m.month), amount: Number(m.amount) }))
         .filter((m: { month: number; amount: number }) => m.month >= 1 && m.month <= 12 && Number.isFinite(m.amount) && m.amount >= 0);
     if (!months.length) return { error: 'month + amount (эсвэл months[]) шаардлагатай' };
-    if (!confirm) return confirmNeeded('set_marketing_budget', { year, months }, `${year} оны маркетингийн төсөв`, Object.fromEntries(months.map((m: { month: number; amount: number }) => [`${m.month}-р сар`, money(m.amount)])));
+    if (!confirm) return confirmNeeded('set_marketing_budget', { year, months }, `${year} оны маркетингийн төсөв`, Object.fromEntries(months.map((m: { month: number; amount: number }) => [`${m.month}-р сар`, formatMNT(m.amount)])));
     const { error } = await upsertMarketingBudget(db(), shopId, year, months);
     if (error) return { error: isMissingMarketingTable(error) ? MARKETING_MIGRATION_HINT : error.message };
     return { success: true, message: `${year} оны ${months.map((m: { month: number }) => m.month).join(', ')}-р сарын төсөв хадгалагдлаа.` };

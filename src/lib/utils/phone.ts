@@ -26,6 +26,17 @@ export function normalizePhone(raw?: string | null): string | null {
 }
 
 /**
+ * Хадгалсан формат (+976, зай, зураас) ямар ч байсан таарах `ilike` загвар: сүүлийн
+ * 8 цифрийг 4-өөр хувааж хооронд нь дурын тэмдэгт зөвшөөрнө («99112233» → «%9911%2233%»).
+ * `minDigits`-ээс цөөн цифртэй бол null.
+ */
+export function phoneIlikePattern(raw: string | null | undefined, minDigits = 6): string | null {
+    const digits = String(raw ?? '').replace(/\D/g, '').slice(-8);
+    if (digits.length < minDigits) return null;
+    return `%${digits.match(/.{1,4}/g)!.join('%')}%`;
+}
+
+/**
  * Нормчилсон дугаар нь Монголын мобайл дугаарын хэв маягтай эсэх (8 орон, 6-9-өөр эхэлнэ).
  */
 export function isValidMongolianMobile(normalized?: string | null): boolean {

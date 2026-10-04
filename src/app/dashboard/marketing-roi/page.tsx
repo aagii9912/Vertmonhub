@@ -382,7 +382,7 @@ export default function MarketingROIPage() {
                 align: 'right',
                 sortable: true,
                 accessor: (c) => Number(c.spend || 0),
-                cell: (c) => <span className="tabular-nums">{Number(c.spend || 0).toLocaleString()}₮</span>,
+                cell: (c) => <span className="tabular-nums">{formatMNT(c.spend)}</span>,
             },
             {
                 key: 'impressions',

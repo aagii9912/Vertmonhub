@@ -6,6 +6,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { formatShortDate, formatTime, ubDateStr, ubStartOfDay } from '@/lib/utils/date';
 import { logger } from '@/lib/utils/logger';
 import { fetchAllRows } from '@/lib/utils/pagination';
+import { normalizePhone } from '@/lib/utils/phone';
 import { buildBudgetOverview, monthlySpendSeries, spendByChannel, SPEND_CHANNELS } from '@/lib/marketing/budget';
 import { loadMarketingSpend } from '@/lib/marketing/spend-load';
 import { spendQuality, SPEND_BASIS } from '@/lib/marketing/performance';
@@ -19,6 +20,7 @@ import { canReadPrivateAttachment, isLegacyPublicAttachmentUrl, parsePrivateAtta
 import { logLeadActivity } from '@/lib/leads/activities';
 import { STATUS_META, statusLabel } from '@/lib/leads/labels';
 import type { LeadStatus } from '@/types/property';
+import { formatMNT } from '@/lib/utils/currency';
 
 /** Timeline-д «хэн өөрчилсөн»-ийг тэмдэглэх (UI-ийн PATCH /leads/[id]-тэй ижил). */
 export interface LeadActor { userId?: string | null; userName?: string | null }
@@ -208,7 +210,7 @@ export async function fetchProperties(shopId: string, args: any) {
         if (unitResult.error) throw new Error(unitResult.error.message);
         const listings = (listingResult.data || []).map(p => ({
             source: 'properties', id: p.id, project_id: p.project_id, name: p.name, type: p.type, price: p.price,
-            priceFormatted: p.price == null ? 'Үнэ бүртгэгдээгүй' : `${Number(p.price).toLocaleString()}₮`,
+            priceFormatted: p.price == null ? 'Үнэ бүртгэгдээгүй' : formatMNT(p.price),
             size_sqm: p.size_sqm, rooms: p.rooms, bedrooms: p.bedrooms, bathrooms: p.bathrooms,
             floor: p.floor, district: p.district, city: p.city, status: p.status,
             is_featured: p.is_featured, views_count: p.views_count, inquiries_count: p.inquiries_count,
@@ -257,7 +259,7 @@ export async function fetchLeads(shopId: string, args: any, scope: SalesProjectS
     return data?.map(l => ({
         id: l.id, project_id: l.project_id, name: l.customer_name || 'Тодорхойгүй', phone: l.customer_phone, email: l.customer_email,
         status: l.status, source: l.source, sales_manager_name: l.sales_manager_name ?? null,
-        budget: l.budget_min && l.budget_max ? `${Number(l.budget_min).toLocaleString()}₮ - ${Number(l.budget_max).toLocaleString()}₮` : l.budget_min ? `${Number(l.budget_min).toLocaleString()}₮+` : 'Тодорхойгүй',
+        budget: l.budget_min && l.budget_max ? `${formatMNT(l.budget_min)} - ${formatMNT(l.budget_max)}` : l.budget_min ? `${formatMNT(l.budget_min)}+` : 'Тодорхойгүй',
         preferred_type: l.preferred_type, preferred_district: l.preferred_district, preferred_rooms: l.preferred_rooms,
         urgency: l.urgency, notes: l.notes,
         last_contact_at: l.last_contact_at, next_followup_at: l.next_followup_at, viewing_scheduled_at: l.viewing_scheduled_at,
@@ -390,9 +392,9 @@ export async function fetchContracts(shopId: string, args: any) {
     return {
         contracts: (data || []).map((c: any) => ({
             ...c,
-            total_price_fmt: c.total_price != null ? `${Number(c.total_price).toLocaleString()}₮` : '-',
-            paid_amount_fmt: c.paid_amount != null ? `${Number(c.paid_amount).toLocaleString()}₮` : '-',
-            balance_fmt: c.balance != null ? `${Number(c.balance).toLocaleString()}₮` : '-',
+            total_price_fmt: c.total_price != null ? formatMNT(c.total_price) : '-',
+            paid_amount_fmt: c.paid_amount != null ? formatMNT(c.paid_amount) : '-',
+            balance_fmt: c.balance != null ? formatMNT(c.balance) : '-',
         })),
         count: data?.length || 0,
     };
@@ -419,12 +421,12 @@ export async function fetchContractDetails(shopId: string, args: any) {
     return {
         contract: {
             ...data,
-            total_price_fmt: data.total_price != null ? `${Number(data.total_price).toLocaleString()}₮` : '-',
-            paid_amount_fmt: data.paid_amount != null ? `${Number(data.paid_amount).toLocaleString()}₮` : '-',
-            balance_fmt: data.balance != null ? `${Number(data.balance).toLocaleString()}₮` : '-',
-            first_price_fmt: data.first_price != null ? `${Number(data.first_price).toLocaleString()}₮` : '-',
-            prepayment_due_fmt: data.prepayment_due != null ? `${Number(data.prepayment_due).toLocaleString()}₮` : '-',
-            prepayment_paid_fmt: data.prepayment_paid != null ? `${Number(data.prepayment_paid).toLocaleString()}₮` : '-',
+            total_price_fmt: data.total_price != null ? formatMNT(data.total_price) : '-',
+            paid_amount_fmt: data.paid_amount != null ? formatMNT(data.paid_amount) : '-',
+            balance_fmt: data.balance != null ? formatMNT(data.balance) : '-',
+            first_price_fmt: data.first_price != null ? formatMNT(data.first_price) : '-',
+            prepayment_due_fmt: data.prepayment_due != null ? formatMNT(data.prepayment_due) : '-',
+            prepayment_paid_fmt: data.prepayment_paid != null ? formatMNT(data.prepayment_paid) : '-',
         },
     };
 }
@@ -481,14 +483,14 @@ export async function fetchContractsSummary(shopId: string, args: any) {
         active: totals.active,
         closed: totals.closed,
         overdue_count: totals.overdue_count,
-        total_contract_value: `${Math.round(totals.total_price).toLocaleString()}₮`,
-        total_collected: `${Math.round(totals.paid_amount).toLocaleString()}₮`,
-        total_outstanding: `${Math.round(totals.balance).toLocaleString()}₮`,
+        total_contract_value: formatMNT(totals.total_price),
+        total_collected: formatMNT(totals.paid_amount),
+        total_outstanding: formatMNT(totals.balance),
         collection_rate_pct: totals.total_price > 0 ? Math.round((totals.paid_amount / totals.total_price) * 1000) / 10 : 0,
         topManagers: Object.entries(byManager)
             .sort((a, b) => b[1].total - a[1].total)
             .slice(0, 5)
-            .map(([name, v]) => ({ name, contracts: v.count, total: `${Math.round(v.total).toLocaleString()}₮`, balance: `${Math.round(v.balance).toLocaleString()}₮` })),
+            .map(([name, v]) => ({ name, contracts: v.count, total: formatMNT(v.total), balance: formatMNT(v.balance) })),
         byChannel,
         byBlock,
     };
@@ -538,8 +540,8 @@ export async function fetchSalesSummary(shopId: string, args: any) {
         availableCount,
         barterCount: properties.filter(p => p.status === 'barter').length,
         reservedCount: properties.filter(p => p.status === 'reserved').length,
-        totalRevenue: `${totalRevenue.toLocaleString()}₮`,
-        avgPrice: `${Math.round(avgPrice).toLocaleString()}₮`,
+        totalRevenue: formatMNT(totalRevenue),
+        avgPrice: formatMNT(avgPrice),
         topDistricts: Object.entries(
             properties.reduce((acc: Record<string, number>, p) => {
                 if (p.district) acc[p.district] = (acc[p.district] || 0) + 1;
@@ -615,8 +617,8 @@ export async function compareProperties(shopId: string, args: any) {
     const comparison = data.map(p => ({
         name: p.name,
         type: p.type,
-        price: `${Number(p.price).toLocaleString()}₮`,
-        pricePerSqm: p.price_per_sqm ? `${Number(p.price_per_sqm).toLocaleString()}₮/м²` : '-',
+        price: formatMNT(p.price),
+        pricePerSqm: p.price_per_sqm ? `${formatMNT(p.price_per_sqm)}/м²` : '-',
         size: p.size_sqm ? `${p.size_sqm}м²` : '-',
         rooms: p.rooms || '-',
         bedrooms: p.bedrooms || '-',
@@ -695,11 +697,11 @@ export async function updatePropertyPrice(shopId: string, args: any, confirm = f
         return confirmNeeded('update_property_price',
             { property_id: prop.id, new_price: newPrice },
             `Байрны үнэ өөрчлөх: ${prop.name}`,
-            { Байр: prop.name, 'Одоогийн үнэ': `${Number(oldPrice).toLocaleString()}₮`, 'Шинэ үнэ': `${newPrice.toLocaleString()}₮` });
+            { Байр: prop.name, 'Одоогийн үнэ': formatMNT(oldPrice), 'Шинэ үнэ': formatMNT(newPrice) });
     }
     const { error } = await supabaseAdmin.from('properties').update({ price: newPrice }).eq('id', prop.id).eq('shop_id', shopId);
     if (error) return { error: `Алдаа: ${error.message}` };
-    return { success: true, property: prop.name, oldPrice: `${Number(oldPrice).toLocaleString()}₮`, newPrice: `${newPrice.toLocaleString()}₮` };
+    return { success: true, property: prop.name, oldPrice: formatMNT(oldPrice), newPrice: formatMNT(newPrice) };
 }
 
 // property_units.status enum (Мандала Гарден маягийн бодит нөөцийн грид)
@@ -1003,7 +1005,7 @@ export async function createProperty(shopId: string, args: any, confirm = false)
 
     const preview = {
         Нэр: args.name, Төрөл: args.type,
-        Үнэ: `${Number(args.price).toLocaleString()}₮`,
+        Үнэ: formatMNT(args.price),
         Дүүрэг: args.district || '-', 'Өрөө': args.rooms ?? '-', 'м²': args.size_sqm ?? '-',
         Статус: args.status || 'available',
     };
@@ -1080,7 +1082,7 @@ export async function createLead(shopId: string, args: any, confirm = false, sal
     }
     const preview = {
         Нэр: args.customer_name, Утас: args.customer_phone || '-', Статус: status, 'Эх сурвалж': source,
-        Төсөв: args.budget_max ? `${Number(args.budget_max).toLocaleString()}₮` : '-',
+        Төсөв: args.budget_max ? formatMNT(args.budget_max) : '-',
         Менежер: managerName || 'Хариуцагчгүй — идэвхтэй менежерт онооно',
     };
     if (!confirm) return confirmNeeded('create_lead', { ...args, status, source }, `Шинэ лийд: ${args.customer_name}`, preview);
@@ -1130,7 +1132,7 @@ export async function deleteLead(shopId: string, args: any, confirm = false, sco
 
 export async function createCustomer(shopId: string, args: any, confirm = false, salesManagerName = '') {
     if (!args.name) return { error: 'name шаардлагатай' };
-    const phoneNorm = args.phone ? String(args.phone).replace(/\D/g, '') : null;
+    const phoneNorm = normalizePhone(args.phone ? String(args.phone) : null);
 
     // Давхардал шалгах (утас/имэйлээр)
     if (phoneNorm || args.email) {
@@ -1259,7 +1261,7 @@ export async function createContract(shopId: string, args: any, confirm = false,
 
     const preview = {
         Харилцагч: args.customer_name, Утас: args.customer_phone || '-',
-        'Нийт үнэ': args.total_price ? `${Number(args.total_price).toLocaleString()}₮` : '-',
+        'Нийт үнэ': args.total_price ? formatMNT(args.total_price) : '-',
         'Төсөл/блок': args.block_name || '-', 'Байр': args.unit_number || '-',
         Менежер: salesManagerName || '-',
     };
@@ -1393,12 +1395,12 @@ export async function fetchMarketingSummary(shopId: string, args: any) {
         campaignCount: camps.length,
         activeCampaigns: camps.filter((c: any) => c.status === 'active').length,
         totals: {
-            spend: `${totals.spend.toLocaleString()}₮`,
+            spend: formatMNT(totals.spend),
             impressions: totals.impressions,
             clicks: totals.clicks,
             conversions: totals.conversions,
             ctr: totals.impressions ? `${((totals.clicks / totals.impressions) * 100).toFixed(2)}%` : '0%',
-            cpa: totals.conversions ? `${Math.round(totals.spend / totals.conversions).toLocaleString()}₮` : '-',
+            cpa: totals.conversions ? formatMNT(totals.spend / totals.conversions) : '-',
         },
         campaigns: camps.slice(0, 10),
         recentPosts: (posts || []).map((p: any) => ({ platform: p.platform, status: p.status, likes: p.likes, comments: p.comments, reach: p.reach, engagement_rate: p.engagement_rate })),
@@ -1429,7 +1431,6 @@ export async function fetchMarketingBudgetStatus(shopId: string, args: any) {
     }
 
     const overview = buildBudgetOverview(budgets, monthlySpendSeries(entries, year), revenue);
-    const fmt = (v: number) => `${Math.round(v).toLocaleString()}₮`;
     return {
         year,
         spendQuality: spendQuality(allEntries),
@@ -1438,23 +1439,23 @@ export async function fetchMarketingBudgetStatus(shopId: string, args: any) {
             .filter((m) => m.budget > 0 || m.spend > 0 || m.revenue > 0)
             .map((m) => ({
                 month: `${m.month}-р сар`,
-                budget: fmt(m.budget),
-                spend: fmt(m.spend),
-                revenue: fmt(m.revenue),
+                budget: formatMNT(m.budget),
+                spend: formatMNT(m.spend),
+                revenue: formatMNT(m.revenue),
                 utilization: m.pct !== null ? `${m.pct}%` : '-',
                 status: m.status,
             })),
         totals: {
-            budget: fmt(overview.totals.budget),
-            spend: fmt(overview.totals.spend),
-            revenue: fmt(overview.totals.revenue),
+            budget: formatMNT(overview.totals.budget),
+            spend: formatMNT(overview.totals.spend),
+            revenue: formatMNT(overview.totals.revenue),
             utilization: overview.totals.pct !== null ? `${overview.totals.pct}%` : '-',
             status: overview.totals.status,
             roi: overview.totals.roi !== null ? `${overview.totals.roi}x` : '-',
         },
         byChannel: spendByChannel(entries).map((c) => ({
             channel: SPEND_CHANNELS[c.channel] || c.channel,
-            amount: fmt(c.amount),
+            amount: formatMNT(c.amount),
         })),
         statusLegend: 'ok = хэвийн (<80%), warn = анхаарах (80-100%), over = төсөв хэтэрсэн (>100%), none = төсөвгүй',
     };

@@ -8,6 +8,7 @@ import { ACTIVE_STATUSES } from '@/lib/leads/labels';
 import { isLeadWorkQueue, workQueueFilter } from '@/lib/leads/work-queue';
 import { parsePagination, buildPageMeta } from '@/lib/utils/pagination';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
+import { phoneIlikePattern } from '@/lib/utils/phone';
 import { applyLeadScope, assertProjectManager, canAccessProject, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 
 /** Хугацааны шүүлтүүр — гүйдэг цонх (өнөөдрөөс хойш N хоног). */
@@ -105,17 +106,9 @@ export async function GET(request: NextRequest) {
         const toIso = searchParams.get('to');
         if (fromIso && !Number.isNaN(Date.parse(fromIso))) query = query.gte('created_at', new Date(fromIso).toISOString());
         if (toIso && !Number.isNaN(Date.parse(toIso))) query = query.lt('created_at', new Date(toIso).toISOString());
-        // Давхардлын шалгалт: цифрүүдийг 4-өөр хувааж хооронд нь дурын тэмдэгт зөвшөөрнө,
-        // ингэснээр хадгалсан формат (зай, зураас) ямар ч байсан таарна.
-        const phone = searchParams.get('phone');
-        if (phone) {
-            // Сүүлийн 8 орон — улсын код (+976) орсон ч хадгалсан «99 11 22 33»-тай таарна
-            const digits = phone.replace(/\D/g, '').slice(-8);
-            if (digits.length >= 6) {
-                const chunks = digits.match(/.{1,4}/g) ?? [digits];
-                query = query.ilike('customer_phone', `%${chunks.join('%')}%`);
-            }
-        }
+        // Давхардлын шалгалт: хадгалсан формат (+976, зай, зураас) ямар ч байсан таарна.
+        const phonePattern = phoneIlikePattern(searchParams.get('phone'));
+        if (phonePattern) query = query.ilike('customer_phone', phonePattern);
         const q = searchParams.get('q')?.trim();
         if (q) {
             const safe = q.replace(/[%_,()]/g, ' ').trim();

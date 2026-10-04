@@ -5,6 +5,7 @@
 
 import { Resend } from 'resend';
 import { logger } from '@/lib/utils/logger';
+import { formatMNT } from '@/lib/utils/currency';
 
 // Initialize Resend client
 const resend = process.env.RESEND_API_KEY
@@ -67,7 +68,6 @@ export interface DirectorDigestData {
     topManagers: Array<{ name: string; contracts: number; sales: number }>;
 }
 export async function sendDirectorDigestEmail(to: string, d: DirectorDigestData): Promise<boolean> {
-    const money = (n: number) => new Intl.NumberFormat('mn-MN').format(Math.round(n)) + '₮';
     const tile = (label: string, value: string) =>
         `<td style="padding:12px;background:#f9fafb;border-radius:8px;text-align:center;width:25%">
             <div style="font-size:22px;font-weight:700;color:#111">${value}</div>
@@ -77,7 +77,7 @@ export async function sendDirectorDigestEmail(to: string, d: DirectorDigestData)
         ? d.topManagers.map((m, i) =>
             `<tr><td style="padding:8px;border-bottom:1px solid #eee">${i + 1}. ${m.name}</td>
              <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${m.contracts} гэрээ</td>
-             <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${money(m.sales)}</td></tr>`).join('')
+             <td style="padding:8px;border-bottom:1px solid #eee;text-align:right">${formatMNT(m.sales)}</td></tr>`).join('')
         : `<tr><td colspan="3" style="padding:8px;color:#6b7280">Мэдээлэл алга</td></tr>`;
 
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head>
@@ -95,8 +95,8 @@ export async function sendDirectorDigestEmail(to: string, d: DirectorDigestData)
         ${tile('Хоцролттой', String(d.overdueCount))}
       </tr></table>
       <table style="width:100%;border-collapse:separate;border-spacing:8px;margin-top:4px"><tr>
-        ${tile('Нийт борлуулалт', money(d.totalSales))}
-        ${tile('Цуглуулсан', money(d.collected))}
+        ${tile('Нийт борлуулалт', formatMNT(d.totalSales))}
+        ${tile('Цуглуулсан', formatMNT(d.collected))}
       </tr></table>
       <h3 style="margin:24px 0 8px;font-size:15px;color:#111">🏆 Топ менежерүүд</h3>
       <table style="width:100%;border-collapse:collapse;font-size:13px">${managerRows}</table>

@@ -6,6 +6,7 @@
 
 import { createHash } from 'crypto';
 import { logger } from '@/lib/utils/logger';
+import { normalizePhone } from '@/lib/utils/phone';
 
 const GRAPH_VERSION = 'v21.0';
 
@@ -22,12 +23,9 @@ function hashEmail(email?: string | null): string | undefined {
 
 /** Утсыг E.164 маягийн цифр болгож (Монгол: 976 код) hash хийх. */
 function hashPhone(phone?: string | null): string | undefined {
-    if (!phone) return undefined;
-    let d = String(phone).replace(/\D/g, '');
-    if (!d) return undefined;
-    if (d.length === 8) d = `976${d}`;            // дотоод дугаар → улсын код нэмэх
-    else if (d.length === 11 && d.startsWith('976')) { /* аль хэдийн зөв */ }
-    return sha256(d);
+    const local = normalizePhone(phone);
+    if (!local) return undefined;
+    return sha256(local.length === 8 ? `976${local}` : local); // дотоод дугаар → улсын код нэмэх
 }
 
 /** fbclid-аас Meta-ийн `fbc` параметр бүтээх. */

@@ -1,6 +1,7 @@
 import { ubMonthRange } from '@/lib/utils/date';
 import { STATUS_META, SOURCE_LABEL } from '@/lib/leads/labels';
 import { VIEWING_STATUS_META } from '@/lib/viewings/labels';
+import { formatMNT } from '@/lib/utils/currency';
 
 /**
  * Сарын KPI тайлангийн PURE туслахууд — DB-гүй, unit-тестэд шууд ордог.
@@ -130,10 +131,6 @@ export function buildKpiSummary(input: {
     };
 }
 
-function fmtMnt(value: number): string {
-    return `${Math.round(value).toLocaleString('mn-MN')}₮`;
-}
-
 function fmtDelta(delta: number | null): string {
     if (delta === null) return '';
     return delta >= 0 ? ` (өмнөх сараас +${delta}%)` : ` (өмнөх сараас ${delta}%)`;
@@ -172,7 +169,7 @@ export function formatKpiReportText(input: {
     lines.push(`• Шинэ лид: ${summary.newLeads}${fmtDelta(summary.deltas.leads)}`);
     lines.push(`• Уулзалт: ${summary.viewings}${fmtDelta(summary.deltas.viewings)} (болсон: ${summary.viewingsDone})`);
     lines.push(`• Байгуулсан гэрээ: ${summary.contracts}${fmtDelta(summary.deltas.contracts)}`);
-    lines.push(`• Борлуулалт: ${fmtMnt(summary.revenue)}${fmtDelta(summary.deltas.revenue)}`);
+    lines.push(`• Борлуулалт: ${formatMNT(summary.revenue)}${fmtDelta(summary.deltas.revenue)}`);
     lines.push(`• Дуусгасан ажил: ${summary.tasksDone}`);
 
     if (input.target && input.target.teamTarget > 0) {
@@ -181,7 +178,7 @@ export function formatKpiReportText(input: {
             : 0;
         lines.push('');
         lines.push('ЗОРИЛТ');
-        lines.push(`• Багийн сарын зорилт: ${fmtMnt(input.target.teamTarget)} · Гүйцэтгэл: ${fmtMnt(input.target.teamActual)} (${pct}%)`);
+        lines.push(`• Багийн сарын зорилт: ${formatMNT(input.target.teamTarget)} · Гүйцэтгэл: ${formatMNT(input.target.teamActual)} (${pct}%)`);
         if (input.target.myShare !== null) {
             lines.push(`• Багийн гүйцэтгэлд миний хувь: ${input.target.myShare}%`);
         }
@@ -221,7 +218,7 @@ export function formatKpiReportText(input: {
             const parts = [
                 c.contract_number ? `№${c.contract_number}` : null,
                 c.customer_name || null,
-                c.total_price ? fmtMnt(Number(c.total_price)) : null,
+                c.total_price ? formatMNT(Number(c.total_price)) : null,
                 c.contract_date ? fmtDay(c.contract_date) : null,
             ].filter(Boolean);
             lines.push(`• ${parts.join(' · ')}`);
