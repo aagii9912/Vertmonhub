@@ -65,7 +65,7 @@ export function ChannelReportList({ data, filter, onFilter, canDelete, shopId }:
                         <h3 className="text-sm font-semibold">{CHANNEL_SOURCE_LABELS[source]}</h3>
                         <p className="text-xs text-muted-foreground">{report.period_from} – {report.period_to}{match.previous ? ` · өмнөх ${match.previous.period_from} – ${match.previous.period_to}` : ' · харьцуулах өмнөх тайлан алга'}</p>
                     </header>
-                    <ChannelTotalsGrid source={source} totals={report.totals} comparison={match.comparison} keys={channelKeyMetrics(source)} />
+                    <ChannelTotalsGrid source={source} totals={report.totals} comparison={match.previous ? match.comparison : null} keys={channelKeyMetrics(source)} />
                     {source === 'callpro' && <MissedCallsByHour breakdown={report.breakdown} />}
                 </article>;
             })}

@@ -39,7 +39,7 @@ export function ChannelTotalsGrid({ source, totals, missing = [], comparison, ke
         {metrics.map(m => {
             const value = totals[m.key];
             return <div key={m.key} className="min-w-0 rounded-lg border border-border p-3">
-                <dt className="truncate text-xs text-muted-foreground" title={m.label}>{m.label}</dt>
+                <dt className="break-words text-xs text-muted-foreground">{m.label}</dt>
                 <dd className="mt-1">
                     {typeof value === 'number'
                         ? <span className="num text-base font-semibold">{formatMetric(source, m.key, value, totals)}</span>
