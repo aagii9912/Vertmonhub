@@ -46,6 +46,9 @@ const typeLabels: Record<string, string> = {
     event: 'Эвент',
 };
 
+/** Локал календарийн `YYYY-MM-DD` (toISOString нь UTC руу шилжиж УБ-д нэг өдөр хасдаг). */
+const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
 export default function CalendarPage() {
     const { shop } = useAuth();
     const [items, setItems] = useState<CalendarItem[]>([]);
@@ -53,7 +56,7 @@ export default function CalendarPage() {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [creating, setCreating] = useState(false);
-    const [newItem, setNewItem] = useState({ title: '', type: 'post', platform: 'facebook', scheduled_date: new Date().toISOString().split('T')[0], color: '#3B82F6' });
+    const [newItem, setNewItem] = useState({ title: '', type: 'post', platform: 'facebook', scheduled_date: ymd(new Date()), color: '#3B82F6' });
 
     const handleCreate = async () => {
         if (!shop?.id || !newItem.title.trim()) return;
@@ -66,7 +69,7 @@ export default function CalendarPage() {
             });
             setItems(prev => [...prev, row].sort((a: CalendarItem, b: CalendarItem) => a.scheduled_date.localeCompare(b.scheduled_date)));
             setShowCreateModal(false);
-            setNewItem({ title: '', type: 'post', platform: 'facebook', scheduled_date: new Date().toISOString().split('T')[0], color: '#3B82F6' });
+            setNewItem({ title: '', type: 'post', platform: 'facebook', scheduled_date: ymd(new Date()), color: '#3B82F6' });
         } catch (err) { console.error('Create error:', err); }
         finally { setCreating(false); }
     };
@@ -76,8 +79,8 @@ export default function CalendarPage() {
         const fetch = async () => {
             setLoading(true);
             try {
-                const startOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).toISOString().split('T')[0];
-                const endOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).toISOString().split('T')[0];
+                const startOfMonth = ymd(new Date(currentDate.getFullYear(), currentDate.getMonth(), 1));
+                const endOfMonth = ymd(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0));
 
                 const { rows } = await dashboardJson<{ rows: CalendarItem[] }>(
                     `/api/marketing/data/content_calendar?gte.scheduled_date=${startOfMonth}&lte.scheduled_date=${endOfMonth}&order=scheduled_date.asc`,
@@ -100,7 +103,7 @@ export default function CalendarPage() {
     const nextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
 
     const getItemsForDay = (day: number) => {
-        const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const dateStr = ymd(new Date(currentDate.getFullYear(), currentDate.getMonth(), day));
         return items.filter(item => item.scheduled_date === dateStr);
     };
 

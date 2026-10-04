@@ -16,6 +16,19 @@ import { createViewing, resolveViewingInput, updateViewing } from '@/lib/service
 import { applyLeadScope, assertProjectManager, canAccessProject, UNRESTRICTED_SALES_SCOPE, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { z } from 'zod';
 import { canReadPrivateAttachment, isLegacyPublicAttachmentUrl, parsePrivateAttachmentUrl } from '@/lib/ai/private-attachments';
+import { logLeadActivity } from '@/lib/leads/activities';
+import { statusLabel } from '@/lib/leads/labels';
+
+/** Timeline-д «хэн өөрчилсөн»-ийг тэмдэглэх (UI-ийн PATCH /leads/[id]-тэй ижил). */
+export interface LeadActor { userId?: string | null; userName?: string | null }
+
+function logStatusChange(shopId: string, leadId: string, from: string, to: string, lostReason: string | null, actor?: LeadActor) {
+    return logLeadActivity(supabaseAdmin, {
+        shopId, leadId, type: 'status', createdBy: actor?.userId ?? null, createdByName: actor?.userName || null,
+        content: `${statusLabel(from)} → ${statusLabel(to)}${lostReason ? ` · ${lostReason}` : ''}`,
+        meta: { from, to, lost_reason: lostReason },
+    });
+}
 
 // Lazy admin client — built on first property access so missing env at
 // module-evaluation time (e.g. Next.js page-data collection) does not
@@ -743,7 +756,7 @@ export async function updateUnitStatus(shopId: string, args: any, confirm = fals
     return { success: true, unit: label, block: unit.block, oldStatus, newStatus };
 }
 
-export async function updateLeadStatus(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
+export async function updateLeadStatus(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE, actor?: LeadActor) {
     if (!LEAD_STATUSES_FOR_AI.includes(args.new_status)) {
         return { error: `Төлөв буруу. Боломжтой: ${LEAD_STATUSES_FOR_AI.join(', ')}` };
     }
@@ -782,6 +795,9 @@ export async function updateLeadStatus(shopId: string, args: any, confirm = fals
         .eq('shop_id', shopId).is('deleted_at', null).select('id').maybeSingle(), scope);
     if (error) return { error: `Алдаа: ${error.message}` };
     if (!data) return { error: 'Лид олдсонгүй. Төлөв өөрчлөгдөөгүй.' };
+    if (oldStatus !== args.new_status) {
+        await logStatusChange(shopId, lead.id, oldStatus, args.new_status, args.new_status === 'closed_lost' ? lostReason : null, actor);
+    }
     return { success: true, lead: lead.customer_name, oldStatus, newStatus: args.new_status };
 }
 
@@ -861,7 +877,7 @@ export async function updateContractStatus(shopId: string, args: any, confirm = 
  * статусыг action-оор нэгтгэж шинэчилнэ. confirm=false үед бүх зорилтыг олж НЭГ
  * нэгдсэн preview буцаана; confirm=true үед preview-д тогтсон ID-уудаар бодитоор шинэчилнэ.
  */
-export async function processContractAction(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE): Promise<any> {
+export async function processContractAction(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE, actor?: LeadActor): Promise<any> {
     // Баталгаажуулалтын хооронд өгөгдөл өөрчлөгдөж болно; бүх зорилтын дүрмийг бичихээс өмнө дахин шалгана.
     if (confirm) {
         const checked = await processContractAction(shopId, args, false, scope);
@@ -913,7 +929,7 @@ export async function processContractAction(shopId: string, args: any, confirm =
 
     // Лийд
     if (args.lead_id || args.customer_name) {
-        const leadResult: any = await updateLeadStatus(shopId, { lead_id: args.lead_id, customer_name: args.customer_name, new_status: mapping.lead, lost_reason: args.lost_reason }, confirm, scope);
+        const leadResult: any = await updateLeadStatus(shopId, { lead_id: args.lead_id, customer_name: args.customer_name, new_status: mapping.lead, lost_reason: args.lost_reason }, confirm, scope, actor);
         results.lead = leadResult;
         if (leadResult.requiresConfirmation) {
             resolvedArgs.lead_id = leadResult.action.args.lead_id;
@@ -1321,7 +1337,7 @@ export async function deleteCustomer(shopId: string, args: any, confirm = false)
 
 // ---- Bulk үйлдэл ----
 
-export async function bulkUpdateLeads(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
+export async function bulkUpdateLeads(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE, actor?: LeadActor) {
     if (args.new_status === 'closed_won' || args.new_status === 'closed_lost') return { error: 'Олон лидийг бөөнөөр хаахгүй. Лид тус бүрт update_lead_status ашиглаж, гэрээ эсвэл алдсан шалтгааныг шалгана уу.' };
     const valid = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating'];
     if (!args.new_status || !valid.includes(args.new_status)) return { error: 'new_status шаардлагатай ба зөв төлөв байх ёстой' };
@@ -1351,6 +1367,9 @@ export async function bulkUpdateLeads(shopId: string, args: any, confirm = false
     const { data: updated, error } = await applyLeadScope(supabaseAdmin.from('leads').update({ status: args.new_status, lost_reason: null, updated_at: new Date().toISOString() })
         .in('id', ids).eq('shop_id', shopId).is('deleted_at', null).select('id'), scope);
     if (error) return { error: `Алдаа: ${error.message}` };
+    const updatedIds = new Set((updated || []).map((row) => row.id));
+    await Promise.all(leads.filter((l) => updatedIds.has(l.id) && l.status !== args.new_status)
+        .map((l) => logStatusChange(shopId, l.id, l.status, args.new_status, null, actor)));
     if (updated?.length !== ids.length) return { error: `${ids.length} лидээс ${updated?.length || 0} нь шинэчлэгдлээ. Жагсаалтаа шинэчилж шалгана уу.`, partialSuccess: !!updated?.length };
     return { success: true, message: `${updated.length} лийдийн статусыг "${args.new_status}" болгож шинэчиллээ.`, count: updated.length };
 }

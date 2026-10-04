@@ -138,6 +138,24 @@ describe('AI individual lead closure', () => {
         query('leads', null);
         expect(await updateLeadStatus('shop-1', { lead_id: lead.id, new_status: 'offered' }, true)).toHaveProperty('error');
     });
+    it('logs the change to the lead timeline with the acting user, like the dashboard PATCH', async () => {
+        query('leads', [lead]);
+        query('leads', { id: lead.id });
+        const activity = query('lead_activities', { id: 'activity-1' });
+        expect(await updateLeadStatus('shop-1', { lead_id: lead.id, new_status: 'closed_lost', lost_reason: 'Үнэ тохироогүй' }, true, undefined, { userId: 'user-1', userName: 'Манда' }))
+            .toMatchObject({ success: true });
+        expect(activity.insert).toHaveBeenCalledWith(expect.objectContaining({
+            shop_id: 'shop-1', lead_id: lead.id, type: 'status', created_by: 'user-1', created_by_name: 'Манда',
+            content: expect.stringContaining('Үнэ тохироогүй'),
+            meta: { from: 'contacted', to: 'closed_lost', lost_reason: 'Үнэ тохироогүй' },
+        }));
+    });
+    it('does not log a timeline entry when the status is unchanged', async () => {
+        query('leads', [lead]);
+        query('leads', { id: lead.id });
+        expect(await updateLeadStatus('shop-1', { lead_id: lead.id, new_status: 'contacted' }, true)).toMatchObject({ success: true });
+        expect(from).toHaveBeenCalledTimes(2);
+    });
 });
 
 describe('bulk and composite lead changes', () => {
@@ -162,6 +180,17 @@ describe('bulk and composite lead changes', () => {
         query('leads', [lead, { ...lead, id: 'lead-2' }]);
         query('leads', [{ id: lead.id }]);
         expect(await bulkUpdateLeads('shop-1', { lead_ids: 'lead-1,lead-2', new_status: 'offered' }, true)).toMatchObject({ partialSuccess: true, error: expect.any(String) });
+    });
+    it('logs a timeline entry only for leads whose status the bulk update changed', async () => {
+        query('leads', [lead, { ...lead, id: 'lead-2', status: 'offered' }]);
+        query('leads', [{ id: lead.id }, { id: 'lead-2' }]);
+        const activity = query('lead_activities', { id: 'activity-1' });
+        expect(await bulkUpdateLeads('shop-1', { lead_ids: 'lead-1,lead-2', new_status: 'offered' }, true, undefined, { userId: 'user-1', userName: 'Манда' }))
+            .toMatchObject({ success: true, count: 2 });
+        expect(activity.insert).toHaveBeenCalledTimes(1);
+        expect(activity.insert).toHaveBeenCalledWith(expect.objectContaining({
+            lead_id: lead.id, type: 'status', created_by: 'user-1', meta: { from: 'contacted', to: 'offered', lost_reason: null },
+        }));
     });
     it('does not silently truncate a bulk request above 100 leads', async () => {
         query('leads', Array.from({ length: 101 }, (_, i) => ({ ...lead, id: String(i) })));

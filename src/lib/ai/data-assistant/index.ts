@@ -143,9 +143,9 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'update_property_status': result = await updatePropertyStatus(shopId, args, confirm); break;
         case 'update_unit_status': result = await updateUnitStatus(shopId, args, confirm); break;
         case 'update_property_price': result = await updatePropertyPrice(shopId, args, confirm); break;
-        case 'update_lead_status': result = await updateLeadStatus(shopId, args, confirm, scope); break;
+        case 'update_lead_status': result = await updateLeadStatus(shopId, args, confirm, scope, { userId, userName }); break;
         case 'add_lead_note': result = await addLeadNote(shopId, args, confirm, scope); break;
-        case 'process_contract_action': result = await processContractAction(shopId, args, confirm, scope); break;
+        case 'process_contract_action': result = await processContractAction(shopId, args, confirm, scope, { userId, userName }); break;
         case 'create_property': result = await createProperty(shopId, args, confirm); break;
         case 'delete_property': result = await deleteProperty(shopId, args, confirm); break;
         case 'create_lead': result = await createLead(shopId, args, confirm, userName, userId, scope); break;
@@ -157,7 +157,7 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'delete_contract': result = await deleteContract(shopId, args, confirm); break;
         case 'delete_customer': result = await deleteCustomer(shopId, args, confirm); break;
         case 'attach_file': result = await attachFile(shopId, args, confirm, userName, userId, perms, scope); break;
-        case 'bulk_update_leads': result = await bulkUpdateLeads(shopId, args, confirm, scope); break;
+        case 'bulk_update_leads': result = await bulkUpdateLeads(shopId, args, confirm, scope, { userId, userName }); break;
         case 'get_marketing_summary': result = await fetchMarketingSummary(shopId, args); break;
         case 'get_marketing_budget_status': result = await fetchMarketingBudgetStatus(shopId, args); break;
         case 'get_market_indicators': result = await fetchMarketIndicators(shopId); break;

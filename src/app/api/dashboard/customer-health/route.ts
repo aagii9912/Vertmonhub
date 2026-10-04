@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { getUserShop } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { ubMonthRange, ubParts } from '@/lib/utils/date';
 
 /**
  * GET /api/dashboard/customer-health
@@ -23,9 +24,8 @@ export async function GET() {
         const scope = await resolveSalesProjectScope(supabase, authShop.id);
         const shopId = authShop.id;
 
-        const monthStart = new Date();
-        monthStart.setDate(1);
-        monthStart.setHours(0, 0, 0, 0);
+        const { year, month } = ubParts();
+        const monthStart = ubMonthRange(year, month - 1).start;
         const nowIso = new Date().toISOString();
 
         const [{ data: customers }, { data: convertedLeads }] = await Promise.all([

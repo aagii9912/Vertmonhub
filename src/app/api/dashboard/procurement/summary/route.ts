@@ -3,6 +3,7 @@ import { getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { ubDateStr, ubMonthRange, ubParts } from '@/lib/utils/date';
 
 /** GET /api/dashboard/procurement/summary — Худалдан авалтын ерөнхий үзүүлэлт */
 export async function GET() {
@@ -15,11 +16,9 @@ export async function GET() {
         const supabase = supabaseAdmin();
         const shopId = authShop.id;
 
-        const monthStart = new Date();
-        monthStart.setDate(1);
-        monthStart.setHours(0, 0, 0, 0);
-        const monthStartIso = monthStart.toISOString().slice(0, 10);
-        const todayIso = new Date().toISOString().slice(0, 10);
+        const { year, month } = ubParts();
+        const monthStartIso = ubDateStr(ubMonthRange(year, month - 1).start);
+        const todayIso = ubDateStr();
 
         const [{ data: bills }, { data: txns }] = await Promise.all([
             supabase
