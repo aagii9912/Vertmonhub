@@ -50,18 +50,24 @@ export async function POST(request: NextRequest) {
     const parsed = RunSchema.safeParse(await readBody(request));
     if (!parsed.success) return NextResponse.json({ error: 'Хүсэлт буруу байна' }, { status: 400 });
     const dryRun = !!parsed.data.dryRun;
+    // Амжилтгүй ажиллалт ч лид үүсгэсэн байж болох тул audit-ыг үргэлж бичнэ.
+    let meta: Record<string, unknown> = { dryRun };
     try {
         const result = await syncElysiumLeads(supabaseAdmin(), { trigger: 'manual', dryRun });
-        await logAdminAudit({
-            actorId: admin.id, action: 'integration.elysium_sync', targetId: 'elysium',
-            meta: {
-                dryRun, read: result.read, pending: result.pending, imported: result.imported, matched: result.matched,
-                invalid: result.invalid, failed: result.failed, remaining: result.remaining,
-            },
-        });
+        meta = {
+            dryRun, read: result.read, pending: result.pending, imported: result.imported, keyed: result.keyed, matched: result.matched,
+            invalid: result.invalid, failed: result.failed, remaining: result.remaining,
+        };
         return NextResponse.json({ result }, { headers: NO_STORE });
     } catch (error) {
+        const partial = error instanceof ElysiumSyncError ? error.partial : undefined;
+        meta = {
+            ...partial, dryRun, aborted: true,
+            error: error instanceof ElysiumSyncError ? error.message : 'Elysium лид татахад алдаа гарлаа',
+        };
         return syncError(error, 'Elysium лид татахад алдаа гарлаа');
+    } finally {
+        await logAdminAudit({ actorId: admin.id, action: 'integration.elysium_sync', targetId: 'elysium', meta });
     }
 }
 

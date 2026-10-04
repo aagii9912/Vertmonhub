@@ -24,18 +24,30 @@ export const ELYSIUM_SETTLE_MS = 15 * 60 * 1000;
 export const ELYSIUM_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 /** Нэг ажиллалтад бичих дээд мөр (үлдсэнийг дараагийн ажиллалт үргэлжлүүлнэ). */
 export const ELYSIUM_MAX_ROWS_PER_RUN = 200;
+/**
+ * Нэг ажиллалтын мөр боловсруулах хугацаа. Route-ийн maxDuration (120 с)-аас өмнө зогсож,
+ * төлөвөө бичээд үлдсэнийг дараагийн ажиллалтад шилжүүлнэ.
+ */
+export const ELYSIUM_RUN_BUDGET_MS = 75_000;
 
 const SOURCE = 'elysium';
 /** `.in()` URL-ийн уртыг хязгаарлана (uuid × 100 ≈ 4KB). */
 const CHUNK = 100;
 const LEAD_COLUMNS = 'id, project_id, client_request_id, customer_phone, customer_email, notes, created_at, deleted_at';
 const KEY_CONFLICT = 'Хүсэлтийн түлхүүр өөр төсөлд ашиглагдсан';
+/** Түүхэн импорт эсвэл өмнөх ажиллалт ижил түлхүүрээр аль хэдийн оруулсан лид. */
+export const ELYSIUM_KEYED_DETAIL = 'Өмнөх импортоор CRM-д орсон';
+const SAMPLE_SIZE = 20;
+const MISSING_STORAGE = 'Холболтын хүснэгт суулгагдаагүй байна (migration 20261004164000).';
 
 export type ElysiumOutcome = 'imported' | 'matched' | 'invalid';
+/** Ажиллалтын тайланд: `keyed` = ledger-т «imported» боловч энэ удаа шинээр үүсээгүй (түлхүүрээр олдсон). */
+export type ElysiumRunOutcome = ElysiumOutcome | 'keyed';
 export type ElysiumSyncTrigger = 'cron' | 'manual';
 
 export class ElysiumSyncError extends Error {
-    constructor(message: string, readonly status = 503) { super(message); }
+    /** `partial` — тасарсан ажиллалт энэ хүртэл юу хийснийг (тоо) audit-д үлдээнэ. */
+    constructor(message: string, readonly status = 503, readonly partial?: Record<string, unknown>) { super(message); }
 }
 
 export interface ElysiumConfig {
@@ -67,7 +79,7 @@ export interface ElysiumSyncSample {
     sourceId: string;
     createdAt: string;
     name: string | null;
-    outcome: ElysiumOutcome | 'failed';
+    outcome: ElysiumRunOutcome | 'failed';
     detail: string | null;
 }
 
@@ -83,7 +95,10 @@ export interface ElysiumSyncResult {
     read: number;
     /** Ledger-т ороогүй (энэ ажиллалтад шийдэх) мөр. */
     pending: number;
+    /** Шинээр үүсгэсэн (dryRun: үүсэх) лид. */
     imported: number;
+    /** Түлхүүрээр (түүхэн импорт, өмнөх ажиллалт) CRM-д аль хэдийн байсан — ledger-т «imported». */
+    keyed: number;
     matched: number;
     invalid: number;
     failed: number;
@@ -91,6 +106,7 @@ export interface ElysiumSyncResult {
     remaining: number;
     /** Тохирсон лид дээр бичсэн «дахин хүсэлт» бичлэг. */
     repeats: number;
+    /** Шинэ ба алдаатай мөрийг түрүүлсэн ≤ 20 жишээ. */
     sample: ElysiumSyncSample[];
 }
 
@@ -119,8 +135,11 @@ function chunks<T>(items: T[], size = CHUNK): T[][] {
 
 const emptyResult = (dryRun: boolean): ElysiumSyncResult => ({
     status: 'ok', dryRun, since: null, until: null, sourceTotal: null,
-    read: 0, pending: 0, imported: 0, matched: 0, invalid: 0, failed: 0, remaining: 0, repeats: 0, sample: [],
+    read: 0, pending: 0, imported: 0, keyed: 0, matched: 0, invalid: 0, failed: 0, remaining: 0, repeats: 0, sample: [],
 });
+
+/** Хүснэгт байхгүй (migration суугаагүй) PostgREST/Postgres алдаа. */
+const missingTable = (error: { code?: string | null }) => error.code === '42P01' || error.code === 'PGRST205';
 
 async function loadProject(db: SupabaseClient, projectId: string): Promise<{ id: string; shop_id: string; name: string | null }> {
     const { data, error } = await db.from('projects').select('id, shop_id, name').eq('id', projectId).maybeSingle();
@@ -129,10 +148,12 @@ async function loadProject(db: SupabaseClient, projectId: string): Promise<{ id:
     return data as { id: string; shop_id: string; name: string | null };
 }
 
-async function loadState(db: SupabaseClient): Promise<SyncState | null> {
+/** `ready: false` — хүснэгт байхгүй (migration суугаагүй); бусад уншилтын алдаа шиднэ. */
+async function loadState(db: SupabaseClient): Promise<{ ready: boolean; state: SyncState | null }> {
     const { data, error } = await db.from('external_lead_sync').select('enabled, cursor_at').eq('source', SOURCE).maybeSingle();
-    if (error) throw new ElysiumSyncError('Холболтын төлөвийн хүснэгт уншигдсангүй (migration 20261004164000 суулгасан эсэхийг шалгана уу).');
-    return (data as SyncState | null) ?? null;
+    if (error && missingTable(error)) return { ready: false, state: null };
+    if (error) throw new ElysiumSyncError('Холболтын төлөв уншигдсангүй.');
+    return { ready: true, state: (data as SyncState | null) ?? null };
 }
 
 async function recordState(db: SupabaseClient, input: {
@@ -162,18 +183,21 @@ async function processedSourceIds(db: SupabaseClient, ids: string[]): Promise<Se
 /**
  * Тохирсон лид дээр «дахин хүсэлт» системийн бичлэг үлдээнэ. Ижил агуулга өмнө нь
  * (дамжуулалт эсвэл өмнөх татан авалт) бичигдсэн бол давтахгүй. Best-effort.
+ * `write: false` (dryRun) — лидийн түүхийг зөвхөн уншиж, бичигдэх агуулгыг буцаана.
  */
 async function logRepeatInquiry(db: SupabaseClient, input: {
     shopId: string;
     lead: LeadCandidate;
     submission: { message: string | null; event: string | null; notes: string | null; phone: string | null; email: string | null };
     meta: Record<string, unknown>;
+    write?: boolean;
 }): Promise<string | null> {
     const { data, error } = await db.from('lead_activities').select('content')
         .eq('shop_id', input.shopId).eq('lead_id', input.lead.id).eq('type', 'system')
         .order('created_at', { ascending: false }).limit(50);
     if (!error && submissionRecorded(((data || []) as Array<{ content: string | null }>).map((row) => row.content), input.submission)) return null;
     const content = elysiumRepeatInquiryText(input.submission, input.lead);
+    if (input.write === false) return content;
     const activity = await logLeadActivity(db, {
         shopId: input.shopId, leadId: input.lead.id, type: 'system', content,
         meta: { source: SOURCE, kind: 'repeat_inquiry', ...input.meta }, createdByName: ELYSIUM_ACTOR_NAME,
@@ -186,10 +210,13 @@ const permanentInsertError = (code: string | undefined) => !!code && /^2[23]/.te
 
 /**
  * Elysium `event_leads`-ийг CRM-тэй тулгана.
- * - cron: тохиргоо дутуу эсвэл админ идэвхжүүлээгүй бол `skipped`.
+ * - cron: тохиргоо дутуу, migration суугаагүй эсвэл админ идэвхжүүлээгүй бол `skipped`
+ *   (төлөвөөс өөр юу ч уншихгүй).
  * - dryRun: юу ч бичихгүй, ямар үр дүн гарахыг тоолж жишээ буцаана.
- * Шийдэл: client_request_id = event_leads.id лид байвал «imported»; утас/и-мэйлээр цонхон
- * дотор тохирвол «matched» (шинэ агуулгыг «дахин хүсэлт»-ээр); үгүй бол шинэ лид («imported»).
+ * Шийдэл: client_request_id = event_leads.id лид байвал «imported» (тайланд `keyed`); утас/и-мэйлээр
+ * цонхон дотор тохирвол «matched» (шинэ агуулгыг «дахин хүсэлт»-ээр); үгүй бол шинэ лид («imported»).
+ * Ledger-ийн мөрийг шийдвэр бүрийн дараа шууд бичнэ: ажиллалт дуусаагүй байхад ч дамжуулалтын
+ * хамгаалалт оруулсан лидийг харна, тасарсан ажиллалтын хийснийг дараагийнх давтахгүй.
  */
 export async function syncElysiumLeads(
     db: SupabaseClient,
@@ -201,17 +228,29 @@ export async function syncElysiumLeads(
         if (options.trigger === 'cron') return { ...emptyResult(dryRun), status: 'skipped', skipped: 'not_configured' };
         throw new ElysiumSyncError('Автомат татах тохируулаагүй байна: ELYSIUM_SUPABASE_URL, ELYSIUM_SUPABASE_SERVICE_KEY, ELYSIUM_LEAD_PROJECT_ID.', 409);
     }
-    const project = await loadProject(db, config.projectId);
-    const state = await loadState(db);
+    // Төлөв эхлээд: унтраалттай (эсвэл хүснэгтгүй) cron өөр юу ч уншихгүй.
+    const { ready, state } = await loadState(db);
     if (options.trigger === 'cron' && !state?.enabled) return { ...emptyResult(dryRun), status: 'skipped', skipped: 'disabled' };
+    if (!ready) throw new ElysiumSyncError(MISSING_STORAGE, 409);
 
+    const clockStart = Date.now();
     const now = options.now ?? new Date();
     const started = now.toISOString();
     const { since, until } = elysiumSyncWindow(now, state?.cursor_at ?? null);
     const result: ElysiumSyncResult = { ...emptyResult(dryRun), since, until };
-    const shopId = project.shop_id;
+    // Жишээ: шинэ/алдаатай мөрийг түрүүлнэ (түүхийн анхны ажиллалтад ихэнх нь CRM-д байсан мөр).
+    const primarySample: ElysiumSyncSample[] = [];
+    const otherSample: ElysiumSyncSample[] = [];
+    const addSample = (entry: ElysiumSyncSample) => {
+        const bucket = entry.outcome === 'matched' || entry.outcome === 'keyed' ? otherSample : primarySample;
+        if (bucket.length < SAMPLE_SIZE) bucket.push(entry);
+    };
+    let project: { id: string; shop_id: string; name: string | null } | null = null;
 
     try {
+        project = await loadProject(db, config.projectId);
+        const projectId = project.id;
+        const shopId = project.shop_id;
         const [rows, sourceTotal] = await Promise.all([fetchEventLeads({ since, until }), countEventLeads()]);
         result.sourceTotal = sourceTotal;
         result.read = rows.length;
@@ -220,9 +259,10 @@ export async function syncElysiumLeads(
             .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at) || a.id.localeCompare(b.id));
         const batch = dryRun ? pending : pending.slice(0, ELYSIUM_MAX_ROWS_PER_RUN);
         result.pending = pending.length;
-        result.remaining = pending.length - batch.length;
+        let processed = 0;
 
-        const ledger: LedgerRow[] = [];
+        /** Шууд бичигдээгүй ledger-ийн мөр (ажиллалтын төгсгөлд дахин оролдоно). */
+        const unsaved: LedgerRow[] = [];
         const failedRows: EventLeadRow[] = [];
         if (batch.length) {
             // 1) Түлхүүрээр (түүхэн импорт эсвэл өмнөх ажиллалт) аль хэдийн орсон лидүүд.
@@ -238,7 +278,7 @@ export async function syncElysiumLeads(
             const from = new Date(Math.min(...times) - ELYSIUM_MATCH_WINDOW.importedBeforeMs).toISOString();
             const to = new Date(Math.max(...times) + ELYSIUM_MATCH_WINDOW.afterMs).toISOString();
             const nearby = await fetchAllRows<CandidateLeadRow>((start, end) => db.from('leads').select(LEAD_COLUMNS)
-                .eq('shop_id', shopId).eq('project_id', project.id).gte('created_at', from).lte('created_at', to)
+                .eq('shop_id', shopId).eq('project_id', projectId).gte('created_at', from).lte('created_at', to)
                 .order('created_at', { ascending: true }).order('id', { ascending: true }).range(start, end))
                 .catch(() => { throw new ElysiumSyncError('CRM-ийн лидийг шалгаж чадсангүй.'); });
             const importedIds = new Set<string>();
@@ -250,36 +290,45 @@ export async function syncElysiumLeads(
             }
             const candidates = new Map<string, LeadCandidate>(nearby.map((lead) => [lead.id, toCandidate(lead, importedIds.has(lead.id))]));
 
-            const record = (row: EventLeadRow, outcome: ElysiumOutcome, leadId: string | null, detail: string | null = null) => {
+            const record = async (
+                row: EventLeadRow, outcome: ElysiumOutcome, leadId: string | null, detail: string | null = null, tally: ElysiumRunOutcome = outcome,
+            ) => {
                 const name = row.name?.trim().slice(0, 255) || null;
-                ledger.push({
-                    source: SOURCE, source_id: row.id, shop_id: shopId, project_id: project.id, lead_id: outcome === 'invalid' ? null : leadId,
+                const entry: LedgerRow = {
+                    source: SOURCE, source_id: row.id, shop_id: shopId, project_id: projectId, lead_id: outcome === 'invalid' ? null : leadId,
                     outcome, source_name: name, source_created_at: row.created_at, detail: detail?.slice(0, 500) ?? null,
-                });
-                result[outcome]++;
-                if (result.sample.length < 20) result.sample.push({ sourceId: row.id, createdAt: row.created_at, name, outcome, detail });
+                };
+                result[tally]++;
+                addSample({ sourceId: row.id, createdAt: row.created_at, name, outcome: tally, detail });
+                if (dryRun) return;
+                const { error } = await db.from('external_lead_imports').upsert(entry, { onConflict: 'source,source_id', ignoreDuplicates: true });
+                if (error) unsaved.push(entry);
             };
 
             for (const row of batch) {
+                // maxDuration-д хүрэхээс өмнө зогсоно: үлдсэнийг дараагийн ажиллалт (cursor энэ мөрийн өмнө).
+                if (!dryRun && Date.now() - clockStart > ELYSIUM_RUN_BUDGET_MS) break;
+                processed++;
                 const keyed = byKey.get(row.id);
                 if (keyed) {
-                    if ((keyed.project_id ?? null) !== project.id) { record(row, 'invalid', null, KEY_CONFLICT); continue; }
+                    if ((keyed.project_id ?? null) !== projectId) { await record(row, 'invalid', null, KEY_CONFLICT); continue; }
                     const known = candidates.get(keyed.id);
                     if (known) known.imported = true;
                     else candidates.set(keyed.id, toCandidate(keyed, true));
-                    record(row, 'imported', keyed.id);
+                    await record(row, 'imported', keyed.id, ELYSIUM_KEYED_DETAIL, 'keyed');
                     continue;
                 }
 
                 const lead = normalizeEventLead(row);
-                if (!lead.ok) { record(row, 'invalid', null, lead.detail); continue; }
+                if (!lead.ok) { await record(row, 'invalid', null, lead.detail); continue; }
 
                 const match = findMatchingLead(lead, [...candidates.values()]);
                 if (match) {
                     let detail: string | null = match.deleted ? 'Устгасан лидтэй таарсан' : null;
                     if (!match.deleted && !submissionRecorded([match.notes], lead)) {
-                        const content = dryRun ? elysiumRepeatInquiryText(lead, match) : await logRepeatInquiry(db, {
-                            shopId, lead: match, submission: lead, meta: { source_id: row.id, submitted_at: row.created_at },
+                        // dryRun ч лидийн түүхийг уншиж шалгана (бичихгүй).
+                        const content = await logRepeatInquiry(db, {
+                            shopId, lead: match, submission: lead, meta: { source_id: row.id, submitted_at: row.created_at }, write: !dryRun,
                         });
                         if (content) {
                             result.repeats++;
@@ -288,20 +337,20 @@ export async function syncElysiumLeads(
                             match.notes = [match.notes, content].filter(Boolean).join('\n\n');
                         }
                     }
-                    record(row, 'matched', match.id, detail);
+                    await record(row, 'matched', match.id, detail);
                     continue;
                 }
 
                 if (dryRun) {
                     // Багц доторх дахин оролдлогын мөр энэ «шинэ» лидтэй тохирно.
                     candidates.set(`dry:${row.id}`, toCandidate({ id: `dry:${row.id}`, customer_phone: lead.phone, customer_email: lead.email, notes: lead.notes, created_at: row.created_at }, true));
-                    record(row, 'imported', null);
+                    await record(row, 'imported', null);
                     continue;
                 }
 
                 const inserted = await insertLeadOnce(db, {
                     shop_id: shopId,
-                    project_id: project.id,
+                    project_id: projectId,
                     client_request_id: row.id,
                     customer_name: lead.name,
                     customer_phone: lead.phone,
@@ -315,67 +364,76 @@ export async function syncElysiumLeads(
                 }, { select: LEAD_COLUMNS });
                 if (inserted.ok) {
                     const saved = inserted.lead as unknown as CandidateLeadRow;
-                    if (!inserted.duplicate) {
-                        await logLeadActivity(db, {
-                            shopId, leadId: saved.id, type: 'system', content: ELYSIUM_IMPORT_NOTE,
-                            meta: { source: SOURCE, kind: 'import', source_id: row.id, submitted_at: row.created_at },
-                            createdByName: ELYSIUM_ACTOR_NAME,
-                        });
-                    }
                     candidates.set(saved.id, toCandidate(saved, true));
-                    record(row, 'imported', saved.id);
+                    if (inserted.duplicate) {
+                        // Зэрэг ажиллалт эсвэл тасарсан ажиллалт энэ түлхүүрээр аль хэдийн оруулсан.
+                        await record(row, 'imported', saved.id, ELYSIUM_KEYED_DETAIL, 'keyed');
+                        continue;
+                    }
+                    // Ledger эхэлж: дамжуулалтын хамгаалалт энэ лидийг шууд харна.
+                    await record(row, 'imported', saved.id);
+                    await logLeadActivity(db, {
+                        shopId, leadId: saved.id, type: 'system', content: ELYSIUM_IMPORT_NOTE,
+                        meta: { source: SOURCE, kind: 'import', source_id: row.id, submitted_at: row.created_at },
+                        createdByName: ELYSIUM_ACTOR_NAME,
+                    });
                 } else if (inserted.conflict) {
-                    record(row, 'invalid', null, KEY_CONFLICT);
+                    await record(row, 'invalid', null, KEY_CONFLICT);
                 } else if (permanentInsertError(inserted.error?.code)) {
-                    record(row, 'invalid', null, `Лид хадгалах боломжгүй (${inserted.error.code})`);
+                    await record(row, 'invalid', null, `Лид хадгалах боломжгүй (${inserted.error.code})`);
                 } else {
                     failedRows.push(row);
                     result.failed++;
-                    if (result.sample.length < 20) result.sample.push({ sourceId: row.id, createdAt: row.created_at, name: lead.name, outcome: 'failed', detail: null });
+                    addSample({ sourceId: row.id, createdAt: row.created_at, name: lead.name, outcome: 'failed', detail: null });
                     logger.warn('[Elysium sync] lead insert failed', { sourceId: row.id, code: inserted.error?.code ?? null });
                 }
             }
         }
+        result.remaining = pending.length - processed;
+        result.sample = [...primarySample, ...otherSample].slice(0, SAMPLE_SIZE);
 
         if (dryRun) return result;
 
-        for (const part of chunks(ledger)) {
+        // Шууд бичигдээгүй ledger-ийн мөрийг нөхнө.
+        for (const part of chunks(unsaved)) {
             const { error } = await db.from('external_lead_imports').upsert(part, { onConflict: 'source,source_id', ignoreDuplicates: true });
             if (error) throw new ElysiumSyncError('Тулгалтын бүртгэл хадгалагдсангүй. Дараагийн ажиллалт дахин шалгана.');
         }
 
         // Cursor: амжилтгүй эсвэл хязгаараас үлдсэн хамгийн эрт мөрийн өмнө, эс бөгөөс цонхны дээд хил.
         const unfinished = [...failedRows.map((row) => Date.parse(row.created_at))];
-        if (result.remaining > 0) unfinished.push(Date.parse(pending[batch.length].created_at));
+        if (result.remaining > 0) unfinished.push(Date.parse(pending[processed].created_at));
         const cursor = unfinished.length ? new Date(Math.min(...unfinished) - 1).toISOString() : until;
         result.status = result.failed ? 'partial' : 'ok';
         await recordState(db, {
-            started, shopId, projectId: project.id, cursor,
+            started, shopId, projectId, cursor,
             error: result.failed ? `${result.failed} хүсэлт хадгалагдсангүй; дараагийн ажиллалт дахин оролдоно.` : null,
             result: summary(result, options.trigger),
         });
-        logger.info('[Elysium sync] done', { trigger: options.trigger, read: result.read, imported: result.imported, matched: result.matched, invalid: result.invalid, failed: result.failed });
+        logger.info('[Elysium sync] done', {
+            trigger: options.trigger, read: result.read, imported: result.imported, keyed: result.keyed, matched: result.matched,
+            invalid: result.invalid, failed: result.failed, remaining: result.remaining,
+        });
         return result;
     } catch (error) {
-        const message = error instanceof ElysiumSyncError || error instanceof ElysiumSourceError
-            ? error.message : 'Elysium лид татахад алдаа гарлаа.';
-        if (!(error instanceof ElysiumSyncError || error instanceof ElysiumSourceError)) {
-            logger.error('[Elysium sync] failed', { message: error instanceof Error ? error.message : 'unknown' });
-        }
+        const expected = error instanceof ElysiumSyncError || error instanceof ElysiumSourceError;
+        const message = expected ? error.message : 'Elysium лид татахад алдаа гарлаа.';
+        if (!expected) logger.error('[Elysium sync] failed', { message: error instanceof Error ? error.message : 'unknown' });
+        const partial = { ...summary(result, options.trigger), aborted: true };
         if (!dryRun) {
+            // Төсөл олдоогүй үед ч төлөвт бичнэ (cursor хэвээр): хуудсанд «Сүүлийн алдаа» харагдана.
             await recordState(db, {
-                started, shopId, projectId: project.id, cursor: null, error: message,
-                result: { ...summary(result, options.trigger), aborted: true },
+                started, shopId: project?.shop_id ?? null, projectId: project?.id ?? null, cursor: null, error: message, result: partial,
             }).catch(() => undefined);
         }
-        throw error instanceof ElysiumSyncError ? error : new ElysiumSyncError(message, 502);
+        throw new ElysiumSyncError(message, error instanceof ElysiumSyncError ? error.status : 502, partial);
     }
 }
 
 function summary(result: ElysiumSyncResult, trigger: ElysiumSyncTrigger): Record<string, unknown> {
     return {
         trigger, since: result.since, until: result.until, sourceTotal: result.sourceTotal, read: result.read, pending: result.pending,
-        imported: result.imported, matched: result.matched, invalid: result.invalid, failed: result.failed,
+        imported: result.imported, keyed: result.keyed, matched: result.matched, invalid: result.invalid, failed: result.failed,
         remaining: result.remaining, repeats: result.repeats,
     };
 }
@@ -477,7 +535,8 @@ export async function elysiumSyncStatus(db: SupabaseClient): Promise<ElysiumSync
         settleMinutes: ELYSIUM_SETTLE_MS / 60_000,
     };
     if (config.projectId) {
-        const { data } = await db.from('projects').select('id, name').eq('id', config.projectId).maybeSingle();
+        const { data, error } = await db.from('projects').select('id, name').eq('id', config.projectId).maybeSingle();
+        if (error) throw new ElysiumSyncError('Elysium-ийн төслийг шалгаж чадсангүй.');
         status.project = (data as { id: string; name: string | null } | null) ?? null;
     }
     const { data: state, error: stateError } = await db.from('external_lead_sync')

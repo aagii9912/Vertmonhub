@@ -23,7 +23,7 @@ import { GET as cron } from '../cron/elysium-leads-sync/route';
 import { GET, PATCH, POST } from '../admin/integrations/elysium/route';
 import { ElysiumSyncError } from '@/lib/services/ElysiumLeadSync';
 
-const counts = { status: 'ok', dryRun: false, read: 2, pending: 2, imported: 1, matched: 1, invalid: 0, failed: 0, remaining: 0, repeats: 0, sample: [] };
+const counts = { status: 'ok', dryRun: false, read: 2, pending: 2, imported: 1, keyed: 0, matched: 1, invalid: 0, failed: 0, remaining: 0, repeats: 0, sample: [] };
 const cronRequest = (secret?: string) => new Request('http://localhost/api/cron/elysium-leads-sync', {
     headers: secret ? { authorization: `Bearer ${secret}` } : {},
 }) as never;
@@ -61,7 +61,7 @@ describe('GET /api/cron/elysium-leads-sync', () => {
     it('returns counts only, and 500 on partial or failed runs', async () => {
         const ok = await cron(cronRequest('cron-secret'));
         expect(ok.status).toBe(200);
-        expect(await ok.json()).toEqual({ success: true, read: 2, imported: 1, matched: 1, invalid: 0, failed: 0, remaining: 0 });
+        expect(await ok.json()).toEqual({ success: true, read: 2, imported: 1, keyed: 0, matched: 1, invalid: 0, failed: 0, remaining: 0 });
         mocks.sync.mockResolvedValueOnce({ ...counts, status: 'partial', failed: 1 });
         expect((await cron(cronRequest('cron-secret'))).status).toBe(500);
         mocks.sync.mockRejectedValueOnce(new ElysiumSyncError('Elysium-ийн хүсэлтүүдийг уншиж чадсангүй.'));
@@ -112,6 +112,23 @@ describe('/api/admin/integrations/elysium', () => {
         const res = await POST(adminRequest('POST', {}));
         expect(res.status).toBe(409);
         expect(await res.json()).toEqual({ error: 'Автомат татах тохируулаагүй байна' });
+    });
+
+    it('audits a pull that failed after creating leads, with the counts it reached', async () => {
+        mocks.sync.mockRejectedValueOnce(new ElysiumSyncError('Тулгалтын бүртгэл хадгалагдсангүй.', 503, { trigger: 'manual', imported: 3, failed: 0, aborted: true }));
+        const res = await POST(adminRequest('POST', {}));
+        expect(res.status).toBe(503);
+        expect(mocks.audit).toHaveBeenCalledTimes(1);
+        expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({
+            actorId: 'admin-1', action: 'integration.elysium_sync', targetId: 'elysium',
+            meta: expect.objectContaining({ dryRun: false, aborted: true, imported: 3, error: 'Тулгалтын бүртгэл хадгалагдсангүй.' }),
+        }));
+
+        mocks.sync.mockRejectedValueOnce(new Error('socket hang up'));
+        expect((await POST(adminRequest('POST', { dryRun: true }))).status).toBe(500);
+        expect(mocks.audit).toHaveBeenLastCalledWith(expect.objectContaining({
+            meta: { dryRun: true, aborted: true, error: 'Elysium лид татахад алдаа гарлаа' },
+        }));
     });
 
     it('enables the schedule and audits it', async () => {

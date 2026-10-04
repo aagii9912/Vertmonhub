@@ -42,6 +42,14 @@ describe('Elysium lead helpers', () => {
         expect(normalizeEventLead(row({ phone: '', email: '' }))).toEqual({ ok: false, detail: 'Утас, и-мэйл хоёул хоосон эсвэл буруу' });
     });
 
+    it('does not use a phone too short to match as the contact (it would turn one request into two leads)', () => {
+        expect(normalizeEventLead(row({ phone: '12345', email: '' }))).toEqual({ ok: false, detail: 'Утас, и-мэйл хоёул хоосон эсвэл буруу' });
+        const withEmail = normalizeEventLead(row({ phone: '12-345', email: 'bat@example.mn' }));
+        expect(withEmail).toMatchObject({ ok: true, phone: null, email: 'bat@example.mn', key: { phone: null, email: 'bat@example.mn' } });
+        if (withEmail.ok) expect(withEmail.notes).toContain('Утас: 12-345');
+        expect(normalizeEventLead(row({ phone: '32 1234', email: '' }))).toMatchObject({ ok: true, phone: '32 1234', key: { phone: '321234' } });
+    });
+
     it('matches formatted phones and email case, but not tiny digit fragments', () => {
         expect(contactKey('+976 9911-2233', null)).toEqual({ phone: '99112233', email: null });
         expect(contactKey('123', ' A@B.MN ')).toEqual({ phone: null, email: 'a@b.mn' });

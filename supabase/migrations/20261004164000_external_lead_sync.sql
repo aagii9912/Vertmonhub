@@ -47,7 +47,7 @@ CREATE INDEX IF NOT EXISTS external_lead_imports_window_idx
 COMMENT ON TABLE public.external_lead_sync IS
     'Гадны сайтын лидийн татан авалтын төлөв (идэвхжүүлэлт, cursor, сүүлийн үр дүн)';
 COMMENT ON TABLE public.external_lead_imports IS
-    'Гадны сайтын эх мөр бүрийн тулгалтын үр дүн: imported (шинээр орсон), matched (CRM-д байсан), invalid (алдаатай)';
+    'Гадны сайтын эх мөр бүрийн тулгалтын үр дүн: imported (татаж оруулсан, түүхэн импортоор орсныг оруулаад), matched (CRM-д байсан), invalid (алдаатай)';
 
 ALTER TABLE public.external_lead_sync ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.external_lead_imports ENABLE ROW LEVEL SECURITY;

@@ -8,6 +8,10 @@ const state = vi.hoisted(() => ({
     /** Хүснэгт → унших/бичих алдаа. */
     fail: {} as Record<string, { code?: string; message: string }>,
     insertError: null as null | { code?: string; message: string },
+    /** Лид бичигдэхийн өмнө дуудагдана (ажиллалтын дундах байдлыг шалгана). */
+    onLeadInsert: null as null | ((row: Row) => Promise<void>),
+    /** Ledger-ийн дараагийн N upsert алдаатай. */
+    upsertFail: 0,
     source: [] as EventLeadRow[],
     sourceError: null as Error | null,
     seq: 0,
@@ -27,7 +31,7 @@ vi.mock('@/lib/utils/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), e
 import { fetchEventLeads } from '@/lib/leads/elysium-source';
 import { ElysiumSourceError } from '@/lib/leads/elysium-source';
 import {
-    ELYSIUM_MAX_ROWS_PER_RUN, elysiumSyncStatus, ElysiumSyncError, elysiumSyncWindow,
+    ELYSIUM_KEYED_DETAIL, ELYSIUM_MAX_ROWS_PER_RUN, ELYSIUM_RUN_BUDGET_MS, elysiumSyncStatus, ElysiumSyncError, elysiumSyncWindow,
     findImportedElysiumDuplicate, setElysiumSyncEnabled, syncElysiumLeads,
 } from '../ElysiumLeadSync';
 
@@ -53,6 +57,7 @@ function query(table: string) {
         if (failure) return { data: null, error: failure, count: null };
         if (op === 'insert') {
             if (table === 'leads' && state.insertError) return { data: null, error: state.insertError };
+            if (table === 'leads' && state.onLeadInsert) for (const row of payload) await state.onLeadInsert(row);
             const inserted: Row[] = payload.map((row) => ({ id: `${table}-${++state.seq}`, deleted_at: null, ...row }));
             for (const row of inserted) {
                 if (table === 'leads' && row.client_request_id
@@ -64,6 +69,10 @@ function query(table: string) {
             return { data: mode === 'many' ? inserted : inserted[0], error: null };
         }
         if (op === 'upsert') {
+            if (table === 'external_lead_imports' && state.upsertFail > 0) {
+                state.upsertFail--;
+                return { data: null, error: { code: '08006', message: 'connection failure' } };
+            }
             const keys = (upsertOptions.onConflict || 'id').split(',');
             const saved: Row[] = [];
             for (const row of payload) {
@@ -146,6 +155,8 @@ beforeEach(() => {
     };
     state.fail = {};
     state.insertError = null;
+    state.onLeadInsert = null;
+    state.upsertFail = 0;
     state.source = [];
     state.sourceError = null;
     state.seq = 0;
@@ -205,13 +216,92 @@ describe('syncElysiumLeads', () => {
         ]);
     });
 
-    it('recognizes a lead from the historical backfill by its key and does not log twice', async () => {
+    it('recognizes a lead from the historical backfill by its key, counts it apart from new leads and does not log twice', async () => {
         state.tables.leads = [{ id: 'backfilled', shop_id: SHOP, project_id: PROJECT, client_request_id: sourceRow(1).id, customer_phone: '99112201', created_at: '2026-10-04T02:00:00.000Z', deleted_at: null }];
         state.source = [sourceRow(1)];
-        expect(await syncElysiumLeads(db, { trigger: 'cron', now: NOW })).toMatchObject({ imported: 1, matched: 0 });
+        expect(await syncElysiumLeads(db, { trigger: 'cron', now: NOW })).toMatchObject({ imported: 0, keyed: 1, matched: 0 });
         expect(leads()).toHaveLength(1);
         expect(activities()).toEqual([]);
-        expect(ledger()).toEqual([expect.objectContaining({ outcome: 'imported', lead_id: 'backfilled' })]);
+        expect(ledger()).toEqual([expect.objectContaining({ outcome: 'imported', lead_id: 'backfilled', detail: ELYSIUM_KEYED_DETAIL })]);
+        expect(syncState().last_result).toMatchObject({ imported: 0, keyed: 1 });
+    });
+
+    it('previews backfilled leads as already imported and samples new and invalid rows first', async () => {
+        const keyedRows = Array.from({ length: 25 }, (_, index) => sourceRow(index + 1, {
+            created_at: new Date(Date.parse('2026-10-03T00:00:00.000Z') + index * 60_000).toISOString(),
+        }));
+        state.tables.leads = keyedRows.map((row, index) => ({
+            id: `backfilled-${index + 1}`, shop_id: SHOP, project_id: PROJECT, client_request_id: row.id, customer_phone: row.phone, created_at: row.created_at, deleted_at: null,
+        }));
+        state.source = [...keyedRows, sourceRow(30, { phone: '88001122' }), sourceRow(31, { phone: '', email: '' })];
+        const preview = await syncElysiumLeads(db, { trigger: 'manual', dryRun: true, now: NOW });
+        expect(preview).toMatchObject({ imported: 1, keyed: 25, matched: 0, invalid: 1 });
+        expect(preview.sample).toHaveLength(20);
+        expect(preview.sample.slice(0, 2).map((row) => [row.sourceId, row.outcome])).toEqual([[sourceRow(30).id, 'imported'], [sourceRow(31).id, 'invalid']]);
+        expect(preview.sample[2]).toMatchObject({ sourceId: keyedRows[0].id, outcome: 'keyed', detail: ELYSIUM_KEYED_DETAIL });
+        expect(ledger()).toEqual([]);
+    });
+
+    it('records a short phone without an email as invalid, so a pushed lead is not imported twice', async () => {
+        state.tables.leads = [{
+            id: 'pushed', shop_id: SHOP, project_id: PROJECT, client_request_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            customer_phone: '12345', customer_email: null, notes: 'Үнийн санал авъя', created_at: '2026-10-04T02:00:01.000Z', deleted_at: null,
+        }];
+        state.source = [sourceRow(1, { phone: '12345' }), sourceRow(2, { phone: '12345', created_at: '2026-10-04T02:00:30.000Z' })];
+        expect(await syncElysiumLeads(db, { trigger: 'cron', now: NOW })).toMatchObject({ imported: 0, matched: 0, invalid: 2 });
+        expect(leads()).toHaveLength(1);
+        expect(ledger().map((row) => row.detail)).toEqual(['Утас, и-мэйл хоёул хоосон эсвэл буруу', 'Утас, и-мэйл хоёул хоосон эсвэл буруу']);
+    });
+
+    it('writes each ledger row at once, so the push guard sees a lead the run imported before the run ends', async () => {
+        state.source = [sourceRow(1), sourceRow(2, { phone: '88001122', created_at: '2026-10-04T02:05:00.000Z' })];
+        const seen: unknown[] = [];
+        state.onLeadInsert = async (row) => {
+            if (row.client_request_id !== sourceRow(2).id) return;
+            seen.push(await findImportedElysiumDuplicate(db, {
+                shopId: SHOP, projectId: PROJECT, requestId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', phone: '9911 2201', email: null,
+                message: 'Үнийн санал авъя', event: null, notes: 'Үнийн санал авъя', now: NOW,
+            }));
+        };
+        expect(await syncElysiumLeads(db, { trigger: 'cron', now: NOW })).toMatchObject({ imported: 2 });
+        expect(seen).toEqual([{ leadId: leads()[0].id }]);
+    });
+
+    it('retries a ledger row that could not be written at once, and reports partial counts when it still fails', async () => {
+        state.source = [sourceRow(1)];
+        state.upsertFail = 1;
+        expect(await syncElysiumLeads(db, { trigger: 'cron', now: NOW })).toMatchObject({ status: 'ok', imported: 1 });
+        expect(ledger()).toEqual([expect.objectContaining({ source_id: sourceRow(1).id, outcome: 'imported' })]);
+
+        state.source.push(sourceRow(2, { phone: '88001122', created_at: '2026-10-04T03:00:00.000Z' }));
+        state.upsertFail = 2;
+        const error = await syncElysiumLeads(db, { trigger: 'cron', now: new Date(NOW.getTime() + H) }).catch((reason: unknown) => reason);
+        expect(error).toBeInstanceOf(ElysiumSyncError);
+        expect((error as ElysiumSyncError).partial).toMatchObject({ imported: 1, aborted: true });
+        expect(leads()).toHaveLength(2);
+        expect(syncState()).toMatchObject({ cursor_at: '2026-10-04T03:45:00.000Z', last_error: 'Тулгалтын бүртгэл хадгалагдсангүй. Дараагийн ажиллалт дахин шалгана.' });
+
+        // Дараагийн ажиллалт түлхүүрээр таньж, давхар лид үүсгэхгүй.
+        expect(await syncElysiumLeads(db, { trigger: 'cron', now: new Date(NOW.getTime() + 2 * H) })).toMatchObject({ imported: 0, keyed: 1 });
+        expect(leads()).toHaveLength(2);
+    });
+
+    it('stops before the time budget runs out and leaves the rest to the next run', async () => {
+        state.source = [1, 2, 3].map((index) => sourceRow(index, {
+            phone: `8800112${index}`, created_at: new Date(Date.parse('2026-10-04T01:00:00.000Z') + index * 60_000).toISOString(),
+        }));
+        let clock = 1_000;
+        const spy = vi.spyOn(Date, 'now').mockImplementation(() => clock);
+        state.onLeadInsert = async () => { clock += ELYSIUM_RUN_BUDGET_MS + 1; };
+        try {
+            expect(await syncElysiumLeads(db, { trigger: 'cron', now: NOW })).toMatchObject({ status: 'ok', imported: 1, remaining: 2 });
+        } finally {
+            spy.mockRestore();
+            state.onLeadInsert = null;
+        }
+        expect(syncState().cursor_at).toBe(new Date(Date.parse(state.source[1].created_at) - 1).toISOString());
+        expect(await syncElysiumLeads(db, { trigger: 'cron', now: new Date(NOW.getTime() + 60_000) })).toMatchObject({ imported: 2, remaining: 0 });
+        expect(leads()).toHaveLength(3);
     });
 
     it('records a key used by another project as invalid instead of attaching it', async () => {
@@ -287,10 +377,36 @@ describe('syncElysiumLeads', () => {
         expect(ledger()).toEqual([expect.objectContaining({ outcome: 'invalid', detail: 'Лид хадгалах боломжгүй (22001)' })]);
     });
 
-    it('fails clearly when the configured project is missing', async () => {
+    it('fails clearly when the configured project is missing and records the error, keeping the cursor', async () => {
+        state.tables.external_lead_sync[0].cursor_at = '2026-10-03T00:00:00.000Z';
         state.tables.projects = [];
-        await expect(syncElysiumLeads(db, { trigger: 'manual', now: NOW })).rejects.toMatchObject({ status: 409 });
+        await expect(syncElysiumLeads(db, { trigger: 'manual', dryRun: true, now: NOW })).rejects.toMatchObject({ status: 409 });
+        expect(syncState().last_attempt_at).toBeNull();
+
+        await expect(syncElysiumLeads(db, { trigger: 'cron', now: NOW })).rejects.toMatchObject({ status: 409 });
         expect(fetchEventLeads).not.toHaveBeenCalled();
+        expect(syncState()).toMatchObject({
+            cursor_at: '2026-10-03T00:00:00.000Z', last_attempt_at: NOW.toISOString(), last_error: 'ELYSIUM_LEAD_PROJECT_ID-д заасан төсөл олдсонгүй.',
+        });
+        expect(syncState().last_result).toMatchObject({ trigger: 'cron', aborted: true });
+    });
+
+    it('a disabled cron reads only the state; a missing table skips the cron but stops a manual run', async () => {
+        state.tables.external_lead_sync[0].enabled = false;
+        state.fail.projects = { code: '08006', message: 'connection failure' };
+        expect(await syncElysiumLeads(db, { trigger: 'cron', now: NOW })).toMatchObject({ status: 'skipped', skipped: 'disabled' });
+        delete state.fail.projects;
+
+        state.source = [sourceRow(1)];
+        state.fail.external_lead_sync = { code: 'PGRST205', message: "Could not find the table 'public.external_lead_sync'" };
+        expect(await syncElysiumLeads(db, { trigger: 'cron', now: NOW })).toMatchObject({ status: 'skipped', skipped: 'disabled' });
+        await expect(syncElysiumLeads(db, { trigger: 'manual', now: NOW })).rejects.toMatchObject({ status: 409, message: expect.stringContaining('20261004164000') });
+        expect(fetchEventLeads).not.toHaveBeenCalled();
+        expect(leads()).toEqual([]);
+
+        // Түр алдаа нуугдахгүй.
+        state.fail.external_lead_sync = { code: '08006', message: 'connection failure' };
+        await expect(syncElysiumLeads(db, { trigger: 'cron', now: NOW })).rejects.toBeInstanceOf(ElysiumSyncError);
     });
 
     it('skips the cron when not configured or not enabled, but a manual run works while disabled', async () => {
@@ -309,11 +425,27 @@ describe('syncElysiumLeads', () => {
         state.source = [sourceRow(1), sourceRow(2, { phone: '99112201', created_at: '2026-10-04T02:01:00.000Z' }), sourceRow(3, { phone: '', email: 'bad', created_at: '2026-10-04T02:02:00.000Z' })];
         const result = await syncElysiumLeads(db, { trigger: 'manual', dryRun: true, now: NOW });
         expect(result).toMatchObject({ dryRun: true, imported: 1, matched: 1, invalid: 1 });
-        expect(result.sample.map((row) => row.outcome)).toEqual(['imported', 'matched', 'invalid']);
+        expect(result.sample.map((row) => row.outcome)).toEqual(['imported', 'invalid', 'matched']);
         expect(leads()).toEqual([]);
         expect(ledger()).toEqual([]);
         expect(activities()).toEqual([]);
         expect(syncState()).toMatchObject({ cursor_at: null, last_attempt_at: null });
+    });
+
+    it('dry run reads the lead history before counting a repeat inquiry', async () => {
+        state.tables.leads = [{
+            id: 'pushed', shop_id: SHOP, project_id: PROJECT, client_request_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+            customer_phone: '99112201', customer_email: null, notes: 'Эхний асуулт', created_at: '2026-10-04T01:00:00.000Z', deleted_at: null,
+        }];
+        state.tables.lead_activities = [{
+            id: 'earlier', shop_id: SHOP, lead_id: 'pushed', type: 'system',
+            content: 'Elysium сайтаас дахин хүсэлт ирлээ.\n\nҮнийн санал авъя\n\nСайтын эх сурвалж: elysium/mono#contact',
+        }];
+        state.source = [sourceRow(1), sourceRow(2, { phone: '99112201', message: 'Шинэ асуулт', created_at: '2026-10-04T02:30:00.000Z' })];
+        const result = await syncElysiumLeads(db, { trigger: 'manual', dryRun: true, now: NOW });
+        expect(result).toMatchObject({ matched: 2, repeats: 1 });
+        expect(result.sample.map((row) => row.detail)).toEqual([null, 'Дахин хүсэлтийг лидийн түүхэнд нэмсэн']);
+        expect(activities()).toHaveLength(1);
     });
 
     it('processes at most one batch per run and continues from the first unprocessed row', async () => {
@@ -399,6 +531,13 @@ describe('elysiumSyncStatus / setElysiumSyncEnabled', () => {
     it('reports missing storage instead of failing', async () => {
         state.fail.external_lead_sync = { code: '42P01', message: 'relation does not exist' };
         expect(await elysiumSyncStatus(db)).toMatchObject({ storageReady: false, totals: null });
+    });
+
+    it('reports a missing project as null but does not hide a failed project read', async () => {
+        state.tables.projects = [];
+        expect(await elysiumSyncStatus(db)).toMatchObject({ project: null, storageReady: true });
+        state.fail.projects = { code: '08006', message: 'connection failure' };
+        await expect(elysiumSyncStatus(db)).rejects.toBeInstanceOf(ElysiumSyncError);
     });
 
     it('enables only a configured pull, and always allows disabling', async () => {

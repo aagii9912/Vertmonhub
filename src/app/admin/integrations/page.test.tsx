@@ -70,7 +70,7 @@ describe('admin integrations: Elysium', () => {
         expect(screen.getByText('214')).toBeInTheDocument();
         expect(screen.getByText('198')).toBeInTheDocument();
         const recent = screen.getByRole('table', { name: 'Сүүлийн хүсэлтүүд' });
-        expect(within(recent).getByText('Шинээр орсон')).toBeInTheDocument();
+        expect(within(recent).getByText('Татаж оруулсан')).toBeInTheDocument();
         expect(within(recent).getByText('CRM-д байсан')).toBeInTheDocument();
         expect(within(recent).getByText('2026-10-04 10:00')).toBeInTheDocument();
         const invalid = screen.getByRole('table', { name: 'Шалгах шаардлагатай хүсэлтүүд' });
@@ -91,6 +91,31 @@ describe('admin integrations: Elysium', () => {
         expect(calls.filter((call) => call.method === 'POST').map((call) => call.body)).toEqual([{ dryRun: true }, { dryRun: false }]);
         await waitFor(() => expect(calls.filter((call) => call.method === 'GET').length).toBeGreaterThan(loads));
         expect(screen.queryByText('Шалгалтын үр дүн (юу ч хадгалаагүй)')).not.toBeInTheDocument();
+    });
+
+    it('previews leads that would be new apart from ones an earlier import already created', async () => {
+        renderPage();
+        const preview = result({
+            dryRun: true, imported: 2, keyed: 76, matched: 5, invalid: 0,
+            sample: [
+                { sourceId: 'x1', createdAt: '2026-10-04T02:00:00.000Z', name: 'Дорж', outcome: 'imported', detail: null },
+                { sourceId: 'x2', createdAt: '2026-08-12T02:00:00.000Z', name: 'Сүрэн', outcome: 'keyed', detail: 'Өмнөх импортоор CRM-д орсон' },
+            ],
+        });
+        vi.mocked(fetch).mockImplementationOnce(async () => ({ ok: true, json: async () => ({ result: preview }) }) as unknown as Response);
+        fireEvent.click(await screen.findByRole('button', { name: /Шалгах/ }));
+        expect(await screen.findByText(/Шинээр орох 2 · CRM-д байгаа 5 · Алдаатай 0/)).toHaveTextContent('Өмнө оруулсан 76');
+        const table = screen.getByRole('table', { name: 'Шалгалтын жишээ' });
+        expect(within(table).getByText('Шинээр орно')).toBeInTheDocument();
+        expect(within(table).getByText('Өмнө оруулсан')).toBeInTheDocument();
+        expect(toast.success).toHaveBeenCalledWith('Шалгалт: шинээр 2 · CRM-д байсан 5 · өмнө оруулсан 76 · алдаатай 0. Юу ч хадгалаагүй.');
+    });
+
+    it('flags a configured project that no longer exists', async () => {
+        current = status({ project: null });
+        renderPage();
+        expect(await screen.findByText(/ELYSIUM_LEAD_PROJECT_ID-д заасан төсөл олдсонгүй/)).toBeInTheDocument();
+        expect(within(screen.getByRole('region', { name: 'Elysium сайт (elysium.mn)' })).getByText('Алдаатай', { selector: '[data-slot="status-pill"]' })).toBeInTheDocument();
     });
 
     it('turns the 15-minute schedule on', async () => {

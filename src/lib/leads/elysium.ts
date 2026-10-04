@@ -21,8 +21,12 @@ const HOUR_MS = 60 * 60 * 1000;
  * хамгаалалт 72 цаг хүртэл буцаадаг тул тэдгээрт өмнөх цонх мөн 72 цаг.
  */
 export const ELYSIUM_MATCH_WINDOW = { beforeMs: 24 * HOUR_MS, afterMs: 72 * HOUR_MS, importedBeforeMs: 72 * HOUR_MS } as const;
-/** Утсаар тулгахад шаардах доод цифрийн тоо (санамсаргүй богино тоо таарахаас сэргийлнэ). */
-const MIN_PHONE_DIGITS = 6;
+/**
+ * Утсанд шаардах доод цифрийн тоо. Түүнээс богино «утас» тулгахад ашиглагдахгүй тул
+ * лидийн утас болгохгүй (тэмдэглэлд үлдэнэ): эс бөгөөс дамжуулалт ба татан авалт нэг
+ * хүсэлтээс хоёр лид үүсгэнэ.
+ */
+export const ELYSIUM_MIN_PHONE_DIGITS = 6;
 
 export interface ElysiumSubmission {
     message?: string | null;
@@ -59,7 +63,7 @@ export const EventLeadRowSchema = z.object({
 export type EventLeadRow = z.infer<typeof EventLeadRowSchema>;
 
 export interface ContactKey {
-    /** normalizePhone, MIN_PHONE_DIGITS-ээс цөөн цифртэй бол null. */
+    /** normalizePhone, ELYSIUM_MIN_PHONE_DIGITS-ээс цөөн цифртэй бол null. */
     phone: string | null;
     /** Жижиг үсгээр. */
     email: string | null;
@@ -68,7 +72,7 @@ export interface ContactKey {
 export function contactKey(phone: string | null | undefined, email: string | null | undefined): ContactKey {
     const digits = normalizePhone(phone);
     return {
-        phone: digits && digits.length >= MIN_PHONE_DIGITS ? digits : null,
+        phone: digits && digits.length >= ELYSIUM_MIN_PHONE_DIGITS ? digits : null,
         email: text(email)?.toLowerCase() ?? null,
     };
 }
@@ -92,13 +96,13 @@ const emailSchema = z.email().max(255);
 
 /**
  * Эх мөрийг лидийн талбарт буулгана: '' → null, DB-ийн уртын хязгаар (нэр 255, утас 50,
- * и-мэйл 255). Буруу и-мэйл эсвэл цифргүй/хэт урт утсыг алдахгүйн тулд тэмдэглэлд нэмнэ.
- * Ашиглах боломжтой утас, и-мэйл хоёулаа байхгүй бол invalid.
+ * и-мэйл 255). Буруу и-мэйл эсвэл 6-аас цөөн цифртэй/хэт урт утсыг алдахгүйн тулд
+ * тэмдэглэлд нэмнэ. Тулгах боломжтой утас, и-мэйл хоёулаа байхгүй бол invalid.
  */
 export function normalizeEventLead(row: EventLeadRow): NormalizedEventLead {
     const extra: string[] = [];
     let phone = text(row.phone);
-    if (phone && (phone.length > 50 || !normalizePhone(phone))) {
+    if (phone && (phone.length > 50 || (normalizePhone(phone)?.length ?? 0) < ELYSIUM_MIN_PHONE_DIGITS)) {
         extra.push(`Утас: ${phone}`);
         phone = null;
     }

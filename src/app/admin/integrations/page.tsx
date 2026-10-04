@@ -9,15 +9,25 @@ import { Button } from '@/components/ui/Button';
 import { StatusPill } from '@/components/ui/StatusPill';
 import { Switch } from '@/components/ui/Switch';
 import { formatShortDate, formatTime } from '@/lib/utils/date';
-import type { ElysiumLedgerEntry, ElysiumOutcome, ElysiumSyncResult, ElysiumSyncStatus } from '@/lib/services/ElysiumLeadSync';
+import type { ElysiumLedgerEntry, ElysiumRunOutcome, ElysiumSyncResult, ElysiumSyncStatus } from '@/lib/services/ElysiumLeadSync';
 
 const ENDPOINT = '/api/admin/integrations/elysium';
 
-const OUTCOME: Record<ElysiumOutcome | 'failed', { label: string; variant: 'success' | 'info' | 'danger' | 'pending' }> = {
-    imported: { label: 'Шинээр орсон', variant: 'success' },
+type RowOutcome = ElysiumRunOutcome | 'failed';
+type Variant = 'success' | 'info' | 'danger' | 'pending';
+
+/** Ledger-ийн «imported» нь шинээр татсан ба түлхүүрээр олдсон (түүхэн импорт) хоёуланг агуулна. */
+const OUTCOME: Record<RowOutcome, { label: string; variant: Variant }> = {
+    imported: { label: 'Татаж оруулсан', variant: 'success' },
+    keyed: { label: 'Өмнө оруулсан', variant: 'info' },
     matched: { label: 'CRM-д байсан', variant: 'info' },
     invalid: { label: 'Алдаатай', variant: 'danger' },
     failed: { label: 'Дахин оролдоно', variant: 'pending' },
+};
+/** «Шалгах» юу ч хадгалаагүй тул ирээдүйн хэлбэрээр. */
+const PREVIEW_OUTCOME: Record<RowOutcome, { label: string; variant: Variant }> = {
+    ...OUTCOME,
+    imported: { label: 'Шинээр орно', variant: 'success' },
 };
 
 async function readJson<T>(response: Response, fallback: string): Promise<T> {
@@ -33,10 +43,14 @@ const when = (value: string | null | undefined) => (value ? `${formatShortDate(v
 const count = (value: unknown) => (typeof value === 'number' ? value.toLocaleString() : '—');
 
 function counts(result: ElysiumSyncResult) {
-    return `шинээр ${result.imported} · CRM-д байсан ${result.matched} · алдаатай ${result.invalid}`;
+    return `шинээр ${result.imported} · CRM-д байсан ${result.matched}${result.keyed ? ` · өмнө оруулсан ${result.keyed}` : ''} · алдаатай ${result.invalid}`;
 }
 
-function LedgerTable({ rows, caption }: { rows: Array<Pick<ElysiumLedgerEntry, 'source_id' | 'source_name' | 'source_created_at' | 'detail'> & { outcome: ElysiumOutcome | 'failed' }>; caption: string }) {
+function LedgerTable({ rows, caption, labels = OUTCOME }: {
+    rows: Array<Pick<ElysiumLedgerEntry, 'source_id' | 'source_name' | 'source_created_at' | 'detail'> & { outcome: RowOutcome }>;
+    caption: string;
+    labels?: Record<RowOutcome, { label: string; variant: Variant }>;
+}) {
     return (
         <div className="overflow-x-auto">
             <table className="w-full min-w-[520px] text-sm">
@@ -54,7 +68,7 @@ function LedgerTable({ rows, caption }: { rows: Array<Pick<ElysiumLedgerEntry, '
                         <tr key={row.source_id} className="border-b border-border last:border-0">
                             <td className="num whitespace-nowrap py-2 pr-3 text-muted-foreground">{when(row.source_created_at)}</td>
                             <td className="py-2 pr-3 text-foreground">{row.source_name || '—'}</td>
-                            <td className="py-2 pr-3"><StatusPill variant={OUTCOME[row.outcome].variant}>{OUTCOME[row.outcome].label}</StatusPill></td>
+                            <td className="py-2 pr-3"><StatusPill variant={labels[row.outcome].variant}>{labels[row.outcome].label}</StatusPill></td>
                             <td className="py-2 text-muted-foreground">{row.detail || '—'}</td>
                         </tr>
                     ))}
@@ -113,9 +127,11 @@ export default function AdminIntegrationsPage() {
     const enabled = toggle.isPending ? !!toggle.variables : !!state?.enabled;
     const ready = !!data?.storageReady;
     const pullConfigured = !!data?.config.pullConfigured;
+    // ELYSIUM_LEAD_PROJECT_ID тохируулсан боловч төсөл олдоогүй: ажиллалт бүр бүтэлгүйтнэ.
+    const projectMissing = pullConfigured && !data?.project;
     const busy = run.isPending;
     const pill = !pullConfigured ? { variant: 'neutral' as const, label: 'Тохируулаагүй' }
-        : state?.last_error ? { variant: 'danger' as const, label: 'Алдаатай' }
+        : state?.last_error || projectMissing ? { variant: 'danger' as const, label: 'Алдаатай' }
         : state?.enabled ? { variant: 'success' as const, label: 'Идэвхтэй' }
         : { variant: 'pending' as const, label: 'Унтраалттай' };
 
@@ -146,6 +162,7 @@ export default function AdminIntegrationsPage() {
                         <div className="space-y-5 p-5">
                             {!ready && <Alert variant="warning">Холболтын хүснэгт суулгагдаагүй байна. Migration 20261004164000-г суулгасны дараа ашиглана.</Alert>}
                             {!pullConfigured && <Alert variant="info">Автомат татахад Vercel-д ELYSIUM_SUPABASE_URL, ELYSIUM_SUPABASE_SERVICE_KEY, ELYSIUM_LEAD_PROJECT_ID-г тохируулж дахин deploy хийнэ үү.</Alert>}
+                            {projectMissing && <Alert variant="danger">ELYSIUM_LEAD_PROJECT_ID-д заасан төсөл олдсонгүй. Vercel-ийн тохиргоог шалгаад дахин deploy хийнэ үү.</Alert>}
 
                             <dl className="grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
                                 {([
@@ -205,9 +222,10 @@ export default function AdminIntegrationsPage() {
                                 <p className="text-sm font-medium text-foreground">Шалгалтын үр дүн (юу ч хадгалаагүй)</p>
                                 <p className="num text-sm text-muted-foreground">
                                     Шинээр орох {preview.imported} · CRM-д байгаа {preview.matched} · Алдаатай {preview.invalid}
+                                    {preview.keyed ? ` · Өмнө оруулсан ${preview.keyed}` : ''}
                                     {preview.repeats ? ` · Дахин хүсэлт ${preview.repeats}` : ''}
                                 </p>
-                                {preview.sample.length > 0 && <LedgerTable caption="Шалгалтын жишээ" rows={preview.sample.map((row) => ({
+                                {preview.sample.length > 0 && <LedgerTable caption="Шалгалтын жишээ" labels={PREVIEW_OUTCOME} rows={preview.sample.map((row) => ({
                                     source_id: row.sourceId, source_name: row.name, source_created_at: row.createdAt, detail: row.detail, outcome: row.outcome,
                                 }))} />}
                             </div>}
@@ -222,7 +240,7 @@ export default function AdminIntegrationsPage() {
 
                     {data.invalid.length > 0 && <section aria-labelledby="elysium-invalid" className="rounded-xl border border-border bg-surface p-5">
                         <h2 id="elysium-invalid" className="font-semibold text-foreground">Шалгах шаардлагатай</h2>
-                        <p className="mt-1 text-sm text-muted-foreground">Эдгээр хүсэлтийг CRM-д оруулаагүй. Elysium-ийн админ хуудсаас харж, шаардлагатай бол гараар лид үүсгэнэ үү.</p>
+                        <p className="mt-1 text-sm text-muted-foreground">Татан авалт эдгээр хүсэлтийг CRM-д оруулаагүй (шууд дамжуулалтаар орсон байж болно). Elysium-ийн админ хуудсаас харж, CRM-д байхгүй бол гараар лид үүсгэнэ үү.</p>
                         <div className="mt-3"><LedgerTable caption="Шалгах шаардлагатай хүсэлтүүд" rows={data.invalid} /></div>
                     </section>}
                 </>}

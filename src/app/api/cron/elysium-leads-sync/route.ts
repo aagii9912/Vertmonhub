@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
         const success = result.status === 'ok';
         return NextResponse.json({
             success,
-            read: result.read, imported: result.imported, matched: result.matched,
+            read: result.read, imported: result.imported, keyed: result.keyed, matched: result.matched,
             invalid: result.invalid, failed: result.failed, remaining: result.remaining,
         }, { status: success ? 200 : 500 });
     } catch (error) {
