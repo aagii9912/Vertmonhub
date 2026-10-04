@@ -44,6 +44,8 @@ export interface ResolvedStaffLead {
     source: LeadSource;
     sales_manager_name: string | null;
     category_id: string | null;
+    /** Preview-д (AI) харуулах ангиллын нэр; ангилалгүй бол null. */
+    category_name: string | null;
 }
 
 export type Failure = { ok: false; status: number; error: string };
@@ -133,6 +135,7 @@ export async function resolveStaffLead(
         source: toLeadSource(typeof request.source === 'string' ? request.source : null),
         sales_manager_name: managerName,
         category_id: category?.categoryId ?? null,
+        category_name: category?.category?.name ?? null,
     };
 }
 

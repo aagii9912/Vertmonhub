@@ -21,7 +21,8 @@ import { applyLeadScope, assertProjectManager, canAccessProject, UNRESTRICTED_SA
 import { z } from 'zod';
 import { canReadPrivateAttachment, isLegacyPublicAttachmentUrl, parsePrivateAttachmentUrl } from '@/lib/ai/private-attachments';
 import { logLeadActivity } from '@/lib/leads/activities';
-import { LEAD_NAME_OR_ANONYMOUS, STATUS_META, isAnonymousLead, leadDisplayName, normalizeLeadName, statusLabel, toLeadSource } from '@/lib/leads/labels';
+import { LEAD_NAME_OR_ANONYMOUS, STATUS_META, UNCATEGORIZED_LABEL, isAnonymousLead, isUncategorizedInput, leadCategoryLabel, leadDisplayName, normalizeLeadName, statusLabel, toLeadSource } from '@/lib/leads/labels';
+import { leadCategoryName, listLeadCategories, resolveLeadCategory, type LeadCategory } from '@/lib/services/LeadCategoryService';
 import type { LeadStatus } from '@/types/property';
 import { formatMNT } from '@/lib/utils/currency';
 import { contractIdsByPreviousHolder, listContractTransfers } from '@/lib/services/ContractService';
@@ -234,7 +235,7 @@ export async function fetchLeads(shopId: string, args: any, scope: SalesProjectS
     const limit = Number.isFinite(Number(args.limit)) ? Math.min(100, Math.max(1, Math.floor(Number(args.limit)))) : 10;
     if (args.queue && !isLeadWorkQueue(args.queue)) return { error: 'Буруу ажлын жагсаалт: unassigned, uncontacted, no_followup, overdue' };
     let query = supabaseAdmin.from('leads')
-        .select('id, project_id, customer_name, customer_phone, customer_email, status, source, sales_manager_name, budget_min, budget_max, preferred_type, preferred_district, preferred_rooms, urgency, notes, internal_notes, last_contact_at, next_followup_at, viewing_scheduled_at, created_at, updated_at')
+        .select('id, project_id, customer_name, customer_phone, customer_email, status, source, sales_manager_name, category_id, budget_min, budget_max, preferred_type, preferred_district, preferred_rooms, urgency, notes, internal_notes, last_contact_at, next_followup_at, viewing_scheduled_at, created_at, updated_at')
         .eq('shop_id', shopId).is('deleted_at', null)
         .order(args.queue === 'overdue' ? 'next_followup_at' : 'created_at', { ascending: !!args.queue, nullsFirst: false }).limit(limit);
     query = applyLeadScope(query, scope);
@@ -244,14 +245,27 @@ export async function fetchLeads(shopId: string, args: any, scope: SalesProjectS
     if (args.status) query = query.eq('status', args.status);
     if (args.source) query = query.eq('source', args.source);
     if (args.urgency) query = query.eq('urgency', args.urgency);
+    // Ангилал: яг нэрээр (архивласан ч болно) эсвэл «Ангилалгүй»; таарахгүй бол сонголтуудыг буцаана.
+    if (typeof args.category === 'string' && args.category.trim()) {
+        if (isUncategorizedInput(args.category)) query = query.is('category_id', null);
+        else {
+            const category = await resolveLeadCategory(supabaseAdmin, shopId, { name: args.category }, { allowArchived: true });
+            if (!category.ok) return { error: category.error };
+            query = query.eq('category_id', category.categoryId);
+        }
+    }
 
-    const { data, error } = await query;
+    const [{ data, error }, categories] = await Promise.all([
+        query,
+        listLeadCategories(supabaseAdmin, shopId, { includeArchived: true }).catch((): LeadCategory[] => []),
+    ]);
     if (error) { logger.error('Lead fetch error:', { error }); return { error: 'Лидийн жагсаалт уншиж чадсангүй. Дахин оролдоно уу.' }; }
 
     return data?.map(l => ({
         // Нэргүй лидэд шошго + anonymous: true — загвар нэр зохиож харилцагчийг нэрээр дуудахгүй.
         id: l.id, project_id: l.project_id, name: leadDisplayName(l), anonymous: isAnonymousLead(l), phone: l.customer_phone, email: l.customer_email,
         status: l.status, source: l.source, sales_manager_name: l.sales_manager_name ?? null,
+        category: leadCategoryLabel(categories, l.category_id),
         budget: l.budget_min && l.budget_max ? `${formatMNT(l.budget_min)} - ${formatMNT(l.budget_max)}` : l.budget_min ? `${formatMNT(l.budget_min)}+` : 'Тодорхойгүй',
         preferred_type: l.preferred_type, preferred_district: l.preferred_district, preferred_rooms: l.preferred_rooms,
         urgency: l.urgency, notes: l.notes,
@@ -297,6 +311,7 @@ export async function fetchLeadDetails(shopId: string, args: any, scope: SalesPr
         lead: {
             id: data.id, project_id: data.project_id, name: leadDisplayName(data), anonymous: isAnonymousLead(data), phone: data.customer_phone, email: data.customer_email,
             status: data.status, source: data.source, budget_min: data.budget_min, budget_max: data.budget_max,
+            category: data.category_id ? (await leadCategoryName(supabaseAdmin, shopId, data.category_id)) ?? '—' : UNCATEGORIZED_LABEL,
             preferred_type: data.preferred_type, preferred_district: data.preferred_district,
             preferred_rooms: data.preferred_rooms, urgency: data.urgency, notes: data.notes,
             internal_notes: data.internal_notes, created_at: data.created_at,
@@ -1096,7 +1111,11 @@ export async function createLead(shopId: string, args: any, confirm: boolean, ac
         return { error: identity.error === LEAD_NAME_OR_ANONYMOUS ? 'customer_name шаардлагатай. Харилцагч нэрээ хэлээгүй бол нэр зохиохгүй, anonymous=true өгнө.' : identity.error };
     }
     const displayName = leadDisplayName(identity.customer_name);
-    const resolved = await resolveStaffLead(supabaseAdmin, shopId, { projectId: args.project_id, status: args.status, source: args.source }, actor);
+    const resolved = await resolveStaffLead(supabaseAdmin, shopId, {
+        projectId: args.project_id, status: args.status, source: args.source,
+        // Ангилал зөвхөн тохиргоонд байгаа яг нэрээр (list_lead_categories); зохиосон нэр алдаа буцаана.
+        category: args.category !== undefined && args.category !== null ? { name: args.category } : undefined,
+    }, actor);
     if (!resolved.ok) return { error: resolved.error };
     if (![args.budget_min, args.budget_max].every((value) => value == null || isAmount(value))) {
         return { error: 'Төсвийг төгрөгөөр, зөвхөн тоогоор өгнө үү' };
@@ -1105,6 +1124,7 @@ export async function createLead(shopId: string, args: any, confirm: boolean, ac
     const preview = {
         Нэр: displayName, Утас: identity.customer_phone || '-', ...(identity.customer_email ? { Имэйл: identity.customer_email } : {}), Статус: status, 'Эх сурвалж': source,
         Төсөв: args.budget_max ? formatMNT(args.budget_max) : '-',
+        Ангилал: resolved.category_name ?? UNCATEGORIZED_LABEL,
         Менежер: managerName || 'Хариуцагчгүй — идэвхтэй менежерт онооно',
     };
     if (!confirm) return confirmNeeded('create_lead', { ...args, status, source }, `Шинэ лийд: ${displayName}`, preview);
@@ -1115,6 +1135,7 @@ export async function createLead(shopId: string, args: any, confirm: boolean, ac
         customer_phone: identity.customer_phone,
         customer_email: identity.customer_email,
         status, source, sales_manager_name: managerName,
+        category_id: resolved.category_id,
         notes: args.notes || null,
         budget_min: args.budget_min ?? null,
         budget_max: args.budget_max ?? null,

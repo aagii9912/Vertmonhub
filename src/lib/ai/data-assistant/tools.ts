@@ -23,6 +23,10 @@ const readDefinitions: ToolDefinition[] = [
         parameters: { type: SchemaType.OBJECT, properties: {} },
     },
     {
+        name: 'list_lead_categories', description: 'Энэ төслийн лидийн ангиллууд (харилцагчийн төрөл/зорилго: ж. хөрөнгө оруулагч, дилер) — нэр, тайлбар, архивласан эсэх. Лидэд ангилал тавих, ангиллаар шүүхээс өмнө яг нэрийг эндээс ав; ангилал зохиохгүй.',
+        parameters: { type: SchemaType.OBJECT, properties: {} },
+    },
+    {
         name: 'get_marketing_performance',
         description: 'Маркетингийн нэгдсэн самбар, албаны KPI-ийн зургаан ангиллын жин ба бодит нотолгоо, багийн гүйцэтгэл: төсөл/суваг/кампанит ажил/контентын Lead–Sales–Deal, өмнөх хугацааны харьцуулалт, маркетингийн менежерийн сарын зорилт, төсөв, зардал, хэтрэлт. Dashboard-ийн AI дүгнэлтэд энэ tool ашиглана. basis, quality, KPI-ийн дутуу шалгуурыг тайлбартаа хадгал; дутуу зорилтыг 0 гэж үзэхгүй. Qualified Lead, Site Visit, нийлбэр оноог таамгаар гаргахгүй.',
         parameters: { type: SchemaType.OBJECT, properties: {
@@ -81,7 +85,8 @@ const readDefinitions: ToolDefinition[] = [
             type: SchemaType.OBJECT,
             properties: {
                 status: { type: SchemaType.STRING, enum: LEAD_STATUSES, description: 'Лийдийн статус' },
-                source: { type: SchemaType.STRING, enum: ['messenger', 'instagram', 'website', 'referral', 'phone', 'other'], description: 'Эх үүсвэр' },
+                source: { type: SchemaType.STRING, enum: SOURCES, description: 'Эх үүсвэр' },
+                category: { type: SchemaType.STRING, description: 'Лидийн ангиллын яг нэр (list_lead_categories) эсвэл «Ангилалгүй»' },
                 urgency: { type: SchemaType.STRING, enum: ['urgent', 'normal', 'flexible'], description: 'Яаралтай эсэх' },
                 queue: { type: SchemaType.STRING, enum: ['unassigned', 'uncontacted', 'no_followup', 'overdue'], description: 'Хариуцагчгүй, холбоо бүртгээгүй, дараагийн алхамгүй, хугацаа хэтэрсэн лидүүд' },
                 manager_name: { type: SchemaType.STRING, description: 'Хариуцагчийн канон нэр (яг бүртгэлээр)' },
@@ -408,6 +413,7 @@ const writeDefinitions: ToolDefinition[] = [
                 customer_email: { type: SchemaType.STRING, description: 'Имэйл' },
                 status: { type: SchemaType.STRING, enum: ACTIVE_STATUSES, description: 'Идэвхтэй төлөв (default: new); үүсгэхдээ хаахгүй' },
                 source: { type: SchemaType.STRING, enum: SOURCES, description: 'Эх үүсвэр' },
+                category: { type: SchemaType.STRING, description: 'Лидийн ангилал (заавал биш): list_lead_categories-ийн яг нэр; хэрэглэгч хэлээгүй бол орхино, таамаглахгүй' },
                 budget_min: { type: SchemaType.NUMBER, description: 'Доод төсөв (MNT)' },
                 budget_max: { type: SchemaType.NUMBER, description: 'Дээд төсөв (MNT)' },
                 preferred_district: { type: SchemaType.STRING, description: 'Сонирхсон дүүрэг' },
@@ -576,6 +582,20 @@ const writeDefinitions: ToolDefinition[] = [
                 next_followup_at: { type: SchemaType.STRING, description: 'ISO 8601 огноо/цаг; цуцлах бол null/хоосон' },
                 note: { type: SchemaType.STRING, description: 'Тэмдэглэл (заавал биш)' }
             }
+        }
+    },
+    {
+        name: 'set_lead_category',
+        description: 'Лидэд ангилал тавих эсвэл цэвэрлэх. Ангиллын яг нэрийг list_lead_categories-оос ав; таарахгүй бол систем боломжтой нэрсийг буцаана — тэр үед хэрэглэгчээс тодруул. Лидийн түүхэнд бичигдэж шууд гүйцэтгэгдэнэ.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                lead_id: { type: SchemaType.STRING, description: 'Лидийн ID (мэдэгдэж байвал)' },
+                customer_name: { type: SchemaType.STRING, description: 'Лидийн нэрээр хайх' },
+                customer_phone: { type: SchemaType.STRING, description: 'Утасны дугаараар хайх' },
+                category: { type: SchemaType.STRING, description: 'Ангиллын яг нэр; цэвэрлэх бол «Ангилалгүй»' }
+            },
+            required: ['category']
         }
     },
     {

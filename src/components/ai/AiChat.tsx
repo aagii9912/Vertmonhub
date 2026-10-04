@@ -79,7 +79,7 @@ interface PendingRequest {
 
 const TOOL_LABEL: Record<string, string> = {
     delegate_to_specialists: 'Мэргэжилтнүүдэд хуваарилах', ask_user: 'Тодруулга', list_viewings: 'Уулзалт хайх', list_my_tasks: 'Миний ажлууд', list_contract_payments: 'Төлбөрийн хуваарь',
-    log_call: 'Дуудлага бүртгэх', set_followup: 'Follow-up тавих', assign_lead_manager: 'Лид шилжүүлэх', record_viewing_outcome: 'Уулзалтын үр дүн', reschedule_viewing: 'Уулзалт зөөх', create_task: 'Ажил нэмэх', complete_task: 'Ажил дуусгах', add_contract_payment: 'Төлбөр нэмэх', mark_payment_paid: 'Төлбөр төлсөн',
+    log_call: 'Дуудлага бүртгэх', set_followup: 'Follow-up тавих', set_lead_category: 'Ангилал тавих', list_lead_categories: 'Лидийн ангилал', assign_lead_manager: 'Лид шилжүүлэх', record_viewing_outcome: 'Уулзалтын үр дүн', reschedule_viewing: 'Уулзалт зөөх', create_task: 'Ажил нэмэх', complete_task: 'Ажил дуусгах', add_contract_payment: 'Төлбөр нэмэх', mark_payment_paid: 'Төлбөр төлсөн',
     get_kpi_report: 'KPI тайлан', get_manager_activity: 'Менежерийн идэвх', get_manager_performance: 'Менежерийн гүйцэтгэл', get_export_link: 'Excel линк', add_customer_tag: 'Таг нэмэх', remove_customer_tag: 'Таг хасах', reply_to_customer: 'Messenger хариу', merge_customers: 'Харилцагч нэгтгэх',
     log_marketing_spend: 'Зарцуулалт бүртгэх', set_marketing_budget: 'Төсөв тавих', list_marketing_spend: 'Зарцуулалт', add_market_indicator: 'Зах зээлийн үзүүлэлт',
     update_unit_status: 'Нэгжийн статус', delete_property: 'Байр устгах', delete_viewing: 'Уулзалт цуцлах', delete_customer: 'Харилцагч устгах', create_role: 'Дүр үүсгэх',
