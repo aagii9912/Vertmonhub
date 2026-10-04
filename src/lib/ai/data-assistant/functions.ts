@@ -22,7 +22,7 @@ import { z } from 'zod';
 import { canReadPrivateAttachment, isLegacyPublicAttachmentUrl, parsePrivateAttachmentUrl } from '@/lib/ai/private-attachments';
 import { logLeadActivity, recordLeadContact } from '@/lib/leads/activities';
 import { loadLeadTimeline } from '@/lib/leads/timeline-load';
-import { compactLeadTimeline } from '@/lib/leads/timeline';
+import { compactLeadTimelineWithin } from '@/lib/leads/timeline';
 import { LEAD_NAME_OR_ANONYMOUS, STATUS_META, isAnonymousLead, leadDisplayName, normalizeLeadName, statusLabel, toLeadSource } from '@/lib/leads/labels';
 import type { LeadStatus } from '@/types/property';
 import { formatMNT } from '@/lib/utils/currency';
@@ -265,6 +265,9 @@ export async function fetchLeads(shopId: string, args: any, scope: SalesProjectS
     })) || [];
 }
 
+/** Харж буй лид/гэрээний урьдчилсан уншилтыг (orchestrator/http.ts `prefetchContext`) энэ уртаар (JSON) таслана. */
+export const AI_PREFETCH_MAX_CHARS = 6000;
+
 export async function fetchLeadDetails(shopId: string, args: any, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
     let query = supabaseAdmin.from('leads').select('*, properties(id, name, price, type, size_sqm, rooms, district, status)').eq('shop_id', shopId).is('deleted_at', null);
     query = applyLeadScope(query, scope);
@@ -287,7 +290,7 @@ export async function fetchLeadDetails(shopId: string, args: any, scope: SalesPr
         matchingProperties = props || [];
     }
 
-    const [{ data: viewings }, managerHistory] = await Promise.all([
+    const [{ data: viewings }, timeline] = await Promise.all([
         runExcludingDeleted((excludeDeleted) => {
             let q = supabaseAdmin.from('property_viewings')
                 .select('id, scheduled_at, status, property_id, customer_feedback, agent_notes')
@@ -295,16 +298,16 @@ export async function fetchLeadDetails(shopId: string, args: any, scope: SalesPr
             if (excludeDeleted) q = q.is('deleted_at', null);
             return q;
         }),
-        // Менежерүүдийн Time-line (хэн хэзээ холбогдсон, үнийн санал, зөрчил) — UI-тай ижил loader, товч хэлбэрээр.
+        // Менежерүүдийн Time-line (хэн хэзээ холбогдсон, үнийн санал, зөрчил) — UI-тай ижил loader.
         loadLeadTimeline(supabaseAdmin, shopId, data, scope)
-            .then(({ timeline }) => compactLeadTimeline(timeline))
+            .then(({ timeline }) => timeline)
             .catch((error: unknown) => {
                 logger.warn('[AI get_lead_details] manager history failed', { error });
-                return { error: 'Менежерийн түүх уншигдсангүй. Холбоо бариагүй гэж бүү дүгнэ.' };
+                return null;
             }),
     ]);
 
-    return {
+    const details = {
         lead: {
             id: data.id, project_id: data.project_id, name: leadDisplayName(data), anonymous: isAnonymousLead(data), phone: data.customer_phone, email: data.customer_email,
             status: data.status, source: data.source, budget_min: data.budget_min, budget_max: data.budget_max,
@@ -314,10 +317,17 @@ export async function fetchLeadDetails(shopId: string, args: any, scope: SalesPr
             last_contact_at: data.last_contact_at, next_followup_at: data.next_followup_at,
             sales_manager_name: data.sales_manager_name ?? null,
         },
-        manager_history: managerHistory,
         linkedProperty: data.properties || null,
         matchingProperties,
         viewings: viewings || [],
+    };
+    // Менежерийн түүх ХАМГИЙН СҮҮЛД, үлдсэн зайд багтахаар (prefetch таслахад уулзалт, байр хадгалагдана).
+    const room = AI_PREFETCH_MAX_CHARS - JSON.stringify(details).length - ',"manager_history":'.length;
+    return {
+        ...details,
+        manager_history: timeline
+            ? compactLeadTimelineWithin(timeline, room)
+            : { error: 'Менежерийн түүх уншигдсангүй. Холбоо бариагүй гэж бүү дүгнэ.' },
     };
 }
 

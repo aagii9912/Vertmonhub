@@ -486,7 +486,7 @@ function parallelConflicts(events: TimelineEvent[]): TimelineConflict[] {
     }];
 }
 
-/** AI-д өгөх товч хувилбар (prefetch 6000 тэмдэгтэд багтана). */
+/** AI-д өгөх товч хувилбар (id-гүй). Хэмжээг `compactLeadTimelineWithin`-ээр хязгаарлана. */
 export function compactLeadTimeline(timeline: LeadTimeline, recent = 12) {
     return {
         owner: timeline.owner,
@@ -497,14 +497,32 @@ export function compactLeadTimeline(timeline: LeadTimeline, recent = 12) {
             ...(m.lastQuote ? { last_quote: { amount: m.lastQuote.amount, unit: m.lastQuote.unitLabel } } : {}),
         })),
         conflicts: timeline.conflicts.map((c) => ({ kind: c.kind, message: c.message })),
-        duplicates: timeline.duplicates ? { count: timeline.duplicates.count, managers: timeline.duplicates.managers } : null,
+        duplicates: timeline.duplicates ? {
+            count: timeline.duplicates.count, managers: timeline.duplicates.managers,
+            ...(timeline.duplicates.truncated ? { count_is_minimum: true } : {}),
+        } : null,
         recent_events: timeline.events.slice(0, recent).map((e) => ({
             at: e.at, kind: e.kind, actor: e.actor, owner: e.owner,
             ...(e.offOwner ? { off_owner: true } : {}),
             ...(e.amount !== null ? { amount: e.amount, unit: e.unitLabel } : {}),
             title: e.title.slice(0, 100),
         })),
+        // Үлдсэн (хуучин) үйлдлийн тоо — жагсаалт бүрэн биш гэдгийг загвар мэдэж байна.
+        ...(timeline.events.length > recent ? { older_events_omitted: timeline.events.length - recent } : {}),
         ...(timeline.partial.length ? { partial: timeline.partial } : {}),
         note: 'Үнийн санал нь гэрээний дүн, орлого биш. Зөрчил нь анхааруулга — хэнийг ч буруутгахгүй.',
     };
+}
+
+/**
+ * `maxChars` тэмдэгтэд (JSON) багтахаар сүүлийн үйлдлийг 12 → 6 → 3 → 0 болгон цөөлнө; хариуцагч,
+ * менежерийн товчоо, зөрчил үргэлж үлдэнэ (тэгээд ч багтахгүй бол хамгийн товч хувилбар).
+ */
+export function compactLeadTimelineWithin(timeline: LeadTimeline, maxChars: number) {
+    let compact = compactLeadTimeline(timeline);
+    for (const recent of [6, 3, 0]) {
+        if (JSON.stringify(compact).length <= maxChars) break;
+        compact = compactLeadTimeline(timeline, recent);
+    }
+    return compact;
 }

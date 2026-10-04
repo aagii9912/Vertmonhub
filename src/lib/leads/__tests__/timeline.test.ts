@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-    buildLeadTimeline, compactLeadTimeline, TIMELINE_CONFLICT_WINDOW_DAYS,
+    buildLeadTimeline, compactLeadTimeline, compactLeadTimelineWithin, TIMELINE_CONFLICT_WINDOW_DAYS,
     type BuildLeadTimelineInput, type TimelineActivityInput,
 } from '../timeline';
 
@@ -269,9 +269,20 @@ describe('compactLeadTimeline', () => {
         const activities = Array.from({ length: 80 }, (_, i) => act(i % 2 ? 'call' : 'quote', new Date(Date.parse('2026-09-02T02:00:00Z') + i * 3_600_000).toISOString(), i % 3 ? 'u-manda' : 'u-saraa', {
             content: 'Урт тайлбар '.repeat(30), meta: i % 2 ? {} : { amount: 400_000_000 + i, unit_label: 'A-1203' },
         }));
-        const compact = compactLeadTimeline(build({ activities }));
+        const timeline = build({ activities });
+        const compact = compactLeadTimeline(timeline);
         expect(compact.recent_events).toHaveLength(12);
+        expect(compact.older_events_omitted).toBe(timeline.events.length - 12);
         expect(JSON.stringify(compact).length).toBeLessThan(3500);
         expect(JSON.stringify(compact)).not.toContain('"id"');
+
+        // Үлдсэн зайд багтахаар зөвхөн сүүлийн үйлдлийг цөөлнө; товчоо, зөрчил хэвээр.
+        const fitted = compactLeadTimelineWithin(timeline, 1500);
+        expect(JSON.stringify(fitted).length).toBeLessThanOrEqual(1500);
+        expect(fitted.recent_events.length).toBeLessThan(12);
+        expect(fitted.managers).toEqual(compact.managers);
+        expect(fitted.conflicts).toEqual(compact.conflicts);
+        expect(compactLeadTimelineWithin(timeline, 10).recent_events).toEqual([]);
+        expect(compactLeadTimelineWithin(timeline, 10_000)).toEqual(compact);
     });
 });

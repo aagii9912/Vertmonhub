@@ -21,6 +21,8 @@ function from(table: string) {
         neq: (key: string, value: unknown) => { filters.push(row => row[key] !== value); return chain; },
         is: (key: string, value: unknown) => { filters.push(row => (row[key] ?? null) === value); return chain; },
         in: (key: string, values: unknown[]) => { filters.push(row => values.includes(row[key])); return chain; },
+        gte: (key: string, value: number) => { filters.push(row => Number(row[key]) >= value); return chain; },
+        lte: (key: string, value: number) => { filters.push(row => Number(row[key]) <= value); return chain; },
         limit: (n: number) => { cap = n; return chain; }, order: () => chain, range: () => chain,
         ilike: () => chain, or: () => chain,
         update: (row: Record<string, unknown>) => { update = row; return chain; },
@@ -84,8 +86,45 @@ describe('AI manager history and price quotes', () => {
         expect(result.manager_history.managers.map((m: { name: string; quotes: number }) => [m.name, m.quotes])).toEqual([['Батаа', 1], ['Сараа', 1]]);
         expect(result.manager_history.conflicts.map((c: { kind: string }) => c.kind)).toEqual(['quote_mismatch', 'non_owner_contact', 'parallel_managers']);
         expect(JSON.stringify(result.manager_history)).not.toContain('Бусдын дуудлага');
-        expect(Object.keys(result).indexOf('manager_history')).toBe(1);
+        // Prefetch (6000 тэмдэгт) таслахад лид, байр, уулзалт үлдэхээр түүх хамгийн сүүлд.
+        expect(Object.keys(result)).toEqual(['lead', 'linkedProperty', 'matchingProperties', 'viewings', 'manager_history']);
         expect(await executeDataTool('get_lead_details', { lead_id: otherId }, 'shop', perms, 'user')).toHaveProperty('error');
+    });
+
+    it('keeps a busy lead within the prefetch limit without losing its viewings', async () => {
+        Object.assign(state.rows.leads[0], {
+            customer_phone: '99112233', customer_email: 'bold@example.mn', preferred_type: 'apartment', preferred_district: 'Хан-Уул', preferred_rooms: 3,
+            budget_min: 300_000_000, budget_max: 500_000_000, urgency: 'high',
+            notes: 'Гэр бүлээрээ 3 өрөө байр хайж байна, сургуулийн ойролцоо, өндөр давхар. '.repeat(5),
+            internal_notes: 'Банкны зээлийн урьдчилсан зөвшөөрөлтэй, урьдчилгаа 30%. '.repeat(4),
+            last_contact_at: '2026-10-01T02:00:00Z', next_followup_at: '2026-10-06T02:00:00Z',
+        });
+        state.rows.properties = Array.from({ length: 5 }, (_, i) => ({
+            id: `prop-${i}`, shop_id: 'shop', is_active: true, status: 'available', type: 'apartment', rooms: 3, price: 350_000_000 + i * 10_000_000,
+            name: `Mandala Garden A блок ${1200 + i}`, size_sqm: 78.5, district: 'Хан-Уул',
+        }));
+        state.rows.property_viewings = Array.from({ length: 5 }, (_, i) => ({
+            id: `00000000-0000-4000-8000-0000000001${i}0`, shop_id: 'shop', lead_id: ownId, scheduled_at: `2026-09-${10 + i}T03:00:00Z`, status: i ? 'completed' : 'scheduled',
+            property_id: `prop-${i}`, customer_feedback: i ? 'Зохион байгуулалт таалагдсан, үнэ дээр бодно гэсэн.' : null, agent_notes: 'Гэр бүлээрээ ирнэ, машины зогсоол асууна.',
+            created_at: `2026-09-0${1 + i}T02:00:00Z`, completed_at: i ? `2026-09-${10 + i}T04:00:00Z` : null, sales_manager_name: 'Батаа', deleted_at: null,
+        }));
+        state.rows.lead_activities.push(...Array.from({ length: 60 }, (_, i) => ({
+            id: `h${String(i).padStart(2, '0')}`, shop_id: 'shop', lead_id: ownId, type: i % 3 ? 'call' : 'quote',
+            content: i % 3 ? 'Харилцагчтай ярьж, байрны үнэ, төлбөрийн нөхцөл, хүлээлгэн өгөх хугацааг тайлбарласан.' : 'Үнийн санал',
+            meta: i % 3 ? {} : { amount: 400_000_000 + i * 1_000_000, unit_label: 'A-1203' },
+            created_by: i % 2 ? 'user' : 'saraa', created_by_name: i % 2 ? 'Батаа' : 'Сараа', created_at: new Date(Date.parse('2026-09-05T02:00:00Z') + i * 3_600_000).toISOString(),
+        })));
+
+        const result = await executeDataTool('get_lead_details', { lead_id: ownId }, 'shop', adminPerms, 'admin');
+        const json = JSON.stringify(result);
+        expect(json.length).toBeLessThanOrEqual(6000);
+        expect(result.viewings).toHaveLength(5);
+        expect(result.matchingProperties).toHaveLength(5);
+        // Багтахын тулд зөвхөн сүүлийн үйлдлүүдийг цөөлнө; товчоо, зөрчил хэвээр.
+        expect(result.manager_history.recent_events.length).toBeLessThan(12);
+        expect(result.manager_history.older_events_omitted).toBeGreaterThan(0);
+        expect(result.manager_history.managers.map((m: { name: string }) => m.name)).toEqual(['Батаа', 'Сараа']);
+        expect(result.manager_history.conflicts.length).toBeGreaterThan(0);
     });
 
     it('previews a price quote, then records it through the locked contact RPC', async () => {
