@@ -18,7 +18,7 @@ import { applyLeadScope, assertProjectManager, canAccessProject, UNRESTRICTED_SA
 import { z } from 'zod';
 import { canReadPrivateAttachment, isLegacyPublicAttachmentUrl, parsePrivateAttachmentUrl } from '@/lib/ai/private-attachments';
 import { logLeadActivity } from '@/lib/leads/activities';
-import { STATUS_META, statusLabel } from '@/lib/leads/labels';
+import { STATUS_META, statusLabel, toLeadSource } from '@/lib/leads/labels';
 import type { LeadStatus } from '@/types/property';
 import { formatMNT } from '@/lib/utils/currency';
 
@@ -1064,8 +1064,7 @@ export async function createLead(shopId: string, args: any, confirm = false, sal
     if (args.status === 'closed_won' || args.status === 'closed_lost') return { error: 'Шинэ лидийг идэвхтэй төлөвөөр бүртгэнэ. Гэрээ эсвэл алдсан шалтгаанаа дараа нь бүртгэнэ үү.' };
     const validStatus = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating'];
     const status = args.status && validStatus.includes(args.status) ? args.status : 'new';
-    const validSource = ['messenger', 'instagram', 'website', 'referral', 'phone', 'facebook_ads', 'google_ads', 'other'];
-    const source = args.source && validSource.includes(args.source) ? args.source : 'other';
+    const source = toLeadSource(typeof args.source === 'string' ? args.source : null);
     let managerName: string | null = null;
     if (userId) {
         const identity = await resolveManagerIdentity(supabaseAdmin, shopId, userId);

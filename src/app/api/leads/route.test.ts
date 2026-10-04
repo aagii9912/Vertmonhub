@@ -12,6 +12,7 @@ const state = vi.hoisted(() => ({
     errors: {} as Record<string, Error>,
     writes: [] as Row[],
     rateChecks: 0,
+    capi: [] as Row[],
 }));
 vi.mock('@/lib/auth/supabase-auth', () => ({
     getUserId: async () => state.userId,
@@ -25,7 +26,7 @@ vi.mock('@google/generative-ai', () => ({ GoogleGenerativeAI: class {
     getGenerativeModel() { return { generateContent: async () => ({ response: { text: () => 'Хүсэлт хүлээн авлаа' } }) }; }
 } }));
 vi.mock('@/lib/email/email', () => ({ sendLeadWelcomeEmail: async () => {} }));
-vi.mock('@/lib/marketing/meta-capi', () => ({ sendMetaCapiEvent: async () => {}, buildFbc: () => null }));
+vi.mock('@/lib/marketing/meta-capi', () => ({ sendMetaCapiEvent: async (event: Row) => { state.capi.push(event); }, buildFbc: () => null }));
 vi.mock('@/lib/utils/rate-limiter', () => ({
     checkRateLimit: async () => { state.rateChecks++; return { allowed: true }; },
     getClientIdentifier: () => 'fixture-ip',
@@ -75,7 +76,7 @@ const request = (body: Row = {}, origin = 'https://garden.example') => new NextR
 });
 beforeEach(() => {
     state.userId = null; state.shopId = shop; state.role = 'sales_manager'; state.denied = false;
-    state.writes = []; state.errors = {}; state.rateChecks = 0;
+    state.writes = []; state.errors = {}; state.rateChecks = 0; state.capi = [];
     state.rows = {
         projects: [{ id: garden, shop_id: shop }, { id: elysium, shop_id: shop }, { id: foreign, shop_id: otherShop }],
         shops: [{ id: shop, name: 'Байгууллага' }, { id: otherShop, name: 'Өөр байгууллага' }],
@@ -135,5 +136,18 @@ describe('project-bound public and staff lead intake', () => {
         state.rows.sales_manager_projects = [];
         expect((await POST(request({ project_id: garden }))).status).toBe(403);
         expect(state.writes).toHaveLength(1);
+        // Ажилтны таблетын бүртгэл Meta руу харилцагчийн event болж явахгүй.
+        expect(state.capi).toEqual([]);
+    });
+    it('stores sources from the shared vocabulary and reports only visitor submissions to Meta', async () => {
+        vi.stubEnv('LEAD_PROJECT_ID', garden);
+        expect((await POST(request({ utm_source: 'google' }))).status).toBe(200);
+        expect((await POST(request({ utm_source: 'newsletter' }))).status).toBe(200);
+        expect((await POST(request({ source: 'board' }))).status).toBe(200);
+        expect((await POST(request({ fbclid: 'fbclid-1' }))).status).toBe(200);
+        expect(state.writes.map(row => [row.source, row.utm_source ?? null])).toEqual([
+            ['google_ads', 'google'], ['website', 'newsletter'], ['board', null], ['facebook_ads', null],
+        ]);
+        expect(state.capi).toHaveLength(4);
     });
 });

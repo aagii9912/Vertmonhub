@@ -6,6 +6,7 @@
  */
 
 import { SPEND_CHANNELS } from '@/lib/marketing/budget';
+import { ACTIVE_STATUSES, LEAD_STATUSES, SOURCES } from '@/lib/leads/labels';
 
 const SchemaType = { OBJECT: 'object', STRING: 'string', NUMBER: 'number', INTEGER: 'integer', BOOLEAN: 'boolean', ARRAY: 'array' } as const;
 
@@ -79,7 +80,7 @@ const readDefinitions: ToolDefinition[] = [
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
-                status: { type: SchemaType.STRING, enum: ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'], description: 'Лийдийн статус' },
+                status: { type: SchemaType.STRING, enum: LEAD_STATUSES, description: 'Лийдийн статус' },
                 source: { type: SchemaType.STRING, enum: ['messenger', 'instagram', 'website', 'referral', 'phone', 'other'], description: 'Эх үүсвэр' },
                 urgency: { type: SchemaType.STRING, enum: ['urgent', 'normal', 'flexible'], description: 'Яаралтай эсэх' },
                 queue: { type: SchemaType.STRING, enum: ['unassigned', 'uncontacted', 'no_followup', 'overdue'], description: 'Хариуцагчгүй, холбоо бүртгээгүй, дараагийн алхамгүй, хугацаа хэтэрсэн лидүүд' },
@@ -324,7 +325,7 @@ const writeDefinitions: ToolDefinition[] = [
             properties: {
                 lead_id: { type: SchemaType.STRING, description: 'Лийдийн ID' },
                 customer_name: { type: SchemaType.STRING, description: 'Хэрэглэгчийн нэрээр хайх' },
-                new_status: { type: SchemaType.STRING, enum: ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'], description: 'Шинэ статус' },
+                new_status: { type: SchemaType.STRING, enum: LEAD_STATUSES, description: 'Шинэ статус' },
                 lost_reason: { type: SchemaType.STRING, description: 'closed_lost үед алдсан бодит шалтгаан; хэрэглэгчээс тодруулна, таамаглахгүй' }
             },
             required: ['new_status']
@@ -395,8 +396,8 @@ const writeDefinitions: ToolDefinition[] = [
                 customer_name: { type: SchemaType.STRING, description: 'Харилцагчийн нэр' },
                 customer_phone: { type: SchemaType.STRING, description: 'Утасны дугаар' },
                 customer_email: { type: SchemaType.STRING, description: 'Имэйл' },
-                status: { type: SchemaType.STRING, enum: ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating'], description: 'Идэвхтэй төлөв (default: new); үүсгэхдээ хаахгүй' },
-                source: { type: SchemaType.STRING, enum: ['messenger', 'instagram', 'website', 'referral', 'phone', 'facebook_ads', 'google_ads', 'other'], description: 'Эх үүсвэр' },
+                status: { type: SchemaType.STRING, enum: ACTIVE_STATUSES, description: 'Идэвхтэй төлөв (default: new); үүсгэхдээ хаахгүй' },
+                source: { type: SchemaType.STRING, enum: SOURCES, description: 'Эх үүсвэр' },
                 budget_min: { type: SchemaType.NUMBER, description: 'Доод төсөв (MNT)' },
                 budget_max: { type: SchemaType.NUMBER, description: 'Дээд төсөв (MNT)' },
                 preferred_district: { type: SchemaType.STRING, description: 'Сонирхсон дүүрэг' },
@@ -492,9 +493,9 @@ const writeDefinitions: ToolDefinition[] = [
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
-                from_status: { type: SchemaType.STRING, enum: ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'], description: 'Энэ статустай бүх лийдийг сонгох' },
+                from_status: { type: SchemaType.STRING, enum: LEAD_STATUSES, description: 'Энэ статустай бүх лийдийг сонгох' },
                 lead_ids: { type: SchemaType.STRING, description: 'Лийдийн ID-ууд (таслалаар)' },
-                new_status: { type: SchemaType.STRING, enum: ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating'], description: 'Шинэ идэвхтэй төлөв; бөөнөөр хаахгүй' }
+                new_status: { type: SchemaType.STRING, enum: ACTIVE_STATUSES, description: 'Шинэ идэвхтэй төлөв; бөөнөөр хаахгүй' }
             },
             required: ['new_status']
         }

@@ -76,4 +76,24 @@ describe('Elysium lead intake', () => {
         expect(await retry.json()).toMatchObject({ ok: true, duplicate: true });
         expect(inserts).toHaveLength(1);
     });
+
+    it('answers a concurrent request ID from another project with 409, not 500', async () => {
+        let reads = 0;
+        vi.mocked(supabaseAdmin).mockReturnValue({
+            from(table: string) {
+                if (table === 'projects') return {
+                    select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { id: projectId, shop_id: shopId }, error: null }) }) }),
+                };
+                return {
+                    // Эхний шалгалтад хоосон, unique зөрчлийн дараах дахин уншилтад өөр төслийн лид.
+                    select: () => ({ eq: () => ({ eq: () => ({
+                        maybeSingle: async () => ({ data: reads++ === 0 ? null : { id: 'other-lead', project_id: 'other-project' }, error: null }),
+                    }) }) }),
+                    insert: () => ({ select: () => ({ single: async () => ({ data: null, error: { code: '23505', message: 'duplicate key' } }) }) }),
+                };
+            },
+        } as never);
+        const res = await POST(post(payload));
+        expect(res.status).toBe(409);
+    });
 });

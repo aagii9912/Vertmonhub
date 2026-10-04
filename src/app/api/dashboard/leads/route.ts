@@ -4,7 +4,7 @@ import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { requireModuleWrite, resolvePermissions, requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveManagerIdentity, resolveActiveManagerName } from '@/lib/sales/manager-identity';
-import { ACTIVE_STATUSES } from '@/lib/leads/labels';
+import { ACTIVE_STATUSES, toLeadSource } from '@/lib/leads/labels';
 import { isLeadWorkQueue, workQueueFilter } from '@/lib/leads/work-queue';
 import { parsePagination, buildPageMeta } from '@/lib/utils/pagination';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
@@ -225,7 +225,7 @@ export async function POST(request: NextRequest) {
             customer_name: input.customer_name,
             customer_phone: input.customer_phone || null,
             customer_email: input.customer_email || null,
-            source: input.source || 'other',
+            source: toLeadSource(input.source),
             preferred_type: input.preferred_type || null,
             preferred_rooms: input.preferred_rooms ?? null,
             financing_intent: input.financing_intent || null,

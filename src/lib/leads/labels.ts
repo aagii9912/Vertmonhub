@@ -53,6 +53,21 @@ export function sourceLabel(s: string | null | undefined): string {
     return (s && SOURCE_LABEL[s as LeadSource]) || s || '—';
 }
 
+/** UTM болон гадны системийн нэршлийг толь бичгийн утгад буулгана. */
+const SOURCE_ALIASES: Record<string, LeadSource> = {
+    fb: 'facebook_ads', meta: 'facebook_ads', ig: 'instagram', google: 'google_ads', adwords: 'google_ads',
+};
+
+/**
+ * Лид үүсгэх бүх зам (dashboard, нийтийн форм, AI …) эх үүсвэрийг энүүгээр хадгална:
+ * толь бичгийн утга эсвэл танигдсан нэршил, бусад нь `fallback`. Түүхий UTM утга `utm_source`-д үлдэнэ.
+ */
+export function toLeadSource(raw: string | null | undefined, fallback: LeadSource = 'other'): LeadSource {
+    const value = raw?.trim().toLowerCase() ?? '';
+    if (Object.hasOwn(SOURCE_LABEL, value)) return value as LeadSource;
+    return Object.hasOwn(SOURCE_ALIASES, value) ? SOURCE_ALIASES[value] : fallback;
+}
+
 /** Сонирхол: «3 өрөө» (preferred_rooms) эсвэл төрлийн нэр (preferred_type). */
 export function interestLabel(lead: { preferred_rooms?: number | null; preferred_type?: string | null }): string {
     if (lead.preferred_rooms) return `${lead.preferred_rooms} өрөө`;

@@ -91,8 +91,10 @@ export async function POST(request: NextRequest) {
                 .eq('shop_id', project.shop_id)
                 .eq('client_request_id', lead.requestId)
                 .maybeSingle();
-            if (!duplicate.error && duplicate.data && duplicate.data.project_id === project.id) {
-                return NextResponse.json({ ok: true, leadId: duplicate.data.id, duplicate: true });
+            if (!duplicate.error && duplicate.data) {
+                return duplicate.data.project_id === project.id
+                    ? NextResponse.json({ ok: true, leadId: duplicate.data.id, duplicate: true })
+                    : NextResponse.json({ error: 'Request ID conflict' }, { status: 409 });
             }
         }
         throw error;

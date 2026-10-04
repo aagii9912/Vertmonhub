@@ -10,6 +10,7 @@ import {
 import { logger } from '@/lib/utils/logger';
 import { sendMetaCapiEvent, buildFbc } from '@/lib/marketing/meta-capi';
 import { sendLeadWelcomeEmail } from '@/lib/email/email';
+import { toLeadSource } from '@/lib/leads/labels';
 import { getUserId, getUserShop } from '@/lib/auth/supabase-auth';
 import { requireModuleWrite, resolvePermissions } from '@/lib/auth/require-permission';
 import { assertProjectManager, canAccessProject, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
@@ -267,9 +268,10 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
         }
 
         const inferredSource = source
-            || (facebook_campaign_id || utm_source === 'facebook' || fbclid
+            ? toLeadSource(source, 'website')
+            : facebook_campaign_id || utm_source === 'facebook' || fbclid
                 ? 'facebook_ads'
-                : utm_source || 'website');
+                : toLeadSource(utm_source, 'website');
 
         // Анкетын нэмэлт талбаруудыг (ээлж, урьдчилгаа %) тэмдэглэлд нэгтгэнэ
         const notesComposed = [
@@ -336,20 +338,23 @@ ${message ? `Түүний хэлсэн зүйл: "${message}"` : 'Ерөнхий
             }
         }
 
-        // Meta Conversions API — сервер талаас Lead event (best-effort)
-        await sendMetaCapiEvent({
-            eventName: 'Lead',
-            eventId: data?.id,
-            eventSourceUrl: request.headers.get('referer'),
-            userData: {
-                email,
-                phone,
-                fbc: buildFbc(fbclid),
-                clientIp,
-                userAgent: request.headers.get('user-agent'),
-            },
-            customData: { lead_source: inferredSource || 'website' },
-        });
+        // Meta Conversions API — зөвхөн зочны илгээсэн анкетад (best-effort). Ажилтны таблетаас
+        // бүртгэсэн лидэд менежерийн IP/браузер харилцагчийнх мэт Meta руу очих байсан.
+        if (!staffUserId) {
+            await sendMetaCapiEvent({
+                eventName: 'Lead',
+                eventId: data?.id,
+                eventSourceUrl: request.headers.get('referer'),
+                userData: {
+                    email,
+                    phone,
+                    fbc: buildFbc(fbclid),
+                    clientIp,
+                    userAgent: request.headers.get('user-agent'),
+                },
+                customData: { lead_source: inferredSource },
+            });
+        }
 
         return NextResponse.json({
             success: true,
