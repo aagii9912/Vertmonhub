@@ -6,8 +6,8 @@ import { resolvePermissions } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { dateSchema } from '@/lib/marketing/performance';
 import { resolveReportViewer } from '@/lib/sales/manager-identity';
-import { activityRangeError, buildPeriods, type ActivityGroup } from '@/lib/sales/activity';
-import { loadManagerActivity } from '@/lib/sales/activity-load';
+import { activityRangeError, buildPeriods, resolveActivityRange, type ActivityGroup } from '@/lib/sales/activity';
+import { findActivityManager, loadManagerActivity } from '@/lib/sales/activity-load';
 import { ubDateStr } from '@/lib/utils/date';
 
 const QuerySchema = z.object({
@@ -22,16 +22,16 @@ const QuerySchema = z.object({
  * Менежерийн дуудлага, болсон уулзалт, санал хүсэлтийн шийдвэрлэлт, өдрийн зорилтын биелэлт.
  * • Менежер (хувийн горим) зөвхөн өөрийнхийг харна — `manager` параметрийг үл тооцно.
  * • Багийн харагдац: super_admin эсвэл `reports` модультай, хувийн горимгүй хэрэглэгч.
- *   Зөвхөн `dashboard` модультай байгууллагын хэрэглэгчид 403.
+ *   Зөвхөн `dashboard` модультай байгууллагын хэрэглэгчид 403. Бүртгэлгүй `manager` нэрт 404.
+ * • `to` өгөөгүй бол өнөөдөр, `from` өгөөгүй бол `to`-гийн өдөр/7 хоног/сарын эхэн (AI tool-тэй ижил).
  */
 export const GET = withRoute({ module: ['reports', 'dashboard'], error: 'Менежерийн идэвхийн тайланг гаргаж чадсангүй. Дахин оролдоно уу.' }, async ({ request, shop }) => {
     const params = Object.fromEntries(request.nextUrl.searchParams.entries());
     const parsed = QuerySchema.safeParse(params);
     if (!parsed.success) return NextResponse.json({ error: 'Огноо эсвэл шүүлтүүр буруу байна' }, { status: 400 });
     const today = ubDateStr();
-    const from = parsed.data.from ?? parsed.data.to ?? today;
-    const to = parsed.data.to ?? parsed.data.from ?? today;
     const group: ActivityGroup = parsed.data.group;
+    const { from, to } = resolveActivityRange(parsed.data.from, parsed.data.to, group, today);
     const rangeError = activityRangeError(from, to);
     if (rangeError) return NextResponse.json({ error: rangeError }, { status: 400 });
 
@@ -51,8 +51,10 @@ export const GET = withRoute({ module: ['reports', 'dashboard'], error: 'Мен�
         only = own;
     } else if (!viewer.canViewTeam) {
         return NextResponse.json({ error: 'Багийн идэвхийг харах эрхгүй' }, { status: 403 });
-    } else {
-        only = parsed.data.manager ?? null;
+    } else if (parsed.data.manager) {
+        const found = await findActivityManager(db, shop.id, parsed.data.manager);
+        if (!found.ok) return NextResponse.json({ error: found.error, options: found.options }, { status: 404 });
+        only = found.name;
     }
 
     const report = await loadManagerActivity(db, { shopId: shop.id, from, to, group, only, now: new Date() });

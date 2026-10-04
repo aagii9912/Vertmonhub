@@ -654,7 +654,10 @@ function NewServiceLogModal({ open, onClose, onSubmit, managers, managersError, 
     );
 }
 
-/** Жагсаалтын «Хариуцагч»: бичих эрхтэй бол бүртгэлийн менежерээр солих, хуучин чөлөөт текстийг харуулна. */
+/**
+ * Жагсаалтын «Хариуцагч»: бичих эрхтэй бол бүртгэлийн менежерээр солих. Хариуцагч = зөвхөн manager_name
+ * (KPI-тай ижил дүрэм); manager_name-гүй мөрийн assigned_to бол хуучин чөлөөт текст — тооцогдохгүй.
+ */
 function AssigneeCell({ log, managers, canWrite, onChange }: {
     log: ServiceLog;
     managers: ManagerOption[];
@@ -662,8 +665,9 @@ function AssigneeCell({ log, managers, canWrite, onChange }: {
     onChange: (name: string | null) => void;
 }) {
     const legacy = !log.manager_name && log.assigned_to ? log.assigned_to : null;
+    const legacyNote = legacy && <div className="mt-0.5 truncate text-2xs text-muted-foreground" title="Хуучин бүртгэлийн текст — KPI-д тооцогдохгүй">{legacy}</div>;
     if (!canWrite || managers.length === 0) {
-        return <>{log.manager_name || log.assigned_to || '—'}</>;
+        return <>{log.manager_name || (legacy ? 'Хариуцагчгүй' : '—')}{legacyNote}</>;
     }
     const options = log.manager_name && !managers.some((m) => m.name === log.manager_name) ? [{ name: log.manager_name }, ...managers] : managers;
     return (
@@ -677,7 +681,7 @@ function AssigneeCell({ log, managers, canWrite, onChange }: {
                     {options.map((m) => <SelectItem key={m.name} value={m.name}>{m.name}</SelectItem>)}
                 </SelectContent>
             </Select>
-            {legacy && <div className="mt-0.5 truncate text-2xs text-muted-foreground" title="Хуучин бүртгэлийн текст — KPI-д тооцогдохгүй">{legacy}</div>}
+            {legacyNote}
         </div>
     );
 }

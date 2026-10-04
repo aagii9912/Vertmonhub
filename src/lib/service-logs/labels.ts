@@ -50,11 +50,11 @@ export const SERVICE_LOG_CHANNEL_LABELS: Record<ServiceLogChannel, string> = {
 
 /** Шийдвэрлэгдсэн гэж тооцох төлвүүд (resolved_at тавигдана). */
 export const CLOSED_SERVICE_STATUSES: readonly ServiceLogStatus[] = ['resolved', 'closed'];
-/** Хариуцагчийн ажил үргэлжилж буй төлвүүд. */
-export const OPEN_SERVICE_STATUSES: readonly ServiceLogStatus[] = ['open', 'in_progress'];
+/** Хариуцагчийн ажил үргэлжилж буй төлвүүд (идэвхийн loader нээлттэй бүх хүсэлтийг эдгээрээр уншина). */
+export const OPEN_SERVICE_STATUSES: readonly ServiceLogStatus[] = SERVICE_LOG_STATUSES.filter(status => !CLOSED_SERVICE_STATUSES.includes(status));
 
 export function isClosedServiceStatus(status: string | null | undefined): boolean {
-    return status === 'resolved' || status === 'closed';
+    return (CLOSED_SERVICE_STATUSES as readonly string[]).includes(status ?? '');
 }
 
 /** Зөвхөн толийн өөрийн түлхүүр (прототипийн `toString` г.м биш). */

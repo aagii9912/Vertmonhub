@@ -61,8 +61,8 @@ describe('loadSalesKpi', () => {
                 { shop_id: 's', type: 'note', created_by: 'u-saraa', created_by_name: 'Сараа', created_at: '2026-10-03T03:00:00.000Z' },
             ],
             service_logs: [
-                { shop_id: 's', manager_name: 'Сараа', assigned_to: 'Сараа', priority: 'urgent', status: 'resolved', created_at: '2026-10-05T00:00:00.000Z', resolved_at: '2026-10-05T10:00:00.000Z' },
-                { shop_id: 's', manager_name: 'Сараа', assigned_to: 'Сараа', priority: 'urgent', status: 'open', created_at: '2026-10-06T00:00:00.000Z', resolved_at: null },
+                { shop_id: 's', manager_name: 'Сараа', priority: 'urgent', status: 'resolved', created_at: '2026-10-05T00:00:00.000Z', resolved_at: '2026-10-05T10:00:00.000Z' },
+                { shop_id: 's', manager_name: 'Сараа', priority: 'urgent', status: 'open', created_at: '2026-10-06T00:00:00.000Z', resolved_at: null },
             ],
             property_viewings: [
                 { shop_id: 's', status: 'completed', meeting_type: 'new_customer', deleted_at: null, scheduled_at: '2026-10-10T03:00:00.000Z', sales_manager_name: 'Номин' },

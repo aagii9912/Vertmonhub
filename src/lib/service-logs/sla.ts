@@ -129,11 +129,3 @@ export function tallyServiceLog(log: SlaLog, now: Date, key: (at: Date) => strin
         if (outcome.met) tally.slaMet += 1;
     }
 }
-
-/** Нэг хугацааны [start, end) шийдвэрлэлтийн дүн. */
-export function summarizeResolution(logs: readonly SlaLog[], range: { start: Date; end: Date }, now: Date): ResolutionSummary {
-    const tally = emptyTally();
-    const inRange = (at: Date) => at.getTime() >= range.start.getTime() && at.getTime() < range.end.getTime() ? 'range' : null;
-    for (const log of logs) tallyServiceLog(log, now, inRange, () => tally);
-    return toResolutionSummary(tally);
-}

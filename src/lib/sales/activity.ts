@@ -6,7 +6,8 @@
  *   Таараагүйг «бүртгэлгүй дуудлага» гэж удирдлагад харуулна (таамаглаж оноохгүй).
  * • Болсон уулзалт = property_viewings 'completed' (бүх төрөл; «шинэ харилцагч»-ийг тусад нь),
  *   «ирээгүй» (no_show) тусдаа, оноонд орохгүй. Уулзалтын УБ өдрөөр (scheduled_at), sales_manager_name-ээр.
- * • Санал хүсэлт = service_logs (хариуцагч manager_name); SLA-ийн дүрэм lib/service-logs/sla.ts.
+ * • Санал хүсэлт = service_logs, ЗӨВХӨН manager_name-ээр (assigned_to-гийн чөлөөт текстийг нэрээр
+ *   таамаглаж оноохгүй — «Санал гомдол» хуудас ч мөн адил); SLA-ийн дүрэм lib/service-logs/sla.ts.
  * • Өдрийн зорилт (sales_kpi_months.daily) × зорилтот өдөр (Даваа–Баасан, өнөөдрийг хүртэл).
  *   Зорилтгүй сар орсон бол хугацааны зорилт null («зорилтгүй») — 0 биш.
  * • 7 хоног = Лхагва гарагийн хурлын долоо хоног (Лхагва–Мягмар), ISO долоо хоног биш.
@@ -98,6 +99,15 @@ export function activityRangeError(from: string, to: string): string | null {
     return null;
 }
 
+/**
+ * Хугацааны анхдагч (API, AI tool нэг дүрэм): `to` өгөөгүй бол өнөөдөр (`from` ирээдүйд бол `from`);
+ * `from` өгөөгүй бол `to`-гийн өдөр / хурлын 7 хоног / сарын эхэн. Шалгалтыг activityRangeError хийнэ.
+ */
+export function resolveActivityRange(from: string | null | undefined, to: string | null | undefined, group: ActivityGroup, today: string): { from: string; to: string } {
+    const end = to || (from && from > today ? from : today);
+    return { from: from || periodBounds(end, group).from, to: end };
+}
+
 /** [from, min(to, today)] доторх зорилтот (Даваа–Баасан) өдрүүд. */
 export function targetDates(from: string, to: string, today: string): string[] {
     const last = to < today ? to : today;
@@ -109,7 +119,7 @@ export function targetDates(from: string, to: string, today: string): string[] {
 export interface ActivityRosterEntry { name: string; user_id: string | null; is_active: boolean }
 export interface ActivityCall { created_by: string | null; created_by_name: string | null; created_at: string }
 export interface ActivityMeeting { sales_manager_name: string | null; scheduled_at: string; status: string | null; meeting_type: string | null }
-export interface ActivityRequest extends SlaLog { manager_name: string | null; assigned_to: string | null }
+export interface ActivityRequest extends SlaLog { manager_name: string | null }
 export interface DailyTargetRow { manager_name: string; year: number; month: number; daily: unknown }
 
 /**
@@ -253,8 +263,7 @@ export function buildManagerActivity(input: BuildActivityInput): ManagerActivity
     }
     const unassignedTally = emptyTally();
     for (const request of input.requests) {
-        const assigned = request.assigned_to?.trim();
-        const name = request.manager_name?.trim() || (assigned && rosterByName.has(assigned) ? assigned : null);
+        const name = request.manager_name?.trim() || null;
         if (!name) {
             tallyServiceLog(request, now, at => periodOf(at), () => unassignedTally);
             if (isOpenOverdue(request, now)) unattributed.openOverdue += 1;

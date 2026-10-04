@@ -1,9 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { isOpenOverdue, slaDeadline, slaOutcome, slaState, summarizeResolution, type SlaLog } from '../sla';
-import { SERVICE_LOG_TYPES, serviceLogTypeLabel } from '../labels';
+import { emptyTally, isOpenOverdue, slaDeadline, slaOutcome, slaState, tallyServiceLog, toResolutionSummary, type SlaLog } from '../sla';
+import { OPEN_SERVICE_STATUSES, SERVICE_LOG_STATUSES, SERVICE_LOG_TYPES, isClosedServiceStatus, serviceLogTypeLabel } from '../labels';
 
 const log = (values: Partial<SlaLog>): SlaLog => ({ priority: 'urgent', status: 'open', created_at: '2026-10-01T00:00:00Z', resolved_at: null, ...values });
 const now = new Date('2026-10-10T00:00:00Z');
+
+/** Нэг хугацааны [start, end) дүн — тайлангийн builder-тэй ижил tallyServiceLog-оор. */
+function summarize(logs: SlaLog[], range: { start: Date; end: Date }) {
+    const tally = emptyTally();
+    const inRange = (at: Date) => at.getTime() >= range.start.getTime() && at.getTime() < range.end.getTime() ? 'range' : null;
+    for (const entry of logs) tallyServiceLog(entry, now, inRange, () => tally);
+    return toResolutionSummary(tally);
+}
 
 describe('service log SLA', () => {
     it('targets 24/48/120/240 hours by priority (unknown = medium)', () => {
@@ -25,13 +33,13 @@ describe('service log SLA', () => {
 
     it('summarizes a period without counting undecided requests as zero', () => {
         const range = { start: new Date('2026-10-01T00:00:00Z'), end: new Date('2026-10-08T00:00:00Z') };
-        const summary = summarizeResolution([
+        const summary = summarize([
             log({ status: 'resolved', resolved_at: '2026-10-01T12:00:00Z' }),
             log({ priority: 'high', status: 'closed', resolved_at: '2026-10-04T00:00:00Z' }),
             log({ priority: 'low', created_at: '2026-10-07T00:00:00Z' }),
-        ], range, now);
+        ], range);
         expect(summary).toEqual({ received: 3, resolved: 2, slaTotal: 2, slaMet: 1, onTimePct: 50, avgResolutionHours: 42 });
-        expect(summarizeResolution([log({ priority: 'low', created_at: '2026-10-07T00:00:00Z' })], range, now)).toMatchObject({ slaTotal: 0, onTimePct: null, avgResolutionHours: null });
+        expect(summarize([log({ priority: 'low', created_at: '2026-10-07T00:00:00Z' })], range)).toMatchObject({ slaTotal: 0, onTimePct: null, avgResolutionHours: null });
     });
 
     it('marks open overdue requests and remaining hours for the list badge', () => {
@@ -42,7 +50,10 @@ describe('service log SLA', () => {
         expect(slaState(log({ status: 'closed' }), now)).toBeNull();
     });
 
-    it('labels every database type', () => {
+    it('labels every database type and splits statuses into open and closed', () => {
         expect(SERVICE_LOG_TYPES.map(serviceLogTypeLabel)).toEqual(['Лавлагаа', 'Гомдол', 'Санал', 'Засвар', 'Хүлээлцэх', 'Төлбөр', 'Бусад']);
+        expect(OPEN_SERVICE_STATUSES).toEqual(['open', 'in_progress']);
+        expect(SERVICE_LOG_STATUSES.filter(isClosedServiceStatus)).toEqual(['resolved', 'closed']);
+        expect([null, undefined, '', 'done'].some(isClosedServiceStatus)).toBe(false);
     });
 });

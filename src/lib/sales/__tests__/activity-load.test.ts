@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { loadManagerActivity } from '../activity-load';
+import { findActivityManager, loadManagerActivity } from '../activity-load';
 
 type Row = Record<string, unknown>;
 const originalTz = process.env.TZ;
@@ -20,6 +20,9 @@ function orFilter(expression: string) {
     return (row: Row) => tests.some(test => test(row));
 }
 
+/** `leads.deleted_at` г.м embed-ийн баганыг уншина (PostgREST-ийн `leads!inner(...)` шүүлтүүр). */
+const field = (row: Row, key: string): unknown => key.split('.').reduce<unknown>((value, part) => (value as Row | null | undefined)?.[part], row);
+
 function fakeDb(tables: Record<string, Row[]>, failing?: string) {
     const queries: Array<{ table: string; calls: unknown[][] }> = [];
     const db = { from(table: string) {
@@ -35,7 +38,7 @@ function fakeDb(tables: Record<string, Row[]>, failing?: string) {
         Object.assign(query, {
             select: record('select'), order: record('order'), range: record('range'),
             eq: record('eq', (key: string, value: unknown) => (row: Row) => row[key] === value),
-            is: record('is', (key: string, value: unknown) => (row: Row) => (row[key] ?? null) === value),
+            is: record('is', (key: string, value: unknown) => (row: Row) => (field(row, key) ?? null) === value),
             in: record('in', (key: string, values: unknown[]) => (row: Row) => values.includes(row[key])),
             gte: record('gte', (key: string, value: unknown) => (row: Row) => String(row[key]) >= String(value)),
             lte: record('lte', (key: string, value: unknown) => (row: Row) => Number(row[key]) <= Number(value)),
@@ -54,8 +57,10 @@ const tables = () => ({
     sales_managers: [{ shop_id: 's', name: 'Номин', user_id: 'u-nomin', is_active: true }, { shop_id: 's', name: 'Сараа', user_id: null, is_active: true }],
     sales_kpi_months: [{ shop_id: 's', manager_name: 'Номин', year: 2026, month: 10, daily: { calls: 3, meetings: 1 } }],
     lead_activities: [
-        { shop_id: 's', type: 'call', created_by: 'u-nomin', created_by_name: 'Номин', created_at: '2026-10-04T16:00:00.000Z' },
-        { shop_id: 's', type: 'call', created_by: 'u-nomin', created_by_name: 'Номин', created_at: '2026-10-04T15:59:59.000Z' },
+        { shop_id: 's', type: 'call', created_by: 'u-nomin', created_by_name: 'Номин', created_at: '2026-10-04T16:00:00.000Z', leads: { deleted_at: null } },
+        { shop_id: 's', type: 'call', created_by: 'u-nomin', created_by_name: 'Номин', created_at: '2026-10-04T15:59:59.000Z', leads: { deleted_at: null } },
+        // Админ устгасан (спам/давхар) лидийн дуудлага — тоологдохгүй.
+        { shop_id: 's', type: 'call', created_by: 'u-nomin', created_by_name: 'Номин', created_at: '2026-10-05T02:00:00.000Z', leads: { deleted_at: '2026-10-06T00:00:00.000Z' } },
         { shop_id: 'other', type: 'call', created_by: 'u-nomin', created_by_name: 'Номин', created_at: '2026-10-05T03:00:00.000Z' },
     ],
     property_viewings: [
@@ -65,11 +70,11 @@ const tables = () => ({
     ],
     service_logs: [
         // 20 хоногийн өмнө бүртгэж, одоо ч нээлттэй (хэтэрсэн) — OR-ийн status салбараар уншина.
-        { id: 1, shop_id: 's', manager_name: 'Сараа', assigned_to: 'Сараа', priority: 'low', status: 'open', created_at: '2026-09-15T00:00:00.000Z', resolved_at: null },
+        { id: 1, shop_id: 's', manager_name: 'Сараа', priority: 'low', status: 'open', created_at: '2026-09-15T00:00:00.000Z', resolved_at: null },
         // 9 хоногийн өмнөх бага чухалтай — SLA нь хугацаанд дуусна (lookback салбар).
-        { id: 2, shop_id: 's', manager_name: 'Сараа', assigned_to: 'Сараа', priority: 'low', status: 'closed', created_at: '2026-09-26T00:00:00.000Z', resolved_at: '2026-10-07T00:00:00.000Z' },
+        { id: 2, shop_id: 's', manager_name: 'Сараа', priority: 'low', status: 'closed', created_at: '2026-09-26T00:00:00.000Z', resolved_at: '2026-10-07T00:00:00.000Z' },
         // Хэт хуучин, хугацаанаас өмнө хаагдсан — уншихгүй.
-        { id: 3, shop_id: 's', manager_name: 'Сараа', assigned_to: 'Сараа', priority: 'urgent', status: 'closed', created_at: '2026-08-01T00:00:00.000Z', resolved_at: '2026-08-01T05:00:00.000Z' },
+        { id: 3, shop_id: 's', manager_name: 'Сараа', priority: 'urgent', status: 'closed', created_at: '2026-08-01T00:00:00.000Z', resolved_at: '2026-08-01T05:00:00.000Z' },
     ],
 });
 
@@ -82,6 +87,8 @@ describe('loadManagerActivity', () => {
         expect(calls).toContainEqual(['gte', 'created_at', '2026-10-04T16:00:00.000Z']);
         expect(calls).toContainEqual(['lt', 'created_at', '2026-10-07T16:00:00.000Z']);
         expect(calls).toContainEqual(['eq', 'type', 'call']);
+        expect(calls).toContainEqual(['select', 'created_by, created_by_name, created_at, leads!inner(deleted_at)']);
+        expect(calls).toContainEqual(['is', 'leads.deleted_at', null]);
         expect(queries.find(query => query.table === 'service_logs')!.calls)
             .toContainEqual(['or', 'created_at.gte.2026-09-24T16:00:00.000Z,resolved_at.gte.2026-10-04T16:00:00.000Z,status.in.(open,in_progress)']);
 
@@ -103,5 +110,25 @@ describe('loadManagerActivity', () => {
         await expect(loadManagerActivity(fakeDb(tables(), 'service_logs').db, { shopId: 's', from: '2026-10-05', to: '2026-10-05', group: 'day' })).rejects.toThrow('service_logs унших алдаа');
         await expect(loadManagerActivity(fakeDb(tables(), 'sales_managers').db, { shopId: 's', from: '2026-10-05', to: '2026-10-05', group: 'day' })).rejects.toMatchObject({ message: 'sales_managers унших алдаа' });
         await expect(loadManagerActivity(db, { shopId: 's', from: '2026-10-05', to: '2026-10-01', group: 'day' })).rejects.toThrow('дараалл');
+    });
+});
+
+describe('findActivityManager', () => {
+    const roster = () => ({ sales_managers: [
+        { shop_id: 's', name: 'Номин-Эрдэнэ', user_id: 'u-1', is_active: true },
+        { shop_id: 's', name: 'Сараа', user_id: null, is_active: true },
+        { shop_id: 's', name: 'Хуучин', user_id: null, is_active: false },
+        { shop_id: 'other', name: 'Номин', user_id: null, is_active: true },
+    ] });
+
+    it('accepts an exact roster name of this project (inactive included) and never guesses a near match', async () => {
+        const { db } = fakeDb(roster());
+        expect(await findActivityManager(db, 's', ' Сараа ')).toEqual({ ok: true, name: 'Сараа' });
+        expect(await findActivityManager(db, 's', 'Хуучин')).toEqual({ ok: true, name: 'Хуучин' });
+        // Өөр төслийн «Номин» биш; төстэй нэрийг сонголтоор санал болгоно.
+        expect(await findActivityManager(db, 's', 'Номин')).toEqual({ ok: false, error: 'Ийм менежер бүртгэлд алга', options: ['Номин-Эрдэнэ'] });
+        // Төстэй нэргүй бол идэвхтэй бүх нэр.
+        expect(await findActivityManager(db, 's', 'Дорж')).toMatchObject({ ok: false, options: ['Номин-Эрдэнэ', 'Сараа'] });
+        await expect(findActivityManager(fakeDb(roster(), 'sales_managers').db, 's', 'Сараа')).rejects.toMatchObject({ message: 'sales_managers унших алдаа' });
     });
 });

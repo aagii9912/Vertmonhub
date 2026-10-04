@@ -20,10 +20,14 @@ vi.mock('@/lib/sales/manager-identity', async (importOriginal) => {
         managerName: state.rosterName ?? 'Профайлын нэр',
         identity: { rosterEntry: state.rosterName ? { name: state.rosterName, user_id: 'user-1', is_active: true } : null } }) };
 });
-vi.mock('@/lib/sales/activity-load', () => ({ loadManagerActivity: async (_db: unknown, options: Record<string, unknown>) => {
-    state.loads.push(options);
-    return { from: options.from, to: options.to, group: options.group, today: '2026-10-05', targetDays: 1, periods: [], managers: [], unattributed: null };
-} }));
+vi.mock('@/lib/sales/activity-load', () => ({
+    findActivityManager: async (_db: unknown, _shop: string, name: string) => ['Сараа', 'Номин'].includes(name)
+        ? { ok: true, name } : { ok: false, error: 'Ийм менежер бүртгэлд алга', options: ['Номин', 'Сараа'] },
+    loadManagerActivity: async (_db: unknown, options: Record<string, unknown>) => {
+        state.loads.push(options);
+        return { from: options.from, to: options.to, group: options.group, today: '2026-10-05', targetDays: 1, periods: [], managers: [], unattributed: null };
+    },
+}));
 
 import { GET } from '../dashboard/reports/manager-activity/route';
 
@@ -44,8 +48,18 @@ describe('manager activity API', () => {
         expect(state.loads[0]).toMatchObject({ shopId: 'shop-1', from: '2026-10-05', to: '2026-10-05', group: 'day', only: null });
         await get('?from=2026-10-01&to=2026-10-31&group=week&manager=Сараа');
         expect(state.loads[1]).toMatchObject({ from: '2026-10-01', to: '2026-10-31', group: 'week', only: 'Сараа' });
+        // Зөвхөн `from`: өнөөдрийг хүртэл (AI tool-тэй ижил).
+        await get('?from=2026-10-01');
+        expect(state.loads[2]).toMatchObject({ from: '2026-10-01', to: '2026-10-05' });
         Object.assign(state, { role: 'viewer' });
         expect(await (await get()).json()).toMatchObject({ canEdit: false, personal: false });
+    });
+
+    it('answers 404 for a manager name that is not on the roster instead of a zero row', async () => {
+        const response = await get('?manager=Номин-Эрдэнэ');
+        expect(response.status).toBe(404);
+        expect(await response.json()).toEqual({ error: 'Ийм менежер бүртгэлд алга', options: ['Номин', 'Сараа'] });
+        expect(state.loads).toHaveLength(0);
     });
 
     it('limits a sales manager to the own roster row whatever manager is asked for', async () => {

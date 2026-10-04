@@ -47,7 +47,7 @@ const roster = () => [
     { shop_id: 'shop', name: 'Сараа', user_id: null, is_active: true },
     { shop_id: 'shop', name: 'Хуучин', user_id: null, is_active: false },
 ];
-const profiles = () => [{ id: 'user-nomin', full_name: 'Номин Бат' }, { id: 'user-admin', full_name: 'Админ Дорж' }];
+const profiles = () => [{ id: 'user-nomin', full_name: 'Номин Бат' }, { id: 'user-admin', full_name: 'Админ Дорж' }, { id: 'user-saraa', full_name: 'Сараа' }];
 const create = (input: Record<string, unknown>) => CreateServiceLogSchema.parse({ subject: 'Цахилгааны асуудал', ...input });
 
 beforeEach(() => vi.useRealTimers());
@@ -92,11 +92,14 @@ describe('createServiceLog', () => {
         await createServiceLog(db, { shopId: 'shop', userId: 'user-nomin', input: create({}) });
         expect(writes[1].values).toMatchObject({ manager_name: 'Номин', assigned_to: 'Номин' });
         await createServiceLog(db, { shopId: 'shop', userId: 'user-admin', input: create({}) });
-        // Бүртгэлгүй админ: хариуцагчгүй, дэлгэцийн нэр нь бүртгэсэн хүн (өмнөх зан төлөв).
-        expect(writes[2].values).toMatchObject({ manager_name: null, assigned_to: 'Админ Дорж' });
+        // Бүртгэлгүй админ: хариуцагчгүй; профайлын нэр assigned_to-д бичигдэхгүй (нэрээр менежерт оноогдохгүй).
+        expect(writes[2].values).toMatchObject({ manager_name: null, assigned_to: null });
         // Хуучин клиентийн assigned_to бүртгэлийн нэртэй таарвал хариуцагч болно.
         await createServiceLog(db, { shopId: 'shop', userId: 'user-admin', input: create({ assigned_to: 'Сараа' }) });
         expect(writes[3].values).toMatchObject({ manager_name: 'Сараа' });
+        // Профайлын нэр нь дансгүй бүртгэлтэй ижил хэрэглэгч — данс холбоогүй тул хариуцагч болохгүй.
+        await createServiceLog(db, { shopId: 'shop', userId: 'user-saraa', input: create({}) });
+        expect(writes[4].values).toMatchObject({ manager_name: null, assigned_to: null });
     });
 
     it('refuses links to another project and stamps resolution when created resolved', async () => {

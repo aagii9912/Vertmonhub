@@ -4,7 +4,8 @@
  * • Оролт хатуу Zod allow-list (DB CHECK-тэй ижил толь, 'suggestion' орно).
  * • Хариуцагч менежер (manager_name, канон sales_managers.name) — шийдвэрлэлтийн KPI-ийн attribution:
  *   ил сонгосон (идэвхтэй бүртгэлээр шалгана) → холбосон гэрээний менежер (идэвхтэй бол) →
- *   бүртгэсэн хэрэглэгчийн бүртгэлийн нэр → хоосон. assigned_to нь дэлгэцийн текст хэвээр.
+ *   бүртгэсэн хэрэглэгчийн (дансаар холбогдсон) бүртгэлийн нэр → хоосон. assigned_to нь зөвхөн дэлгэцийн хуулбар (эсвэл хуучин
+ *   клиентийн чөлөөт текст); KPI үүнийг уншихгүй, бүртгэсэн хүний профайлын нэрийг ч бичихгүй.
  * • resolved_at: нээлттэй → шийдвэрлэсэн/хаасан үед тавигдана, шийдвэрлэсэн → хаасан үед ХЭВЭЭР
  *   (SLA-ийн цаг дахин эхлэхгүй), дахин нээхэд цэвэрлэгдэнэ. resolved_by хамт.
  */
@@ -100,8 +101,11 @@ export async function createServiceLog(
     }
     managerName ??= await activeRosterName(db, shopId, input.assigned_to);
     managerName ??= await activeRosterName(db, shopId, contractManager);
-    const identity = userId ? await resolveManagerIdentity(db, shopId, userId) : null;
-    if (!managerName && identity?.isManager && identity.rosterEntry) managerName = identity.rosterEntry.name;
+    if (!managerName && userId) {
+        // Бүртгэсэн хэрэглэгч: зөвхөн дансаар (user_id) холбогдсон идэвхтэй бүртгэл — профайлын нэрийн таарц биш.
+        const identity = await resolveManagerIdentity(db, shopId, userId);
+        if (identity.isManager && identity.rosterEntry?.user_id === userId) managerName = identity.rosterEntry.name;
+    }
 
     const closed = isClosedServiceStatus(input.status);
     const { data, error } = await db.from('service_logs').insert({
@@ -117,8 +121,9 @@ export async function createServiceLog(
         status: input.status,
         channel: input.channel ?? null,
         manager_name: managerName,
-        // Дэлгэцийн нэр: хариуцагч → хуучин клиентийн текст → бүртгэсэн хүний нэр (өмнөх зан төлөв).
-        assigned_to: managerName ?? input.assigned_to ?? identity?.fullName ?? null,
+        // Дэлгэцийн нэр: хариуцагч → хуучин клиентийн текст. Хариуцагчгүй бол бүртгэсэн хүний профайлын
+        // нэрийг бичихгүй (хуудас «Хариуцагчгүй» гэж харуулна; нэрийн таарцаар менежерт оноогдохгүй).
+        assigned_to: managerName ?? input.assigned_to ?? null,
         resolved_at: closed ? new Date().toISOString() : null,
         resolved_by: closed ? userId : null,
     }).select().single();

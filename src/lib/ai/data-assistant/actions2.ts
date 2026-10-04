@@ -8,8 +8,8 @@ import { supabaseAdmin as adminClient } from '@/lib/supabase';
 import { ubDateStr, ubParts } from '@/lib/utils/date';
 import { phoneIlikePattern } from '@/lib/utils/phone';
 import { resolveManagerIdentity, resolveReportViewer } from '@/lib/sales/manager-identity';
-import { activityRangeError, periodBounds, type ActivityGroup, type ActivityRow } from '@/lib/sales/activity';
-import { loadManagerActivity } from '@/lib/sales/activity-load';
+import { activityRangeError, resolveActivityRange, type ActivityGroup, type ActivityRow } from '@/lib/sales/activity';
+import { findActivityManager, loadManagerActivity } from '@/lib/sales/activity-load';
 import { dateSchema } from '@/lib/marketing/performance';
 import { resolveSalesProjectScope, UNRESTRICTED_SALES_SCOPE, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { computeKpiReport } from '@/lib/dashboard/kpi-report-build';
@@ -47,7 +47,8 @@ export async function getKpiReport(shopId: string, args: Args, userId: string, p
 
 const ACTIVITY_GUIDANCE = 'Дуудлага = CRM-д бүртгэсэн дуудлага (CallPro-гийн нийт тоо биш); менежерт оноогдоогүйг (unattributed) хэн нэгэнд бүү оноо. '
     + 'Болсон уулзалт бүх төрлөөр, «шинэ» нь шинэ харилцагчтай; ирээгүй нь оноонд орохгүй. Санал хүсэлт: хугацаандаа % = SLA (24/48/120/240ц)-ийн үр дүн тодорхой болсноос. '
-    + 'null зорилт/хувь = зорилтгүй эсвэл мэдээлэлгүй — 0% гэж бүү тайлбарла, зорилт бүү зохио. 7 хоног = Лхагва–Мягмар.';
+    + 'null зорилт/хувь = зорилтгүй эсвэл мэдээлэлгүй — 0% гэж бүү тайлбарла, зорилт бүү зохио. 7 хоног = Лхагва–Мягмар. '
+    + 'inRoster=false = менежерийн бүртгэлд байхгүй нэр (уулзалтын хуучин нэр г.м).';
 
 const compactActivityRow = (row: ActivityRow, label?: string) => ({
     ...(label ? { period: label } : {}),
@@ -61,10 +62,8 @@ export async function getManagerActivityTool(shopId: string, args: Args, userId:
     const group: ActivityGroup = args.group === 'week' || args.group === 'month' ? args.group : 'day';
     const valid = (value: unknown) => typeof value === 'string' && dateSchema.safeParse(value).success;
     if ((args.from && !valid(args.from)) || (args.to && !valid(args.to))) return { error: 'Огноог YYYY-MM-DD хэлбэрээр өгнө үү' };
-    const today = ubDateStr();
-    // Огноо өгөөгүй бол одоогийн өдөр / хурлын 7 хоног / сарыг өнөөдрийг хүртэл.
-    const from: string = args.from || args.to || periodBounds(today, group).from;
-    const to: string = args.to || (args.from ? from : today);
+    // `to` өгөөгүй бол өнөөдөр («…-аас хойш»); `from` өгөөгүй бол `to`-гийн өдөр / хурлын 7 хоног / сарын эхэн.
+    const { from, to } = resolveActivityRange(args.from, args.to, group, ubDateStr());
     const rangeError = activityRangeError(from, to);
     if (rangeError) return { error: rangeError };
 
@@ -75,8 +74,11 @@ export async function getManagerActivityTool(shopId: string, args: Args, userId:
         if (!only) return { error: 'Та борлуулалтын менежерийн бүртгэлд байхгүй — идэвхийн тайлан гаргах менежер тодорхойгүй.' };
     } else if (!viewer.canViewTeam) {
         return { error: 'Багийн идэвхийг харах эрхгүй' };
-    } else if (args.manager) {
-        only = String(args.manager).trim().slice(0, 120) || null;
+    } else if (String(args.manager ?? '').trim()) {
+        // Бүртгэлгүй/буруу бичсэн нэрээр «0 дуудлага» гэсэн хоосон мөр гаргахгүй — сонголт өгч тодруулна.
+        const found = await findActivityManager(db(), shopId, String(args.manager).slice(0, 120));
+        if (!found.ok) return { error: `${found.error} — доорх нэрсээс тодруулна уу (ask_user)`, options: found.options };
+        only = found.name;
     }
 
     const report = await loadManagerActivity(db(), { shopId, from, to, group, only });
@@ -85,7 +87,7 @@ export async function getManagerActivityTool(shopId: string, args: Args, userId:
     return {
         from: report.from, to: report.to, group: report.group, targetDays: report.targetDays,
         managers: report.managers.map(manager => ({
-            manager: manager.manager, active: manager.active, dailyTarget: manager.daily, openOverdueRequests: manager.openOverdue,
+            manager: manager.manager, active: manager.active, inRoster: manager.inRoster, dailyTarget: manager.daily, openOverdueRequests: manager.openOverdue,
             total: compactActivityRow(manager.totals),
             ...(withRows ? { periods: manager.rows.map(row => compactActivityRow(row, labels.get(row.period))) } : {}),
         })),

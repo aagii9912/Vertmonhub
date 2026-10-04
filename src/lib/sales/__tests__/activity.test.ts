@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
     activityRangeError, activityWeekStart, attributeCall, buildManagerActivity, buildPeriods, periodBounds, readDailyTargets,
-    shiftPeriod, targetDates, type ActivityRosterEntry, type BuildActivityInput,
+    resolveActivityRange, shiftPeriod, targetDates, type ActivityRosterEntry, type BuildActivityInput,
 } from '../activity';
 import { weeklyReviewRange } from '@/lib/dashboard/weekly-review';
 
@@ -44,6 +44,18 @@ describe('activity periods', () => {
         expect(activityRangeError('2026-10-05', '2026-10-04')).toContain('дараалл');
         expect(activityRangeError('2026-01-01', '2026-04-03')).toContain('92');
         expect(activityRangeError('2026-01-01', '2026-04-02')).toBeNull();
+    });
+
+    it('defaults a missing end to today and a missing start to the start of the end period', () => {
+        const today = '2026-10-09';
+        expect(resolveActivityRange(null, null, 'day', today)).toEqual({ from: today, to: today });
+        expect(resolveActivityRange(undefined, undefined, 'week', today)).toEqual({ from: '2026-10-07', to: today });
+        expect(resolveActivityRange(undefined, undefined, 'month', today)).toEqual({ from: '2026-10-01', to: today });
+        // «9-р сарын 15-аас хойш» — өнөөдрийг хүртэл, нэг өдөр биш.
+        expect(resolveActivityRange('2026-09-15', undefined, 'day', today)).toEqual({ from: '2026-09-15', to: today });
+        expect(resolveActivityRange('2026-10-20', '', 'day', today)).toEqual({ from: '2026-10-20', to: '2026-10-20' });
+        expect(resolveActivityRange(undefined, '2026-09-30', 'month', today)).toEqual({ from: '2026-09-01', to: '2026-09-30' });
+        expect(resolveActivityRange(undefined, '2026-09-30', 'day', today)).toEqual({ from: '2026-09-30', to: '2026-09-30' });
     });
 });
 
@@ -105,7 +117,7 @@ describe('buildManagerActivity', () => {
         expect(crossMonth.managers.find(row => row.manager === 'Номин')!.rows[1].target.calls).toBe(2);
     });
 
-    it('attributes requests to the assignee with SLA outcomes, and shows only the own row in the personal view', () => {
+    it('attributes requests by manager_name only (never by legacy assigned_to text), and shows only the own row in the personal view', () => {
         const now = new Date('2026-10-12T00:00:00Z');
         const request = (values: Record<string, unknown>) => ({ manager_name: 'Сараа', assigned_to: 'Сараа', priority: 'urgent', status: 'resolved', created_at: '2026-10-05T00:00:00Z', resolved_at: '2026-10-05T06:00:00Z', ...values });
         const report = buildManagerActivity(input({
@@ -113,7 +125,9 @@ describe('buildManagerActivity', () => {
             requests: [
                 request({ created_at: '2026-10-07T00:00:00Z', resolved_at: '2026-10-07T12:00:00Z' }),
                 request({ created_at: '2026-10-08T00:00:00Z', status: 'open', resolved_at: null }),
+                // Хуучин мөр: assigned_to бүртгэлийн нэртэй (идэвхтэй/идэвхгүй) таарсан ч «Санал гомдол» хуудас шиг хариуцагчгүй.
                 request({ manager_name: null, assigned_to: 'Номин', created_at: '2026-10-08T00:00:00Z', status: 'closed', resolved_at: '2026-10-11T00:00:00Z' }),
+                request({ manager_name: null, assigned_to: 'Хуучин', created_at: '2026-10-08T00:00:00Z', status: 'open', resolved_at: null }),
                 request({ manager_name: null, assigned_to: 'Профайлын нэр', created_at: '2026-10-08T00:00:00Z', status: 'open', resolved_at: null }),
                 request({}), // өмнөх 7 хоногт шийдвэрлэсэн — энэ хугацаанд орохгүй
             ],
@@ -121,8 +135,10 @@ describe('buildManagerActivity', () => {
         const saraa = report.managers.find(row => row.manager === 'Сараа')!;
         expect(saraa.totals.requests).toEqual({ received: 2, resolved: 1, slaTotal: 2, slaMet: 1, onTimePct: 50, avgResolutionHours: 12 });
         expect(saraa.openOverdue).toBe(1);
-        expect(report.managers.find(row => row.manager === 'Номин')!.totals.requests).toMatchObject({ resolved: 1, slaTotal: 1, slaMet: 0, onTimePct: 0 });
-        expect(report.unattributed).toMatchObject({ requests: 1, openOverdue: 1 });
+        expect(report.managers.find(row => row.manager === 'Номин')!.totals.requests).toMatchObject({ received: 0, resolved: 0, slaTotal: 0 });
+        expect(report.managers.find(row => row.manager === 'Номин')!.openOverdue).toBe(0);
+        expect(report.managers.map(row => row.manager)).not.toContain('Хуучин');
+        expect(report.unattributed).toMatchObject({ requests: 3, openOverdue: 2 });
 
         const personal = buildManagerActivity(input({ from: '2026-10-07', to: '2026-10-13', group: 'day', now, only: 'Сараа', requests: [request({ created_at: '2026-10-07T00:00:00Z', resolved_at: '2026-10-07T12:00:00Z' })] }));
         expect(personal.managers.map(row => row.manager)).toEqual(['Сараа']);
