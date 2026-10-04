@@ -255,6 +255,15 @@ const readDefinitions: ToolDefinition[] = [
             manager: { type: SchemaType.STRING, description: 'Менежерийн нэр (өөрийн тайланд хоосон)' } } }
     },
     {
+        name: 'get_manager_activity',
+        description: 'Менежерүүдийн өдөр/7 хоног (Лхагва–Мягмар)/сарын идэвх: CRM-д бүртгэсэн дуудлага, болсон уулзалт (шинэ харилцагч, ирээгүй тусдаа), санал хүсэлтийг SLA-д шийдвэрлэсэн хувь, өдрийн зорилтын биелэлт. «Өнөөдөр хэдэн дуудлага хийв», «энэ 7 хоногт хэн зорилтоо биелүүлэв» г.м. Менежер зөвхөн өөрийнхийг харна.',
+        parameters: { type: SchemaType.OBJECT, properties: {
+            from: { type: SchemaType.STRING, description: 'Эхлэх өдөр YYYY-MM-DD (default: одоогийн өдөр/7 хоног/сарын эхэн)' },
+            to: { type: SchemaType.STRING, description: 'Дуусах өдөр YYYY-MM-DD (default: өнөөдөр); хамгийн ихдээ 92 хоног' },
+            group: { type: SchemaType.STRING, enum: ['day', 'week', 'month'], description: 'Бүлэглэл: day | week (Лхагва–Мягмар) | month (default: day)' },
+            manager: { type: SchemaType.STRING, description: 'Менежерийн канон нэр (зөвхөн багийн тайлан харах эрхтэй хэрэглэгчид)' } } }
+    },
+    {
         name: 'get_manager_performance',
         description: 'Бүх менежерийн гүйцэтгэлийн харьцуулалт: гэрээний тоо, борлуулалт, цуглуулалт, үлдэгдэл, цуглуулалтын %, багийн жилийн зорилт/гүйцэтгэл. Лидерборд, «хэн хамгийн сайн» асуултад.',
         parameters: { type: SchemaType.OBJECT, properties: {} }
