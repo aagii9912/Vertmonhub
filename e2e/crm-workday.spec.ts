@@ -39,6 +39,7 @@ async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admi
         sales_manager: 'Номин', block_name: 'B', unit_number: `120${i + 1}`, rooms: 3, overdue_days: i === 0 ? 4 : 0,
     }));
     const state = { failContracts: false, failExport: false, missingFx: false, viewings,
+        transfers: [] as Record<string, unknown>[], transferBodies: [] as Record<string, unknown>[],
         requests: [] as { path: string; search: string; method: string; shop: string | undefined; body?: Record<string, unknown> }[], errors: [] as string[], unhandled: [] as string[] };
     page.on('pageerror', error => state.errors.push(error.message));
     await page.route('**/api/**', async route => {
@@ -86,6 +87,25 @@ async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admi
             return reply({ viewing: item });
         }
         if (path === '/api/dashboard/viewings') return reply({ viewings: state.viewings, counts: { today: 0, upcoming: 2, past: 0 } });
+        const contractPath = path.match(/^\/api\/dashboard\/contracts\/([^/]+)(?:\/(payments|transfer))?$/);
+        if (contractPath && contractPath[1] !== 'stats') {
+            const contract = contracts.find(c => c.id === contractPath[1]);
+            if (!contract) return reply({ error: 'Гэрээ олдсонгүй' }, 404);
+            if (contractPath[2] === 'payments') return reply({ payments: [] });
+            if (contractPath[2] === 'transfer' && request.method() === 'POST') {
+                if (readonly) return reply({ error: 'Бичих эрхгүй' }, 403);
+                const body = request.postDataJSON() as Record<string, string>;
+                state.transferBodies.push(body);
+                state.transfers.unshift({ id: `transfer-${state.transfers.length + 1}`, contract_id: contract.id, kind: body.kind, effective_date: body.effective_date,
+                    from_customer_name: contract.customer_name, to_customer_name: body.customer_name, to_registration: String(body.customer_registration || '').toUpperCase(),
+                    reason: body.reason, created_by_name: 'Номин', created_at: new Date().toISOString() });
+                contract.customer_name = body.customer_name;
+                return reply({ transfer: state.transfers[0], replayed: false, message: 'Гэрээ шилжүүлэгдлээ' }, 201);
+            }
+            if (contractPath[2] === 'transfer') return reply({ transfers: state.transfers.filter(t => t.contract_id === contract.id), available: true });
+            return reply({ contract });
+        }
+        if (path === '/api/dashboard/ai-attachments') return reply({ attachments: [] });
         if (path === '/api/dashboard/contracts') {
             if (state.failContracts) return reply({ error: 'Туршилтын түр алдаа' }, 503);
             const matches = contracts.filter(c => (!url.searchParams.get('search') || c.customer_name.includes(url.searchParams.get('search')!)) && (url.searchParams.get('overdue') !== '1' || c.overdue_days > 0));
@@ -217,6 +237,34 @@ test('гэрээний ачааллын алдаа болон экспортын
     expect(state.errors).toEqual([]);
 });
 
+test('гэрээг өөр хүнд шилжүүлж эзэмшигчийн түүхийг харна', async ({ page }) => {
+    const state = await setup(page);
+    await page.goto('/dashboard/contracts/contract-0');
+    await expect(page.getByText('VM-2026-001', { exact: true })).toBeVisible();
+    await expect(page.getByText('Эзэмшигчийн түүх', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Гэрээ шилжүүлэх', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Гэрээ шилжүүлэх' });
+    await expect(dialog).toContainText('Б. Энхжин');
+    await dialog.getByRole('button', { name: 'Шилжүүлэх', exact: true }).click();
+    await expect(dialog.getByRole('alert')).toHaveText('Шинэ эзэмшигчийн нэрийг оруулна уу');
+    await dialog.getByLabel('Овог', { exact: true }).fill('Дорж');
+    await dialog.getByLabel('Нэр', { exact: true }).fill('Сараа');
+    await expect(dialog.getByLabel('Шинэ эзэмшигчийн нэр')).toHaveValue('Дорж Сараа');
+    await dialog.getByLabel('Регистр / паспорт').fill('чб88020202');
+    await dialog.getByLabel('Шалтгаан / тэмдэглэл').fill('Гэр бүлийн гишүүнд шилжүүлэв');
+    await dialog.getByRole('button', { name: 'Шилжүүлэх', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    expect(state.transferBodies).toEqual([expect.objectContaining({ kind: 'transfer', customer_name: 'Дорж Сараа', customer_last_name: 'Дорж', customer_first_name: 'Сараа',
+        customer_registration: 'чб88020202', effective_date: today, expected_customer_name: 'Б. Энхжин', reason: 'Гэр бүлийн гишүүнд шилжүүлэв' })]);
+    expect(state.transferBodies[0].client_request_id).toMatch(/^[0-9a-f-]{36}$/);
+    await expect(page.getByText('Эзэмшигчийн түүх', { exact: true })).toBeVisible();
+    await expect(page.getByText('Анхны худалдан авагч', { exact: true })).toBeVisible();
+    await expect(page.getByText('Б. Энхжин → Дорж Сараа').first()).toBeVisible();
+    await expect(page.getByText('ЧБ88020202', { exact: true })).toBeVisible();
+    expect(state.errors).toEqual([]);
+    expect(state.unhandled).toEqual([]);
+});
+
 test('маркетингийн ханш дутуу үед өртөг тэг гэж харагдахгүй', async ({ page }) => {
     const state = await setup(page);
     state.missingFx = true;
@@ -237,6 +285,10 @@ test('унших эрхтэй хэрэглэгчид шинээр үүсгэх �
     await page.goto('/dashboard/contracts');
     await expect(page.getByText('VM-2026-001', { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Гэрээ үүсгэх' })).toHaveCount(0);
+    await page.goto('/dashboard/contracts/contract-0');
+    await expect(page.getByText('VM-2026-001', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Гэрээ шилжүүлэх' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Төлбөр бүртгэх' })).toHaveCount(0);
     await page.goto('/dashboard/viewings');
     await expect(page.getByText('Б. Энхжин', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Ирсэн', exact: true })).toHaveCount(0);
