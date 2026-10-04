@@ -10,11 +10,18 @@
  *  - Тоо биш нүд анхааруулга болно, 0 гэж тооцохгүй; хоосон нүд утгагүй (`—`).
  *  - Давхцдаг үзүүлэлт (reach, viewers, …)-ийг мөрөөр нэмэхгүй: файлын «нийт» мөр эсвэл ганц мөр.
  *  - Meta-гийн зардлыг файлын валютаар (USD) хадгалж, валютыг `totals.currency`-д тэмдэглэнэ.
+ *  - Meta-гийн өөр төрлийн үр дүнг (дуудлага, постын харилцаа, хүрсэн хүн…) нэг тоонд нэмэхгүй:
+ *    төрөл бүр `results_<төрөл>`, зардал нь кампанит ажлын зорилгоор `spend_<төрөл>` (`meta-results.ts`).
  *  - Хугацаагүй огноо-цагийг Улаанбаатарын цаг гэж үзнэ; offset-той бол УБ руу хөрвүүлнэ.
  *
  * Цэвэр функцууд: файл уншихгүй (сервер: `channel-reports-file.ts`), браузерт ч ашиглагдана.
  */
 import { z } from 'zod';
+import { reviewWeeksBetween, shiftReviewDate } from '@/lib/dashboard/weekly-review';
+import {
+    META_RESULT_DEFS, META_RESULT_TYPES, metaResultCost, metaResultCostKey, metaResultKey, metaResultSpendKey, metaResultTypeOf,
+    type MetaResultType,
+} from './meta-results';
 
 export const CHANNEL_SOURCES = ['meta_ads', 'facebook_page', 'callpro', 'sms'] as const;
 export type ChannelSource = (typeof CHANNEL_SOURCES)[number];
@@ -28,13 +35,13 @@ export const CHANNEL_SOURCE_LABELS: Record<ChannelSource, string> = {
 };
 
 export const CHANNEL_SOURCE_HELP: Record<ChannelSource, string> = {
-    meta_ads: 'Ads Manager → Campaigns хүснэгтийг хурлын долоо хоногоор шүүж «Export table data» (.csv эсвэл .xlsx). Reach, Impressions, Frequency, Link clicks, Page engagement, Post engagements, Amount spent баганууд байна. Нийт мөрийг (summary row) оруулбал Reach-ийн давхардалгүй нийт тооцогдоно.',
+    meta_ads: 'Ads Manager → Campaigns хүснэгтийг «Export table data»-аар (.csv эсвэл .xlsx) татна. Өдрөөр задалж болно (Breakdown → By time → Day): тэгвэл нэг файлыг Лхагва–Мягмар хурлын долоо хоног бүрээр хувааж хадгална. Amount spent, Impressions, Link clicks, Clicks (all), Landing page views-ийг нэмж тооцно. Results + Result indicator баганаар үр дүнг төрлөөр нь (дуудлага, постын харилцаа, ThruPlay, хүрсэн хүн…) тусад нь гаргаж, зардлыг кампанит ажлын зорилгоор хуваарилна. Campaign ID багана байвал ижил нэртэй кампанит ажлыг ялгана. Reach (давхардалгүй хүн)-ийг өдрийн мөрүүдээс нэмж болохгүй — долоо хоногийн Reach хэрэгтэй бол тухайн 7 хоногийг өдрөөр задлалгүй, нийт мөртэй (summary row) экспортлоно.',
     facebook_page: 'Meta Business Suite → Insights → Content overview-г өдрөөр экспортлоно (.csv). Views, Viewers, 3-second views, Content interactions, Watch time, Link clicks, Visits, Follows баганууд байна.',
     callpro: 'CallPro-гоос «Бүлгийн тайлан» эсвэл дуудлагын жагсаалтыг (огноо-цаг, төлөв, дугаартай) Excel-ээр татна. Дуудлагын жагсаалт алдсан дуудлагыг цагаар гаргана.',
     sms: 'Масс SMS-ийн илгээлтийн тайлан: нэр, төлөвлөсөн, илгээсэн, алдаа (хүргэгдсэн) баганууд.',
 };
 
-export type FieldRole = 'metric' | 'label' | 'date' | 'start' | 'end' | 'datetime' | 'time' | 'hour' | 'status' | 'phone' | 'direction' | 'currency' | 'result_type';
+export type FieldRole = 'metric' | 'label' | 'id' | 'date' | 'start' | 'end' | 'datetime' | 'time' | 'hour' | 'status' | 'phone' | 'direction' | 'currency' | 'result_type';
 export type MetricKind = 'count' | 'money' | 'duration' | 'decimal' | 'percent';
 /** sum = мөрөөр нэмнэ; max = хамгийн их; nonAdditive = мөрөөр нэмэхгүй (нийт мөр / ганц мөр); derived = бусдаас бодно. */
 export type MetricAgg = 'sum' | 'max' | 'nonAdditive' | 'derived';
@@ -68,7 +75,7 @@ export type WarningCode =
     | 'invalid_number' | 'invalid_duration' | 'invalid_date' | 'invalid_hour' | 'invalid_phone' | 'out_of_period'
     | 'non_additive' | 'no_values' | 'total_mismatch' | 'total_ignored' | 'duplicate_total' | 'mixed_currency'
     | 'unknown_currency' | 'mixed_results' | 'unknown_status' | 'unknown_direction' | 'no_direction' | 'no_time'
-    | 'field_ignored' | 'unknown_field' | 'truncated';
+    | 'field_ignored' | 'unknown_field' | 'truncated' | 'partial_coverage' | 'unattributed_spend' | 'unknown_result_type';
 export interface ChannelWarning {
     code: WarningCode;
     level: 'warning' | 'info';
@@ -88,14 +95,60 @@ export interface ChannelAggregate {
     missing: string[];
     /** Хадгалахыг хаах алдаа (давхар холболт, шаардлагатай багана, өгөгдөлгүй). */
     errors: string[];
+    /** Тооцсон мөр: дор хаяж нэг үзүүлэлт > 0 (Meta-д хүргэлтгүй хоосон мөрийг `zeroRows`-д тоолно). */
     rowCount: number;
+    /** Meta: зардал, харагдалт, үр дүн бүгд 0 / хоосон мөр (нийтэд 0 нэмнэ, задаргаанд орохгүй). */
+    zeroRows: number;
     excludedRows: number;
     totalRow: boolean;
     /** Файлд огноо байвал хамгийн бага/их огноо (хугацааны шүүлтээс өмнө). */
     detectedPeriod: { from: string; to: string } | null;
+    /** Meta: тайлангийн хугацаа ∩ файлын огноо — өгөгдөл хамарсан өдрүүд (`data_from`/`data_to`). Тодорхойгүй бол null. */
+    dataPeriod: { from: string; to: string } | null;
+    /** Meta: тайлангийн хугацааны өгөгдөлгүй өдрүүд (файлын мөр огт байхгүй). */
+    missingDays: string[];
+    /** Огноотой бүх мөр нэг өдрийнх (өдрөөр задалсан экспорт) эсэх. */
+    dailyRows: boolean;
 }
-export interface MetricDelta { current: number | null; previous: number | null; delta: number | null; pct: number | null; comparable: boolean }
+export interface MetricDelta {
+    current: number | null;
+    previous: number | null;
+    delta: number | null;
+    pct: number | null;
+    comparable: boolean;
+    /** Харьцуулаагүй шалтгаан: валют өөр эсвэл аль нэг тайлангийн өдрийн хамралт дутуу. */
+    reason?: 'currency' | 'coverage';
+}
 export type MappingOrigin = 'remembered' | 'mixed' | 'suggested' | 'client';
+export type ChannelReportOrigin = 'file' | 'api';
+/** Урьдчилан харах үеийн хадгалсан тайлан (ижил shop, эх үүсвэр, хугацаа). */
+export interface ChannelExistingReport {
+    id: string;
+    file_name: string | null;
+    updated_at: string;
+    /** 'api' бол файлаар дарж бичихгүй (409). */
+    origin?: ChannelReportOrigin;
+    /** Яг ижил агуулгатай файлаар хадгалсан эсэх. */
+    sameFile?: boolean;
+}
+/** Хурлын долоо хоногоор хуваах үеийн нэг долоо хоног. */
+export interface ChannelSplitWeek {
+    from: string;
+    to: string;
+    dataPeriod: { from: string; to: string } | null;
+    missingDays: string[];
+    rowCount: number;
+    zeroRows: number;
+    totals: ChannelTotals;
+    existing: ChannelExistingReport | null;
+}
+export interface ChannelSplitPreview {
+    /** Файлын огноо (бүх долоо хоногийг хамарсан). */
+    period: { from: string; to: string };
+    weeks: ChannelSplitWeek[];
+    /** Файлын бүх хугацааны нэгтгэл (хуваах үед урьдчилан харуулах нийт дүн). */
+    result: ChannelAggregate;
+}
 /** POST /api/marketing/channel-reports (mode=preview) хариу. */
 export interface ChannelPreviewResponse {
     mode: 'preview';
@@ -111,12 +164,17 @@ export interface ChannelPreviewResponse {
     suggested: ChannelMapping;
     mappingOrigin: MappingOrigin;
     result: ChannelAggregate;
-    existing: { id: string; file_name: string | null; updated_at: string } | null;
+    existing: ChannelExistingReport | null;
+    /** Ижил агуулгатай файлыг ижил хугацаанд (аль ч эх үүсвэрт) хадгалсан бол. */
     duplicate: { id: string; source: ChannelSource; period_from: string; period_to: string } | null;
+    /** Өдрөөр задалсан Meta файл нэгээс олон хурлын долоо хоног хамарвал хуваах санал. */
+    split: ChannelSplitPreview | null;
 }
 
 export const CHANNEL_LIMITS = { breakdown: 100, headerScan: 20 } as const;
 export const CHANNEL_PERIOD_MAX_DAYS = 92;
+/** Нэг файлыг хуваах хурлын долоо хоногийн дээд тоо (~93 өдөр). */
+export const CHANNEL_SPLIT_MAX_WEEKS = 14;
 
 // ---------------------------------------------------------------------------
 // Үзүүлэлтийн толь
@@ -142,10 +200,21 @@ interface SourceSpec {
     breakdownKind: BreakdownKind;
 }
 
+/** Meta-гийн үр дүнгийн төрөл бүрийн үзүүлэлт: `results_<төрөл>`, `spend_<төрөл>`, `cost_per_result_<төрөл>`. */
+const META_RESULT_METRICS: ChannelMetricDef[] = META_RESULT_TYPES.flatMap(type => [
+    { key: metaResultKey(type), label: META_RESULT_DEFS[type].label, kind: 'count' as const },
+    { key: metaResultSpendKey(type), label: `Зардал — ${META_RESULT_DEFS[type].label}`, kind: 'money' as const },
+    { key: metaResultCostKey(type), label: META_RESULT_DEFS[type].costLabel, kind: 'money' as const },
+]);
+const META_RESULT_METRIC_KEYS = new Set(['results', 'cost_per_result', ...META_RESULT_METRICS.map(m => m.key)]);
+/** Meta-гийн үр дүнгийн түлхүүр (нийт `results` ба төрөл бүрийн) — нийт дүнгийн хавтангаас тусад нь харуулна. */
+export function isMetaResultMetric(key: string): boolean { return META_RESULT_METRIC_KEYS.has(key); }
+
 const SPECS: Record<ChannelSource, SourceSpec> = {
     meta_ads: {
         fields: [
             dim('campaign', 'Кампанит ажил', 'label', ['campaign name', 'campaign', 'кампанит ажлын нэр', 'кампанит ажил', 'кампанийн нэр']),
+            dim('campaign_id', 'Кампанит ажлын ID', 'id', ['campaign id', 'кампанит ажлын id', 'кампанийн id']),
             dim('reporting_starts', 'Тайлангийн эхлэх өдөр', 'start', ['reporting starts', 'reporting start', 'date start', 'start date', 'тайлан эхлэх', 'тайлангийн эхлэл', 'эхлэх огноо']),
             dim('reporting_ends', 'Тайлангийн дуусах өдөр', 'end', ['reporting ends', 'reporting end', 'date stop', 'end date', 'тайлан дуусах', 'тайлангийн төгсгөл', 'дуусах огноо']),
             dim('day', 'Өдөр (өдрөөр задалсан)', 'date', ['day', 'date', 'өдөр', 'огноо']),
@@ -155,6 +224,9 @@ const SPECS: Record<ChannelSource, SourceSpec> = {
             metric('impressions', 'Impressions (харагдалт)', 'count', 'sum', ['impressions', 'харагдалт', 'харуулалт']),
             metric('frequency', 'Frequency (давтамж)', 'decimal', 'derived', ['frequency', 'давтамж']),
             metric('link_clicks', 'Link clicks', 'count', 'sum', ['link clicks', 'холбоосын товшилт', 'линкийн товшилт']),
+            // «Clicks (all)» — хаалтан доторхыг normalize хасдаг тул «clicks» гэж таарна.
+            metric('clicks_all', 'Clicks (all) — бүх товшилт', 'count', 'sum', ['clicks', 'all clicks', 'clicks all', 'бүх товшилт', 'нийт товшилт']),
+            metric('landing_page_views', 'Landing page views', 'count', 'sum', ['landing page views', 'landing page view', 'буух хуудасны үзэлт']),
             metric('page_engagement', 'Page engagement', 'count', 'sum', ['page engagement', 'хуудасны оролцоо', 'хуудасны идэвх']),
             metric('post_engagements', 'Post engagements', 'count', 'sum', ['post engagements', 'post engagement', 'нийтлэлийн оролцоо', 'постын оролцоо']),
             metric('results', 'Results (үр дүн)', 'count', 'sum', ['results', 'result', 'үр дүн']),
@@ -165,6 +237,8 @@ const SPECS: Record<ChannelSource, SourceSpec> = {
             { key: 'impressions', label: 'Impressions (харагдалт)', kind: 'count' },
             { key: 'frequency', label: 'Frequency (давтамж)', kind: 'decimal' },
             { key: 'link_clicks', label: 'Link clicks', kind: 'count' },
+            { key: 'clicks_all', label: 'Clicks (all) — бүх товшилт', kind: 'count' },
+            { key: 'landing_page_views', label: 'Landing page views', kind: 'count' },
             { key: 'page_engagement', label: 'Page engagement', kind: 'count' },
             { key: 'post_engagements', label: 'Post engagements', kind: 'count' },
             { key: 'results', label: 'Results (үр дүн)', kind: 'count' },
@@ -172,17 +246,21 @@ const SPECS: Record<ChannelSource, SourceSpec> = {
             { key: 'cpm', label: 'CPM (1000 харагдалтын өртөг)', kind: 'money' },
             { key: 'cost_per_link_click', label: 'Нэг link click-ийн өртөг', kind: 'money' },
             { key: 'ctr_link', label: 'Link CTR', kind: 'percent' },
+            { key: 'cost_per_landing_page_view', label: 'Нэг landing page view-ийн өртөг', kind: 'money' },
             { key: 'cost_per_result', label: 'Нэг үр дүнгийн өртөг', kind: 'money' },
+            ...META_RESULT_METRICS,
         ],
+        // Нэг үр дүнгийн өртгийг төрлөөр нь `applyMetaResults` тооцно (reach 1000 хүнд, 0.01-ээс бага бол 4 орон).
         derived: [
             { key: 'frequency', num: 'impressions', den: ['reach'], scale: 1, digits: 2 },
             { key: 'cpm', num: 'spend', den: ['impressions'], scale: 1000, digits: 2 },
             { key: 'cost_per_link_click', num: 'spend', den: ['link_clicks'], scale: 1, digits: 2 },
             { key: 'ctr_link', num: 'link_clicks', den: ['impressions'], scale: 100, digits: 2 },
-            { key: 'cost_per_result', num: 'spend', den: ['results'], scale: 1, digits: 2 },
+            { key: 'cost_per_landing_page_view', num: 'spend', den: ['landing_page_views'], scale: 1, digits: 2 },
         ],
-        expected: () => ['reach', 'impressions', 'frequency', 'link_clicks', 'page_engagement', 'post_engagements', 'spend'],
-        keyMetrics: ['spend', 'reach', 'impressions', 'link_clicks'],
+        // Engagement, Clicks (all), Landing page views баганууд заавал биш — байхгүй бол «дутуу» гэж харуулахгүй.
+        expected: () => ['spend', 'impressions', 'link_clicks', 'reach'],
+        keyMetrics: ['spend', 'impressions', 'link_clicks', 'reach'],
         labelField: 'campaign',
         breakdownKind: 'campaign',
     },
@@ -372,13 +450,22 @@ export function mappedField(mapping: ChannelMapping | null | undefined, header: 
     return typeof key === 'string' ? key : '';
 }
 
-/** Хадгалсан холболтыг (толгойг normalize хийж) шинэ файлд хэрэгжүүлж, үлдсэнийг санал болгоно. */
+/**
+ * Хадгалсан холболтыг шинэ файлд хэрэгжүүлж, үлдсэнийг санал болгоно. Эхлээд толгойн яг нэрээр,
+ * дараа нь normalize хийсэн нэрээр таарна. Normalize нь хаалтан доторхыг хасдаг тул
+ * «Results» ба «Results (initial)» нэг түлхүүрт буудаг — тэгвэл хоосон ('') холболт
+ * үзүүлэлттэй холболтыг хэзээ ч дарахгүй (jsonb түлхүүрийн дарааллаас үл хамаарна).
+ */
 export function applyRememberedMapping(headers: readonly string[], source: ChannelSource, remembered: ChannelMapping | null | undefined) {
     const suggested = suggestMapping(headers, source);
     const valid = new Set(SPECS[source].fields.map(f => f.key));
+    const exact = new Map<string, string>();
     const memory = new Map<string, string>();
     for (const [header, key] of Object.entries(remembered ?? {})) {
-        if (key === '' || valid.has(key)) memory.set(normalizeHeader(header), key);
+        if (typeof key !== 'string' || (key !== '' && !valid.has(key))) continue;
+        exact.set(header, key);
+        const normalized = normalizeHeader(header);
+        if (!memory.has(normalized) || (key && !memory.get(normalized))) memory.set(normalized, key);
     }
     const chosen = new Map<string, string>();
     const used = new Set<string>();
@@ -387,7 +474,7 @@ export function applyRememberedMapping(headers: readonly string[], source: Chann
         if (key) used.add(key);
     };
     for (const header of headers) {
-        const key = memory.get(normalizeHeader(header));
+        const key = exact.has(header) ? exact.get(header) : memory.get(normalizeHeader(header));
         if (key !== undefined) assign(header, key);
     }
     const hits = chosen.size;
@@ -624,7 +711,8 @@ class Issues {
     entries() { return [...this.map.values()]; }
 }
 
-interface ParsedRow { line: number; label: string | null; values: Record<string, number | null>; raw: Record<string, unknown> }
+/** `active` = дор хаяж нэг үзүүлэлт > 0 (Meta-гийн хүргэлтгүй өдрийн мөр false). */
+interface ParsedRow { line: number; label: string | null; values: Record<string, number | null>; raw: Record<string, unknown>; active: boolean }
 interface CallRow extends ParsedRow { hour: number | null; status: CallStatus | null; phone: string | null; outbound: boolean }
 
 export const SHAPE_LABELS: Record<ChannelShape, string> = { rows: 'тайлан', groups: 'бүлгийн тайлан', calls: 'дуудлагын жагсаалт', hourly: 'цагийн тайлан' };
@@ -653,6 +741,8 @@ class AggregateContext {
     readonly metricKeys: string[];
     readonly labelHeader?: string;
     readonly dateKeys: { start: string; end: string } | null;
+    /** Meta: кампанит ажил (ID эсвэл нэр) → үр дүнгийн төрлүүд, файлын бүх мөрөөс. */
+    metaTypes: Map<string, MetaResultType[]> | null = null;
     private readonly hints: Map<string, ReturnType<typeof durationHint>>;
 
     constructor(readonly source: ChannelSource, mapping: ChannelMapping) {
@@ -699,6 +789,35 @@ class AggregateContext {
     warn(code: WarningCode, message: string, field?: string, level: ChannelWarning['level'] = 'warning') {
         this.warnings.push({ code, level, message, ...(field ? { field } : {}) });
     }
+    /** Мөрийн шошго (нэр); нэргүй бол «(нэргүй)». */
+    labelOf(raw: Record<string, unknown>): string | null {
+        return this.labelHeader ? cellText(raw[this.labelHeader]).slice(0, 120) || UNNAMED : null;
+    }
+    isTotalRow(raw: Record<string, unknown>): boolean {
+        const firstKey = Object.keys(raw)[0];
+        return [this.labelHeader ? raw[this.labelHeader] : undefined, firstKey !== undefined ? raw[firstKey] : undefined]
+            .some(v => typeof v === 'string' && TOTAL_ROW.test(normalizeHeader(v)));
+    }
+    /** Meta: кампанит ажлын түлхүүр — Campaign ID байвал ID, үгүй бол нэр. */
+    campaignKey(raw: Record<string, unknown>): string {
+        const id = this.mapped.has('campaign_id') ? cellText(this.cell(raw, 'campaign_id')) : '';
+        return id ? `id:${id}` : `name:${this.labelOf(raw) ?? ''}`;
+    }
+    /** Мөрийн өөрийн «Result indicator»-ын төрөл (хоосон бол null). */
+    indicatorType(raw: Record<string, unknown>): MetaResultType | null {
+        return this.mapped.has('result_type') ? metaResultTypeOf(cellText(this.cell(raw, 'result_type'))) : null;
+    }
+    /**
+     * Мөрийн үр дүнгийн төрөл кампанит ажлын зорилгоор: кампанит ажил нэг төрөлтэй бол тэр
+     * (үр дүнгүй өдрийн зардал ч тэр төрөлд), олон төрөлтэй (давхар нэр) бол мөрийн өөрийн төрөл.
+     */
+    rowType(raw: Record<string, unknown>): MetaResultType | null {
+        const types = this.metaTypes?.get(this.campaignKey(raw));
+        if (!types?.length) return null;
+        if (types.length === 1) return types[0];
+        const own = this.indicatorType(raw);
+        return own && types.includes(own) ? own : null;
+    }
 }
 
 interface ReadResult {
@@ -707,19 +826,30 @@ interface ReadResult {
     totalRaw: Record<string, unknown> | null;
     excluded: number;
     period: { from: string; to: string } | null;
+    /** Мөртэй өдрүүд (хугацааны шүүлтээс өмнө) — өгөгдөлгүй өдрийг илрүүлэхэд. */
+    days: Set<string>;
+    /** Огноотой мөр бүр нэг өдрийнх эсэх. */
+    daily: boolean;
+}
+
+const MAX_SPAN_DAYS = 400;
+/** [from, to] хоорондох өдрүүд (хоёр захыг оруулна). */
+export function daysBetween(from: string, to: string): string[] {
+    const days: string[] = [];
+    for (let day = from; day <= to && days.length <= MAX_SPAN_DAYS; day = shiftReviewDate(day, 1)) days.push(day);
+    return days;
 }
 
 /** Мөрүүдийг уншина: хоосон ба «нийт» мөрийг ялгаж, хугацаагаар шүүж, утгыг задална. */
-function readRows(ctx: AggregateContext, rows: readonly Record<string, unknown>[], firstLine: number, period?: { from: string; to: string } | null): ReadResult {
-    const result: ReadResult = { used: [], calls: [], totalRaw: null, excluded: 0, period: null };
+function readRows(ctx: AggregateContext, rows: readonly Record<string, unknown>[], firstLine: number, period?: { from: string; to: string } | null, split = false): ReadResult {
+    const result: ReadResult = { used: [], calls: [], totalRaw: null, excluded: 0, period: null, days: new Set(), daily: false };
+    let dated = 0, singleDay = 0;
     const mappedHeaders = [...ctx.mapped.values()];
     const unknownStatuses = new Map<string, number>(), unknownDirections = new Map<string, number>();
     rows.forEach((raw, index) => {
         const line = firstLine + index;
         if (mappedHeaders.every(h => isBlank(raw[h]))) return;
-        const firstKey = Object.keys(raw)[0];
-        if ([ctx.labelHeader ? raw[ctx.labelHeader] : undefined, firstKey !== undefined ? raw[firstKey] : undefined]
-            .some(v => typeof v === 'string' && TOTAL_ROW.test(normalizeHeader(v)))) {
+        if (ctx.isTotalRow(raw)) {
             if (result.totalRaw) ctx.issues.add('duplicate_total', line);
             else result.totalRaw = raw;
             return;
@@ -743,7 +873,14 @@ function readRows(ctx: AggregateContext, rows: readonly Record<string, unknown>[
         }
         if (start && end) {
             result.period = { from: !result.period || start < result.period.from ? start : result.period.from, to: !result.period || end > result.period.to ? end : result.period.to };
-            if (period && (start < period.from || end > period.to)) { ctx.issues.add('out_of_period', line); result.excluded++; return; }
+            dated++;
+            if (start === end) { singleDay++; result.days.add(start); } else for (const day of daysBetween(start, end)) result.days.add(day);
+            if (period && (start < period.from || end > period.to)) {
+                // Долоо хоногоор хуваах үед бусад долоо хоногийн мөр хасагдах нь хэвийн — анхааруулахгүй.
+                if (!split) ctx.issues.add('out_of_period', line);
+                result.excluded++;
+                return;
+            }
         }
         const values: Record<string, number | null> = {};
         for (const key of ctx.metricKeys) {
@@ -751,8 +888,10 @@ function readRows(ctx: AggregateContext, rows: readonly Record<string, unknown>[
             if (parsed === 'invalid') ctx.issues.add(ctx.field(key).kind === 'duration' ? 'invalid_duration' : 'invalid_number', line, key);
             values[key] = parsed === 'invalid' ? null : parsed;
         }
-        const label = ctx.source === 'facebook_page' ? start : ctx.labelHeader ? cellText(raw[ctx.labelHeader]).slice(0, 120) || UNNAMED : null;
-        const row: ParsedRow = { line, label, values, raw };
+        const label = ctx.source === 'facebook_page' ? start : ctx.labelOf(raw);
+        // Meta-гийн экспорт идэвхгүй кампанит ажлыг өдөр бүр 0-ээр давтдаг: ийм мөрийг тооцсон мөрөнд оруулахгүй.
+        const active = ctx.source !== 'meta_ads' || Object.values(values).some(v => typeof v === 'number' && v > 0);
+        const row: ParsedRow = { line, label, values, raw, active };
         if (ctx.shape !== 'calls') { result.used.push(row); return; }
 
         let outbound = false;
@@ -775,6 +914,7 @@ function readRows(ctx: AggregateContext, rows: readonly Record<string, unknown>[
         }
         result.calls.push({ ...row, hour, status, phone, outbound });
     });
+    result.daily = dated > 0 && singleDay === dated;
     for (const [text, n] of [...unknownStatuses].slice(0, 10)) ctx.warnings.push({ code: 'unknown_status', level: 'warning', count: n, message: `Тодорхойгүй төлөв «${text}» (${n} дуудлага) хариулсан/алдсан/тасалсанд ороогүй, «Бусад төлөв»-д тоологдсон.` });
     for (const [text, n] of [...unknownDirections].slice(0, 10)) ctx.warnings.push({ code: 'unknown_direction', level: 'warning', count: n, message: `Тодорхойгүй чиглэл «${text}» (${n} мөр) тооцоонд ороогүй.` });
 
@@ -842,21 +982,29 @@ function aggregateCalls(ctx: AggregateContext, calls: CallRow[], totals: Channel
 }
 
 /** Мөр бүр нэг campaign / өдөр / бүлэг / цаг байх тайлан. */
-function aggregateSummaryRows(ctx: AggregateContext, used: ParsedRow[], totalValue: (key: string) => number | null, totals: ChannelTotals, breakdown: BreakdownRow[]) {
+function aggregateSummaryRows(ctx: AggregateContext, used: ParsedRow[], totalValue: (key: string) => number | null, totals: ChannelTotals, breakdown: BreakdownRow[], daily = false) {
     for (const key of ctx.metricKeys) {
         const def = ctx.field(key);
         if (def.agg === 'derived') continue;
         const valid = validNumbers(used, key);
         const fromTotal = totalValue(key);
         if (def.agg === 'nonAdditive') {
+            // Хүргэлтгүй (бүх үзүүлэлт 0) мөр хүнд хүрээгүй тул ганц идэвхтэй мөрийн утга нь давхардалгүй нийт.
+            const live = used.filter(row => row.active);
+            const single = live.length === 1 ? live[0].values[key] : null;
             if (fromTotal !== null) totals[key] = fromTotal;
-            else if (used.length === 1 && valid.length === 1) totals[key] = valid[0];
-            else if (valid.length) ctx.warn('non_additive', `«${def.label}»-ийн нийтийг тооцоогүй: мөр бүрийн хүмүүс давхцаж болох тул нэмэхгүй. Файлд «нийт» (summary) мөр оруулж экспортлоно уу.`, key);
+            else if (typeof single === 'number') totals[key] = single;
+            else if (valid.length) ctx.warn('non_additive', daily
+                ? `«${def.label}»-ийн нийтийг тооцоогүй: өдрөөр задалсан файлын өдөр бүрийн хүмүүс давхцдаг тул нэмэхгүй. Долоо хоногийн давхардалгүй тоо хэрэгтэй бол тухайн хугацааг өдрөөр задлалгүй, нийт (summary) мөртэй экспортлоно уу.`
+                : `«${def.label}»-ийн нийтийг тооцоогүй: мөр бүрийн хүмүүс давхцаж болох тул нэмэхгүй. Файлд «нийт» (summary) мөр оруулж экспортлоно уу.`,
+            // Өдрөөр задалсан файлд энэ нь хэвийн (Reach-ийг «Тооцоогүй» гэж харуулна) — мэдээлэл төдий.
+            key, daily ? 'info' : 'warning');
             continue;
         }
         if (!valid.length) {
             if (fromTotal !== null) totals[key] = fromTotal;
-            else if (used.length) ctx.warn('no_values', `«${def.label}»-д хүчинтэй утга алга тул тооцоогүй.`, key);
+            // Заавал биш багана (Meta-гийн Landing page views г.м. 0 үед хоосон) хоосон бол мэдээлэл төдий.
+            else if (used.length) ctx.warn('no_values', `«${def.label}»-д хүчинтэй утга алга тул тооцоогүй.`, key, ctx.spec.expected(ctx.shape).includes(key) ? 'warning' : 'info');
             continue;
         }
         const value = round(def.agg === 'max' ? Math.max(...valid) : sum(valid));
@@ -880,11 +1028,18 @@ function aggregateSummaryRows(ctx: AggregateContext, used: ParsedRow[], totalVal
             return hour;
         });
         breakdown.push(...hours.sort(([a], [b]) => a - b).map(([hour, list]) => ({ kind: 'hour' as const, label: hourLabel(hour), values: groupValues(ctx, list) })));
+    } else if (ctx.source === 'meta_ads') {
+        if (used.some(row => row.label !== null)) breakdown.push(...metaCampaignBreakdown(ctx, used));
     } else if (used.some(row => row.label !== null)) {
         const labels = group(row => row.label);
         if (ctx.source === 'facebook_page') labels.sort(([a], [b]) => a.localeCompare(b));
         breakdown.push(...labels.map(([label, list]) => ({ kind: ctx.spec.breakdownKind, label, values: groupValues(ctx, list) })));
     }
+}
+
+/** Бодож гаргасан утгыг тоймлоно: 2 оронтой үзүүлэлт 0.01-ээс бага бол 4 орон (0 болж харагдахгүй). */
+function roundDerived(value: number, digits: number): number {
+    return round(value, digits >= 2 && value !== 0 && Math.abs(value) < 0.01 ? 4 : digits);
 }
 
 function groupValues(ctx: AggregateContext, list: ParsedRow[]): Record<string, number | null> {
@@ -899,34 +1054,145 @@ function groupValues(ctx: AggregateContext, list: ParsedRow[]): Record<string, n
         if (typeof values[d.key] === 'number') continue;
         const num = values[d.num];
         const den = d.den.map(k => values[k]).find(v => typeof v === 'number');
-        if (typeof num === 'number' && typeof den === 'number' && den > 0) values[d.key] = round(num / den * d.scale, d.digits);
+        if (typeof num === 'number' && typeof den === 'number' && den > 0) values[d.key] = roundDerived(num / den * d.scale, d.digits);
         else if (d.key in values) values[d.key] = null;
     }
     return values;
 }
 
-/** Meta: валютыг тэмдэглэнэ, өөр валют / өөр төрлийн үр дүнг нэмэхгүй. */
-function applyMetaRules(ctx: AggregateContext, used: ParsedRow[], totals: ChannelTotals): { mixedResults: boolean } {
-    if (ctx.source !== 'meta_ads') return { mixedResults: false };
-    if (ctx.mapped.has('spend')) {
-        const fromHeader = /\(([A-Za-z]{3})\)/.exec(ctx.mapped.get('spend')!)?.[1]?.toUpperCase();
-        const fromRows = ctx.mapped.has('currency') ? used.map(r => cellText(ctx.cell(r.raw, 'currency')).toUpperCase()).filter(v => /^[A-Z]{3}$/.test(v)) : [];
-        const currencies = new Set([...(fromHeader ? [fromHeader] : []), ...fromRows]);
-        if (currencies.size > 1) {
-            for (const m of ctx.spec.metrics) if (m.kind === 'money') delete totals[m.key];
-            ctx.warn('mixed_currency', `Файлд өөр өөр валют байна (${[...currencies].join(', ')}). Зардлыг хөрвүүлж нэмэхгүй — нэг дансны, нэг валютын тайлан экспортлоно уу.`);
-        } else if (currencies.size === 1) totals.currency = [...currencies][0];
-        else if ('spend' in totals) ctx.warn('unknown_currency', 'Зардлын валют тодорхойгүй. «Amount spent (USD)» гэх мэт валюттай толгойгоор экспортлох эсвэл Currency багана сонгоно уу.');
+const orderTypes = (types: Iterable<MetaResultType>) => { const set = new Set(types); return META_RESULT_TYPES.filter(type => set.has(type)); };
+
+/**
+ * Meta: кампанит ажил бүрийн үр дүнгийн төрлийг файлын БҮХ мөрөөс (хугацааны шүүлтээс өмнө)
+ * тогтооно — эхлээд Results > 0 мөрийн «Result indicator», тийм мөргүй бол хоосон биш ямар ч indicator.
+ * Тиймээс үр дүнгүй өдрийн зардал ч, өөр долоо хоногт үр дүн гарсан кампанит ажлын зардал ч зорилгоороо хуваарилагдана.
+ */
+function metaCampaignTypes(ctx: AggregateContext, rows: readonly Record<string, unknown>[]): Map<string, MetaResultType[]> {
+    const withResults = new Map<string, Set<MetaResultType>>(), any = new Map<string, Set<MetaResultType>>();
+    const add = (map: Map<string, Set<MetaResultType>>, key: string, type: MetaResultType) => map.set(key, (map.get(key) ?? new Set()).add(type));
+    for (const raw of rows) {
+        const type = ctx.indicatorType(raw);
+        if (!type || ctx.isTotalRow(raw)) continue;
+        const key = ctx.campaignKey(raw);
+        add(any, key, type);
+        const results = ctx.mapped.has('results') ? parseCount(ctx.cell(raw, 'results')) : null;
+        if (typeof results === 'number' && results > 0) add(withResults, key, type);
     }
-    if (ctx.mapped.has('result_type') && 'results' in totals) {
-        const types = new Set(used.map(r => cellText(ctx.cell(r.raw, 'result_type'))).filter(Boolean));
-        if (types.size > 1) {
-            delete totals.results;
-            ctx.warn('mixed_results', `Results нь өөр төрлийн үр дүнг (${[...types].slice(0, 4).join(', ')}) агуулж байгаа тул нийтийг нэмээгүй.`, 'results');
-            return { mixedResults: true };
+    return new Map([...any].map(([key, types]) => [key, orderTypes(withResults.get(key) ?? types)]));
+}
+
+/**
+ * Meta-гийн кампанит ажлын задаргаа: кампанит ажил (ID эсвэл нэр) × үр дүнгийн төрөл. Хүргэлтгүй
+ * кампанит ажлыг хасаж, зардлаар (их → бага) эрэмбэлнэ. Үр дүн нь `tag` төрлийн нэгжээр; хүрсэн хүн
+ * (reach) олон мөртэй бол давхцдаг тул null.
+ */
+function metaCampaignBreakdown(ctx: AggregateContext, used: ParsedRow[]): BreakdownRow[] {
+    const typed = ctx.mapped.has('result_type');
+    const groups = new Map<string, { label: string; type: MetaResultType | null; rows: ParsedRow[] }>();
+    for (const row of used) {
+        if (!row.active) continue;
+        const type = typed ? ctx.rowType(row.raw) : null;
+        const key = `${ctx.campaignKey(row.raw)}\u0001${type ?? ''}`;
+        const group = groups.get(key) ?? { label: row.label ?? UNNAMED, type, rows: [] };
+        group.rows.push(row);
+        groups.set(key, group);
+    }
+    const delivery = ['spend', 'impressions', 'results'].filter(key => ctx.mapped.has(key));
+    const rows: BreakdownRow[] = [];
+    for (const { label, type, rows: list } of groups.values()) {
+        const values: Record<string, number | null> = {};
+        for (const key of ctx.metricKeys) {
+            if (key === 'results') continue;
+            const agg = ctx.field(key).agg;
+            const valid = validNumbers(list, key);
+            values[key] = agg === 'nonAdditive' || agg === 'derived' ? (list.length === 1 && valid.length === 1 ? valid[0] : null) : valid.length ? round(sum(valid)) : null;
         }
+        if (ctx.mapped.has('results')) {
+            const valid = validNumbers(list, 'results');
+            if (type && META_RESULT_DEFS[type].nonAdditive) values.results = list.length === 1 ? valid[0] ?? null : null;
+            else if (type) values.results = round(sum(valid));
+            else values.results = !typed && valid.length ? round(sum(valid)) : null;
+            values.cost_per_result = type ? metaResultCost(type, values.spend, values.results) : !typed ? metaResultCost('other', values.spend, values.results) : null;
+        }
+        if (delivery.length && !delivery.some(key => (values[key] ?? 0) > 0)) continue;
+        rows.push({ kind: 'campaign', label, values, ...(type ? { tag: type } : {}) });
     }
-    return { mixedResults: false };
+    return rows.sort((a, b) => (b.values.spend ?? -1) - (a.values.spend ?? -1) || a.label.localeCompare(b.label));
+}
+
+/**
+ * Meta: үр дүнг төрлөөр нь — `results_<төрөл>`, кампанит ажлын зорилгоор хуваарилсан `spend_<төрөл>`,
+ * `cost_per_result_<төрөл>`. Нийт `results`/`cost_per_result` зөвхөн нэг л төрөл байхад (хуучин түлхүүр).
+ * Хүрсэн хүн (reach)-ийг өдөр, кампаниар нэмэхгүй: файлын «нийт» мөр эсвэл ганц мөрөөс л.
+ */
+function applyMetaResults(ctx: AggregateContext, used: ParsedRow[], totalValue: (key: string) => number | null, totals: ChannelTotals) {
+    if (ctx.source !== 'meta_ads' || (!ctx.mapped.has('results') && !ctx.mapped.has('result_type'))) return;
+    const hasSpend = ctx.mapped.has('spend'), hasResults = ctx.mapped.has('results');
+    delete totals.cost_per_result;
+    if (!ctx.mapped.has('result_type')) {
+        // Төрөлгүй бол Results-ийг өмнөх шигээ нэмнэ, гэхдээ өөр төрлийн үр дүн нийлсэн байж болохыг анхааруулна.
+        if (typeof totals.results === 'number') {
+            const cost = metaResultCost('other', typeof totals.spend === 'number' ? totals.spend : null, totals.results);
+            if (cost !== null) totals.cost_per_result = cost;
+            ctx.warn('unknown_result_type', '«Result indicator» багана сонгоогүй тул Results-ийн төрөл тодорхойгүй — өөр төрлийн үр дүн (дуудлага, хүрсэн хүн…) нийлсэн байж болно.', 'results', 'info');
+        }
+        return;
+    }
+    delete totals.results;
+    const live = used.filter(row => row.active).map(row => ({ row, type: ctx.rowType(row.raw) }));
+    const present = META_RESULT_TYPES.filter(type => live.some(item => item.type === type));
+    for (const type of present) {
+        const def = META_RESULT_DEFS[type];
+        const list = live.filter(item => item.type === type).map(item => item.row);
+        const spend = hasSpend ? round(sum(validNumbers(list, 'spend'))) : null;
+        if (spend !== null) totals[metaResultSpendKey(type)] = spend;
+        let results: number | null = null;
+        if (hasResults && !def.nonAdditive) results = round(sum(validNumbers(list, 'results')));
+        else if (hasResults) {
+            results = list.length === 1 ? list[0].values.results ?? null : present.length === 1 ? totalValue('results') : null;
+            if (results === null) ctx.warn('non_additive', `«${def.label}»-ийг тооцоогүй: өдөр, кампанит ажлын хүрсэн хүн давхцдаг тул нэмэхгүй (зардлыг нь харуулав). Давхардалгүй тоог өдрөөр задлаагүй, нийт мөртэй экспорт эсвэл Meta API өгнө.`, metaResultKey(type), 'info');
+        }
+        if (results !== null) totals[metaResultKey(type)] = results;
+        const cost = metaResultCost(type, spend, results);
+        if (cost !== null) totals[metaResultCostKey(type)] = cost;
+    }
+    if (present.length === 1) {
+        const [type] = present;
+        const results = totals[metaResultKey(type)], cost = totals[metaResultCostKey(type)];
+        if (typeof results === 'number') totals.results = results;
+        if (typeof cost === 'number') totals.cost_per_result = cost;
+    } else if (present.length > 1) {
+        ctx.warn('mixed_results', `Results нь ${present.length} төрлийн үр дүнтэй (${present.map(type => META_RESULT_DEFS[type].label).join(', ')}) тул нэг тоонд нэмээгүй — төрөл бүрийг тусад нь, зардлыг кампанит ажлын зорилгоор хуваарилж харуулав.`, 'results', 'info');
+    }
+    const unattributed = live.filter(item => !item.type && (item.row.values.spend ?? 0) > 0).map(item => item.row);
+    if (hasSpend && unattributed.length && present.length) {
+        const campaigns = new Set(unattributed.map(row => ctx.campaignKey(row.raw))).size;
+        ctx.warn('unattributed_spend', `Үр дүнгийн төрөлгүй (Result indicator хоосон) ${campaigns} кампанит ажлын ${round(sum(validNumbers(unattributed, 'spend')), 2)} зардал төрлийн зардалд ороогүй — нийт зардалд орсон.`, 'spend', 'info');
+    }
+}
+
+/** Meta: валютыг тэмдэглэнэ, өөр валютын мөнгөн дүнг хөрвүүлж нэмэхгүй. */
+function applyMetaCurrency(ctx: AggregateContext, used: ParsedRow[], totals: ChannelTotals) {
+    if (ctx.source !== 'meta_ads' || !ctx.mapped.has('spend')) return;
+    const fromHeader = /\(([A-Za-z]{3})\)/.exec(ctx.mapped.get('spend')!)?.[1]?.toUpperCase();
+    const fromRows = ctx.mapped.has('currency') ? used.map(r => cellText(ctx.cell(r.raw, 'currency')).toUpperCase()).filter(v => /^[A-Z]{3}$/.test(v)) : [];
+    const currencies = new Set([...(fromHeader ? [fromHeader] : []), ...fromRows]);
+    if (currencies.size > 1) {
+        for (const m of ctx.spec.metrics) if (m.kind === 'money') delete totals[m.key];
+        ctx.warn('mixed_currency', `Файлд өөр өөр валют байна (${[...currencies].join(', ')}). Зардлыг хөрвүүлж нэмэхгүй — нэг дансны, нэг валютын тайлан экспортлоно уу.`);
+    } else if (currencies.size === 1) totals.currency = [...currencies][0];
+    else if ('spend' in totals) ctx.warn('unknown_currency', 'Зардлын валют тодорхойгүй. «Amount spent (USD)» гэх мэт валюттай толгойгоор экспортлох эсвэл Currency багана сонгоно уу.');
+}
+
+/** Дараалсан өдрүүдийг хугацаа болгож бичнэ: «2026-08-26 – 2026-08-29, 2026-09-29». */
+export function formatDayRanges(days: readonly string[]): string {
+    const ranges: Array<[string, string]> = [];
+    for (const day of [...days].sort()) {
+        const last = ranges[ranges.length - 1];
+        if (last && shiftReviewDate(last[1], 1) === day) last[1] = day;
+        else ranges.push([day, day]);
+    }
+    return ranges.map(([from, to]) => from === to ? from : `${from} – ${to}`).join(', ');
 }
 
 const ISSUE_MESSAGES: Partial<Record<WarningCode, (label: string) => string>> = {
@@ -942,16 +1208,17 @@ const ISSUE_MESSAGES: Partial<Record<WarningCode, (label: string) => string>> = 
 
 /**
  * Файлын мөрүүдийг холболтоор нэгтгэнэ. `period` өгвөл огноотой мөрийг хугацаагаар шүүнэ
- * (хамаарахгүй мөрийг хасаж анхааруулна). `firstLine` — анхааруулгын мөрийн дугаарт.
+ * (хамаарахгүй мөрийг хасаж анхааруулна; `split` үед анхааруулахгүй). `firstLine` — анхааруулгын мөрийн дугаарт.
  */
 export function aggregateChannelReport(
     rows: readonly Record<string, unknown>[],
     mapping: ChannelMapping,
     source: ChannelSource,
-    options: { period?: { from: string; to: string } | null; firstLine?: number; breakdownLimit?: number } = {},
+    options: { period?: { from: string; to: string } | null; firstLine?: number; breakdownLimit?: number; split?: boolean } = {},
 ): ChannelAggregate {
     const ctx = new AggregateContext(source, mapping);
-    const read = readRows(ctx, rows, options.firstLine ?? 2, options.period);
+    if (source === 'meta_ads' && ctx.mapped.has('result_type')) ctx.metaTypes = metaCampaignTypes(ctx, rows);
+    const read = readRows(ctx, rows, options.firstLine ?? 2, options.period, options.split);
     const totals: ChannelTotals = {};
     const breakdown: BreakdownRow[] = [];
     // Хасагдсан мөр байвал файлын «нийт» мөр шүүсэн мөрүүдтэй таарахгүй.
@@ -964,17 +1231,18 @@ export function aggregateChannelReport(
     };
 
     if (ctx.shape === 'calls') aggregateCalls(ctx, read.calls, totals, breakdown);
-    else aggregateSummaryRows(ctx, read.used, totalValue, totals, breakdown);
-    const { mixedResults } = applyMetaRules(ctx, read.used, totals);
+    else aggregateSummaryRows(ctx, read.used, totalValue, totals, breakdown, read.daily);
+    applyMetaResults(ctx, read.used, totalValue, totals);
+    applyMetaCurrency(ctx, read.used, totals);
 
-    // Бодож гаргах үзүүлэлт: нийт дүнгээс; эс бөгөөс файлын «нийт» мөр эсвэл ганц мөр.
+    // Бодож гаргах үзүүлэлт: нийт дүнгээс; эс бөгөөс файлын «нийт» мөр эсвэл ганц (идэвхтэй) мөр.
+    const live = read.used.filter(row => row.active);
     for (const d of ctx.spec.derived) {
-        if (mixedResults && d.key === 'cost_per_result') continue;
         const num = totals[d.num];
         const den = d.den.map(k => totals[k]).find(v => typeof v === 'number');
-        if (typeof num === 'number' && typeof den === 'number' && den > 0) totals[d.key] = round(num / den * d.scale, d.digits);
+        if (typeof num === 'number' && typeof den === 'number' && den > 0) totals[d.key] = roundDerived(num / den * d.scale, d.digits);
         else if (ctx.mapped.has(d.key)) {
-            const value = totalValue(d.key) ?? (read.used.length === 1 ? read.used[0].values[d.key] : null);
+            const value = totalValue(d.key) ?? (live.length === 1 ? live[0].values[d.key] : null);
             if (typeof value === 'number') totals[d.key] = value;
         }
     }
@@ -991,13 +1259,64 @@ export function aggregateChannelReport(
         const more = issue.count > issue.rows.length ? ', …' : '';
         ctx.warnings.push({ code: issue.code, level: 'warning', field: issue.field, count: issue.count, rows: issue.rows, message: `${ISSUE_MESSAGES[issue.code]?.(label) ?? issue.code} (${issue.count} мөр: ${issue.rows.join(', ')}${more})` });
     }
-    const rowCount = ctx.shape === 'calls' ? read.calls.length : read.used.length;
-    if (!rowCount && !ctx.errors.length) ctx.errors.push(options.period && read.excluded ? 'Сонгосон хугацаанд хамаарах өгөгдөлтэй мөр алга. Хугацаа эсвэл файлаа шалгана уу.' : 'Өгөгдөлтэй мөр олдсонгүй.');
+    const rowCount = ctx.shape === 'calls' ? read.calls.length : live.length;
+    const zeroRows = ctx.shape === 'calls' ? 0 : read.used.length - live.length;
+    if (!rowCount && !zeroRows && !ctx.errors.length) ctx.errors.push(options.period && read.excluded ? 'Сонгосон хугацаанд хамаарах өгөгдөлтэй мөр алга. Хугацаа эсвэл файлаа шалгана уу.' : 'Өгөгдөлтэй мөр олдсонгүй.');
+
+    // Meta: тайлангийн хугацааны аль өдрүүдэд файлын мөр байгаа (өдрийн мөр 0 байсан ч өгөгдөл мөн).
+    let dataPeriod: { from: string; to: string } | null = null;
+    let missingDays: string[] = [];
+    if (source === 'meta_ads' && read.period) {
+        const window = options.period ?? read.period;
+        const from = window.from > read.period.from ? window.from : read.period.from;
+        const to = window.to < read.period.to ? window.to : read.period.to;
+        dataPeriod = from <= to ? { from, to } : null;
+        if (options.period && dataPeriod) {
+            missingDays = daysBetween(options.period.from, options.period.to).filter(day => !read.days.has(day));
+            const days = periodDays(options.period);
+            if (missingDays.length) ctx.warn('partial_coverage', `Тайлангийн ${days} өдрөөс ${days - missingDays.length}-д л өгөгдөл байна — өгөгдөлгүй: ${formatDayRanges(missingDays)}. Бүтэн долоо хоногтой шууд харьцуулахгүй.`);
+        }
+    }
 
     return {
         source, shape: ctx.shape, totals, breakdown: bounded, warnings: ctx.warnings, errors: ctx.errors,
         missing: ctx.spec.expected(ctx.shape).filter(key => !(key in totals)),
-        rowCount, excludedRows: read.excluded, totalRow: !!read.totalRaw, detectedPeriod: read.period,
+        rowCount, zeroRows, excludedRows: read.excluded, totalRow: !!read.totalRaw, detectedPeriod: read.period,
+        dataPeriod, missingDays, dailyRows: read.daily,
+    };
+}
+
+/**
+ * Өдрөөр задалсан Meta файл нэгээс олон хурлын долоо хоног (Лхагва–Мягмар) хамарвал тэдгээр долоо
+ * хоног (файлын огноогоор); хуваах боломжгүй бол [].
+ */
+export function channelSplitWeeks(result: Pick<ChannelAggregate, 'source' | 'dailyRows' | 'detectedPeriod'>): Array<{ from: string; to: string }> {
+    if (result.source !== 'meta_ads' || !result.dailyRows || !result.detectedPeriod) return [];
+    const weeks = reviewWeeksBetween(result.detectedPeriod.from, result.detectedPeriod.to);
+    return weeks.length > 1 && weeks.length <= CHANNEL_SPLIT_MAX_WEEKS ? weeks : [];
+}
+
+/**
+ * Файлыг хурлын долоо хоног бүрээр тусад нь нэгтгэнэ (кампанит ажлын задаргаа ч долоо хоногоор;
+ * үр дүнгийн төрлийг бүх файлаас). Мөргүй долоо хоногийг алгасна.
+ */
+export function aggregateByReviewWeeks(
+    rows: readonly Record<string, unknown>[],
+    mapping: ChannelMapping,
+    source: ChannelSource,
+    weeks: ReadonlyArray<{ from: string; to: string }>,
+    options: { firstLine?: number; breakdownLimit?: number } = {},
+): Array<{ week: { from: string; to: string }; result: ChannelAggregate }> {
+    return weeks
+        .map(week => ({ week, result: aggregateChannelReport(rows, mapping, source, { ...options, period: week, split: true }) }))
+        .filter(({ result }) => result.rowCount + result.zeroRows > 0);
+}
+
+/** Урьдчилан харах долоо хоногийн товч (нийт дүн, хамралт, хадгалсан тайлан). */
+export function splitWeekSummary(week: { from: string; to: string }, result: ChannelAggregate, existing: ChannelExistingReport | null = null): ChannelSplitWeek {
+    return {
+        from: week.from, to: week.to, dataPeriod: result.dataPeriod, missingDays: result.missingDays,
+        rowCount: result.rowCount, zeroRows: result.zeroRows, totals: result.totals, existing,
     };
 }
 
@@ -1016,9 +1335,16 @@ export function peakMissedHours(breakdown: readonly BreakdownRow[], top = 3): Ar
 
 /**
  * Үзүүлэлт бүрийн өөрчлөлт. Суурь (өмнөх) байхгүй эсвэл 0 бол хувь null; валют өөр бол
- * мөнгөн үзүүлэлтийг харьцуулахгүй (`comparable: false`).
+ * мөнгөн үзүүлэлтийг харьцуулахгүй (`comparable: false`). Аль нэг тайлангийн өдрийн хамралт
+ * дутуу (`partialCoverage`) бол ямар ч үзүүлэлтийг харьцуулахгүй — 6 өдрийг 7 өдөртэй тулгахгүй.
+ * Meta-гийн үр дүнгийн төрөл бүрийн түлхүүр (`results_<төрөл>`, …) ч харьцуулалтад орно.
  */
-export function compareWithPrevious(current: ChannelTotals, previous: ChannelTotals | null | undefined, source?: ChannelSource): Record<string, MetricDelta> {
+export function compareWithPrevious(
+    current: ChannelTotals,
+    previous: ChannelTotals | null | undefined,
+    source?: ChannelSource,
+    options: { partialCoverage?: boolean } = {},
+): Record<string, MetricDelta> {
     const money = new Set((source ? SPECS[source].metrics : Object.values(SPECS).flatMap(s => s.metrics)).filter(m => m.kind === 'money').map(m => m.key));
     const order = source ? SPECS[source].metrics.map(m => m.key) : [];
     const keys = [...new Set([...Object.keys(current), ...Object.keys(previous ?? {})])]
@@ -1029,10 +1355,11 @@ export function compareWithPrevious(current: ChannelTotals, previous: ChannelTot
     for (const key of keys) {
         const c = typeof current[key] === 'number' ? current[key] as number : null;
         const p = typeof previous?.[key] === 'number' ? previous[key] as number : null;
-        const comparable = !money.has(key) || sameCurrency;
+        const reason = options.partialCoverage && p !== null ? 'coverage' : money.has(key) && !sameCurrency ? 'currency' : undefined;
+        const comparable = !reason;
         const delta = c !== null && p !== null && comparable ? round(c - p) : null;
         const pct = delta !== null && p !== null && p > 0 ? Math.round(delta / p * 1000) / 10 : null;
-        result[key] = { current: c, previous: p, delta, pct, comparable };
+        result[key] = { current: c, previous: p, delta, pct, comparable, ...(reason ? { reason } : {}) };
     }
     return result;
 }
@@ -1050,7 +1377,8 @@ export function formatChannelValue(value: number | null | undefined, kind: Metri
         case 'duration': return formatDuration(value);
         case 'percent': return `${n(1)}%`;
         case 'decimal': return n(2);
-        case 'money': return `${n(2)}${currency ? ` ${currency}` : ''}`;
+        // 0.01-ээс бага өртгийг (постын оролцоо ~0.0037 USD) 0 болгож харуулахгүй — 4 орон хүртэл.
+        case 'money': return `${n(value !== 0 && Math.abs(value) < 0.01 ? 4 : 2)}${currency ? ` ${currency}` : ''}`;
         default: return n(2);
     }
 }
