@@ -149,12 +149,22 @@ beforeEach(() => {
 });
 
 describe('current manager onboarding route integration', () => {
-    it('requires explicit project access even after the manager account becomes active', async () => {
+    it('a legacy shop with several projects still requires explicit project access after provisioning', async () => {
+        state.rows.projects.push({ id: '40000000-0000-4000-8000-000000000002', shop_id: shopId, name: 'Хуучин дэд төсөл' });
         await provisionManager(false);
         expect(await resolveManagerIdentity(db as never, shopId, managerId)).toMatchObject({ isManager: true });
+        expect(state.rows.sales_manager_projects).toEqual([]);
         const response = await createLead(request('/api/dashboard/leads', { project_id: projectId, customer_name: 'Харилцагч' }));
         expect(response.status).toBe(403);
         expect(state.rows.leads).toEqual([]);
+    });
+
+    it('provisioning a manager into a single-project shop grants that project at once (shop = project)', async () => {
+        await provisionManager(false);
+        expect(state.rows.sales_manager_projects).toEqual([expect.objectContaining({ shop_id: shopId, manager_name: 'Бат', project_id: projectId })]);
+        const response = await createLead(request('/api/dashboard/leads', { customer_name: 'Харилцагч' }));
+        expect(response.status).toBe(200);
+        expect(state.rows.leads).toEqual([expect.objectContaining({ project_id: projectId, sales_manager_name: 'Бат' })]);
     });
 
     it('cannot claim another project or a lead already assigned to another manager', async () => {

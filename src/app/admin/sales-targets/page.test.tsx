@@ -132,11 +132,42 @@ it('saves multiple projects without changing another manager membership', async 
     expect(screen.getByRole('checkbox', { name: 'Manager A: Mandala' })).not.toBeChecked();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Manager A: Mandala' }));
     fireEvent.click(screen.getByRole('button', { name: 'Менежерийн бүртгэл хадгалах' }));
-    await waitFor(() => expect(writes).toMatchObject([{
+    // Зөвхөн өөрчлөгдсөн менежерийг илгээнэ — хуучирсан цонх бусдын бүртгэлийг дарахгүй.
+    await waitFor(() => expect(writes).toEqual([{
         shopId: 'shop-a', managers: [
-            { name: 'Manager A', project_ids: ['elysium', 'mandala'] },
-            { name: 'Manager B', project_ids: ['mandala'] },
+            { name: 'Manager A', is_active: true, user_id: null, project_ids: ['elysium', 'mandala'] },
         ],
     }]));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Менежерийн бүртгэл хадгалах' })).toBeEnabled());
+});
+
+it('single-project shop: adding a member assigns the project in one save, and an inactive name is reactivated', async () => {
+    const writes: Array<{ shopId: string; managers: object[] }> = [];
+    const roster = {
+        teamTarget: Array(12).fill(0), teamActual: Array(12).fill(0),
+        managers: [{ name: 'Хуучин менежер', is_active: false, user_id: null, year_actual: 0, project_ids: ['elysium'] }],
+        teamMembers: [{ id: 'u-1', full_name: 'Ариунбилэг', role: 'sales_manager' }],
+        projects: [{ id: 'elysium', name: 'Elysium Residence' }],
+    };
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+        if (url === '/api/admin/shops') return response({ shops: [{ id: 'shop-1', name: 'Elysium Residence' }] });
+        if (init?.method === 'PUT') { writes.push(JSON.parse(String(init.body))); return response({ success: true }); }
+        return response(roster);
+    }));
+    renderPage();
+    const chip = await screen.findByRole('button', { name: /Ариунбилэг/ });
+    // Нэг төсөлтэй орчинд төсөл сонгох checkbox шаардлагагүй.
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(screen.getByText(/«Elysium Residence» төслийн өөрт хуваарилсан лидийг хариуцна/)).toBeInTheDocument();
+    fireEvent.click(chip);
+    await waitFor(() => expect(writes).toEqual([{ shopId: 'shop-1', managers: [
+        { name: 'Ариунбилэг', is_active: true, user_id: 'u-1', project_ids: ['elysium'] },
+    ] }]));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Нэмэх' })).toBeDisabled());
+    fireEvent.change(screen.getByPlaceholderText('Менежерийн нэр бичих...'), { target: { value: 'Хуучин менежер' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Нэмэх' }));
+    await waitFor(() => expect(writes[1]).toEqual({ shopId: 'shop-1', managers: [
+        { name: 'Хуучин менежер', is_active: true, user_id: null, project_ids: ['elysium'] },
+    ] }));
 });

@@ -32,6 +32,7 @@ vi.mock('@/lib/auth/supabase-auth', () => ({
             in: () => query,
             order: () => query,
             range: () => query,
+            limit: () => query,
             upsert: (rows: unknown) => { state.writes.push(rows); return Promise.resolve({ error: null }); },
             then: (resolve: (value: unknown) => unknown) => Promise.resolve(table === 'shop_members'
                 ? { data: [{ user_id: '10000000-0000-4000-8000-000000000002' }], error: null }
@@ -72,10 +73,24 @@ it('rejects two submitted manager names linked to the same account', async () =>
     expect(state.writes).toEqual([]);
 });
 
-it('rejects automatic profile matching when a retained roster row already owns the account', async () => {
+it('never links an account by matching the profile name; only an explicit choice links it', async () => {
+    // Профайлын нэрээ «Бат» болгосон хэрэглэгч хадгалалт бүрт автоматаар холбогдохгүй.
+    expect((await PUT(request([{ name: 'Бат', user_id: null, is_active: true }]))).status).toBe(200);
+    expect(state.writes).toMatchObject([[{ name: 'Бат', user_id: null }]]);
     state.roster = [{ name: 'Хуучин бүртгэл', user_id: userId }];
-    expect((await PUT(request([{ name: 'Бат', user_id: null, is_active: true }]))).status).toBe(409);
-    expect(state.writes).toEqual([]);
+    expect((await PUT(request([{ name: 'Бат', user_id: userId, is_active: true }]))).status).toBe(409);
+    expect(state.writes).toHaveLength(1);
+});
+
+it('assigns every manager of a single-project shop to that project (shop = project)', async () => {
+    expect((await PUT(request([
+        { name: 'Бат', user_id: userId, is_active: true },
+        { name: 'Сараа', user_id: null, is_active: false, project_ids: [] },
+    ]))).status).toBe(200);
+    expect(state.writes).toEqual([[
+        { name: 'Бат', user_id: userId, is_active: true, project_ids: [projectId] },
+        { name: 'Сараа', user_id: null, is_active: false, project_ids: [projectId] },
+    ]]);
 });
 
 it('allows updating the same canonical manager link', async () => {
@@ -116,7 +131,8 @@ it('rejects another shop project and fails closed on project validation reads', 
     expect(state.writes).toEqual([]);
 });
 
-it('sends explicit empty memberships to clear while omitted memberships stay omitted', async () => {
+it('legacy multi-project shops: explicit empty memberships clear while omitted memberships stay omitted', async () => {
+    state.projects = [{ id: projectId, name: 'Mandala Garden' }, { id: otherProjectId, name: 'Elysium' }];
     expect((await PUT(request([{ name: 'Бат', user_id: userId, is_active: true, project_ids: [] }]))).status).toBe(200);
     expect(state.writes[0]).toMatchObject([{ project_ids: [] }]);
     expect((await PUT(request([{ name: 'Бат', user_id: userId, is_active: true }]))).status).toBe(200);
@@ -124,6 +140,7 @@ it('sends explicit empty memberships to clear while omitted memberships stay omi
 });
 
 it('deduplicates selected projects and requires the atomic roster RPC to succeed', async () => {
+    state.projects = [{ id: projectId, name: 'Mandala Garden' }, { id: otherProjectId, name: 'Elysium' }];
     const manager = { name: 'Бат', user_id: userId, is_active: true, project_ids: [projectId, projectId] };
     expect((await PUT(request([manager]))).status).toBe(200);
     expect(state.writes).toMatchObject([[{ project_ids: [projectId] }]]);

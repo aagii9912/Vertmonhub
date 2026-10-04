@@ -124,7 +124,8 @@ export const GET = withRoute({ module: 'leads', error: 'Лийд татахад 
 const VALID_STATUSES = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'] as const;
 
 const CreateLeadSchema = z.object({
-    project_id: z.string().uuid('Төслөө сонгоно уу'),
+    // Shop = төсөл: өгөөгүй бол resolveStaffLead shop-ийн ганц төслийг авна.
+    project_id: z.string().uuid('Төслөө сонгоно уу').optional(),
     customer_name: z.string().trim().min(1, 'Нэр шаардлагатай').max(200),
     customer_phone: z.string().trim().max(30).nullish(),
     customer_email: z.string().trim().max(200).nullish(),

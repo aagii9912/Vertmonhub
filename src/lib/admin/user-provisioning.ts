@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase';
+import { soleShopProjectId } from '@/lib/projects/shop-project';
 
 type AdminDb = ReturnType<typeof supabaseAdmin>;
 
@@ -35,6 +36,7 @@ export async function provisionUserAccess(db: AdminDb, input: {
     role: string; shopId: string; isNew: boolean;
 }): Promise<AccessError | null> {
     let addedMembership = false;
+    let addedProjectLink: { project: string } | null = null;
     let managerName: string | undefined;
     let previousManager: ManagerRow | null = null;
     let changedManager = false;
@@ -102,6 +104,22 @@ export async function provisionUserAccess(db: AdminDb, input: {
             if (!data) throw { error: 'Менежерийн холбоос зэрэг өөрчлөгдсөн байна. Жагсаалтыг шинэчлээд дахин оролдоно уу.', status: 409 };
             changedManager = true;
         }
+        // Shop = төсөл: ганц төсөлтэй shop-ийн менежер тэр төслийн лидийг шууд хариуцна
+        // (Борлуулалтын төлөвлөгөө хэсэгт хоёр дахь хадгалалт шаардахгүй).
+        if (managerName) {
+            const project = await soleShopProjectId(db, input.shopId);
+            if (project) {
+                const { data: link, error: linkError } = await db.from('sales_manager_projects').select('project_id')
+                    .eq('shop_id', input.shopId).eq('manager_name', managerName).eq('project_id', project).maybeSingle();
+                if (linkError) throw linkError;
+                if (!link) {
+                    const { error } = await db.from('sales_manager_projects')
+                        .insert({ shop_id: input.shopId, manager_name: managerName, project_id: project });
+                    if (error && error.code !== '23505') throw error;
+                    if (!error) addedProjectLink = { project };
+                }
+            }
+        }
         // Write the role last: a failed profile/membership must never demote an existing account.
         const { error } = await db.from('user_roles').upsert({ user_id: input.userId, role: input.role }, { onConflict: 'user_id' });
         if (error) throw error;
@@ -109,6 +127,13 @@ export async function provisionUserAccess(db: AdminDb, input: {
     } catch (error) {
         console.error('User provisioning failed:', error);
         let rollbackError: unknown;
+        if (addedProjectLink && managerName) {
+            try {
+                const rollback = await db.from('sales_manager_projects').delete()
+                    .eq('shop_id', input.shopId).eq('manager_name', managerName).eq('project_id', addedProjectLink.project);
+                rollbackError = rollback.error;
+            } catch (error) { rollbackError = error; }
+        }
         if (changedManager && managerName) {
             try {
                 const query = previousManager

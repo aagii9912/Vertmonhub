@@ -16,6 +16,7 @@ import {
 import { useAuth } from '@/contexts/AuthContext';
 import { formatMNT } from '@/lib/utils/currency';
 
+const ROLE_LABEL: Record<string, string> = { super_admin: 'Super Admin', admin: 'Админ', marketing: 'Маркетинг', viewer: 'Харах эрх' };
 const MONTHS = ['1-р', '2-р', '3-р', '4-р', '5-р', '6-р', '7-р', '8-р', '9-р', '10-р', '11-р', '12-р'];
 const NO_MONTHS: number[] = Array(12).fill(0);
 
@@ -31,7 +32,7 @@ interface SalesTargetsData {
     teamTarget: number[];
     teamActual: number[];
     managers: ManagerRow[];
-    teamMembers: Array<{ id: string; full_name: string }>;
+    teamMembers: Array<{ id: string; full_name: string; role?: string | null }>;
     projects: Array<{ id: string; name: string }>;
 }
 
@@ -69,7 +70,7 @@ export default function SalesTargetsAdminPage() {
         queryFn: async (): Promise<Array<{ id: string; name: string }>> => {
             const res = await fetch('/api/admin/shops');
             const d = await res.json();
-            if (!res.ok) throw new Error(d.error || 'Байгууллагууд ачаалагдсангүй');
+            if (!res.ok) throw new Error(d.error || 'Төслүүд ачаалагдсангүй');
             return d.shops || [];
         },
         enabled: !!user?.id,
@@ -77,7 +78,8 @@ export default function SalesTargetsAdminPage() {
         refetchOnWindowFocus: false,
     });
     const shops = shopsQuery.data ?? NO_SHOPS;
-    const shopId = selectedShopId || shops[0]?.id || '';
+    // Анхдагч нь одоо ажиллаж буй төсөл (shop = төсөл).
+    const shopId = selectedShopId || (shops.some((s) => s.id === shop?.id) ? shop!.id : shops[0]?.id) || '';
 
     const targetsQuery = useQuery({
         meta: { inlineError: true },
@@ -116,7 +118,7 @@ export default function SalesTargetsAdminPage() {
     const projects = data?.projects ?? NO_PROJECTS;
 
     const shopsError = shopsQuery.data
-        ? (shopsQuery.data.length ? null : 'Байгууллага бүртгэгдээгүй байна')
+        ? (shopsQuery.data.length ? null : 'Төсөл бүртгэгдээгүй байна')
         : shopsQuery.error?.message ?? null;
     // Өгөгдөл ачаалагдсан бол дэвсгэрт шинэчлэл унахад (toast) хадгалаагүй засварыг нуухгүй.
     const error = (!shopsQuery.isFetching && shopsError) || (!targetsQuery.data && !targetsQuery.isFetching && targetsQuery.error?.message) || null;
@@ -163,13 +165,26 @@ export default function SalesTargetsAdminPage() {
         }));
     }
 
+    function unlinkManager(name: string) {
+        if (!scopeReady || saving) return;
+        setManagersDraft((prev) => (prev ?? managers).map((m) => (m.name === name ? { ...m, user_id: null } : m)));
+    }
+
+    /** Зөвхөн өөрчлөгдсөн мөрийг илгээнэ — хуучирсан цонх бусдын холбоос, төлөвийг дарахгүй. */
     async function persistRoster(list: ManagerRow[]) {
+        const saved = new Map((data?.managers ?? []).map((m) => [m.name, m]));
+        const changed = list.filter((m) => {
+            const before = saved.get(m.name);
+            return !before || before.is_active !== m.is_active || before.user_id !== m.user_id
+                || before.project_ids.length !== m.project_ids.length || before.project_ids.some((id) => !m.project_ids.includes(id));
+        });
+        if (!changed.length) { setManagersDraft(null); return; }
         const res = await fetch('/api/admin/sales-targets', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     shopId,
-                    managers: list.map((m) => ({ name: m.name, is_active: m.is_active, user_id: m.user_id, project_ids: m.project_ids })),
+                    managers: changed.map((m) => ({ name: m.name, is_active: m.is_active, user_id: m.user_id, project_ids: m.project_ids })),
                 }),
             });
         if (!res.ok) throw new Error((await res.json()).error || 'Менежерийн жагсаалт хадгалагдсангүй');
@@ -204,21 +219,31 @@ export default function SalesTargetsAdminPage() {
         if (!scopeReady || saving) return;
         const trimmed = name.trim();
         if (!trimmed) return;
-        if (managers.some((m) => m.name === trimmed)) {
-            setNewManagerName('');
-            return; // аль хэдийн жагсаалтад бий
+        // Хадгалаагүй өөрчлөлтийг нэмэлттэй хамт санамсаргүй хадгалахгүй.
+        if (managersDraft) {
+            toast.error('Хадгалаагүй өөрчлөлт байна. Эхлээд «Менежерийн бүртгэл хадгалах» дарна уу.');
+            return;
         }
-        const next = [
-            ...managers,
-            { name: trimmed, is_active: true, user_id: userId, year_actual: 0, project_ids: [] },
-        ].sort((a, b) => a.name.localeCompare(b.name, 'mn'));
+        const existing = managers.find((m) => m.name === trimmed);
+        if (existing?.is_active && (!userId || existing.user_id === userId)) {
+            setNewManagerName('');
+            toast.info(`${trimmed} аль хэдийн идэвхтэй менежер байна`);
+            return;
+        }
+        // Нэг төсөлтэй бол сервер тухайн төслийг автоматаар онооно.
+        const next = existing
+            ? managers.map((m) => (m.name === trimmed ? { ...m, is_active: true, user_id: userId ?? m.user_id } : m))
+            : [
+                ...managers,
+                { name: trimmed, is_active: true, user_id: userId, year_actual: 0, project_ids: projects.length === 1 ? [projects[0].id] : [] },
+            ].sort((a, b) => a.name.localeCompare(b.name, 'mn'));
         const previousDraft = managersDraft;
         setManagersDraft(next);
         setNewManagerName('');
         setSavingRoster(true);
         try {
             await persistRoster(next);
-            toast.success('Менежер нэмэгдлээ');
+            toast.success(existing ? 'Менежер дахин идэвхжлээ' : 'Менежер нэмэгдлээ');
         } catch (cause) {
             setManagersDraft(previousDraft);
             setNewManagerName(trimmed);
@@ -258,8 +283,8 @@ export default function SalesTargetsAdminPage() {
             {/* Toolbar */}
             <div className="flex flex-wrap items-center gap-3">
                 <Select value={shopId} onValueChange={setShopId} disabled={saving}>
-                    <SelectTrigger className="h-9 w-56 text-sm" aria-label="Компани сонгох">
-                        <SelectValue placeholder="Компани сонгох" />
+                    <SelectTrigger className="h-9 w-56 text-sm" aria-label="Төсөл сонгох">
+                        <SelectValue placeholder="Төсөл сонгох" />
                     </SelectTrigger>
                     <SelectContent>
                         {shops.map((s) => (
@@ -355,7 +380,9 @@ export default function SalesTargetsAdminPage() {
                                         {activeCount} идэвхтэй · багийн гүйцэтгэл эдгээрийн нийлбэр
                                     </p>
                                     <p className="mt-1 text-xs text-muted-foreground">
-                                        Менежер зөвхөн сонгосон төслийн лидийг хариуцна. Нэг менежерт олон төсөл сонгож болно.
+                                        {projects.length === 1
+                                            ? `Энд нэмсэн менежер «${projects[0].name}» төслийн өөрт хуваарилсан лидийг хариуцна. Өөр төсөлд нэмэхдээ дээрээс төслөө сонгоно уу.`
+                                            : 'Менежер зөвхөн сонгосон төслийн лидийг хариуцна. Нэг менежерт олон төсөл сонгож болно.'}
                                     </p>
                                 </div>
                             </div>
@@ -397,7 +424,13 @@ export default function SalesTargetsAdminPage() {
                                                 {m.is_active ? 'Идэвхтэй' : 'Идэвхгүй'}
                                             </span>
                                         </button>
-                                        <fieldset disabled={!scopeReady || saving} className="space-y-2 px-3 pb-3 pt-2">
+                                        {m.user_id && <div className="flex justify-end px-3 pt-2">
+                                            <button type="button" onClick={() => unlinkManager(m.name)} disabled={!scopeReady || saving}
+                                                className="text-2xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:opacity-50">
+                                                Акаунтын холбоос салгах
+                                            </button>
+                                        </div>}
+                                        {projects.length !== 1 && <fieldset disabled={!scopeReady || saving} className="space-y-2 px-3 pb-3 pt-2">
                                             <legend className="sr-only">{m.name} — төслийн харьяалал</legend>
                                             <p className="text-2xs text-muted-foreground">
                                                 {m.project_ids.length ? 'Төслийн харьяалал' : 'Төсөл сонгоогүй — төслийн лид хариуцах эрхгүй'}
@@ -417,8 +450,8 @@ export default function SalesTargetsAdminPage() {
                                                         </label>
                                                     ))}
                                                 </div>
-                                            ) : <p className="text-xs text-muted-foreground">Энэ байгууллагад төсөл бүртгэгдээгүй байна.</p>}
-                                        </fieldset>
+                                            ) : <p className="text-xs text-muted-foreground">Энэ ажлын орчинд төсөл бүртгэгдээгүй байна.</p>}
+                                        </fieldset>}
                                         </div>
                                     ))}
                                 </div>
@@ -438,6 +471,7 @@ export default function SalesTargetsAdminPage() {
                             {/* Шинэ борлуулалтын менежер нэмэх */}
                             <div className="space-y-2 rounded-lg border border-dashed border-border p-3">
                                 <p className="text-xs font-medium text-muted-foreground">Шинэ менежер нэмэх</p>
+                                <p className="text-2xs text-muted-foreground">Акаунттай ажилтныг товчоор сонговол түүний акаунт холбогдоно. Энэ жагсаалтад гарахын тулд ажилтан энэ төсөлд гишүүн байх ёстой («Хэрэглэгчид» → төсөл нэмэх).</p>
                                 {unlistedMembers.length > 0 && (
                                     <div className="flex flex-wrap gap-1.5">
                                         {unlistedMembers.map((t) => (
@@ -448,6 +482,7 @@ export default function SalesTargetsAdminPage() {
                                                 className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-xs text-foreground hover:border-brand hover:text-brand disabled:opacity-50"
                                             >
                                                 <Plus className="h-3 w-3" /> {t.full_name}
+                                                {t.role && t.role !== 'sales_manager' && <span className="text-muted-foreground">· {ROLE_LABEL[t.role] || t.role}</span>}
                                             </button>
                                         ))}
                                     </div>

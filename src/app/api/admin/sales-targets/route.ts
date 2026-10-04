@@ -5,6 +5,8 @@ import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { getTeamTargets, getMonthlyActualsByManager, sumYear } from '@/lib/sales/targets';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { z } from 'zod';
+import { soleShopProjectId } from '@/lib/projects/shop-project';
+import { ubParts } from '@/lib/utils/date';
 
 const shopSchema = z.guid();
 const yearSchema = z.number().int().min(2000).max(2100);
@@ -41,7 +43,7 @@ async function requireAdmin() {
     return { userId };
 }
 
-/** shop-ийн багийн гишүүд (нэр→id) — акаунт авто-холбоход. */
+/** Төслийн (shop) ажилтнууд — менежерийн акаунтыг ил тод холбоход сонгоно. */
 async function loadMembers(supabase: ReturnType<typeof supabaseAdmin>, shopId: string) {
     const { data: memberRows, error: memberError } = await supabase
         .from('shop_members')
@@ -49,13 +51,15 @@ async function loadMembers(supabase: ReturnType<typeof supabaseAdmin>, shopId: s
         .eq('shop_id', shopId);
     if (memberError) throw memberError;
     const ids = (memberRows || []).map((m) => m.user_id);
-    if (!ids.length) return [] as Array<{ id: string; full_name: string }>;
-    const { data: profiles, error: profileError } = await supabase
-        .from('user_profiles')
-        .select('id, full_name, email')
-        .in('id', ids);
+    if (!ids.length) return [] as Array<{ id: string; full_name: string; role: string | null }>;
+    const [{ data: profiles, error: profileError }, { data: roles, error: roleError }] = await Promise.all([
+        supabase.from('user_profiles').select('id, full_name, email').in('id', ids),
+        supabase.from('user_roles').select('user_id, role').in('user_id', ids),
+    ]);
     if (profileError) throw profileError;
-    return (profiles || []).map((p) => ({ id: p.id, full_name: p.full_name || p.email || 'Нэргүй' }));
+    if (roleError) throw roleError;
+    const roleById = new Map((roles || []).map((row) => [row.user_id, row.role as string]));
+    return (profiles || []).map((p) => ({ id: p.id, full_name: p.full_name || p.email || 'Нэргүй', role: roleById.get(p.id) ?? null }));
 }
 
 export async function GET(request: NextRequest) {
@@ -65,8 +69,8 @@ export async function GET(request: NextRequest) {
 
         const sp = request.nextUrl.searchParams;
         const shopId = sp.get('shopId');
-        if (!shopSchema.safeParse(shopId).success) return NextResponse.json({ error: 'Байгууллага буруу байна' }, { status: 400 });
-        const year = sp.has('year') ? Number(sp.get('year')) : new Date().getFullYear();
+        if (!shopSchema.safeParse(shopId).success) return NextResponse.json({ error: 'Төсөл буруу байна' }, { status: 400 });
+        const year = sp.has('year') ? Number(sp.get('year')) : ubParts().year;
         if (!yearSchema.safeParse(year).success) return NextResponse.json({ error: 'Он буруу байна' }, { status: 400 });
 
         const supabase = supabaseAdmin();
@@ -168,29 +172,25 @@ export async function PUT(request: NextRequest) {
                 .select('id').eq('shop_id', shopId).order('id').range(from, to));
             const allowedProjectIds = new Set(projects.map((project) => project.id));
             if (requestedProjectIds.some((id) => !allowedProjectIds.has(id))) {
-                return NextResponse.json({ error: 'Менежерийн төсөл энэ байгууллагад харьяалагдахгүй байна' }, { status: 400 });
+                return NextResponse.json({ error: 'Менежерийн төсөл энэ ажлын орчинд харьяалагдахгүй байна' }, { status: 400 });
             }
         }
 
-        // Нэрээр акаунт авто-холбох (full_name → user_id)
+        // Акаунтыг зөвхөн админ ил тод сонгосон үед холбоно. Профайлын нэр таарсан гэж
+        // автоматаар холбохгүй: хэрэглэгч нэрээ өөрчилж бусдын лидийг авах эрсдэлтэй.
         const members = await loadMembers(supabase, shopId);
         const memberIds = new Set(members.map((m) => m.id));
         if (managers.some((m) => m.user_id && !memberIds.has(m.user_id)))
-            return NextResponse.json({ error: 'Менежерийн акаунт энэ байгууллагад харьяалагдахгүй байна' }, { status: 400 });
-        const nameToId = new Map<string, string>();
-        const duplicateNames = new Set<string>();
-        for (const member of members) {
-            if (nameToId.has(member.full_name) || duplicateNames.has(member.full_name)) {
-                nameToId.delete(member.full_name);
-                duplicateNames.add(member.full_name);
-            } else nameToId.set(member.full_name, member.id);
-        }
+            return NextResponse.json({ error: 'Менежерийн акаунт энэ төсөлд харьяалагдахгүй байна' }, { status: 400 });
 
+        // Shop = төсөл: ганц төсөлтэй shop-ийн бүртгэлтэй менежер тэр төслийг хариуцна.
+        const soleProject = await soleShopProjectId(supabase, shopId);
         const rows = managers.map((m) => ({
                 name: m.name,
                 is_active: m.is_active,
-                user_id: m.user_id || nameToId.get(m.name) || null,
-                ...(m.project_ids !== undefined ? { project_ids: [...new Set(m.project_ids)] } : {}),
+                user_id: m.user_id || null,
+                ...(soleProject ? { project_ids: [soleProject] }
+                    : m.project_ids !== undefined ? { project_ids: [...new Set(m.project_ids)] } : {}),
             }));
 
         if (rows.length === 0) return NextResponse.json({ success: true });
@@ -205,7 +205,7 @@ export async function PUT(request: NextRequest) {
         for (const row of [...retained, ...rows]) {
             if (!row.user_id) continue;
             if (linkedUsers.has(row.user_id)) {
-                return NextResponse.json({ error: 'Нэг акаунтыг энэ байгууллагад олон менежерт холбож болохгүй' }, { status: 409 });
+                return NextResponse.json({ error: 'Нэг акаунтыг энэ төсөлд олон менежерт холбож болохгүй' }, { status: 409 });
             }
             linkedUsers.add(row.user_id);
         }

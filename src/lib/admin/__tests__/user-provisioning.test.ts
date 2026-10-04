@@ -28,6 +28,7 @@ const state = vi.hoisted(() => ({
     authUpdates: 0,
     emails: 0,
     emailLinks: [] as string[],
+    projects: [] as Array<{ id: string }>,
 }));
 const shopId = '10000000-0000-4000-8000-000000000001';
 vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => db }));
@@ -81,6 +82,7 @@ const db = {
                 ? null : { id: state.shopId };
             if (table === 'shop_members' && state.membership && filters.user_id !== 'actor') data = { id: 'existing-membership' };
             if (table === 'user_profiles' && state.profileId) data = { id: state.profileId, email: 'target@example.com', full_name: state.fullName };
+            if (table === 'projects') data = state.projects.slice(0, limit);
             if (table === 'sales_managers') {
                 const matched = state.roster.filter(row => Object.entries(filters).every(([key, value]) => row[key as keyof typeof row] === value));
                 if (!error && (operation === 'read' || !state.rosterRace)) {
@@ -101,6 +103,7 @@ const db = {
             select: () => query,
             eq: (field: string, value: unknown) => { filters[field] = value; return query; },
             limit: (value: number) => { limit = value; return query; },
+            order: () => query,
             is: (field: string, value: unknown) => { filters[field] = value; return query; },
             insert: (value: unknown) => { operation = 'insert'; payload = value; return query; },
             update: (value: unknown) => { operation = 'update'; payload = value; return query; },
@@ -138,6 +141,7 @@ beforeEach(() => {
     state.wrongVerificationType = false; state.tokenHash = 'synthetic-token-hash';
     state.linkTypes = []; state.linkInputs = []; state.authCreates = [];
     state.passwords = []; state.authDeletes = []; state.authUpdates = 0; state.emails = 0; state.emailLinks = [];
+    state.projects = [];
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -486,6 +490,20 @@ describe('sales manager access provisioning', () => {
         expect(state.roster).toEqual([row({ user_id: 'target', is_active: true })]);
         expect(writesTo('user_profiles')).toEqual([]);
         expect(state.writes.map(write => write.table)).toEqual(['shop_members', 'sales_managers', 'user_roles']);
+    });
+
+    it('links the manager to the single project of the shop (shop = project) in the same provisioning', async () => {
+        state.projects = [{ id: 'project-1' }];
+        expect(await provisionUserAccess(db as never, managerInput)).toBeNull();
+        expect(state.writes.map(write => write.table)).toEqual(['shop_members', 'sales_managers', 'sales_manager_projects', 'user_roles']);
+        expect(writesTo('sales_manager_projects')[0]).toMatchObject({ operation: 'insert', payload: { shop_id: shopId, manager_name: 'Бат', project_id: 'project-1' } });
+    });
+
+    it('rolls the project link back with the roster when the role write fails', async () => {
+        state.projects = [{ id: 'project-1' }];
+        state.errors['upsert:user_roles'] = failure;
+        expect(await provisionUserAccess(db as never, managerInput)).toMatchObject({ status: 500 });
+        expect(writesTo('sales_manager_projects').map(write => write.operation)).toEqual(['insert', 'delete']);
     });
 
     it('claims and activates one unlinked matching roster without creating another identity', async () => {

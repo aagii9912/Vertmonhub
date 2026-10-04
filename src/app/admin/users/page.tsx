@@ -47,6 +47,7 @@ export default function AdminUsersPage() {
     const [search, setSearch] = useState('');
     const [actorId, setActorId] = useState<string | null>(null);
     const [roleChange, setRoleChange] = useState<{ user: UserWithRole; role: string; shop_id: string } | null>(null);
+    const [projectEdit, setProjectEdit] = useState<{ user: UserWithRole; shopIds: string[] } | null>(null);
     const [saving, setSaving] = useState(false);
     const [deleteConfirm, setDeleteConfirm] = useState<UserWithRole | null>(null);
     const [deleting, setDeleting] = useState(false);
@@ -167,6 +168,28 @@ export default function AdminUsersPage() {
 
     function openRoleChange(user: UserWithRole, role = user.role) {
         setRoleChange({ user, role, shop_id: user.shops?.length === 1 ? user.shops[0].id : shops.length === 1 ? shops[0].id : '' });
+    }
+
+    /** Shop = төсөл: ажилтны хандах төслүүдийг нэг дор тохируулна. */
+    async function saveProjects() {
+        if (!projectEdit) return;
+        setSaving(true);
+        try {
+            const res = await fetch('/api/admin/users/projects', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: projectEdit.user.id, shopIds: projectEdit.shopIds }),
+            });
+            const data = await res.json().catch(() => ({}));
+            await fetchUsers();
+            if (!res.ok) { toast.error(data.error || 'Төслийн эрх хадгалагдсангүй'); return; }
+            setProjectEdit(null);
+            toast.success('Төслийн эрх шинэчлэгдлээ');
+        } catch {
+            toast.error('Төслийн эрх хадгалахад сүлжээний алдаа гарлаа');
+        } finally {
+            setSaving(false);
+        }
     }
 
     async function createUser() {
@@ -384,7 +407,7 @@ export default function AdminUsersPage() {
                         <tr>
                             <th className="text-left px-6 py-3 text-xs font-medium text-muted-foreground uppercase">Хэрэглэгч</th>
                             <th className="text-left px-6 py-3 text-xs font-medium text-muted-foreground uppercase">Дүр</th>
-                            <th className="text-left px-6 py-3 text-xs font-medium text-muted-foreground uppercase">Байгууллага / төлөв</th>
+                            <th className="text-left px-6 py-3 text-xs font-medium text-muted-foreground uppercase">Төсөл / төлөв</th>
                             <th className="text-left px-6 py-3 text-xs font-medium text-muted-foreground uppercase">Бүртгэгдсэн</th>
                             <th className="text-right px-6 py-3 text-xs font-medium text-muted-foreground uppercase">Үйлдэл</th>
                         </tr>
@@ -428,9 +451,10 @@ export default function AdminUsersPage() {
                                             </span>
                                         </td>
                                         <td className="px-6 py-4 text-xs text-muted-foreground">
-                                            <p>{user.shops?.map(shop => `${shop.name}${shop.is_owner ? ' (эзэмшигч)' : ''}`).join(', ') || (user.role === 'super_admin' ? 'Бүх байгууллагын админ' : 'Байгууллагын хандалтгүй')}</p>
+                                            <p>{user.shops?.map(shop => `${shop.name}${shop.is_owner ? ' (эзэмшигч)' : ''}`).join(', ') || (user.role === 'super_admin' ? 'Админ хэсэгт бүх төсөл' : 'Төслийн хандалтгүй')}</p>
                                             <p className="mt-1">{user.last_sign_in_at ? 'Нэвтэрсэн' : user.email_confirmed ? 'Имэйл баталгаажсан · нэвтрээгүй' : 'Урилга / имэйл баталгаажаагүй'}</p>
                                             {user.role === 'sales_manager' && !user.manager_shops?.length && <p className="mt-1 text-status-pending">Идэвхтэй менежерийн холбоосгүй</p>}
+                                            {user.role === 'sales_manager' && user.shops?.some(shop => !user.manager_shops?.some(link => link.shop_id === shop.id)) && <p className="mt-1 text-status-pending">Зарим төсөлд менежерээр бүртгэгдээгүй</p>}
                                         </td>
                                         <td className="px-6 py-4 text-sm text-muted-foreground">
                                             {new Date(user.created_at).toLocaleDateString('mn-MN')}
@@ -443,6 +467,14 @@ export default function AdminUsersPage() {
                                                         <Shield className="w-3.5 h-3.5" />Super Admin эрх өгөх
                                                     </button>
                                                 )}
+                                                    <button
+                                                        onClick={() => setProjectEdit({ user, shopIds: (user.shops || []).map(shop => shop.id) })}
+                                                        disabled={saving || !!shopError || shops.length === 0}
+                                                        className="px-3 py-1.5 text-xs font-medium text-brand-strong hover:bg-brand-soft rounded-lg transition-colors disabled:opacity-50"
+                                                        aria-label={`${user.full_name || user.email}: төслүүд`}
+                                                    >
+                                                        Төслүүд
+                                                    </button>
                                                     <button
                                                         onClick={() => openRoleChange(user)}
                                                         disabled={isSelf || saving || !!roleError || roles.length === 0}
@@ -510,6 +542,39 @@ export default function AdminUsersPage() {
                             <button onClick={updateRole} disabled={saving || !!roleError || !roles.some(role => role.value === roleChange.role) || (roleChange.role === 'sales_manager' && (!roleChange.shop_id || !!shopError))}
                                 className="rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-brand-fg disabled:opacity-50">
                                 {saving ? 'Хадгалж байна...' : roleChange.role === 'super_admin' ? 'Super Admin эрх олгох' : 'Эрх хадгалах'}
+                            </button>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            )}
+
+            {projectEdit && (
+                <Dialog open onOpenChange={open => { if (!open && !saving) setProjectEdit(null); }}>
+                    <DialogContent className="max-w-md">
+                        <DialogTitle>Төслийн хандалт</DialogTitle>
+                        <DialogDescription>{projectEdit.user.full_name || projectEdit.user.email} — аль төсөлд ажиллахыг сонгоно уу.</DialogDescription>
+                        <fieldset disabled={saving} className="space-y-1">
+                            <legend className="sr-only">Төслүүд</legend>
+                            {shops.map(shop => {
+                                const owner = projectEdit.user.shops?.some(item => item.id === shop.id && item.is_owner);
+                                const checked = projectEdit.shopIds.includes(shop.id);
+                                return <label key={shop.id} className="flex min-h-11 items-center gap-3 rounded-lg px-2 text-sm hover:bg-surface-2">
+                                    <input type="checkbox" checked={checked} disabled={owner || (projectEdit.user.id === actorId && checked)}
+                                        onChange={event => setProjectEdit({ ...projectEdit, shopIds: event.target.checked
+                                            ? [...projectEdit.shopIds, shop.id] : projectEdit.shopIds.filter(id => id !== shop.id) })} />
+                                    <span className="flex-1">{shop.name}</span>
+                                    {owner && <span className="text-xs text-muted-foreground">эзэмшигч</span>}
+                                </label>;
+                            })}
+                        </fieldset>
+                        {projectEdit.user.role === 'sales_manager' ? <p className="text-xs text-muted-foreground">
+                            Сонгосон төсөлд менежерийн бүртгэл профайлын нэрээр холбогдож, тухайн төслийн өөрт хуваарилсан лидийг харна.
+                            Хассан төслийн лид нь менежерийн нэрээр үлдэх тул <a href="/admin/sales-targets" className="text-brand-strong underline">Борлуулалтын төлөвлөгөө</a> болон Лид хэсэгт дахин хуваарилна.
+                        </p> : <p className="text-xs text-muted-foreground">Сонгосон төслүүдийн мэдээллийг дүрийнх нь эрхээр харна.</p>}
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => setProjectEdit(null)} disabled={saving} className="rounded-lg bg-surface-2 px-4 py-2.5 text-sm">Цуцлах</button>
+                            <button onClick={saveProjects} disabled={saving} className="rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-brand-fg disabled:opacity-50">
+                                {saving ? 'Хадгалж байна...' : 'Хадгалах'}
                             </button>
                         </div>
                     </DialogContent>
