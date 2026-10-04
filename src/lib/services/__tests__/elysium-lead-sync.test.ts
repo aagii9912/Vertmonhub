@@ -53,7 +53,7 @@ function query(table: string) {
         if (failure) return { data: null, error: failure, count: null };
         if (op === 'insert') {
             if (table === 'leads' && state.insertError) return { data: null, error: state.insertError };
-            const inserted = payload.map((row) => ({ id: `${table}-${++state.seq}`, deleted_at: null, ...row }));
+            const inserted: Row[] = payload.map((row) => ({ id: `${table}-${++state.seq}`, deleted_at: null, ...row }));
             for (const row of inserted) {
                 if (table === 'leads' && row.client_request_id
                     && rows().some((lead) => lead.shop_id === row.shop_id && lead.client_request_id === row.client_request_id)) {
