@@ -10,6 +10,7 @@ import { ANONYMOUS_LEAD_CONTACT, ANONYMOUS_LEAD_LABEL, LEAD_NAME_OR_ANONYMOUS } 
 const mocks = vi.hoisted(() => ({
     refetch: vi.fn(), push: vi.fn(), mutate: vi.fn(), enqueue: vi.fn(), isNetworkError: vi.fn(), toastError: vi.fn(),
     managers: vi.fn(),
+    categories: [] as { id: string; name: string; tone: string; is_active: boolean }[],
     role: 'viewer', update: vi.fn(),
     myStats: { data: undefined as unknown, isError: true },
     detail: { data: undefined as unknown, isLoading: false, isError: true, error: new Error('Лид олдсонгүй'), isFetching: false },
@@ -30,8 +31,13 @@ vi.mock('@/hooks/useLeads', () => ({
     useManagers: (...args: unknown[]) => { mocks.managers(...args); return { data: [] }; },
     useLeadDetail: () => ({ ...mocks.detail, refetch: mocks.refetch }),
     useUpdateLead: () => ({ mutate: mocks.update }), useAddLeadActivity: () => ({ mutateAsync: vi.fn() }),
+    useLeadCategories: () => ({ data: mocks.categories }),
 }));
-vi.mock('../leads/pickers', () => ({ StatusPicker: () => null, ManagerPicker: () => null }));
+vi.mock('../leads/pickers', () => ({
+    StatusPicker: () => null, ManagerPicker: () => null,
+    CategoryPicker: ({ onChange, disabled }: { onChange: (id: string | null) => void; disabled?: boolean }) =>
+        <button type="button" disabled={disabled} onClick={() => onChange('investor')}>Ангилал сонгох</button>,
+}));
 vi.mock('../leads/LeadWorkActions', () => ({ LeadWorkActions: () => null }));
 
 beforeEach(() => {
@@ -41,6 +47,7 @@ beforeEach(() => {
     mocks.detail.data = undefined;
     mocks.detail.isError = true;
     mocks.role = 'viewer';
+    mocks.categories = [];
     mocks.isNetworkError.mockReturnValue(false);
     mocks.mutate.mockResolvedValue({ lead: { id: 'new-lead' } });
 });
@@ -255,5 +262,44 @@ describe('workflow error and recovery states', () => {
         mocks.detail.data = { lead: { id: 'lead', project_id: 'mandala', customer_name: 'Болд', source: 'other', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
         render(<LeadPanel leadId="lead" canWrite={true} />);
         expect(screen.queryByRole('combobox', { name: 'Лидийн төсөл' })).not.toBeInTheDocument();
+    });
+    it('offers only active lead categories in quick create and sends the chosen one', async () => {
+        mocks.categories = [
+            { id: 'investor', name: 'Хөрөнгө оруулагч', tone: 'success', is_active: true },
+            { id: 'old', name: 'Хуучин ангилал', tone: 'neutral', is_active: false },
+        ];
+        render(<QuickCreateSheet />);
+        act(() => openQuickCreate('lead'));
+        fireEvent.change(await screen.findByPlaceholderText('Ж: Г. Энхжин'), { target: { value: 'Болд' } });
+        fireEvent.change(screen.getByRole('combobox', { name: 'Төсөл' }), { target: { value: 'mandala' } });
+        expect(screen.queryByRole('button', { name: 'Хуучин ангилал' })).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Хөрөнгө оруулагч' }));
+        expect(screen.getByRole('button', { name: 'Хөрөнгө оруулагч' })).toHaveAttribute('aria-pressed', 'true');
+        fireEvent.click(screen.getByRole('button', { name: /^Хадгалах/ }));
+        await waitFor(() => expect(mocks.mutate).toHaveBeenCalledWith('/api/dashboard/leads', 'POST', expect.objectContaining({ category_id: 'investor' })));
+    });
+
+    it('sends no category and hides the field when the project has none', async () => {
+        render(<QuickCreateSheet />);
+        act(() => openQuickCreate('lead'));
+        fireEvent.change(await screen.findByPlaceholderText('Ж: Г. Энхжин'), { target: { value: 'Болд' } });
+        fireEvent.change(screen.getByRole('combobox', { name: 'Төсөл' }), { target: { value: 'mandala' } });
+        expect(screen.queryByRole('group', { name: 'Ангилал' })).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /^Хадгалах/ }));
+        await waitFor(() => expect(mocks.mutate).toHaveBeenCalledWith('/api/dashboard/leads', 'POST', expect.objectContaining({ category_id: null })));
+    });
+
+    it('shows the lead category row and saves a new category', () => {
+        mocks.categories = [{ id: 'investor', name: 'Хөрөнгө оруулагч', tone: 'success', is_active: true }];
+        mocks.detail.isError = false;
+        mocks.detail.data = { lead: { id: 'lead', project_id: 'mandala', customer_name: 'Болд', source: 'phone', status: 'new', category_id: null, created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
+        const { unmount } = render(<LeadPanel leadId="lead" canWrite={true} />);
+        expect(screen.getByText('Ангилал')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Ангилал сонгох' }));
+        expect(mocks.update).toHaveBeenCalledWith({ id: 'lead', patch: { category_id: 'investor' } }, expect.anything());
+        unmount();
+        mocks.categories = [];
+        render(<LeadPanel leadId="lead" canWrite={true} />);
+        expect(screen.queryByText('Ангилал')).not.toBeInTheDocument();
     });
 });

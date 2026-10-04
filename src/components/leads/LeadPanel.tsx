@@ -7,11 +7,11 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
 import { formatShortDate, formatTime, formatRelativeDays } from '@/lib/utils/date';
-import { useLeadDetail, useUpdateLead, useAddLeadActivity, useLeadProjects, useManagers } from '@/hooks/useLeads';
+import { useLeadDetail, useUpdateLead, useAddLeadActivity, useLeadProjects, useLeadCategories, useManagers } from '@/hooks/useLeads';
 import { INTEREST_CHIPS, ACTIVITY_LABEL, sourceLabel, interestLabel, isAnonymousLead, leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
 import { propertyStatusLabel, propertyStatusTone } from '@/lib/inventory/labels';
 import { Pill, Skeleton, GhostButton } from '@/components/dashboard/v2/primitives';
-import { StatusPicker, ManagerPicker } from './pickers';
+import { StatusPicker, ManagerPicker, CategoryPicker } from './pickers';
 import { useRegisterAiContext } from '@/lib/ai/context';
 import { LeadWorkActions } from './LeadWorkActions';
 import { Alert } from '@/components/ui/Alert';
@@ -48,6 +48,7 @@ export function LeadPanel({
     const lead = data?.lead;
     const { data: managers = [] } = useManagers(lead?.project_id ?? null);
     const { data: projects = [] } = useLeadProjects();
+    const { data: categories = [] } = useLeadCategories();
     // Shop = төсөл: ганц төсөлтэй бол зөвхөн төсөлгүй хуучин лидэд төсөл оноох сонголт гарна.
     const canEditProject = canWrite && (user?.role === 'admin' || user?.role === 'super_admin')
         && (projects.length > 1 || !lead?.project_id);
@@ -178,6 +179,10 @@ export function LeadPanel({
                     </div>
                     <Label>Эх үүсвэр</Label>
                     <div className="text-foreground">{sourceLabel(lead.source)}</div>
+                    {(categories.length > 0 || !!lead.category_id) && <>
+                        <Label>Ангилал</Label>
+                        <div><CategoryPicker value={lead.category_id ?? null} options={categories} size="md" disabled={!canWrite} onChange={(id) => patch({ category_id: id })} /></div>
+                    </>}
                     <Label>Сонирхол</Label>
                     <div>
                         {canWrite ? (

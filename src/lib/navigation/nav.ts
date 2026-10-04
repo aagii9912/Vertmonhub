@@ -36,6 +36,7 @@ import {
     Bot,
     HelpCircle,
     FileSpreadsheet,
+    Tags,
 } from 'lucide-react';
 
 type IconType = ComponentType<SVGAttributes<SVGSVGElement>>;
@@ -207,6 +208,7 @@ export const SECONDARY_ROUTES: SecondaryRoute[] = [
     { name: 'AI агентууд', href: '/dashboard/ai-assistant/agents', icon: Bot, module: 'ai-assistant', group: 'AI' },
     { name: 'AI тохиргоо', href: '/dashboard/ai-settings', icon: Settings, module: 'ai-settings', group: 'AI' },
 
+    { name: 'Лидийн ангилал', href: '/dashboard/settings#lead-categories', icon: Tags, module: 'settings', group: 'Систем', keywords: ['ангилал', 'category', 'лид', 'төрөл'] },
     { name: 'Тусламж', href: '/help', icon: HelpCircle, module: '', group: 'Систем' },
 ];
 
