@@ -101,7 +101,8 @@ export function WeeklyMarketingChannels({ from, to }: { from: string; to: string
 
     return (
         <div className="space-y-3">
-            <div className="grid gap-3 md:grid-cols-2">
+            {/* Урт файлын нэр (Meta-гийн экспорт ~120 тэмдэгт) картыг утсанд тэлэхгүй: grid-ийн хүүхэд min-w-0. */}
+            <div className="grid gap-3 md:grid-cols-2 [&>*]:min-w-0">
                 {CHANNEL_SOURCES.filter(source => query.data.latest[source]?.report).map(source => {
                     const match = query.data.latest[source];
                     const report = match.report!;
@@ -120,10 +121,10 @@ export function WeeklyMarketingChannels({ from, to }: { from: string; to: string
                     return (
                         <section key={source} className="break-inside-avoid rounded-2xl border border-border p-4" aria-label={CHANNEL_SOURCE_LABELS[source]}>
                             <header className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-                                <h3 className="flex flex-wrap items-baseline gap-2 text-sm font-medium">
+                                <h3 className="flex min-w-0 max-w-full flex-wrap items-baseline gap-2 text-sm font-medium">
                                     {CHANNEL_SOURCE_LABELS[source]}
-                                    <span className={cn('rounded-md px-1.5 py-0.5 text-[10.5px] font-normal', report.origin === 'api' ? 'bg-brand-soft text-brand-strong' : 'bg-surface-2 text-muted-foreground')}
-                                        title={report.origin === 'api' ? 'Meta Marketing API-аас автоматаар' : 'Экспорт файлаас'}>
+                                    <span className={cn('min-w-0 max-w-full truncate rounded-md px-1.5 py-0.5 text-[10.5px] font-normal', report.origin === 'api' ? 'bg-brand-soft text-brand-strong' : 'bg-surface-2 text-muted-foreground')}
+                                        title={report.origin === 'api' ? 'Meta Marketing API-аас автоматаар' : report.file_name ? `Экспорт файл: ${report.file_name}` : 'Экспорт файлаас'}>
                                         {report.origin === 'api' ? 'Meta API' : report.file_name || 'Файл'}
                                     </span>
                                 </h3>
@@ -154,7 +155,9 @@ export function WeeklyMarketingChannels({ from, to }: { from: string; to: string
                             {missedByHour.length > 0 && <p className="mt-3 border-t border-border pt-2 text-[11.5px] text-fg-2">
                                 Алдсан дуудлага их цаг: {missedByHour.map(row => `${row.label} (${row.values.missed})`).join(', ')}
                             </p>}
-                            {warnings.length > 0 && <p className="mt-2 text-[11px] text-status-pending">{warnings.length} анхааруулгатай импорт — импортын хуудсанд шалгана уу.</p>}
+                            {warnings.length > 0 && <p className="mt-2 text-[11px] text-status-pending" title={warnings.slice(0, 3).map(warning => warning.message).join('\n')}>
+                                {report.origin === 'api' ? `Meta API синкийн ${warnings.length} анхааруулга.` : `${warnings.length} анхааруулгатай импорт — импортын хуудсанд шалгана уу.`}
+                            </p>}
                         </section>
                     );
                 })}

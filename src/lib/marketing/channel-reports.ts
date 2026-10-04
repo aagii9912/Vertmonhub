@@ -139,6 +139,11 @@ export interface ChannelExistingReport {
  * (файлаар солихгүй), 'fuller' = хадгалсан файлын тайлан шинэ файлаас олон өдөр хамарсан.
  */
 export type ChannelSplitSkip = 'api' | 'fuller';
+/**
+ * Meta API-ийн долоо хоногийг файлаар солих арга (409, алгассан долоо хоног, импортын хуудас): эхлээд
+ * API-ийн тайланг устгана. Данс холбогдсон хэвээр бол синк сүүлийн 35 хоногийн долоо хоногийг дахин бичдэг.
+ */
+export const CHANNEL_API_WEEK_REPLACE_HINT = 'Файлаар солих бол «Хадгалсан тайлангууд» жагсаалтаас тэр долоо хоногийн Meta API тайланг эхлээд устгаад дахин хадгална уу. Meta данс холбогдсон хэвээр бол дараагийн Meta синк (сүүлийн 35 хоног) түүнийг дахин үүсгэж болно.';
 /** Хурлын долоо хоногоор хуваах үеийн нэг долоо хоног. */
 export interface ChannelSplitWeek {
     from: string;
@@ -1148,7 +1153,8 @@ function metaCampaignBreakdown(ctx: AggregateContext, used: ParsedRow[]): Breakd
 
 /**
  * Meta: үр дүнг төрлөөр нь — `results_<төрөл>`, кампанит ажлын зорилгоор хуваарилсан `spend_<төрөл>`,
- * `cost_per_result_<төрөл>`. Нийт `results`/`cost_per_result` зөвхөн нэг л төрөл байхад (хуучин түлхүүр).
+ * `cost_per_result_<төрөл>`. Нийт `results`/`cost_per_result` зөвхөн нэг л төрөл байхад (хуучин түлхүүр;
+ * reach-ийн 1000 хүнд ногдох өртгийг `cost_per_result`-д бичихгүй).
  * Хүрсэн хүн (reach)-ийг өдөр, кампаниар нэмэхгүй: файлын «нийт» мөр эсвэл ганц мөрөөс л.
  */
 function applyMetaResults(ctx: AggregateContext, used: ParsedRow[], totalValue: (key: string) => number | null, totals: ChannelTotals) {
@@ -1191,17 +1197,20 @@ function applyMetaResults(ctx: AggregateContext, used: ParsedRow[], totalValue: 
         if (cost !== null) totals[metaResultCostKey(type)] = cost;
     }
     // Файлд хүргэлттэй боловч энэ хугацаанд идэвхгүй төрөл = 0 (өртөггүй): долоо хоногийн тайлан
-    // «0 дуудлага» гэж харуулж, дараагийн долоо хоногийг 0-ээс харьцуулна. Хүрсэн хүний тоог (давхцдаг) бичихгүй.
+    // «0 дуудлага» гэж харуулж, дараагийн долоо хоногийг 0-ээс харьцуулна. Хүрсэн хүн (reach) ч 0 —
+    // хүргэлтгүй бол 0 хүн нь яг тоо (давхардал нэмэх зүйлгүй). Meta API-ийн тайлан ч ижил дүрэмтэй.
     for (const type of META_RESULT_TYPES) {
         if (present.includes(type) || !ctx.deliveredTypes?.has(type)) continue;
         if (hasSpend) totals[metaResultSpendKey(type)] = 0;
-        if (hasResults && !META_RESULT_DEFS[type].nonAdditive) totals[metaResultKey(type)] = 0;
+        if (hasResults) totals[metaResultKey(type)] = 0;
     }
     if (present.length === 1) {
         const [type] = present;
         const results = totals[metaResultKey(type)], cost = totals[metaResultCostKey(type)];
         if (typeof results === 'number') totals.results = results;
-        if (typeof cost === 'number') totals.cost_per_result = cost;
+        // Хуучин «Нэг үр дүнгийн өртөг» нь нэг үр дүнд (Meta API-тай адил); reach-ийн 1000 хүнд ногдох
+        // өртөг зөвхөн cost_per_result_reach-д.
+        if (typeof cost === 'number' && META_RESULT_DEFS[type].costScale === 1) totals.cost_per_result = cost;
     } else if (present.length > 1) {
         ctx.warn('mixed_results', `Results нь ${present.length} төрлийн үр дүнтэй (${present.map(type => META_RESULT_DEFS[type].label).join(', ')}) тул нэг тоонд нэмээгүй — төрөл бүрийг тусад нь, зардлыг кампанит ажлын зорилгоор хуваарилж харуулав.`, 'results', 'info');
     }
@@ -1322,7 +1331,8 @@ export function aggregateChannelReport(
         if (options.period && dataPeriod) {
             missingDays = daysBetween(options.period.from, options.period.to).filter(day => !read.days.has(day));
             const days = periodDays(options.period);
-            if (missingDays.length) ctx.warn('partial_coverage', `Тайлангийн ${days} өдрөөс ${days - missingDays.length}-д л өгөгдөл байна — өгөгдөлгүй: ${formatDayRanges(missingDays)}. Бүтэн долоо хоногтой шууд харьцуулахгүй.`);
+            // Мэдээлэл төдий: хамралтыг data_from/data_to-д хадгалж «6/7 өдөр» гэж харуулдаг, харьцуулалтыг ч хаадаг.
+            if (missingDays.length) ctx.warn('partial_coverage', `Тайлангийн ${days} өдрөөс ${days - missingDays.length}-д л өгөгдөл байна — өгөгдөлгүй: ${formatDayRanges(missingDays)}. Бүтэн долоо хоногтой шууд харьцуулахгүй.`, undefined, 'info');
         }
     }
 
@@ -1361,7 +1371,8 @@ export function aggregateByReviewWeeks(
 }
 
 /**
- * Хуваах үед долоо хоногийг анхдагчаар хадгалахгүй шалтгаан. Meta API-ийн тайланг файлаар солихгүй ('api').
+ * Хуваах үед долоо хоногийг анхдагчаар хадгалахгүй шалтгаан. Meta API-ийн тайланг (хамралт дутуу ч)
+ * файлаар солихгүй ('api') — солих бол эхлээд API-ийн тайланг устгана (`CHANNEL_API_WEEK_REPLACE_HINT`).
  * Хадгалсан файлын тайлангийн өдрүүдийг шинэ файл бүрэн хамраагүй бол ('fuller') хадгалсныг үлдээнэ —
  * жишээ нь «сүүлийн 30 хоног»-ийн экспорт долоо хоногийн дундаас эхэлдэг тул өмнө 7/7-оор хадгалсан
  * долоо хоногийг 2/7-оор дарахгүй. Хадгалсан тайлангийн хамралт тодорхойгүй (хуучин мөр) бол бүтэн долоо хоног.

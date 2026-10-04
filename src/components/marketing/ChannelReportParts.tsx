@@ -1,7 +1,7 @@
 'use client';
 
 import {
-    channelMetric, channelMetrics, formatChannelValue, isMetaResultMetric, peakMissedHours, periodDays,
+    CHANNEL_API_WEEK_REPLACE_HINT, channelMetric, channelMetrics, formatChannelValue, isMetaResultMetric, peakMissedHours, periodDays,
     type BreakdownRow, type ChannelSource, type ChannelSplitWeek, type ChannelTotals, type ChannelWarning, type MetricDelta,
 } from '@/lib/marketing/channel-reports';
 import {
@@ -168,7 +168,7 @@ function SavedWeekState({ week, chosen }: { week: ChannelSplitWeek; chosen: bool
     const existing = week.existing;
     if (!existing) return <span className="text-muted-foreground">Шинэ</span>;
     const saved = existing.data_from && existing.data_to ? coverageText(week, { from: existing.data_from, to: existing.data_to }) : null;
-    if (existing.origin === 'api') return <Badge variant="danger">Meta API — солихгүй</Badge>;
+    if (existing.origin === 'api') return <Badge variant="danger" title={CHANNEL_API_WEEK_REPLACE_HINT}>Meta API — солихгүй</Badge>;
     if (existing.sameFile) return <Badge variant="neutral">Ижил файл</Badge>;
     if (week.skip === 'fuller' && !chosen) return <Badge variant="neutral" title="Хадгалсан тайлан энэ файлаас олон өдөр хамарсан тул анхдагчаар алгасна. Сонговол энэ файлаар солигдоно.">Хадгалсан нь илүү бүрэн{saved ? ` (${saved})` : ''}</Badge>;
     return <Badge variant="warning">Солигдоно{saved ? ` (${saved})` : ''}</Badge>;

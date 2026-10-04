@@ -11,7 +11,7 @@ import { Textarea } from '@/components/ui/Textarea';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { lastCompletedReviewRange, shiftReviewDate } from '@/lib/dashboard/weekly-review';
 import {
-    CHANNEL_SOURCES, CHANNEL_SOURCE_HELP, CHANNEL_SOURCE_LABELS, ChannelPeriodSchema, SHAPE_LABELS,
+    CHANNEL_API_WEEK_REPLACE_HINT, CHANNEL_SOURCES, CHANNEL_SOURCE_HELP, CHANNEL_SOURCE_LABELS, ChannelPeriodSchema, SHAPE_LABELS,
     type ChannelMapping, type ChannelPreviewResponse, type ChannelSource, type ChannelSplitSkip, type MappingOrigin,
 } from '@/lib/marketing/channel-reports';
 import { ChannelMappingTable } from './ChannelMappingTable';
@@ -112,6 +112,7 @@ export function ChannelReportImport({ shopId }: { shopId: string }) {
     // Хуваахгүй үед сонгосон хугацааны API-ийн тайланг дарахгүй; хуваах үед API-ийн долоо хоногийг сонгох боломжгүй.
     const apiLocked = !splitting && preview?.existing?.origin === 'api';
     const chosenCount = splitting ? preview!.split!.weeks.filter(week => chosen.has(week.from)).length : 0;
+    const apiWeeks = preview?.split?.weeks.filter(week => week.skip === 'api').length ?? 0;
     const blocked = !preview || stale || !!result?.errors.length || !preview.storageReady || !!busy || apiLocked || (splitting && !chosenCount);
     const currency = typeof result?.totals.currency === 'string' ? result.totals.currency : null;
 
@@ -176,11 +177,12 @@ export function ChannelReportImport({ shopId }: { shopId: string }) {
                     <ChannelSplitWeeks weeks={preview.split.weeks} currency={currency} showCalls={typeof preview.split.result.totals[metaResultKey('calls')] === 'number'}
                         selected={chosen} onToggle={toggleWeek} disabled={!!busy} />
                     <p className="text-xs text-muted-foreground">{chosenCount}/{preview.split.weeks.length} долоо хоногийг хадгална. Meta API-аас татсан долоо хоногийг файлаар солихгүй; өмнө нь илүү олон өдрөөр хадгалсан долоо хоногийг анхдагчаар алгасна (сонговол энэ файлаар солигдоно).</p>
+                    {apiWeeks > 0 && <p className="text-xs text-status-pending">Meta API-ийн {apiWeeks} долоо хоног: {CHANNEL_API_WEEK_REPLACE_HINT}</p>}
                     {!chosenCount && <p className="text-xs text-status-pending">Хадгалах долоо хоногоо сонгоно уу.</p>}
                 </>}
             </div>}
             {!splitting && preview.existing && (preview.existing.origin === 'api'
-                ? <Alert variant="danger">Энэ хугацааны {CHANNEL_SOURCE_LABELS[source]} тайланг Meta API-аас автоматаар татсан тул файлаар дарж бичихгүй. Өөр хугацаа сонгоно уу.</Alert>
+                ? <Alert variant="danger">Энэ хугацааны {CHANNEL_SOURCE_LABELS[source]} тайланг Meta API-аас автоматаар татсан тул файлаар дарж бичихгүй. {CHANNEL_API_WEEK_REPLACE_HINT} Эсвэл өөр хугацаа сонгоно уу.</Alert>
                 : <Alert variant="info">Энэ хугацааны {CHANNEL_SOURCE_LABELS[source]} тайлан ({preview.existing.file_name || 'файл'}) хадгалагдсан байна. {preview.existing.sameFile ? 'Яг энэ файлаар хадгалсан тул дахин хадгалахад дүн өөрчлөгдөхгүй.' : 'Хадгалбал шинэ файлаар солигдоно.'}</Alert>)}
             {!splitting && preview.duplicate && <Alert variant="warning">Яг энэ файлыг {preview.duplicate.period_from} – {preview.duplicate.period_to} хугацааны {CHANNEL_SOURCE_LABELS[preview.duplicate.source]} тайланд хадгалсан байна. {preview.duplicate.source === source ? 'Өөр долоо хоногийн файл мөн эсэхийг шалгана уу.' : 'Эх үүсвэрээ шалгана уу.'}</Alert>}
             {!splitting && detected && (detected.from !== period.from || detected.to !== period.to) && <Alert variant={outside ? 'warning' : 'info'}>

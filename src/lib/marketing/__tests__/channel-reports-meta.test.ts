@@ -99,7 +99,9 @@ describe('Meta Ads Manager daily campaign export', () => {
             ['A', '2026-09-24', '2026-09-24', 800, 'reach', 800, 1],
             ['Results from 1 campaign', '2026-09-23', '2026-09-24', 1200, 'reach', 1200, 2]);
         const result = aggregateChannelReport(rows, suggestMapping(header, 'meta_ads'), 'meta_ads');
-        expect(result.totals).toMatchObject({ reach: 1200, results_reach: 1200, spend_reach: 2, cost_per_result_reach: 1.67, results: 1200, cost_per_result: 1.67 });
+        expect(result.totals).toMatchObject({ reach: 1200, results_reach: 1200, spend_reach: 2, cost_per_result_reach: 1.67, results: 1200 });
+        // Хуучин «нэг үр дүнгийн өртөг»-т 1000 хүнд ногдох өртгийг бичихгүй (Meta API-тай адил).
+        expect(result.totals.cost_per_result).toBeUndefined();
         const mixed = aggregateChannelReport([...rows.slice(0, 2), ...table(header, ['B', '2026-09-23', '2026-09-23', 3, 'actions:click_to_call_native_call_placed', 50, 6]), rows[2]], suggestMapping(header, 'meta_ads'), 'meta_ads');
         expect(mixed.totals.results_reach).toBeUndefined();
         expect(mixed.totals).toMatchObject({ results_calls: 3, cost_per_result_calls: 2 });
@@ -171,18 +173,22 @@ describe('meeting-week split', () => {
         expect(split.reduce((total, { result }) => total + (result.totals.spend as number), 0)).toBeCloseTo(183.9, 6);
         expect(split[2].result.breakdown.map(row => row.label)).toEqual(['Дуудлагын кампанит ажил', 'Постын урамшуулал', 'Давхар нэр']);
         for (const { result } of split) expect(result.warnings.map(w => w.code)).not.toContain('out_of_period');
-        expect(split[0].result.warnings.find(w => w.code === 'partial_coverage')?.message).toContain('7 өдрөөс 4-д л өгөгдөл байна — өгөгдөлгүй: 2026-09-09 – 2026-09-11');
+        // Хамралт data_from/data_to-д хадгалагдаж «4/7 өдөр» гэж харагдана — мэдээлэл төдий (хурлын тайланд анхааруулга болохгүй).
+        expect(split[0].result.warnings.find(w => w.code === 'partial_coverage')).toMatchObject({ level: 'info', message: expect.stringContaining('7 өдрөөс 4-д л өгөгдөл байна — өгөгдөлгүй: 2026-09-09 – 2026-09-11') });
         expect(split[1].result.warnings.map(w => w.code)).not.toContain('partial_coverage');
     });
 
     it('stores 0 for a result type of the file without delivery in that week, so the next week compares with 0', () => {
         const weeks = aggregateByReviewWeeks(file.rows, mapping, 'meta_ads', channelSplitWeeks(aggregateChannelReport(file.rows, mapping, 'meta_ads')), { firstLine: file.firstLine });
         const [first, second, third] = weeks.map(({ result }) => result.totals);
-        // ThruPlay зөвхөн 09-17, 09-18-нд: эхний долоо хоногт 0 (өртөггүй), хүрсэн хүний тоог (давхцдаг) 0 гэж бичихгүй.
+        // ThruPlay зөвхөн 09-17, 09-18-нд: эхний долоо хоногт 0 (өртөггүй).
         expect(first).toMatchObject({ results_thruplay: 0, spend_thruplay: 0, results_post_engagement: 0, spend_post_engagement: 0, results_post_interaction: 0, spend_post_interaction: 0 });
         expect(first.cost_per_result_thruplay).toBeUndefined();
-        expect(third).toMatchObject({ results_thruplay: 0, spend_reach: 0 });
-        expect(third.results_reach).toBeUndefined();
+        // Хүрсэн хүний кампанит ажил 3 дахь долоо хоногт хүргэлтгүй: 0 хүн нь яг тоо (давхардал нэмэх зүйлгүй), өртөггүй.
+        expect(third).toMatchObject({ results_thruplay: 0, spend_reach: 0, results_reach: 0 });
+        expect(third.cost_per_result_reach).toBeUndefined();
+        // Хүргэлттэй боловч олон мөртэй долоо хоногт хүрсэн хүнийг нэмэхгүй хэвээр.
+        expect(first.results_reach).toBeUndefined();
         // Хуучин нийт `results` нь хүргэлттэй төрөл нэг байхад л (энд 2 төрөл: дуудлага, хүрсэн хүн).
         expect(first.results).toBeUndefined();
         expect(compareWithPrevious(second, first, 'meta_ads').results_thruplay).toEqual({ current: 1200, previous: 0, delta: 1200, pct: null, comparable: true });

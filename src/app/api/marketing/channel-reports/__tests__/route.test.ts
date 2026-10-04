@@ -33,6 +33,7 @@ vi.mock('@/lib/supabase', () => ({
 }));
 
 import { DELETE, GET, POST } from '../route';
+import { CHANNEL_API_WEEK_REPLACE_HINT } from '@/lib/marketing/channel-reports';
 
 const SHOP = 'allowed-shop';
 const URL_BASE = 'http://localhost/api/marketing/channel-reports';
@@ -278,7 +279,10 @@ describe('POST save', () => {
         withExisting([savedRow('2026-09-23', '2026-09-29', 'api')]);
         const single = await POST(upload({ mode: 'save' }));
         expect(single.status).toBe(409);
-        expect((await single.json()).error).toMatch(/2026-09-23 – 2026-09-29 хугацааны Meta Ads Manager тайланг Meta API-аас автоматаар татсан/);
+        const refused = (await single.json()).error as string;
+        expect(refused).toMatch(/2026-09-23 – 2026-09-29 хугацааны Meta Ads Manager тайланг Meta API-аас автоматаар татсан/);
+        // Хамралт дутуу хуучирсан API долоо хоногийг ч солих арга: эхлээд устгана, синк дахин үүсгэж болно.
+        expect(refused).toContain(CHANNEL_API_WEEK_REPLACE_HINT);
         expect(writes()).toEqual([]);
         // Хуваахад API-ийн долоо хоногийг алгасаад бусдыг нь хадгална.
         const split = await POST(upload({ mode: 'save', split: '1' }, { contents: META_DAILY, name: 'daily.csv' }));
@@ -322,7 +326,9 @@ describe('POST save', () => {
         withExisting([savedRow('2026-09-09', '2026-09-15', 'api'), savedRow('2026-09-16', '2026-09-22', 'api'), savedRow('2026-09-23', '2026-09-29', 'file', ['2026-09-23', '2026-09-29'])]);
         const nothing = await POST(upload({ mode: 'save', split: '1' }, { contents: META_DAILY, name: 'daily.csv' }));
         expect(nothing.status).toBe(409);
-        expect((await nothing.json()).skipped.map((w: { reason: string }) => w.reason)).toEqual(['api', 'api', 'fuller']);
+        const body = await nothing.json();
+        expect(body.skipped.map((w: { reason: string }) => w.reason)).toEqual(['api', 'api', 'fuller']);
+        expect(body.error).toContain(`Meta API-ийн долоо хоног: ${CHANNEL_API_WEEK_REPLACE_HINT}`);
         expect(writes()).toEqual([]);
     });
 
@@ -434,5 +440,7 @@ describe('GET and DELETE', () => {
         const call = mocks.calls.at(-1)!;
         expect(call.table).toBe('marketing_channel_reports');
         expect(has(call, 'eq', 'id', id) && has(call, 'eq', 'shop_id', SHOP) && has(call, 'delete')).toBe(true);
+        // Эх сурвалжаар шүүхгүй: Meta API-ийн тайланг ч устгана (файлаар солих арга; trigger нь зөвхөн UPDATE-д).
+        expect(call.ops.some(([op, args]) => op === 'eq' && args[0] === 'origin')).toBe(false);
     });
 });
