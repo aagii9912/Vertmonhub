@@ -139,64 +139,6 @@ export const MergeCustomersSchema = z.object({
 });
 
 // ============================================
-// Finance / ERP Schemas
-// ============================================
-export const CreateFinanceTransactionSchema = z.object({
-    txn_date: z.string().optional().nullable(),
-    type: z.enum(['receipt', 'disbursement']),
-    amount: z.number().positive('Дүн 0-ээс их байх ёстой').max(1e15),
-    vat_amount: z.number().nonnegative().max(1e15).optional().nullable(),
-    method: z.enum(['cash', 'bank', 'barter', 'mortgage']).optional().nullable(),
-    account_id: z.string().uuid().optional().nullable(),
-    contract_id: z.string().uuid().optional().nullable(),
-    payment_schedule_id: z.string().uuid().optional().nullable(),
-    project_id: z.string().uuid().optional().nullable(),
-    note: z.string().max(2000).optional().nullable(),
-});
-
-// Procurement (AP)
-export const CreateVendorSchema = z.object({
-    name: z.string().min(1, 'Нэр шаардлагатай').max(255),
-    registration: z.string().max(50).optional().nullable(),
-    phone: z.string().max(50).optional().nullable(),
-    email: z.string().email('И-мэйл буруу').max(255).optional().nullable().or(z.literal('')),
-    bank_name: z.string().max(100).optional().nullable(),
-    account_number: z.string().max(50).optional().nullable(),
-    account_name: z.string().max(255).optional().nullable(),
-    note: z.string().max(2000).optional().nullable(),
-});
-
-export const CreateBillSchema = z.object({
-    vendor_id: z.string().uuid().optional().nullable(),
-    project_id: z.string().uuid().optional().nullable(),
-    bill_number: z.string().max(100).optional().nullable(),
-    bill_date: z.string().optional().nullable(),
-    due_date: z.string().optional().nullable(),
-    vat_amount: z.number().nonnegative().max(1e15).optional().nullable(),
-    note: z.string().max(2000).optional().nullable(),
-    lines: z.array(z.object({
-        description: z.string().max(500).optional().nullable(),
-        account_id: z.string().uuid().optional().nullable(),
-        amount: z.number().nonnegative().max(1e15),
-    })).min(1, 'Дор хаяж нэг мөр шаардлагатай').max(50),
-});
-
-export const PayBillSchema = z.object({
-    client_request_id: z.string().uuid('Хүсэлтийн UUID шаардлагатай'),
-    amount: z.number().positive('Дүн 0-ээс их байх ёстой').max(1e15),
-    method: z.enum(['cash', 'bank', 'barter', 'mortgage']).optional().nullable(),
-    paid_date: z.iso.date().optional().nullable(),
-}).strict();
-
-export const CreateBudgetLineSchema = z.object({
-    project_id: z.string().uuid('Төсөл сонгоно уу'),
-    account_id: z.string().uuid().optional().nullable(),
-    label: z.string().max(255).optional().nullable(),
-    planned_amount: z.number().nonnegative().max(1e15),
-    note: z.string().max(2000).optional().nullable(),
-});
-
-// ============================================
 // Shop Schemas
 // ============================================
 export const CreateShopSchema = z.object({

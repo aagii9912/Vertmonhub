@@ -51,8 +51,8 @@ describe('direct URL authorization', () => {
         expect(screen.queryByText('Protected content')).not.toBeInTheDocument();
         expect(state.unmounted).toHaveBeenCalledOnce();
     });
-    it('reports access does not grant finance reports', () => {
-        state.path = '/dashboard/finance/reports';
+    it('reports access does not grant the narrower ERP import route', () => {
+        state.path = '/dashboard/reports/erp';
         render(<AppShell><ProtectedPage /></AppShell>);
         expect(state.mounted).not.toHaveBeenCalled();
     });

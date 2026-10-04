@@ -78,8 +78,6 @@ import * as shop from '@/app/api/shop/route';
 import * as userShops from '@/app/api/user/shops/route';
 import * as disconnect from '@/app/api/shop/disconnect/route';
 import * as attachments from '@/app/api/dashboard/ai-attachments/route';
-import * as surveys from '@/app/api/surveys/route';
-import * as surveyDetail from '@/app/api/surveys/[id]/route';
 import * as channelContracts from '@/app/api/marketing/contracts/route';
 import * as conversations from '@/app/api/ai-assistant/conversations/route';
 import * as conversationDetail from '@/app/api/ai-assistant/conversations/[id]/route';
@@ -185,10 +183,6 @@ const moduleCases: [string, () => Promise<Response>][] = [
     ['shop creation alternative', () => userShops.POST(request('/api/user/shops', 'POST', {}))],
     ['social disconnect', () => disconnect.POST(request('/api/shop/disconnect', 'POST', { platform: 'facebook' }))],
     ['property attachments', () => attachments.GET(request('/api/dashboard/ai-attachments?entity_type=property&entity_id=fixture-id'))],
-    ['survey read', () => surveys.GET(request('/api/surveys'))],
-    ['survey create', () => surveys.POST(request('/api/surveys', 'POST', {}))],
-    ['survey summary', () => surveyDetail.GET(request('/api/surveys/fixture-id'), params)],
-    ['offline response', () => surveyDetail.POST(request('/api/surveys/fixture-id', 'POST', { answers: {}, source: 'offline' }), params)],
     ['marketing contract', () => channelContracts.POST(request('/api/marketing/contracts', 'POST', {}))],
     ['conversation list', () => conversations.GET(request('/api/ai-assistant/conversations?shopId=fixture-shop'))],
     ['conversation create', () => conversations.POST(request('/api/ai-assistant/conversations', 'POST', {}))],
@@ -301,30 +295,5 @@ describe('allowed operations, field permissions and tenant boundaries', () => {
         expect((await conversationDetail.PATCH(request('/fixture', 'PATCH', { title: 'Fixture' }), params)).status).toBe(404);
         expect((await conversationDetail.DELETE(request('/fixture', 'DELETE'), params)).status).toBe(404);
         expect(state.mutations).toEqual([]);
-    });
-    it('public survey responses remain possible, but inactive surveys and foreign customer links are rejected', async () => {
-        state.signedIn = false;
-        state.rows.surveys = { is_active: true, shop_id: 'fixture-shop' };
-        const submit = (extra = {}) => surveyDetail.POST(request('/api/surveys/fixture-id', 'POST', { answers: { answer: 'Fixture' }, ...extra }), params);
-        expect((await submit()).status).toBe(201);
-        expect(state.writes).toContainEqual({ table: 'survey_responses', data: [expect.objectContaining({ shop_id: 'fixture-shop', source: 'online' })] });
-        state.mutations = [];
-        state.rows.customers = null;
-        expect((await submit({ customer_id: '00000000-0000-4000-8000-000000000002' })).status).toBe(401);
-        state.rows.surveys.is_active = false;
-        expect((await submit()).status).toBe(400);
-        expect(state.mutations).toEqual([]);
-    });
-    it('authorized staff survey responses still enforce survey and customer tenant scope', async () => {
-        asRole('marketing');
-        state.definition.role_permissions = [{ module: 'surveys' }];
-        state.rows.surveys = { is_active: true, shop_id: 'other-shop' };
-        const submit = (extra = {}) => surveyDetail.POST(request('/api/surveys/fixture-id', 'POST', { answers: {}, source: 'offline', ...extra }), params);
-        expect((await submit()).status).toBe(403);
-        state.rows.surveys.shop_id = 'fixture-shop';
-        state.rows.customers = null;
-        expect((await submit({ customer_id: '00000000-0000-4000-8000-000000000002' })).status).toBe(404);
-        expect(state.mutations).toEqual([]);
-        expect((await submit()).status).toBe(201);
     });
 });

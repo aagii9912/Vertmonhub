@@ -5,9 +5,8 @@ import {
     Headphones, AlertTriangle, CheckCircle2,
     DollarSign, Star, Loader2, Plus,
     Phone, User, FileText, MessageSquare, Wrench, ArrowRight,
-    ThumbsUp, Wallet, Lightbulb, X,
+    ThumbsUp, Lightbulb, X,
 } from 'lucide-react';
-import Link from 'next/link';
 import { toast } from 'sonner';
 import { formatTimeAgo } from '@/lib/utils/date';
 import { PageHeader } from '@/components/dashboard/PageHeader';
@@ -214,18 +213,6 @@ export default function CustomerServicePage() {
                     </Button>
                 }
             />
-
-            {/* Санхүүгийн үзүүлэлт (гэрээ, цуглуулалт, хоцрогдол) Санхүү/ERP хэсэгт байрлана */}
-            <div className="mb-6">
-                <Link
-                    href="/dashboard/finance"
-                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm text-muted-foreground transition-colors hover:border-border-strong hover:text-foreground"
-                >
-                    <Wallet className="w-4 h-4 text-brand" />
-                    Санхүүгийн үзүүлэлт (гэрээ, цуглуулалт, хоцрогдол)
-                    <span className="font-medium text-brand">Санхүү хэсэгт →</span>
-                </Link>
-            </div>
 
             {/* KPI Cards: Санал гомдол & Сэтгэл ханамж */}
             <StatBar columns={4}>

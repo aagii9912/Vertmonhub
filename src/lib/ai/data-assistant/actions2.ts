@@ -1,7 +1,7 @@
 /**
- * AI tool — wave 2–4: менежерийн тайлан, харилцагч, маркетинг, санхүү/худалдан авалт.
+ * AI tool — wave 2–4: менежерийн тайлан, харилцагч, маркетинг.
  * Бүгд service давхаргаар (lib/services/*, lib/reports, lib/dashboard/kpi-report-build).
- * Модулийн эрх (finance/procurement/reports/marketing-roi) executeDataTool дээр шалгагдана.
+ * Модулийн эрх (reports/customers/inbox/marketing-roi) executeDataTool дээр шалгагдана.
  */
 
 import { supabaseAdmin as adminClient } from '@/lib/supabase';
@@ -12,12 +12,8 @@ import { formatKpiReportText } from '@/lib/dashboard/kpi-report';
 import { getManagerPerformance } from '@/lib/reports/manager-performance';
 import { addCustomerTag, removeCustomerTag, replyToCustomer, mergeCustomers } from '@/lib/services/CustomerOps';
 import { logMarketingSpend, upsertMarketingBudget, addMarketIndicator, listMarketingSpend, isMissingMarketingTable, MARKETING_MIGRATION_HINT } from '@/lib/services/MarketingOps';
-import { listTransactions, financeSummary, addTransaction, listBills, payBill, type TxnMethod } from '@/lib/services/FinanceOps';
 import { SPEND_CHANNELS } from '@/lib/marketing/budget';
 import type { AssistantPerms } from './index';
-import { randomUUID } from 'node:crypto';
-import { ubDateStr } from '@/lib/utils/date';
-import { PayBillSchema } from '@/lib/validations/schemas';
 
 type Args = Record<string, any>;
 const db = () => adminClient();
@@ -145,61 +141,4 @@ export async function addIndicator(shopId: string, args: Args) {
     const { data, error } = await addMarketIndicator(db(), shopId, { category: args.category, name, value, note: args.note, sourceUrl: args.source_url, recordedAt: args.recorded_at });
     if (error) return { error: isMissingMarketingTable(error) ? MARKETING_MIGRATION_HINT : error.message };
     return { success: true, message: `Зах зээлийн үзүүлэлт «${name}: ${value}» бүртгэлээ.`, indicatorId: data.id };
-}
-
-/* ---------------- Санхүү / худалдан авалт ---------------- */
-
-const METHODS: TxnMethod[] = ['cash', 'bank', 'barter', 'mortgage'];
-const methodOf = (v: unknown): TxnMethod | null => (METHODS.includes(v as TxnMethod) ? (v as TxnMethod) : null);
-
-export async function financeSummaryTool(shopId: string) {
-    return financeSummary(db(), shopId);
-}
-
-export async function listTransactionsTool(shopId: string, args: Args) {
-    const { data, error } = await listTransactions(db(), shopId, { type: args.type, limit: args.limit, from: args.from, to: args.to });
-    if (error) return { error: error.message };
-    const rows = data || [];
-    return { count: rows.length, receipts: rows.filter((t) => t.type === 'receipt').reduce((s, t) => s + Number(t.amount), 0), disbursements: rows.filter((t) => t.type === 'disbursement').reduce((s, t) => s + Number(t.amount), 0), transactions: rows };
-}
-
-export async function addTransactionTool(shopId: string, args: Args, confirm: boolean) {
-    const type: 'receipt' | 'disbursement' = args.type === 'disbursement' ? 'disbursement' : 'receipt';
-    const amount = Number(args.amount);
-    if (!Number.isFinite(amount) || amount <= 0) return { error: 'amount 0-ээс их байх ёстой' };
-    const payload = { type, amount, txn_date: args.txn_date || null, method: methodOf(args.method), note: args.note || null, contract_id: args.contract_id || null, project_id: args.project_id || null };
-    if (!confirm) return confirmNeeded('add_finance_transaction', payload, type === 'receipt' ? 'Кассын орлого бүртгэх' : 'Кассын зарлага бүртгэх', { Төрөл: type === 'receipt' ? 'Орлого' : 'Зарлага', Дүн: money(amount), Огноо: payload.txn_date || 'өнөөдөр', Хэлбэр: payload.method || '-', Тэмдэглэл: payload.note || '-' });
-    const r = await addTransaction(db(), shopId, payload);
-    if ('error' in r) return { error: r.error };
-    return { success: true, message: `${type === 'receipt' ? 'Орлого' : 'Зарлага'} ${money(amount)} кассад бүртгэгдлээ.`, transactionId: r.transaction.id };
-}
-
-export async function listBillsTool(shopId: string, args: Args) {
-    const { data, error } = await listBills(db(), shopId, args.status, args.limit || 30);
-    if (error) return { error: error.message };
-    const rows = (data || []).map((b: any) => ({ id: b.id, bill_number: b.bill_number, vendor: b.vendors?.name || null, project: b.projects?.name || null, bill_date: b.bill_date, due_date: b.due_date, total_amount: b.total_amount, paid_amount: b.paid_amount, status: b.status }));
-    return { count: rows.length, outstanding: rows.reduce((s, b) => s + Math.max(0, Number(b.total_amount) - Number(b.paid_amount || 0)), 0), bills: rows };
-}
-
-export async function payBillTool(shopId: string, args: Args, confirm: boolean) {
-    let q = db().from('vendor_bills').select('id, bill_number, total_amount, paid_amount, status, vendors(name)').eq('shop_id', shopId);
-    if (args.bill_id) q = q.eq('id', args.bill_id);
-    else if (args.bill_number) q = q.ilike('bill_number', `%${args.bill_number}%`);
-    else return { error: 'bill_id эсвэл bill_number шаардлагатай' };
-    const { data, error } = await q.limit(2);
-    if (error) return { error: 'Нэхэмжлэхийн мэдээлэл татаж чадсангүй' };
-    if (data && data.length > 1) return { error: 'Ижил дугаартай хэд хэдэн нэхэмжлэх байна. Яг төлөх нэхэмжлэхийн bill_id-г сонгоно уу.', bills: data };
-    const bill: any = data?.[0];
-    if (!bill) return { error: 'Нэхэмжлэх олдсонгүй' };
-    const remaining = Number(bill.total_amount) - Number(bill.paid_amount || 0);
-    const amount = args.amount != null ? Number(args.amount) : remaining;
-    if (!Number.isFinite(amount) || amount <= 0) return { error: 'amount 0-ээс их байх ёстой' };
-    const parsed = PayBillSchema.safeParse({ client_request_id: args.client_request_id ?? (confirm ? undefined : randomUUID()), amount, method: methodOf(args.method), paid_date: args.paid_date ?? ubDateStr() });
-    if (!parsed.success) return { error: 'Төлбөрийн дүн, огноо эсвэл хүсэлтийн UUID буруу байна. Төлөлтийг шинээр бэлтгэнэ үү.' };
-    const payload = { bill_id: bill.id, ...parsed.data };
-    const vendorName = Array.isArray(bill.vendors) ? bill.vendors[0]?.name : bill.vendors?.name;
-    if (!confirm) return confirmNeeded('pay_vendor_bill', payload, `Нэхэмжлэх төлөх: ${bill.bill_number || vendorName || ''}`, { Нийлүүлэгч: vendorName || '-', Нэхэмжлэх: bill.bill_number || '-', Нийт: money(Number(bill.total_amount)), Үлдэгдэл: money(remaining), Төлөх: money(amount), Хэлбэр: payload.method || '-' });
-    const r = await payBill(db(), shopId, bill.id, parsed.data);
-    if ('error' in r) return { error: r.error };
-    return { success: true, message: `Нэхэмжлэх ${bill.bill_number || ''} ${money(amount)} төлөгдлөө (${r.bill.status === 'paid' ? 'бүрэн төлөгдсөн' : 'хэсэгчлэн'}).`, billId: bill.id };
 }

@@ -16,7 +16,7 @@ describe('nav v2 — бүтэц', () => {
         expect(getRouteModule('/dashboard/marketing-roi')).toBe('marketing-roi');
         expect(getRouteModule('/dashboard/competitor-research')).toBe('marketing-roi');
         expect(getRouteModule('/dashboard/properties/fixture-id')).toBe('properties');
-        expect(getRouteModule('/dashboard/finance/reports')).toBe('finance');
+        expect(getRouteModule('/dashboard/customer-service')).toBe('customer-service');
         expect(getRouteModule('/dashboard/tasks')).toBe('dashboard');
         expect(getRouteModule('/dashboard/weekly')).toBe('dashboard');
         expect(getRouteModule('/dashboard/leadsX')).toBeUndefined();
@@ -37,12 +37,12 @@ describe('nav v2 — бүтэц', () => {
         expect(MOBILE_TABS.map((i) => i.href)).toEqual(['/dashboard', '/dashboard/leads', '/dashboard/weekly']);
     });
 
-    it('санхүү / ERP цэсэнд БАЙХГҮЙ, харин хоёрдогч замд байна', () => {
-        const primaryHrefs = PRIMARY_NAV.map((i) => i.href);
-        expect(primaryHrefs).not.toContain('/dashboard/finance');
-        expect(primaryHrefs).not.toContain('/dashboard/procurement');
-        expect(SECONDARY_ROUTES.some((r) => r.href === '/dashboard/finance')).toBe(true);
-        expect(SECONDARY_ROUTES.some((r) => r.href === '/dashboard/procurement')).toBe(true);
+    it('устгасан санхүү/худалдан авалт/судалгааны зам цэс, ⌘K-д байхгүй', () => {
+        const hrefs = [...PRIMARY_NAV, ...BOTTOM_NAV, ...SECONDARY_ROUTES].map((i) => i.href);
+        for (const removed of ['/dashboard/finance', '/dashboard/procurement', '/dashboard/surveys']) {
+            expect(hrefs.some((h) => h === removed || h.startsWith(removed + '/'))).toBe(false);
+        }
+        expect(SECONDARY_ROUTES.some((r) => r.href === '/dashboard/reports/erp')).toBe(true);
     });
 
     it('href бүр давтагдахгүй', () => {
@@ -107,8 +107,8 @@ describe('findNavItem / getBreadcrumb / getNavTitle', () => {
     });
 
     it('хоёрдогч зам (цэсэнд байхгүй) ч гарчигтай', () => {
-        expect(getNavTitle('/dashboard/finance')).toBe('Санхүү');
-        expect(getBreadcrumb('/dashboard/finance/projects')[0].name).toBe('Санхүүгийн төслүүд');
+        expect(getNavTitle('/dashboard/customer-service')).toBe('Санал гомдол');
+        expect(getBreadcrumb('/dashboard/competitor-research')[0].name).toBe('Өрсөлдөгчийн судалгаа');
     });
 
     it('тодорхойгүй зам → Vertmon Hub', () => {

@@ -24,9 +24,6 @@ import {
     Settings,
     ListChecks,
     GitBranch,
-    Wallet,
-    ShoppingCart,
-    LayoutGrid,
     ClipboardList,
     Search,
     Headphones,
@@ -193,12 +190,7 @@ export const SECONDARY_ROUTES: SecondaryRoute[] = [
     { name: 'Санал гомдол', href: '/dashboard/customer-service', icon: Headphones, module: 'customer-service', group: 'Ажил' },
 
     { name: 'ERP импорт', href: '/dashboard/reports/erp', icon: ClipboardList, module: 'erp-imports', group: 'Санхүү', keywords: ['erp', 'импорт', 'snapshot', 'excel', 'csv', 'мягмар', 'өөрчлөлт'] },
-    { name: 'Санхүү', href: '/dashboard/finance', icon: Wallet, module: 'finance', group: 'Санхүү', keywords: ['erp', 'мөнгө'] },
-    { name: 'Санхүүгийн төслүүд', href: '/dashboard/finance/projects', icon: LayoutGrid, module: 'finance', group: 'Санхүү' },
-    { name: 'Санхүүгийн тайлан', href: '/dashboard/finance/reports', icon: BarChart3, module: 'finance', group: 'Санхүү' },
-    { name: 'Худалдан авалт', href: '/dashboard/procurement', icon: ShoppingCart, module: 'procurement', group: 'Санхүү' },
 
-    { name: 'Судалгаа', href: '/dashboard/surveys', icon: ClipboardList, module: 'surveys', group: 'Судалгаа' },
     { name: 'Өрсөлдөгчийн судалгаа', href: '/dashboard/competitor-research', icon: Search, module: 'marketing-roi', group: 'Судалгаа' },
 
     { name: 'Сурталчилгаа', href: '/marketing/ads', icon: Target, module: 'marketing-roi', group: 'Маркетинг' },
@@ -275,7 +267,7 @@ export function getBreadcrumb(pathname: string): Crumb[] {
     const item = findNavItem(pathname);
     if (!item) {
         // Хоёрдогч замуудаас хамгийн урт (тодорхой) таарсныг авна:
-        // /dashboard/finance/projects → «Санхүүгийн төслүүд», «Санхүү» биш.
+        // Хоёрдогч замын нарийн (урт) href нь ерөнхийгөөсөө түрүүлнэ.
         const secondary = SECONDARY_ROUTES
             .filter((r) => pathname === r.href || pathname.startsWith(r.href + '/'))
             .reduce<SecondaryRoute | undefined>((a, b) => (!a || b.href.length > a.href.length ? b : a), undefined);

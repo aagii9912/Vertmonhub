@@ -24,7 +24,6 @@ const PUBLIC_ROUTES: Record<string, string> = {
     'leads': 'гадаад landing page-ийн лид intake (Turnstile + origin + rate limit)',
     'integrations/elysium/leads': 'сервер хоорондын intake: ELYSIUM_LEAD_SYNC_SECRET Bearer token (safeEqual)',
     'feedback': 'нийтийн feedback widget',
-    'surveys/[id]': 'active survey online responses are public; staff/offline/summary paths have explicit RBAC tests',
 };
 
 const GATE = /\b(requireModule|requireAnyModule|requireModuleWrite|requireModuleDelete|requireWrite|requireDelete|resolvePermissions|getUserShop|getUserId|getAuthUser|resolveApiUser|prepareAssistantRequest|getAuthUserShop|getAdminUser|requireAdmin|isAuthorizedCron|verifyWebhookSignature|assertShopAccess)\s*\(/;

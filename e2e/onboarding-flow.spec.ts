@@ -69,7 +69,6 @@ async function fixtures(page: Page, identity: Identity, state: State) {
         }
         if (path === '/api/dashboard/mode') return reply({ mode: 'personal', managerName: identity.full_name, isManager: true, canViewTeam: false });
         if (path === '/api/dashboard/nav-counts') return reply({ leads: state.lead ? 1 : 0, inbox: 0, meetings: state.viewings.length });
-        if (path === '/api/dashboard/projects') return reply({ projects: state.projects });
         if (path === '/api/dashboard/leads/projects') return reply({ projects: state.projects });
         if (path === '/api/dashboard/managers') return reply({ managers: managers.map(manager => ({ ...manager, name: manager.full_name, is_active: true, project_ids: [projectId], assignable: identity.role !== 'sales_manager' })), mineName: identity.full_name });
         if (path === '/api/dashboard/my-stats') return reply({ manager: { name: identity.full_name, isSelf: true, inRoster: true, hasAccount: true }, onboarding: false, period: 'today', missing: [],

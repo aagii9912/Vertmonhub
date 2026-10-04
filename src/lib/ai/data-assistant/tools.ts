@@ -262,24 +262,6 @@ export const readTools: any[] = [
         description: 'Маркетингийн гар бүртгэсэн зарцуулалтын жагсаалт (сувгаар нэгтгэлтэй) — жил/сараар.',
         parameters: { type: SchemaType.OBJECT, properties: { year: { type: SchemaType.NUMBER }, month: { type: SchemaType.NUMBER, description: '1–12 (заавал биш)' } } }
     },
-    {
-        name: 'get_finance_summary',
-        description: 'Санхүүгийн нэгтгэл: нийт орлого (гэрээ), цуглуулсан, авлага, НӨАТ, цуглуулалтын %, энэ сарын кассын орлого/зарлага/цэвэр мөнгөн урсгал.',
-        parameters: { type: SchemaType.OBJECT, properties: {} }
-    },
-    {
-        name: 'list_finance_transactions',
-        description: 'Кассын гүйлгээний жагсаалт (орлого/зарлага), огнооны хүрээгээр шүүж болно.',
-        parameters: { type: SchemaType.OBJECT, properties: {
-            type: { type: SchemaType.STRING, enum: ['receipt', 'disbursement'], description: 'receipt=орлого, disbursement=зарлага' },
-            from: { type: SchemaType.STRING, description: 'YYYY-MM-DD' }, to: { type: SchemaType.STRING, description: 'YYYY-MM-DD' },
-            limit: { type: SchemaType.NUMBER, description: 'default 50' } } }
-    },
-    {
-        name: 'list_vendor_bills',
-        description: 'Нийлүүлэгчийн нэхэмжлэхүүд (худалдан авалт): статус, дүн, төлсөн, үлдэгдэл.',
-        parameters: { type: SchemaType.OBJECT, properties: { status: { type: SchemaType.STRING, enum: ['pending', 'partial', 'paid', 'overdue'] }, limit: { type: SchemaType.NUMBER } } }
-    }
 ];
 
 
@@ -729,23 +711,6 @@ export const writeTools: any[] = [
             value: { type: SchemaType.STRING, description: 'Утга (жишээ: 8%, 30 жил)' },
             note: { type: SchemaType.STRING }, source_url: { type: SchemaType.STRING }, recorded_at: { type: SchemaType.STRING, description: 'YYYY-MM-DD' } }, required: ['name', 'value'] }
     },
-    {
-        name: 'add_finance_transaction',
-        description: 'Кассын гар бичилт: орлого (receipt) эсвэл зарлага (disbursement). Баталгаажуулалт авна.',
-        parameters: { type: SchemaType.OBJECT, properties: {
-            type: { type: SchemaType.STRING, enum: ['receipt', 'disbursement'] }, amount: { type: SchemaType.NUMBER, description: '₮' },
-            txn_date: { type: SchemaType.STRING, description: 'YYYY-MM-DD' }, method: { type: SchemaType.STRING, enum: ['cash', 'bank', 'barter', 'mortgage'] },
-            note: { type: SchemaType.STRING }, contract_id: { type: SchemaType.STRING }, project_id: { type: SchemaType.STRING } }, required: ['type', 'amount'] }
-    },
-    {
-        name: 'pay_vendor_bill',
-        description: 'Нийлүүлэгчийн нэхэмжлэх төлөх (үлдэгдэл эсвэл хэсэгчлэн) — кассад зарлага бичигдэнэ. Баталгаажуулалт авна.',
-        parameters: { type: SchemaType.OBJECT, properties: {
-            bill_id: { type: SchemaType.STRING }, bill_number: { type: SchemaType.STRING },
-            amount: { type: SchemaType.NUMBER, description: 'Төлөх дүн (default: үлдэгдэл)' }, method: { type: SchemaType.STRING, enum: ['cash', 'bank', 'barter', 'mortgage'] },
-            paid_date: { type: SchemaType.STRING, description: 'YYYY-MM-DD' },
-            client_request_id: { type: SchemaType.STRING, description: 'Баталгаажуулалтын preview-ээс ирсэн UUID; давтан төлөлтөөс хамгаална. Шинээр зохиохгүй.' } } }
-    }
 ];
 
 
@@ -857,7 +822,7 @@ export const adminTools: any[] = [
                 can_write: { type: SchemaType.BOOLEAN, description: 'Бичих эрх' },
                 can_delete: { type: SchemaType.BOOLEAN, description: 'Устгах эрх' },
                 can_access_admin: { type: SchemaType.BOOLEAN, description: 'Админ хандах эрх' },
-                modules: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: 'Эрх олгох модулиуд: dashboard, properties, leads, viewings, contracts, customers, inbox, reports, marketing-roi, surveys, ai-assistant, ai-settings, settings' }
+                modules: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: 'Эрх олгох модулиуд: dashboard, properties, leads, viewings, contracts, customers, customer-service, inbox, reports, reports-leads, erp-imports, finance (тайлангийн мөнгөн урсгал), marketing-roi, ai-assistant, ai-settings, settings' }
             },
             required: ['name', 'display_name_mn']
         }
@@ -866,7 +831,7 @@ export const adminTools: any[] = [
 
 export const WRITE_TOOL_NAMES = ['update_property_status', 'update_unit_status', 'update_property_price', 'update_lead_status', 'add_lead_note', 'process_contract_action', 'create_property', 'create_lead', 'create_customer', 'schedule_viewing', 'create_contract', 'attach_file', 'bulk_update_leads', 'create_social_post', 'remember_fact',
     'log_call', 'set_followup', 'assign_lead_manager', 'record_viewing_outcome', 'reschedule_viewing', 'create_task', 'complete_task', 'add_contract_payment', 'mark_payment_paid',
-    'add_customer_tag', 'remove_customer_tag', 'reply_to_customer', 'merge_customers', 'log_marketing_spend', 'set_marketing_budget', 'add_market_indicator', 'add_finance_transaction', 'pay_vendor_bill'];
+    'add_customer_tag', 'remove_customer_tag', 'reply_to_customer', 'merge_customers', 'log_marketing_spend', 'set_marketing_budget', 'add_market_indicator'];
 
 /**
  * Буцаах боломжтой, эрсдэл багатай WRITE tool-ууд — баталгаажуулалтын картгүйгээр ШУУД
@@ -891,8 +856,6 @@ export const TOOL_MODULE: Record<string, string | string[]> = {
     get_operations_report: 'reports',
     get_kpi_report: 'reports', get_manager_performance: 'reports', get_export_link: 'reports', get_sales_summary: 'reports', get_sales_forecast: 'reports',
     get_marketing_performance: 'marketing-roi', list_marketing_spend: 'marketing-roi', log_marketing_spend: 'marketing-roi', set_marketing_budget: 'marketing-roi', add_market_indicator: 'marketing-roi', get_market_indicators: 'marketing-roi', get_marketing_summary: 'marketing-roi', get_marketing_budget_status: 'marketing-roi', create_social_post: 'marketing-roi',
-    get_finance_summary: 'finance', list_finance_transactions: 'finance', add_finance_transaction: 'finance',
-    list_vendor_bills: 'procurement', pay_vendor_bill: 'procurement',
     reply_to_customer: 'inbox',
     invite_user: 'settings', assign_role: 'settings', create_role: 'settings',
 };

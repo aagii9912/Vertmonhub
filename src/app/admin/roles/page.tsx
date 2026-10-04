@@ -84,7 +84,8 @@ export default function RolesPage() {
     async function toggleModule(roleId: string, module: string) {
         const role = roles.find(r => r.id === roleId);
         if (!role) return;
-        const currentModules = role.role_permissions.map(rp => rp.module);
+        const currentModules = role.role_permissions.map(rp => rp.module)
+            .filter(m => (ALL_MODULES as readonly string[]).includes(m));
         await updateRole(roleId, { modules: currentModules.includes(module)
             ? currentModules.filter(m => m !== module)
             : [...currentModules, module] });

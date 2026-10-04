@@ -110,26 +110,26 @@ describe('Wave 1 — өдөр тутмын tool-ууд', () => {
         const t = toClaudeTool(writeTools.find((x: { name: string }) => x.name === 'log_call'));
         expect(t.input_schema.required).toEqual(['summary']);
     });
-    it('wave 2–4: модулийн эрхгүй хэрэглэгч санхүү/тайлангийн tool-ыг харахгүй, super_admin бүгдийг', () => {
+    it('wave 2–4: модулийн эрхгүй хэрэглэгч тайлан/маркетингийн tool-ыг харахгүй, super_admin бүгдийг', () => {
         const base = { canWrite: true, canDelete: false, role: 'sales_manager' as const };
-        const noFinance = dataToolsForPerms({ ...base, modules: ['dashboard', 'leads', 'reports'] }).map((t) => t.name);
-        expect(noFinance).toContain('get_kpi_report');
-        expect(noFinance).not.toContain('get_finance_summary');
-        expect(noFinance).not.toContain('pay_vendor_bill');
-        const withFinance = dataToolsForPerms({ ...base, modules: ['dashboard', 'finance', 'procurement'] }).map((t) => t.name);
-        expect(withFinance).toContain('add_finance_transaction');
-        expect(withFinance).toContain('pay_vendor_bill');
-        expect(withFinance).not.toContain('get_kpi_report');
+        const reportsOnly = dataToolsForPerms({ ...base, modules: ['dashboard', 'leads', 'reports'] }).map((t) => t.name);
+        expect(reportsOnly).toContain('get_kpi_report');
+        expect(reportsOnly).not.toContain('log_marketing_spend');
+        const marketingOnly = dataToolsForPerms({ ...base, modules: ['dashboard', 'marketing-roi'] }).map((t) => t.name);
+        expect(marketingOnly).toContain('log_marketing_spend');
+        expect(marketingOnly).not.toContain('get_kpi_report');
         const sup = dataToolsForPerms({ canWrite: true, canDelete: true, role: 'super_admin', modules: [] }).map((t) => t.name);
-        expect(sup).toContain('get_finance_summary');
+        expect(sup).toContain('get_kpi_report');
+        for (const removed of ['get_finance_summary', 'list_finance_transactions', 'add_finance_transaction', 'list_vendor_bills', 'pay_vendor_bill']) expect(sup).not.toContain(removed);
         // Missing permissions cannot silently grant access to legacy callers.
         expect(dataToolsForPerms(base)).toEqual([]);
         const allNames = [...readTools, ...writeTools, ...deleteTools, ...adminTools].map((x: { name: string }) => x.name);
         expect(Object.keys(TOOL_MODULE).sort()).toEqual(allNames.sort());
     });
     it('executeDataTool модулийн эрхийг шалгана (DB-д хүрэхгүй)', async () => {
-        const r = await executeDataTool('get_finance_summary', {}, 'shop1', { canWrite: true, canDelete: false, role: 'admin', modules: ['dashboard'] }, 'u1', false, '');
-        expect(r.error).toMatch(/finance/);
+        const r = await executeDataTool('get_kpi_report', {}, 'shop1', { canWrite: true, canDelete: false, role: 'admin', modules: ['dashboard'] }, 'u1', false, '');
+        expect(r.error).toMatch(/reports/);
+        expect(await executeDataTool('pay_vendor_bill', {}, 'shop1', { canWrite: true, canDelete: false, role: 'super_admin', modules: [] }, 'u1', true, '')).toHaveProperty('error');
     });
     it('marketing cannot read or mutate contracts, properties or viewings through AI', async () => {
         const perms = { ...ROLE_PERMISSIONS.marketing, role: 'marketing' };

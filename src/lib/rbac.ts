@@ -42,12 +42,10 @@ export const ALL_MODULES = [
     'customer-service',
     'finance',
     'erp-imports',
-    'procurement',
     'inbox',
     'reports',
     'reports-leads',
     'marketing-roi',
-    'surveys',
     'ai-assistant',
     'ai-settings',
     'settings',
@@ -65,13 +63,11 @@ export const MODULE_LABELS: Record<string, { en: string; mn: string }> = {
     'customers': { en: 'Customers', mn: 'Харилцагч' },
     'customer-service': { en: 'Feedback & Complaints', mn: 'Санал гомдол' },
     'erp-imports': { en: 'ERP imports', mn: 'ERP импорт' },
-    'finance': { en: 'Finance / ERP', mn: 'Санхүү' },
-    'procurement': { en: 'Procurement', mn: 'Худалдан авалт' },
+    'finance': { en: 'Cash flow in reports', mn: 'Мөнгөн урсгал (тайлан)' },
     'inbox': { en: 'Inbox', mn: 'Мессэж' },
     'reports': { en: 'Reports', mn: 'Аналитик' },
     'reports-leads': { en: 'Leads Report', mn: 'Лийд тайлан' },
     'marketing-roi': { en: 'Marketing ROI', mn: 'Маркетинг ROI' },
-    'surveys': { en: 'Surveys', mn: 'Судалгаа' },
     'ai-assistant': { en: 'AI Orchestrator', mn: 'AI Orchestrator' },
     'ai-settings': { en: 'AI Settings', mn: 'AI Тохируулга' },
     'settings': { en: 'Settings', mn: 'Тохиргоо' },
@@ -112,7 +108,7 @@ export const ROLE_PERMISSIONS: Record<string, RolePermissions> = {
     marketing: {
         modules: [
             'dashboard', 'marketing-roi', 'reports', 'reports-leads',
-            'surveys', 'ai-assistant', 'ai-settings', 'leads', 'customers',
+            'ai-assistant', 'ai-settings', 'leads', 'customers',
         ],
         canWrite: true,
         canDelete: false,
@@ -122,7 +118,7 @@ export const ROLE_PERMISSIONS: Record<string, RolePermissions> = {
     },
     finance_manager: {
         modules: [
-            'dashboard', 'finance', 'erp-imports', 'procurement', 'contracts', 'reports',
+            'dashboard', 'finance', 'erp-imports', 'contracts', 'reports',
         ],
         canWrite: true,
         canDelete: true,
@@ -132,7 +128,7 @@ export const ROLE_PERMISSIONS: Record<string, RolePermissions> = {
     },
     accountant: {
         modules: [
-            'dashboard', 'finance', 'erp-imports', 'procurement', 'contracts', 'reports',
+            'dashboard', 'finance', 'erp-imports', 'contracts', 'reports',
         ],
         canWrite: true,
         canDelete: false,

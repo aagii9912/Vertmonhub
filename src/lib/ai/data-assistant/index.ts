@@ -37,7 +37,7 @@ import {
     generateChartConfig,
 } from './functions';
 import { inviteUser, assignRole, createRole } from './admin-functions';
-import { getKpiReport, getManagerPerformanceTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, logSpend, setBudget, listSpend, addIndicator, financeSummaryTool, listTransactionsTool, addTransactionTool, listBillsTool, payBillTool } from './actions2';
+import { getKpiReport, getManagerPerformanceTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
 import { logCall, setFollowup, assignLeadManager, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
 
 /** AI Assistant-ийн RBAC эрхүүд (route-аас тооцоолж дамжуулна). */
@@ -176,7 +176,7 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'complete_task': result = await completeTaskTool(shopId, args, userId); break; // confirm: AUTO хаалт дээр
         case 'add_contract_payment': result = await addContractPayment(shopId, args, confirm); break;
         case 'mark_payment_paid': result = await markPaymentPaid(shopId, args, confirm); break;
-        // Wave 2–4 — менежер / харилцагч / маркетинг / санхүү
+        // Wave 2–4 — менежер / харилцагч / маркетинг
         case 'get_kpi_report': result = await getKpiReport(shopId, args, userId, perms, scope); break;
         case 'get_manager_performance': result = await getManagerPerformanceTool(shopId); break;
         case 'get_export_link': result = await getExportLink(shopId, args); break;
@@ -188,11 +188,6 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'set_marketing_budget': result = await setBudget(shopId, args, confirm); break;
         case 'list_marketing_spend': result = await listSpend(shopId, args); break;
         case 'add_market_indicator': result = await addIndicator(shopId, args); break; // confirm: AUTO хаалт дээр
-        case 'get_finance_summary': result = await financeSummaryTool(shopId); break;
-        case 'list_finance_transactions': result = await listTransactionsTool(shopId, args); break;
-        case 'add_finance_transaction': result = await addTransactionTool(shopId, args, confirm); break;
-        case 'list_vendor_bills': result = await listBillsTool(shopId, args); break;
-        case 'pay_vendor_bill': result = await payBillTool(shopId, args, confirm); break;
         case 'invite_user': result = await inviteUser(shopId, args, confirm, userId); break;
         case 'assign_role': result = await assignRole(shopId, args, confirm, userId); break;
         case 'create_role': result = await createRole(shopId, args, confirm); break;

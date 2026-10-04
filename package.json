@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:workflow": "playwright test --project=workflow",
-    "test:payments": "node scripts/test-atomic-payments.mjs && node scripts/test-atomic-vendor-payments.mjs",
+    "test:payments": "node scripts/test-atomic-payments.mjs",
     "test:rbac": "node scripts/test-rbac.mjs",
     "typecheck": "tsc --noEmit",
     "test:e2e": "playwright test"
@@ -23,7 +23,6 @@
     "@anthropic-ai/sdk": "^0.125.0",
     "@dnd-kit/core": "^6.3.1",
     "@google/generative-ai": "^0.24.1",
-    "@hello-pangea/dnd": "^18.0.1",
     "@sentry/nextjs": "^10.34.0",
     "@supabase/ssr": "^0.8.0",
     "@supabase/supabase-js": "^2.89.0",
