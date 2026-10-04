@@ -11,7 +11,7 @@ import { canAccessModuleDynamic } from '@/lib/rbac';
 import { formatRelativeDays } from '@/lib/utils/date';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
 import { useLeadsList, useLeadSummary, useLeadProjects, useManagers, useUpdateLead, type LeadRow } from '@/hooks/useLeads';
-import { LEAD_VIEWS, LEAD_STATUSES, STATUS_META, SOURCES, SOURCE_LABEL, sourceLabel, interestLabel, type LeadView } from '@/lib/leads/labels';
+import { LEAD_VIEWS, LEAD_STATUSES, STATUS_META, SOURCES, SOURCE_LABEL, sourceLabel, interestLabel, isAnonymousLead, leadDisplayName, normalizeLeadName, type LeadView } from '@/lib/leads/labels';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/Sheet';
 import { Avatar, Pill, Skeleton } from '@/components/dashboard/v2/primitives';
 import { StatusPicker, ManagerPicker } from './pickers';
@@ -211,7 +211,7 @@ function LeadsWorkspace() {
                 </div>
             </div>
 
-            <FilterBar className="mb-0" search={{ value: qInput, onChange: setQInput, label: 'Лидийг нэр, утсаар хайх', placeholder: 'Нэр, утас, имэйлээр хайх…' }} showClear={filtered} onClear={resetFilters}>
+            <FilterBar className="mb-0" search={{ value: qInput, onChange: setQInput, label: 'Лидийг нэр, утсаар хайх', placeholder: 'Нэр, утас, имэйл эсвэл «нэргүй»…' }} showClear={filtered} onClear={resetFilters}>
                 {projects.length > 1 && <FilterChip value={project} onChange={(v) => { setProject(v); setManager('all'); setPage(1); setChecked(new Set()); select(null); }} label="Төсөл" options={projects.map((p) => [p.id, p.name])} />}
                 <FilterChip value={status} onChange={(v) => { setStatus(v); setPage(1); }} label="Статус" options={LEAD_STATUSES.map((s) => [s, STATUS_META[s].label])} />
                 <FilterChip value={source} onChange={(v) => { setSource(v); setPage(1); }} label="Эх үүсвэр" options={SOURCES.map((s) => [s, SOURCE_LABEL[s]])} />
@@ -284,7 +284,7 @@ function LeadsWorkspace() {
                                                 <td className="px-2" onClick={(e) => e.stopPropagation()}>
                                                     <CheckBox label="Сонгох" checked={checked.has(l.id)} onChange={(v) => setChecked((prev) => { const n = new Set(prev); if (v) n.add(l.id); else n.delete(l.id); return n; })} />
                                                 </td>
-                                                <td className="px-2"><span className={cn('block max-w-[220px] truncate font-medium', sel ? 'text-brand' : 'text-foreground')}>{l.customer_name || 'Нэргүй'}</span>{(projects.length > 1 || !l.project_id) && <span className="block max-w-[220px] truncate text-xs text-muted-foreground">{l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй'}</span>}</td>
+                                                <td className="px-2"><span className={cn('block max-w-[220px] truncate font-medium', sel ? 'text-brand' : isAnonymousLead(l) ? 'text-muted-foreground' : 'text-foreground')}>{leadDisplayName(l)}</span>{(projects.length > 1 || !l.project_id) && <span className="block max-w-[220px] truncate text-xs text-muted-foreground">{l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй'}</span>}</td>
                                                 <td className="mono-label px-2 text-fg-2">{l.customer_phone || '—'}</td>
                                                 <td className="px-2"><StatusPicker value={l.status} disabled={!canWrite} onChange={(s, reason) => patchLead(l.id, { status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} /></td>
                                                 {!showSplit && <td className="px-2 text-fg-2">{sourceLabel(l.source)}</td>}
@@ -381,9 +381,9 @@ function MobileList({ leads, projectNames, loading, onOpen }: { leads: LeadRow[]
                 return (
                     <div key={l.id} className="flex min-h-20 items-center gap-3 border-b border-border px-4 py-3 last:border-b-0 active:bg-surface-2">
                         <button type="button" onClick={() => onOpen(l.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-                            <Avatar name={l.customer_name} className="h-8 w-8 text-[11px]" />
+                            <Avatar name={normalizeLeadName(l.customer_name)} className="h-8 w-8 text-[11px]" />
                             <span className="min-w-0 flex-1">
-                                <span className="block truncate text-[14px] font-medium text-foreground">{l.customer_name || 'Нэргүй'}</span>
+                                <span className={cn('block truncate text-[14px] font-medium', isAnonymousLead(l) ? 'text-muted-foreground' : 'text-foreground')}>{leadDisplayName(l)}</span>
                                 {(Object.keys(projectNames).length > 1 || !l.project_id) && <span className="block truncate text-xs text-fg-2">{l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй'}</span>}
                                 <span className="block truncate text-[12px] text-muted-foreground">{[interestLabel(l) !== '—' ? interestLabel(l) : null, sourceLabel(l.source), l.last_contact_at ? `Холбогдсон: ${formatRelativeDays(l.last_contact_at)}` : 'Холбоо бүртгээгүй'].filter(Boolean).join(' · ')}</span>
                                 <span className="mt-1 block text-xs text-fg-2">{nextStep(l)}</span>

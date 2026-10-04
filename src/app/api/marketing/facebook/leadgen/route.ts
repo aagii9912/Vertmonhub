@@ -120,7 +120,8 @@ export async function POST(request: NextRequest) {
                     shop_id: shop.id,
                     project_id: projectId,
                     client_request_id: leadgenRequestId(String(leadgenId)),
-                    customer_name: name || 'Facebook lead',
+                    // Нэргүй бол null (нэргүй лид); insertLeadOnce нэрийг normalizeLeadName-ээр цэвэрлэнэ.
+                    customer_name: name || null,
                     customer_phone: phone,
                     customer_email: email,
                     source: 'facebook_ads',

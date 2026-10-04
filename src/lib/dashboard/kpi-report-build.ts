@@ -7,6 +7,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ManagerIdentity } from '@/lib/sales/manager-identity';
 import { applyLeadScope, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { getTeamTargets, getMonthlyActualsByManager } from '@/lib/sales/targets';
+import { isAnonymousLead } from '@/lib/leads/labels';
 import {
     monthRange, prevMonthOf, countBy, buildKpiSummary,
     type KpiLeadRow, type KpiViewingRow, type KpiContractRow, type KpiTaskRow,
@@ -178,6 +179,7 @@ export async function computeKpiReport(db: SupabaseClient, { shopId, shopName, i
             status: (row.status as string) || null,
             property_name: property?.name || null,
             customer_name: lead?.customer_name || null,
+            anonymous_lead: !!lead && isAnonymousLead(lead),
         };
     });
     const contracts = contractRows as unknown as KpiContractRow[];

@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ViewingsPage } from './ViewingsPage';
+import { ANONYMOUS_LEAD_LABEL, ANONYMOUS_MEETING_PHONE, LEAD_NAME_OR_ANONYMOUS } from '@/lib/leads/labels';
 
 const mocks = vi.hoisted(() => ({ create: vi.fn(), error: vi.fn() }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: vi.fn() }), useSearchParams: () => new URLSearchParams() }));
@@ -30,5 +31,26 @@ describe('viewing project selection', () => {
         fireEvent.change(dialog.getByRole('combobox', { name: 'Төсөл' }), { target: { value: 'mandala' } });
         fireEvent.click(dialog.getByRole('button', { name: 'Товлох' }));
         await waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ project_id: 'mandala', customer_name: 'Болд' })));
+    });
+
+    it('registers an anonymous walk-in only with a phone number', async () => {
+        render(<ViewingsPage />);
+        fireEvent.click(screen.getAllByRole('button', { name: 'Уулзалт товлох' })[0]);
+        const dialog = within(screen.getByRole('dialog'));
+        fireEvent.change(dialog.getByRole('combobox', { name: 'Төсөл' }), { target: { value: 'elysium' } });
+        fireEvent.click(dialog.getByRole('button', { name: 'Товлох' }));
+        expect(mocks.error).toHaveBeenCalledWith(LEAD_NAME_OR_ANONYMOUS);
+
+        fireEvent.click(dialog.getByRole('checkbox', { name: /Нэр тодорхойгүй/ }));
+        expect(dialog.getByPlaceholderText(ANONYMOUS_LEAD_LABEL)).toBeDisabled();
+        fireEvent.click(dialog.getByRole('button', { name: 'Товлох' }));
+        expect(mocks.error).toHaveBeenCalledWith(ANONYMOUS_MEETING_PHONE);
+        expect(mocks.create).not.toHaveBeenCalled();
+
+        fireEvent.change(dialog.getByPlaceholderText('9909 1122'), { target: { value: '9909 1122' } });
+        fireEvent.click(dialog.getByRole('button', { name: 'Товлох' }));
+        await waitFor(() => expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+            project_id: 'elysium', customer_name: null, customer_phone: '9909 1122', anonymous: true,
+        })));
     });
 });

@@ -73,6 +73,14 @@ describe('Facebook Lead Ads intake', () => {
         expect(state.inserts[0]).toMatchObject({ project_id: null, customer_name: 'Бат Дорж' });
     });
 
+    it('stores a lead without a name as anonymous instead of a placeholder', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+            campaign_id: 'cmp-1', field_data: [{ name: 'phone_number', values: ['99112233'] }],
+        }), { status: 200 })));
+        expect((await POST(webhook('9005'))).status).toBe(200);
+        expect(state.inserts[0]).toMatchObject({ customer_name: null, customer_phone: '99112233' });
+    });
+
     it('does not duplicate a lead when Meta delivers it again', async () => {
         await POST(webhook('9002'));
         const retry = await POST(webhook('9002'));

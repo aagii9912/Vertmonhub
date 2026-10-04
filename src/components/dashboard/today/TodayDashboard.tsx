@@ -10,7 +10,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatMNTShort } from '@/lib/utils/currency';
 import { formatTime, formatWorkdayDate, ubDateStr, ubParts } from '@/lib/utils/date';
-import { sourceLabel } from '@/lib/leads/labels';
+import { leadDisplayName, normalizeLeadName, sourceLabel } from '@/lib/leads/labels';
 import { dashboardMutate } from '@/lib/api/dashboardFetch';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
 import { useMyStats, type MyStatsTask, type MyStatsLead } from '@/hooks/useMyStats';
@@ -327,9 +327,9 @@ function LeadRow({ lead }: { lead: MyStatsLead }) {
     const phone = lead.customer_phone?.replace(/\D/g, '') || null;
     return (
         <div className="flex min-h-[48px] items-center gap-3 border-b border-border px-3.5 py-1.5 last:border-b-0">
-            <Avatar name={lead.customer_name} className="h-6 w-6 text-[10px]" />
+            <Avatar name={normalizeLeadName(lead.customer_name)} className="h-6 w-6 text-[10px]" />
             <Link href={`/dashboard/leads?lead=${lead.id}`} className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-medium text-foreground">{lead.customer_name || 'Нэргүй'}</div>
+                <div className="truncate text-[13px] font-medium text-foreground">{leadDisplayName(lead)}</div>
                 <div className="truncate text-[12px] text-muted-foreground">
                     {[lead.customer_phone, lead.source ? sourceLabel(lead.source) : null].filter(Boolean).join(' · ')}
                 </div>

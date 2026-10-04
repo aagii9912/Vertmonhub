@@ -49,6 +49,8 @@ export interface CreateViewingInput {
     project_id?: string | null;
     customer_name?: string | null;
     customer_phone?: string | null;
+    /** «Нэр тодорхойгүй» шинэ харилцагч — нэргүй лид (утас заавал). */
+    anonymous?: boolean;
     property_id?: string | null;
     scheduled_at?: string | null;
     meeting_type: MeetingType;

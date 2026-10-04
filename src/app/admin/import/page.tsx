@@ -96,7 +96,8 @@ const IMPORT_CATEGORIES: ImportCategory[] = [
         icon: Users,
         color: 'emerald',
         columns: [
-            { name: 'Нэр', required: true },
+            // Нэр хоосон бол нэргүй лид болно (8+ оронтой утас эсвэл и-мэйл шаардана); утас давхардлын түлхүүр тул заавал.
+            { name: 'Нэр' },
             { name: 'Утас', required: true },
             { name: 'Имэйл' },
             { name: 'Сонирхож буй' },

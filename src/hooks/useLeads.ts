@@ -167,6 +167,8 @@ export function useManagers(projectId?: string | null) {
 }
 
 export type LeadPatch = Partial<{
+    /** Нэр нэмэх/засах (хоосолж болохгүй). */
+    customer_name: string;
     project_id: string;
     status: string;
     lost_reason: string | null;

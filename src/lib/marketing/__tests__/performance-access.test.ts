@@ -8,9 +8,10 @@ vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: mocks.from }) }
 vi.mock('@/lib/marketing/performance-load', () => ({ loadMarketingPerformance: mocks.load }));
 vi.mock('@/lib/utils/logger', () => ({ logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } }));
 import { GET } from '@/app/api/marketing/performance/route';
-import { POST } from '@/app/api/marketing/performance/records/route';
+import { GET as RECORDS_GET, POST } from '@/app/api/marketing/performance/records/route';
 import { executeDataTool } from '@/lib/ai/data-assistant';
 import { buildMarketingPerformance } from '../performance';
+import { anonymousLeadOrFilter } from '@/lib/leads/labels';
 
 const id = '00000000-0000-4000-8000-000000000001';
 const unrestricted = { projectIds: null, managerName: null };
@@ -59,6 +60,29 @@ it('cannot use a project in another shop', async () => {
     expect((await POST(request({ kind: 'target', project_id: id, marketing_owner_name: 'Owner', month: '2026-08-01', lead_target: 1, deal_target: 1, budget: 1 }))).status).toBe(404);
     expect(project.eq).toHaveBeenCalledWith('shop_id', 'allowed');
     expect(project.eq).toHaveBeenCalledWith('id', id);
+});
+it('finds attribution leads by name, phone or the anonymous keyword', async () => {
+    const calls: unknown[][] = [];
+    const leadsQuery = () => {
+        const result = { data: [{ id, customer_name: null, customer_phone: '99112233' }], error: null };
+        const q: Record<string, unknown> = { then: (resolve: (value: typeof result) => unknown) => Promise.resolve(result).then(resolve) };
+        for (const method of ['select', 'eq', 'is', 'order', 'limit', 'ilike', 'or']) q[method] = (...args: unknown[]) => { calls.push([method, ...args]); return q; };
+        return q;
+    };
+    mocks.from.mockImplementation(table => table === 'leads' ? leadsQuery() : marketingActor(table));
+    const get = (q: string) => RECORDS_GET(new NextRequest(`http://localhost/api/marketing/performance/records?q=${encodeURIComponent(q)}`));
+
+    expect((await get('9911 2233')).status).toBe(200);
+    expect(calls).toContainEqual(['or', 'customer_name.ilike.%9911 2233%,customer_phone.ilike.%9911%2233%']);
+    expect(calls).toContainEqual(['select', expect.stringContaining('customer_phone')]);
+    calls.length = 0;
+    expect((await (await get('Нэргүй')).json()).leads).toEqual([{ id, customer_name: null, customer_phone: '99112233' }]);
+    // Нэмэлт: жинхэнэ нэр «Нэргүй» + нэргүй/хуучин орлуулагч нэртэй лидүүд.
+    expect(calls).toContainEqual(['or', `customer_name.ilike.%Нэргүй%,${anonymousLeadOrFilter()}`]);
+    expect(calls).not.toContainEqual(['is', 'customer_name', null]);
+    calls.length = 0;
+    await get('Бат');
+    expect(calls).toContainEqual(['ilike', 'customer_name', '%Бат%']);
 });
 it('AI uses module permission and server shop, ignoring client shop overrides', async () => {
     const permissions = { role: 'marketing', canWrite: false, canDelete: false, modules: [] as string[] };

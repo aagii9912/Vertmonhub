@@ -8,10 +8,14 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { dashboardFetch, dashboardMutate } from '@/lib/api/dashboardFetch';
 import { onQuickCreate, type QuickCreateKind } from '@/lib/navigation/commandPalette';
-import { INTEREST_CHIPS, SOURCES, SOURCE_LABEL } from '@/lib/leads/labels';
+import {
+    ANONYMOUS_LEAD_CONTACT, ANONYMOUS_LEAD_LABEL, INTEREST_CHIPS, LEAD_NAME_OR_ANONYMOUS, SOURCES, SOURCE_LABEL,
+    hasAnonymousLeadContact, leadDisplayName, normalizeLeadName,
+} from '@/lib/leads/labels';
 import { enqueue, isNetworkError } from '@/lib/offline/outbox';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLeadProjects } from '@/hooks/useLeads';
+import { Checkbox } from '@/components/ui/Checkbox';
 
 /**
  * Түргэн бүртгэл — «Шинэ» товч, N товчлуур, гар утасны «+» бүгд үүнийг нээнэ.
@@ -19,6 +23,8 @@ import { useLeadProjects } from '@/hooks/useLeads';
  * Гол зарчим: хуудас солихгүй. Төсөл, нэр, утас, сонирхлоо сонгоно,
  * бусад нь «Нэмэлт мэдээлэл» доор хумигдана. Утас давхцвал ХАДГАЛАХААС ӨМНӨ
  * анхааруулна — v1-д давхардсан лид чимээгүй үүсдэг байсан.
+ * Нэрээ хэлээгүй харилцагчийг «Нэр тодорхойгүй»-гээр нэргүй хадгална; тэр үед
+ * утас (эсвэл и-мэйл) заавал — сервер `resolveLeadIdentity` мөн адил шалгана.
  */
 
 interface DuplicateLead {
@@ -82,12 +88,14 @@ function LeadForm({ onClose }: { onClose: () => void }) {
     const router = useRouter();
     const qc = useQueryClient();
     const nameRef = useRef<HTMLInputElement>(null);
+    const phoneRef = useRef<HTMLInputElement>(null);
     const projectRef = useRef<HTMLSelectElement>(null);
     const { data: projects = [], isLoading: projectsLoading, error: projectsError, refetch: refetchProjects } = useLeadProjects();
     /** Давхар submit хамгаалалт (state биш ref — ⌘↵ хоёр дарахад closure хоцордог) */
     const submittingRef = useRef(false);
 
     const [name, setName] = useState('');
+    const [anonymous, setAnonymous] = useState(false);
     const [requestId] = useState(() => crypto.randomUUID());
     const [phone, setPhone] = useState('');
     const [chosenProjectId, setProjectId] = useState('');
@@ -107,6 +115,16 @@ function LeadForm({ onClose }: { onClose: () => void }) {
         nameRef.current?.focus();
     }, []);
 
+    // «Нэр тодорхойгүй»: нэрийг цэвэрлэж утас руу шилжинэ; буцаахад нэр рүү.
+    const toggleAnonymous = (on: boolean) => {
+        setAnonymous(on);
+        if (on) {
+            setName('');
+            phoneRef.current?.focus();
+        } else {
+            requestAnimationFrame(() => nameRef.current?.focus());
+        }
+    };
 
     // Утас бүрэн болмогц давхардлыг шалгана (400ms debounce).
     useEffect(() => {
@@ -140,9 +158,14 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                 projectRef.current?.focus();
                 return;
             }
-            if (!name.trim()) {
-                toast.error('Нэр оруулна уу');
+            if (!anonymous && !normalizeLeadName(name)) {
+                toast.error(LEAD_NAME_OR_ANONYMOUS);
                 nameRef.current?.focus();
+                return;
+            }
+            if (anonymous && !hasAnonymousLeadContact(phone, email)) {
+                toast.error(ANONYMOUS_LEAD_CONTACT);
+                phoneRef.current?.focus();
                 return;
             }
             // ⌘↵-г хоёр дарахад давхар POST явдаг байсан (state-ийн `saving` closure хоцордог)
@@ -154,7 +177,8 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                 // Idempotency: timeout-ын дараа outbox дахин илгээхэд сервер давхар лид үүсгэхгүй
                 client_request_id: requestId,
                 project_id: projectId,
-                customer_name: name.trim(),
+                customer_name: anonymous ? null : name.trim(),
+                anonymous,
                 customer_phone: phone.trim() || null,
                 customer_email: email.trim() || null,
                 source,
@@ -178,7 +202,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                 if (isNetworkError(e)) {
                     // Талбай дээр интернэтгүй: алдахгүй, холбогдмогц илгээнэ.
                     try {
-                        enqueue({ url: '/api/dashboard/leads', method: 'POST', body: payload, label: `Лид · ${payload.customer_name}` }, { userId: user?.id || '', shopId: shop?.id || '' });
+                        enqueue({ url: '/api/dashboard/leads', method: 'POST', body: payload, label: `Лид · ${leadDisplayName(payload.customer_name)}` }, { userId: user?.id || '', shopId: shop?.id || '' });
                         toast.success('Интернэтгүй байна — лид энэ төхөөрөмжид хадгалагдлаа');
                         onClose();
                     } catch {
@@ -192,7 +216,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                 setSaving(false);
             }
         },
-        [name, phone, email, source, interest, budget, notes, qc, onClose, router, user, shop, requestId, projectId, projects],
+        [name, anonymous, phone, email, source, interest, budget, notes, qc, onClose, router, user, shop, requestId, projectId, projects],
     );
 
     // ⌘↵ — хадгалах
@@ -235,31 +259,41 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                     </select>
                     {projectsError ? <p role="alert" className="mt-1 text-xs text-status-danger">Төслүүдийг уншиж чадсангүй. <button type="button" className="underline" onClick={() => void refetchProjects()}>Дахин оролдох</button></p> : !projectsLoading && !projects.length && <p role="status" className="mt-1 text-xs text-muted-foreground">Лид бүртгэх төслийн эрх олгогдоогүй байна.</p>}
                 </Field>}
-                <Field label="Нэр" required>
-                    <input
-                        ref={nameRef}
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        placeholder="Ж: Г. Энхжин"
-                        className="h-[34px] w-full rounded-md border border-border-strong bg-surface px-2.5 text-[13px] text-foreground outline-none transition-shadow placeholder:text-muted-foreground focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]"
-                    />
-                </Field>
+                <div className="flex flex-col gap-2">
+                    <Field label="Нэр" required={!anonymous}>
+                        <input
+                            ref={nameRef}
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            disabled={anonymous}
+                            placeholder={anonymous ? ANONYMOUS_LEAD_LABEL : 'Ж: Г. Энхжин'}
+                            className="h-[34px] w-full rounded-md border border-border-strong bg-surface px-2.5 text-[13px] text-foreground outline-none transition-shadow placeholder:text-muted-foreground focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)] disabled:cursor-not-allowed disabled:bg-surface-2"
+                        />
+                    </Field>
+                    {/* Field нь <label> — checkbox-ийг дотор нь биш, тусдаа мөрөнд байрлуулна. */}
+                    <label htmlFor="quick-lead-anonymous" className="flex w-fit cursor-pointer select-none items-center gap-2 text-[12.5px] text-fg-2">
+                        <Checkbox id="quick-lead-anonymous" checked={anonymous} onCheckedChange={(checked) => toggleAnonymous(checked === true)} />
+                        Нэр тодорхойгүй — нэргүй хадгалах
+                    </label>
+                </div>
 
-                <Field label="Утас" required>
+                <Field label="Утас" required={anonymous}>
                     <input
+                        ref={phoneRef}
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
                         inputMode="tel"
                         placeholder="9911 2233"
                         className="mono-label h-[34px] w-full rounded-md border border-border-strong bg-surface px-2.5 text-[13px] text-foreground outline-none transition-shadow placeholder:font-sans placeholder:text-muted-foreground focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]"
                     />
+                    {anonymous && <span className="text-[11.5px] text-muted-foreground">Нэргүй лидийг утас (эсвэл и-мэйл)-аар нь танина.</span>}
                     {duplicate && (
                         <div className="mt-2 flex items-start gap-2 rounded-md bg-status-pending-soft px-2.5 py-2 text-[12px] text-status-pending">
                             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                             <div className="min-w-0 flex-1">
                                 <div>
                                     Энэ дугаар бүртгэлтэй:{' '}
-                                    <strong className="font-semibold">{duplicate.customer_name || 'Нэргүй'}</strong>
+                                    <strong className="font-semibold">{leadDisplayName(duplicate)}</strong>
                                     {duplicate.sales_manager_name ? ` · ${duplicate.sales_manager_name}` : ''}
                                 </div>
                             </div>

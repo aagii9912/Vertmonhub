@@ -33,6 +33,7 @@ import {
     type KpiViewingRow,
 } from '@/lib/dashboard/kpi-report';
 import { formatShortDate } from '@/lib/utils/date';
+import { meetingCustomerName } from '@/lib/leads/labels';
 import { SalesKpiCard } from '@/components/reports/SalesKpiCard';
 import {
     CheckCircle2,
@@ -452,8 +453,8 @@ export default function KpiReportPage() {
                                     {(data.viewings || []).slice(0, 12).map((v) => (
                                         <li key={v.id} className="flex justify-between gap-2 text-sm">
                                             <span className="truncate">
-                                                {v.property_name || v.customer_name || 'Уулзалт'}
-                                                {v.customer_name && v.property_name ? ` · ${v.customer_name}` : ''}
+                                                {v.property_name || meetingCustomerName(v) || 'Уулзалт'}
+                                                {v.property_name && meetingCustomerName(v) ? ` · ${meetingCustomerName(v)}` : ''}
                                             </span>
                                             <span className="text-muted-foreground tabular-nums flex-shrink-0">
                                                 {v.scheduled_at ? formatShortDate(v.scheduled_at) : ''}

@@ -52,7 +52,20 @@ vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: (table: string)
         is: (key: string, value: unknown) => { filters.push(row => (row[key] ?? null) === value); return query; },
         in: (key: string, values: unknown[]) => { filters.push(row => values.includes(valueAt(row, key))); return query; },
         ilike: (key: string, value: string) => { const search = value.replace(/%/g, '').toLowerCase(); filters.push(row => String(row[key] || '').toLowerCase().includes(search)); return query; },
-        or: (value: string) => { if (value === 'sales_manager_name.is.null,sales_manager_name.eq.""') filters.push(row => !row.sales_manager_name); return query; },
+        // Энгийн `col.is|eq|ilike.value` OR-уудыг үнэлнэ; and(...) зэрэг бусдыг (ажлын дараалал) үл хэрэгсэнэ.
+        or: (value: string) => {
+            const clauses = value.includes('(') ? [] : value.split(',').map(clause => clause.match(/^([\w.]+)\.(is|eq|ilike)\.(.*)$/));
+            if (!clauses.length || clauses.some(clause => !clause)) return query;
+            const tests = clauses.map(clause => {
+                const [, key, op, raw] = clause!;
+                if (op === 'is') return (row: Record<string, any>) => (valueAt(row, key) ?? null) === null;
+                if (op === 'eq') return (row: Record<string, any>) => (valueAt(row, key) as unknown) === (raw === '""' ? '' : raw);
+                const pattern = new RegExp(`^${raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*')}$`, 'iu');
+                return (row: Record<string, any>) => pattern.test(String(valueAt(row, key) ?? ''));
+            });
+            filters.push(row => tests.some(test => test(row)));
+            return query;
+        },
         order: () => query,
         gte: () => query,
         lt: () => query,
@@ -66,6 +79,7 @@ vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: (table: string)
     return query;
 } }) }));
 
+import { ANONYMOUS_LEAD_CONTACT, ANONYMOUS_LEAD_LABEL, LEAD_NAME_OR_ANONYMOUS } from '@/lib/leads/labels';
 import { GET as list, POST as create } from './route';
 import { GET as summary } from './summary/route';
 import { GET as detail, PATCH as patch } from './[id]/route';
@@ -166,6 +180,53 @@ describe('project and personal lead API boundaries', () => {
         expect((await create(request('', 'POST', { customer_name: 'Шинэ', project_id: elysium }))).status).toBe(403);
         expect((await create(request('', 'POST', { customer_name: 'Шинэ', project_id: mandala }))).status).toBe(200);
         expect(state.writes).toContainEqual({ table: 'leads', data: expect.objectContaining({ project_id: mandala, sales_manager_name: 'Манда' }) });
+    });
+
+    it('creates an anonymous lead only when explicitly chosen and reachable', async () => {
+        const missing = await create(request('', 'POST', { project_id: mandala, customer_phone: '99112233' }));
+        expect(missing.status).toBe(400);
+        expect((await missing.json()).error).toBe(LEAD_NAME_OR_ANONYMOUS);
+        const unreachable = await create(request('', 'POST', { project_id: mandala, anonymous: true }));
+        expect(unreachable.status).toBe(400);
+        expect((await unreachable.json()).error).toBe(ANONYMOUS_LEAD_CONTACT);
+        expect(state.writes).toEqual([]);
+
+        const created = await create(request('', 'POST', { project_id: mandala, anonymous: true, customer_name: ANONYMOUS_LEAD_LABEL, customer_phone: '9911 2233' }));
+        expect(created.status).toBe(200);
+        expect(state.writes).toContainEqual({ table: 'leads', data: expect.objectContaining({
+            project_id: mandala, customer_name: null, customer_phone: '9911 2233', sales_manager_name: 'Манда',
+        }) });
+        // «нэргүй» хайлт нэргүй лидийг НЭМЖ буцаана (хүрээндээ): жинхэнэ нэр «Нэргүй» болон
+        // хуучин «Facebook lead» мөр ч олдоно; хүрээнээс гадуурх мөр орохгүй.
+        state.rows.leads.push(
+            { id: 'named-nergui', shop_id: 'shop-1', project_id: mandala, customer_name: 'Нэргүй', status: 'new', sales_manager_name: 'Манда', deleted_at: null },
+            { id: 'legacy-fb', shop_id: 'shop-1', project_id: mandala, customer_name: 'Facebook lead', status: 'new', sales_manager_name: 'Манда', deleted_at: null },
+            { id: 'foreign-anon', shop_id: 'shop-1', project_id: elysium, customer_name: null, status: 'new', sales_manager_name: 'Эли', deleted_at: null },
+        );
+        const names = async (q: string) => (await (await list(request(`?q=${encodeURIComponent(q)}`))).json()).leads
+            .map((lead: { customer_name: string | null }) => lead.customer_name).sort();
+        expect(await names('Нэргүй')).toEqual(['Facebook lead', 'Нэргүй', null].sort());
+        expect(await names(ANONYMOUS_LEAD_LABEL)).toEqual(['Facebook lead', null].sort());
+        expect(await names('Өөрийн')).toEqual(['Өөрийн лид']);
+    });
+
+    it('lets a manager name their own lead later and records it in the history', async () => {
+        state.rows.leads.push({ id: 'anon', shop_id: 'shop-1', project_id: mandala, customer_name: null, status: 'new', sales_manager_name: 'Манда', deleted_at: null });
+        expect((await patch(request('', 'PATCH', { customer_name: '  ' }), context('anon'))).status).toBe(400);
+        expect((await patch(request('', 'PATCH', { customer_name: ANONYMOUS_LEAD_LABEL }), context('anon'))).status).toBe(400);
+        expect((await patch(request('', 'PATCH', { customer_name: null }), context('anon'))).status).toBe(400);
+        expect((await patch(request('', 'PATCH', { customer_name: 'Бат' }), context(colleagueLead))).status).toBe(404);
+        expect(state.writes).toEqual([]);
+
+        expect((await patch(request('', 'PATCH', { customer_name: ' Г.  Бат ' }), context('anon'))).status).toBe(200);
+        expect(state.rows.leads.find(lead => lead.id === 'anon')).toMatchObject({ customer_name: 'Г. Бат' });
+        // «Нэргүй» бол жинхэнэ нэр — хадгалагдана.
+        expect((await patch(request('', 'PATCH', { customer_name: 'Нэргүй' }), context(ownLead))).status).toBe(200);
+        expect(state.rows.leads.find(lead => lead.id === ownLead)).toMatchObject({ customer_name: 'Нэргүй' });
+        expect(state.writes).toContainEqual({ table: 'lead_activities', data: expect.objectContaining({
+            lead_id: 'anon', type: 'system', content: `Нэр: ${ANONYMOUS_LEAD_LABEL} → Г. Бат`,
+            meta: { field: 'customer_name', from: null, to: 'Г. Бат' },
+        }) });
     });
 
     it('never returns a foreign lead through an idempotency replay', async () => {

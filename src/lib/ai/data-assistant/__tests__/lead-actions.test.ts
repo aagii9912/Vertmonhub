@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { assignLeadManager, findLead, logCall, setFollowup } from '../actions';
+import { assignLeadManager, findLead, listViewingsTool, logCall, setFollowup } from '../actions';
 import { recordLeadContact } from '@/lib/leads/activities';
 import { resolveActiveManagerName } from '@/lib/sales/manager-identity';
 import { UNRESTRICTED_SALES_SCOPE } from '@/lib/sales/project-scope';
@@ -39,6 +39,38 @@ function projectManager() {
 beforeEach(() => {
     from.mockReset();
     from.mockImplementation((table: string) => { throw new Error(`Unexpected query: ${table}`); });
+});
+
+describe('anonymous leads in AI lookups', () => {
+    it('never searches by the display label and names anonymous leads by the label', async () => {
+        const byLabel = query('leads', [{ ...lead, customer_name: null }]);
+        expect(await findLead('shop-1', { customer_name: 'Нэргүй харилцагч' })).toHaveProperty('error', expect.stringContaining('lead_id'));
+        expect(byLabel.ilike).not.toHaveBeenCalled();
+        query('leads', [{ ...lead, customer_name: null }, { ...lead, id: 'lead-2', customer_name: null }]);
+        expect(await findLead('shop-1', { customer_phone: '99112233' })).toMatchObject({ options: [{ name: 'Нэргүй харилцагч' }, { name: 'Нэргүй харилцагч' }] });
+    });
+    it('searches «Нэргүй» as a real given name', async () => {
+        const byName = query('leads', [{ ...lead, customer_name: 'Нэргүй' }]);
+        expect(await findLead('shop-1', { customer_name: 'Нэргүй' })).toMatchObject({ lead: { customer_name: 'Нэргүй' } });
+        expect(byName.ilike).toHaveBeenCalledWith('customer_name', '%Нэргүй%');
+    });
+    it('gives meetings a display name and anonymous flag without changing the raw lead', async () => {
+        const rows = [
+            { id: 'v-anon', scheduled_at: '2026-10-05T02:00:00Z', status: 'scheduled', leads: { id: 'lead-a', customer_name: null, customer_phone: '99112233' } },
+            { id: 'v-named', scheduled_at: '2026-10-05T03:00:00Z', status: 'scheduled', leads: { id: 'lead-b', customer_name: 'Болд' } },
+            { id: 'v-none', scheduled_at: '2026-10-05T04:00:00Z', status: 'scheduled', leads: null },
+        ];
+        const chain = query('property_viewings', rows);
+        Object.assign(chain, { gte: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis() });
+        const result = await listViewingsTool('shop-1', {});
+        expect(result).toEqual({ viewings: [
+            { ...rows[0], customer: 'Нэргүй харилцагч', anonymous: true },
+            { ...rows[1], customer: 'Болд', anonymous: false },
+            { ...rows[2], customer: null, anonymous: false },
+        ] });
+        expect(rows[0]).not.toHaveProperty('customer');
+        expect(rows[0].leads).toEqual({ id: 'lead-a', customer_name: null, customer_phone: '99112233' });
+    });
 });
 
 describe('lead contact persistence shared by AI and API', () => {

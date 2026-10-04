@@ -11,7 +11,7 @@ export const runtime = 'nodejs';
 
 const LeadSchema = z.object({
     requestId: z.string().uuid(),
-    name: z.string().trim().min(1).max(255),
+    name: z.string().trim().max(255).nullish(),
     phone: z.string().trim().min(1).max(50).nullish(),
     email: z.email().max(255).nullish(),
     message: z.string().trim().max(2000).nullish(),
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
             shop_id: project.shop_id,
             project_id: project.id,
             client_request_id: lead.requestId,
-            customer_name: lead.name,
+            customer_name: lead.name ?? null,
             customer_phone: lead.phone || null,
             customer_email: lead.email || null,
             source: ELYSIUM_LEAD_SOURCE,
