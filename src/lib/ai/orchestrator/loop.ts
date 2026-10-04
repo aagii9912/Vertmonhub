@@ -266,12 +266,13 @@ export async function runLoop(o: LoopOptions): Promise<LoopResult> {
                     logger.error('[Orchestrator] tool failed', { tool: tu.name, error: result });
                 }
 
-                const r = result as { requiresConfirmation?: boolean; action?: { tool: string; args?: Record<string, unknown> }; label?: string; preview?: Record<string, unknown> } | null;
+                const r = result as { requiresConfirmation?: boolean; action?: { tool: string; args?: Record<string, unknown> }; label?: string; preview?: Record<string, unknown>; shopId?: unknown } | null;
                 let content: string;
                 if (r && r.requiresConfirmation && r.action) {
                     pendingActions.push({
                         id: randomUUID(), tool: r.action.tool, args: r.action.args || {}, label: r.label || 'Үйлдэл', preview: r.preview || {},
                         agentId: o.agentLabel.id, agentName: o.agentLabel.name, emoji: o.agentLabel.emoji,
+                        ...(typeof r.shopId === 'string' ? { shopId: r.shopId } : {}),
                     });
                     content = JSON.stringify({ status: 'awaiting_user_confirmation', label: r.label, preview: r.preview, note: 'Хэрэглэгч UI картаас батална. Энэ tool-ыг ДАХИН БҮҮ ДУУД; товч мэдэгд.' });
                 } else {

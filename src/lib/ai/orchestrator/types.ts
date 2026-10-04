@@ -41,6 +41,8 @@ export interface PendingAction {
     agentId: string;
     agentName: string;
     emoji: string;
+    /** Өөр төслийн (`in_project`) үйлдэл бол тухайн shop; байхгүй бол ярианы идэвхтэй shop. */
+    shopId?: string;
 }
 
 /** Модель хэрэглэгчээс тодруулга асуусан (ask_user). */
@@ -89,6 +91,8 @@ export interface OrchestratorContext {
     signal?: AbortSignal;
     /** Энэ мөчөөс хойш шинэ раунд/агент эхлүүлэхгүй (Vercel maxDuration-аас өмнө partial хариу өгнө). */
     deadlineAt?: number;
+    /** Хэрэглэгчийн хандах төслүүд (owner ∪ shop_members, сервер тооцоолно) — `in_project`-д. */
+    projects?: Array<{ shopId: string; name: string }>;
 }
 
 export interface OrchestratorAttachment {

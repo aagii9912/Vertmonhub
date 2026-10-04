@@ -59,6 +59,8 @@ export interface PendingAction {
     /** Серверийн бодит үр дүн (id-ууд) — үргэлжлүүлэх мессежид AI-д өгнө */
     result?: unknown;
     autoApproved?: boolean;
+    /** Өөр төслийн үйлдэл бол тухайн shop (сервер `in_project`-оос өгнө). */
+    shopId?: string;
 }
 
 /** Чат дотор inline харагдах нэг ажил: tool дуудлага эсвэл дэд агентын алхам. */
@@ -82,7 +84,7 @@ const TOOL_LABEL: Record<string, string> = {
     log_call: 'Дуудлага бүртгэх', set_followup: 'Follow-up тавих', assign_lead_manager: 'Лид шилжүүлэх', record_viewing_outcome: 'Уулзалтын үр дүн', reschedule_viewing: 'Уулзалт зөөх', create_task: 'Ажил нэмэх', complete_task: 'Ажил дуусгах', add_contract_payment: 'Төлбөр нэмэх', mark_payment_paid: 'Төлбөр төлсөн',
     get_kpi_report: 'KPI тайлан', get_manager_performance: 'Менежерийн гүйцэтгэл', get_export_link: 'Excel линк', add_customer_tag: 'Таг нэмэх', remove_customer_tag: 'Таг хасах', reply_to_customer: 'Messenger хариу', merge_customers: 'Харилцагч нэгтгэх',
     log_marketing_spend: 'Зарцуулалт бүртгэх', set_marketing_budget: 'Төсөв тавих', list_marketing_spend: 'Зарцуулалт', add_market_indicator: 'Зах зээлийн үзүүлэлт',
-    update_unit_status: 'Нэгжийн статус', update_unit: 'Нэгж засах', update_lead: 'Лид засах', update_customer: 'Харилцагч засах', delete_property: 'Байр устгах', delete_viewing: 'Уулзалт цуцлах', delete_customer: 'Харилцагч устгах', create_role: 'Дүр үүсгэх',
+    update_unit_status: 'Нэгжийн статус', in_project: 'Өөр төсөл', update_unit: 'Нэгж засах', update_lead: 'Лид засах', update_customer: 'Харилцагч засах', delete_property: 'Байр устгах', delete_viewing: 'Уулзалт цуцлах', delete_customer: 'Харилцагч устгах', create_role: 'Дүр үүсгэх',
     get_dashboard_stats: 'Самбарын тоо', list_properties: 'Байр хайх', list_leads: 'Лид хайх', get_lead_details: 'Лидийн мэдээлэл',
     get_customer_insights: 'Харилцагчийн дүн', list_contracts: 'Гэрээ хайх', get_contract_details: 'Гэрээний мэдээлэл', get_contracts_summary: 'Гэрээний нэгтгэл',
     get_sales_summary: 'Борлуулалтын нэгтгэл', get_sales_forecast: 'Прогноз', compare_properties: 'Байр харьцуулах', get_marketing_summary: 'Маркетингийн нэгтгэл',
@@ -190,7 +192,7 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
                             update(asstId, { status: null, clarification: { question: e.question, options: e.options } });
                             break;
                         case 'done': {
-                            const actions: PendingAction[] = (e.pendingActions || []).map((a) => ({ ...a, status: 'pending', autoApproved: !e.interruption && shop?.id ? isToolAllowed(shop.id, a.tool, user?.id) : false }));
+                            const actions: PendingAction[] = (e.pendingActions || []).map((a) => ({ ...a, status: 'pending', autoApproved: !e.interruption && (a.shopId ?? shop?.id) ? isToolAllowed(a.shopId ?? shop!.id, a.tool, user?.id) : false }));
                             update(asstId, (m) => ({ ...m, content: e.response || m.content, streaming: false, status: null, activity: (m.activity || []).map((a) => (a.status === 'run' ? { ...a, status: e.interruption ? 'fail' : 'ok', summary: e.interruption ? 'Үр дүнг бүртгэлээс шалгана уу' : a.summary } : a)), chartConfig: e.chartConfig as AiMessage['chartConfig'], data: e.data, agentsUsed: e.agentsUsed, trace: e.trace, pendingActions: actions, clarification: e.clarification ?? m.clarification ?? null, interruption: e.interruption }));
                             if (e.conversationId && e.conversationId !== conversationId) { setConversationId(e.conversationId); onConversationId?.(e.conversationId); }
                             break;
@@ -249,7 +251,7 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
 
     const approve = useCallback(async (a: PendingAction) => {
         setAction(a.id, { status: 'running' });
-        const r = await approveAssistantAction({ shopId: shop?.id, tool: a.tool, args: a.args, conversationId });
+        const r = await approveAssistantAction({ shopId: a.shopId ?? shop?.id, tool: a.tool, args: a.args, conversationId });
         refreshWork();
         if (r.ok) { setAction(a.id, { status: 'done', resultMessage: r.message, result: r.result }); toast.success(r.message); }
         else { setAction(a.id, { status: 'error', resultMessage: r.message, autoApproved: false }); toast.error(r.message); }
@@ -263,8 +265,9 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
     };
 
     const allowAlways = (a: PendingAction) => {
-        if (shop?.id) addAllowedTool(shop.id, a.tool, user?.id);
-        setMessages((prev) => prev.map((m) => (m.pendingActions && !m.interruption ? { ...m, pendingActions: m.pendingActions.map((x) => (x.id !== a.id && x.status === 'pending' && x.tool === a.tool ? { ...x, autoApproved: true } : x)) } : m)));
+        const target = a.shopId ?? shop?.id;
+        if (target) addAllowedTool(target, a.tool, user?.id);
+        setMessages((prev) => prev.map((m) => (m.pendingActions && !m.interruption ? { ...m, pendingActions: m.pendingActions.map((x) => (x.id !== a.id && x.status === 'pending' && x.tool === a.tool && (x.shopId ?? shop?.id) === target ? { ...x, autoApproved: true } : x)) } : m)));
         void approve(a);
     };
 

@@ -109,11 +109,19 @@ export async function prepareAssistantRequest(req: Request): Promise<{ error: Ne
     const effectiveShopId = shopId || [...accessible][0];
     if (!effectiveShopId) return { error: NextResponse.json({ error: 'Холбогдсон shop олдсонгүй' }, { status: 403 }) };
 
-    const [shopKnowledge, userName, summaryRow] = await Promise.all([
+    const [shopKnowledge, userName, summaryRow, projectRows] = await Promise.all([
         loadShopKnowledge(adminDb, effectiveShopId),
         resolveSalesManagerName(resolvedUser.id, resolvedUser.email),
         conversationId ? loadConversationSummary(adminDb, String(conversationId), { userId: resolvedUser.id, shopId: effectiveShopId }) : Promise.resolve(null),
+        // Shop = төсөл: хэрэглэгчийн хандах бусад төслийг `in_project`-оор асууж болно (best-effort).
+        accessible.size > 1
+            ? adminDb.from('shops').select('id, name').in('id', [...accessible]).then(({ data, error }) => (error ? [] : data ?? []))
+            : Promise.resolve([] as Array<{ id: string; name: string | null }>),
     ]);
+    const projects = projectRows
+        .map((row) => ({ shopId: row.id as string, name: String(row.name || '').trim() }))
+        .filter((row) => row.name)
+        .sort((a, b) => a.name.localeCompare(b.name, 'mn'));
 
     const uiCtx = context && typeof context === 'object' ? context : null;
     const perms = { canWrite: permissions.canWrite, canDelete: permissions.canDelete, role: roleName, modules: permissions.modules };
@@ -133,6 +141,7 @@ export async function prepareAssistantRequest(req: Request): Promise<{ error: Ne
             conversationSummary: summaryRow?.summary || null,
             userName,
             attachments: Array.isArray(attachments) ? (attachments as OrchestratorContext['attachments']) : [],
+            projects,
         },
         message,
         modelMessage,

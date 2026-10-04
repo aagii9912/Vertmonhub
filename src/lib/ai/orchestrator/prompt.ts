@@ -63,6 +63,12 @@ export function buildSystemBlocks(ctx: OrchestratorContext, extra?: { personaOve
     const ub = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ulaanbaatar', dateStyle: 'short', timeStyle: 'short' }).format(now);
     volatile.push(`ОДОО: ${ub} (Улаанбаатар).`);
     volatile.push(`ХЭРЭГЛЭГЧ: ${ctx.userName || 'нэр тодорхойгүй'}, эрх: ${ctx.perms.role}${ctx.perms.canWrite ? ', бичих эрхтэй' : ', зөвхөн унших'}${ctx.perms.canDelete ? ', устгах эрхтэй' : ''}.`);
+    const projects = ctx.projects ?? [];
+    if (projects.length > 1) {
+        const current = projects.find((p) => p.shopId === ctx.shopId)?.name;
+        volatile.push(`ТӨСЛҮҮД: одоогийн «${current ?? 'тодорхойгүй'}»; бусад: ${projects.filter((p) => p.shopId !== ctx.shopId).map((p) => `«${p.name}»`).join(', ')}. `
+            + 'Өөр төслийн тухай асуувал in_project-оор тухайн төсөлд tool дууд; «бүх төсөл» гэвэл одоогийн төсөлд шууд, бусдад in_project-оор тус бүр дуудаж нэгтгэ. Хариултад төслийн нэрийг заа.');
+    }
     if (ctx.conversationSummary) volatile.push(`ЭНЭ ЯРИАНЫ ӨМНӨХ ХЭСГИЙН ХУРААНГУЙ:\n${ctx.conversationSummary}`);
     blocks.push({ type: 'text', text: volatile.join('\n') });
     return blocks;
