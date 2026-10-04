@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, useRef, ReactNode, useC
 import type { Session } from '@supabase/supabase-js';
 import type { UserRole, RolePermissions } from '@/lib/rbac';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
+import { toast } from 'sonner';
 
 const isDev = process.env.NODE_ENV === 'development';
 const ACTIVE_SHOP_KEY = 'vertmonhub_active_shop_id';
@@ -145,14 +146,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify({ shopId }),
       });
 
-      const data = await res.json();
+      const data = await res.json().catch(() => null);
 
-      if (data.success && data.shop) {
+      if (res.ok && data?.success && data.shop) {
         setActiveShop(data.shop);
         window.location.reload();
+        return;
       }
+      toast.error(data?.error || 'Байгууллага сольж чадсангүй.');
     } catch (err) {
       if (isDev) console.error('Switch shop error:', err);
+      toast.error('Байгууллага сольж чадсангүй. Дахин оролдоно уу.');
     }
   }, [setActiveShop]);
 

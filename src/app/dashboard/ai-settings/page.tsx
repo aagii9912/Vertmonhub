@@ -13,7 +13,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import ImportTab from './components/ImportTab';
 import { SessionApprovalsReset } from '@/components/ai-assistant/SessionApprovalsReset';
-import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { dashboardFetch, dashboardMutate } from '@/lib/api/dashboardFetch';
 
 // ============================================
 // TYPES
@@ -307,7 +307,7 @@ function FAQSection({ faqs, setFaqs, editingFaq, setEditingFaq, setError }: {
 
     async function deleteFaq(id: string) {
         try {
-            await dashboardFetch(`/api/ai-settings?type=faqs&id=${id}`, { method: 'DELETE' });
+            await dashboardMutate(`/api/ai-settings?type=faqs&id=${encodeURIComponent(id)}`, 'DELETE');
             setFaqs(faqs.filter(f => f.id !== id));
             toast.success('FAQ устгагдлаа');
         } catch (err: any) { setError(err.message); }

@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/Dialog';
 import { FormField } from '@/components/ui/FormField';
 import { PageSkeleton } from '@/components/ui/LoadingSkeleton';
-import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { dashboardFetch, dashboardMutate } from '@/lib/api/dashboardFetch';
 
 type StatusPillVariant = 'success' | 'danger' | 'pending' | 'info' | 'active' | 'neutral' | 'brand';
 
@@ -185,13 +185,10 @@ export default function CustomerServicePage() {
 
     async function updateLogStatus(id: string, status: string) {
         try {
-            await dashboardFetch(`/api/dashboard/service-logs/${id}`, {
-                method: 'PATCH',
-                body: JSON.stringify({ status }),
-            });
+            await dashboardMutate(`/api/dashboard/service-logs/${id}`, 'PATCH', { status });
             fetchData();
         } catch (err) {
-            console.error('[CustomerService] update error:', err);
+            toast.error(err instanceof Error ? err.message : 'Төлөв шинэчилж чадсангүй');
         }
     }
 

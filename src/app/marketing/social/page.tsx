@@ -22,7 +22,8 @@ import {
     Loader2, X
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardFetch, dashboardJson } from '@/lib/api/dashboardFetch';
+import { dashboardFetch, dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
+import { toast } from 'sonner';
 import { formatTimeAgo } from '@/lib/utils/date';
 import { confirmToast } from '@/components/ui/Toast';
 
@@ -328,11 +329,11 @@ function SocialPageContent() {
         });
         if (!ok) return;
         try {
-            await dashboardFetch('/api/shop/disconnect', {
-                method: 'POST',
-                body: JSON.stringify({ platform }),
-            });
-        } catch { /* алдааг үл хайхран reload хийнэ */ }
+            await dashboardMutate('/api/shop/disconnect', 'POST', { platform });
+        } catch (error) {
+            toast.error(error instanceof Error ? error.message : 'Холболтыг салгаж чадсангүй');
+            return;
+        }
         window.location.reload();
     }, []);
 
