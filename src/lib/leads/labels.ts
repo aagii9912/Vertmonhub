@@ -3,8 +3,10 @@
  * Статус, эх үүсвэр, сонирхол, урсгалын шат бүгд эндээс. Шинэ утга нэмбэл
  * ЗӨВХӨН энд нэмнэ; хуудсууд өөрсдийн map-гүй.
  */
+import { z } from 'zod';
 import type { LeadStatus, LeadSource } from '@/types/property';
 import { propertyTypeLabel } from '@/lib/inventory/labels';
+import { normalizePhone } from '@/lib/utils/phone';
 
 export type Tone = 'info' | 'pending' | 'success' | 'danger' | 'neutral';
 
@@ -102,3 +104,47 @@ export const LEAD_VIEWS: { key: LeadView; label: string }[] = [
     { key: 'meetings', label: 'Уулзалттай' },
     { key: 'active', label: 'Идэвхтэй' },
 ];
+
+/* ── Нэргүй лид ──────────────────────────────────────────────────────────
+ * Нэргүй лид = `leads.customer_name IS NULL`. Харагдах нэр нь энэ НЭГ шошго;
+ * хуудас, тайлан, экспорт, AI бүгд `leadDisplayName`-ээр харуулна. Шошгыг DB,
+ * гэрээ, харилцагчид хэзээ ч бичихгүй — бичих зам бүр `normalizeLeadName`-ээр орно.
+ */
+export const ANONYMOUS_LEAD_LABEL = 'Нэргүй харилцагч';
+
+/** Нэр биш орлуулагч утгууд (экспортын «-», хуучин «Facebook lead», шошго өөрөө). */
+const LEAD_NAME_PLACEHOLDERS = new Set([
+    '-', '—', 'нэргүй', 'нэргүй лид', 'нэргүй харилцагч', 'тодорхойгүй', 'facebook lead',
+]);
+
+/** Бичих бүх зам: хоосон эсвэл орлуулагч нэр → null; бусдыг trim хийж давхар зайг нэг болгоно. */
+export function normalizeLeadName(raw: unknown): string | null {
+    if (typeof raw !== 'string') return null;
+    const value = raw.trim().replace(/\s+/g, ' ');
+    return !value || LEAD_NAME_PLACEHOLDERS.has(value.toLowerCase()) ? null : value;
+}
+
+export function isAnonymousLead(lead: { customer_name?: string | null } | null | undefined): boolean {
+    return !normalizeLeadName(lead?.customer_name);
+}
+
+/** Харагдах нэр: жинхэнэ нэр эсвэл `ANONYMOUS_LEAD_LABEL`. Лид эсвэл нэрийг шууд авна. */
+export function leadDisplayName(lead: { customer_name?: string | null } | string | null | undefined): string {
+    const raw = typeof lead === 'string' || lead == null ? lead : lead.customer_name;
+    return normalizeLeadName(raw) ?? ANONYMOUS_LEAD_LABEL;
+}
+
+/** Лидийн хайлт «нэргүй»-ээр эхэлбэл нэргүй лидүүдийг (customer_name IS NULL) шүүнэ. */
+export function isAnonymousLeadQuery(q: string | null | undefined): boolean {
+    return !!q && q.trim().toLowerCase().startsWith('нэргүй');
+}
+
+/** Ажилтны сувгийн нэргүй лидийн дүрэм (сервер: LeadService.resolveLeadIdentity, client формууд). */
+export const LEAD_NAME_OR_ANONYMOUS = 'Харилцагчийн нэрийг оруулах эсвэл «Нэр тодорхойгүй»-г сонгоно уу';
+export const ANONYMOUS_LEAD_CONTACT = 'Нэргүй лидэд утасны дугаар (8+ орон) эсвэл и-мэйл оруулна уу';
+
+/** Нэргүй лидийг дахин олох холбоо: 8+ оронтой утас эсвэл зөв и-мэйл. */
+export function hasAnonymousLeadContact(phone: string | null | undefined, email: string | null | undefined): boolean {
+    if ((normalizePhone(phone)?.length ?? 0) >= 8) return true;
+    return !!email && z.email().safeParse(email.trim()).success;
+}

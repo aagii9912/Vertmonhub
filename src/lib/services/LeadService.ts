@@ -1,6 +1,10 @@
 /**
  * Лид үүсгэх нэг дүрэм. Ажилтны оруулсан лид (dashboard, AI, нийтийн формын ажилтны
  * горим) `resolveStaffLead`-ээр төсөл, хариуцагч менежер, төлөв, эх үүсвэрээ тодорхойлно.
+ * Харилцагчийн нэр/холбоо барих мэдээллийг `resolveLeadIdentity` нэг дүрмээр шийднэ
+ * (dashboard, AI, уулзалтын хуудас): нэргүй лид = `customer_name` null, ажилтан
+ * `anonymous: true`-г илт сонгоно, утас эсвэл и-мэйл заавал. Гадны суваг нэрийг
+ * `normalizeLeadName`-ээр л цэвэрлэнэ.
  * Бүх суваг (ажилтан, Elysium, Facebook Lead Ads, нийтийн форм) `insertLeadOnce`-оор
  * бичиж, `client_request_id` давтагдвал аль хэдийн хадгалсан лидийг буцаана.
  * `sales_handoff_at`-ийг DB trigger тавина; энд тавихгүй.
@@ -8,7 +12,9 @@
 
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { ACTIVE_STATUSES, toLeadSource } from '@/lib/leads/labels';
+import {
+    ACTIVE_STATUSES, ANONYMOUS_LEAD_CONTACT, LEAD_NAME_OR_ANONYMOUS, hasAnonymousLeadContact, normalizeLeadName, toLeadSource,
+} from '@/lib/leads/labels';
 import { resolveActiveManagerName, resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { applyLeadScope, assertProjectManager, canAccessProject, ProjectScopeError, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
@@ -37,6 +43,38 @@ export interface ResolvedStaffLead {
 }
 
 export type Failure = { ok: false; status: number; error: string };
+
+export interface LeadIdentityInput {
+    customer_name?: unknown;
+    customer_phone?: unknown;
+    customer_email?: unknown;
+    /** Ажилтан «Нэр тодорхойгүй»-г сонгосон (нэр өгсөн ч үл хэрэгсэнэ). */
+    anonymous?: boolean | null;
+}
+
+export interface LeadIdentity {
+    customer_name: string | null;
+    customer_phone: string | null;
+    customer_email: string | null;
+}
+
+/**
+ * Ажилтны оруулсан лидийн нэр/холбоо барих дүрэм (DB-гүй цэвэр функц). Нэрийг
+ * `normalizeLeadName`-ээр цэвэрлэнэ (шошго, «-» зэрэг орлуулагч → null). Нэргүй хадгалахад
+ * `anonymous: true` заавал — мартсан нэрийг ингэж барина; нэргүй лидэд 8+ оронтой утас
+ * эсвэл зөв и-мэйл заавал. Нэртэй лидэд утас өмнөх шигээ заавал биш.
+ */
+export function resolveLeadIdentity(input: LeadIdentityInput): ({ ok: true } & LeadIdentity) | Failure {
+    const text = (v: unknown) => (typeof v === 'string' ? v.trim() || null : null);
+    const customer_phone = text(input.customer_phone);
+    const customer_email = text(input.customer_email);
+    const customer_name = input.anonymous ? null : normalizeLeadName(input.customer_name);
+    if (!customer_name) {
+        if (!input.anonymous) return { ok: false, status: 400, error: LEAD_NAME_OR_ANONYMOUS };
+        if (!hasAnonymousLeadContact(customer_phone, customer_email)) return { ok: false, status: 400, error: ANONYMOUS_LEAD_CONTACT };
+    }
+    return { ok: true, customer_name, customer_phone, customer_email };
+}
 
 /**
  * Төслийг (shop + хэрэглэгчийн хүрээ), идэвхтэй төлвийг, эх үүсвэрийг, хариуцагч менежерийг
