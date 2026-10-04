@@ -14,7 +14,9 @@ const ShopPatchSchema = z.object({
   bank_name: optionalText, account_number: optionalText, account_name: optionalText,
   custom_knowledge: z.record(z.string(), z.string()).optional(),
   facebook_page_id: optionalText, facebook_page_name: optionalText, facebook_page_username: optionalText,
-  facebook_page_access_token: optionalText, facebook_ad_account_id: optionalText,
+  // facebook_ad_account_id энд байхгүй: зарын дансыг зөвхөн /api/marketing/facebook/ads/accounts
+  // (Meta-д эрх, нэг данс = нэг төсөл шалгалттай) сонгоно.
+  facebook_page_access_token: optionalText,
   facebook_token_expires_at: optionalText, facebook_token_expires_in: optionalExpiry,
   facebook_user_access_token: optionalText, facebook_user_token_expires_at: optionalText,
   facebook_user_token_expires_in: optionalExpiry,

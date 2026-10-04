@@ -4,11 +4,13 @@ import { getUserId, assertShopAccess, supabaseAdmin } from '@/lib/auth/supabase-
 import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { encryptToken } from '@/lib/crypto/tokens';
 import { metaRead } from '@/lib/facebook/daily-spend';
+import { getAdAccounts } from '@/lib/facebook/marketing-api';
 import { META_ADS_CALLBACK_PATH, META_ADS_OAUTH_COOKIE } from '../route';
 
 export const dynamic = 'force-dynamic';
 
 type OAuthState = { state: string; userId: string; shopId: string };
+type DebugToken = { data?: { app_id?: string | number; type?: string; is_valid?: boolean; expires_at?: number; scopes?: unknown } };
 
 export async function GET(request: NextRequest) {
     const finish = (result: string) => {
@@ -50,27 +52,51 @@ export async function GET(request: NextRequest) {
         const shortData = await short.json().catch(() => null);
         if (!short.ok || typeof shortData?.access_token !== 'string') return finish('token_error');
 
-        const long = await fetch(tokenUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({ grant_type: 'fb_exchange_token', client_id: appId, client_secret: appSecret, fb_exchange_token: shortData.access_token }),
-            cache: 'no-store',
-            signal: AbortSignal.timeout(20000),
-        });
-        const longData = await long.json().catch(() => null);
-        if (!long.ok || typeof longData?.access_token !== 'string' || !Number.isFinite(longData.expires_in) || longData.expires_in <= 0) return finish('token_error');
+        // Токены төрөл, хугацаа: Login for Business-ийн system-user тохиргоо хугацаагүй (expires_at = 0)
+        // SYSTEM_USER токен өгдөг — түүнийг богино хугацаат user токен шиг солихгүй.
+        const debug = await metaRead<DebugToken>('debug_token', `${appId}|${appSecret}`, { input_token: shortData.access_token });
+        if (debug.data?.is_valid !== true || String(debug.data.app_id ?? '') !== appId) return finish('token_error');
+        let token: string, expiresAt: string | null;
+        if (debug.data.type === 'SYSTEM_USER') {
+            token = shortData.access_token;
+            const expires = Number(debug.data.expires_at);
+            expiresAt = Number.isFinite(expires) && expires > 0 ? new Date(expires * 1000).toISOString() : null;
+        } else {
+            const long = await fetch(tokenUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({ grant_type: 'fb_exchange_token', client_id: appId, client_secret: appSecret, fb_exchange_token: shortData.access_token }),
+                cache: 'no-store',
+                signal: AbortSignal.timeout(20000),
+            });
+            const longData = await long.json().catch(() => null);
+            if (!long.ok || typeof longData?.access_token !== 'string' || !Number.isFinite(longData.expires_in) || longData.expires_in <= 0) return finish('token_error');
+            token = longData.access_token;
+            expiresAt = new Date(Date.now() + longData.expires_in * 1000).toISOString();
+        }
 
-        const token = longData.access_token as string;
-        const permissions = await metaRead<{ data: Array<{ permission: string; status: string }> }>('me/permissions', token);
-        if (!Array.isArray(permissions.data) || !permissions.data.some(p => p.permission === 'ads_read' && p.status === 'granted')) return finish('ads_read_error');
+        const scopes = Array.isArray(debug.data.scopes) ? debug.data.scopes : [];
+        if (!scopes.includes('ads_read')) {
+            const permissions = await metaRead<{ data: Array<{ permission: string; status: string }> }>('me/permissions', token);
+            if (!Array.isArray(permissions.data) || !permissions.data.some(p => p.permission === 'ads_read' && p.status === 'granted')) return finish('ads_read_error');
+        }
         const encrypted = encryptToken(token);
         if (!encrypted?.startsWith('enc:v1:')) return finish('save_error');
 
         const db = supabaseAdmin();
+        // Шинэ токен сонгосон дансыг уншиж чадвал сонголтыг хадгална; эс бөгөөс дахин сонгуулна.
+        const { data: current, error: readError } = await db.from('shops').select('facebook_ad_account_id').eq('id', shopId).single();
+        if (readError) return finish('save_error');
+        const selected = current?.facebook_ad_account_id ? `act_${String(current.facebook_ad_account_id).replace(/^act_/, '')}` : null;
+        let keepAccount = false;
+        if (selected) {
+            try { keepAccount = (await getAdAccounts(token)).data.some(account => account.id === selected); }
+            catch { keepAccount = false; }
+        }
         const { error } = await db.from('shops').update({
             meta_ads_user_access_token: encrypted,
-            meta_ads_user_token_expires_at: new Date(Date.now() + longData.expires_in * 1000).toISOString(),
-            facebook_ad_account_id: null,
+            meta_ads_user_token_expires_at: expiresAt,
+            ...(keepAccount ? {} : { facebook_ad_account_id: null }),
         }).eq('id', shopId);
         if (error) return finish('save_error');
 

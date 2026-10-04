@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { z } from 'zod';
 import { requireModule } from '@/lib/auth/require-permission';
 import { getUserShop, supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { getAdAccounts } from '@/lib/facebook/marketing-api';
@@ -54,12 +55,14 @@ export async function GET(_req: NextRequest) {
  * POST /api/marketing/facebook/ads/accounts
  * Хэрэглэгч сонгосон ad_account_id-г shops-д хадгална
  */
+const SelectAccountSchema = z.object({ ad_account_id: z.string().trim().regex(/^act_\d{1,40}$/) });
+
 export const POST = withRoute({ module: 'marketing-roi', access: 'write', error: 'Хадгалахад алдаа' }, async ({ request: req, shop: authShop }) => {
-    const body = await req.json();
-    const adAccountId = String(body?.ad_account_id || '').trim();
-    if (!/^act_\d+$/.test(adAccountId)) {
+    const parsed = SelectAccountSchema.safeParse(await req.json().catch(() => null));
+    if (!parsed.success) {
         return NextResponse.json({ error: 'ad_account_id шаардлагатай' }, { status: 400 });
     }
+    const adAccountId = parsed.data.ad_account_id;
 
     const admin = supabaseAdmin();
     const { data: shop, error: readError } = await admin.from('shops')
@@ -74,6 +77,10 @@ export const POST = withRoute({ module: 'marketing-roi', access: 'write', error:
         .update({ facebook_ad_account_id: adAccountId })
         .eq('id', authShop.id);
 
+    // Нэг зарын данс зөвхөн нэг төсөлд (shops_facebook_ad_account_unique).
+    if (error?.code === '23505') {
+        return NextResponse.json({ error: 'Энэ зарын данс өөр төсөлд холбогдсон байна' }, { status: 409 });
+    }
     if (error) {
         logger.error('[FB Ads Accounts POST] error:', { error });
         return NextResponse.json({ error: 'Хадгалахад алдаа' }, { status: 500 });
