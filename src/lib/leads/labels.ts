@@ -142,6 +142,8 @@ export function isAnonymousLeadQuery(q: string | null | undefined): boolean {
 /** Ажилтны сувгийн нэргүй лидийн дүрэм (сервер: LeadService.resolveLeadIdentity, client формууд). */
 export const LEAD_NAME_OR_ANONYMOUS = 'Харилцагчийн нэрийг оруулах эсвэл «Нэр тодорхойгүй»-г сонгоно уу';
 export const ANONYMOUS_LEAD_CONTACT = 'Нэргүй лидэд утасны дугаар (8+ орон) эсвэл и-мэйл оруулна уу';
+/** Уулзалтын хуудсанд и-мэйл талбаргүй тул нэргүй шинэ харилцагчид утас заавал. */
+export const ANONYMOUS_MEETING_PHONE = 'Нэргүй харилцагчийн утасны дугаарыг (8 орон) оруулна уу';
 
 /** Нэргүй лидийг дахин олох холбоо: 8+ оронтой утас эсвэл зөв и-мэйл. */
 export function hasAnonymousLeadContact(phone: string | null | undefined, email: string | null | undefined): boolean {

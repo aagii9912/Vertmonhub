@@ -2,13 +2,13 @@
 
 import React, { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { Phone, CalendarPlus, FileText, StickyNote, X, ExternalLink, PhoneCall, Check } from 'lucide-react';
+import { Phone, CalendarPlus, FileText, StickyNote, X, ExternalLink, PhoneCall, Check, UserPen } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
 import { formatShortDate, formatTime, formatRelativeDays } from '@/lib/utils/date';
 import { useLeadDetail, useUpdateLead, useAddLeadActivity, useLeadProjects, useManagers } from '@/hooks/useLeads';
-import { INTEREST_CHIPS, ACTIVITY_LABEL, sourceLabel, interestLabel } from '@/lib/leads/labels';
+import { INTEREST_CHIPS, ACTIVITY_LABEL, sourceLabel, interestLabel, isAnonymousLead, leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
 import { propertyStatusLabel, propertyStatusTone } from '@/lib/inventory/labels';
 import { Pill, Skeleton, GhostButton } from '@/components/dashboard/v2/primitives';
 import { StatusPicker, ManagerPicker } from './pickers';
@@ -43,6 +43,7 @@ export function LeadPanel({
     const [isCall, setIsCall] = useState(false);
     const [followup, setFollowup] = useState<number | null>(null); // хоног
     const [budgetDraft, setBudgetDraft] = useState<string | null>(null);
+    const [nameDraft, setNameDraft] = useState<string | null>(null);
 
     const lead = data?.lead;
     const { data: managers = [] } = useManagers(lead?.project_id ?? null);
@@ -50,7 +51,7 @@ export function LeadPanel({
     // Shop = төсөл: ганц төсөлтэй бол зөвхөн төсөлгүй хуучин лидэд төсөл оноох сонголт гарна.
     const canEditProject = canWrite && (user?.role === 'admin' || user?.role === 'super_admin')
         && (projects.length > 1 || !lead?.project_id);
-    useRegisterAiContext(lead ? { type: 'lead', id: lead.id, label: lead.customer_name || 'Нэргүй лид' } : null);
+    useRegisterAiContext(lead ? { type: 'lead', id: lead.id, label: leadDisplayName(lead) } : null);
 
     const timeline = useMemo(() => {
         if (!data) return [];
@@ -105,12 +106,48 @@ export function LeadPanel({
 
     const phoneDigits = lead.customer_phone?.replace(/\D/g, '') || '';
     const interestValue = INTEREST_CHIPS.find((c) => (c.rooms && c.rooms === lead.preferred_rooms) || (c.type && c.type === lead.preferred_type))?.label ?? '';
+    const anonymous = isAnonymousLead(lead);
+    // Нэр нэмэх/засах: хоосон эсвэл өөрчлөгдөөгүй бол юу ч илгээхгүй (нэрийг хоосолж болохгүй).
+    const commitName = () => {
+        if (nameDraft === null) return;
+        const next = normalizeLeadName(nameDraft);
+        setNameDraft(null);
+        if (next && next !== normalizeLeadName(lead.customer_name)) patch({ customer_name: next });
+    };
 
     return (
         <div className={cn('flex h-full min-h-0 flex-col', className)}>
             {/* Толгой */}
             <header className="flex h-[52px] shrink-0 items-center gap-2.5 border-b border-border px-4">
-                <h2 className="truncate text-[16px] font-semibold text-foreground">{lead.customer_name || 'Нэргүй лид'}</h2>
+                {nameDraft !== null ? (
+                    <input
+                        aria-label="Харилцагчийн нэр"
+                        autoFocus
+                        value={nameDraft}
+                        maxLength={200}
+                        onChange={(e) => setNameDraft(e.target.value)}
+                        onBlur={commitName}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); commitName(); }
+                            if (e.key === 'Escape') { e.stopPropagation(); setNameDraft(null); }
+                        }}
+                        placeholder="Ж: Г. Энхжин"
+                        className="h-8 min-w-0 flex-1 rounded-md border border-brand bg-surface px-2 text-[14px] font-semibold text-foreground outline-none shadow-[0_0_0_3px_var(--brand-soft)] placeholder:font-normal placeholder:text-muted-foreground"
+                    />
+                ) : (
+                    <h2 className={cn('min-w-0 truncate text-[16px] font-semibold', anonymous ? 'text-muted-foreground' : 'text-foreground')}>
+                        {canWrite && !anonymous ? (
+                            <button type="button" title="Нэр засах" onClick={() => setNameDraft(lead.customer_name ?? '')} className="max-w-full truncate rounded-sm text-left hover:underline focus-ring">
+                                {leadDisplayName(lead)}
+                            </button>
+                        ) : leadDisplayName(lead)}
+                    </h2>
+                )}
+                {canWrite && anonymous && nameDraft === null && (
+                    <GhostButton onClick={() => setNameDraft('')} className="shrink-0">
+                        <UserPen className="h-3.5 w-3.5" /> Нэр нэмэх
+                    </GhostButton>
+                )}
                 <StatusPicker value={lead.status} disabled={!canWrite} size="md" onChange={(s, reason) => patch({ status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} />
                 {onClose && (
                     <button type="button" onClick={onClose} className="ml-auto flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-ring" aria-label="Хаах">

@@ -1,4 +1,5 @@
 import { ubStartOfDay } from '@/lib/utils/date';
+import { leadDisplayName } from '@/lib/leads/labels';
 
 /**
  * «Миний самбар» (менежерийн хувийн дашбоард)-ын цэвэр aggregation туслахууд.
@@ -100,7 +101,7 @@ export function buildTaskList(
         tasks.push({
             type: 'followup',
             id: lead.id,
-            title: lead.customer_name || 'Лид',
+            title: leadDisplayName(lead),
             subtitle: lead.customer_phone ? `Холбогдох · ${lead.customer_phone}` : 'Холбогдох',
             dueAt: due.toISOString(),
             overdue: due.getTime() < dayStart.getTime(),

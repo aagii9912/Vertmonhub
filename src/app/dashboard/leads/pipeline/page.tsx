@@ -48,11 +48,11 @@ import {
 import { cn } from '@/lib/utils';
 import { formatShortDate } from '@/lib/utils/date';
 import { formatMNTShort } from '@/lib/utils/currency';
-import { statusLabel } from '@/lib/leads/labels';
+import { leadDisplayName, statusLabel } from '@/lib/leads/labels';
 
 interface Lead {
     id: string;
-    customer_name: string;
+    customer_name: string | null;
     customer_phone: string | null;
     status: string;
     source: string;
@@ -163,7 +163,7 @@ function LeadCardBody({ lead, now }: { lead: Lead; now: number }) {
             <div className="flex items-start justify-between mb-1.5">
                 <p className="text-sm font-medium text-foreground flex items-center gap-1">
                     <User className="w-3.5 h-3.5 text-muted-foreground/70" />
-                    {lead.customer_name || 'Нэргүй'}
+                    {leadDisplayName(lead)}
                 </p>
                 <GripVertical className="w-4 h-4 text-muted-foreground/60 flex-shrink-0" />
             </div>
@@ -412,7 +412,7 @@ export default function PipelinePage() {
         if (!lead || lead.status === stageKey) return;
         // "Алдсан"-руу шилжихэд шалтгаан асууна (win/loss analysis).
         if (stageKey === 'closed_lost') {
-            setLostModal({ leadId, name: lead.customer_name || 'Нэргүй' });
+            setLostModal({ leadId, name: leadDisplayName(lead) });
             return;
         }
         moveToStage(leadId, stageKey);

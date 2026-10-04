@@ -19,6 +19,8 @@ import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { FilterBar, FilterChip } from '@/components/dashboard/FilterBar';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from '@/components/ui/Dropdown';
+import { Checkbox } from '@/components/ui/Checkbox';
+import { ANONYMOUS_LEAD_LABEL, ANONYMOUS_MEETING_PHONE, LEAD_NAME_OR_ANONYMOUS, isAnonymousLead, leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
 
 /**
  * «Уулзалт» v2 — өдрөөр бүлэглэсэн нягт жагсаалт; товлох ба үр дүн бүртгэх
@@ -152,7 +154,7 @@ export function ViewingsPage() {
 function Row({ v, now, canWrite, busy, onArrived, onNoShow, onCancel, onPostpone }: { v: ViewingRow; now: number; canWrite: boolean; busy: boolean; onArrived: () => void; onNoShow: () => void; onCancel: () => void; onPostpone: () => void }) {
     const phone = v.lead?.customer_phone?.replace(/\D/g, '') || '';
     const past = new Date(v.scheduled_at).getTime() < now;
-    const name = v.lead?.customer_name || 'Нэргүй';
+    const name = leadDisplayName(v.lead);
     const mt = v.meeting_type ? MEETING_TYPE_META[v.meeting_type] : null;
     return <div className={cn('grid grid-cols-[52px_minmax(0,1fr)] items-center gap-x-3 gap-y-3 border-b border-border p-4 last:border-b-0 sm:flex sm:min-h-24 sm:gap-4', v.status === 'scheduled' && past && 'bg-status-danger-soft/30')}>
         <span className={cn('num self-start pt-0.5 text-base font-semibold sm:self-auto', v.status === 'scheduled' && past ? 'text-status-danger' : 'text-foreground')}>{formatTime(v.scheduled_at)}</span>
@@ -190,6 +192,8 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
     const create = useCreateViewing();
     const [walkIn, setWalkIn] = useState(false);
     const [name, setName] = useState('');
+    // Шинэ харилцагч нэрээ хэлээгүй: лидийг нэргүй үүсгэнэ, утас заавал (сервер мөн шалгана).
+    const [anonymous, setAnonymous] = useState(false);
     const [phone, setPhone] = useState('');
     const [chosenProjectId, setProjectId] = useState('');
     // Shop = төсөл: ганц төсөлтэй бол автоматаар сонгоно.
@@ -214,14 +218,16 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
 
     const submit = async () => {
         if (!leadId && !projects.some(p => p.id === projectId)) { toast.error('Төсөл сонгоно уу'); return; }
-        if (!leadId && !name.trim()) { toast.error('Харилцагчийн нэр оруулна уу'); return; }
+        if (!leadId && !anonymous && !normalizeLeadName(name)) { toast.error(LEAD_NAME_OR_ANONYMOUS); return; }
+        if (!leadId && anonymous && phone.replace(/\D/g, '').length < 8) { toast.error(ANONYMOUS_MEETING_PHONE); return; }
         if (!walkIn && !when) { toast.error('Огноо, цаг сонгоно уу'); return; }
         try {
             const result = await create.mutateAsync({
                 lead_id: leadId,
                 project_id: leadId ? undefined : projectId,
-                customer_name: leadId ? undefined : name.trim(),
+                customer_name: leadId ? undefined : anonymous ? null : name.trim(),
                 customer_phone: leadId ? undefined : phone.trim() || null,
+                anonymous: leadId ? undefined : anonymous,
                 property_id: property?.id ?? null,
                 scheduled_at: walkIn ? null : new Date(when).toISOString(),
                 meeting_type: type,
@@ -264,15 +270,22 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                     <div className="flex items-center gap-3 rounded-md border border-border bg-surface-2/60 px-3 py-2">
                         <Avatar name={leadDetail.lead.customer_name} className="h-7 w-7 text-[11px]" />
                         <div className="min-w-0 flex-1">
-                            <div className="truncate text-[13px] font-medium text-foreground">{leadDetail.lead.customer_name}</div>
+                            <div className={cn('truncate text-[13px] font-medium', isAnonymousLead(leadDetail.lead) ? 'text-muted-foreground' : 'text-foreground')}>{leadDisplayName(leadDetail.lead)}</div>
                             <div className="mono-label truncate text-[12px] text-muted-foreground">{leadDetail.lead.customer_phone || '—'}</div>
                         </div>
                         <Pill tone="info">Лид</Pill>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-2 gap-3">
-                        <Field label="Нэр" required><input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Б. Болд" className={inputCls} /></Field>
-                        <Field label="Утас"><input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" placeholder="9909 1122" className={cn(inputCls, 'mono-label')} /></Field>
+                    <div className="flex flex-col gap-2">
+                        <div className="grid grid-cols-2 gap-3">
+                            <Field label="Нэр" required={!anonymous}><input autoFocus value={name} onChange={(e) => setName(e.target.value)} disabled={anonymous} placeholder={anonymous ? ANONYMOUS_LEAD_LABEL : 'Б. Болд'} className={cn(inputCls, 'disabled:cursor-not-allowed disabled:bg-surface-2')} /></Field>
+                            <Field label="Утас" required={anonymous}><input value={phone} onChange={(e) => setPhone(e.target.value)} inputMode="tel" placeholder="9909 1122" className={cn(inputCls, 'mono-label')} /></Field>
+                        </div>
+                        {/* Field нь <label> — checkbox-ийг тусдаа мөрөнд байрлуулна. */}
+                        <label htmlFor="meeting-anonymous" className="flex w-fit cursor-pointer select-none items-center gap-2 text-[12.5px] text-fg-2">
+                            <Checkbox id="meeting-anonymous" checked={anonymous} onCheckedChange={(checked) => { setAnonymous(checked === true); if (checked === true) setName(''); }} />
+                            Нэр тодорхойгүй — нэргүй бүртгэх
+                        </label>
                     </div>
                 )}
 
@@ -367,7 +380,7 @@ function OutcomeSheet({ v, onClose }: { v: ViewingRow; onClose: () => void }) {
     return (
         <div className="flex h-full flex-col">
             <header className="flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-5">
-                <h2 className="truncate text-[16px] font-semibold text-foreground">{v.lead?.customer_name || 'Уулзалт'} — үр дүн</h2>
+                <h2 className="truncate text-[16px] font-semibold text-foreground">{v.lead ? leadDisplayName(v.lead) : 'Уулзалт'} — үр дүн</h2>
                 <button type="button" onClick={onClose} className="ml-auto flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-ring" aria-label="Хаах"><X className="h-4 w-4" /></button>
             </header>
             <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
