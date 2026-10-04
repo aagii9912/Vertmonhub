@@ -156,17 +156,31 @@ export async function getAdAccounts(accessToken: string): Promise<{ data: Facebo
 }
 
 /**
- * Ad account-ийн campaign-уудыг авах
+ * Ad account-ийн бүх campaign-ыг авах (`pageSize` = нэг хуудасны хэмжээ, cursor-оор бүгдийг).
  */
 export async function fetchAdAccountCampaigns(
     adAccountId: string,
     accessToken: string,
-    limit: number = 50
+    pageSize: number = 100
 ): Promise<{ data: FacebookAdCampaign[] }> {
     const accountId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
     if (!/^act_\d+$/.test(accountId)) throw new Error('Meta зарын дансны ID буруу байна.');
     const fields = 'id,name,status,objective,daily_budget,lifetime_budget,start_time,stop_time,created_time,updated_time';
-    return metaRead<{ data: FacebookAdCampaign[] }>(`${accountId}/campaigns`, accessToken, { fields, limit: String(limit) });
+    const data: FacebookAdCampaign[] = [];
+    const cursors = new Set<string>();
+    let after: string | undefined;
+    for (let page = 0; page < 100; page++) {
+        const result = await metaRead<{ data: FacebookAdCampaign[]; paging?: { next?: string; cursors?: { after?: string } } }>(`${accountId}/campaigns`, accessToken,
+            { fields, limit: String(pageSize), ...(after ? { after } : {}) });
+        if (!Array.isArray(result.data)) throw new Error('Meta кампанит ажлын хариу дутуу байна.');
+        data.push(...result.data);
+        // Rebuild the trusted Graph URL with a cursor; never follow paging.next.
+        if (!result.paging?.next) return { data };
+        after = result.paging.cursors?.after;
+        if (!after || cursors.has(after)) break;
+        cursors.add(after);
+    }
+    throw new Error('Meta кампанит ажлын жагсаалт бүрэн татагдсангүй.');
 }
 
 /** Verify a campaign belongs to the shop's selected ad account before reading its insights. */

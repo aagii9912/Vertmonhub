@@ -4,6 +4,7 @@ import { logger } from '@/lib/utils/logger';
 import { campaignBelongsToAccount, fetchCampaignInsights } from '@/lib/facebook/marketing-api';
 import { metaAdsToken } from '@/lib/facebook/ads-auth';
 import { syncMetaSpend } from '@/lib/marketing/meta-spend';
+import { syncMetaInsights } from '@/lib/marketing/meta-insights';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { isAuthorizedCron } from '@/lib/auth/cron';
 
@@ -12,8 +13,10 @@ export const maxDuration = 300;
 
 /**
  * POST /api/cron/ads-insights-sync
- * Shop бүрийн Facebook кампанит ажлуудын insights (spend, impressions, ...)-ыг шинэчилнэ.
- * Ингэснээр ROI dashboard-ийн зардал сэргэж байна. CRON_SECRET-ээр хамгаалагдсан.
+ * Shop бүрийн Meta зарын дансны: (1) өдрийн кампанит ажлын зардал (meta_daily_spend),
+ * (2) ad set × өдрийн дэлгэрэнгүй үр дүн + хурлын долоо хоногийн `meta_ads` тайлан
+ * (meta_ad_insights_daily, marketing_channel_reports), (3) хуучин ROI-ийн 30 хоногийн snapshot.
+ * Нэг shop-ийн алдаа бусдыг зогсоохгүй. CRON_SECRET-ээр хамгаалагдсан.
  */
 export async function POST(request: NextRequest) {
     if (!isAuthorizedCron(request)) {
@@ -26,6 +29,7 @@ export async function POST(request: NextRequest) {
         const shops = await fetchAllRows<{ id: string; facebook_ad_account_id: string; meta_ads_user_access_token: string | null; meta_ads_user_token_expires_at: string | null }>((from, to) => supabase.from('shops')
             .select('id,facebook_ad_account_id,meta_ads_user_access_token,meta_ads_user_token_expires_at').not('facebook_ad_account_id', 'is', null).order('id').range(from, to));
         const dailyResults: { shopId: string; success: boolean; rows?: number }[] = [];
+        const insightResults: { shopId: string; success: boolean; rows?: number; weeks?: number }[] = [];
         let snapshotFailures = 0;
         let updated = 0;
         for (const shop of shops || []) {
@@ -35,6 +39,14 @@ export async function POST(request: NextRequest) {
             } catch {
                 dailyResults.push({ shopId: shop.id, success: false });
                 logger.warn('[Ads Insights Cron] daily sync failed', { shopId: shop.id });
+            }
+            // Ad set × өдрийн үр дүн + хурлын долоо хоногийн тайлан. Алдаа нь meta_insights_sync-д бичигдэнэ.
+            try {
+                const result = await syncMetaInsights(supabase, shop.id);
+                insightResults.push({ shopId: shop.id, success: true, rows: result.rows, weeks: result.weeks.length });
+            } catch {
+                insightResults.push({ shopId: shop.id, success: false });
+                logger.warn('[Ads Insights Cron] detailed insights sync failed', { shopId: shop.id });
             }
             let token: string;
             try { token = metaAdsToken(shop); }
@@ -84,8 +96,8 @@ export async function POST(request: NextRequest) {
         }
 
         logger.info('[Ads Insights Cron] done', { updated });
-        const success = dailyResults.every(r => r.success) && snapshotFailures === 0;
-        return NextResponse.json({ success, updated, dailyResults, snapshotFailures }, { status: success ? 200 : 500 });
+        const success = dailyResults.every(r => r.success) && insightResults.every(r => r.success) && snapshotFailures === 0;
+        return NextResponse.json({ success, updated, dailyResults, insightResults, snapshotFailures }, { status: success ? 200 : 500 });
     } catch (error) {
         logger.error('[Ads Insights Cron] error', { error });
         return NextResponse.json({ error: 'Insights sync failed' }, { status: 500 });

@@ -73,6 +73,7 @@ Browser specs run against `e2e/support/fixture-server.mjs` (fake GoTrue + `next 
 - Development-only mock: `localStorage.vertmonhub_ai_mock = ok|error|delegate|clarify` (sent as `x-ai-mock`); never active in production.
 
 ### Other
+- Meta Ads (Marketing API v26): `META_ADS_SYSTEM_TOKEN` (System User, optional, server-only) takes precedence over each project's OAuth user token (`metaAdsToken`/`metaAdsTokenSource` in `lib/facebook/ads-auth.ts`). One ad account per project (`shops_facebook_ad_account_unique`), chosen only via `POST /api/marketing/facebook/ads/accounts` — admin/super_admin only while the system token is active; `/api/shop` PATCH cannot set it. The cron and «Meta зардал татах» save spend in `meta_daily_spend` and ad set × day insights in `meta_ad_insights_daily` (`save_meta_ad_insights`, status in `meta_insights_sync`), then write weekly `meta_ads` channel reports with `origin = 'api'` (`lib/marketing/meta-insights.ts`, docs/features/META-INSIGHTS-API-2026-10-05.md).
 - Meta DMs: `/api/webhook` verifies the signature, ACKs immediately and, in `after()`, saves the customer and a `chat_history` row (attachments as type labels, never CDN URLs). No auto-reply. Staff answer from the Inbox via `/api/dashboard/conversations/reply` (Meta's 24 h window; Facebook only).
 - Sentry: `src/instrumentation.ts` (server/edge init) + `src/instrumentation-client.ts` + `withSentryConfig`; no root `sentry.*.config.ts`.
 - `shops` is load-bearing (one shop = one project); a multi-tenant rework is out of scope for routine changes.
