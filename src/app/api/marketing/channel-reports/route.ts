@@ -185,10 +185,12 @@ export const POST = withRoute({ module: MODULE, access: 'write', error: 'Фай�
     }
 
     if (!storageReady) return unavailable();
-    if (result.errors.length) return badRequest(result.errors[0], { errors: result.errors });
     if (split && !weekResults.length) return badRequest('Энэ файлыг хурлын долоо хоногоор хуваах боломжгүй: өдрөөр задалсан, нэгээс олон долоо хоног хамарсан Meta экспорт шаардлагатай.');
     if (weekResults.some(({ week }) => week.from > today)) return badRequest('Ирээдүйн хугацааны тайлан оруулах боломжгүй.');
+    // Хуваах үед сонгосон хугацаа хамаарахгүй — долоо хоног бүрийн нэгтгэлийг л шалгана.
     const targets = split ? weekResults : [{ week: period.data, result }];
+    const errors = [...new Set(targets.flatMap(t => t.result.errors))];
+    if (errors.length) return badRequest(errors[0], { errors });
 
     let existing: Map<string, ChannelExistingReport>;
     try { existing = await findExisting(targets.map(t => t.week)); } catch (error) {

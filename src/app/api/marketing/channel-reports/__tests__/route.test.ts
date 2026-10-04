@@ -237,6 +237,10 @@ describe('POST save', () => {
         expect(rows[2].breakdown.map(b => b.label)).toEqual(['Дуудлагын кампанит ажил', 'Постын урамшуулал', 'Давхар нэр']);
         expect((rows[0].warnings as Array<{ code: string }>).map(w => w.code)).toContain('partial_coverage');
         expect((rows[1].warnings as Array<{ code: string }>).map(w => w.code)).not.toContain('partial_coverage');
+        // Хуваах үед сонгосон хугацаа (файлын гадна байсан ч) хадгалалтыг хаахгүй.
+        const elsewhere = await POST(upload({ mode: 'save', split: '1', period_from: '2026-08-01', period_to: '2026-08-07' }, { contents: META_DAILY, name: 'Meta-Campaigns-daily.csv' }));
+        expect(elsewhere.status).toBe(200);
+        expect(await POST(upload({ mode: 'save', period_from: '2026-08-01', period_to: '2026-08-07' }, { contents: META_DAILY, name: 'Meta-Campaigns-daily.csv' })).then(r => r.status)).toBe(400);
     });
 
     it('refuses to overwrite a report synced from the Meta API', async () => {
