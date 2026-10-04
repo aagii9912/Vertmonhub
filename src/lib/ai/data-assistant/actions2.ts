@@ -10,7 +10,7 @@ import { resolveSalesProjectScope, UNRESTRICTED_SALES_SCOPE, type SalesProjectSc
 import { computeKpiReport } from '@/lib/dashboard/kpi-report-build';
 import { formatKpiReportText } from '@/lib/dashboard/kpi-report';
 import { getManagerPerformance } from '@/lib/reports/manager-performance';
-import { addCustomerTag, removeCustomerTag, setCustomerAiPause, replyToCustomer, mergeCustomers } from '@/lib/services/CustomerOps';
+import { addCustomerTag, removeCustomerTag, replyToCustomer, mergeCustomers } from '@/lib/services/CustomerOps';
 import { logMarketingSpend, upsertMarketingBudget, addMarketIndicator, listMarketingSpend, isMissingMarketingTable, MARKETING_MIGRATION_HINT } from '@/lib/services/MarketingOps';
 import { listTransactions, financeSummary, addTransaction, listBills, payBill, type TxnMethod } from '@/lib/services/FinanceOps';
 import { SPEND_CHANNELS } from '@/lib/marketing/budget';
@@ -56,7 +56,7 @@ export async function getExportLink(_shopId: string, args: Args) {
 /* ---------------- Харилцагч ---------------- */
 
 async function findCustomer(shopId: string, a: Args) {
-    let q = db().from('customers').select('id, name, phone, tags, facebook_id, ai_paused_until').eq('shop_id', shopId);
+    let q = db().from('customers').select('id, name, phone, tags, facebook_id').eq('shop_id', shopId);
     if (a.customer_id) q = q.eq('id', a.customer_id);
     else if (a.phone) q = q.ilike('phone', `%${String(a.phone).replace(/\D/g, '').slice(-8)}%`);
     else if (a.customer_name) q = q.ilike('name', `%${a.customer_name}%`);
@@ -77,24 +77,14 @@ export async function customerTag(shopId: string, args: Args, remove: boolean) {
     return { success: true, message: remove ? `«${f.customer.name}»-аас «${tag}» тагийг хаслаа.` : `«${f.customer.name}»-д «${tag}» таг нэмлээ.`, tags: r.tags, customerId: f.customer.id };
 }
 
-export async function customerAiPause(shopId: string, args: Args) {
-    const f = await findCustomer(shopId, args);
-    if ('error' in f) return f;
-    const resume = args.action === 'resume';
-    const minutes = resume ? null : Math.max(5, Math.min(24 * 60, Number(args.minutes) || 60));
-    const r = await setCustomerAiPause(db(), shopId, f.customer.id, minutes);
-    if ('error' in r) return r;
-    return { success: true, message: resume ? `«${f.customer.name}»-д AI хариулагч дахин идэвхжлээ.` : `«${f.customer.name}»-д AI-г ${minutes} минут зогсоолоо — та өөрөө хариулна.`, customerId: f.customer.id };
-}
-
 export async function replyCustomer(shopId: string, args: Args, confirm: boolean) {
     const f = await findCustomer(shopId, args);
     if ('error' in f) return f;
     const message = String(args.message || '').trim().slice(0, 2000);
     if (!message) return { error: 'message шаардлагатай' };
     if (!f.customer.facebook_id) return { error: `«${f.customer.name}» Facebook Messenger-тэй холбогдоогүй` };
-    if (!confirm) return confirmNeeded('reply_to_customer', { customer_id: f.customer.id, message, ai_pause: args.ai_pause !== false }, `Messenger хариу: ${f.customer.name}`, { Харилцагч: f.customer.name, Мессеж: message, 'AI зогсоох': args.ai_pause === false ? 'Үгүй' : '30 мин' });
-    const r = await replyToCustomer(db(), shopId, f.customer.id, message, args.ai_pause === false ? 'off' : 'pause');
+    if (!confirm) return confirmNeeded('reply_to_customer', { customer_id: f.customer.id, message }, `Messenger хариу: ${f.customer.name}`, { Харилцагч: f.customer.name, Мессеж: message });
+    const r = await replyToCustomer(db(), shopId, f.customer.id, message);
     if ('error' in r) return { error: r.error };
     return { success: true, message: `«${f.customer.name}»-д Messenger-ээр хариу илгээлээ.`, customerId: f.customer.id };
 }

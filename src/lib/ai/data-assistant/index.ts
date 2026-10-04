@@ -19,7 +19,7 @@ import { WRITE_TOOL_NAMES, DELETE_TOOL_NAMES, ADMIN_TOOL_NAMES, TOOL_MODULE, AUT
 const AUTO_SET = new Set(AUTO_TOOL_NAMES);
 const AUTO_LABELS: Record<string, string> = {
     add_lead_note: 'Тэмдэглэл нэмэх', remember_fact: 'Санах', log_call: 'Дуудлага бүртгэх', set_followup: 'Follow-up тавих', record_viewing_outcome: 'Уулзалтын үр дүн',
-    create_task: 'Ажил нэмэх', complete_task: 'Ажил дуусгах', add_customer_tag: 'Таг нэмэх', remove_customer_tag: 'Таг хасах', set_customer_ai_pause: 'AI зогсоох/сэргээх', add_market_indicator: 'Зах зээлийн үзүүлэлт',
+    create_task: 'Ажил нэмэх', complete_task: 'Ажил дуусгах', add_customer_tag: 'Таг нэмэх', remove_customer_tag: 'Таг хасах', add_market_indicator: 'Зах зээлийн үзүүлэлт',
 };
 import { logAiAudit } from './audit';
 import {
@@ -37,7 +37,7 @@ import {
     generateChartConfig,
 } from './functions';
 import { inviteUser, assignRole, createRole } from './admin-functions';
-import { getKpiReport, getManagerPerformanceTool, getExportLink, customerTag, customerAiPause, replyCustomer, mergeCustomersTool, logSpend, setBudget, listSpend, addIndicator, financeSummaryTool, listTransactionsTool, addTransactionTool, listBillsTool, payBillTool } from './actions2';
+import { getKpiReport, getManagerPerformanceTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, logSpend, setBudget, listSpend, addIndicator, financeSummaryTool, listTransactionsTool, addTransactionTool, listBillsTool, payBillTool } from './actions2';
 import { logCall, setFollowup, assignLeadManager, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
 
 /** AI Assistant-ийн RBAC эрхүүд (route-аас тооцоолж дамжуулна). */
@@ -182,7 +182,6 @@ export async function executeDataTool(toolName: string, args: any, shopId: strin
         case 'get_export_link': result = await getExportLink(shopId, args); break;
         case 'add_customer_tag': result = await customerTag(shopId, args, false); break; // confirm: AUTO хаалт дээр
         case 'remove_customer_tag': result = await customerTag(shopId, args, true); break; // confirm: AUTO хаалт дээр
-        case 'set_customer_ai_pause': result = await customerAiPause(shopId, args); break; // confirm: AUTO хаалт дээр
         case 'reply_to_customer': result = await replyCustomer(shopId, args, confirm); break;
         case 'merge_customers': result = await mergeCustomersTool(shopId, args, confirm, scope); break;
         case 'log_marketing_spend': result = await logSpend(shopId, args, confirm, userId); break;

@@ -15,13 +15,13 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const { customerId, message, aiPauseMode = 'pause' } = await request.json();
+        const { customerId, message } = await request.json();
 
         if (!customerId || !message) {
             return NextResponse.json({ error: 'customerId and message are required' }, { status: 400 });
         }
 
-        const r = await replyToCustomer(supabaseAdmin(), authShop.id, customerId, message, aiPauseMode === 'off' ? 'off' : 'pause');
+        const r = await replyToCustomer(supabaseAdmin(), authShop.id, customerId, message);
         if ('error' in r) return NextResponse.json({ error: r.error }, { status: r.status });
 
         return NextResponse.json({ success: true, message: 'Message sent successfully' });

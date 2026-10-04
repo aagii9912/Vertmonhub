@@ -12,9 +12,8 @@ import { resolvePermissions } from '@/lib/auth/require-permission';
  * Sidebar болон гар утасны табын амьд тоонууд — нэг хөнгөн дуудлага:
  *   leads    — шинэ (status = new) лид
  *   meetings — өнөөдрийн товлосон уулзалт
- *   inbox    — AI-г түр зогсоож хүн хариулж буй харилцагч (ai_paused_until > now)
  *
- * Гурван тоолол зэрэг явна; аль нэг нь бүтэлгүйтвэл тэр талбар undefined
+ * Хоёр тоолол зэрэг явна; аль нэг нь бүтэлгүйтвэл тэр талбар undefined
  * буцна — sidebar тоогүй ч бүрэн ажиллана (миграци хийгдээгүй орчинд ч).
  */
 export async function GET() {
@@ -33,9 +32,8 @@ export async function GET() {
 
         // «Өнөөдөр» — Улаанбаатарын өдрийн хилээр (сервер UTC)
         const { start: dayStart, end: dayEnd } = ubDayRange();
-        const nowIso = new Date().toISOString();
 
-        const [leads, meetings, inbox] = await Promise.all([
+        const [leads, meetings] = await Promise.all([
             canRead('leads') ? applyLeadScope(db
                 .from('leads')
                 .select('id', { count: 'exact', head: true })
@@ -52,18 +50,12 @@ export async function GET() {
                 .gte('scheduled_at', dayStart.toISOString())
                 .lt('scheduled_at', dayEnd.toISOString()), scope, 'leads.project_id', 'leads.sales_manager_name')
                 .then((r) => (r.error ? undefined : r.count ?? 0)) : undefined,
-            canRead('inbox') ? db
-                .from('customers')
-                .select('id', { count: 'exact', head: true })
-                .eq('shop_id', shopId)
-                .gt('ai_paused_until', nowIso)
-                .then((r) => (r.error ? undefined : r.count ?? 0)) : undefined,
         ]);
 
         // no-store: react-query өөрөө cache-лэнэ; browser HTTP cache нь invalidation-ийг
         // хүчингүй болгож, shop сольсны дараа өмнөх shop-ийн тоог харуулдаг байв.
         return NextResponse.json(
-            { leads, meetings, inbox },
+            { leads, meetings },
             { headers: { 'Cache-Control': 'private, no-store' } },
         );
     } catch (error) {

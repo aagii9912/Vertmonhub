@@ -85,7 +85,6 @@ function ConversationThread({ conversation, onBack, onRefresh }: { conversation:
     const [draft, setDraft] = useState('');
     const [sending, setSending] = useState(false);
     const [sendError, setSendError] = useState<string | null>(null);
-    const [pause, setPause] = useState<'pause' | 'off'>('pause');
     const endRef = useRef<HTMLDivElement>(null);
     const messages = [...conversation.messages].sort((a,b) => Date.parse(a.created_at) - Date.parse(b.created_at));
     useEffect(() => { endRef.current?.scrollIntoView({ block: 'nearest' }); }, [conversation.id, conversation.messages.length]);
@@ -96,7 +95,7 @@ function ConversationThread({ conversation, onBack, onRefresh }: { conversation:
         setSending(true);
         setSendError(null);
         try {
-            const res = await dashboardFetch('/api/dashboard/conversations/reply', { method: 'POST', body: JSON.stringify({ customerId: conversation.id, message, aiPauseMode: pause }) });
+            const res = await dashboardFetch('/api/dashboard/conversations/reply', { method: 'POST', body: JSON.stringify({ customerId: conversation.id, message }) });
             if (!res.ok) {
                 const body = await res.json().catch(() => null);
                 throw new Error(body?.error || 'Мессеж илгээж чадсангүй.');
@@ -134,9 +133,6 @@ function ConversationThread({ conversation, onBack, onRefresh }: { conversation:
             <div ref={endRef} />
         </div>
         {canWrite ? <form onSubmit={e => { e.preventDefault(); void send(); }} className="shrink-0 space-y-2 border-t border-border bg-surface p-3">
-            <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">Хариу илгээсний дараа:
-                <select aria-label="Хариу илгээсний дараах AI горим" disabled={sending} value={pause} onChange={e => setPause(e.target.value as 'pause' | 'off')} className="min-h-9 rounded-md border border-border bg-surface px-2 text-foreground focus-ring"><option value="pause">AI-г 30 минут зогсоох</option><option value="off">AI-г дахин асаах хүртэл зогсоох</option></select>
-            </label>
             {sendError && <p role="alert" className="text-xs text-status-danger">{sendError} Бичсэн мессеж талбарт үлдсэн; дахин илгээж болно.</p>}
             <div className="flex items-end gap-2"><textarea aria-label="Хариу мессеж" value={draft} onChange={e => setDraft(e.target.value)} disabled={sending} rows={2} placeholder="Хариу бичих…" onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(); } }} className="min-h-11 min-w-0 flex-1 resize-none rounded-md border border-border bg-surface-2 px-3 py-2 text-base focus-ring md:text-sm" /><button type="submit" disabled={!draft.trim() || sending} aria-label="Мессеж илгээх" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md bg-brand text-brand-fg disabled:opacity-40 focus-ring">{sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}</button></div>
         </form> : <p className="border-t border-border p-3 text-sm text-muted-foreground">Та яриаг зөвхөн харах эрхтэй.</p>}

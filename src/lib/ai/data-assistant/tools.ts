@@ -689,24 +689,13 @@ export const writeTools: any[] = [
             tag: { type: SchemaType.STRING, description: 'Таг' } }, required: ['tag'] }
     },
     {
-        name: 'set_customer_ai_pause',
-        description: 'Тухайн харилцагчид FB/IG DM-ийн AI хариулагчийг ТҮР ЗОГСООХ (хүн өөрөө хариулна) эсвэл СЭРГЭЭХ. Шууд гүйцэтгэгдэнэ.',
-        parameters: { type: SchemaType.OBJECT, properties: {
-                customer_id: { type: SchemaType.STRING, description: 'Харилцагчийн ID' },
-                customer_name: { type: SchemaType.STRING, description: 'Нэрээр хайх' },
-                phone: { type: SchemaType.STRING, description: 'Утсаар хайх' },
-            action: { type: SchemaType.STRING, enum: ['pause', 'resume'], description: 'pause=зогсоох, resume=сэргээх' },
-            minutes: { type: SchemaType.NUMBER, description: 'Зогсоох минут (default 60)' } }, required: ['action'] }
-    },
-    {
         name: 'reply_to_customer',
-        description: 'Харилцагчид Facebook Messenger-ээр ХҮНИЙ хариу илгээх (chat_history-д бичигдэж, AI 30 мин зогсоно). Гадагш илгээгддэг тул баталгаажуулалт авна.',
+        description: 'Харилцагчид Facebook Messenger-ээр ХҮНИЙ хариу илгээх (chat_history-д бичигдэнэ). Гадагш илгээгддэг тул баталгаажуулалт авна.',
         parameters: { type: SchemaType.OBJECT, properties: {
                 customer_id: { type: SchemaType.STRING, description: 'Харилцагчийн ID' },
                 customer_name: { type: SchemaType.STRING, description: 'Нэрээр хайх' },
                 phone: { type: SchemaType.STRING, description: 'Утсаар хайх' },
-            message: { type: SchemaType.STRING, description: 'Илгээх мессеж (монголоор)' },
-            ai_pause: { type: SchemaType.BOOLEAN, description: 'AI-г 30 мин зогсоох эсэх (default true)' } }, required: ['message'] }
+            message: { type: SchemaType.STRING, description: 'Илгээх мессеж (монголоор)' } }, required: ['message'] }
     },
     {
         name: 'merge_customers',
@@ -877,13 +866,13 @@ export const adminTools: any[] = [
 
 export const WRITE_TOOL_NAMES = ['update_property_status', 'update_unit_status', 'update_property_price', 'update_lead_status', 'add_lead_note', 'process_contract_action', 'create_property', 'create_lead', 'create_customer', 'schedule_viewing', 'create_contract', 'attach_file', 'bulk_update_leads', 'create_social_post', 'remember_fact',
     'log_call', 'set_followup', 'assign_lead_manager', 'record_viewing_outcome', 'reschedule_viewing', 'create_task', 'complete_task', 'add_contract_payment', 'mark_payment_paid',
-    'add_customer_tag', 'remove_customer_tag', 'set_customer_ai_pause', 'reply_to_customer', 'merge_customers', 'log_marketing_spend', 'set_marketing_budget', 'add_market_indicator', 'add_finance_transaction', 'pay_vendor_bill'];
+    'add_customer_tag', 'remove_customer_tag', 'reply_to_customer', 'merge_customers', 'log_marketing_spend', 'set_marketing_budget', 'add_market_indicator', 'add_finance_transaction', 'pay_vendor_bill'];
 
 /**
  * Буцаах боломжтой, эрсдэл багатай WRITE tool-ууд — баталгаажуулалтын картгүйгээр ШУУД
  * гүйцэтгэгдэнэ («хэлээд хийлгэх» мэдрэмж). Устгах, гэрээ, төлбөр, шилжүүлэлт энд ОРОХГҮЙ.
  */
-export const AUTO_TOOL_NAMES = ['add_lead_note', 'remember_fact', 'log_call', 'set_followup', 'record_viewing_outcome', 'create_task', 'complete_task', 'add_customer_tag', 'remove_customer_tag', 'set_customer_ai_pause', 'add_market_indicator'];
+export const AUTO_TOOL_NAMES = ['add_lead_note', 'remember_fact', 'log_call', 'set_followup', 'record_viewing_outcome', 'create_task', 'complete_task', 'add_customer_tag', 'remove_customer_tag', 'add_market_indicator'];
 
 /**
  * API-тай ижил модулийн шаардлага. Бүртгэлгүй tool эсвэл тодорхойгүй эрх → хориглоно.
@@ -904,7 +893,7 @@ export const TOOL_MODULE: Record<string, string | string[]> = {
     get_marketing_performance: 'marketing-roi', list_marketing_spend: 'marketing-roi', log_marketing_spend: 'marketing-roi', set_marketing_budget: 'marketing-roi', add_market_indicator: 'marketing-roi', get_market_indicators: 'marketing-roi', get_marketing_summary: 'marketing-roi', get_marketing_budget_status: 'marketing-roi', create_social_post: 'marketing-roi',
     get_finance_summary: 'finance', list_finance_transactions: 'finance', add_finance_transaction: 'finance',
     list_vendor_bills: 'procurement', pay_vendor_bill: 'procurement',
-    reply_to_customer: 'inbox', set_customer_ai_pause: 'inbox',
+    reply_to_customer: 'inbox',
     invite_user: 'settings', assign_role: 'settings', create_role: 'settings',
 };
 

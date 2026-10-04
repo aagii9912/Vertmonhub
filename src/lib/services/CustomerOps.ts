@@ -29,16 +29,8 @@ export async function removeCustomerTag(db: SupabaseClient, shopId: string, cust
     return { tags: data.tags as string[] };
 }
 
-/** AI-г түр зогсоох (minutes) эсвэл сэргээх (null). */
-export async function setCustomerAiPause(db: SupabaseClient, shopId: string, customerId: string, minutes: number | null) {
-    const until = minutes === null ? null : new Date(Date.now() + minutes * 60 * 1000).toISOString();
-    const { error } = await db.from('customers').update({ ai_paused_until: until }).eq('id', customerId).eq('shop_id', shopId);
-    if (error) return { error: error.message };
-    return { ai_paused_until: until };
-}
-
-/** Messenger-ээр хүнээс хариу илгээж, chat_history-д бичиж, AI-г 30 мин зогсооно (эсвэл 'off'). */
-export async function replyToCustomer(db: SupabaseClient, shopId: string, customerId: string, message: string, aiPauseMode: 'pause' | 'off' = 'pause') {
+/** Messenger-ээр хүнээс хариу илгээж, chat_history-д бичнэ. */
+export async function replyToCustomer(db: SupabaseClient, shopId: string, customerId: string, message: string) {
     const { data: customer } = await db.from('customers').select('facebook_id, name').eq('id', customerId).eq('shop_id', shopId).single();
     if (!customer?.facebook_id) return { error: 'Харилцагч олдсонгүй эсвэл Facebook ID алга', status: 404 as const };
     const { data: shop } = await db.from('shops').select('facebook_page_access_token').eq('id', shopId).single();
@@ -47,11 +39,10 @@ export async function replyToCustomer(db: SupabaseClient, shopId: string, custom
     if (!token) return { error: 'Facebook token decrypt хийж чадсангүй', status: 400 as const };
     await sendTextMessage({ recipientId: customer.facebook_id, message, pageAccessToken: token });
     await db.from('chat_history').insert({ shop_id: shopId, customer_id: customerId, message: '', response: message, intent: 'human_reply' });
-    await setCustomerAiPause(db, shopId, customerId, aiPauseMode === 'off' ? null : 30);
     return { sent: true, customerName: customer.name as string | null };
 }
 
-const CHILD_TABLES = ['leads', 'chat_history', 'property_viewings', 'property_contracts', 'ai_memory', 'customer_surveys', 'service_logs'];
+const CHILD_TABLES = ['leads', 'chat_history', 'property_viewings', 'property_contracts', 'customer_surveys', 'service_logs'];
 
 /** Давхардсан хоёр харилцагчийг нэгтгэнэ: duplicate → primary, duplicate устна. */
 export async function mergeCustomers(db: SupabaseClient, shopId: string, primaryId: string, duplicateId: string, scope?: SalesProjectScope) {
