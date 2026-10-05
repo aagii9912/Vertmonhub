@@ -283,9 +283,12 @@ export async function fetchPageDailyInsights(
     to: string,
     read: MetaReadOptions = {},
 ): Promise<{ rows: PageDailyRow[]; unavailable: string[] }> {
-    // since/until-ийг өргөн авна: Graph огноог аль цагийн бүсээр тайлбарлахаас үл хамааран бүх өдөр орно.
+    // Unix секундээр, нэг өдрөөр өргөн (PT-ийн шилжилтээс үл хамааран бүх өдөр орно); until ирээдүйд гарахгүй.
+    const unix = (day: string) => Math.floor(Date.parse(`${day}T00:00:00Z`) / 1000);
     const { data, unavailable } = await fetchInsightMetrics(pageId, accessToken, PAGE_DAILY_METRICS, {
-        period: 'day', since: shiftDay(from, -1), until: shiftDay(to, 2),
+        period: 'day',
+        since: String(unix(shiftDay(from, -1))),
+        until: String(Math.min(unix(shiftDay(to, 2)), Math.floor(Date.now() / 1000))),
     }, read);
     const today = metaInsightToday();
     const rows: PageDailyRow[] = [];

@@ -106,6 +106,20 @@ const CONNECT_ENDPOINT: Record<ConnectFlow, string> = {
     facebook: '/api/auth/facebook/pages',
     instagram: '/api/auth/instagram/accounts',
 };
+/** OAuth callback-ийн алдааны код (lib/facebook/page-connect.ts) → хэрэглэгчид ойлгомжтой тайлбар. */
+const OAUTH_ERROR_LABEL: Record<string, string> = {
+    denied: 'Facebook дээр зөвшөөрөл өгөөгүй.',
+    state_mismatch: 'Холболтын хугацаа дууссан эсвэл өөр цонхноос эхэлсэн. Дахин холбоно уу.',
+    session_error: 'Нэвтэрсэн хэрэглэгч эсвэл төсөл өөрчлөгдсөн. Дахин холбоно уу.',
+    no_code: 'Facebook баталгаажуулалтын код ирсэнгүй. Дахин оролдоно уу.',
+    config_missing: 'Facebook app-ийн тохиргоо дутуу байна. Админд хандана уу.',
+    token_error: 'Facebook нэвтрэх эрх авч чадсангүй. Дахин оролдоно уу.',
+    pages_error: 'Facebook Page-ийн жагсаалт татаж чадсангүй.',
+    no_pages: 'Таны удирддаг Facebook Page олдсонгүй.',
+    no_instagram_account: 'Instagram Business аккаунттай Facebook Page олдсонгүй.',
+    save_error: 'Холболтыг хадгалж чадсангүй. Дахин оролдоно уу.',
+    exception: 'Facebook-тэй холбогдоход алдаа гарлаа. Дахин оролдоно уу.',
+};
 const PERMISSION_LABEL: Record<string, string> = {
     read_insights: 'Page insights (read_insights)',
     pages_read_engagement: 'Page-ийн нийтлэл, engagement (pages_read_engagement)',
@@ -270,7 +284,7 @@ function SocialPageContent() {
         const errParam = searchParams.get(`${prefix}_error`);
 
         if (errParam) {
-            setOauthBanner(`${label} холболт амжилтгүй: ${errParam}`);
+            setOauthBanner(`${label} холболт амжилтгүй: ${OAUTH_ERROR_LABEL[errParam] ?? errParam}`);
             router.replace('/marketing/social');
             return;
         }

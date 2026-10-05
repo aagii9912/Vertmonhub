@@ -86,8 +86,8 @@ it('reads the v26 Page metrics per day, keeps only finished days inside the wind
     expect(url.pathname).toBe('/v26.0/42/insights');
     expect(url.searchParams.get('metric')).toBe(PAGE_DAILY_METRICS.join(','));
     expect(url.searchParams.get('period')).toBe('day');
-    expect(url.searchParams.get('since')).toBe('2026-09-30');
-    expect(url.searchParams.get('until')).toBe('2026-10-06');
+    expect(url.searchParams.get('since')).toBe(String(Date.parse('2026-09-30T00:00:00Z') / 1000));
+    expect(url.searchParams.get('until')).toBe(String(Date.parse('2026-10-05T03:00:00Z') / 1000)); // одоо, ирээдүй биш
 });
 
 it('isolates one removed metric (code 100) and keeps the rest', async () => {
