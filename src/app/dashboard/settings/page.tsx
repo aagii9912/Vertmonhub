@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { SectionCard } from '@/components/ui/SectionCard';
 import { SettingRow } from '@/components/ui/SettingRow';
@@ -9,30 +10,28 @@ import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/ui/FormField';
 import { Switch } from '@/components/ui/Switch';
 import { useAuth } from '@/contexts/AuthContext';
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import {
-    Building2, User, Bell, Save, LogOut, Loader2, Check,
-    Mail, Phone, MapPin, Globe
+    Building2, User, Bell, Save, LogOut, Loader2, Check, Phone
 } from 'lucide-react';
+
+// Имэйл, хаяг, вэб сайтын талбар `shops` хүснэгтэд байхгүй тул хадгалагдахгүй
+// удирдлага харуулахгүй. Мэдэгдлийн цорын ганц хадгалагддаг тохиргоо бол энэ
+// төхөөрөмжийн push бүртгэл (/api/push/subscribe, «Миний ажлууд»-тай ижил).
 
 export default function SettingsPage() {
     const { user, shop, refreshShop, signOut } = useAuth();
+    const push = usePushNotifications();
 
     const [loading, setLoading] = useState(false);
     const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+    const [saveError, setSaveError] = useState<string | null>(null);
 
     // Company Settings
     const [companyName, setCompanyName] = useState('');
     const [ownerName, setOwnerName] = useState('');
     const [phone, setPhone] = useState('');
-    const [companyEmail, setCompanyEmail] = useState('');
-    const [address, setAddress] = useState('');
-    const [website, setWebsite] = useState('');
-
-    // Notification Settings
-    const [emailNotif, setEmailNotif] = useState(true);
-    const [leadNotif, setLeadNotif] = useState(true);
-    const [reportNotif, setReportNotif] = useState(false);
 
     useEffect(() => {
         if (shop) {
@@ -43,34 +42,67 @@ export default function SettingsPage() {
     }, [shop]);
 
     async function handleSave() {
+        const name = companyName.trim();
+        if (!name) {
+            setSaveStatus('error');
+            setSaveError('Төслийн нэрийг оруулна уу.');
+            return;
+        }
+
         setLoading(true);
         setSaveStatus('saving');
+        setSaveError(null);
 
         try {
-            const res = await dashboardFetch('/api/shop', {
-                method: 'PATCH',
-                body: JSON.stringify({
-                    name: companyName,
-                    owner_name: ownerName,
-                    phone: phone,
-                })
-            });
+            let res: Response;
+            try {
+                res = await dashboardFetch('/api/shop', {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        name,
+                        owner_name: ownerName.trim() || null,
+                        phone: phone.trim() || null,
+                    })
+                });
+            } catch {
+                throw new Error('Сүлжээний алдаа. Дахин оролдоно уу.');
+            }
 
-            if (!res.ok) throw new Error('Failed to save');
+            if (!res.ok) {
+                const detail = await res.json().catch(() => null) as { error?: string } | null;
+                throw new Error(detail?.error || `Хүсэлт амжилтгүй (${res.status}). Дахин оролдоно уу.`);
+            }
 
             await refreshShop();
             setSaveStatus('saved');
             setTimeout(() => setSaveStatus('idle'), 2000);
-        } catch {
+        } catch (error) {
             setSaveStatus('error');
+            setSaveError(`Хадгалж чадсангүй: ${error instanceof Error ? error.message : 'Дахин оролдоно уу.'}`);
         } finally {
             setLoading(false);
         }
     }
 
+    async function togglePush(next: boolean) {
+        if (next) {
+            // subscribe() алдаагаа өөрөө toast-оор мэдэгдэнэ
+            await push.subscribe();
+            return;
+        }
+        if (!await push.unsubscribe()) toast.error('Мэдэгдлийг унтрааж чадсангүй. Дахин оролдоно уу.');
+    }
+
     async function handleLogout() {
         await signOut();
     }
+
+    // Hook дэмжлэгийг mount-ийн дараа шалгадаг тул шалгаж дуусаагүй үед «дэмжихгүй» гэж харуулахгүй.
+    const pushDescription = !push.isSupported && !push.isLoading
+        ? 'Энэ хөтөч push мэдэгдэл дэмжихгүй байна.'
+        : push.permission === 'denied'
+            ? 'Хөтчийн тохиргоонд мэдэгдлийг хориглосон байна. Тэндээс зөвшөөрсний дараа асаана уу.'
+            : 'Шинэ лид, даалгаврын сануулга зэрэг мэдэгдлийг энэ төхөөрөмж дээр авах';
 
     const SaveButton = () => (
         <Button onClick={handleSave} disabled={loading}>
@@ -125,48 +157,13 @@ export default function SettingsPage() {
                                 placeholder="99112233"
                             />
                         </FormField>
-                        <FormField
-                            label={<span className="inline-flex items-center gap-1"><Mail className="w-3.5 h-3.5" /> Имэйл хаяг</span>}
-                            htmlFor="company-email"
-                        >
-                            <Input
-                                id="company-email"
-                                type="email"
-                                value={companyEmail}
-                                onChange={(e) => setCompanyEmail(e.target.value)}
-                                placeholder="info@vertmon.mn"
-                            />
-                        </FormField>
-                        <FormField
-                            label={<span className="inline-flex items-center gap-1"><MapPin className="w-3.5 h-3.5" /> Хаяг</span>}
-                            htmlFor="company-address"
-                            className="md:col-span-2"
-                        >
-                            <Input
-                                id="company-address"
-                                type="text"
-                                value={address}
-                                onChange={(e) => setAddress(e.target.value)}
-                                placeholder="Улаанбаатар хот, Сүхбаатар дүүрэг"
-                            />
-                        </FormField>
-                        <FormField
-                            label={<span className="inline-flex items-center gap-1"><Globe className="w-3.5 h-3.5" /> Вэб сайт</span>}
-                            htmlFor="company-website"
-                            className="md:col-span-2"
-                        >
-                            <Input
-                                id="company-website"
-                                type="url"
-                                value={website}
-                                onChange={(e) => setWebsite(e.target.value)}
-                                placeholder="https://vertmon.mn"
-                            />
-                        </FormField>
                     </div>
 
-                    <div className="flex justify-end">
+                    <div className="flex flex-col items-end gap-2">
                         <SaveButton />
+                        {saveError && (
+                            <p role="alert" className="text-sm text-status-danger">{saveError}</p>
+                        )}
                     </div>
                 </div>
             </SectionCard>
@@ -175,35 +172,14 @@ export default function SettingsPage() {
             <SectionCard title="Мэдэгдлийн тохиргоо" icon={Bell}>
                 <div className="space-y-3">
                     <SettingRow
-                        label="Имэйл мэдэгдэл"
-                        description="Чухал шинэчлэлтүүдийг имэйлээр авах"
+                        label="Push мэдэгдэл"
+                        description={pushDescription}
                         control={
                             <Switch
-                                checked={emailNotif}
-                                onCheckedChange={setEmailNotif}
-                                aria-label="Имэйл мэдэгдэл"
-                            />
-                        }
-                    />
-                    <SettingRow
-                        label="Шинэ Lead мэдэгдэл"
-                        description="Шинэ лийд ирсэн үед мэдэгдэл авах"
-                        control={
-                            <Switch
-                                checked={leadNotif}
-                                onCheckedChange={setLeadNotif}
-                                aria-label="Шинэ Lead мэдэгдэл"
-                            />
-                        }
-                    />
-                    <SettingRow
-                        label="Долоо хоногийн тайлан"
-                        description="Борлуулалтын тайланг долоо хоног бүр авах"
-                        control={
-                            <Switch
-                                checked={reportNotif}
-                                onCheckedChange={setReportNotif}
-                                aria-label="Долоо хоногийн тайлан"
+                                checked={push.isSubscribed}
+                                disabled={!push.isSupported || push.isLoading || push.permission === 'denied'}
+                                onCheckedChange={(next) => void togglePush(next)}
+                                aria-label="Push мэдэгдэл"
                             />
                         }
                     />

@@ -45,6 +45,19 @@ describe('nav v2 — бүтэц', () => {
         expect(SECONDARY_ROUTES.some((r) => r.href === '/dashboard/reports/erp')).toBe(true);
     });
 
+    it('өгөгдөл ирдэггүй placeholder маркетинг хуудсууд цэс, ⌘K, «Бусад»-д байхгүй ч эрхийн хил хэвээр', () => {
+        const hrefs = [
+            ...PRIMARY_NAV.flatMap((i) => [i.href, ...(i.children ?? []).map((c) => c.href)]),
+            ...BOTTOM_NAV.map((i) => i.href),
+            ...SECONDARY_ROUTES.map((r) => r.href),
+        ];
+        for (const placeholder of ['/marketing/analytics', '/marketing/brand', '/marketing/messaging']) {
+            expect(hrefs).not.toContain(placeholder);
+            // Хуудас устаагүй: шууд URL нь /marketing-ийн marketing-roi эрхээр хамгаалагдсан хэвээр.
+            expect(getRouteModule(placeholder)).toBe('marketing-roi');
+        }
+    });
+
     it('href бүр давтагдахгүй', () => {
         const hrefs = [...PRIMARY_NAV, ...BOTTOM_NAV].map((i) => i.href);
         expect(new Set(hrefs).size).toBe(hrefs.length);
