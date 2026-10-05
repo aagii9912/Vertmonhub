@@ -63,7 +63,8 @@ ERP-ийн `transferred` төлөв («Тоот шилжсэн» — Odoo-д т�
 
 - `src/lib/contracts/transfer.ts`: client-safe Zod `TransferContractSchema` (strict), огнооны дүрэм, хураангуй. UI, API, AI нэг дүрмээр шалгана.
 - `src/lib/services/ContractService.ts`: `transferContract`, `listContractTransfers`, `contractIdsByPreviousHolder`, `loadContractTransferSummaries`, `loadTransferredContractIds`. API route, AI tool, импорт, экспорт энэ сервисийг хуваалцана.
-- `PATCH /api/dashboard/contracts/[id]`: `customer_name`-ийг allow-list-ээс хассан. Эзэмшигчийн нэрийг солих гэвэл 400 буцааж «Гэрээ шилжүүлэх»-ийг заана. `customer_phone` (холбоо барих засвар) хэвээр. PATCH-ийн өөрчлөгдсөн талбар бүрийг өмнөх/шинэ утгатай нь `data_audit_log`-д бичнэ.
+- `PATCH /api/dashboard/contracts/[id]`: `customer_name`-ийг allow-list-ээс хассан. Эзэмшигчийн нэрийг солих гэвэл 400 буцааж «Гэрээ шилжүүлэх»-ийг заана. `customer_phone` (холбоо барих засвар) хэвээр. PATCH-ийн өөрчлөгдсөн талбар бүрийг өмнөх/шинэ утгатай нь `data_audit_log`-д бичнэ. Хязгаарлагдсан менежер PATCH-аар `sales_manager`-ийг солихгүй (403), зөвхөн өөрийн борлуулсан гэрээг засна (бусдынх 404) — эс бөгөөс гэрээг өөр дээрээ шилжүүлээд «өөрийн гэрээ» дүрмийг тойрох боломжтой байв.
+- AI аудит болон серверийн логт `transfer_contract`-ын шинэ эзэмшигчийн регистр, утас «(нуусан)» болно.
 
 ## 6. AI туслах
 
