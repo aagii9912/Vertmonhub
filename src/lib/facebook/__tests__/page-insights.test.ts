@@ -109,7 +109,7 @@ it('treats a missing object (100/33) or a request no metric survives as a failur
     expect(http).toHaveBeenCalledTimes(1);
 
     http.mockReset();
-    http.mockResolvedValue(invalidMetric());
+    http.mockImplementation(async () => invalidMetric());
     await expect(fetchPageDailyInsights('42', 'page-token', '2026-10-01', '2026-10-03')).rejects.toThrow(/code 100/);
     expect(http).toHaveBeenCalledTimes(1 + PAGE_DAILY_METRICS.length);
 });
