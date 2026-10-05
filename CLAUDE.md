@@ -80,7 +80,7 @@ Browser specs run against `e2e/support/fixture-server.mjs` (fake GoTrue + `next 
 
 ## Database and migrations
 
-- Migrations in `supabase/migrations` are additive and idempotent. Apply them with node + `pg` over `DATABASE_URL` (no Supabase CLI), one transaction per file, and record each version in `supabase_migrations.schema_migrations`. Data changes are separate, explicitly approved statements. Production has every migration through `20261004150000` (verified 2026-10-04).
+- Migrations in `supabase/migrations` are additive and idempotent. Apply them with node + `pg` over `DATABASE_URL` (no Supabase CLI), one transaction per file, and record each version in `supabase_migrations.schema_migrations`. Data changes are separate, explicitly approved statements. Production has every migration through `20261005140000` (verified 2026-10-05).
 - `DATABASE_URL` in `.env.local` is the production database: read-only queries and approved migrations only.
 - Real inventory is `property_units` (`property_block_summary` view); the `properties` listing table is mostly empty. `admins`, `plans`, `subscriptions`, `invoices`, `ai_memory` and `exec_sql` never existed — do not query them.
 - `node scripts/rls-audit.mjs` audits RLS/`security_invoker` read-only.
