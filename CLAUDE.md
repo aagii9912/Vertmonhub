@@ -95,7 +95,7 @@ Browser specs run against `e2e/support/fixture-server.mjs` (fake GoTrue + `next 
 
 ## UI conventions
 
-- Design system v2: Vertmon blue `#2D6FE6` is the only accent, borders over shadows, status colours only from `--status-*`, `.focus-ring` is the one focus style, `.num` for tabular figures; Golos Text + JetBrains Mono via `next/font`.
+- Design system v3 «Шөнө» (owner decision 2026-10-05, docs/features/DESIGN-SYSTEM-V3-2026-10-05.md): dark is the default theme (light via the user menu, `vh-theme`), the sidebar is dark in both. Vertmon blue is the only accent: `bg-brand` + `hover:bg-brand-hover` for actions, `text-brand-strong` for brand-coloured text (never `text-brand` on text). Champagne `gold` only for targets/achievement and the active-nav marker. Status colours only from `--status-*` (text on `*-soft`; `text-background` on solid fills; `danger-solid` for destructive buttons); inputs use `border-control` (3:1). One focus style: the base-layer outline (no `focus-visible:ring-*` in components). Borders over shadows; no text below 12px; `.num` for tabular figures; Inter + JetBrains Mono (codes/IDs only) via `next/font`. Web/desktop only — no new mobile-specific UI.
 - Navigation from `lib/navigation/nav.ts` (`PRIMARY_NAV`, `BOTTOM_NAV`, `MOBILE_TABS`, `SECONDARY_ROUTES` for ⌘K and the mobile «Бусад» sheet), filtered by `canAccessModule(Dynamic)`.
 - Icons `lucide-react`, toasts `sonner`, forms are controlled inputs + Zod, data via react-query. `@/` → `src/`.
 - Before browser-checking UI changes, unregister the service worker (`sw.js` serves cached JS).
