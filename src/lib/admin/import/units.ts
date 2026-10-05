@@ -110,7 +110,15 @@ function text(raw: unknown, label: string, max: number, required = false): strin
     return result;
 }
 
-/** Full-value parsing: malformed grouping, numeric prefixes and rounding are rejected. */
+/** «Б1-201» → «Б1». Зөвхөн «Б<тоо>-» угтвартай кодоос блок авна; бусад кодоос таахгүй. */
+export function blockFromCode(code: string | null | undefined): string | null {
+    return (code ?? '').trim().match(/^(Б\d+)-/u)?.[1] ?? null;
+}
+
+/**
+ * Full-value parsing: malformed grouping, numeric prefixes and rounding are rejected.
+ * Excel/ERP-ийн хөвөгч таслалын үлдэгдэл (89.32000000000001) л 2 орон руу буцна; 80.123 мэт утгыг татгалзсаар.
+ */
 function number(raw: unknown, label: string, integer = false): number | null {
     if (raw === null || raw === undefined || (typeof raw === 'string' && !raw.trim())) return null;
     if (typeof raw !== 'string' && typeof raw !== 'number') throw new Error(`${label} буруу тоо байна`);
@@ -122,12 +130,46 @@ function number(raw: unknown, label: string, integer = false): number | null {
         throw new Error(`${label} буруу тоо байна`);
     }
     const clean = input.replace(/[, \u00a0]/g, '');
-    const result = Number(clean);
+    let result = Number(clean);
     if (!Number.isFinite(result)) throw new Error(`${label} буруу тоо байна`);
     if (integer) {
         if (!Number.isInteger(result) || result > 2147483647) throw new Error(`${label} зөв бүхэл тоо байна`);
-    } else if (result > 99999999.99 || (clean.split('.')[1]?.length ?? 0) > 2) {
-        throw new Error(`${label} нь 99,999,999.99-аас ихгүй, хоёр орны нарийвчлалтай байна`);
+        return result;
+    }
+    if ((clean.split('.')[1]?.length ?? 0) > 2) {
+        const cents = Math.round(result * 100) / 100;
+        if (Math.abs(result - cents) > 1e-6) throw new Error(`${label} нь 99,999,999.99-аас ихгүй, хоёр орны нарийвчлалтай байна`);
+        result = cents;
+    }
+    if (result > 99999999.99) throw new Error(`${label} нь 99,999,999.99-аас ихгүй, хоёр орны нарийвчлалтай байна`);
+    return result;
+}
+
+const cellText = (raw: unknown) => typeof raw === 'string' || typeof raw === 'number' ? String(raw).trim() || null : null;
+const allDistinct = (values: Array<string | null>) => values.every(Boolean) && new Set(values).size === values.length;
+
+/**
+ * ERP зогсоол/агуулахын код давхар бүрт давтагддаг (Б1-1 нь B1 ба 01 давхарт). Ээлж/ангилал/код давхардсан
+ * бүлэгт кодын ард давхрыг (бүгд өөр бол), эс бөгөөс загварыг (ERP-ийн түлхүүр: төрөл + загвар + код) залгаж ялгана.
+ * Аль нь ч ялгахгүй бол давхардлын алдаа хэвээр үлдэнэ.
+ */
+function codeSuffixes(sourceRows: ImportRow[], fixedPhase: string | null) {
+    const groups = new Map<string, Array<{ floor: string | null; model: string | null }>>();
+    for (const source of sourceRows) {
+        const code = value(source, columns.code);
+        const rawCategory = value(source, columns.category);
+        const phase = fixedPhase ?? value(source, columns.phase);
+        if (typeof code !== 'string' && typeof code !== 'number') continue;
+        const categoryKey = typeof rawCategory === 'string' ? normalize(rawCategory) : '';
+        if (!Object.hasOwn(categories, categoryKey) || (typeof phase !== 'string' && typeof phase !== 'number')) continue;
+        const key = JSON.stringify([String(phase).trim(), categories[categoryKey], String(code).trim()]);
+        groups.set(key, [...groups.get(key) ?? [], { floor: cellText(value(source, columns.floor)), model: cellText(value(source, columns.model)) }]);
+    }
+    const result = new Map<string, 'floor' | 'model'>();
+    for (const [key, units] of groups) {
+        if (units.length < 2) continue;
+        if (allDistinct(units.map(unit => unit.floor))) result.set(key, 'floor');
+        else if (allDistinct(units.map(unit => unit.model))) result.set(key, 'model');
     }
     return result;
 }
@@ -166,17 +208,22 @@ export function mapInventoryRows(sourceRows: ImportRow[], context: InventoryImpo
 
     const hasPhase = sourceRows.some(row => hasColumn(row, columns.phase));
     const hasBlock = sourceRows.some(row => hasColumn(row, columns.block));
+    const suffixes = codeSuffixes(sourceRows, hasPhase ? null : context.projectName);
     const seen = new Map<string, number>();
     sourceRows.forEach((source, index) => {
         const rowNumber = index + 2;
         try {
-            const code = text(value(source, columns.code), 'Код', 50, true)!;
+            const sourceCode = text(value(source, columns.code), 'Код', 50, true)!;
             const phase = text(hasPhase ? value(source, columns.phase) : context.projectName, 'Ээлж', 50, true)!;
-            const block = text(hasBlock ? value(source, columns.block) : context.block, 'Блок', 50, true)!;
+            const block = text(hasBlock ? value(source, columns.block) : context.block ?? blockFromCode(sourceCode), 'Блок', 50, true)!;
             const rawCategory = text(value(source, columns.category), 'Бүтээгдэхүүний төрөл', 50, true)!;
             const categoryKey = normalize(rawCategory);
             const category = Object.hasOwn(categories, categoryKey) ? categories[categoryKey] : undefined;
             if (!category) throw new Error(`Тодорхойгүй бүтээгдэхүүний төрөл: ${rawCategory}`);
+            const floor = text(value(source, columns.floor), 'Давхар', 20);
+            const model = text(value(source, columns.model), 'Загвар', 50);
+            const suffix = suffixes.get(JSON.stringify([phase, category, sourceCode]));
+            const code = suffix ? text(`${sourceCode} (${suffix === 'floor' ? floor : model})`, 'Код', 50, true)! : sourceCode;
             const rawStatus = text(value(source, columns.status), 'Бүтээгдэхүүний төлөв', 50, true)!;
             const statusKey = normalize(rawStatus);
             const status = Object.hasOwn(statuses, statusKey) ? statuses[statusKey] : undefined;
@@ -186,11 +233,11 @@ export function mapInventoryRows(sourceRows: ImportRow[], context: InventoryImpo
                 project_id: context.projectId.toLowerCase(),
                 phase, block, code, category, status,
                 building_number: text(value(source, columns.building_number), 'Барилгын дугаар', 50),
-                floor: text(value(source, columns.floor), 'Давхар', 20),
+                floor,
                 unit_number: text(value(source, columns.unit_number), 'Шинэ тоот', 50),
                 legacy_unit_number: text(value(source, columns.legacy_unit_number), 'Хуучин тоот', 50),
                 unit_type: text(value(source, columns.unit_type), 'Айлын төрөл', 30),
-                model: text(value(source, columns.model), 'Загвар', 50),
+                model,
                 window_view: text(value(source, columns.window_view), 'Цонхны харагдац', 50),
                 rooms: number(value(source, columns.rooms), 'Өрөөний тоо', true),
                 sale_area: number(value(source, columns.sale_area), 'Борлуулах талбай'),

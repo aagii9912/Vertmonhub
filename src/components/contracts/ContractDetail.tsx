@@ -43,8 +43,10 @@ export function ContractDetail({ id }: { id: string }) {
     const paymentsQuery = usePayments(id);
     const pay = paymentsQuery.data;
     const payments = useMemo(() => (pay?.payments ?? []).slice().sort((a, b) => a.installment_number - b.installment_number), [pay]);
+    // ERP-ийн бүтээгдэхүүний экспортоос үүссэн гэрээнд өмнө төлсөн дүн байхгүй: таахгүй, төлбөр бүртгэхгүй.
+    const paidKnown = c?.paid_amount !== null && c?.paid_amount !== undefined;
     // Хуваарь амжилттай уншигдсан үед л шинэ мөр нэмнэ — алдаатай үед байгаа төлбөрийг дахин оруулахгүй.
-    const canAddPayment = canWrite && !!pay && !paymentsQuery.isError;
+    const canAddPayment = canWrite && paidKnown && !!pay && !paymentsQuery.isError;
     const { data: leadDetail } = useLeadDetail(c?.lead_id ?? null);
     const { data: transferData, isError: transfersFailed } = useContractTransfers(id);
     const transfers = useMemo(() => transferData?.transfers ?? [], [transferData]);
@@ -97,8 +99,8 @@ export function ContractDetail({ id }: { id: string }) {
                         <F label="Байр">{[c.unit_type || (c.rooms ? `${c.rooms} өрөө` : null), c.contracted_area ? `${c.contracted_area} м²` : null, c.floor ? `${c.floor}-р давхар` : null].filter(Boolean).join(' · ') || '—'}</F>
                         <F label="Менежер">{c.sales_manager ? <span className="inline-flex items-center gap-1.5"><Avatar name={c.sales_manager} />{c.sales_manager}</span> : '—'}</F>
                         <F label="Нийт үнэ"><span className="num font-medium">{formatMNT(total)}</span></F>
-                        <F label="Урьдчилгаа"><span className="num">{c.prepayment_percent ? `${c.prepayment_percent}%` : '—'}{c.prepayment_due ? ` · ${formatMNT(c.prepayment_due)}` : ''}</span></F>
-                        <F label="Урьдчилгаа төлсөн"><span className="num">{formatMNT(c.prepayment_paid || 0)}</span></F>
+                        <F label="Урьдчилгаа"><span className="num">{c.prepayment_percent ? `${c.prepayment_percent}%` : c.prepayment_condition || '—'}{c.prepayment_due ? ` · ${formatMNT(c.prepayment_due)}` : ''}</span></F>
+                        <F label="Урьдчилгаа төлсөн"><span className="num">{c.prepayment_paid === null || c.prepayment_paid === undefined ? '—' : formatMNT(c.prepayment_paid)}</span></F>
                         {(c.payment_condition || c.sales_channel) && <F label="Нөхцөл / суваг">{[c.payment_condition, c.sales_channel].filter(Boolean).join(' · ')}</F>}
                     </Panel>
 
@@ -123,10 +125,10 @@ export function ContractDetail({ id }: { id: string }) {
                         ) : payments.length === 0 && !showAddRow ? (
                             <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
                                 <div className="text-[13px] font-medium text-foreground">Төлбөрийн график оруулаагүй</div>
-                                {canAddPayment && <>
+                                {paidKnown ? canAddPayment && <>
                                     <p className="max-w-sm text-[12.5px] text-muted-foreground">Урьдчилгаа болон сар бүрийн төлөлтийг энд бүртгэвэл захирлын самбар авлага, хоцролтыг автоматаар харуулна.</p>
                                     <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-hover focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>
-                                </>}
+                                </> : <p className="max-w-sm text-[12.5px] text-muted-foreground">Энэ гэрээ ERP-ийн бүтээгдэхүүний экспортоос үүссэн тул өмнө төлсөн дүн тодорхойгүй. Төлсөн дүнтэй гэрээний экспорт орсны дараа төлбөр бүртгэнэ.</p>}
                             </div>
                         ) : (
                             <div className="overflow-x-auto">
@@ -164,13 +166,15 @@ export function ContractDetail({ id }: { id: string }) {
 
                 <div className="flex min-w-0 flex-col gap-4">
                     <Panel title="Төлбөрийн явц" bodyClassName="flex flex-col gap-3 p-4">
-                        <div className="flex items-baseline gap-2">
-                            <span className="num text-[22px] font-semibold tracking-[-0.02em] text-foreground">{paidPct}%</span>
-                            <span className="text-[12.5px] text-muted-foreground">{formatMNTShort(paid)} төлсөн</span>
-                        </div>
-                        <Progress value={paidPct} overColor={false} />
+                        {paidKnown ? (<>
+                            <div className="flex items-baseline gap-2">
+                                <span className="num text-[22px] font-semibold tracking-[-0.02em] text-foreground">{paidPct}%</span>
+                                <span className="text-[12.5px] text-muted-foreground">{formatMNTShort(paid)} төлсөн</span>
+                            </div>
+                            <Progress value={paidPct} overColor={false} />
+                        </>) : <p className="text-[12.5px] text-muted-foreground">Төлсөн дүн тодорхойгүй — ERP-ийн экспортод байхгүй.</p>}
                         <div className="grid grid-cols-[1fr_auto] gap-y-1.5 text-[12.5px]">
-                            <span className="text-muted-foreground">Үлдэгдэл</span><span className="num text-right font-medium text-foreground">{formatMNTShort(balance)}</span>
+                            <span className="text-muted-foreground">Үлдэгдэл</span><span className="num text-right font-medium text-foreground">{paidKnown ? formatMNTShort(balance) : '—'}</span>
                             {nextDue && (<><span className="text-muted-foreground">Дараагийн төлөлт</span><span className="num text-right text-foreground"><span className="mono-label">{nextDue.due_date}</span> · {formatMNTShort(Number(nextDue.amount) - Number(nextDue.paid_amount || 0))}</span></>)}
                             {(c.overdue_days || 0) > 0 && (<><span className="text-status-danger">Хоцролт</span><span className="num text-right font-medium text-status-danger">{c.overdue_days} хоног{c.penalty_amount ? ` · ${formatMNTShort(c.penalty_amount)}` : ''}</span></>)}
                         </div>

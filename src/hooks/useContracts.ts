@@ -16,6 +16,8 @@ export interface ContractStats {
     total_paid: number;
     total_balance: number;
     overdue_count: number;
+    /** Төлсөн дүн тодорхойгүй гэрээний тоо (нийлбэрт ороогүй). */
+    unknown_paid?: number;
 }
 
 export interface ContractsListParams {

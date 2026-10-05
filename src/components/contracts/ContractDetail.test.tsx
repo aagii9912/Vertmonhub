@@ -107,6 +107,14 @@ describe('ContractDetail payment writes', () => {
         expect(screen.queryByRole('button', { name: /Төлбөр бүртгэх/ })).not.toBeInTheDocument();
     });
 
+    it('never offers payment entry for an ERP product-export contract whose paid amount is unknown', () => {
+        mocks.contract = loaded({ contract: { ...contract, paid_amount: null, balance: null } });
+        mocks.payments = loaded({ payments: [] });
+        render(<ContractDetail id="contract-1" />);
+        expect(screen.getByText(/өмнө төлсөн дүн тодорхойгүй/)).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Төлбөр бүртгэх/ })).not.toBeInTheDocument();
+    });
+
     it('confirms the amount and receipt kind before marking a payment paid', async () => {
         render(<ContractDetail id="contract-1" />);
         fireEvent.change(screen.getByRole('combobox', { name: 'Төлбөрийн хэлбэр' }), { target: { value: 'bank_transfer' } });

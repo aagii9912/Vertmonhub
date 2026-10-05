@@ -102,8 +102,19 @@ describe('project-bound public and staff lead intake', () => {
         const response = await POST(request({ project_id: foreign, sales_manager_name: 'Өөр менежер' }));
         expect(response.status).toBe(200);
         expect(await response.json()).toEqual({ success: true, receipt_id: 'lead-1' });
-        expect(state.writes).toMatchObject([{ shop_id: shop, project_id: garden, sales_manager_name: null }]);
+        // Илгээсэн менежерийн нэрийг үл хэрэгсэж, төслийн бүртгэлтэй менежерт автоматаар онооно.
+        expect(state.writes).toMatchObject([
+            { shop_id: shop, project_id: garden, sales_manager_name: 'Канон Бат' },
+            { shop_id: shop, lead_id: 'lead-1', type: 'manager', meta: { action: 'auto_assign', to: 'Канон Бат' } },
+        ]);
         expect(state.rateChecks).toBe(1);
+    });
+    it('leaves a public lead unassigned when the project has no linked active manager', async () => {
+        vi.stubEnv('LEAD_PROJECT_ID', garden);
+        state.rows.sales_managers = [{ shop_id: shop, name: 'Канон Бат', user_id: null, is_active: true }];
+        expect((await POST(request())).status).toBe(200);
+        expect(state.writes).toMatchObject([{ project_id: garden, sales_manager_name: null }]);
+        expect(state.writes).toHaveLength(1);
     });
     it('maps exact public origins and rejects unmapped or broken origin configuration', async () => {
         vi.stubEnv('LEAD_PROJECT_ORIGINS', JSON.stringify({ 'https://garden.example': garden, 'https://elysium.example': elysium }));
@@ -145,7 +156,7 @@ describe('project-bound public and staff lead intake', () => {
         expect((await POST(request({ utm_source: 'newsletter' }))).status).toBe(200);
         expect((await POST(request({ source: 'board' }))).status).toBe(200);
         expect((await POST(request({ fbclid: 'fbclid-1' }))).status).toBe(200);
-        expect(state.writes.map(row => [row.source, row.utm_source ?? null])).toEqual([
+        expect(state.writes.filter(row => !('lead_id' in row)).map(row => [row.source, row.utm_source ?? null])).toEqual([
             ['google_ads', 'google'], ['website', 'newsletter'], ['board', null], ['facebook_ads', null],
         ]);
         expect(state.capi).toHaveLength(4);

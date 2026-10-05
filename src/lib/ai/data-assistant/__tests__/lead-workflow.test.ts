@@ -19,7 +19,7 @@ function query(table: string, data: unknown, error: unknown = null) {
     const chain = {
         select: vi.fn().mockReturnThis(), eq: vi.fn().mockReturnThis(), is: vi.fn().mockReturnThis(),
         in: vi.fn().mockReturnThis(), or: vi.fn().mockReturnThis(), order: vi.fn().mockReturnThis(),
-        ilike: vi.fn().mockReturnThis(), limit: vi.fn().mockReturnThis(),
+        ilike: vi.fn().mockReturnThis(), limit: vi.fn().mockReturnThis(), range: vi.fn().mockReturnThis(),
         update: vi.fn().mockReturnThis(), insert: vi.fn().mockReturnThis(),
         maybeSingle: vi.fn().mockResolvedValue(result), single: vi.fn().mockResolvedValue(result),
         then: (resolve: (value: typeof result) => unknown) => Promise.resolve(result).then(resolve),
@@ -57,13 +57,28 @@ describe('AI lead creation ownership', () => {
         const project = query('projects', { id: projectId });
         query('user_profiles', { full_name: 'Маркетинг' });
         query('sales_managers', [{ name: 'Батаа', user_id: 'sales-1', is_active: true }]);
+        query('sales_manager_projects', []); // Автоматаар хуваарилах нэр дэвшигч: төсөлд бүртгэлтэй менежер алга.
+        query('sales_managers', [{ name: 'Батаа', user_id: 'sales-1', is_active: true }]);
         const insert = query('leads', { id: lead.id, customer_name: lead.customer_name });
         const result = await createLead('shop-1', { project_id: projectId, customer_name: lead.customer_name }, true, { userId: 'marketing-1', role: 'marketing', scope: UNRESTRICTED_SALES_SCOPE });
         expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({ shop_id: 'shop-1', project_id: projectId, sales_manager_name: null }));
         expect(project.eq).toHaveBeenCalledWith('id', projectId);
         expect(project.eq).toHaveBeenCalledWith('shop_id', 'shop-1');
         expect(result).toHaveProperty('message', expect.stringContaining('хариуцагчгүй'));
-        expect(from).toHaveBeenCalledTimes(4);
+        expect(from).toHaveBeenCalledTimes(6);
+    });
+    it('auto-assigns a marketing-created lead to the project\'s only linked manager and says so', async () => {
+        query('projects', { id: projectId });
+        query('user_profiles', { full_name: 'Маркетинг' });
+        query('sales_managers', [{ name: 'Батаа', user_id: 'sales-1', is_active: true }]);
+        query('sales_manager_projects', [{ manager_name: 'Батаа' }]);
+        query('sales_managers', [{ name: 'Батаа', user_id: 'sales-1', is_active: true }]);
+        const insert = query('leads', { id: lead.id, customer_name: lead.customer_name });
+        const activity = query('lead_activities', { id: 'activity-1' });
+        const result = await createLead('shop-1', { project_id: projectId, customer_name: lead.customer_name }, true, { userId: 'marketing-1', role: 'marketing', scope: UNRESTRICTED_SALES_SCOPE });
+        expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({ project_id: projectId, sales_manager_name: 'Батаа' }));
+        expect(activity.insert).toHaveBeenCalledWith(expect.objectContaining({ lead_id: lead.id, type: 'manager', meta: { action: 'auto_assign', to: 'Батаа' } }));
+        expect(result).toHaveProperty('message', expect.stringContaining('менежер: Батаа (автоматаар)'));
     });
     it('uses the user-linked active roster name in the original insert', async () => {
         query('projects', { id: projectId });
@@ -109,6 +124,7 @@ describe('AI lead creation ownership', () => {
             preview: { Нэр: ANONYMOUS_LEAD_LABEL, Утас: '99112233' }, action: { args: { anonymous: true } },
         });
         actor();
+        query('sales_manager_projects', []); query('sales_managers', []);
         const insert = query('leads', { id: 'anon-1', customer_name: null });
         expect(await createLead('shop-1', args, true, admin)).toMatchObject({ success: true, message: expect.stringContaining(ANONYMOUS_LEAD_LABEL) });
         expect(insert.insert).toHaveBeenCalledWith(expect.objectContaining({ customer_name: null, customer_phone: '99112233' }));

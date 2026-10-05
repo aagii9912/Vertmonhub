@@ -13,8 +13,9 @@
  * For a multi-sheet workbook, explicitly select the product sheet:
  *   npx tsx scripts/import-elysium-b1-units.ts /path/to/export.xlsx --sheet=Products
  *
- * Missing phase columns use the validated project name. Missing block columns
- * use the explicitly selected Б1 block; blank cells in existing columns fail.
+ * Missing phase columns use the validated project name. Missing block columns take
+ * the block from the «Б<n>-» code prefix (Б1-1 → Б1, Б2-14 → Б2); blank cells in existing columns fail.
+ * The latest uploaded ERP snapshot can be imported without a file: scripts/import-erp-snapshot.ts.
  * New units are inserted together; matching existing units are never updated.
  */
 
@@ -86,7 +87,7 @@ async function main() {
 
     const mapped = mapInventoryRows(sheet.rows, {
         shopId: project.shop_id, projectId: project.id, projectName: project.name,
-        sourceFile: path.basename(filePath), block: 'Б1',
+        sourceFile: path.basename(filePath),
     });
     if (mapped.errors.length) {
         console.error(JSON.stringify({ success: false, mode: apply ? 'apply' : 'dry-run', errors: mapped.errors, summary: mapped.summary }, null, 2));
