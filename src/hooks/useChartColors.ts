@@ -23,15 +23,16 @@ export interface ChartColors {
     aging: [string, string, string, string];
 }
 
+// First paint before getComputedStyle runs: the default «Шөнө» (dark) theme values.
 const FALLBACK: ChartColors = {
-    grid: '#E5E3DB',
-    axis: '#6B6962',
-    line: '#C2602F',
-    track: '#F4F3EE',
-    series: ['#C2602F', '#5B7DA6', '#4FA07C', '#C9A24B', '#6B5E8C'],
-    surface: '#FFFFFF',
-    foreground: '#1A1A1A',
-    aging: ['#4FA07C', '#C9A24B', '#D98A3D', '#C0492F'],
+    grid: '#232936',
+    axis: '#8E96A5',
+    line: '#6E9BFF',
+    track: '#181C24',
+    series: ['#6E9BFF', '#2BC4AE', '#F2B13D', '#A28BFF', '#F27BA2'],
+    surface: '#12151C',
+    foreground: '#EDF0F5',
+    aging: ['#5CC795', '#E3A84B', '#F08A4B', '#F07E74'],
 };
 
 export function useChartColors(): ChartColors {
@@ -58,7 +59,7 @@ export function useChartColors(): ChartColors {
                 aging: [
                     v('--status-success', FALLBACK.aging[0]),
                     v('--status-pending', FALLBACK.aging[1]),
-                    v('--status-active', FALLBACK.aging[2]),
+                    v('--aging-3', FALLBACK.aging[2]),
                     v('--status-danger', FALLBACK.aging[3]),
                 ],
             });
