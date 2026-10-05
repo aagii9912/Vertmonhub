@@ -40,8 +40,11 @@ async function upsertChunks(supabase: SupabaseClient, table: string, rows: Recor
     }
 }
 
-function postRow(shopId: string, { post, insights }: PagePost) {
-    return {
+type KnownCounts = { likes: number | null; comments: number | null; shares: number | null; reach: number | null };
+
+/** Meta энэ удаа өгөөгүй тоо (жишээ нь эрх цуцлагдсан) өмнө хадгалсан мэдэгдэж буй утгыг дарахгүй. */
+function postRow(shopId: string, { post, insights }: PagePost, previous?: KnownCounts) {
+    const row = {
         shop_id: shopId,
         platform: 'facebook' as const,
         external_post_id: post.id,
@@ -57,6 +60,8 @@ function postRow(shopId: string, { post, insights }: PagePost) {
         reach: insights.post_total_media_view_unique?.value ?? null,
         updated_at: new Date().toISOString(),
     };
+    for (const key of ['likes', 'comments', 'shares', 'reach'] as const) row[key] ??= previous?.[key] ?? null;
+    return row;
 }
 
 /**
@@ -101,7 +106,15 @@ export async function syncShopSocial(supabase: SupabaseClient, shop: SyncShop, d
     try {
         const { posts, unavailable } = await getPagePosts(pageId, token, POST_LIMIT);
         const valid = posts.filter(item => isPostId(item.post.id) && item.post.id.startsWith(`${pageId}_`));
-        await upsertChunks(supabase, 'social_posts', valid.map(item => postRow(shop.id, item)), 'shop_id,platform,external_post_id');
+        const previous = new Map<string, KnownCounts>();
+        if (valid.length) {
+            const { data: stored, error } = await supabase.from('social_posts')
+                .select('external_post_id, likes, comments, shares, reach')
+                .eq('shop_id', shop.id).eq('platform', 'facebook').in('external_post_id', valid.map(item => item.post.id));
+            if (error) throw new Error(`social_posts: ${error.message}`);
+            for (const row of stored ?? []) previous.set(row.external_post_id, row);
+        }
+        await upsertChunks(supabase, 'social_posts', valid.map(item => postRow(shop.id, item, previous.get(item.post.id))), 'shop_id,platform,external_post_id');
         const today = ubDateStr();
         const syncedAt = new Date().toISOString();
         const insightRows = valid.flatMap(({ post, insights }) => Object.entries(insights).flatMap(([metric, parsed]) => parsed ? [{

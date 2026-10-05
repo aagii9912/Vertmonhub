@@ -22,7 +22,7 @@ import {
     Loader2, X
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardFetch, dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
+import { dashboardFetch, dashboardJson, dashboardMutate, getActiveShopId } from '@/lib/api/dashboardFetch';
 import { toast } from 'sonner';
 import { formatTimeAgo } from '@/lib/utils/date';
 import { confirmToast } from '@/components/ui/Toast';
@@ -352,6 +352,16 @@ function SocialPageContent() {
         }
     }, [selectedPageId, connectFlow, router, fetchFacebookData, fetchInstagramData]);
 
+    // ======= OAuth start: dashboardFetch-тэй ижил идэвхтэй төсөл (x-shop-id) =======
+    const startConnect = useCallback((flow: ConnectFlow) => {
+        const shopId = getActiveShopId() || shop?.id;
+        if (!shopId) {
+            setOauthBanner('Төсөл сонгогдоогүй байна. Дээрх «Төсөл» цэснээс сонгоод дахин оролдоно уу.');
+            return;
+        }
+        window.location.href = `/api/auth/${flow}?shop_id=${encodeURIComponent(shopId)}`;
+    }, [shop?.id]);
+
     // ======= Disconnect platform =======
     const handleDisconnect = useCallback(async (platform: 'facebook' | 'instagram') => {
         const label = platform === 'facebook' ? 'Facebook' : 'Instagram';
@@ -476,7 +486,7 @@ function SocialPageContent() {
                         tokenExpired={tokenExpired}
                         formatNumber={formatNumber}
                         formatDate={formatTimeAgo}
-                        onConnect={() => { window.location.href = `/api/auth/facebook${shop?.id ? `?shop_id=${encodeURIComponent(shop.id)}` : ''}`; }}
+                        onConnect={() => startConnect('facebook')}
                         onRefresh={fetchFacebookData}
                         onDisconnect={() => handleDisconnect('facebook')}
                     />
@@ -494,7 +504,7 @@ function SocialPageContent() {
                         error={igError}
                         formatNumber={formatNumber}
                         formatDate={formatTimeAgo}
-                        onConnect={() => { window.location.href = `/api/auth/instagram${shop?.id ? `?shop_id=${encodeURIComponent(shop.id)}` : ''}`; }}
+                        onConnect={() => startConnect('instagram')}
                     />
                 </TabsContent>
 

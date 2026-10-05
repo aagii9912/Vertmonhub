@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { isAuthorizedCron } from '@/lib/auth/cron';
 import { syncShopSocial } from '@/lib/marketing/socialSync';
+import { purgeExpiredPageConnections } from '@/lib/facebook/page-connect';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -20,6 +21,8 @@ export async function POST(request: NextRequest) {
 
     try {
         const supabase = supabaseAdmin();
+        // Дуусаагүй орхисон Page сонголтын шифрлэгдсэн user токеныг цэвэрлэнэ.
+        await purgeExpiredPageConnections();
         const { data: shops, error } = await supabase
             .from('shops')
             .select('id, facebook_page_id, facebook_page_access_token')

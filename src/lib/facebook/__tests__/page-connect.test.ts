@@ -135,6 +135,8 @@ it('keeps every token server-side: POST exchanges, encrypted pending row, token-
 it('rejects a forged state or another user before any Graph call', async () => {
     const { callback, saved } = await connect();
     expect(new URL((await callback('state=forged&code=x')).headers.get('location')!).searchParams.get('fb_error')).toBe('state_mismatch');
+    // 64 тэмдэгт боловч hex биш (UTF-8 урт өөр) — 500 биш, state_mismatch.
+    expect(new URL((await callback(`state=${encodeURIComponent('ө'.repeat(64))}&code=x`)).headers.get('location')!).searchParams.get('fb_error')).toBe('state_mismatch');
     mocks.user.mockResolvedValue('user-2');
     const state = JSON.parse(saved).state;
     expect(new URL((await callback(`state=${state}&code=x`)).headers.get('location')!).searchParams.get('fb_error')).toBe('session_error');

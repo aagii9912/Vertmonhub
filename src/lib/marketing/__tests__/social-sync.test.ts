@@ -16,8 +16,13 @@ import { syncShopSocial } from '../socialSync';
 type Upsert = { table: string; rows: Record<string, unknown>[]; onConflict?: string };
 let upserts: Upsert[];
 let failTable: string | null;
+let storedPosts: Record<string, unknown>[];
 const supabase = {
     from: (table: string) => ({
+        select: () => {
+            const query = { eq: () => query, in: async () => ({ data: storedPosts, error: null }) };
+            return query;
+        },
         upsert: async (rows: Record<string, unknown> | Record<string, unknown>[], options?: { onConflict?: string }) => {
             upserts.push({ table, rows: Array.isArray(rows) ? rows : [rows], onConflict: options?.onConflict });
             return { error: failTable === table ? { message: 'db down' } : null };
@@ -32,6 +37,7 @@ beforeEach(() => {
     vi.clearAllMocks();
     upserts = [];
     failTable = null;
+    storedPosts = [];
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-10-05T03:00:00Z')); // PT 2026-10-04, УБ 2026-10-05
     mocks.daily.mockResolvedValue({
@@ -82,6 +88,16 @@ it('stores date-keyed Page rows for the last 30 finished Meta days and lifetime 
         last_success_at: expect.any(String), last_from: '2026-09-04', last_to: '2026-10-03',
         unavailable_metrics: ['page_video_views', 'post_clicks'], last_error: null, page_rows: 2, post_rows: 2,
     });
+});
+
+it('keeps previously known post counts when Meta stops returning them', async () => {
+    storedPosts = [{ external_post_id: '42_2', likes: 9, comments: 4, shares: 1, reach: 700 }];
+    await syncShopSocial(supabase, shop);
+    const posts = written('social_posts');
+    // 42_2: Meta likes/comments/reach өгөөгүй → өмнөх утга; shares шинэ утга (3).
+    expect(posts[1]).toMatchObject({ external_post_id: '42_2', likes: 9, comments: 4, shares: 3, reach: 700 });
+    // 42_1: шинэ утгууд хэвээр.
+    expect(posts[0]).toMatchObject({ likes: 5, comments: 2, reach: 800 });
 });
 
 it('keeps earlier data when Meta fails: no rows, no success stamp, Mongolian error without the token', async () => {

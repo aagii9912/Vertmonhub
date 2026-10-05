@@ -51,7 +51,7 @@ it('parses numbers and breakdowns and never turns a missing value into zero', ()
     expect(parseInsightValue(12)).toEqual({ value: 12, breakdown: null });
     expect(parseInsightValue({ like: 3, love: 1, junk: 'x' })).toEqual({ value: 4, breakdown: { like: 3, love: 1 } });
     expect(parseInsightValue({})).toEqual({ value: 0, breakdown: {} }); // Meta: reaction алга
-    for (const raw of [null, undefined, 'x', Number.NaN, [1]]) expect(parseInsightValue(raw)).toBeNull();
+    for (const raw of [null, undefined, 'x', Number.NaN, [1], { like: 'x' }]) expect(parseInsightValue(raw)).toBeNull();
 });
 
 it('summarizes days without adding unique viewers and returns null when Meta gave nothing', () => {
@@ -101,6 +101,17 @@ it('isolates one removed metric (code 100) and keeps the rest', async () => {
     expect(rows.map(r => r.metric)).toEqual(PAGE_DAILY_METRICS.filter(m => m !== 'page_video_views'));
     expect(http).toHaveBeenCalledTimes(1 + PAGE_DAILY_METRICS.length);
     expect(requested().some(m => REMOVED.includes(m))).toBe(false);
+});
+
+it('treats a missing object (100/33) or a request no metric survives as a failure, not as removed metrics', async () => {
+    http.mockResolvedValue(reply({ error: { code: 100, error_subcode: 33, message: 'Object does not exist' } }, 400));
+    await expect(fetchPageDailyInsights('42', 'page-token', '2026-10-01', '2026-10-03')).rejects.toThrow(/code 100/);
+    expect(http).toHaveBeenCalledTimes(1);
+
+    http.mockReset();
+    http.mockResolvedValue(invalidMetric());
+    await expect(fetchPageDailyInsights('42', 'page-token', '2026-10-01', '2026-10-03')).rejects.toThrow(/code 100/);
+    expect(http).toHaveBeenCalledTimes(1 + PAGE_DAILY_METRICS.length);
 });
 
 it('does not fan out per metric on permission or token errors', async () => {

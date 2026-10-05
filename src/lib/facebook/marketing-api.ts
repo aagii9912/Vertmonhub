@@ -171,18 +171,21 @@ export interface InsightNumber { value: number; breakdown: Record<string, number
 export function parseInsightValue(raw: unknown): InsightNumber | null {
     if (typeof raw === 'number') return Number.isFinite(raw) ? { value: raw, breakdown: null } : null;
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const entries = Object.entries(raw);
     const breakdown: Record<string, number> = {};
-    for (const [key, value] of Object.entries(raw)) {
+    for (const [key, value] of entries) {
         if (typeof value === 'number' && Number.isFinite(value)) breakdown[key] = value;
     }
-    // Хоосон задаргаа ({}) нь Meta-гийн бодит хариу: тухайн төрлийн үйлдэл алга.
+    // Хоосон задаргаа ({}) нь Meta-гийн бодит хариу (тухайн төрлийн үйлдэл алга); тоогүй өөр хэлбэр = байхгүй.
+    if (entries.length > 0 && Object.keys(breakdown).length === 0) return null;
     return { value: Object.values(breakdown).reduce((total, value) => total + value, 0), breakdown };
 }
 
 /**
  * Нэг объектын (Page, нийтлэл, IG аккаунт/media) insights. Хасагдсан/хүчингүй нэг метрик (code 100) бүх
  * дуудлагыг унагадаг тул тэр үед метрик бүрийг тусад нь оролдож, Meta-гийн өгөөгүйг `unavailable`-д
- * бичнэ. Эрх, токен, хурдны хязгаарын алдаа шууд шидэгдэнэ (метрик бүрээр давтахгүй).
+ * бичнэ. Эрх, токен, хурдны хязгаар, объект олдоогүй (100/33) алдаа шууд шидэгдэнэ; метрик бүрээр
+ * оролдоод нэг ч метрик ирээгүй бол анхны алдааг шиднэ (метрик биш, хүсэлт өөрөө буруу).
  */
 export async function fetchInsightMetrics(
     objectId: string,
@@ -197,12 +200,15 @@ export async function fetchInsightMetrics(
         return result.data.filter(metric => names.includes(metric.name));
     };
     const missing = (data: GraphInsight[], names: readonly string[]) => names.filter(name => !data.some(metric => metric.name === name));
+    let batchError: unknown;
     try {
         const data = await call(metrics);
         return { data, unavailable: missing(data, metrics) };
     } catch (error) {
-        if (!isMetaInvalidParamError(error)) throw error;
+        // 100/33 = объект олдоогүй эсвэл хандах эрхгүй (устгасан Page, буруу ID) — метрикийн асуудал биш.
+        if (!isMetaInvalidParamError(error) || (error as MetaApiError).subcode === 33) throw error;
         if (metrics.length === 1) return { data: [], unavailable: [...metrics] };
+        batchError = error;
     }
     const data: GraphInsight[] = [];
     const unavailable: string[] = [];
@@ -216,6 +222,7 @@ export async function fetchInsightMetrics(
             unavailable.push(metric);
         }
     }
+    if (data.length === 0) throw batchError;
     if (unavailable.length) logger.warn('[Page insights] Meta зарим метрикийг өгсөнгүй', { metrics: unavailable });
     return { data, unavailable };
 }

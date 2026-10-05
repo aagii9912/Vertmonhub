@@ -142,8 +142,10 @@ export async function finishPageOAuth(request: NextRequest, flow: PageConnectFlo
     try { saved = JSON.parse(request.cookies.get(FLOW[flow].cookie)?.value || 'null') as OAuthState | null; }
     catch { return socialRedirect(request, flow, 'state_mismatch'); }
     const state = request.nextUrl.searchParams.get('state');
-    if (typeof saved?.state !== 'string' || typeof saved.userId !== 'string' || typeof saved.shopId !== 'string' || !state ||
-        saved.state.length !== state.length || !crypto.timingSafeEqual(Buffer.from(saved.state), Buffer.from(state))) {
+    // State нь 32 байтын hex; хэлбэрийг шалгасны дараа л timingSafeEqual (ижил байтын урт).
+    const isState = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+    if (!isState(saved?.state) || typeof saved.userId !== 'string' || typeof saved.shopId !== 'string' || !isState(state) ||
+        !crypto.timingSafeEqual(Buffer.from(saved.state), Buffer.from(state))) {
         return socialRedirect(request, flow, 'state_mismatch');
     }
     if (request.nextUrl.searchParams.has('error')) return socialRedirect(request, flow, 'denied');
@@ -182,9 +184,8 @@ export async function finishPageOAuth(request: NextRequest, flow: PageConnectFlo
 
         const encrypted = encryptToken(userToken);
         if (!encrypted?.startsWith('enc:v1:')) return socialRedirect(request, flow, 'save_error');
-        const db = supabaseAdmin();
-        await db.from('meta_page_connect_pending').delete().lt('expires_at', new Date().toISOString());
-        const { error } = await db.from('meta_page_connect_pending').upsert({
+        await purgeExpiredPageConnections();
+        const { error } = await supabaseAdmin().from('meta_page_connect_pending').upsert({
             user_id: userId, shop_id: shopId, flow,
             user_token: encrypted,
             user_token_expires_at: typeof expiresIn === 'number' && expiresIn > 0 ? new Date(Date.now() + expiresIn * 1000).toISOString() : null,
@@ -216,7 +217,12 @@ async function loadPending(userId: string, shopId: string, flow: PageConnectFlow
         .select('user_token, user_token_expires_at, pages, granted_scopes, expires_at')
         .eq('user_id', userId).eq('shop_id', shopId).eq('flow', flow).maybeSingle();
     if (error) throw new Error(error.message);
-    if (!data || !(Date.parse(data.expires_at) > Date.now()) || !Array.isArray(data.pages)) return null;
+    if (!data) return null;
+    if (!(Date.parse(data.expires_at) > Date.now()) || !Array.isArray(data.pages)) {
+        // Хугацаа дууссан шифрлэгдсэн токеныг хадгалж үлдээхгүй.
+        await supabaseAdmin().from('meta_page_connect_pending').delete().eq('user_id', userId).eq('shop_id', shopId).eq('flow', flow);
+        return null;
+    }
     return data as PendingRow;
 }
 
@@ -287,6 +293,12 @@ export async function selectPendingPage(flow: PageConnectFlow, shopId: string, p
         page: flow === 'facebook' ? { id: page.id, name: page.name } : { id: instagram!.id, name: instagram!.username ?? instagram!.name ?? page.name },
         webhookSubscribed,
     });
+}
+
+/** Хугацаа дууссан бүх сонголтыг (шифрлэгдсэн user токен) устгана — cron болон callback дуудна. */
+export async function purgeExpiredPageConnections(): Promise<void> {
+    const { error } = await supabaseAdmin().from('meta_page_connect_pending').delete().lt('expires_at', new Date().toISOString());
+    if (error) logger.warn('[Page OAuth] хугацаа дууссан сонголтыг устгаж чадсангүй', { error: error.message });
 }
 
 /** Shop-ийн холбосон Page (токен тайлсан) — зөвхөн серверийн route-д. */
