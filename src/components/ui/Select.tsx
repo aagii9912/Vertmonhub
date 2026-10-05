@@ -37,7 +37,8 @@ function SelectTrigger({
         "placeholder:text-muted-foreground data-[placeholder]:text-muted-foreground",
         "hover:bg-surface-2",
         "disabled:cursor-not-allowed disabled:opacity-50",
-        "[&>span]:line-clamp-1 [&>span]:text-left",
+        // line-clamp only on the value itself: an icon + value wrapper span keeps its flex row
+        "[&>span]:min-w-0 [&_[data-slot=select-value]]:line-clamp-1 [&_[data-slot=select-value]]:text-left",
         "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
