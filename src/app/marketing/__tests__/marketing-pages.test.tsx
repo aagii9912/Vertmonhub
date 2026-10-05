@@ -44,11 +44,27 @@ beforeEach(() => {
 
 describe('ads', () => {
     const URL = '/api/marketing/data/ad_campaigns?order=created_at.desc';
+    const META_URL = '/api/marketing/facebook/ads/spend-sync';
     const ad = (id: string, name: string) => ({ id, name, platform: 'facebook', status: 'draft', budget: 0, spend: 10, impressions: 100, clicks: 5, conversions: 1, ctr: 5, cpc: 2 });
+    const synced = (id: string, name: string, extra: Record<string, unknown> = {}) => ({ ...ad(id, name), external_id: `1202${id}`, status: 'active', ...extra });
+    // Зарын жагсаалтын хариунууд дарааллаараа; зарын дансны валют (spend-sync) URL-аар.
+    let adReplies: Array<() => Promise<unknown>>;
+    let meta: unknown;
+    const reply = (value: unknown) => adReplies.push(() => Promise.resolve(value));
+    const fail = (error: Error) => adReplies.push(() => Promise.reject(error));
+    beforeEach(() => {
+        adReplies = [];
+        meta = { accountId: 'act_1', status: { currency: 'USD' } };
+        mocks.json.mockImplementation((url: string) => {
+            if (url === META_URL) return Promise.resolve(meta);
+            const next = adReplies.shift();
+            return next ? next() : Promise.reject(new Error(`unexpected ${url}`));
+        });
+    });
 
-    it('loads with a spinner, then rows; create refetches the list', async () => {
+    it('loads with a spinner, then rows; registering a planned ad refetches the list', async () => {
         const first = deferred<unknown>();
-        mocks.json.mockReturnValueOnce(first.promise);
+        adReplies.push(() => first.promise);
         renderPage(<AdsPage />);
         expect(screen.getByRole('status')).toBeInTheDocument();
         await act(async () => first.resolve({ rows: [ad('a1', 'Зар нэг')] }));
@@ -56,39 +72,64 @@ describe('ads', () => {
         expect(mocks.json).toHaveBeenCalledWith(URL);
 
         mocks.mutate.mockResolvedValueOnce({ row: ad('a2', 'Зар хоёр') });
-        mocks.json.mockResolvedValueOnce({ rows: [ad('a2', 'Зар хоёр'), ad('a1', 'Зар нэг')] });
-        fireEvent.click(screen.getByRole('button', { name: /Шинэ зар/ }));
+        reply({ rows: [ad('a2', 'Зар хоёр'), ad('a1', 'Зар нэг')] });
+        fireEvent.click(screen.getByRole('button', { name: /Төлөвлөгөөт зар бүртгэх/ }));
+        expect(await screen.findByText(/Meta болон бусад платформ дээр зар үүсэхгүй/)).toBeInTheDocument();
         fireEvent.change(await screen.findByPlaceholderText('Зарын нэр'), { target: { value: 'Зар хоёр' } });
-        fireEvent.click(screen.getByRole('button', { name: /Үүсгэх/ }));
+        fireEvent.click(screen.getByRole('button', { name: 'Бүртгэх' }));
         expect((await screen.findAllByText('Зар хоёр')).length).toBeGreaterThan(0);
         expect(mocks.mutate).toHaveBeenCalledWith('/api/marketing/data/ad_campaigns', 'POST', expect.objectContaining({ name: 'Зар хоёр', status: 'draft' }));
         expect(calls(URL)).toBe(2);
     });
 
+    it('shows Meta spend and CPC in the ad-account currency and leaves planned rows without results', async () => {
+        reply({ rows: [synced('1', 'Meta кампанит ажил', { spend: 300.38, clicks: 700, impressions: 10_000, conversions: 3, ctr: 7 }), ad('a2', 'Төлөвлөгөөт зар')] });
+        renderPage(<AdsPage />);
+        expect(await screen.findByText('Нийт зарцуулалт (USD)')).toBeInTheDocument();
+        expect(screen.getAllByText('$300.38').length).toBeGreaterThanOrEqual(2);
+        expect(screen.getByText('CPC (USD)')).toBeInTheDocument();
+        // Төлөвлөгөөт мөрийн (spend 10, 5 click, 100 imp) утгыг нэмэхгүй: $310.38 / $0.44 / 6.98% биш.
+        expect(screen.getByText('$0.43')).toBeInTheDocument();
+        expect(screen.queryByText('$310.38')).not.toBeInTheDocument();
+        expect(screen.getAllByText('7.00%').length).toBeGreaterThanOrEqual(2);
+        expect(screen.queryByText('6.98%')).not.toBeInTheDocument();
+        expect(screen.getAllByText('Төлөвлөгөөт').length).toBeGreaterThan(0);
+        expect(document.body.textContent).not.toMatch(/₮/);
+    });
+
+    it('never assumes tugrik when the ad-account currency is unknown', async () => {
+        meta = { accountId: null, status: null };
+        reply({ rows: [synced('1', 'Meta кампанит ажил', { spend: 300.38, clicks: 700 })] });
+        renderPage(<AdsPage />);
+        expect(await screen.findByText('Нийт зарцуулалт (валют тодорхойгүй)')).toBeInTheDocument();
+        expect(screen.getAllByText('300.38').length).toBeGreaterThan(0);
+        expect(document.body.textContent).not.toMatch(/300(\.38)?₮/);
+    });
+
     it('keeps loaded rows on screen when a later refresh fails', async () => {
-        mocks.json.mockResolvedValueOnce({ rows: [ad('a1', 'Зар нэг')] });
+        reply({ rows: [ad('a1', 'Зар нэг')] });
         renderPage(<AdsPage />);
         expect((await screen.findAllByText('Зар нэг')).length).toBeGreaterThan(0);
         mocks.mutate.mockResolvedValueOnce({ row: ad('a2', 'Зар хоёр') });
-        mocks.json.mockRejectedValueOnce(new Error('Сүлжээ тасарлаа'));
-        fireEvent.click(screen.getByRole('button', { name: /Шинэ зар/ }));
+        fail(new Error('Сүлжээ тасарлаа'));
+        fireEvent.click(screen.getByRole('button', { name: /Төлөвлөгөөт зар бүртгэх/ }));
         fireEvent.change(await screen.findByPlaceholderText('Зарын нэр'), { target: { value: 'Зар хоёр' } });
-        fireEvent.click(screen.getByRole('button', { name: /Үүсгэх/ }));
+        fireEvent.click(screen.getByRole('button', { name: 'Бүртгэх' }));
         await waitFor(() => expect(calls(URL)).toBe(2));
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
         expect(screen.getAllByText('Зар нэг').length).toBeGreaterThan(0);
     });
 
     it('shows a failed read as an error with retry, not as the empty state', async () => {
-        mocks.json.mockRejectedValueOnce(new Error('Маркетингийн өгөгдөл уншихад алдаа гарлаа'));
+        fail(new Error('Маркетингийн өгөгдөл уншихад алдаа гарлаа'));
         renderPage(<AdsPage />);
         const alert = await screen.findByRole('alert');
         expect(within(alert).getByText('Зар сурталчилгааны мэдээлэл татахад алдаа гарлаа')).toBeInTheDocument();
         expect(within(alert).getByText('Маркетингийн өгөгдөл уншихад алдаа гарлаа')).toBeInTheDocument();
         expect(screen.queryByText('Мэдээлэл байхгүй')).not.toBeInTheDocument();
-        expect(screen.queryByText('Нийт зарцуулалт')).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /Шинэ зар/ })).toBeInTheDocument();
-        mocks.json.mockResolvedValueOnce({ rows: [] });
+        expect(screen.queryByText(/Нийт зарцуулалт/)).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /Төлөвлөгөөт зар бүртгэх/ })).toBeInTheDocument();
+        reply({ rows: [] });
         fireEvent.click(within(alert).getByRole('button', { name: 'Дахин оролдох' }));
         expect(await screen.findByText('Мэдээлэл байхгүй')).toBeInTheDocument();
         expect(screen.queryByRole('alert')).not.toBeInTheDocument();
