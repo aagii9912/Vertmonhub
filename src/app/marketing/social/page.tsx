@@ -26,6 +26,7 @@ import { dashboardFetch, dashboardJson, dashboardMutate, getActiveShopId } from 
 import { toast } from 'sonner';
 import { formatTimeAgo } from '@/lib/utils/date';
 import { confirmToast } from '@/components/ui/Toast';
+import { LeadAdsCard } from '@/components/marketing/LeadAdsCard';
 
 // ======= Types =======
 
@@ -136,7 +137,8 @@ export default function SocialPage() {
 }
 
 function SocialPageContent() {
-    const { shop } = useAuth();
+    const { shop, user } = useAuth();
+    const canWrite = !!user?.permissions?.canWrite && (user.role === 'super_admin' || !!user.permissions.modules?.includes('marketing-roi'));
     const searchParams = useSearchParams();
     const router = useRouter();
     const [activeTab, setActiveTab] = useState<TabType>('facebook');
@@ -340,7 +342,9 @@ function SocialPageContent() {
             setPageSelectorOpen(false);
             const subNote = data.webhookSubscribed === false
                 ? ' (⚠️ Webhook subscribe хийгдсэнгүй — App Dashboard дээр гараар тохируулна уу)'
-                : '';
+                : data.leadAdsSubscribed === false
+                    ? ' (⚠️ Lead Ads-ийн лид автоматаар орохгүй — leads_retrieval эрхтэйгээр Facebook-ээ дахин холбоно уу)'
+                    : '';
             setOauthBanner(`✅ "${data.page?.name ?? ''}" амжилттай холбогдлоо${subNote}`);
             router.replace('/marketing/social');
             if (connectFlow === 'facebook') fetchFacebookData();
@@ -490,6 +494,7 @@ function SocialPageContent() {
                         onRefresh={fetchFacebookData}
                         onDisconnect={() => handleDisconnect('facebook')}
                     />
+                    {fbConnected && !fbLoading && <div className="mt-6"><LeadAdsCard canWrite={canWrite} /></div>}
                 </TabsContent>
 
                 {/* Instagram Tab */}

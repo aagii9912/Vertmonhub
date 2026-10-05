@@ -500,28 +500,50 @@ export const DEFAULT_PAGE_SUBSCRIBE_FIELDS = [
     'message_reactions',
     'messaging_optins',
     'feed',
+    // Facebook Lead Ads — leads_retrieval эрх шаардана (lib/facebook/leadgen).
+    'leadgen',
 ];
 
 export interface SubscribeResult {
     success: boolean;
     error?: string;
+    /** `leadgen` талбар subscribe хийгдсэн эсэх. */
+    leadgen: boolean;
+    /** Зөвхөн leadgen унасан (DM-ийн талбарууд subscribe хийгдсэн) үеийн тайлбар. */
+    leadgenError?: string;
+}
+
+const LEADGEN_SUBSCRIBE_ERROR = 'Lead Ads (leadgen) webhook идэвхжсэнгүй — leads_retrieval эрхтэйгээр Facebook Page-ээ дахин холбоно уу.';
+
+async function postSubscribedApps(pageId: string, pageAccessToken: string, fields: string[]): Promise<{ success: boolean; error?: string }> {
+    try {
+        const json = await pagePost<{ success?: boolean }>(`${pageId}/subscribed_apps`, pageAccessToken, { subscribed_fields: fields.join(',') });
+        return { success: json.success !== false };
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn('subscribePageToApp failed', { pageId, fields: fields.join(','), code: error instanceof MetaApiError ? error.code : null, error: message });
+        return { success: false, error: message };
+    }
 }
 
 /**
  * Page-ийг app-ийн webhook-д subscribe хийнэ (POST /{page-id}/subscribed_apps). Idempotent. Хэзээ ч throw
- * хийхгүй (Page холболтыг блоклохгүй). pages_manage_metadata эрх шаардана.
+ * хийхгүй (Page холболтыг блоклохгүй). pages_manage_metadata эрх шаардана; `leadgen` нь leads_retrieval
+ * шаарддаг бөгөөд эрхгүй бол Meta бүх хүсэлтийг унагадаг тул DM-ийн талбаруудыг leadgen-гүйгээр дахин
+ * subscribe хийж, leadgen-ийн алдааг тусад нь буцаана.
  */
 export async function subscribePageToApp(
     pageId: string,
     pageAccessToken: string,
     fields: string[] = DEFAULT_PAGE_SUBSCRIBE_FIELDS
 ): Promise<SubscribeResult> {
-    try {
-        const json = await pagePost<{ success?: boolean }>(`${pageId}/subscribed_apps`, pageAccessToken, { subscribed_fields: fields.join(',') });
-        return { success: json.success !== false };
-    } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger.warn('subscribePageToApp failed', { pageId, error: message });
-        return { success: false, error: message };
-    }
+    const all = await postSubscribedApps(pageId, pageAccessToken, fields);
+    const wantsLeadgen = fields.includes('leadgen');
+    if (all.success || !wantsLeadgen) return { ...all, leadgen: all.success && wantsLeadgen };
+    const rest = fields.filter(field => field !== 'leadgen');
+    if (rest.length === 0) return { success: false, error: all.error, leadgen: false, leadgenError: LEADGEN_SUBSCRIBE_ERROR };
+    const withoutLeadgen = await postSubscribedApps(pageId, pageAccessToken, rest);
+    return withoutLeadgen.success
+        ? { success: true, leadgen: false, leadgenError: LEADGEN_SUBSCRIBE_ERROR }
+        : { success: false, error: withoutLeadgen.error, leadgen: false, leadgenError: LEADGEN_SUBSCRIBE_ERROR };
 }

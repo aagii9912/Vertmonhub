@@ -4,6 +4,8 @@ import { verifyWebhook } from '@/lib/facebook/messenger';
 import { isDuplicateWebhookEvent } from '@/lib/webhook/retryService';
 import { logger } from '@/lib/utils/logger';
 import { verifyWebhookSignature } from '@/lib/utils/verify-webhook-signature';
+import { supabaseAdmin } from '@/lib/supabase';
+import { hasLeadgenChanges, ingestLeadgenWebhook } from '@/lib/facebook/leadgen';
 import {
     getShopByPageId,
     getShopByInstagramId,
@@ -16,11 +18,17 @@ import {
 } from '@/lib/webhook/WebhookService';
 
 /**
- * Meta webhook — Facebook Messenger / Instagram DM-ийг харилцагч ба chat_history-д
- * хадгалж dashboard-ын Inbox-д харуулна. Автомат (AI) хариу байхгүй.
- * Meta 20с дотор 200 хүлээдэг тул хадгалалтыг ACK-ийн дараа after()-д хийнэ.
+ * Meta webhook — app-ийн Page-ийн ганц callback URL.
+ *  - Messenger / Instagram DM-ийг харилцагч ба chat_history-д хадгалж Inbox-д харуулна (AI хариугүй).
+ *    Meta 20с дотор 200 хүлээдэг тул хадгалалтыг ACK-ийн дараа after()-д хийнэ.
+ *  - Facebook Lead Ads (`entry.changes[field=leadgen]`)-ийг ACK-аас ӨМНӨ `lib/facebook/leadgen`-ээр
+ *    хадгална: түр зуурын алдаа гарвал 503 буцааж Meta-аар дахин илгээлгэнэ (давхардал таслагдана),
+ *    тохиргооны алдааг (Page холбоогүй, токен, эрх) `meta_leadgen_events`-д тэмдэглээд 200 буцаана.
  */
 export const maxDuration = 60;
+
+/** Leadgen-ийг Meta-гийн хариу хүлээх хугацаанд багтааж боловсруулна; үлдсэнийг Meta дахин илгээнэ. */
+const LEADGEN_BUDGET_MS = 15_000;
 
 const VERIFY_TOKEN = process.env.FACEBOOK_VERIFY_TOKEN;
 if (!VERIFY_TOKEN) {
@@ -33,6 +41,7 @@ type Platform = 'messenger' | 'instagram';
 
 interface WebhookEntry {
     id: string;
+    changes?: Array<{ field?: string; value?: unknown }>;
     messaging?: Array<{
         sender: { id: string };
         message?: {
@@ -105,6 +114,19 @@ export async function POST(request: NextRequest) {
                 logger.error('[Webhook] background processing error', { requestId, error: error instanceof Error ? error.message : String(error) });
             }
         });
+
+        if (platform === 'messenger' && hasLeadgenChanges(body)) {
+            const leadgen = await ingestLeadgenWebhook(supabaseAdmin(), body, Date.now() + LEADGEN_BUDGET_MS)
+                .catch((error: unknown) => {
+                    logger.error('[Webhook] leadgen processing error', { requestId, error: error instanceof Error ? error.message : String(error) });
+                    return null;
+                });
+            if (!leadgen || leadgen.failed > 0) {
+                // DM-ийн давтан илгээлтийг mid-ээр, лидийг client_request_id-аар таслана.
+                return NextResponse.json({ status: 'retry', leadgen }, { status: 503 });
+            }
+            return NextResponse.json({ status: 'ok', leadgen });
+        }
 
         return NextResponse.json({ status: 'ok' });
     } catch (error) {

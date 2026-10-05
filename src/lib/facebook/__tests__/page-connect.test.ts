@@ -76,7 +76,7 @@ beforeEach(() => {
     vi.stubEnv('FACEBOOK_APP_SECRET', 'app-secret');
     mocks.user.mockResolvedValue('user-1');
     mocks.shop.mockImplementation(async (id: string | null) => id === 'shop-1' ? 'shop-1' : null);
-    mocks.subscribe.mockResolvedValue({ success: true });
+    mocks.subscribe.mockResolvedValue({ success: true, leadgen: true });
     graph();
 });
 afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); http.mockReset(); });
@@ -168,7 +168,7 @@ it('selects a listed page server-side: fresh page token, encrypted on the projec
 
     const response = await selectPendingPage('facebook', 'shop-1', '101');
     const body = await response.json();
-    expect(body).toEqual({ success: true, page: { id: '101', name: 'Mandala Garden' }, webhookSubscribed: true });
+    expect(body).toEqual({ success: true, page: { id: '101', name: 'Mandala Garden' }, webhookSubscribed: true, leadAdsSubscribed: true });
     noSecrets(JSON.stringify(body));
     expect(ops('shops', 'update')[0].args[0]).toEqual({
         facebook_page_id: '101', facebook_page_name: 'Mandala Garden', facebook_page_access_token: 'enc:v1:page-token-1',

@@ -20,13 +20,14 @@ import { logger } from '@/lib/utils/logger';
 export type PageConnectFlow = 'facebook' | 'instagram';
 
 /**
- * Facebook Page: жагсаах, нийтлэл/engagement унших, DM, webhook, Page insights (read_insights).
+ * Facebook Page: жагсаах, нийтлэл/engagement унших, DM, webhook, Page insights (read_insights),
+ * Lead Ads (`leads_retrieval` — leadgen webhook + лид унших, `pages_manage_ads` — backfill-д lead формууд).
  * ⚠️ 'email' нь энэ FB-Login-for-Business аппад invalid scope (dialog-ийг блоклодог). Login for Business
  * `config_id` ашиглавал эрхүүдийг тохиргоонд нь нэмнэ (scope параметрийг үл тооно).
  */
 export const PAGE_OAUTH_SCOPES = [
     'pages_show_list', 'pages_read_engagement', 'read_insights', 'pages_messaging', 'pages_manage_metadata',
-    'ads_read', 'business_management', 'public_profile',
+    'leads_retrieval', 'pages_manage_ads', 'ads_read', 'business_management', 'public_profile',
 ] as const;
 /** Instagram: Page-тэй холбогдсон Business аккаунт, DM, сэтгэгдэл, insights. */
 export const IG_OAUTH_SCOPES = [
@@ -286,12 +287,14 @@ export async function selectPendingPage(flow: PageConnectFlow, shopId: string, p
     }
     await db.from('meta_page_connect_pending').delete().eq('user_id', userId).eq('shop_id', shopId).eq('flow', flow);
 
-    // DM webhook: Page-ийг app-д subscribe (idempotent, блоклохгүй).
-    const webhookSubscribed = flow === 'facebook' ? (await subscribePageToApp(page.id, pageToken)).success : undefined;
+    // DM + Lead Ads webhook: Page-ийг app-д subscribe (idempotent, блоклохгүй). leads_retrieval эрхгүй бол
+    // DM-ийн талбарууд subscribe хийгдэж, leadAdsSubscribed=false болно.
+    const subscription = flow === 'facebook' ? await subscribePageToApp(page.id, pageToken) : null;
     return NextResponse.json({
         success: true,
         page: flow === 'facebook' ? { id: page.id, name: page.name } : { id: instagram!.id, name: instagram!.username ?? instagram!.name ?? page.name },
-        webhookSubscribed,
+        webhookSubscribed: subscription?.success,
+        leadAdsSubscribed: subscription?.leadgen,
     });
 }
 
