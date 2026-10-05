@@ -4,6 +4,8 @@
 
 **Төлөв:** код, unit/SQL тест бэлэн. Migration `20261004163000_manager_activity_kpi.sql` production-д хараахан ороогүй — deploy хийхээс **өмнө** ажиллуулна (KPI карт, шинэ тайлан `daily`, `manager_name` баганыг уншина). KPI-ийн шинэ жин нь эзэмшигч батлах хүртэл кодын анхдагч утга.
 
+**2026-10-05:** migration `20261004163000` production-д орж бүртгэгдсэн (Supabase SQL Editor, эзэмшигч баталсан); код `main`-д орсон.
+
 Энэ нь хоёр дахь KPI систем биш: KPI v2 картын (`sales_kpi_months`, `scoreKpi`) өдрийн давхарга. Сарын карт ба өдрийн тайлан нэг loader-аар (`lib/sales/activity-load.ts`) тооцогдоно.
 
 ## 1. Юуг тоолох вэ

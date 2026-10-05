@@ -4,6 +4,8 @@
 
 Төлөв: хэрэгжсэн (салбар `lane/lead-categories`, wave 2). Migration `supabase/migrations/20261004161000_lead_categories.sql` бичигдсэн, production-д **хараахан ажиллуулаагүй**. Анхдагч ангилал seed хийгээгүй (өгөгдлийн өөрчлөлт хийгээгүй). Production-д deploy хийгдээгүй.
 
+**2026-10-05:** migration `20261004161000` production-д орж бүртгэгдсэн (Supabase SQL Editor, эзэмшигч баталсан); код `main`-д орсон.
+
 ## Дүрэм
 
 - Ангилал нь төсөл (= shop) бүрийн тохиргоо: `lead_categories` хүснэгт (нэр ≤ 60, тайлбар ≤ 300, өнгө `neutral|info|success|pending`, эрэмбэ 0–1000, идэвхтэй/архив). Нэг төсөлд хамгийн ихдээ **30** ангилал (архивласан нь орно) — DB trigger advisory lock-той шалгана (шинэ мөр болон `shop_id`-г өөрчилж өөр төсөл рүү шилжүүлсэн мөрөнд), service мөн адил.

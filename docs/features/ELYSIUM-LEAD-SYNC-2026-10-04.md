@@ -4,6 +4,8 @@
 
 **Төлөв:** код, тест бэлэн. Migration `20261004164000_external_lead_sync.sql` production-д **суугаагүй**, `ELYSIUM_SUPABASE_URL` / `ELYSIUM_SUPABASE_SERVICE_KEY` тохируулаагүй, автомат татах анхдагчаар **унтраалттай**. Доорх «Идэвхжүүлэх» алхмыг эзэмшигч баталсны дараа хийнэ.
 
+**2026-10-05:** migration `20261004164000` production-д орж бүртгэгдсэн (Supabase SQL Editor, эзэмшигч баталсан); код `main`-д орсон.
+
 Уулзалтын 6-р ажил «Elysium.mn мессеж импорт»: elysium.mn/admin/leads-д байгаа хүсэлт бүр Vertmon Hub-д нэг л удаа лид болж орох баталгаа.
 
 ## 1. Хоёр зам

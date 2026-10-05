@@ -4,6 +4,8 @@
 
 Төлөв: хэрэгжсэн, 1-р шат (салбар `lane/manager-timeline`, review засвар `lane/manager-timeline-r1`). Migration `20261004162000_lead_activity_quotes.sql` бэлэн боловч production-д хэрэглээгүй — тусдаа батлалтаар хэрэглэнэ (доорх «Migration»). Production-д deploy хийгдээгүй. Playwright (`e2e/crm-workday.spec.ts`) статикаар шинэчлэгдсэн, ажиллуулаагүй. Харилцагчийн түвшний түүх, Inbox-ийн хариуны attribution нь 2-р шат.
 
+**2026-10-05:** migration `20261004162000` production-д орж бүртгэгдсэн (Supabase SQL Editor, эзэмшигч баталсан); код `main`-д орсон.
+
 ## Юу харагдах вэ
 
 Лидийн хажуугийн панелын «Түүх» хэсэг (`src/components/leads/LeadTimeline.tsx`):
