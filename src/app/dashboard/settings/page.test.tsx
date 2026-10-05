@@ -122,8 +122,21 @@ describe('settings page', () => {
         unmount();
 
         push.state = { ...push.state, isSubscribed: false, permission: 'denied' };
-        render(<SettingsPage />);
+        const denied = render(<SettingsPage />);
         expect(screen.getByRole('switch', { name: 'Push мэдэгдэл' })).toBeDisabled();
         expect(screen.getByText(/мэдэгдлийг хориглосон/)).toBeInTheDocument();
+        denied.unmount();
+
+        // Дэмжлэгийг шалгаж байх үед «дэмжихгүй» гэж харуулахгүй, шалгасны дараа л харуулна.
+        push.state = { isSupported: false, isSubscribed: false, isLoading: true, permission: null };
+        const checking = render(<SettingsPage />);
+        expect(screen.getByRole('switch', { name: 'Push мэдэгдэл' })).toBeDisabled();
+        expect(screen.queryByText(/дэмжихгүй/)).not.toBeInTheDocument();
+        checking.unmount();
+
+        push.state = { ...push.state, isLoading: false };
+        render(<SettingsPage />);
+        expect(screen.getByRole('switch', { name: 'Push мэдэгдэл' })).toBeDisabled();
+        expect(screen.getByText('Энэ хөтөч push мэдэгдэл дэмжихгүй байна.')).toBeInTheDocument();
     });
 });

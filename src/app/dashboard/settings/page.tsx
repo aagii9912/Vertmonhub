@@ -97,7 +97,8 @@ export default function SettingsPage() {
         await signOut();
     }
 
-    const pushDescription = !push.isSupported
+    // Hook дэмжлэгийг mount-ийн дараа шалгадаг тул шалгаж дуусаагүй үед «дэмжихгүй» гэж харуулахгүй.
+    const pushDescription = !push.isSupported && !push.isLoading
         ? 'Энэ хөтөч push мэдэгдэл дэмжихгүй байна.'
         : push.permission === 'denied'
             ? 'Хөтчийн тохиргоонд мэдэгдлийг хориглосон байна. Тэндээс зөвшөөрсний дараа асаана уу.'
