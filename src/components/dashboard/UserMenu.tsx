@@ -45,7 +45,7 @@ export function UserMenu() {
                 </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-64">
-                <DropdownMenuLabel className="flex flex-col gap-0.5 py-2">
+                <DropdownMenuLabel className="flex flex-col gap-0.5 py-2 normal-case tracking-normal">
                     <span className="truncate text-sm font-semibold text-foreground">{displayName}</span>
                     {user?.email && <span className="truncate text-xs font-normal text-muted-foreground">{user.email}</span>}
                     <span className="truncate text-xs font-normal text-muted-foreground">{getRoleDisplayName(role)}</span>

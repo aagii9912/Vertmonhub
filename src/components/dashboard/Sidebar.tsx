@@ -3,9 +3,9 @@
 import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ChevronDown, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { ChevronDown, ChevronsLeft, ChevronsRight, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { NAV_SECTIONS, BOTTOM_NAV, isNavItemActive, isSuperAdminRoute, type NavItem } from '@/lib/navigation/nav';
+import { NAV_SECTIONS, ADMIN_NAV, BOTTOM_NAV, isNavItemActive, isSuperAdminRoute, type NavItem } from '@/lib/navigation/nav';
 import { useSidebarCollapsed } from '@/hooks/useSidebarCollapsed';
 import { useDashboardMode } from '@/hooks/useDashboardMode';
 import { useNavCounts } from '@/hooks/useNavCounts';
@@ -61,7 +61,16 @@ export function Sidebar() {
             <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-2" aria-label="Үндсэн цэс">
                 {sections.map((section, index) => {
                     const isAdmin = section.id === 'admin';
-                    const open = !isAdmin || adminExpanded || collapsed;
+                    const open = !isAdmin || adminExpanded;
+                    // Хумисан rail: удирдлагын 8 icon биш ганц «Удирдлага» (админ хуудсан дээр бүгд).
+                    if (isAdmin && collapsed && !adminExpanded) {
+                        return (
+                            <div key={section.id} className="mt-4 flex flex-col gap-0.5">
+                                <div aria-hidden="true" className="mx-auto mb-1 h-px w-6 bg-sidebar-border" />
+                                <NavRow item={{ name: 'Удирдлага', href: ADMIN_NAV[0].href, icon: ShieldCheck, module: '', superAdmin: true }} pathname={pathname} collapsed />
+                            </div>
+                        );
+                    }
                     return (
                         <div key={section.id} className={cn('flex flex-col gap-0.5', index > 0 && 'mt-4')}>
                             {section.label && (collapsed ? (

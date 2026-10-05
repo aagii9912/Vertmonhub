@@ -40,9 +40,10 @@ export function Header() {
     const navTitle = pathname === '/dashboard' ? (dashboardMode?.mode === 'personal' ? 'Өнөөдөр' : 'Самбар') : getNavTitle(pathname);
     const title = override ?? navTitle;
     // Бичлэгийн нэр (жишээ: гэрээний дугаар) ирвэл замын мөрийн сүүлийн хэсгийг солино.
+    // Танигдаагүй замд (404 г.м.) хуудас өөрөө гарчиг өгөөгүй бол зөвхөн төсөл харагдана.
     const trail = crumbs.length > 1
         ? crumbs.map((c, i) => (i === crumbs.length - 1 ? { ...c, name: title } : c))
-        : [{ name: title }];
+        : crumbs.length === 1 || override ? [{ name: title }] : [];
 
     useEffect(() => {
         document.title = getDocumentTitle(title);

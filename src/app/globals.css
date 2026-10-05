@@ -483,7 +483,7 @@ body {
      :where() нь specificity 0 тул !important-аар focus:outline-none-ийг даран
      бүх интерактив элементэд найдвартай focus indicator өгнө (WCAG 2.4.7).
      Primitives draw no extra ring, so this is the only focus style. */
-  :where(a, button, [role="button"], [role="tab"], [role="menuitem"], [role="option"], input, select, textarea, summary, [tabindex]):focus-visible {
+  :where(a, button, [role="button"], [role="tab"], [role="menuitem"], [role="option"], input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible {
     outline: 2px solid var(--focus) !important;
     outline-offset: 2px !important;
   }
@@ -491,6 +491,9 @@ body {
      Base layer дотор байснаар дээрх important дүрмийг зөв дарна. */
   .ai-composer:has(textarea:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
   .ai-composer textarea:focus-visible { outline: none !important; }
+  /* ⌘K: хайлтын талбар цонхны дээд мөр өөрөө — дотор нь давхар хүрээ зурахгүй.
+     tabindex="-1" (цэс, цонх, main) зөвхөн программаар focus авдаг тул хүрээгүй. */
+  [cmdk-input]:focus-visible { outline: none !important; }
 }
 
 /* Хурлын танилцуулга: native fullscreen, Escape-ээр буцна. */
