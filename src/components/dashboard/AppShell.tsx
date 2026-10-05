@@ -17,7 +17,7 @@ import { getRouteModule } from '@/lib/navigation/nav';
  * Бүх dashboard / marketing хуудасны нийтлэг shell (v2).
  *
  * v1-д гурван workspace-ийн switcher sidebar-ыг бүхэлд нь сольдог байсан.
- * v2-т НЭГ sidebar, 52px тогтмол толгой, гар утсанд доод таб + голын «+».
+ * v2-т НЭГ sidebar, тогтмол толгой (v3: 56px), гар утсанд доод таб + голын «+».
  *
  * ЧУХАЛ: header өндөр `--header-h` токеноос уншигдана — ai-assistant/layout.tsx
  * бүтэн өндрийн тооцоондоо мөн үүнийг ашигладаг тул зөрж болохгүй.
@@ -42,7 +42,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <div className="sticky top-0 z-30 shrink-0 print:hidden">
                     <Header />
                 </div>
-                <main id="workspace-content" tabIndex={-1} className={`flex-1 p-4 md:p-6 print:p-0 ${isInbox ? 'flex min-h-0 flex-col pb-[calc(4.5rem+env(safe-area-inset-bottom))]' : 'pb-24 md:pb-6'}`}>
+                <main id="workspace-content" tabIndex={-1} className={`flex-1 p-4 md:p-8 print:p-0 ${isInbox ? 'flex min-h-0 flex-col pb-[calc(4.5rem+env(safe-area-inset-bottom))]' : 'pb-24 md:pb-8'}`}>
                     {!isLoaded ? <p role="status">Уншиж байна…</p>
                         : allowed ? children
                         : <p role="alert">Энэ хэсэгт хандах эрх танд алга.</p>}
