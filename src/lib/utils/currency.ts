@@ -4,10 +4,22 @@
  *
  * - default: бүтэн тоо мянгатын таслалтай (жишээ: 380,000,000₮)
  * - compact: товчилсон (жишээ: 1.2 сая₮, 3.5 тэрбум₮)
+ *
+ * Дүн байхгүй (null / undefined / NaN / ±Infinity) бол «—» буцаана: дутуу өгөгдлийг
+ * «0₮» болгож тэгтэй андуурахгүй. Бодит 0 нь «0₮» хэвээр.
  */
-export function formatMNT(value: number | null | undefined, options?: { compact?: boolean }): string {
+const MISSING_AMOUNT = '—';
+
+/** Хадгалсан дүнг тоо болгоно; хоосон, тоон бус утга бол null (DB numeric string-ийг ч хүлээн авна). */
+function finiteAmount(value: number | null | undefined): number | null {
+    if (value === null || value === undefined || (value as unknown) === '') return null;
     const n = Number(value);
-    const safe = Number.isFinite(n) ? n : 0;
+    return Number.isFinite(n) ? n : null;
+}
+
+export function formatMNT(value: number | null | undefined, options?: { compact?: boolean }): string {
+    const safe = finiteAmount(value);
+    if (safe === null) return MISSING_AMOUNT;
 
     if (options?.compact) {
         const abs = Math.abs(safe);
@@ -21,11 +33,11 @@ export function formatMNT(value: number | null | undefined, options?: { compact?
 
 /**
  * v2 KPI формат — «1.24 тэрбум ₮», «331 сая ₮», «980,000 ₮».
- * Толгойн тоонд 2 орон, сая-д бүхэл тоо (331 сая), ₮-ийн өмнө зай.
+ * Толгойн тоонд 2 орон, сая-д бүхэл тоо (331 сая), ₮-ийн өмнө зай. Дүнгүй бол «—».
  */
 export function formatMNTShort(value: number | null | undefined): string {
-    const n = Number(value);
-    const safe = Number.isFinite(n) ? n : 0;
+    const safe = finiteAmount(value);
+    if (safe === null) return MISSING_AMOUNT;
     const abs = Math.abs(safe);
     if (abs >= 1_000_000_000) return `${trimZeros((safe / 1_000_000_000).toFixed(2))} тэрбум ₮`;
     if (abs >= 1_000_000) return `${trimZeros((safe / 1_000_000).toFixed(abs >= 100_000_000 ? 0 : 1))} сая ₮`;
