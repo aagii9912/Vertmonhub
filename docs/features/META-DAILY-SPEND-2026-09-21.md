@@ -34,8 +34,9 @@
 
 `loadMarketingSpend`-ийг маркетингийн самбар, төсвийн самбар, AI төсөв ашиглана.
 Excel ба AI гүйцэтгэл ижил performance loader ашиглана. Хуучин 30 хоногийн
-`ad_campaigns.spend` snapshot нийт дээр нэмэгдэхгүй; хуучин ROI-ийн snapshot
-синк тусдаа хэвээр ажиллана.
+`ad_campaigns.spend` snapshot-ийг 2026-10-05-нд бүрэн татан буулгасан: ROI,
+«Зар сурталчилгаа», AI-ийн маркетингийн нэгтгэл энэ ledger-ээс уншина
+(`docs/features/MARKETING-ROI-DATED-2026-10-05.md`).
 
 ## Найдвартай хадгалалт
 
