@@ -8,7 +8,8 @@ import type { CountKey } from '@/lib/navigation/nav';
 export type NavCounts = Partial<Record<CountKey, number>>;
 
 /**
- * Sidebar-ийн амьд тоонууд: шинэ лид, уншаагүй мессеж, өнөөдрийн уулзалт.
+ * Sidebar-ийн амьд тоонууд: шинэ лид, хариу хүлээж буй яриа (Inbox), өнөөдрийн уулзалт.
+ * Шинэ мессеж / хариу ирэхэд useRealtimeNotifications энэ query-г шинэчилнэ.
  *
  * Нэг хөнгөн дуудлага, 60 секунд cache — навигаци бүрт дахин татахгүй.
  * Алдаа гарвал ЧИМЭЭГҮЙ хоосон буцаана: sidebar тоогүй ч бүрэн ажиллана.

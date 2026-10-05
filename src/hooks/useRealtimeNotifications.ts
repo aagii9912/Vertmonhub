@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
 import { useAuth } from '@/contexts/AuthContext';
@@ -9,6 +10,7 @@ import { useRouter } from 'next/navigation';
 export function useRealtimeNotifications() {
     const { shop } = useAuth();
     const router = useRouter();
+    const queryClient = useQueryClient();
 
     useEffect(() => {
         if (!shop?.id) return;
@@ -23,6 +25,10 @@ export function useRealtimeNotifications() {
                 table: 'chat_history',
                 filter: `shop_id=eq.${shop.id}`
             }, (payload) => {
+                // Ирсэн мессеж ч, ажилтны хариу ч Inbox-ийн «хариу хүлээж буй» тоо, жагсаалтыг өөрчилнө.
+                void queryClient.invalidateQueries({ queryKey: ['nav-counts'] });
+                void queryClient.invalidateQueries({ queryKey: ['conversations'] });
+
                 const message: string = payload.new?.message || '';
                 if (!message) return;
 
@@ -42,5 +48,5 @@ export function useRealtimeNotifications() {
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [shop?.id, router]);
+    }, [shop?.id, router, queryClient]);
 }

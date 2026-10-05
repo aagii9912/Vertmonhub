@@ -41,12 +41,19 @@ export function dashboardFetch(input: string, init: DashboardFetchInit = {}): Pr
     return fetch(input, { ...rest, body, headers: merged });
 }
 
-/** JSON хүлээж буй дуудлагын богино хэлбэр. Алдаа гарвал `Error` шиднэ. */
+/** API-ийн алдаатай хариу — дуудагч HTTP статусыг (ж: 404 «олдсонгүй») ялгаж харуулж болно. */
+export class DashboardApiError extends Error {
+    constructor(message: string, readonly status: number) {
+        super(message);
+    }
+}
+
+/** JSON хүлээж буй дуудлагын богино хэлбэр. Алдаа гарвал `DashboardApiError` (Error) шиднэ. */
 export async function dashboardJson<T>(input: string, init: DashboardFetchInit = {}): Promise<T> {
     const res = await dashboardFetch(input, init);
     if (!res.ok) {
         const detail = await res.json().catch(() => null as { error?: string } | null);
-        throw new Error(detail?.error || `Хүсэлт амжилтгүй (${res.status})`);
+        throw new DashboardApiError(detail?.error || `Хүсэлт амжилтгүй (${res.status})`, res.status);
     }
     return (await res.json()) as T;
 }

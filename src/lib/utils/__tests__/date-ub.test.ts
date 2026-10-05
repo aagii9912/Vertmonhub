@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ubStartOfDay, ubDayRange, ubDateStr, ubMonthRange, ubParts } from '../date';
+import { ubStartOfDay, ubDayRange, ubDateStr, ubMonthRange, ubParts, ubLocalToIso } from '../date';
 
 /**
  * Улаанбаатарын өдрийн хил — TZ-ээс ХАМААРАХГҮЙ (UTC instant-аар) шалгана.
@@ -30,5 +30,22 @@ describe('Asia/Ulaanbaatar day boundaries', () => {
     it('сарын 1-ний УБ 03:00 (= UTC 19:00 өмнөх сарын сүүлийн өдөр) шинэ сард орно', () => {
         const at = new Date('2026-08-31T19:00:00Z');
         expect(ubParts(at).month).toBe(9);
+    });
+
+    it('ubLocalToIso — datetime-local утгыг хөтчийн бүсээс үл хамааран УБ-ийн цагаар уншина', () => {
+        const original = process.env.TZ;
+        try {
+            for (const tz of ['UTC', 'America/New_York', 'Asia/Ulaanbaatar']) {
+                process.env.TZ = tz;
+                expect(ubLocalToIso('2026-10-06T07:30')).toBe('2026-10-05T23:30:00.000Z'); // УБ өглөө = UTC өмнөх өдөр
+                expect(ubLocalToIso('2026-10-06T09:30:15')).toBe('2026-10-06T01:30:15.000Z');
+            }
+        } finally {
+            if (original === undefined) delete process.env.TZ;
+            else process.env.TZ = original;
+        }
+        expect(ubLocalToIso('')).toBeNull();
+        expect(ubLocalToIso('2026-10-06')).toBeNull();
+        expect(ubLocalToIso('2026-13-40T99:99')).toBeNull();
     });
 });

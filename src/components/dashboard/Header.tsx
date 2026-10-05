@@ -124,7 +124,7 @@ function NotificationBell() {
         <Link
             href="/dashboard/inbox"
             className="relative flex h-10 w-9 md:h-[30px] md:w-[30px] items-center justify-center rounded-md text-fg-2 transition-colors hover:bg-surface-2 hover:text-foreground focus-ring"
-            aria-label={inbox > 0 ? `${inbox} шинэ мессеж` : 'Мессежүүд'}
+            aria-label={inbox > 0 ? `Мессежүүд: ${inbox} яриа хариу хүлээж байна` : 'Мессежүүд'}
         >
             <MessageSquare className="h-4 w-4" strokeWidth={1.75} />
             {inbox > 0 && (

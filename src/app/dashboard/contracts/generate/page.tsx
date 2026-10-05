@@ -2,7 +2,9 @@
 
 import { useState, useRef, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { FileText, Download, Loader2, User, Building2, DollarSign, Search, Check } from 'lucide-react';
+import { Printer, Download, Loader2, User, Building2, DollarSign, Search, Check, Landmark } from 'lucide-react';
+import { toast } from 'sonner';
+import { useAuth } from '@/contexts/AuthContext';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -20,6 +22,10 @@ import { formatMNT } from '@/lib/utils/currency';
 import { ubDateStr } from '@/lib/utils/date';
 
 interface ContractData {
+    /** Худалдагч (А тал) — хуулийн этгээдийн нэр; системд хадгалагдаагүй тул гараар. */
+    sellerCompany: string;
+    /** Төслийн нэр — идэвхтэй төслөөс (shop = төсөл) урьдчилан бөглөгдөнө. */
+    projectName: string;
     contractNumber: string;
     buyerName: string;
     buyerPhone: string;
@@ -37,20 +43,29 @@ interface ContractData {
     contractDate: string;
 }
 
-// Мандала Гарден — худалдагч/төслийн тогтмол мэдээлэл
-const SELLER = {
-    company: 'МОНКОН Констракшн ХХК',
-    project: 'Мандала Гарден цогцолбор хороолол',
-    address: 'Улаанбаатар, Хан-Уул дүүрэг, 23-р хороо, Яармаг, Арцатын ам',
-};
-
-const empty: ContractData = {
+// Худалдагч, төсөл, хаягийг аль нэг төслийн тогтмол утгаар бөглөхгүй: өөр төслийн
+// гэрээнд Мандала Гардены худалдагч хэвлэгддэг байсан. Төслийн нэрийг идэвхтэй
+// төслөөс авч, үлдсэнийг хэрэглэгч заавал оруулна.
+const emptyContract = (projectName: string): ContractData => ({
+    sellerCompany: '', projectName,
     contractNumber: '', buyerName: '', buyerPhone: '', buyerEmail: '', buyerRegister: '',
-    propertyName: '', propertyAddress: SELLER.address, propertySizeSqm: '', propertyFloor: '', propertyRooms: '',
+    propertyName: '', propertyAddress: '', propertySizeSqm: '', propertyFloor: '', propertyRooms: '',
     pricePerSqm: '', price: '', downPayment: '',
     paymentMethod: 'cash',
     contractDate: ubDateStr(),
-};
+});
+
+/** Хэвлэхээс өмнө заавал бөглөх талбарууд (дарааллаар нь сануулна). */
+const REQUIRED_FIELDS: [keyof ContractData, string][] = [
+    ['sellerCompany', 'Худалдагч байгууллага'],
+    ['projectName', 'Төсөл'],
+    ['propertyAddress', 'Төслийн хаяг'],
+    ['buyerName', 'Худалдан авагчийн нэр'],
+    ['propertyName', 'Байрны код / нэр'],
+    ['price', 'Нийт үнэ'],
+];
+
+const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
 
 interface ContractRow {
     id: string; unit_label?: string; block_name?: string; floor?: string; rooms?: number;
@@ -73,16 +88,17 @@ function derivePaymentMethod(c: ContractRow): ContractData['paymentMethod'] {
 }
 
 export default function ContractGeneratePage() {
+    const { shop } = useAuth();
     return (
         <Suspense fallback={null}>
-            <ContractGenerateInner />
+            {/* Төсөл солигдвол өмнөх төслийн худалдагч, хаяг формд үлдэхгүй (key). */}
+            <ContractGenerateInner key={shop?.id ?? 'none'} defaultProject={shop?.name ?? ''} />
         </Suspense>
     );
 }
 
-function ContractGenerateInner() {
-    const [data, setData] = useState<ContractData>(empty);
-    const [generating, setGenerating] = useState(false);
+function ContractGenerateInner({ defaultProject }: { defaultProject: string }) {
+    const [data, setData] = useState<ContractData>(() => emptyContract(defaultProject));
     const [search, setSearch] = useState('');
     const [results, setResults] = useState<ContractRow[]>([]);
     const [searching, setSearching] = useState(false);
@@ -134,14 +150,15 @@ function ContractGenerateInner() {
     }, []);
 
     function loadContract(c: ContractRow) {
-        setData({
+        // Худалдагч, төсөл, хаяг хэрэглэгчийн оруулснаар үлдэнэ — гэрээний мөрөөс авахгүй.
+        setData(prev => ({
+            ...prev,
             contractNumber: c.unit_label || '',
             buyerName: c.customer_name || '',
             buyerPhone: c.customer_phone || '',
             buyerEmail: '',
             buyerRegister: c.customer_registration || '',
             propertyName: c.unit_label || c.block_name || '',
-            propertyAddress: SELLER.address,
             propertySizeSqm: c.contracted_area?.toString() || '',
             propertyFloor: c.floor || '',
             propertyRooms: c.rooms?.toString() || '',
@@ -149,8 +166,8 @@ function ContractGenerateInner() {
             price: c.total_price?.toString() || '',
             downPayment: c.prepayment_due?.toString() || '',
             paymentMethod: derivePaymentMethod(c),
-            contractDate: (c.contract_date || c.order_date || new Date().toISOString()).slice(0, 10),
-        });
+            contractDate: (c.contract_date || c.order_date || ubDateStr()).slice(0, 10),
+        }));
         setLoadedId(c.id);
         setResults([]);
         setSearch('');
@@ -160,15 +177,17 @@ function ContractGenerateInner() {
         cash: 'Бэлэн төлбөр', mortgage: 'Банкны зээл', installment: 'Хэсэгчилсэн төлбөр', leasing: 'Хувь лизинг', barter: 'Бартер',
     };
 
-    const generateContract = () => { setGenerating(true); setTimeout(() => setGenerating(false), 600); };
+    // Энэ хуудас юу ч хадгалахгүй — гэрээний баримтыг бэлтгэж хэвлэнэ (PDF-ээр хадгалж болно).
+    const missing = REQUIRED_FIELDS.filter(([key]) => !data[key].trim()).map(([, label]) => label);
+    const ready = missing.length === 0;
 
     const printContract = () => {
         const content = previewRef.current;
-        if (!content) return;
+        if (!content || !ready) return;
         const win = window.open('', '', 'width=820,height=1100');
-        if (!win) return;
+        if (!win) { toast.error('Хэвлэх цонх нээгдсэнгүй. Хөтчийн pop-up зөвшөөрлийг шалгаад дахин оролдоно уу.'); return; }
         win.document.write(`
-            <html><head><title>Гэрээ ${data.contractNumber || ''}</title>
+            <html><head><title>Гэрээ ${escapeHtml(data.contractNumber || '')}</title>
             <style>
               @page { margin: 24mm 18mm; }
               body{font-family:'Times New Roman',serif;color:#000;line-height:1.7;font-size:13px}
@@ -193,8 +212,8 @@ function ContractGenerateInner() {
             <div className="max-w-5xl mx-auto">
                 <PageHeader
                     eyebrow="Гэрээ"
-                    title="Гэрээ үүсгэгч"
-                    subtitle="Үл хөдлөх хөрөнгө худалдах-худалдан авах гэрээ — Мандала Гарден"
+                    title="Гэрээний баримт"
+                    subtitle="Үл хөдлөх хөрөнгө худалдах-худалдан авах гэрээний баримтыг бэлтгэж хэвлэнэ. Энд оруулсан мэдээлэл системд хадгалагдахгүй, гэрээ бүртгэгдэхгүй."
                 />
 
                 {/* Гэрээ хайж дуудах */}
@@ -230,6 +249,20 @@ function ContractGenerateInner() {
                     {/* Form */}
                     <Card>
                         <CardContent className="p-6 space-y-5">
+                            <div>
+                                <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-3"><Landmark className="w-4 h-4 text-brand-strong" /> Худалдагч ба төсөл</h3>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <FormField className="col-span-2" label="Худалдагч байгууллага" htmlFor="cg-seller-company" required hint="Гэрээний А тал — хуулийн этгээдийн бүтэн нэр">
+                                        <Input id="cg-seller-company" placeholder="Ж: ... ХХК" value={data.sellerCompany} onChange={e => set('sellerCompany', e.target.value)} aria-required="true" />
+                                    </FormField>
+                                    <FormField className="col-span-2" label="Төсөл" htmlFor="cg-project-name" required hint="Идэвхтэй төслөөс бөглөгдсөн — шаардлагатай бол засна уу">
+                                        <Input id="cg-project-name" placeholder="Төслийн нэр" value={data.projectName} onChange={e => set('projectName', e.target.value)} aria-required="true" />
+                                    </FormField>
+                                    <FormField className="col-span-2" label="Төслийн хаяг" htmlFor="cg-property-address" required>
+                                        <Input id="cg-property-address" placeholder="Хот, дүүрэг, хороо, байршил" value={data.propertyAddress} onChange={e => set('propertyAddress', e.target.value)} aria-required="true" />
+                                    </FormField>
+                                </div>
+                            </div>
                             <div>
                                 <h3 className="text-sm font-semibold text-foreground flex items-center gap-1.5 mb-3"><User className="w-4 h-4 text-brand-strong" /> Худалдан авагч</h3>
                                 <div className="grid grid-cols-2 gap-3">
@@ -293,13 +326,16 @@ function ContractGenerateInner() {
                                 </div>
                             </div>
                             <Button
-                                onClick={generateContract}
-                                disabled={!data.buyerName || !data.propertyName || !data.price}
+                                onClick={printContract}
+                                disabled={!ready}
                                 size="lg"
                                 className="w-full"
                             >
-                                {generating ? <Loader2 className="w-5 h-5 animate-spin" /> : <FileText className="w-5 h-5" />} Гэрээ шинэчлэх
+                                <Printer className="w-5 h-5" /> Хэвлэх / PDF
                             </Button>
+                            <p role="status" className="text-xs text-muted-foreground">
+                                {ready ? 'Баримтыг хэвлэх эсвэл PDF-ээр хадгалж болно. Системд юу ч хадгалагдахгүй.' : `Хэвлэхийн өмнө бөглөнө үү: ${missing.join(', ')}`}
+                            </p>
                         </CardContent>
                     </Card>
 
@@ -307,7 +343,7 @@ function ContractGenerateInner() {
                     <Card className="overflow-hidden">
                         <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
                             <span className="text-sm font-semibold text-foreground">Урьдчилж харах</span>
-                            {data.buyerName && data.propertyName && (
+                            {ready && (
                                 <Button onClick={printContract} variant="secondary" size="sm">
                                     <Download className="w-3.5 h-3.5" /> PDF / Хэвлэх
                                 </Button>
@@ -321,7 +357,7 @@ function ContractGenerateInner() {
 
                             <h2 style={{ fontWeight: 'bold', marginTop: '14px' }}>НЭГ. ГЭРЭЭНИЙ ТАЛУУД</h2>
                             <table><tbody>
-                                <tr><td style={{ width: '38%', fontWeight: 'bold' }}>Худалдагч (А тал):</td><td>{SELLER.company} — «{SELLER.project}»</td></tr>
+                                <tr><td style={{ width: '38%', fontWeight: 'bold' }}>Худалдагч (А тал):</td><td>{data.sellerCompany || '___'} — «{data.projectName || '___'}»</td></tr>
                                 <tr><td style={{ fontWeight: 'bold' }}>Худалдан авагч (Б тал):</td><td>{data.buyerName || '___'}</td></tr>
                                 <tr><td style={{ fontWeight: 'bold' }}>Регистрийн дугаар:</td><td>{data.buyerRegister || '___'}</td></tr>
                                 <tr><td style={{ fontWeight: 'bold' }}>Холбоо барих утас:</td><td>{data.buyerPhone || '___'}</td></tr>
@@ -357,7 +393,7 @@ function ContractGenerateInner() {
 
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '56px' }}>
                                 <div style={{ width: '45%', textAlign: 'center', borderTop: '1px solid #000', paddingTop: '8px' }}>
-                                    ХУДАЛДАГЧ<br /><small>{SELLER.company}</small>
+                                    ХУДАЛДАГЧ<br /><small>{data.sellerCompany || '___'}</small>
                                 </div>
                                 <div style={{ width: '45%', textAlign: 'center', borderTop: '1px solid #000', paddingTop: '8px' }}>
                                     ХУДАЛДАН АВАГЧ<br /><small>{data.buyerName || '___'}</small>

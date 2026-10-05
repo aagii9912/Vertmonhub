@@ -212,7 +212,7 @@ describe('allowed operations, field permissions and tenant boundaries', () => {
         const response = await navCounts.GET();
         expect(response.status).toBe(200);
         expect(await response.json()).toEqual({});
-        expect(state.filters.some(filter => ['leads', 'property_viewings', 'customers'].includes(filter.table))).toBe(false);
+        expect(state.filters.some(filter => ['leads', 'property_viewings', 'customers', 'chat_history'].includes(filter.table))).toBe(false);
     });
     it('removing reports permission from admin also denies the director report', async () => {
         asRole('marketing');
