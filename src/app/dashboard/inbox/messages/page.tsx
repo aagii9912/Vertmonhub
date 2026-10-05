@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowLeft, Inbox, Loader2, MessageSquare, RefreshCw, Search, Send, Trash2 } from 'lucide-react';
+import { Inbox, Loader2, MessageSquare, RefreshCw, Search, Send, Trash2 } from 'lucide-react';
 import { confirmToast } from '@/components/ui/Toast';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
@@ -46,7 +46,7 @@ function InboxWorkspace() {
     return <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-md border border-border bg-surface">
         {isError && <p role="alert" className="border-b border-border px-4 py-2 text-xs text-status-pending">Шинэчилж чадсангүй. Өмнө ачаалсан ярианууд харагдаж байна.</p>}
         <div className="flex min-h-0 flex-1">
-            <section aria-label="Ярианы жагсаалт" className={cn('min-h-0 w-full shrink-0 flex-col border-border md:flex md:w-72 md:border-r lg:w-80', activeId ? 'hidden' : 'flex')}>
+            <section aria-label="Ярианы жагсаалт" className="flex min-h-0 w-80 shrink-0 flex-col border-r border-border">
                 <div className="flex items-center gap-2 border-b border-border px-3 py-2">
                     <h2 className="text-sm font-semibold">Ярианууд <span className="num ml-1 text-muted-foreground">{conversations.length}</span></h2>
                     <button type="button" onClick={() => void refetch()} disabled={isFetching} aria-label="Яриа шинэчлэх" className="ml-auto flex h-10 w-10 items-center justify-center rounded-md hover:bg-surface-2 focus-ring"><RefreshCw className={cn('h-4 w-4', isFetching && 'animate-spin')} /></button>
@@ -67,18 +67,17 @@ function InboxWorkspace() {
                     </button>)}
                 </div>
             </section>
-            <section aria-label="Сонгосон яриа" className={cn('min-h-0 min-w-0 flex-1 flex-col md:flex', activeId ? 'flex' : 'hidden')}>
-                {active ? <ConversationThread key={`${shop.id}:${active.id}`} conversation={active} onBack={() => select(null)} onRefresh={refetch} /> : <div className="flex flex-1 flex-col items-center justify-center gap-3 p-5 text-center text-sm text-muted-foreground">
+            <section aria-label="Сонгосон яриа" className="flex min-h-0 min-w-0 flex-1 flex-col">
+                {active ? <ConversationThread key={`${shop.id}:${active.id}`} conversation={active} onClose={() => select(null)} onRefresh={refetch} /> : <div className="flex flex-1 flex-col items-center justify-center gap-3 p-5 text-center text-sm text-muted-foreground">
                     <MessageSquare className="h-8 w-8" />
                     <p>{activeId ? 'Сонгосон яриа энэ жагсаалтад олдсонгүй.' : 'Жагсаалтаас яриа сонгоно уу.'}</p>
-                    {activeId && <button type="button" onClick={() => select(null)} className="min-h-11 rounded-md border border-border px-3 text-foreground focus-ring">Ярианы жагсаалт руу буцах</button>}
                 </div>}
             </section>
         </div>
     </div>;
 }
 
-function ConversationThread({ conversation, onBack, onRefresh }: { conversation: Conversation; onBack: () => void; onRefresh: () => Promise<unknown> }) {
+function ConversationThread({ conversation, onClose, onRefresh }: { conversation: Conversation; onClose: () => void; onRefresh: () => Promise<unknown> }) {
     const { user } = useAuth();
     const canWrite = !!user?.permissions?.canWrite;
     const canDelete = !!user?.permissions?.canDelete && (user.role === 'super_admin' || user.permissions.modules.includes('customers'));
@@ -112,7 +111,7 @@ function ConversationThread({ conversation, onBack, onRefresh }: { conversation:
         if (!await confirmToast({ title: 'Харилцагчийг жагсаалтаас хасах уу?', description: 'Чатны түүх хадгалагдана. Харилцагч дахин мессеж бичвэл буцаж гарч ирнэ.', confirmLabel: 'Устгах', destructive: true })) return;
         try {
             await dashboardMutate(`/api/dashboard/customers/${encodeURIComponent(conversation.id)}`, 'DELETE');
-            onBack();
+            onClose();
             await onRefresh();
             toast.success('Харилцагч устгагдлаа');
         } catch (error) { toast.error(error instanceof Error ? error.message : 'Харилцагчийг устгаж чадсангүй'); }
@@ -120,7 +119,6 @@ function ConversationThread({ conversation, onBack, onRefresh }: { conversation:
 
     return <>
         <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2.5">
-            <button type="button" onClick={onBack} aria-label="Ярианы жагсаалт руу буцах" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md hover:bg-surface-2 focus-ring md:hidden"><ArrowLeft className="h-5 w-5" /></button>
             <div className="min-w-0"><h2 className="truncate text-sm font-semibold">{conversation.customer_name || 'Зочин'}</h2><p className="text-xs text-muted-foreground">{messages.length} мессеж</p></div>
             {canDelete && <button type="button" disabled={sending} onClick={() => void remove()} aria-label="Харилцагчийг жагсаалтаас хасах" className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-status-danger-soft hover:text-status-danger focus-ring"><Trash2 className="h-4 w-4" /></button>}
         </header>

@@ -71,15 +71,17 @@ describe('UI audit regressions', () => {
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
-    it('opens the exact conversation in the URL and returns to the list without losing other parameters', () => {
+    it('opens the exact conversation in the URL beside the list and switches conversations without losing other parameters', () => {
         mocks.params = 'conversation=b&source=inbox';
         render(<InboxMessagesPage />);
         const selected = screen.getByRole('region', { name: 'Сонгосон яриа' });
         expect(within(selected).getByRole('heading', { name: 'Харилцагч b' })).toBeInTheDocument();
         expect(screen.getByRole('log')).toHaveTextContent('Яриа b');
         expect(screen.getByRole('log')).not.toHaveTextContent('Яриа a');
-        fireEvent.click(screen.getByRole('button', { name: 'Ярианы жагсаалт руу буцах' }));
-        expect(mocks.push).toHaveBeenCalledWith('/dashboard/inbox/messages?source=inbox', { scroll: false });
+        const list = screen.getByRole('region', { name: 'Ярианы жагсаалт' });
+        expect(within(list).getByRole('button', { name: /Харилцагч b/ })).toHaveAttribute('aria-pressed', 'true');
+        fireEvent.click(within(list).getByRole('button', { name: /Харилцагч a/ }));
+        expect(mocks.push).toHaveBeenCalledWith('/dashboard/inbox/messages?conversation=a&source=inbox', { scroll: false });
     });
 
     it('preserves an unsent reply and shows the failure when the server rejects it', async () => {
