@@ -268,5 +268,5 @@ ad set-ийнх ч) тэр төрөлд ногдоно (`spend_<төрөл>`, к
 - Өөрийн бизнесийн зарын дансны тайланд **App Review шаардлагагүй** (Standard access);
   Advanced access зөвхөн бусдын дансанд эсвэл хязгаар нэмэхэд хэрэгтэй.
 - Marketing API **v26.0** ашиглаж байна.
-- Facebook хуудас / Instagram-ийн insights ба Lead Ads (маягтын лид) нь тусдаа дараагийн
-  ажил — энэ синкт ороогүй.
+- Facebook хуудас / Instagram-ийн insights нь тусдаа дараагийн ажил — энэ синкт ороогүй.
+  Lead Ads (маягтын лид): `docs/features/LEAD-ADS-WEBHOOK-2026-10-05.md`.

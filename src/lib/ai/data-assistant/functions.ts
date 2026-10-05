@@ -1341,7 +1341,9 @@ export async function createLead(shopId: string, args: any, confirm: boolean, ac
         preferred_rooms: args.preferred_rooms ?? null,
     }, { select: 'id, customer_name' });
     if (!result.ok) return { error: 'Лид үүсгэхэд алдаа гарлаа' };
-    return { success: true, message: `"${displayName}" лийд амжилттай үүсгэлээ (${managerName ? `менежер: ${managerName}` : 'хариуцагчгүй — идэвхтэй менежерт онооно'}).`, leadId: result.lead.id };
+    const owner = managerName ? `менежер: ${managerName}`
+        : result.autoAssigned ? `менежер: ${result.autoAssigned} (автоматаар)` : 'хариуцагчгүй — идэвхтэй менежерт онооно';
+    return { success: true, message: `"${displayName}" лийд амжилттай үүсгэлээ (${owner}).`, leadId: result.lead.id };
 }
 
 export async function deleteLead(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {

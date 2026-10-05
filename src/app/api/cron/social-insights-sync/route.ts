@@ -3,16 +3,16 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { isAuthorizedCron } from '@/lib/auth/cron';
 import { syncShopSocial } from '@/lib/marketing/socialSync';
+import { purgeExpiredPageConnections } from '@/lib/facebook/page-connect';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
 
 /**
  * GET|POST /api/cron/social-insights-sync
- * Холбогдсон бүх shop-ийн Facebook organic post + page insights-ийг татаж
- * `social_posts` / `social_insights`-д snapshot хадгална. Үүгээр trend болон ROI
- * шинэлэг хэвээр байна. Vercel Cron-д зориулсан (GET + Bearer), `x-cron-secret`-ийг
- * бас зөвшөөрнө.
+ * Facebook Page холбосон бүх shop-ийн Page-ийн өдрийн insights (сүүлийн 30 дууссан өдөр), нийтлэл ба
+ * нийтлэлийн insights-ийг `social_insights_daily` / `social_posts`-д хадгална (Graph v26). Vercel Cron-д
+ * зориулсан (GET + Bearer), `x-cron-secret`-ийг бас зөвшөөрнө.
  */
 export async function POST(request: NextRequest) {
     if (!isAuthorizedCron(request)) {
@@ -21,26 +21,32 @@ export async function POST(request: NextRequest) {
 
     try {
         const supabase = supabaseAdmin();
-        const { data: shops } = await supabase
+        // Дуусаагүй орхисон Page сонголтын шифрлэгдсэн user токеныг цэвэрлэнэ.
+        await purgeExpiredPageConnections();
+        const { data: shops, error } = await supabase
             .from('shops')
             .select('id, facebook_page_id, facebook_page_access_token')
             .not('facebook_page_id', 'is', null)
             .not('facebook_page_access_token', 'is', null);
+        if (error) throw new Error(error.message);
 
+        const statuses: Record<string, number> = {};
         let totalPosts = 0;
-        let syncedShops = 0;
+        let pageRows = 0;
         for (const shop of shops || []) {
             try {
-                const { postsStored } = await syncShopSocial(supabase, shop);
-                totalPosts += postsStored;
-                syncedShops++;
+                const result = await syncShopSocial(supabase, shop);
+                statuses[result.status] = (statuses[result.status] ?? 0) + 1;
+                totalPosts += result.postsStored;
+                pageRows += result.pageRows;
             } catch (e) {
+                statuses.error = (statuses.error ?? 0) + 1;
                 logger.warn('[Social Insights Cron] shop sync failed', { shopId: shop.id, error: e });
             }
         }
 
-        logger.info('[Social Insights Cron] done', { syncedShops, totalPosts });
-        return NextResponse.json({ success: true, syncedShops, totalPosts });
+        logger.info('[Social Insights Cron] done', { statuses, totalPosts, pageRows });
+        return NextResponse.json({ success: true, statuses, totalPosts, pageRows });
     } catch (error) {
         logger.error('[Social Insights Cron] error', { error });
         return NextResponse.json({ error: 'Social insights sync failed' }, { status: 500 });

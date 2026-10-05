@@ -2,7 +2,9 @@ import crypto from 'crypto';
 import { dateSchema } from '@/lib/marketing/performance';
 import { logger } from '@/lib/utils/logger';
 
-const BASE = 'https://graph.facebook.com/v26.0';
+/** Бүх Graph дуудлагын нэг хувилбар (зар, Page, Instagram). */
+export const META_GRAPH_VERSION = 'v26.0';
+const BASE = `https://graph.facebook.com/${META_GRAPH_VERSION}`;
 export interface MetaAccount { id: string; currency: string; timezone_name: string }
 export interface MetaDailyRow { campaign_id: string; campaign_name: string; spent_at: string; native_amount: string }
 
@@ -89,7 +91,8 @@ export function metaUsage(headers: Headers): { pct: number; regainMinutes: numbe
     return { pct, regainMinutes, header };
 }
 
-const graphInt = (value: unknown): number | null =>
+/** Graph алдааны `code`/`error_subcode` (тоо эсвэл тоон мөр); бусад үед null. */
+export const graphInt = (value: unknown): number | null =>
     typeof value === 'number' && Number.isInteger(value) ? value : typeof value === 'string' && /^\d{1,9}$/.test(value) ? Number(value) : null;
 
 function metaError(status: number | null, code: number | null, subcode: number | null): MetaApiError {
@@ -108,12 +111,37 @@ function pause(ms: number, signal: AbortSignal): Promise<boolean> {
     });
 }
 
-// Never log a URL, response body or token. Even Graph paging.next can contain credentials.
-export async function metaRead<T>(path: string, token: string, params: Record<string, string> = {}, options: MetaReadOptions = {}): Promise<T> {
-    const secret = process.env.META_ADS_APP_SECRET?.trim();
-    if (!secret) throw new MetaApiError('Meta Ads app-ийн нууц түлхүүр тохируулаагүй байна.');
+/**
+ * Graph-д хандах Meta app: `appsecret_proof`-ийг тухайн app-ийн нууц түлхүүрээр үүсгэж, алдааг
+ * хэрэглэгчид ойлгомжтой монгол мессеж болгоно. Зар = META_ADS_APP_SECRET, Page/IG = FACEBOOK_APP_SECRET.
+ */
+export interface MetaGraphApp {
+    /** Токены appsecret_proof; нууц түлхүүр тохируулаагүй бол null (fail-closed). */
+    proof(token: string): string | null;
+    missingSecret: string;
+    error(status: number | null, code: number | null, subcode: number | null): MetaApiError;
+}
+const ADS_APP: MetaGraphApp = {
+    proof: token => {
+        const secret = process.env.META_ADS_APP_SECRET?.trim();
+        return secret ? crypto.createHmac('sha256', secret).update(token).digest('hex') : null;
+    },
+    missingSecret: 'Meta Ads app-ийн нууц түлхүүр тохируулаагүй байна.',
+    error: metaError,
+};
+
+export function metaRead<T>(path: string, token: string, params: Record<string, string> = {}, options: MetaReadOptions = {}): Promise<T> {
+    return graphRead<T>(ADS_APP, path, token, params, options);
+}
+
+/**
+ * Graph GET: токен зөвхөн Authorization толгойд, `appsecret_proof` заавал, түр алдаанд хязгаартай
+ * дахин оролдлого. Never log a URL, response body or token. Even Graph paging.next can contain credentials.
+ */
+export async function graphRead<T>(app: MetaGraphApp, path: string, token: string, params: Record<string, string> = {}, options: MetaReadOptions = {}): Promise<T> {
+    const proof = app.proof(token);
+    if (!proof) throw new MetaApiError(app.missingSecret);
     const url = new URL(`${BASE}/${path}`);
-    const proof = crypto.createHmac('sha256', secret).update(token).digest('hex');
     for (const [key, value] of Object.entries({ ...params, appsecret_proof: proof })) url.searchParams.set(key, value);
     const abort = options.signal ?? AbortSignal.timeout(20000);
     const retries = options.retry === false ? 0 : META_RETRY_DELAYS_MS.length;
@@ -137,8 +165,29 @@ export async function metaRead<T>(path: string, token: string, params: Record<st
         // Хандалт минутаар хаагдсан бол хэдэн секундын дараа дахин оролдох нь утгагүй.
         if (canRetry && usage.regainMinutes <= 0 && isRetriableMetaError(response.status, code)
             && await pause(META_RETRY_DELAYS_MS[attempt], abort)) continue;
-        throw metaError(response.status, code, subcode);
+        throw app.error(response.status, code, subcode);
     }
+}
+/**
+ * Graph POST (нийтлэл, webhook subscribe): токен Authorization толгойд, `appsecret_proof` биед. Давхар
+ * нийтлэлээс сэргийлж ДАХИН ОРОЛДОХГҮЙ. URL, хариу, токеныг хэзээ ч лог/алдаанд оруулахгүй.
+ */
+export async function graphPost<T>(app: MetaGraphApp, path: string, token: string, body: Record<string, string> = {}, options: Pick<MetaReadOptions, 'signal'> = {}): Promise<T> {
+    const proof = app.proof(token);
+    if (!proof) throw new MetaApiError(app.missingSecret);
+    let response: Response;
+    try {
+        response = await fetch(`${BASE}/${path}`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({ ...body, appsecret_proof: proof }),
+            cache: 'no-store',
+            signal: options.signal ?? AbortSignal.timeout(20000),
+        });
+    } catch { throw new MetaApiError('Meta холболт тасарлаа эсвэл хугацаа хэтэрлээ. Дахин оролдоно уу.'); }
+    const json = await response.json().catch(() => null);
+    if (response.ok && json && !json.error) return json as T;
+    throw app.error(response.status, graphInt(json?.error?.code), graphInt(json?.error?.error_subcode));
 }
 export async function fetchMetaAccount(account: string, token: string, deadline?: MetaDeadline): Promise<MetaAccount> {
     if (!/^act_\d+$/.test(account)) throw new Error('Meta зарын данс сонгоно уу.');

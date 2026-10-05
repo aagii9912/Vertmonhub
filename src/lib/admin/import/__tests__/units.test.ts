@@ -88,6 +88,32 @@ describe('mapInventoryRows', () => {
         expect(result.errors).toEqual(['Мөр 3: Ээлж хоосон байна']);
     });
 
+    it('takes the block from a «Б<n>-» code prefix when the file has neither a block column nor an explicit block', () => {
+        const { 'Блок': _block, ...noBlock } = unit;
+        const result = mapInventoryRows([noBlock, { ...noBlock, 'Код': 'Б2-14' }], context);
+        expect(result.errors).toEqual([]);
+        expect(result.rows.map(row => row.block)).toEqual(['Б1', 'Б2']);
+        expect(mapInventoryRows([{ ...noBlock, 'Код': 'Б2-14' }], { ...context, block: 'Б1' }).rows[0].block).toBe('Б1');
+    });
+
+    it('rounds Excel floating-point residue to cents but still rejects real third decimals', () => {
+        const result = mapInventoryRows([{ ...unit, 'Борлуулах талбай': '89.32000000000001', 'Гэрээлсэн талбай': 79.69999999999999 }], context);
+        expect(result.errors).toEqual([]);
+        expect(result.rows[0]).toMatchObject({ sale_area: 89.32, contracted_area: 79.7 });
+        expect(mapInventoryRows([{ ...unit, 'Борлуулах талбай': '80.125' }], context).errors).toHaveLength(1);
+    });
+
+    it('separates ERP codes repeated on other floors by floor, else by model, and keeps true duplicates as errors', () => {
+        const parking = { ...unit, 'Код': 'Б1-1', 'Бүтээгдэхүүний төрөл': 'Зогсоол' };
+        const byFloor = mapInventoryRows([{ ...parking, 'Давхар': 'B1', 'Загвар': 'A-2' }, { ...parking, 'Давхар': '01', 'Загвар': 'A-1' }, unit], context);
+        expect(byFloor.errors).toEqual([]);
+        expect(byFloor.rows.map(row => row.code)).toEqual(['Б1-1 (B1)', 'Б1-1 (01)', 'Б1-201']);
+        const byModel = mapInventoryRows([{ ...parking, 'Давхар': '01', 'Загвар': 'H-1' }, { ...parking, 'Давхар': '01', 'Загвар': 'H-2' }], context);
+        expect(byModel.rows.map(row => row.code)).toEqual(['Б1-1 (H-1)', 'Б1-1 (H-2)']);
+        const same = mapInventoryRows([{ ...parking, 'Давхар': '01', 'Загвар': 'A-1' }, { ...parking, 'Давхар': '01', 'Загвар': 'A-1' }], context);
+        expect(same.errors[0]).toContain('Код давхардсан');
+    });
+
     it('never guesses block or building from layout/code and never silently skips empty rows', () => {
         const result = mapInventoryRows([
             { code: 'E-1', category: 'residential', status: 'available', model: 'Б1-А' }, {},

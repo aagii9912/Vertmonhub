@@ -47,6 +47,9 @@ export function ContractDetail({ id }: { id: string }) {
 
     const st = CONTRACT_STATUS_META[c.contract_status] ?? { label: c.contract_status, tone: 'neutral' as const };
     const total = c.total_price || 0;
+    // ERP-ийн бүтээгдэхүүний экспортоос үүссэн гэрээнд өмнө төлсөн дүн байхгүй: таахгүй, төлбөр бүртгэхгүй.
+    const paidKnown = c.paid_amount !== null && c.paid_amount !== undefined;
+    const canAddPayment = canWrite && paidKnown;
     const paid = c.paid_amount || 0;
     const balance = c.balance ?? Math.max(0, total - paid);
     const paidPct = total > 0 ? Math.round((paid / total) * 100) : 0;
@@ -71,7 +74,7 @@ export function ContractDetail({ id }: { id: string }) {
                     {canWrite && isTransferableContract(c.contract_status) && (
                         <button type="button" onClick={() => setTransferring(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md border border-border-strong bg-surface px-2.5 text-[12.5px] font-medium text-foreground hover:bg-surface-2 focus-ring"><ArrowLeftRight className="h-4 w-4" /> Гэрээ шилжүүлэх</button>
                     )}
-                    {canWrite && <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-2.5 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>}
+                    {canAddPayment && <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-2.5 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>}
                 </div>
             </div>
 
@@ -85,8 +88,8 @@ export function ContractDetail({ id }: { id: string }) {
                         <F label="Байр">{[c.unit_type || (c.rooms ? `${c.rooms} өрөө` : null), c.contracted_area ? `${c.contracted_area} м²` : null, c.floor ? `${c.floor}-р давхар` : null].filter(Boolean).join(' · ') || '—'}</F>
                         <F label="Менежер">{c.sales_manager ? <span className="inline-flex items-center gap-1.5"><Avatar name={c.sales_manager} />{c.sales_manager}</span> : '—'}</F>
                         <F label="Нийт үнэ"><span className="num font-medium">{formatMNT(total)}</span></F>
-                        <F label="Урьдчилгаа"><span className="num">{c.prepayment_percent ? `${c.prepayment_percent}%` : '—'}{c.prepayment_due ? ` · ${formatMNT(c.prepayment_due)}` : ''}</span></F>
-                        <F label="Урьдчилгаа төлсөн"><span className="num">{formatMNT(c.prepayment_paid || 0)}</span></F>
+                        <F label="Урьдчилгаа"><span className="num">{c.prepayment_percent ? `${c.prepayment_percent}%` : c.prepayment_condition || '—'}{c.prepayment_due ? ` · ${formatMNT(c.prepayment_due)}` : ''}</span></F>
+                        <F label="Урьдчилгаа төлсөн"><span className="num">{c.prepayment_paid === null || c.prepayment_paid === undefined ? '—' : formatMNT(c.prepayment_paid)}</span></F>
                         {(c.payment_condition || c.sales_channel) && <F label="Нөхцөл / суваг">{[c.payment_condition, c.sales_channel].filter(Boolean).join(' · ')}</F>}
                     </Panel>
 
@@ -94,8 +97,10 @@ export function ContractDetail({ id }: { id: string }) {
                         {payments.length === 0 && !adding ? (
                             <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
                                 <div className="text-[13px] font-medium text-foreground">Төлбөрийн график оруулаагүй</div>
-                                <p className="max-w-sm text-[12.5px] text-muted-foreground">Урьдчилгаа болон сар бүрийн төлөлтийг энд бүртгэвэл захирлын самбар авлага, хоцролтыг автоматаар харуулна.</p>
-                                {canWrite && <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>}
+                                <p className="max-w-sm text-[12.5px] text-muted-foreground">{paidKnown
+                                    ? 'Урьдчилгаа болон сар бүрийн төлөлтийг энд бүртгэвэл захирлын самбар авлага, хоцролтыг автоматаар харуулна.'
+                                    : 'Энэ гэрээ ERP-ийн бүтээгдэхүүний экспортоос үүссэн тул өмнө төлсөн дүн тодорхойгүй. Төлсөн дүнтэй гэрээний экспорт орсны дараа төлбөр бүртгэнэ.'}</p>
+                                {canAddPayment && <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>}
                             </div>
                         ) : (
                             <div className="overflow-x-auto">
@@ -113,7 +118,7 @@ export function ContractDetail({ id }: { id: string }) {
                                     </thead>
                                     <tbody>
                                         {payments.map((p) => <PaymentTr key={p.id} p={p} contractId={id} now={now} canWrite={canWrite} />)}
-                                        {adding && canWrite && <AddPaymentRow contractId={id} next={(payments.at(-1)?.installment_number ?? 0) + 1} defaultAmount={nextDue ? 0 : Math.round(balance / 6)} onDone={() => setAdding(false)} />}
+                                        {adding && canAddPayment && <AddPaymentRow contractId={id} next={(payments.at(-1)?.installment_number ?? 0) + 1} defaultAmount={nextDue ? 0 : Math.round(balance / 6)} onDone={() => setAdding(false)} />}
                                     </tbody>
                                     {payments.length > 0 && (
                                         <tfoot>
@@ -133,13 +138,15 @@ export function ContractDetail({ id }: { id: string }) {
 
                 <div className="flex min-w-0 flex-col gap-4">
                     <Panel title="Төлбөрийн явц" bodyClassName="flex flex-col gap-3 p-4">
-                        <div className="flex items-baseline gap-2">
-                            <span className="num text-[22px] font-semibold tracking-[-0.02em] text-foreground">{paidPct}%</span>
-                            <span className="text-[12.5px] text-muted-foreground">{formatMNTShort(paid)} төлсөн</span>
-                        </div>
-                        <Progress value={paidPct} overColor={false} />
+                        {paidKnown ? (<>
+                            <div className="flex items-baseline gap-2">
+                                <span className="num text-[22px] font-semibold tracking-[-0.02em] text-foreground">{paidPct}%</span>
+                                <span className="text-[12.5px] text-muted-foreground">{formatMNTShort(paid)} төлсөн</span>
+                            </div>
+                            <Progress value={paidPct} overColor={false} />
+                        </>) : <p className="text-[12.5px] text-muted-foreground">Төлсөн дүн тодорхойгүй — ERP-ийн экспортод байхгүй.</p>}
                         <div className="grid grid-cols-[1fr_auto] gap-y-1.5 text-[12.5px]">
-                            <span className="text-muted-foreground">Үлдэгдэл</span><span className="num text-right font-medium text-foreground">{formatMNTShort(balance)}</span>
+                            <span className="text-muted-foreground">Үлдэгдэл</span><span className="num text-right font-medium text-foreground">{paidKnown ? formatMNTShort(balance) : '—'}</span>
                             {nextDue && (<><span className="text-muted-foreground">Дараагийн төлөлт</span><span className="num text-right text-foreground"><span className="mono-label">{nextDue.due_date}</span> · {formatMNTShort(Number(nextDue.amount) - Number(nextDue.paid_amount || 0))}</span></>)}
                             {(c.overdue_days || 0) > 0 && (<><span className="text-status-danger">Хоцролт</span><span className="num text-right font-medium text-status-danger">{c.overdue_days} хоног{c.penalty_amount ? ` · ${formatMNTShort(c.penalty_amount)}` : ''}</span></>)}
                         </div>

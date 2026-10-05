@@ -126,6 +126,8 @@ interface Stats {
     total_paid: number;
     total_balance: number;
     overdue_count: number;
+    /** Төлсөн дүн тодорхойгүй гэрээ (ERP-ийн бүтээгдэхүүний экспортоос): нийлбэрт ороогүй. */
+    unknown_paid: number;
 }
 
 function emptyStats(): Stats {
@@ -137,6 +139,7 @@ function emptyStats(): Stats {
         total_paid: 0,
         total_balance: 0,
         overdue_count: 0,
+        unknown_paid: 0,
     };
 }
 
@@ -148,6 +151,7 @@ function computeStats(contracts: Array<Record<string, unknown>>): Stats {
         else if (c.contract_status !== 'cancelled') stats.active += 1;
 
         stats.total_sales += Number(c.total_price) || 0;
+        if (c.paid_amount === null || c.paid_amount === undefined) stats.unknown_paid += 1;
         stats.total_paid += Number(c.paid_amount) || 0;
         stats.total_balance += Number(c.balance) || 0;
         if (Number(c.overdue_days) > 0) stats.overdue_count += 1;

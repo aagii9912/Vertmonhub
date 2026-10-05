@@ -70,6 +70,11 @@ export function ContractsPage() {
         finally { setExporting(false); }
     }
 
+    // ERP-ийн бүтээгдэхүүний экспортоос үүссэн гэрээнд төлсөн дүн байхгүй: 0₮ гэж харуулахгүй.
+    const unknownPaid = stats?.unknown_paid ?? 0;
+    const paidUnknown = !stats || unknownPaid === 0 ? 'none' : unknownPaid >= stats.total ? 'all' : 'some';
+    const paidNote = paidUnknown === 'none' ? undefined : `${unknownPaid} гэрээний төлсөн дүн тодорхойгүй (ERP)`;
+
     return (
         <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5">
             <PageHeader title="Гэрээнүүд" subtitle="Гэрээний явц, бүртгэсэн төлөлт, үлдэгдлийг нэг дор хянаарай." className="mb-0"
@@ -79,8 +84,8 @@ export function ContractsPage() {
             <StatBar className="mb-0">
                 <Kpi label="Нийт гэрээ" value={stats ? String(stats.total) : isLoading ? null : '—'} sub={stats ? `${stats.active} идэвхтэй · ${stats.closed} хаагдсан` : undefined} />
                 <Kpi label="Гэрээний бүртгэлтэй дүн" value={stats ? formatMNTShort(stats.total_sales) : isLoading ? null : '—'} />
-                <Kpi label="Гэрээнд бүртгэсэн төлөлт" value={stats ? formatMNTShort(stats.total_paid) : isLoading ? null : '—'} sub={stats && stats.total_sales > 0 ? `${Math.round((stats.total_paid / stats.total_sales) * 100)}%` : undefined} />
-                <Kpi label="Үлдэгдэл" value={stats ? formatMNTShort(stats.total_balance) : isLoading ? null : '—'} sub={stats && stats.overdue_count > 0 ? `${stats.overdue_count} гэрээнд хоцролт бүртгэсэн` : undefined} tone={stats && stats.overdue_count > 0 ? 'danger' : undefined} />
+                <Kpi label="Гэрээнд бүртгэсэн төлөлт" value={stats ? (paidUnknown === 'all' ? '—' : formatMNTShort(stats.total_paid)) : isLoading ? null : '—'} sub={paidNote ?? (stats && stats.total_sales > 0 ? `${Math.round((stats.total_paid / stats.total_sales) * 100)}%` : undefined)} />
+                <Kpi label="Үлдэгдэл" value={stats ? (paidUnknown === 'all' ? '—' : formatMNTShort(stats.total_balance)) : isLoading ? null : '—'} sub={stats && stats.overdue_count > 0 ? `${stats.overdue_count} гэрээнд хоцролт бүртгэсэн` : paidNote} tone={stats && stats.overdue_count > 0 ? 'danger' : undefined} />
             </StatBar>
 
             <p className="text-xs leading-relaxed text-muted-foreground">Төлөлт, үлдэгдэл, хоцролтыг гэрээний бүртгэлээс харуулав. Энэ нь тухайн сарын мөнгөн орлогын тайлан биш.</p>
@@ -117,7 +122,8 @@ export function ContractsPage() {
                                 {isLoading && Array.from({ length: 8 }).map((_, i) => <tr key={i} className="h-9 border-b border-border"><td colSpan={8} className="px-2"><Skeleton className="h-5" /></td></tr>)}
                                 {!isLoading && rows.length === 0 && <tr><td colSpan={8} className="px-4 py-12 text-center text-[13px] text-muted-foreground">Гэрээ олдсонгүй</td></tr>}
                                 {rows.map((c) => {
-                                    const paidPct = c.total_price && c.total_price > 0 ? Math.round(((c.paid_amount || 0) / c.total_price) * 100) : 0;
+                                    const paidKnown = c.paid_amount !== null && c.paid_amount !== undefined;
+                                    const paidPct = paidKnown && c.total_price && c.total_price > 0 ? Math.round(((c.paid_amount || 0) / c.total_price) * 100) : 0;
                                     const st = CONTRACT_STATUS_META[c.contract_status] ?? { label: c.contract_status, tone: 'neutral' as const };
                                     const overdueDays = c.overdue_days || 0;
                                     return (
@@ -146,11 +152,13 @@ export function ContractsPage() {
                                             </td>
                                             <td className="num px-2 text-right text-foreground">{c.total_price ? formatMNT(c.total_price) : '—'}</td>
                                             <td className="px-2 text-right">
-                                                <div className="num text-fg-2">{formatMNT(c.paid_amount || 0)}</div>
-                                                <div className="flex items-center justify-end gap-1.5"><Progress value={paidPct} className="w-12" overColor={false} /><span className="num text-[11px] text-muted-foreground">{paidPct}%</span></div>
+                                                {paidKnown ? (<>
+                                                    <div className="num text-fg-2">{formatMNT(c.paid_amount || 0)}</div>
+                                                    <div className="flex items-center justify-end gap-1.5"><Progress value={paidPct} className="w-12" overColor={false} /><span className="num text-[11px] text-muted-foreground">{paidPct}%</span></div>
+                                                </>) : <div className="text-muted-foreground" title="ERP-ийн экспортод төлсөн дүн байхгүй">—</div>}
                                             </td>
                                             <td className={cn('num px-2 text-right', (c.balance || 0) > 0 ? 'text-foreground' : 'text-muted-foreground')}>
-                                                {formatMNT(c.balance || 0)}
+                                                {c.balance === null || c.balance === undefined ? '—' : formatMNT(c.balance)}
                                                 {overdueDays > 0 && <div className="text-[11px] font-medium text-status-danger">{overdueDays} хоног хоцорсон</div>}
                                             </td>
                                             <td className="px-2">{c.sales_manager ? <span className="inline-flex items-center gap-1.5"><Avatar name={c.sales_manager} /><span className="truncate text-fg-2">{c.sales_manager}</span></span> : <span className="text-muted-foreground">—</span>}</td>
@@ -201,7 +209,7 @@ function MobileList({ rows, loading, onOpen }: { rows: ContractRow[]; loading: b
                         <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2"><span className="mono-label text-[12.5px] font-medium text-foreground">{c.contract_number || c.unit_label || '—'}</span><Pill tone={st.tone}>{st.label}</Pill></div>
                             <div className="truncate text-[13px] text-foreground">{c.customer_name || '—'}</div>
-                            <div className="mt-2 text-xs text-muted-foreground">Нийт {formatMNT(c.total_price || 0)}</div><div className="mt-1 text-xs text-fg-2">Үлдэгдэл <strong className="num">{formatMNT(c.balance || 0)}</strong>{!!c.overdue_days && <span className="ml-2 text-status-danger">{c.overdue_days} хоног хоцорсон</span>}</div>
+                            <div className="mt-2 text-xs text-muted-foreground">Нийт {formatMNT(c.total_price || 0)}</div><div className="mt-1 text-xs text-fg-2">Үлдэгдэл <strong className="num">{c.balance === null || c.balance === undefined ? '—' : formatMNT(c.balance)}</strong>{!!c.overdue_days && <span className="ml-2 text-status-danger">{c.overdue_days} хоног хоцорсон</span>}</div>
                         </div>
                         <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
                     </button>
