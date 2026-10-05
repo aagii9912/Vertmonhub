@@ -1,11 +1,10 @@
 # Facebook Page / Instagram insights — Graph v26 (2026-10-05)
 
-**Төлөв (2026-10-05):** код `feat/meta-page-insights-v26` branch дээр (`feat/meta-insights` дээр
-суурилсан), production-д **deploy хийгдээгүй**. Миграци `20261005150000_social_page_insights.sql`
-production-д **хэрэглээгүй** — эзэмшигчийн зөвшөөрөл хүлээж байна. Production-д 2026-10-05-ны
-байдлаар аль ч төсөлд Facebook Page, Instagram холбогдоогүй (3 төсөл, `facebook_page_id` бүгд
-NULL); хуучин `social_insights`-д 2026-06-10…07-21-ний 164 мөр бий, бүгд `raw = {}`,
-`impressions = 0`. `social_posts` хоосон.
+**Төлөв (2026-10-05):** код main-д нэгдэж production-д гарсан; миграци `20261005150000_social_page_insights.sql`
+production-д хэрэглэгдсэн (урьдчилсан шалгалт: `social_posts` давхардал 0). 2026-10-05-ны байдлаар аль ч
+төсөлд Facebook Page, Instagram холбогдоогүй (3 төсөл, `facebook_page_id` бүгд NULL) тул эзэмшигчийн
+алхмууд (read_insights, Page дахин холбох) хийгдэх хүртэл өгөгдөл татагдахгүй; хуучин `social_insights`-д
+2026-06-10…07-21-ний 164 мөр бий, бүгд `raw = {}`, `impressions = 0`. `social_posts` хоосон.
 
 ## Юу өөрчлөгдсөн бэ
 

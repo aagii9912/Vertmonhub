@@ -1,6 +1,6 @@
 # Facebook Lead Ads → CRM лид (2026-10-05)
 
-Салбар: `feat/lead-ads-webhook` (`origin/main` 5f9a744 дээр, `feat/meta-page-insights-v26`-ийг merge хийсэн). **Deploy хийгээгүй, production-д юу ч бичээгүй.**
+Төлөв (2026-10-05): код main-д нэгдэж production-д гарсан; миграци `20261005160000_meta_leadgen_events.sql` production-д хэрэглэгдсэн. Нэргүй лидийг (`customer_name` null) main-ийн «нэргүй лид» дүрмээр хадгална. Page холбогдоогүй, Meta app Live биш тул эзэмшигчийн алхмууд хийгдэх хүртэл лид орж ирэхгүй.
 
 ## Юу өөрчлөгдсөн бэ
 
