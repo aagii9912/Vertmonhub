@@ -4,6 +4,9 @@ import { useState, useEffect } from 'react';
 import { Shield, Search, UserPlus, Check, X, Loader2, Eye, EyeOff, AlertCircle, Trash2, Link as LinkIcon, Copy, Mail, KeyRound, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/Dialog';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { PageHeader } from '@/components/dashboard/PageHeader';
 import { MANAGER_NAME_REQUIRED, STAFF_PHONE_ERROR, formatStaffPhone, managerNameMissing, parseStaffPhone } from '@/lib/admin/staff-profile';
 
 interface UserWithRole {
@@ -425,41 +428,40 @@ export default function AdminUsersPage() {
 
     return (
         <div className="max-w-5xl mx-auto">
-            <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-                <div>
-                    <h1 className="text-2xl font-bold text-foreground">Хэрэглэгчид & Дүрүүд</h1>
-                    <p className="text-muted-foreground text-sm mt-1">Ажилтны бүртгэл, төслийн хандалт болон Super Admin эрх удирдах</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
+            <PageHeader
+                title="Хэрэглэгчид & Дүрүүд"
+                subtitle="Ажилтны бүртгэл, төслийн хандалт болон Super Admin эрх удирдах"
+                secondaryActions={<>
                     <div className="relative min-w-0">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/70" />
-                        <input
+                        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                        <Input
                             type="text"
                             aria-label="Хэрэглэгч хайх"
                             placeholder="Хайх..."
                             value={search}
                             onChange={e => setSearch(e.target.value)}
-                            className="pl-10 pr-4 py-2 border border-border-strong rounded-lg text-sm w-full sm:w-64 focus:ring-2 focus:ring-brand focus:border-brand"
+                            className="w-64 pl-9"
                         />
                     </div>
-                    <button
+                    <Button
+                        variant="secondary"
                         onClick={() => { setShowInvite(true); setInviteError(null); setInviteResult(null); }}
                         disabled={!!roleError || !!shopError || roles.length === 0 || shops.length === 0}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-surface-2 text-foreground border border-border rounded-xl font-medium hover:bg-surface-3 transition-colors disabled:opacity-50"
                     >
-                        <LinkIcon className="w-4 h-4" />
+                        <LinkIcon />
                         Урих холбоос
-                    </button>
-                    <button
+                    </Button>
+                </>}
+                primaryAction={
+                    <Button
                         onClick={() => { setShowCreate(true); setCreateError(null); }}
                         disabled={!!roleError || !!shopError || roles.length === 0 || shops.length === 0}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-brand text-brand-fg rounded-xl font-medium hover:bg-brand-hover transition-colors disabled:opacity-50"
                     >
-                        <UserPlus className="w-4 h-4" />
+                        <UserPlus />
                         Хэрэглэгч нэмэх
-                    </button>
-                </div>
-            </div>
+                    </Button>
+                }
+            />
 
             {/* Success Alert */}
             {createSuccess && (

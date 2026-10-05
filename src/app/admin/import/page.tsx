@@ -8,6 +8,7 @@ import { unitCategoryLabel, unitStatusLabel } from '@/lib/inventory/labels';
 import { useAuth } from '@/contexts/AuthContext';
 import { Alert, AlertDescription } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/dashboard/PageHeader';
 import {
     Upload, Building2, MessageSquare, CheckCircle2, AlertCircle,
     Download, Loader2, Users, FileText, CreditCard, MapPin,
@@ -404,10 +405,7 @@ export default function AdminImportPage() {
 
     return (
         <div className="max-w-5xl mx-auto">
-            <div className="mb-8">
-                <h1 className="text-2xl font-bold text-foreground">Дата Импорт</h1>
-                <p className="text-muted-foreground mt-1">CSV/Excel файлаас мэдээлэл бөөнөөр оруулах</p>
-            </div>
+            <PageHeader title="Дата Импорт" subtitle="CSV/Excel файлаас мэдээлэл бөөнөөр оруулах" />
 
             {/* Category Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-8">

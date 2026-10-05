@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Building2, Users, UserPlus, FileText, UserCheck, CalendarDays, ArrowUpRight, type LucideIcon } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
+import { PageHeader } from '@/components/dashboard/PageHeader';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatShortDate } from '@/lib/utils/date';
 import Link from 'next/link';
@@ -32,19 +33,27 @@ export default function AdminDashboard() {
         refetchOnWindowFocus: false,
     });
 
+    const header = <PageHeader title="Админ хяналт" subtitle="Платформын CRM тойм — бүх байгууллагын нийлбэр" />;
+
     if (!data && isFetching) {
         return (
-            <div className="flex items-center justify-center h-64">
-                <div className="animate-spin w-8 h-8 border-4 border-brand border-t-transparent rounded-full"></div>
+            <div>
+                {header}
+                <div className="flex items-center justify-center h-64">
+                    <div className="animate-spin w-8 h-8 border-4 border-brand border-t-transparent rounded-full"></div>
+                </div>
             </div>
         );
     }
 
     if (!data) {
         return (
-            <div className="text-center py-12">
-                <p className="text-muted-foreground">{error ? 'Хяналтын самбарын мэдээлэл ачаалагдсангүй. Дахин оролдоно уу.' : 'Хяналтын самбар ачаалахад алдаа гарлаа'}</p>
-                <button onClick={() => void refetch()} className="mt-3 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Дахин ачаалах</button>
+            <div>
+                {header}
+                <div className="text-center py-12">
+                    <p className="text-muted-foreground">{error ? 'Хяналтын самбарын мэдээлэл ачаалагдсангүй. Дахин оролдоно уу.' : 'Хяналтын самбар ачаалахад алдаа гарлаа'}</p>
+                    <button onClick={() => void refetch()} className="mt-3 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground hover:bg-surface-2">Дахин ачаалах</button>
+                </div>
             </div>
         );
     }
@@ -61,11 +70,7 @@ export default function AdminDashboard() {
 
     return (
         <div className="space-y-8">
-            {/* Header */}
-            <div>
-                <h1 className="heading-display text-2xl text-foreground">Админ хяналт</h1>
-                <p className="text-muted-foreground mt-1">Платформын CRM тойм — бүх байгууллагын нийлбэр</p>
-            </div>
+            {header}
 
             <div className="flex flex-wrap gap-2">
                 {[
