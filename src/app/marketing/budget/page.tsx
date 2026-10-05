@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -338,7 +339,7 @@ function MarketingBudgetWorkspace({ shopId, userId, canWrite, canDelete }: { sho
                         </p>
                     )}
 
-                    {!!(data.spendQuality?.missingFx || data.spendQuality?.excludedManual) && <Alert variant="warning">Ханшгүй Meta: {data.spendQuality?.missingFx} мөр; нийтээс хассан гар Meta: {data.spendQuality?.excludedManual} мөр. Ханшгүй бол нийт зардал бүрэн биш. <a href="/marketing" className="underline">Meta синк / ханш тохируулах</a></Alert>}
+                    {!!(data.spendQuality?.missingFx || data.spendQuality?.excludedManual) && <Alert variant="warning">Ханшгүй Meta: {data.spendQuality?.missingFx} мөр; нийтээс хассан гар Meta: {data.spendQuality?.excludedManual} мөр. Ханшгүй бол нийт зардал бүрэн биш. <Link href="/marketing" className="underline">Meta синк / ханш тохируулах</Link></Alert>}
                     {!!data.unassignedSpendCount && <Alert variant="warning">Төсөлд холбоогүй {data.unassignedSpendCount} зардлын мөр энэ төслийн нийтэд ороогүй. Маркетингийн зардлын бүртгэлээс төслийг холбоно уу.</Alert>}
                     {/* Сар бүрийн хяналт */}
                     <Card>

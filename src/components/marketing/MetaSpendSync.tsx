@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -65,7 +66,7 @@ export function MetaSpendSync({ shopId, canWrite, from, to }: { shopId?: string;
         {oauthError && <Alert variant="danger">Meta Ads холболт амжилтгүй боллоо. App-ийн ads_read эрх, Meta зөвшөөрөл болон нэвтрэх тохиргоог шалгана уу.</Alert>}
         {state.isError && <Alert variant="danger">{state.error.message}<Button size="sm" variant="ghost" onClick={() => void state.refetch()}>Дахин шалгах</Button></Alert>}
         {state.data && !state.data.connected && <p className="text-sm text-muted-foreground">Зардал татахын тулд Meta Ads app-аа холбоно уу.</p>}
-        {state.data?.connected && !state.data.accountId && <p className="text-sm text-muted-foreground">Meta зарын данс сонгоогүй байна. <a className="underline" href="/dashboard/marketing-roi">Зарын данс сонгох</a></p>}
+        {state.data?.connected && !state.data.accountId && <p className="text-sm text-muted-foreground">Meta зарын данс сонгоогүй байна. <Link className="underline" href="/dashboard/marketing-roi">Зарын данс сонгох</Link></p>}
         {system && <p className="text-xs text-muted-foreground">Meta Ads эрх: Системийн хэрэглэгч (хугацаагүй)</p>}
         {state.data?.tokenSource === 'user' && <p className="text-xs text-muted-foreground">Meta Ads эрхийн хугацаа: {state.data.expiresAt
             ? new Date(state.data.expiresAt).toLocaleDateString('mn-MN', { timeZone: 'Asia/Ulaanbaatar' }) : 'Хугацаагүй'}</p>}
