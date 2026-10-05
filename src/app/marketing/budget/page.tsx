@@ -491,8 +491,8 @@ function MarketingBudgetWorkspace({ shopId, userId, canWrite, canDelete }: { sho
                                     isLoading={addSpend.isPending}
                                     disabled={!amount || !Number.isSafeInteger(Number(amount)) || Number(amount) <= 0 || Number(amount) > MAX_BUDGET_AMOUNT}
                                 >
-                                    <Plus className="w-4 h-4 md:mr-1.5" />
-                                    <span className="hidden md:inline">Бүртгэх</span>
+                                    <Plus className="w-4 h-4 mr-1.5" />
+                                    Бүртгэх
                                 </Button>
                             </div>}
 

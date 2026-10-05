@@ -314,7 +314,7 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
                     </PrefillBridge>
                     {empty && <div className="mt-4 flex flex-wrap justify-center gap-2">{suggestions.map(s => <button key={s.label} type="button" onClick={() => selectSuggestion(s.prompt)} className="min-h-10 rounded-full border border-border px-3.5 text-xs text-fg-2 transition-colors hover:bg-surface-2 focus-ring">{s.label}</button>)}</div>}
                     <div className="mt-3 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-                        <span className="hidden sm:inline">Enter — илгээх · Shift+Enter — шинэ мөр</span>
+                        <span>Enter — илгээх · Shift+Enter — шинэ мөр</span>
                         <span className="inline-flex items-center gap-1"><ShieldCheck className="h-3 w-3" /> Үйлдлийг та батална</span>
                     </div>
                 </div>
