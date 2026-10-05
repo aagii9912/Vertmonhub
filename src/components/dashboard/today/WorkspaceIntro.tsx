@@ -40,7 +40,7 @@ export function WorkspaceIntro() {
             <div className="flex items-center justify-between text-xs text-muted-foreground"><span className="flex items-center gap-2"><CalendarDays className="size-4" />Дараагийн хурал</span><span>{days === 0 ? 'Өнөөдөр' : `${days} хоногийн дараа`}</span></div>
             <h2 className="mt-4 text-xl font-semibold tracking-tight">Лхагва гараг <span className="ml-1 text-muted-foreground">{Number(meeting.slice(5, 7))}.{meeting.slice(8)}</span></h2>
             <p className="mt-1 text-xs text-muted-foreground">Борлуулалт + маркетинг</p>
-            <ol className="my-5 space-y-3 text-sm text-fg-2">{['Тоон үзүүлэлтээ шалгах', 'Хийсэн ажил, саадаа нэмэх', 'Хурлын тайлангаа бэлдэх'].map((step, index) => <li key={step} className="flex items-center gap-2.5"><span className="flex size-5 items-center justify-center rounded-full border border-border-strong text-[10px]">{index + 1}</span>{step}</li>)}</ol>
+            <ol className="my-5 space-y-3 text-sm text-fg-2">{['Тоон үзүүлэлтээ шалгах', 'Хийсэн ажил, саадаа нэмэх', 'Хурлын тайлангаа бэлдэх'].map((step, index) => <li key={step} className="flex items-center gap-2.5"><span className="flex size-5 items-center justify-center rounded-full border border-border-strong text-xs">{index + 1}</span>{step}</li>)}</ol>
             <Link href="/dashboard/weekly" className="mt-auto flex min-h-11 items-center justify-between rounded-xl bg-surface px-3.5 text-sm font-medium transition-colors hover:bg-surface-3 focus-ring">Хурлын бэлтгэл нээх<ArrowRight className="size-4" /></Link>
         </aside>
         <div className="col-span-full flex items-center gap-3 border-b border-border sm:gap-5">
