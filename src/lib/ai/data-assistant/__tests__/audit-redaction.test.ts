@@ -34,4 +34,9 @@ describe('AI audit args', () => {
         expect(redactAuditArgs('create_lead', leadArgs)).toBe(leadArgs);
         expect(redactAuditArgs('invite_user')).toEqual({});
     });
+
+    it('hides the new contract holder\'s registration and phone in transfer_contract audit rows', () => {
+        const args = { contract_number: 'VM-1', kind: 'transfer', customer_name: 'Б.Сараа', customer_registration: 'УБ99112233', customer_phone: '99112233', reason: 'Худалдсан' };
+        expect(redactAuditArgs('transfer_contract', args)).toEqual({ ...args, customer_registration: '(нуусан)', customer_phone: '(нуусан)' });
+    });
 });

@@ -16,6 +16,7 @@ import { formatOperationsReportText } from '@/lib/dashboard/operations-report';
 import { ZodError } from 'zod';
 import { TOOL_CATALOG, canUseToolModule, isCatalogTool, toolKindDenial, type ToolName } from '@/lib/ai/tool-catalog';
 import { logAiAudit } from './audit';
+import { redactAuditArgs } from './audit-redaction';
 import {
     fetchDashboardStats,
     fetchProperties, fetchLeads, fetchLeadDetails, fetchCustomerInsights,
@@ -168,7 +169,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
  * confirm=true  → бодит үйлдлийг гүйцэтгэнэ (зөвшөөрлийн дараа action endpoint дуудна).
  */
 export async function executeDataTool(toolName: string, args: any, shopId: string, perms: AssistantPerms, userId: string, confirm = false, userName = ''): Promise<any> {
-    logger.info(`[AI Data Assistant] Executing tool: ${toolName}`, { args, role: perms.role, confirm });
+    logger.info(`[AI Data Assistant] Executing tool: ${toolName}`, { args: redactAuditArgs(toolName, args ?? {}), role: perms.role, confirm });
 
     if (!isCatalogTool(toolName)) return { error: `Unknown tool: ${toolName}` };
     const meta = TOOL_CATALOG[toolName];

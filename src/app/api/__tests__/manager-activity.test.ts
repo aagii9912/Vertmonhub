@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
 const state = vi.hoisted(() => ({
-    role: 'admin', modules: ['dashboard', 'reports'] as string[], isManager: false, rosterName: null as string | null,
+    role: 'admin', modules: ['dashboard', 'reports'] as string[], isManager: false, rosterName: null as string | null, rosterUserId: 'user-1' as string | null,
     loads: [] as Array<Record<string, unknown>>, gates: [] as unknown[],
 }));
 vi.mock('@/lib/auth/require-permission', () => ({
@@ -18,7 +18,7 @@ vi.mock('@/lib/sales/manager-identity', async (importOriginal) => {
     return { ...actual, resolveReportViewer: async (_db: unknown, _shop: string, input: { userId: string | null; role: string; modules: string[] }) => ({
         ...actual.reportViewerRule({ role: input.role, modules: input.modules, isManager: state.isManager }), userId: input.userId,
         managerName: state.rosterName ?? 'Профайлын нэр',
-        identity: { rosterEntry: state.rosterName ? { name: state.rosterName, user_id: 'user-1', is_active: true } : null } }) };
+        identity: { rosterEntry: state.rosterName ? { name: state.rosterName, user_id: state.rosterUserId, is_active: true } : null } }) };
 });
 vi.mock('@/lib/sales/activity-load', () => ({
     findActivityManager: async (_db: unknown, _shop: string, name: string) => ['Сараа', 'Номин'].includes(name)
@@ -35,7 +35,7 @@ const get = (query = '') => GET(new NextRequest(`http://test/api/dashboard/repor
 
 beforeEach(() => {
     vi.useFakeTimers({ now: new Date('2026-10-04T16:30:00Z'), toFake: ['Date'] }); // УБ 2026-10-05 00:30
-    Object.assign(state, { role: 'admin', modules: ['dashboard', 'reports'], isManager: false, rosterName: null, loads: [], gates: [] });
+    Object.assign(state, { role: 'admin', modules: ['dashboard', 'reports'], isManager: false, rosterName: null, rosterUserId: 'user-1', loads: [], gates: [] });
 });
 
 describe('manager activity API', () => {
@@ -68,6 +68,10 @@ describe('manager activity API', () => {
         expect(state.loads[0]).toMatchObject({ only: 'Номин' });
         // Бүртгэлгүй менежер: хоосон, onboarding (өгөгдөл уншихгүй).
         Object.assign(state, { rosterName: null });
+        expect(await (await get()).json()).toMatchObject({ personal: true, onboarding: true, managers: [] });
+        expect(state.loads).toHaveLength(1);
+        // Профайлын нэрээр таарсан дансгүй (legacy) мөр: тэр менежерийн идэвхийг өгөхгүй.
+        Object.assign(state, { rosterName: 'Сараа', rosterUserId: null });
         expect(await (await get()).json()).toMatchObject({ personal: true, onboarding: true, managers: [] });
         expect(state.loads).toHaveLength(1);
     });

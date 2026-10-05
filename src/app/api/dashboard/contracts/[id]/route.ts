@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { withRoute } from '@/lib/api/route';
 import { getUserId } from '@/lib/auth/supabase-auth';
 import { recordAudit } from '@/lib/services/AuditService';
+import { resolveSalesProjectScope } from '@/lib/sales/project-scope';
 
 // Эзэмшигчийн нэрийг (customer_name) энд солихгүй — зөвхөн «Гэрээ шилжүүлэх» урсгалаар
 // (POST [id]/transfer → transfer_contract RPC) түүх, аудиттай солигдоно.
@@ -79,6 +80,19 @@ export const PATCH = withRoute<{ id: string }>({ module: 'contracts', access: 'w
     }
 
     const supabase = supabaseAdmin();
+    // Хязгаарлагдсан менежер зөвхөн өөрийн нэр дээрх гэрээг засна, менежерийг солихгүй:
+    // эс бөгөөс sales_manager-ийг өөр дээрээ шилжүүлээд «Гэрээ шилжүүлэх» хязгаарыг тойрч, борлуулалтыг өөртөө авна.
+    const scope = await resolveSalesProjectScope(supabase, authShop.id);
+    if (scope.projectIds !== null) {
+        if ('sales_manager' in updateData) {
+            return NextResponse.json({ error: 'Гэрээний менежерийг зөвхөн админ солино' }, { status: 403 });
+        }
+        if (!scope.managerName) {
+            return NextResponse.json({ error: 'Зөвхөн өөрийн борлуулсан гэрээг засах боломжтой' }, { status: 403 });
+        }
+    }
+    const ownContract = <Q extends { eq: (column: string, value: string) => Q }>(query: Q): Q =>
+        scope.projectIds === null ? query : query.eq('sales_manager', scope.managerName || '');
     if (updateData.project_id) {
         const { data: project, error } = await supabase.from('projects').select('id')
             .eq('id', updateData.project_id).eq('shop_id', authShop.id).maybeSingle();
@@ -86,21 +100,21 @@ export const PATCH = withRoute<{ id: string }>({ module: 'contracts', access: 'w
         if (!project) return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 400 });
     }
     // Аудитад өмнөх утгыг хадгална (утас зэрэг холбоо барих засвар түүхгүй алга болохгүй).
-    const { data: before, error: beforeError } = await supabase
+    const { data: before, error: beforeError } = await ownContract(supabase
         .from('property_contracts')
         .select(Object.keys(updateData).join(', '))
         .eq('id', id)
-        .eq('shop_id', authShop.id)
+        .eq('shop_id', authShop.id))
         .is('deleted_at', null)
         .maybeSingle();
     if (beforeError) throw beforeError;
     if (!before) return NextResponse.json({ error: 'Гэрээ олдсонгүй' }, { status: 404 });
     const previous = { ...(before as unknown as Record<string, unknown>) };
-    const { data, error } = await supabase
+    const { data, error } = await ownContract(supabase
         .from('property_contracts')
         .update(updateData)
         .eq('id', id)
-        .eq('shop_id', authShop.id)
+        .eq('shop_id', authShop.id))
         .is('deleted_at', null)
         .select()
         .maybeSingle();

@@ -8,10 +8,11 @@ const state = vi.hoisted(() => ({
     writes: [] as string[],
     denied: null as Response | null,
     attribution: vi.fn(),
+    role: 'super_admin',
 }));
 
 vi.mock('@/lib/auth/require-permission', () => ({
-    resolvePermissions: async () => state.denied ? null : ({ role: 'super_admin', permissions: { modules: ['leads'], canWrite: true, canDelete: true } }),
+    resolvePermissions: async () => state.denied ? null : ({ role: state.role, permissions: { modules: ['leads'], canWrite: true, canDelete: true } }),
     requireModule: async () => state.denied,
     requireModuleWrite: async () => state.denied,
     requireModuleDelete: async () => state.denied,
@@ -72,6 +73,7 @@ beforeEach(() => {
     state.errors = {};
     state.writes = [];
     state.denied = null;
+    state.role = 'super_admin';
     vi.clearAllMocks();
     vi.spyOn(console, 'error').mockImplementation(() => {});
 });
@@ -188,5 +190,31 @@ describe('contract fields cannot bypass receipt accounting', () => {
         // Өөрчлөлтгүй хадгалалт аудит нэмэхгүй.
         expect((await patch({ customer_phone: '88888888' })).status).toBe(200);
         expect(state.rows.data_audit_log).toHaveLength(1);
+    });
+});
+
+describe('restricted managers cannot take over another manager\'s contract', () => {
+    const patch = (body: object) => patchContract(new NextRequest('http://localhost/api/dashboard/contracts/contract-1', {
+        method: 'PATCH', body: JSON.stringify(body),
+    }), { params: Promise.resolve({ id: 'contract-1' }) });
+    beforeEach(() => {
+        state.role = 'sales_manager';
+        state.rows.user_profiles = [{ id: 'user-1', full_name: 'Манда' }];
+        state.rows.sales_managers = [{ shop_id: 'shop-1', name: 'Манда', user_id: 'user-1', is_active: true }];
+        state.rows.sales_manager_projects = [{ shop_id: 'shop-1', manager_name: 'Манда', project_id: 'project-1' }];
+        Object.assign(state.rows.property_contracts[0], { sales_manager: 'Сараа' });
+    });
+    it('refuses a sales_manager change, so the own-contract transfer rule cannot be bypassed', async () => {
+        const response = await patch({ sales_manager: 'Манда' });
+        expect(response.status).toBe(403);
+        expect(state.writes).toHaveLength(0);
+        expect(state.rows.property_contracts[0].sales_manager).toBe('Сараа');
+    });
+    it('edits only contracts sold by the manager', async () => {
+        expect((await patch({ customer_phone: '88888888' })).status).toBe(404);
+        expect(state.rows.property_contracts[0].customer_phone).toBeUndefined();
+        Object.assign(state.rows.property_contracts[0], { sales_manager: 'Манда' });
+        expect((await patch({ customer_phone: '88888888' })).status).toBe(200);
+        expect(state.rows.property_contracts[0].customer_phone).toBe('88888888');
     });
 });

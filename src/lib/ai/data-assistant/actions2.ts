@@ -70,7 +70,9 @@ export async function getManagerActivityTool(shopId: string, args: Args, userId:
     const viewer = await resolveReportViewer(db(), shopId, { userId, role: perms.role, modules: perms.modules });
     let only: string | null = null;
     if (viewer.personal || scope.projectIds !== null) {
-        only = scope.managerName ?? viewer.identity?.rosterEntry?.name ?? null;
+        const entry = viewer.identity?.rosterEntry ?? null;
+        // Акаунттай холбосон бүртгэл л (профайлын нэрээр таарсан дансгүй мөрийн идэвхийг өгөхгүй).
+        only = scope.managerName ?? (entry && entry.user_id === userId ? entry.name : null);
         if (!only) return { error: 'Та борлуулалтын менежерийн бүртгэлд байхгүй — идэвхийн тайлан гаргах менежер тодорхойгүй.' };
     } else if (!viewer.canViewTeam) {
         return { error: 'Багийн идэвхийг харах эрхгүй' };

@@ -31,7 +31,7 @@ type Profile = { id: string; email: string; full_name: string | null; phone: str
 export async function PATCH(request: NextRequest) {
     try {
         const actorId = await getUserId();
-        if (!actorId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!actorId) return NextResponse.json({ error: 'Нэвтрэх шаардлагатай' }, { status: 401 });
         const admin = await getAdminUser();
         if (!admin || admin.role !== 'super_admin') return NextResponse.json({ error: 'Super admin эрх шаардлагатай' }, { status: 403 });
 

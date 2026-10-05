@@ -42,8 +42,10 @@ export const GET = withRoute({ module: ['reports', 'dashboard'], error: 'Мен�
 
     let only: string | null = null;
     if (viewer.personal) {
-        // Бүртгэлгүй менежерт хоосон (0 биш) — админ бүртгэлд нэмэх хүртэл.
-        const own = viewer.identity?.rosterEntry?.name ?? null;
+        // Бүртгэлгүй менежерт хоосон (0 биш) — админ бүртгэлд нэмэх хүртэл. Зөвхөн акаунттай холбосон мөр:
+        // хэрэглэгч өөрөө засдаг профайлын нэрээр дансгүй (legacy) менежерийн идэвхийг авч болохгүй.
+        const entry = viewer.identity?.rosterEntry ?? null;
+        const own = entry && userId && entry.user_id === userId ? entry.name : null;
         if (!own) {
             return NextResponse.json({ from, to, group, today, targetDays: 0, periods: buildPeriods(from, to, group, today), managers: [], unattributed: null,
                 personal: true, onboarding: true, canEdit: false }, { headers: { 'Cache-Control': 'private, no-store' } });
