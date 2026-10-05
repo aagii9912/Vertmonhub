@@ -189,8 +189,14 @@ const readDefinitions: ToolDefinition[] = [
     },
     {
         name: 'get_marketing_summary',
-        description: 'Маркетингийн нэгтгэл: зар сурталчилгааны кампанит ажил (зарцуулалт, харагдалт, клик, хөрвүүлэлт, CTR, CPA) ба сошиал постын гүйцэтгэл.',
-        parameters: { type: SchemaType.OBJECT, properties: {} }
+        description: 'Meta (Facebook/Instagram) зарын огноотой нэгтгэл: зардал төгрөгөөр (ханшгүй дүн эх валютаар тусад нь), харагдалт, link click, CTR, CPC, CPM, үр дүн ТӨРӨЛ бүрээр (дуудлага, мессеж, лид маягт, ThruPlay…) тоо ба нэг үр дүнгийн өртөг, кампанит ажил бүрээр; сүүлийн сошиал постууд. Төрлүүдийг нэг тоонд нэмэхгүй, reach-ийг нэмэхгүй.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                from: { type: SchemaType.STRING, description: 'Эхлэх өдөр YYYY-MM-DD; орхивол энэ сарын 1' },
+                to: { type: SchemaType.STRING, description: 'Дуусах өдөр YYYY-MM-DD, оруулна; орхивол өнөөдөр' },
+            },
+        }
     },
     {
         name: 'get_marketing_budget_status',

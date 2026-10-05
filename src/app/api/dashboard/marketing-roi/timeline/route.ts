@@ -1,111 +1,41 @@
-import { applyLeadScope, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { NextResponse } from 'next/server';
+import { applyLeadScope, applyProjectScope, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { supabaseAdmin } from '@/lib/supabase';
+import { fetchAllRows } from '@/lib/utils/pagination';
+import { buildMarketingTimeline, timelineMonths, timelineWindow } from '@/lib/marketing/timeline';
+import { loadMetaActivities, loadMetaLedger, metaCampaignFilter } from '@/lib/marketing/meta-ads-load';
 import { withRoute } from '@/lib/api/route';
 
 /**
  * GET /api/dashboard/marketing-roi/timeline
- * Маркетингийн нөлөөллийн сар бүрийн цуваа (сүүлийн 6 сар):
- *   - leads     — үүссэн лийдийн тоо (leads.created_at)
- *   - meetings  — товлосон уулзалтын тоо (property_viewings.scheduled_at)
- *   - activity  — идэвхжүүлэлтийн тоо (нийтэлсэн пост + эхэлсэн кампанит ажил)
- *   - spend     — зарын зардал (ad_campaigns, эхэлсэн сард нь хамааруулна)
- * Идэвхжүүлэлт лид/уулзалтад хэрхэн нөлөөлж буйг харьцуулах графикт ашиглана.
+ * Сүүлийн 6 сарын (Улаанбаатарын сараар) лид, уулзалт, идэвхжүүлэлт (пост + эхэлсэн акц / кампанит ажил)
+ * ба Meta зардал (meta_daily_spend, төгрөг; ханшгүй дүн эх валютаар `pending`-д). Идэвхжүүлэлт лид /
+ * уулзалтад хэрхэн нөлөөлж буйг харьцуулах графикт ашиглана.
  */
+export const GET = withRoute({ module: 'marketing-roi', error: 'Цуваа татахад алдаа гарлаа' }, async ({ shop }) => {
+    const db = supabaseAdmin();
+    const scope = await resolveSalesProjectScope(db, shop.id);
+    const months = timelineMonths();
+    // Meta-гийн өдөр дансны цагийн бүсээр тул «өнөөдөр»-өөр биш, сүүлийн сарын эцсээр хязгаарлана.
+    const { start, firstDay, lastDay } = timelineWindow(months);
+    const startISO = start.toISOString();
+    // Төслөөр хязгаарлагдсан хэрэглэгчид уулзалтыг лидийн төсөл, менежерээр шүүнэ.
+    const viewingColumns: string = scope.projectIds === null ? 'scheduled_at' : 'scheduled_at,leads!inner(project_id,sales_manager_name)';
 
-const MONTHS_BACK = 6;
-
-/** created_at маягийн огноог 'YYYY-MM' түлхүүр болгоно. */
-function monthKey(value: string | null): string | null {
-    if (!value) return null;
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return null;
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-}
-
-export const GET = withRoute({ module: 'marketing-roi', error: 'Цуваа татахад алдаа гарлаа' }, async ({ shop: authShop }) => {
-    const supabase = supabaseAdmin();
-    const scope = await resolveSalesProjectScope(supabase, authShop.id);
-    const shopId = authShop.id;
-
-    // Цонхны эхлэл: одоогоос N-1 сарын өмнөх сарын 1-ний өдөр.
-    const now = new Date();
-    const windowStart = new Date(now.getFullYear(), now.getMonth() - (MONTHS_BACK - 1), 1);
-    const startISO = windowStart.toISOString();
-
-    const [{ data: leads }, { data: viewings }, { data: posts }, { data: adCampaigns }, { data: mktCampaigns }] =
-        await Promise.all([
-            applyLeadScope(supabase
-                .from('leads')
-                .select('created_at')
-                .eq('shop_id', shopId)
-                .is('deleted_at', null)
-                .gte('created_at', startISO), scope),
-            applyLeadScope(supabase
-                .from('property_viewings')
-                .select(scope.projectIds === null ? 'scheduled_at' : 'scheduled_at,leads!inner(project_id,sales_manager_name)')
-                .eq('shop_id', shopId)
-                .gte('scheduled_at', startISO), scope, 'leads.project_id', 'leads.sales_manager_name'),
-            supabase
-                .from('social_posts')
-                .select('published_at, status')
-                .eq('shop_id', shopId)
-                .eq('status', 'published')
-                .gte('published_at', startISO),
-            supabase
-                .from('ad_campaigns')
-                .select('spend, start_date, created_at')
-                .eq('shop_id', shopId),
-            supabase
-                .from('marketing_campaigns')
-                .select('start_date, created_at')
-                .eq('shop_id', shopId),
-        ]);
-
-    // Сүүлийн N сарын хоосон bucket-уудыг бэлдэнэ (өгөгдөлгүй сар 0-ээр харагдана).
-    const buckets = new Map<
-        string,
-        { month: string; label: string; leads: number; meetings: number; activity: number; spend: number }
-    >();
-    for (let i = 0; i < MONTHS_BACK; i++) {
-        const d = new Date(now.getFullYear(), now.getMonth() - (MONTHS_BACK - 1) + i, 1);
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-        buckets.set(key, {
-            month: key,
-            label: `${d.getMonth() + 1}-р сар`,
-            leads: 0,
-            meetings: 0,
-            activity: 0,
-            spend: 0,
-        });
-    }
-
-    const bump = (
-        key: string | null,
-        field: 'leads' | 'meetings' | 'activity',
-        amount = 1,
-    ) => {
-        if (!key) return;
-        const bucket = buckets.get(key);
-        if (bucket) bucket[field] += amount;
-    };
-
-    for (const l of leads || []) bump(monthKey(l.created_at), 'leads');
-    for (const v of (viewings || []) as unknown as { scheduled_at: string | null }[]) bump(monthKey(v.scheduled_at), 'meetings');
-    for (const p of posts || []) bump(monthKey(p.published_at), 'activity');
-    for (const c of mktCampaigns || []) bump(monthKey(c.start_date || c.created_at), 'activity');
-
-    // Зарын зардлыг кампанит ажлын эхэлсэн сард нь хамааруулна (сар тутмын
-    // задаргаа Meta-с ирдэггүй тул ойролцоо хуваарилалт).
-    for (const c of adCampaigns || []) {
-        const key = monthKey(c.start_date || c.created_at);
-        if (!key) continue;
-        const bucket = buckets.get(key);
-        if (bucket) {
-            bucket.spend += Number(c.spend) || 0;
-            bucket.activity += 1;
-        }
-    }
-
-    return NextResponse.json({ months: Array.from(buckets.values()) });
+    const [leads, viewings, posts, activities, spend, metaActivities] = await Promise.all([
+        fetchAllRows<{ created_at: string }>((from, to) => applyLeadScope(db.from('leads').select('created_at')
+            .eq('shop_id', shop.id).is('deleted_at', null).gte('created_at', startISO).order('id').range(from, to), scope)),
+        fetchAllRows<{ scheduled_at: string | null }>(async (from, to) => await applyLeadScope(db.from('property_viewings')
+            .select(viewingColumns).eq('shop_id', shop.id).is('deleted_at', null).gte('scheduled_at', startISO).order('id').range(from, to),
+        scope, 'leads.project_id', 'leads.sales_manager_name') as unknown as { data: { scheduled_at: string | null }[] | null; error: { message: string } | null }),
+        fetchAllRows<{ published_at: string | null }>((from, to) => db.from('social_posts').select('published_at')
+            .eq('shop_id', shop.id).eq('status', 'published').gte('published_at', startISO).order('id').range(from, to)),
+        fetchAllRows<{ start_date: string | null; created_at: string | null; status: string | null }>((from, to) => applyProjectScope(db.from('marketing_campaigns')
+            .select('start_date,created_at,status').eq('shop_id', shop.id).order('id').range(from, to), scope)),
+        loadMetaLedger(db, shop.id, firstDay, lastDay),
+        loadMetaActivities(db, shop.id),
+    ]);
+    return NextResponse.json({
+        months: buildMarketingTimeline(months, { leads, viewings, posts, activities, spend: metaCampaignFilter(metaActivities, scope)(spend) }),
+    }, { headers: { 'Cache-Control': 'private, no-store' } });
 });

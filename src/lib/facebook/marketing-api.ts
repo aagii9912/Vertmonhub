@@ -4,7 +4,7 @@
  */
 
 import { appsecretProof } from '@/lib/facebook/messenger';
-import { metaRead, type MetaReadOptions } from '@/lib/facebook/daily-spend';
+import { metaRead } from '@/lib/facebook/daily-spend';
 import { logger } from '@/lib/utils/logger';
 
 const GRAPH_API_BASE = 'https://graph.facebook.com/v21.0';
@@ -96,44 +96,6 @@ export interface FacebookAdAccount {
     timezone_name?: string;
 }
 
-export interface FacebookAdCampaign {
-    id: string;
-    name: string;
-    status?: 'ACTIVE' | 'PAUSED' | 'DELETED' | 'ARCHIVED';
-    objective?: string;
-    daily_budget?: string;
-    lifetime_budget?: string;
-    start_time?: string;
-    stop_time?: string;
-    created_time?: string;
-    updated_time?: string;
-}
-
-export interface FacebookCampaignInsight {
-    campaign_id?: string;
-    campaign_name?: string;
-    adset_id?: string;
-    adset_name?: string;
-    ad_id?: string;
-    ad_name?: string;
-    spend?: string;
-    impressions?: string;
-    clicks?: string;
-    ctr?: string;
-    cpc?: string;
-    cpm?: string;
-    reach?: string;
-    actions?: Array<{ action_type: string; value: string }>;
-    date_start?: string;
-    date_stop?: string;
-    // breakdowns (зөвхөн breakdowns параметр дамжуулсан үед)
-    age?: string;
-    gender?: string;
-    publisher_platform?: string;
-    platform_position?: string;
-    country?: string;
-}
-
 /**
  * Хэрэглэгчийн ad account-уудыг авах
  */
@@ -153,74 +115,6 @@ export async function getAdAccounts(accessToken: string): Promise<{ data: Facebo
         cursors.add(after);
     }
     throw new Error('Meta зарын дансны жагсаалт бүрэн татагдсангүй.');
-}
-
-/**
- * Ad account-ийн бүх campaign-ыг авах (`pageSize` = нэг хуудасны хэмжээ, cursor-оор бүгдийг).
- */
-export async function fetchAdAccountCampaigns(
-    adAccountId: string,
-    accessToken: string,
-    pageSize: number = 100
-): Promise<{ data: FacebookAdCampaign[] }> {
-    const accountId = adAccountId.startsWith('act_') ? adAccountId : `act_${adAccountId}`;
-    if (!/^act_\d+$/.test(accountId)) throw new Error('Meta зарын дансны ID буруу байна.');
-    const fields = 'id,name,status,objective,daily_budget,lifetime_budget,start_time,stop_time,created_time,updated_time';
-    const data: FacebookAdCampaign[] = [];
-    const cursors = new Set<string>();
-    let after: string | undefined;
-    for (let page = 0; page < 100; page++) {
-        const result = await metaRead<{ data: FacebookAdCampaign[]; paging?: { next?: string; cursors?: { after?: string } } }>(`${accountId}/campaigns`, accessToken,
-            { fields, limit: String(pageSize), ...(after ? { after } : {}) });
-        if (!Array.isArray(result.data)) throw new Error('Meta кампанит ажлын хариу дутуу байна.');
-        data.push(...result.data);
-        // Rebuild the trusted Graph URL with a cursor; never follow paging.next.
-        if (!result.paging?.next) return { data };
-        after = result.paging.cursors?.after;
-        if (!after || cursors.has(after)) break;
-        cursors.add(after);
-    }
-    throw new Error('Meta кампанит ажлын жагсаалт бүрэн татагдсангүй.');
-}
-
-/** Verify a campaign belongs to the shop's selected ad account before reading its insights. */
-export async function campaignBelongsToAccount(campaignId: string, adAccountId: string, accessToken: string, read: MetaReadOptions = {}): Promise<boolean> {
-    if (!/^\d+$/.test(campaignId) || !/^act_\d+$/.test(adAccountId)) return false;
-    const campaign = await metaRead<{ id: string; account_id: string }>(campaignId, accessToken, { fields: 'id,account_id' }, read);
-    return campaign.id === campaignId && campaign.account_id === adAccountId.slice(4);
-}
-
-/**
- * Кампанит ажлын insights авах (date_preset: today, yesterday, last_7d, last_30d, lifetime)
- */
-export async function fetchCampaignInsights(
-    campaignId: string,
-    accessToken: string,
-    datePreset: string = 'last_30d',
-    level: 'campaign' | 'adset' | 'ad' = 'campaign',
-    breakdowns?: string[],
-    read: MetaReadOptions = {},
-): Promise<{ data: FacebookCampaignInsight[] }> {
-    if (!/^\d+$/.test(campaignId)) throw new Error('Meta campaign ID буруу байна.');
-    // Level-ийн дагуу нэмэлт ID/нэр талбарууд
-    const levelFields =
-        level === 'ad'
-            ? ',adset_id,adset_name,ad_id,ad_name'
-            : level === 'adset'
-            ? ',adset_id,adset_name'
-            : '';
-    const fields = 'spend,impressions,clicks,ctr,cpc,cpm,reach,actions,date_start,date_stop,campaign_name' + levelFields;
-    const params: Record<string, string> = {
-        fields,
-        date_preset: datePreset,
-        level,
-    };
-    // ⚠️ breakdowns нь combination бүрт нэг мөр буцаана. data[0]-г уншдаг дуудагч
-    // breakdowns дамжуулж болохгүй.
-    if (breakdowns && breakdowns.length > 0) {
-        params.breakdowns = breakdowns.join(',');
-    }
-    return metaRead<{ data: FacebookCampaignInsight[] }>(`${campaignId}/insights`, accessToken, params, read);
 }
 
 // ============ Page Info ============

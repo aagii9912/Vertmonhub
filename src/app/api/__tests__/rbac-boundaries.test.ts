@@ -88,8 +88,9 @@ import * as instagram from '@/app/api/auth/instagram/route';
 import * as instagramCallback from '@/app/api/auth/instagram/callback/route';
 import * as navCounts from '@/app/api/dashboard/nav-counts/route';
 import * as director from '@/app/api/dashboard/director/route';
-import * as adCampaigns from '@/app/api/marketing/facebook/ads/campaigns/route';
-import * as adInsights from '@/app/api/marketing/facebook/ads/insights/route';
+import * as metaAds from '@/app/api/marketing/meta-ads/route';
+import * as marketingRoi from '@/app/api/dashboard/marketing-roi/route';
+import * as marketingTimeline from '@/app/api/dashboard/marketing-roi/timeline/route';
 import { requireModule, requireModuleWrite, requireModuleDelete } from '@/lib/auth/require-permission';
 
 function asRole(role: string) {
@@ -184,6 +185,9 @@ const moduleCases: [string, () => Promise<Response>][] = [
     ['social disconnect', () => disconnect.POST(request('/api/shop/disconnect', 'POST', { platform: 'facebook' }))],
     ['property attachments', () => attachments.GET(request('/api/dashboard/ai-attachments?entity_type=property&entity_id=fixture-id'))],
     ['marketing contract', () => channelContracts.POST(request('/api/marketing/contracts', 'POST', {}))],
+    ['Meta ads report', () => metaAds.GET(request('/api/marketing/meta-ads'))],
+    ['marketing ROI', () => marketingRoi.GET(request('/api/dashboard/marketing-roi'))],
+    ['marketing timeline', () => marketingTimeline.GET(request('/api/dashboard/marketing-roi/timeline'))],
     ['conversation list', () => conversations.GET(request('/api/ai-assistant/conversations?shopId=fixture-shop'))],
     ['conversation create', () => conversations.POST(request('/api/ai-assistant/conversations', 'POST', {}))],
     ['conversation read', () => conversationDetail.GET(request('/api/ai-assistant/conversations/fixture-id'), params)],
@@ -232,8 +236,6 @@ describe('allowed operations, field permissions and tenant boundaries', () => {
         expect((await aiSettings.POST(request('/api/ai-settings', 'POST', { type: 'faqs' }))).status).toBe(403);
         expect((await shop.PATCH(request('/api/shop', 'PATCH', { custom_knowledge: { fixture: 'text' } }))).status).toBe(403);
         expect((await facebook.GET(request('/api/auth/facebook'))).status).toBe(403);
-        expect((await adCampaigns.GET(request('/api/marketing/facebook/ads/campaigns'))).status).toBe(403);
-        expect((await adInsights.GET(request('/api/marketing/facebook/ads/insights'))).status).toBe(403);
         expect((await aiSettings.DELETE(request('/api/ai-settings?type=faqs&id=fixture-id', 'DELETE'))).status).toBe(403);
         expect(state.mutations).toEqual([]);
         expect(fetch).not.toHaveBeenCalled();
