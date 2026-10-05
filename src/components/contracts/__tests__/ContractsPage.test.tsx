@@ -7,7 +7,6 @@ const list = vi.hoisted(() => ({ data: undefined as ContractsListResult | undefi
 vi.mock('@/hooks/useContracts', () => ({ useContractsList: () => ({ data: list.data, isLoading: false, isFetching: false, error: null, refetch: vi.fn() }) }));
 vi.mock('@/hooks/useLeads', () => ({ useManagers: () => ({ data: [] }) }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ user: { role: 'admin', permissions: { canWrite: true, modules: ['contracts'] } } }) }));
-vi.mock('@/hooks/use-mobile', () => ({ useMobile: () => ({ isMobile: false }) }));
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock('@/lib/api/dashboardFetch', () => ({ dashboardDownload: vi.fn() }));
 

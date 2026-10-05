@@ -4,14 +4,13 @@ import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { ClipboardCopy, MoreHorizontal, Printer, RefreshCw, ArrowUpRight, Sparkles } from 'lucide-react';
+import { ClipboardCopy, Printer, RefreshCw, ArrowUpRight, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { dashboardJson } from '@/lib/api/dashboardFetch';
 import { openAiPanel } from '@/lib/ai/context';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Button } from '@/components/ui/Button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/Dropdown';
 import { Money } from '@/components/ui/Money';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
 import { sourceLabel } from '@/lib/leads/labels';
@@ -49,19 +48,9 @@ function OperationsReportContent() {
             <PageHeader title="Үйл ажиллагааны тайлан" subtitle="Лид, гэрээ, төлбөр."
                 className="print:hidden"
                 secondaryActions={<>
-                    <span className="hidden md:contents">
-                        <Button variant="secondary" disabled={reportActionDisabled} onClick={askAi}><Sparkles className="size-4" />AI-аар тайлбарлуулах</Button>
-                        <Button variant="secondary" onClick={() => refetch()} disabled={refreshDisabled}><RefreshCw className="size-4" />Шинэчлэх</Button>
-                        <Button variant="secondary" onClick={copy} disabled={reportActionDisabled}><ClipboardCopy className="size-4" />Хуулах</Button>
-                    </span>
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild><Button variant="secondary" className="md:hidden"><MoreHorizontal className="size-4" />Үйлдэл</Button></DropdownMenuTrigger>
-                        <DropdownMenuContent align="start" className="w-56">
-                            <DropdownMenuItem disabled={reportActionDisabled} onSelect={askAi}><Sparkles />AI-аар тайлбарлуулах</DropdownMenuItem>
-                            <DropdownMenuItem disabled={refreshDisabled} onSelect={() => void refetch()}><RefreshCw />Шинэчлэх</DropdownMenuItem>
-                            <DropdownMenuItem disabled={reportActionDisabled} onSelect={() => void copy()}><ClipboardCopy />Хуулах</DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
+                    <Button variant="secondary" disabled={reportActionDisabled} onClick={askAi}><Sparkles className="size-4" />AI-аар тайлбарлуулах</Button>
+                    <Button variant="secondary" onClick={() => refetch()} disabled={refreshDisabled}><RefreshCw className="size-4" />Шинэчлэх</Button>
+                    <Button variant="secondary" onClick={copy} disabled={reportActionDisabled}><ClipboardCopy className="size-4" />Хуулах</Button>
                 </>}
                 primaryAction={<Button size="lg" className="min-h-14 md:min-h-[44px]" onClick={() => window.print()} disabled={!usable || isFetching}><Printer className="size-4" />Хэвлэх / PDF</Button>}
             />
