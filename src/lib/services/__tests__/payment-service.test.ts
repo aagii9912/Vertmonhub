@@ -9,7 +9,20 @@ const db = { rpc, from } as unknown as SupabaseClient;
 const id = '11111111-1111-4111-8111-111111111111';
 const input = { client_request_id: id, due_date: '2026-09-13', amount: 100, paid_amount: 100, payment_method: 'bank_transfer', receipt_kind: 'advance' as const };
 
-beforeEach(() => { vi.clearAllMocks(); rpc.mockResolvedValue({ data: { id }, error: null }); });
+// addPayment зөвхөн гэрээний төлсөн дүнг уншина (бичилт RPC-ээр л).
+const contractRead = { select: vi.fn(), eq: vi.fn(), is: vi.fn(), maybeSingle: vi.fn() };
+const expectContractReadOnly = () => {
+    expect(from.mock.calls).toEqual([['property_contracts']]);
+    expect(contractRead.select).toHaveBeenCalledWith('paid_amount');
+};
+
+beforeEach(() => {
+    vi.clearAllMocks();
+    rpc.mockResolvedValue({ data: { id }, error: null });
+    for (const step of [contractRead.select, contractRead.eq, contractRead.is]) step.mockReturnValue(contractRead);
+    contractRead.maybeSingle.mockResolvedValue({ data: { paid_amount: 0 }, error: null });
+    from.mockReturnValue(contractRead);
+});
 
 describe('atomic payment service', () => {
     it('preserves the caller request ID and performs exactly one atomic RPC', async () => {
@@ -18,7 +31,8 @@ describe('atomic payment service', () => {
             p_shop_id: 'shop', p_contract_id: 'contract', p_payment_id: null, p_request_id: id,
             p_payload: expect.objectContaining({ receipt_kind: 'advance', paid_amount: 100 }),
         }));
-        expect(from).not.toHaveBeenCalled();
+        expectContractReadOnly();
+        expect(contractRead.eq).toHaveBeenCalledWith('shop_id', 'shop');
         expect(rpc).toHaveBeenCalledTimes(1);
     });
     it('requires a stable creation ID rather than risking duplicate receipts on retry', async () => {
@@ -35,13 +49,21 @@ describe('atomic payment service', () => {
     it.each(['PGRST202', '42883'])('RPC unavailable (%s) returns 503 with no partial-write fallback', async code => {
         rpc.mockResolvedValue({ data: null, error: { code, message: 'missing function' } });
         expect(await addPayment(db, 'shop', 'contract', input)).toMatchObject({ status: 503 });
-        expect(from).not.toHaveBeenCalled();
+        expectContractReadOnly();
     });
     it('database failure or missing persisted result never becomes success', async () => {
         rpc.mockResolvedValue({ data: null, error: { code: '23514', message: 'receipt insert failed' } });
         expect(await addPayment(db, 'shop', 'contract', input)).toMatchObject({ status: 500 });
         rpc.mockResolvedValue({ data: null, error: null });
         expect(await addPayment(db, 'shop', 'contract', input)).toMatchObject({ status: 500 });
+    });
+    it('refuses a payment while the contract paid amount is unknown (ERP product export) instead of counting it as 0', async () => {
+        contractRead.maybeSingle.mockResolvedValue({ data: { paid_amount: null }, error: null });
+        expect(await addPayment(db, 'shop', 'contract', input)).toMatchObject({ status: 409 });
+        expect(rpc).not.toHaveBeenCalled();
+        contractRead.maybeSingle.mockResolvedValue({ data: null, error: { code: '08006', message: 'connection lost' } });
+        expect(await addPayment(db, 'shop', 'contract', input)).toMatchObject({ status: 500 });
+        expect(rpc).not.toHaveBeenCalled();
     });
     it('rejects tenant fields and malformed payment data before executing RPC', async () => {
         expect(await updatePayment(db, 'shop', id, { paid_amount: 100, shop_id: 'another-shop' })).toMatchObject({ status: 400 });
