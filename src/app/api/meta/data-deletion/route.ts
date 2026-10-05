@@ -11,6 +11,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeEqual } from '@/lib/crypto/safe-equal';
+import { newDeletionConfirmationCode } from '@/lib/facebook/data-deletion';
 import crypto from 'crypto';
 
 const APP_SECRET = process.env.FACEBOOK_APP_SECRET || '';
@@ -59,13 +60,6 @@ function parseSignedRequest(signedRequest: string): SignedRequestData | null {
 }
 
 /**
- * Generate a unique confirmation code
- */
-function generateConfirmationCode(): string {
-    return crypto.randomBytes(16).toString('hex');
-}
-
-/**
  * POST /api/meta/data-deletion
  * Handle data deletion request from Meta
  */
@@ -92,7 +86,7 @@ export async function POST(request: NextRequest) {
         }
 
         const userId = data.user_id;
-        const confirmationCode = generateConfirmationCode();
+        const confirmationCode = newDeletionConfirmationCode();
 
         // Delete user data from customers table (customers.facebook_id / instagram_id —
         // өмнө нь байхгүй `facebook_user_id` баганаар шүүж юу ч устгадаггүй байв).
@@ -116,9 +110,10 @@ export async function POST(request: NextRequest) {
             // Still return a confirmation to Meta; status below is 'pending' for follow-up
         }
 
-        // Store deletion request for audit trail (optional - table might not exist)
+        // Audit мөр — /deletion-status хуудас төлөвийг энэ кодоор уншина
+        // (migration 20260911130000). Алдааг залгилгүй log-д үлдээнэ.
         try {
-            await supabaseAdmin()
+            const { error: recordError } = await db
                 .from('data_deletion_requests')
                 .insert({
                     confirmation_code: confirmationCode,
@@ -126,8 +121,9 @@ export async function POST(request: NextRequest) {
                     requested_at: new Date().toISOString(),
                     status: deleteError ? 'pending' : 'completed',
                 });
-        } catch {
-            // Table might not exist, that's ok - silently ignore
+            if (recordError) console.error('Data deletion request not recorded:', recordError.message);
+        } catch (recordError) {
+            console.error('Data deletion request not recorded:', recordError);
         }
 
         // Return the confirmation URL as required by Meta
