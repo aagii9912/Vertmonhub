@@ -1,26 +1,21 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { withRoute } from '@/lib/api/route';
+import { awaitingReplyByCustomer, recentInboxMessages } from '@/lib/inbox/conversations';
 
 export const GET = withRoute({ module: 'inbox' }, async ({ shop: authShop }) => {
     const supabase = supabaseAdmin();
-    const shopId = authShop.id;
 
-    // Сүүлийн 200 мессеж, харилцагчийн нэртэй. Жагсаалтаас хассан (deleted_at) харилцагчийн яриаг
-    // хязгаараас ӨМНӨ хасна — эс бөгөөс устгасан нэг харилцагч бүх 200 мөрийг эзэлж Inbox хоосорно.
-    // (Дахин мессеж бичвэл webhook харилцагчийг сэргээнэ.)
-    const { data: conversations, error: convoError } = await supabase
-        .from('chat_history')
-        .select('id, customer_id, message, response, created_at, customers!inner(name, deleted_at)')
-        .eq('shop_id', shopId)
-        .is('customers.deleted_at', null)
-        .order('created_at', { ascending: false })
-        .limit(200);
+    // Сүүлийн 200 мессеж, харилцагчийн нэртэй (устгасан харилцагчгүй) — навигацийн тоотой нэг query.
+    const { data: conversations, error: convoError } = await recentInboxMessages(supabase, authShop.id);
 
     if (convoError) {
         console.error('Error fetching conversations:', convoError);
         return NextResponse.json({ error: 'Яриануудыг уншиж чадсангүй' }, { status: 500 });
     }
+
+    // unread_count = сүүлийн хариунаас хойш ирсэн харилцагчийн мессеж (nav-counts-ийн «inbox»-той нэг дүрэм).
+    const awaiting = awaitingReplyByCustomer(conversations ?? []);
 
     // Group messages by customer_id and get latest info
     const customerMap = new Map<string, any>();
@@ -34,7 +29,7 @@ export const GET = withRoute({ module: 'inbox' }, async ({ shop: authShop }) => 
                 customer_avatar: null,
                 last_message: chat.message || chat.response || '',
                 last_message_at: chat.created_at,
-                unread_count: 0,
+                unread_count: awaiting.get(customerId) ?? 0,
                 messages: []
             });
         }
