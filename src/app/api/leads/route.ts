@@ -17,6 +17,7 @@ import { ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project
 import { insertLeadOnce, resolveStaffLead } from '@/lib/services/LeadService';
 import { z } from 'zod';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
+import { intakeProjectId, requestOrigin } from '@/lib/leads/intake-project';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -26,28 +27,9 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 const LEAD_RATE_LIMIT = { windowMs: 60 * 60 * 1000, maxRequests: 5 };
 const IntakeLeadSchema = CreateLeadSchema.extend({ project_id: z.uuid().optional() });
 
-/** Нийтийн form төсөл сонгохгүй; серверийн баталсан UUID холбоос ашиглана. */
+/** Нийтийн form төсөл сонгохгүй; серверийн баталсан UUID холбоос ашиглана (/contact-ийн толгойтой ижил дүрэм). */
 function configuredProjectId(request: NextRequest): string {
-    const originMap = process.env.LEAD_PROJECT_ORIGINS?.trim();
-    if (originMap) {
-        let configured: Record<string, string>;
-        try {
-            configured = z.record(z.string(), z.uuid()).parse(JSON.parse(originMap));
-            for (const origin of Object.keys(configured)) {
-                if (new URL(origin).origin !== origin) throw new Error('Non-canonical origin');
-            }
-        } catch {
-            throw new ProjectScopeError(503, 'Лид хүлээн авах төслийн тохиргоо буруу байна');
-        }
-        const source = request.headers.get('origin') || request.headers.get('referer');
-        let origin = '';
-        try { origin = source ? new URL(source).origin : ''; } catch { /* баталгаагүй origin */ }
-        if (!Object.hasOwn(configured, origin)) throw new ProjectScopeError(503, 'Энэ сайтын лид хүлээн авах төсөл тохируулаагүй байна');
-        return configured[origin];
-    }
-    const configured = z.uuid().safeParse(process.env.LEAD_PROJECT_ID?.trim());
-    if (!configured.success) throw new ProjectScopeError(503, 'Лид хүлээн авах төсөл тохируулаагүй байна');
-    return configured.data;
+    return intakeProjectId(requestOrigin(request.headers));
 }
 
 /**
