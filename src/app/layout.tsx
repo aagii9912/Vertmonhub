@@ -3,7 +3,6 @@ import { Golos_Text, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
-import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 import { AnalyticsScripts } from "@/components/marketing/AnalyticsScripts";
 import { MarketingAttribution } from "@/components/marketing/MarketingAttribution";
@@ -74,7 +73,6 @@ export default function RootLayout({
         <AnalyticsScripts />
         <MarketingAttribution />
         <ServiceWorkerRegistration />
-        <PWAInstallPrompt />
         <QueryProvider>
           <AuthProvider>
             {children}
