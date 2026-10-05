@@ -13,7 +13,7 @@ vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => state.auth }));
 vi.mock('@/hooks/useRealtimeNotifications', () => ({ useRealtimeNotifications: vi.fn() }));
 vi.mock('@/components/dashboard/Sidebar', () => ({ Sidebar: () => null }));
 vi.mock('@/components/dashboard/Header', () => ({ Header: () => null }));
-vi.mock('@/components/dashboard/MobileNav', () => ({ MobileNav: () => null }));
+vi.mock('@/components/dashboard/ShortcutsDialog', () => ({ ShortcutsDialog: () => null }));
 vi.mock('@/components/dashboard/CommandPalette', () => ({ CommandPalette: () => null }));
 vi.mock('@/components/dashboard/QuickCreateSheet', () => ({ QuickCreateSheet: () => null }));
 vi.mock('@/components/dashboard/OutboxSync', () => ({ OutboxSync: () => null }));
@@ -59,6 +59,16 @@ describe('direct URL authorization', () => {
     it('super_admin retains access even without a database module list', () => {
         state.auth.user = { role: 'super_admin', permissions: { modules: [] } };
         render(<AppShell><ProtectedPage /></AppShell>);
+        expect(state.mounted).toHaveBeenCalledOnce();
+    });
+    it('admin pages inside the shell stay super_admin only, even for an admin with every module', () => {
+        state.path = '/admin/users';
+        state.auth.user = { role: 'admin', permissions: { modules: ['dashboard', 'leads', 'reports', 'settings'] } };
+        const view = render(<AppShell><ProtectedPage /></AppShell>);
+        expect(screen.getByRole('alert')).toBeInTheDocument();
+        expect(state.mounted).not.toHaveBeenCalled();
+        state.auth.user = { role: 'super_admin', permissions: { modules: [] } };
+        view.rerender(<AppShell><ProtectedPage /></AppShell>);
         expect(state.mounted).toHaveBeenCalledOnce();
     });
 });

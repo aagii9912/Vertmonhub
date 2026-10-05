@@ -31,7 +31,7 @@ export function FeedbackWidget() {
     }
 
     return <Sheet open={open} onOpenChange={setOpen}>
-        <SheetTrigger asChild><button type="button" aria-label="Тусламж, санал хүсэлт" title="Тусламж, санал хүсэлт" onClick={() => setSent(false)} className="flex h-10 w-9 items-center justify-center rounded-lg text-fg-2 transition-colors hover:bg-surface-2 hover:text-foreground md:size-9"><HelpCircle className="h-4 w-4" /></button></SheetTrigger>
+        <SheetTrigger asChild><button type="button" aria-label="Тусламж, санал хүсэлт" title="Тусламж, санал хүсэлт" onClick={() => setSent(false)} className="flex size-9 items-center justify-center rounded-lg text-fg-2 transition-colors hover:bg-surface-2 hover:text-foreground"><HelpCircle className="h-4 w-4" /></button></SheetTrigger>
         <SheetContent className="overflow-y-auto">
             <SheetHeader><SheetTitle>Тусламж, санал хүсэлт</SheetTitle><SheetDescription>Алдаа мэдээлэх, санал гаргах эсвэл тусламж авах.</SheetDescription></SheetHeader>
             {sent ? <div role="status" className="space-y-4 px-4 py-8 text-center"><CheckCircle className="mx-auto h-9 w-9 text-status-success" /><p>Таны санал хүсэлт илгээгдлээ.</p><Button variant="secondary" onClick={() => setOpen(false)}>Хаах</Button></div> : <form onSubmit={submit} className="space-y-4 px-4 pb-6">

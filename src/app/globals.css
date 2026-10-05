@@ -214,7 +214,7 @@
   --duration-slow: 260ms;
 
   /* Layout — single source for the shell; the AI page's full-height calc reads it. */
-  --sidebar-w: 15.5rem;  /* 248px */
+  --sidebar-w: 14.5rem;  /* 232px; хумисан үед 4rem = 64px (useSidebarCollapsed) */
   --header-h: 3.5rem;    /* 56px */
 
   /* Control heights */
@@ -244,6 +244,11 @@
   --sidebar-hover: #12151C;
   --sidebar-border: #191D25;
   --sidebar-ring: #8EAEFF;
+}
+
+/* Хумисан sidebar (icon rail) — layout.tsx-ийн эхний script будахаас өмнө тавина. */
+:root[data-sidebar="collapsed"] {
+  --sidebar-w: 4rem;     /* 64px */
 }
 
 /* ============================================================
