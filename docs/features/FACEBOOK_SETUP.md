@@ -85,7 +85,8 @@ App → **Settings → Basic** дээр доорх талбаруудыг бөг
 
 App Secret хаана хэрэглэгдэх вэ?
 - **Webhook signature verify** (`X-Hub-Signature-256`) — `src/lib/utils/verify-webhook-signature.ts`
-- **OAuth token exchange** — `src/app/api/auth/facebook/callback/route.ts:33`
+- **OAuth token exchange** — `src/lib/facebook/page-connect.ts` (`finishPageOAuth`)
+- **Page/IG Graph дуудлагын `appsecret_proof`** — `src/lib/facebook/page-graph.ts`
 - **GDPR data deletion signed request HMAC verify** — `src/app/api/meta/data-deletion/route.ts`
 
 > ⚠️ **Анхаар:** App Secret-ыг хэзээ ч клиент сайд код, public repo дээр хадгалж болохгүй. Зөвхөн server side ENV-д бай.
@@ -104,6 +105,7 @@ Facebook Login for Business → **Settings** → **OAuth Settings** дээр:
   ```
   http://localhost:3001/api/auth/facebook/callback
   https://YOUR_PUBLIC_URL/api/auth/facebook/callback
+  https://YOUR_PUBLIC_URL/api/auth/instagram/callback
   ```
 
 - **Login with the JavaScript SDK:** хэрэгтэй биш (Vertmonhub нь server-side OAuth ашигладаг).
@@ -118,10 +120,12 @@ Facebook Login for Business → **Configurations** → **Create Configuration**:
 - **Login type:** **Business login for users**
 - **Permissions** (зөвшөөрөл):
   - ✅ `pages_show_list`
+  - ✅ `pages_read_engagement`
+  - ✅ `read_insights` — Page insights (`docs/features/META-PAGE-INSIGHTS-2026-10-05.md`)
   - ✅ `pages_messaging`
   - ✅ `pages_manage_metadata`
-  - ✅ `email`
   - ✅ `public_profile`
+  - ☐ `email` — энэ аппад invalid scope (login dialog-ийг блоклодог), нэмэхгүй
 
 **Create** товчийг дар. Үүний дараа гарах **Configuration ID** утгыг хуулж авна.
 
@@ -294,10 +298,13 @@ Facebook App Dashboard → Messenger → **API Settings → Webhooks → Test** 
 
 ### d) OAuth flow тест
 
-1. Browser-аар `http://localhost:3001/api/auth/facebook` руу ор.
-2. Facebook login dialog → Page сонгох → callback success.
-3. URL `/dashboard?fb_success=true&page_count=N` руу redirect болж dashboard нээгдэнэ.
-4. DevTools → Application → Cookies дотор `fb_pages` cookie set хийгдсэн эсэхийг шалга.
+1. `/marketing/social` → **Facebook-ээр холбох** (`/api/auth/facebook?shop_id=<төсөл>` руу очно).
+2. Facebook login dialog (Graph v26, `read_insights`-тэй) → callback.
+3. `/marketing/social?fb_success=true&page_count=N` руу буцаж Page сонгох цонх нээгдэнэ.
+   Олгоогүй insights эрх байвал цонхонд анхааруулна.
+4. Page сонгоход сервер Page токеныг өөрөө авч шифрлээд хадгална. Браузерт токен очихгүй:
+   cookie-д зөвхөн `fb_oauth` (state, зөвхөн callback зам), сонголт `meta_page_connect_pending`
+   хүснэгтэд 30 минут. Дэлгэрэнгүй: `docs/features/META-PAGE-INSIGHTS-2026-10-05.md`.
 
 ---
 
@@ -340,8 +347,10 @@ Facebook App Dashboard → Messenger → **API Settings → Webhooks → Test** 
 |------|-----------|
 | `.env.local.example` | ENV шаблон (Facebook section: lines 8-13) |
 | `src/app/api/webhook/route.ts` | Webhook GET (verify) + POST (signature + entry routing) |
-| `src/app/api/auth/facebook/route.ts` | OAuth start (config_id энд hardcoded) |
-| `src/app/api/auth/facebook/callback/route.ts` | OAuth callback (token exchange + page list) |
+| `src/lib/facebook/page-connect.ts` | Page/IG OAuth (эхлэл, callback, серверт Page сонголт) |
+| `src/app/api/auth/facebook/route.ts` | OAuth start (`FACEBOOK_LOGIN_USE_CONFIG` + `FACEBOOK_LOGIN_CONFIG_ID` үед config_id) |
+| `src/app/api/auth/facebook/callback/route.ts` | OAuth callback (token exchange + page list, серверт) |
+| `src/app/api/auth/facebook/pages/route.ts` | Сонгох Page-ийн жагсаалт (токенгүй) ба сонголт |
 | `src/app/api/meta/data-deletion/route.ts` | GDPR data deletion handler |
 | `src/lib/facebook/messenger.ts` | Graph API send helpers |
 | `src/lib/utils/verify-webhook-signature.ts` | HMAC-SHA256 signature verify |

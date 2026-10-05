@@ -1,69 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'crypto';
+import { NextRequest } from 'next/server';
 import { requireModuleWrite } from '@/lib/auth/require-permission';
+import { startPageOAuth } from '@/lib/facebook/page-connect';
 
-// Facebook OAuth - Start
+// Facebook Page OAuth эхлэл (Graph v26, read_insights-тэй). Урсгал: lib/facebook/page-connect.ts
 export async function GET(request: NextRequest) {
-  const denied = await requireModuleWrite('marketing-roi');
-  if (denied) return denied;
-  const appId = process.env.FACEBOOK_APP_ID?.trim();
-
-  if (!appId) {
-    return NextResponse.json({ error: 'Facebook App ID not configured' }, { status: 500 });
-  }
-
-  // Get the current origin for redirect URI
-  const origin = request.nextUrl.origin;
-  const redirectUri = `${origin}/api/auth/facebook/callback`;
-
-  // Phase 2 scopes — list pages, read engagement, send DMs, subscribe webhooks.
-  // `pages_messaging` + `pages_manage_metadata` require Meta App Review approval
-  // before they can be granted on a Live app.
-  // ⚠️ 'email' нь энэ FB-Login-for-Business аппад invalid scope — login dialog-ийг
-  // блоклодог тул хассан. business_management нь ad account жагсаалтад туслана.
-  const permissions = [
-    'pages_show_list',
-    'pages_read_engagement',
-    'pages_messaging',
-    'pages_manage_metadata',
-    'ads_read',
-    'business_management',
-    'public_profile'
-  ].join(',');
-
-  // Facebook Login for Business config_id is opt-in. We default to standard
-  // Facebook Login because the FB Login for Business flow has its own internal
-  // domain whitelist that returns "Can't load URL" if the redirect_uri isn't
-  // explicitly tied to the configured business asset, and the standard flow
-  // works with just App Domains. To re-enable FB Login for Business set BOTH:
-  //   FACEBOOK_LOGIN_USE_CONFIG=true
-  //   FACEBOOK_LOGIN_CONFIG_ID=<configuration_id>
-  const useConfig = process.env.FACEBOOK_LOGIN_USE_CONFIG?.trim().toLowerCase() === 'true';
-  const configId = process.env.FACEBOOK_LOGIN_CONFIG_ID?.trim();
-
-  // Build Facebook OAuth URL
-  const fbAuthUrl = new URL('https://www.facebook.com/v21.0/dialog/oauth');
-  fbAuthUrl.searchParams.set('client_id', appId);
-  fbAuthUrl.searchParams.set('redirect_uri', redirectUri);
-  fbAuthUrl.searchParams.set('scope', permissions);
-  if (useConfig && configId) {
-    fbAuthUrl.searchParams.set('config_id', configId);
-  }
-  fbAuthUrl.searchParams.set('response_type', 'code');
-
-  // CSRF state — санамсаргүй токеныг httpOnly cookie-д хадгалж callback дээр шалгана.
-  // sameSite:'lax' ЗААВАЛ — 'strict' бол facebook.com-оос буцах redirect дээр cookie
-  // илгээгдэхгүй тул login бүхэлдээ эвдэрнэ.
-  const state = crypto.randomBytes(32).toString('hex');
-  fbAuthUrl.searchParams.set('state', state);
-
-  const response = NextResponse.redirect(fbAuthUrl.toString());
-  response.cookies.set('fb_oauth_state', state, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 600,
-    path: '/',
-  });
-  return response;
+    const denied = await requireModuleWrite('marketing-roi');
+    if (denied) return denied;
+    return startPageOAuth(request, 'facebook');
 }
