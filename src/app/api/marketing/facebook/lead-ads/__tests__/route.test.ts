@@ -82,7 +82,7 @@ describe('POST /api/marketing/facebook/lead-ads', () => {
         const res = await post({ action: 'backfill', days: 30 });
         expect(res.status).toBe(200);
         expect(await res.json()).toMatchObject({ ingested: 2, complete: true });
-        expect(mocks.backfill).toHaveBeenCalledWith(mocks.db.client, { id: SHOP, pageId: '1111', pageName: 'Mandala', token: 'page-token' },
+        expect(mocks.backfill).toHaveBeenCalledWith(mocks.db.client, { id: SHOP, pageId: '1111', token: 'page-token' },
             { days: 30, deadline: expect.any(Number) });
     });
 

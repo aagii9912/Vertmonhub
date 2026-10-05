@@ -84,7 +84,7 @@ export const POST = withRoute({ module: 'marketing-roi', access: 'write' }, asyn
         return NextResponse.json(result, { status: result.success ? 200 : 502 });
     }
 
-    const summary = await backfillPageLeads(supabaseAdmin(), { id: shop.id, ...page }, {
+    const summary = await backfillPageLeads(supabaseAdmin(), { id: shop.id, pageId: page.pageId, token: page.token }, {
         days: parsed.data.days,
         deadline: Date.now() + BACKFILL_BUDGET_MS,
     });

@@ -1,6 +1,6 @@
 # Facebook Lead Ads → CRM лид (2026-10-05)
 
-Салбар: `feat/lead-ads-webhook` (`origin/main` 26f06ba дээр). **Deploy хийгээгүй, production-д юу ч бичээгүй.**
+Салбар: `feat/lead-ads-webhook` (`origin/main` 5f9a744 дээр). **Deploy хийгээгүй, production-д юу ч бичээгүй.**
 
 ## Юу өөрчлөгдсөн бэ
 
