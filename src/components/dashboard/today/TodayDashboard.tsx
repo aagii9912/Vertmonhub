@@ -327,7 +327,7 @@ function TaskRow({ task, busy, onDone, onSnooze }: { task: MyStatsTask; busy: bo
                 <div className="truncate text-[13px] font-medium text-foreground">{task.title}</div>
                 <div className="truncate text-[12px] text-muted-foreground">{task.subtitle}</div>
             </Link>
-            <div className="hidden shrink-0 items-center gap-1 sm:flex">
+            <div className="flex shrink-0 items-center gap-1">
                 {task.overdue ? (
                     <Pill tone="danger">{daysAgo(time)} хоног</Pill>
                 ) : (
@@ -343,24 +343,7 @@ function TaskRow({ task, busy, onDone, onSnooze }: { task: MyStatsTask; busy: bo
                     <GhostButton onClick={onSnooze} disabled={busy}><ArrowRight className="h-3.5 w-3.5" /> Хойшлуулах</GhostButton>
                 </div>
             </div>
-            {/* Гар утас: залгах товч 44px */}
-            {phone ? (
-                <a href={`tel:${phone}`} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-brand active:bg-brand-soft sm:hidden" aria-label="Залгах">
-                    <Phone className="h-5 w-5" />
-                </a>
-            ) : (
-                <button type="button" onClick={onDone} disabled={busy} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground active:bg-surface-2 sm:hidden" aria-label="Дууссан">
-                    <Check className="h-5 w-5" />
-                </button>
-            )}
-            <details className="relative shrink-0 sm:hidden">
-                <summary aria-label={`${task.title}: бусад үйлдэл`} className="flex size-11 cursor-pointer list-none items-center justify-center rounded-full text-muted-foreground hover:bg-surface-2 focus-ring [&::-webkit-details-marker]:hidden"><MoreHorizontal className="size-5" /></summary>
-                <div className="absolute right-0 top-full z-20 w-44 rounded-xl border border-border bg-surface p-1 shadow-lg">
-                    <button type="button" disabled={busy} onClick={onDone} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-sm hover:bg-surface-2 focus-ring"><Check className="size-4" />Дууссан</button>
-                    <button type="button" disabled={busy} onClick={onSnooze} className="flex min-h-11 w-full items-center gap-2 rounded-lg px-3 text-sm hover:bg-surface-2 focus-ring"><ArrowRight className="size-4" />Маргааш болгох</button>
-                </div>
-            </details>
-            <MoreHorizontal className="hidden h-4 w-4 shrink-0 text-muted-foreground sm:block sm:group-hover:hidden" />
+            <MoreHorizontal className="h-4 w-4 shrink-0 text-muted-foreground group-hover:hidden" />
         </div>
     );
 }
