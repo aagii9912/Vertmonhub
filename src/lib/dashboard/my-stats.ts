@@ -1,4 +1,5 @@
 import { ubStartOfDay } from '@/lib/utils/date';
+import { leadDisplayName, meetingCustomerName } from '@/lib/leads/labels';
 
 /**
  * «Миний самбар» (менежерийн хувийн дашбоард)-ын цэвэр aggregation туслахууд.
@@ -14,6 +15,7 @@ export interface LeadLite {
     status: string;
     created_at?: string | null;
     next_followup_at?: string | null;
+    last_contact_at?: string | null;
     customer_name?: string | null;
     customer_phone?: string | null;
 }
@@ -24,6 +26,8 @@ export interface ViewingLite {
     status?: string | null;
     property_name?: string | null;
     customer_name?: string | null;
+    /** Нэргүй лидийн уулзалт: харагдахдаа шошго (`meetingCustomerName`), өгөгдөлд бичихгүй. */
+    anonymous_lead?: boolean | null;
 }
 
 /** Лидүүдийг статусаар нь тоолно. */
@@ -62,6 +66,8 @@ export interface DashTask {
     dueAt: string;
     overdue: boolean;
     href: string;
+    /** follow-up: өнөөдөр (УБ) дуудлага/үнийн санал аль хэдийн бүртгэгдсэн — «Дууссан» дахин дуудлага нэмэхгүй. */
+    contactedToday?: boolean;
 }
 
 // Улаанбаатарын өдрийн хил (сервер UTC дээр `setHours(0)` = УБ 08:00 болдог байв)
@@ -100,11 +106,12 @@ export function buildTaskList(
         tasks.push({
             type: 'followup',
             id: lead.id,
-            title: lead.customer_name || 'Лид',
+            title: leadDisplayName(lead),
             subtitle: lead.customer_phone ? `Холбогдох · ${lead.customer_phone}` : 'Холбогдох',
             dueAt: due.toISOString(),
             overdue: due.getTime() < dayStart.getTime(),
             href: '/dashboard/leads',
+            contactedToday: !!lead.last_contact_at && new Date(lead.last_contact_at).getTime() >= dayStart.getTime(),
         });
     }
 
@@ -113,11 +120,12 @@ export function buildTaskList(
         if (viewing.status && viewing.status !== 'scheduled') continue;
         const at = new Date(viewing.scheduled_at);
         if (at.getTime() < dayStart.getTime() || at.getTime() >= dayEnd.getTime()) continue;
+        const customer = meetingCustomerName(viewing);
         tasks.push({
             type: 'viewing',
             id: viewing.id,
-            title: viewing.property_name || viewing.customer_name || 'Үзүүлэлт',
-            subtitle: viewing.customer_name ? `Уулзалт · ${viewing.customer_name}` : 'Уулзалт',
+            title: viewing.property_name || customer || 'Үзүүлэлт',
+            subtitle: customer ? `Уулзалт · ${customer}` : 'Уулзалт',
             dueAt: at.toISOString(),
             overdue: at.getTime() < now.getTime(),
             href: '/dashboard/viewings',

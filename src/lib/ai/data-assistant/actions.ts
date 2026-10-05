@@ -19,6 +19,8 @@ import { updateViewing, listViewings } from '@/lib/services/ViewingService';
 import { listTasks, createTask, updateTask, isMissingTaskTable, TASK_MIGRATION_HINT } from '@/lib/services/TaskService';
 import { listPayments, addPayment, updatePayment } from '@/lib/services/PaymentService';
 import { formatMNT } from '@/lib/utils/currency';
+import { ANONYMOUS_LEAD_LABEL, isAnonymousLead, leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
+import { QuoteAmountSchema, QuoteUnitSchema } from '@/lib/leads/quotes';
 
 type Args = Record<string, any>;
 const db = () => adminClient();
@@ -39,13 +41,15 @@ export async function findLead(shopId: string, a: { lead_id?: string; customer_n
     } else if (a.customer_name) {
         const name = String(a.customer_name).trim().replace(/[\\%_]/g, '\\$&');
         if (!name) return { error: 'Лидийн нэрийг оруулна уу' };
+        // Нэргүй лидийн шошго DB-д байхгүй — нэрээр биш lead_id эсвэл утсаар олно.
+        if (!normalizeLeadName(name)) return { error: `${ANONYMOUS_LEAD_LABEL}-ийг lead_id эсвэл утасны дугаараар нь хайна уу` };
         q = q.ilike('customer_name', `%${name}%`);
     }
     else return { error: 'lead_id, customer_name эсвэл customer_phone шаардлагатай' };
     const { data, error } = await q.limit(5);
     if (error) return { error: 'Лид хайхад алдаа гарлаа. Дахин оролдоно уу.' };
     if (!data || !data.length) return { error: 'Лид олдсонгүй' };
-    if (data.length > 1 && !a.lead_id) return { error: 'Олон лид таарлаа — аль нь болохыг тодруул (ask_user)', options: data };
+    if (data.length > 1 && !a.lead_id) return { error: 'Олон лид таарлаа — аль нь болохыг тодруул (ask_user)', options: data.map((lead) => ({ ...lead, name: leadDisplayName(lead) })) };
     return { lead: data[0] };
 }
 
@@ -70,7 +74,7 @@ export async function logCall(shopId: string, args: Args, userId: string, userNa
     const next = isoOrNull(parsed.data);
     const result = await recordLeadContact(db(), { shopId, leadId: f.lead.id, type: 'call', content, nextFollowupAt: next, userId, managerName: userName || null, scope });
     if (!result.ok) return { error: result.error, partialSuccess: result.partialSuccess ?? false, leadId: f.lead.id };
-    return { success: true, message: `«${f.lead.customer_name}»-д дуудлага бүртгэлээ${next ? `, дараагийн холбоо ${formatShortDate(next)} ${formatTime(next)}` : ''}.`, leadId: f.lead.id };
+    return { success: true, message: `«${leadDisplayName(f.lead)}»-д дуудлага бүртгэлээ${next ? `, дараагийн холбоо ${formatShortDate(next)} ${formatTime(next)}` : ''}.`, leadId: f.lead.id };
 }
 
 export async function setFollowup(shopId: string, args: Args, userId: string, userName: string, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
@@ -79,11 +83,40 @@ export async function setFollowup(shopId: string, args: Args, userId: string, us
     const f = await findLead(shopId, args, scope);
     if ('error' in f) return f;
     const next = isoOrNull(parsed.data);
-    const message = next ? `«${f.lead.customer_name}»-ийн дараагийн холбоог ${formatShortDate(next)} ${formatTime(next)} болголоо.` : `«${f.lead.customer_name}»-ийн follow-up-ийг цуцаллаа.`;
+    const message = next ? `«${leadDisplayName(f.lead)}»-ийн дараагийн холбоог ${formatShortDate(next)} ${formatTime(next)} болголоо.` : `«${leadDisplayName(f.lead)}»-ийн follow-up-ийг цуцаллаа.`;
     const content = String(args.note || '').trim().slice(0, 4000) || message;
     const result = await recordLeadContact(db(), { shopId, leadId: f.lead.id, type: 'note', content, nextFollowupAt: next, userId, managerName: userName || null, scope });
     if (!result.ok) return { error: result.error, partialSuccess: result.partialSuccess ?? false, leadId: f.lead.id };
     return { success: true, message, leadId: f.lead.id };
+}
+
+/** AI-ийн дүн: тоо эсвэл «450,000,000» / «450 000 000» хэлбэрийн цифрийн мөр (₮, «сая»-г модель өөрөө хөрвүүлнэ). */
+function quoteAmountArg(value: unknown): unknown {
+    if (typeof value === 'string' && /^[\d\s,]+$/.test(value.trim())) return Number(value.replace(/[\s,]/g, ''));
+    return value;
+}
+
+/**
+ * Харилцагчид хэлсэн үнийг («Үнийн санал») менежерийн түүхэнд бүртгэнэ — UI-ийн «Үнийн санал»-тай ижил
+ * recordLeadContact. Гэрээний дүн, орлого биш; мөнгөтэй тул үргэлж картаар батална (alwaysConfirm).
+ */
+export async function logPriceQuote(shopId: string, args: Args, confirm: boolean, userId: string, userName: string, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
+    const amount = QuoteAmountSchema.safeParse(quoteAmountArg(args.amount));
+    if (!amount.success) return { error: `${amount.error.issues[0]?.message ?? 'Үнийн саналын дүн буруу'} (amount: бүхэл ₮, жишээ 450000000)` };
+    const unit = QuoteUnitSchema.safeParse(typeof args.unit_label === 'string' ? args.unit_label : null);
+    if (!unit.success) return { error: unit.error.issues[0]?.message ?? 'Байр/тоот буруу байна' };
+    const note = typeof args.note === 'string' ? args.note.trim().slice(0, 4000) : '';
+    const f = await findLead(shopId, args, scope);
+    if ('error' in f) return f;
+    const name = leadDisplayName(f.lead);
+    if (!confirm) {
+        return confirmNeeded('log_price_quote', { lead_id: f.lead.id, amount: amount.data, unit_label: unit.data, note },
+            `Үнийн санал бүртгэх: ${name}`,
+            { Лид: name, 'Үнийн санал': formatMNT(amount.data), 'Байр/тоот': unit.data ?? '—', ...(note ? { Тайлбар: note.slice(0, 200) } : {}), Анхаар: 'Гэрээний дүн, орлого биш — менежерийн түүхэнд л хадгалагдана' });
+    }
+    const result = await recordLeadContact(db(), { shopId, leadId: f.lead.id, type: 'quote', content: note, quote: { amount: amount.data, unitLabel: unit.data }, userId, managerName: userName || null, scope });
+    if (!result.ok) return { error: result.error, partialSuccess: result.partialSuccess ?? false, leadId: f.lead.id };
+    return { success: true, message: `«${name}»-д ${formatMNT(amount.data)}${unit.data ? ` (${unit.data})` : ''} үнийн санал бүртгэлээ.`, leadId: f.lead.id };
 }
 
 export async function assignLeadManager(shopId: string, args: Args, confirm: boolean, userId: string, userName: string, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
@@ -95,20 +128,29 @@ export async function assignLeadManager(shopId: string, args: Args, confirm: boo
     const manager = resolved.managerName;
     try { await assertProjectManager(db(), shopId, f.lead.project_id, manager); }
     catch (error) { return { error: error instanceof Error ? error.message : 'Менежерийн төсөл шалгахад алдаа гарлаа' }; }
-    if (!confirm) return confirmNeeded('assign_lead_manager', { lead_id: f.lead.id, manager_name: manager }, `Лид шилжүүлэх: ${f.lead.customer_name}`, { Лид: f.lead.customer_name, 'Одоогийн менежер': f.lead.sales_manager_name || '-', 'Шинэ менежер': manager });
+    if (!confirm) return confirmNeeded('assign_lead_manager', { lead_id: f.lead.id, manager_name: manager }, `Лид шилжүүлэх: ${leadDisplayName(f.lead)}`, { Лид: leadDisplayName(f.lead), 'Одоогийн менежер': f.lead.sales_manager_name || '-', 'Шинэ менежер': manager });
     const { data, error } = await applyLeadScope(db().from('leads').update({ sales_manager_name: manager, updated_at: new Date().toISOString() })
         .eq('id', f.lead.id).eq('shop_id', shopId).is('deleted_at', null).select('id').maybeSingle(), scope);
     if (error) return { error: 'Лидийн менежер шинэчлэгдсэнгүй. Дахин оролдоно уу.' };
     if (!data) return { error: 'Лид олдсонгүй. Менежер өөрчлөгдөөгүй.' };
     const activity = await logLeadActivity(db(), { shopId, leadId: f.lead.id, type: 'manager', content: `Менежер: ${f.lead.sales_manager_name || '-'} → ${manager}`, meta: { from: f.lead.sales_manager_name, to: manager }, createdBy: userId, createdByName: userName || null });
     if (!activity) return { error: `Лид ${manager}-д шилжсэн боловч өөрчлөлтийн түүх хадгалагдсангүй. Лидээ нээж шалгана уу.`, partialSuccess: true, leadId: f.lead.id };
-    return { success: true, message: `«${f.lead.customer_name}» лидийг ${manager}-д шилжүүллээ.`, leadId: f.lead.id };
+    return { success: true, message: `«${leadDisplayName(f.lead)}» лидийг ${manager}-д шилжүүллээ.`, leadId: f.lead.id };
 }
 
 /* ---------------- Уулзалт ---------------- */
 
 export async function listViewingsTool(shopId: string, args: Args, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
-    return listViewings(db(), shopId, { range: args.range, status: args.status, manager: args.manager, leadId: args.lead_id, limit: args.limit }, scope);
+    const result = await listViewings(db(), shopId, { range: args.range, status: args.status, manager: args.manager, leadId: args.lead_id, limit: args.limit }, scope);
+    if ('error' in result) return result;
+    // Загварт харагдах нэр + нэргүй тэмдэг (customer_name: null-ийг «null» гэж хэлэх/нэр зохиохгүй).
+    // Шинэ мөр үүсгэнэ; service-ийн мөр (UI ашигладаг) өөрчлөгдөхгүй.
+    return {
+        viewings: (result.viewings as Array<Record<string, unknown>>).map((viewing) => {
+            const lead = (Array.isArray(viewing.leads) ? viewing.leads[0] : viewing.leads) as { customer_name?: string | null } | null | undefined;
+            return { ...viewing, customer: lead ? leadDisplayName(lead) : null, anonymous: !!lead && isAnonymousLead(lead) };
+        }),
+    };
 }
 
 type ViewingRow = { id: string; scheduled_at: string; status: string; lead_id: string | null; leads?: { customer_name?: string } | { customer_name?: string }[] | null; properties?: { name?: string } | { name?: string }[] | null };
@@ -123,7 +165,7 @@ async function findViewing(shopId: string, args: Args, scope: SalesProjectScope 
     if ('error' in f) return { error: f.error ?? 'Лид олдсонгүй', options: f.options };
     const { data } = await applyLeadScope(db().from('property_viewings').select(`id, scheduled_at, status, lead_id, ${scope.projectIds === null ? 'leads' : 'leads!inner'}(customer_name,project_id,sales_manager_name), properties(name)`)
         .eq('shop_id', shopId).eq('lead_id', f.lead.id).is('deleted_at', null).eq('status', 'scheduled').order('scheduled_at', { ascending: false }).limit(1), scope, 'leads.project_id', 'leads.sales_manager_name');
-    if (!data || !data.length) return { error: `«${f.lead.customer_name}»-д товлогдсон (scheduled) уулзалт алга` };
+    if (!data || !data.length) return { error: `«${leadDisplayName(f.lead)}»-д товлогдсон (scheduled) уулзалт алга` };
     return { viewing: data[0] as unknown as ViewingRow };
 }
 
@@ -147,7 +189,8 @@ export async function rescheduleViewing(shopId: string, args: Args, confirm: boo
     const at = isoOrNull(args.scheduled_at);
     if (!at) return { error: 'scheduled_at (ISO огноо/цаг) шаардлагатай' };
     const one = <T,>(x: T | T[] | null | undefined): T | undefined => (Array.isArray(x) ? x[0] : x ?? undefined);
-    const lead = one(v.viewing.leads)?.customer_name || '-';
+    const leadRow = one(v.viewing.leads);
+    const lead = leadRow ? leadDisplayName(leadRow) : '-';
     const prop = one(v.viewing.properties)?.name || '-';
     if (!confirm) return confirmNeeded('reschedule_viewing', { viewing_id: v.viewing.id, scheduled_at: at }, `Уулзалт зөөх: ${lead}`, { Лид: lead, Байр: prop, 'Хуучин цаг': String(v.viewing.scheduled_at).slice(0, 16).replace('T', ' '), 'Шинэ цаг': at.slice(0, 16).replace('T', ' ') });
     const r = await updateViewing(db(), shopId, v.viewing.id, { scheduled_at: at, status: 'scheduled' }, { scope, userId, managerName: userName || null });

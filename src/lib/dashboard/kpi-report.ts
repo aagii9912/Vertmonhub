@@ -24,6 +24,8 @@ export interface KpiViewingRow {
     status?: string | null;
     property_name?: string | null;
     customer_name?: string | null;
+    /** Нэргүй лидийн уулзалт: харагдахдаа шошго (`meetingCustomerName`), өгөгдөлд бичихгүй. */
+    anonymous_lead?: boolean | null;
 }
 
 export interface KpiContractRow {

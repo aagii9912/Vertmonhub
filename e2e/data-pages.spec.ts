@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
+import { managerActivityFixture } from './support/manager-activity';
 
 // react-query руу шилжсэн хуудсууд: анхны уншилт унавал хоосон биш алдаа + «Дахин оролдох»,
 // сэргээгээд өгөгдөл харагдана; харилцагчийг жагсаалтаас (сэргээх боломжтой) хасна.
@@ -23,6 +24,9 @@ async function setup(page: Page) {
         if (path === '/api/dashboard/nav-counts') return reply({ leads: 1, inbox: 0, meetings: 0 });
         if (path === '/api/dashboard/my-stats') return reply({ manager: { name: 'Номин', isSelf: true, inRoster: true, hasAccount: true }, onboarding: false, missing: [], period: 'today',
             kpis: { activeLeads: 1, newLeads: 1, viewingsToday: 0, viewingsThisWeek: 0, activeContracts: 0, salesThisMonth: 0 }, target: null, tasks: [], recentLeads: [], upcomingViewings: [], revenueTrend: [] });
+        if (path === '/api/dashboard/reports/manager-activity') return reply(managerActivityFixture(url, 'Номин'));
+        // Санал гомдлын хариуцагч = борлуулалтын менежерийн бүртгэл.
+        if (path === '/api/dashboard/managers') return reply({ managers: [{ name: 'Номин', user_id: null, is_active: true, hasAccount: false, assignable: true, project_ids: [] }] });
         if (path === '/api/dashboard/customers' && request.method() === 'GET') {
             if (state.failCustomers) return reply({ error: 'Түр алдаа' }, 500);
             return reply({ customers: state.deleted.includes(customerId) ? [] : [customer] });
@@ -32,10 +36,11 @@ async function setup(page: Page) {
             if (request.method() === 'DELETE') { state.deleted.push(customerId); return reply({ success: true }); }
             return reply({ customer: { ...customer, chat_history: [], service_logs: [] } });
         }
+        if (path === '/api/dashboard/lead-categories') return reply({ categories: [{ id: 'investor', name: 'Хөрөнгө оруулагч', description: null, tone: 'success', sort_order: 10, is_active: true }] });
         if (path === '/api/dashboard/leads' && url.searchParams.get('pageSize') === '1000') {
             if (state.failPipeline) return reply({ error: 'Түр алдаа' }, 500);
             return reply({ leads: [{ id: leadId, customer_name: 'Энхжин', customer_phone: '88112233', status: 'new', source: 'facebook', sales_manager_name: 'Номин',
-                project_id: null, budget_max: 300000000, created_at: '2026-10-02T02:00:00Z', updated_at: '2026-10-02T02:00:00Z', stage_changed_at: '2026-10-02T02:00:00Z' }], pagination: { total: 1 } });
+                project_id: null, budget_max: 300000000, category_id: 'investor', created_at: '2026-10-02T02:00:00Z', updated_at: '2026-10-02T02:00:00Z', stage_changed_at: '2026-10-02T02:00:00Z' }], pagination: { total: 1 } });
         }
         if (path === '/api/dashboard/contracts/stats/service') return reply({ stats: { total_contracts: 1, active_contracts: 1, closed_contracts: 0, total_sales: 286000000, total_collected: 80000000,
             collection_rate: 28, overdue_contract_count: 0, total_overdue_amount: 0, open_requests: 1, resolved_requests: 0, avg_resolution_hours: null, by_type: {} } });
@@ -77,6 +82,9 @@ test('pipeline болон санал гомдлын уншилт унавал а
     state.failPipeline = false;
     await page.getByRole('button', { name: 'Дахин оролдох', exact: true }).click();
     await expect(page.getByText('Энхжин', { exact: true }).first()).toBeVisible();
+    // Картанд лидийн ангилал (саарал pill + өнгөт цэг) харагдана; эхнийх нь шүүлтүүрийн сонголт.
+    await expect(page.getByRole('combobox', { name: 'Ангилал', exact: true })).toBeAttached();
+    await expect(page.getByText('Хөрөнгө оруулагч', { exact: true }).last()).toBeVisible();
 
     await page.goto('/dashboard/customer-service');
     await expect(page.getByText('Санал гомдлын бүртгэл татахад алдаа гарлаа', { exact: true })).toBeVisible();

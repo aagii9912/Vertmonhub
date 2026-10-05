@@ -3,13 +3,15 @@ import { z } from 'zod';
 import { safeEqual } from '@/lib/crypto/safe-equal';
 import { supabaseAdmin } from '@/lib/supabase';
 import { insertLeadOnce } from '@/lib/services/LeadService';
+import { findImportedElysiumDuplicate } from '@/lib/services/ElysiumLeadSync';
+import { ELYSIUM_LEAD_SOURCE, elysiumLeadNotes } from '@/lib/leads/elysium';
 import { logger } from '@/lib/utils/logger';
 
 export const runtime = 'nodejs';
 
 const LeadSchema = z.object({
     requestId: z.string().uuid(),
-    name: z.string().trim().min(1).max(255),
+    name: z.string().trim().max(255).nullish(),
     phone: z.string().trim().min(1).max(50).nullish(),
     email: z.email().max(255).nullish(),
     message: z.string().trim().max(2000).nullish(),
@@ -20,7 +22,11 @@ const LeadSchema = z.object({
     path: ['phone'],
 });
 
-/** Elysium серверээс ирсэн маягтыг тохируулсан төсөлд бүртгэнэ. */
+/**
+ * Elysium серверээс ирсэн маягтыг тохируулсан төсөлд бүртгэнэ (шууд дамжуулалт).
+ * Дамжуулалтаар ирээгүй хүсэлтийг `/api/cron/elysium-leads-sync` татан авалт нөхнө;
+ * тэр нь оруулсан лидийг зочны дахин илгээлт давхардуулахгүй (`findImportedElysiumDuplicate`).
+ */
 export async function POST(request: NextRequest) {
     const secret = process.env.ELYSIUM_LEAD_SYNC_SECRET;
     const projectId = process.env.ELYSIUM_LEAD_PROJECT_ID;
@@ -53,19 +59,21 @@ export async function POST(request: NextRequest) {
         }
 
         const lead = parsed.data;
-        const notes = [
-            lead.message || null,
-            lead.event ? `Арга хэмжээ: ${lead.event}` : null,
-            lead.source ? `Сайтын эх сурвалж: ${lead.source}` : null,
-        ].filter(Boolean).join('\n\n') || null;
+        const notes = elysiumLeadNotes(lead);
+        // Татан авалт энэ хүсэлтийг аль хэдийн оруулсан бол (дамжуулалт эхэндээ амжилтгүй, зочин дахин илгээсэн) шинэ лид үүсгэхгүй.
+        const imported = await findImportedElysiumDuplicate(db, {
+            shopId: project.shop_id, projectId: project.id, requestId: lead.requestId,
+            phone: lead.phone, email: lead.email, message: lead.message, event: lead.event, notes,
+        });
+        if (imported) return NextResponse.json({ ok: true, leadId: imported.leadId, duplicate: true });
         const result = await insertLeadOnce(db, {
             shop_id: project.shop_id,
             project_id: project.id,
             client_request_id: lead.requestId,
-            customer_name: lead.name,
+            customer_name: lead.name ?? null,
             customer_phone: lead.phone || null,
             customer_email: lead.email || null,
-            source: 'website',
+            source: ELYSIUM_LEAD_SOURCE,
             notes,
         }, { select: 'id, project_id' });
         if (result.ok) return NextResponse.json({ ok: true, leadId: result.lead.id, duplicate: result.duplicate });

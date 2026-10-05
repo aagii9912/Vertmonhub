@@ -33,9 +33,8 @@ import { CustomerDetailSheet } from './_components/CustomerDetailSheet';
 import { CreateCustomerModal } from './_components/CreateCustomerModal';
 import { HubSpotImportModal } from './_components/HubSpotImportModal';
 import { HubSpotSyncModal } from './_components/HubSpotSyncModal';
-
-type ServiceLogType = 'inquiry' | 'complaint' | 'maintenance' | 'handover' | 'payment' | 'other';
-type ServiceLogStatus = 'open' | 'in_progress' | 'resolved' | 'closed';
+import { EMPTY_SERVICE_LOG_FORM, type ServiceLogFormState } from './_components/ServiceLogForm';
+import type { ServiceLogStatus, ServiceLogType } from '@/lib/service-logs/labels';
 
 interface ServiceLogEntry {
     id: string;
@@ -176,11 +175,7 @@ export default function CustomersPage() {
     const [creating, setCreating] = useState(false);
     const [createError, setCreateError] = useState<string | null>(null);
 
-    const [logForm, setLogForm] = useState<{ type: ServiceLogType; subject: string; description: string }>({
-        type: 'complaint',
-        subject: '',
-        description: '',
-    });
+    const [logForm, setLogForm] = useState<ServiceLogFormState>(EMPTY_SERVICE_LOG_FORM);
     const [logSubmitting, setLogSubmitting] = useState(false);
     const [logError, setLogError] = useState<string | null>(null);
 
@@ -225,9 +220,16 @@ export default function CustomersPage() {
         }
     }
 
+    /** Санал гомдлын ноорог (хариуцагч менежер орно) өөр харилцагчид дамжихгүй. */
+    function resetLogDraft() {
+        setLogForm(EMPTY_SERVICE_LOG_FORM);
+        setLogError(null);
+    }
+
     function openCustomer(id: string) {
         // Ижил мөрийг дахин дарвал (ачаалж/алдаа гарсан үед) дахин татна.
         if (id === detailId) void detailQuery.refetch();
+        else resetLogDraft();
         setDetailId(id);
     }
 
@@ -235,6 +237,7 @@ export default function CustomersPage() {
         setDetailId(null);
         setEditMode(false);
         setMergeMode(false);
+        resetLogDraft();
     }
 
     /** Засах горимд орохдоо маягтыг харилцагчийн одоогийн мэдээллээр дүүргэнэ. */
@@ -270,15 +273,17 @@ export default function CustomersPage() {
                     subject: logForm.subject.trim(),
                     description: logForm.description.trim() || null,
                     priority: logForm.type === 'complaint' ? 'high' : 'medium',
+                    ...(logForm.manager_name ? { manager_name: logForm.manager_name } : {}),
                 }),
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
                 throw new Error(err?.error || 'Бүртгэхэд алдаа гарлаа');
             }
-            setLogForm({ type: 'complaint', subject: '', description: '' });
+            setLogForm(EMPTY_SERVICE_LOG_FORM);
             await detailQuery.refetch();
             void queryClient.invalidateQueries({ queryKey: ['service-logs'] });
+            void queryClient.invalidateQueries({ queryKey: ['manager-activity'] });
         } catch (err) {
             setLogError(err instanceof Error ? err.message : 'Бүртгэхэд алдаа гарлаа');
         } finally {
@@ -464,6 +469,7 @@ export default function CustomersPage() {
         try {
             await dashboardMutate(`/api/dashboard/customers/${selectedCustomer.id}`, 'DELETE');
             setDetailId(null);
+            resetLogDraft();
             // Устгасан харилцагчийн дэлгэрэнгүйг дахин татахгүй (404) — cache-ээс хасна.
             queryClient.removeQueries({ queryKey: ['customers', 'detail', selectedCustomer.id] });
             toast.success('Харилцагч устгагдлаа');

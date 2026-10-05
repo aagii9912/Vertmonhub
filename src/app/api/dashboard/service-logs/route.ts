@@ -5,6 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { withRoute } from '@/lib/api/route';
+import { CreateServiceLogSchema, createServiceLog, serviceLogInputError } from '@/lib/services/ServiceLogService';
 
 // ============================================
 // GET /api/dashboard/service-logs
@@ -26,6 +27,7 @@ export async function GET(request: NextRequest) {
         const type = sp.get('type');
         const priority = sp.get('priority');
         const assignedTo = sp.get('assigned_to');
+        const managerName = sp.get('manager');
         const customerId = sp.get('customer_id');
         const channel = sp.get('channel');
         const search = sp.get('search')?.trim() || '';
@@ -40,6 +42,7 @@ export async function GET(request: NextRequest) {
             if (type) q = q.eq('type', type);
             if (priority) q = q.eq('priority', priority);
             if (assignedTo) q = q.eq('assigned_to', assignedTo);
+            if (managerName) q = q.eq('manager_name', managerName);
             if (customerId) q = q.eq('customer_id', customerId);
             if (channel) q = q.eq('channel', channel);
 
@@ -67,71 +70,15 @@ export async function GET(request: NextRequest) {
 
 // ============================================
 // POST /api/dashboard/service-logs
-// Шинэ хүсэлт/гомдол нээх
+// Шинэ хүсэлт/гомдол нээх — хатуу allow-list, хариуцагч менежерийг ServiceLogService тогтооно.
 // ============================================
 export const POST = withRoute({ module: 'customer-service', access: 'write', error: 'Хүсэлт бүртгэхэд алдаа гарлаа' }, async ({ request, shop: authShop }) => {
-    const body = await request.json().catch(() => ({}));
-    const supabase = supabaseAdmin();
-
-    if (!body.subject || typeof body.subject !== 'string' || body.subject.length > 255) {
-        return NextResponse.json({ error: 'Гарчиг (subject) шаардлагатай (255 хүртэл тэмдэгт)' }, { status: 400 });
-    }
-    // DB CHECK constraint-тай таарахгүй утга 500 өгдөг байсан — урьдчилан шалгана.
-    const SL_TYPES = ['inquiry', 'complaint', 'maintenance', 'handover', 'payment', 'other'];
-    const SL_PRIORITIES = ['low', 'medium', 'high', 'urgent'];
-    const SL_STATUSES = ['open', 'in_progress', 'resolved', 'closed'];
-    if (body.type !== undefined && !SL_TYPES.includes(body.type)) {
-        return NextResponse.json({ error: `Буруу төрөл. Боломжтой: ${SL_TYPES.join(', ')}` }, { status: 400 });
-    }
-    if (body.priority !== undefined && !SL_PRIORITIES.includes(body.priority)) {
-        return NextResponse.json({ error: `Буруу чухлал. Боломжтой: ${SL_PRIORITIES.join(', ')}` }, { status: 400 });
-    }
-    if (body.status !== undefined && !SL_STATUSES.includes(body.status)) {
-        return NextResponse.json({ error: `Буруу төлөв. Боломжтой: ${SL_STATUSES.join(', ')}` }, { status: 400 });
-    }
-
-    // Тэмдэглэгчийн нэрийг автоматаар тогтоох (assigned_to өгөгдөөгүй бол)
-    let actor: string | null = body.assigned_to || null;
-    if (!actor) {
-        const uid = await getUserId();
-        if (uid) {
-            const { data: prof } = await supabase
-                .from('user_profiles')
-                .select('full_name')
-                .eq('id', uid)
-                .maybeSingle();
-            actor = prof?.full_name || null;
-        }
-    }
-
-    const { data, error } = await supabase
-        .from('service_logs')
-        .insert({
-            shop_id: authShop.id,
-            contract_id: body.contract_id || null,
-            customer_id: body.customer_id || null,
-            customer_name: body.customer_name || null,
-            customer_phone: body.customer_phone || null,
-            type: body.type || 'inquiry',
-            priority: body.priority || 'medium',
-            subject: body.subject,
-            description: body.description || null,
-            status: body.status || 'open',
-            assigned_to: actor,
-        })
-        .select()
-        .single();
-
-    if (error) throw error;
-
-    // channel — 20260630150000 migration хэрэгжээгүй байж болзошгүй тул
-    // best-effort (үндсэн insert-ийг унагаахгүйгээр тусад нь шинэчилнэ).
-    if (body.channel) {
-        await supabase.from('service_logs').update({ channel: body.channel }).eq('id', data.id);
-    }
-
+    const parsed = CreateServiceLogSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) return NextResponse.json({ error: serviceLogInputError(parsed.error) }, { status: 400 });
+    const result = await createServiceLog(supabaseAdmin(), { shopId: authShop.id, userId: await getUserId(), input: parsed.data });
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
     return NextResponse.json(
-        { log: data, message: 'Хүсэлт амжилттай бүртгэлээ' },
+        { log: result.data, message: 'Хүсэлт амжилттай бүртгэлээ' },
         { status: 201 }
     );
 });

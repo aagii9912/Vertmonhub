@@ -78,6 +78,13 @@ describe('Facebook Lead Ads webhook ingest', () => {
         expect(empty.tables.leads[0].project_id).toBeNull();
     });
 
+    it('stores a lead without a name as anonymous instead of a placeholder', async () => {
+        graph['9010'] = [graphLead('9010', { field_data: [{ name: 'phone_number', values: ['99112233'] }] })];
+        const db = seededDb();
+        expect((await run(db, webhookBody('9010'))).ingested).toBe(1);
+        expect(db.tables.leads[0]).toMatchObject({ customer_name: null, customer_phone: '99112233' });
+    });
+
     it('does not fetch, insert or record again when Meta re-delivers a saved lead', async () => {
         const db = seededDb();
         await run(db, webhookBody('9005'));

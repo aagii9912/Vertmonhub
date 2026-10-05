@@ -128,6 +128,10 @@ function OperationsReportContent() {
                             <header className="flex h-10 items-center border-b border-border px-3.5"><h2 className="text-[12.5px] font-semibold text-foreground">Хугацаанд шинээр орсон лид · {data.leads.newCount}</h2></header>
                             <div className="p-3.5">
                                 {data.leads.bySource.length ? <ul className="divide-y divide-border">{data.leads.bySource.map(row => <li key={row.source} className="flex justify-between py-2.5 text-sm"><span>{sourceLabel(row.source)}</span><span className="num font-medium">{row.count}</span></li>)}</ul> : <p className="text-sm text-muted-foreground">Сонгосон хугацаанд шинэ лид бүртгэгдээгүй.</p>}
+                                {!!data.leads.byCategory?.length && <>
+                                    <h3 className="mt-4 text-xs font-medium text-muted-foreground">Ангиллаар</h3>
+                                    <ul className="divide-y divide-border">{data.leads.byCategory.map(row => <li key={row.categoryId ?? 'none'} className="flex justify-between py-2.5 text-sm"><span>{row.name}</span><span className="num font-medium">{row.count}</span></li>)}</ul>
+                                </>}
                                 <Link href="/dashboard/reports/kpi" className="mt-3 inline-flex items-center gap-1 text-sm text-brand-strong print:hidden">Ажилтны сарын хийсэн ажлын тайлан<ArrowUpRight className="size-4" /></Link>
                             </div>
                         </section>

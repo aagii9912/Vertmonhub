@@ -4,14 +4,14 @@ import { listErpSnapshots, loadErpDatasets, snapshotRecords } from '@/lib/erp/sn
 import { ACTIVE_STATUSES } from '@/lib/leads/labels';
 import { getLeadWorkQueues } from '@/lib/leads/work-queue';
 import { fetchAllRows } from '@/lib/utils/pagination';
-import { ubMonthRange } from '@/lib/utils/date';
 import { scoreKpi, type KpiActuals, type KpiItemKey } from './kpi';
+import { readDailyTargets } from './activity';
+import { loadManagerActivity } from './activity-load';
 
 const DAY = 86_400_000;
 const shift = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY).toISOString().slice(0, 10);
 
-type KpiRow = { manager_name: string; plans: Record<string, number>; manual: Record<string, number>; review: { management?: number | null; note?: string } };
-type ViewingRow = { sales_manager_name: string | null };
+type KpiRow = { manager_name: string; plans: Record<string, number>; manual: Record<string, number | null>; daily: unknown; review: { management?: number | null; note?: string } };
 type LeadRow = { sales_manager_name: string | null; status: string; last_contact_at: string | null; next_followup_at: string | null; viewing_scheduled_at: string | null; created_at: string };
 
 /**
@@ -20,12 +20,14 @@ type LeadRow = { sales_manager_name: string | null; status: string; last_contact
  *  - гэрээний дүн: сарын дараах 7 хоногийн доторх хамгийн сүүлийн гэрээний snapshot;
  *  - орсон мөнгө, хоцролтын бууралт: сарын эхний өдөр хүртэлх snapshot ↔ дээрх snapshot.
  * Snapshot дутуу бол тухайн үзүүлэлт `null` (0 биш).
+ * CRM-ийн идэвх (шинэ харилцагчтай уулзалт, дуудлага, санал хүсэлтийн SLA) нь өдрийн идэвхийн
+ * тайлантай (loadManagerActivity) нэг дүрмээр тооцогдоно. Дуудлага = гараар оруулсан тоо ?? CRM (нэмэхгүй).
  */
 export async function loadSalesKpi(db: SupabaseClient, options: { shopId: string; year: number; month: number; only?: string | null; now?: Date }) {
     const { shopId, year, month } = options;
     const firstDay = `${year}-${String(month).padStart(2, '0')}-01`;
     const nextFirst = month === 12 ? `${year + 1}-01-01` : `${year}-${String(month + 1).padStart(2, '0')}-01`;
-    const { start, end } = ubMonthRange(year, month - 1);
+    const now = options.now ?? new Date();
 
     const metas = await listErpSnapshots(db, shopId, shift(nextFirst, 6));
     const endMeta = metas.find(meta => meta.kind === 'sales') ?? null;
@@ -34,12 +36,10 @@ export async function loadSalesKpi(db: SupabaseClient, options: { shopId: string
     const endSales = snapshotRecords(endMeta, datasets, parseErpSale);
     const startSales = snapshotRecords(startMeta, datasets, parseErpSale);
 
-    const [rosterResult, kpiResult, viewings, leads] = await Promise.all([
+    const [rosterResult, kpiResult, activity, leads] = await Promise.all([
         db.from('sales_managers').select('name, is_active').eq('shop_id', shopId),
-        db.from('sales_kpi_months').select('manager_name, plans, manual, review').eq('shop_id', shopId).eq('year', year).eq('month', month),
-        fetchAllRows<ViewingRow>((from, to) => db.from('property_viewings').select('sales_manager_name')
-            .eq('shop_id', shopId).eq('status', 'completed').eq('meeting_type', 'new_customer').is('deleted_at', null)
-            .gte('scheduled_at', start.toISOString()).lt('scheduled_at', end.toISOString()).order('id').range(from, to)),
+        db.from('sales_kpi_months').select('manager_name, plans, manual, daily, review').eq('shop_id', shopId).eq('year', year).eq('month', month),
+        loadManagerActivity(db, { shopId, from: firstDay, to: shift(nextFirst, -1), group: 'month', only: options.only ?? null, now }),
         fetchAllRows<LeadRow>((from, to) => db.from('leads').select('sales_manager_name, status, last_contact_at, next_followup_at, viewing_scheduled_at, created_at')
             .eq('shop_id', shopId).is('deleted_at', null).in('status', [...ACTIVE_STATUSES]).not('sales_manager_name', 'is', null).order('id').range(from, to)),
     ]);
@@ -66,9 +66,8 @@ export async function loadSalesKpi(db: SupabaseClient, options: { shopId: string
                 overdue.set(sale.manager, (overdue.get(sale.manager) ?? 0) + Math.max(0, prior.overdue - sale.overdue));
         }
     }
-    const meetingsByManager = byManager(viewings, row => row.sales_manager_name);
+    const activityByManager = new Map(activity.managers.map(row => [row.manager, row.totals]));
     const leadsByManager = byManager(leads, row => row.sales_manager_name);
-    const now = options.now ?? new Date();
 
     const names = new Set<string>([
         ...(rosterResult.data ?? []).filter(row => row.is_active).map(row => row.name as string),
@@ -79,13 +78,16 @@ export async function loadSalesKpi(db: SupabaseClient, options: { shopId: string
         const row = kpiRows.get(manager);
         const managerLeads = leadsByManager.get(manager) ?? [];
         const onTime = managerLeads.filter(lead => !getLeadWorkQueues(lead, now).includes('overdue')).length;
+        const crm = activityByManager.get(manager);
+        const manualCalls = typeof row?.manual?.calls_chats === 'number' ? row.manual.calls_chats : null;
         const actuals: KpiActuals = {
             contract_amount: endSales ? (salesByManager.get(manager) ?? []).reduce((sum, sale) => sum + (sale.total ?? 0), 0) : null,
             cash_collected: endSales && startSales ? cash.get(manager) ?? 0 : null,
             overdue_collected: endSales && startSales ? overdue.get(manager) ?? 0 : null,
-            new_meetings: (meetingsByManager.get(manager) ?? []).length,
-            calls_chats: typeof row?.manual?.calls_chats === 'number' ? row.manual.calls_chats : null,
+            new_meetings: crm?.meetingsNew ?? 0,
+            calls_chats: manualCalls ?? crm?.calls ?? 0,
             followup: managerLeads.length ? Math.round(onTime / managerLeads.length * 1000) / 10 : null,
+            service_resolution: crm?.requests.onTimePct ?? null,
         };
         const plans = Object.fromEntries(Object.entries(row?.plans ?? {}).filter(([, value]) => typeof value === 'number')) as Partial<Record<KpiItemKey, number>>;
         return {
@@ -94,7 +96,9 @@ export async function loadSalesKpi(db: SupabaseClient, options: { shopId: string
             contracts: (salesByManager.get(manager) ?? []).length,
             review: { management: row?.review?.management ?? null, note: row?.review?.note ?? '' },
             plans,
-            manual: { calls_chats: actuals.calls_chats ?? null },
+            manual: { calls_chats: manualCalls },
+            crm: { calls: crm?.calls ?? 0, requests: crm?.requests ?? null },
+            daily: readDailyTargets(row?.daily),
             ...scoreKpi({ plans, actuals, management: row?.review?.management ?? null }),
         };
     });

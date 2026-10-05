@@ -20,12 +20,14 @@ import {
     Download,
     PieChart,
     Building2,
+    Tags,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { dashboardFetch, dashboardJson } from '@/lib/api/dashboardFetch';
 import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
-import { sourceLabel } from '@/lib/leads/labels';
+import { UNCATEGORIZED_LABEL, leadCategoryLabel, sourceLabel } from '@/lib/leads/labels';
+import { useLeadCategories } from '@/hooks/useLeads';
 import { ubDateStr } from '@/lib/utils/date';
 
 interface LeadStats {
@@ -40,6 +42,13 @@ interface SourceData {
     count: number;
     percentage: number;
     barClass: string;
+}
+
+/** Ангиллаар (id; нэрийг төслийн ангиллын жагсаалтаас). null = ангилалгүй. */
+interface CategoryData {
+    categoryId: string | null;
+    leads: number;
+    won: number;
 }
 
 interface ProjectData {
@@ -64,9 +73,10 @@ interface LeadsReportData {
     stats: LeadStats;
     sourceData: SourceData[];
     projectData: ProjectData[];
+    categoryData: CategoryData[];
 }
 
-const EMPTY_REPORT: LeadsReportData = { stats: { total: 0, won: 0, inProgress: 0, conversionRate: 0 }, sourceData: [], projectData: [] };
+const EMPTY_REPORT: LeadsReportData = { stats: { total: 0, won: 0, inProgress: 0, conversionRate: 0 }, sourceData: [], projectData: [], categoryData: [] };
 
 async function fetchLeadsReport(period: Period): Promise<LeadsReportData> {
     // Сонгосон хугацааны эхлэлийг тооцоолно
@@ -129,7 +139,17 @@ async function fetchLeadsReport(period: Period): Promise<LeadsReportData> {
         .sort((a, b) => b.leads - a.leads)
         .slice(0, 5);
 
-    return { stats, sourceData, projectData };
+    const categoryMap = new Map<string | null, CategoryData>();
+    for (const lead of leads) {
+        const categoryId: string | null = lead.category_id ?? null;
+        const row = categoryMap.get(categoryId) ?? { categoryId, leads: 0, won: 0 };
+        row.leads++;
+        if (lead.status === 'closed_won') row.won++;
+        categoryMap.set(categoryId, row);
+    }
+    const categoryData = [...categoryMap.values()].sort((a, b) => b.leads - a.leads);
+
+    return { stats, sourceData, projectData, categoryData };
 }
 
 export default function LeadsReport() {
@@ -146,7 +166,8 @@ export default function LeadsReport() {
         staleTime: 0,
         refetchOnWindowFocus: false,
     });
-    const { stats, sourceData, projectData } = data ?? EMPTY_REPORT;
+    const { stats, sourceData, projectData, categoryData } = data ?? EMPTY_REPORT;
+    const { data: categories = [] } = useLeadCategories();
     const [exporting, setExporting] = useState(false);
 
     async function exportExcel() {
@@ -352,6 +373,34 @@ export default function LeadsReport() {
                     </div>
                 )}
             </div>
+
+            {/* Ангиллаар — төсөлд ангилал тохируулсан үед */}
+            {categories.length > 0 && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Tags className="w-5 h-5 text-brand" />
+                            Ангиллаар
+                        </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                        <ul className="divide-y divide-border" aria-label="Лидийн ангиллын задаргаа">
+                            {categoryData.map((item) => (
+                                <li key={item.categoryId ?? 'none'} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                                    <span className={cn('min-w-0 truncate', item.categoryId ? 'text-foreground' : 'text-muted-foreground')}>
+                                        {item.categoryId ? leadCategoryLabel(categories, item.categoryId, { markArchived: true }) : UNCATEGORIZED_LABEL}
+                                    </span>
+                                    <span className="flex shrink-0 gap-4 text-xs text-muted-foreground">
+                                        <span className="num">Лид: <span className="font-medium text-foreground">{item.leads}</span></span>
+                                        <span className="num text-status-success">Амжилттай: {item.won}</span>
+                                        <span className="num">{item.leads ? `${((item.won / item.leads) * 100).toFixed(1)}%` : '—'}</span>
+                                    </span>
+                                </li>
+                            ))}
+                        </ul>
+                    </CardContent>
+                </Card>
+            )}
 
             {/* Performance by Project */}
             <Card>

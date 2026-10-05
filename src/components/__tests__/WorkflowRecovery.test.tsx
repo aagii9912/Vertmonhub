@@ -5,10 +5,12 @@ import { DirectorDashboard } from '../dashboard/director/DirectorDashboard';
 import { LeadPanel } from '../leads/LeadPanel';
 import { QuickCreateSheet } from '../dashboard/QuickCreateSheet';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
+import { ANONYMOUS_LEAD_CONTACT, ANONYMOUS_LEAD_LABEL, LEAD_NAME_OR_ANONYMOUS } from '@/lib/leads/labels';
 
 const mocks = vi.hoisted(() => ({
     refetch: vi.fn(), push: vi.fn(), mutate: vi.fn(), enqueue: vi.fn(), isNetworkError: vi.fn(), toastError: vi.fn(),
     managers: vi.fn(),
+    categories: [] as { id: string; name: string; tone: string; is_active: boolean }[],
     role: 'viewer', update: vi.fn(),
     myStats: { data: undefined as unknown, isError: true },
     detail: { data: undefined as unknown, isLoading: false, isError: true, error: new Error('Лид олдсонгүй'), isFetching: false },
@@ -22,14 +24,20 @@ vi.mock('@/lib/api/dashboardFetch', () => ({ dashboardMutate: (...args: unknown[
 vi.mock('@/lib/offline/outbox', () => ({ enqueue: (...args: unknown[]) => mocks.enqueue(...args), isNetworkError: () => mocks.isNetworkError() }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: (...args: unknown[]) => mocks.toastError(...args) } }));
 vi.mock('@/hooks/useMyStats', () => ({ useMyStats: () => ({ ...mocks.myStats, isLoading: false, error: new Error('Өгөгдөл татаж чадсангүй'), refetch: mocks.refetch }) }));
+vi.mock('@/hooks/useManagerActivity', () => ({ useManagerActivity: () => ({ data: undefined, isPending: false, refetch: mocks.refetch }) }));
 vi.mock('@/hooks/useDirector', () => ({ useDirector: () => ({ data: undefined, isLoading: false, isError: true, error: new Error('Өгөгдөл татаж чадсангүй'), refetch: mocks.refetch }) }));
 vi.mock('@/hooks/useLeads', () => ({
     useLeadProjects: () => ({ data: [{ id: 'mandala', name: 'Mandala Garden', status: 'active' }, { id: 'elysium', name: 'Elysium', status: 'active' }], isLoading: false }),
     useManagers: (...args: unknown[]) => { mocks.managers(...args); return { data: [] }; },
     useLeadDetail: () => ({ ...mocks.detail, refetch: mocks.refetch }),
     useUpdateLead: () => ({ mutate: mocks.update }), useAddLeadActivity: () => ({ mutateAsync: vi.fn() }),
+    useLeadCategories: () => ({ data: mocks.categories }),
 }));
-vi.mock('../leads/pickers', () => ({ StatusPicker: () => null, ManagerPicker: () => null }));
+vi.mock('../leads/pickers', () => ({
+    StatusPicker: () => null, ManagerPicker: () => null,
+    CategoryPicker: ({ onChange, disabled }: { onChange: (id: string | null) => void; disabled?: boolean }) =>
+        <button type="button" disabled={disabled} onClick={() => onChange('investor')}>Ангилал сонгох</button>,
+}));
 vi.mock('../leads/LeadWorkActions', () => ({ LeadWorkActions: () => null }));
 
 beforeEach(() => {
@@ -39,6 +47,7 @@ beforeEach(() => {
     mocks.detail.data = undefined;
     mocks.detail.isError = true;
     mocks.role = 'viewer';
+    mocks.categories = [];
     mocks.isNetworkError.mockReturnValue(false);
     mocks.mutate.mockResolvedValue({ lead: { id: 'new-lead' } });
 });
@@ -128,6 +137,108 @@ describe('workflow error and recovery states', () => {
         await waitFor(() => expect(mocks.mutate).toHaveBeenCalledWith('/api/dashboard/leads', 'POST', expect.objectContaining({ project_id: 'mandala', customer_name: 'Болд' })));
     });
 
+    it('asks for a name or the explicit anonymous option', async () => {
+        render(<QuickCreateSheet />);
+        act(() => openQuickCreate('lead'));
+        await screen.findByPlaceholderText('Ж: Г. Энхжин');
+        fireEvent.change(screen.getByRole('combobox', { name: 'Төсөл' }), { target: { value: 'mandala' } });
+        fireEvent.click(screen.getByRole('button', { name: /^Хадгалах/ }));
+        expect(mocks.toastError).toHaveBeenCalledWith(LEAD_NAME_OR_ANONYMOUS);
+        expect(mocks.mutate).not.toHaveBeenCalled();
+    });
+
+    it('saves an anonymous lead with a phone and never sends the display label as a name', async () => {
+        render(<QuickCreateSheet />);
+        act(() => openQuickCreate('lead'));
+        const input = await screen.findByPlaceholderText('Ж: Г. Энхжин');
+        fireEvent.change(input, { target: { value: 'Болд' } });
+        fireEvent.change(screen.getByRole('combobox', { name: 'Төсөл' }), { target: { value: 'mandala' } });
+        fireEvent.click(screen.getByRole('checkbox', { name: /Нэр тодорхойгүй/ }));
+        expect(input).toBeDisabled();
+        expect(input).toHaveValue('');
+        expect(input).toHaveAttribute('placeholder', ANONYMOUS_LEAD_LABEL);
+
+        fireEvent.click(screen.getByRole('button', { name: /^Хадгалах/ }));
+        expect(mocks.toastError).toHaveBeenCalledWith(ANONYMOUS_LEAD_CONTACT);
+        expect(mocks.mutate).not.toHaveBeenCalled();
+
+        fireEvent.change(screen.getByPlaceholderText('9911 2233'), { target: { value: '9911 2233' } });
+        fireEvent.click(screen.getByRole('button', { name: /^Хадгалах/ }));
+        await waitFor(() => expect(mocks.mutate).toHaveBeenCalledWith('/api/dashboard/leads', 'POST', expect.objectContaining({
+            project_id: 'mandala', customer_name: null, anonymous: true, customer_phone: '9911 2233',
+        })));
+    });
+
+    it('labels an offline anonymous lead with the anonymous display name', async () => {
+        mocks.mutate.mockRejectedValue(new TypeError('offline'));
+        mocks.isNetworkError.mockReturnValue(true);
+        render(<QuickCreateSheet />);
+        act(() => openQuickCreate('lead'));
+        await screen.findByPlaceholderText('Ж: Г. Энхжин');
+        fireEvent.change(screen.getByRole('combobox', { name: 'Төсөл' }), { target: { value: 'elysium' } });
+        fireEvent.click(screen.getByRole('checkbox', { name: /Нэр тодорхойгүй/ }));
+        fireEvent.change(screen.getByPlaceholderText('9911 2233'), { target: { value: '99112233' } });
+        fireEvent.click(screen.getByRole('button', { name: /^Хадгалах/ }));
+        await waitFor(() => expect(mocks.enqueue).toHaveBeenCalledWith(
+            expect.objectContaining({ label: `Лид · ${ANONYMOUS_LEAD_LABEL}`, body: expect.objectContaining({ customer_name: null, anonymous: true }) }),
+            { userId: 'manager-a', shopId: 'shop-a' },
+        ));
+    });
+
+    it('shows the anonymous label and lets a writer add the name later', () => {
+        mocks.detail.isError = false;
+        mocks.detail.data = { lead: { id: 'lead', project_id: 'mandala', customer_name: null, customer_phone: '99112233', source: 'phone', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
+        render(<LeadPanel leadId="lead" canWrite={true} />);
+        expect(screen.getByRole('heading', { name: ANONYMOUS_LEAD_LABEL })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Нэр нэмэх' }));
+        const input = screen.getByRole('textbox', { name: 'Харилцагчийн нэр' });
+        fireEvent.change(input, { target: { value: ' ' } });
+        fireEvent.keyDown(input, { key: 'Enter' });
+        expect(mocks.update).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Нэр нэмэх' }));
+        fireEvent.change(screen.getByRole('textbox', { name: 'Харилцагчийн нэр' }), { target: { value: ' Г. Бат ' } });
+        fireEvent.keyDown(screen.getByRole('textbox', { name: 'Харилцагчийн нэр' }), { key: 'Enter' });
+        expect(mocks.update).toHaveBeenCalledWith({ id: 'lead', patch: { customer_name: 'Г. Бат' } }, expect.anything());
+    });
+
+    it('warns instead of silently dropping a placeholder name and saves the real name «Нэргүй»', () => {
+        mocks.detail.isError = false;
+        mocks.detail.data = { lead: { id: 'lead', project_id: 'mandala', customer_name: null, customer_phone: '99112233', source: 'phone', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
+        render(<LeadPanel leadId="lead" canWrite={true} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Нэр нэмэх' }));
+        fireEvent.change(screen.getByRole('textbox', { name: 'Харилцагчийн нэр' }), { target: { value: ANONYMOUS_LEAD_LABEL } });
+        fireEvent.keyDown(screen.getByRole('textbox', { name: 'Харилцагчийн нэр' }), { key: 'Enter' });
+        expect(mocks.toastError).toHaveBeenCalledWith(expect.stringContaining('жинхэнэ нэрийг'));
+        expect(mocks.update).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Нэр нэмэх' }));
+        fireEvent.change(screen.getByRole('textbox', { name: 'Харилцагчийн нэр' }), { target: { value: 'Нэргүй' } });
+        fireEvent.keyDown(screen.getByRole('textbox', { name: 'Харилцагчийн нэр' }), { key: 'Enter' });
+        expect(mocks.update).toHaveBeenCalledWith({ id: 'lead', patch: { customer_name: 'Нэргүй' } }, expect.anything());
+    });
+
+    it('lets a writer correct a named lead and ignores an unchanged name', () => {
+        mocks.detail.isError = false;
+        mocks.detail.data = { lead: { id: 'lead', project_id: 'mandala', customer_name: 'Болд', source: 'phone', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
+        render(<LeadPanel leadId="lead" canWrite={true} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Болд' }));
+        const input = screen.getByRole('textbox', { name: 'Харилцагчийн нэр' });
+        expect(input).toHaveValue('Болд');
+        fireEvent.blur(input);
+        expect(mocks.update).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: 'Болд' }));
+        fireEvent.change(screen.getByRole('textbox', { name: 'Харилцагчийн нэр' }), { target: { value: 'Болд Бат' } });
+        fireEvent.blur(screen.getByRole('textbox', { name: 'Харилцагчийн нэр' }));
+        expect(mocks.update).toHaveBeenCalledWith({ id: 'lead', patch: { customer_name: 'Болд Бат' } }, expect.anything());
+    });
+
+    it('does not offer name editing without write access', () => {
+        mocks.detail.isError = false;
+        mocks.detail.data = { lead: { id: 'lead', project_id: 'mandala', customer_name: null, source: 'phone', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
+        render(<LeadPanel leadId="lead" canWrite={false} />);
+        expect(screen.getByRole('heading', { name: ANONYMOUS_LEAD_LABEL })).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: 'Нэр нэмэх' })).not.toBeInTheDocument();
+    });
+
     it('requests only managers in the selected lead project', () => {
         mocks.detail.isError = false;
         mocks.detail.data = { lead: { id: 'lead', project_id: 'elysium', customer_name: 'Болд', source: 'other', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
@@ -151,5 +262,44 @@ describe('workflow error and recovery states', () => {
         mocks.detail.data = { lead: { id: 'lead', project_id: 'mandala', customer_name: 'Болд', source: 'other', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
         render(<LeadPanel leadId="lead" canWrite={true} />);
         expect(screen.queryByRole('combobox', { name: 'Лидийн төсөл' })).not.toBeInTheDocument();
+    });
+    it('offers only active lead categories in quick create and sends the chosen one', async () => {
+        mocks.categories = [
+            { id: 'investor', name: 'Хөрөнгө оруулагч', tone: 'success', is_active: true },
+            { id: 'old', name: 'Хуучин ангилал', tone: 'neutral', is_active: false },
+        ];
+        render(<QuickCreateSheet />);
+        act(() => openQuickCreate('lead'));
+        fireEvent.change(await screen.findByPlaceholderText('Ж: Г. Энхжин'), { target: { value: 'Болд' } });
+        fireEvent.change(screen.getByRole('combobox', { name: 'Төсөл' }), { target: { value: 'mandala' } });
+        expect(screen.queryByRole('button', { name: 'Хуучин ангилал' })).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Хөрөнгө оруулагч' }));
+        expect(screen.getByRole('button', { name: 'Хөрөнгө оруулагч' })).toHaveAttribute('aria-pressed', 'true');
+        fireEvent.click(screen.getByRole('button', { name: /^Хадгалах/ }));
+        await waitFor(() => expect(mocks.mutate).toHaveBeenCalledWith('/api/dashboard/leads', 'POST', expect.objectContaining({ category_id: 'investor' })));
+    });
+
+    it('sends no category and hides the field when the project has none', async () => {
+        render(<QuickCreateSheet />);
+        act(() => openQuickCreate('lead'));
+        fireEvent.change(await screen.findByPlaceholderText('Ж: Г. Энхжин'), { target: { value: 'Болд' } });
+        fireEvent.change(screen.getByRole('combobox', { name: 'Төсөл' }), { target: { value: 'mandala' } });
+        expect(screen.queryByRole('group', { name: 'Ангилал' })).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /^Хадгалах/ }));
+        await waitFor(() => expect(mocks.mutate).toHaveBeenCalledWith('/api/dashboard/leads', 'POST', expect.objectContaining({ category_id: null })));
+    });
+
+    it('shows the lead category row and saves a new category', () => {
+        mocks.categories = [{ id: 'investor', name: 'Хөрөнгө оруулагч', tone: 'success', is_active: true }];
+        mocks.detail.isError = false;
+        mocks.detail.data = { lead: { id: 'lead', project_id: 'mandala', customer_name: 'Болд', source: 'phone', status: 'new', category_id: null, created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
+        const { unmount } = render(<LeadPanel leadId="lead" canWrite={true} />);
+        expect(screen.getByText('Ангилал')).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Ангилал сонгох' }));
+        expect(mocks.update).toHaveBeenCalledWith({ id: 'lead', patch: { category_id: 'investor' } }, expect.anything());
+        unmount();
+        mocks.categories = [];
+        render(<LeadPanel leadId="lead" canWrite={true} />);
+        expect(screen.queryByText('Ангилал')).not.toBeInTheDocument();
     });
 });

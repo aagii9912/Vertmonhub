@@ -172,7 +172,8 @@ export async function saveMetaLead(db: SupabaseClient, shopId: string, lead: Met
             shop_id: shopId,
             project_id: projectId,
             client_request_id: leadgenRequestId(lead.id),
-            customer_name: name || 'Facebook lead',
+            // Нэргүй бол null (нэргүй лид); insertLeadOnce нэрийг normalizeLeadName-ээр цэвэрлэнэ.
+            customer_name: name || null,
             customer_phone: phone,
             customer_email: email,
             notes,

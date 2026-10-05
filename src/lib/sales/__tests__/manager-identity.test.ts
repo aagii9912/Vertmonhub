@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { matchRosterEntry, resolveManagerIdentity, type RosterEntry } from '../manager-identity';
+import { matchRosterEntry, reportViewerRule, resolveManagerIdentity, resolveReportViewer, type RosterEntry } from '../manager-identity';
 
 const UID = '11111111-1111-1111-1111-111111111111';
 const OTHER_UID = '22222222-2222-2222-2222-222222222222';
@@ -91,5 +91,32 @@ describe('resolveManagerIdentity', () => {
         const identity = await resolveManagerIdentity(db('Өөр нэр', null, entries), 'shop', UID);
         expect(identity.managerName).toBeNull();
         expect(identity.isManager).toBe(false);
+    });
+});
+
+describe('reportViewerRule / resolveReportViewer', () => {
+    const db = (fullName: string | null, entries = roster) => ({ from: (table: string) => {
+        const query = {
+            select: () => query, eq: () => query,
+            maybeSingle: async () => ({ data: { full_name: fullName }, error: null }),
+            then: (resolve: (result: unknown) => unknown) => Promise.resolve({ data: table === 'sales_managers' ? entries : null, error: null }).then(resolve),
+        };
+        return query;
+    } }) as unknown as SupabaseClient;
+
+    it('keeps managers personal, needs reports for the team view and never lets admin bypass modules', () => {
+        expect(reportViewerRule({ role: 'sales_manager', modules: ['reports'], isManager: false })).toMatchObject({ personal: true, canViewTeam: false });
+        expect(reportViewerRule({ role: 'viewer', modules: ['reports'], isManager: true })).toMatchObject({ personal: true, canViewTeam: false });
+        expect(reportViewerRule({ role: 'admin', modules: ['dashboard'], isManager: true })).toMatchObject({ isAdmin: true, personal: false, canViewTeam: false });
+        expect(reportViewerRule({ role: 'super_admin', modules: [], isManager: false })).toMatchObject({ personal: false, canViewTeam: true });
+        expect(reportViewerRule({ role: 'marketing', modules: ['dashboard'], isManager: false })).toMatchObject({ personal: false, canViewTeam: false });
+        expect(reportViewerRule({ role: null, isManager: false })).toMatchObject({ role: 'viewer', canViewTeam: false });
+    });
+
+    it('resolves the identity once and exposes the canonical name', async () => {
+        const viewer = await resolveReportViewer(db('Өөр нэр'), 'shop', { userId: UID, role: 'viewer', modules: ['dashboard', 'reports'] });
+        expect(viewer).toMatchObject({ personal: true, canViewTeam: false, managerName: 'Батаа', userId: UID });
+        expect(await resolveReportViewer(db(null), 'shop', { userId: null, role: 'viewer', modules: ['reports'] }))
+            .toMatchObject({ personal: false, canViewTeam: true, managerName: null, identity: null });
     });
 });

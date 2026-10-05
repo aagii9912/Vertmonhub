@@ -1,40 +1,21 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
+import { getUserId } from '@/lib/auth/supabase-auth';
 import { withRoute } from '@/lib/api/route';
+import { UpdateServiceLogSchema, serviceLogInputError, updateServiceLog } from '@/lib/services/ServiceLogService';
 
 // ============================================
 // PATCH /api/dashboard/service-logs/[id]
-// Шийдвэрлэлт бүртгэх, status шинэчлэх
+// Төлөв, чухлал, хариуцагч, шийдвэрлэлт — хатуу allow-list; resolved_at-ийн
+// шилжилтийг ServiceLogService хариуцна (шийдвэрлэсэн → хаасан үед хэвээр, дахин нээхэд цэвэрлэнэ).
 // ============================================
 export const PATCH = withRoute<{ id: string }>({ module: 'customer-service', access: 'write', error: 'Хүсэлт шинэчлэхэд алдаа гарлаа' }, async ({ request, shop: authShop, params }) => {
     const { id } = await params;
-    const body = await request.json();
-    const supabase = supabaseAdmin();
-
-    const updates: Record<string, unknown> = {};
-
-    if (body.status) updates.status = body.status;
-    if (body.assigned_to !== undefined) updates.assigned_to = body.assigned_to;
-    if (body.resolution_notes !== undefined) updates.resolution_notes = body.resolution_notes;
-    if (body.satisfaction_rating !== undefined) updates.satisfaction_rating = body.satisfaction_rating;
-    if (body.priority) updates.priority = body.priority;
-
-    // status = resolved болвол resolved_at автомат тавих
-    if (body.status === 'resolved' || body.status === 'closed') {
-        updates.resolved_at = new Date().toISOString();
-    }
-
-    const { data, error } = await supabase
-        .from('service_logs')
-        .update(updates)
-        .eq('id', id)
-        .eq('shop_id', authShop.id)
-        .select()
-        .single();
-
-    if (error) throw error;
-
-    return NextResponse.json({ log: data, message: 'Хүсэлт шинэчлэгдлээ' });
+    const parsed = UpdateServiceLogSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) return NextResponse.json({ error: serviceLogInputError(parsed.error) }, { status: 400 });
+    const result = await updateServiceLog(supabaseAdmin(), { shopId: authShop.id, id, userId: await getUserId(), patch: parsed.data });
+    if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
+    return NextResponse.json({ log: result.data, message: 'Хүсэлт шинэчлэгдлээ' });
 });
 
 // ============================================

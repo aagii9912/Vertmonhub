@@ -23,6 +23,10 @@ const readDefinitions: ToolDefinition[] = [
         parameters: { type: SchemaType.OBJECT, properties: {} },
     },
     {
+        name: 'list_lead_categories', description: 'Энэ төслийн лидийн ангиллууд (харилцагчийн төрөл/зорилго: ж. хөрөнгө оруулагч, дилер) — нэр, тайлбар, архивласан эсэх. Лидэд ангилал тавих, ангиллаар шүүхээс өмнө яг нэрийг эндээс ав; ангилал зохиохгүй.',
+        parameters: { type: SchemaType.OBJECT, properties: {} },
+    },
+    {
         name: 'get_marketing_performance',
         description: 'Маркетингийн нэгдсэн самбар, албаны KPI-ийн зургаан ангиллын жин ба бодит нотолгоо, багийн гүйцэтгэл: төсөл/суваг/кампанит ажил/контентын Lead–Sales–Deal, өмнөх хугацааны харьцуулалт, маркетингийн менежерийн сарын зорилт, төсөв, зардал, хэтрэлт. Dashboard-ийн AI дүгнэлтэд энэ tool ашиглана. basis, quality, KPI-ийн дутуу шалгуурыг тайлбартаа хадгал; дутуу зорилтыг 0 гэж үзэхгүй. Qualified Lead, Site Visit, нийлбэр оноог таамгаар гаргахгүй.',
         parameters: { type: SchemaType.OBJECT, properties: {
@@ -81,7 +85,8 @@ const readDefinitions: ToolDefinition[] = [
             type: SchemaType.OBJECT,
             properties: {
                 status: { type: SchemaType.STRING, enum: LEAD_STATUSES, description: 'Лийдийн статус' },
-                source: { type: SchemaType.STRING, enum: ['messenger', 'instagram', 'website', 'referral', 'phone', 'other'], description: 'Эх үүсвэр' },
+                source: { type: SchemaType.STRING, enum: SOURCES, description: 'Эх үүсвэр' },
+                category: { type: SchemaType.STRING, description: 'Лидийн ангиллын яг нэр (list_lead_categories) эсвэл «Ангилалгүй»' },
                 urgency: { type: SchemaType.STRING, enum: ['urgent', 'normal', 'flexible'], description: 'Яаралтай эсэх' },
                 queue: { type: SchemaType.STRING, enum: ['unassigned', 'uncontacted', 'no_followup', 'overdue'], description: 'Хариуцагчгүй, холбоо бүртгээгүй, дараагийн алхамгүй, хугацаа хэтэрсэн лидүүд' },
                 manager_name: { type: SchemaType.STRING, description: 'Хариуцагчийн канон нэр (яг бүртгэлээр)' },
@@ -91,7 +96,7 @@ const readDefinitions: ToolDefinition[] = [
     },
     {
         name: 'get_lead_details',
-        description: 'Нэг лийдийн дэлгэрэнгүй мэдээллийг авах: харилцагчийн мэдээлэл, төсөв, сонирхол, тэмдэглэлүүд, холбогдох байр.',
+        description: 'Нэг лийдийн дэлгэрэнгүй мэдээллийг авах: харилцагчийн мэдээлэл, төсөв, сонирхол, тэмдэглэлүүд, холбогдох байр, менежерүүдийн холбогдсон түүх (manager_history: хэн хэзээ залгасан/уулзсан/үнийн санал өгсөн, хариуцагч, давхцал ба үнийн зөрүүний сануулга). Үнийн санал нь гэрээний дүн биш.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
@@ -121,7 +126,7 @@ const readDefinitions: ToolDefinition[] = [
             type: SchemaType.OBJECT,
             properties: {
                 status: { type: SchemaType.STRING, enum: ['active', 'closed'], description: 'Гэрээний төлөв (active=идэвхтэй, closed=хаагдсан)' },
-                customer_search: { type: SchemaType.STRING, description: 'Харилцагчийн нэр/утас/регистер дугаараар хайх' },
+                customer_search: { type: SchemaType.STRING, description: 'Харилцагчийн нэр/утас/регистер дугаараар хайх (шилжүүлсэн гэрээний өмнөх эзэмшигч ч орно)' },
                 contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар' },
                 sales_manager: { type: SchemaType.STRING, description: 'Борлуулагч менежерийн нэр' },
                 sales_channel: { type: SchemaType.STRING, description: 'Борлуулалтын суваг (ПРОПЕРТИС, БАРТЕР, ТҮРЭЭС гэх мэт)' },
@@ -134,13 +139,13 @@ const readDefinitions: ToolDefinition[] = [
     },
     {
         name: 'get_contract_details',
-        description: 'Нэг гэрээний бүх мэдээлэл авах: үнийн задаргаа (1-р үнэ, м²-ийн үнэ, нийт, төлсөн, үлдэгдэл), төлбөрийн нөхцөл, урьдчилгаа, гарын үсэг/ашиглалтын огноо, борлуулагч менежер, банкны/бартерын төлөв.',
+        description: 'Нэг гэрээний бүх мэдээлэл авах: үнийн задаргаа (1-р үнэ, м²-ийн үнэ, нийт, төлсөн, үлдэгдэл), төлбөрийн нөхцөл, урьдчилгаа, гарын үсэг/ашиглалтын огноо, борлуулагч менежер, банкны/бартерын төлөв, эзэмшигчийн түүх (шилжүүлэг/нэр засвар, transfers).',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 contract_id: { type: SchemaType.STRING, description: 'Гэрээний ID (UUID)' },
                 contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар' },
-                customer_phone: { type: SchemaType.STRING, description: 'Харилцагчийн утсаар (нэг гэрээ олдоно)' }
+                customer_phone: { type: SchemaType.STRING, description: 'Харилцагчийн утсаар (нэг гэрээ олдоно; өмнөх эзэмшигчийн утсаар ч олдоно)' }
             }
         }
     },
@@ -255,6 +260,15 @@ const readDefinitions: ToolDefinition[] = [
             manager: { type: SchemaType.STRING, description: 'Менежерийн нэр (өөрийн тайланд хоосон)' } } }
     },
     {
+        name: 'get_manager_activity',
+        description: 'Менежерүүдийн өдөр/7 хоног (Лхагва–Мягмар)/сарын идэвх: CRM-д бүртгэсэн дуудлага, болсон уулзалт (шинэ харилцагч, ирээгүй тусдаа), санал хүсэлтийг SLA-д шийдвэрлэсэн хувь, өдрийн зорилтын биелэлт. «Өнөөдөр хэдэн дуудлага хийв», «энэ 7 хоногт хэн зорилтоо биелүүлэв» г.м. Менежер зөвхөн өөрийнхийг харна.',
+        parameters: { type: SchemaType.OBJECT, properties: {
+            from: { type: SchemaType.STRING, description: 'Эхлэх өдөр YYYY-MM-DD (default: `to`-гийн, эсвэл өнөөдрийн өдөр/7 хоног/сарын эхэн)' },
+            to: { type: SchemaType.STRING, description: 'Дуусах өдөр YYYY-MM-DD (default: өнөөдөр — «9-р сарын 15-аас хойш» гэвэл зөвхөн from өг; нэг өдөр бол from = to); хамгийн ихдээ 92 хоног' },
+            group: { type: SchemaType.STRING, enum: ['day', 'week', 'month'], description: 'Бүлэглэл: day | week (Лхагва–Мягмар) | month (default: day)' },
+            manager: { type: SchemaType.STRING, description: 'Менежерийн бүртгэлийн яг нэр (зөвхөн багийн тайлан харах эрхтэй хэрэглэгчид); олдохгүй бол options-оос тодруул' } } }
+    },
+    {
         name: 'get_manager_performance',
         description: 'Бүх менежерийн гүйцэтгэлийн харьцуулалт: гэрээний тоо, борлуулалт, цуглуулалт, үлдэгдэл, цуглуулалтын %, багийн жилийн зорилт/гүйцэтгэл. Лидерборд, «хэн хамгийн сайн» асуултад.',
         parameters: { type: SchemaType.OBJECT, properties: {} }
@@ -333,7 +347,7 @@ const writeDefinitions: ToolDefinition[] = [
     },
     {
         name: 'add_lead_note',
-        description: 'Лийдэд тэмдэглэл нэмэх. ЗӨВХӨН Super Admin.',
+        description: 'Лийдэд тэмдэглэл нэмэх — лидийн түүхэнд нэвтэрсэн хэрэглэгчийн нэрээр хадгалагдана.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
@@ -388,23 +402,25 @@ const writeDefinitions: ToolDefinition[] = [
     },
     {
         name: 'create_lead',
-        description: 'Шинэ лид үүсгэх. Нэвтэрсэн ажилтан идэвхтэй борлуулалтын менежер бол өөрт нь хариуцуулна; бусад ажилтан үүсгэвэл хариуцагчгүй үлдээнэ. Үйлдэл хийхээс өмнө баталгаажуулалт авна.',
+        description: 'Шинэ лид үүсгэх. Нэвтэрсэн ажилтан идэвхтэй борлуулалтын менежер бол өөрт нь хариуцуулна; бусад ажилтан үүсгэвэл хариуцагчгүй үлдээнэ. Харилцагч нэрээ хэлээгүй бол нэр зохиохгүй: anonymous=true, утас эсвэл и-мэйлтэй. Үйлдэл хийхээс өмнө баталгаажуулалт авна.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 project_id: { type: SchemaType.STRING, description: 'Төслийн UUID; list_lead_projects-оос авч хэрэглэгчээр сонгуулна' },
-                customer_name: { type: SchemaType.STRING, description: 'Харилцагчийн нэр' },
+                customer_name: { type: SchemaType.STRING, description: 'Харилцагчийн нэр; мэдэгдэхгүй бол орхиж anonymous=true. Нэр зохиохгүй' },
+                anonymous: { type: SchemaType.BOOLEAN, description: 'Харилцагч нэрээ хэлээгүй үед true (нэргүй лид); утас (8+ орон) эсвэл и-мэйл заавал' },
                 customer_phone: { type: SchemaType.STRING, description: 'Утасны дугаар' },
                 customer_email: { type: SchemaType.STRING, description: 'Имэйл' },
                 status: { type: SchemaType.STRING, enum: ACTIVE_STATUSES, description: 'Идэвхтэй төлөв (default: new); үүсгэхдээ хаахгүй' },
                 source: { type: SchemaType.STRING, enum: SOURCES, description: 'Эх үүсвэр' },
+                category: { type: SchemaType.STRING, description: 'Лидийн ангилал (заавал биш): list_lead_categories-ийн яг нэр; хэрэглэгч хэлээгүй бол орхино, таамаглахгүй' },
                 budget_min: { type: SchemaType.NUMBER, description: 'Доод төсөв (MNT)' },
                 budget_max: { type: SchemaType.NUMBER, description: 'Дээд төсөв (MNT)' },
                 preferred_district: { type: SchemaType.STRING, description: 'Сонирхсон дүүрэг' },
                 preferred_rooms: { type: SchemaType.NUMBER, description: 'Сонирхсон өрөөний тоо' },
                 notes: { type: SchemaType.STRING, description: 'Тэмдэглэл' }
             },
-            required: ['customer_name', 'project_id']
+            required: ['project_id']
         }
     },
     {
@@ -413,7 +429,7 @@ const writeDefinitions: ToolDefinition[] = [
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
-                name: { type: SchemaType.STRING, description: 'Харилцагчийн нэр' },
+                name: { type: SchemaType.STRING, description: 'Харилцагчийн жинхэнэ нэр («Нэргүй харилцагч» шошго биш)' },
                 phone: { type: SchemaType.STRING, description: 'Утас' },
                 email: { type: SchemaType.STRING, description: 'Имэйл' },
                 address: { type: SchemaType.STRING, description: 'Хаяг' },
@@ -447,7 +463,7 @@ const writeDefinitions: ToolDefinition[] = [
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
-                customer_name: { type: SchemaType.STRING, description: 'Харилцагчийн нэр' },
+                customer_name: { type: SchemaType.STRING, description: 'Худалдан авагчийн жинхэнэ нэр («Нэргүй харилцагч» шошго биш)' },
                 customer_phone: { type: SchemaType.STRING, description: 'Утас' },
                 total_price: { type: SchemaType.NUMBER, description: 'Нийт үнэ (MNT)' },
                 block_name: { type: SchemaType.STRING, description: 'Төсөл/блокийн нэр' },
@@ -459,6 +475,27 @@ const writeDefinitions: ToolDefinition[] = [
                 customer_id: { type: SchemaType.STRING, description: 'Холбогдох харилцагчийн ID' }
             },
             required: ['customer_name']
+        }
+    },
+    {
+        name: 'transfer_contract',
+        description: 'Гэрээг өөр хүний нэр дээр шилжүүлэх (kind=transfer) эсвэл ижил эзэмшигчийн нэрийг засах (kind=rename). Төлсөн дүн, төлбөрийн график, менежер, гэрээний огноо, дугаар хэвээр; түүх, аудит хадгалагдана. Шилжүүлэхэд шинэ эзэмшигчийн нэр, регистр, шалтгаан заавал — хэрэглэгчээс тодруул, бүү зохио. Нэр засвар регистрийг солихгүй (регистр өөр бол kind=transfer). Шилжүүлгийн хураамжийг энд биш add_contract_payment (receipt_kind=other)-оор бүртгэнэ. Баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                contract_id: { type: SchemaType.STRING, description: 'Гэрээний ID' },
+                contract_number: { type: SchemaType.STRING, description: 'Гэрээний дугаар' },
+                current_holder_name: { type: SchemaType.STRING, description: 'Одоогийн эзэмшигчийн нэрээр гэрээ хайх' },
+                kind: { type: SchemaType.STRING, enum: ['transfer', 'rename'], description: 'transfer = өөр хүнд шилжүүлэх, rename = ижил хүний нэр засах' },
+                customer_name: { type: SchemaType.STRING, description: 'Шинэ (эсвэл зассан) эзэмшигчийн бүтэн нэр' },
+                customer_last_name: { type: SchemaType.STRING, description: 'Овог' },
+                customer_first_name: { type: SchemaType.STRING, description: 'Нэр' },
+                customer_registration: { type: SchemaType.STRING, description: 'Шинэ эзэмшигчийн регистр/паспорт (transfer үед заавал; rename үед өгөхгүй)' },
+                customer_phone: { type: SchemaType.STRING, description: 'Шинэ эзэмшигчийн утас (rename үед зөвхөн хэрэглэгч утсаа солих гэвэл)' },
+                effective_date: { type: SchemaType.STRING, description: 'Шилжүүлсэн огноо YYYY-MM-DD (default өнөөдөр)' },
+                reason: { type: SchemaType.STRING, description: 'Шалтгаан / тэмдэглэл (transfer үед заавал)' }
+            },
+            required: ['kind', 'customer_name']
         }
     },
     {
@@ -534,6 +571,22 @@ const writeDefinitions: ToolDefinition[] = [
         }
     },
     {
+        name: 'log_price_quote',
+        description: 'Харилцагчид хэлсэн ҮНИЙН САНАЛЫГ лидийн менежерийн түүхэнд бүртгэх (₮ бүхэл дүн + байр/тоот). Гэрээний дүн, орлого, зорилт БИШ — менежерүүдийн үнийн зөрүүг илрүүлэхэд. Дүнг хэрэглэгчээс тодруул, бүү зохио. Үргэлж баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                lead_id: { type: SchemaType.STRING, description: 'Лидийн ID (мэдэгдэж байвал)' },
+                customer_name: { type: SchemaType.STRING, description: 'Лидийн нэрээр хайх' },
+                customer_phone: { type: SchemaType.STRING, description: 'Утасны дугаараар хайх' },
+                amount: { type: SchemaType.INTEGER, description: 'Санал болгосон үнэ, бүхэл төгрөг (жишээ: 450 сая → 450000000)' },
+                unit_label: { type: SchemaType.STRING, description: 'Байр/тоот, блок (заавал биш, жишээ: A-1203)' },
+                note: { type: SchemaType.STRING, description: 'Тайлбар (заавал биш, жишээ: хөнгөлөлтийн нөхцөл)' }
+            },
+            required: ['amount']
+        }
+    },
+    {
         name: 'set_followup',
         description: 'Лидийн дараагийн холбоо барих (follow-up) огноог тавих/цуцлах. «Өнөөдөр» дэлгэцийн залгах жагсаалтад гарна. Шууд гүйцэтгэгдэнэ.',
         parameters: {
@@ -545,6 +598,20 @@ const writeDefinitions: ToolDefinition[] = [
                 next_followup_at: { type: SchemaType.STRING, description: 'ISO 8601 огноо/цаг; цуцлах бол null/хоосон' },
                 note: { type: SchemaType.STRING, description: 'Тэмдэглэл (заавал биш)' }
             }
+        }
+    },
+    {
+        name: 'set_lead_category',
+        description: 'Лидэд ангилал тавих эсвэл цэвэрлэх. Ангиллын яг нэрийг list_lead_categories-оос ав; таарахгүй бол систем боломжтой нэрсийг буцаана — тэр үед хэрэглэгчээс тодруул. Лидийн түүхэнд бичигдэж шууд гүйцэтгэгдэнэ.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                lead_id: { type: SchemaType.STRING, description: 'Лидийн ID (мэдэгдэж байвал)' },
+                customer_name: { type: SchemaType.STRING, description: 'Лидийн нэрээр хайх' },
+                customer_phone: { type: SchemaType.STRING, description: 'Утасны дугаараар хайх' },
+                category: { type: SchemaType.STRING, description: 'Ангиллын яг нэр; цэвэрлэх бол «Ангилалгүй»' }
+            },
+            required: ['category']
         }
     },
     {
@@ -793,11 +860,13 @@ const deleteDefinitions: ToolDefinition[] = [
 const adminDefinitions: ToolDefinition[] = [
     {
         name: 'invite_user',
-        description: 'Шинэ хэрэглэгчийг түр нууц үгтэй үүсгэж, дүр (role) болон төслийн гишүүнчлэл онооно. Имэйл автоматаар илгээгдэхгүй — нэвтрэх мэдээлэл (имэйл+түр нууц үг+линк) буцаж ирэх тул админ тухайн хүнд дамжуулна. ЗӨВХӨН super_admin. Баталгаажуулалт авна.',
+        description: 'Шинэ хэрэглэгчийг түр нууц үгтэй үүсгэж, дүр (role) болон төслийн гишүүнчлэл онооно. Имэйл автоматаар илгээгдэхгүй — нэвтрэх мэдээлэл (имэйл+түр нууц үг+линк) буцаж ирэх тул админ тухайн хүнд дамжуулна. sales_manager-т бодит бүтэн нэр ЗААВАЛ (ERP-ийн «Борлуулалтын менежер» бичлэгтэй яг ижил; нэр бүү зохио — мэдэхгүй бол хэрэглэгчээс асуу). ЗӨВХӨН super_admin. Баталгаажуулалт авна.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 email: { type: SchemaType.STRING, description: 'Урих хэрэглэгчийн имэйл' },
+                full_name: { type: SchemaType.STRING, description: 'Бодит бүтэн нэр (кирилл). Борлуулалтын менежерт заавал; лид, KPI энэ нэрээр холбогдоно' },
+                phone: { type: SchemaType.STRING, description: 'Ажилтны утас, 8 оронтой (заавал биш; +976, зай, зураасыг систем хасна)' },
                 role: { type: SchemaType.STRING, description: 'Оноох дүр: admin, sales_manager, marketing, finance_manager, accountant, viewer гэх мэт (default: viewer)' },
                 shop_id: { type: SchemaType.STRING, description: 'Төслийн ID (default: одоогийн төсөл)' }
             },
@@ -806,12 +875,13 @@ const adminDefinitions: ToolDefinition[] = [
     },
     {
         name: 'assign_role',
-        description: 'Бүртгэлтэй хэрэглэгчид (имэйлээр) дүр оноох/солих. ЗӨВХӨН super_admin. Хэрэглэгчээс баталгаажуулалт авна.',
+        description: 'Бүртгэлтэй хэрэглэгчид (имэйлээр) дүр оноох/солих. sales_manager болгох бол тухайн төсөлд менежерийн бүртгэл, гишүүнчлэл хамт үүснэ. ЗӨВХӨН super_admin. Хэрэглэгчээс баталгаажуулалт авна.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 email: { type: SchemaType.STRING, description: 'Хэрэглэгчийн имэйл' },
-                role: { type: SchemaType.STRING, description: 'Шинэ дүр (role нэр)' }
+                role: { type: SchemaType.STRING, description: 'Шинэ дүр (role нэр)' },
+                shop_id: { type: SchemaType.STRING, description: 'sales_manager-ийн төслийн ID (default: одоогийн төсөл)' }
             },
             required: ['email', 'role']
         }

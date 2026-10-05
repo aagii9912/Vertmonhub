@@ -19,7 +19,8 @@ vi.mock('@/lib/sales/project-scope', async (original) => ({
     assertProjectManager: async () => undefined,
 }));
 
-import { insertLeadOnce, resolveStaffLead } from '../LeadService';
+import { insertLeadOnce, resolveLeadIdentity, resolveStaffLead } from '../LeadService';
+import { ANONYMOUS_LEAD_CONTACT, ANONYMOUS_LEAD_LABEL, LEAD_NAME_OR_ANONYMOUS } from '@/lib/leads/labels';
 import { UNRESTRICTED_SALES_SCOPE } from '@/lib/sales/project-scope';
 
 const db = { from: (table: string) => {
@@ -84,6 +85,17 @@ describe('resolveStaffLead', () => {
         expect(await resolveStaffLead(db, 'shop-1', { projectId: project, assignManager: 'Сараа' }, admin)).toMatchObject({ ok: true, sales_manager_name: 'Сараа' });
         expect(await resolveStaffLead(db, 'shop-1', { projectId: project, assignManager: 'Байхгүй' }, admin)).toMatchObject({ ok: false, status: 400 });
     });
+
+    it('accepts an optional active category of the same project shop', async () => {
+        const category = '00000000-0000-4000-8000-0000000000c1';
+        state.tables.lead_categories = [{ id: category, shop_id: 'shop-1', name: 'Бартер', tone: 'neutral', sort_order: 10, is_active: true }];
+        expect(await resolveStaffLead(db, 'shop-1', { projectId: project }, admin)).toMatchObject({ ok: true, category_id: null });
+        expect(await resolveStaffLead(db, 'shop-1', { projectId: project, category: { id: category } }, admin)).toMatchObject({ ok: true, category_id: category });
+        expect(await resolveStaffLead(db, 'shop-1', { projectId: project, category: { name: 'бартер' } }, admin)).toMatchObject({ ok: true, category_id: category });
+        expect(await resolveStaffLead(db, 'shop-2', { projectId: other, category: { id: category } }, admin)).toMatchObject({ ok: false, status: 400 });
+        expect(await resolveStaffLead(db, 'shop-1', { projectId: project, category: { name: 'Таамаг' } }, admin))
+            .toMatchObject({ ok: false, status: 400, error: expect.stringContaining('Боломжтой ангилал: Бартер') });
+    });
 });
 
 describe('insertLeadOnce', () => {
@@ -97,6 +109,13 @@ describe('insertLeadOnce', () => {
             .toEqual({ ok: false, conflict: true });
     });
 
+    it('normalizes every channel name so placeholders and the label are stored as anonymous', async () => {
+        await insertLeadOnce(db, { shop_id: 'shop-1', project_id: project, customer_name: 'Facebook lead' });
+        await insertLeadOnce(db, { shop_id: 'shop-1', project_id: project, customer_name: ` ${ANONYMOUS_LEAD_LABEL} ` });
+        await insertLeadOnce(db, { shop_id: 'shop-1', project_id: project, customer_name: '  Г.  Энхжин ' });
+        expect(state.tables.leads.map((lead) => lead.customer_name)).toEqual([null, null, 'Г. Энхжин']);
+    });
+
     it('resolves a concurrent unique violation and reports other errors', async () => {
         state.insertError = { code: '23505', message: 'duplicate key' };
         state.raceRow = { id: 'raced', shop_id: 'shop-1', project_id: project, client_request_id: requestId };
@@ -104,5 +123,28 @@ describe('insertLeadOnce', () => {
         state.insertError = { code: '23502', message: 'not null' };
         state.raceRow = null;
         expect(await insertLeadOnce(db, { shop_id: 'shop-1', project_id: project })).toMatchObject({ ok: false, conflict: false, error: { code: '23502' } });
+    });
+});
+
+describe('resolveLeadIdentity', () => {
+    it('requires a name unless the staff member explicitly chose anonymous', () => {
+        expect(resolveLeadIdentity({ customer_phone: '99112233' })).toEqual({ ok: false, status: 400, error: LEAD_NAME_OR_ANONYMOUS });
+        expect(resolveLeadIdentity({ customer_name: ANONYMOUS_LEAD_LABEL, customer_phone: '99112233' })).toMatchObject({ ok: false, error: LEAD_NAME_OR_ANONYMOUS });
+        expect(resolveLeadIdentity({ customer_name: '  Г.  Энхжин ', customer_phone: ' ' })).toEqual({
+            ok: true, customer_name: 'Г. Энхжин', customer_phone: null, customer_email: null,
+        });
+    });
+
+    it('stores an anonymous lead as a null name with a reachable phone or email', () => {
+        expect(resolveLeadIdentity({ anonymous: true, customer_phone: ' 9911 2233 ' })).toEqual({
+            ok: true, customer_name: null, customer_phone: '9911 2233', customer_email: null,
+        });
+        expect(resolveLeadIdentity({ anonymous: true, customer_email: 'bold@example.com' })).toMatchObject({ ok: true, customer_name: null, customer_email: 'bold@example.com' });
+        expect(resolveLeadIdentity({ anonymous: true, customer_name: 'Зохиосон нэр', customer_phone: '99112233' })).toMatchObject({ ok: true, customer_name: null });
+    });
+
+    it('rejects an anonymous lead without a way to reach the customer', () => {
+        expect(resolveLeadIdentity({ anonymous: true })).toEqual({ ok: false, status: 400, error: ANONYMOUS_LEAD_CONTACT });
+        expect(resolveLeadIdentity({ anonymous: true, customer_phone: '99-11', customer_email: 'bold@' })).toMatchObject({ ok: false, error: ANONYMOUS_LEAD_CONTACT });
     });
 });

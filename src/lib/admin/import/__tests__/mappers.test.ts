@@ -316,9 +316,22 @@ describe('mapLeadRow — leads хүснэгтийн жинхэнэ багану�
         expect(data).not.toHaveProperty('budget');
     });
 
-    it('нэр/утас дутууг алдаа болгоно', () => {
-        expect(mapLeadRow({ 'Утас': '99112233' }, 2).error).toContain('Нэр хоосон');
-        expect(mapLeadRow({ 'Нэр': 'Бат' }, 3).error).toContain('Утас хоосон');
+    it('нэргүй мөрийг null нэртэй (нэргүй лид), утасгүйг алдаа болгоно', () => {
+        expect(mapLeadRow({ 'Утас': '99112233' }, 2)).toMatchObject({ data: { customer_name: null, customer_phone: '99112233' } });
+        // Экспортын шошго/«-» буцаж импортлогдоход нэр болж хадгалагдахгүй.
+        expect(mapLeadRow({ 'Нэр': 'Нэргүй харилцагч', 'Утас': '99112233' }, 2).data?.customer_name).toBeNull();
+        expect(mapLeadRow({ 'Нэр': '-', 'Утас': '99112233' }, 2).data?.customer_name).toBeNull();
+        expect(mapLeadRow({ 'Нэр': 'Бат' }, 3).error).toContain('Утас хоосон (Бат)');
+        expect(mapLeadRow({}, 4).error).toBe('Мөр 4: Утас хоосон (Нэргүй харилцагч)');
+    });
+
+    it('нэргүй мөрөнд 8+ оронтой утас эсвэл и-мэйл шаардана (экспортын «-» утас)', () => {
+        expect(mapLeadRow({ 'Нэр': 'Нэргүй харилцагч', 'Утас': '-' }, 5).error).toBe('Мөр 5: Нэргүй мөрөнд утас (8+ орон) эсвэл и-мэйл заавал');
+        expect(mapLeadRow({ 'Утас': '9911' }, 6).error).toContain('Нэргүй мөрөнд');
+        expect(mapLeadRow({ 'Нэр': '-', 'Утас': '-', 'Имэйл': 'bold@example.com' }, 7)).toMatchObject({ data: { customer_name: null, customer_email: 'bold@example.com' } });
+        // Нэртэй мөр өмнөх шигээ (утас заавал, хэлбэр шалгахгүй); «Нэргүй» бол жинхэнэ нэр.
+        expect(mapLeadRow({ 'Нэр': 'Бат', 'Утас': '-' }, 8).data?.customer_name).toBe('Бат');
+        expect(mapLeadRow({ 'Нэр': 'Нэргүй', 'Утас': '-' }, 9).data?.customer_name).toBe('Нэргүй');
     });
 });
 

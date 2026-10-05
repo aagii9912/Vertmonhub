@@ -27,6 +27,7 @@ const ENTRIES = {
     get_dashboard_stats: { kind: 'read', module: 'dashboard', scoped: true },
     get_operations_report: { kind: 'read', module: 'reports', scoped: true },
     get_kpi_report: { kind: 'read', module: 'reports', scoped: true },
+    get_manager_activity: { kind: 'read', module: 'reports', scoped: true },
     get_manager_performance: { kind: 'read', module: 'reports' },
     get_export_link: { kind: 'read', module: 'reports' },
     get_sales_summary: { kind: 'read', module: 'reports' },
@@ -41,6 +42,7 @@ const ENTRIES = {
     delete_property: { kind: 'delete', module: 'properties' },
     // Лид
     list_lead_projects: { kind: 'read', module: ['leads', 'viewings'], scoped: true },
+    list_lead_categories: { kind: 'read', module: ['leads', 'reports-leads'] },
     list_leads: { kind: 'read', module: 'leads', scoped: true },
     get_lead_details: { kind: 'read', module: 'leads', scoped: true },
     update_lead_status: { kind: 'write', module: 'leads', scoped: true },
@@ -49,6 +51,8 @@ const ENTRIES = {
     bulk_update_leads: { kind: 'write', module: 'leads', scoped: true, alwaysConfirm: true },
     log_call: { kind: 'write', module: 'leads', scoped: true, auto: 'Дуудлага бүртгэх' },
     set_followup: { kind: 'write', module: 'leads', scoped: true, auto: 'Follow-up тавих' },
+    log_price_quote: { kind: 'write', module: 'leads', scoped: true, alwaysConfirm: true },
+    set_lead_category: { kind: 'write', module: 'leads', scoped: true, auto: 'Ангилал тавих' },
     assign_lead_manager: { kind: 'write', module: 'leads', scoped: true },
     delete_lead: { kind: 'delete', module: 'leads', scoped: true },
     // Харилцагч, Inbox
@@ -72,6 +76,7 @@ const ENTRIES = {
     list_contract_payments: { kind: 'read', module: 'contracts' },
     process_contract_action: { kind: 'write', module: 'contracts', scoped: true, alwaysConfirm: true },
     create_contract: { kind: 'write', module: 'contracts', scoped: true, alwaysConfirm: true },
+    transfer_contract: { kind: 'write', module: 'contracts', scoped: true, alwaysConfirm: true },
     add_contract_payment: { kind: 'write', module: 'contracts', alwaysConfirm: true },
     mark_payment_paid: { kind: 'write', module: 'contracts', alwaysConfirm: true },
     delete_contract: { kind: 'delete', module: 'contracts' },

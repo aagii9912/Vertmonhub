@@ -26,3 +26,16 @@ export const PAYMENT_METHOD_LABEL: Record<string, string> = {
 export function contractStatusLabel(status: string | null | undefined): string {
     return (status && Object.hasOwn(CONTRACT_STATUS_META, status) && CONTRACT_STATUS_META[status].label) || status || '—';
 }
+
+/**
+ * Гэрээний эзэмшигчийн өөрчлөлтийн төрөл (contract_transfers.kind). ERP-ийн
+ * `transferred` («Тоот шилжсэн» — тоот солигдсон) төлөвтэй андуурахгүй.
+ */
+export const CONTRACT_TRANSFER_KIND_META: Record<'transfer' | 'rename', { label: string; action: string; tone: Tone }> = {
+    transfer: { label: 'Шилжүүлэг', action: 'Өөр хүнд шилжүүлэх', tone: 'info' },
+    rename: { label: 'Нэр засвар', action: 'Нэр засах (ижил хүн)', tone: 'neutral' },
+};
+
+export function contractTransferKindLabel(kind: string | null | undefined): string {
+    return (kind && Object.hasOwn(CONTRACT_TRANSFER_KIND_META, kind) && CONTRACT_TRANSFER_KIND_META[kind as 'transfer' | 'rename'].label) || kind || '—';
+}

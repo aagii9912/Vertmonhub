@@ -51,8 +51,26 @@ vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: (table: string)
         eq: (key: string, value: unknown) => { filters.push(row => valueAt(row, key) === value); return query; },
         is: (key: string, value: unknown) => { filters.push(row => (row[key] ?? null) === value); return query; },
         in: (key: string, values: unknown[]) => { filters.push(row => values.includes(valueAt(row, key))); return query; },
-        ilike: (key: string, value: string) => { const search = value.replace(/%/g, '').toLowerCase(); filters.push(row => String(row[key] || '').toLowerCase().includes(search)); return query; },
-        or: (value: string) => { if (value === 'sales_manager_name.is.null,sales_manager_name.eq.""') filters.push(row => !row.sales_manager_name); return query; },
+        neq: (key: string, value: unknown) => { filters.push(row => valueAt(row, key) !== value); return query; },
+        ilike: (key: string, value: string) => {
+            const pattern = new RegExp(`^${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*')}$`, 'iu');
+            filters.push(row => pattern.test(String(row[key] || '')));
+            return query;
+        },
+        // Энгийн `col.is|eq|ilike.value` OR-уудыг үнэлнэ; and(...) зэрэг бусдыг (ажлын дараалал) үл хэрэгсэнэ.
+        or: (value: string) => {
+            const clauses = value.includes('(') ? [] : value.split(',').map(clause => clause.match(/^([\w.]+)\.(is|eq|ilike)\.(.*)$/));
+            if (!clauses.length || clauses.some(clause => !clause)) return query;
+            const tests = clauses.map(clause => {
+                const [, key, op, raw] = clause!;
+                if (op === 'is') return (row: Record<string, any>) => (valueAt(row, key) ?? null) === null;
+                if (op === 'eq') return (row: Record<string, any>) => (valueAt(row, key) as unknown) === (raw === '""' ? '' : raw);
+                const pattern = new RegExp(`^${raw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/%/g, '.*')}$`, 'iu');
+                return (row: Record<string, any>) => pattern.test(String(valueAt(row, key) ?? ''));
+            });
+            filters.push(row => tests.some(test => test(row)));
+            return query;
+        },
         order: () => query,
         gte: () => query,
         lt: () => query,
@@ -66,6 +84,7 @@ vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: (table: string)
     return query;
 } }) }));
 
+import { ANONYMOUS_LEAD_CONTACT, ANONYMOUS_LEAD_LABEL, LEAD_NAME_OR_ANONYMOUS } from '@/lib/leads/labels';
 import { GET as list, POST as create } from './route';
 import { GET as summary } from './summary/route';
 import { GET as detail, PATCH as patch } from './[id]/route';
@@ -168,6 +187,53 @@ describe('project and personal lead API boundaries', () => {
         expect(state.writes).toContainEqual({ table: 'leads', data: expect.objectContaining({ project_id: mandala, sales_manager_name: 'Манда' }) });
     });
 
+    it('creates an anonymous lead only when explicitly chosen and reachable', async () => {
+        const missing = await create(request('', 'POST', { project_id: mandala, customer_phone: '99112233' }));
+        expect(missing.status).toBe(400);
+        expect((await missing.json()).error).toBe(LEAD_NAME_OR_ANONYMOUS);
+        const unreachable = await create(request('', 'POST', { project_id: mandala, anonymous: true }));
+        expect(unreachable.status).toBe(400);
+        expect((await unreachable.json()).error).toBe(ANONYMOUS_LEAD_CONTACT);
+        expect(state.writes).toEqual([]);
+
+        const created = await create(request('', 'POST', { project_id: mandala, anonymous: true, customer_name: ANONYMOUS_LEAD_LABEL, customer_phone: '9911 2233' }));
+        expect(created.status).toBe(200);
+        expect(state.writes).toContainEqual({ table: 'leads', data: expect.objectContaining({
+            project_id: mandala, customer_name: null, customer_phone: '9911 2233', sales_manager_name: 'Манда',
+        }) });
+        // «нэргүй» хайлт нэргүй лидийг НЭМЖ буцаана (хүрээндээ): жинхэнэ нэр «Нэргүй» болон
+        // хуучин «Facebook lead» мөр ч олдоно; хүрээнээс гадуурх мөр орохгүй.
+        state.rows.leads.push(
+            { id: 'named-nergui', shop_id: 'shop-1', project_id: mandala, customer_name: 'Нэргүй', status: 'new', sales_manager_name: 'Манда', deleted_at: null },
+            { id: 'legacy-fb', shop_id: 'shop-1', project_id: mandala, customer_name: 'Facebook lead', status: 'new', sales_manager_name: 'Манда', deleted_at: null },
+            { id: 'foreign-anon', shop_id: 'shop-1', project_id: elysium, customer_name: null, status: 'new', sales_manager_name: 'Эли', deleted_at: null },
+        );
+        const names = async (q: string) => (await (await list(request(`?q=${encodeURIComponent(q)}`))).json()).leads
+            .map((lead: { customer_name: string | null }) => lead.customer_name).sort();
+        expect(await names('Нэргүй')).toEqual(['Facebook lead', 'Нэргүй', null].sort());
+        expect(await names(ANONYMOUS_LEAD_LABEL)).toEqual(['Facebook lead', null].sort());
+        expect(await names('Өөрийн')).toEqual(['Өөрийн лид']);
+    });
+
+    it('lets a manager name their own lead later and records it in the history', async () => {
+        state.rows.leads.push({ id: 'anon', shop_id: 'shop-1', project_id: mandala, customer_name: null, status: 'new', sales_manager_name: 'Манда', deleted_at: null });
+        expect((await patch(request('', 'PATCH', { customer_name: '  ' }), context('anon'))).status).toBe(400);
+        expect((await patch(request('', 'PATCH', { customer_name: ANONYMOUS_LEAD_LABEL }), context('anon'))).status).toBe(400);
+        expect((await patch(request('', 'PATCH', { customer_name: null }), context('anon'))).status).toBe(400);
+        expect((await patch(request('', 'PATCH', { customer_name: 'Бат' }), context(colleagueLead))).status).toBe(404);
+        expect(state.writes).toEqual([]);
+
+        expect((await patch(request('', 'PATCH', { customer_name: ' Г.  Бат ' }), context('anon'))).status).toBe(200);
+        expect(state.rows.leads.find(lead => lead.id === 'anon')).toMatchObject({ customer_name: 'Г. Бат' });
+        // «Нэргүй» бол жинхэнэ нэр — хадгалагдана.
+        expect((await patch(request('', 'PATCH', { customer_name: 'Нэргүй' }), context(ownLead))).status).toBe(200);
+        expect(state.rows.leads.find(lead => lead.id === ownLead)).toMatchObject({ customer_name: 'Нэргүй' });
+        expect(state.writes).toContainEqual({ table: 'lead_activities', data: expect.objectContaining({
+            lead_id: 'anon', type: 'system', content: `Нэр: ${ANONYMOUS_LEAD_LABEL} → Г. Бат`,
+            meta: { field: 'customer_name', from: null, to: 'Г. Бат' },
+        }) });
+    });
+
     it('never returns a foreign lead through an idempotency replay', async () => {
         const response = await create(request('', 'POST', { customer_name: 'Шинэ', project_id: mandala, client_request_id: '00000000-0000-4000-8000-000000000099' }));
         expect(response.status).toBe(409);
@@ -189,6 +255,54 @@ describe('project and personal lead API boundaries', () => {
         expect((await patch(request('', 'PATCH', { sales_manager_name: 'Хамтрагч' }), context(ownLead))).status).toBe(200);
         expect((await patch(request('', 'PATCH', { project_id: elysium, sales_manager_name: 'Эли' }), context(ownLead))).status).toBe(200);
         expect(state.rows.leads.find(lead => lead.id === ownLead)).toMatchObject({ project_id: elysium, sales_manager_name: 'Эли' });
+    });
+
+    it('returns the manager timeline with a masked duplicate-phone warning for a restricted manager', async () => {
+        Object.assign(state.rows.leads.find(lead => lead.id === ownLead)!, { customer_phone: '9911-2233', created_at: '2026-09-01T02:00:00Z', source: 'phone' });
+        Object.assign(state.rows.leads.find(lead => lead.id === colleagueLead)!, { customer_phone: '+976 99112233' });
+        Object.assign(state.rows.leads.find(lead => lead.id === otherLead)!, { customer_phone: '99112233' });
+        state.rows.leads.push({ id: 'near-miss', shop_id: 'shop-1', project_id: mandala, customer_name: 'Өөр дугаар', status: 'new', sales_manager_name: 'Эли', customer_phone: '899112233', deleted_at: null });
+        state.rows.lead_activities = [
+            { id: 'a1', shop_id: 'shop-1', lead_id: ownLead, type: 'call', content: 'Ярьсан', meta: {}, created_by: 'user-1', created_by_name: 'Манда', created_at: '2026-09-02T02:00:00Z' },
+            { id: 'a2', shop_id: 'shop-1', lead_id: ownLead, type: 'quote', content: 'Үнийн санал: 430,000,000₮', meta: { amount: 430_000_000 }, created_by: 'user-3', created_by_name: 'Хамтрагч', created_at: '2026-09-03T02:00:00Z' },
+            { id: 'a3', shop_id: 'shop-1', lead_id: colleagueLead, type: 'call', content: 'Хамтрагчийн лид', meta: {}, created_by: 'user-3', created_by_name: 'Хамтрагч', created_at: '2026-09-03T02:00:00Z' },
+        ];
+        const response = await detail(request(), context(ownLead));
+        expect(response.status).toBe(200);
+        const body = await response.json();
+        expect(body.partial).toEqual([]);
+        expect(body.activities.map((a: { id: string }) => a.id)).toEqual(['a2', 'a1']);
+        expect(body.timeline.managers.map((m: { name: string; isOwner: boolean }) => [m.name, m.isOwner])).toEqual([['Манда', true], ['Хамтрагч', false]]);
+        expect(body.timeline.conflicts.map((c: { kind: string }) => c.kind)).toEqual(['duplicate_phone', 'non_owner_contact', 'parallel_managers']);
+        expect(body.timeline.duplicates).toEqual({ count: 2, managers: ['Хамтрагч', 'Эли'], masked: true, leads: [], truncated: false });
+        // Хязгаарлагдсан менежерт бусдын лидийн id, харилцагчийн мэдээлэл ирэхгүй.
+        expect(JSON.stringify(body.timeline)).not.toContain(colleagueLead);
+        expect(JSON.stringify(body.timeline)).not.toContain('Хамтрагчийн лид');
+
+        state.role = 'admin';
+        const admin = await (await detail(request(), context(ownLead))).json();
+        expect(admin.timeline.duplicates).toMatchObject({ count: 2, masked: false });
+        expect(admin.timeline.duplicates.leads.map((lead: { id: string; name: string }) => [lead.id, lead.name]).sort())
+            .toEqual([[colleagueLead, 'Хамтрагчийн лид'], [otherLead, 'Өөр төслийн лид']].sort());
+    });
+
+    it('validates price quotes and records them as attributed contacts', async () => {
+        for (const body of [{ type: 'quote' }, { type: 'quote', amount: 0 }, { type: 'quote', amount: 12.5 }, { type: 'quote', amount: '450000000' },
+            { type: 'quote', amount: 10, unit_label: 'x'.repeat(61) }, { type: 'bogus', content: 'x' }]) {
+            const response = await contact(request('', 'POST', body), context(ownLead));
+            expect(response.status).toBe(400);
+        }
+        expect((await contact(request('', 'POST', { type: 'quote', amount: 10 }), context(colleagueLead))).status).toBe(404);
+        expect(state.writes).toEqual([]);
+
+        state.role = 'admin';
+        const response = await contact(request('', 'POST', { type: 'quote', amount: 450_000_000, unit_label: ' A-1203 ' }), context(ownLead));
+        expect(response.status).toBe(201);
+        expect(state.writes).toContainEqual({ table: 'leads', data: expect.objectContaining({ last_contact_at: expect.any(String) }) });
+        expect(state.writes).toContainEqual({ table: 'lead_activities', data: expect.objectContaining({
+            lead_id: ownLead, type: 'quote', content: 'Үнийн санал: 450,000,000₮ · A-1203', created_by: 'user-1',
+            meta: { amount: 450_000_000, unit_label: 'A-1203' },
+        }) });
     });
 
     it('rejects assignment to a lead without a project', async () => {

@@ -48,11 +48,14 @@ import {
 import { cn } from '@/lib/utils';
 import { formatShortDate } from '@/lib/utils/date';
 import { formatMNTShort } from '@/lib/utils/currency';
-import { statusLabel } from '@/lib/leads/labels';
+import { UNCATEGORIZED_KEY, UNCATEGORIZED_LABEL, categoryOptionLabel, leadDisplayName, statusLabel } from '@/lib/leads/labels';
+import { useLeadCategories, type LeadCategoryRow } from '@/hooks/useLeads';
+import { CategoryBadge } from '@/components/leads/pickers';
+import { FilterChip } from '@/components/dashboard/FilterBar';
 
 interface Lead {
     id: string;
-    customer_name: string;
+    customer_name: string | null;
     customer_phone: string | null;
     status: string;
     source: string;
@@ -63,6 +66,7 @@ interface Lead {
     next_followup_at: string | null;
     stage_changed_at: string | null;
     lost_reason: string | null;
+    category_id?: string | null;
     created_at: string;
 }
 
@@ -153,7 +157,7 @@ const noNextStep = (l: Lead): boolean => !l.next_followup_at && !isClosed(l.stat
 /*  Lead card (дотоод харагдац) — drag overlay болон багана дотор хоёуланд нь   */
 /* -------------------------------------------------------------------------- */
 
-function LeadCardBody({ lead, now }: { lead: Lead; now: number }) {
+function LeadCardBody({ lead, now, category }: { lead: Lead; now: number; category?: LeadCategoryRow | null }) {
     const stalled = isStalled(lead, now);
     const overdue = isOverdue(lead, now);
     const days = daysInStage(lead, now);
@@ -163,7 +167,7 @@ function LeadCardBody({ lead, now }: { lead: Lead; now: number }) {
             <div className="flex items-start justify-between mb-1.5">
                 <p className="text-sm font-medium text-foreground flex items-center gap-1">
                     <User className="w-3.5 h-3.5 text-muted-foreground/70" />
-                    {lead.customer_name || 'Нэргүй'}
+                    {leadDisplayName(lead)}
                 </p>
                 <GripVertical className="w-4 h-4 text-muted-foreground/60 flex-shrink-0" />
             </div>
@@ -176,6 +180,7 @@ function LeadCardBody({ lead, now }: { lead: Lead; now: number }) {
             )}
 
             <div className="flex items-center gap-1.5 flex-wrap">
+                {category && <CategoryBadge category={category} className="max-w-[180px]" />}
                 {lead.urgency && (
                     <StatusPill variant={urgencyVariant[lead.urgency] || urgencyVariant.normal} className="text-2xs px-1.5 py-0.5">
                         {lead.urgency === 'urgent' ? (
@@ -240,11 +245,13 @@ function DraggableLeadCard({
     now,
     isDragging,
     reduced,
+    category,
 }: {
     lead: Lead;
     now: number;
     isDragging: boolean;
     reduced: boolean;
+    category?: LeadCategoryRow | null;
 }) {
     const stalled = isStalled(lead, now);
     const { attributes, listeners, setNodeRef } = useDraggable({ id: lead.id });
@@ -264,7 +271,7 @@ function DraggableLeadCard({
                 stalled ? 'border-status-danger/50 ring-1 ring-status-danger/20' : 'border-border',
             )}
         >
-            <LeadCardBody lead={lead} now={now} />
+            <LeadCardBody lead={lead} now={now} category={category} />
         </motion.div>
     );
 }
@@ -280,6 +287,7 @@ function StageColumn({
     now,
     activeDragId,
     reduced,
+    categoryOf,
 }: {
     stage: Stage;
     stageLeads: Lead[];
@@ -287,6 +295,7 @@ function StageColumn({
     now: number;
     activeDragId: string | null;
     reduced: boolean;
+    categoryOf: (lead: Lead) => LeadCategoryRow | null;
 }) {
     const { setNodeRef, isOver } = useDroppable({ id: stage.key });
 
@@ -323,6 +332,7 @@ function StageColumn({
                         now={now}
                         isDragging={activeDragId === lead.id}
                         reduced={reduced}
+                        category={categoryOf(lead)}
                     />
                 ))}
             </div>
@@ -334,8 +344,14 @@ export default function PipelinePage() {
     const queryClient = useQueryClient();
     const reduced = useReducedMotion();
     const { data, error, isFetching, refetch, dataUpdatedAt } = useDashboardQuery<PipelineData>(PIPELINE_KEY, PIPELINE_URL);
-    const leads = data?.leads ?? [];
-    const total = data?.pagination?.total ?? leads.length;
+    const { data: categories = [] } = useLeadCategories();
+    // Ангиллаар шүүх — ачаалсан лидүүд дээр (самбар, таамаг хоёуланд).
+    const [category, setCategory] = useState('all');
+    const allLeads = data?.leads ?? [];
+    const leads = category === 'all' ? allLeads
+        : allLeads.filter(l => category === UNCATEGORIZED_KEY ? !l.category_id : l.category_id === category);
+    const categoryOf = (lead: Lead) => (lead.category_id ? categories.find(c => c.id === lead.category_id) ?? null : null);
+    const total = data?.pagination?.total ?? allLeads.length;
     const [activeDragId, setActiveDragId] = useState<string | null>(null);
     const [lostModal, setLostModal] = useState<{ leadId: string; name: string } | null>(null);
     // Өгөгдөл ирэх бүрд (dataUpdatedAt) "хоног" тооцоо ч шинэчлэгдэнэ.
@@ -369,7 +385,7 @@ export default function PipelinePage() {
     async function moveToStage(leadId: string, newStatus: string, lostReason?: string) {
         // Зөвхөн тухайн лийдийн хуучин төлвийг хадгална — алдаа гарвал бусад зэрэгцээ
         // зөөлтийг устгахгүйгээр энэ нэг картыг л буцаана.
-        const original = leads.find(l => l.id === leadId);
+        const original = allLeads.find(l => l.id === leadId);
         const stampedAt = new Date().toISOString();
         const applyMove = (l: Lead): Lead => l.id === leadId
             ? {
@@ -412,7 +428,7 @@ export default function PipelinePage() {
         if (!lead || lead.status === stageKey) return;
         // "Алдсан"-руу шилжихэд шалтгаан асууна (win/loss analysis).
         if (stageKey === 'closed_lost') {
-            setLostModal({ leadId, name: lead.customer_name || 'Нэргүй' });
+            setLostModal({ leadId, name: leadDisplayName(lead) });
             return;
         }
         moveToStage(leadId, stageKey);
@@ -481,10 +497,17 @@ export default function PipelinePage() {
 
             {/* Truncation анхааруулга — 1000-аас олон лийдтэй бол самбар бүгдийг
                 харуулахгүй тул forecast/тоо дутуу болохыг мэдэгдэнэ. */}
-            {total > leads.length && (
+            {total > allLeads.length && (
                 <div className="flex items-center gap-1.5 mb-3 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-status-danger-soft text-status-danger">
                     <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                    Нийт {total} лийдээс эхний {leads.length} харагдаж байна — таамаг/тоо дутуу. Шүүлтүүрээр багасгана уу.
+                    Нийт {total} лийдээс эхний {allLeads.length} харагдаж байна — таамаг/тоо дутуу. Шүүлтүүрээр багасгана уу.
+                </div>
+            )}
+
+            {categories.length > 0 && (
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <FilterChip value={category} onChange={setCategory} label="Ангилал"
+                        options={[[UNCATEGORIZED_KEY, UNCATEGORIZED_LABEL], ...categories.map((c): [string, string] => [c.id, categoryOptionLabel(c)])]} />
                 </div>
             )}
 
@@ -527,6 +550,7 @@ export default function PipelinePage() {
                                     now={now}
                                     activeDragId={activeDragId}
                                     reduced={reduced}
+                                    categoryOf={categoryOf}
                                 />
                             );
                         })}
@@ -536,7 +560,7 @@ export default function PipelinePage() {
                 <DragOverlay>
                     {activeLead ? (
                         <div className="bg-surface rounded-lg p-3 border border-border shadow-lg w-[232px] cursor-grabbing">
-                            <LeadCardBody lead={activeLead} now={now} />
+                            <LeadCardBody lead={activeLead} now={now} category={categoryOf(activeLead)} />
                         </div>
                     ) : null}
                 </DragOverlay>

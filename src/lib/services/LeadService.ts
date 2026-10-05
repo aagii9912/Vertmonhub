@@ -1,6 +1,10 @@
 /**
  * Лид үүсгэх нэг дүрэм. Ажилтны оруулсан лид (dashboard, AI, нийтийн формын ажилтны
- * горим) `resolveStaffLead`-ээр төсөл, хариуцагч менежер, төлөв, эх үүсвэрээ тодорхойлно.
+ * горим) `resolveStaffLead`-ээр төсөл, хариуцагч менежер, төлөв, эх үүсвэр, ангиллаа тодорхойлно.
+ * Харилцагчийн нэр/холбоо барих мэдээллийг `resolveLeadIdentity` нэг дүрмээр шийднэ
+ * (dashboard, AI, уулзалтын хуудас): нэргүй лид = `customer_name` null, ажилтан
+ * `anonymous: true`-г илт сонгоно, утас эсвэл и-мэйл заавал. Гадны суваг нэрийг
+ * `normalizeLeadName`-ээр л цэвэрлэнэ.
  * Бүх суваг (ажилтан, Elysium, Facebook Lead Ads, нийтийн форм) `insertLeadOnce`-оор
  * бичиж, `client_request_id` давтагдвал аль хэдийн хадгалсан лидийг буцаана.
  * `sales_handoff_at`-ийг DB trigger тавина; энд тавихгүй.
@@ -8,10 +12,13 @@
 
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 import { z } from 'zod';
-import { ACTIVE_STATUSES, toLeadSource } from '@/lib/leads/labels';
+import {
+    ACTIVE_STATUSES, ANONYMOUS_LEAD_CONTACT, LEAD_NAME_OR_ANONYMOUS, hasAnonymousLeadContact, normalizeLeadName, toLeadSource,
+} from '@/lib/leads/labels';
 import { resolveActiveManagerName, resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { applyLeadScope, assertProjectManager, canAccessProject, ProjectScopeError, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
+import { resolveLeadCategory, type LeadCategoryInput } from '@/lib/services/LeadCategoryService';
 import type { LeadSource, LeadStatus } from '@/types/property';
 
 export interface StaffLeadActor {
@@ -27,6 +34,8 @@ export interface StaffLeadRequest {
     source?: unknown;
     /** Админ өөр идэвхтэй менежерт шууд оноох нэр (бусдад үл хэрэгсэнэ). */
     assignManager?: string | null;
+    /** Лидийн ангилал (заавал биш): сонгогчийн id эсвэл AI-ийн яг нэр. Зөвхөн энэ төслийн идэвхтэй ангилал. */
+    category?: LeadCategoryInput;
 }
 
 export interface ResolvedStaffLead {
@@ -34,9 +43,44 @@ export interface ResolvedStaffLead {
     status: LeadStatus;
     source: LeadSource;
     sales_manager_name: string | null;
+    category_id: string | null;
+    /** Preview-д (AI) харуулах ангиллын нэр; ангилалгүй бол null. */
+    category_name: string | null;
 }
 
 export type Failure = { ok: false; status: number; error: string };
+
+export interface LeadIdentityInput {
+    customer_name?: unknown;
+    customer_phone?: unknown;
+    customer_email?: unknown;
+    /** Ажилтан «Нэр тодорхойгүй»-г сонгосон (нэр өгсөн ч үл хэрэгсэнэ). */
+    anonymous?: boolean | null;
+}
+
+export interface LeadIdentity {
+    customer_name: string | null;
+    customer_phone: string | null;
+    customer_email: string | null;
+}
+
+/**
+ * Ажилтны оруулсан лидийн нэр/холбоо барих дүрэм (DB-гүй цэвэр функц). Нэрийг
+ * `normalizeLeadName`-ээр цэвэрлэнэ (шошго, «-» зэрэг орлуулагч → null). Нэргүй хадгалахад
+ * `anonymous: true` заавал — мартсан нэрийг ингэж барина; нэргүй лидэд 8+ оронтой утас
+ * эсвэл зөв и-мэйл заавал. Нэртэй лидэд утас өмнөх шигээ заавал биш.
+ */
+export function resolveLeadIdentity(input: LeadIdentityInput): ({ ok: true } & LeadIdentity) | Failure {
+    const text = (v: unknown) => (typeof v === 'string' ? v.trim() || null : null);
+    const customer_phone = text(input.customer_phone);
+    const customer_email = text(input.customer_email);
+    const customer_name = input.anonymous ? null : normalizeLeadName(input.customer_name);
+    if (!customer_name) {
+        if (!input.anonymous) return { ok: false, status: 400, error: LEAD_NAME_OR_ANONYMOUS };
+        if (!hasAnonymousLeadContact(customer_phone, customer_email)) return { ok: false, status: 400, error: ANONYMOUS_LEAD_CONTACT };
+    }
+    return { ok: true, customer_name, customer_phone, customer_email };
+}
 
 /**
  * Төслийг (shop + хэрэглэгчийн хүрээ), идэвхтэй төлвийг, эх үүсвэрийг, хариуцагч менежерийг
@@ -67,6 +111,9 @@ export async function resolveStaffLead(
     }
     const status = (ACTIVE_STATUSES as string[]).includes(request.status as string) ? request.status as LeadStatus : 'new';
 
+    const category = request.category ? await resolveLeadCategory(db, shopId, request.category) : null;
+    if (category && !category.ok) return category;
+
     const identity = await resolveManagerIdentity(db, shopId, actor.userId);
     let managerName = identity.isManager ? identity.managerName : null;
     if ((actor.role === 'admin' || actor.role === 'super_admin') && request.assignManager) {
@@ -87,6 +134,8 @@ export async function resolveStaffLead(
         status,
         source: toLeadSource(typeof request.source === 'string' ? request.source : null),
         sales_manager_name: managerName,
+        category_id: category?.categoryId ?? null,
+        category_name: category?.category?.name ?? null,
     };
 }
 
@@ -100,12 +149,15 @@ export type InsertLeadResult =
 /**
  * Лидийг нэг удаа бичнэ. `client_request_id` өмнө ашиглагдсан бол ижил төслийн лидийг буцааж
  * (`duplicate`), өөр төсөлд ашиглагдсан бол `conflict`. `scope` өгвөл давтан уншилт хүрээндээ үлдэнэ.
+ * Бүх сувгийн нэрийг `normalizeLeadName`-ээр цэвэрлэнэ: хоосон, «-», «Facebook lead»,
+ * «Нэргүй харилцагч» шошго → null (нэргүй лид). Шошго DB-д хэзээ ч бичигдэхгүй.
  */
 export async function insertLeadOnce(
     db: SupabaseClient,
-    row: LeadRow,
+    input: LeadRow,
     options: { scope?: SalesProjectScope; select?: string } = {},
 ): Promise<InsertLeadResult> {
+    const row: LeadRow = 'customer_name' in input ? { ...input, customer_name: normalizeLeadName(input.customer_name) } : input;
     const select = options.select ?? '*';
     const requestId = row.client_request_id;
     const existing = async () => {
