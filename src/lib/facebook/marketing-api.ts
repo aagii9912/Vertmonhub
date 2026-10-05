@@ -1,88 +1,15 @@
 /**
- * Facebook Marketing API - Graph API v21.0 utility functions
- * Marketing хэсэгт ашиглагдах Facebook Page мэдээллүүд
+ * Facebook Graph v26 туслахууд: зар (`metaRead`, META_ADS_APP_SECRET) ба Page/Instagram
+ * (`pageRead`/`pagePost`, FACEBOOK_APP_SECRET-ийн appsecret_proof). Токен URL-д хэзээ ч орохгүй.
+ * Page/IG метрикийн каталог: `lib/marketing/social-metrics.ts`.
  */
 
-import { appsecretProof } from '@/lib/facebook/messenger';
-import { metaRead, type MetaReadOptions } from '@/lib/facebook/daily-spend';
+import { metaRead, MetaApiError, type MetaReadOptions } from '@/lib/facebook/daily-spend';
+import { isMetaInvalidParamError, isMetaPermissionError, pagePost, pageRead } from '@/lib/facebook/page-graph';
+import {
+    IG_ACCOUNT_METRICS, IG_MEDIA_METRICS, PAGE_DAILY_METRICS, POST_LIFETIME_METRICS,
+} from '@/lib/marketing/social-metrics';
 import { logger } from '@/lib/utils/logger';
-
-const GRAPH_API_BASE = 'https://graph.facebook.com/v21.0';
-
-// ============ Types ============
-
-export interface FacebookPageInfo {
-    id: string;
-    name: string;
-    category?: string;
-    fan_count?: number;
-    followers_count?: number;
-    picture?: { data: { url: string } };
-    cover?: { source: string };
-    about?: string;
-    website?: string;
-    link?: string;
-}
-
-export interface FacebookPost {
-    id: string;
-    message?: string;
-    story?: string;
-    full_picture?: string;
-    permalink_url?: string;
-    created_time: string;
-    likes?: { summary: { total_count: number } };
-    comments?: { summary: { total_count: number } };
-    shares?: { count: number };
-    insights?: {
-        data: Array<{
-            name: string;
-            values: Array<{ value: number | Record<string, number> }>;
-        }>;
-    };
-}
-
-export interface PageInsightMetric {
-    name: string;
-    period: string;
-    title: string;
-    description: string;
-    values: Array<{
-        value: number | Record<string, number>;
-        end_time: string;
-    }>;
-}
-
-export interface PublishPostResult {
-    id: string;
-    post_id?: string;
-}
-
-export interface FacebookApiError {
-    error: {
-        message: string;
-        type: string;
-        code: number;
-        error_subcode?: number;
-        fbtrace_id?: string;
-    };
-}
-
-// ============ Helpers ============
-
-async function fbFetch<T>(url: string): Promise<T> {
-    const response = await fetch(url);
-    const data = await response.json();
-
-    if (data.error) {
-        const fbError = data as FacebookApiError;
-        throw new Error(
-            `Facebook API Error [${fbError.error.code}]: ${fbError.error.message}`
-        );
-    }
-
-    return data as T;
-}
 
 // ============ Ads API ============
 
@@ -223,313 +150,335 @@ export async function fetchCampaignInsights(
     return metaRead<{ data: FacebookCampaignInsight[] }>(`${campaignId}/insights`, accessToken, params, read);
 }
 
-// ============ Page Info ============
+// ============ Page / Instagram: нийтлэг ============
+
+export interface GraphInsight {
+    name: string;
+    period?: string;
+    title?: string;
+    description?: string;
+    values?: Array<{ value?: unknown; end_time?: string }>;
+    total_value?: {
+        value?: unknown;
+        breakdowns?: Array<{ dimension_keys?: string[]; results?: Array<{ dimension_values?: string[]; value?: unknown }> }>;
+    };
+}
+
+/** Graph-ийн нэг утга: тоо, эсвэл төрлөөрх задаргаа ({ like: 3, love: 1 } → value = нийлбэр). */
+export interface InsightNumber { value: number; breakdown: Record<string, number> | null }
+
+/** Тоо эсвэл задаргаа биш бол null — «байхгүй», хэзээ ч 0 гэж таамаглахгүй. */
+export function parseInsightValue(raw: unknown): InsightNumber | null {
+    if (typeof raw === 'number') return Number.isFinite(raw) ? { value: raw, breakdown: null } : null;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const breakdown: Record<string, number> = {};
+    for (const [key, value] of Object.entries(raw)) {
+        if (typeof value === 'number' && Number.isFinite(value)) breakdown[key] = value;
+    }
+    // Хоосон задаргаа ({}) нь Meta-гийн бодит хариу: тухайн төрлийн үйлдэл алга.
+    return { value: Object.values(breakdown).reduce((total, value) => total + value, 0), breakdown };
+}
 
 /**
- * Page-ийн ерөнхий мэдээлэл авах
+ * Нэг объектын (Page, нийтлэл, IG аккаунт/media) insights. Хасагдсан/хүчингүй нэг метрик (code 100) бүх
+ * дуудлагыг унагадаг тул тэр үед метрик бүрийг тусад нь оролдож, Meta-гийн өгөөгүйг `unavailable`-д
+ * бичнэ. Эрх, токен, хурдны хязгаарын алдаа шууд шидэгдэнэ (метрик бүрээр давтахгүй).
  */
-export async function getPageInfo(
+export async function fetchInsightMetrics(
+    objectId: string,
+    accessToken: string,
+    metrics: readonly string[],
+    params: Record<string, string>,
+    read: MetaReadOptions = {},
+): Promise<{ data: GraphInsight[]; unavailable: string[] }> {
+    const call = async (names: readonly string[]) => {
+        const result = await pageRead<{ data?: GraphInsight[] }>(`${objectId}/insights`, accessToken, { ...params, metric: names.join(',') }, read);
+        if (!Array.isArray(result.data)) throw new MetaApiError('Facebook insights-ийн хариу дутуу байна.');
+        return result.data.filter(metric => names.includes(metric.name));
+    };
+    const missing = (data: GraphInsight[], names: readonly string[]) => names.filter(name => !data.some(metric => metric.name === name));
+    try {
+        const data = await call(metrics);
+        return { data, unavailable: missing(data, metrics) };
+    } catch (error) {
+        if (!isMetaInvalidParamError(error)) throw error;
+        if (metrics.length === 1) return { data: [], unavailable: [...metrics] };
+    }
+    const data: GraphInsight[] = [];
+    const unavailable: string[] = [];
+    for (const metric of metrics) {
+        try {
+            const found = await call([metric]);
+            data.push(...found);
+            unavailable.push(...missing(found, [metric]));
+        } catch (error) {
+            if (!isMetaInvalidParamError(error)) throw error;
+            unavailable.push(metric);
+        }
+    }
+    if (unavailable.length) logger.warn('[Page insights] Meta зарим метрикийг өгсөнгүй', { metrics: unavailable });
+    return { data, unavailable };
+}
+
+const META_DAY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' });
+
+/**
+ * Meta-гийн Page/IG өдрийн insights Номхон далайн цагаар (America/Los_Angeles) тасардаг: өдөр D-ийн утгын
+ * `end_time` = D+1-ийн 00:00 PT. Тиймээс өдөр = (end_time − 1 мс)-ийн PT огноо. УБ-ын өдөр БИШ.
+ */
+export function metaInsightDay(endTime: string | undefined): string | null {
+    const at = endTime ? Date.parse(endTime) : NaN;
+    return Number.isFinite(at) ? META_DAY.format(new Date(at - 1)) : null;
+}
+
+/** Meta-гийн одоогийн (дуусаагүй) өдөр, PT. */
+export function metaInsightToday(now: Date = new Date()): string {
+    return META_DAY.format(now);
+}
+
+/** YYYY-MM-DD огноог n өдрөөр шилжүүлнэ (цагийн бүсгүй хуанлийн тооцоо). */
+export function shiftDay(day: string, days: number): string {
+    return new Date(Date.parse(`${day}T00:00:00Z`) + days * 86400000).toISOString().slice(0, 10);
+}
+
+// ============ Page Info ============
+
+export interface FacebookPageInfo {
+    id: string;
+    name: string;
+    category?: string;
+    fan_count?: number;
+    followers_count?: number;
+    picture?: { data: { url: string } };
+    cover?: { source: string };
+    about?: string;
+    website?: string;
+    link?: string;
+}
+
+const PAGE_INFO_FIELDS = 'id,name,category,followers_count,fan_count,picture,cover,about,website,link';
+
+export async function getPageInfo(pageId: string, accessToken: string): Promise<FacebookPageInfo> {
+    try {
+        return await pageRead<FacebookPageInfo>(pageId, accessToken, { fields: PAGE_INFO_FIELDS });
+    } catch (error) {
+        // Meta Page-ийн like (fan_count)-ийг дагагчаар сольж байгаа — талбар хасагдвал түүнгүйгээр дахин.
+        if (!isMetaInvalidParamError(error)) throw error;
+        return pageRead<FacebookPageInfo>(pageId, accessToken, { fields: PAGE_INFO_FIELDS.replace(',fan_count', '') });
+    }
+}
+
+// ============ Page insights (өдрөөр) ============
+
+export interface PageDailyRow { day: string; metric: string; value: number; breakdown: Record<string, number> | null }
+
+/**
+ * Page-ийн өдрийн insights [from, to] (Meta-гийн PT өдөр). Өдрийг `end_time`-аар өөрсдөө тооцож, хүрээнээс
+ * гадуурх болон дуусаагүй (өнөөдрийн) өдрийг хаяна. Meta-гийн өгөөгүй метрик `unavailable`-д.
+ */
+export async function fetchPageDailyInsights(
     pageId: string,
-    accessToken: string
-): Promise<FacebookPageInfo> {
-    const fields = 'id,name,category,fan_count,followers_count,picture,cover,about,website,link';
-    const url = `${GRAPH_API_BASE}/${pageId}?fields=${fields}&access_token=${accessToken}`;
-    return fbFetch<FacebookPageInfo>(url);
+    accessToken: string,
+    from: string,
+    to: string,
+    read: MetaReadOptions = {},
+): Promise<{ rows: PageDailyRow[]; unavailable: string[] }> {
+    // since/until-ийг өргөн авна: Graph огноог аль цагийн бүсээр тайлбарлахаас үл хамааран бүх өдөр орно.
+    const { data, unavailable } = await fetchInsightMetrics(pageId, accessToken, PAGE_DAILY_METRICS, {
+        period: 'day', since: shiftDay(from, -1), until: shiftDay(to, 2),
+    }, read);
+    const today = metaInsightToday();
+    const rows: PageDailyRow[] = [];
+    const seen = new Set<string>();
+    for (const metric of data) {
+        if (metric.period && metric.period !== 'day') continue;
+        for (const point of metric.values ?? []) {
+            const day = metaInsightDay(point.end_time);
+            const parsed = parseInsightValue(point.value);
+            if (!day || !parsed || day < from || day > to || day >= today || seen.has(`${metric.name}:${day}`)) continue;
+            seen.add(`${metric.name}:${day}`);
+            rows.push({ day, metric: metric.name, ...parsed });
+        }
+    }
+    return { rows, unavailable };
 }
 
 // ============ Posts ============
 
+export interface FacebookPost {
+    id: string;
+    message?: string;
+    story?: string;
+    full_picture?: string;
+    permalink_url?: string;
+    created_time: string;
+    likes?: { summary?: { total_count?: number } };
+    comments?: { summary?: { total_count?: number } };
+    shares?: { count?: number };
+    insights?: { data?: GraphInsight[] };
+}
+
+/** Нийтлэл + насан туршийн insights; Meta-гийн өгөөгүй метрик объектод байхгүй (= null). */
+export interface PagePost { post: FacebookPost; insights: Partial<Record<string, InsightNumber>> }
+
+const POST_FIELDS = 'id,message,story,full_picture,permalink_url,created_time,likes.summary(true),comments.summary(true),shares';
+
+function postInsights(post: FacebookPost): Partial<Record<string, InsightNumber>> {
+    const out: Partial<Record<string, InsightNumber>> = {};
+    for (const metric of post.insights?.data ?? []) {
+        if (!(POST_LIFETIME_METRICS as readonly string[]).includes(metric.name)) continue;
+        const parsed = parseInsightValue(metric.values?.[0]?.value);
+        if (parsed) out[metric.name] = parsed;
+    }
+    return out;
+}
+
 /**
- * Page-ийн нийтлэлүүдийг авах
+ * Page-ийн сүүлийн нийтлэлүүд + насан туршийн insights (field expansion, нэг дуудлага). Хүчингүй метрик бүх
+ * /posts-ийг унагадаг тул тэр үед эхний нийтлэл дээр метрик бүрийг шалгаад хүчинтэйгээр нь дахин татна.
+ * Insights-ийн эрхгүй бол нийтлэлүүдийг insights-гүйгээр буцааж, бүх метрикийг `unavailable` гэнэ.
  */
 export async function getPagePosts(
     pageId: string,
     accessToken: string,
-    limit: number = 25
-): Promise<{ data: FacebookPost[]; paging?: { next?: string; previous?: string } }> {
-    const baseFields = 'id,message,story,full_picture,permalink_url,created_time,likes.summary(true),comments.summary(true),shares';
-    const withInsights = `${baseFields},insights.metric(post_impressions_unique,post_clicks,post_reactions_by_type_total)`;
-    const buildUrl = (f: string) => `${GRAPH_API_BASE}/${pageId}/posts?fields=${f}&limit=${limit}&access_token=${accessToken}`;
-    type R = { data: FacebookPost[]; paging?: { next?: string; previous?: string } };
-    try {
-        return await fbFetch<R>(buildUrl(withInsights));
-    } catch (err) {
-        // insights метрик буруу/устгагдсан бол бүхэл /posts унадаг — insights-гүйгээр
-        // дахин татаж нийтлэлийн жагсаалт хэзээ ч хоосрохгүй болгоно (fail-safe).
-        logger.warn('getPagePosts with insights failed, retrying without insights', { error: String(err) });
-        return await fbFetch<R>(buildUrl(baseFields));
-    }
-}
-
-/**
- * Нэг post-ийн дэлгэрэнгүй мэдээлэл авах
- */
-export async function getPostDetails(
-    postId: string,
-    accessToken: string
-): Promise<FacebookPost> {
-    const baseFields = 'id,message,story,full_picture,permalink_url,created_time,likes.summary(true),comments.summary(true),shares';
-    const withInsights = `${baseFields},insights.metric(post_impressions_unique,post_clicks,post_reactions_by_type_total)`;
-    const buildUrl = (f: string) => `${GRAPH_API_BASE}/${postId}?fields=${f}&access_token=${accessToken}`;
-    try {
-        return await fbFetch<FacebookPost>(buildUrl(withInsights));
-    } catch {
-        return await fbFetch<FacebookPost>(buildUrl(baseFields));
-    }
-}
-
-// ============ Insights ============
-
-/**
- * Page insights авах (28 хоногийн)
- */
-export async function getPageInsights(
-    pageId: string,
-    accessToken: string,
-    // ⚠️ Graph v21-д page_impressions, page_engaged_users, page_fan_adds,
-    // page_fan_removes зэрэг нь DEPRECATED. Нэг буруу метрик бүхэл дуудлагыг
-    // унагадаг тул зөвхөн хүчинтэй метрик ашиглана.
-    metrics: string[] = [
-        'page_impressions_unique',
-        'page_post_engagements',
-        'page_views_total',
-        'page_daily_follows_unique',
-        'page_total_actions',
-    ],
-    period: 'day' | 'week' | 'days_28' = 'day'
-): Promise<{ data: PageInsightMetric[] }> {
-    const fetchMetrics = async (ms: string[]): Promise<PageInsightMetric[]> => {
-        const url = `${GRAPH_API_BASE}/${pageId}/insights?metric=${ms.join(',')}&period=${period}&access_token=${accessToken}`;
-        const res = await fetch(url);
-        const json = await res.json();
-        if (json.error) throw new Error(json.error.message);
-        return (json.data || []) as PageInsightMetric[];
+    limit: number = 25,
+    read: MetaReadOptions = {},
+): Promise<{ posts: PagePost[]; unavailable: string[] }> {
+    const size = String(Math.min(Math.max(Math.trunc(limit) || 25, 1), 100));
+    const load = async (metrics: readonly string[]) => {
+        const fields = metrics.length ? `${POST_FIELDS},insights.metric(${metrics.join(',')})` : POST_FIELDS;
+        const result = await pageRead<{ data?: FacebookPost[] }>(`${pageId}/posts`, accessToken, { fields, limit: size }, read);
+        if (!Array.isArray(result.data)) throw new MetaApiError('Facebook нийтлэлийн хариу дутуу байна.');
+        return result.data;
     };
+    const wrap = (posts: FacebookPost[]) => posts.map(post => ({ post, insights: postInsights(post) }));
     try {
-        // Хурдан зам: бүх метрикийг нэг дуудлагаар.
-        return { data: await fetchMetrics(metrics) };
-    } catch (err) {
-        // Нэг буруу/устгагдсан метрик бүхэл батчийг унагасан байж магадгүй — метрик
-        // бүрийг тусад нь оролдож, хүчинтэйг нь л цуглуулна (fail-safe). Ингэснээр
-        // ирээдүйд Meta өөр метрик уствал бусад нь хэвээр ажиллана.
-        logger.warn('getPageInsights batch failed, retrying per-metric', { error: String(err) });
-        const data: PageInsightMetric[] = [];
-        for (const m of metrics) {
-            try {
-                data.push(...(await fetchMetrics([m])));
-            } catch {
-                logger.warn('getPageInsights metric skipped (invalid/unavailable)', { metric: m });
-            }
+        return { posts: wrap(await load(POST_LIFETIME_METRICS)), unavailable: [] };
+    } catch (error) {
+        if (!isMetaInvalidParamError(error) && !isMetaPermissionError(error)) throw error;
+        logger.warn('[Page posts] insights-тэй татаж чадсангүй, insights-гүйгээр дахин', { code: (error as MetaApiError).code });
+        const posts = await load([]);
+        if (isMetaPermissionError(error) || posts.length === 0) return { posts: wrap(posts), unavailable: isMetaPermissionError(error) ? [...POST_LIFETIME_METRICS] : [] };
+        let probe: { data: GraphInsight[]; unavailable: string[] };
+        try { probe = await fetchInsightMetrics(posts[0].id, accessToken, POST_LIFETIME_METRICS, { period: 'lifetime' }, read); }
+        catch (probeError) {
+            if (!isMetaInvalidParamError(probeError) && !isMetaPermissionError(probeError)) throw probeError;
+            return { posts: wrap(posts), unavailable: [...POST_LIFETIME_METRICS] };
         }
-        return { data };
+        const valid = POST_LIFETIME_METRICS.filter(metric => !probe.unavailable.includes(metric));
+        return { posts: wrap(valid.length ? await load(valid) : posts), unavailable: probe.unavailable };
     }
 }
 
 // ============ Publish ============
 
-/**
- * Text post нийтлэх
- */
-export async function publishTextPost(
-    pageId: string,
-    accessToken: string,
-    message: string
-): Promise<PublishPostResult> {
-    const url = `${GRAPH_API_BASE}/${pageId}/feed`;
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            message,
-            access_token: accessToken,
-        }),
+export interface PublishPostResult {
+    id: string;
+    post_id?: string;
+}
+
+/** Text post нийтлэх (дахин оролдохгүй — давхар нийтлэлээс сэргийлнэ). */
+export function publishTextPost(pageId: string, accessToken: string, message: string): Promise<PublishPostResult> {
+    return pagePost<PublishPostResult>(`${pageId}/feed`, accessToken, { message });
+}
+
+/** Зурагтай post нийтлэх. */
+export function publishPhotoPost(pageId: string, accessToken: string, message: string, imageUrl: string): Promise<PublishPostResult> {
+    return pagePost<PublishPostResult>(`${pageId}/photos`, accessToken, { message, url: imageUrl });
+}
+
+// ============ Instagram ============
+
+export interface InstagramAccount {
+    id: string;
+    username?: string;
+    name?: string;
+    profile_picture_url?: string;
+    followers_count?: number;
+    follows_count?: number;
+    media_count?: number;
+    biography?: string;
+}
+
+export interface InstagramMedia {
+    id: string;
+    caption?: string;
+    media_type?: string;
+    media_url?: string;
+    thumbnail_url?: string;
+    permalink?: string;
+    timestamp?: string;
+    like_count?: number;
+    comments_count?: number;
+}
+
+export function getInstagramAccount(igId: string, accessToken: string): Promise<InstagramAccount> {
+    return pageRead<InstagramAccount>(igId, accessToken, {
+        fields: 'id,username,name,profile_picture_url,followers_count,follows_count,media_count,biography',
     });
-
-    const data = await response.json();
-    if (data.error) {
-        throw new Error(`Facebook API Error: ${data.error.message}`);
-    }
-    return data;
 }
 
-/**
- * Зурагтай post нийтлэх
- */
-export async function publishPhotoPost(
-    pageId: string,
-    accessToken: string,
-    message: string,
-    imageUrl: string
-): Promise<PublishPostResult> {
-    const url = `${GRAPH_API_BASE}/${pageId}/photos`;
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            message,
-            url: imageUrl,
-            access_token: accessToken,
-        }),
+export async function getInstagramMedia(igId: string, accessToken: string, limit: number = 25): Promise<InstagramMedia[]> {
+    const result = await pageRead<{ data?: InstagramMedia[] }>(`${igId}/media`, accessToken, {
+        fields: 'id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count',
+        limit: String(Math.min(Math.max(Math.trunc(limit) || 25, 1), 100)),
     });
-
-    const data = await response.json();
-    if (data.error) {
-        throw new Error(`Facebook API Error: ${data.error.message}`);
-    }
-    return data;
+    if (!Array.isArray(result.data)) throw new MetaApiError('Instagram нийтлэлийн хариу дутуу байна.');
+    return result.data;
 }
-
-// ============ Page Messaging Insights ============
-
-/**
- * Messenger харилцааны хэмжээний метрик. pages_messaging эрх шаардана. Эдгээрийг
- * default getPageInsights массивт нэмбэл эрхгүй shop-уудад БҮХ дуудлага унах тул
- * ТУСДАА, isolated helper болгов. page_messages_new_conversations_unique нь v21-д
- * deprecated — ихэнх Page-д хоосон буцаана.
- */
-export async function getPageMessagingInsights(
-    pageId: string,
-    accessToken: string
-): Promise<Record<string, number>> {
-    try {
-        const metrics = 'page_messages_total_messaging_connections,page_messages_new_conversations_unique';
-        const url = `${GRAPH_API_BASE}/${pageId}/insights?metric=${metrics}&period=day&access_token=${accessToken}`;
-        const res = await fetch(url);
-        const json: { data?: PageInsightMetric[]; error?: { message: string } } = await res.json();
-        if (json.error) throw new Error(json.error.message);
-        const out: Record<string, number> = {};
-        for (const m of json.data || []) {
-            const v = m.values?.[m.values.length - 1]?.value;
-            if (typeof v === 'number') out[m.name] = v;
-        }
-        return out;
-    } catch (error) {
-        logger.warn('getPageMessagingInsights failed', { error: String(error) });
-        return {};
-    }
-}
-
-// ============ Instagram Insights ============
 
 export interface InstagramAccountInsights {
-    reach?: number;
-    impressions?: number;
-    follower_count?: number;
-    profile_views?: number;
-    accounts_engaged?: number;
-    partial?: boolean; // зарим метрик авч чадаагүй (deprecated гэх мэт)
+    /** Хугацаа (Unix секунд): Meta `since`/`until`. */
+    since: number;
+    until: number;
+    /** Meta-гийн өгөөгүй метрик null. */
+    metrics: Record<string, number | null>;
+    follows: number | null;
+    unfollows: number | null;
+    unavailable: string[];
 }
 
-interface IgInsightResponse {
-    data?: Array<{
-        name: string;
-        period?: string;
-        values?: Array<{ value: number; end_time?: string }>;
-        total_value?: { value: number };
-    }>;
-    error?: { message: string; code: number };
-}
+const nullMetrics = (names: readonly string[]) => Object.fromEntries(names.map(name => [name, null])) as Record<string, number | null>;
+const totalValue = (metric: GraphInsight): number | null => {
+    const value = metric.total_value?.value ?? metric.values?.[0]?.value;
+    return typeof value === 'number' && Number.isFinite(value) ? value : null;
+};
 
 /**
- * Instagram business account insights. v21-д хоёр төрлийн метрик нэг дуудлагад
- * багтахгүй тул 2 тусдаа fetch:
- *   1) time-series: reach, impressions, follower_count (period-based, values[])
- *   2) total_value: profile_views, accounts_engaged (metric_type=total_value)
- * impressions нь 2024-07-02-оос хойш үүссэн account-д deprecated — тусдаа
- * try/catch-аар бүрхэж partial flag тавина. instagram_manage_insights эрх шаардана.
+ * Instagram аккаунтын сүүлийн `days` өдрийн нийт үзүүлэлт (`metric_type=total_value`). `reach`,
+ * `accounts_engaged` нь давхардалгүй хүн тул өдрүүдээр нэмэхгүй — Meta хугацааны дүнг өөрөө өгнө.
+ * instagram_manage_insights эрх шаардана.
  */
-export async function getInstagramInsights(
-    igId: string,
-    accessToken: string,
-    period: 'day' | 'week' | 'days_28' = 'day'
-): Promise<InstagramAccountInsights> {
-    const result: InstagramAccountInsights = {};
-    const setNum = (k: string, v: number) => {
-        (result as unknown as Record<string, number>)[k] = v;
-    };
+export async function getInstagramInsights(igId: string, accessToken: string, days: 1 | 7 | 28 = 7): Promise<InstagramAccountInsights> {
+    const until = Math.floor(Date.now() / 1000);
+    const since = until - days * 86400;
+    const range = { period: 'day', metric_type: 'total_value', since: String(since), until: String(until) };
+    const { data, unavailable } = await fetchInsightMetrics(igId, accessToken, IG_ACCOUNT_METRICS, range);
+    const metrics = nullMetrics(IG_ACCOUNT_METRICS);
+    for (const metric of data) metrics[metric.name] = totalValue(metric);
 
-    // Family 1: time-series. follower_count зөвхөн period=day дээр хүчинтэй.
-    const tsMetrics = period === 'day' ? ['reach', 'impressions', 'follower_count'] : ['reach', 'impressions'];
-    try {
-        const url = `${GRAPH_API_BASE}/${igId}/insights?metric=${tsMetrics.join(',')}&period=${period}&access_token=${accessToken}`;
-        const res = await fetch(url);
-        const json: IgInsightResponse = await res.json();
-        if (json.error) throw new Error(json.error.message);
-        for (const m of json.data || []) {
-            const v = m.values?.[m.values.length - 1]?.value;
-            if (typeof v === 'number') setNum(m.name, v);
-        }
-    } catch (error) {
-        // impressions deprecated байж болзошгүй — reach-ийг дангаар нь оролдоно
-        result.partial = true;
-        try {
-            const url = `${GRAPH_API_BASE}/${igId}/insights?metric=reach&period=${period}&access_token=${accessToken}`;
-            const res = await fetch(url);
-            const json: IgInsightResponse = await res.json();
-            const v = json.data?.[0]?.values?.[0]?.value;
-            if (typeof v === 'number') setNum('reach', v);
-        } catch {
-            // орхино
-        }
-        logger.warn('getInstagramInsights time-series partial', { error: String(error) });
+    let follows: number | null = null;
+    let unfollows: number | null = null;
+    const followData = await fetchInsightMetrics(igId, accessToken, ['follows_and_unfollows'], { ...range, breakdown: 'follow_type' });
+    unavailable.push(...followData.unavailable);
+    for (const result of followData.data[0]?.total_value?.breakdowns?.[0]?.results ?? []) {
+        if (typeof result.value !== 'number' || !Number.isFinite(result.value)) continue;
+        if (result.dimension_values?.[0] === 'FOLLOWER') follows = result.value;
+        else if (result.dimension_values?.[0] === 'NON_FOLLOWER') unfollows = result.value;
     }
-
-    // Family 2: total_value
-    try {
-        const url = `${GRAPH_API_BASE}/${igId}/insights?metric=profile_views,accounts_engaged&metric_type=total_value&period=day&access_token=${accessToken}`;
-        const res = await fetch(url);
-        const json: IgInsightResponse = await res.json();
-        if (json.error) throw new Error(json.error.message);
-        for (const m of json.data || []) {
-            const v = m.total_value?.value;
-            if (typeof v === 'number') setNum(m.name, v);
-        }
-    } catch (error) {
-        result.partial = true;
-        logger.warn('getInstagramInsights total_value partial', { error: String(error) });
-    }
-
-    return result;
+    return { since, until, metrics, follows, unfollows, unavailable };
 }
 
-export interface InstagramMediaInsights {
-    reach?: number;
-    saved?: number;
-    likes?: number;
-    comments?: number;
-    shares?: number;
-    total_interactions?: number;
-    plays?: number;
-    partial?: boolean;
-}
-
-/**
- * Instagram media (post/reel) insights. media_type-аас хамаарч хүчинтэй метрик
- * өөр: VIDEO/REELS дээр plays нэмэгдэнэ (legacy video_views БИШ). impressions нь
- * media дээр deprecated тул оруулахгүй.
- */
-export async function getInstagramMediaInsights(
-    mediaId: string,
-    accessToken: string,
-    mediaType?: string
-): Promise<InstagramMediaInsights> {
-    const base = ['reach', 'saved', 'likes', 'comments', 'shares', 'total_interactions'];
-    const isVideo = mediaType === 'VIDEO' || mediaType === 'REELS';
-    const metrics = isVideo ? [...base, 'plays'] : base;
+/** Instagram media (post, reel)-ийн насан туршийн үзүүлэлт. Алдаа гарвал бүгд null (жагсаалтыг унагахгүй). */
+export async function getInstagramMediaInsights(mediaId: string, accessToken: string): Promise<{ metrics: Record<string, number | null>; unavailable: string[] }> {
     try {
-        const url = `${GRAPH_API_BASE}/${mediaId}/insights?metric=${metrics.join(',')}&access_token=${accessToken}`;
-        const res = await fetch(url);
-        const json: IgInsightResponse = await res.json();
-        if (json.error) throw new Error(json.error.message);
-        const out: InstagramMediaInsights = {};
-        for (const m of json.data || []) {
-            const v = m.values?.[0]?.value;
-            if (typeof v === 'number') (out as unknown as Record<string, number>)[m.name] = v;
-        }
-        return out;
+        const { data, unavailable } = await fetchInsightMetrics(mediaId, accessToken, IG_MEDIA_METRICS, {});
+        const metrics = nullMetrics(IG_MEDIA_METRICS);
+        for (const metric of data) metrics[metric.name] = totalValue(metric);
+        return { metrics, unavailable };
     } catch (error) {
-        logger.warn('getInstagramMediaInsights failed', { mediaId, error: String(error) });
-        return { partial: true };
+        logger.warn('[Instagram media insights] татагдсангүй', { code: error instanceof MetaApiError ? error.code : null });
+        return { metrics: nullMetrics(IG_MEDIA_METRICS), unavailable: [...IG_MEDIA_METRICS] };
     }
 }
 
@@ -549,9 +498,8 @@ export interface SubscribeResult {
 }
 
 /**
- * Page-ийг app-ийн webhook-д subscribe хийнэ (POST /{page-id}/subscribed_apps).
- * Idempotent — дахин дуудахад асуудалгүй. Хэзээ ч throw хийхгүй (Page холболтыг
- * блоклохгүй). pages_manage_metadata эрх шаардана.
+ * Page-ийг app-ийн webhook-д subscribe хийнэ (POST /{page-id}/subscribed_apps). Idempotent. Хэзээ ч throw
+ * хийхгүй (Page холболтыг блоклохгүй). pages_manage_metadata эрх шаардана.
  */
 export async function subscribePageToApp(
     pageId: string,
@@ -559,43 +507,11 @@ export async function subscribePageToApp(
     fields: string[] = DEFAULT_PAGE_SUBSCRIBE_FIELDS
 ): Promise<SubscribeResult> {
     try {
-        const params = new URLSearchParams({
-            subscribed_fields: fields.join(','),
-            access_token: pageAccessToken,
-        });
-        const proof = appsecretProof(pageAccessToken);
-        if (proof) params.set('appsecret_proof', proof);
-        const url = `${GRAPH_API_BASE}/${pageId}/subscribed_apps?${params.toString()}`;
-        const res = await fetch(url, { method: 'POST' });
-        const json = await res.json();
-        if (json.error) {
-            logger.warn('subscribePageToApp error', { pageId, error: json.error.message });
-            return { success: false, error: json.error.message };
-        }
+        const json = await pagePost<{ success?: boolean }>(`${pageId}/subscribed_apps`, pageAccessToken, { subscribed_fields: fields.join(',') });
         return { success: json.success !== false };
     } catch (error) {
-        logger.warn('subscribePageToApp failed', { pageId, error: String(error) });
-        return { success: false, error: String(error) };
-    }
-}
-
-/**
- * Page-ийн идэвхтэй subscribed_apps жагсаалт (баталгаажуулалт / health endpoint-д).
- */
-export async function getPageSubscribedApps(
-    pageId: string,
-    pageAccessToken: string
-): Promise<Array<{ id?: string; name?: string; subscribed_fields?: string[] }>> {
-    try {
-        const params = new URLSearchParams({ access_token: pageAccessToken });
-        const proof = appsecretProof(pageAccessToken);
-        if (proof) params.set('appsecret_proof', proof);
-        const url = `${GRAPH_API_BASE}/${pageId}/subscribed_apps?${params.toString()}`;
-        const res = await fetch(url);
-        const json = await res.json();
-        if (json.error) return [];
-        return json.data || [];
-    } catch {
-        return [];
+        const message = error instanceof Error ? error.message : String(error);
+        logger.warn('subscribePageToApp failed', { pageId, error: message });
+        return { success: false, error: message };
     }
 }
