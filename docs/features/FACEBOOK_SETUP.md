@@ -120,8 +120,11 @@ Facebook Login for Business → **Configurations** → **Create Configuration**:
   - ✅ `pages_show_list`
   - ✅ `pages_messaging`
   - ✅ `pages_manage_metadata`
-  - ✅ `email`
+  - ✅ `leads_retrieval` — Facebook Lead Ads (leadgen webhook + лид унших)
+  - ✅ `pages_manage_ads` — Lead Ads-ийн формуудыг 90 хоногийн backfill-д жагсаах
   - ✅ `public_profile`
+
+> ⚠️ `email` нь энэ аппад invalid scope (login dialog-ийг блоклодог) — `src/app/api/auth/facebook/route.ts`-ийн жагсаалттай ижил байлгана.
 
 **Create** товчийг дар. Үүний дараа гарах **Configuration ID** утгыг хуулж авна.
 
@@ -169,8 +172,11 @@ Webhook үүсгэсний дараа доорх field-уудыг сонго:
 
 - ✅ `messages` — Messenger DM (text + attachments)
 - ✅ `messaging_postbacks` — Button click postbacks
-- ✅ `feed` — Page comments дээр AI хариу үлдээх
+- ✅ `feed` — Page-ийн нийтлэл, сэтгэгдэл
+- ✅ `leadgen` — Facebook Lead Ads-ийн шинэ лид (`docs/features/LEAD-ADS-WEBHOOK-2026-10-05.md`)
 - ☐ `messaging_optins`, `message_deliveries` — хэрэггүй
+
+> Callback URL нэг л байна (`/api/webhook`): DM болон Lead Ads хоёулаа тэнд ирнэ.
 
 ### d) Page Subscriptions
 
@@ -178,7 +184,7 @@ Messenger → API Settings → **Webhooks** → **Page Subscriptions** хэсэ�
 
 1. **Add Subscriptions** дар → Facebook Page-ээ сонго.
 2. **Subscribe to Webhooks** товчийг дар.
-3. Дараах field-ууд subscribe хийгдсэн эсэхийг хяна: `messages`, `messaging_postbacks`, `feed`.
+3. Дараах field-ууд subscribe хийгдсэн эсэхийг хяна: `messages`, `messaging_postbacks`, `feed`, `leadgen`. (Page-ийг Vertmon Hub-д холбоход код өөрөө subscribe хийнэ; `leadgen` нь `leads_retrieval` эрхгүй бол алгасагдаж, /marketing/social дээрх «Facebook Lead Ads» картанд «Webhook идэвхгүй» гэж харагдана.)
 
 ---
 
@@ -323,6 +329,7 @@ Facebook App Dashboard → Messenger → **API Settings → Webhooks → Test** 
   - `pages_messaging` — DM хариу илгээх
   - `pages_manage_metadata` — Webhook subscribe
   - `pages_show_list` — Page list харах
+  - `leads_retrieval`, `pages_manage_ads` — Facebook Lead Ads
 - **Business Verification** — Business Manager дээр компанийн нотолгоо (улсын бүртгэл, нэхэмжлэх г.м.).
 - **Production webhook URL** — `*.vercel.app` эсвэл custom домэйн.
 - **App Mode → Live** товчийг дар.
@@ -345,7 +352,8 @@ Facebook App Dashboard → Messenger → **API Settings → Webhooks → Test** 
 | `src/app/api/meta/data-deletion/route.ts` | GDPR data deletion handler |
 | `src/lib/facebook/messenger.ts` | Graph API send helpers |
 | `src/lib/utils/verify-webhook-signature.ts` | HMAC-SHA256 signature verify |
-| `src/lib/webhook/WebhookService.ts` | `getShopByPageId`, AI features lookup |
+| `src/lib/webhook/WebhookService.ts` | `getShopByPageId`, DM хадгалалт |
+| `src/lib/facebook/leadgen.ts` | Lead Ads: leadgen → `leads` (webhook + backfill) |
 
 ---
 
