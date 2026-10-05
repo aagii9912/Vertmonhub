@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
 
@@ -47,6 +47,28 @@ async function parseError(res: Response): Promise<string> {
     }
 }
 
+/** «Миний ажлууд» жагсаалт болон «Өнөөдөр» самбарын («Хийх ажлууд») query-г шинэчилнэ. */
+function invalidateTaskQueries(queryClient: QueryClient) {
+    queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
+    queryClient.invalidateQueries({ queryKey: ['my-stats'] });
+}
+
+/** Хувийн ажил нэмэх — «Миний ажлууд» хуудас ба «Ажил нэмэх» түргэн форм нэг API, нэг шинэчлэлтэй. */
+export function useCreateTask() {
+    const queryClient = useQueryClient();
+    return useMutation({
+        mutationFn: async (input: CreateTaskInput) => {
+            const res = await dashboardFetch('/api/dashboard/tasks', {
+                method: 'POST',
+                body: JSON.stringify(input),
+            });
+            if (!res.ok) throw new Error(await parseError(res));
+            return res.json() as Promise<{ task: UserTask }>;
+        },
+        onSuccess: () => invalidateTaskQueries(queryClient),
+    });
+}
+
 export function useMyTasks() {
     const { shop } = useAuth();
     const shopId = shop?.id;
@@ -63,22 +85,9 @@ export function useMyTasks() {
         staleTime: 15000,
     });
 
-    const invalidate = () => {
-        queryClient.invalidateQueries({ queryKey: ['my-tasks'] });
-        queryClient.invalidateQueries({ queryKey: ['my-stats'] });
-    };
+    const invalidate = () => invalidateTaskQueries(queryClient);
 
-    const createTask = useMutation({
-        mutationFn: async (input: CreateTaskInput) => {
-            const res = await dashboardFetch('/api/dashboard/tasks', {
-                method: 'POST',
-                body: JSON.stringify(input),
-            });
-            if (!res.ok) throw new Error(await parseError(res));
-            return res.json() as Promise<{ task: UserTask }>;
-        },
-        onSuccess: invalidate,
-    });
+    const createTask = useCreateTask();
 
     const updateTask = useMutation({
         mutationFn: async ({ id, ...input }: UpdateTaskInput) => {
