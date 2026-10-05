@@ -31,56 +31,20 @@ import {
     META_RESULT_DEFS, META_RESULT_TYPES, metaResultCost, metaResultCostKey, metaResultKey, metaResultSpendKey, presentMetaResultTypes,
     type MetaResultType,
 } from './meta-results';
+import { groupMetaResultRows, hasMetaDelivery, toMetaResultRows, type MetaInsightRow, type MetaResultGroup } from './meta-result-groups';
 import { dateSchema } from './performance';
 
 export const META_INSIGHTS_TABLE = 'meta_ad_insights_daily';
 export const META_INSIGHTS_STATUS_TABLE = 'meta_insights_sync';
 export const META_INSIGHT_COLUMNS = 'day,campaign_id,campaign_name,adset_id,spend,impressions,reach,clicks,inline_link_clicks,landing_page_views,result_type,results,result_source';
 
-/** `meta_ad_insights_daily`-ийн тайланд хэрэгтэй багана (PostgREST numeric-ийг string-ээр ч буцааж болно). */
-export interface MetaInsightRow {
-    day: string;
-    campaign_id: string;
-    campaign_name: string;
-    adset_id: string;
-    spend: number | string;
-    impressions: number | string;
-    reach: number | string | null;
-    clicks: number | string;
-    inline_link_clicks: number | string;
-    landing_page_views: number | string;
-    result_type: string | null;
-    results: number | string | null;
-    result_source: string;
-}
+export type { MetaInsightRow } from './meta-result-groups';
 export interface MetaChannelReport { totals: ChannelTotals; breakdown: BreakdownRow[]; warnings: ChannelWarning[]; rowCount: number }
 /** Хурлын долоо хоног Улаанбаатарын цагаар (Лхагва–Мягмар). */
 export const MEETING_TIMEZONE = 'Asia/Ulaanbaatar';
 
 const round = (value: number, digits = 6) => { const f = 10 ** digits; return Math.round(value * f) / f; };
-const num = (value: unknown) => { const n = typeof value === 'number' ? value : Number(value); return Number.isFinite(n) ? n : 0; };
-const isResultType = (value: unknown): value is MetaResultType => (META_RESULT_TYPES as readonly unknown[]).includes(value);
 const sum = <T>(list: readonly T[], pick: (item: T) => number) => list.reduce((total, item) => total + pick(item), 0);
-
-interface Row {
-    day: string; campaign: string; name: string; adset: string; spend: number; impressions: number; clicks: number;
-    linkClicks: number; landingPageViews: number; type: MetaResultType | null; results: number | null; source: string;
-}
-interface Group {
-    campaign: string; name: string; nameDay: string; type: MetaResultType | null;
-    spend: number; impressions: number; linkClicks: number; results: number | null; reach: number | null;
-}
-
-/** Хамгийн олон өдөр давтагдсан төрөл; тэнцвэл хамгийн сүүлийн өдрийнх. */
-function dominantType(rows: readonly Row[]): MetaResultType | null {
-    const counts = new Map<MetaResultType, { days: number; last: string }>();
-    for (const row of rows) {
-        if (!row.type) continue;
-        const entry = counts.get(row.type) ?? { days: 0, last: '' };
-        counts.set(row.type, { days: entry.days + 1, last: row.day > entry.last ? row.day : entry.last });
-    }
-    return [...counts].sort(([, a], [, b]) => b.days - a.days || b.last.localeCompare(a.last))[0]?.[0] ?? null;
-}
 
 /**
  * Хадгалсан ad set × өдрийн мөрүүдээс нэг хугацааны (хурлын 7 хоног) `meta_ads` тайлан.
@@ -98,73 +62,11 @@ export function buildMetaChannelReport(input: {
 }): MetaChannelReport {
     const warnings: ChannelWarning[] = [];
     const info = (code: ChannelWarning['code'], message: string, level: ChannelWarning['level'] = 'info') => warnings.push({ code, level, message });
-    const rows: Row[] = input.rows.map(r => ({
-        day: r.day, campaign: r.campaign_id, name: r.campaign_name || r.campaign_id, adset: r.adset_id,
-        spend: num(r.spend), impressions: num(r.impressions), clicks: num(r.clicks), linkClicks: num(r.inline_link_clicks),
-        landingPageViews: num(r.landing_page_views), type: isResultType(r.result_type) ? r.result_type : null,
-        results: r.results === null || r.results === undefined ? null : num(r.results), source: r.result_source,
-    }));
-
-    // Ad set-ийн төрөл: үр дүн гарсан өдрүүдийнх; үр дүнгүй бол зорилгын (indicator/goal) төрөл.
-    const adsets = new Map<string, { campaign: string; rows: Row[] }>();
-    for (const row of rows) {
-        const adset = adsets.get(row.adset) ?? { campaign: row.campaign, rows: [] };
-        adset.rows.push(row);
-        adsets.set(row.adset, adset);
-    }
-    const adsetInfo = new Map<string, { campaign: string; type: MetaResultType | null; hasResults: boolean }>();
-    for (const [id, adset] of adsets) {
-        const withResults = adset.rows.filter(r => r.type && (r.results ?? 0) > 0);
-        adsetInfo.set(id, { campaign: adset.campaign, type: dominantType(withResults.length ? withResults : adset.rows), hasResults: withResults.length > 0 });
-    }
-    // Кампанит ажлын төрөл: үр дүнтэй ad set-үүдийнх. Ганц бол бүх зардал тэр төрөлд (зорилгоор хуваарилна);
-    // өөр өөр бол ad set бүр өөрийн төрлийн мөрөнд, харин эдгээр төрлийн аль нь ч биш (үр дүнгүй, өөр
-    // зорилготой) ad set-ийн зардал кампанит ажлын хамгийн их зардалтай үр дүнгийн төрөлд — кампанит
-    // ажил гаргаагүй төрөл тайланд гарахгүй.
-    const campaignTypes = new Map<string, Set<MetaResultType>>();
-    const campaignMainType = new Map<string, MetaResultType>();
-    for (const campaign of new Set(rows.map(r => r.campaign))) {
-        const infos = [...adsetInfo.values()].filter(i => i.campaign === campaign);
-        const withResults = infos.filter(i => i.hasResults && i.type);
-        const types = new Set((withResults.length ? withResults : infos).flatMap(i => i.type ? [i.type] : []));
-        campaignTypes.set(campaign, types);
-        if (types.size < 2) continue;
-        const spendByType = new Map<MetaResultType, number>();
-        for (const row of rows) {
-            const type = adsetInfo.get(row.adset)!.type;
-            if (row.campaign === campaign && type && types.has(type)) spendByType.set(type, (spendByType.get(type) ?? 0) + row.spend);
-        }
-        campaignMainType.set(campaign, [...types].sort((a, b) => (spendByType.get(b) ?? 0) - (spendByType.get(a) ?? 0)
-            || META_RESULT_TYPES.indexOf(a) - META_RESULT_TYPES.indexOf(b))[0]);
-    }
-    const groupTypeOf = (row: Row): MetaResultType | null => {
-        const types = campaignTypes.get(row.campaign)!;
-        if (types.size === 1) return [...types][0];
-        const own = adsetInfo.get(row.adset)!.type;
-        return own && types.has(own) ? own : campaignMainType.get(row.campaign) ?? own;
-    };
-
-    const groups = new Map<string, Group>();
-    const unknownResults = new Set<string>();
-    for (const row of rows) {
-        const type = groupTypeOf(row);
-        const key = `${row.campaign}\u0000${type ?? ''}`;
-        const group = groups.get(key) ?? { campaign: row.campaign, name: row.name, nameDay: row.day, type, spend: 0, impressions: 0, linkClicks: 0, results: 0, reach: null };
-        group.spend += row.spend;
-        group.impressions += row.impressions;
-        group.linkClicks += row.linkClicks;
-        if (row.day >= group.nameDay) { group.name = row.name; group.nameDay = row.day; }
-        // Зөвхөн ижил нэгжийн үр дүнг нэмнэ; reach-ийг өдрөөр нэмэхгүй (доор давхардалгүйгээр).
-        if (type && type !== 'reach' && row.type === type) {
-            if (row.results === null) unknownResults.add(key);
-            else if (group.results !== null) group.results += row.results;
-        }
-        groups.set(key, group);
-    }
-    for (const key of unknownResults) groups.get(key)!.results = null;
+    const rows = toMetaResultRows(input.rows);
+    const groups = groupMetaResultRows(rows);
 
     // Хүргэлтгүй (зардал, харагдалт, үр дүн бүгд 0) кампанит ажлыг хасна.
-    const kept = [...groups.values()].filter(g => g.spend > 0 || g.impressions > 0 || (g.type !== 'reach' && (g.results ?? 0) > 0));
+    const kept: Array<MetaResultGroup & { reach: number | null }> = groups.filter(hasMetaDelivery).map(g => ({ ...g, reach: null }));
     const perCampaign = new Map<string, number>();
     for (const group of kept) perCampaign.set(group.campaign, (perCampaign.get(group.campaign) ?? 0) + 1);
     for (const group of kept) {
