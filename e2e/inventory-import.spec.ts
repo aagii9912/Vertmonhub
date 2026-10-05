@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
+import { COMPACT_VIEWPORT } from './support/viewports';
 
 const shopId = '00000000-0000-4000-8000-000000000110';
 const elysiumId = '00000000-0000-4000-8000-000000000120';
@@ -109,10 +110,10 @@ async function expectHealthy(page: Page, state: Awaited<ReturnType<typeof setup>
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 }
 
-for (const mobile of [false, true]) {
-    const viewport = mobile ? 'mobile' : 'desktop';
+for (const compact of [false, true]) {
+    const viewport = compact ? 'compact' : 'desktop';
     test(`inventory preview requires scope and refreshes after changed inputs (${viewport})`, async ({ page }, info) => {
-        if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+        if (compact) await page.setViewportSize(COMPACT_VIEWPORT);
         const state = await setup(page);
         await page.goto('/admin/import');
         const project = page.getByLabel('Төсөл сонгох', { exact: true });
@@ -167,7 +168,7 @@ for (const mobile of [false, true]) {
     });
 
     test(`inventory preview errors are visible and existing rows cannot commit (${viewport})`, async ({ page }) => {
-        if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+        if (compact) await page.setViewportSize(COMPACT_VIEWPORT);
         const state = await setup(page);
         await page.goto('/admin/import');
         await page.getByLabel('Төсөл сонгох', { exact: true }).selectOption(elysiumId);
@@ -185,7 +186,7 @@ for (const mobile of [false, true]) {
     });
 
     test(`project creation and inventory preview cannot overlap (${viewport})`, async ({ page }) => {
-        if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+        if (compact) await page.setViewportSize(COMPACT_VIEWPORT);
         const state = await setup(page);
         await page.goto('/admin/import');
         const project = page.getByLabel('Төсөл сонгох', { exact: true });
@@ -223,7 +224,7 @@ for (const mobile of [false, true]) {
     });
 
     test(`blocks summary and unit failures expose retries (${viewport})`, async ({ page }, info) => {
-        if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+        if (compact) await page.setViewportSize(COMPACT_VIEWPORT);
         const state = await setup(page); state.failSummary = true;
         await page.goto('/dashboard/properties/blocks');
         await expect(page.getByRole('alert').filter({ hasText: 'Блокийн мэдээллийн түр алдаа' })).toBeVisible();

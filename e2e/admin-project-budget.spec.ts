@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import { compareErp, normalizeErpSheets } from '../src/lib/erp/import';
 import { buildBudgetOverview } from '../src/lib/marketing/budget';
+import { COMPACT_VIEWPORT } from './support/viewports';
 
 const adminId = '00000000-0000-4000-8000-000000000101';
 const delegateId = '00000000-0000-4000-8000-000000000102';
@@ -77,10 +78,10 @@ async function setup(page: Page) {
     return state;
 }
 
-for (const mobile of [false, true]) {
-    const viewport = mobile ? 'mobile' : 'desktop';
+for (const compact of [false, true]) {
+    const viewport = compact ? 'compact' : 'desktop';
     test(`Elysium saved source and baseline visible (${viewport})`, async ({ page }, info) => {
-        if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+        if (compact) await page.setViewportSize(COMPACT_VIEWPORT);
         const state = await setup(page);
         await page.goto('/dashboard/reports/erp');
         await expect(page.getByLabel('Эх үүсвэр / тайлангийн багц', { exact: true })).toHaveValue('Elysium ERP');
@@ -93,7 +94,7 @@ for (const mobile of [false, true]) {
         await page.screenshot({ path: info.outputPath('elysium-erp.png'), fullPage: true });
     });
     test(`annual project budget preview and failed-save retry (${viewport})`, async ({ page }, info) => {
-        if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+        if (compact) await page.setViewportSize(COMPACT_VIEWPORT);
         const state = await setup(page);
         await page.goto('/marketing/budget');
         // Shop = төсөл: ганц төсөлтэй ажлын орчинд хамрах хүрээ сонгохгүй — төслийн жилийн үндсэн төсөв.
@@ -119,7 +120,7 @@ for (const mobile of [false, true]) {
         await page.screenshot({ path: info.outputPath('annual-project-budget.png'), fullPage: true });
     });
     test(`Super Admin delegation has explicit confirmation (${viewport})`, async ({ page }, info) => {
-        if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+        if (compact) await page.setViewportSize(COMPACT_VIEWPORT);
         const state = await setup(page);
         await page.goto('/admin/users');
         await page.getByRole('button', { name: 'Super Admin эрх өгөх', exact: true }).click();

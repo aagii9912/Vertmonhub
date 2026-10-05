@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { buildOperationsReport } from '../src/lib/dashboard/operations-report';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import { managerActivityFixture } from './support/manager-activity';
+import { COMPACT_VIEWPORT } from './support/viewports';
 
 const leadId = '00000000-0000-4000-8000-000000000010';
 const shopId = '00000000-0000-4000-8000-000000000002';
@@ -88,9 +89,9 @@ test('protected pages reject missing and invalid sessions', async ({ page, conte
     await expect(page).toHaveURL(/\/auth\/login/);
 });
 
-for (const mobile of [false, true]) {
-    test(`login → lead → schedule → report (${mobile ? 'mobile' : 'desktop'})`, async ({ page }) => {
-        if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+for (const compact of [false, true]) {
+    test(`login → lead → schedule → report (${compact ? 'compact' : 'desktop'})`, async ({ page }) => {
+        if (compact) await page.setViewportSize(COMPACT_VIEWPORT);
         const state = await fixtures(page);
         await login(page);
         await page.getByRole('button', { name: 'Шинэ лид', exact: true }).click();
