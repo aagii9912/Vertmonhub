@@ -339,7 +339,7 @@ export default function TasksPage() {
                         : 'Хийх ажлаа бүртгэж, сануулга аваарай — дууссан ажлууд сарын KPI тайланд автоматаар орно'
                 }
                 secondaryActions={
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                         <Button variant="secondary" size="sm" onClick={() => openAiPanel('Миний хийх ажил, дуусах хугацаа, сануулгыг бүртгэ: ')}>AI-аар бүртгүүлэх</Button>
                         {todayPct !== null && (
                             <ProgressRing
