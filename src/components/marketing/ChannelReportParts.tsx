@@ -1,12 +1,17 @@
 'use client';
 
 import {
-    channelMetric, channelMetrics, formatChannelValue, peakMissedHours,
-    type BreakdownRow, type ChannelSource, type ChannelTotals, type ChannelWarning, type MetricDelta,
+    CHANNEL_API_WEEK_REPLACE_HINT, channelMetric, channelMetrics, formatChannelValue, isMetaResultMetric, peakMissedHours, periodDays,
+    type BreakdownRow, type ChannelSource, type ChannelSplitWeek, type ChannelTotals, type ChannelWarning, type MetricDelta,
 } from '@/lib/marketing/channel-reports';
+import {
+    META_RESULT_DEFS, META_RESULT_TYPES, metaResultCostKey, metaResultKey, metaResultSpendKey, presentMetaResultTypes, type MetaResultType,
+} from '@/lib/marketing/meta-results';
 import { Alert } from '@/components/ui/Alert';
+import { Badge } from '@/components/ui/Badge';
 
 const currencyOf = (totals: ChannelTotals) => typeof totals.currency === 'string' ? totals.currency : null;
+const isResultType = (tag: string | undefined): tag is MetaResultType => !!tag && (META_RESULT_TYPES as readonly string[]).includes(tag);
 
 /** Үзүүлэлтийн утгыг төрлөөр нь (тоо, хувь, hh:mm:ss, валюттай мөнгө) форматлана. */
 export function formatMetric(source: ChannelSource, key: string, value: unknown, totals: ChannelTotals): string {
@@ -14,9 +19,15 @@ export function formatMetric(source: ChannelSource, key: string, value: unknown,
     return typeof value === 'number' && def ? formatChannelValue(value, def.kind, currencyOf(totals)) : '—';
 }
 
+/** «6/7 өдөр» — өгөгдөл хамарсан өдөр / тайлангийн өдөр. */
+export function coverageText(period: { from: string; to: string }, data: { from: string; to: string } | null | undefined): string | null {
+    if (!data) return null;
+    return `${periodDays(data)}/${periodDays(period)} өдөр`;
+}
+
 function DeltaText({ delta }: { delta?: MetricDelta }) {
     if (!delta || delta.previous === null) return <span className="text-muted-foreground">Өмнөх тайлан алга</span>;
-    if (!delta.comparable) return <span className="text-muted-foreground">Валют өөр тул харьцуулаагүй</span>;
+    if (!delta.comparable) return <span className="text-muted-foreground">{delta.reason === 'coverage' ? 'Өдрийн хамралт дутуу тул харьцуулаагүй' : 'Валют өөр тул харьцуулаагүй'}</span>;
     if (delta.pct === null) return <span className="text-muted-foreground">Өмнөх суурь 0 · хувь тооцоогүй</span>;
     // Өсөлт сайн эсэх нь үзүүлэлтээс хамаарна (алдсан дуудлага буурах нь сайн) тул өнгөөр үнэлэхгүй.
     return <span className="text-fg-2">{delta.pct > 0 ? '+' : ''}{delta.pct}% өмнөхөөс</span>;
@@ -24,7 +35,8 @@ function DeltaText({ delta }: { delta?: MetricDelta }) {
 
 /**
  * Нийт дүнгийн хавтан. Тооцоогүй (холбоогүй эсвэл тооцох боломжгүй) үзүүлэлтийг 0 биш
- * «Тооцоогүй» гэж харуулна. `keys` өгвөл зөвхөн тэдгээрийг.
+ * «Тооцоогүй» гэж харуулна. `keys` өгвөл зөвхөн тэдгээрийг. Meta-гийн үр дүнг төрлөөр нь
+ * `MetaResultsByType` тусад нь харуулна.
  */
 export function ChannelTotalsGrid({ source, totals, missing = [], comparison, keys }: {
     source: ChannelSource;
@@ -33,7 +45,8 @@ export function ChannelTotalsGrid({ source, totals, missing = [], comparison, ke
     comparison?: Record<string, MetricDelta> | null;
     keys?: string[];
 }) {
-    const metrics = channelMetrics(source).filter(m => keys ? keys.includes(m.key) : (typeof totals[m.key] === 'number' || missing.includes(m.key)));
+    const metrics = channelMetrics(source).filter(m => keys ? keys.includes(m.key)
+        : (source !== 'meta_ads' || !isMetaResultMetric(m.key)) && (typeof totals[m.key] === 'number' || missing.includes(m.key)));
     if (!metrics.length) return <p className="text-sm text-muted-foreground">Тооцсон үзүүлэлт алга.</p>;
     return <dl className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         {metrics.map(m => {
@@ -49,6 +62,47 @@ export function ChannelTotalsGrid({ source, totals, missing = [], comparison, ke
             </div>;
         })}
     </dl>;
+}
+
+/** Нэг үр дүнгийн өртөг: reach бол «/1000 хүн». */
+function costText(type: MetaResultType, value: unknown, currency: string | null): string {
+    if (typeof value !== 'number') return '—';
+    return `${formatChannelValue(value, 'money', currency)}${META_RESULT_DEFS[type].costScale === 1000 ? ' / 1000 хүн' : ''}`;
+}
+
+/**
+ * Meta-гийн үр дүн төрөл бүрээр: тоо, кампанит ажлын зорилгоор хуваарилсан зардал, нэг үр дүнгийн
+ * өртөг. Хүрсэн хүн (reach)-ийг өдрөөр нэмдэггүй тул тоо нь «—» байж болно (зардлыг харуулна).
+ */
+export function MetaResultsByType({ totals, comparison }: { totals: ChannelTotals; comparison?: Record<string, MetricDelta> | null }) {
+    const types = presentMetaResultTypes(totals);
+    if (!types.length) {
+        if (typeof totals.results !== 'number') return null;
+        // Төрөлгүй (Result indicator сонгоогүй) хуучин тайлан.
+        return <p className="text-sm"><span className="text-muted-foreground">Results (үр дүн, төрөл тодорхойгүй):</span> <span className="num font-semibold">{formatChannelValue(totals.results, 'count')}</span>
+            {typeof totals.cost_per_result === 'number' && <span className="text-muted-foreground"> · нэг үр дүн {formatChannelValue(totals.cost_per_result, 'money', currencyOf(totals))}</span>}</p>;
+    }
+    return <div className="max-w-full overflow-x-auto rounded-lg border border-border" tabIndex={0} role="region" aria-label="Үр дүн төрлөөр">
+        <table className="w-full min-w-[420px] text-left text-xs">
+            <caption className="px-3 pt-2 text-left text-xs font-semibold text-foreground">Үр дүн төрлөөр <span className="font-normal text-muted-foreground">· зардлыг кампанит ажлын зорилгоор хуваарилсан</span></caption>
+            <thead className="text-muted-foreground"><tr>
+                {['Үр дүн', 'Тоо', 'Зардал', 'Нэг үр дүнгийн өртөг'].map((label, i) => <th key={label} scope="col" className={`px-3 py-2 font-medium ${i ? 'text-right' : ''}`}>{label}</th>)}
+            </tr></thead>
+            <tbody>{types.map(type => {
+                const def = META_RESULT_DEFS[type];
+                const results = totals[metaResultKey(type)];
+                return <tr key={type} className="border-t border-border">
+                    <th scope="row" className="px-3 py-2 font-medium">{def.label}</th>
+                    <td className="num px-3 py-2 text-right">
+                        {typeof results === 'number' ? formatChannelValue(results, 'count') : <span className="text-muted-foreground" title="Хүрсэн хүнийг өдөр, кампанит ажлаар нэмэхгүй">—</span>}
+                        {comparison && typeof results === 'number' && <span className="block text-[11px]"><DeltaText delta={comparison[metaResultKey(type)]} /></span>}
+                    </td>
+                    <td className="num px-3 py-2 text-right">{formatMetric('meta_ads', metaResultSpendKey(type), totals[metaResultSpendKey(type)], totals)}</td>
+                    <td className="num px-3 py-2 text-right" title={def.costLabel}>{costText(type, totals[metaResultCostKey(type)], currencyOf(totals))}</td>
+                </tr>;
+            })}</tbody>
+        </table>
+    </div>;
 }
 
 /** Алдсан + тасалсан дуудлага цаг бүрээр (Улаанбаатарын цаг). */
@@ -72,24 +126,95 @@ export function MissedCallsByHour({ breakdown }: { breakdown: BreakdownRow[] }) 
     </figure>;
 }
 
+/** Meta-гийн кампанит ажлын задаргааны багана: үр дүнгийн хажууд төрлийг нь заана. */
+const META_BREAKDOWN_KEYS = ['spend', 'impressions', 'link_clicks', 'reach', 'results', 'cost_per_result'] as const;
+
 /** Campaign / өдөр / бүлгийн задаргааны эхний мөрүүд. */
 export function ChannelBreakdownTable({ source, rows, totals, limit = 20 }: { source: ChannelSource; rows: BreakdownRow[]; totals: ChannelTotals; limit?: number }) {
     const list = rows.filter(r => r.kind !== 'hour');
     if (!list.length) return null;
-    const keys = channelMetrics(source).map(m => m.key).filter(key => list.some(r => typeof r.values[key] === 'number')).slice(0, 6);
+    const meta = source === 'meta_ads';
+    const keys = meta
+        ? META_BREAKDOWN_KEYS.filter(key => list.some(r => typeof r.values[key] === 'number'))
+        : channelMetrics(source).map(m => m.key).filter(key => list.some(r => typeof r.values[key] === 'number')).slice(0, 6);
+    const typed = meta && list.some(r => isResultType(r.tag));
     const title = { campaign: 'Кампанит ажил', day: 'Өдөр', group: 'Бүлэг', hour: 'Цаг' }[list[0].kind];
+    const header = (key: string) => meta && key === 'results' ? 'Үр дүн' : meta && key === 'cost_per_result' ? 'Нэг үр дүнгийн өртөг' : channelMetric(source, key)?.label;
+    const cell = (row: BreakdownRow, key: string) => {
+        const value = row.values[key];
+        if (meta && isResultType(row.tag) && key === 'cost_per_result') return costText(row.tag, value, currencyOf(totals));
+        if (meta && key === 'results') return typeof value === 'number' ? formatChannelValue(value, 'count') : '—';
+        return formatMetric(source, key, value, totals);
+    };
     return <div className="max-w-full overflow-x-auto rounded-lg border border-border" tabIndex={0} role="region" aria-label={`Задаргаа: ${title}`}>
-        <table className="w-full text-left text-xs" style={{ minWidth: 160 + keys.length * 110 }}>
+        <table className="w-full text-left text-xs" style={{ minWidth: 160 + (keys.length + (typed ? 1 : 0)) * 110 }}>
             <thead className="bg-surface-2 text-muted-foreground"><tr>
                 <th scope="col" className="px-3 py-2 font-medium">{title}</th>
-                {keys.map(key => <th key={key} scope="col" className="px-3 py-2 text-right font-medium">{channelMetric(source, key)?.label}</th>)}
+                {keys.map(key => <th key={key} scope="col" className="px-3 py-2 text-right font-medium">{header(key)}</th>)}
+                {typed && <th scope="col" className="px-3 py-2 font-medium">Үр дүнгийн төрөл</th>}
             </tr></thead>
-            <tbody>{list.slice(0, limit).map(row => <tr key={`${row.kind}:${row.label}`} className="border-t border-border">
+            <tbody>{list.slice(0, limit).map((row, index) => <tr key={`${row.kind}:${row.label}:${row.tag ?? ''}:${index}`} className="border-t border-border">
                 <th scope="row" className="max-w-64 break-words px-3 py-2 font-medium">{row.label}</th>
-                {keys.map(key => <td key={key} className="num px-3 py-2 text-right">{formatMetric(source, key, row.values[key], totals)}</td>)}
+                {keys.map(key => <td key={key} className="num px-3 py-2 text-right">{cell(row, key)}</td>)}
+                {typed && <td className="px-3 py-2 text-muted-foreground">{isResultType(row.tag) ? META_RESULT_DEFS[row.tag].label : 'Тодорхойгүй'}</td>}
             </tr>)}</tbody>
         </table>
         {list.length > limit && <p className="border-t border-border px-3 py-2 text-xs text-muted-foreground">Эхний {limit} мөр харагдаж байна (нийт {list.length}).</p>}
+    </div>;
+}
+
+/** Хадгалсан тайлангийн төлөв: шинэ, Meta API (солихгүй), илүү бүрэн (анхдагчаар алгасна), ижил файл, солигдоно. */
+function SavedWeekState({ week, chosen }: { week: ChannelSplitWeek; chosen: boolean }) {
+    const existing = week.existing;
+    if (!existing) return <span className="text-muted-foreground">Шинэ</span>;
+    const saved = existing.data_from && existing.data_to ? coverageText(week, { from: existing.data_from, to: existing.data_to }) : null;
+    if (existing.origin === 'api') return <Badge variant="danger" title={CHANNEL_API_WEEK_REPLACE_HINT}>Meta API — солихгүй</Badge>;
+    if (existing.sameFile) return <Badge variant="neutral">Ижил файл</Badge>;
+    if (week.skip === 'fuller' && !chosen) return <Badge variant="neutral" title="Хадгалсан тайлан энэ файлаас олон өдөр хамарсан тул анхдагчаар алгасна. Сонговол энэ файлаар солигдоно.">Хадгалсан нь илүү бүрэн{saved ? ` (${saved})` : ''}</Badge>;
+    return <Badge variant="warning">Солигдоно{saved ? ` (${saved})` : ''}</Badge>;
+}
+
+/**
+ * Хурлын долоо хоногоор хуваах урьдчилсан харагдац: долоо хоног бүрийн зардал, Meta-гийн дуудлага,
+ * өдрийн хамралт, хадгалсан тайлантай эсэх. Файлд дуудлагын кампанит ажил байвал тухайн долоо хоногт
+ * хүргэлтгүй бол 0. `selected` өгвөл долоо хоног бүрийг хадгалах эсэхийг сонгоно — Meta API-ийн
+ * долоо хоногийг сонгох боломжгүй, илүү бүрэн хадгалсан долоо хоног анхдагчаар сонгогдоогүй.
+ */
+export function ChannelSplitWeeks({ weeks, currency, showCalls, selected, onToggle, disabled }: {
+    weeks: ChannelSplitWeek[];
+    currency: string | null;
+    showCalls: boolean;
+    selected?: ReadonlySet<string>;
+    onToggle?: (from: string, on: boolean) => void;
+    disabled?: boolean;
+}) {
+    const pick = !!selected && !!onToggle;
+    const labels = [...(pick ? ['Хадгалах'] : []), 'Долоо хоног (Лхагва–Мягмар)', 'Зардал', ...(showCalls ? ['Дуудлага (Meta)', 'Нэг дуудлагын өртөг'] : []), 'Өдөр', 'Хадгалсан'];
+    const numeric = new Set(['Зардал', 'Дуудлага (Meta)', 'Нэг дуудлагын өртөг']);
+    return <div className="max-w-full overflow-x-auto rounded-lg border border-border" tabIndex={0} role="region" aria-label="Хурлын долоо хоногууд">
+        <table className={`w-full text-left text-xs ${pick ? 'min-w-[640px]' : 'min-w-[560px]'}`}>
+            <thead className="bg-surface-2 text-muted-foreground"><tr>
+                {labels.map(label => <th key={label} scope="col" className={`px-3 py-2 font-medium ${numeric.has(label) ? 'text-right' : ''}`}>{label}</th>)}
+            </tr></thead>
+            <tbody>{weeks.map(week => {
+                const coverage = coverageText(week, week.dataPeriod);
+                const partial = !!week.dataPeriod && periodDays(week.dataPeriod) < periodDays(week);
+                const calls = week.totals[metaResultKey('calls')];
+                const chosen = !!selected?.has(week.from);
+                return <tr key={week.from} className="border-t border-border">
+                    {pick && <td className="px-3 py-2">
+                        <input type="checkbox" className="size-4 accent-brand" checked={chosen} disabled={disabled || week.skip === 'api'}
+                            aria-label={`${week.from} – ${week.to} долоо хоногийг хадгалах`} onChange={event => onToggle!(week.from, event.target.checked)} />
+                    </td>}
+                    <th scope="row" className="num whitespace-nowrap px-3 py-2 font-medium">{week.from} – {week.to}</th>
+                    <td className="num px-3 py-2 text-right">{typeof week.totals.spend === 'number' ? formatChannelValue(week.totals.spend, 'money', currency) : '—'}</td>
+                    {showCalls && <td className="num px-3 py-2 text-right">{typeof calls === 'number' ? formatChannelValue(calls, 'count') : '0'}</td>}
+                    {showCalls && <td className="num px-3 py-2 text-right">{costText('calls', week.totals[metaResultCostKey('calls')], currency)}</td>}
+                    <td className="whitespace-nowrap px-3 py-2">{coverage ? <span className={partial ? 'text-status-pending' : undefined} title={week.missingDays.length ? `Өгөгдөлгүй: ${week.missingDays.join(', ')}` : undefined}>{coverage}</span> : '—'}</td>
+                    <td className="px-3 py-2"><SavedWeekState week={week} chosen={pick ? chosen : !week.skip} /></td>
+                </tr>;
+            })}</tbody>
+        </table>
     </div>;
 }
 

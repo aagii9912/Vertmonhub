@@ -28,6 +28,8 @@ import { leadCategoryName, listLeadCategories, resolveLeadCategory, type LeadCat
 import type { LeadStatus } from '@/types/property';
 import { formatMNT } from '@/lib/utils/currency';
 import { contractIdsByPreviousHolder, listContractTransfers } from '@/lib/services/ContractService';
+import { propertyStatusLabel, unitStatusLabel, type InventoryStatus } from '@/lib/inventory/labels';
+import { contractStatusLabel } from '@/lib/contracts/labels';
 
 /** Timeline-д «хэн өөрчилсөн»-ийг тэмдэглэх (UI-ийн PATCH /leads/[id]-тэй ижил). */
 export interface LeadActor { userId?: string | null; userName?: string | null }
@@ -714,20 +716,29 @@ const PROPERTY_STATUSES = ['available', 'reserved', 'sold', 'rented', 'barter'];
 const LEAD_STATUSES_FOR_AI = ['new', 'contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'];
 const CONTRACT_STATUSES = ['active', 'closed', 'cancelled'];
 
-export async function updatePropertyStatus(shopId: string, args: any, confirm = false) {
-    if (!PROPERTY_STATUSES.includes(args.new_status)) {
-        return { error: `Төлөв буруу. Боломжтой: ${PROPERTY_STATUSES.join(', ')}` };
-    }
+interface PropertyRow { id: string; name: string | null; status: string | null }
+
+/** Listing байрыг (properties) ID эсвэл нэрээр нэг утгатай олно. */
+async function findProperty(shopId: string, args: any): Promise<{ property: PropertyRow } | { error: string; options?: unknown[] }> {
     let query = supabaseAdmin.from('properties').select('id, name, status').eq('shop_id', shopId).is('deleted_at', null);
     if (args.property_id) query = query.eq('id', args.property_id);
     else if (args.property_name) query = query.ilike('name', `%${args.property_name}%`);
     else return { error: 'property_id эсвэл property_name шаардлагатай' };
 
-    const { data: properties } = await query.limit(20);
+    const { data: properties, error } = await query.limit(20);
+    if (error) return { error: 'Байр шалгахад алдаа гарлаа' };
     if (!properties || properties.length === 0) return { error: 'Байр олдсонгүй' };
     if (properties.length > 1) return { error: `${properties.length} байр олдлоо, ID-г тодруулна уу`, options: properties.map(p => ({ id: p.id, name: p.name, status: p.status })) };
+    return { property: properties[0] as PropertyRow };
+}
 
-    const prop = properties[0];
+export async function updatePropertyStatus(shopId: string, args: any, confirm = false) {
+    if (!PROPERTY_STATUSES.includes(args.new_status)) {
+        return { error: `Төлөв буруу. Боломжтой: ${PROPERTY_STATUSES.join(', ')}` };
+    }
+    const found = await findProperty(shopId, args);
+    if ('error' in found) return found;
+    const prop = found.property;
     const oldStatus = prop.status;
     if (!confirm) {
         return confirmNeeded('update_property_status',
@@ -766,19 +777,16 @@ export async function updatePropertyPrice(shopId: string, args: any, confirm = f
 }
 
 // property_units.status enum (Мандала Гарден маягийн бодит нөөцийн грид)
-const UNIT_STATUSES = ['available', 'reserved', 'ordered', 'sold', 'handed_over'];
+const UNIT_STATUSES: readonly string[] = ['available', 'reserved', 'ordered', 'sold', 'handed_over'] satisfies InventoryStatus[];
+/** «Хүлээлгэсэн» = зарагдаад худалдан авагчид хүлээлгэн өгсөн (эзэмшигч 2026-10-05): зарагдсанд тооцно, хэзээ ч худалдаанд биш. */
+const SOLD_UNIT_STATUSES: readonly string[] = ['sold', 'handed_over'];
 
-/**
- * Нэгжийн (property_units) төлөвийг өөрчилнө — "байр зарагдсан" гэх мэт.
- * property_units бол Мандала Гарден маягийн ээлж→блок→нэгж бүтэцтэй бодит нөөц;
- * `properties` (зурагтай listing) хүснэгтээс тусдаа тул энэ tool-оор шинэчилнэ.
- */
-export async function updateUnitStatus(shopId: string, args: any, confirm = false) {
-    const newStatus = args.new_status;
-    if (!UNIT_STATUSES.includes(newStatus)) {
-        return { error: `Төлөв буруу. Боломжтой: ${UNIT_STATUSES.join(', ')}` };
-    }
+interface UnitRow { id: string; code: string | null; unit_number: string | null; block: string | null; phase: string | null; status: string | null }
 
+const unitLabelOf = (unit: UnitRow) => unit.code || unit.unit_number || unit.id;
+
+/** Нэгжийг ID/код/тоотоор (блок, ээлжээр нарийсгаж) нэг утгатай олно. */
+async function findUnit(shopId: string, args: any): Promise<{ unit: UnitRow } | { error: string; options?: unknown[] }> {
     let query = supabaseAdmin
         .from('property_units')
         .select('id, code, unit_number, block, phase, status')
@@ -792,33 +800,164 @@ export async function updateUnitStatus(shopId: string, args: any, confirm = fals
     if (args.block) query = query.eq('block', args.block);
     if (args.phase) query = query.ilike('phase', `%${args.phase}%`);
 
-    const { data: units } = await query.limit(50);
+    const { data: units, error } = await query.limit(50);
+    if (error) return { error: 'Нэгж шалгахад алдаа гарлаа' };
     if (!units || units.length === 0) return { error: 'Нэгж олдсонгүй' };
     if (units.length > 1) {
         return {
             error: `${units.length} нэгж олдлоо, код/блокоор тодруулна уу`,
-            options: units.slice(0, 10).map(u => ({ id: u.id, code: u.code, unit_number: u.unit_number, block: u.block, phase: u.phase, status: u.status })),
+            options: units.slice(0, 10).map(u => ({ id: u.id, code: u.code, unit_number: u.unit_number, block: u.block, phase: u.phase, status: u.status, statusLabel: unitStatusLabel(u.status) })),
         };
     }
+    return { unit: units[0] as UnitRow };
+}
 
-    const unit = units[0];
-    const oldStatus = unit.status;
-    const label = unit.code || unit.unit_number;
-    if (!confirm) {
-        return confirmNeeded('update_unit_status',
-            { unit_id: unit.id, new_status: newStatus },
-            `Нэгжийн төлөв өөрчлөх: ${label}`,
-            { Нэгж: label, Блок: unit.block || '-', 'Одоогийн төлөв': oldStatus, 'Шинэ төлөв': newStatus });
+/** Preview-ээс хойш төлөв өөрчлөгдсөн: хэрэглэгчийн батлаагүй шилжилтийг хийхгүй. */
+function statusChanged(subject: string, change = ''): { error: string } {
+    return { error: `${subject}: төлөв энэ хооронд өөрчлөгдсөн байна${change}. Дахин шалгаад үйлдлийг шинээр хүснэ үү.` };
+}
+
+/**
+ * Баталгаажуулалт (confirm) preview-д харуулсан төлөвтэй (args[key]) тулгана: preview-ийн
+ * args нь тэр төлөвийг агуулдаг. Өөр бол (жишээ нь энэ хооронд зарагдсан) алдаа буцаана —
+ * хэрэглэгч хараагүй төлөвөөс шилжүүлэхгүй. Төлөвгүй (хуучин) preview-г ч хүлээж авахгүй.
+ */
+function previewStatusDrift(args: any, key: string, subject: string, current: string | null, label: (status: string | null) => string): { error: string } | null {
+    const expected = args && Object.hasOwn(args, key) ? args[key] : undefined;
+    if (expected !== null && typeof expected !== 'string') {
+        return { error: 'Баталгаажуулалтад урьдчилан харсан төлөв алга байна. Үйлдлийг дахин хүснэ үү.' };
     }
-    const { error } = await supabaseAdmin
+    return expected === current ? null : statusChanged(subject, ` («${label(expected)}» → «${label(current)}»)`);
+}
+
+/** Баталсан (preview-д харуулсан) төлөв хэвээр байвал л бичнэ (compare-and-set): уншсаны дараах өөрчлөлтийг дарж бичихгүй. */
+async function writeUnitStatus(shopId: string, unit: UnitRow, expected: string | null, newStatus: string): Promise<{ error: string } | null> {
+    let query = supabaseAdmin
         .from('property_units')
         .update({ status: newStatus, updated_at: new Date().toISOString() })
         .eq('id', unit.id)
         .eq('shop_id', shopId);
+    query = expected === null ? query.is('status', null) : query.eq('status', expected);
+    const { data, error } = await query.select('id');
     if (error) return { error: `Алдаа: ${error.message}` };
+    return data?.length ? null : statusChanged(`Нэгж ${unitLabelOf(unit)}`);
+}
+
+/** Listing байрны төлөвийг баталсан төлөв хэвээр байвал л бичнэ (compare-and-set). */
+async function writePropertyStatus(shopId: string, property: PropertyRow, expected: string | null, newStatus: string): Promise<{ error: string } | null> {
+    let query = supabaseAdmin
+        .from('properties')
+        .update({ status: newStatus })
+        .eq('id', property.id)
+        .eq('shop_id', shopId)
+        .is('deleted_at', null);
+    query = expected === null ? query.is('status', null) : query.eq('status', expected);
+    const { data, error } = await query.select('id');
+    if (error) return { error: `Алдаа: ${error.message}` };
+    return data?.length ? null : statusChanged(`Байр ${property.name || property.id}`);
+}
+
+/**
+ * Нэгжийн (property_units) төлөвийг өөрчилнө — "байр зарагдсан" гэх мэт.
+ * property_units бол Мандала Гарден маягийн ээлж→блок→нэгж бүтэцтэй бодит нөөц;
+ * `properties` (зурагтай listing) хүснэгтээс тусдаа тул энэ tool-оор шинэчилнэ.
+ * Гэрээний үйлдэл зарагдсан нэгжийг ухраадаггүй тул тийм засварыг ЭНЭ tool-оор ил хийнэ.
+ */
+export async function updateUnitStatus(shopId: string, args: any, confirm = false) {
+    const newStatus = args.new_status;
+    if (!UNIT_STATUSES.includes(newStatus)) {
+        return { error: `Төлөв буруу. Боломжтой: ${UNIT_STATUSES.join(', ')}` };
+    }
+
+    const found = await findUnit(shopId, args);
+    if ('error' in found) return found;
+    const { unit } = found;
+    const oldStatus = unit.status;
+    const label = unitLabelOf(unit);
+    if (!confirm) {
+        const preview: Record<string, unknown> = { Нэгж: label, Блок: unit.block || '-', 'Одоогийн төлөв': unitStatusLabel(oldStatus), 'Шинэ төлөв': unitStatusLabel(newStatus) };
+        // Картын мөр нэг мөрөнд таслагддаг тул товч.
+        if (oldStatus && SOLD_UNIT_STATUSES.includes(oldStatus) && !SOLD_UNIT_STATUSES.includes(newStatus)) {
+            preview['Анхааруулга'] = 'Зарагдсаныг буцаана, гэрээг шалгана уу';
+        }
+        return confirmNeeded('update_unit_status', { unit_id: unit.id, new_status: newStatus, expected_status: oldStatus }, `Нэгжийн төлөв өөрчлөх: ${label}`, preview);
+    }
+    // Preview-д харуулснаас өөр төлөвтэй бол (жишээ нь энэ хооронд зарагдсан) анхааруулгагүйгээр дарж бичихгүй.
+    const drift = previewStatusDrift(args, 'expected_status', `Нэгж ${label}`, oldStatus, unitStatusLabel);
+    if (drift) return drift;
+    const failed = await writeUnitStatus(shopId, unit, oldStatus, newStatus);
+    if (failed) return failed;
 
     return { success: true, unit: label, block: unit.block, oldStatus, newStatus };
 }
+
+/** Гэрээний үйлдлийн нэгж/байрны алхам: дараагийн төлөв, эсвэл өөрчлөхгүй шалтгаан (skip — бүтэн, note — картад товч). */
+export type ContractInventoryStep = { next: string } | { skip: string; note: string };
+
+interface ContractStepRules {
+    /** Үр дүн, баталгаажуулалтын args-ийн түлхүүр (`unit_id`, `unit_status` …). */
+    entity: 'unit' | 'property';
+    /** «Нэгж» / «Байр» ба харьяалахын тийн ялгал (өгүүлбэрийн эхэнд, дунд). */
+    subject: string;
+    Of: string;
+    of: string;
+    steps: Record<string, { from: readonly string[]; to: string }>;
+    known: readonly string[];
+    /** Цуцлалт худалдаанд буцаахгүй (зарагдсан гэх мэт) төлөвүүд. */
+    keepOnCancel: readonly string[];
+    label: (status: string | null) => string;
+    gloss?: Record<string, string>;
+}
+
+/**
+ * Гэрээний үйлдэл нэгжийг зөвхөн урагш шилжүүлнэ: зарагдсан/хүлээлгэсэн нэгж хэзээ ч ухрахгүй.
+ * sign: Чөлөөтэй → Хадгалсан; paid: Чөлөөтэй/Хадгалсан/Захиалсан → Зарагдсан;
+ * cancel: Хадгалсан/Захиалсан → Чөлөөтэй (зарагдсан/хүлээлгэсэнийг өөрчлөхгүй).
+ */
+const UNIT_CONTRACT_RULES: ContractStepRules = {
+    entity: 'unit', subject: 'Нэгж', Of: 'Нэгжийн', of: 'нэгжийн', known: UNIT_STATUSES, keepOnCancel: SOLD_UNIT_STATUSES, label: unitStatusLabel,
+    gloss: { handed_over: 'зарагдаад хүлээлгэн өгсөн' },
+    steps: {
+        sign: { from: ['available'], to: 'reserved' },
+        paid: { from: ['available', 'reserved', 'ordered'], to: 'sold' },
+        cancel: { from: ['reserved', 'ordered'], to: 'available' },
+    },
+};
+
+/** Listing байр (properties) ч мөн адил: зарагдсан, түрээслэсэн, бартер байрыг гэрээний үйлдэл буцаахгүй. */
+const LISTING_CONTRACT_RULES: ContractStepRules = {
+    entity: 'property', subject: 'Байр', Of: 'Байрны', of: 'байрны', known: PROPERTY_STATUSES, keepOnCancel: ['sold', 'rented', 'barter'], label: propertyStatusLabel,
+    steps: {
+        sign: { from: ['available'], to: 'reserved' },
+        paid: { from: ['available', 'reserved'], to: 'sold' },
+        cancel: { from: ['reserved'], to: 'available' },
+    },
+};
+
+function contractStep(rules: ContractStepRules, action: string, current: string | null): ContractInventoryStep {
+    const step = rules.steps[action];
+    if (step && current && step.from.includes(current)) return { next: step.to };
+    const now = `«${rules.label(current)}»`;
+    if (!current || !rules.known.includes(current)) {
+        return {
+            skip: `${rules.Of} төлөв ${now} тодорхойгүй тул автоматаар өөрчлөхгүй. Шалгаад ${rules.of} төлөвийг тусад нь өөрчилнө үү.`,
+            note: 'Тодорхойгүй төлөв — тусад нь засна уу',
+        };
+    }
+    if (action === 'cancel' && rules.keepOnCancel.includes(current)) {
+        const gloss = rules.gloss?.[current];
+        return {
+            skip: `${rules.subject} ${now}${gloss ? ` (${gloss})` : ''} тул цуцлалтаар худалдаанд буцаахгүй. Гэрээ, төлбөрийг шалгаад шаардлагатай бол ${rules.of} төлөвийг тусад нь өөрчилнө үү.`,
+            note: 'Буцаахгүй — шалгаад тусад нь засна уу',
+        };
+    }
+    return { skip: `${rules.subject} аль хэдийн ${now} төлөвтэй тул өөрчлөхгүй.`, note: 'Аль хэдийн энэ төлөвтэй' };
+}
+
+/** Нэгжийн одоогийн төлөвөөс гэрээний үйлдлийн дараах төлөв, эсвэл өөрчлөхгүй шалтгаан. */
+export const contractUnitStep = (action: string, current: string | null) => contractStep(UNIT_CONTRACT_RULES, action, current);
+/** Listing байрны одоогийн төлөвөөс гэрээний үйлдлийн дараах төлөв, эсвэл өөрчлөхгүй шалтгаан. */
+export const contractListingStep = (action: string, current: string | null) => contractStep(LISTING_CONTRACT_RULES, action, current);
 
 export async function updateLeadStatus(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE, actor?: LeadActor) {
     if (!LEAD_STATUSES_FOR_AI.includes(args.new_status)) {
@@ -941,6 +1080,7 @@ export async function updateContractStatus(shopId: string, args: any, confirm = 
  * Мандала маягийн нэгж (property_units), listing байр (properties), лийд, гэрээний
  * статусыг action-оор нэгтгэж шинэчилнэ. confirm=false үед бүх зорилтыг олж НЭГ
  * нэгдсэн preview буцаана; confirm=true үед preview-д тогтсон ID-уудаар бодитоор шинэчилнэ.
+ * Нэгж/байрны preview-д харуулсан төлөв args-д дамжина; баталгаажуулахад өөрчлөгдсөн бол юу ч бичихгүй.
  */
 export async function processContractAction(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE, actor?: LeadActor): Promise<any> {
     // Баталгаажуулалтын хооронд өгөгдөл өөрчлөгдөж болно; бүх зорилтын дүрмийг бичихээс өмнө дахин шалгана.
@@ -948,10 +1088,11 @@ export async function processContractAction(shopId: string, args: any, confirm =
         const checked = await processContractAction(shopId, args, false, scope);
         if (checked.error) return checked;
     }
-    const statusMap: Record<string, { property: string; unit: string; lead: string; contract: string }> = {
-        sign:   { property: 'reserved',  unit: 'reserved',  lead: 'negotiating', contract: 'active' },
-        paid:   { property: 'sold',      unit: 'sold',      lead: 'closed_won',  contract: 'closed' },
-        cancel: { property: 'available', unit: 'available', lead: 'closed_lost', contract: 'cancelled' },
+    // Нэгж/байрны шилжилт одоогийн төлөвөөс хамаарна (UNIT_/LISTING_CONTRACT_RULES).
+    const statusMap: Record<string, { label: string; lead: string; contract: string }> = {
+        sign:   { label: 'Гарын үсэг',    lead: 'negotiating', contract: 'active' },
+        paid:   { label: 'Бүрэн төлбөр',  lead: 'closed_won',  contract: 'closed' },
+        cancel: { label: 'Цуцлалт',       lead: 'closed_lost', contract: 'cancelled' },
     };
 
     const mapping = statusMap[args.action];
@@ -959,27 +1100,64 @@ export async function processContractAction(shopId: string, args: any, confirm =
 
     const results: any = { action: args.action, changes: [] };
     const resolvedArgs: Record<string, unknown> = { action: args.action };
-    const preview: Record<string, unknown> = { Үйлдэл: args.action };
+    const preview: Record<string, unknown> = { Үйлдэл: mapping.label };
     const labels: string[] = [];
+    const notFound = 'Нэгж/гэрээ/лийд олдсонгүй. Нэгжийн код, гэрээний дугаар эсвэл харилцагчийн нэрийг тодорхой өгнө үү.';
 
-    // Нэгж (property_units) → байхгүй бол listing property руу шилжинэ
+    /**
+     * Нэгж эсвэл listing байрны алхам: одоогийн төлөвийг уншаад зөвхөн урагш шилжүүлнэ (contractStep),
+     * өөрчлөхгүй бол шалтгааныг preview-д хэлнэ. Preview-д харуулсан төлөв args-д (unit_status /
+     * property_status) дамжиж, баталгаажуулахад тулгагдана: өөрчлөгдсөн бол юу ч бичихгүй.
+     */
+    const inventoryStep = async (
+        rules: ContractStepRules,
+        target: { id: string; status: string | null; label: string },
+        write: (expected: string | null, next: string) => Promise<{ error: string } | null>,
+    ) => {
+        const { entity, subject, Of, label } = rules;
+        const drift = confirm ? previewStatusDrift(args, `${entity}_status`, `${subject} ${target.label}`, target.status, label) : null;
+        if (drift) return drift;
+        resolvedArgs[`${entity}_id`] = target.id;
+        resolvedArgs[`${entity}_status`] = target.status;
+        preview[subject] = target.label;
+        const step = contractStep(rules, args.action, target.status);
+        if ('skip' in step) {
+            preview[`${Of} төлөв`] = `${label(target.status)} (өөрчлөхгүй)`;
+            preview[`${Of} тайлбар`] = step.note;
+            return { skipped: true, [entity]: target.label, status: target.status, reason: step.skip };
+        }
+        preview[`${Of} төлөв`] = `${label(target.status)} → ${label(step.next)}`;
+        labels.push(target.label);
+        if (!confirm) return null;
+        const failed = await write(target.status, step.next);
+        if (failed) return failed;
+        results.changes.push(`${subject} ${target.label} → ${label(step.next)}`);
+        return { success: true, [entity]: target.label, oldStatus: target.status, newStatus: step.next };
+    };
+
+    // Нэгж (property_units) → байхгүй бол listing property руу шилжинэ.
     if (args.code || args.unit_number || args.unit_id) {
-        const unitResult: any = await updateUnitStatus(shopId, { unit_id: args.unit_id, code: args.code, unit_number: args.unit_number, block: args.block, phase: args.phase, new_status: mapping.unit }, confirm);
-        results.unit = unitResult;
-        if (unitResult.requiresConfirmation) {
-            resolvedArgs.unit_id = unitResult.action.args.unit_id;
-            preview['Нэгж'] = `${unitResult.preview['Нэгж']} → ${mapping.unit}`;
-            labels.push(String(unitResult.preview['Нэгж']));
-        } else if (!unitResult.error) results.changes.push(`Нэгж → ${mapping.unit}`);
+        const found = await findUnit(shopId, { unit_id: args.unit_id, code: args.code, unit_number: args.unit_number, block: args.block, phase: args.phase });
+        if ('error' in found) results.unit = found;
+        else {
+            const { unit } = found;
+            results.unit = await inventoryStep(UNIT_CONTRACT_RULES, { id: unit.id, status: unit.status, label: unitLabelOf(unit) },
+                (expected, next) => writeUnitStatus(shopId, unit, expected, next));
+        }
     } else if (args.property_id || args.property_name) {
-        const propResult: any = await updatePropertyStatus(shopId, { property_id: args.property_id, property_name: args.property_name, new_status: mapping.property }, confirm);
-        results.property = propResult;
-        if (propResult.requiresConfirmation) {
-            resolvedArgs.property_id = propResult.action.args.property_id;
-            preview['Байр'] = `${propResult.preview['Байр']} → ${mapping.property}`;
-            labels.push(String(propResult.preview['Байр']));
-        } else if (!propResult.error) results.changes.push(`Байр → ${mapping.property}`);
+        const found = await findProperty(shopId, { property_id: args.property_id, property_name: args.property_name });
+        if ('error' in found) results.property = found;
+        else {
+            const { property } = found;
+            results.property = await inventoryStep(LISTING_CONTRACT_RULES, { id: property.id, status: property.status, label: property.name || property.id },
+                (expected, next) => writePropertyStatus(shopId, property, expected, next));
+        }
     }
+
+    // Нэгж/байр эхэлж бичигдэнэ: төлөв нь preview-оос хойш өөрчлөгдсөн эсвэл бичилт бүтэлгүйтвэл гэрээ, лидэд хүрэхгүй.
+    const inventoryError = [results.unit, results.property].find((r: any) => r?.error);
+    if (confirm && inventoryError) return { ...inventoryError, partialSuccess: false, changes: [] };
+    const inventorySkip: string | null = [results.unit, results.property].find((r: any) => r?.skipped)?.reason ?? null;
 
     // Гэрээний статус (property_contracts)
     if (args.contract_id || args.contract_number) {
@@ -987,9 +1165,9 @@ export async function processContractAction(shopId: string, args: any, confirm =
         results.contract = contractResult;
         if (contractResult.requiresConfirmation) {
             resolvedArgs.contract_id = contractResult.action.args.contract_id;
-            preview['Гэрээ'] = `${contractResult.preview['Гэрээ']} → ${mapping.contract}`;
+            preview['Гэрээ'] = `${contractResult.preview['Гэрээ']} → ${contractStatusLabel(mapping.contract)}`;
             labels.push(`гэрээ ${contractResult.preview['Гэрээ']}`);
-        } else if (!contractResult.error) results.changes.push(`Гэрээ → ${mapping.contract}`);
+        } else if (!contractResult.error) results.changes.push(`Гэрээ → ${contractStatusLabel(mapping.contract)}`);
     }
 
     // Лийд
@@ -999,26 +1177,22 @@ export async function processContractAction(shopId: string, args: any, confirm =
         if (leadResult.requiresConfirmation) {
             resolvedArgs.lead_id = leadResult.action.args.lead_id;
             resolvedArgs.lost_reason = leadResult.action.args.lost_reason;
-            preview['Лийд'] = `${leadResult.preview['Лийд']} → ${mapping.lead}`;
+            preview['Лийд'] = `${leadResult.preview['Лийд']} → ${statusLabel(mapping.lead)}`;
             if (leadResult.action.args.lost_reason) preview['Алдсан шалтгаан'] = leadResult.action.args.lost_reason;
             labels.push(String(leadResult.preview['Лийд']));
-        } else if (!leadResult.error) results.changes.push(`Лийд → ${mapping.lead}`);
+        } else if (!leadResult.error) results.changes.push(`Лийд → ${statusLabel(mapping.lead)}`);
     }
 
     const firstErr = [results.unit, results.property, results.contract, results.lead].find((r: any) => r?.error);
     if (firstErr) return { ...firstErr, partialSuccess: confirm && results.changes.length > 0, changes: results.changes };
     if (!confirm) {
-        if (labels.length === 0) {
-            // Зорилт олдоогүй — sub-tool-уудын алдааг (options-тэй) хэвээр буцаана
-            return { error: 'Нэгж/гэрээ/лийд олдсонгүй. Нэгжийн код, гэрээний дугаар эсвэл харилцагчийн нэрийг тодорхой өгнө үү.' };
-        }
-        return confirmNeeded('process_contract_action', resolvedArgs, `Гэрээний үйлдэл (${args.action}): ${labels.join(', ')}`, preview);
+        // Өөрчлөх зорилтгүй: ганц нэгж өгөгдөөд тэр нь өөрчлөгдөхгүй бол шалтгааныг нь хэлнэ.
+        if (labels.length === 0) return { error: inventorySkip ?? notFound };
+        return confirmNeeded('process_contract_action', resolvedArgs, `Гэрээний үйлдэл (${mapping.label}): ${labels.join(', ')}`, preview);
     }
 
-    if (results.changes.length === 0) {
-        return { error: 'Нэгж/гэрээ/лийд олдсонгүй. Нэгжийн код, гэрээний дугаар эсвэл харилцагчийн нэрийг тодорхой өгнө үү.' };
-    }
-
+    if (results.changes.length === 0) return { error: inventorySkip ?? notFound };
+    results.message = `Гүйцэтгэгдлээ: ${results.changes.join(', ')}.${inventorySkip ? ` ${inventorySkip}` : ''}`;
     return results;
 }
 

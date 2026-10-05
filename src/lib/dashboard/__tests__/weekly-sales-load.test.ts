@@ -62,13 +62,19 @@ describe('loadWeeklySales', () => {
             erp_imports: [],
             property_contracts: [{ id: 'c1', shop_id: 's', contract_date: '2026-09-18', product_type: 'parking', total_price: '40', contract_status: 'active', unit_label: '201-5' },
                 { id: 'c2', shop_id: 's', contract_date: '2026-09-19', product_type: 'residential', total_price: '90', contract_status: 'cancelled' }],
-            property_units: [{ shop_id: 's', code: '203-209', block: '1477', floor: '05', model: 'A', category: 'residential', sale_area: '57.93', status: 'sold', raw_status: 'Гэрээ баталгаажсан', sales_channel: 'Пропертис', updated_at: '2026-06-24T00:00:00Z' }],
+            property_units: [
+                { shop_id: 's', code: '203-209', block: '1477', floor: '05', model: 'A', category: 'residential', sale_area: '57.93', status: 'sold', raw_status: 'Гэрээ баталгаажсан', sales_channel: 'Пропертис', updated_at: '2026-06-24T00:00:00Z' },
+                // «Хүлээлгэсэн» нь зарагдсанд тооцогдоно: төлөвөөр ч, зөвхөн эх төлөв (raw_status) байгаа ч.
+                { shop_id: 's', code: '203-210', block: '1477', floor: '05', model: 'B', category: 'residential', sale_area: '60', status: 'handed_over', raw_status: 'Хүлээлгэсэн', sales_channel: null, updated_at: '2026-06-24T00:00:00Z' },
+                { shop_id: 's', code: '203-211', block: '1477', floor: '05', model: 'C', category: 'residential', sale_area: '61', status: null, raw_status: 'Хүлээлгэсэн', sales_channel: null, updated_at: '2026-06-24T00:00:00Z' },
+            ],
         }, calls);
         const report = await loadWeeklySales(db, { shopId: 's', meetingDate: '2026-09-23', canSeeCustomers: true });
         expect(report.sources.contracts).toBe('crm');
         expect(report.week).toMatchObject({ count: 1, total: 40 });
         expect(report.inventory!.source).toEqual({ date: '2026-06-24', source: 'Байрны бүртгэл (CRM)', kind: 'crm' });
-        expect(report.inventory!.floorMaps).toEqual([expect.objectContaining({ block: '203', models: ['A'], totals: { sold: 1, available: 0, other: 0, barter: 0 } })]);
+        expect(report.inventory!.floorMaps).toEqual([expect.objectContaining({ block: '203', models: ['A', 'B', 'C'], totals: { sold: 3, available: 0, other: 0, barter: 0 } })]);
+        expect(report.inventory!.blocks).toEqual([expect.objectContaining({ block: '203', kind: 'residential', total: 3, statuses: { sold: 1, handed_over: 2 } })]);
         expect(report.month.target).toBeNull();
         expect(calls.some(call => call.startsWith('erp_imports:id, datasets'))).toBe(false);
     });

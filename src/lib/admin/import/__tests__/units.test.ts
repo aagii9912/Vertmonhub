@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { mapInventoryRows, type InventoryImportContext } from '../units';
+import { inventoryStatusOf, mapInventoryRows, type InventoryImportContext } from '../units';
+import { UNIT_STATUS_LABEL } from '@/lib/inventory/labels';
 
 const context: InventoryImportContext = {
     shopId: '10000000-0000-4000-8000-000000000001',
@@ -36,6 +37,15 @@ describe('mapInventoryRows', () => {
         const result = mapInventoryRows([{ ...unit, 'Бүтээгдэхүүний төлөв': raw }], context);
         expect(result.errors).toEqual([]);
         expect(result.rows[0].status).toBe(expected);
+    });
+
+    it('re-imports every status label the Excel export writes («Захиалсан» = ordered)', () => {
+        const exported = { ...UNIT_STATUS_LABEL, available: 'Худалдаанд' };
+        for (const [status, label] of Object.entries(exported)) expect(inventoryStatusOf(label)).toBe(status);
+        expect(inventoryStatusOf(UNIT_STATUS_LABEL.available)).toBe('available');
+        const result = mapInventoryRows([{ ...unit, 'Бүтээгдэхүүний төлөв': 'Захиалсан' }], context);
+        expect(result.errors).toEqual([]);
+        expect(result.rows[0]).toMatchObject({ status: 'ordered', raw_status: 'Захиалсан' });
     });
 
     it('accepts canonical English columns and explicit block fallback for single-block files', () => {

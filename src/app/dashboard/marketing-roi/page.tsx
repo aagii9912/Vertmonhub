@@ -175,6 +175,9 @@ export default function MarketingROIPage() {
     const adAccountsQuery = useDashboardQuery<{ accounts?: AdAccount[]; selected_id?: string | null }>(
         ['marketing-roi', 'ad-accounts'], '/api/marketing/facebook/ads/accounts', { enabled: false },
     );
+    // System User токентой үед хэрэглэгчийн OAuth холболт хэрэггүй (сервер 409) тул товчийг нуух.
+    const metaTokenQuery = useDashboardQuery<{ tokenSource?: 'system' | 'user' | null }>(['marketing-roi', 'meta-token'], '/api/marketing/facebook/ads/spend-sync');
+    const showMetaConnect = metaTokenQuery.isError || (metaTokenQuery.isSuccess && metaTokenQuery.data?.tokenSource !== 'system');
     const refetchCampaigns = campaignsQuery.refetch;
 
     const leads = leadsQuery.data?.leads ?? NO_LEADS;
@@ -575,7 +578,7 @@ export default function MarketingROIPage() {
                                 )}
                             </div>
                             <div className="flex items-center gap-2">
-                                {shop?.id && <Button variant="secondary" size="sm" href={`/api/marketing/facebook/ads/connect?shop_id=${encodeURIComponent(shop.id)}`}>Meta Ads холбох</Button>}
+                                {shop?.id && showMetaConnect && <Button variant="secondary" size="sm" href={`/api/marketing/facebook/ads/connect?shop_id=${encodeURIComponent(shop.id)}`}>Meta Ads холбох</Button>}
                                 {adAccounts.length === 0 ? (
                                     <Button variant="secondary" size="sm" onClick={() => void adAccountsQuery.refetch()}>
                                         Ad account-уудыг ачаалах

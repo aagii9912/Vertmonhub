@@ -55,7 +55,8 @@ function database(saveFails = false) {
 }
 it('only commits after every page succeeds; partial response preserves the previous ledger', async () => {
     const { db, rpc } = database();
-    http.mockResolvedValueOnce(reply(account)).mockResolvedValueOnce(reply({ data: [insight], paging: { next: 'more', cursors: { after: 'next' } } })).mockResolvedValueOnce(reply({ error: { code: 2 } }, 500));
+    // Дахин оролдохгүй алдаа (code 100); түр алдааны дахин оролдлогыг facebook/__tests__/meta-read.test.ts шалгана.
+    http.mockResolvedValueOnce(reply(account)).mockResolvedValueOnce(reply({ data: [insight], paging: { next: 'more', cursors: { after: 'next' } } })).mockResolvedValueOnce(reply({ error: { code: 100 } }, 400));
     await expect(syncMetaSpend(db, 'shop1', { from: '2026-09-01', to: '2026-09-15' })).rejects.toThrow();
     expect(rpc.mock.calls.map(c => c[0])).toEqual(['record_meta_spend_failure']);
 });

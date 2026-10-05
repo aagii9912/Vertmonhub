@@ -2,11 +2,13 @@ import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { getUserId, assertShopAccess } from '@/lib/auth/supabase-auth';
 import { requireModuleWrite } from '@/lib/auth/require-permission';
+import { metaAdsSystemToken } from '@/lib/facebook/ads-auth';
 
 export const dynamic = 'force-dynamic';
 
 export const META_ADS_OAUTH_COOKIE = 'meta_ads_oauth';
 export const META_ADS_CALLBACK_PATH = '/api/marketing/facebook/ads/connect/callback';
+export const META_ADS_SYSTEM_MODE_ERROR = 'Системийн хэрэглэгчийн токен идэвхтэй тул Meta Ads-ийг хэрэглэгчээр холбох шаардлагагүй. Зарын дансыг админ сонгоно.';
 
 export async function GET(request: NextRequest) {
     // The state cookie and registered redirect must share the same browser host.
@@ -22,6 +24,8 @@ export async function GET(request: NextRequest) {
     const userId = await getUserId();
     const shopId = await assertShopAccess(request.nextUrl.searchParams.get('shop_id'));
     if (!userId || !shopId) return NextResponse.json({ error: 'Нэвтрэх эсвэл төслийн эрх шаардлагатай.' }, { status: 401 });
+    // System User токентой үед синк хэрэглэгчийн токеныг ашигладаггүй; OAuth нь админы сонгосон дансыг л эвдэнэ.
+    if (metaAdsSystemToken()) return NextResponse.json({ error: META_ADS_SYSTEM_MODE_ERROR }, { status: 409 });
 
     const appId = process.env.META_ADS_APP_ID?.trim();
     const configId = process.env.META_ADS_LOGIN_CONFIG_ID?.trim();

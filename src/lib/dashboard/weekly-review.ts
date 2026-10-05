@@ -56,6 +56,20 @@ export function lastCompletedReviewRange(now = new Date()) {
     return weeklyReviewRange(next === ubDateStr(now) ? next : shiftReviewDate(next, -7));
 }
 
+/** Огноог агуулах хурлын долоо хоног (Лхагва–Мягмар). */
+export function reviewWeekOf(day: string) {
+    const weekday = new Date(`${day}T00:00:00Z`).getUTCDay();
+    const from = shiftReviewDate(day, -((weekday - 3 + 7) % 7));
+    return { from, to: shiftReviewDate(from, 6) };
+}
+
+/** [from, to] хугацаатай давхцах хурлын долоо хоногууд (Лхагва–Мягмар), эрт → хожуу. */
+export function reviewWeeksBetween(from: string, to: string) {
+    const weeks: Array<{ from: string; to: string }> = [];
+    for (let week = reviewWeekOf(from); week.from <= to; week = reviewWeekOf(shiftReviewDate(week.to, 1))) weeks.push(week);
+    return weeks;
+}
+
 export function formatReviewChange(current: number, previous?: number): string {
     if (previous === undefined) return 'Өмнөх хугацааны мэдээлэл байхгүй';
     const delta = current - previous;

@@ -180,6 +180,20 @@ describe('status mapping — схемийн жинхэнэ утгууд', () => 
         expect(mapPropertyStatus('Худалдаанд')).toBe('available');
     });
 
+    it.each([
+        // «Хүлээлгэсэн» = зарагдаад хүлээлгэн өгсөн (2026-10-05): listing-д handed_over алга тул sold.
+        ['Хүлээлгэсэн', 'sold'], ['handed_over', 'sold'], [' ХҮЛЭЭЛГЭСЭН ', 'sold'],
+        ['Захиалга үүссэн', 'reserved'], ['Гэрээ  баталгаажаагүй', 'reserved'], ['ordered', 'reserved'], ['Захиалсан', 'reserved'],
+        ['Гэрээ баталгаажсан', 'sold'], ['', 'available'],
+    ])('property status %j → %s', (input, expected) => {
+        expect(mapPropertyStatus(input)).toBe(expected);
+    });
+
+    it('мэдэгдэхгүй төлөвийг «Чөлөөтэй» болгохгүй', () => {
+        expect(mapPropertyStatus('юу ч биш')).toBeNull();
+        expect(mapPropertyStatus('constructor')).toBeNull();
+    });
+
     it('lead status зөвхөн lead_status enum-ийн утга буцаана', () => {
         const validStatuses = [
             'new', 'contacted', 'viewing_scheduled', 'offered',
@@ -251,6 +265,14 @@ describe('mapPropertyRow', () => {
         expect(mapPropertyRow({ 'Үнэ': '100' }, 3).error).toContain('Мөр 3');
         expect(mapPropertyRow({ 'Нэр': 'X' }, 4).error).toContain('Үнэ буруу');
         expect(mapPropertyRow({ 'Нэр': 'X', 'Үнэ': '0' }, 5).error).toContain('Үнэ буруу');
+    });
+
+    it('мэдэгдэхгүй статустай мөрийг алдаатай болгоно, хоосон статус available хэвээр', () => {
+        const unknown = mapPropertyRow({ 'Нэр': 'A-301', 'Үнэ': '1', 'Статус': 'Түр хаасан' }, 7);
+        expect(unknown.data).toBeUndefined();
+        expect(unknown.error).toBe('Мөр 7: Тодорхойгүй төлөв «Түр хаасан» (A-301). Боломжтой: Худалдаанд, Хадгалсан, Захиалга үүссэн, Зарагдсан, Хүлээлгэсэн, Түрээслэсэн, Бартер');
+        expect(mapPropertyRow({ 'Нэр': 'A-301', 'Үнэ': '1', 'Статус': 'Хүлээлгэсэн' }, 2).data).toMatchObject({ status: 'sold' });
+        expect(mapPropertyRow({ 'Нэр': 'A-301', 'Үнэ': '1' }, 2).data).toMatchObject({ status: 'available' });
     });
 
     it('provided = зөвхөн файлд байсан баганууд (үнийн файл статус/төрлийг дарахгүй)', () => {

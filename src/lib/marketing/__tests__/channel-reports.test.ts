@@ -132,7 +132,8 @@ describe('aggregateChannelReport', () => {
         const result = aggregateChannelReport(metaRows(), suggestMapping(META, 'meta_ads'), 'meta_ads', { period: week });
         expect(result.errors).toEqual([]);
         expect(result.totals).toEqual({ impressions: 4600, link_clicks: 150, page_engagement: 1200, post_engagements: 1050, spend: 70.25, currency: 'USD', cpm: 15.27, cost_per_link_click: 0.47, ctr_link: 3.26 });
-        expect(result.missing).toEqual(['reach', 'frequency']);
+        // Engagement баганууд заавал биш; Reach-ийг давхцдаг тул «дутуу».
+        expect(result.missing).toEqual(['reach']);
         expect(result.warnings.map(w => w.code)).toContain('non_additive');
         expect(result.breakdown).toEqual([
             { kind: 'campaign', label: 'Mandala Garden lead', values: expect.objectContaining({ reach: 1000, frequency: 3, spend: 50.25 }) },
@@ -177,8 +178,10 @@ describe('aggregateChannelReport', () => {
         const header = ['Campaign name', 'Currency', 'Results', 'Result indicator', 'Amount spent'];
         const rows = table(header, ['A', 'USD', 10, 'actions:link_click', 5], ['B', 'MNT', 3, 'onsite_conversion.messaging', 15000]);
         const result = aggregateChannelReport(rows, suggestMapping(header, 'meta_ads'), 'meta_ads');
-        expect(result.totals).toEqual({});
+        // Үр дүн төрлөөр тусдаа; өөр валютын зардал (төрлийн зардал, өртөг ч) нийтэд орохгүй.
+        expect(result.totals).toEqual({ results_link_clicks: 10, results_other: 3 });
         expect(result.warnings.map(w => w.code)).toEqual(expect.arrayContaining(['mixed_currency', 'mixed_results']));
+        expect(result.warnings.find(w => w.code === 'mixed_results')?.level).toBe('info');
         const unknown = aggregateChannelReport(table(['Campaign name', 'Amount spent'], ['A', 5]), { 'Campaign name': 'campaign', 'Amount spent': 'spend' }, 'meta_ads');
         expect(unknown.totals).toEqual({ spend: 5 });
         expect(unknown.warnings.map(w => w.code)).toContain('unknown_currency');
