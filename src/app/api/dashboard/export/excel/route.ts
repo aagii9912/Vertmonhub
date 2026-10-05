@@ -10,6 +10,7 @@ import { fetchAllRows } from '@/lib/utils/pagination';
 import { sourceLabel, statusLabel } from '@/lib/leads/labels';
 import { UNIT_STATUS_LABEL, unitCategoryLabel } from '@/lib/inventory/labels';
 import { contractStatusLabel } from '@/lib/contracts/labels';
+import { leadsReportInstants, resolveLeadsReportRange } from '@/lib/reports/leads-summary';
 
 /** Export төрөл бүр өөрийн модулийн унших эрх шаардана (өмнө нь зөвхөн auth). */
 const EXPORT_MODULE: Record<string, string> = {
@@ -71,14 +72,24 @@ export async function GET(request: NextRequest) {
             filename = `нэгжүүд_${ubDateStr()}.xlsx`;
 
         } else if (type === 'leads') {
-            // Export Leads
-            const leads = await fetchAllRows<Record<string, any>>((from, to) => applyLeadScope(supabase
-                .from('leads')
-                .select('*')
-                .eq('shop_id', shopId)
-                .is('deleted_at', null)
-                .order('created_at', { ascending: false })
-                .order('id').range(from, to), scope));
+            // Лидийн тайлангийн хуудас сонгосон хугацаагаа (from/to, УБ өдөр) дамжуулна; өгөөгүй бол бүгд.
+            let period: { from: string; to: string; start: string; end: string } | null = null;
+            if (searchParams.get('from') || searchParams.get('to')) {
+                const resolved = resolveLeadsReportRange({ from: searchParams.get('from'), to: searchParams.get('to') });
+                if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: 400 });
+                period = { ...resolved.range, ...leadsReportInstants(resolved.range) };
+            }
+            const leads = await fetchAllRows<Record<string, any>>((from, to) => {
+                let query = supabase
+                    .from('leads')
+                    .select('*')
+                    .eq('shop_id', shopId)
+                    .is('deleted_at', null);
+                if (period) query = query.gte('created_at', period.start).lt('created_at', period.end);
+                return applyLeadScope(query
+                    .order('created_at', { ascending: false })
+                    .order('id').range(from, to), scope);
+            });
 
             const exportData = leads?.map(lead => ({
                 'Нэр': lead.customer_name || '-',
@@ -89,11 +100,12 @@ export async function GET(request: NextRequest) {
                 'Менежер': lead.sales_manager_name || '-',
                 'Төсөл ID': lead.project_id || '-',
                 'Тэмдэглэл': lead.notes || '-',
-                'Огноо': new Date(lead.created_at).toLocaleDateString('mn-MN'),
+                // Сервер UTC дээр ажилладаг тул бүртгэгдсэн өдрийг Улаанбаатарын цагаар (шүүлтүүртэй ижил).
+                'Огноо': ubDateStr(new Date(lead.created_at)),
             })) || [];
 
             sheet = { name: 'Лийдүүд', rows: exportData };
-            filename = `лийдүүд_${ubDateStr()}.xlsx`;
+            filename = period ? `лийдүүд_${period.from}_${period.to}.xlsx` : `лийдүүд_${ubDateStr()}.xlsx`;
 
         } else if (type === 'customers') {
             const customers = await fetchAllRows<Record<string, any>>((from, to) => supabase

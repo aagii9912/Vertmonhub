@@ -37,6 +37,15 @@
 | by-source | leads.source |
 | **Юүлүүрийн холбоос (Phase 4)** | lead `closed_won` → `property_contracts` (lead_id) автоматаар үүснэ (trigger) |
 
+## Лидийн тайлан (`/api/dashboard/reports/leads-summary`, `/dashboard/reports/leads`)
+`reports` модуль. Хугацаа (`period=today|week|month|quarter|year` = өнөөдрийг оруулаад 1/7/30/90/365 УБ өдөр, эсвэл `from`/`to` ≤ 367 өдөр) доторх `created_at`-тай БҮХ лидийг (`fetchAllRows`, `applyLeadScope`) тоолно; хариунд шийдсэн `range` буцна.
+| Метрик | Тооцоо |
+|---|---|
+| total, byStatus | хугацаанд бүртгэгдсэн лид, одоогийн төлөвөөр |
+| conversion | won = closed_won, lost = closed_lost, open = ACTIVE_STATUSES, inProgress = open − new; хөрвүүлэлт = won / total |
+| bySource / byProject / byManager | лид ба амжилттай лидийн тоо (`source` хоосон → other; `project_id` → төслийн нэр; хариуцагчгүй, төсөлгүй мөр төгсгөлд). Мөнгөн дүн тооцохгүй — лидийн төсөв гэрээний үнэ биш |
+| Экспорт | `/api/dashboard/export/excel?type=leads&from=&to=` (`leads` модуль) — тайлангийн ижил хугацаа |
+
 ## Маркетингийн форм lead-ийн ялгаа (чухал)
 `POST /api/leads` (Vertmon-ы өөрийн **маркетингийн форм**) нь `shop_id`-гүй lead үүсгэдэг.
 Бүх CRM метрик `shop_id`-ээр шүүдэг тул эдгээр lead нь **tenant-ийн CRM юүлүүрт ОРОХГҮЙ** —
