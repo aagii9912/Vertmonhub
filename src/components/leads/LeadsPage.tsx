@@ -2,18 +2,17 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Check, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Download, LayoutList, PanelRight, Plus, MoreHorizontal, Phone, GitBranch } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Download, LayoutList, PanelRight, Plus, MoreHorizontal, GitBranch } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
-import { useMobile } from '@/hooks/use-mobile';
 import { canAccessModuleDynamic } from '@/lib/rbac';
 import { formatRelativeDays } from '@/lib/utils/date';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
-import { useLeadsList, useLeadSummary, useLeadProjects, useLeadCategories, useManagers, useUpdateLead, type LeadCategoryRow, type LeadRow } from '@/hooks/useLeads';
-import { LEAD_VIEWS, LEAD_STATUSES, STATUS_META, SOURCES, SOURCE_LABEL, UNCATEGORIZED_KEY, UNCATEGORIZED_LABEL, categoryOptionLabel, sourceLabel, interestLabel, isAnonymousLead, leadCategoryLabel, leadDisplayName, normalizeLeadName, type LeadView } from '@/lib/leads/labels';
+import { useLeadsList, useLeadSummary, useLeadProjects, useLeadCategories, useManagers, useUpdateLead } from '@/hooks/useLeads';
+import { LEAD_VIEWS, LEAD_STATUSES, STATUS_META, SOURCES, SOURCE_LABEL, UNCATEGORIZED_KEY, UNCATEGORIZED_LABEL, categoryOptionLabel, sourceLabel, interestLabel, isAnonymousLead, leadDisplayName, type LeadView } from '@/lib/leads/labels';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/Sheet';
-import { Avatar, Pill, Skeleton } from '@/components/dashboard/v2/primitives';
+import { Skeleton } from '@/components/dashboard/v2/primitives';
 import { StatusPicker, ManagerPicker, CategoryPicker } from './pickers';
 import { LeadPanel, nextStep } from './LeadPanel';
 import { isLeadWorkQueue, LEAD_WORK_QUEUES } from '@/lib/leads/work-queue';
@@ -43,7 +42,6 @@ function LeadsWorkspace() {
     const search = useSearchParams();
     const queueParam = search.get('queue');
     const queue = isLeadWorkQueue(queueParam) ? queueParam : undefined;
-    const { isMobile, isDesktop } = useMobile();
     const { user } = useAuth();
     const canWrite = !!user?.permissions && canAccessModuleDynamic(user.permissions, 'leads') && !!user.permissions.canWrite;
     const canAssign = canWrite && user?.role !== 'sales_manager';
@@ -152,7 +150,7 @@ function LeadsWorkspace() {
         }
     };
 
-    const showSplit = mode === 'split' && isDesktop;
+    const showSplit = mode === 'split';
     // Ангилалгүй төсөлд (Тохиргоонд үүсгээгүй) баганыг харуулахгүй.
     const showCategory = categories.length > 0;
     const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
@@ -209,7 +207,7 @@ function LeadsWorkspace() {
                         </button>
                     );
                 })}
-                <div className="ml-auto hidden shrink-0 items-center gap-1 rounded-lg bg-surface-2 p-1 lg:flex">
+                <div className="ml-auto flex shrink-0 items-center gap-1 rounded-lg bg-surface-2 p-1">
                     <button type="button" onClick={() => changeMode('table')} aria-pressed={mode === 'table'} className={cn('flex size-8 items-center justify-center rounded-md focus-ring', mode === 'table' ? 'bg-surface text-foreground shadow-xs' : 'text-muted-foreground')} aria-label="Хүснэгт" title="Хүснэгт"><LayoutList className="size-4" /></button>
                     <button type="button" onClick={() => changeMode('split')} aria-pressed={mode === 'split'} className={cn('flex size-8 items-center justify-center rounded-md focus-ring', mode === 'split' ? 'bg-surface text-foreground shadow-xs' : 'text-muted-foreground')} aria-label="Хажуугийн самбартай" title="Хажуугийн самбартай"><PanelRight className="size-4" /></button>
                 </div>
@@ -240,9 +238,7 @@ function LeadsWorkspace() {
             {/* Агуулга */}
             <div className={cn('grid gap-3', showSplit && 'lg:grid-cols-[minmax(0,1fr)_minmax(400px,480px)]')}>
                 <div className="min-w-0 overflow-hidden rounded-2xl border border-border bg-surface">
-                    {error ? null : isMobile ? (
-                        <MobileList leads={leads} projectNames={projectNames} categories={categories} loading={isLoading} onOpen={select} />
-                    ) : (
+                    {!error && (
                         <div className="overflow-x-auto">
                             <table className="w-full text-[13px]">
                                 <thead>
@@ -333,7 +329,7 @@ function LeadsWorkspace() {
                 )}
             </div>
 
-            {/* Хүснэгтийн горим / утас: панел нь Sheet */}
+            {/* Хүснэгтийн горим: панел нь Sheet */}
             {!showSplit && (
                 <Sheet open={!!selectedId} onOpenChange={(o) => !o && select(null)}>
                     <SheetContent
@@ -381,33 +377,5 @@ function Th({ children, onClick, active, dir }: { children: React.ReactNode; onC
                 {active && (dir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
             </button>
         </th>
-    );
-}
-
-
-function MobileList({ leads, projectNames, categories, loading, onOpen }: { leads: LeadRow[]; projectNames: Record<string, string>; categories: LeadCategoryRow[]; loading: boolean; onOpen: (id: string) => void }) {
-    if (loading) return <div className="flex flex-col gap-2 p-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>;
-    if (!leads.length) return <div className="px-4 py-10 text-center text-[13px] text-muted-foreground">Лид олдсонгүй</div>;
-    return (
-        <div className="flex flex-col">
-            {leads.map((l) => {
-                const phone = l.customer_phone?.replace(/\D/g, '') || '';
-                return (
-                    <div key={l.id} className="flex min-h-20 items-center gap-3 border-b border-border px-4 py-3 last:border-b-0 active:bg-surface-2">
-                        <button type="button" onClick={() => onOpen(l.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-                            <Avatar name={normalizeLeadName(l.customer_name)} className="h-8 w-8 text-[11px]" />
-                            <span className="min-w-0 flex-1">
-                                <span className={cn('block truncate text-[14px] font-medium', isAnonymousLead(l) ? 'text-muted-foreground' : 'text-foreground')}>{leadDisplayName(l)}</span>
-                                {(Object.keys(projectNames).length > 1 || !l.project_id) && <span className="block truncate text-xs text-fg-2">{l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй'}</span>}
-                                <span className="block truncate text-[12px] text-muted-foreground">{[l.category_id ? leadCategoryLabel(categories, l.category_id) : null, interestLabel(l) !== '—' ? interestLabel(l) : null, sourceLabel(l.source), l.last_contact_at ? `Холбогдсон: ${formatRelativeDays(l.last_contact_at)}` : 'Холбоо бүртгээгүй'].filter(Boolean).join(' · ')}</span>
-                                <span className="mt-1 block text-xs text-fg-2">{nextStep(l)}</span>
-                            </span>
-                            <Pill tone={STATUS_META[l.status]?.tone ?? 'neutral'}>{STATUS_META[l.status]?.short ?? l.status}</Pill>
-                        </button>
-                        {phone && <a href={`tel:${phone}`} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-brand active:bg-brand-soft" aria-label="Залгах"><Phone className="h-5 w-5" /></a>}
-                    </div>
-                );
-            })}
-        </div>
     );
 }
