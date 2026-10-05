@@ -5,10 +5,9 @@ import { useRouter } from 'next/navigation';
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Download, FilePlus2, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { useMobile } from '@/hooks/use-mobile';
 import { formatMNT, formatMNTShort } from '@/lib/utils/currency';
 import { formatShortDate } from '@/lib/utils/date';
-import { useContractsList, type ContractRow } from '@/hooks/useContracts';
+import { useContractsList } from '@/hooks/useContracts';
 import { CONTRACT_STATUS_META } from '@/lib/contracts/labels';
 import { useManagers } from '@/hooks/useLeads';
 import { Avatar, Pill, Progress, Skeleton } from '@/components/dashboard/v2/primitives';
@@ -32,7 +31,6 @@ export function ContractsPage() {
     const { user } = useAuth();
     const canWrite = user?.role === 'super_admin' || !!(user?.permissions.canWrite && user.permissions.modules.includes('contracts'));
     const [exporting, setExporting] = useState(false);
-    const isMobile = useMobile().isMobile;
     const [status, setStatus] = useState('all');
     const [manager, setManager] = useState('all');
     const [overdue, setOverdue] = useState(false);
@@ -101,9 +99,7 @@ export function ContractsPage() {
                 {error ? <div role="alert" className="space-y-3 p-6 text-sm">
                     <p className="font-medium text-status-danger">Гэрээнүүдийг уншиж чадсангүй.</p><p className="text-muted-foreground">Жагсаалт хоосон гэсэн үг биш. Дахин оролдоно уу.</p>
                     <Button variant="secondary" onClick={() => void refetch()}>Дахин оролдох</Button>
-                </div> : isMobile ? (
-                    <MobileList rows={rows} loading={isLoading} onOpen={(id) => router.push(`/dashboard/contracts/${id}`)} />
-                ) : (
+                </div> : (
                     <div className="overflow-x-auto">
                         <table className="w-full text-[13px]">
                             <thead>
@@ -193,28 +189,5 @@ function Th({ children, onClick, active, dir, right }: { children: React.ReactNo
                 {children}{active && (dir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
             </button>
         </th>
-    );
-}
-
-
-function MobileList({ rows, loading, onOpen }: { rows: ContractRow[]; loading: boolean; onOpen: (id: string) => void }) {
-    if (loading) return <div className="flex flex-col gap-2 p-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>;
-    if (!rows.length) return <div className="px-4 py-10 text-center text-[13px] text-muted-foreground">Гэрээ олдсонгүй</div>;
-    return (
-        <div className="flex flex-col">
-            {rows.map((c) => {
-                const st = CONTRACT_STATUS_META[c.contract_status] ?? { label: c.contract_status, tone: 'neutral' as const };
-                return (
-                    <button key={c.id} type="button" onClick={() => onOpen(c.id)} className="flex min-h-24 items-center gap-3 border-b border-border px-4 py-4 text-left focus-ring last:border-b-0 active:bg-surface-2">
-                        <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2"><span className="mono-label text-[12.5px] font-medium text-foreground">{c.contract_number || c.unit_label || '—'}</span><Pill tone={st.tone}>{st.label}</Pill></div>
-                            <div className="truncate text-[13px] text-foreground">{c.customer_name || '—'}</div>
-                            <div className="mt-2 text-xs text-muted-foreground">Нийт {formatMNT(c.total_price || 0)}</div><div className="mt-1 text-xs text-fg-2">Үлдэгдэл <strong className="num">{c.balance === null || c.balance === undefined ? '—' : formatMNT(c.balance)}</strong>{!!c.overdue_days && <span className="ml-2 text-status-danger">{c.overdue_days} хоног хоцорсон</span>}</div>
-                        </div>
-                        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                    </button>
-                );
-            })}
-        </div>
     );
 }
