@@ -11,7 +11,6 @@
 import crypto from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { assertShopAccess, getUserId, supabaseAdmin } from '@/lib/auth/supabase-auth';
-import { requireModuleWrite } from '@/lib/auth/require-permission';
 import { decryptToken, encryptToken } from '@/lib/crypto/tokens';
 import { META_GRAPH_VERSION, MetaApiError } from '@/lib/facebook/daily-spend';
 import { pageRead } from '@/lib/facebook/page-graph';
@@ -73,10 +72,11 @@ function socialRedirect(request: NextRequest, flow: PageConnectFlow, result: str
     return response;
 }
 
-/** OAuth эхлэл: модулийн бичих эрх + төслийн гишүүнчлэл, state cookie нь callback зам дээр л илгээгдэнэ. */
-export async function startPageOAuth(request: NextRequest, flow: PageConnectFlow): Promise<Response> {
-    const denied = await requireModuleWrite('marketing-roi');
-    if (denied) return denied;
+/**
+ * OAuth эхлэл: төслийн гишүүнчлэл, state cookie нь зөвхөн callback зам дээр илгээгдэнэ.
+ * Дуудагч route `requireModuleWrite('marketing-roi')`-ийг ӨМНӨ нь шалгана.
+ */
+export async function startPageOAuth(request: NextRequest, flow: PageConnectFlow): Promise<NextResponse> {
     const userId = await getUserId();
     const shopId = await assertShopAccess(request.nextUrl.searchParams.get('shop_id'));
     if (!userId || !shopId) return NextResponse.json({ error: 'Нэвтрэх эсвэл төслийн эрх шаардлагатай.' }, { status: 401 });
@@ -133,8 +133,11 @@ function pendingPages(accounts: GraphAccount[], flow: PageConnectFlow): PendingP
     return pages;
 }
 
-/** OAuth callback: токенуудыг зөвхөн серверт солиод сонголтыг pending мөрөнд хадгална. */
-export async function finishPageOAuth(request: NextRequest, flow: PageConnectFlow): Promise<Response> {
+/**
+ * OAuth callback: токенуудыг зөвхөн серверт солиод сонголтыг pending мөрөнд хадгална. Дуудагч route
+ * `requireModuleWrite('marketing-roi')`-ийг ӨМНӨ нь шалгана; энд state, хэрэглэгч, төслийг тулгана.
+ */
+export async function finishPageOAuth(request: NextRequest, flow: PageConnectFlow): Promise<NextResponse> {
     let saved: OAuthState | null = null;
     try { saved = JSON.parse(request.cookies.get(FLOW[flow].cookie)?.value || 'null') as OAuthState | null; }
     catch { return socialRedirect(request, flow, 'state_mismatch'); }
@@ -147,8 +150,6 @@ export async function finishPageOAuth(request: NextRequest, flow: PageConnectFlo
     const code = request.nextUrl.searchParams.get('code');
     if (!code) return socialRedirect(request, flow, 'no_code');
 
-    const denied = await requireModuleWrite('marketing-roi');
-    if (denied) return socialRedirect(request, flow, 'permission_error');
     const userId = await getUserId();
     const shopId = await assertShopAccess(saved.shopId);
     if (!userId || userId !== saved.userId || shopId !== saved.shopId) return socialRedirect(request, flow, 'session_error');
