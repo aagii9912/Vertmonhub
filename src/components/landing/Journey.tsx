@@ -72,7 +72,7 @@ export function Journey() {
                                         aria-hidden="true"
                                         className="absolute right-[-1.05rem] top-1/2 z-10 hidden -translate-y-1/2 lg:flex"
                                     >
-                                        <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface text-brand">
+                                        <span className="flex h-7 w-7 items-center justify-center rounded-full border border-border bg-surface text-brand-strong">
                                             <ArrowRight className="h-3.5 w-3.5" />
                                         </span>
                                     </span>

@@ -440,7 +440,7 @@ function MarketingBudgetWorkspace({ shopId, userId, canWrite, canDelete }: { sho
                     <Card>
                         <CardHeader className="py-3">
                             <CardTitle className="text-base flex items-center gap-2">
-                                <Wallet className="w-4 h-4 text-brand" />
+                                <Wallet className="w-4 h-4 text-brand-strong" />
                                 Зарцуулалтын бүртгэл
                             </CardTitle>
                         </CardHeader>

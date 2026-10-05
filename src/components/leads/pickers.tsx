@@ -70,7 +70,7 @@ export function StatusPicker({
                                 className="flex h-8 items-center gap-2 rounded-md px-1.5 text-left hover:bg-surface-2 focus-ring"
                             >
                                 <Pill tone={STATUS_META[s].tone}>{STATUS_META[s].label}</Pill>
-                                {s === value && <Check className="ml-auto h-3.5 w-3.5 text-brand" />}
+                                {s === value && <Check className="ml-auto h-3.5 w-3.5 text-brand-strong" />}
                             </button>
                         ))}
                     </div>
@@ -92,7 +92,7 @@ export function StatusPicker({
                             <button
                                 type="button"
                                 onClick={() => { onChange('closed_lost', reason.trim() || undefined); setOpen(false); setAskLost(false); setReason(''); }}
-                                className="h-7 rounded-md bg-brand px-2.5 text-[12px] font-medium text-brand-fg hover:bg-brand-strong"
+                                className="h-7 rounded-md bg-brand px-2.5 text-[12px] font-medium text-brand-fg hover:bg-brand-hover"
                             >
                                 Алдсан гэж тэмдэглэх
                             </button>
@@ -151,13 +151,13 @@ export function ManagerPicker({
                 <div className="flex max-h-56 flex-col gap-0.5 overflow-y-auto">
                     <button type="button" onClick={() => { onChange(null); setOpen(false); }} className="flex h-8 items-center gap-2 rounded-md px-1.5 text-left text-[12.5px] text-muted-foreground hover:bg-surface-2">
                         Хуваарилаагүй
-                        {!value && <Check className="ml-auto h-3.5 w-3.5 text-brand" />}
+                        {!value && <Check className="ml-auto h-3.5 w-3.5 text-brand-strong" />}
                     </button>
                     {list.map((m) => (
                         <button key={m.name} type="button" onClick={() => { onChange(m.name); setOpen(false); }} className="flex h-8 items-center gap-2 rounded-md px-1.5 text-left text-[12.5px] hover:bg-surface-2">
                             <Avatar name={m.name} />
                             <span className="truncate text-foreground">{m.name}</span>
-                            {m.name === value && <Check className="ml-auto h-3.5 w-3.5 text-brand" />}
+                            {m.name === value && <Check className="ml-auto h-3.5 w-3.5 text-brand-strong" />}
                         </button>
                     ))}
                     {list.length === 0 && <div className="px-2 py-3 text-center text-[12px] text-muted-foreground">Олдсонгүй</div>}
@@ -252,12 +252,12 @@ export function CategoryPicker({
                         className="flex min-h-8 items-center gap-2 rounded-md px-1.5 text-left text-[12.5px] text-muted-foreground hover:bg-surface-2 focus-ring">
                         <span aria-hidden className="size-1.5 rounded-full border border-dashed border-border-strong" />
                         {UNCATEGORIZED_LABEL}
-                        {value === null && <Check className="ml-auto h-3.5 w-3.5 text-brand" />}
+                        {value === null && <Check className="ml-auto h-3.5 w-3.5 text-brand-strong" />}
                     </button>
                     {current && !current.is_active && (
                         <div role="option" aria-selected aria-disabled className="flex min-h-8 items-center gap-2 rounded-md px-1.5 text-[12.5px]">
                             <CategoryBadge category={current} />
-                            <Check className="ml-auto h-3.5 w-3.5 text-brand" />
+                            <Check className="ml-auto h-3.5 w-3.5 text-brand-strong" />
                         </div>
                     )}
                     {active.map((category) => (
@@ -265,7 +265,7 @@ export function CategoryPicker({
                             title={category.description ?? undefined}
                             className="flex min-h-8 items-center gap-2 rounded-md px-1.5 text-left hover:bg-surface-2 focus-ring">
                             <CategoryBadge category={category} />
-                            {category.id === value && <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-brand" />}
+                            {category.id === value && <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-brand-strong" />}
                         </button>
                     ))}
                 </div>

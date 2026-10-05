@@ -92,7 +92,7 @@ export function ViewingsPage() {
                     return (
                         <button key={t.key} type="button" aria-pressed={active} onClick={() => setRange(t.key)} className={cn('flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] font-medium transition-colors focus-ring', active ? 'bg-surface-2 text-foreground shadow-[inset_0_0_0_1px_var(--border)]' : 'text-fg-2 hover:bg-surface-2 hover:text-foreground')}>
                             {t.label}
-                            {typeof n === 'number' && <span className={cn('mono-label text-[11px]', active ? 'text-brand' : 'text-muted-foreground')}>{n}</span>}
+                            {typeof n === 'number' && <span className={cn('mono-label text-[11px]', active ? 'text-brand-strong' : 'text-muted-foreground')}>{n}</span>}
                         </button>
                     );
                 })}
@@ -113,7 +113,7 @@ export function ViewingsPage() {
                     <div className="flex flex-col items-center gap-3 px-4 py-12 text-center">
                         <div className="text-[13.5px] font-medium text-foreground">{range === 'today' ? 'Өнөөдөр уулзалт алга' : 'Уулзалт олдсонгүй'}</div>
                         <p className="max-w-xs text-[12.5px] text-muted-foreground">Лидийн панелаас эсвэл дээрх товчоор уулзалт товлоно.</p>
-                        {canWrite && <button type="button" onClick={() => setCreateOpen(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring"><CalendarPlus className="h-4 w-4" /> Уулзалт товлох</button>}
+                        {canWrite && <button type="button" onClick={() => setCreateOpen(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-hover focus-ring"><CalendarPlus className="h-4 w-4" /> Уулзалт товлох</button>}
                     </div>
                 ) : (
                     groups.map((g) => (
@@ -159,7 +159,7 @@ function Row({ v, now, canWrite, busy, onArrived, onNoShow, onCancel, onPostpone
     return <div className={cn('grid grid-cols-[52px_minmax(0,1fr)] items-center gap-x-3 gap-y-3 border-b border-border p-4 last:border-b-0 sm:flex sm:min-h-24 sm:gap-4', v.status === 'scheduled' && past && 'bg-status-danger-soft/30')}>
         <span className={cn('num self-start pt-0.5 text-base font-semibold sm:self-auto', v.status === 'scheduled' && past ? 'text-status-danger' : 'text-foreground')}>{formatTime(v.scheduled_at)}</span>
         <div className="min-w-0 flex-1">
-            {v.lead ? <Link href={`/dashboard/leads?lead=${v.lead.id}`} className="block truncate text-sm font-medium text-foreground hover:text-brand focus-ring">{name}</Link> : <span className="text-sm font-medium">{name}</span>}
+            {v.lead ? <Link href={`/dashboard/leads?lead=${v.lead.id}`} className="block truncate text-sm font-medium text-foreground hover:text-brand-strong focus-ring">{name}</Link> : <span className="text-sm font-medium">{name}</span>}
             <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"><MapPin className="size-3 shrink-0" /><span className="truncate">{v.property ? [v.property.name, v.property.district].filter(Boolean).join(' · ') : 'Байр сонгоогүй'}</span></div>
             {v.agent_notes && <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{v.agent_notes}</p>}
             {mt && <p className="mt-1 text-xs text-muted-foreground">{mt.label}</p>}
@@ -168,7 +168,7 @@ function Row({ v, now, canWrite, busy, onArrived, onNoShow, onCancel, onPostpone
         <div className="col-span-2 flex flex-wrap items-center gap-2 border-t border-border/60 pt-3 sm:ml-auto sm:shrink-0 sm:border-0 sm:pt-0">
             <Pill tone={viewingStatusTone(v.status)}>{viewingStatusLabel(v.status)}</Pill>
             {v.status === 'completed' && v.interest_level && <span className="inline-flex items-center gap-1 text-xs text-status-pending" aria-label={`Сонирхол ${v.interest_level}/5`}><Star className="size-3.5 fill-current" />{v.interest_level}/5</span>}
-            {phone && <a href={`tel:${phone}`} className="ml-auto flex size-11 items-center justify-center rounded-lg text-brand hover:bg-surface-2 focus-ring sm:ml-0 sm:size-9" aria-label={`${name} руу залгах`}><Phone className="size-4" /></a>}
+            {phone && <a href={`tel:${phone}`} className="ml-auto flex size-11 items-center justify-center rounded-lg text-brand-strong hover:bg-surface-2 focus-ring sm:ml-0 sm:size-9" aria-label={`${name} руу залгах`}><Phone className="size-4" /></a>}
             {canWrite && v.status === 'scheduled' && <>
                 <Button variant="secondary" size="sm" disabled={busy} onClick={onArrived}><Check />Ирсэн</Button>
                 <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" disabled={busy} aria-label={`${name}: уулзалтын бусад үйлдэл`}><MoreHorizontal /></Button></DropdownMenuTrigger>
@@ -292,7 +292,7 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                 <Field label="Байр">
                     {property ? (
                         <div className="flex items-center gap-2 rounded-md border border-brand bg-brand-soft px-3 py-1.5 text-[13px]">
-                            <MapPin className="h-3.5 w-3.5 text-brand" />
+                            <MapPin className="h-3.5 w-3.5 text-brand-strong" />
                             <span className="min-w-0 flex-1 truncate text-foreground">{property.name}{property.district ? ` · ${property.district}` : ''}</span>
                             {property.price && <span className="num text-[12px] text-fg-2">{formatMNT(property.price)}</span>}
                             <button type="button" onClick={() => setProperty(null)} className="text-muted-foreground hover:text-foreground" aria-label="Цуцлах"><X className="h-3.5 w-3.5" /></button>
@@ -326,7 +326,7 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                 <Field label="Төрөл">
                     <div className="flex flex-wrap gap-1.5">
                         {MEETING_TYPES.map((t) => (
-                            <button key={t} type="button" onClick={() => setType(t)} className={cn('h-[26px] rounded-md border px-2.5 text-[12px] focus-ring', type === t ? 'border-brand bg-brand-soft text-brand' : 'border-border text-fg-2 hover:border-border-strong')}>{MEETING_TYPE_META[t].label}</button>
+                            <button key={t} type="button" onClick={() => setType(t)} className={cn('h-[26px] rounded-md border px-2.5 text-[12px] focus-ring', type === t ? 'border-brand bg-brand-soft text-brand-strong' : 'border-border text-fg-2 hover:border-border-strong')}>{MEETING_TYPE_META[t].label}</button>
                         ))}
                     </div>
                 </Field>
@@ -350,7 +350,7 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
             </div>
             <footer className="flex shrink-0 items-center gap-2 border-t border-border p-4">
                 <button type="button" onClick={onClose} className="h-11 rounded-md px-3 text-[13px] text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-ring sm:h-[34px]">Болих</button>
-                <button type="button" disabled={create.isPending} onClick={() => void submit()} className="ml-auto inline-flex h-11 items-center gap-2 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong disabled:opacity-60 focus-ring sm:h-[34px]">
+                <button type="button" disabled={create.isPending} onClick={() => void submit()} className="ml-auto inline-flex h-11 items-center gap-2 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-hover disabled:opacity-60 focus-ring sm:h-[34px]">
                     {create.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}{walkIn ? 'Бүртгэх' : 'Товлох'}
                 </button>
             </footer>
@@ -398,14 +398,14 @@ function OutcomeSheet({ v, onClose }: { v: ViewingRow; onClose: () => void }) {
                 <Field label="Дараагийн холбоо">
                     <div className="flex flex-wrap gap-1.5">
                         {[1, 3, 7].map((d) => (
-                            <button key={d} type="button" onClick={() => setFollowup(followup === d ? null : d)} className={cn('h-[26px] rounded-md border px-2.5 text-[12px] focus-ring', followup === d ? 'border-brand bg-brand-soft text-brand' : 'border-border text-fg-2 hover:border-border-strong')}>{d === 1 ? 'Маргааш залгах' : `${d} хоногийн дараа`}</button>
+                            <button key={d} type="button" onClick={() => setFollowup(followup === d ? null : d)} className={cn('h-[26px] rounded-md border px-2.5 text-[12px] focus-ring', followup === d ? 'border-brand bg-brand-soft text-brand-strong' : 'border-border text-fg-2 hover:border-border-strong')}>{d === 1 ? 'Маргааш залгах' : `${d} хоногийн дараа`}</button>
                         ))}
                     </div>
                 </Field>
             </div>
             <footer className="flex shrink-0 items-center gap-2 border-t border-border p-4">
                 <button type="button" onClick={onClose} className="h-11 rounded-md px-3 text-[13px] text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-ring sm:h-[34px]">Болих</button>
-                <button type="button" disabled={update.isPending} onClick={() => void submit()} className="ml-auto inline-flex h-11 items-center gap-2 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong disabled:opacity-60 focus-ring sm:h-[34px]">
+                <button type="button" disabled={update.isPending} onClick={() => void submit()} className="ml-auto inline-flex h-11 items-center gap-2 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-hover disabled:opacity-60 focus-ring sm:h-[34px]">
                     {update.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}<Check className="h-4 w-4" /> Дууссан
                 </button>
             </footer>

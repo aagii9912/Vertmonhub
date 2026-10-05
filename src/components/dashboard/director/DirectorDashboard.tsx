@@ -63,7 +63,7 @@ export function DirectorDashboard({ actions }: { actions?: React.ReactNode }) {
                     </button>
                 </div>
                 {!isCurrent && (
-                    <button type="button" onClick={() => setYm({ year: now.getFullYear(), month: now.getMonth() + 1 })} className="h-[30px] rounded-md px-2.5 text-[12.5px] text-brand hover:bg-brand-soft focus-ring">
+                    <button type="button" onClick={() => setYm({ year: now.getFullYear(), month: now.getMonth() + 1 })} className="h-[30px] rounded-md px-2.5 text-[12.5px] text-brand-strong hover:bg-brand-soft focus-ring">
                         Энэ сар
                     </button>
                 )}
@@ -120,7 +120,7 @@ function SalesVsTarget({ data, loading, className, month }: { data?: ReturnType<
                         {s.target > 0 ? (
                             <span className="text-[13px] text-muted-foreground">Зорилт {formatMNTShort(s.target)} · <b className={cn('font-semibold', s.attainmentPct >= 100 ? 'text-status-success' : 'text-foreground')}>{s.attainmentPct}%</b></span>
                         ) : (
-                            <Link href="/admin/sales-targets" className="text-[12.5px] text-brand hover:underline">Сарын зорилт тохируулах</Link>
+                            <Link href="/admin/sales-targets" className="text-[12.5px] text-brand-strong hover:underline">Сарын зорилт тохируулах</Link>
                         )}
                         {s.momDeltaPct !== null && (
                             <span className={cn('text-[12.5px] font-medium', s.momDeltaPct >= 0 ? 'text-status-success' : 'text-status-danger')}>
@@ -251,7 +251,7 @@ function Receivables({ data, loading }: { data?: ReturnType<typeof useDirector>[
                             <div className="text-[12.5px] text-muted-foreground">Төлбөрийн хуваарьт хоцролт бүртгэгдээгүй</div>
                         )}
                         <p className="text-[12px] leading-relaxed text-muted-foreground">Зөвхөн бүртгэсэн төлбөрийн хуваарийг тооцов. Гэрээнд өмнө бүртгэсэн хоцролтоос ялгаатай байж болно.</p>
-                        <Link href="/dashboard/contracts" className="text-[12px] text-brand hover:underline">Гэрээний бүртгэл шалгах</Link>
+                        <Link href="/dashboard/contracts" className="text-[12px] text-brand-strong hover:underline">Гэрээний бүртгэл шалгах</Link>
                         {r.outstandingTotal > 0 && (
                             <div className="flex items-center justify-between text-[12px] text-muted-foreground">
                                 <span>Нийт авлага (идэвхтэй гэрээ)</span>
@@ -274,7 +274,7 @@ function Receivables({ data, loading }: { data?: ReturnType<typeof useDirector>[
                             <div className="flex flex-col gap-2">
                                 {inv.blocks.slice(0, 6).map((b) => <BlockRow key={`${b.phase}|${b.block}`} b={b} />)}
                                 {inv.blocks.length > 6 && (
-                                    <Link href="/dashboard/properties/blocks" className="inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline">
+                                    <Link href="/dashboard/properties/blocks" className="inline-flex items-center gap-1 text-[12px] font-medium text-brand-strong hover:underline">
                                         Бүх блок ({inv.blocks.length}) <ArrowRight className="h-3.5 w-3.5" />
                                     </Link>
                                 )}
@@ -304,7 +304,7 @@ function Leaderboard({ rows, loading }: { rows?: LeaderboardRow[]; loading: bool
     return (
         <Panel
             title="Менежерийн гүйцэтгэл"
-            right={<Link href="/dashboard/reports/manager-performance" className="inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline">Бүх тайлан <ArrowRight className="h-3.5 w-3.5" /></Link>}
+            right={<Link href="/dashboard/reports/manager-performance" className="inline-flex items-center gap-1 text-[12px] font-medium text-brand-strong hover:underline">Бүх тайлан <ArrowRight className="h-3.5 w-3.5" /></Link>}
         >
             {loading || !rows ? (
                 <div className="flex flex-col gap-2 p-3.5">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-9" />)}</div>

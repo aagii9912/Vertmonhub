@@ -503,7 +503,7 @@ function NewServiceLogModal({ open, onClose, onSubmit, managers, managersError, 
             <DialogContent className="rounded-2xl sm:max-w-lg">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
-                        <Plus className="w-5 h-5 text-brand" />
+                        <Plus className="w-5 h-5 text-brand-strong" />
                         Шинэ хүсэлт бүртгэх
                     </DialogTitle>
                     <DialogDescription className="sr-only">

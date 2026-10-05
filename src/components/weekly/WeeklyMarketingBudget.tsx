@@ -37,7 +37,7 @@ export function WeeklyMarketingBudget({ to }: { to: string }) {
             <Cell label="Он эхнээс зарцуулсан" value={formatMNTShort(ytdSpend)} helper={`${pct(ytdSpend, ytdBudget)} (энэ хүртэлх сарын төсвөөс)`} tone={ytdBudget > 0 && ytdSpend > ytdBudget ? 'danger' : undefined} />
             <Cell label={`${month}-р сарын төсөв`} value={current?.budget ? formatMNTShort(current.budget) : 'Оруулаагүй'} />
             <Cell label={`${month}-р сард зарцуулсан`} value={formatMNTShort(current?.spend ?? 0)} helper={current ? pct(current.spend, current.budget) : undefined} tone={current?.status === 'over' ? 'danger' : undefined} />
-            <Link href="/marketing/budget" className="col-span-full inline-flex items-center gap-1 text-xs text-brand hover:underline focus-ring print:hidden">Төсөв засах, зардал нэмэх<ArrowUpRight className="size-3" /></Link>
+            <Link href="/marketing/budget" className="col-span-full inline-flex items-center gap-1 text-xs text-brand-strong hover:underline focus-ring print:hidden">Төсөв засах, зардал нэмэх<ArrowUpRight className="size-3" /></Link>
         </div>
     );
 }

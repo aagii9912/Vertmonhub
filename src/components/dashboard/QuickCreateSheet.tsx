@@ -314,7 +314,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                                     onClose();
                                     router.push(`/dashboard/leads?lead=${duplicate.id}`);
                                 }}
-                                className="shrink-0 font-medium text-brand underline-offset-2 hover:underline"
+                                className="shrink-0 font-medium text-brand-strong underline-offset-2 hover:underline"
                             >
                                 Нээх
                             </button>
@@ -332,7 +332,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                                 className={cn(
                                     'h-[26px] rounded-md border px-2.5 text-[12px] transition-colors focus-ring',
                                     interest === v
-                                        ? 'border-brand bg-brand-soft text-brand'
+                                        ? 'border-brand bg-brand-soft text-brand-strong'
                                         : 'border-border bg-surface text-fg-2 hover:border-border-strong',
                                 )}
                             >
@@ -357,7 +357,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                                     className={cn(
                                         'h-[26px] rounded-md border px-2.5 text-[12px] transition-colors focus-ring',
                                         categoryId === c.id
-                                            ? 'border-brand bg-brand-soft text-brand'
+                                            ? 'border-brand bg-brand-soft text-brand-strong'
                                             : 'border-border bg-surface text-fg-2 hover:border-border-strong',
                                     )}
                                 >
@@ -458,7 +458,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                         type="button"
                         disabled={saving}
                         onClick={() => void submit(false)}
-                        className="flex h-[34px] items-center gap-2 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg transition-colors hover:bg-brand-strong disabled:opacity-60 focus-ring"
+                        className="flex h-[34px] items-center gap-2 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg transition-colors hover:bg-brand-hover disabled:opacity-60 focus-ring"
                     >
                         {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                         Хадгалах
@@ -651,7 +651,7 @@ function TaskForm({ onClose }: { onClose: () => void }) {
                 <button
                     type="submit"
                     disabled={isPending}
-                    className="ml-auto flex h-[34px] items-center gap-2 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg transition-colors hover:bg-brand-strong disabled:opacity-60 focus-ring"
+                    className="ml-auto flex h-[34px] items-center gap-2 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg transition-colors hover:bg-brand-hover disabled:opacity-60 focus-ring"
                 >
                     {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                     Хадгалах

@@ -94,7 +94,7 @@ export default function LeadsReport() {
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div>
                     <h2 className="heading-section text-lg text-foreground flex items-center gap-2">
-                        <Users className="w-5 h-5 text-brand" />
+                        <Users className="w-5 h-5 text-brand-strong" />
                         Сэжмийн тайлан
                     </h2>
                     <p className="text-sm text-muted-foreground mt-1">
@@ -261,10 +261,10 @@ export default function LeadsReport() {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <BreakdownCard title="Төслөөр" icon={<Building2 className="w-5 h-5 text-brand" />} rows={projectRows} />
-                <BreakdownCard title="Менежерээр" icon={<UserRound className="w-5 h-5 text-brand" />} rows={managerRows} />
+                <BreakdownCard title="Төслөөр" icon={<Building2 className="w-5 h-5 text-brand-strong" />} rows={projectRows} />
+                <BreakdownCard title="Менежерээр" icon={<UserRound className="w-5 h-5 text-brand-strong" />} rows={managerRows} />
                 {categories.length > 0 && (
-                    <BreakdownCard title="Ангиллаар" icon={<Tags className="w-5 h-5 text-brand" />} rows={categoryRows} />
+                    <BreakdownCard title="Ангиллаар" icon={<Tags className="w-5 h-5 text-brand-strong" />} rows={categoryRows} />
                 )}
             </div>
         </div>

@@ -213,7 +213,7 @@ export function ConversationSidebar({
                                     const isActive = activeId === conv.id;
                                     const isRenaming = renamingId === conv.id;
                                     const ModeIcon = conv.mode === 'data' ? Database : conv.mode === 'general' ? Globe : Network;
-                                    const modeColor = conv.mode === 'data' ? 'text-status-success' : 'text-brand';
+                                    const modeColor = conv.mode === 'data' ? 'text-status-success' : 'text-brand-strong';
 
                                     return (
                                         <div

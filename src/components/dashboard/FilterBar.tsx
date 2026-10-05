@@ -66,7 +66,7 @@ export function FilterBar({
 /** Ижил хэмжээ, сонгосон төлөв, харагдах keyboard focus-той авсаархан шүүлтүүр. */
 export function FilterChip({ value, onChange, label, options }: { value: string; onChange: (value: string) => void; label: string; options: [string, string][] }) {
     const active = value !== 'all';
-    return <label className={cn('relative inline-flex h-11 items-center gap-1 rounded-lg border pl-3 pr-7 text-xs focus-ring md:h-9', active ? 'border-brand bg-brand-soft text-brand' : 'border-border bg-surface text-fg-2 hover:border-border-strong')}>
+    return <label className={cn('relative inline-flex h-11 items-center gap-1 rounded-lg border pl-3 pr-7 text-xs focus-ring md:h-9', active ? 'border-brand bg-brand-soft text-brand-strong' : 'border-border bg-surface text-fg-2 hover:border-border-strong')}>
         <span className="pointer-events-none whitespace-nowrap">{active ? `${label}: ${options.find(option => option[0] === value)?.[1] ?? value}` : label}</span>
         <select value={value} onChange={event => onChange(event.target.value)} className="absolute inset-0 cursor-pointer opacity-0" aria-label={label}>
             <option value="all">Бүгд</option>

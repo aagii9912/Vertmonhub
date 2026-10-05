@@ -305,7 +305,7 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
                     {!empty && suggestions.length > 0 && !busy && (
                         <div className="mb-2 flex gap-1.5 overflow-x-auto no-scrollbar">
                             {suggestions.slice(0, 3).map((s) => (
-                                <button key={s.label} type="button" onClick={() => selectSuggestion(s.prompt)} className="h-[24px] shrink-0 rounded-md border border-border px-2 text-[11.5px] text-fg-2 hover:border-brand hover:text-brand">{s.label}</button>
+                                <button key={s.label} type="button" onClick={() => selectSuggestion(s.prompt)} className="h-[24px] shrink-0 rounded-md border border-border px-2 text-[11.5px] text-fg-2 hover:border-brand hover:text-brand-strong">{s.label}</button>
                             ))}
                         </div>
                     )}
@@ -387,7 +387,7 @@ function AssistantBlock({ m, compact, busy, onRetry, onApprove, onApproveAll, on
                                 {m.clarification.options.length > 0 && (
                                     <div className="mt-1.5 flex flex-wrap gap-1.5">
                                         {m.clarification.options.map((o) => (
-                                            <button key={o} type="button" disabled={!isLast} onClick={() => onClarify(o)} className="h-[28px] rounded-md border border-border bg-surface px-2.5 text-[12.5px] text-foreground transition-colors hover:border-brand hover:text-brand disabled:opacity-50 focus-ring">{o}</button>
+                                            <button key={o} type="button" disabled={!isLast} onClick={() => onClarify(o)} className="h-[28px] rounded-md border border-border bg-surface px-2.5 text-[12.5px] text-foreground transition-colors hover:border-brand hover:text-brand-strong disabled:opacity-50 focus-ring">{o}</button>
                                         ))}
                                     </div>
                                 )}
@@ -400,7 +400,7 @@ function AssistantBlock({ m, compact, busy, onRetry, onApprove, onApproveAll, on
                                 {pending.length > 1 && (
                                     <div className="flex items-center gap-2 rounded-md border border-brand/30 bg-brand-soft/40 px-3 py-1.5 text-[12px]">
                                         <span className="font-medium text-foreground">{pending.length} үйлдэл таны зөвшөөрлийг хүлээж байна</span>
-                                        <button type="button" onClick={() => onApproveAll(pending.map((a) => a.id))} className="ml-auto inline-flex h-[26px] items-center gap-1 rounded-md bg-brand px-2 text-[12px] font-medium text-brand-fg hover:bg-brand-strong"><CheckCheck className="h-3.5 w-3.5" /> Бүгдийг зөвшөөрөх</button>
+                                        <button type="button" onClick={() => onApproveAll(pending.map((a) => a.id))} className="ml-auto inline-flex h-[26px] items-center gap-1 rounded-md bg-brand px-2 text-[12px] font-medium text-brand-fg hover:bg-brand-hover"><CheckCheck className="h-3.5 w-3.5" /> Бүгдийг зөвшөөрөх</button>
                                     </div>
                                 )}
                                 {m.pendingActions.map((a) => <ActionCard key={a.id} a={a} onApprove={() => onApprove(a)} onCancel={() => onCancel(a)} onAlways={() => onAlways(a)} />)}
@@ -442,14 +442,14 @@ function ActivityView({ items, status, streaming }: { items: Activity[]; status?
             {expanded && (
                 <div className={cn('flex flex-col gap-1 rounded-md border border-border bg-surface-2/50 px-2.5 py-2', !streaming && 'mt-1')}>
                     {items.map((a) => (
-                        <Row key={a.id} icon={a.status === 'run' ? <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" /> : a.status === 'ok' ? <Check className="h-3.5 w-3.5 text-status-success" /> : <X className="h-3.5 w-3.5 text-status-danger" />}>
+                        <Row key={a.id} icon={a.status === 'run' ? <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-strong" /> : a.status === 'ok' ? <Check className="h-3.5 w-3.5 text-status-success" /> : <X className="h-3.5 w-3.5 text-status-danger" />}>
                             {a.kind === 'agent' && <Users className="mr-1 h-3 w-3 text-muted-foreground" />}
                             <span className={cn('font-medium', a.status === 'run' ? 'text-foreground' : 'text-fg-2')}>{a.label}{a.status === 'run' ? '…' : ''}</span>
                             {a.summary && <span className="ml-1.5 truncate text-muted-foreground">{a.status === 'run' && a.kind === 'agent' ? a.summary : a.status !== 'run' ? `→ ${a.summary}` : ''}</span>}
                             {a.latencyMs !== undefined && a.latencyMs > 0 && <span className="mono-label ml-auto pl-2 text-[10.5px] text-muted-foreground">{(a.latencyMs / 1000).toFixed(1)}с</span>}
                         </Row>
                     ))}
-                    {status && <Row icon={<Loader2 className="h-3.5 w-3.5 animate-spin text-brand" />}><span className="text-muted-foreground">{status}</span></Row>}
+                    {status && <Row icon={<Loader2 className="h-3.5 w-3.5 animate-spin text-brand-strong" />}><span className="text-muted-foreground">{status}</span></Row>}
                 </div>
             )}
         </div>
@@ -468,7 +468,7 @@ function ActionCard({ a, onApprove, onCancel, onAlways }: { a: PendingAction; on
                 <span className="text-[12.5px] font-semibold text-foreground">{a.label}</span>
                 <span className="text-[11px] text-muted-foreground">· {a.agentName}</span>
                 <span className="ml-auto">
-                    {a.status === 'running' && <Loader2 className="h-3.5 w-3.5 animate-spin text-brand" />}
+                    {a.status === 'running' && <Loader2 className="h-3.5 w-3.5 animate-spin text-brand-strong" />}
                     {a.status === 'done' && <span className="inline-flex items-center gap-1 text-[11.5px] font-medium text-status-success"><Check className="h-3.5 w-3.5" /> Гүйцэтгэгдлээ</span>}
                     {a.status === 'cancelled' && <span className="text-[11.5px] text-muted-foreground">Цуцалсан</span>}
                     {a.status === 'error' && <span className="text-[11.5px] font-medium text-status-danger">Алдаа</span>}
@@ -482,7 +482,7 @@ function ActionCard({ a, onApprove, onCancel, onAlways }: { a: PendingAction; on
             {a.resultMessage && a.status !== 'pending' && <div className={cn('px-3 pb-2 text-[12px]', a.status === 'error' ? 'text-status-danger' : 'text-fg-2')}>{a.resultMessage}</div>}
             {a.status === 'pending' && (
                 <div className="flex flex-wrap items-center gap-1.5 border-t border-border px-3 py-2">
-                    <button type="button" onClick={onApprove} className="inline-flex h-[28px] items-center gap-1.5 rounded-md bg-brand px-2.5 text-[12px] font-medium text-brand-fg hover:bg-brand-strong"><Check className="h-3.5 w-3.5" /> Зөвшөөрөх</button>
+                    <button type="button" onClick={onApprove} className="inline-flex h-[28px] items-center gap-1.5 rounded-md bg-brand px-2.5 text-[12px] font-medium text-brand-fg hover:bg-brand-hover"><Check className="h-3.5 w-3.5" /> Зөвшөөрөх</button>
                     <button type="button" onClick={onCancel} className="h-[28px] rounded-md border border-border-strong bg-surface px-2.5 text-[12px] text-foreground hover:bg-surface-2">Болих</button>
                     <button type="button" onClick={onAlways} className="ml-auto text-[11.5px] text-muted-foreground hover:text-foreground" title="Энэ төрлийн үйлдлийг энэ session-д дахин асуухгүй">Үргэлж зөвшөөрөх</button>
                 </div>

@@ -504,7 +504,7 @@ function UnitDrawer({ unit: u, onClose, onUpdated }: {
                             </Section>
 
                             {isSold && (
-                                <Section icon={<User className="w-4 h-4 text-brand" />} title="Худалдан авагч">
+                                <Section icon={<User className="w-4 h-4 text-brand-strong" />} title="Худалдан авагч">
                                     {u.buyer_name ? (
                                         <>
                                             <Field label="Нэр" value={u.buyer_name} />
@@ -585,7 +585,7 @@ function UnitEditForm({ unit: u, onCancel, onSaved }: {
     return (
         <div className="space-y-3">
             <h3 className="heading-section text-sm text-foreground flex items-center gap-2">
-                <Pencil className="w-4 h-4 text-brand" /> Нэгж засах
+                <Pencil className="w-4 h-4 text-brand-strong" /> Нэгж засах
             </h3>
 
             <label className="block">

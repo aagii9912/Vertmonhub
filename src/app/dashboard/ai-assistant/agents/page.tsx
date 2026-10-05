@@ -50,7 +50,7 @@ export default function AgentsPage() {
                         return (
                             <Panel key={a.id} bodyClassName="flex flex-col gap-3 p-4">
                                 <div className="flex items-start gap-3">
-                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand-soft text-brand"><Icon className="h-4 w-4" strokeWidth={1.75} /></span>
+                                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-brand-soft text-brand-strong"><Icon className="h-4 w-4" strokeWidth={1.75} /></span>
                                     <div className="min-w-0 flex-1">
                                         <div className="flex items-center gap-2">
                                             <h3 className="truncate text-[13.5px] font-semibold text-foreground">{a.name}</h3>
@@ -79,7 +79,7 @@ function ToolRow({ icon: Icon, label, tools, tone }: { icon: React.ElementType; 
             <div className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.04em] text-muted-foreground"><Icon className="h-3 w-3" /> {label} <span className="mono-label normal-case tracking-normal">{tools.length}</span></div>
             <div className="flex flex-wrap gap-1">
                 {tools.map((t) => (
-                    <span key={t} className={cn('mono-label rounded border px-1.5 py-0.5 text-[10.5px]', tone === 'brand' ? 'border-brand/30 bg-brand-soft text-brand' : tone === 'danger' ? 'border-status-danger/30 bg-status-danger-soft text-status-danger' : tone === 'pending' ? 'border-status-pending/30 bg-status-pending-soft text-status-pending' : 'border-border bg-surface-2 text-fg-2')}>{t}</span>
+                    <span key={t} className={cn('mono-label rounded border px-1.5 py-0.5 text-[10.5px]', tone === 'brand' ? 'border-brand/30 bg-brand-soft text-brand-strong' : tone === 'danger' ? 'border-status-danger/30 bg-status-danger-soft text-status-danger' : tone === 'pending' ? 'border-status-pending/30 bg-status-pending-soft text-status-pending' : 'border-border bg-surface-2 text-fg-2')}>{t}</span>
                 ))}
             </div>
         </div>

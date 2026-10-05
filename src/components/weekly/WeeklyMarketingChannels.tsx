@@ -164,7 +164,7 @@ export function WeeklyMarketingChannels({ from, to }: { from: string; to: string
             </div>
             {missing.length > 0 && <p className="text-xs text-muted-foreground">
                 Экспорт оруулаагүй: {missing.map(source => CHANNEL_SOURCE_LABELS[source]).join(', ')}.{' '}
-                <Link href="/marketing/channel-reports" className="inline-flex items-center gap-1 text-brand hover:underline focus-ring print:hidden">Экспорт импорт<ArrowUpRight className="size-3" /></Link>
+                <Link href="/marketing/channel-reports" className="inline-flex items-center gap-1 text-brand-strong hover:underline focus-ring print:hidden">Экспорт импорт<ArrowUpRight className="size-3" /></Link>
             </p>}
         </div>
     );

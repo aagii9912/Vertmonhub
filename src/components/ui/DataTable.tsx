@@ -260,7 +260,7 @@ export function DataTable<T>({
               role="status"
               className="flex flex-1 items-center justify-between gap-3 rounded-md border border-brand/30 bg-brand-soft px-3 py-1.5"
             >
-              <span className="num text-[12.5px] font-medium text-brand">
+              <span className="num text-[12.5px] font-medium text-brand-strong">
                 {selected.length} сонгогдсон
               </span>
               <div className="flex items-center gap-2">
@@ -371,12 +371,12 @@ export function DataTable<T>({
                         {isActive ? (
                           direction === "asc" ? (
                             <ArrowUpIcon
-                              className="size-3 text-brand"
+                              className="size-3 text-brand-strong"
                               aria-hidden="true"
                             />
                           ) : (
                             <ArrowDownIcon
-                              className="size-3 text-brand"
+                              className="size-3 text-brand-strong"
                               aria-hidden="true"
                             />
                           )

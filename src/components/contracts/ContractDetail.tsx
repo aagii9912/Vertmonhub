@@ -83,15 +83,15 @@ export function ContractDetail({ id }: { id: string }) {
                     {canWrite && isTransferableContract(c.contract_status) && (
                         <button type="button" onClick={() => setTransferring(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md border border-border-strong bg-surface px-2.5 text-[12.5px] font-medium text-foreground hover:bg-surface-2 focus-ring"><ArrowLeftRight className="h-4 w-4" /> Гэрээ шилжүүлэх</button>
                     )}
-                    {canAddPayment && <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-2.5 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>}
+                    {canAddPayment && <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-2.5 text-[12.5px] font-medium text-brand-fg hover:bg-brand-hover focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>}
                 </div>
             </div>
 
             <div className="grid gap-4 xl:grid-cols-3">
                 <div className="flex min-w-0 flex-col gap-4 xl:col-span-2">
                     <Panel title="Ерөнхий" bodyClassName="grid grid-cols-2 gap-x-6 gap-y-3 p-4 md:grid-cols-3">
-                        <F label="Харилцагч">{c.lead_id ? <Link href={`/dashboard/leads?lead=${c.lead_id}`} className="text-brand hover:underline">{customer}</Link> : customer}</F>
-                        <F label="Утас"><span className="mono-label">{phone || '—'}</span>{phone && <a href={`tel:${phone.replace(/\D/g, '')}`} className="ml-1 inline-flex text-brand" aria-label="Залгах"><Phone className="h-3.5 w-3.5" /></a>}</F>
+                        <F label="Харилцагч">{c.lead_id ? <Link href={`/dashboard/leads?lead=${c.lead_id}`} className="text-brand-strong hover:underline">{customer}</Link> : customer}</F>
+                        <F label="Утас"><span className="mono-label">{phone || '—'}</span>{phone && <a href={`tel:${phone.replace(/\D/g, '')}`} className="ml-1 inline-flex text-brand-strong" aria-label="Залгах"><Phone className="h-3.5 w-3.5" /></a>}</F>
                         <F label="Регистр"><span className="mono-label">{c.customer_registration || '—'}</span></F>
                         <F label="Блок / Тоот"><span className="mono-label">{[c.block_name, c.unit_number || c.legacy_unit_number].filter(Boolean).join(' / ') || '—'}</span></F>
                         <F label="Байр">{[c.unit_type || (c.rooms ? `${c.rooms} өрөө` : null), c.contracted_area ? `${c.contracted_area} м²` : null, c.floor ? `${c.floor}-р давхар` : null].filter(Boolean).join(' · ') || '—'}</F>
@@ -125,7 +125,7 @@ export function ContractDetail({ id }: { id: string }) {
                                 <div className="text-[13px] font-medium text-foreground">Төлбөрийн график оруулаагүй</div>
                                 {canAddPayment && <>
                                     <p className="max-w-sm text-[12.5px] text-muted-foreground">Урьдчилгаа болон сар бүрийн төлөлтийг энд бүртгэвэл захирлын самбар авлага, хоцролтыг автоматаар харуулна.</p>
-                                    <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>
+                                    <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-hover focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>
                                 </>}
                             </div>
                         ) : (
@@ -200,7 +200,7 @@ export function ContractDetail({ id }: { id: string }) {
                                     </li>
                                 ))}
                         </ol>
-                        {c.lead_id && <Link href={`/dashboard/leads?lead=${c.lead_id}`} className="mt-3 inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline"><FileText className="h-3.5 w-3.5" /> Холбоотой лид</Link>}
+                        {c.lead_id && <Link href={`/dashboard/leads?lead=${c.lead_id}`} className="mt-3 inline-flex items-center gap-1 text-[12px] font-medium text-brand-strong hover:underline"><FileText className="h-3.5 w-3.5" /> Холбоотой лид</Link>}
                     </Panel>
                 </div>
             </div>
@@ -323,7 +323,7 @@ function PaymentTr({ p, contractId, now, canWrite }: { p: PaymentRow; contractId
             </td>
             <td className="px-2 text-right">
                 {payable && (
-                    <GhostButton onClick={() => void markPaid()} disabled={update.isPending || !method || !kind || !receivedAt} className="text-brand hover:bg-brand-soft"><Check className="h-3.5 w-3.5" /> Төлсөн</GhostButton>
+                    <GhostButton onClick={() => void markPaid()} disabled={update.isPending || !method || !kind || !receivedAt} className="text-brand-strong hover:bg-brand-soft"><Check className="h-3.5 w-3.5" /> Төлсөн</GhostButton>
                 )}
             </td>
         </tr>
@@ -379,7 +379,7 @@ function AddPaymentRow({ contractId, next, onDone }: { contractId: string; next:
             </td>
             <td className="px-2 text-right">
                 <span className="inline-flex gap-1">
-                    <button type="button" onClick={() => void submit()} disabled={add.isPending} aria-label="Төлбөр хадгалах" className="inline-flex h-7 items-center gap-1 rounded-md bg-brand px-2 text-[12px] font-medium text-brand-fg hover:bg-brand-strong disabled:opacity-60">{add.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}</button>
+                    <button type="button" onClick={() => void submit()} disabled={add.isPending} aria-label="Төлбөр хадгалах" className="inline-flex h-7 items-center gap-1 rounded-md bg-brand px-2 text-[12px] font-medium text-brand-fg hover:bg-brand-hover disabled:opacity-60">{add.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}</button>
                     <button type="button" onClick={onDone} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2" aria-label="Болих"><X className="h-3.5 w-3.5" /></button>
                 </span>
             </td>

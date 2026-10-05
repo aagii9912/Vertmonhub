@@ -139,7 +139,7 @@ export default function AdminProjectsPage() {
                     <h1 className="heading-display text-2xl text-foreground">Төслүүд</h1>
                     <p className="mt-1 text-sm text-muted-foreground">Төсөл бүр өөрийн ажлын орчин, маркетинг, менежер, тайлантай. Төсөл дотор дэд төсөл үүсгэхгүй.</p>
                 </div>
-                <button onClick={openCreate} disabled={loading} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-brand-fg hover:bg-brand-strong disabled:opacity-50">
+                <button onClick={openCreate} disabled={loading} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-brand-fg hover:bg-brand-hover disabled:opacity-50">
                     <Plus className="h-4 w-4" /> Шинэ төсөл
                 </button>
             </div>
@@ -151,7 +151,7 @@ export default function AdminProjectsPage() {
                 {unlinked.map(row => <p key={row.shop_id} className="mt-2 text-foreground">{shops.find(shop => shop.id === row.shop_id)?.name || 'Төсөл'}: лид {row.leads.toLocaleString()} · нэгж {row.units.toLocaleString()} · гэрээ {row.contracts.toLocaleString()}</p>)}
             </div>}
 
-            {loading ? <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-brand" /></div>
+            {loading ? <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-brand-strong" /></div>
                 : loadError ? <div role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger-soft p-4 text-sm text-status-danger">{loadError} <button onClick={() => void refetch()} className="ml-2 font-semibold underline">Дахин ачаалах</button></div>
                 : visible.length === 0 ? <div className="rounded-xl border border-border bg-surface p-10 text-center text-sm text-muted-foreground">Төсөл бүртгэгдээгүй байна.</div>
                 : <div className="grid gap-3 sm:grid-cols-2">
@@ -187,7 +187,7 @@ export default function AdminProjectsPage() {
             <div className="rounded-xl border border-border bg-surface p-4 text-sm text-muted-foreground">
                 <p>Лид, гэрээний тоонд устгаагүй бүртгэлүүд орно. Нэгжийн тоонд нөөцийн сангийн бүх бүртгэл орно.</p>
                 <p className="mt-2">ERP файл тусдаа түүхэн тайланд хадгалагдана. Файл хадгалах нь CRM-ийн нэгж, гэрээ болон мөнгөн орлогыг автоматаар бүртгэхгүй.</p>
-                <Link href="/dashboard/reports/erp" className="mt-2 inline-flex min-h-11 items-center font-medium text-brand hover:underline">ERP тайлан харах →</Link>
+                <Link href="/dashboard/reports/erp" className="mt-2 inline-flex min-h-11 items-center font-medium text-brand-strong hover:underline">ERP тайлан харах →</Link>
             </div>
 
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

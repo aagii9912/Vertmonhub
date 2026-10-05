@@ -171,7 +171,7 @@ export default function RolesPage() {
                 </div>
                 <button
                     onClick={() => setShowCreate(true)}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-brand text-brand-fg rounded-xl font-medium hover:bg-brand-strong transition-colors"
+                    className="flex items-center gap-2 px-4 py-2.5 bg-brand text-brand-fg rounded-xl font-medium hover:bg-brand-hover transition-colors"
                 >
                     <Plus className="w-4 h-4" />
                     Шинэ дүр
@@ -483,7 +483,7 @@ export default function RolesPage() {
                             <button
                                 onClick={createRole}
                                 disabled={saving.includes('new')}
-                                className="flex items-center gap-2 px-4 py-2 text-sm bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50"
+                                className="flex items-center gap-2 px-4 py-2 text-sm bg-brand text-brand-fg rounded-lg hover:bg-brand-hover disabled:opacity-50"
                             >
                                 {saving.includes('new') ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                                 Үүсгэх

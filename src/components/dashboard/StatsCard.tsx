@@ -22,7 +22,7 @@ interface StatsCardProps {
 type IconTone = 'brand' | 'info' | 'success' | 'warning' | 'danger' | 'neutral';
 
 const TONE_TEXT: Record<IconTone, string> = {
-    brand: 'text-brand',
+    brand: 'text-brand-strong',
     info: 'text-status-info',
     success: 'text-status-success',
     warning: 'text-status-pending',

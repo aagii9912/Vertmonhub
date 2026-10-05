@@ -56,7 +56,7 @@ export function Hero() {
                     >
                         Лийдээс гэрээ хүртэл
                         <br />
-                        <span className="text-brand">нэг ухаалаг системд</span>
+                        <span className="text-brand-strong">нэг ухаалаг системд</span>
                     </motion.h1>
 
                     <motion.p

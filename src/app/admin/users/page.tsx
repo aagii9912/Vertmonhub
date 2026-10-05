@@ -453,7 +453,7 @@ export default function AdminUsersPage() {
                     <button
                         onClick={() => { setShowCreate(true); setCreateError(null); }}
                         disabled={!!roleError || !!shopError || roles.length === 0 || shops.length === 0}
-                        className="flex items-center gap-2 px-4 py-2.5 bg-brand text-brand-fg rounded-xl font-medium hover:bg-brand-strong transition-colors disabled:opacity-50"
+                        className="flex items-center gap-2 px-4 py-2.5 bg-brand text-brand-fg rounded-xl font-medium hover:bg-brand-hover transition-colors disabled:opacity-50"
                     >
                         <UserPlus className="w-4 h-4" />
                         Хэрэглэгч нэмэх
@@ -832,7 +832,7 @@ export default function AdminUsersPage() {
                                         />
                                         <button
                                             onClick={copyInviteLink}
-                                            className="flex items-center gap-1.5 px-3 py-2.5 bg-brand text-brand-fg rounded-lg text-sm font-medium hover:bg-brand-strong"
+                                            className="flex items-center gap-1.5 px-3 py-2.5 bg-brand text-brand-fg rounded-lg text-sm font-medium hover:bg-brand-hover"
                                         >
                                             {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                                             {copied ? 'Хуулсан' : 'Хуулах'}
@@ -854,7 +854,7 @@ export default function AdminUsersPage() {
                                 <button
                                     onClick={sendInvite}
                                     disabled={inviting || !inviteForm.email || !inviteForm.shop_id || !roles.some(role => role.value === inviteForm.role) || inviteNameMissing || inviteExistingNameMissing || invitePhoneInvalid}
-                                    className="flex items-center gap-2 px-5 py-2.5 text-sm bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                                    className="flex items-center gap-2 px-5 py-2.5 text-sm bg-brand text-brand-fg rounded-lg hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                                 >
                                     {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
                                     Урилга илгээх
@@ -1025,7 +1025,7 @@ export default function AdminUsersPage() {
                             <button
                                 onClick={createUser}
                                 disabled={creating || !newUser.email || !newUser.password || !newUser.shop_id || !roles.some(role => role.value === newUser.role) || newNameMissing || newPhoneInvalid}
-                                className="flex items-center gap-2 px-5 py-2.5 text-sm bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                                className="flex items-center gap-2 px-5 py-2.5 text-sm bg-brand text-brand-fg rounded-lg hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                             >
                                 {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}
                                 Үүсгэх
@@ -1105,7 +1105,7 @@ export default function AdminUsersPage() {
                             <button
                                 onClick={resetPassword}
                                 disabled={pwSaving || pwValue.length < 8}
-                                className="flex items-center gap-2 px-5 py-2.5 text-sm bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                                className="flex items-center gap-2 px-5 py-2.5 text-sm bg-brand text-brand-fg rounded-lg hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                             >
                                 {pwSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <KeyRound className="w-4 h-4" />}
                                 Хадгалах

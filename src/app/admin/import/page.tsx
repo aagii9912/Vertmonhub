@@ -453,7 +453,7 @@ export default function AdminImportPage() {
                         <button
                             disabled={loading}
                             onClick={() => setShowNewProject(!showNewProject)}
-                            className="text-xs text-brand-strong hover:text-brand font-medium"
+                            className="text-xs text-brand-strong hover:text-brand-strong font-medium"
                         >
                             {showNewProject ? '✕ Хаах' : '+ Шинэ төсөл нэмэх'}
                         </button>
@@ -483,7 +483,7 @@ export default function AdminImportPage() {
                             <button
                                 onClick={createProject}
                                 disabled={!newProjectName.trim() || loading || creatingProject}
-                                className="w-full py-2 bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2"
+                                className="w-full py-2 bg-brand text-brand-fg rounded-lg hover:bg-brand-hover disabled:opacity-50 text-sm font-medium flex items-center justify-center gap-2"
                             >
                                 {creatingProject ? (
                                     <><Loader2 className="w-4 h-4 animate-spin" /> Үүсгэж байна...</>
@@ -645,7 +645,7 @@ export default function AdminImportPage() {
                 <button
                     onClick={() => handleImport(selected.type === 'units' && !inventoryPreview)}
                     disabled={!file || !selectedProject || loading || creatingProject || inventoryPreview?.fresh === 0}
-                    className="w-full py-3 bg-brand text-brand-fg font-semibold rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
+                    className="w-full py-3 bg-brand text-brand-fg font-semibold rounded-lg hover:bg-brand-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center gap-2"
                 >
                     {loading ? (
                         <><Loader2 className="w-5 h-5 animate-spin" /> Импорт хийж байна...</>

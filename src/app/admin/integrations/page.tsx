@@ -142,7 +142,7 @@ export default function AdminIntegrationsPage() {
                 <p className="mt-1 text-sm text-muted-foreground">Гадны сайтаас CRM руу лид оруулах холболтууд.</p>
             </div>
 
-            {loading ? <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-brand" aria-label="Ачаалж байна" /></div>
+            {loading ? <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-brand-strong" aria-label="Ачаалж байна" /></div>
                 : loadError ? <div role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger-soft p-4 text-sm text-status-danger">
                     {loadError} <button type="button" onClick={() => void refetch()} className="focus-ring ml-2 font-semibold underline">Дахин ачаалах</button>
                 </div>

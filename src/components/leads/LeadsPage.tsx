@@ -205,7 +205,7 @@ function LeadsWorkspace() {
                             className={cn('flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] font-medium transition-colors focus-ring', active ? 'bg-surface-2 text-foreground shadow-[inset_0_0_0_1px_var(--border)]' : 'text-fg-2 hover:bg-surface-2 hover:text-foreground')}
                         >
                             {v.label}
-                            {typeof n === 'number' && <span className={cn('mono-label text-[11px]', active ? 'text-brand' : 'text-muted-foreground')}>{n}</span>}
+                            {typeof n === 'number' && <span className={cn('mono-label text-[11px]', active ? 'text-brand-strong' : 'text-muted-foreground')}>{n}</span>}
                         </button>
                     );
                 })}
@@ -227,7 +227,7 @@ function LeadsWorkspace() {
             {/* Bulk */}
             {checked.size > 0 && canWrite && (
                 <div className="flex flex-wrap items-center gap-2 rounded-md border border-brand/30 bg-brand-soft px-3 py-2 text-[12.5px]">
-                    <span className="font-medium text-brand">{checked.size} сонгосон</span>
+                    <span className="font-medium text-brand-strong">{checked.size} сонгосон</span>
                     <span className="text-muted-foreground">·</span>
                     <span className="text-fg-2">Статус:</span>
                     <StatusPicker value="" onChange={(s, reason) => void bulk({ status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} />
@@ -269,7 +269,7 @@ function LeadsWorkspace() {
                                             <div className="flex flex-col items-center gap-3 px-4 py-12 text-center">
                                                 <div className="text-[13.5px] font-medium text-foreground">Лид олдсонгүй</div>
                                                 <p className="max-w-xs text-[12.5px] text-muted-foreground">Шүүлтүүрээ өөрчлөх эсвэл шинэ лид бүртгээрэй.</p>
-                                                {canWrite && <button type="button" onClick={() => openQuickCreate('lead')} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring"><Plus className="h-4 w-4" /> Шинэ лид</button>}
+                                                {canWrite && <button type="button" onClick={() => openQuickCreate('lead')} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-hover focus-ring"><Plus className="h-4 w-4" /> Шинэ лид</button>}
                                             </div>
                                         </td></tr>
                                     )}
@@ -291,7 +291,7 @@ function LeadsWorkspace() {
                                                 <td className="px-2" onClick={(e) => e.stopPropagation()}>
                                                     <CheckBox label="Сонгох" checked={checked.has(l.id)} onChange={(v) => setChecked((prev) => { const n = new Set(prev); if (v) n.add(l.id); else n.delete(l.id); return n; })} />
                                                 </td>
-                                                <td className="px-2"><span className={cn('block max-w-[220px] truncate font-medium', sel ? 'text-brand' : isAnonymousLead(l) ? 'text-muted-foreground' : 'text-foreground')}>{leadDisplayName(l)}</span>{(projects.length > 1 || !l.project_id) && <span className="block max-w-[220px] truncate text-xs text-muted-foreground">{l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй'}</span>}</td>
+                                                <td className="px-2"><span className={cn('block max-w-[220px] truncate font-medium', sel ? 'text-brand-strong' : isAnonymousLead(l) ? 'text-muted-foreground' : 'text-foreground')}>{leadDisplayName(l)}</span>{(projects.length > 1 || !l.project_id) && <span className="block max-w-[220px] truncate text-xs text-muted-foreground">{l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй'}</span>}</td>
                                                 <td className="mono-label px-2 text-fg-2">{l.customer_phone || '—'}</td>
                                                 <td className="px-2"><StatusPicker value={l.status} disabled={!canWrite} onChange={(s, reason) => patchLead(l.id, { status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} /></td>
                                                 {!showSplit && showCategory && <td className="px-2"><CategoryPicker value={l.category_id ?? null} options={categories} disabled={!canWrite} onChange={(id) => patchLead(l.id, { category_id: id })} /></td>}
@@ -404,7 +404,7 @@ function MobileList({ leads, projectNames, categories, loading, onOpen }: { lead
                             </span>
                             <Pill tone={STATUS_META[l.status]?.tone ?? 'neutral'}>{STATUS_META[l.status]?.short ?? l.status}</Pill>
                         </button>
-                        {phone && <a href={`tel:${phone}`} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-brand active:bg-brand-soft" aria-label="Залгах"><Phone className="h-5 w-5" /></a>}
+                        {phone && <a href={`tel:${phone}`} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-brand-strong active:bg-brand-soft" aria-label="Залгах"><Phone className="h-5 w-5" /></a>}
                     </div>
                 );
             })}
