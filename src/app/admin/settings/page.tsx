@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { ArrowUpRight, Bot, Building2, Plug, Shield, SlidersHorizontal, Tags, Upload, Users } from 'lucide-react';
+import { PageHeader } from '@/components/dashboard/PageHeader';
 
 const sections = [
     { href: '/admin/users', title: 'Хэрэглэгчид', description: 'Ажилтан нэмэх, урих, дүр оноох', icon: Users },
@@ -15,10 +16,7 @@ const sections = [
 export default function AdminSettingsPage() {
     return (
         <div className="mx-auto max-w-4xl space-y-6">
-            <div>
-                <h1 className="heading-display text-2xl text-foreground">Удирдлагын тохиргоо</h1>
-                <p className="mt-1 text-sm text-muted-foreground">Хадгалагддаг тохиргоонууд руу шууд орно.</p>
-            </div>
+            <PageHeader title="Удирдлагын тохиргоо" subtitle="Хадгалагддаг тохиргоонууд руу шууд орно." />
             <div className="grid gap-3 sm:grid-cols-2">
                 {sections.map(({ href, title, description, icon: Icon }) => (
                     <Link key={href} href={href} className="group flex min-h-28 items-start gap-4 rounded-xl border border-border bg-surface p-5 transition-colors hover:border-brand focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">

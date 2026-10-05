@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createSupabaseBrowserClient } from '@/lib/supabase-browser';
+import { safeRedirectPath } from '@/lib/auth/safe-redirect';
 import { AuthShell } from '@/components/auth/AuthShell';
 import { AuthCard } from '@/components/auth/AuthCard';
 import { OAuthButton } from '@/components/auth/OAuthButton';
@@ -9,6 +10,9 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { FormField } from '@/components/ui/FormField';
 import { Alert } from '@/components/ui/Alert';
+
+/** `?redirect_url=` (proxy, админ хамгаалалт тавина) — зөвхөн аппын дотоод зам, бусад үед /dashboard. */
+const requestedPath = () => safeRedirectPath(new URLSearchParams(window.location.search).get('redirect_url'));
 
 export default function LoginPage() {
     const [email, setEmail] = useState('');
@@ -41,7 +45,7 @@ export default function LoginPage() {
             const data = await res.json();
 
             if (res.ok && data.success) {
-                window.location.assign(new URL('/dashboard', window.location.origin).href);
+                window.location.assign(new URL(requestedPath(), window.location.origin).href);
                 return;
             }
 
@@ -58,35 +62,12 @@ export default function LoginPage() {
         }
     };
 
-    const handleGoogleLogin = async () => {
+    // OAuth: буцах замыг callback-ийн `?next=`-ээр дамжуулна (callback дахин шалгана).
+    const handleOAuthLogin = async (provider: 'google' | 'apple' | 'facebook') => {
         setLoading(true);
         const { error } = await supabase.auth.signInWithOAuth({
-            provider: 'google',
-            options: { redirectTo: `${window.location.origin}/auth/callback` },
-        });
-        if (error) {
-            setError(error.message);
-            setLoading(false);
-        }
-    };
-
-    const handleAppleLogin = async () => {
-        setLoading(true);
-        const { error } = await supabase.auth.signInWithOAuth({
-            provider: 'apple',
-            options: { redirectTo: `${window.location.origin}/auth/callback` },
-        });
-        if (error) {
-            setError(error.message);
-            setLoading(false);
-        }
-    };
-
-    const handleFacebookLogin = async () => {
-        setLoading(true);
-        const { error } = await supabase.auth.signInWithOAuth({
-            provider: 'facebook',
-            options: { redirectTo: `${window.location.origin}/auth/callback` },
+            provider,
+            options: { redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(requestedPath())}` },
         });
         if (error) {
             setError(error.message);
@@ -147,13 +128,13 @@ export default function LoginPage() {
                 </div>
 
                 <div className="space-y-3">
-                    <OAuthButton provider="google" onClick={handleGoogleLogin} disabled={loading}>
+                    <OAuthButton provider="google" onClick={() => void handleOAuthLogin('google')} disabled={loading}>
                         Google-ээр нэвтрэх
                     </OAuthButton>
 
                     <button
                         type="button"
-                        onClick={handleAppleLogin}
+                        onClick={() => void handleOAuthLogin('apple')}
                         disabled={loading}
                         className="flex w-full items-center justify-center gap-3 rounded-md bg-foreground px-4 py-3 text-sm font-medium text-background transition-colors hover:bg-fg-2 outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50"
                     >
@@ -166,7 +147,7 @@ export default function LoginPage() {
                         Apple-ээр нэвтрэх
                     </button>
 
-                    <OAuthButton provider="facebook" onClick={handleFacebookLogin} disabled={loading}>
+                    <OAuthButton provider="facebook" onClick={() => void handleOAuthLogin('facebook')} disabled={loading}>
                         Facebook-ээр нэвтрэх
                     </OAuthButton>
                 </div>

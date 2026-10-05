@@ -5,7 +5,10 @@ import { checkMiddlewareRateLimit } from '@/lib/utils/rate-limiter';
 import { logApiRequest } from '@/lib/utils/request-logger';
 
 // Protected routes requiring authentication
-const protectedRoutes = ['/dashboard', '/admin'];
+const protectedRoutes = ['/dashboard', '/admin', '/marketing'];
+
+// Хуучин тусдаа админ нэвтрэх хуудас — устсан; нэг нэвтрэх хуудас руу шилжүүлнэ.
+const retiredAdminLogin = '/admin/login';
 
 // Public routes that bypass auth
 const publicRoutes = [
@@ -13,7 +16,6 @@ const publicRoutes = [
     '/auth/login',
 
     '/auth/callback',
-    '/admin/login',
     '/api/webhook',
     '/privacy',
     '/terms',
@@ -37,6 +39,13 @@ export async function proxy(request: NextRequest) {
     // Redirect old register page to login
     if (pathname === '/auth/register') {
         return NextResponse.redirect(new URL('/auth/login', request.url));
+    }
+
+    // Retired /admin/login (and sub-paths) → the single login page, back to the admin overview.
+    if (matchesRoute(pathname, [retiredAdminLogin])) {
+        const signInUrl = new URL('/auth/login', request.url);
+        signInUrl.searchParams.set('redirect_url', '/admin/dashboard');
+        return NextResponse.redirect(signInUrl);
     }
 
     // Log API requests
@@ -85,9 +94,9 @@ export async function proxy(request: NextRequest) {
             // Supabase auth check failed (GoTrue down)
         }
 
-        // No valid session found — redirect to login
+        // No valid session found — redirect to login, keeping the query so the page reopens as requested
         const signInUrl = new URL('/auth/login', request.url);
-        signInUrl.searchParams.set('redirect_url', pathname);
+        signInUrl.searchParams.set('redirect_url', pathname + request.nextUrl.search);
         return NextResponse.redirect(signInUrl);
     }
 

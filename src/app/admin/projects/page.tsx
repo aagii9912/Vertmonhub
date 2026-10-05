@@ -5,6 +5,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Building2, Loader2, Pencil, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/Dialog';
+import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/dashboard/PageHeader';
 import { useAuth } from '@/contexts/AuthContext';
 import Link from 'next/link';
 
@@ -134,15 +136,11 @@ export default function AdminProjectsPage() {
 
     return (
         <div className="mx-auto max-w-5xl space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                    <h1 className="heading-display text-2xl text-foreground">Төслүүд</h1>
-                    <p className="mt-1 text-sm text-muted-foreground">Төсөл бүр өөрийн ажлын орчин, маркетинг, менежер, тайлантай. Төсөл дотор дэд төсөл үүсгэхгүй.</p>
-                </div>
-                <button onClick={openCreate} disabled={loading} className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-brand px-4 text-sm font-semibold text-brand-fg hover:bg-brand-hover disabled:opacity-50">
-                    <Plus className="h-4 w-4" /> Шинэ төсөл
-                </button>
-            </div>
+            <PageHeader
+                title="Төслүүд"
+                subtitle="Төсөл бүр өөрийн ажлын орчин, маркетинг, менежер, тайлантай. Төсөл дотор дэд төсөл үүсгэхгүй."
+                primaryAction={<Button onClick={openCreate} disabled={loading}><Plus />Шинэ төсөл</Button>}
+            />
 
             {diagnosticsError && <p role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger-soft p-4 text-sm text-status-danger">{diagnosticsError}</p>}
             {!loading && !loadError && unlinked.length > 0 && <div className="rounded-xl border border-border bg-surface p-4 text-sm">
