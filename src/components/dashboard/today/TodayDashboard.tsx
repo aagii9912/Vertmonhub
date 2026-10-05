@@ -74,8 +74,13 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
                 warning = result.warning;
             }
             else if (t.type === 'personal') await dashboardMutate(`/api/dashboard/tasks/${t.id}`, 'PATCH', { status: 'done' });
-            else {
-                // «Залгах» ажлыг дуусгах = дуудлага: түүхэнд менежерийн нэрээр бүртгэгдэж өдрийн KPI-д тоологдоно
+            else if (managerName || t.contactedToday) {
+                // Захирал менежерийн самбарыг харж байгаа (өөрөө залгаагүй), эсвэл өнөөдөр дуудлага аль хэдийн
+                // бүртгэгдсэн: зөвхөн follow-up-ийг цэвэрлэнэ — KPI-д худал/давхар дуудлага нэмэхгүй.
+                await dashboardMutate(`/api/dashboard/leads/${t.id}`, 'PATCH', { next_followup_at: null });
+                void qc.invalidateQueries({ queryKey: ['leads'] });
+            } else {
+                // Өөрийн «Залгах» ажлыг дуусгах = дуудлага: түүхэнд менежерийн нэрээр бүртгэгдэж өдрийн KPI-д тоологдоно
                 // (last_contact_at, next_followup_at-г recordLeadContact хамт шинэчилнэ).
                 await dashboardMutate(`/api/dashboard/leads/${t.id}/activities`, 'POST', { type: 'call', content: 'Залгасан («Өнөөдөр» жагсаалтаас)', next_followup_at: null });
                 void qc.invalidateQueries({ queryKey: ['leads'] });

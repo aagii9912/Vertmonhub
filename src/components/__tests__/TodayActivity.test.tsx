@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { TodayDashboard } from '../dashboard/today/TodayDashboard';
 
 const mocks = vi.hoisted(() => ({
-    mutate: vi.fn(), invalidate: vi.fn(), activityArgs: [] as unknown[],
+    mutate: vi.fn(), invalidate: vi.fn(), activityArgs: [] as unknown[], contactedToday: false,
     activity: { data: undefined as unknown, isPending: false },
 }));
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries: mocks.invalidate }) }));
@@ -12,7 +12,7 @@ vi.mock('@/lib/api/dashboardFetch', () => ({ dashboardMutate: (...args: unknown[
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 vi.mock('@/hooks/useMyStats', () => ({ useMyStats: () => ({
     data: { missing: [], recentLeads: [], target: null, kpis: { salesThisMonth: 0, activeContracts: 0, viewingsThisWeek: 0, newLeads: 0 },
-        tasks: [{ type: 'followup', id: 'lead-1', title: 'Болдтой холбогдох', subtitle: 'Утасгүй', dueAt: new Date().toISOString(), overdue: false, href: '/dashboard/leads?lead=lead-1' }] },
+        tasks: [{ type: 'followup', id: 'lead-1', title: 'Болдтой холбогдох', subtitle: 'Утасгүй', dueAt: new Date().toISOString(), overdue: false, href: '/dashboard/leads?lead=lead-1', contactedToday: mocks.contactedToday }] },
     isLoading: false, isError: false, error: null, isFetching: false, refetch: vi.fn(),
 }) }));
 vi.mock('@/hooks/useManagerActivity', () => ({ useManagerActivity: (...args: unknown[]) => { mocks.activityArgs.push(args[0]); return mocks.activity; } }));
@@ -26,6 +26,7 @@ const row = (values: Record<string, unknown>) => ({
 beforeEach(() => {
     vi.clearAllMocks();
     mocks.activityArgs = [];
+    mocks.contactedToday = false;
     mocks.mutate.mockResolvedValue({});
     mocks.activity = { data: undefined, isPending: false };
 });
@@ -38,6 +39,20 @@ describe('Today activity', () => {
             { type: 'call', content: 'Залгасан («Өнөөдөр» жагсаалтаас)', next_followup_at: null }));
         expect(mocks.mutate).not.toHaveBeenCalledWith('/api/dashboard/leads/lead-1', 'PATCH', expect.anything());
         expect(mocks.invalidate).toHaveBeenCalledWith({ queryKey: ['manager-activity'] });
+    });
+
+    it('only clears the follow-up when a call was already logged today or a director completes a manager\'s task', async () => {
+        mocks.contactedToday = true;
+        const { unmount } = render(<TodayDashboard />);
+        fireEvent.click(screen.getAllByRole('button', { name: /Дууссан/ })[0]);
+        await waitFor(() => expect(mocks.mutate).toHaveBeenCalledWith('/api/dashboard/leads/lead-1', 'PATCH', { next_followup_at: null }));
+        unmount();
+        mocks.contactedToday = false;
+        mocks.mutate.mockClear();
+        render(<TodayDashboard managerName="Сараа" embedded />);
+        fireEvent.click(screen.getAllByRole('button', { name: /Дууссан/ })[0]);
+        await waitFor(() => expect(mocks.mutate).toHaveBeenCalledWith('/api/dashboard/leads/lead-1', 'PATCH', { next_followup_at: null }));
+        expect(mocks.mutate).not.toHaveBeenCalledWith('/api/dashboard/leads/lead-1/activities', 'POST', expect.anything());
     });
 
     it('shows today calls and meetings against the daily target, and no target as such', () => {

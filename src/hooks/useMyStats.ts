@@ -27,6 +27,8 @@ export interface MyStatsTask {
     dueAt: string;
     overdue: boolean;
     href: string;
+    /** follow-up: өнөөдөр дуудлага аль хэдийн бүртгэгдсэн. */
+    contactedToday?: boolean;
 }
 
 export interface MyStatsViewing {

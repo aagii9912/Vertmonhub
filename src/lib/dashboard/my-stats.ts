@@ -15,6 +15,7 @@ export interface LeadLite {
     status: string;
     created_at?: string | null;
     next_followup_at?: string | null;
+    last_contact_at?: string | null;
     customer_name?: string | null;
     customer_phone?: string | null;
 }
@@ -65,6 +66,8 @@ export interface DashTask {
     dueAt: string;
     overdue: boolean;
     href: string;
+    /** follow-up: өнөөдөр (УБ) дуудлага/үнийн санал аль хэдийн бүртгэгдсэн — «Дууссан» дахин дуудлага нэмэхгүй. */
+    contactedToday?: boolean;
 }
 
 // Улаанбаатарын өдрийн хил (сервер UTC дээр `setHours(0)` = УБ 08:00 болдог байв)
@@ -108,6 +111,7 @@ export function buildTaskList(
             dueAt: due.toISOString(),
             overdue: due.getTime() < dayStart.getTime(),
             href: '/dashboard/leads',
+            contactedToday: !!lead.last_contact_at && new Date(lead.last_contact_at).getTime() >= dayStart.getTime(),
         });
     }
 

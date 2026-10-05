@@ -122,6 +122,19 @@ describe('buildTaskList', () => {
         expect(today?.overdue).toBe(false);
     });
 
+    it('өнөөдөр (УБ) дуудлага бүртгэгдсэн follow-up-ийг тэмдэглэнэ (давхар дуудлага нэмэхгүй)', () => {
+        const tasks = buildTaskList(
+            [
+                lead({ id: 'called', next_followup_at: new Date(2026, 6, 7, 10, 0).toISOString(), last_contact_at: new Date(2026, 6, 7, 0, 30).toISOString() }),
+                lead({ id: 'yesterday', next_followup_at: new Date(2026, 6, 7, 10, 0).toISOString(), last_contact_at: new Date(2026, 6, 6, 23, 30).toISOString() }),
+                lead({ id: 'never', next_followup_at: new Date(2026, 6, 7, 10, 0).toISOString() }),
+            ],
+            [],
+            NOW,
+        );
+        expect(Object.fromEntries(tasks.map((t) => [t.id, t.contactedToday]))).toEqual({ called: true, yesterday: false, never: false });
+    });
+
     it('маргаашийн follow-up болон хаагдсан лид орохгүй', () => {
         const tasks = buildTaskList(
             [

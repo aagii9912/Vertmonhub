@@ -152,7 +152,7 @@ export async function GET(request: NextRequest) {
             safeManagerRows('leads', missing, ({ excludeDeleted }) => {
                 let q = db
                     .from('leads')
-                    .select('id, customer_name, customer_phone, status, source, created_at, next_followup_at, budget_max')
+                    .select('id, customer_name, customer_phone, status, source, created_at, next_followup_at, last_contact_at, budget_max')
                     .eq('shop_id', authShop.id)
                     .eq('sales_manager_name', targetName)
                     .order('created_at', { ascending: false })
