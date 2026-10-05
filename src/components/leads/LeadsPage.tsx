@@ -336,7 +336,13 @@ function LeadsWorkspace() {
             {/* Хүснэгтийн горим / утас: панел нь Sheet */}
             {!showSplit && (
                 <Sheet open={!!selectedId} onOpenChange={(o) => !o && select(null)}>
-                    <SheetContent side="right" showCloseButton={false} className="w-full p-0 sm:max-w-[520px]">
+                    <SheetContent
+                        side="right"
+                        showCloseButton={false}
+                        className="w-full p-0 sm:max-w-[520px]"
+                        // Нэрийн inline засварт Escape зөвхөн засварыг цуцална, панелийг хаахгүй (Radix capture-аар түрүүлж сонсдог).
+                        onEscapeKeyDown={(e) => { if ((e.target as HTMLElement | null)?.closest?.('[data-inline-edit]')) e.preventDefault(); }}
+                    >
                         <SheetTitle className="sr-only">Лидийн дэлгэрэнгүй</SheetTitle>
                         <SheetDescription className="sr-only">Сонгосон лидийн мэдээлэл болон дараагийн үйлдлүүд.</SheetDescription>
                         {selectedId && <LeadPanel key={selectedId} leadId={selectedId} canWrite={canWrite} onClose={() => select(null)} onOpenLead={select} />}

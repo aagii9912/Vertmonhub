@@ -135,10 +135,10 @@ function TransferForm({ contract, previousChangeDate, transfer, onClose }: {
 
     return (
         <form onSubmit={(event) => void submit(event)} className="flex flex-col gap-4" noValidate>
-            <dl className="grid grid-cols-3 gap-3 rounded-md border border-border bg-surface-2 p-3 text-[12.5px]">
-                <div className="col-span-3 min-w-0 sm:col-span-1"><dt className="text-muted-foreground">Одоогийн эзэмшигч</dt><dd className="truncate font-medium text-foreground">{current}</dd></div>
-                <div><dt className="text-muted-foreground">Төлсөн (хэвээр)</dt><dd className="num font-medium text-foreground">{formatMNT(paid)}</dd></div>
-                <div><dt className="text-muted-foreground">Үлдэгдэл</dt><dd className="num font-medium text-foreground">{formatMNT(balance)}</dd></div>
+            <dl className="grid grid-cols-2 gap-3 rounded-md border border-border bg-surface-2 p-3 text-[12.5px] sm:grid-cols-3">
+                <div className="col-span-2 min-w-0 sm:col-span-1"><dt className="text-muted-foreground">Одоогийн эзэмшигч</dt><dd className="truncate font-medium text-foreground">{current}</dd></div>
+                <div className="min-w-0"><dt className="text-muted-foreground">Төлсөн (хэвээр)</dt><dd className="num break-words font-medium text-foreground">{formatMNT(paid)}</dd></div>
+                <div className="min-w-0"><dt className="text-muted-foreground">Үлдэгдэл</dt><dd className="num break-words font-medium text-foreground">{formatMNT(balance)}</dd></div>
             </dl>
 
             <fieldset className="flex flex-col gap-1.5">

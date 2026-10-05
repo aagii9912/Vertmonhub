@@ -2,7 +2,7 @@
 
 import { Alert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
 import { Phone, CalendarDays, Clock, Check, ArrowRight, MoreHorizontal, ChevronRight, Plus } from 'lucide-react';
@@ -35,7 +35,21 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
     const [filter, setFilter] = useState<Filter>('all');
     const [busy, setBusy] = useState<string | null>(null);
 
-    const now = useMemo(() => new Date(), []);
+    // Таб шөнөжин нээлттэй байсан ч «өнөөдөр» шинэчлэгдэнэ (идэвхийн тайлан, бүлэглэлт УБ өдрөөр).
+    const [clock, setClock] = useState(() => Date.now());
+    useEffect(() => {
+        const tick = () => setClock(Date.now());
+        const timer = setInterval(tick, 60_000);
+        const refresh = () => { if (!document.hidden) tick(); };
+        window.addEventListener('focus', refresh);
+        document.addEventListener('visibilitychange', refresh);
+        return () => {
+            clearInterval(timer);
+            window.removeEventListener('focus', refresh);
+            document.removeEventListener('visibilitychange', refresh);
+        };
+    }, []);
+    const now = useMemo(() => new Date(clock), [clock]);
     const today = ubDateStr(now);
     // «Өнөөдрийн идэвх»: хувийн горимд сервер зөвхөн өөрийн мөрийг, админы drill-in-д сонгосон менежерийг буцаана.
     const activity = useManagerActivity({ from: today, to: today, group: 'day', manager: managerName ?? null });

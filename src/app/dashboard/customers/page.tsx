@@ -220,9 +220,16 @@ export default function CustomersPage() {
         }
     }
 
+    /** Санал гомдлын ноорог (хариуцагч менежер орно) өөр харилцагчид дамжихгүй. */
+    function resetLogDraft() {
+        setLogForm(EMPTY_SERVICE_LOG_FORM);
+        setLogError(null);
+    }
+
     function openCustomer(id: string) {
         // Ижил мөрийг дахин дарвал (ачаалж/алдаа гарсан үед) дахин татна.
         if (id === detailId) void detailQuery.refetch();
+        else resetLogDraft();
         setDetailId(id);
     }
 
@@ -230,6 +237,7 @@ export default function CustomersPage() {
         setDetailId(null);
         setEditMode(false);
         setMergeMode(false);
+        resetLogDraft();
     }
 
     /** Засах горимд орохдоо маягтыг харилцагчийн одоогийн мэдээллээр дүүргэнэ. */
@@ -461,6 +469,7 @@ export default function CustomersPage() {
         try {
             await dashboardMutate(`/api/dashboard/customers/${selectedCustomer.id}`, 'DELETE');
             setDetailId(null);
+            resetLogDraft();
             // Устгасан харилцагчийн дэлгэрэнгүйг дахин татахгүй (404) — cache-ээс хасна.
             queryClient.removeQueries({ queryKey: ['customers', 'detail', selectedCustomer.id] });
             toast.success('Харилцагч устгагдлаа');

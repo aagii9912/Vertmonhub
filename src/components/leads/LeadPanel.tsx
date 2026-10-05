@@ -67,9 +67,12 @@ export function LeadPanel({
 
     const amountValue = parseQuoteAmount(quoteAmount);
     const canSave = isQuote ? amountValue !== null : !!note.trim() || isCall;
+    // ⌘↵ давтан дарах/барих үед нэг бүртгэл л илгээнэ (дуудлага, үнийн санал KPI-д тоологдоно).
+    const savingRef = useRef(false);
     const saveNote = async () => {
         const content = note.trim();
-        if (!canSave) return;
+        if (!canSave || savingRef.current) return;
+        savingRef.current = true;
         try {
             const next = followup ? new Date(Date.now() + followup * 86_400_000) : undefined;
             if (next) next.setHours(10, 0, 0, 0);
@@ -83,6 +86,8 @@ export function LeadPanel({
             setNote(''); setIsCall(false); setIsQuote(false); setQuoteAmount(''); setQuoteUnit(''); setFollowup(null);
         } catch (e) {
             toast.error(e instanceof Error ? e.message : 'Хадгалж чадсангүй');
+        } finally {
+            savingRef.current = false;
         }
     };
 
@@ -127,6 +132,7 @@ export function LeadPanel({
                 {nameDraft !== null ? (
                     <input
                         aria-label="Харилцагчийн нэр"
+                        data-inline-edit
                         autoFocus
                         value={nameDraft}
                         maxLength={200}
@@ -134,7 +140,7 @@ export function LeadPanel({
                         onBlur={commitName}
                         onKeyDown={(e) => {
                             if (e.key === 'Enter') { e.preventDefault(); commitName(); }
-                            if (e.key === 'Escape') { e.stopPropagation(); setNameDraft(null); }
+                            if (e.key === 'Escape') { e.stopPropagation(); setNameDraft(null); } // Sheet хаагдахгүй: LeadsPage data-inline-edit-ийг алгасна
                         }}
                         placeholder="Ж: Г. Энхжин"
                         className="h-8 min-w-0 flex-1 rounded-md border border-brand bg-surface px-2 text-[14px] font-semibold text-foreground outline-none shadow-[0_0_0_3px_var(--brand-soft)] placeholder:font-normal placeholder:text-muted-foreground"
@@ -282,7 +288,7 @@ export function LeadPanel({
                                 ref={noteRef}
                                 value={note}
                                 onChange={(e) => setNote(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void saveNote(); }}
+                                onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.repeat) void saveNote(); }}
                                 rows={2}
                                 placeholder={isQuote ? 'Саналын тайлбар (заавал биш)…' : 'Тэмдэглэл бичих… (⌘↵ хадгална)'}
                                 className="w-full resize-none bg-transparent px-2.5 pt-2 text-[13px] outline-none placeholder:text-muted-foreground"

@@ -58,6 +58,21 @@ describe('LeadPanel price quote composer', () => {
         await waitFor(() => expect(mocks.addActivity).toHaveBeenCalledWith({ type: 'call', content: 'Залгав', next_followup_at: undefined }));
     });
 
+    it('sends one call for repeated ⌘↵ while the first save is in flight', async () => {
+        let resolve: (value: unknown) => void = () => {};
+        mocks.addActivity.mockReturnValueOnce(new Promise((r) => { resolve = r; }));
+        render(<LeadPanel leadId="lead" canWrite={true} />);
+        fireEvent.click(screen.getByRole('button', { name: 'Залгав' }));
+        const note = screen.getByRole('textbox', { name: 'Тэмдэглэл эсвэл дуудлагын үр дүн' });
+        fireEvent.keyDown(note, { key: 'Enter', metaKey: true });
+        fireEvent.keyDown(note, { key: 'Enter', metaKey: true });
+        fireEvent.keyDown(note, { key: 'Enter', metaKey: true, repeat: true });
+        expect(mocks.addActivity).toHaveBeenCalledTimes(1);
+        resolve({ activity: null });
+        await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('Дуудлага бүртгэгдлээ'));
+        expect(mocks.addActivity).toHaveBeenCalledTimes(1);
+    });
+
     it('labels a degraded manager history in the partial warning', () => {
         mocks.detail.data = { ...(mocks.detail.data as object), partial: ['timeline'] };
         render(<LeadPanel leadId="lead" canWrite={false} />);

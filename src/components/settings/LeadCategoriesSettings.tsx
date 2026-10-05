@@ -72,6 +72,7 @@ export function LeadCategoriesSettings() {
 
     const submitNew = async (event: React.FormEvent) => {
         event.preventDefault();
+        if (create.isPending) return; // Давхар Enter/товшилт: амжилтын дараа 409 алдаа гаргахгүй.
         const parsed = DraftSchema.safeParse(draft);
         if (!parsed.success) { toast.error(parsed.error.issues[0]?.message ?? 'Мэдээлэл буруу байна'); return; }
         try {
@@ -212,7 +213,7 @@ export function LeadCategoriesSettings() {
                             <form onSubmit={(event) => void submitNew(event)} className="flex flex-col gap-3 rounded-xl border border-border p-3" aria-label="Шинэ ангилал нэмэх">
                                 <DraftFields draft={draft} onChange={setDraft} idPrefix="new-category" />
                                 <div>
-                                    <Button type="submit" size="sm" isLoading={create.isPending} disabled={!draft.name.trim()}><Plus />Ангилал нэмэх</Button>
+                                    <Button type="submit" size="sm" isLoading={create.isPending} disabled={create.isPending || !draft.name.trim()}><Plus />Ангилал нэмэх</Button>
                                 </div>
                             </form>
                         ))}
