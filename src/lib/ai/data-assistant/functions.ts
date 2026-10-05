@@ -26,7 +26,9 @@ import { compactLeadTimelineWithin } from '@/lib/leads/timeline';
 import { LEAD_NAME_OR_ANONYMOUS, STATUS_META, UNCATEGORIZED_LABEL, isAnonymousLead, isUncategorizedInput, leadCategoryLabel, leadDisplayName, normalizeLeadName, statusLabel, toLeadSource } from '@/lib/leads/labels';
 import { leadCategoryName, listLeadCategories, resolveLeadCategory, type LeadCategory } from '@/lib/services/LeadCategoryService';
 import type { LeadStatus } from '@/types/property';
-import { formatMNT } from '@/lib/utils/currency';
+import { accountCurrencyLabel, formatAccountMoney, formatMNT } from '@/lib/utils/currency';
+import { isMetaSyncedCampaign } from '@/lib/marketing/ad-campaigns';
+import { loadMetaAdAccount } from '@/lib/services/MarketingOps';
 import { contractIdsByPreviousHolder, listContractTransfers } from '@/lib/services/ContractService';
 import { propertyStatusLabel, unitStatusLabel, type InventoryStatus } from '@/lib/inventory/labels';
 import { contractStatusLabel } from '@/lib/contracts/labels';
@@ -1635,31 +1637,64 @@ export async function bulkUpdateLeads(shopId: string, args: any, confirm = false
 
 // ---- Marketing ----
 
-export async function fetchMarketingSummary(shopId: string, args: any) {
-    const [{ data: campaigns }, { data: posts }] = await Promise.all([
-        supabaseAdmin.from('ad_campaigns').select('name, platform, status, budget, spend, impressions, clicks, conversions, reach').eq('shop_id', shopId),
+interface AdCampaignSummaryRow {
+    name: string; platform: string; status: string | null; external_id: string | null;
+    budget: number | string | null; spend: number | string | null; impressions: number | null; clicks: number | null;
+    conversions: number | null; reach: number | null; last_synced_at: string | null;
+}
+
+/**
+ * Зар сурталчилгааны нэгтгэл. Зардал, CPA нь зөвхөн Meta-аас синк хийсэн кампанит ажлынх бөгөөд
+ * зарын дансны валютаар (/marketing/ads, ROI хуудастай ижил дүрэм: `isMetaSyncedCampaign`,
+ * `loadMetaAdAccount`); Hub-д гараар бүртгэсэн төлөвлөгөөт зар нийлбэрт орохгүй, тусад нь жагсана.
+ */
+export async function fetchMarketingSummary(shopId: string) {
+    const [account, rows, posts] = await Promise.all([
+        loadMetaAdAccount(supabaseAdmin, shopId),
+        fetchAllRows<AdCampaignSummaryRow>((from, to) => supabaseAdmin.from('ad_campaigns')
+            .select('name, platform, status, external_id, budget, spend, impressions, clicks, conversions, reach, last_synced_at')
+            .eq('shop_id', shopId).order('id').range(from, to)),
         supabaseAdmin.from('social_posts').select('platform, status, likes, comments, shares, reach, engagement_rate, published_at').eq('shop_id', shopId).order('published_at', { ascending: false, nullsFirst: false }).limit(10),
     ]);
-    const camps = campaigns || [];
-    const totals = camps.reduce((a, c: any) => ({
-        spend: a.spend + Number(c.spend || 0),
-        impressions: a.impressions + Number(c.impressions || 0),
-        clicks: a.clicks + Number(c.clicks || 0),
-        conversions: a.conversions + Number(c.conversions || 0),
+    if (posts.error) throw new Error('Сошиал постын гүйцэтгэлийг уншиж чадсангүй');
+
+    const { currency } = account;
+    const money = (value: number) => formatAccountMoney(value, currency);
+    const meta = rows.filter(isMetaSyncedCampaign).sort((a, b) => (Number(b.spend) || 0) - (Number(a.spend) || 0));
+    const planned = rows.filter(row => !isMetaSyncedCampaign(row));
+    const totals = meta.reduce((sum, c) => ({
+        spend: sum.spend + (Number(c.spend) || 0),
+        impressions: sum.impressions + (Number(c.impressions) || 0),
+        clicks: sum.clicks + (Number(c.clicks) || 0),
+        conversions: sum.conversions + (Number(c.conversions) || 0),
     }), { spend: 0, impressions: 0, clicks: 0, conversions: 0 });
+    const lastSynced = meta.map(c => c.last_synced_at).filter((at): at is string => !!at).sort().pop();
+    const currencyText = currency
+        ? `Meta зарын дансны валютаар (${currency})`
+        : 'Meta зарын дансны валютаар (валют тодорхойгүй — зардлын синк хийгдээгүй)';
+
     return {
-        campaignCount: camps.length,
-        activeCampaigns: camps.filter((c: any) => c.status === 'active').length,
+        currency: accountCurrencyLabel(currency),
+        basis: `Зардал, CPA нь зөвхөн Meta-аас синк хийсэн ${meta.length} кампанит ажлын сүүлийн синкийн хугацааны (анхдагч сүүлийн 30 хоног) дүн, ${currencyText}. Төгрөгт хөрвүүлээгүй тул ₮ гэж бүү бич, төгрөгийн дүнтэй бүү нэм. Hub-д гараар бүртгэсэн ${planned.length} төлөвлөгөөт зар нийлбэрт ороогүй (үр дүнгүй, төсөв нь ₮).`,
+        lastSyncedAt: lastSynced ? formatShortDate(lastSynced) : null,
+        campaignCount: meta.length,
+        activeCampaigns: meta.filter(c => c.status === 'active').length,
         totals: {
-            spend: formatMNT(totals.spend),
+            spend: meta.length ? money(totals.spend) : '-',
             impressions: totals.impressions,
             clicks: totals.clicks,
             conversions: totals.conversions,
-            ctr: totals.impressions ? `${((totals.clicks / totals.impressions) * 100).toFixed(2)}%` : '0%',
-            cpa: totals.conversions ? formatMNT(totals.spend / totals.conversions) : '-',
+            ctr: totals.impressions ? `${((totals.clicks / totals.impressions) * 100).toFixed(2)}%` : '-',
+            cpa: totals.conversions ? money(totals.spend / totals.conversions) : '-',
         },
-        campaigns: camps.slice(0, 10),
-        recentPosts: (posts || []).map((p: any) => ({ platform: p.platform, status: p.status, likes: p.likes, comments: p.comments, reach: p.reach, engagement_rate: p.engagement_rate })),
+        campaigns: meta.slice(0, 10).map(c => ({
+            name: c.name, status: c.status, spend: money(Number(c.spend) || 0),
+            impressions: c.impressions, clicks: c.clicks, conversions: c.conversions, reach: c.reach,
+        })),
+        plannedCampaigns: planned.slice(0, 10).map(c => ({
+            name: c.name, platform: c.platform, status: c.status, budget: formatMNT(c.budget === null ? null : Number(c.budget)),
+        })),
+        recentPosts: (posts.data || []).map((p: any) => ({ platform: p.platform, status: p.status, likes: p.likes, comments: p.comments, reach: p.reach, engagement_rate: p.engagement_rate })),
     };
 }
 

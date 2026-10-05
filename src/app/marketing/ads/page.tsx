@@ -34,6 +34,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { dashboardMutate } from '@/lib/api/dashboardFetch';
 import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 import { accountCurrencyLabel, formatAccountMoney } from '@/lib/utils/currency';
+import { isMetaSyncedCampaign } from '@/lib/marketing/ad-campaigns';
 
 interface AdCampaign {
     id: string;
@@ -49,13 +50,6 @@ interface AdCampaign {
     ctr: number;
     cpc: number;
 }
-
-/**
- * Meta-аас синк хийсэн кампанит ажил: зардал, CPC нь төслийн сонгосон зарын дансны валютаар
- * (cron/insights зөвхөн тэр дансны кампанит ажлыг шинэчилнэ). Бусад мөр гараар бүртгэсэн
- * төлөвлөгөө — үр дүн (зардал, click) байхгүй.
- */
-const isMetaSynced = (ad: AdCampaign) => ad.platform === 'facebook' && !!ad.external_id;
 
 const STATUS_LABEL: Record<string, string> = { active: 'Идэвхтэй', paused: 'Зогссон', draft: 'Төлөвлөгөөт', completed: 'Дууссан' };
 
@@ -93,7 +87,8 @@ export default function AdsPage() {
     };
 
     // Нийлбэрийг зөвхөн нэг валюттай (Meta зарын дансны) мөрөөр — гар бүртгэлийг хольж нэмэхгүй.
-    const metaAds = ads.filter(isMetaSynced);
+    // Дүрэм AI маркетингийн нэгтгэлтэй нэг (`isMetaSyncedCampaign`).
+    const metaAds = ads.filter(isMetaSyncedCampaign);
     const totalSpend = metaAds.reduce((s, a) => s + (Number(a.spend) || 0), 0);
     const totalClicks = metaAds.reduce((s, a) => s + (Number(a.clicks) || 0), 0);
     const totalImpressions = metaAds.reduce((s, a) => s + (Number(a.impressions) || 0), 0);
@@ -130,24 +125,24 @@ export default function AdsPage() {
             key: 'spend',
             header: `Зарцуулалт (${currencyLabel})`,
             align: 'right',
-            accessor: (ad) => (isMetaSynced(ad) ? ad.spend : -1),
-            cell: (ad) => <span className="tabular-nums">{isMetaSynced(ad) ? formatAccountMoney(ad.spend, currency) : '—'}</span>,
+            accessor: (ad) => (isMetaSyncedCampaign(ad) ? ad.spend : -1),
+            cell: (ad) => <span className="tabular-nums">{isMetaSyncedCampaign(ad) ? formatAccountMoney(ad.spend, currency) : '—'}</span>,
             sortable: true,
         },
         {
             key: 'clicks',
             header: 'Click',
             align: 'right',
-            accessor: (ad) => (isMetaSynced(ad) ? ad.clicks : -1),
-            cell: (ad) => <span className="tabular-nums">{isMetaSynced(ad) ? ad.clicks.toLocaleString() : '—'}</span>,
+            accessor: (ad) => (isMetaSyncedCampaign(ad) ? ad.clicks : -1),
+            cell: (ad) => <span className="tabular-nums">{isMetaSyncedCampaign(ad) ? ad.clicks.toLocaleString() : '—'}</span>,
             sortable: true,
         },
         {
             key: 'ctr',
             header: 'CTR',
             align: 'right',
-            accessor: (ad) => (isMetaSynced(ad) ? ad.ctr : -1),
-            cell: (ad) => <span className="tabular-nums">{isMetaSynced(ad) ? `${ad.ctr.toFixed(2)}%` : '—'}</span>,
+            accessor: (ad) => (isMetaSyncedCampaign(ad) ? ad.ctr : -1),
+            cell: (ad) => <span className="tabular-nums">{isMetaSyncedCampaign(ad) ? `${ad.ctr.toFixed(2)}%` : '—'}</span>,
             sortable: true,
         },
     ];
