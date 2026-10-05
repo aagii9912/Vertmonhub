@@ -1,6 +1,6 @@
 # Facebook Lead Ads → CRM лид (2026-10-05)
 
-Салбар: `feat/lead-ads-webhook` (`origin/main` 5f9a744 дээр). **Deploy хийгээгүй, production-д юу ч бичээгүй.**
+Салбар: `feat/lead-ads-webhook` (`origin/main` 5f9a744 дээр, `feat/meta-page-insights-v26`-ийг merge хийсэн). **Deploy хийгээгүй, production-д юу ч бичээгүй.**
 
 ## Юу өөрчлөгдсөн бэ
 
@@ -14,8 +14,8 @@
 
 1. **`/api/webhook`** нь `leadgen` өөрчлөлтийг Meta-д хариу өгөхөөс **өмнө** хадгалдаг болсон. Хадгалалтыг `src/lib/facebook/leadgen.ts` хийнэ. DM-ийн урсгал хэвээр, `after()`-д хийгдэнэ.
 2. Хуучин `/api/marketing/facebook/leadgen` route-ийг **устгасан** (эзэмшигчийн шийдвэр). Callback-ийг андуурч тэр URL-д тохируулбал Meta-гийн баталгаажуулалт 404-өөр шууд унана.
-3. Page холбоход `leadgen` талбарыг автоматаар subscribe хийнэ. `leads_retrieval` эрхгүй үед Meta бүх subscribe хүсэлтийг унагадаг. Тиймээс DM-ийн талбаруудыг `leadgen`-гүйгээр дахин subscribe хийж, Lead Ads идэвхгүй гэдгийг тусад нь буцаана. Ингэснээр DM хэзээ ч эвдрэхгүй.
-4. Facebook OAuth-д `leads_retrieval`, `pages_manage_ads` эрх нэмсэн.
+3. Page сонгоход (`lib/facebook/page-connect.ts` → `selectPendingPage`) `leadgen` талбарыг автоматаар subscribe хийнэ. `leads_retrieval` эрхгүй үед Meta бүх subscribe хүсэлтийг унагадаг. Тиймээс DM-ийн талбаруудыг `leadgen`-гүйгээр дахин subscribe хийж, Lead Ads идэвхгүй гэдгийг тусад нь буцаана. Ингэснээр DM хэзээ ч эвдрэхгүй.
+4. Facebook OAuth-д (`PAGE_OAUTH_SCOPES`) `leads_retrieval`, `pages_manage_ads` эрх нэмсэн.
 5. Шинэ хүснэгт **`meta_leadgen_events`** нь leadgen_id бүрийн сүүлийн үр дүнг хадгална. Энд харилцагчийн хувийн мэдээлэл хадгалахгүй.
 6. **`/api/marketing/facebook/lead-ads`** нь төлөв харуулах, дахин subscribe хийх, 90 хоногийн лид нөхөх (backfill) үүрэгтэй. /marketing/social → Facebook таб дээр **«Facebook Lead Ads»** карт нэмэгдсэн.
 
@@ -76,12 +76,12 @@ Meta лидийг **90 хоног** л хадгалдаг. Webhook ажилла�
 ## Аюулгүй байдал
 
 - Webhook POST fail-closed ажиллана: `FACEBOOK_APP_SECRET` байхгүй бол 500, гарын үсэг буруу эсвэл байхгүй бол 403. Verify GET нь `safeEqual` ашиглана (`verifyWebhook`).
-- Graph дуудлага v26.0 хувилбартай. Токен `Authorization: Bearer` header-т явна. `appsecret_proof` (`FACEBOOK_APP_SECRET`) байхгүй бол дуудахгүй.
+- Graph дуудлага Page-ийн нэгдсэн цөмөөр (`lib/facebook/page-graph.ts` → `pageRead`, v26.0) явна. Токен `Authorization: Bearer` header-т явна. `appsecret_proof` (`FACEBOOK_APP_SECRET`) байхгүй бол дуудахгүй. Webhook дотор дахин оролдохгүй, учир нь Meta өөрөө дахин илгээнэ.
 - `meta_leadgen_events`: RLS асаалттай, зөвхөн `service_role` хандана. Зөвхөн Meta-гийн ID, төлөв, шалтгаан хадгална. CHECK-ээр нэр/утас/имэйл орох боломжгүй.
 
 ## Эзэмшигч / админы хийх алхам (дарааллаар)
 
-1. **Migration** `supabase/migrations/20261005160000_meta_leadgen_events.sql`-ийг production-д apply хийнэ (additive, **зөвшөөрөл шаардлагатай**). Код хүснэгтгүй үед ч лидийг хадгална, зөвхөн тэмдэглэл лог-д үлдэнэ.
+1. **Migration** `supabase/migrations/20261005160000_meta_leadgen_events.sql`-ийг production-д apply хийнэ (additive, **зөвшөөрөл шаардлагатай**). Зөвхөн `shops`, `leads` хүснэгтээс хамаарна; `20261005150000_social_page_insights`-ийн дараа дарааллаар орно. Код хүснэгтгүй үед ч лидийг хадгална, зөвхөн тэмдэглэл лог-д үлдэнэ.
 2. Салбарыг main-д merge хийж deploy хийнэ.
 3. **Meta App** (`FACEBOOK_APP_ID`) дээр:
    - App **Live** горимд байх ёстой. Development горимд зөвхөн app-ийн role-той хүмүүсийн лид ирнэ.
@@ -100,7 +100,7 @@ Meta лидийг **90 хоног** л хадгалдаг. Webhook ажилла�
 - Meta-гийн баримтад leadgen-д `ads_management` эрхийг ч дурдсан байдаг. Энэ нь зар өөрчлөх эрх тул бид хүсээгүй. Хоёр эрхтэй үед Graph `permission_missing` буцаавал нэмэхийг хэлэлцэнэ.
 - Шинэ Lead Ads лид push мэдэгдэл илгээхгүй (өмнөх шигээ). Менежерүүд лидийн жагсаалтаас харна.
 - Backfill-ээр өнгөрсөн долоо хоногийн лид орвол тэр долоо хоногийн Лхагва гарагийн тайлангийн тоо өөрчлөгдөнө (`created_at` = Meta-гийн цаг).
-- DM илгээх, Page insights, OAuth dialog зэрэг бусад Facebook кодод Graph **v21.0** хэвээр байна (2024-10-д гарсан). Тусад нь шинэчилнэ. Meta хуучирсан хувилбарын дуудлагыг дэмжигдэж буй хамгийн хуучин хувилбар руу автоматаар шилжүүлдэг.
+- DM илгээх (`messenger.ts`), DM-ийн профайл унших (`WebhookService.ts`) болон Conversions API (`meta-capi.ts`) Graph **v21.0** хэвээр байна (2024-10-д гарсан). Тусад нь шинэчилнэ. Meta хуучирсан хувилбарын дуудлагыг дэмжигдэж буй хамгийн хуучин хувилбар руу автоматаар шилжүүлдэг.
 
 ## Файлууд
 
@@ -111,12 +111,12 @@ Meta лидийг **90 хоног** л хадгалдаг. Webhook ажилла�
 | `src/app/api/webhook/route.ts` | leadgen-ийг ACK-аас өмнө хадгалах; 503 = дахин илгээх |
 | `src/app/api/marketing/facebook/lead-ads/route.ts` | GET төлөв, POST backfill / subscribe |
 | `src/lib/facebook/marketing-api.ts` | `DEFAULT_PAGE_SUBSCRIBE_FIELDS` + `leadgen`, DM-ийг хамгаалсан fallback |
-| `src/app/api/auth/facebook/route.ts` | `leads_retrieval`, `pages_manage_ads` эрх |
+| `src/lib/facebook/page-connect.ts` | `PAGE_OAUTH_SCOPES`-д `leads_retrieval`, `pages_manage_ads`; Page сонгоход `leadAdsSubscribed` |
 | `src/components/marketing/LeadAdsCard.tsx` | /marketing/social дээрх карт |
 | `supabase/migrations/20261005160000_meta_leadgen_events.sql` | үр дүнгийн хүснэгт |
 
 ## Шалгалт
 
-- Unit: `src/lib/facebook/__tests__/{leadgen,leadgen-backfill,subscribe,leadgen-events-sql}.test.ts`, `src/app/api/webhook/__tests__/webhook-leadgen.test.ts`, `src/app/api/marketing/facebook/lead-ads/__tests__/route.test.ts`, `src/app/api/auth/facebook/__tests__/route.test.ts`, `src/components/marketing/LeadAdsCard.test.tsx`.
+- Unit: `src/lib/facebook/__tests__/{leadgen,leadgen-backfill,subscribe,leadgen-events-sql,page-connect}.test.ts`, `src/app/api/webhook/__tests__/webhook-leadgen.test.ts`, `src/app/api/marketing/facebook/lead-ads/__tests__/route.test.ts`, `src/components/marketing/LeadAdsCard.test.tsx`.
 - Browser: `e2e/lead-ads.spec.ts` (marketing project).
 - Production build дээр локал curl хийсэн: verify 200/403, гарын үсэггүй leadgen 403, DB-гүй leadgen 503 `db_error`, дутуу leadgen 200 `invalid_payload`, зөвхөн DM 200, `/api/marketing/facebook/lead-ads` cookie-гүй 401, хуучин route 404.

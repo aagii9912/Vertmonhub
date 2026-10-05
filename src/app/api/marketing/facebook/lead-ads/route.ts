@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { withRoute } from '@/lib/api/route';
-import { decryptToken } from '@/lib/crypto/tokens';
 import { LEADGEN_RETENTION_DAYS, backfillPageLeads } from '@/lib/facebook/leadgen-backfill';
 import { pageGraphRead } from '@/lib/facebook/leadgen';
+import { loadShopPage } from '@/lib/facebook/page-connect';
 import { subscribePageToApp } from '@/lib/facebook/marketing-api';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
@@ -26,14 +26,6 @@ const SCHEMA = z.discriminatedUnion('action', [
 
 type EventRow = { leadgen_id: string; status: 'saved' | 'skipped' | 'failed'; reason: string | null; origin: string; updated_at: string };
 
-async function connectedPage(shopId: string) {
-    const { data, error } = await supabaseAdmin().from('shops')
-        .select('facebook_page_id, facebook_page_name, facebook_page_access_token').eq('id', shopId).maybeSingle();
-    if (error) throw error;
-    const token = decryptToken(data?.facebook_page_access_token);
-    return data?.facebook_page_id && token ? { pageId: data.facebook_page_id as string, pageName: (data.facebook_page_name as string | null) ?? null, token } : null;
-}
-
 /** App-ийн subscribed_fields-д leadgen байгаа эсэх; шалгаж чадаагүй бол null. */
 async function leadgenSubscribed(pageId: string, token: string): Promise<boolean | null> {
     const appId = process.env.FACEBOOK_APP_ID?.trim();
@@ -45,7 +37,7 @@ async function leadgenSubscribed(pageId: string, token: string): Promise<boolean
 }
 
 export const GET = withRoute({ module: 'marketing-roi' }, async ({ shop }) => {
-    const page = await connectedPage(shop.id);
+    const page = await loadShopPage(shop.id);
     if (!page) return NextResponse.json({ connected: false });
 
     const since = new Date(Date.now() - LEADGEN_RETENTION_DAYS * 86_400_000).toISOString();
@@ -76,7 +68,7 @@ export const POST = withRoute({ module: 'marketing-roi', access: 'write' }, asyn
     if (!process.env.FACEBOOK_APP_SECRET?.trim()) {
         return NextResponse.json({ error: 'Facebook app-ийн нууц түлхүүр (FACEBOOK_APP_SECRET) тохируулаагүй байна.' }, { status: 503 });
     }
-    const page = await connectedPage(shop.id);
+    const page = await loadShopPage(shop.id);
     if (!page) return NextResponse.json({ error: 'Facebook Page холбогдоогүй байна. Эхлээд Page-ээ холбоно уу.' }, { status: 400 });
 
     if (parsed.data.action === 'subscribe') {

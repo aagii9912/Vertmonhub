@@ -12,13 +12,14 @@
 import { createHash } from 'node:crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { decryptToken } from '@/lib/crypto/tokens';
+import { MetaApiError } from '@/lib/facebook/daily-spend';
 import { appsecretProof } from '@/lib/facebook/messenger';
+import { pageRead } from '@/lib/facebook/page-graph';
 import { logAttributionEvent } from '@/lib/marketing/attribution-events';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
 import { insertLeadOnce } from '@/lib/services/LeadService';
 import { logger } from '@/lib/utils/logger';
 
-export const LEADGEN_GRAPH = 'https://graph.facebook.com/v26.0';
 export const LEAD_FIELDS = 'id,created_time,field_data,campaign_id,adset_id,ad_id,form_id';
 const GRAPH_TIMEOUT_MS = 10_000;
 
@@ -72,24 +73,18 @@ export function classifyGraphError(status: number, code: number | undefined, isT
 }
 
 /**
- * Page токеноор Graph v26 унших. Токен URL-д биш Authorization header-т, `appsecret_proof` заавал
- * (FACEBOOK_APP_SECRET-гүй бол дуудахгүй). URL, токен, хариуг логлохгүй.
+ * Page токеноор Graph v26 унших (`lib/facebook/page-graph` — токен Authorization header-т, `appsecret_proof`
+ * заавал, URL/токен/хариу лог руу орохгүй). Дахин оролдохгүй: webhook-ийн түр алдааг Meta өөрөө дахин илгээнэ.
  */
 export async function pageGraphRead<T>(path: string, token: string, params: Record<string, string> = {}, signal?: AbortSignal): Promise<GraphResult<T>> {
-    const proof = appsecretProof(token);
-    if (!proof) return { ok: false, transient: false, reason: 'app_secret_missing' };
-    const url = new URL(`${LEADGEN_GRAPH}/${path}`);
-    for (const [key, value] of Object.entries({ ...params, appsecret_proof: proof })) url.searchParams.set(key, value);
-    let response: Response;
+    if (!appsecretProof(token)) return { ok: false, transient: false, reason: 'app_secret_missing' };
     try {
-        response = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store', signal: signal ?? AbortSignal.timeout(GRAPH_TIMEOUT_MS) });
-    } catch {
-        return { ok: false, transient: true, reason: 'graph_unavailable' };
+        return { ok: true, data: await pageRead<T>(path, token, params, { signal: signal ?? AbortSignal.timeout(GRAPH_TIMEOUT_MS), retry: false }) };
+    } catch (error) {
+        // status байхгүй = сүлжээ тасарсан эсвэл хугацаа хэтэрсэн.
+        if (!(error instanceof MetaApiError) || error.status === null) return { ok: false, transient: true, reason: 'graph_unavailable' };
+        return classifyGraphError(error.status, error.code ?? undefined, false);
     }
-    const body = await response.json().catch(() => null);
-    if (response.ok && body && !body.error) return { ok: true, data: body as T };
-    const code = Number(body?.error?.code);
-    return classifyGraphError(response.status, Number.isFinite(code) ? code : undefined, body?.error?.is_transient === true);
 }
 
 // ============ Lead ============

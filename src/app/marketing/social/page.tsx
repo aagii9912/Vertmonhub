@@ -22,7 +22,7 @@ import {
     Loader2, X
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardFetch, dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
+import { dashboardFetch, dashboardJson, dashboardMutate, getActiveShopId } from '@/lib/api/dashboardFetch';
 import { toast } from 'sonner';
 import { formatTimeAgo } from '@/lib/utils/date';
 import { confirmToast } from '@/components/ui/Toast';
@@ -35,10 +35,10 @@ interface SocialPost {
     platform: string;
     content: string;
     status: string;
-    likes: number;
-    comments: number;
-    shares: number;
-    reach: number;
+    likes: number | null;
+    comments: number | null;
+    shares: number | null;
+    reach: number | null;
     published_at: string;
 }
 
@@ -62,20 +62,33 @@ interface FacebookPostData {
     image: string | null;
     permalink: string | null;
     created_time: string;
-    likes: number;
-    comments: number;
-    shares: number;
+    likes: number | null;
+    comments: number | null;
+    shares: number | null;
+    insights?: { views: number | null; viewers: number | null; clicks: number | null };
 }
 
+/** /api/marketing/facebook/insights — Meta-гийн өгөөгүй утга null. */
 interface InsightsData {
-    [key: string]: {
-        title: string;
-        description: string;
-        period: string;
-        value: number;
-        values: Array<{ value: number; end_time: string }>;
-    };
+    from: string;
+    to: string;
+    days: number;
+    unavailable: string[];
+    metrics: Record<string, { label: string; kind: 'sum' | 'unique' | 'latest'; value: number | null; day: string | null; days: number }>;
 }
+
+/** Page insights картын дараалал (lib/marketing/social-metrics.ts). */
+const PAGE_CARD_METRICS = ['page_media_view', 'page_total_media_view_unique', 'page_post_engagements', 'page_daily_follows_unique', 'page_views_total', 'page_total_actions', 'page_video_views', 'page_follows'] as const;
+
+/** Instagram аккаунтын хугацааны үзүүлэлт (/api/marketing/instagram). */
+interface InstagramInsightsData { metrics: Record<string, number | null>; follows: number | null; unfollows: number | null; unavailable: string[] }
+const IG_CARD_METRICS: Array<[string, string]> = [
+    ['views', 'Үзэлт'], ['reach', 'Хүрсэн хүн'], ['accounts_engaged', 'Оролцсон аккаунт'], ['total_interactions', 'Нийт оролцоо'],
+    ['profile_links_taps', 'Холбоос дарсан'], ['saves', 'Хадгалсан'],
+];
+
+/** Meta-гийн өгөөгүй тоо «—» (0 биш). */
+const showCount = (value: number | null | undefined) => typeof value === 'number' ? value.toLocaleString() : '—';
 
 type TabType = 'all' | 'facebook' | 'instagram';
 
@@ -85,7 +98,35 @@ interface AvailableFbPage {
     id: string;
     name: string;
     category?: string;
+    instagram?: { id: string; username?: string; name?: string };
 }
+
+type ConnectFlow = 'facebook' | 'instagram';
+/** Сервер талын Page сонголт: токен браузерт хэзээ ч ирэхгүй (lib/facebook/page-connect.ts). */
+const CONNECT_ENDPOINT: Record<ConnectFlow, string> = {
+    facebook: '/api/auth/facebook/pages',
+    instagram: '/api/auth/instagram/accounts',
+};
+/** OAuth callback-ийн алдааны код (lib/facebook/page-connect.ts) → хэрэглэгчид ойлгомжтой тайлбар. */
+const OAUTH_ERROR_LABEL: Record<string, string> = {
+    denied: 'Facebook дээр зөвшөөрөл өгөөгүй.',
+    state_mismatch: 'Холболтын хугацаа дууссан эсвэл өөр цонхноос эхэлсэн. Дахин холбоно уу.',
+    session_error: 'Нэвтэрсэн хэрэглэгч эсвэл төсөл өөрчлөгдсөн. Дахин холбоно уу.',
+    no_code: 'Facebook баталгаажуулалтын код ирсэнгүй. Дахин оролдоно уу.',
+    config_missing: 'Facebook app-ийн тохиргоо дутуу байна. Админд хандана уу.',
+    token_error: 'Facebook нэвтрэх эрх авч чадсангүй. Дахин оролдоно уу.',
+    pages_error: 'Facebook Page-ийн жагсаалт татаж чадсангүй.',
+    no_pages: 'Таны удирддаг Facebook Page олдсонгүй.',
+    no_instagram_account: 'Instagram Business аккаунттай Facebook Page олдсонгүй.',
+    save_error: 'Холболтыг хадгалж чадсангүй. Дахин оролдоно уу.',
+    exception: 'Facebook-тэй холбогдоход алдаа гарлаа. Дахин оролдоно уу.',
+};
+const PERMISSION_LABEL: Record<string, string> = {
+    read_insights: 'Page insights (read_insights)',
+    pages_read_engagement: 'Page-ийн нийтлэл, engagement (pages_read_engagement)',
+    instagram_basic: 'Instagram аккаунт (instagram_basic)',
+    instagram_manage_insights: 'Instagram insights (instagram_manage_insights)',
+};
 
 export default function SocialPage() {
     return (
@@ -109,6 +150,8 @@ function SocialPageContent() {
     const [selectedPageId, setSelectedPageId] = useState<string>('');
     const [savingPage, setSavingPage] = useState(false);
     const [pageSelectorError, setPageSelectorError] = useState<string | null>(null);
+    const [connectFlow, setConnectFlow] = useState<ConnectFlow>('facebook');
+    const [missingPermissions, setMissingPermissions] = useState<string[]>([]);
     const [oauthBanner, setOauthBanner] = useState<string | null>(null);
 
     // Internal posts
@@ -120,6 +163,7 @@ function SocialPageContent() {
     const [fbPage, setFbPage] = useState<FacebookPageData | null>(null);
     const [fbPosts, setFbPosts] = useState<FacebookPostData[]>([]);
     const [fbInsights, setFbInsights] = useState<InsightsData | null>(null);
+    const [fbInsightsError, setFbInsightsError] = useState<string | null>(null);
     const [fbLoading, setFbLoading] = useState(true);
     const [fbError, setFbError] = useState<string | null>(null);
     const [tokenExpired, setTokenExpired] = useState(false);
@@ -135,6 +179,8 @@ function SocialPageContent() {
     const [igConnected, setIgConnected] = useState(false);
     const [igAccount, setIgAccount] = useState<any>(null);
     const [igPosts, setIgPosts] = useState<any[]>([]);
+    const [igInsights, setIgInsights] = useState<InstagramInsightsData | null>(null);
+    const [igInsightsError, setIgInsightsError] = useState<string | null>(null);
     const [igLoading, setIgLoading] = useState(true);
     const [igError, setIgError] = useState<string | null>(null);
 
@@ -161,7 +207,7 @@ function SocialPageContent() {
         setFbError(null);
         try {
             // Page info
-            const pageRes = await dashboardFetch(`/api/marketing/facebook${shop?.id ? `?shop_id=${shop.id}` : ''}`);
+            const pageRes = await dashboardFetch('/api/marketing/facebook');
             const pageData = await pageRes.json();
 
             if (pageData.connected) {
@@ -170,19 +216,18 @@ function SocialPageContent() {
                 setTokenExpired(false);
 
                 // Posts
-                const postsRes = await dashboardFetch(`/api/marketing/facebook/posts${shop?.id ? `?shop_id=${shop.id}` : ''}`);
+                const postsRes = await dashboardFetch('/api/marketing/facebook/posts');
                 const postsData = await postsRes.json();
                 setFbPosts(postsData.posts || []);
 
-                // Insights (may fail due to permissions)
+                // Insights (read_insights эрхгүй бол тайлбартай хоосон)
                 try {
-                    const insightsRes = await dashboardFetch(`/api/marketing/facebook/insights${shop?.id ? `?shop_id=${shop.id}` : ''}`);
+                    const insightsRes = await dashboardFetch('/api/marketing/facebook/insights?days=28');
                     const insightsData = await insightsRes.json();
-                    if (insightsData.insights) {
-                        setFbInsights(insightsData.insights);
-                    }
+                    setFbInsights(insightsData.insights ?? null);
+                    setFbInsightsError(insightsData.insights ? null : insightsData.error ?? null);
                 } catch {
-                    // Insights permission байхгүй бол skip
+                    setFbInsightsError('Page insights ачаалж чадсангүй');
                 }
             } else {
                 setFbConnected(false);
@@ -195,23 +240,26 @@ function SocialPageContent() {
         } finally {
             setFbLoading(false);
         }
-    }, [shop?.id]);
+    }, []);
 
+    // Төсөл солиход (x-shop-id) дахин ачаална.
     useEffect(() => {
         fetchFacebookData();
-    }, [fetchFacebookData]);
+    }, [fetchFacebookData, shop?.id]);
 
     // ======= Load Instagram data =======
     const fetchInstagramData = useCallback(async () => {
         setIgLoading(true);
         setIgError(null);
         try {
-            const res = await dashboardFetch(`/api/marketing/instagram${shop?.id ? `?shop_id=${shop.id}` : ''}`);
+            const res = await dashboardFetch('/api/marketing/instagram?period=week');
             const data = await res.json();
             if (data.connected) {
                 setIgConnected(true);
                 setIgAccount(data.account);
                 setIgPosts(data.posts || []);
+                setIgInsights(data.insights ?? null);
+                setIgInsightsError(data.insights_error ?? null);
             } else {
                 setIgConnected(false);
                 if (data.error) setIgError(data.error);
@@ -222,46 +270,52 @@ function SocialPageContent() {
         } finally {
             setIgLoading(false);
         }
-    }, [shop?.id]);
+    }, []);
 
     useEffect(() => {
         fetchInstagramData();
-    }, [fetchInstagramData]);
+    }, [fetchInstagramData, shop?.id]);
 
-    // ======= Handle OAuth callback (?fb_success / ?fb_error) =======
+    // ======= Handle OAuth callback (?fb_success / ?fb_error, ?ig_success / ?ig_error) =======
     useEffect(() => {
-        const success = searchParams.get('fb_success');
-        const errParam = searchParams.get('fb_error');
+        const flow: ConnectFlow | null = searchParams.has('ig_success') || searchParams.has('ig_error') ? 'instagram'
+            : searchParams.has('fb_success') || searchParams.has('fb_error') ? 'facebook' : null;
+        if (!flow) return;
+        const prefix = flow === 'facebook' ? 'fb' : 'ig';
+        const label = flow === 'facebook' ? 'Facebook' : 'Instagram';
+        const errParam = searchParams.get(`${prefix}_error`);
 
         if (errParam) {
-            setOauthBanner(`Facebook холболт амжилтгүй: ${decodeURIComponent(errParam)}`);
+            setOauthBanner(`${label} холболт амжилтгүй: ${OAUTH_ERROR_LABEL[errParam] ?? errParam}`);
             router.replace('/marketing/social');
             return;
         }
+        if (searchParams.get(`${prefix}_success`) !== 'true') return;
 
-        if (success !== 'true') return;
-
-        // Fetch pages from cookie set by callback
+        // OAuth-ийн дараа серверт хадгалсан сонголтыг (токенгүй) татна
         let cancelled = false;
         const loadPages = async () => {
             setPagesLoading(true);
             setPageSelectorError(null);
             try {
-                const res = await dashboardFetch('/api/auth/facebook/pages');
+                const res = await dashboardFetch(CONNECT_ENDPOINT[flow]);
                 const data = await res.json();
                 if (cancelled) return;
 
-                if (data.code === 'SESSION_EXPIRED' || !data.pages?.length) {
-                    setOauthBanner('Facebook session дууссан эсвэл хуудас олдсонгүй. Дахин холбоно уу.');
+                if (!res.ok || data.code === 'SESSION_EXPIRED' || !data.pages?.length) {
+                    setOauthBanner(data.error || data.message || `${label} холболтын хугацаа дууссан эсвэл сонгох хуудас олдсонгүй. Дахин холбоно уу.`);
                     router.replace('/marketing/social');
                     return;
                 }
 
+                setConnectFlow(flow);
+                setActiveTab(flow);
                 setAvailablePages(data.pages);
+                setMissingPermissions(Array.isArray(data.missing_permissions) ? data.missing_permissions : []);
                 setSelectedPageId(data.pages[0]?.id || '');
                 setPageSelectorOpen(true);
-            } catch (e) {
-                if (!cancelled) setPageSelectorError('Pages татахад алдаа гарлаа');
+            } catch {
+                if (!cancelled) setPageSelectorError('Жагсаалт татахад алдаа гарлаа');
             } finally {
                 if (!cancelled) setPagesLoading(false);
             }
@@ -270,57 +324,47 @@ function SocialPageContent() {
         return () => { cancelled = true; };
     }, [searchParams, router]);
 
-    // ======= Save selected page to shop =======
+    // ======= Save selected page (server-side) =======
     const handleSavePage = useCallback(async () => {
         if (!selectedPageId) return;
         setSavingPage(true);
         setPageSelectorError(null);
         try {
-            // Step 1: get the access token by selecting the page
-            const selectRes = await dashboardFetch('/api/auth/facebook/pages', {
+            const res = await dashboardFetch(CONNECT_ENDPOINT[connectFlow], {
                 method: 'POST',
                 body: JSON.stringify({ pageId: selectedPageId }),
             });
-            const selectData = await selectRes.json();
-
-            if (!selectRes.ok || !selectData.success) {
-                throw new Error(selectData.error || 'Page сонгоход алдаа');
-            }
-
-            // Step 2: save to shop
-            const patchRes = await dashboardFetch('/api/shop', {
-                method: 'PATCH',
-                body: JSON.stringify({
-                    facebook_page_id: selectData.page.id,
-                    facebook_page_name: selectData.page.name,
-                    facebook_page_access_token: selectData.page.access_token,
-                    facebook_token_expires_in: selectData.page.token_expires_in ?? undefined,
-                    facebook_user_access_token: selectData.page.user_access_token ?? undefined,
-                    facebook_user_token_expires_in: selectData.page.user_token_expires_in ?? undefined,
-                }),
-            });
-            const patchData = await patchRes.json();
-
-            if (!patchRes.ok) {
-                throw new Error(patchData.error || 'Shop шинэчлэх алдаа');
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || 'Холбоход алдаа гарлаа');
             }
 
             setPageSelectorOpen(false);
-            const subNote = patchData.webhookSubscribed === false
+            const subNote = data.webhookSubscribed === false
                 ? ' (⚠️ Webhook subscribe хийгдсэнгүй — App Dashboard дээр гараар тохируулна уу)'
-                : patchData.leadAdsSubscribed === false
+                : data.leadAdsSubscribed === false
                     ? ' (⚠️ Lead Ads-ийн лид автоматаар орохгүй — leads_retrieval эрхтэйгээр Facebook-ээ дахин холбоно уу)'
                     : '';
-            setOauthBanner(`✅ "${selectData.page.name}" хуудас амжилттай холбогдлоо${subNote}`);
+            setOauthBanner(`✅ "${data.page?.name ?? ''}" амжилттай холбогдлоо${subNote}`);
             router.replace('/marketing/social');
-            // Refresh Facebook data
-            fetchFacebookData();
+            if (connectFlow === 'facebook') fetchFacebookData();
+            else fetchInstagramData();
         } catch (e: any) {
             setPageSelectorError(e?.message || 'Хадгалахад алдаа гарлаа');
         } finally {
             setSavingPage(false);
         }
-    }, [selectedPageId, router, fetchFacebookData]);
+    }, [selectedPageId, connectFlow, router, fetchFacebookData, fetchInstagramData]);
+
+    // ======= OAuth start: dashboardFetch-тэй ижил идэвхтэй төсөл (x-shop-id) =======
+    const startConnect = useCallback((flow: ConnectFlow) => {
+        const shopId = getActiveShopId() || shop?.id;
+        if (!shopId) {
+            setOauthBanner('Төсөл сонгогдоогүй байна. Дээрх «Төсөл» цэснээс сонгоод дахин оролдоно уу.');
+            return;
+        }
+        window.location.href = `/api/auth/${flow}?shop_id=${encodeURIComponent(shopId)}`;
+    }, [shop?.id]);
 
     // ======= Disconnect platform =======
     const handleDisconnect = useCallback(async (platform: 'facebook' | 'instagram') => {
@@ -352,7 +396,6 @@ function SocialPageContent() {
                 body: JSON.stringify({
                     message: publishMessage,
                     imageUrl: publishImageUrl || undefined,
-                    shop_id: shop?.id,
                 }),
             });
             const data = await res.json();
@@ -442,11 +485,12 @@ function SocialPageContent() {
                         page={fbPage}
                         posts={fbPosts}
                         insights={fbInsights}
+                        insightsError={fbInsightsError}
                         error={fbError}
                         tokenExpired={tokenExpired}
                         formatNumber={formatNumber}
                         formatDate={formatTimeAgo}
-                        onConnect={() => window.location.href = '/api/auth/facebook'}
+                        onConnect={() => startConnect('facebook')}
                         onRefresh={fetchFacebookData}
                         onDisconnect={() => handleDisconnect('facebook')}
                     />
@@ -460,10 +504,12 @@ function SocialPageContent() {
                         connected={igConnected}
                         account={igAccount}
                         posts={igPosts}
+                        insights={igInsights}
+                        insightsError={igInsightsError}
                         error={igError}
                         formatNumber={formatNumber}
                         formatDate={formatTimeAgo}
-                        onConnect={() => window.location.href = '/api/auth/instagram'}
+                        onConnect={() => startConnect('instagram')}
                     />
                 </TabsContent>
 
@@ -515,6 +561,8 @@ function SocialPageContent() {
             {/* Page Selector Modal */}
             <PageSelectorModal
                 open={pageSelectorOpen}
+                flow={connectFlow}
+                missingPermissions={missingPermissions}
                 pages={availablePages}
                 selectedPageId={selectedPageId}
                 setSelectedPageId={setSelectedPageId}
@@ -534,6 +582,8 @@ function SocialPageContent() {
 
 function PageSelectorModal({
     open,
+    flow,
+    missingPermissions,
     pages,
     selectedPageId,
     setSelectedPageId,
@@ -543,6 +593,8 @@ function PageSelectorModal({
     onClose,
 }: {
     open: boolean;
+    flow: ConnectFlow;
+    missingPermissions: string[];
     pages: AvailableFbPage[];
     selectedPageId: string;
     setSelectedPageId: (v: string) => void;
@@ -556,8 +608,8 @@ function PageSelectorModal({
             <DialogContent showCloseButton={false} className="bg-surface p-0 sm:max-w-md">
                 <DialogHeader className="flex flex-row items-center justify-between gap-2 px-5 py-4 border-b border-border space-y-0">
                     <DialogTitle className="flex items-center gap-2 text-base font-semibold text-foreground">
-                        <Facebook className="w-5 h-5 text-status-info" />
-                        Facebook Page сонгох
+                        {flow === 'facebook' ? <Facebook className="w-5 h-5 text-status-info" /> : <Instagram className="w-5 h-5 text-brand-strong" />}
+                        {flow === 'facebook' ? 'Facebook Page сонгох' : 'Instagram аккаунт сонгох'}
                     </DialogTitle>
                     <button
                         type="button"
@@ -572,8 +624,18 @@ function PageSelectorModal({
 
                 <div className="p-5 space-y-2 max-h-96 overflow-y-auto">
                     <p className="text-sm text-muted-foreground mb-3">
-                        Холбохыг хүсэж буй Facebook Page-ээ сонгоно уу.
+                        {flow === 'facebook'
+                            ? 'Энэ төсөлд холбох Facebook Page-ээ сонгоно уу.'
+                            : 'Энэ төсөлд холбох Instagram Business аккаунтаа (Page-ээр нь) сонгоно уу.'}
                     </p>
+                    {missingPermissions.length > 0 && (
+                        <Alert variant="warning" className="mb-3">
+                            <AlertDescription>
+                                Facebook дараах эрхийг олгоогүй тул insights татагдахгүй: {missingPermissions.map(p => PERMISSION_LABEL[p] ?? p).join(', ')}.
+                                Холбосны дараа дахин холбож эрхийг зөвшөөрнө үү.
+                            </AlertDescription>
+                        </Alert>
+                    )}
                     {pages.map(p => (
                         <label
                             key={p.id}
@@ -585,7 +647,7 @@ function PageSelectorModal({
                         >
                             <input
                                 type="radio"
-                                name="fb-page"
+                                name="connect-page"
                                 value={p.id}
                                 checked={selectedPageId === p.id}
                                 onChange={() => setSelectedPageId(p.id)}
@@ -593,7 +655,12 @@ function PageSelectorModal({
                                 className="mt-1 accent-[var(--brand)]"
                             />
                             <div className="flex-1">
-                                <div className="font-medium text-foreground">{p.name}</div>
+                                <div className="font-medium text-foreground">
+                                    {flow === 'instagram' && p.instagram ? `@${p.instagram.username ?? p.instagram.id}` : p.name}
+                                </div>
+                                {flow === 'instagram' && (
+                                    <div className="text-xs text-muted-foreground mt-0.5">Page: {p.name}</div>
+                                )}
                                 {p.category && (
                                     <div className="text-xs text-muted-foreground mt-0.5">{p.category}</div>
                                 )}
@@ -645,6 +712,7 @@ function FacebookTabContent({
     page,
     posts,
     insights,
+    insightsError,
     error,
     tokenExpired,
     formatNumber,
@@ -658,6 +726,7 @@ function FacebookTabContent({
     page: FacebookPageData | null;
     posts: FacebookPostData[];
     insights: InsightsData | null;
+    insightsError: string | null;
     error: string | null;
     tokenExpired: boolean;
     formatNumber: (v: number) => string;
@@ -784,13 +853,13 @@ function FacebookTabContent({
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatsCard
                     title="Дагагчид"
-                    value={formatNumber(page?.followers_count || 0)}
+                    value={typeof page?.followers_count === 'number' ? formatNumber(page.followers_count) : '—'}
                     icon={Users}
                     iconColor="info"
                 />
                 <StatsCard
                     title="Like тоо"
-                    value={formatNumber(page?.fan_count || 0)}
+                    value={typeof page?.fan_count === 'number' ? formatNumber(page.fan_count) : '—'}
                     icon={ThumbsUp}
                     iconColor="brand"
                 />
@@ -802,46 +871,47 @@ function FacebookTabContent({
                 />
                 <StatsCard
                     title="Нийт engagement"
-                    value={formatNumber(posts.reduce((s, p) => s + p.likes + p.comments + p.shares, 0))}
+                    value={formatNumber(posts.reduce((s, p) => s + (p.likes ?? 0) + (p.comments ?? 0) + (p.shares ?? 0), 0))}
                     icon={TrendingUp}
                     iconColor="warning"
                 />
             </div>
 
-            {/* Insights */}
-            {insights && (
+            {/* Insights (Graph v26, сүүлийн дууссан өдрүүд, Meta-гийн PT өдөр) */}
+            {(insights || insightsError) && (
                 <Card>
                     <CardContent className="p-5">
-                        <h3 className="heading-section text-foreground mb-4 flex items-center gap-2">
+                        <h3 className="heading-section text-foreground mb-1 flex items-center gap-2">
                             <BarChart3 className="w-5 h-5 text-brand-strong" />
                             Хуудасны үзүүлэлт
                         </h3>
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            {insights.page_impressions && (
-                                <div className="bg-surface-2 rounded-md p-3">
-                                    <p className="text-xs text-muted-foreground">Харагдалт</p>
-                                    <p className="text-lg font-bold text-foreground tabular-nums">{formatNumber(insights.page_impressions.value as number)}</p>
-                                </div>
-                            )}
-                            {insights.page_impressions_unique && (
-                                <div className="bg-surface-2 rounded-md p-3">
-                                    <p className="text-xs text-muted-foreground">Хамрах хүрээ</p>
-                                    <p className="text-lg font-bold text-foreground tabular-nums">{formatNumber(insights.page_impressions_unique.value as number)}</p>
-                                </div>
-                            )}
-                            {insights.page_engaged_users && (
-                                <div className="bg-surface-2 rounded-md p-3">
-                                    <p className="text-xs text-muted-foreground">Идэвхтэй хэрэглэгч</p>
-                                    <p className="text-lg font-bold text-foreground tabular-nums">{formatNumber(insights.page_engaged_users.value as number)}</p>
-                                </div>
-                            )}
-                            {insights.page_views_total && (
-                                <div className="bg-surface-2 rounded-md p-3">
-                                    <p className="text-xs text-muted-foreground">Хуудас үзэлт</p>
-                                    <p className="text-lg font-bold text-foreground tabular-nums">{formatNumber(insights.page_views_total.value as number)}</p>
-                                </div>
-                            )}
-                        </div>
+                        {insights && (
+                            <p className="text-xs text-muted-foreground mb-4">
+                                {insights.from} – {insights.to} ({insights.days} өдөр, Meta-гийн өдөр Номхон далайн цагаар). «—» = Meta өгөөгүй.
+                            </p>
+                        )}
+                        {insightsError && (
+                            <Alert variant="warning" className="mb-3">
+                                <AlertDescription>{insightsError}</AlertDescription>
+                            </Alert>
+                        )}
+                        {insights && (
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                {PAGE_CARD_METRICS.map(name => {
+                                    const metric = insights.metrics[name];
+                                    if (!metric) return null;
+                                    return (
+                                        <div key={name} className="bg-surface-2 rounded-md p-3">
+                                            <p className="text-xs text-muted-foreground">{metric.label}</p>
+                                            <p className="text-lg font-bold text-foreground tabular-nums">{metric.value === null ? '—' : formatNumber(metric.value)}</p>
+                                            <p className="text-[11px] text-muted-foreground">
+                                                {metric.value === null ? 'өгөгдөлгүй' : metric.kind === 'sum' ? `${metric.days} өдрийн нийлбэр` : `${metric.day}-ны байдлаар`}
+                                            </p>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </CardContent>
                 </Card>
             )}
@@ -877,15 +947,19 @@ function FacebookTabContent({
                                             <div className="flex items-center gap-4 text-xs text-muted-foreground tabular-nums">
                                                 <span className="flex items-center gap-1">
                                                     <Heart className="w-3.5 h-3.5" />
-                                                    {post.likes}
+                                                    {showCount(post.likes)}
                                                 </span>
                                                 <span className="flex items-center gap-1">
                                                     <MessageCircle className="w-3.5 h-3.5" />
-                                                    {post.comments}
+                                                    {showCount(post.comments)}
                                                 </span>
                                                 <span className="flex items-center gap-1">
                                                     <Share2 className="w-3.5 h-3.5" />
-                                                    {post.shares}
+                                                    {showCount(post.shares)}
+                                                </span>
+                                                <span className="flex items-center gap-1" title="Үзсэн хүн (нийтлэлийн насан туршид)">
+                                                    <Eye className="w-3.5 h-3.5" />
+                                                    {showCount(post.insights?.viewers)}
                                                 </span>
                                                 <span className="ml-auto">{formatDate(post.created_time)}</span>
                                             </div>
@@ -988,9 +1062,9 @@ function AllPostsContent({
                                             <p className="text-sm text-foreground line-clamp-2">{post.content}</p>
                                         </div>
                                         <div className="flex items-center gap-4 text-sm text-muted-foreground ml-4 tabular-nums">
-                                            <span className="flex items-center gap-1"><Heart className="w-3 h-3" />{post.likes}</span>
-                                            <span className="flex items-center gap-1"><MessageCircle className="w-3 h-3" />{post.comments}</span>
-                                            <span className="flex items-center gap-1"><Share2 className="w-3 h-3" />{post.shares}</span>
+                                            <span className="flex items-center gap-1"><Heart className="w-3 h-3" />{showCount(post.likes)}</span>
+                                            <span className="flex items-center gap-1"><MessageCircle className="w-3 h-3" />{showCount(post.comments)}</span>
+                                            <span className="flex items-center gap-1"><Share2 className="w-3 h-3" />{showCount(post.shares)}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -1116,6 +1190,8 @@ function InstagramTabContent({
     connected,
     account,
     posts,
+    insights,
+    insightsError,
     error,
     formatNumber,
     formatDate,
@@ -1125,6 +1201,8 @@ function InstagramTabContent({
     connected: boolean;
     account: any;
     posts: any[];
+    insights: InstagramInsightsData | null;
+    insightsError: string | null;
     error: string | null;
     formatNumber: (v: number) => string;
     formatDate: (d: string) => string;
@@ -1221,23 +1299,55 @@ function InstagramTabContent({
             <div className="grid grid-cols-3 gap-4">
                 <Card>
                     <CardContent className="p-4 text-center">
-                        <p className="heading-display text-2xl text-foreground tabular-nums">{formatNumber(account?.followers_count || 0)}</p>
+                        <p className="heading-display text-2xl text-foreground tabular-nums">{typeof account?.followers_count === 'number' ? formatNumber(account.followers_count) : '—'}</p>
                         <p className="text-sm text-muted-foreground">Дагагчид</p>
                     </CardContent>
                 </Card>
                 <Card>
                     <CardContent className="p-4 text-center">
-                        <p className="heading-display text-2xl text-foreground tabular-nums">{formatNumber(account?.follows_count || 0)}</p>
+                        <p className="heading-display text-2xl text-foreground tabular-nums">{typeof account?.follows_count === 'number' ? formatNumber(account.follows_count) : '—'}</p>
                         <p className="text-sm text-muted-foreground">Дагаж буй</p>
                     </CardContent>
                 </Card>
                 <Card>
                     <CardContent className="p-4 text-center">
-                        <p className="heading-display text-2xl text-foreground tabular-nums">{formatNumber(account?.media_count || 0)}</p>
+                        <p className="heading-display text-2xl text-foreground tabular-nums">{typeof account?.media_count === 'number' ? formatNumber(account.media_count) : '—'}</p>
                         <p className="text-sm text-muted-foreground">Нийтлэл</p>
                     </CardContent>
                 </Card>
             </div>
+
+            {/* Insights: сүүлийн 7 хоног (Graph v26, metric_type=total_value) */}
+            {(insights || insightsError) && (
+                <Card>
+                    <CardContent className="p-5">
+                        <h3 className="heading-section text-foreground mb-1 flex items-center gap-2">
+                            <BarChart3 className="w-5 h-5 text-brand-strong" />
+                            Сүүлийн 7 хоногийн үзүүлэлт
+                        </h3>
+                        <p className="text-xs text-muted-foreground mb-4">«—» = Meta өгөөгүй (жишээ нь 100-аас цөөн дагагчтай аккаунт).</p>
+                        {insightsError && !insights && (
+                            <Alert variant="warning">
+                                <AlertDescription>{insightsError}</AlertDescription>
+                            </Alert>
+                        )}
+                        {insights && (
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                {IG_CARD_METRICS.map(([name, label]) => (
+                                    <div key={name} className="bg-surface-2 rounded-md p-3">
+                                        <p className="text-xs text-muted-foreground">{label}</p>
+                                        <p className="text-lg font-bold text-foreground tabular-nums">{showCount(insights.metrics[name])}</p>
+                                    </div>
+                                ))}
+                                <div className="bg-surface-2 rounded-md p-3">
+                                    <p className="text-xs text-muted-foreground">Дагасан / болисон</p>
+                                    <p className="text-lg font-bold text-foreground tabular-nums">{showCount(insights.follows)} / {showCount(insights.unfollows)}</p>
+                                </div>
+                            </div>
+                        )}
+                    </CardContent>
+                </Card>
+            )}
 
             {/* Posts Grid */}
             <Card>
@@ -1274,11 +1384,11 @@ function InstagramTabContent({
                                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 text-white">
                                         <span className="flex items-center gap-1 text-sm font-medium tabular-nums">
                                             <Heart className="w-4 h-4" />
-                                            {post.likes}
+                                            {showCount(post.likes)}
                                         </span>
                                         <span className="flex items-center gap-1 text-sm font-medium tabular-nums">
                                             <MessageCircle className="w-4 h-4" />
-                                            {post.comments}
+                                            {showCount(post.comments)}
                                         </span>
                                     </div>
                                     {post.media_type === 'VIDEO' && (

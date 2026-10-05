@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/auth/require-permission', () => ({
     requireModule: mocks.read, requireModuleWrite: mocks.write, requireModuleDelete: vi.fn(), requireAnyModule: mocks.read,
 }));
-vi.mock('@/lib/auth/supabase-auth', () => ({ getUserShop: mocks.shop }));
+vi.mock('@/lib/auth/supabase-auth', () => ({ getUserShop: mocks.shop, supabaseAdmin: () => mocks.db.client }));
 vi.mock('@/lib/utils/logger', () => ({ logger: { error: vi.fn(), warn: vi.fn(), info: vi.fn() } }));
 vi.mock('@/lib/crypto/tokens', () => ({ decryptToken: (value: string | null | undefined) => value || null }));
 vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => mocks.db.client }));
