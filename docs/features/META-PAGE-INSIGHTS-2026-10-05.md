@@ -155,9 +155,14 @@ cron (`/api/cron/social-insights-sync`) устгана. State нь 64 тэмдэ
 
 ## Хамрах хүрээнээс гадуур (дараагийн ажил)
 
-- Graph **v21** хэвээр: `lib/facebook/messenger.ts` (DM илгээх), `lib/webhook/WebhookService.ts`
-  (харилцагчийн профайл), `api/marketing/facebook/leadgen` (Lead Ads). 2027-01-21-нээс өмнө
-  v26 руу шилжүүлэх.
+- ~~Graph v21: DM илгээх, харилцагчийн профайл, Lead Ads~~ — `feat/meta-graph-v26-send`
+  (2026-10-05) дээр v26 болсон: `messenger.ts` (`me/messages`, 429/5xx/сүлжээний алдаанд 3 хүртэл
+  оролдлого хэвээр), `WebhookService.ts` профайл ба `api/marketing/facebook/leadgen` нь `pageRead`.
+  Токен толгойд, `appsecret_proof` заавал (`FACEBOOK_APP_SECRET`-гүй бол Graph-д хандахгүй),
+  алдаа/лог-д зөвхөн HTTP статус ба Graph code. v22–v26 changelog-д эдгээр endpoint-ийн талбар
+  өөрчлөгдөөгүй (message tag `CONFIRMED_EVENT_UPDATE`/`ACCOUNT_UPDATE`/`POST_PURCHASE_UPDATE`
+  2026-04-27-нөөс хаагдсан — бид tag хэрэглэдэггүй).
+- Graph **v21** хэвээр, токен URL-д: `lib/marketing/meta-capi.ts` (Conversions API, өөр токен).
 - Instagram аккаунтын insights-ийг өдрөөр хадгалах (одоо live л). Хүснэгт `platform =
   'instagram'`-ийг аль хэдийн зөвшөөрнө.
 - Instagram сонголт Page-ийг DM webhook-д subscribe хийхгүй (өмнө нь Instagram холболт огт

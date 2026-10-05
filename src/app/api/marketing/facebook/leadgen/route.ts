@@ -6,11 +6,14 @@ import { verifyWebhookSignature } from '@/lib/utils/verify-webhook-signature';
 import { logAttributionEvent } from '@/lib/marketing/attribution-events';
 import { insertLeadOnce } from '@/lib/services/LeadService';
 import { decryptToken } from '@/lib/crypto/tokens';
+import { MetaApiError } from '@/lib/facebook/daily-spend';
+import { pageRead } from '@/lib/facebook/page-graph';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const GRAPH = 'https://graph.facebook.com/v21.0';
+/** Нэг lead-ийг Graph-аас унших хугацаа (дахин оролдлогыг оролцуулна). */
+const LEAD_READ_TIMEOUT_MS = 10000;
 
 /**
  * GET — Facebook webhook баталгаажуулалт (Lead Ads-д бүртгүүлэхэд).
@@ -29,6 +32,7 @@ export async function GET(request: NextRequest) {
 }
 
 interface LeadFieldDatum { name: string; values: string[]; }
+interface MetaLead { field_data?: LeadFieldDatum[]; campaign_id?: string; adset_id?: string; ad_id?: string }
 
 /** Facebook lead form field_data-г name/phone/email рүү буулгана. */
 function mapFields(fieldData: LeadFieldDatum[]): { name: string | null; phone: string | null; email: string | null } {
@@ -92,16 +96,20 @@ export async function POST(request: NextRequest) {
                 const pageToken = decryptToken(shop.facebook_page_access_token);
                 if (!pageToken) continue;
 
-                // Lead-ийн дэлгэрэнгүйг Graph-аас татах
-                const res = await fetch(
-                    `${GRAPH}/${leadgenId}?fields=field_data,campaign_id,adset_id,ad_id&access_token=${pageToken}`
-                );
-                if (!res.ok) {
+                // Lead-ийн дэлгэрэнгүйг Graph v26-аас татах (токен толгойд, appsecret_proof заавал)
+                let lead: MetaLead;
+                try {
+                    lead = await pageRead<MetaLead>(encodeURIComponent(String(leadgenId)), pageToken,
+                        { fields: 'field_data,campaign_id,adset_id,ad_id' }, { signal: AbortSignal.timeout(LEAD_READ_TIMEOUT_MS) });
+                } catch (error) {
                     failed++;
-                    logger.warn('[Leadgen] fetch failed', { leadgenId, status: res.status });
+                    logger.warn('[Leadgen] fetch failed', {
+                        leadgenId,
+                        status: error instanceof MetaApiError ? error.status : null,
+                        code: error instanceof MetaApiError ? error.code : null,
+                    });
                     continue;
                 }
-                const lead = await res.json();
                 const { name, phone, email } = mapFields(lead.field_data || []);
 
                 const campaignId = lead.campaign_id || v.campaign_id || null;

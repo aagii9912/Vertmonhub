@@ -7,7 +7,8 @@
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
 import { extractPhoneFromText } from '@/lib/utils/phone';
-import { appsecretProof } from '@/lib/facebook/messenger';
+import { MetaApiError } from '@/lib/facebook/daily-spend';
+import { pageRead } from '@/lib/facebook/page-graph';
 import { decryptToken } from '@/lib/crypto/tokens';
 
 /** Webhook-д хэрэгтэй shop-ийн талбарууд (токенууд тайлагдсан). */
@@ -207,44 +208,39 @@ export async function getOrCreateInstagramCustomer(
     };
 }
 
-/**
- * Fetch Instagram user name from Graph API
- */
-async function fetchInstagramUserName(userId: string, accessToken: string): Promise<string | null> {
-    try {
-        const proof = appsecretProof(accessToken);
-        const proofParam = proof ? `&appsecret_proof=${proof}` : '';
-        const response = await fetch(
-            `https://graph.facebook.com/v21.0/${userId}?fields=username,name&access_token=${accessToken}${proofParam}`
-        );
-        if (response.ok) {
-            const data = await response.json();
-            return data.name || data.username || null;
-        }
-    } catch {
-        logger.warn('Could not fetch Instagram profile', { userId });
-    }
-    return null;
-}
+const PROFILE_TIMEOUT_MS = 10000;
+
+interface MetaProfile { name?: string; first_name?: string; username?: string }
 
 /**
- * Fetch Facebook user name
+ * Харилцагчийн профайлыг Graph v26-аас (`pageRead`: токен толгойд, appsecret_proof заавал) нэг
+ * удаа уншина. Алдаа гарвал null — нэр дутуу харилцагчийг дараагийн мессежээр дахин оролдоно.
  */
-async function fetchFacebookUserName(userId: string, accessToken: string): Promise<string | null> {
+async function fetchProfile(userId: string, accessToken: string, fields: string): Promise<MetaProfile | null> {
     try {
-        const proof = appsecretProof(accessToken);
-        const proofParam = proof ? `&appsecret_proof=${proof}` : '';
-        const response = await fetch(
-            `https://graph.facebook.com/v21.0/${userId}?fields=first_name,last_name,name&access_token=${accessToken}${proofParam}`
-        );
-        if (response.ok) {
-            const data = await response.json();
-            return data.name || data.first_name || null;
-        }
-    } catch {
-        logger.warn('Could not fetch Facebook profile', { userId });
+        return await pageRead<MetaProfile>(encodeURIComponent(userId), accessToken, { fields }, {
+            retry: false, signal: AbortSignal.timeout(PROFILE_TIMEOUT_MS),
+        });
+    } catch (error) {
+        logger.warn('Could not fetch Meta profile', {
+            userId,
+            status: error instanceof MetaApiError ? error.status : null,
+            code: error instanceof MetaApiError ? error.code : null,
+        });
+        return null;
     }
-    return null;
+}
+
+/** Instagram хэрэглэгчийн нэр (IGSID профайл). */
+async function fetchInstagramUserName(userId: string, accessToken: string): Promise<string | null> {
+    const data = await fetchProfile(userId, accessToken, 'username,name');
+    return data?.name || data?.username || null;
+}
+
+/** Messenger хэрэглэгчийн нэр (PSID профайл; эрхгүй бол Meta хоосон объект буцаана). */
+async function fetchFacebookUserName(userId: string, accessToken: string): Promise<string | null> {
+    const data = await fetchProfile(userId, accessToken, 'first_name,last_name,name');
+    return data?.name || data?.first_name || null;
 }
 
 /**

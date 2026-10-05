@@ -91,7 +91,8 @@ export function metaUsage(headers: Headers): { pct: number; regainMinutes: numbe
     return { pct, regainMinutes, header };
 }
 
-const graphInt = (value: unknown): number | null =>
+/** Graph алдааны `code`/`error_subcode` (тоо эсвэл тоон мөр); бусад үед null. */
+export const graphInt = (value: unknown): number | null =>
     typeof value === 'number' && Number.isInteger(value) ? value : typeof value === 'string' && /^\d{1,9}$/.test(value) ? Number(value) : null;
 
 function metaError(status: number | null, code: number | null, subcode: number | null): MetaApiError {
