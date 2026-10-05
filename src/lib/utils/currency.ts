@@ -48,3 +48,33 @@ export function formatMNTShort(value: number | null | undefined): string {
 function trimZeros(s: string): string {
     return s.includes('.') ? s.replace(/\.?0+$/, '') : s;
 }
+
+function currencyCode(currency: string | null | undefined): string | null {
+    const code = currency?.trim().toUpperCase();
+    return code && /^[A-Z]{3}$/.test(code) ? code : null;
+}
+
+/**
+ * Зарын дансны (Meta) өөрийн валютаар хадгалсан дүн — «$300.38», «€12.50». Ханшаар хөрвүүлээгүй
+ * тул ₮-ийг зөвхөн данс өөрөө MNT бол хэрэглэнэ. Валют тодорхойгүй бол тэмдэггүй тоо буцаана;
+ * дуудагч `accountCurrencyLabel`-аар «валют тодорхойгүй» гэж шошголно. Дүнгүй бол «—».
+ */
+export function formatAccountMoney(value: number | null | undefined, currency: string | null | undefined): string {
+    const amount = finiteAmount(value);
+    if (amount === null) return MISSING_AMOUNT;
+    const code = currencyCode(currency);
+    if (code === 'MNT') return formatMNT(amount);
+    if (code) {
+        try {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: code }).format(amount);
+        } catch {
+            // Intl танихгүй код — доор тэмдэггүй тоогоор.
+        }
+    }
+    return amount.toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
+
+/** Дүнгийн валютын шошго: «USD» эсвэл «валют тодорхойгүй». */
+export function accountCurrencyLabel(currency: string | null | undefined): string {
+    return currencyCode(currency) ?? 'валют тодорхойгүй';
+}

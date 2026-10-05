@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatMNT, formatMNTShort } from '../currency';
+import { accountCurrencyLabel, formatAccountMoney, formatMNT, formatMNTShort } from '../currency';
 
 describe('formatMNT', () => {
     it('formats whole tugrik amounts with thousands separators', () => {
@@ -48,5 +48,31 @@ describe('formatMNTShort', () => {
         for (const value of [null, undefined, Number.NaN, Number.POSITIVE_INFINITY]) {
             expect(formatMNTShort(value)).toBe('—');
         }
+    });
+});
+
+describe('formatAccountMoney', () => {
+    it('renders ad-account amounts in their own currency, never as ₮', () => {
+        expect(formatAccountMoney(300.38, 'USD')).toBe('$300.38');
+        expect(formatAccountMoney(1234.5, 'usd')).toBe('$1,234.50');
+        expect(formatAccountMoney(12.5, 'EUR')).toBe('€12.50');
+        expect(formatAccountMoney(0, 'USD')).toBe('$0.00');
+    });
+
+    it('uses ₮ only when the account itself is in MNT', () => {
+        expect(formatAccountMoney(1_500_000, 'MNT')).toBe('1,500,000₮');
+    });
+
+    it('shows a bare number when the currency is unknown and «—» when the amount is missing', () => {
+        expect(formatAccountMoney(300.384, null)).toBe('300.38');
+        expect(formatAccountMoney(300, 'dollars')).toBe('300');
+        expect(formatAccountMoney(null, 'USD')).toBe('—');
+        expect(formatAccountMoney(Number.NaN, 'USD')).toBe('—');
+    });
+
+    it('labels the currency or says it is unknown', () => {
+        expect(accountCurrencyLabel(' usd ')).toBe('USD');
+        expect(accountCurrencyLabel(null)).toBe('валют тодорхойгүй');
+        expect(accountCurrencyLabel('')).toBe('валют тодорхойгүй');
     });
 });

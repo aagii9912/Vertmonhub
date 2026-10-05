@@ -26,7 +26,7 @@ import {
     SelectValue,
 } from '@/components/ui/Select';
 import { cn } from '@/lib/utils';
-import { formatMNT } from '@/lib/utils/currency';
+import { accountCurrencyLabel, formatAccountMoney, formatMNT } from '@/lib/utils/currency';
 import { sourceLabel } from '@/lib/leads/labels';
 import { toast } from 'sonner';
 
@@ -78,6 +78,16 @@ interface SocialInsight { captured_at: string; reach: number; impressions: numbe
 /** Эх үүсвэрийн шинжилгээнд хэрэглэх лидийн талбарууд (/api/dashboard/leads). */
 interface LeadStat { source: string | null; status: string | null; created_at: string; }
 
+/** Сонгосон зарын данс + сүүлийн зардлын синкийн валют (/api/marketing/facebook/ads/spend-sync). */
+interface MetaAdsConfig {
+    tokenSource?: 'system' | 'user' | null;
+    accountId?: string | null;
+    status?: { currency?: string | null } | null;
+}
+
+/** 'act_123' ба '123'-г ижил данс гэж үзнэ. */
+const accountKey = (id: string | null | undefined) => (id ? id.replace(/^act_/, '') : '');
+
 /** Маркетингийн нөлөөллийн сар бүрийн цуваа (/api/dashboard/marketing-roi/timeline) */
 interface TimelineMonth {
     month: string;
@@ -110,12 +120,12 @@ interface SourceRow {
 const conversionPillVariant = (rate: number) =>
     rate >= 50 ? 'success' : rate >= 20 ? 'pending' : 'neutral';
 
-// Кампанит ажлын ROI хүснэгтийн багана
-const roiColumns: DataTableColumn<CampaignRoi>[] = [
+// Кампанит ажлын ROI хүснэгтийн багана. Зардал, CPL нь зарын дансны валютаар (₮ биш); гэрээний дүн төгрөгөөр.
+const roiColumns = (adCurrency: string | null): DataTableColumn<CampaignRoi>[] => [
     { key: 'name', header: 'Кампанит ажил', accessor: (c) => c.name, sortable: true, cell: (c) => <span className="font-medium text-foreground">{c.name}</span> },
-    { key: 'spend', header: 'Зардал', align: 'right', sortable: true, accessor: (c) => c.spend, cell: (c) => <Money value={c.spend} compact /> },
+    { key: 'spend', header: `Зардал (${accountCurrencyLabel(adCurrency)})`, align: 'right', sortable: true, accessor: (c) => c.spend, cell: (c) => <span className="tabular-nums">{formatAccountMoney(c.spend, adCurrency)}</span> },
     { key: 'leads', header: 'Лийд', align: 'center', sortable: true, accessor: (c) => c.leads, cell: (c) => <span className="tabular-nums">{c.leads}</span> },
-    { key: 'cpl', header: 'CPL', align: 'right', sortable: true, accessor: (c) => c.cpl ?? -1, cell: (c) => (c.cpl !== null ? <Money value={c.cpl} compact /> : '—') },
+    { key: 'cpl', header: 'CPL', align: 'right', sortable: true, accessor: (c) => c.cpl ?? -1, cell: (c) => <span className="tabular-nums">{formatAccountMoney(c.cpl, adCurrency)}</span> },
     { key: 'won', header: 'Хожсон', align: 'center', sortable: true, accessor: (c) => c.won, cell: (c) => <span className="tabular-nums">{c.won}</span> },
     { key: 'revenue', header: 'Гэрээний дүн', align: 'right', sortable: true, accessor: (c) => c.revenue, cell: (c) => <Money value={c.revenue} compact /> },
     {
@@ -165,7 +175,7 @@ export default function MarketingROIPage() {
     const { shop } = useAuth();
     const queryClient = useQueryClient();
     // API-аар (RBAC + shop scope сервер талд) — өмнө нь browser Supabase, зөвхөн RLS
-    const leadsQuery = useDashboardQuery<{ leads?: LeadStat[] }>(['marketing-roi', 'leads'], '/api/dashboard/leads?pageSize=1000');
+    const leadsQuery = useDashboardQuery<{ leads?: LeadStat[]; pagination?: { total?: number } }>(['marketing-roi', 'leads'], '/api/dashboard/leads?pageSize=1000');
     // Хадгалсан Facebook кампаниуд (Meta-аас синк хийхгүй)
     const campaignsQuery = useDashboardQuery<{ rows?: AdCampaign[] }>(['marketing-roi', 'campaigns'], '/api/marketing/data/ad_campaigns?eq.platform=facebook&order=updated_at.desc');
     const roiQuery = useDashboardQuery<{ roi?: RoiData | null }>(['marketing-roi', 'roi'], '/api/dashboard/marketing-roi');
@@ -176,11 +186,14 @@ export default function MarketingROIPage() {
         ['marketing-roi', 'ad-accounts'], '/api/marketing/facebook/ads/accounts', { enabled: false },
     );
     // System User токентой үед хэрэглэгчийн OAuth холболт хэрэггүй (сервер 409) тул товчийг нуух.
-    const metaTokenQuery = useDashboardQuery<{ tokenSource?: 'system' | 'user' | null }>(['marketing-roi', 'meta-token'], '/api/marketing/facebook/ads/spend-sync');
+    const metaTokenQuery = useDashboardQuery<MetaAdsConfig>(['marketing-roi', 'meta-token'], '/api/marketing/facebook/ads/spend-sync');
     const showMetaConnect = metaTokenQuery.isError || (metaTokenQuery.isSuccess && metaTokenQuery.data?.tokenSource !== 'system');
     const refetchCampaigns = campaignsQuery.refetch;
 
     const leads = leadsQuery.data?.leads ?? NO_LEADS;
+    // Лидийн нэгтгэл 1,000 мөрөөр хязгаарлагдана — нийт тоо илүү бол тайлан бүрэн биш гэж ил хэлнэ.
+    const leadsTotal = leadsQuery.data?.pagination?.total;
+    const leadsTruncated = typeof leadsTotal === 'number' && leadsTotal > leads.length;
     const campaigns = campaignsQuery.data?.rows ?? NO_CAMPAIGNS;
     // Таталт алдагдвал хуучин/тэг дүнг одоогийн тайлан мэт харуулахгүй.
     const roi = roiQuery.isError ? null : roiQuery.data?.roi ?? null;
@@ -192,6 +205,15 @@ export default function MarketingROIPage() {
     const selectedAdAccount = pickedAdAccount
         ?? adAccountsQuery.data?.selected_id
         ?? (adAccounts.length === 1 ? adAccounts[0].id : null);
+    // ad_campaigns-ийн зардал, CPC нь хадгалсан зарын дансны валютаар (cron/insights зөвхөн тэр дансны
+    // кампанит ажлыг шинэчилнэ). Валютыг сүүлийн зардлын синк эсвэл ачаалсан дансны жагсаалтаас авна;
+    // мэдэгдэхгүй бол ₮ гэж таамаглахгүй.
+    const savedAdAccount = metaTokenQuery.data?.accountId ?? null;
+    const adCurrency = metaTokenQuery.data?.status?.currency
+        || adAccounts.find((a) => !!savedAdAccount && accountKey(a.id) === accountKey(savedAdAccount))?.currency
+        || null;
+    const adCurrencyLabel = accountCurrencyLabel(adCurrency);
+    const adMoney = useCallback((value: number | null | undefined) => formatAccountMoney(value, adCurrency), [adCurrency]);
     const [campaignsLoading, setCampaignsLoading] = useState(false);
     const [campaignsError, setCampaignsError] = useState<string | null>(null);
     const adsError = campaignsError || adAccountsQuery.error?.message;
@@ -232,6 +254,8 @@ export default function MarketingROIPage() {
             const res = await dashboardFetch(`/api/marketing/facebook/ads/campaigns?ad_account_id=${encodeURIComponent(selectedAdAccount)}`);
             const data = await res.json();
             if (!res.ok) throw new Error(data?.error || 'Sync алдаа');
+            // Данс солигдсон байж болзошгүй — валютыг хадгалсан данснаас дахин уншина.
+            void metaTokenQuery.refetch();
             await refetchCampaigns();
             toast.success(`${data.synced} кампанит ажил татлаа`);
         } catch (err) {
@@ -333,11 +357,11 @@ export default function MarketingROIPage() {
             },
             {
                 key: 'spend',
-                header: 'Зарцуулалт',
+                header: `Зарцуулалт (${adCurrencyLabel})`,
                 align: 'right',
                 sortable: true,
                 accessor: (c) => Number(c.spend || 0),
-                cell: (c) => <span className="tabular-nums">{formatMNT(c.spend)}</span>,
+                cell: (c) => <span className="tabular-nums">{adMoney(c.spend)}</span>,
             },
             {
                 key: 'impressions',
@@ -369,7 +393,7 @@ export default function MarketingROIPage() {
                 align: 'right',
                 sortable: true,
                 accessor: (c) => Number(c.cpc || 0),
-                cell: (c) => <span className="tabular-nums">{Number(c.cpc || 0).toFixed(0)}₮</span>,
+                cell: (c) => <span className="tabular-nums">{adMoney(c.cpc)}</span>,
             },
             {
                 key: 'conversions',
@@ -397,8 +421,9 @@ export default function MarketingROIPage() {
                 ),
             },
         ],
-        [syncInsights],
+        [syncInsights, adCurrencyLabel, adMoney],
     );
+    const roiTableColumns = useMemo(() => roiColumns(adCurrency), [adCurrency]);
 
     // Хуучин шигээ эхний ачаалалт бүх уншилтыг хүлээнэ. Лид/кампанит ажлын өгөгдөлгүй үед л алдааны
     // карт (дахин оролдох үед spinner); өгөгдөл байхад фон шинэчлэлтийн алдааг QueryProvider toast мэдэгдэнэ.
@@ -434,6 +459,13 @@ export default function MarketingROIPage() {
                 title="Маркетинг ROI"
                 subtitle="Эх үүсвэр тус бүрийн лийд, конверс шинжилгээ"
             />
+
+            {leadsTruncated && (
+                <Alert variant="warning" className="mb-4">
+                    <AlertTitle>Тайлан бүрэн биш: {leadsTotal.toLocaleString('en-US')} лидээс эхний {leads.length.toLocaleString('en-US')}-г тооцов</AlertTitle>
+                    <AlertDescription>Нийт лид, конверс, эх үүсвэрийн шинжилгээ, сар бүрийн лидийг зөвхөн хамгийн сүүлд бүртгэгдсэн лидүүдээр тооцсон.</AlertDescription>
+                </Alert>
+            )}
 
             {!analytics ? (
                 <Card>
@@ -478,9 +510,9 @@ export default function MarketingROIPage() {
                         <>
                             {roi.basis?.note && <p className="text-sm text-muted-foreground mb-4">{roi.basis.note}</p>}
                             <StatBar columns={4}>
-                                <StatTile label="Зарын зардал" value={fmtMNT(roi.totals.spend)} icon={<DollarSign className="w-4 h-4" />} accent="warning" />
+                                <StatTile label="Зарын зардал" value={adMoney(roi.totals.spend)} helper={adCurrency ? `Зарын дансны валютаар (${adCurrencyLabel}), төгрөгт хөрвүүлээгүй` : 'Зарын дансны валют тодорхойгүй, төгрөгт хөрвүүлээгүй'} icon={<DollarSign className="w-4 h-4" />} accent="warning" />
                                 <StatTile label="Гэрээний дүн" value={fmtMNT(roi.totals.revenue)} helper="Бүх хугацааны, лидтэй холбосон" icon={<Target className="w-4 h-4" />} accent="success" />
-                                <StatTile label="ROAS" value={roi.totals.roas !== null ? `${roi.totals.roas}x` : '—'} helper={roi.totals.cpl !== null ? `CPL ${fmtMNT(roi.totals.cpl)}` : undefined} icon={<TrendingUp className="w-4 h-4" />} accent="brand" />
+                                <StatTile label="ROAS" value={roi.totals.roas !== null ? `${roi.totals.roas}x` : '—'} helper={roi.totals.cpl !== null ? `CPL ${adMoney(roi.totals.cpl)}` : undefined} icon={<TrendingUp className="w-4 h-4" />} accent="brand" />
                                 <StatTile label="Гэрээтэй лид" value={String(roi.totals.won)} helper="Хүчинтэй гэрээгээр баталгаажсан" icon={<BarChart3 className="w-4 h-4" />} accent="success" />
                             </StatBar>
 
@@ -496,7 +528,7 @@ export default function MarketingROIPage() {
                                             getRowId={(c) => c.external_id}
                                             showDensityToggle={false}
                                             hidePagination
-                                            columns={roiColumns}
+                                            columns={roiTableColumns}
                                         />
                                     </div>
                                 </Card>
@@ -662,8 +694,8 @@ export default function MarketingROIPage() {
                                     { key: 'meetings', name: 'Уулзалт' },
                                     { key: 'activity', name: 'Идэвхжүүлэлт' },
                                 ]}
-                                line={{ key: 'spend', name: 'Зарын зардал' }}
-                                lineFormatter={fmtMNT}
+                                line={{ key: 'spend', name: `Зарын зардал (${adCurrencyLabel})` }}
+                                lineFormatter={adMoney}
                             />
                         </ChartCard>
                     )}
