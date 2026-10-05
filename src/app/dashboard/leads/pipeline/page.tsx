@@ -49,6 +49,10 @@ import { cn } from '@/lib/utils';
 import { formatShortDate } from '@/lib/utils/date';
 import { formatMNTShort } from '@/lib/utils/currency';
 import { UNCATEGORIZED_KEY, UNCATEGORIZED_LABEL, categoryOptionLabel, leadDisplayName, statusLabel } from '@/lib/leads/labels';
+import {
+    PIPELINE_STAGE_RULES, daysInStage, isClosedStatus, isOverdue, isStalled, movePipelineLead, pipelineTotals,
+    type PipelineStageRule, type PipelineSummary,
+} from '@/lib/leads/pipeline';
 import { useLeadCategories, type LeadCategoryRow } from '@/hooks/useLeads';
 import { CategoryBadge } from '@/components/leads/pickers';
 import { FilterChip } from '@/components/dashboard/FilterBar';
@@ -70,29 +74,25 @@ interface Lead {
     created_at: string;
 }
 
-interface Stage {
-    key: string;
+/** Шатны дүрэм (магадлал, зогссон хоног) `lib/leads/pipeline.ts`-ээс; энд зөвхөн харагдац. */
+interface Stage extends PipelineStageRule {
     /** толгойн цэгийн өнгө (token) */
     dot: string;
     /** баганын дэвсгэр + хүрээ (token) */
     bg: string;
-    /** closed_won-руу хүрэх магадлал (weighted forecast) */
-    probability: number;
-    /** энэ шатанд хэдэн хоног зогсвол "зогссон" гэж үзэх (0 = шалгахгүй) */
-    stalledDays: number;
 }
 
-const PIPELINE_STAGES: Stage[] = [
-    { key: 'new', dot: 'bg-status-info', bg: 'bg-surface-2/50 border-border', probability: 0.1, stalledDays: 3 },
-    { key: 'contacted', dot: 'bg-status-pending', bg: 'bg-surface-2/50 border-border', probability: 0.2, stalledDays: 5 },
-    { key: 'viewing_scheduled', dot: 'bg-brand', bg: 'bg-brand-soft border-brand/30', probability: 0.4, stalledDays: 7 },
-    { key: 'offered', dot: 'bg-status-pending', bg: 'bg-surface-2/50 border-border', probability: 0.6, stalledDays: 7 },
-    { key: 'negotiating', dot: 'bg-status-info', bg: 'bg-surface-2/50 border-border', probability: 0.8, stalledDays: 10 },
-    { key: 'closed_won', dot: 'bg-status-success', bg: 'bg-surface-2/50 border-border', probability: 1, stalledDays: 0 },
-    { key: 'closed_lost', dot: 'bg-status-neutral-soft', bg: 'bg-surface-2/50 border-border', probability: 0, stalledDays: 0 },
-];
+const STAGE_STYLE: Record<string, Pick<Stage, 'dot' | 'bg'>> = {
+    new: { dot: 'bg-status-info', bg: 'bg-surface-2/50 border-border' },
+    contacted: { dot: 'bg-status-pending', bg: 'bg-surface-2/50 border-border' },
+    viewing_scheduled: { dot: 'bg-brand', bg: 'bg-brand-soft border-brand/30' },
+    offered: { dot: 'bg-status-pending', bg: 'bg-surface-2/50 border-border' },
+    negotiating: { dot: 'bg-status-info', bg: 'bg-surface-2/50 border-border' },
+    closed_won: { dot: 'bg-status-success', bg: 'bg-surface-2/50 border-border' },
+    closed_lost: { dot: 'bg-status-neutral-soft', bg: 'bg-surface-2/50 border-border' },
+};
 
-const STAGE_MAP: Record<string, Stage> = Object.fromEntries(PIPELINE_STAGES.map(s => [s.key, s]));
+const PIPELINE_STAGES: Stage[] = PIPELINE_STAGE_RULES.map(rule => ({ ...rule, ...STAGE_STYLE[rule.key] }));
 
 interface PipelineData {
     leads?: Lead[];
@@ -100,8 +100,12 @@ interface PipelineData {
 }
 
 const PIPELINE_KEY = ['leads', 'pipeline'] as const;
-// pageSize=1000 — pipeline самбар бүх лийдийг харуулна (аюулгүйн таг).
-const PIPELINE_URL = '/api/dashboard/leads?pageSize=1000';
+/** Бүх лидийн тоо, дүн (/api/dashboard/leads/pipeline-summary). */
+const PIPELINE_SUMMARY_KEY = ['leads', 'pipeline-summary'] as const;
+/** Самбарын карт: хамгийн сүүлд бүртгэгдсэн 1,000 лид (аюулгүйн таг). Тоо, дүнг summary-гаас авна. */
+const PIPELINE_CARD_LIMIT = 1000;
+
+const categoryQuery = (category: string) => (category === 'all' ? '' : `category=${encodeURIComponent(category)}`);
 
 const LOST_REASONS = [
     'Үнэ тохироогүй',
@@ -118,8 +122,6 @@ const urgencyVariant: Record<string, 'danger' | 'neutral' | 'success'> = {
     flexible: 'success',
 };
 
-const DAY_MS = 86400000;
-
 const formatBudget = (min: number | null, max: number | null) => {
     if (min && max) return `${formatMNTShort(min)} – ${formatMNTShort(max)}`;
     if (min) return `${formatMNTShort(min)}+`;
@@ -127,31 +129,7 @@ const formatBudget = (min: number | null, max: number | null) => {
     return '';
 };
 
-/** Лийдийн төлөөлөл утга (budget mid-point) — forecast-д ашиглана. */
-const leadValue = (l: Lead): number => {
-    if (l.budget_min && l.budget_max) return (l.budget_min + l.budget_max) / 2;
-    return l.budget_min || l.budget_max || 0;
-};
-
-const isClosed = (status: string) => status === 'closed_won' || status === 'closed_lost';
-
-/** Одоогийн шатанд хэдэн хоног болсон (stage_changed_at, эс бөгөөс created_at). */
-const daysInStage = (l: Lead, now: number): number => {
-    const ts = l.stage_changed_at || l.created_at;
-    if (!ts) return 0;
-    return Math.floor((now - new Date(ts).getTime()) / DAY_MS);
-};
-
-const isStalled = (l: Lead, now: number): boolean => {
-    if (isClosed(l.status)) return false;
-    const threshold = STAGE_MAP[l.status]?.stalledDays || 0;
-    return threshold > 0 && daysInStage(l, now) >= threshold;
-};
-
-const isOverdue = (l: Lead, now: number): boolean =>
-    !!l.next_followup_at && !isClosed(l.status) && new Date(l.next_followup_at).getTime() < now;
-
-const noNextStep = (l: Lead): boolean => !l.next_followup_at && !isClosed(l.status);
+const formatCount = (n: number) => n.toLocaleString('en-US');
 
 /* -------------------------------------------------------------------------- */
 /*  Lead card (дотоод харагдац) — drag overlay болон багана дотор хоёуланд нь   */
@@ -200,7 +178,7 @@ function LeadCardBody({ lead, now, category }: { lead: Lead; now: number; catego
                     </span>
                 )}
                 {/* Шатанд байсан хугацаа — зогссон бол улаан */}
-                {!isClosed(lead.status) && (
+                {!isClosedStatus(lead.status) && (
                     <span className={cn(
                         'px-1.5 py-0.5 rounded text-2xs font-medium inline-flex items-center gap-0.5 tabular-nums',
                         stalled ? 'bg-status-danger-soft text-status-danger' : 'bg-surface-2 text-muted-foreground/80',
@@ -226,7 +204,7 @@ function LeadCardBody({ lead, now, category }: { lead: Lead; now: number; catego
                     <Calendar className="w-3 h-3" />
                     {overdue ? 'Хугацаа хэтэрсэн: ' : 'Follow-up: '}{formatShortDate(lead.next_followup_at)}
                 </p>
-            ) : !isClosed(lead.status) && (
+            ) : !isClosedStatus(lead.status) && (
                 <p className="text-2xs mt-1.5 flex items-center gap-1 text-status-pending">
                     <AlertTriangle className="w-3 h-3" />
                     Дараагийн алхамгүй
@@ -283,6 +261,7 @@ function DraggableLeadCard({
 function StageColumn({
     stage,
     stageLeads,
+    stageCount,
     stageValue,
     now,
     activeDragId,
@@ -291,6 +270,8 @@ function StageColumn({
 }: {
     stage: Stage;
     stageLeads: Lead[];
+    /** Шатны бүх лид (серверийн тоолол) — ачаалсан картаас олон байж болно. */
+    stageCount: number;
     stageValue: number;
     now: number;
     activeDragId: string | null;
@@ -302,6 +283,7 @@ function StageColumn({
     return (
         <div
             ref={setNodeRef}
+            data-stage={stage.key}
             className={cn(
                 'flex-1 min-w-[240px] rounded-xl border p-3 transition-all',
                 stage.bg,
@@ -316,11 +298,16 @@ function StageColumn({
                     {stage.key === 'closed_lost' && <XCircle className="w-3.5 h-3.5 text-muted-foreground" />}
                     {statusLabel(stage.key)}
                 </span>
-                <span className="text-xs text-muted-foreground/70 ml-auto tabular-nums">{stageLeads.length}</span>
+                <span className="text-xs text-muted-foreground/70 ml-auto tabular-nums">{formatCount(stageCount)}</span>
             </div>
             {stageValue > 0 && (
                 <p className="text-2xs text-muted-foreground -mt-2 mb-2 flex items-center gap-0.5 tabular-nums">
                     <DollarSign className="w-3 h-3" />{formatMNTShort(stageValue)}
+                </p>
+            )}
+            {stageLeads.length < stageCount && (
+                <p className="text-2xs text-status-pending -mt-1 mb-2 tabular-nums">
+                    {formatCount(stageLeads.length)} / {formatCount(stageCount)} карт харагдаж байна
                 </p>
             )}
 
@@ -343,15 +330,20 @@ function StageColumn({
 export default function PipelinePage() {
     const queryClient = useQueryClient();
     const reduced = useReducedMotion();
-    const { data, error, isFetching, refetch, dataUpdatedAt } = useDashboardQuery<PipelineData>(PIPELINE_KEY, PIPELINE_URL);
     const { data: categories = [] } = useLeadCategories();
-    // Ангиллаар шүүх — ачаалсан лидүүд дээр (самбар, таамаг хоёуланд).
+    // Ангиллаар шүүх — сервер дээр: карт ба бүх лидийн тоо, таамаг хоёуланд.
     const [category, setCategory] = useState('all');
-    const allLeads = data?.leads ?? [];
-    const leads = category === 'all' ? allLeads
-        : allLeads.filter(l => category === UNCATEGORIZED_KEY ? !l.category_id : l.category_id === category);
+    const filter = categoryQuery(category);
+    const list = useDashboardQuery<PipelineData>(
+        PIPELINE_KEY, `/api/dashboard/leads?pageSize=${PIPELINE_CARD_LIMIT}${filter ? `&${filter}` : ''}`, { keepPreviousData: true });
+    const summaryQuery = useDashboardQuery<PipelineSummary>(
+        PIPELINE_SUMMARY_KEY, `/api/dashboard/leads/pipeline-summary${filter ? `?${filter}` : ''}`, { keepPreviousData: true });
+    const { data, dataUpdatedAt } = list;
+    const summary = summaryQuery.data;
+    const leads = data?.leads ?? [];
     const categoryOf = (lead: Lead) => (lead.category_id ? categories.find(c => c.id === lead.category_id) ?? null : null);
-    const total = data?.pagination?.total ?? allLeads.length;
+    // Самбарт ачаалсан картаас олон лид байвал (жагсаалтын нийт тоо) ил хэлнэ.
+    const listTotal = data?.pagination?.total ?? leads.length;
     const [activeDragId, setActiveDragId] = useState<string | null>(null);
     const [lostModal, setLostModal] = useState<{ leadId: string; name: string } | null>(null);
     // Өгөгдөл ирэх бүрд (dataUpdatedAt) "хоног" тооцоо ч шинэчлэгдэнэ.
@@ -382,35 +374,50 @@ export default function PipelinePage() {
             current ? { ...current, leads: (current.leads ?? []).map(update) } : current);
     }
 
+    /** Харагдаж буй (идэвхтэй) тооллыг л засна — бусад ангиллын хадгалсан тоолол дахин уншигдана. */
+    function updateCachedSummary(update: (current: PipelineSummary) => PipelineSummary) {
+        queryClient.setQueriesData<PipelineSummary>({ queryKey: PIPELINE_SUMMARY_KEY, type: 'active' }, (current) =>
+            current ? update(current) : current);
+    }
+
     async function moveToStage(leadId: string, newStatus: string, lostReason?: string) {
         // Зөвхөн тухайн лийдийн хуучин төлвийг хадгална — алдаа гарвал бусад зэрэгцээ
         // зөөлтийг устгахгүйгээр энэ нэг картыг л буцаана.
-        const original = allLeads.find(l => l.id === leadId);
+        const original = leads.find(l => l.id === leadId);
+        if (!original) return;
         const stampedAt = new Date().toISOString();
-        const applyMove = (l: Lead): Lead => l.id === leadId
-            ? {
-                ...l,
-                status: newStatus,
-                stage_changed_at: stampedAt,
-                lost_reason: newStatus === 'closed_lost' ? (lostReason ?? l.lost_reason) : null,
-            }
-            : l;
+        const moved: Lead = {
+            ...original,
+            status: newStatus,
+            stage_changed_at: stampedAt,
+            lost_reason: newStatus === 'closed_lost' ? (lostReason ?? original.lost_reason) : null,
+        };
+        const movedAt = Date.now();
         // Явж буй дахин таталтыг (хуучин төлөвтэй байж болзошгүй) цуцалж, дараа нь зөөлтийг тусгана.
         void queryClient.cancelQueries({ queryKey: PIPELINE_KEY });
-        updateCachedLeads(applyMove);
+        void queryClient.cancelQueries({ queryKey: PIPELINE_SUMMARY_KEY });
+        updateCachedLeads(l => (l.id === leadId ? moved : l));
+        updateCachedSummary(current => movePipelineLead(current, original, moved, movedAt));
         try {
             const res = await dashboardFetch(`/api/dashboard/leads/${leadId}`, {
                 method: 'PATCH',
                 body: JSON.stringify({ status: newStatus, ...(lostReason ? { lost_reason: lostReason } : {}) }),
             });
             if (!res.ok) throw new Error('Failed');
-            // Хүсэлтийн явцад самбар дахин татагдаж эхэлсэн бол серверийн шинэ төлвөөр дахин татна.
+            // Хүсэлтийн явцад самбар/тоолол дахин татагдаж эхэлсэн бол серверийн шинэ төлвөөр дахин татна.
             if (queryClient.isFetching({ queryKey: PIPELINE_KEY })) void queryClient.invalidateQueries({ queryKey: PIPELINE_KEY });
+            if (queryClient.isFetching({ queryKey: PIPELINE_SUMMARY_KEY })) void queryClient.invalidateQueries({ queryKey: PIPELINE_SUMMARY_KEY });
             // Лидийн бусад жагсаалт/тоо дараагийн нээлтэд шинэчлэгдэнэ (самбарыг дахин татахгүй).
-            void queryClient.invalidateQueries({ queryKey: ['leads'], predicate: (query) => query.queryKey[1] !== 'pipeline' });
+            void queryClient.invalidateQueries({
+                queryKey: ['leads'],
+                predicate: (query) => query.queryKey[1] !== 'pipeline' && query.queryKey[1] !== 'pipeline-summary',
+            });
             toast.success('Статус солигдлоо');
         } catch {
-            if (original) updateCachedLeads(l => l.id === leadId ? original : l);
+            updateCachedLeads(l => (l.id === leadId ? original : l));
+            updateCachedSummary(current => movePipelineLead(current, moved, original, movedAt));
+            // Нэгтгэлийг серверийн бодит тоогоор баталгаажуулна.
+            void queryClient.invalidateQueries({ queryKey: PIPELINE_SUMMARY_KEY });
             toast.error('Статус солиход алдаа');
         }
     }
@@ -434,27 +441,22 @@ export default function PipelinePage() {
         moveToStage(leadId, stageKey);
     };
 
-    // ---- Forecast / hygiene нэгтгэлүүд ----
-    const activeLeads = leads.filter(l => !isClosed(l.status));
-    const openValue = activeLeads.reduce((s, l) => s + leadValue(l), 0);
-    const weightedForecast = activeLeads.reduce((s, l) => s + leadValue(l) * (STAGE_MAP[l.status]?.probability || 0), 0);
-    const wonValue = leads.filter(l => l.status === 'closed_won').reduce((s, l) => s + leadValue(l), 0);
-    const stalledCount = activeLeads.filter(l => isStalled(l, now)).length;
-    const noStepCount = activeLeads.filter(noNextStep).length;
-
     const activeLead = activeDragId ? leads.find(l => l.id === activeDragId) ?? null : null;
 
-    if (error && !data) {
+    // Самбар картгүйгээр тоо, таамгийг (эсвэл эсрэгээр) харуулахгүй: аль нэг нь уншигдаагүй бол алдаа.
+    const loadError = (!data && list.error) || (!summary && summaryQuery.error);
+    if (loadError) {
         return (
             <Alert variant="danger">
                 <AlertTitle>Лийд татахад алдаа</AlertTitle>
-                <AlertDescription>{error.message}</AlertDescription>
-                <Button size="sm" variant="secondary" className="self-start" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</Button>
+                <AlertDescription>{loadError.message}</AlertDescription>
+                <Button size="sm" variant="secondary" className="self-start" disabled={list.isFetching || summaryQuery.isFetching}
+                    onClick={() => { if (!data) void list.refetch(); if (!summary) void summaryQuery.refetch(); }}>Дахин оролдох</Button>
             </Alert>
         );
     }
 
-    if (!data) {
+    if (!data || !summary) {
         return (
             <div className="flex items-center justify-center min-h-[400px]">
                 <Loader2 className="w-8 h-8 animate-spin text-brand-strong" />
@@ -462,12 +464,16 @@ export default function PipelinePage() {
         );
     }
 
+    // ---- Forecast / hygiene: бүх лидээр (серверийн тоолол); карт нь зөвхөн ачаалсан хэсэг ----
+    const totals = pipelineTotals(summary);
+    const stageSummary = new Map<string, PipelineSummary['stages'][number]>(summary.stages.map(s => [s.status, s]));
+
     return (
         <div>
             <PageHeader
                 eyebrow="Лид"
                 title="Лидийн pipeline"
-                subtitle={`${leads.length} лийд • Чирж зөөнө үү`}
+                subtitle={`${formatCount(totals.total)} лийд • Чирж зөөнө үү`}
                 breadcrumbs={[
                     { label: 'Лийдүүд', href: '/dashboard/leads' },
                     { label: 'Лидийн pipeline' },
@@ -481,27 +487,28 @@ export default function PipelinePage() {
                     <div className="flex items-center gap-4">
                         <div className="text-right">
                             <p className="text-2xs uppercase tracking-wide text-muted-foreground/70">Нээлттэй дүн</p>
-                            <p className="text-sm font-semibold text-foreground tabular-nums">{formatMNTShort(openValue)}</p>
+                            <p className="text-sm font-semibold text-foreground tabular-nums">{formatMNTShort(totals.openValue)}</p>
                         </div>
                         <div className="text-right">
                             <p className="text-2xs uppercase tracking-wide text-muted-foreground/70">Жинлэсэн таамаг</p>
-                            <p className="text-sm font-bold text-brand-strong tabular-nums">{formatMNTShort(weightedForecast)}</p>
+                            <p className="text-sm font-bold text-brand-strong tabular-nums">{formatMNTShort(totals.weightedForecast)}</p>
                         </div>
                         <div className="text-right">
                             <p className="text-2xs uppercase tracking-wide text-muted-foreground/70">Хаасан</p>
-                            <p className="text-sm font-semibold text-status-success tabular-nums">{formatMNTShort(wonValue)}</p>
+                            <p className="text-sm font-semibold text-status-success tabular-nums">{formatMNTShort(totals.wonValue)}</p>
                         </div>
                     </div>
                 }
             />
 
-            {/* Truncation анхааруулга — 1000-аас олон лийдтэй бол самбар бүгдийг
-                харуулахгүй тул forecast/тоо дутуу болохыг мэдэгдэнэ. */}
-            {total > allLeads.length && (
-                <div className="flex items-center gap-1.5 mb-3 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-status-danger-soft text-status-danger">
-                    <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                    Нийт {total} лийдээс эхний {allLeads.length} харагдаж байна — таамаг/тоо дутуу. Шүүлтүүрээр багасгана уу.
-                </div>
+            {/* Карт хамгийн сүүлийн 1,000 лидээр хязгаарлагдана; тоо, дүн, таамаг бүх лидээр (summary). */}
+            {listTotal > leads.length && (
+                <Alert variant="warning" className="mb-3">
+                    <AlertTitle>Картын жагсаалт бүрэн биш: {formatCount(listTotal)} лидээс хамгийн сүүлд бүртгэгдсэн {formatCount(leads.length)} лидийн карт харагдаж байна</AlertTitle>
+                    <AlertDescription>
+                        Баганын тоо, нээлттэй дүн, жинлэсэн таамаг, хаасан дүн, зогссон ба дараагийн алхамгүй лидийн тоог бүх лидээр тооцсон. Харагдахгүй лидийг «Лийдүүд» жагсаалтаас хайж нээнэ үү.
+                    </AlertDescription>
+                </Alert>
             )}
 
             {categories.length > 0 && (
@@ -512,18 +519,18 @@ export default function PipelinePage() {
             )}
 
             {/* Hygiene анхааруулга */}
-            {(stalledCount > 0 || noStepCount > 0) && (
+            {(totals.stalled > 0 || totals.noNextStep > 0) && (
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
-                    {stalledCount > 0 && (
+                    {totals.stalled > 0 && (
                         <StatusPill variant="danger" className="px-2.5 py-1">
                             <AlertTriangle className="w-3.5 h-3.5" />
-                            {stalledCount} зогссон лийд
+                            {formatCount(totals.stalled)} зогссон лийд
                         </StatusPill>
                     )}
-                    {noStepCount > 0 && (
+                    {totals.noNextStep > 0 && (
                         <StatusPill variant="pending" className="px-2.5 py-1">
                             <Clock className="w-3.5 h-3.5" />
-                            {noStepCount} дараагийн алхамгүй
+                            {formatCount(totals.noNextStep)} дараагийн алхамгүй
                         </StatusPill>
                     )}
                 </div>
@@ -540,13 +547,13 @@ export default function PipelinePage() {
                     <div className="flex gap-3" style={{ minWidth: `${PIPELINE_STAGES.length * 260}px` }}>
                         {PIPELINE_STAGES.map(stage => {
                             const stageLeads = leads.filter(l => l.status === stage.key);
-                            const stageValue = stageLeads.reduce((s, l) => s + leadValue(l), 0);
                             return (
                                 <StageColumn
                                     key={stage.key}
                                     stage={stage}
                                     stageLeads={stageLeads}
-                                    stageValue={stageValue}
+                                    stageCount={stageSummary.get(stage.key)?.count ?? 0}
+                                    stageValue={stageSummary.get(stage.key)?.value ?? 0}
                                     now={now}
                                     activeDragId={activeDragId}
                                     reduced={reduced}
