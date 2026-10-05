@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
+import { managerActivityFixture } from './support/manager-activity';
 import { mkdirSync } from 'node:fs';
 
 const shopId = '00000000-0000-4000-8000-000000000110';
@@ -14,6 +15,8 @@ const managers = [
 ];
 type Identity = typeof admin | typeof managers[number];
 const shop = { id: shopId, name: 'Тест байгууллага', setup_completed: true, is_active: true };
+/** «Утас» талбарт бичих утга → серверт очих нормчилсон 8 оронтой утас (хоосон бол илгээхгүй). */
+const managerPhones = [{ typed: '+976 9911-2233', sent: '99112233' }, { typed: '', sent: undefined }];
 
 function data() {
     return { projects: [] as Record<string, unknown>[], users: [] as Record<string, unknown>[],
@@ -70,7 +73,9 @@ async function fixtures(page: Page, identity: Identity, state: State) {
         if (path === '/api/dashboard/mode') return reply({ mode: 'personal', managerName: identity.full_name, isManager: true, canViewTeam: false });
         if (path === '/api/dashboard/nav-counts') return reply({ leads: state.lead ? 1 : 0, inbox: 0, meetings: state.viewings.length });
         if (path === '/api/dashboard/leads/projects') return reply({ projects: state.projects });
+        if (path === '/api/dashboard/lead-categories') return reply({ categories: [] });
         if (path === '/api/dashboard/managers') return reply({ managers: managers.map(manager => ({ ...manager, name: manager.full_name, is_active: true, project_ids: [projectId], assignable: identity.role !== 'sales_manager' })), mineName: identity.full_name });
+        if (path === '/api/dashboard/reports/manager-activity') return reply(managerActivityFixture(url, identity.full_name));
         if (path === '/api/dashboard/my-stats') return reply({ manager: { name: identity.full_name, isSelf: true, inRoster: true, hasAccount: true }, onboarding: false, period: 'today', missing: [],
             kpis: { activeLeads: state.lead ? 1 : 0, newLeads: state.lead ? 1 : 0, leadsByStatus: {}, viewingsToday: 0,
                 viewingsThisWeek: state.viewings.length, activeContracts: 0, overdueContracts: 0, salesThisMonth: 0, salesThisYear: 0, contractCountThisYear: 0 },
@@ -232,11 +237,12 @@ for (const mobile of [false, true]) {
         await page.screenshot({ path: `output/onboarding/${mobile ? 'mobile' : 'desktop'}-project.png`, fullPage: true });
 
         await page.goto('/admin/users');
-        for (const manager of managers) {
+        for (const [index, manager] of managers.entries()) {
             await page.getByRole('button', { name: 'Хэрэглэгч нэмэх', exact: true }).click();
             const modal = page.getByRole('dialog', { name: 'Хэрэглэгч нэмэх', exact: true });
             await modal.getByPlaceholder('Нэр оруулах', { exact: true }).fill(manager.full_name);
             await modal.getByPlaceholder('email@example.com', { exact: true }).fill(manager.email);
+            await modal.getByLabel('Утас', { exact: true }).fill(managerPhones[index].typed);
             await modal.getByPlaceholder('Хамгийн багадаа 8 тэмдэгт', { exact: true }).fill(password);
             await modal.getByRole('button', { name: 'Борлуулалтын менежер', exact: true }).click();
             await expect(modal.locator('select')).toHaveValue(shopId);
@@ -250,9 +256,12 @@ for (const mobile of [false, true]) {
         expect(state.users).toHaveLength(2);
         const userWrites = state.writes.filter(write => write.path === '/api/admin/users');
         expect(userWrites).toHaveLength(2);
-        for (const [index, write] of userWrites.entries()) expect(write.body).toMatchObject({
-            email: managers[index].email, full_name: managers[index].full_name, role: 'sales_manager', shop_id: shopId,
-        });
+        for (const [index, write] of userWrites.entries()) {
+            expect(write.body).toMatchObject({
+                email: managers[index].email, full_name: managers[index].full_name, role: 'sales_manager', shop_id: shopId,
+            });
+            expect(write.body.phone).toBe(managerPhones[index].sent);
+        }
 
         const managerContext = await browser.newContext({ viewport, timezoneId: 'Asia/Ulaanbaatar', bypassCSP: true, serviceWorkers: 'block' });
         const managerPage = await managerContext.newPage();

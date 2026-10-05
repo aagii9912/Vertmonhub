@@ -64,6 +64,8 @@ export interface LeadsSummaryLead {
     source: string | null;
     project_id: string | null;
     sales_manager_name: string | null;
+    /** Төслийн лидийн ангилал (lead_categories); ангилалгүй бол null. */
+    category_id?: string | null;
 }
 
 export interface LeadsSummaryProject {
@@ -89,6 +91,8 @@ export interface LeadsSummary {
     byProject: { projectId: string | null; name: string | null; count: number; won: number }[];
     /** Хариуцагч менежер (sales_manager_name); хариуцагчгүй нь `manager: null`, төгсгөлд. */
     byManager: { manager: string | null; count: number; won: number }[];
+    /** Лидийн ангилал (id; нэрийг UI төслийн ангиллаас авна); ангилалгүй нь `categoryId: null`, төгсгөлд. */
+    byCategory: { categoryId: string | null; count: number; won: number }[];
 }
 
 /** API-ийн хариу: нэгтгэл + шийдсэн хугацаа (UI шошголоно). */
@@ -109,6 +113,7 @@ export function buildLeadsSummary(leads: LeadsSummaryLead[], projects: LeadsSumm
     const sources = new Map<string, Tally>();
     const byProject = new Map<string | null, Tally>();
     const byManager = new Map<string | null, Tally>();
+    const byCategory = new Map<string | null, Tally>();
     const projectNames = new Map(projects.map(project => [project.id, project.name]));
     const active = new Set<string>(ACTIVE_STATUSES);
     let open = 0;
@@ -123,6 +128,7 @@ export function buildLeadsSummary(leads: LeadsSummaryLead[], projects: LeadsSumm
         tally(sources, lead.source || 'other', won);
         tally(byProject, lead.project_id || null, won);
         tally(byManager, lead.sales_manager_name?.trim() || null, won);
+        tally(byCategory, lead.category_id || null, won);
     }
 
     return {
@@ -139,6 +145,7 @@ export function buildLeadsSummary(leads: LeadsSummaryLead[], projects: LeadsSumm
         byProject: ranked(byProject, id => (id ? projectNames.get(id) ?? '' : ''))
             .map(([projectId, row]) => ({ projectId, name: projectId ? projectNames.get(projectId) ?? null : null, ...row })),
         byManager: ranked(byManager).map(([manager, row]) => ({ manager, ...row })),
+        byCategory: ranked(byCategory).map(([categoryId, row]) => ({ categoryId, ...row })),
     };
 }
 

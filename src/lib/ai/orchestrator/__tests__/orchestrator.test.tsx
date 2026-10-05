@@ -92,7 +92,7 @@ describe('Agent registry бүрэн бүтэн байдал', () => {
         }
     });
     it('MUTATING_TOOL_NAMES шинэ tool-уудыг агуулна', () => {
-        ['schedule_viewing', 'delete_viewing', 'create_contract', 'delete_contract', 'create_customer', 'delete_customer', 'attach_file', 'bulk_update_leads', 'invite_user', 'assign_role', 'create_role']
+        ['schedule_viewing', 'delete_viewing', 'create_contract', 'transfer_contract', 'delete_contract', 'create_customer', 'delete_customer', 'attach_file', 'bulk_update_leads', 'invite_user', 'assign_role', 'create_role']
             .forEach((t) => expect(MUTATING_TOOL_NAMES, t).toContain(t));
     });
 });
@@ -100,7 +100,7 @@ describe('Agent registry бүрэн бүтэн байдал', () => {
 describe('Wave 1 — өдөр тутмын tool-ууд', () => {
     it('AUTO tool бүр WRITE tool бөгөөд устгах/төлбөр/шилжүүлэлт AUTO биш', () => {
         AUTO_TOOL_NAMES.forEach((t) => expect(WRITE_TOOL_NAMES, t).toContain(t));
-        ['delete_lead', 'add_contract_payment', 'mark_payment_paid', 'assign_lead_manager', 'reschedule_viewing', 'create_contract'].forEach((t) => expect(AUTO_TOOL_NAMES).not.toContain(t));
+        ['delete_lead', 'add_contract_payment', 'mark_payment_paid', 'assign_lead_manager', 'reschedule_viewing', 'create_contract', 'transfer_contract'].forEach((t) => expect(AUTO_TOOL_NAMES).not.toContain(t));
     });
     it('шинэ tool бүр тодорхойлолттой бөгөөд Claude schema болж хөрвөнө', () => {
         const all = TOOL_DEFINITIONS.map((t) => t.name);
@@ -131,7 +131,7 @@ describe('Wave 1 — өдөр тутмын tool-ууд', () => {
     it('marketing cannot read or mutate contracts, properties or viewings through AI', async () => {
         const perms = { ...ROLE_PERMISSIONS.marketing, role: 'marketing' };
         const visible = dataToolsForPerms(perms).map(tool => tool.name);
-        for (const tool of ['list_contracts', 'get_contract_details', 'create_contract', 'add_contract_payment', 'mark_payment_paid', 'update_property_price', 'schedule_viewing']) {
+        for (const tool of ['list_contracts', 'get_contract_details', 'create_contract', 'transfer_contract', 'add_contract_payment', 'mark_payment_paid', 'update_property_price', 'schedule_viewing']) {
             expect(visible).not.toContain(tool);
             expect(await executeDataTool(tool, {}, 'shop1', perms, 'u1', true)).toHaveProperty('error');
         }

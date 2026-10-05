@@ -21,7 +21,8 @@ function fakeDb(tables: Record<string, Row[]>) {
             lte: (key: string, value: string) => { filters.push(row => String(row[key]) <= value); return query; },
             gte: (key: string, value: string) => { filters.push(row => String(row[key]) >= value); return query; },
             lt: (key: string, value: string) => { filters.push(row => String(row[key]) < value); return query; },
-            order: () => query, range: () => query,
+            // service_logs-ийн OR шүүлтүүрийг энд хялбарчилна (activity-load.test бүрэн шалгана).
+            or: () => query, order: () => query, range: () => query,
             then: (resolve: (value: unknown) => unknown) => {
                 let rows = (tables[table] ?? []).filter(row => filters.every(filter => filter(row)));
                 // Бодит query шиг: шинэ snapshot эхэнд.
@@ -46,8 +47,23 @@ describe('loadSalesKpi', () => {
                 ]),
                 snapshot('too-late', '2026-11-20', [sale('4', 'Номин', { 'Нийт дүн': '999999' })]),
             ],
-            sales_managers: [{ shop_id: 's', name: 'Номин', is_active: true }, { shop_id: 's', name: 'Сараа', is_active: true }, { shop_id: 's', name: 'Хуучин', is_active: false }],
-            sales_kpi_months: [{ shop_id: 's', year: 2026, month: 10, manager_name: 'Номин', plans: { contract_amount: 400, cash_collected: 160, new_meetings: 2 }, manual: { calls_chats: 30 }, review: { management: 5 } }],
+            sales_managers: [{ shop_id: 's', name: 'Номин', user_id: 'u-nomin', is_active: true }, { shop_id: 's', name: 'Сараа', user_id: 'u-saraa', is_active: true }, { shop_id: 's', name: 'Хуучин', user_id: null, is_active: false }],
+            sales_kpi_months: [
+                { shop_id: 's', year: 2026, month: 10, manager_name: 'Номин', plans: { contract_amount: 400, cash_collected: 160, new_meetings: 2 }, manual: { calls_chats: 30 }, daily: { calls: 20 }, review: { management: 5 } },
+                { shop_id: 's', year: 2026, month: 10, manager_name: 'Сараа', plans: { calls_chats: 4, service_resolution: 100 }, manual: { calls_chats: null }, daily: {}, review: {} },
+            ],
+            lead_activities: [
+                { shop_id: 's', type: 'call', created_by: 'u-nomin', created_by_name: 'Номин', created_at: '2026-10-02T03:00:00.000Z' },
+                { shop_id: 's', type: 'call', created_by: 'u-saraa', created_by_name: 'Сараа С.', created_at: '2026-10-02T03:00:00.000Z' },
+                { shop_id: 's', type: 'call', created_by: 'u-saraa', created_by_name: 'Сараа', created_at: '2026-10-31T15:59:00.000Z' },
+                // УБ-ийн 11-р сарын 1 — энэ сард орохгүй.
+                { shop_id: 's', type: 'call', created_by: 'u-saraa', created_by_name: 'Сараа', created_at: '2026-10-31T16:00:00.000Z' },
+                { shop_id: 's', type: 'note', created_by: 'u-saraa', created_by_name: 'Сараа', created_at: '2026-10-03T03:00:00.000Z' },
+            ],
+            service_logs: [
+                { shop_id: 's', manager_name: 'Сараа', priority: 'urgent', status: 'resolved', created_at: '2026-10-05T00:00:00.000Z', resolved_at: '2026-10-05T10:00:00.000Z' },
+                { shop_id: 's', manager_name: 'Сараа', priority: 'urgent', status: 'open', created_at: '2026-10-06T00:00:00.000Z', resolved_at: null },
+            ],
             property_viewings: [
                 { shop_id: 's', status: 'completed', meeting_type: 'new_customer', deleted_at: null, scheduled_at: '2026-10-10T03:00:00.000Z', sales_manager_name: 'Номин' },
                 { shop_id: 's', status: 'completed', meeting_type: 'repeat_customer', deleted_at: null, scheduled_at: '2026-10-10T03:00:00.000Z', sales_manager_name: 'Номин' },
@@ -63,12 +79,18 @@ describe('loadSalesKpi', () => {
         expect(report.managers.map(row => row.manager)).toEqual(['Номин', 'Сараа']);
         const nomin = report.managers[0];
         const actual = (key: string) => nomin.items.find(item => item.key === key)!.actual;
-        expect([actual('contract_amount'), actual('cash_collected'), actual('overdue_collected'), actual('new_meetings'), actual('calls_chats'), actual('followup'), actual('management')])
-            .toEqual([400, 160, 20, 1, 30, 50, 5]);
-        expect(nomin).toMatchObject({ contracts: 1, review: { management: 5 }, coveredWeight: 75 });
-        // (25 + 25 + 5 + 15) / 75
-        expect(nomin.total).toBe(93.3);
-        expect(report.managers[1].items.find(item => item.key === 'contract_amount')).toMatchObject({ actual: 0, missing: 'plan' });
+        expect([actual('contract_amount'), actual('cash_collected'), actual('overdue_collected'), actual('new_meetings'), actual('calls_chats'), actual('followup'), actual('service_resolution'), actual('management')])
+            .toEqual([400, 160, 20, 1, 30, 50, null, 5]);
+        // Гараар оруулсан 30 нь CRM-ийн 1 дуудлагыг орлоно (нэмэхгүй).
+        expect(nomin).toMatchObject({ contracts: 1, review: { management: 5 }, coveredWeight: 70, manual: { calls_chats: 30 }, crm: { calls: 1 }, daily: { calls: 20, meetings: null } });
+        // (25 + 25 + 5 + 10) / 70
+        expect(nomin.total).toBe(92.9);
+        const saraa = report.managers[1];
+        expect(saraa.items.find(item => item.key === 'contract_amount')).toMatchObject({ actual: 0, missing: 'plan' });
+        // CRM: данс холбоосоор 2 дуудлага (нэр зөрсөн ч), гар тоо цэвэрлэгдсэн; SLA: 1 хугацаандаа, 1 хэтэрсэн.
+        expect(saraa).toMatchObject({ manual: { calls_chats: null }, crm: { calls: 2 } });
+        expect(saraa.items.find(item => item.key === 'calls_chats')).toMatchObject({ actual: 2, plan: 4, score: 5 });
+        expect(saraa.items.find(item => item.key === 'service_resolution')).toMatchObject({ actual: 50, attainmentPct: 50, score: 2.5 });
     });
 
     it('marks ERP figures unavailable instead of zero without the needed snapshots, and limits to one manager', async () => {

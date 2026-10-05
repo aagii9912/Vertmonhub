@@ -86,6 +86,12 @@ import * as facebookCallback from '@/app/api/auth/facebook/callback/route';
 import * as facebookPages from '@/app/api/auth/facebook/pages/route';
 import * as instagram from '@/app/api/auth/instagram/route';
 import * as instagramCallback from '@/app/api/auth/instagram/callback/route';
+import * as instagramAccounts from '@/app/api/auth/instagram/accounts/route';
+import * as pageInfo from '@/app/api/marketing/facebook/route';
+import * as pageInsights from '@/app/api/marketing/facebook/insights/route';
+import * as pagePosts from '@/app/api/marketing/facebook/posts/route';
+import * as pagePublish from '@/app/api/marketing/facebook/publish/route';
+import * as instagramData from '@/app/api/marketing/instagram/route';
 import * as navCounts from '@/app/api/dashboard/nav-counts/route';
 import * as director from '@/app/api/dashboard/director/route';
 import * as adCampaigns from '@/app/api/marketing/facebook/ads/campaigns/route';
@@ -192,9 +198,16 @@ const moduleCases: [string, () => Promise<Response>][] = [
     ['Facebook OAuth start', () => facebook.GET(request('/api/auth/facebook'))],
     ['Facebook OAuth callback', () => facebookCallback.GET(request('/api/auth/facebook/callback?code=fixture'))],
     ['Facebook pages', () => facebookPages.GET()],
-    ['Facebook page token', () => facebookPages.POST(request('/api/auth/facebook/pages', 'POST', { pageId: 'fixture' }))],
+    ['Facebook page selection', () => facebookPages.POST(request('/api/auth/facebook/pages', 'POST', { pageId: 'fixture' }))],
     ['Instagram OAuth start', () => instagram.GET(request('/api/auth/instagram'))],
     ['Instagram OAuth callback', () => instagramCallback.GET(request('/api/auth/instagram/callback?code=fixture'))],
+    ['Instagram accounts', () => instagramAccounts.GET()],
+    ['Instagram account selection', () => instagramAccounts.POST(request('/api/auth/instagram/accounts', 'POST', { pageId: '101' }))],
+    ['Facebook page info', () => pageInfo.GET(request('/api/marketing/facebook'))],
+    ['Facebook page insights', () => pageInsights.GET(request('/api/marketing/facebook/insights'))],
+    ['Facebook page posts', () => pagePosts.GET(request('/api/marketing/facebook/posts'))],
+    ['Facebook publish', () => pagePublish.POST(request('/api/marketing/facebook/publish', 'POST', { message: 'Fixture' }))],
+    ['Instagram data', () => instagramData.GET(request('/api/marketing/instagram'))],
 ];
 
 describe.each([false, true])('module boundaries (signed in: %s)', signedIn => {
@@ -265,6 +278,17 @@ describe('allowed operations, field permissions and tenant boundaries', () => {
         expect(state.filters).toContainEqual({ table: 'shops', column: 'id', value: 'fixture-shop' });
         expect(state.writes).toContainEqual({ table: 'shops', data: { custom_knowledge: { fixture: 'Text' } } });
         expect((await (await shop.GET()).json()).shop).not.toHaveProperty('facebook_page_access_token');
+    });
+    it('shop update no longer accepts Facebook/Instagram connections or tokens from the browser', async () => {
+        asRole('marketing');
+        for (const body of [
+            { facebook_page_access_token: 'EAAB-fixture' }, { facebook_page_id: '101', facebook_page_name: 'Page' },
+            { facebook_user_access_token: 'EAAB-fixture' }, { instagram_access_token: 'IG-fixture' }, { instagram_business_account_id: '1789' },
+        ]) {
+            expect((await shop.PATCH(request('/api/shop', 'PATCH', body))).status).toBe(400);
+        }
+        expect(state.mutations).toEqual([]);
+        expect(fetch).not.toHaveBeenCalled();
     });
     it('shop update rejects ownership fields and revoked membership', async () => {
         asRole('marketing');

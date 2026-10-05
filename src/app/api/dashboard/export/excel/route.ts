@@ -7,10 +7,12 @@ import { ubDateStr } from '@/lib/utils/date';
 import { buildWorkbookBuffer, type WorkbookSheetSpec } from '@/lib/utils/xlsx';
 import { getManagerPerformance } from '@/lib/reports/manager-performance';
 import { fetchAllRows } from '@/lib/utils/pagination';
-import { sourceLabel, statusLabel } from '@/lib/leads/labels';
+import { leadCategoryLabel, leadDisplayName, sourceLabel, statusLabel } from '@/lib/leads/labels';
 import { UNIT_STATUS_LABEL, unitCategoryLabel } from '@/lib/inventory/labels';
 import { contractStatusLabel } from '@/lib/contracts/labels';
 import { leadsReportInstants, resolveLeadsReportRange } from '@/lib/reports/leads-summary';
+import { loadContractTransferSummaries } from '@/lib/services/ContractService';
+import { listLeadCategories } from '@/lib/services/LeadCategoryService';
 
 /** Export төрөл бүр өөрийн модулийн унших эрх шаардана (өмнө нь зөвхөн auth). */
 const EXPORT_MODULE: Record<string, string> = {
@@ -79,23 +81,29 @@ export async function GET(request: NextRequest) {
                 if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: 400 });
                 period = { ...resolved.range, ...leadsReportInstants(resolved.range) };
             }
-            const leads = await fetchAllRows<Record<string, any>>((from, to) => {
-                let query = supabase
-                    .from('leads')
-                    .select('*')
-                    .eq('shop_id', shopId)
-                    .is('deleted_at', null);
-                if (period) query = query.gte('created_at', period.start).lt('created_at', period.end);
-                return applyLeadScope(query
-                    .order('created_at', { ascending: false })
-                    .order('id').range(from, to), scope);
-            });
+            // + төслийн лидийн ангилал — архивласан нь «(архив)»-тай
+            const [leads, categories] = await Promise.all([
+                fetchAllRows<Record<string, any>>((from, to) => {
+                    let query = supabase
+                        .from('leads')
+                        .select('*')
+                        .eq('shop_id', shopId)
+                        .is('deleted_at', null);
+                    if (period) query = query.gte('created_at', period.start).lt('created_at', period.end);
+                    return applyLeadScope(query
+                        .order('created_at', { ascending: false })
+                        .order('id').range(from, to), scope);
+                }),
+                listLeadCategories(supabase, shopId, { includeArchived: true }),
+            ]);
 
             const exportData = leads?.map(lead => ({
-                'Нэр': lead.customer_name || '-',
+                // Нэргүй лид шошгоор; дахин импортлоход normalizeLeadName шошгыг null болгоно.
+                'Нэр': leadDisplayName(lead),
                 'Утас': lead.customer_phone || '-',
                 'Имэйл': lead.customer_email || '-',
                 'Эх сурвалж': lead.source ? sourceLabel(lead.source) : '-',
+                'Ангилал': leadCategoryLabel(categories, lead.category_id, { markArchived: true }),
                 'Төлөв': statusLabel(lead.status),
                 'Менежер': lead.sales_manager_name || '-',
                 'Төсөл ID': lead.project_id || '-',
@@ -130,33 +138,42 @@ export async function GET(request: NextRequest) {
             filename = `харилцагчид_${ubDateStr()}.xlsx`;
 
         } else if (type === 'contracts') {
-            const rows = await fetchAllRows<Record<string, unknown>>((from, to) => supabase
-                .from('property_contracts')
-                .select('*')
-                .eq('shop_id', shopId)
-                .is('deleted_at', null)
-                .order('contract_date', { ascending: false, nullsFirst: false })
-                .order('id')
-                .range(from, to));
+            // Шилжүүлсэн гэрээ: одоогийн эзэмшигч + анхны худалдан авагч, сүүлийн шилжүүлгийн огноо.
+            const [rows, transfers] = await Promise.all([
+                fetchAllRows<Record<string, unknown>>((from, to) => supabase
+                    .from('property_contracts')
+                    .select('*')
+                    .eq('shop_id', shopId)
+                    .is('deleted_at', null)
+                    .order('contract_date', { ascending: false, nullsFirst: false })
+                    .order('id')
+                    .range(from, to)),
+                loadContractTransferSummaries(supabase, shopId),
+            ]);
 
-            const exportData = rows.map((c) => ({
-                'Код': c.unit_label || '-',
-                'Ээлж/Блок': c.block_name || '-',
-                'Давхар': c.floor || '-',
-                'Айлын төрөл': c.unit_type || '-',
-                'Загвар': c.model || '-',
-                'Өрөө': c.rooms || '-',
-                'Талбай (м²)': c.contracted_area || '-',
-                'М.кв үнэ': Number(c.price_per_sqm) || 0,
-                'Нийт дүн': Number(c.total_price) || 0,
-                'Төлсөн': Number(c.paid_amount) || 0,
-                'Үлдэгдэл': Number(c.balance) || 0,
-                'Төлөв': contractStatusLabel(c.contract_status as string | null),
-                'Менежер': c.sales_manager || '-',
-                'Худалдан авагч': c.customer_name || '-',
-                'Регистр': c.customer_registration || '-',
-                'Огноо': c.contract_date ? new Date(String(c.contract_date)).toLocaleDateString('mn-MN') : '-',
-            }));
+            const exportData = rows.map((c) => {
+                const transfer = transfers.get(String(c.id));
+                return {
+                    'Код': c.unit_label || '-',
+                    'Ээлж/Блок': c.block_name || '-',
+                    'Давхар': c.floor || '-',
+                    'Айлын төрөл': c.unit_type || '-',
+                    'Загвар': c.model || '-',
+                    'Өрөө': c.rooms || '-',
+                    'Талбай (м²)': c.contracted_area || '-',
+                    'М.кв үнэ': Number(c.price_per_sqm) || 0,
+                    'Нийт дүн': Number(c.total_price) || 0,
+                    'Төлсөн': Number(c.paid_amount) || 0,
+                    'Үлдэгдэл': Number(c.balance) || 0,
+                    'Төлөв': contractStatusLabel(c.contract_status as string | null),
+                    'Менежер': c.sales_manager || '-',
+                    'Худалдан авагч': c.customer_name || '-',
+                    'Регистр': c.customer_registration || '-',
+                    'Анхны худалдан авагч': transfer?.originalHolder || '-',
+                    'Шилжүүлсэн огноо': transfer?.lastTransferDate || '-',
+                    'Огноо': c.contract_date ? new Date(String(c.contract_date)).toLocaleDateString('mn-MN') : '-',
+                };
+            });
 
             sheet = { name: 'Гэрээнүүд', rows: exportData };
             filename = `гэрээнүүд_${ubDateStr()}.xlsx`;

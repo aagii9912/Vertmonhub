@@ -96,7 +96,8 @@ const IMPORT_CATEGORIES: ImportCategory[] = [
         icon: Users,
         color: 'emerald',
         columns: [
-            { name: 'Нэр', required: true },
+            // Нэр хоосон бол нэргүй лид болно (8+ оронтой утас эсвэл и-мэйл шаардана); утас давхардлын түлхүүр тул заавал.
+            { name: 'Нэр' },
             { name: 'Утас', required: true },
             { name: 'Имэйл' },
             { name: 'Сонирхож буй' },
@@ -251,6 +252,7 @@ interface ImportResult {
     updated?: number;
     skipped?: number;
     errors?: string[];
+    notes?: string[];
     message: string;
     preview?: InventoryImportPreview;
 }
@@ -677,6 +679,16 @@ export default function AdminImportPage() {
                     )}
                     {result.success && (result.skipped || 0) > 0 && (
                         <p className="text-sm text-status-success">⏭️ {result.skipped} давхардсан мөрийг алгассан</p>
+                    )}
+                    {result.notes && result.notes.length > 0 && (
+                        <div className="mt-3 p-3 bg-surface rounded-lg border">
+                            <p className="text-sm font-medium text-foreground mb-2">Тэмдэглэл:</p>
+                            <ul className="text-xs text-muted-foreground space-y-1 max-h-40 overflow-y-auto">
+                                {result.notes.map((note, i) => (
+                                    <li key={i}>• {note}</li>
+                                ))}
+                            </ul>
+                        </div>
                     )}
                     {result.errors && result.errors.length > 0 && (
                         <div className="mt-3 p-3 bg-surface rounded-lg border">

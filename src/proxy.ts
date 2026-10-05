@@ -25,7 +25,7 @@ const publicRoutes = [
 const aiRoutes = ['/api/chat', '/api/ai', '/api/ai-assistant', '/api/ai-settings'];
 
 // Webhook routes with relaxed limits
-const webhookRoutes = ['/api/webhook', '/api/marketing/facebook/leadgen'];
+const webhookRoutes = ['/api/webhook'];
 
 function matchesRoute(pathname: string, routes: string[]): boolean {
     return routes.some(route => pathname === route || pathname.startsWith(route + '/'));

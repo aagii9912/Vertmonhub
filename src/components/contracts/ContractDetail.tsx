@@ -2,16 +2,19 @@
 
 import React, { useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Download, Plus, Check, Loader2, X, FileText, Phone } from 'lucide-react';
+import { ArrowLeft, ArrowLeftRight, Download, Plus, Check, Loader2, X, FileText, Phone } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatMNT, formatMNTShort } from '@/lib/utils/currency';
 import { formatShortDate, formatTime, ubDateStr } from '@/lib/utils/date';
 import { usePageTitle } from '@/lib/navigation/pageTitle';
-import { useContract, usePayments, useAddPayment, useUpdatePayment, type PaymentRow } from '@/hooks/useContracts';
-import { CONTRACT_STATUS_META, PAYMENT_STATUS_META, PAYMENT_METHOD_LABEL } from '@/lib/contracts/labels';
-import { useLeadDetail } from '@/hooks/useLeads';
+import { useContract, useContractTransfers, usePayments, useAddPayment, useUpdatePayment, type PaymentRow } from '@/hooks/useContracts';
+import { CONTRACT_STATUS_META, CONTRACT_TRANSFER_KIND_META, PAYMENT_STATUS_META, PAYMENT_METHOD_LABEL } from '@/lib/contracts/labels';
+import { isTransferableContract, latestTransferDate, summarizeContractTransfers } from '@/lib/contracts/transfer';
 import { useAuth } from '@/contexts/AuthContext';
+import { ContractTransferDialog } from '@/components/contracts/ContractTransferDialog';
+import type { ContractTransfer } from '@/types/property';
+import { useLeadDetail } from '@/hooks/useLeads';
 import { DashboardApiError } from '@/lib/api/dashboardFetch';
 import { parseLocalDate } from '@/lib/dashboard/director';
 import { Panel, Pill, Progress, Skeleton, Avatar, GhostButton } from '@/components/dashboard/v2/primitives';
@@ -25,7 +28,7 @@ const RECEIPT_KIND_LABEL = { advance: 'Урьдчилгаа', installment: 'Ху
 
 /**
  * Гэрээний дэлгэрэнгүй — бүтэн хуудас (мокап 5).
- * Зүүн: ерөнхий мэдээлэл, төлбөрийн график (+ бүртгэх). Баруун: явц, хавсралт, түүх.
+ * Зүүн: ерөнхий мэдээлэл, төлбөрийн график (+ бүртгэх). Баруун: явц, эзэмшигчийн түүх, хавсралт, түүх.
  * Төлбөр бүртгэх үйлдлүүд зөвхөн `contracts` модульд бичих эрхтэй хэрэглэгчид харагдана
  * (сервер дахин шалгана); хуваарь ачаалж чадаагүй үед «оруулаагүй» гэж харуулахгүй.
  */
@@ -43,8 +46,11 @@ export function ContractDetail({ id }: { id: string }) {
     // Хуваарь амжилттай уншигдсан үед л шинэ мөр нэмнэ — алдаатай үед байгаа төлбөрийг дахин оруулахгүй.
     const canAddPayment = canWrite && !!pay && !paymentsQuery.isError;
     const { data: leadDetail } = useLeadDetail(c?.lead_id ?? null);
+    const { data: transferData, isError: transfersFailed } = useContractTransfers(id);
+    const transfers = useMemo(() => transferData?.transfers ?? [], [transferData]);
     const [adding, setAdding] = useState(false);
     const showAddRow = adding && canAddPayment;
+    const [transferring, setTransferring] = useState(false);
 
     if (!c) {
         if (isError) return <ContractLoadError error={error} retrying={isFetching} onRetry={() => void refetch()} />;
@@ -72,8 +78,11 @@ export function ContractDetail({ id }: { id: string }) {
                 <span className="mono-label text-[16px] font-semibold text-foreground">{c.contract_number || c.unit_label || '—'}</span>
                 <Pill tone={st.tone}>{st.label}</Pill>
                 {c.contract_date && <span className="mono-label text-[12px] text-muted-foreground">{formatShortDate(c.contract_date)}</span>}
-                <div className="ml-auto flex items-center gap-2">
+                <div className="ml-auto flex flex-wrap items-center gap-2">
                     <Link href={genLink} className="inline-flex h-[30px] items-center gap-1.5 rounded-md border border-border-strong bg-surface px-2.5 text-[12.5px] font-medium text-foreground hover:bg-surface-2 focus-ring"><Download className="h-4 w-4" /> PDF татах</Link>
+                    {canWrite && isTransferableContract(c.contract_status) && (
+                        <button type="button" onClick={() => setTransferring(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md border border-border-strong bg-surface px-2.5 text-[12.5px] font-medium text-foreground hover:bg-surface-2 focus-ring"><ArrowLeftRight className="h-4 w-4" /> Гэрээ шилжүүлэх</button>
+                    )}
                     {canAddPayment && <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-2.5 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>}
                 </div>
             </div>
@@ -116,7 +125,7 @@ export function ContractDetail({ id }: { id: string }) {
                                 <div className="text-[13px] font-medium text-foreground">Төлбөрийн график оруулаагүй</div>
                                 {canAddPayment && <>
                                     <p className="max-w-sm text-[12.5px] text-muted-foreground">Урьдчилгаа болон сар бүрийн төлөлтийг энд бүртгэвэл захирлын самбар авлага, хоцролтыг автоматаар харуулна.</p>
-                                    <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>
+                                    <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>
                                 </>}
                             </div>
                         ) : (
@@ -167,12 +176,17 @@ export function ContractDetail({ id }: { id: string }) {
                         </div>
                     </Panel>
 
+                    {(transfers.length > 0 || transfersFailed) && <HolderHistory transfers={transfers} failed={transfersFailed} />}
+
                     <Panel title="Хавсралт" bodyClassName="p-3"><EntityAttachments entityType="contract" entityId={id} /></Panel>
 
                     <Panel title="Түүх" bodyClassName="p-4">
                         <ol className="relative flex flex-col gap-3 border-l border-border pl-4">
                             {[
-                                ...(leadDetail?.activities ?? []).map((a) => ({ at: a.created_at, title: a.content || a.type, by: a.created_by_name })),
+                                // Шилжүүлгийн лидийн бичлэгийг давхардуулахгүй — эзэмшигчийн түүхээс нэг удаа харуулна.
+                                ...(leadDetail?.activities ?? []).filter((a) => !transfers.some((t) => t.id === a.meta?.transfer_id))
+                                    .map((a) => ({ at: a.created_at, title: a.content || a.type, by: a.created_by_name })),
+                                ...transfers.map((t) => ({ at: t.created_at, title: `${t.kind === 'rename' ? 'Эзэмшигчийн нэр засав' : 'Гэрээ шилжүүлэв'}: ${t.from_customer_name || '—'} → ${t.to_customer_name}`, by: t.created_by_name })),
                                 ...payments.filter((p) => p.paid_date).map((p) => ({ at: p.paid_date as string, title: `${p.label || `${p.installment_number}-р төлөлт`} · ${formatMNTShort(Number(p.paid_amount || 0))} төлсөн`, by: null })),
                                 ...(c.contract_date ? [{ at: c.contract_date, title: 'Гэрээ байгуулав', by: c.sales_manager }] : []),
                             ]
@@ -190,7 +204,41 @@ export function ContractDetail({ id }: { id: string }) {
                     </Panel>
                 </div>
             </div>
+            {canWrite && <ContractTransferDialog contract={c} open={transferring} onOpenChange={setTransferring} previousChangeDate={latestTransferDate(transfers)} />}
         </div>
+    );
+}
+
+/** «Эзэмшигчийн түүх»: анхны худалдан авагч ба шилжүүлэг / нэр засвар бүр (шинэ нь эхэнд). */
+function HolderHistory({ transfers, failed }: { transfers: ContractTransfer[]; failed: boolean }) {
+    const summary = summarizeContractTransfers(transfers);
+    return (
+        <Panel title="Эзэмшигчийн түүх" sub={transfers.length ? `${transfers.length} өөрчлөлт` : undefined} bodyClassName="flex flex-col gap-3 p-4">
+            {failed && <p role="alert" className="text-[12.5px] text-status-danger">Эзэмшигчийн түүхийг уншиж чадсангүй.</p>}
+            {summary.originalHolder && (
+                <div className="grid grid-cols-[1fr_auto] gap-2 text-[12.5px]">
+                    <span className="text-muted-foreground">Анхны худалдан авагч</span>
+                    <span className="text-right font-medium text-foreground">{summary.originalHolder}</span>
+                </div>
+            )}
+            <ol className="flex flex-col gap-2.5">
+                {transfers.map((t) => {
+                    const meta = CONTRACT_TRANSFER_KIND_META[t.kind] ?? CONTRACT_TRANSFER_KIND_META.transfer;
+                    return (
+                        <li key={t.id} className="flex flex-col gap-1 border-t border-border pt-2.5 first:border-t-0 first:pt-0">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="mono-label text-[11px] text-muted-foreground">{formatShortDate(t.effective_date)}</span>
+                                <Pill tone={meta.tone}>{meta.label}</Pill>
+                            </div>
+                            <div className="text-[13px] text-foreground">{t.from_customer_name || '—'} → <span className="font-medium">{t.to_customer_name}</span></div>
+                            {t.to_registration && t.kind === 'transfer' && <div className="mono-label text-[11.5px] text-muted-foreground">{t.to_registration}</div>}
+                            {t.reason && <p className="text-[12px] text-fg-2">{t.reason}</p>}
+                            {t.created_by_name && <div className="text-[11px] text-muted-foreground">Бүртгэсэн: {t.created_by_name}</div>}
+                        </li>
+                    );
+                })}
+            </ol>
+        </Panel>
     );
 }
 

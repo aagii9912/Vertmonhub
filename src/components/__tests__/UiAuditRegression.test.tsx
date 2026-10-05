@@ -17,8 +17,12 @@ vi.mock('@/hooks/useLeads', () => ({
     useLeadsList: (params: unknown) => { mocks.listParams(params); return { data: { leads: [], pagination: { total: 0, totalPages: 1 } }, isLoading: false }; },
     useLeadSummary: () => ({ data: {} }), useManagers: () => ({ data: [] }), useUpdateLead: () => ({ mutate: vi.fn() }),
     useLeadProjects: () => ({ data: [{ id: 'mandala', name: 'Mandala Garden' }, { id: 'elysium', name: 'Elysium' }] }),
+    useLeadCategories: () => ({ data: [
+        { id: 'investor', name: 'Хөрөнгө оруулагч', tone: 'success', is_active: true },
+        { id: 'barter', name: 'Бартер', tone: 'neutral', is_active: false },
+    ] }),
 }));
-vi.mock('../leads/pickers', () => ({ StatusPicker: () => null, ManagerPicker: () => null }));
+vi.mock('../leads/pickers', () => ({ StatusPicker: () => null, ManagerPicker: () => null, CategoryPicker: () => null }));
 vi.mock('../leads/LeadPanel', () => ({ LeadPanel: ({ leadId, onClose }: { leadId: string; onClose: () => void }) => <div><h2>{leadId}</h2><button onClick={onClose}>Хаах</button></div>, nextStep: () => '' }));
 
 beforeEach(() => {
@@ -39,6 +43,17 @@ describe('UI audit regressions', () => {
         expect(mocks.listParams).toHaveBeenLastCalledWith(expect.objectContaining({ project: 'elysium', page: 1 }));
         fireEvent.click(screen.getByRole('button', { name: 'Цэвэрлэх' }));
         expect(mocks.listParams).toHaveBeenLastCalledWith(expect.objectContaining({ project: 'all' }));
+    });
+    it('filters the list by lead category (archived labelled, uncategorized included) and resets it', () => {
+        render(<LeadsPage />);
+        const chip = screen.getByRole('combobox', { name: 'Ангилал' });
+        expect([...chip.querySelectorAll('option')].map((option) => option.textContent)).toEqual(['Бүгд', 'Ангилалгүй', 'Хөрөнгө оруулагч', 'Бартер (архив)']);
+        fireEvent.change(chip, { target: { value: 'none' } });
+        expect(mocks.listParams).toHaveBeenLastCalledWith(expect.objectContaining({ category: 'none', page: 1 }));
+        fireEvent.change(chip, { target: { value: 'barter' } });
+        expect(mocks.listParams).toHaveBeenLastCalledWith(expect.objectContaining({ category: 'barter' }));
+        fireEvent.click(screen.getByRole('button', { name: 'Цэвэрлэх' }));
+        expect(mocks.listParams).toHaveBeenLastCalledWith(expect.objectContaining({ category: 'all' }));
     });
     it('keeps the selected lead accessible when a saved desktop split layout is opened on a tablet, then resized', () => {
         localStorage.setItem('vertmonhub_leads_mode', 'split');

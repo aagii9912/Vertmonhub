@@ -4,11 +4,11 @@ import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { requireModuleWrite, resolvePermissions } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
-import { ACTIVE_STATUSES } from '@/lib/leads/labels';
+import { ACTIVE_STATUSES, UNCATEGORIZED_KEY, anonymousLeadOrFilter, isAnonymousLeadQuery } from '@/lib/leads/labels';
 import { isLeadWorkQueue, workQueueFilter } from '@/lib/leads/work-queue';
 import { parsePagination, buildPageMeta } from '@/lib/utils/pagination';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
-import { insertLeadOnce, resolveStaffLead } from '@/lib/services/LeadService';
+import { insertLeadOnce, resolveLeadIdentity, resolveStaffLead } from '@/lib/services/LeadService';
 import { phoneIlikePattern } from '@/lib/utils/phone';
 import { withRoute } from '@/lib/api/route';
 import { applyLeadScope, canAccessProject, ProjectScopeError, resolveSalesProjectScope } from '@/lib/sales/project-scope';
@@ -25,11 +25,12 @@ const PERIOD_DAYS: Record<string, number> = {
  * GET /api/dashboard/leads?status=<status>&source=<source>&period=<week|month|quarter|year>&manager=<нэр>&phone=<дугаар>&q=<хайлт>
  * Лийдийн жагсаалт (shop-scoped, сервер cookie auth + service role).
  * phone — утасны давхардал шалгах (форматаас үл хамааран: «9911 2233» / «99112233» / «9911-2233»).
- * q — нэр, утас, и-мэйлээр хайлт.
+ * q — нэр, утас, и-мэйлээр хайлт; «нэргүй»/«нэргүй харилцагч» бол нэргүй лидүүдийг нэмж буцаана.
  * view — хадгалсан харагдац: all | mine (миний лид) | new | meetings (уулзалт товлосон) | active (хаагдаагүй).
  * sort — created_at (анхдагч) | last_contact_at | customer_name | next_followup_at; dir — asc | desc.
  * Soft-delete хийгдсэн лийдийг (deleted_at) хасна.
  * manager — хариуцагч менежерээр шүүнэ (sales_manager_name, contracts API-ийн жишиг).
+ * category — лидийн ангилал: uuid эсвэл `none` (ангилалгүй).
  */
 export const GET = withRoute({ module: 'leads', error: 'Лийд татахад алдаа гарлаа' }, async ({ request, shop: authShop }) => {
     const { searchParams } = new URL(request.url);
@@ -91,6 +92,12 @@ export const GET = withRoute({ module: 'leads', error: 'Лийд татахад 
     if (manager && manager !== 'all') {
         query = query.eq('sales_manager_name', manager);
     }
+    const category = searchParams.get('category');
+    if (category && category !== 'all') {
+        if (category === UNCATEGORIZED_KEY) query = query.is('category_id', null);
+        else if (z.string().uuid().safeParse(category).success) query = query.eq('category_id', category);
+        else return NextResponse.json({ error: 'Буруу ангилал' }, { status: 400 });
+    }
     if (period && PERIOD_DAYS[period]) {
         const start = new Date(Date.now() - PERIOD_DAYS[period] * 24 * 60 * 60 * 1000);
         query = query.gte('created_at', start.toISOString());
@@ -106,11 +113,10 @@ export const GET = withRoute({ module: 'leads', error: 'Лийд татахад 
     const q = searchParams.get('q')?.trim();
     if (q) {
         const safe = q.replace(/[%_,()]/g, ' ').trim();
-        if (safe) {
-            query = query.or(
-                `customer_name.ilike.%${safe}%,customer_phone.ilike.%${safe}%,customer_email.ilike.%${safe}%`,
-            );
-        }
+        const clauses = safe ? [`customer_name.ilike.%${safe}%`, `customer_phone.ilike.%${safe}%`, `customer_email.ilike.%${safe}%`] : [];
+        // «нэргүй…» хайлт нэргүй лидүүдийг НЭМНЭ (нэрийг нөхөхөд); «Нэргүй» нэртэй хүн хэвээр олдоно.
+        if (isAnonymousLeadQuery(q)) clauses.push(anonymousLeadOrFilter());
+        if (clauses.length) query = query.or(clauses.join(','));
     }
 
     const { data, error, count } = await query;
@@ -126,7 +132,9 @@ const VALID_STATUSES = ['new', 'contacted', 'viewing_scheduled', 'offered', 'neg
 const CreateLeadSchema = z.object({
     // Shop = төсөл: өгөөгүй бол resolveStaffLead shop-ийн ганц төслийг авна.
     project_id: z.string().uuid('Төслөө сонгоно уу').optional(),
-    customer_name: z.string().trim().min(1, 'Нэр шаардлагатай').max(200),
+    // Нэргүй лид: нэр хоосон + anonymous=true (resolveLeadIdentity утас/и-мэйл шаардана).
+    customer_name: z.string().trim().max(200).nullish(),
+    anonymous: z.boolean().optional(),
     customer_phone: z.string().trim().max(30).nullish(),
     customer_email: z.string().trim().max(200).nullish(),
     source: z.string().trim().max(50).optional(),
@@ -141,6 +149,8 @@ const CreateLeadSchema = z.object({
     assignManager: z.string().trim().min(1).max(120).nullish(),
     /** Client-ийн idempotency түлхүүр (offline outbox / давхар submit-ээс хамгаална). */
     client_request_id: z.string().uuid().nullish(),
+    /** Лидийн ангилал (заавал биш) — энэ төслийн идэвхтэй ангилал; null = ангилалгүй. */
+    category_id: z.string().uuid('Буруу ангилал').nullish(),
 });
 
 /**
@@ -170,11 +180,14 @@ export async function POST(request: NextRequest) {
             );
         }
         const input = parsed.data;
+        const identity = resolveLeadIdentity(input);
+        if (!identity.ok) return NextResponse.json({ error: identity.error }, { status: identity.status });
 
         const db = supabaseAdmin();
         const [scope, perms] = await Promise.all([resolveSalesProjectScope(db, authShop.id), resolvePermissions()]);
         const resolved = await resolveStaffLead(db, authShop.id, {
             projectId: input.project_id, status: input.status, source: input.source, assignManager: input.assignManager,
+            category: input.category_id ? { id: input.category_id } : undefined,
         }, { userId: uid, role: perms?.role || 'viewer', scope });
         if (!resolved.ok) return NextResponse.json({ error: resolved.error }, { status: resolved.status });
 
@@ -184,9 +197,9 @@ export async function POST(request: NextRequest) {
             shop_id: authShop.id,
             project_id: resolved.project_id,
             client_request_id: input.client_request_id || null,
-            customer_name: input.customer_name,
-            customer_phone: input.customer_phone || null,
-            customer_email: input.customer_email || null,
+            customer_name: identity.customer_name,
+            customer_phone: identity.customer_phone,
+            customer_email: identity.customer_email,
             source: resolved.source,
             preferred_type: input.preferred_type || null,
             preferred_rooms: input.preferred_rooms ?? null,
@@ -196,6 +209,8 @@ export async function POST(request: NextRequest) {
             notes: input.notes || null,
             status: resolved.status,
             sales_manager_name: resolved.sales_manager_name,
+            // Ангилалгүй бол баганыг огт бичихгүй (migration-аас өмнөх DB дээр лид үүсгэх ажиллана).
+            ...(resolved.category_id ? { category_id: resolved.category_id } : {}),
         }, { scope });
         if (result.ok) return NextResponse.json(result.duplicate ? { lead: result.lead, deduplicated: true } : { lead: result.lead });
         if (result.conflict) return NextResponse.json({ error: 'Энэ хүсэлтийн түлхүүр өмнө ашиглагдсан байна' }, { status: 409 });

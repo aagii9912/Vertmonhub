@@ -6,6 +6,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { logLeadActivity } from '@/lib/leads/activities';
+import { ANONYMOUS_MEETING_PHONE, LEAD_NAME_OR_ANONYMOUS, normalizeLeadName } from '@/lib/leads/labels';
 import { z } from 'zod';
 import { ubDayRange } from '@/lib/utils/date';
 import { normalizePhone } from '@/lib/utils/phone';
@@ -36,6 +37,8 @@ export const CreateViewingSchema = z.object({
     project_id: z.string().uuid().nullish(),
     customer_name: z.string().trim().min(1).max(200).nullish(),
     customer_phone: z.string().trim().max(30).nullish(),
+    /** Шинэ харилцагч нэрээ хэлээгүй («Нэр тодорхойгүй»): лидийг нэргүй үүсгэнэ, утас заавал. */
+    anonymous: z.boolean().default(false),
     property_id: z.string().uuid().nullish(),
     scheduled_at: z.string().datetime({ offset: true }).nullish(),
     meeting_type: z.enum(['new_customer', 'repeat_customer', 'existing_buyer']).default('new_customer'),
@@ -44,13 +47,16 @@ export const CreateViewingSchema = z.object({
     interest_level: z.number().int().min(1).max(5).nullish(),
     feedback: z.string().trim().max(4000).nullish(),
 }).refine(p => p.walk_in || !!p.scheduled_at, { message: 'Уулзалтын огноо, цаг шаардлагатай' })
-    .refine(p => !!(p.lead_id || p.customer_name || p.customer_phone), { message: 'Лид эсвэл харилцагчийн мэдээлэл шаардлагатай' });
+    .refine(p => !!(p.lead_id || p.customer_name || p.customer_phone || p.anonymous), { message: 'Лид эсвэл харилцагчийн мэдээлэл шаардлагатай' });
 
 /** Баталгаажуулах мэдээллийг зөвхөн уншина; preview хэзээ ч лид/уулзалт үүсгэхгүй. */
 export async function resolveViewingInput(db: SupabaseClient, shopId: string, input: unknown, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
     const parsed = CreateViewingSchema.safeParse(input);
     if (!parsed.success) return { ok: false as const, error: 'Уулзалтын мэдээлэл, огноо/цагийг шалгана уу', status: 400 };
-    const p = parsed.data;
+    // Шинэ харилцагчийн нэрийг нэг дүрмээр цэвэрлэнэ (шошго/«-» → null); нэргүй бол нэрийг үл хэрэгсэнэ.
+    const p = { ...parsed.data, customer_name: parsed.data.anonymous ? null : normalizeLeadName(parsed.data.customer_name) };
+    if (!p.lead_id && p.anonymous && !p.customer_phone) return { ok: false as const, error: ANONYMOUS_MEETING_PHONE, status: 400 };
+    if (!p.lead_id && !p.customer_name && !p.customer_phone) return { ok: false as const, error: LEAD_NAME_OR_ANONYMOUS, status: 400 };
     let property: { id: string; name: string; project_id: string | null } | null = null;
     if (p.property_id) {
         const result = await db.from('properties').select('id, name, project_id').eq('id', p.property_id).eq('shop_id', shopId).is('deleted_at', null).maybeSingle();
@@ -83,7 +89,7 @@ export async function resolveViewingInput(db: SupabaseClient, shopId: string, in
         const matches = phone ? (result.data ?? []).filter(row => normalizePhone(row.customer_phone) === phone) : result.data ?? [];
         if ((result.data?.length ?? 0) > 50 || matches.length > 1) return { ok: false as const, error: 'Олон лид таарлаа. Лидээ сонгоод уулзалт товлоно уу.', status: 409 };
         lead = matches[0] ?? null;
-        if (!lead && !p.customer_name) return { ok: false as const, error: 'Энэ утсаар лид олдсонгүй. Шинэ харилцагчийн нэрийг оруулна уу.', status: 400 };
+        if (!lead && !p.customer_name && !p.anonymous) return { ok: false as const, error: 'Энэ утсаар лид олдсонгүй. Шинэ харилцагчийн нэрийг оруулах эсвэл «Нэр тодорхойгүй»-г сонгоно уу.', status: 400 };
     }
     let projectId = lead?.project_id || p.project_id;
     // Shop = төсөл: шинэ харилцагчийн уулзалтад төсөл заагаагүй бол shop-ийн ганц төслийг авна.
@@ -120,7 +126,7 @@ export async function createViewing(db: SupabaseClient, shopId: string, input: u
         try { await assertProjectManager(db, shopId, projectId, managerName); }
         catch (error) { return { ok: false, error: error instanceof Error ? error.message : 'Менежерийн төсөл шалгахад алдаа гарлаа', status: 400 }; }
     }
-    if (!lead && p.customer_name) {
+    if (!lead && (p.customer_name || p.anonymous)) {
         const result = await db.from('leads').insert({ shop_id: shopId, project_id: projectId, customer_name: p.customer_name,
             customer_phone: p.customer_phone || null, status: 'new', source: 'meeting', sales_manager_name: managerName,
         }).select('id, status, customer_name, project_id, sales_manager_name').single();

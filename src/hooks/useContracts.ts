@@ -2,10 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
-import type { PropertyContract } from '@/types/property';
+import { dashboardFetch, dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
+import type { ContractTransfer, PropertyContract } from '@/types/property';
+import type { TransferContractInput } from '@/lib/contracts/transfer';
 
-export type ContractRow = PropertyContract & { lead_id?: string | null; project_id?: string | null };
+export type ContractRow = PropertyContract;
 
 export interface ContractStats {
     total: number;
@@ -126,6 +127,47 @@ export function useUpdatePayment(contractId: string) {
         onSuccess: () => {
             void qc.invalidateQueries({ queryKey: ['contracts'] });
             void qc.invalidateQueries({ queryKey: ['director'] });
+        },
+    });
+}
+
+/** Эзэмшигчийн түүх (шилжүүлэг, нэр засвар). available=false — migration хараахан ороогүй. */
+export function useContractTransfers(contractId: string | null) {
+    const { shop } = useAuth();
+    return useQuery<{ transfers: ContractTransfer[]; available: boolean }>({
+        queryKey: ['contracts', 'transfers', shop?.id, contractId],
+        queryFn: () => dashboardJson<{ transfers: ContractTransfer[]; available: boolean }>(`/api/dashboard/contracts/${contractId}/transfer`),
+        enabled: !!shop?.id && !!contractId,
+        staleTime: 15_000,
+    });
+}
+
+export interface ContractTransferResponse { transfer: ContractTransfer; replayed: boolean; message: string }
+
+/**
+ * Гэрээ шилжүүлэх / нэр засах. Гэрээ, захирлын самбар, лидийн түүхийг шинэчилнэ.
+ * Алдааны HTTP төлөвийг `status`-аар дамжуулна (409 = хуучирсан эзэмшигч эсвэл ашиглагдсан хүсэлт).
+ * Алдаа гарвал гэрээ, эзэмшигчийн түүхийг дахин уншина — цонх шинэ эзэмшигчийг харуулж, хуучин
+ * `expected_customer_name`-ээр 409-д гацахгүй.
+ */
+export function useTransferContract(contractId: string) {
+    const qc = useQueryClient();
+    const { shop } = useAuth();
+    return useMutation({
+        mutationFn: async (input: TransferContractInput) => {
+            const res = await dashboardFetch(`/api/dashboard/contracts/${contractId}/transfer`, { method: 'POST', body: JSON.stringify(input) });
+            const body = await res.json().catch(() => null) as (Partial<ContractTransferResponse> & { error?: string }) | null;
+            if (!res.ok) throw Object.assign(new Error(body?.error || `Хүсэлт амжилтгүй (${res.status})`), { status: res.status });
+            return body as ContractTransferResponse;
+        },
+        onSuccess: () => {
+            void qc.invalidateQueries({ queryKey: ['contracts'] });
+            void qc.invalidateQueries({ queryKey: ['director'] });
+            void qc.invalidateQueries({ queryKey: ['leads'] });
+        },
+        onError: () => {
+            void qc.invalidateQueries({ queryKey: ['contracts', 'detail', shop?.id, contractId] });
+            void qc.invalidateQueries({ queryKey: ['contracts', 'transfers', shop?.id, contractId] });
         },
     });
 }

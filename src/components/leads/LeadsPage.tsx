@@ -10,11 +10,11 @@ import { useMobile } from '@/hooks/use-mobile';
 import { canAccessModuleDynamic } from '@/lib/rbac';
 import { formatRelativeDays } from '@/lib/utils/date';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
-import { useLeadsList, useLeadSummary, useLeadProjects, useManagers, useUpdateLead, type LeadRow } from '@/hooks/useLeads';
-import { LEAD_VIEWS, LEAD_STATUSES, STATUS_META, SOURCES, SOURCE_LABEL, sourceLabel, interestLabel, type LeadView } from '@/lib/leads/labels';
+import { useLeadsList, useLeadSummary, useLeadProjects, useLeadCategories, useManagers, useUpdateLead, type LeadCategoryRow, type LeadRow } from '@/hooks/useLeads';
+import { LEAD_VIEWS, LEAD_STATUSES, STATUS_META, SOURCES, SOURCE_LABEL, UNCATEGORIZED_KEY, UNCATEGORIZED_LABEL, categoryOptionLabel, sourceLabel, interestLabel, isAnonymousLead, leadCategoryLabel, leadDisplayName, normalizeLeadName, type LeadView } from '@/lib/leads/labels';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/Sheet';
 import { Avatar, Pill, Skeleton } from '@/components/dashboard/v2/primitives';
-import { StatusPicker, ManagerPicker } from './pickers';
+import { StatusPicker, ManagerPicker, CategoryPicker } from './pickers';
 import { LeadPanel, nextStep } from './LeadPanel';
 import { isLeadWorkQueue, LEAD_WORK_QUEUES } from '@/lib/leads/work-queue';
 import { PageHeader } from '@/components/dashboard/PageHeader';
@@ -54,6 +54,7 @@ function LeadsWorkspace() {
     const [source, setSource] = useState('all');
     const [manager, setManager] = useState('all');
     const [project, setProject] = useState(() => search.get('project') || 'all');
+    const [category, setCategory] = useState('all');
     const [period, setPeriod] = useState('all');
     const [qInput, setQInput] = useState('');
     const [q, setQ] = useState('');
@@ -90,11 +91,12 @@ function LeadsWorkspace() {
         return () => clearTimeout(t);
     }, [qInput]);
 
-    const params = useMemo(() => ({ view, queue, status, source, manager, project, period, q, sort, dir, page, pageSize: PAGE_SIZE }), [view, queue, status, source, manager, project, period, q, sort, dir, page]);
+    const params = useMemo(() => ({ view, queue, status, source, manager, project, category, period, q, sort, dir, page, pageSize: PAGE_SIZE }), [view, queue, status, source, manager, project, category, period, q, sort, dir, page]);
     const { data, isLoading, isFetching, error, refetch } = useLeadsList(params);
     const { data: summary, error: summaryError } = useLeadSummary();
     const { data: managers = [] } = useManagers();
     const { data: projects = [] } = useLeadProjects();
+    const { data: categories = [] } = useLeadCategories();
     const update = useUpdateLead();
 
     const leads = useMemo(() => data?.leads ?? [], [data]);
@@ -151,16 +153,18 @@ function LeadsWorkspace() {
     };
 
     const showSplit = mode === 'split' && isDesktop;
+    // Ангилалгүй төсөлд (Тохиргоонд үүсгээгүй) баганыг харуулахгүй.
+    const showCategory = categories.length > 0;
     const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
     const to = Math.min(page * PAGE_SIZE, total);
     const chooseQueue = (key: typeof LEAD_WORK_QUEUES[number]['key']) => {
-        setView('all'); setStatus('all'); setSource('all'); setManager('all'); setPeriod('all'); setQInput(''); setQ(''); setPage(1); setChecked(new Set()); setSelectedId(null);
+        setView('all'); setStatus('all'); setSource('all'); setManager('all'); setCategory('all'); setPeriod('all'); setQInput(''); setQ(''); setPage(1); setChecked(new Set()); setSelectedId(null);
         setSort(key === 'overdue' ? 'next_followup_at' : 'created_at'); setDir('asc');
         router.replace(`/dashboard/leads?queue=${key}`);
     };
-    const filtered = !!queue || view !== 'all' || status !== 'all' || source !== 'all' || manager !== 'all' || project !== 'all' || period !== 'all' || !!qInput;
+    const filtered = !!queue || view !== 'all' || status !== 'all' || source !== 'all' || manager !== 'all' || project !== 'all' || category !== 'all' || period !== 'all' || !!qInput;
     function resetFilters() {
-        setView('all'); setStatus('all'); setSource('all'); setManager('all'); setProject('all'); setPeriod('all'); setQInput(''); setQ(''); setPage(1); setChecked(new Set());
+        setView('all'); setStatus('all'); setSource('all'); setManager('all'); setProject('all'); setCategory('all'); setPeriod('all'); setQInput(''); setQ(''); setPage(1); setChecked(new Set());
         if (queue) router.replace('/dashboard/leads');
     }
     async function download() {
@@ -211,10 +215,11 @@ function LeadsWorkspace() {
                 </div>
             </div>
 
-            <FilterBar className="mb-0" search={{ value: qInput, onChange: setQInput, label: 'Лидийг нэр, утсаар хайх', placeholder: 'Нэр, утас, имэйлээр хайх…' }} showClear={filtered} onClear={resetFilters}>
+            <FilterBar className="mb-0" search={{ value: qInput, onChange: setQInput, label: 'Лидийг нэр, утсаар хайх', placeholder: 'Нэр, утас, имэйл эсвэл «нэргүй»…' }} showClear={filtered} onClear={resetFilters}>
                 {projects.length > 1 && <FilterChip value={project} onChange={(v) => { setProject(v); setManager('all'); setPage(1); setChecked(new Set()); select(null); }} label="Төсөл" options={projects.map((p) => [p.id, p.name])} />}
                 <FilterChip value={status} onChange={(v) => { setStatus(v); setPage(1); }} label="Статус" options={LEAD_STATUSES.map((s) => [s, STATUS_META[s].label])} />
                 <FilterChip value={source} onChange={(v) => { setSource(v); setPage(1); }} label="Эх үүсвэр" options={SOURCES.map((s) => [s, SOURCE_LABEL[s]])} />
+                {categories.length > 0 && <FilterChip value={category} onChange={(v) => { setCategory(v); setPage(1); setChecked(new Set()); }} label="Ангилал" options={[[UNCATEGORIZED_KEY, UNCATEGORIZED_LABEL], ...categories.map((c): [string, string] => [c.id, categoryOptionLabel(c)])]} />}
                 {filterManagers.length > 0 && <FilterChip value={manager} onChange={(v) => { setManager(v); setPage(1); }} label="Менежер" options={filterManagers.map((m) => [m.name, m.name])} />}
                 <FilterChip value={period} onChange={(v) => { setPeriod(v); setPage(1); }} label="Огноо" options={[['week', '7 хоног'], ['month', '30 хоног'], ['quarter', '90 хоног'], ['year', '1 жил']]} />
             </FilterBar>
@@ -227,6 +232,7 @@ function LeadsWorkspace() {
                     <span className="text-fg-2">Статус:</span>
                     <StatusPicker value="" onChange={(s, reason) => void bulk({ status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} />
                     {canAssign && bulkManagers.length > 0 && (<><span className="text-fg-2">Менежер:</span><ManagerPicker value={null} options={bulkManagers} onChange={(n) => void bulk({ sales_manager_name: n })} /></>)}
+                    {categories.some((c) => c.is_active) && (<><span className="text-fg-2">Ангилал:</span><CategoryPicker value={undefined} options={categories} onChange={(id) => void bulk({ category_id: id })} /></>)}
                     <button type="button" onClick={() => setChecked(new Set())} className="ml-auto text-[12px] text-muted-foreground hover:text-foreground">Цуцлах</button>
                 </div>
             )}
@@ -235,7 +241,7 @@ function LeadsWorkspace() {
             <div className={cn('grid gap-3', showSplit && 'lg:grid-cols-[minmax(0,1fr)_minmax(400px,480px)]')}>
                 <div className="min-w-0 overflow-hidden rounded-2xl border border-border bg-surface">
                     {error ? null : isMobile ? (
-                        <MobileList leads={leads} projectNames={projectNames} loading={isLoading} onOpen={select} />
+                        <MobileList leads={leads} projectNames={projectNames} categories={categories} loading={isLoading} onOpen={select} />
                     ) : (
                         <div className="overflow-x-auto">
                             <table className="w-full text-[13px]">
@@ -245,6 +251,7 @@ function LeadsWorkspace() {
                                         <Th onClick={() => toggleSort('customer_name')} active={sort === 'customer_name'} dir={dir}>Нэр</Th>
                                         <th className="px-2 text-left font-medium">Утас</th>
                                         <th className="px-2 text-left font-medium">Статус</th>
+                                        {!showSplit && showCategory && <th className="px-2 text-left font-medium">Ангилал</th>}
                                         {!showSplit && <th className="px-2 text-left font-medium">Эх үүсвэр</th>}
                                         <th className="px-2 text-left font-medium">Сонирхол</th>
                                         {!showSplit && <th className="px-2 text-left font-medium">Менежер</th>}
@@ -255,10 +262,10 @@ function LeadsWorkspace() {
                                 </thead>
                                 <tbody>
                                     {isLoading && Array.from({ length: 8 }).map((_, i) => (
-                                        <tr key={i} className="h-10 border-b border-border"><td colSpan={10} className="px-2"><Skeleton className="h-5" /></td></tr>
+                                        <tr key={i} className="h-10 border-b border-border"><td colSpan={11} className="px-2"><Skeleton className="h-5" /></td></tr>
                                     ))}
                                     {!error && !isLoading && leads.length === 0 && (
-                                        <tr><td colSpan={10}>
+                                        <tr><td colSpan={11}>
                                             <div className="flex flex-col items-center gap-3 px-4 py-12 text-center">
                                                 <div className="text-[13.5px] font-medium text-foreground">Лид олдсонгүй</div>
                                                 <p className="max-w-xs text-[12.5px] text-muted-foreground">Шүүлтүүрээ өөрчлөх эсвэл шинэ лид бүртгээрэй.</p>
@@ -284,9 +291,10 @@ function LeadsWorkspace() {
                                                 <td className="px-2" onClick={(e) => e.stopPropagation()}>
                                                     <CheckBox label="Сонгох" checked={checked.has(l.id)} onChange={(v) => setChecked((prev) => { const n = new Set(prev); if (v) n.add(l.id); else n.delete(l.id); return n; })} />
                                                 </td>
-                                                <td className="px-2"><span className={cn('block max-w-[220px] truncate font-medium', sel ? 'text-brand' : 'text-foreground')}>{l.customer_name || 'Нэргүй'}</span>{(projects.length > 1 || !l.project_id) && <span className="block max-w-[220px] truncate text-xs text-muted-foreground">{l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй'}</span>}</td>
+                                                <td className="px-2"><span className={cn('block max-w-[220px] truncate font-medium', sel ? 'text-brand' : isAnonymousLead(l) ? 'text-muted-foreground' : 'text-foreground')}>{leadDisplayName(l)}</span>{(projects.length > 1 || !l.project_id) && <span className="block max-w-[220px] truncate text-xs text-muted-foreground">{l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй'}</span>}</td>
                                                 <td className="mono-label px-2 text-fg-2">{l.customer_phone || '—'}</td>
                                                 <td className="px-2"><StatusPicker value={l.status} disabled={!canWrite} onChange={(s, reason) => patchLead(l.id, { status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} /></td>
+                                                {!showSplit && showCategory && <td className="px-2"><CategoryPicker value={l.category_id ?? null} options={categories} disabled={!canWrite} onChange={(id) => patchLead(l.id, { category_id: id })} /></td>}
                                                 {!showSplit && <td className="px-2 text-fg-2">{sourceLabel(l.source)}</td>}
                                                 <td className="px-2 text-fg-2">{interestLabel(l)}</td>
                                                 {!showSplit && <td className="px-2"><ManagerPicker value={l.sales_manager_name ?? null} options={managers} projectId={l.project_id ?? null} disabled={!canAssign} onChange={(n) => patchLead(l.id, { sales_manager_name: n })} /></td>}
@@ -313,7 +321,7 @@ function LeadsWorkspace() {
                 {showSplit && (
                     <aside aria-label="Сонгосон лид" className="sticky top-[calc(var(--header-h)+1rem)] h-[calc(100dvh-var(--header-h)-2rem)] min-h-0 self-start overflow-hidden rounded-2xl border border-border bg-surface">
                         {selectedId ? (
-                            <LeadPanel leadId={selectedId} canWrite={canWrite} onClose={() => select(null)} />
+                            <LeadPanel key={selectedId} leadId={selectedId} canWrite={canWrite} onClose={() => select(null)} onOpenLead={select} />
                         ) : (
                             <div className="flex h-full min-h-[300px] flex-col items-center justify-center gap-2 p-6 text-center">
                                 <PanelRight className="h-6 w-6 text-muted-foreground" />
@@ -328,10 +336,16 @@ function LeadsWorkspace() {
             {/* Хүснэгтийн горим / утас: панел нь Sheet */}
             {!showSplit && (
                 <Sheet open={!!selectedId} onOpenChange={(o) => !o && select(null)}>
-                    <SheetContent side="right" showCloseButton={false} className="w-full p-0 sm:max-w-[520px]">
+                    <SheetContent
+                        side="right"
+                        showCloseButton={false}
+                        className="w-full p-0 sm:max-w-[520px]"
+                        // Нэрийн inline засварт Escape зөвхөн засварыг цуцална, панелийг хаахгүй (Radix capture-аар түрүүлж сонсдог).
+                        onEscapeKeyDown={(e) => { if ((e.target as HTMLElement | null)?.closest?.('[data-inline-edit]')) e.preventDefault(); }}
+                    >
                         <SheetTitle className="sr-only">Лидийн дэлгэрэнгүй</SheetTitle>
                         <SheetDescription className="sr-only">Сонгосон лидийн мэдээлэл болон дараагийн үйлдлүүд.</SheetDescription>
-                        {selectedId && <LeadPanel leadId={selectedId} canWrite={canWrite} onClose={() => select(null)} />}
+                        {selectedId && <LeadPanel key={selectedId} leadId={selectedId} canWrite={canWrite} onClose={() => select(null)} onOpenLead={select} />}
                     </SheetContent>
                 </Sheet>
             )}
@@ -371,7 +385,7 @@ function Th({ children, onClick, active, dir }: { children: React.ReactNode; onC
 }
 
 
-function MobileList({ leads, projectNames, loading, onOpen }: { leads: LeadRow[]; projectNames: Record<string, string>; loading: boolean; onOpen: (id: string) => void }) {
+function MobileList({ leads, projectNames, categories, loading, onOpen }: { leads: LeadRow[]; projectNames: Record<string, string>; categories: LeadCategoryRow[]; loading: boolean; onOpen: (id: string) => void }) {
     if (loading) return <div className="flex flex-col gap-2 p-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-14" />)}</div>;
     if (!leads.length) return <div className="px-4 py-10 text-center text-[13px] text-muted-foreground">Лид олдсонгүй</div>;
     return (
@@ -381,11 +395,11 @@ function MobileList({ leads, projectNames, loading, onOpen }: { leads: LeadRow[]
                 return (
                     <div key={l.id} className="flex min-h-20 items-center gap-3 border-b border-border px-4 py-3 last:border-b-0 active:bg-surface-2">
                         <button type="button" onClick={() => onOpen(l.id)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-                            <Avatar name={l.customer_name} className="h-8 w-8 text-[11px]" />
+                            <Avatar name={normalizeLeadName(l.customer_name)} className="h-8 w-8 text-[11px]" />
                             <span className="min-w-0 flex-1">
-                                <span className="block truncate text-[14px] font-medium text-foreground">{l.customer_name || 'Нэргүй'}</span>
+                                <span className={cn('block truncate text-[14px] font-medium', isAnonymousLead(l) ? 'text-muted-foreground' : 'text-foreground')}>{leadDisplayName(l)}</span>
                                 {(Object.keys(projectNames).length > 1 || !l.project_id) && <span className="block truncate text-xs text-fg-2">{l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй'}</span>}
-                                <span className="block truncate text-[12px] text-muted-foreground">{[interestLabel(l) !== '—' ? interestLabel(l) : null, sourceLabel(l.source), l.last_contact_at ? `Холбогдсон: ${formatRelativeDays(l.last_contact_at)}` : 'Холбоо бүртгээгүй'].filter(Boolean).join(' · ')}</span>
+                                <span className="block truncate text-[12px] text-muted-foreground">{[l.category_id ? leadCategoryLabel(categories, l.category_id) : null, interestLabel(l) !== '—' ? interestLabel(l) : null, sourceLabel(l.source), l.last_contact_at ? `Холбогдсон: ${formatRelativeDays(l.last_contact_at)}` : 'Холбоо бүртгээгүй'].filter(Boolean).join(' · ')}</span>
                                 <span className="mt-1 block text-xs text-fg-2">{nextStep(l)}</span>
                             </span>
                             <Pill tone={STATUS_META[l.status]?.tone ?? 'neutral'}>{STATUS_META[l.status]?.short ?? l.status}</Pill>

@@ -229,7 +229,8 @@ export async function sendInviteEmail(params: {
     const { to, actionLink, mode, fullName, inviterName } = params;
     const isInvite = mode === 'invite';
     const title = isInvite ? 'Vertmon Hub-д урьж байна' : 'Vertmon Hub — нэвтрэх холбоос';
-    const greeting = fullName ? `Сайн байна уу, ${fullName}!` : 'Сайн байна уу!';
+    // Нэр нь профайлаас (хэрэглэгч өөрөө засаж болдог) ирж болох тул escape хийнэ.
+    const greeting = fullName ? `Сайн байна уу, ${escapeHtml(fullName)}!` : 'Сайн байна уу!';
     const intro = isInvite
         ? `${inviterName ? inviterName + ' таныг' : 'Таныг'} Vertmon Hub — үл хөдлөхийн борлуулалт &amp; CRM платформд урьж байна. Доорх товчийг дарж бүртгэлээ баталгаажуулна уу (нууц үг шаардахгүй).`
         : 'Vertmon Hub-д нэвтрэх нэг удаагийн холбоос доор байна. Товчийг дарж нэвтэрнэ үү.';

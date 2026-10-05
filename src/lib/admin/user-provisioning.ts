@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
+import { STAFF_PHONE_ERROR, managerNameMissing, staffPhoneInput } from '@/lib/admin/staff-profile';
 
 type AdminDb = ReturnType<typeof supabaseAdmin>;
 
@@ -9,7 +10,15 @@ export const adminUserInput = z.object({
     full_name: z.string().trim().max(120).optional().default(''),
     role: z.string().regex(/^[a-z][a-z0-9_]{0,49}$/).optional().default('viewer'),
     shop_id: z.preprocess((value) => value === '' ? undefined : value, z.guid().optional()),
+    // Ажилтны утас (заавал биш): нормчилсон 8 оронтой эсвэл null.
+    phone: staffPhoneInput.optional(),
 });
+
+/** adminUserInput-ийн алдааг админд ойлгомжтой Монгол мессеж болгоно. */
+export function adminUserInputError(error: z.ZodError): string {
+    if (error.issues.some(issue => issue.path[0] === 'phone')) return STAFF_PHONE_ERROR;
+    return 'Имэйл, дүр эсвэл төслийн мэдээлэл буруу байна';
+}
 
 /** DB-defined roles may be assigned; only super_admin retains its missing-row fallback. */
 export async function isAssignableRole(db: AdminDb, role: unknown): Promise<boolean> {
@@ -33,6 +42,8 @@ type ManagerRow = { name: string; user_id: string | null; is_active: boolean };
 /** Алдаа гарвал шинэ Auth бүртгэл эсвэл шинээр нэмсэн гишүүнчлэлийг буцаана. */
 export async function provisionUserAccess(db: AdminDb, input: {
     actorId: string; userId: string; email: string; fullName?: string;
+    /** Зөвхөн шинэ профайлд бичнэ (нормчилсон 8 оронтой). */
+    phone?: string | null;
     role: string; shopId: string; isNew: boolean;
 }): Promise<AccessError | null> {
     let addedMembership = false;
@@ -47,8 +58,10 @@ export async function provisionUserAccess(db: AdminDb, input: {
             throw new Error(denied.error);
         }
         if (input.isNew) {
+            // Бүртгэлтэй профайлын нэр/утсыг энд дарж бичихгүй («Засах»-аар өөрчилнө).
             const { error } = await db.from('user_profiles').upsert({
                 id: input.userId, email: input.email, full_name: input.fullName || input.email,
+                ...(input.phone ? { phone: input.phone } : {}),
             }, { onConflict: 'id' });
             if (error) throw error;
         }
@@ -60,7 +73,7 @@ export async function provisionUserAccess(db: AdminDb, input: {
                 .select('full_name').eq('id', input.userId).maybeSingle();
             if (profileError) throw profileError;
             const name = profile?.full_name?.trim();
-            if (!name || name === input.email || name.length > 120)
+            if (!name || managerNameMissing(input.role, name, input.email) || name.length > 120)
                 throw { error: 'Борлуулалтын менежерийн профайлд бодит нэр оруулна уу. Имэйлээр менежер үүсгэх боломжгүй.', status: 400 };
             const [linked, named] = await Promise.all([
                 db.from('sales_managers').select('name, user_id, is_active')
@@ -164,17 +177,18 @@ export async function provisionUserAccess(db: AdminDb, input: {
     }
 }
 
-/** A multi-shop installation must always name the destination shop explicitly. */
+/** A multi-shop installation must always name the destination shop (= project) explicitly. */
 export async function resolveTargetShop(db: AdminDb, shopId: unknown): Promise<{ id?: string; error?: string }> {
     if (shopId !== undefined && shopId !== null && shopId !== '') {
-        if (!z.guid().safeParse(shopId).success) return { error: 'Байгууллагын ID буруу байна' };
+        if (!z.guid().safeParse(shopId).success) return { error: 'Төслийн ID буруу байна' };
         const { data, error } = await db.from('shops').select('id').eq('id', shopId).maybeSingle();
         if (error) throw error;
-        return data ? { id: data.id } : { error: 'Сонгосон байгууллага олдсонгүй' };
+        return data ? { id: data.id } : { error: 'Сонгосон төсөл олдсонгүй' };
     }
 
+    // Shop = төсөл: олон төсөлтэй үед хаана нэмэхийг заавал сонгоно.
     const { data, error } = await db.from('shops').select('id').limit(2);
     if (error) throw error;
     if (data?.length === 1) return { id: data[0].id };
-    return { error: data?.length ? 'Байгууллага сонгоно уу' : 'Эхлээд байгууллага үүсгэнэ үү' };
+    return { error: data?.length ? 'Төсөл сонгоно уу' : 'Эхлээд төсөл үүсгэнэ үү' };
 }

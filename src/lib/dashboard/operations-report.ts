@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { ACTIVE_STATUSES, sourceLabel } from '@/lib/leads/labels';
+import { ACTIVE_STATUSES, UNCATEGORIZED_LABEL, categoryOptionLabel, sourceLabel, type LeadCategoryOption } from '@/lib/leads/labels';
 import { unitCategoryLabel } from '@/lib/inventory/labels';
 import { getLeadWorkQueues } from '@/lib/leads/work-queue';
 import { formatMNT } from '@/lib/utils/currency';
@@ -37,8 +37,11 @@ export interface OperationsLead {
     last_contact_at: string | null;
     next_followup_at: string | null;
     viewing_scheduled_at: string | null;
+    category_id?: string | null;
     deleted_at?: string | null;
 }
+/** Төслийн лидийн ангилал (архивласан нь орно) — «Ангиллаар» задаргааны нэр, эрэмбэ. */
+export type OperationsLeadCategory = Pick<LeadCategoryOption, 'id' | 'name' | 'is_active'>;
 export interface OperationsTransaction {
     txn_date: string;
     type: string;
@@ -122,6 +125,8 @@ export function buildOperationsReport(input: {
     receiptClassificationAvailable?: boolean;
     viewings?: OperationsViewing[];
     meetingClassificationAvailable?: boolean;
+    /** Ангилалгүй төсөлд задаргаа хоосон. */
+    categories?: OperationsLeadCategory[];
 }) {
     const { range, now } = input;
     const within = (date: string | null) => !!date && date >= range.from && date <= range.to;
@@ -170,6 +175,12 @@ export function buildOperationsReport(input: {
     const newLeads = leads.filter(l => within(ubDateStr(new Date(l.created_at))));
     const bySource = new Map<string, number>();
     for (const lead of newLeads) bySource.set(lead.source || 'other', (bySource.get(lead.source || 'other') || 0) + 1);
+    // Ангиллаар: тохиргооны эрэмбээр, дараа нь «Ангилалгүй». Тоо 0 ангиллыг харуулахгүй.
+    const categories = input.categories ?? [];
+    const byCategory = categories.length ? [
+        ...categories.map(category => ({ categoryId: category.id as string | null, name: categoryOptionLabel(category), count: newLeads.filter(lead => lead.category_id === category.id).length })),
+        { categoryId: null, name: UNCATEGORIZED_LABEL, count: newLeads.filter(lead => !lead.category_id || !categories.some(category => category.id === lead.category_id)).length },
+    ].filter(row => row.count > 0) : [];
     const leadQueues = active.map(lead => getLeadWorkQueues(lead, new Date(now)));
     const leadHealth = {
         active: active.length,
@@ -193,7 +204,7 @@ export function buildOperationsReport(input: {
         // Stored contract/import snapshot. New ledger receipts do not update this field.
         advanceSnapshot: { amount: snapshots.some(n => n !== null) ? snapshots.reduce<number>((sum, n) => sum + (n ?? 0), 0) : null,
             recordedContracts: snapshots.filter(n => n !== null).length, totalContracts: contracts.length },
-        leads: { newCount: newLeads.length, bySource: [...bySource].map(([source, count]) => ({ source, count })).sort((a, b) => b.count - a.count), health: leadHealth },
+        leads: { newCount: newLeads.length, bySource: [...bySource].map(([source, count]) => ({ source, count })).sort((a, b) => b.count - a.count), byCategory, health: leadHealth },
     };
 }
 
@@ -230,6 +241,7 @@ export function formatOperationsReportText(report: OperationsReport): string {
         `Гэрээнд хадгалсан урьдчилгаа мөнгө: ${advance.amount === null ? 'бүртгэлгүй' : formatMNT(advance.amount)} (${advance.recordedContracts}/${advance.totalContracts} гэрээнд дүн бүртгэлтэй). Энэ нь сонгосон хугацааны орлого биш. Импорт/өмнөх бүртгэлийн энэ дүнг шинэ гүйлгээ автоматаар өөрчлөхгүй; хугацааны урьдчилгаатай нэмж нийлбэрлэхгүй.`,
         `Шинэ лид: ${leads.newCount}`,
         ...leads.bySource.map(r => `  ${sourceLabel(r.source)}: ${r.count}`),
+        ...(leads.byCategory?.length ? [`Ангиллаар: ${leads.byCategory.map(r => `${r.name} ${r.count}`).join(' · ')}`] : []),
         `Одоогийн идэвхтэй лид: ${leads.health.active}; эзэнгүй ${leads.health.ownerless}; анхны холбоо бүртгээгүй ${leads.health.awaitingContact}; дараагийн алхамгүй ${leads.health.noNextStep}; холбоо барих эсвэл уулзалтын хугацаа хэтэрсэн ${leads.health.overdue}. Ангиллууд давхцаж болно.`,
     ].join('\n');
 }

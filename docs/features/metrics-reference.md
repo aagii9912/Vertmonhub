@@ -43,13 +43,28 @@
 |---|---|
 | total, byStatus | хугацаанд бүртгэгдсэн лид, одоогийн төлөвөөр |
 | conversion | won = closed_won, lost = closed_lost, open = ACTIVE_STATUSES, inProgress = open − new; хөрвүүлэлт = won / total |
-| bySource / byProject / byManager | лид ба амжилттай лидийн тоо (`source` хоосон → other; `project_id` → төслийн нэр; хариуцагчгүй, төсөлгүй мөр төгсгөлд). Мөнгөн дүн тооцохгүй — лидийн төсөв гэрээний үнэ биш |
-| Экспорт | `/api/dashboard/export/excel?type=leads&from=&to=` (`leads` модуль) — тайлангийн ижил хугацаа |
+| bySource / byProject / byManager / byCategory | лид ба амжилттай лидийн тоо (`source` хоосон → other; `project_id` → төслийн нэр; `category_id` → UI төслийн ангиллын нэр, архивласан нь «(архив)»; хариуцагчгүй, төсөлгүй, ангилалгүй мөр төгсгөлд). Мөнгөн дүн тооцохгүй — лидийн төсөв гэрээний үнэ биш |
+| Экспорт | `/api/dashboard/export/excel?type=leads&from=&to=` (`leads` модуль) — тайлангийн ижил хугацаа, «Ангилал» баганатай |
 
 ## Маркетингийн форм lead-ийн ялгаа (чухал)
 `POST /api/leads` (Vertmon-ы өөрийн **маркетингийн форм**) нь `shop_id`-гүй lead үүсгэдэг.
 Бүх CRM метрик `shop_id`-ээр шүүдэг тул эдгээр lead нь **tenant-ийн CRM юүлүүрт ОРОХГҮЙ** —
 зориудаар тусгаарлагдсан. (`/dashboard/leads` нь зөвхөн shop-ийн lead-ийг харуулна.)
+
+## Менежерийн идэвх / KPI (`/api/dashboard/reports/manager-activity`, `/api/dashboard/reports/sales-kpi`)
+Дэлгэрэнгүй: [MANAGER-ACTIVITY-KPI-2026-10-04.md](./MANAGER-ACTIVITY-KPI-2026-10-04.md). Нэг loader: `lib/sales/activity-load.ts`.
+
+| Метрик | Эх | Тооцоо |
+|---|---|---|
+| Дуудлага | lead_activities | `type='call'`, УБ өдрөөр; менежер = `created_by` → `sales_managers.user_id`, эс бөгөөс бүртгэлийн нэртэй яг таарсан `created_by_name` (холбоосгүй бүртгэл). Таараагүй = «оноогдоогүй» |
+| Болсон уулзалт / шинэ | property_viewings | `status='completed'`, устгаагүй, `scheduled_at`-ийн УБ өдөр, `sales_manager_name`; шинэ = `meeting_type='new_customer'` |
+| Ирээгүй | property_viewings | `status='no_show'` (оноонд орохгүй) |
+| Санал хүсэлт: хугацаандаа % | service_logs | Хариуцагч `manager_name`. SLA 24/48/120/240ц (чухлалаар). Үр дүн тодорхой болсон өдөр: хугацаандаа шийдвэрлэсэн бол шийдвэрлэсэн өдөр, эс бөгөөс SLA дууссан өдөр. Хуваагч 0 → null |
+| Санал хүсэлт: дундаж цаг | service_logs | `resolved_at − created_at`, хугацаанд шийдвэрлэсэн (resolved/closed) мөрөөр |
+| Хэтэрсэн нээлттэй | service_logs | open/in_progress бөгөөд SLA хэтэрсэн (одоогийн байдлаар) |
+| Хугацааны зорилт | sales_kpi_months.daily | өдрийн зорилт × Даваа–Баасан (өнөөдрийг хүртэл); зорилтгүй → null |
+| KPI «Дуудлага, чат» | sales_kpi_months.manual ?? CRM | гар тоо байвал түүнийг, эс бөгөөс сарын CRM дуудлага (нэмэхгүй) |
+| KPI «Санал хүсэлтийг хугацаандаа шийдвэрлэсэн» | service_logs | сарын «хугацаандаа %» |
 
 ## Хуучин/устгасан метрик (Phase 5)
 - `customers.total_orders`, `total_spent`, `is_vip` — Syncly e-commerce-ийн үлдэгдэл,

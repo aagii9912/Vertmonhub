@@ -40,12 +40,17 @@ export async function POST(request: NextRequest) {
                 facebook_page_name: null,
                 facebook_page_username: null,
                 facebook_page_access_token: null,
+                facebook_token_expires_at: null,
+                // Хуучин урсгалын хадгалсан (ашиглагддаггүй) хэрэглэгчийн токен.
+                facebook_user_access_token: null,
+                facebook_user_token_expires_at: null,
             };
         } else if (platform === 'instagram') {
             updateData = {
                 instagram_business_account_id: null,
                 instagram_username: null,
                 instagram_access_token: null,
+                instagram_token_expires_at: null,
             };
         }
 
@@ -61,6 +66,9 @@ export async function POST(request: NextRequest) {
                 { status: 500 }
             );
         }
+
+        // Дуусаагүй OAuth сонголт (шифрлэгдсэн хэрэглэгчийн токен)-ыг ч устгана.
+        await supabase.from('meta_page_connect_pending').delete().eq('shop_id', shop.id).eq('flow', platform);
 
         return NextResponse.json({
             success: true,

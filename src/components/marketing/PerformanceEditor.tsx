@@ -9,10 +9,11 @@ import { Input } from '@/components/ui/Input';
 import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
 import { MARKETING_CHANNELS, type MarketingActivity } from '@/lib/marketing/performance';
 import { ubDateStr } from '@/lib/utils/date';
+import { leadDisplayName } from '@/lib/leads/labels';
 
 export const marketingInputClass = 'h-10 w-full rounded-md border border-border bg-surface px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand';
 export type EditRecord = { kind: 'activity' | 'target' | 'spend' | 'attribution'; [key: string]: string | number | null | undefined };
-type LeadOption = { id: string; customer_name: string; sales_manager_name: string | null; sales_handoff_at: string | null; project_id: string | null; marketing_campaign_id: string | null; marketing_owner_name: string | null; marketing_channel: string | null };
+type LeadOption = { id: string; customer_name: string | null; customer_phone?: string | null; sales_manager_name: string | null; sales_handoff_at: string | null; project_id: string | null; marketing_campaign_id: string | null; marketing_owner_name: string | null; marketing_channel: string | null };
 const labels = { activity: 'Акц / контент бүртгэх', target: 'Сарын зорилт, төсөв', spend: 'Зардал бүртгэх', attribution: 'Лидийн эх үүсвэр холбох' };
 
 export function PerformanceEditor({ record, projects, activities, shopId, onClose, onSaved }: {
@@ -82,13 +83,13 @@ export function PerformanceEditor({ record, projects, activities, shopId, onClos
             <form onSubmit={save} className="grid gap-4">
                 <datalist id="marketing-owner-options">{owners.map(n => <option key={n} value={n} />)}</datalist>
                 {record.kind === 'attribution' && <>
-                    <div className="flex items-end gap-2"><label className="grid flex-1 gap-1.5 text-sm">Лид нэрээр хайх<Input value={search} onChange={e => setSearch(e.target.value)} /></label><Button type="button" variant="secondary" onClick={() => setQuery(search)}>Хайх</Button></div>
-                    <p className="text-xs text-muted-foreground">Сүүлийн 30 тохирох лид. Өөр нэрээр хайж нарийвчилна уу.</p>
+                    <div className="flex items-end gap-2"><label className="grid flex-1 gap-1.5 text-sm">Лид нэр, утсаар хайх<Input value={search} onChange={e => setSearch(e.target.value)} /></label><Button type="button" variant="secondary" onClick={() => setQuery(search)}>Хайх</Button></div>
+                    <p className="text-xs text-muted-foreground">Сүүлийн 30 тохирох лид. Нэр, утсаар хайж нарийвчилна уу; «нэргүй» гэвэл нэргүй лидүүд.</p>
                     {leads.isError && <p role="alert">Лидийн жагсаалт татаж чадсангүй. <button type="button" className="underline" onClick={() => void leads.refetch()}>Дахин оролдох</button></p>}
                     <label className="grid gap-1.5 text-sm">Лид<select aria-label="Лид" required className={marketingInputClass} value={value('lead_id')} onChange={e => {
                         const lead = leads.data?.leads.find(l => l.id === e.target.value);
                         setDraft(d => ({ ...d, lead_id: e.target.value, project_id: lead?.project_id || '', marketing_campaign_id: lead?.marketing_campaign_id || '', marketing_owner_name: lead?.marketing_owner_name || '', marketing_channel: lead?.marketing_channel || 'other' }));
-                    }}><option value="">{leads.isLoading ? 'Уншиж байна…' : 'Лид сонгох'}</option>{leads.data?.leads.map(l => <option key={l.id} value={l.id}>{l.customer_name}</option>)}</select></label>
+                    }}><option value="">{leads.isLoading ? 'Уншиж байна…' : 'Лид сонгох'}</option>{leads.data?.leads.map(l => <option key={l.id} value={l.id}>{leadDisplayName(l)}{l.customer_phone ? ` · ${l.customer_phone}` : ''}</option>)}</select></label>
                     {selectedLead?.sales_manager_name && !selectedLead.sales_handoff_at && <div className="rounded-md border border-border p-3 text-sm">
                         <p>Борлуулалтын менежер: {selectedLead.sales_manager_name}. Хуучин шилжүүлсэн огноо тодорхойгүй.</p>
                         <Button type="button" variant="secondary" size="sm" className="mt-2" isLoading={confirming} onClick={() => void confirmHandoff()}>Sales хүлээн авсныг өнөөдрөөр батлах</Button>

@@ -1,5 +1,8 @@
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { redactAuditArgs } from './audit-redaction';
+
+export { AUDIT_REDACTED, redactAuditArgs } from './audit-redaction';
 
 /**
  * AI Assistant-ээр хийсэн write/delete үйлдлийг бүртгэх. Best-effort —
@@ -19,7 +22,7 @@ export async function logAiAudit(params: {
                 shop_id: params.shopId,
                 user_id: params.userId || null,
                 tool: params.tool,
-                args: params.args || {},
+                args: redactAuditArgs(params.tool, params.args),
                 success: params.success ?? true,
             });
     } catch (error) {

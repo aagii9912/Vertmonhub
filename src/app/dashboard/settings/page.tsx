@@ -12,6 +12,7 @@ import { Switch } from '@/components/ui/Switch';
 import { useAuth } from '@/contexts/AuthContext';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
+import { LeadCategoriesSettings } from '@/components/settings/LeadCategoriesSettings';
 import {
     Building2, User, Bell, Save, LogOut, Loader2, Check, Phone
 } from 'lucide-react';
@@ -167,6 +168,9 @@ export default function SettingsPage() {
                     </div>
                 </div>
             </SectionCard>
+
+            {/* Лидийн ангилал (төсөл бүрийн жагсаалт) */}
+            <LeadCategoriesSettings />
 
             {/* Notification Settings */}
             <SectionCard title="Мэдэгдлийн тохиргоо" icon={Bell}>

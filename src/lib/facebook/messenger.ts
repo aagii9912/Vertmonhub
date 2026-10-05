@@ -1,74 +1,80 @@
 import crypto from 'crypto';
 import { calculateBackoffDelay } from '@/lib/webhook/retryService';
 import { safeEqual } from '@/lib/crypto/safe-equal';
-
-const GRAPH_API_URL = 'https://graph.facebook.com/v21.0';
+import { graphInt, META_GRAPH_VERSION, MetaApiError } from '@/lib/facebook/daily-spend';
+import { logger } from '@/lib/utils/logger';
 
 // Meta Graph API статус кодууд: түр зуурын алдаа (rate limit / серверийн талын)
 // үед дахин оролдоно. 4xx (429-аас бусад) алдааг дахин оролдох нь утгагүй —
 // тэдгээр нь буруу хүсэлт (буруу recipient, токен г.м.) тул шууд унагана.
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 504]);
 const MAX_SEND_ATTEMPTS = 3;
+const SEND_TIMEOUT_MS = 20000;
+
+/** Send API-ийн алдааг монгол мессеж болгоно. Meta-гийн хариу, URL, токен хэзээ ч орохгүй. */
+function sendError(status: number | null, code: number | null, subcode: number | null): MetaApiError {
+    const details = { status, code, subcode };
+    if (code === 190) return new MetaApiError('Facebook холболтын эрх дууссан. Page-ээ дахин холбоно уу.', details);
+    if (code === 10 && subcode === 2018278) {
+        return new MetaApiError('Харилцагчийн сүүлийн мессежээс хойш 24 цаг өнгөрсөн тул Messenger-ээр хариу илгээх боломжгүй.', details);
+    }
+    if (code === 551) return new MetaApiError('Энэ харилцагч одоогоор Messenger мессеж хүлээн авах боломжгүй байна.', details);
+    return new MetaApiError(`Messenger мессеж илгээж чадсангүй (HTTP ${status}${code !== null ? `, code ${code}` : ''}).`, details);
+}
 
 /**
- * Meta Graph API руу мессеж илгээх нэгдсэн helper.
- * Түр зуурын алдаа (429/5xx) болон сүлжээний алдаа гарвал exponential
- * backoff-оор дахин оролдоно. Бусад тохиолдолд шууд алдаа шиднэ.
+ * Send API (Graph v26 `me/messages`) руу мессеж илгээх нэгдсэн helper. Токен зөвхөн
+ * Authorization толгойд, `appsecret_proof` заавал (FACEBOOK_APP_SECRET байхгүй бол Graph-д
+ * хандахгүй). Түр зуурын алдаа (429/5xx) болон сүлжээний алдаа гарвал exponential
+ * backoff-оор дахин оролдоно. Бусад тохиолдолд шууд MetaApiError шиднэ.
  */
-async function postToGraph(
-    pageAccessToken: string,
-    body: Record<string, unknown>,
-    operation: string
-): Promise<unknown> {
-    let lastError: Error | undefined;
+async function postMessage(pageAccessToken: string, body: Record<string, unknown>): Promise<unknown> {
+    const proof = appsecretProof(pageAccessToken);
+    if (!proof) throw new MetaApiError('Facebook app-ийн нууц түлхүүр (FACEBOOK_APP_SECRET) тохируулаагүй байна.');
+    const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/me/messages?appsecret_proof=${proof}`;
+    let lastError: MetaApiError | undefined;
 
     for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
         let response: Response;
         try {
-            response = await fetch(buildSendUrl(pageAccessToken), {
+            response = await fetch(url, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { Authorization: `Bearer ${pageAccessToken}`, 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
+                cache: 'no-store',
+                signal: AbortSignal.timeout(SEND_TIMEOUT_MS),
             });
-        } catch (err) {
+        } catch {
             // Сүлжээний алдаа — түр зуурын гэж үзэж дахин оролдоно
-            lastError = err instanceof Error ? err : new Error(String(err));
+            lastError = new MetaApiError('Meta холболт тасарлаа эсвэл хугацаа хэтэрлээ. Дахин оролдоно уу.');
             if (attempt === MAX_SEND_ATTEMPTS) break;
-            await sleepBackoff(attempt, operation);
+            await sleepBackoff(attempt, lastError);
             continue;
         }
 
-        if (response.ok) {
-            return response.json();
-        }
-
-        const error = await response.json().catch(() => ({}));
-        const message = error?.error?.message || `HTTP ${response.status}`;
+        const json = await response.json().catch(() => null);
+        if (response.ok && json && !json.error) return json;
+        lastError = sendError(response.status, graphInt(json?.error?.code), graphInt(json?.error?.error_subcode));
 
         // Дахин оролдох боломжгүй алдаа (4xx, 429-аас бусад) — шууд унагана
-        if (!RETRYABLE_STATUS.has(response.status)) {
-            console.error(`Facebook API error [${operation}]:`, error);
-            throw new Error(`Failed to ${operation}: ${message}`);
-        }
-
-        lastError = new Error(message);
-        if (attempt === MAX_SEND_ATTEMPTS) break;
-        await sleepBackoff(attempt, operation);
+        if (!RETRYABLE_STATUS.has(response.status) || attempt === MAX_SEND_ATTEMPTS) break;
+        await sleepBackoff(attempt, lastError);
     }
 
-    throw new Error(`Failed to ${operation}${lastError ? `: ${lastError.message}` : ''}`);
+    logger.warn('[Messenger] send failed', { status: lastError?.status, code: lastError?.code, subcode: lastError?.subcode });
+    throw lastError;
 }
 
-async function sleepBackoff(attempt: number, operation: string): Promise<void> {
+async function sleepBackoff(attempt: number, error: MetaApiError): Promise<void> {
     const delay = calculateBackoffDelay(attempt, { initialDelayMs: 500, maxDelayMs: 8000 });
-    console.warn(`⚠️ [${operation}] оролдлого ${attempt}/${MAX_SEND_ATTEMPTS} амжилтгүй, ${Math.round(delay)}ms-ийн дараа дахин оролдоно...`);
+    logger.warn(`[Messenger] оролдлого ${attempt}/${MAX_SEND_ATTEMPTS} амжилтгүй, ${Math.round(delay)}ms-ийн дараа дахин оролдоно`, {
+        status: error.status, code: error.code,
+    });
     await new Promise(resolve => setTimeout(resolve, delay));
 }
 
-// Meta recommends signing every Graph API call with appsecret_proof when the
-// "Require App Secret Proof for Server API calls" toggle is on. Returns null
-// when FACEBOOK_APP_SECRET is not configured, in which case the param is
-// omitted (Meta accepts the call so long as the toggle is off).
+// Page/Instagram-ийн Graph дуудлага бүр (илгээх, профайл, Lead Ads, insights) энэ proof-ыг
+// заавал авна; FACEBOOK_APP_SECRET тохируулаагүй бол null буцааж, дуудагч Graph-д хандахгүй (fail closed).
 export function appsecretProof(token: string): string | null {
     // ⚠️ .trim() ЗААВАЛ — Vercel env-д сүүл newline/зай орвол OAuth (trim хийдэг)
     // ажиллах ч энэ proof буруу гарч "Invalid appsecret_proof" алдаа өгдөг
@@ -78,12 +84,6 @@ export function appsecretProof(token: string): string | null {
     return crypto.createHmac('sha256', secret).update(token).digest('hex');
 }
 
-function buildSendUrl(pageAccessToken: string): string {
-    const proof = appsecretProof(pageAccessToken);
-    const base = `${GRAPH_API_URL}/me/messages?access_token=${pageAccessToken}`;
-    return proof ? `${base}&appsecret_proof=${proof}` : base;
-}
-
 interface SendMessageOptions {
     recipientId: string;
     message: string;
@@ -91,11 +91,11 @@ interface SendMessageOptions {
 }
 
 export async function sendTextMessage({ recipientId, message, pageAccessToken }: SendMessageOptions) {
-    return postToGraph(pageAccessToken, {
+    return postMessage(pageAccessToken, {
         recipient: { id: recipientId },
         messaging_type: 'RESPONSE',
         message: { text: message },
-    }, 'send message');
+    });
 }
 
 export function verifyWebhook(

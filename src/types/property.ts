@@ -129,6 +129,8 @@ export interface Lead {
     assigned_to: string | null;
     /** Хариуцагч борлуулалтын менежерийн нэр (миграци 20260617120000) */
     sales_manager_name?: string | null;
+    /** Лидийн ангилал (lead_categories, төслийн тохиргоо; NULL = ангилалгүй) — миграци 20261004161000 */
+    category_id?: string | null;
 
     // Conversion
     converted_at: string | null;
@@ -203,7 +205,8 @@ export interface LoanCalculatorResult {
  * Property Contract — Excel-ээс импортолсон гэрээний бүх өгөгдөл
  * (Mongolian sales-tracking workbook structure)
  */
-export type ContractStatus = 'active' | 'closed' | 'cancelled';
+/** `transferred` — ERP-ээс импортолсон «Тоот шилжсэн» (тоот солигдсон); эзэмшигч солих биш. */
+export type ContractStatus = 'active' | 'closed' | 'cancelled' | 'transferred';
 
 export interface PropertyContract {
     id: string;
@@ -271,10 +274,46 @@ export interface PropertyContract {
 
     // CRM
     hubspot_contact_id: string | null;
+    lead_id?: string | null;
+    /** Одоогийн эзэмшигчийн харилцагч (шилжүүлэгт солигдоно). */
+    customer_id?: string | null;
+    project_id?: string | null;
 
     // Timestamps
     created_at: string;
     updated_at: string;
+}
+
+/**
+ * Гэрээний эзэмшигчийн өөрчлөлтийн түүхийн мөр (`contract_transfers`, append-only).
+ * transfer = өөр хүнд шилжүүлсэн, rename = ижил хүний нэр засвар. Мөнгөн дүн нь
+ * шилжүүлэх үеийн хуулбар; гэрээний төлсөн дүн, үлдэгдэл энэ мөрөөр өөрчлөгдөхгүй.
+ */
+export interface ContractTransfer {
+    id: string;
+    contract_id: string;
+    kind: 'transfer' | 'rename';
+    effective_date: string;
+    from_customer_id: string | null;
+    from_customer_name: string | null;
+    from_first_name: string | null;
+    from_last_name: string | null;
+    from_registration: string | null;
+    from_phone: string | null;
+    from_mobile: string | null;
+    to_customer_id: string | null;
+    to_customer_name: string;
+    to_first_name: string | null;
+    to_last_name: string | null;
+    to_registration: string | null;
+    to_phone: string | null;
+    to_mobile: string | null;
+    total_price_at_transfer: number | null;
+    paid_amount_at_transfer: number | null;
+    balance_at_transfer: number | null;
+    reason: string | null;
+    created_by_name: string | null;
+    created_at: string;
 }
 
 /**

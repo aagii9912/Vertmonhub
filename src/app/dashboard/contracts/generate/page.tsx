@@ -20,6 +20,7 @@ import {
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { formatMNT } from '@/lib/utils/currency';
 import { ubDateStr } from '@/lib/utils/date';
+import { normalizeLeadName } from '@/lib/leads/labels';
 
 interface ContractData {
     /** Худалдагч (А тал) — хуулийн этгээдийн нэр; системд хадгалагдаагүй тул гараар. */
@@ -139,7 +140,8 @@ function ContractGenerateInner({ defaultProject }: { defaultProject: string }) {
                     if (!l) return;
                     setData((prev) => ({
                         ...prev,
-                        buyerName: prev.buyerName || l.customer_name || '',
+                        // Нэргүй лидийн шошго гэрээнд хэзээ ч орохгүй — хоосон үлдээнэ.
+                        buyerName: prev.buyerName || normalizeLeadName(l.customer_name) || '',
                         buyerPhone: prev.buyerPhone || l.customer_phone || '',
                         buyerEmail: prev.buyerEmail || l.customer_email || '',
                     }));

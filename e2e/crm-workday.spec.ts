@@ -4,11 +4,14 @@ import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import { buildMarketingPerformance, type MarketingSpend } from '../src/lib/marketing/performance';
 import { nextMeetingDate, weeklyReviewRange } from '../src/lib/dashboard/weekly-review';
 import { ubDateStr } from '../src/lib/utils/date';
+import { buildLeadTimeline } from '../src/lib/leads/timeline';
+import { managerActivityFixture } from './support/manager-activity';
 
 const shopId = '00000000-0000-4000-8000-000000000002';
 const leadId = '00000000-0000-4000-8000-000000000010';
 const projectId = '00000000-0000-4000-8000-000000000030';
 const elysiumId = '00000000-0000-4000-8000-000000000031';
+const investorId = '00000000-0000-4000-8000-000000000041';
 const today = ubDateStr();
 const tomorrow = ubDateStr(new Date(Date.now() + 86_400_000));
 
@@ -18,6 +21,7 @@ async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admi
         customer_email: null, status: i === 0 ? 'contacted' : 'new', source: i === 2 ? 'website' : 'facebook',
         sales_manager_name: i === 2 ? null : 'Номин', notes: null, interest_type: 'apartment', interest_rooms: 3,
         project_id: i === 2 ? null : projectId,
+        category_id: i === 0 ? investorId : null as string | null,
         created_at: `${today}T01:00:00Z`, updated_at: `${today}T01:00:00Z`,
         last_contact_at: i === 0 ? `${today}T02:00:00Z` : null,
         next_followup_at: i === 0 ? '2026-01-01T01:00:00Z' : null,
@@ -27,6 +31,17 @@ async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admi
         { ...leads[0], id: '00000000-0000-4000-8000-000000000015', customer_name: 'Өөр төслийн лид', project_id: elysiumId },
     ];
     const visibleLeads = () => role === 'admin' ? [...leads, ...privateLeads] : leads.filter(lead => lead.sales_manager_name === 'Номин' && lead.project_id === projectId);
+    // Менежерүүдийн Time-line: Сараа хариуцаж байхад үнэ хэлээд, Номинд шилжсэний дараа өөр үнэ хэлсэн.
+    const timeline = buildLeadTimeline({
+        lead: leads[0],
+        roster: [{ name: 'Номин', user_id: 'user-nomin', is_active: true }, { name: 'Сараа', user_id: 'user-saraa', is_active: true }],
+        activities: [
+            { id: 'activity-1', type: 'quote', content: 'Үнийн санал', meta: { amount: 280000000, unit_label: 'B-1201' }, created_by: 'user-saraa', created_by_name: 'Сараа', created_at: `${today}T01:10:00Z` },
+            { id: 'activity-2', type: 'manager', content: 'Сараа → Номин', meta: { from: 'Сараа', to: 'Номин' }, created_by: 'user-admin', created_by_name: 'Админ', created_at: `${today}T01:20:00Z` },
+            { id: 'activity-3', type: 'call', content: 'Үнийн нөхцөл ярилаа', meta: {}, created_by: 'user-nomin', created_by_name: 'Номин', created_at: `${today}T02:00:00Z` },
+            { id: 'activity-4', type: 'quote', content: 'Үнийн санал', meta: { amount: 286000000, unit_label: 'B-1201' }, created_by: 'user-nomin', created_by_name: 'Номин', created_at: `${today}T02:05:00Z` },
+        ],
+    });
     const viewings = leads.slice(0, 2).map((lead, i) => ({
         id: `viewing-${i}`, scheduled_at: `${tomorrow}T${i ? '15' : '11'}:00:00+08:00`, status: 'scheduled',
         lead, lead_id: lead.id, sales_manager_name: 'Номин', meeting_type: 'new_customer', agent_notes: i ? null : '3 өрөө байрны зохион байгуулалт танилцуулах',
@@ -39,6 +54,7 @@ async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admi
         sales_manager: 'Номин', block_name: 'B', unit_number: `120${i + 1}`, rooms: 3, overdue_days: i === 0 ? 4 : 0,
     }));
     const state = { failContracts: false, failExport: false, missingFx: false, viewings,
+        transfers: [] as Record<string, unknown>[], transferBodies: [] as Record<string, unknown>[],
         requests: [] as { path: string; search: string; method: string; shop: string | undefined; body?: Record<string, unknown> }[], errors: [] as string[], unhandled: [] as string[] };
     page.on('pageerror', error => state.errors.push(error.message));
     await page.route('**/api/**', async route => {
@@ -53,7 +69,12 @@ async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admi
         if (path === '/api/dashboard/nav-counts') return reply({ leads: 3, inbox: 0, meetings: 2 });
         if (path === '/api/dashboard/my-stats') return reply({ manager: { name: 'Номин', isSelf: true, inRoster: true, hasAccount: true }, onboarding: false, missing: [], period: 'today',
             kpis: { activeLeads: 3, newLeads: 2, viewingsToday: 0, viewingsThisWeek: 2, activeContracts: 3, salesThisMonth: 860000000 }, target: null, tasks: [], recentLeads: [], upcomingViewings: [], revenueTrend: [] });
+        if (path === '/api/dashboard/reports/manager-activity') return reply(managerActivityFixture(url, 'Номин'));
         if (path === '/api/dashboard/leads/projects') return reply({ projects: [{ id: projectId, name: 'Мандала Гарден' }, ...(role === 'admin' ? [{ id: elysiumId, name: 'Элизиум' }] : [])] });
+        if (path === '/api/dashboard/lead-categories') return reply({ categories: [
+            { id: investorId, name: 'Хөрөнгө оруулагч', description: null, tone: 'success', sort_order: 10, is_active: true },
+            { id: '00000000-0000-4000-8000-000000000042', name: 'Бартер', description: null, tone: 'neutral', sort_order: 20, is_active: false },
+        ] });
         if (path === '/api/dashboard/managers') {
             const managers = [
                 { id: 'manager-1', name: 'Номин', is_active: true, project_ids: [projectId], assignable: role === 'admin' },
@@ -67,6 +88,7 @@ async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admi
             const matches = visibleLeads().filter(lead => (!url.searchParams.get('q') || lead.customer_name.includes(url.searchParams.get('q')!))
                 && (!url.searchParams.get('project') || lead.project_id === url.searchParams.get('project'))
                 && (!url.searchParams.get('status') || lead.status === url.searchParams.get('status'))
+                && (!url.searchParams.get('category') || (url.searchParams.get('category') === 'none' ? !lead.category_id : lead.category_id === url.searchParams.get('category')))
                 && (url.searchParams.get('queue') !== 'overdue' || !!lead.next_followup_at));
             return reply({ leads: matches, pagination: { page: 1, pageSize: 25, total: matches.length, totalPages: 1, hasMore: false } });
         }
@@ -78,7 +100,7 @@ async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admi
                 if (role !== 'admin' && ('project_id' in body || 'sales_manager_name' in body)) return reply({ error: 'Хуваарилах эрхгүй' }, 403);
                 Object.assign(lead, body);
             }
-            return reply({ lead, viewings: [], contracts: [], activities: [], property: null });
+            return reply({ lead, viewings: [], contracts: [], activities: [], property: null, timeline: lead.id === leadId ? timeline : null });
         }
         if (path.startsWith('/api/dashboard/viewings/') && request.method() === 'PATCH') {
             const item = state.viewings.find(item => path.endsWith(item.id));
@@ -86,6 +108,25 @@ async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admi
             return reply({ viewing: item });
         }
         if (path === '/api/dashboard/viewings') return reply({ viewings: state.viewings, counts: { today: 0, upcoming: 2, past: 0 } });
+        const contractPath = path.match(/^\/api\/dashboard\/contracts\/([^/]+)(?:\/(payments|transfer))?$/);
+        if (contractPath && contractPath[1] !== 'stats') {
+            const contract = contracts.find(c => c.id === contractPath[1]);
+            if (!contract) return reply({ error: 'Гэрээ олдсонгүй' }, 404);
+            if (contractPath[2] === 'payments') return reply({ payments: [] });
+            if (contractPath[2] === 'transfer' && request.method() === 'POST') {
+                if (readonly) return reply({ error: 'Бичих эрхгүй' }, 403);
+                const body = request.postDataJSON() as Record<string, string>;
+                state.transferBodies.push(body);
+                state.transfers.unshift({ id: `transfer-${state.transfers.length + 1}`, contract_id: contract.id, kind: body.kind, effective_date: body.effective_date,
+                    from_customer_name: contract.customer_name, to_customer_name: body.customer_name, to_registration: String(body.customer_registration || '').toUpperCase(),
+                    reason: body.reason, created_by_name: 'Номин', created_at: new Date().toISOString() });
+                contract.customer_name = body.customer_name;
+                return reply({ transfer: state.transfers[0], replayed: false, message: 'Гэрээ шилжүүлэгдлээ' }, 201);
+            }
+            if (contractPath[2] === 'transfer') return reply({ transfers: state.transfers.filter(t => t.contract_id === contract.id), available: true });
+            return reply({ contract });
+        }
+        if (path === '/api/dashboard/ai-attachments') return reply({ attachments: [] });
         if (path === '/api/dashboard/contracts') {
             if (state.failContracts) return reply({ error: 'Туршилтын түр алдаа' }, 503);
             const matches = contracts.filter(c => (!url.searchParams.get('search') || c.customer_name.includes(url.searchParams.get('search')!)) && (url.searchParams.get('overdue') !== '1' || c.overdue_days > 0));
@@ -143,6 +184,10 @@ for (const mobile of [false, true]) {
         await page.getByRole('button', { name: 'Цэвэрлэх', exact: true }).click();
         await page.getByText('Б. Энхжин', { exact: true }).click();
         await expect(page.getByRole('dialog', { name: 'Лидийн дэлгэрэнгүй' })).toBeVisible();
+        const leadPanel = page.getByRole('dialog', { name: 'Лидийн дэлгэрэнгүй' });
+        await expect(leadPanel.getByRole('region', { name: 'Холбогдсон менежерүүд' })).toBeVisible();
+        await expect(leadPanel.getByText('Үнийн санал зөрүүтэй (B-1201): Сараа 280,000,000₮ · Номин 286,000,000₮', { exact: true })).toBeVisible();
+        await expect(leadPanel.getByRole('button', { name: 'Үнийн санал', exact: true })).toBeVisible();
         await page.getByRole('dialog', { name: 'Лидийн дэлгэрэнгүй' }).getByRole('button', { name: 'Хаах', exact: true }).click();
         const download = page.waitForEvent('download');
         await page.getByRole('button', { name: 'Excel · бүгд', exact: true }).click();
@@ -163,7 +208,7 @@ for (const mobile of [false, true]) {
         await page.goto('/dashboard/contracts');
         await expect(page.getByRole('heading', { name: 'Гэрээнүүд', exact: true })).toBeVisible();
         await expect(page.getByRole('link', { name: 'Гэрээ үүсгэх' })).toBeVisible();
-        await expect(page.getByText('VM-2026-001', { exact: true })).toBeVisible();
+        await expect(page.locator('#workspace-content').getByText('VM-2026-001', { exact: true })).toBeVisible();
         await shot('contracts');
         await page.getByRole('button', { name: 'Хоцролттой', exact: true }).click();
         await expect(page.getByRole('button', { name: 'Хоцролттой', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -210,11 +255,39 @@ test('гэрээний ачааллын алдаа болон экспортын
     await expect(page.getByText('Гэрээ олдсонгүй', { exact: true })).not.toBeVisible();
     state.failContracts = false;
     await page.getByRole('button', { name: 'Дахин оролдох', exact: true }).click();
-    await expect(page.getByText('VM-2026-001', { exact: true })).toBeVisible();
+    await expect(page.locator('#workspace-content').getByText('VM-2026-001', { exact: true })).toBeVisible();
     state.failExport = true;
     await page.getByRole('button', { name: 'Excel · бүгд', exact: true }).click();
     await expect(page.getByText('Экспорт түр боломжгүй', { exact: true })).toBeVisible();
     expect(state.errors).toEqual([]);
+});
+
+test('гэрээг өөр хүнд шилжүүлж эзэмшигчийн түүхийг харна', async ({ page }) => {
+    const state = await setup(page);
+    await page.goto('/dashboard/contracts/contract-0');
+    await expect(page.locator('#workspace-content').getByText('VM-2026-001', { exact: true })).toBeVisible();
+    await expect(page.getByText('Эзэмшигчийн түүх', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Гэрээ шилжүүлэх', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Гэрээ шилжүүлэх' });
+    await expect(dialog).toContainText('Б. Энхжин');
+    await dialog.getByRole('button', { name: 'Шилжүүлэх', exact: true }).click();
+    await expect(dialog.getByRole('alert')).toHaveText('Шинэ эзэмшигчийн нэрийг оруулна уу');
+    await dialog.getByLabel('Овог', { exact: true }).fill('Дорж');
+    await dialog.getByLabel('Нэр', { exact: true }).fill('Сараа');
+    await expect(dialog.getByLabel('Шинэ эзэмшигчийн нэр')).toHaveValue('Дорж Сараа');
+    await dialog.getByLabel('Регистр / паспорт').fill('чб88020202');
+    await dialog.getByLabel('Шалтгаан / тэмдэглэл').fill('Гэр бүлийн гишүүнд шилжүүлэв');
+    await dialog.getByRole('button', { name: 'Шилжүүлэх', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    expect(state.transferBodies).toEqual([expect.objectContaining({ kind: 'transfer', customer_name: 'Дорж Сараа', customer_last_name: 'Дорж', customer_first_name: 'Сараа',
+        customer_registration: 'чб88020202', effective_date: today, expected_customer_name: 'Б. Энхжин', reason: 'Гэр бүлийн гишүүнд шилжүүлэв' })]);
+    expect(state.transferBodies[0].client_request_id).toMatch(/^[0-9a-f-]{36}$/);
+    await expect(page.getByText('Эзэмшигчийн түүх', { exact: true })).toBeVisible();
+    await expect(page.getByText('Анхны худалдан авагч', { exact: true })).toBeVisible();
+    await expect(page.getByText('Б. Энхжин → Дорж Сараа').first()).toBeVisible();
+    await expect(page.getByText('ЧБ88020202', { exact: true })).toBeVisible();
+    expect(state.errors).toEqual([]);
+    expect(state.unhandled).toEqual([]);
 });
 
 test('маркетингийн ханш дутуу үед өртөг тэг гэж харагдахгүй', async ({ page }) => {
@@ -235,8 +308,12 @@ test('маркетингийн ханш дутуу үед өртөг тэг гэ
 test('унших эрхтэй хэрэглэгчид шинээр үүсгэх болон уулзалт өөрчлөх товч харагдахгүй', async ({ page }) => {
     await setup(page, true);
     await page.goto('/dashboard/contracts');
-    await expect(page.getByText('VM-2026-001', { exact: true })).toBeVisible();
+    await expect(page.locator('#workspace-content').getByText('VM-2026-001', { exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Гэрээ үүсгэх' })).toHaveCount(0);
+    await page.goto('/dashboard/contracts/contract-0');
+    await expect(page.locator('#workspace-content').getByText('VM-2026-001', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Гэрээ шилжүүлэх' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Төлбөр бүртгэх' })).toHaveCount(0);
     await page.goto('/dashboard/viewings');
     await expect(page.getByText('Б. Энхжин', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Ирсэн', exact: true })).toHaveCount(0);
@@ -278,6 +355,27 @@ test('админ төслийг ил тод сонгоод зөв төслийн
     await page.getByRole('button', { name: 'Элизиум Менежер', exact: true }).click();
     await expect.poll(() => state.requests.some(r => r.method === 'PATCH' && r.body?.sales_manager_name === 'Элизиум Менежер')).toBe(true);
     await expect(panel.getByText('Элизиум Менежер', { exact: true })).toBeVisible();
+    expect(state.errors).toEqual([]);
+    expect(state.unhandled).toEqual([]);
+});
+
+test('лидийг ангиллаар шүүж, дэлгэрэнгүйгээс ангилал тавина', async ({ page }) => {
+    const state = await setup(page);
+    await page.goto('/dashboard/leads');
+    await expect(page.getByText('Б. Энхжин', { exact: true })).toBeVisible();
+    await page.getByRole('combobox', { name: 'Ангилал', exact: true }).selectOption('none');
+    await expect.poll(() => state.requests.some(r => r.path === '/api/dashboard/leads' && r.search.includes('category=none'))).toBe(true);
+    await expect(page.getByText('Б. Энхжин', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Цэвэрлэх', exact: true }).click();
+    await page.getByText('Г. Тэмүүлэн', { exact: true }).click();
+    const panel = page.getByRole('dialog', { name: 'Лидийн дэлгэрэнгүй' });
+    await panel.getByRole('button', { name: 'Ангилал солих', exact: true }).click();
+    const picker = page.getByRole('listbox', { name: 'Лидийн ангилал', exact: true });
+    // Архивласан ангиллыг шинээр санал болгохгүй.
+    await expect(picker.getByRole('option')).toHaveText(['Ангилалгүй', 'Хөрөнгө оруулагч']);
+    await picker.getByRole('option', { name: 'Хөрөнгө оруулагч' }).click();
+    await expect.poll(() => state.requests.some(r => r.method === 'PATCH' && r.body?.category_id === investorId)).toBe(true);
+    await expect(panel.getByRole('button', { name: 'Ангилал солих', exact: true })).toContainText('Хөрөнгө оруулагч');
     expect(state.errors).toEqual([]);
     expect(state.unhandled).toEqual([]);
 });

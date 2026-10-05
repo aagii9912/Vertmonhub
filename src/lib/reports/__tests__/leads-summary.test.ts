@@ -120,6 +120,21 @@ describe('buildLeadsSummary', () => {
         expect(JSON.stringify(summary)).not.toMatch(/budget|value/);
     });
 
+    it('groups lead categories by id with won counts, uncategorized last', () => {
+        const summary = buildLeadsSummary([
+            lead('closed_won', { category_id: 'cat-invest' }),
+            lead('new', { category_id: 'cat-invest' }),
+            lead('new', { category_id: 'cat-family' }),
+            lead('new', { category_id: null }),
+            lead('closed_won'),
+        ], projects);
+        expect(summary.byCategory).toEqual([
+            { categoryId: 'cat-invest', count: 2, won: 1 },
+            { categoryId: 'cat-family', count: 1, won: 0 },
+            { categoryId: null, count: 2, won: 1 },
+        ]);
+    });
+
     it('returns an empty report without inventing rows', () => {
         const summary = buildLeadsSummary([], projects);
         expect(summary).toMatchObject({ total: 0, bySource: [], byProject: [], byManager: [], conversion: { won: 0, lost: 0, open: 0, inProgress: 0 } });

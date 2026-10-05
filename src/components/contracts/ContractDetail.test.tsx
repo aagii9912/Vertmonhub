@@ -16,6 +16,7 @@ vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ user: mocks.user, s
 vi.mock('@/hooks/useContracts', () => ({
     useContract: () => ({ ...mocks.contract, refetch: mocks.refetchContract }),
     usePayments: () => ({ ...mocks.payments, refetch: mocks.refetchPayments }),
+    useContractTransfers: () => ({ data: { transfers: [] }, isError: false }),
     useAddPayment: () => ({ mutateAsync: mocks.add, isPending: false }),
     useUpdatePayment: () => ({ mutate: mocks.update, isPending: false }),
 }));
@@ -23,6 +24,7 @@ vi.mock('@/hooks/useLeads', () => ({ useLeadDetail: () => ({ data: undefined }) 
 vi.mock('@/lib/navigation/pageTitle', () => ({ usePageTitle: vi.fn() }));
 vi.mock('@/lib/ai/context', () => ({ useRegisterAiContext: vi.fn() }));
 vi.mock('@/components/dashboard/EntityAttachments', () => ({ EntityAttachments: () => null }));
+vi.mock('@/components/contracts/ContractTransferDialog', () => ({ ContractTransferDialog: () => null }));
 vi.mock('@/components/ui/Toast', () => ({ confirmToast: (...args: unknown[]) => mocks.confirm(...args) }));
 vi.mock('sonner', () => ({ toast: { success: (...args: unknown[]) => mocks.toastSuccess(...args), error: (...args: unknown[]) => mocks.toastError(...args) } }));
 

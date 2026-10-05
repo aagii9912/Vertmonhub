@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
-import { TrendingUp, Users, Target, BarChart3, RefreshCw, Megaphone, DollarSign, Heart, MessageCircle, Share2 } from 'lucide-react';
+import { TrendingUp, Users, Target, BarChart3, RefreshCw, Megaphone, DollarSign, Heart, MessageCircle, Share2, Eye } from 'lucide-react';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { StatBar, StatTile } from '@/components/dashboard/StatBar';
 import { Card } from '@/components/ui/Card';
@@ -72,8 +72,20 @@ interface RoiTotals {
 }
 interface RoiData { campaigns: CampaignRoi[]; sources: unknown[]; totals: RoiTotals; basis?: { note: string }; }
 
-interface SocialPost { id: string; content: string | null; likes: number; comments: number; shares: number; published_at: string | null; }
-interface SocialInsight { captured_at: string; reach: number; impressions: number; followers: number; }
+interface SocialPost { id: string; content: string | null; likes: number | null; comments: number | null; shares: number | null; reach: number | null; published_at: string | null; }
+interface SocialMetricSummary { label: string; kind: 'sum' | 'unique' | 'latest'; value: number | null; day: string | null; days: number; }
+interface SocialSync { last_attempt_at: string; last_success_at: string | null; last_from: string | null; last_to: string | null; unavailable_metrics: string[]; last_error: string | null; }
+interface SocialHistory {
+    posts?: SocialPost[];
+    page?: { id: string; name: string | null } | null;
+    sync?: SocialSync | null;
+    daily?: { from: string; to: string; metrics: Record<string, SocialMetricSummary> } | null;
+}
+/** Органик картын үзүүлэлтүүд (lib/marketing/social-metrics.ts-ийн нэрээр). */
+const SOCIAL_CARD_METRICS = ['page_follows', 'page_daily_follows_unique', 'page_media_view', 'page_total_media_view_unique', 'page_post_engagements', 'page_views_total'] as const;
+const socialNumber = (value: number | null | undefined) => typeof value === 'number' ? value.toLocaleString() : '—';
+const socialMetricCaption = (metric: SocialMetricSummary) =>
+    metric.kind === 'sum' ? `${metric.days} өдрийн нийлбэр` : metric.day ? `${metric.day}-ны байдлаар` : 'өгөгдөлгүй';
 
 /** Эх үүсвэрийн шинжилгээнд хэрэглэх лидийн талбарууд (/api/dashboard/leads). */
 interface LeadStat { source: string | null; status: string | null; created_at: string; }
@@ -179,7 +191,7 @@ export default function MarketingROIPage() {
     // Хадгалсан Facebook кампаниуд (Meta-аас синк хийхгүй)
     const campaignsQuery = useDashboardQuery<{ rows?: AdCampaign[] }>(['marketing-roi', 'campaigns'], '/api/marketing/data/ad_campaigns?eq.platform=facebook&order=updated_at.desc');
     const roiQuery = useDashboardQuery<{ roi?: RoiData | null }>(['marketing-roi', 'roi'], '/api/dashboard/marketing-roi');
-    const socialQuery = useDashboardQuery<{ posts?: SocialPost[]; insights?: SocialInsight[] }>(['marketing-roi', 'social'], '/api/dashboard/marketing/social-history');
+    const socialQuery = useDashboardQuery<SocialHistory>(['marketing-roi', 'social'], '/api/dashboard/marketing/social-history');
     const timelineQuery = useDashboardQuery<{ months?: TimelineMonth[] }>(['marketing-roi', 'timeline'], '/api/dashboard/marketing-roi/timeline');
     // Зарын дансыг «Ad account-уудыг ачаалах» дарахад л татна.
     const adAccountsQuery = useDashboardQuery<{ accounts?: AdAccount[]; selected_id?: string | null }>(
@@ -198,7 +210,8 @@ export default function MarketingROIPage() {
     // Таталт алдагдвал хуучин/тэг дүнг одоогийн тайлан мэт харуулахгүй.
     const roi = roiQuery.isError ? null : roiQuery.data?.roi ?? null;
     const socialPosts = socialQuery.data?.posts ?? [];
-    const socialInsights = socialQuery.data?.insights ?? [];
+    const socialDaily = socialQuery.data?.daily ?? null;
+    const socialSync = socialQuery.data?.sync ?? null;
     const timeline = timelineQuery.data?.months ?? NO_MONTHS;
     const adAccounts = adAccountsQuery.data?.accounts ?? NO_ACCOUNTS;
     const [pickedAdAccount, setPickedAdAccount] = useState<string | null>(null);
@@ -554,11 +567,38 @@ export default function MarketingROIPage() {
                                 </Alert>
                             ) : (
                                 <>
-                                    {socialInsights[0] && (
-                                        <div className="flex flex-wrap gap-4 mb-4 text-sm">
-                                            <span className="text-muted-foreground">Дагагч: <span className="font-semibold text-foreground tabular-nums">{socialInsights[0].followers.toLocaleString()}</span></span>
-                                            <span className="text-muted-foreground">Хүртээмж: <span className="font-semibold text-foreground tabular-nums">{socialInsights[0].reach.toLocaleString()}</span></span>
-                                            <span className="text-muted-foreground">Snapshot: <span className="font-semibold text-foreground tabular-nums">{socialInsights.length}</span></span>
+                                    {socialQuery.data?.page && (
+                                        <div className="mb-4 space-y-3">
+                                            {socialDaily ? (
+                                                <>
+                                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                                        {SOCIAL_CARD_METRICS.map((name) => {
+                                                            const metric = socialDaily.metrics[name];
+                                                            if (!metric) return null;
+                                                            return (
+                                                                <div key={name} className="rounded-md border border-border p-3">
+                                                                    <p className="text-xs text-muted-foreground">{metric.label}</p>
+                                                                    <p className="num text-lg font-semibold text-foreground">{socialNumber(metric.value)}</p>
+                                                                    <p className="text-[11px] text-muted-foreground">{socialMetricCaption(metric)}</p>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                    <p className="text-xs text-muted-foreground">
+                                                        {socialQuery.data.page.name ?? 'Facebook Page'} · {socialDaily.from} – {socialDaily.to} (Meta-гийн өдөр, Номхон далайн цаг) · «—» = Meta өгөөгүй
+                                                    </p>
+                                                </>
+                                            ) : (
+                                                <p className="text-sm text-muted-foreground">Өдрийн үзүүлэлт хадгалагдаагүй байна. «Хадгалах» дарж Facebook-аас татна уу.</p>
+                                            )}
+                                            {socialSync?.last_error && (
+                                                <Alert variant="warning">
+                                                    <AlertDescription>{socialSync.last_error}</AlertDescription>
+                                                </Alert>
+                                            )}
+                                            {!!socialSync?.unavailable_metrics?.length && (
+                                                <p className="text-xs text-muted-foreground">Meta өгөөгүй үзүүлэлт: {socialSync.unavailable_metrics.join(', ')}</p>
+                                            )}
                                         </div>
                                     )}
                                     {socialPosts.length === 0 ? (
@@ -569,9 +609,10 @@ export default function MarketingROIPage() {
                                                 <div key={p.id} className="py-2.5 flex items-start justify-between gap-3">
                                                     <p className="text-sm text-foreground line-clamp-2 flex-1">{p.content || '(зураг)'}</p>
                                                     <span className="flex items-center gap-3 text-xs text-muted-foreground whitespace-nowrap tabular-nums">
-                                                        <span className="flex items-center gap-1"><Heart className="w-3.5 h-3.5" /> {p.likes}</span>
-                                                        <span className="flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5" /> {p.comments}</span>
-                                                        <span className="flex items-center gap-1"><Share2 className="w-3.5 h-3.5" /> {p.shares}</span>
+                                                        <span className="flex items-center gap-1"><Heart className="w-3.5 h-3.5" /> {socialNumber(p.likes)}</span>
+                                                        <span className="flex items-center gap-1"><MessageCircle className="w-3.5 h-3.5" /> {socialNumber(p.comments)}</span>
+                                                        <span className="flex items-center gap-1"><Share2 className="w-3.5 h-3.5" /> {socialNumber(p.shares)}</span>
+                                                        <span className="flex items-center gap-1" title="Үзсэн хүн"><Eye className="w-3.5 h-3.5" /> {socialNumber(p.reach)}</span>
                                                     </span>
                                                 </div>
                                             ))}

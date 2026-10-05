@@ -20,12 +20,14 @@ import {
     Download,
     Building2,
     UserRound,
+    Tags,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 import { dashboardDownload } from '@/lib/api/dashboardFetch';
 import { cn } from '@/lib/utils';
-import { sourceLabel } from '@/lib/leads/labels';
+import { UNCATEGORIZED_LABEL, leadCategoryLabel, sourceLabel } from '@/lib/leads/labels';
+import { useLeadCategories } from '@/hooks/useLeads';
 import type { LeadsReportPeriod, LeadsSummaryReport } from '@/lib/reports/leads-summary';
 
 const PERIOD_OPTIONS: { value: LeadsReportPeriod; label: string }[] = [
@@ -53,6 +55,8 @@ export default function LeadsReport() {
         ['leads-report'],
         `/api/dashboard/reports/leads-summary?period=${period}`,
     );
+    // Ангиллын нэр (архивласан нь «(архив)»-тай) — төсөлд ангилал тохируулсан үед л задаргаа харагдана.
+    const { data: categories = [] } = useLeadCategories();
     const [exporting, setExporting] = useState(false);
     // Экспорт нь харилцагчийн холбоо барих мэдээлэлтэй тул лидийн модулийн эрх шаардана.
     const canExport = user?.role === 'super_admin' || !!user?.permissions.modules.includes('leads');
@@ -168,6 +172,12 @@ export default function LeadsReport() {
         count: row.count,
         won: row.won,
     }));
+    const categoryRows: BreakdownRow[] = data.byCategory.map((row) => ({
+        key: row.categoryId ?? 'none',
+        label: row.categoryId ? leadCategoryLabel(categories, row.categoryId, { markArchived: true }) : UNCATEGORIZED_LABEL,
+        count: row.count,
+        won: row.won,
+    }));
     const managerRows: BreakdownRow[] = data.byManager.map((row) => ({
         key: row.manager ?? 'none',
         label: row.manager ?? 'Хариуцагчгүй',
@@ -253,6 +263,9 @@ export default function LeadsReport() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 <BreakdownCard title="Төслөөр" icon={<Building2 className="w-5 h-5 text-brand" />} rows={projectRows} />
                 <BreakdownCard title="Менежерээр" icon={<UserRound className="w-5 h-5 text-brand" />} rows={managerRows} />
+                {categories.length > 0 && (
+                    <BreakdownCard title="Ангиллаар" icon={<Tags className="w-5 h-5 text-brand" />} rows={categoryRows} />
+                )}
             </div>
         </div>
     );

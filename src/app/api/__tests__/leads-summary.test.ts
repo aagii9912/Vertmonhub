@@ -44,6 +44,7 @@ vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: (table: string)
         gte: (key: string, value: string) => { filters.push(row => Date.parse(row[key]) >= Date.parse(value)); return query; },
         lt: (key: string, value: string) => { filters.push(row => Date.parse(row[key]) < Date.parse(value)); return query; },
         order: () => query,
+        limit: () => query,
         range: (from: number, to: number) => { first = from; last = to; return query; },
         maybeSingle: async () => { const r = result(); return { ...r, data: r.data?.[0] ?? null }; },
         then: (resolve: (value: unknown) => unknown) => Promise.resolve(result()).then(resolve),

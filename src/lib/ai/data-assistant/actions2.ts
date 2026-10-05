@@ -5,9 +5,12 @@
  */
 
 import { supabaseAdmin as adminClient } from '@/lib/supabase';
-import { ubDateStr } from '@/lib/utils/date';
+import { ubDateStr, ubParts } from '@/lib/utils/date';
 import { phoneIlikePattern } from '@/lib/utils/phone';
-import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
+import { resolveManagerIdentity, resolveReportViewer } from '@/lib/sales/manager-identity';
+import { activityRangeError, resolveActivityRange, type ActivityGroup, type ActivityRow } from '@/lib/sales/activity';
+import { findActivityManager, loadManagerActivity } from '@/lib/sales/activity-load';
+import { dateSchema } from '@/lib/marketing/performance';
 import { resolveSalesProjectScope, UNRESTRICTED_SALES_SCOPE, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { computeKpiReport } from '@/lib/dashboard/kpi-report-build';
 import { formatKpiReportText } from '@/lib/dashboard/kpi-report';
@@ -25,9 +28,10 @@ const confirmNeeded = (tool: string, args: Args, label: string, preview: Record<
 /* ---------------- Менежер / тайлан ---------------- */
 
 export async function getKpiReport(shopId: string, args: Args, userId: string, perms: AssistantPerms, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
-    const now = new Date();
-    const year = Math.min(2100, Math.max(2020, Number(args.year) || now.getFullYear()));
-    const month = Math.min(12, Math.max(1, Number(args.month) || now.getMonth() + 1));
+    // Сервер UTC-ээр ажилладаг тул анхдагч сарыг УБ-ийн огноогоор (сарын эхний 8 цагт өмнөх сар гарахгүй).
+    const now = ubParts();
+    const year = Math.min(2100, Math.max(2020, Number(args.year) || now.year));
+    const month = Math.min(12, Math.max(1, Number(args.month) || now.month));
     const identity = await resolveManagerIdentity(db(), shopId, userId);
     const isAdmin = perms.role === 'admin' || perms.role === 'super_admin';
     const isPersonal = !isAdmin && (perms.role === 'sales_manager' || identity.isManager);
@@ -39,6 +43,61 @@ export async function getKpiReport(shopId: string, args: Args, userId: string, p
     let text = '';
     try { text = formatKpiReportText(report as never); } catch { text = ''; }
     return { ...report, plainText: text };
+}
+
+const ACTIVITY_GUIDANCE = 'Дуудлага = CRM-д бүртгэсэн дуудлага (CallPro-гийн нийт тоо биш); менежерт оноогдоогүйг (unattributed) хэн нэгэнд бүү оноо. '
+    + 'Болсон уулзалт бүх төрлөөр, «шинэ» нь шинэ харилцагчтай; ирээгүй нь оноонд орохгүй. Санал хүсэлт: хугацаандаа % = SLA (24/48/120/240ц)-ийн үр дүн тодорхой болсноос. '
+    + 'null зорилт/хувь = зорилтгүй эсвэл мэдээлэлгүй — 0% гэж бүү тайлбарла, зорилт бүү зохио. 7 хоног = Лхагва–Мягмар. '
+    + 'inRoster=false = менежерийн бүртгэлд байхгүй нэр (уулзалтын хуучин нэр г.м).';
+
+const compactActivityRow = (row: ActivityRow, label?: string) => ({
+    ...(label ? { period: label } : {}),
+    calls: row.calls, callTarget: row.target.calls, callPct: row.attainment.calls,
+    meetingsHeld: row.meetingsHeld, meetingsNew: row.meetingsNew, noShows: row.noShows, meetingTarget: row.target.meetings, meetingPct: row.attainment.meetings,
+    requests: { received: row.requests.received, resolved: row.requests.resolved, onTimePct: row.requests.onTimePct, avgResolutionHours: row.requests.avgResolutionHours },
+});
+
+/** Менежерийн өдөр/7 хоног/сарын идэвх — API-тай ижил эрхийн дүрэм (resolveReportViewer), ижил loader. */
+export async function getManagerActivityTool(shopId: string, args: Args, userId: string, perms: AssistantPerms, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
+    const group: ActivityGroup = args.group === 'week' || args.group === 'month' ? args.group : 'day';
+    const valid = (value: unknown) => typeof value === 'string' && dateSchema.safeParse(value).success;
+    if ((args.from && !valid(args.from)) || (args.to && !valid(args.to))) return { error: 'Огноог YYYY-MM-DD хэлбэрээр өгнө үү' };
+    // `to` өгөөгүй бол өнөөдөр («…-аас хойш»); `from` өгөөгүй бол `to`-гийн өдөр / хурлын 7 хоног / сарын эхэн.
+    const { from, to } = resolveActivityRange(args.from, args.to, group, ubDateStr());
+    const rangeError = activityRangeError(from, to);
+    if (rangeError) return { error: rangeError };
+
+    const viewer = await resolveReportViewer(db(), shopId, { userId, role: perms.role, modules: perms.modules });
+    let only: string | null = null;
+    if (viewer.personal || scope.projectIds !== null) {
+        const entry = viewer.identity?.rosterEntry ?? null;
+        // Акаунттай холбосон бүртгэл л (профайлын нэрээр таарсан дансгүй мөрийн идэвхийг өгөхгүй).
+        only = scope.managerName ?? (entry && entry.user_id === userId ? entry.name : null);
+        if (!only) return { error: 'Та борлуулалтын менежерийн бүртгэлд байхгүй — идэвхийн тайлан гаргах менежер тодорхойгүй.' };
+    } else if (!viewer.canViewTeam) {
+        return { error: 'Багийн идэвхийг харах эрхгүй' };
+    } else if (String(args.manager ?? '').trim()) {
+        // Бүртгэлгүй/буруу бичсэн нэрээр «0 дуудлага» гэсэн хоосон мөр гаргахгүй — сонголт өгч тодруулна.
+        const found = await findActivityManager(db(), shopId, String(args.manager).slice(0, 120));
+        if (!found.ok) return { error: `${found.error} — доорх нэрсээс тодруулна уу (ask_user)`, options: found.options };
+        only = found.name;
+    }
+
+    const report = await loadManagerActivity(db(), { shopId, from, to, group, only });
+    const withRows = report.periods.length > 1 && report.periods.length * report.managers.length <= 150;
+    const labels = new Map(report.periods.map(period => [period.key, period.label]));
+    return {
+        from: report.from, to: report.to, group: report.group, targetDays: report.targetDays,
+        managers: report.managers.map(manager => ({
+            manager: manager.manager, active: manager.active, inRoster: manager.inRoster, dailyTarget: manager.daily, openOverdueRequests: manager.openOverdue,
+            total: compactActivityRow(manager.totals),
+            ...(withRows ? { periods: manager.rows.map(row => compactActivityRow(row, labels.get(row.period))) } : {}),
+        })),
+        unattributed: report.unattributed,
+        ...(report.periods.length > 1 && !withRows ? { note: 'Хугацаа урт тул зөвхөн нийт дүнг өгөв — задаргаа хэрэгтэй бол 7 хоног/сараар эсвэл нэг менежерээр асуу.' } : {}),
+        guidance: ACTIVITY_GUIDANCE,
+        url: '/dashboard/reports/kpi',
+    };
 }
 
 export async function getManagerPerformanceTool(shopId: string) {

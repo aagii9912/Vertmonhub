@@ -16,6 +16,7 @@ import { formatOperationsReportText } from '@/lib/dashboard/operations-report';
 import { ZodError } from 'zod';
 import { TOOL_CATALOG, canUseToolModule, isCatalogTool, toolKindDenial, type ToolName } from '@/lib/ai/tool-catalog';
 import { logAiAudit } from './audit';
+import { redactAuditArgs } from './audit-redaction';
 import {
     fetchDashboardStats,
     fetchProperties, fetchLeads, fetchLeadDetails, fetchCustomerInsights,
@@ -30,8 +31,10 @@ import {
     createSocialPost, rememberFact,
 } from './functions';
 import { inviteUser, assignRole, createRole } from './admin-functions';
-import { getKpiReport, getManagerPerformanceTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
-import { logCall, setFollowup, assignLeadManager, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
+import { getKpiReport, getManagerActivityTool, getManagerPerformanceTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
+import { logCall, setFollowup, logPriceQuote, assignLeadManager, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
+import { transferContractTool } from './actions-contract-transfer';
+import { listLeadCategoriesTool, setLeadCategory } from './actions-lead-category';
 
 /** AI Assistant-ийн RBAC эрхүүд (route-аас тооцоолж дамжуулна). */
 export interface AssistantPerms {
@@ -87,6 +90,7 @@ async function operationsReportTool({ shopId, args, scope, perms }: ToolCall) {
 const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     list_lead_projects: async ({ shopId, scope }) => ({ projects: await fetchAllRows((from, to) => applyProjectScope(supabaseAdmin().from('projects')
         .select('id,name').eq('shop_id', shopId).order('id').range(from, to), scope, 'id')) }),
+    list_lead_categories: ({ shopId }) => listLeadCategoriesTool(shopId),
     get_marketing_performance: marketingPerformanceTool,
     get_operations_report: operationsReportTool,
     get_dashboard_stats: ({ shopId, args, scope }) => fetchDashboardStats(shopId, args.timeRange || 'month', scope),
@@ -104,7 +108,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     update_unit_status: ({ shopId, args, confirm }) => updateUnitStatus(shopId, args, confirm),
     update_property_price: ({ shopId, args, confirm }) => updatePropertyPrice(shopId, args, confirm),
     update_lead_status: ({ shopId, args, confirm, scope, userId, userName }) => updateLeadStatus(shopId, args, confirm, scope, { userId, userName }),
-    add_lead_note: ({ shopId, args, confirm, scope }) => addLeadNote(shopId, args, confirm, scope),
+    add_lead_note: ({ shopId, args, confirm, scope, userId, userName }) => addLeadNote(shopId, args, confirm, scope, { userId, userName }),
     process_contract_action: ({ shopId, args, confirm, scope, userId, userName }) => processContractAction(shopId, args, confirm, scope, { userId, userName }),
     create_property: ({ shopId, args, confirm }) => createProperty(shopId, args, confirm),
     delete_property: ({ shopId, args, confirm }) => deleteProperty(shopId, args, confirm),
@@ -114,6 +118,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     schedule_viewing: ({ shopId, args, confirm, userName, userId, scope }) => scheduleViewing(shopId, args, confirm, userName, userId, scope),
     delete_viewing: ({ shopId, args, confirm, scope, userId }) => deleteViewing(shopId, args, confirm, scope, userId),
     create_contract: ({ shopId, args, confirm, userName, scope }) => createContract(shopId, args, confirm, userName, scope),
+    transfer_contract: ({ shopId, args, confirm, scope, userId, userName }) => transferContractTool(shopId, args, confirm, { userId, userName, scope }),
     delete_contract: ({ shopId, args, confirm }) => deleteContract(shopId, args, confirm),
     delete_customer: ({ shopId, args, confirm }) => deleteCustomer(shopId, args, confirm),
     attach_file: ({ shopId, args, confirm, userName, userId, perms, scope }) => attachFile(shopId, args, confirm, userName, userId, perms, scope),
@@ -128,6 +133,8 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     list_contract_payments: ({ shopId, args }) => listContractPayments(shopId, args),
     log_call: ({ shopId, args, userId, userName, scope }) => logCall(shopId, args, userId, userName, scope),
     set_followup: ({ shopId, args, userId, userName, scope }) => setFollowup(shopId, args, userId, userName, scope),
+    log_price_quote: ({ shopId, args, confirm, userId, userName, scope }) => logPriceQuote(shopId, args, confirm, userId, userName, scope),
+    set_lead_category: ({ shopId, args, userId, userName, scope }) => setLeadCategory(shopId, args, userId, userName, scope),
     assign_lead_manager: ({ shopId, args, confirm, userId, userName, scope }) => assignLeadManager(shopId, args, confirm, userId, userName, scope),
     record_viewing_outcome: ({ shopId, args, userId, userName, scope }) => recordViewingOutcome(shopId, args, userId, userName, scope),
     reschedule_viewing: ({ shopId, args, confirm, userId, userName, scope }) => rescheduleViewing(shopId, args, confirm, userId, userName, scope),
@@ -136,6 +143,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     add_contract_payment: ({ shopId, args, confirm }) => addContractPayment(shopId, args, confirm),
     mark_payment_paid: ({ shopId, args, confirm }) => markPaymentPaid(shopId, args, confirm),
     get_kpi_report: ({ shopId, args, userId, perms, scope }) => getKpiReport(shopId, args, userId, perms, scope),
+    get_manager_activity: ({ shopId, args, userId, perms, scope }) => getManagerActivityTool(shopId, args, userId, perms, scope),
     get_manager_performance: ({ shopId }) => getManagerPerformanceTool(shopId),
     get_export_link: ({ shopId, args }) => getExportLink(shopId, args),
     add_customer_tag: ({ shopId, args }) => customerTag(shopId, args, false),
@@ -161,7 +169,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
  * confirm=true  → бодит үйлдлийг гүйцэтгэнэ (зөвшөөрлийн дараа action endpoint дуудна).
  */
 export async function executeDataTool(toolName: string, args: any, shopId: string, perms: AssistantPerms, userId: string, confirm = false, userName = ''): Promise<any> {
-    logger.info(`[AI Data Assistant] Executing tool: ${toolName}`, { args, role: perms.role, confirm });
+    logger.info(`[AI Data Assistant] Executing tool: ${toolName}`, { args: redactAuditArgs(toolName, args ?? {}), role: perms.role, confirm });
 
     if (!isCatalogTool(toolName)) return { error: `Unknown tool: ${toolName}` };
     const meta = TOOL_CATALOG[toolName];

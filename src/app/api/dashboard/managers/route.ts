@@ -10,9 +10,9 @@ import { withRoute } from '@/lib/api/route';
  * Тухайн shop-ийн идэвхтэй борлуулалтын менежерүүдийн жагсаалт.
  * sales_managers бүртгэл цорын ганц эх сурвалж: хуучин гэрээ, лидийн нэр
  * идэвхтэй багийн сонгогчид эргэн орохгүй.
- * Хамгаалалт: reports эсвэл leads модулийн эрх.
+ * Хамгаалалт: reports, leads эсвэл customer-service (санал гомдлын хариуцагч сонгох) модулийн эрх.
  */
-export const GET = withRoute({ module: ['reports', 'leads'], error: 'Менежерийн жагсаалт унших алдаа' }, async ({ request, shop: authShop }) => {
+export const GET = withRoute({ module: ['reports', 'leads', 'customer-service'], error: 'Менежерийн жагсаалт унших алдаа' }, async ({ request, shop: authShop }) => {
     const db = supabaseAdmin();
     const scope = await resolveSalesProjectScope(db, authShop.id);
     const projectId = request ? new URL(request.url).searchParams.get('project') : null;

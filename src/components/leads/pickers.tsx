@@ -5,7 +5,10 @@ import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/Popover';
 import { Pill, Avatar } from '@/components/dashboard/v2/primitives';
-import { LEAD_STATUSES, STATUS_META, statusLabel, statusTone } from '@/lib/leads/labels';
+import {
+    LEAD_STATUSES, STATUS_META, UNCATEGORIZED_LABEL, categoryOptionLabel, categoryTone, statusLabel, statusTone,
+    type LeadCategoryOption, type LeadCategoryTone,
+} from '@/lib/leads/labels';
 import type { ManagerOption } from '@/hooks/useLeads';
 
 /**
@@ -158,6 +161,113 @@ export function ManagerPicker({
                         </button>
                     ))}
                     {list.length === 0 && <div className="px-2 py-3 text-center text-[12px] text-muted-foreground">Олдсонгүй</div>}
+                </div>
+            </PopoverContent>
+        </Popover>
+    );
+}
+
+const CATEGORY_DOT: Record<LeadCategoryTone, string> = {
+    neutral: 'bg-status-neutral',
+    info: 'bg-status-info',
+    success: 'bg-status-success',
+    pending: 'bg-status-pending',
+};
+
+/**
+ * Лидийн ангиллын тэмдэг — саарал pill дээр өнгөт цэг (статусын pill-тэй андуурахгүй).
+ * Архивласан ангилалд «(архив)» нэмнэ.
+ */
+export function CategoryBadge({
+    category,
+    className,
+}: {
+    category: Pick<LeadCategoryOption, 'name' | 'tone' | 'is_active'>;
+    className?: string;
+}) {
+    return (
+        <Pill tone="neutral" className={cn('max-w-full', className)}>
+            <span aria-hidden className={cn('size-1.5 shrink-0 rounded-full', CATEGORY_DOT[categoryTone(category.tone)])} />
+            <span className="truncate">{categoryOptionLabel(category)}</span>
+        </Pill>
+    );
+}
+
+/**
+ * Inline ангилал сонгогч. `options` нь төслийн бүх ангилал (архивласан нь орно — одоогийн
+ * нэрийг харуулна); шинээр зөвхөн идэвхтэйг санал болгоно. `value === undefined` бол
+ * (бөөнөөр засах) одоогийн утгагүй — `placeholder` харагдана.
+ */
+export function CategoryPicker({
+    value,
+    options,
+    onChange,
+    disabled,
+    placeholder = 'Сонгох',
+    size = 'sm',
+}: {
+    value: string | null | undefined;
+    options: readonly LeadCategoryOption[];
+    onChange: (categoryId: string | null) => void;
+    disabled?: boolean;
+    placeholder?: string;
+    size?: 'sm' | 'md';
+}) {
+    const [open, setOpen] = useState(false);
+    const current = value ? options.find((category) => category.id === value) ?? null : null;
+    const active = options.filter((category) => category.is_active);
+    const canPick = !disabled && (active.length > 0 || !!current);
+
+    const label = current ? (
+        <CategoryBadge category={current} className={cn(size === 'md' && 'h-6 px-2.5 text-[12px]')} />
+    ) : (
+        <span className={cn('inline-flex items-center gap-1.5 text-muted-foreground', size === 'md' ? 'text-[12.5px]' : 'text-[12px]')}>
+            <span aria-hidden className="size-1.5 rounded-full border border-dashed border-border-strong" />
+            {value === undefined ? placeholder : value ? '—' : options.length ? UNCATEGORIZED_LABEL : '—'}
+        </span>
+    );
+    if (!canPick) return label;
+
+    const pick = (categoryId: string | null) => {
+        setOpen(false);
+        if (value === undefined || categoryId !== (value ?? null)) onChange(categoryId);
+    };
+
+    return (
+        <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+                <button
+                    type="button"
+                    onClick={(e) => e.stopPropagation()}
+                    className={cn('inline-flex max-w-full items-center gap-1 rounded-full px-0.5 focus-ring', open && 'ring-2 ring-brand/30')}
+                    aria-label="Ангилал солих"
+                >
+                    {label}
+                    <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
+                </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" sideOffset={4} className="w-[240px] p-1" onClick={(e) => e.stopPropagation()}>
+                <div role="listbox" aria-label="Лидийн ангилал" className="flex max-h-64 flex-col gap-0.5 overflow-y-auto">
+                    <button type="button" role="option" aria-selected={value === null} onClick={() => pick(null)}
+                        className="flex min-h-8 items-center gap-2 rounded-md px-1.5 text-left text-[12.5px] text-muted-foreground hover:bg-surface-2 focus-ring">
+                        <span aria-hidden className="size-1.5 rounded-full border border-dashed border-border-strong" />
+                        {UNCATEGORIZED_LABEL}
+                        {value === null && <Check className="ml-auto h-3.5 w-3.5 text-brand" />}
+                    </button>
+                    {current && !current.is_active && (
+                        <div role="option" aria-selected aria-disabled className="flex min-h-8 items-center gap-2 rounded-md px-1.5 text-[12.5px]">
+                            <CategoryBadge category={current} />
+                            <Check className="ml-auto h-3.5 w-3.5 text-brand" />
+                        </div>
+                    )}
+                    {active.map((category) => (
+                        <button key={category.id} type="button" role="option" aria-selected={category.id === value} onClick={() => pick(category.id)}
+                            title={category.description ?? undefined}
+                            className="flex min-h-8 items-center gap-2 rounded-md px-1.5 text-left hover:bg-surface-2 focus-ring">
+                            <CategoryBadge category={category} />
+                            {category.id === value && <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-brand" />}
+                        </button>
+                    ))}
                 </div>
             </PopoverContent>
         </Popover>

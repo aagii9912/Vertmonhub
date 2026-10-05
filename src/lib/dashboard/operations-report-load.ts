@@ -4,7 +4,7 @@ import { fetchAllRows } from '@/lib/utils/pagination';
 import { ubDateStr, ubDayRange, ubMonthRange, ubParts } from '@/lib/utils/date';
 import {
     buildOperationsReport, OperationsRangeSchema,
-    type OperationsContract, type OperationsLead, type OperationsTarget, type OperationsTransaction, type OperationsViewing,
+    type OperationsContract, type OperationsLead, type OperationsLeadCategory, type OperationsTarget, type OperationsTransaction, type OperationsViewing,
 } from './operations-report';
 
 /** Shared by the report page and AI. Authorization is supplied by their server-side callers. */
@@ -49,12 +49,12 @@ export async function loadOperationsReport(db: SupabaseClient, options: {
         }
         return result as unknown as { data: OperationsTransaction[] | null; error: { message: string } | null };
     };
-    const [contracts, leads, targets, transactions, viewings] = await Promise.all([
+    const [contracts, leads, targets, transactions, viewings, categories] = await Promise.all([
         fetchAllRows<OperationsContract>((from, to) => db.from('property_contracts')
             .select('id, contract_date, contract_status, total_price, prepayment_paid_cash, product_type')
             .eq('shop_id', options.shopId).is('deleted_at', null).order('id').range(from, to)),
         fetchAllRows<OperationsLead>((from, to) => applyLeadScope(db.from('leads')
-            .select('created_at, status, source, sales_manager_name, last_contact_at, next_followup_at, viewing_scheduled_at')
+            .select('created_at, status, source, sales_manager_name, last_contact_at, next_followup_at, viewing_scheduled_at, category_id')
             .eq('shop_id', options.shopId).is('deleted_at', null).order('id').range(from, to), scope)),
         fetchAllRows<OperationsTarget>((from, to) => db.from('team_sales_targets')
             .select('year, month, target_amount').eq('shop_id', options.shopId)
@@ -62,6 +62,9 @@ export async function loadOperationsReport(db: SupabaseClient, options: {
             .order('year').order('month').range(from, to)),
         options.canReadFinance ? fetchAllRows<OperationsTransaction>(receiptPage) : Promise.resolve(null),
         fetchAllRows<OperationsViewing>(viewingPage),
+        // Лидийн ангилал — төслийн тохиргоо (лидийн өгөгдөл биш), хүрээгээр хязгаарлахгүй.
+        fetchAllRows<OperationsLeadCategory>((from, to) => db.from('lead_categories')
+            .select('id, name, is_active').eq('shop_id', options.shopId).order('sort_order').order('id').range(from, to)),
     ]);
-    return { ...buildOperationsReport({ range, now: now.toISOString(), contracts, leads, targets, transactions, viewings, receiptClassificationAvailable, meetingClassificationAvailable }), shopName: options.shopName || 'Vertmon Hub' };
+    return { ...buildOperationsReport({ range, now: now.toISOString(), contracts, leads, targets, transactions, viewings, receiptClassificationAvailable, meetingClassificationAvailable, categories }), shopName: options.shopName || 'Vertmon Hub' };
 }

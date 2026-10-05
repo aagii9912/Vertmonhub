@@ -4,8 +4,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
 import type { Lead } from '@/types/property';
-import type { LeadView } from '@/lib/leads/labels';
+import type { LeadCategoryOption, LeadView } from '@/lib/leads/labels';
 import type { LeadActivity } from '@/lib/leads/activities';
+import type { LeadTimeline } from '@/lib/leads/timeline';
 import type { LeadWorkQueue } from '@/lib/leads/work-queue';
 
 export type LeadRow = Lead & { lost_reason?: string | null; project_id?: string | null };
@@ -17,6 +18,8 @@ export interface LeadsListParams {
     source?: string;
     manager?: string;
     project?: string;
+    /** Лидийн ангилал: id эсвэл `none` (ангилалгүй). */
+    category?: string;
     period?: string;
     q?: string;
     sort?: string;
@@ -38,6 +41,7 @@ function buildQuery(p: LeadsListParams): string {
     if (p.source && p.source !== 'all') sp.set('source', p.source);
     if (p.manager && p.manager !== 'all') sp.set('manager', p.manager);
     if (p.project && p.project !== 'all') sp.set('project', p.project);
+    if (p.category && p.category !== 'all') sp.set('category', p.category);
     if (p.period && p.period !== 'all') sp.set('period', p.period);
     if (p.q) sp.set('q', p.q);
     if (p.sort) sp.set('sort', p.sort);
@@ -107,8 +111,11 @@ export interface LeadDetail {
         balance: number | null;
         unit_number: string | null;
         block_name: string | null;
+        sales_manager?: string | null;
     }[];
     activities: LeadActivity[];
+    /** Менежерүүдийн Time-line (хуучин fixture/алдаатай үед байхгүй эсвэл null). */
+    timeline?: LeadTimeline | null;
     property: { id: string; name: string; price: number | null; rooms: number | null; size_sqm: number | null; status: string | null; images: string[] | null } | null;
 }
 
@@ -166,7 +173,27 @@ export function useManagers(projectId?: string | null) {
     });
 }
 
+/** Төслийн лидийн ангиллууд (архивласан нь орно — хуучин лидийн нэрийг харуулна; сонгогч идэвхтэйг л санал болгоно). */
+export interface LeadCategoryRow extends LeadCategoryOption {
+    description: string | null;
+    sort_order: number;
+}
+
+/** `inlineError` — хуудас өөрөө анхны ачааллын алдааг (Alert) харуулдаг бол давхар toast гаргахгүй. */
+export function useLeadCategories(options: { inlineError?: boolean } = {}) {
+    const { shop, user } = useAuth();
+    return useQuery<LeadCategoryRow[]>({
+        queryKey: ['lead-categories', shop?.id, user?.id, user?.role],
+        queryFn: async () => (await dashboardJson<{ categories: LeadCategoryRow[] }>('/api/dashboard/lead-categories?include=archived')).categories,
+        enabled: !!shop?.id,
+        staleTime: 5 * 60_000,
+        ...(options.inlineError ? { meta: { inlineError: true } } : {}),
+    });
+}
+
 export type LeadPatch = Partial<{
+    /** Нэр нэмэх/засах (хоосолж болохгүй). */
+    customer_name: string;
     project_id: string;
     status: string;
     lost_reason: string | null;
@@ -177,6 +204,8 @@ export type LeadPatch = Partial<{
     preferred_rooms: number | null;
     preferred_type: string | null;
     budget_max: number | null;
+    /** Лидийн ангилал (null = ангилалгүй). */
+    category_id: string | null;
 }>;
 
 /**
@@ -212,10 +241,15 @@ export function useUpdateLead() {
     });
 }
 
+/** Тэмдэглэл / дуудлага эсвэл «Үнийн санал» (₮ бүхэл дүн, байр/тоот заавал биш). */
+export type LeadActivityInput =
+    | { type: 'note' | 'call'; content: string; next_followup_at?: string | null }
+    | { type: 'quote'; amount: number; unit_label?: string | null; content?: string; next_followup_at?: string | null };
+
 export function useAddLeadActivity(leadId: string | null) {
     const qc = useQueryClient();
     return useMutation({
-        mutationFn: (input: { type: 'note' | 'call'; content: string; next_followup_at?: string | null }) =>
+        mutationFn: (input: LeadActivityInput) =>
             dashboardMutate<{ activity: LeadActivity | null }>(`/api/dashboard/leads/${leadId}/activities`, 'POST', input),
         onSettled: () => {
             void qc.invalidateQueries({ queryKey: ['leads', 'detail'] });
@@ -223,6 +257,9 @@ export function useAddLeadActivity(leadId: string | null) {
             void qc.invalidateQueries({ queryKey: ['leads', 'summary'] });
             void qc.invalidateQueries({ queryKey: ['operations-report'] });
             void qc.invalidateQueries({ queryKey: ['my-stats'] });
+            // Дуудлага өдрийн идэвх, сарын KPI-д тоологдоно.
+            void qc.invalidateQueries({ queryKey: ['manager-activity'] });
+            void qc.invalidateQueries({ queryKey: ['sales-kpi'] });
         },
     });
 }

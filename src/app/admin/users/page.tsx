@@ -1,20 +1,37 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Shield, Search, UserPlus, Check, X, Loader2, Eye, EyeOff, AlertCircle, Trash2, Link as LinkIcon, Copy, Mail, KeyRound } from 'lucide-react';
+import { Shield, Search, UserPlus, Check, X, Loader2, Eye, EyeOff, AlertCircle, Trash2, Link as LinkIcon, Copy, Mail, KeyRound, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/Dialog';
+import { MANAGER_NAME_REQUIRED, STAFF_PHONE_ERROR, formatStaffPhone, managerNameMissing, parseStaffPhone } from '@/lib/admin/staff-profile';
 
 interface UserWithRole {
     id: string;
     email: string;
     full_name: string | null;
+    phone?: string | null;
     role: string;
     created_at: string;
     email_confirmed?: boolean;
     last_sign_in_at?: string | null;
     shops?: Array<{ id: string; name: string; is_owner: boolean }>;
     manager_shops?: Array<{ shop_id: string; name: string }>;
+    /** Менежерийн бүртгэлд (идэвхгүй мөр ч) холбогдсон эсэх — нэр нь canonical, «Засах»-аар солихгүй. */
+    manager_linked?: boolean;
+}
+
+type ProfileEdit = { user: UserWithRole; full_name: string; phone: string };
+
+/**
+ * «Засах» цонхны нэрийн төлөв: түгжээтэй (менежерийн холбоос) / илгээхгүй (нэргүй профайлын
+ * зөвхөн утсыг засна) / буруу / илгээнэ. Бичсэн нэрийг хоосолж арилгахгүй.
+ */
+function profileNameState(edit: ProfileEdit): 'locked' | 'omit' | 'invalid' | 'send' {
+    if (edit.user.manager_linked || edit.user.manager_shops?.length) return 'locked';
+    if (!edit.full_name.trim())
+        return !(edit.user.full_name || '').trim() && edit.user.role !== 'sales_manager' ? 'omit' : 'invalid';
+    return managerNameMissing(edit.user.role, edit.full_name, edit.user.email) ? 'invalid' : 'send';
 }
 
 interface RoleOption {
@@ -48,6 +65,7 @@ export default function AdminUsersPage() {
     const [actorId, setActorId] = useState<string | null>(null);
     const [roleChange, setRoleChange] = useState<{ user: UserWithRole; role: string; shop_id: string } | null>(null);
     const [projectEdit, setProjectEdit] = useState<{ user: UserWithRole; shopIds: string[] } | null>(null);
+    const [profileEdit, setProfileEdit] = useState<ProfileEdit | null>(null);
     const [saving, setSaving] = useState(false);
     const [deleteConfirm, setDeleteConfirm] = useState<UserWithRole | null>(null);
     const [deleting, setDeleting] = useState(false);
@@ -62,6 +80,7 @@ export default function AdminUsersPage() {
         email: '',
         password: '',
         full_name: '',
+        phone: '',
         role: 'viewer',
         shop_id: '',
     });
@@ -76,10 +95,14 @@ export default function AdminUsersPage() {
     // Invite link modal
     const [showInvite, setShowInvite] = useState(false);
     const [inviting, setInviting] = useState(false);
-    const [inviteForm, setInviteForm] = useState({ email: '', full_name: '', role: 'sales_manager', shop_id: '' });
+    const [inviteForm, setInviteForm] = useState({ email: '', full_name: '', phone: '', role: 'sales_manager', shop_id: '' });
     const [inviteError, setInviteError] = useState<string | null>(null);
     const [inviteResult, setInviteResult] = useState<{ link: string; mode: string; emailed: boolean } | null>(null);
     const [copied, setCopied] = useState(false);
+    // Урих имэйл бүртгэлтэй хэрэглэгчийнх эсэх (жагсаалтаас; сервер профайлаар нь дахин шалгана).
+    const inviteEmail = inviteForm.email.trim().toLowerCase();
+    const inviteExisting = inviteEmail ? users.find(user => user.email.toLowerCase() === inviteEmail) ?? null : null;
+    const inviteExistingNameMissing = Boolean(inviteExisting && managerNameMissing(inviteForm.role, inviteExisting.full_name, inviteExisting.email));
 
     useEffect(() => {
         Promise.all([fetchUsers(), fetchRoles(), fetchShops()]).finally(() => setLoading(false));
@@ -89,17 +112,17 @@ export default function AdminUsersPage() {
         try {
             const res = await fetch('/api/admin/shops');
             const data = await res.json();
-            if (!res.ok) throw new Error(data.error || 'Байгууллагууд ачаалагдсангүй');
+            if (!res.ok) throw new Error(data.error || 'Төслүүд ачаалагдсангүй');
             const list: ShopOption[] = data.shops || [];
             setShops(list);
             setShopError(null);
-            // Ганц shop байвал автоматаар сонгож тавьна
+            // Ганц төсөл (shop) байвал автоматаар сонгож тавьна
             if (list.length === 1) {
                 setNewUser(p => ({ ...p, shop_id: list[0].id }));
                 setInviteForm(p => ({ ...p, shop_id: list[0].id }));
             }
         } catch (e) {
-            setShopError(e instanceof Error ? e.message : 'Байгууллагууд ачаалагдсангүй');
+            setShopError(e instanceof Error ? e.message : 'Төслүүд ачаалагдсангүй');
         }
     }
 
@@ -192,6 +215,31 @@ export default function AdminUsersPage() {
         }
     }
 
+    /** Нэр, утас засах. Менежерийн холбоостой акаунтын нэрийг сервер 409-өөр хамгаална. */
+    async function saveProfile() {
+        if (!profileEdit) return;
+        const { user, full_name, phone } = profileEdit;
+        const nameState = profileNameState(profileEdit);
+        if (nameState === 'invalid') return;
+        setSaving(true);
+        try {
+            const res = await fetch('/api/admin/users/profile', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: user.id, ...(nameState === 'send' ? { full_name } : {}), phone: parseStaffPhone(phone) || null }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) { toast.error(data.error || 'Профайл хадгалагдсангүй'); return; }
+            await fetchUsers();
+            setProfileEdit(null);
+            toast.success('Профайл шинэчлэгдлээ');
+        } catch {
+            toast.error('Профайл хадгалахад сүлжээний алдаа гарлаа');
+        } finally {
+            setSaving(false);
+        }
+    }
+
     async function createUser() {
         if (!newUser.email || !newUser.password) {
             setCreateError('Имэйл болон нууц үг оруулна уу');
@@ -201,6 +249,15 @@ export default function AdminUsersPage() {
             setCreateError('Нууц үг хамгийн багадаа 8 тэмдэгт');
             return;
         }
+        if (managerNameMissing(newUser.role, newUser.full_name, newUser.email)) {
+            setCreateError(MANAGER_NAME_REQUIRED);
+            return;
+        }
+        const phone = parseStaffPhone(newUser.phone);
+        if (phone === false) {
+            setCreateError(STAFF_PHONE_ERROR);
+            return;
+        }
 
         setCreating(true);
         setCreateError(null);
@@ -208,14 +265,14 @@ export default function AdminUsersPage() {
             const res = await fetch('/api/admin/users', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(newUser),
+                body: JSON.stringify({ ...newUser, phone: phone || undefined }),
             });
             const data = await res.json();
 
             if (res.ok) {
                 await fetchUsers();
                 setShowCreate(false);
-                setNewUser({ email: '', password: '', full_name: '', role: 'viewer', shop_id: shops.length === 1 ? shops[0].id : '' });
+                setNewUser({ email: '', password: '', full_name: '', phone: '', role: 'viewer', shop_id: shops.length === 1 ? shops[0].id : '' });
                 const verifyNote = data.login_verified ? ' Нэвтрэлт шалгагдлаа ✓' : '';
                 setCreateSuccess(
                     data.warning
@@ -239,7 +296,20 @@ export default function AdminUsersPage() {
             return;
         }
         if (!shops.some(shop => shop.id === inviteForm.shop_id)) {
-            setInviteError('Байгууллага сонгоно уу');
+            setInviteError('Төсөл сонгоно уу');
+            return;
+        }
+        if (!inviteExisting && managerNameMissing(inviteForm.role, inviteForm.full_name, inviteForm.email)) {
+            setInviteError(MANAGER_NAME_REQUIRED);
+            return;
+        }
+        if (inviteExistingNameMissing) {
+            setInviteError('Бүртгэлтэй хэрэглэгчийн профайлд бодит нэр алга. Эхлээд «Засах»-аар нэр оруулна уу.');
+            return;
+        }
+        const phone = parseStaffPhone(inviteForm.phone);
+        if (phone === false) {
+            setInviteError(STAFF_PHONE_ERROR);
             return;
         }
         setInviting(true);
@@ -249,7 +319,7 @@ export default function AdminUsersPage() {
             const res = await fetch('/api/admin/users/invite', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(inviteForm),
+                body: JSON.stringify({ ...inviteForm, phone: phone || undefined }),
             });
             const data = await res.json();
             if (res.ok && data.success) {
@@ -337,6 +407,17 @@ export default function AdminUsersPage() {
         (u.full_name || '').toLowerCase().includes(search.toLowerCase())
     );
 
+    // Шууд шалгалт: менежерт бодит нэр, утас 8 оронтой (заавал биш).
+    const newPhoneInvalid = parseStaffPhone(newUser.phone) === false;
+    const newNameMissing = managerNameMissing(newUser.role, newUser.full_name, newUser.email);
+    const invitePhoneInvalid = parseStaffPhone(inviteForm.phone) === false;
+    // Бүртгэлтэй акаунтыг урихад профайлын нэр хүчинтэй (сервер бичсэн нэр, утсыг ашиглахгүй).
+    const inviteNameMissing = !inviteExisting && managerNameMissing(inviteForm.role, inviteForm.full_name, inviteForm.email);
+    const profilePhoneInvalid = profileEdit ? parseStaffPhone(profileEdit.phone) === false : false;
+    const profileName = profileEdit ? profileNameState(profileEdit) : 'send';
+    const profileNameLocked = profileName === 'locked';
+    const profileNameInvalid = profileName === 'invalid';
+
     const getRoleBadge = (role: string) => {
         const r = roles.find(r => r.value === role);
         return r || { value: role, label: role, color: 'bg-surface-2 text-foreground' };
@@ -347,7 +428,7 @@ export default function AdminUsersPage() {
             <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
                 <div>
                     <h1 className="text-2xl font-bold text-foreground">Хэрэглэгчид & Дүрүүд</h1>
-                    <p className="text-muted-foreground text-sm mt-1">Ажилтны бүртгэл, байгууллагын хандалт болон Super Admin эрх удирдах</p>
+                    <p className="text-muted-foreground text-sm mt-1">Ажилтны бүртгэл, төслийн хандалт болон Super Admin эрх удирдах</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
                     <div className="relative min-w-0">
@@ -389,7 +470,7 @@ export default function AdminUsersPage() {
             {loadError && <div role="alert" className="mb-4 rounded-lg border border-status-danger/30 bg-status-danger-soft p-3 text-sm text-status-danger">{loadError} <button onClick={fetchUsers} className="ml-2 font-semibold underline">Дахин ачаалах</button></div>}
             {roleError && <div role="alert" className="mb-4 rounded-lg border border-status-danger/30 bg-status-danger-soft p-3 text-sm text-status-danger">{roleError} <button onClick={fetchRoles} className="ml-2 font-semibold underline">Дахин ачаалах</button></div>}
             {shopError && <div role="alert" className="mb-4 rounded-lg border border-status-danger/30 bg-status-danger-soft p-3 text-sm text-status-danger">{shopError} <button onClick={fetchShops} className="ml-2 font-semibold underline">Дахин ачаалах</button></div>}
-            {!shopError && !roleError && !loading && (shops.length === 0 || roles.length === 0) && <div role="status" className="mb-4 rounded-lg border border-status-pending/30 bg-status-pending-soft p-3 text-sm text-status-pending">Хэрэглэгч нэмэхийн өмнө байгууллага болон дүрийг тохируулна уу.</div>}
+            {!shopError && !roleError && !loading && (shops.length === 0 || roles.length === 0) && <div role="status" className="mb-4 rounded-lg border border-status-pending/30 bg-status-pending-soft p-3 text-sm text-status-pending">Хэрэглэгч нэмэхийн өмнө төсөл болон дүрийг тохируулна уу.</div>}
 
             {/* Role Legend */}
             <div className="flex flex-wrap gap-2 mb-6">
@@ -442,6 +523,7 @@ export default function AdminUsersPage() {
                                                 <div>
                                                     <p className="text-sm font-medium text-foreground">{user.full_name || 'Нэргүй'}{isSelf && <span className="ml-2 text-xs text-muted-foreground">(Та)</span>}</p>
                                                     <p className="text-xs text-muted-foreground">{user.email}</p>
+                                                    {user.phone && <p className="num text-xs text-muted-foreground">{formatStaffPhone(user.phone)}</p>}
                                                 </div>
                                             </div>
                                         </td>
@@ -474,6 +556,15 @@ export default function AdminUsersPage() {
                                                         aria-label={`${user.full_name || user.email}: төслүүд`}
                                                     >
                                                         Төслүүд
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setProfileEdit({ user, full_name: user.full_name || '', phone: formatStaffPhone(user.phone) })}
+                                                        disabled={saving}
+                                                        className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-brand-strong hover:bg-brand-soft rounded-lg transition-colors disabled:opacity-50"
+                                                        aria-label={`${user.full_name || user.email}: профайл засах`}
+                                                        title="Нэр, утас засах"
+                                                    >
+                                                        <Pencil className="w-3.5 h-3.5" />Засах
                                                     </button>
                                                     <button
                                                         onClick={() => openRoleChange(user)}
@@ -523,18 +614,18 @@ export default function AdminUsersPage() {
                             {roles.map(role => <option key={role.value} value={role.value}>{role.label}</option>)}
                         </select>
                         {roleChange.role === 'super_admin' && <p role="status" className="rounded-lg bg-status-pending-soft p-3 text-sm text-status-pending">
-                            Энэ хүн бүх байгууллагын админ хэсэгт нэвтэрч, хүн нэмэх, эрх өөрчлөх, төсөл болон тохиргоо удирдах бүрэн эрхтэй болно.
+                            Энэ хүн бүх төслийн админ хэсэгт нэвтэрч, хүн нэмэх, эрх өөрчлөх, төсөл болон тохиргоо удирдах бүрэн эрхтэй болно.
                             Таны Super Admin эрх хадгалагдана.
                         </p>}
                         {roleChange.role === 'sales_manager' && <>
-                            <label htmlFor="admin-user-role-shop" className="text-sm font-medium">Менежерийн байгууллага</label>
+                            <label htmlFor="admin-user-role-shop" className="text-sm font-medium">Менежерийн төсөл</label>
                             <select id="admin-user-role-shop" value={roleChange.shop_id} disabled={saving || !!shopError}
                                 onChange={event => setRoleChange({ ...roleChange, shop_id: event.target.value })}
                                 className="rounded-lg border border-border bg-surface p-2.5 text-sm">
-                                <option value="">Байгууллага сонгох</option>
+                                <option value="">Төсөл сонгох</option>
                                 {shops.map(shop => <option key={shop.id} value={shop.id}>{shop.name}</option>)}
                             </select>
-                            <p className="text-xs text-muted-foreground">Профайлын нэрээр идэвхтэй борлуулалтын менежер холбож, байгууллагын хандалт олгоно.
+                            <p className="text-xs text-muted-foreground">Профайлын нэрээр идэвхтэй борлуулалтын менежер холбож, төслийн хандалт олгоно.
                                 Менежерийн холбоосыг <a href="/admin/sales-targets" className="ml-1 text-brand-strong underline">Борлуулалтын төлөвлөгөө</a> хэсэгт шалгана.</p>
                         </>}
                         <div className="flex justify-end gap-2">
@@ -581,6 +672,41 @@ export default function AdminUsersPage() {
                 </Dialog>
             )}
 
+            {profileEdit && (
+                <Dialog open onOpenChange={open => { if (!open && !saving) setProfileEdit(null); }}>
+                    <DialogContent className="max-w-md">
+                        <DialogTitle>Профайл засах</DialogTitle>
+                        <DialogDescription>{profileEdit.user.email}</DialogDescription>
+                        <label htmlFor="admin-profile-name" className="text-sm font-medium">Нэр</label>
+                        <input id="admin-profile-name" type="text" value={profileEdit.full_name} disabled={saving || profileNameLocked}
+                            onChange={event => setProfileEdit({ ...profileEdit, full_name: event.target.value })}
+                            aria-describedby={profileNameLocked ? 'admin-profile-name-hint' : undefined}
+                            className="rounded-lg border border-border bg-surface p-2.5 text-sm disabled:bg-surface-2 disabled:text-muted-foreground" />
+                        {profileNameLocked && <p id="admin-profile-name-hint" className="text-xs text-muted-foreground">
+                            Борлуулалтын менежерийн бүртгэлтэй (идэвхгүй мөр ч) холбогдсон нэрээр ERP, KPI болон лидийн хариуцагч холбогддог тул энд солихгүй.
+                            Эхлээд <a href="/admin/sales-targets" className="text-brand-strong underline">Борлуулалтын төлөвлөгөө</a> хэсэгт «Акаунтын холбоос салгах»-аар холбоосыг салгана.
+                        </p>}
+                        {profileName === 'omit' && <p className="text-xs text-muted-foreground">Нэр хоосон бол зөвхөн утсыг хадгална.</p>}
+                        {profileNameInvalid && <p className="text-xs text-status-danger">{profileEdit.full_name.trim() ? MANAGER_NAME_REQUIRED : 'Нэр оруулна уу'}</p>}
+                        <label htmlFor="admin-profile-phone" className="text-sm font-medium">Утас</label>
+                        <input id="admin-profile-phone" type="tel" inputMode="numeric" autoComplete="off" value={profileEdit.phone} disabled={saving}
+                            onChange={event => setProfileEdit({ ...profileEdit, phone: event.target.value })}
+                            aria-invalid={profilePhoneInvalid} aria-describedby="admin-profile-phone-hint"
+                            className="num rounded-lg border border-border bg-surface p-2.5 text-sm" placeholder="9911 2233" />
+                        <p id="admin-profile-phone-hint" className={`text-xs ${profilePhoneInvalid ? 'text-status-danger' : 'text-muted-foreground'}`}>
+                            {profilePhoneInvalid ? STAFF_PHONE_ERROR : '8 оронтой. Хоосон үлдээвэл утсыг арилгана.'}
+                        </p>
+                        <div className="flex justify-end gap-2">
+                            <button onClick={() => setProfileEdit(null)} disabled={saving} className="rounded-lg bg-surface-2 px-4 py-2.5 text-sm">Цуцлах</button>
+                            <button onClick={saveProfile} disabled={saving || profilePhoneInvalid || profileNameInvalid}
+                                className="rounded-lg bg-brand px-4 py-2.5 text-sm font-medium text-brand-fg disabled:opacity-50">
+                                {saving ? 'Хадгалж байна...' : 'Хадгалах'}
+                            </button>
+                        </div>
+                    </DialogContent>
+                </Dialog>
+            )}
+
             {/* Invite Link Modal */}
             {showInvite && (
                 <Dialog open onOpenChange={open => { if (!open && !inviting) setShowInvite(false); }}>
@@ -609,18 +735,25 @@ export default function AdminUsersPage() {
                                         Имэйл оруулахад ажилтанд урилга (нэвтрэх холбоос) <b>имэйлээр автоматаар илгээгдэнэ</b> — нэвтрэхэд нууц үг шаардахгүй. Шаардвал холбоосыг доор хуулж болно.
                                     </p>
                                     <div>
-                                        <label htmlFor="invite-full-name" className="block text-sm font-medium text-foreground mb-1">Нэр</label>
+                                        <label htmlFor="invite-full-name" className="block text-sm font-medium text-foreground mb-1">Нэр{inviteForm.role === 'sales_manager' && !inviteExisting && <span className="text-status-danger"> *</span>}</label>
                                         <input
                                             id="invite-full-name"
                                             type="text"
                                             value={inviteForm.full_name}
                                             onChange={e => setInviteForm(p => ({ ...p, full_name: e.target.value }))}
                                             className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-brand focus:border-brand"
-                                            placeholder="Борлуулалтын менежер"
+                                            placeholder="Бодит бүтэн нэр"
                                         />
                                     </div>
-                                    {inviteForm.role === 'sales_manager' && <p className="text-xs text-muted-foreground">Шинэ менежерийн бодит нэрийг оруулна уу. Бүртгэлтэй хүний профайлын нэрээр менежер холбогдоно.
+                                    {inviteForm.role === 'sales_manager' && !inviteExisting && <p className="text-xs text-muted-foreground">Борлуулалтын менежерт бодит бүтэн нэр заавал — ERP-ийн «Борлуулалтын менежер» бичлэгтэй яг ижил бичнэ.
                                         Менежерийн холбоосыг <a href="/admin/sales-targets" className="ml-1 text-brand-strong underline">Борлуулалтын төлөвлөгөө</a> хэсэгт шалгана.</p>}
+                                    {inviteExisting && <p id="invite-existing-hint" className="text-xs text-muted-foreground">
+                                        Бүртгэлтэй хэрэглэгч{inviteExisting.full_name ? ` «${inviteExisting.full_name}»` : ''}: профайлын нэр, утас хэвээр үлдэнэ — энд бичсэн нэр, утсыг ашиглахгүй.
+                                        {inviteForm.role === 'sales_manager' && ' Менежер профайлын нэрээр холбогдоно.'} Засахдаа жагсаалтын «Засах»-ыг ашиглана.
+                                    </p>}
+                                    {inviteExistingNameMissing && <p className="text-xs text-status-danger">
+                                        Энэ хэрэглэгчийн профайлд бодит нэр алга. Эхлээд жагсаалтын «Засах»-аар нэр оруулсны дараа менежерээр урина уу.
+                                    </p>}
                                     <div>
                                         <label htmlFor="invite-email" className="block text-sm font-medium text-foreground mb-1">Имэйл <span className="text-status-danger">*</span></label>
                                         <input
@@ -631,6 +764,24 @@ export default function AdminUsersPage() {
                                             className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-brand focus:border-brand"
                                             placeholder="manager@example.com"
                                         />
+                                    </div>
+                                    <div>
+                                        <label htmlFor="invite-phone" className="block text-sm font-medium text-foreground mb-1">Утас</label>
+                                        <input
+                                            id="invite-phone"
+                                            type="tel"
+                                            inputMode="numeric"
+                                            autoComplete="off"
+                                            value={inviteForm.phone}
+                                            onChange={e => setInviteForm(p => ({ ...p, phone: e.target.value }))}
+                                            aria-invalid={invitePhoneInvalid}
+                                            aria-describedby="invite-phone-hint"
+                                            className="num w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-brand focus:border-brand"
+                                            placeholder="9911 2233"
+                                        />
+                                        <p id="invite-phone-hint" className={`mt-1 text-xs ${invitePhoneInvalid ? 'text-status-danger' : 'text-muted-foreground/70'}`}>
+                                            {invitePhoneInvalid ? STAFF_PHONE_ERROR : '8 оронтой, заавал биш. Имэйл хүрэхгүй бол холбоосыг энэ дугаараар дамжуулна.'}
+                                        </p>
                                     </div>
                                     <div>
                                         <label htmlFor="invite-role" className="block text-sm font-medium text-foreground mb-1">Дүр</label>
@@ -645,18 +796,18 @@ export default function AdminUsersPage() {
                                                 <option key={r.value} value={r.value}>{r.label}</option>
                                             ))}
                                         </select>
-                                        {inviteForm.role === 'super_admin' && <p className="mt-2 text-xs text-status-pending">Super Admin нь бүх байгууллагын хэрэглэгч, эрх, төсөл болон тохиргоог удирдана.</p>}
+                                        {inviteForm.role === 'super_admin' && <p className="mt-2 text-xs text-status-pending">Super Admin нь бүх төслийн хэрэглэгч, эрх болон тохиргоог удирдана.</p>}
                                     </div>
                                     {shops.length > 0 && (
                                         <div>
-                                            <label htmlFor="invite-shop" className="block text-sm font-medium text-foreground mb-1">Байгууллага</label>
+                                            <label htmlFor="invite-shop" className="block text-sm font-medium text-foreground mb-1">Төсөл</label>
                                             <select
                                                 id="invite-shop"
                                                 value={inviteForm.shop_id}
                                                 onChange={e => setInviteForm(p => ({ ...p, shop_id: e.target.value }))}
                                                 className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface focus:ring-2 focus:ring-brand"
                                             >
-                                                {shops.length > 1 && <option value="">— Байгууллага сонгох —</option>}
+                                                {shops.length > 1 && <option value="">— Төсөл сонгох —</option>}
                                                 {shops.map(shop => <option key={shop.id} value={shop.id}>{shop.name}</option>)}
                                             </select>
                                         </div>
@@ -702,7 +853,7 @@ export default function AdminUsersPage() {
                             {!inviteResult && (
                                 <button
                                     onClick={sendInvite}
-                                    disabled={inviting || !inviteForm.email || !inviteForm.shop_id || !roles.some(role => role.value === inviteForm.role)}
+                                    disabled={inviting || !inviteForm.email || !inviteForm.shop_id || !roles.some(role => role.value === inviteForm.role) || inviteNameMissing || inviteExistingNameMissing || invitePhoneInvalid}
                                     className="flex items-center gap-2 px-5 py-2.5 text-sm bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                                 >
                                     {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
@@ -739,7 +890,7 @@ export default function AdminUsersPage() {
 
                             {/* Full Name */}
                             <div>
-                                <label htmlFor="new-user-name" className="block text-sm font-medium text-foreground mb-1">Нэр</label>
+                                <label htmlFor="new-user-name" className="block text-sm font-medium text-foreground mb-1">Нэр{newUser.role === 'sales_manager' && <span className="text-status-danger"> *</span>}</label>
                                 <input
                                     id="new-user-name"
                                     type="text"
@@ -763,6 +914,26 @@ export default function AdminUsersPage() {
                                     placeholder="email@example.com"
                                     required
                                 />
+                            </div>
+
+                            {/* Phone */}
+                            <div>
+                                <label htmlFor="new-user-phone" className="block text-sm font-medium text-foreground mb-1">Утас</label>
+                                <input
+                                    id="new-user-phone"
+                                    type="tel"
+                                    inputMode="numeric"
+                                    autoComplete="off"
+                                    value={newUser.phone}
+                                    onChange={e => setNewUser(p => ({ ...p, phone: e.target.value }))}
+                                    aria-invalid={newPhoneInvalid}
+                                    aria-describedby="new-user-phone-hint"
+                                    className="num w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm focus:ring-2 focus:ring-brand focus:border-brand"
+                                    placeholder="9911 2233"
+                                />
+                                <p id="new-user-phone-hint" className={`mt-1 text-xs ${newPhoneInvalid ? 'text-status-danger' : 'text-muted-foreground/70'}`}>
+                                    {newPhoneInvalid ? STAFF_PHONE_ERROR : '8 оронтой, заавал биш. Түр нууц үгийг имэйлээр бус энэ дугаараар дамжуулна.'}
+                                </p>
                             </div>
 
                             {/* Password */}
@@ -816,29 +987,29 @@ export default function AdminUsersPage() {
                                 <p className="text-xs text-muted-foreground/70 mt-2">
                                     Дүр нь module хандалтыг тодорхойлно. Дүр удирдлагыг "Дүрүүд" хуудсаас хийнэ.
                                 </p>
-                                {newUser.role === 'super_admin' && <p className="mt-2 text-xs text-status-pending">Super Admin нь бүх байгууллагын хэрэглэгч, эрх, төсөл болон тохиргоог удирдана.</p>}
-                                {newUser.role === 'sales_manager' && <p className="mt-2 text-xs text-muted-foreground">Бодит нэрийг оруулна уу. Энэ нэрээр идэвхтэй борлуулалтын менежер автоматаар холбогдоно.
+                                {newUser.role === 'super_admin' && <p className="mt-2 text-xs text-status-pending">Super Admin нь бүх төслийн хэрэглэгч, эрх болон тохиргоог удирдана.</p>}
+                                {newUser.role === 'sales_manager' && <p className="mt-2 text-xs text-muted-foreground">Бодит бүтэн нэр заавал — ERP-ийн «Борлуулалтын менежер» бичлэгтэй яг ижил бичнэ. Энэ нэрээр идэвхтэй борлуулалтын менежер автоматаар холбогдоно.
                                     Менежерийн холбоосыг <a href="/admin/sales-targets" className="ml-1 text-brand-strong underline">Борлуулалтын төлөвлөгөө</a> хэсэгт шалгана.</p>}
                             </div>
 
-                            {/* Shop Membership */}
+                            {/* Project (shop = төсөл) membership */}
                             {shops.length > 0 && (
                                 <div>
-                                    <label htmlFor="new-user-shop" className="block text-sm font-medium text-foreground mb-1">Shop (байгууллага)</label>
+                                    <label htmlFor="new-user-shop" className="block text-sm font-medium text-foreground mb-1">Төсөл</label>
                                     <select
                                         id="new-user-shop"
                                         value={newUser.shop_id}
                                         onChange={e => setNewUser(p => ({ ...p, shop_id: e.target.value }))}
                                         className="w-full px-3 py-2.5 border border-border-strong rounded-lg text-sm bg-surface focus:ring-2 focus:ring-brand focus:border-brand"
                                     >
-                                        {shops.length > 1 && <option value="">— Shop сонгох —</option>}
+                                        {shops.length > 1 && <option value="">— Төсөл сонгох —</option>}
                                         {shops.map(s => (
                                             <option key={s.id} value={s.id}>{s.name}</option>
                                         ))}
                                     </select>
                                     <p className="text-xs text-muted-foreground/70 mt-1">
-                                        Ажилтан энэ shop-ийн dashboard-д хандах эрхтэй болно.
-                                        {shops.length === 1 && ' (Ганц shop байгаа тул автоматаар холбогдоно.)'}
+                                        Ажилтан энэ төслийн самбарт хандана. Бусад төслийг «Төслүүд» товчоор нэмнэ.
+                                        {shops.length === 1 && ' (Ганц төсөл тул автоматаар сонгогдсон.)'}
                                     </p>
                                 </div>
                             )}
@@ -853,7 +1024,7 @@ export default function AdminUsersPage() {
                             </button>
                             <button
                                 onClick={createUser}
-                                disabled={creating || !newUser.email || !newUser.password || !newUser.shop_id || !roles.some(role => role.value === newUser.role)}
+                                disabled={creating || !newUser.email || !newUser.password || !newUser.shop_id || !roles.some(role => role.value === newUser.role) || newNameMissing || newPhoneInvalid}
                                 className="flex items-center gap-2 px-5 py-2.5 text-sm bg-brand text-brand-fg rounded-lg hover:bg-brand-strong disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                             >
                                 {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <UserPlus className="w-4 h-4" />}

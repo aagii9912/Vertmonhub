@@ -19,7 +19,7 @@ export async function loadLeadsSummary(
         fetchAllRows<LeadsSummaryProject>((from, to) => applyProjectScope(db.from('projects')
             .select('id, name').eq('shop_id', options.shopId).order('id').range(from, to), options.scope, 'id')),
         fetchAllRows<LeadsSummaryLead>((from, to) => applyLeadScope(db.from('leads')
-            .select('status, source, project_id, sales_manager_name')
+            .select('status, source, project_id, sales_manager_name, category_id')
             .eq('shop_id', options.shopId).is('deleted_at', null)
             .gte('created_at', start).lt('created_at', end)
             .order('id').range(from, to), options.scope)),

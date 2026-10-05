@@ -8,6 +8,7 @@ import {
     type LeadLite,
     type ViewingLite,
 } from '../my-stats';
+import { ANONYMOUS_LEAD_LABEL } from '@/lib/leads/labels';
 
 // Тогтмол «одоо»: 2026-07-07 14:00 (локал цаг)
 const NOW = new Date(2026, 6, 7, 14, 0, 0);
@@ -121,6 +122,19 @@ describe('buildTaskList', () => {
         expect(today?.overdue).toBe(false);
     });
 
+    it('өнөөдөр (УБ) дуудлага бүртгэгдсэн follow-up-ийг тэмдэглэнэ (давхар дуудлага нэмэхгүй)', () => {
+        const tasks = buildTaskList(
+            [
+                lead({ id: 'called', next_followup_at: new Date(2026, 6, 7, 10, 0).toISOString(), last_contact_at: new Date(2026, 6, 7, 0, 30).toISOString() }),
+                lead({ id: 'yesterday', next_followup_at: new Date(2026, 6, 7, 10, 0).toISOString(), last_contact_at: new Date(2026, 6, 6, 23, 30).toISOString() }),
+                lead({ id: 'never', next_followup_at: new Date(2026, 6, 7, 10, 0).toISOString() }),
+            ],
+            [],
+            NOW,
+        );
+        expect(Object.fromEntries(tasks.map((t) => [t.id, t.contactedToday]))).toEqual({ called: true, yesterday: false, never: false });
+    });
+
     it('маргаашийн follow-up болон хаагдсан лид орохгүй', () => {
         const tasks = buildTaskList(
             [
@@ -153,6 +167,22 @@ describe('buildTaskList', () => {
         expect(tasks.map((t) => t.id)).toEqual(['past-hour', 'future-hour']);
         expect(tasks.find((t) => t.id === 'past-hour')?.overdue).toBe(true);
         expect(tasks.find((t) => t.id === 'future-hour')?.overdue).toBe(false);
+    });
+
+    it('нэргүй лидийн уулзалтад шошго, лидгүй уулзалтад ерөнхий нэр харуулна', () => {
+        const tasks = buildTaskList(
+            [],
+            [
+                viewing({ id: 'anon', customer_name: null, anonymous_lead: true }),
+                viewing({ id: 'anon-room', customer_name: null, anonymous_lead: true, property_name: 'A-101' }),
+                viewing({ id: 'no-lead', customer_name: null }),
+            ],
+            NOW,
+        );
+        const byId = Object.fromEntries(tasks.map((t) => [t.id, t]));
+        expect(byId.anon).toMatchObject({ title: ANONYMOUS_LEAD_LABEL, subtitle: `Уулзалт · ${ANONYMOUS_LEAD_LABEL}` });
+        expect(byId['anon-room']).toMatchObject({ title: 'A-101', subtitle: `Уулзалт · ${ANONYMOUS_LEAD_LABEL}` });
+        expect(byId['no-lead']).toMatchObject({ title: 'Үзүүлэлт', subtitle: 'Уулзалт' });
     });
 
     it('хувийн ажлууд (user_tasks) нэгтгэгдэж, дараалалдаа орно', () => {

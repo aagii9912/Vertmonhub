@@ -4,7 +4,8 @@ import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logAdminAudit } from '@/lib/admin/audit';
 import { getAdminUser } from '@/lib/admin/auth';
-import { adminUserInput, checkRoleAssignment, isAssignableRole, provisionUserAccess, resolveTargetShop } from '@/lib/admin/user-provisioning';
+import { adminUserInput, adminUserInputError, checkRoleAssignment, isAssignableRole, provisionUserAccess, resolveTargetShop } from '@/lib/admin/user-provisioning';
+import { MANAGER_NAME_REQUIRED, managerNameMissing } from '@/lib/admin/staff-profile';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import type { User } from '@supabase/supabase-js';
 import { z } from 'zod';
@@ -69,8 +70,8 @@ export async function GET() {
         const [roles, profiles, shops, members, managers] = await Promise.all([
             fetchAllRows<{ user_id: string; role: string }>((from, to) =>
                 supabase.from('user_roles').select('user_id, role').range(from, to)),
-            fetchAllRows<{ id: string; full_name: string | null }>((from, to) =>
-                supabase.from('user_profiles').select('id, full_name').range(from, to)),
+            fetchAllRows<{ id: string; full_name: string | null; phone: string | null }>((from, to) =>
+                supabase.from('user_profiles').select('id, full_name, phone').range(from, to)),
             fetchAllRows<{ id: string; name: string; user_id: string }>((from, to) =>
                 supabase.from('shops').select('id, name, user_id').range(from, to)),
             fetchAllRows<{ user_id: string; shop_id: string }>((from, to) =>
@@ -80,13 +81,15 @@ export async function GET() {
         ]);
 
         const roleMap = new Map((roles || []).map(r => [r.user_id, r.role]));
-        const profileMap = new Map((profiles || []).map(p => [p.id, p.full_name]));
+        const profileMap = new Map((profiles || []).map(p => [p.id, p]));
         const memberKeys = new Set(members.map(member => `${member.user_id}:${member.shop_id}`));
 
         const users = (authUsers || []).map(u => ({
             id: u.id,
             email: u.email || '',
-            full_name: profileMap.get(u.id) || u.user_metadata?.full_name || null,
+            full_name: profileMap.get(u.id)?.full_name || u.user_metadata?.full_name || null,
+            // Ажилтны утас зөвхөн super_admin-ийн энэ жагсаалтад харагдана.
+            phone: profileMap.get(u.id)?.phone || null,
             role: roleMap.get(u.id) || 'viewer',
             created_at: u.created_at,
             email_confirmed: Boolean(u.email_confirmed_at),
@@ -95,6 +98,8 @@ export async function GET() {
                 .map(shop => ({ id: shop.id, name: shop.name, is_owner: shop.user_id === u.id })),
             manager_shops: managers.filter(manager => manager.user_id === u.id && manager.is_active)
                 .map(manager => ({ shop_id: manager.shop_id, name: manager.name })),
+            // Идэвхгүй мөрийг оролцуулсан холбоос: профайлын нэрийг «Засах»-аар солихгүй (PATCH profile 409).
+            manager_linked: managers.some(manager => manager.user_id === u.id),
         }));
 
         // Sort by created_at desc
@@ -177,12 +182,13 @@ export async function POST(request: NextRequest) {
         // Login preserves the exact password; creating/resetting must do the same.
         const password = body?.password;
         const parsed = adminUserInput.safeParse({ ...body, email });
-        if (!parsed.success || !passwordInput.safeParse(password).success) {
-            return NextResponse.json({ error: 'Имэйл, дүр эсвэл байгууллагын мэдээлэл буруу байна' }, { status: 400 });
-        }
-        const { full_name, role } = parsed.data;
-        if (role === 'sales_manager' && (!full_name || full_name === email))
-            return NextResponse.json({ error: 'Борлуулалтын менежерийн бодит нэрийг оруулна уу' }, { status: 400 });
+        if (!parsed.success)
+            return NextResponse.json({ error: adminUserInputError(parsed.error) }, { status: 400 });
+        if (!passwordInput.safeParse(password).success)
+            return NextResponse.json({ error: 'Нууц үг 8–1024 тэмдэгттэй байх ёстой' }, { status: 400 });
+        const { full_name, role, phone = null } = parsed.data;
+        if (managerNameMissing(role, full_name, email))
+            return NextResponse.json({ error: MANAGER_NAME_REQUIRED }, { status: 400 });
         if (!await isAssignableRole(supabase, role))
             return NextResponse.json({ error: 'Сонгосон дүр олдсонгүй' }, { status: 400 });
         const shop = await resolveTargetShop(supabase, parsed.data.shop_id);
@@ -214,7 +220,7 @@ export async function POST(request: NextRequest) {
         const newUserId = newUser?.user?.id;
         if (!newUserId) return NextResponse.json({ error: 'Хэрэглэгчийн бүртгэл бүрэн үүссэнгүй' }, { status: 500 });
         const provisioningError = await provisionUserAccess(supabase, {
-            actorId: userId, userId: newUserId, email, fullName: full_name, role, shopId: shop.id, isNew: true,
+            actorId: userId, userId: newUserId, email, fullName: full_name, phone, role, shopId: shop.id, isNew: true,
         });
         if (provisioningError) return NextResponse.json(provisioningError, { status: provisioningError.status });
 
@@ -237,6 +243,7 @@ export async function POST(request: NextRequest) {
                 id: newUserId,
                 email,
                 full_name: full_name || null,
+                phone,
                 role: role || 'viewer',
                 created_at: new Date().toISOString(),
             },

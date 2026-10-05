@@ -28,6 +28,7 @@ const state = vi.hoisted(() => ({
     authUpdates: 0,
     emails: 0,
     emailLinks: [] as string[],
+    emailNames: [] as Array<string | undefined>,
     projects: [] as Array<{ id: string }>,
 }));
 const shopId = '10000000-0000-4000-8000-000000000001';
@@ -36,9 +37,10 @@ vi.mock('@/lib/auth/supabase-auth', () => ({ supabaseAdmin: () => db, getUserId:
 vi.mock('@/lib/admin/auth', () => ({ getAdminUser: async () => ({ id: 'actor', email: 'actor@example.com', role: 'super_admin' }) }));
 vi.mock('@/lib/admin/audit', () => ({ logAdminAudit: async () => {} }));
 vi.mock('@/lib/ai/data-assistant/audit', () => ({ logAiAudit: async () => {} }));
-vi.mock('@/lib/email/email', () => ({ sendInviteEmail: async (input: { actionLink: string }) => {
+vi.mock('@/lib/email/email', () => ({ sendInviteEmail: async (input: { actionLink: string; fullName?: string }) => {
     state.emails++;
     state.emailLinks.push(input.actionLink);
+    state.emailNames.push(input.fullName);
     return true;
 } }));
 
@@ -76,6 +78,11 @@ const db = {
         const result = (single = false) => {
             if (operation !== 'read') state.writes.push({ operation, table, payload, filters: { ...filters } });
             const error = state.errors[`${operation}:${table}`] || null;
+            // Шинэ профайлын upsert-ийн дараах уншилт тэр профайлыг харна (бодит DB-тэй адил).
+            if (operation === 'upsert' && table === 'user_profiles' && !error) {
+                const profile = payload as { id: string; full_name: string };
+                state.profileId = profile.id; state.fullName = profile.full_name;
+            }
             let data: unknown = null;
             if (table === 'roles' && state.roleExists) data = { id: 'role-id', name: 'analyst' };
             if (table === 'shops') data = (filters.id && filters.id !== state.shopId) || (filters.user_id && !state.actorAccess)
@@ -121,6 +128,7 @@ import { adminUserInput, isAssignableRole, provisionUserAccess, resolveTargetSho
 import { ROLE_PERMISSIONS } from '@/lib/rbac';
 import { assignRole, createRole, inviteUser } from '@/lib/ai/data-assistant/admin-functions';
 import { executeDataTool } from '@/lib/ai/data-assistant';
+import { TOOL_DEFINITIONS } from '@/lib/ai/data-assistant/tools';
 import { POST as inviteApi } from '@/app/api/admin/users/invite/route';
 import { POST as createApi, PATCH as roleApi } from '@/app/api/admin/users/route';
 
@@ -141,7 +149,7 @@ beforeEach(() => {
     state.wrongVerificationType = false; state.tokenHash = 'synthetic-token-hash';
     state.linkTypes = []; state.linkInputs = []; state.authCreates = [];
     state.passwords = []; state.authDeletes = []; state.authUpdates = 0; state.emails = 0; state.emailLinks = [];
-    state.projects = [];
+    state.emailNames = []; state.projects = [];
 });
 
 afterEach(() => vi.unstubAllEnvs());
@@ -154,13 +162,13 @@ describe('existing shop GUID validation', () => {
         expect(adminUserInput.safeParse({ ...invite, shop_id: legacyShopId }).success).toBe(true);
         expect(await resolveTargetShop(db as never, legacyShopId)).toEqual({ id: legacyShopId });
         expect(await resolveTargetShop(db as never, '00000000-0000-0000-0000-000000000002'))
-            .toHaveProperty('error', 'Сонгосон байгууллага олдсонгүй');
+            .toHaveProperty('error', 'Сонгосон төсөл олдсонгүй');
         expect(state.writes).toEqual([]);
     });
 
     it.each(['not-a-guid', '00000000-0000-0000-0000-00000000000g'])('rejects malformed shop IDs: %s', async invalidId => {
         expect(adminUserInput.safeParse({ ...invite, shop_id: invalidId }).success).toBe(false);
-        expect(await resolveTargetShop(db as never, invalidId)).toHaveProperty('error', 'Байгууллагын ID буруу байна');
+        expect(await resolveTargetShop(db as never, invalidId)).toHaveProperty('error', 'Төслийн ID буруу байна');
         expect(state.writes).toEqual([]);
     });
 
@@ -471,9 +479,9 @@ describe('sales manager access provisioning', () => {
         expect(writesTo('user_profiles')).toEqual([]);
     });
 
-    it('API invitation links the existing manager profile before returning its callback link', async () => {
+    it('API invitation links the existing manager profile name (not the typed one) before returning its callback link', async () => {
         const response = await inviteApi(new NextRequest('http://localhost/api/admin/users/invite', {
-            method: 'POST', body: JSON.stringify({ ...invite, role: 'sales_manager' }),
+            method: 'POST', body: JSON.stringify({ ...invite, role: 'sales_manager', full_name: 'Өөр нэр', phone: '99112233' }),
         }));
         expect(response.status).toBe(200);
         expect(await response.json()).toMatchObject({
@@ -483,6 +491,19 @@ describe('sales manager access provisioning', () => {
         expect(state.authUpdates).toBe(0);
         expect(writesTo('user_profiles')).toEqual([]);
         expect(state.emails).toBe(1);
+        // Имэйлийн мэндчилгээ профайлд хадгалагдсан нэрээр (бичсэн нэр ашиглагдахгүй).
+        expect(state.emailNames).toEqual(['Бат']);
+    });
+
+    it('API re-invites a registered manager without a typed name (the profile name links the roster)', async () => {
+        state.linkMode = 'magiclink';
+        const response = await inviteApi(new NextRequest('http://localhost/api/admin/users/invite', {
+            method: 'POST', body: JSON.stringify({ ...invite, role: 'sales_manager' }),
+        }));
+        expect(response.status).toBe(200);
+        expect(await response.json()).toMatchObject({ success: true, mode: 'magiclink' });
+        expect(state.roster).toEqual([row({ user_id: 'target', is_active: true })]);
+        expect(state.emailNames).toEqual(['Бат']);
     });
 
     it('creates an active roster linked to the existing profile name and selected shop', async () => {
@@ -590,6 +611,94 @@ describe('sales manager access provisioning', () => {
     it('AI assign_role provisions the manager identity through the same helper', async () => {
         expect(await assignRole(shopId, { ...invite, role: 'sales_manager' }, true, 'actor')).toHaveProperty('success', true);
         expect(state.roster).toEqual([row({ user_id: 'target', is_active: true })]);
+    });
+});
+
+describe('staff name and phone (user setup)', () => {
+    const managerInvite = { ...invite, role: 'sales_manager' };
+    const inviteRequest = (body: object) => inviteApi(new NextRequest('http://localhost/api/admin/users/invite', {
+        method: 'POST', body: JSON.stringify(body),
+    }));
+
+    it.each([{}, { full_name: '   ' }, { full_name: 'TARGET@example.com' }])('API invite refuses a nameless new sales manager before Auth or links (%j)', async extra => {
+        state.profileId = null;
+        const response = await inviteRequest({ ...managerInvite, ...extra });
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({ error: 'Борлуулалтын менежерийн бодит нэрийг оруулна уу' });
+        expect(state.authCreates).toEqual([]);
+        expect(state.linkTypes).toEqual([]);
+        expect(state.writes).toEqual([]);
+        expect(state.emails).toBe(0);
+    });
+
+    it('API invite refuses a malformed phone with a phone-specific message before Auth', async () => {
+        const response = await inviteRequest({ ...managerInvite, full_name: 'Шинэ Менежер', phone: '9911223' });
+        expect(response.status).toBe(400);
+        expect(await response.json()).toEqual({ error: 'Утасны дугаар 8 оронтой байх ёстой' });
+        expect(state.authCreates).toEqual([]);
+    });
+
+    it('API invite stores the normalized phone and real name on a new manager profile', async () => {
+        state.apiTargetExists = false; state.linkUserId = state.createdUserId; state.profileId = null;
+        const response = await inviteRequest({ ...managerInvite, email: ' New.Manager@Example.com ', full_name: 'Шинэ Менежер', phone: '+976 9911-2233' });
+        expect(response.status).toBe(200);
+        expect(state.authCreates[0]).toMatchObject({ email: 'new.manager@example.com', user_metadata: { full_name: 'Шинэ Менежер' } });
+        expect(writesTo('user_profiles')[0].payload).toEqual({
+            id: state.createdUserId, email: 'new.manager@example.com', full_name: 'Шинэ Менежер', phone: '99112233',
+        });
+        expect(state.roster).toEqual([{ shop_id: shopId, name: 'Шинэ Менежер', user_id: state.createdUserId, is_active: true }]);
+        expect(state.emailNames).toEqual(['Шинэ Менежер']);
+    });
+
+    it('a new profile without a phone does not write the phone column', async () => {
+        expect(await provisionUserAccess(db as never, { ...provisioning, isNew: true, phone: null })).toBeNull();
+        expect(writesTo('user_profiles')[0].payload).toEqual({ id: 'target', email: invite.email, full_name: invite.email });
+    });
+
+    it('AI invite_user refuses a nameless new sales manager before the confirmation preview', async () => {
+        state.profileId = null;
+        const result = await inviteUser(shopId, managerInvite, false, 'actor');
+        expect(result).toEqual({ error: 'Борлуулалтын менежерийн бодит нэрийг оруулна уу' });
+        expect(state.writes).toEqual([]);
+    });
+
+    it('AI invite_user previews and creates a sales manager with full name and phone', async () => {
+        state.profileId = null;
+        const args = { ...managerInvite, full_name: 'Шинэ Менежер', phone: '9911 2233' };
+        const preview = await inviteUser(shopId, args, false, 'actor') as { action: { args: Record<string, unknown> }; preview: Record<string, unknown> };
+        expect(preview.action.args).toEqual({ email: invite.email, role: 'sales_manager', full_name: 'Шинэ Менежер', phone: '99112233', shop_id: shopId });
+        expect(preview.preview).toMatchObject({ Нэр: 'Шинэ Менежер', Утас: '9911 2233', Төсөл: shopId });
+        expect(state.writes).toEqual([]);
+
+        const result = await executeDataTool('invite_user', preview.action.args, shopId,
+            { role: 'super_admin', canWrite: true, canDelete: true }, 'actor', true);
+        expect(result).toHaveProperty('success', true);
+        expect(writesTo('user_profiles')[0].payload).toMatchObject({ full_name: 'Шинэ Менежер', phone: '99112233' });
+        expect(state.roster).toEqual([{ shop_id: shopId, name: 'Шинэ Менежер', user_id: 'new-user', is_active: true }]);
+        expect(result.message).not.toContain('Тохиргоо');
+    });
+
+    it('AI invite_user keeps an existing profile and says so in the preview', async () => {
+        const preview = await inviteUser(shopId, { ...invite, phone: '99112233' }, false, 'actor');
+        expect(preview).toMatchObject({ preview: { Профайл: 'Бүртгэлтэй — нэр, утас өөрчлөгдөхгүй' } });
+        expect(await inviteUser(shopId, { ...invite, phone: '99112233' }, true, 'actor')).toHaveProperty('success', true);
+        expect(writesTo('user_profiles')).toEqual([]);
+    });
+
+    it('AI assign_role carries the explicit manager project from preview to execution', async () => {
+        const preview = await assignRole(shopId, { ...invite, role: 'sales_manager', shop_id: shopId }, false, 'actor') as { action: { args: Record<string, unknown> } };
+        expect(preview.action.args).toEqual({ email: invite.email, role: 'sales_manager', shop_id: shopId });
+        expect(state.writes).toEqual([]);
+        // Баталгаажуулалт өөр (одоогийн) төсөл дээр ирсэн ч сонгосон төсөлд холбоно.
+        expect(await assignRole('another-current-shop', preview.action.args, true, 'actor')).toHaveProperty('success', true);
+        expect(writesTo('shop_members')[0].payload).toMatchObject({ shop_id: shopId, user_id: 'target' });
+    });
+
+    it('AI tool schemas expose full name, phone and the manager project', () => {
+        const props = (name: string) => Object.keys(
+            (TOOL_DEFINITIONS.find(tool => tool.name === name)?.parameters?.properties as Record<string, unknown> | undefined) || {});
+        expect(props('invite_user')).toEqual(expect.arrayContaining(['email', 'full_name', 'phone', 'role', 'shop_id']));
+        expect(props('assign_role')).toEqual(expect.arrayContaining(['email', 'role', 'shop_id']));
     });
 });
 

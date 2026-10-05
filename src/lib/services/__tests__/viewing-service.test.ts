@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createViewing, resolveViewingInput, updateViewing } from '../ViewingService';
 import { logLeadActivity } from '@/lib/leads/activities';
+import { ANONYMOUS_LEAD_LABEL, ANONYMOUS_MEETING_PHONE, LEAD_NAME_OR_ANONYMOUS } from '@/lib/leads/labels';
 
 vi.mock('@/lib/leads/activities', () => ({ logLeadActivity: vi.fn() }));
 const leadId = '00000000-0000-4000-8000-000000000001';
@@ -70,6 +71,31 @@ describe('shared viewing creation', () => {
         const { db, queries } = fakeDb({ projects: [ok({ id: projectId })], leads: [ok([{ id: leadId, project_id: projectId, status: 'new', customer_phone: '+976 9911 2233' }])] });
         expect(await createViewing(db, 'shop', { project_id: projectId, customer_phone: '76911223', scheduled_at: scheduledAt }, actor)).toMatchObject({ ok: false, status: 400 });
         expect(queries[0].table).toBe('leads');
+        expect(queries.some(q => q.insert)).toBe(false);
+    });
+
+    it('creates an anonymous walk-in lead with a null name and the phone', async () => {
+        const { db, queries } = fakeDb({
+            leads: [ok([]), ok({ id: leadId, status: 'new', customer_name: null, project_id: projectId, sales_manager_name: 'Менежер' }), ok({ id: leadId })],
+            projects: [ok({ id: projectId })],
+            sales_managers: [ok({ name: 'Менежер' })], sales_manager_projects: [ok({ project_id: projectId })],
+            property_viewings: [ok({ id: 'viewing', status: 'completed', scheduled_at: scheduledAt })],
+        });
+        const result = await createViewing(db, 'shop', { project_id: projectId, anonymous: true, customer_name: 'Зохиосон', customer_phone: '9911 2233', walk_in: true }, actor);
+        expect(result).toMatchObject({ ok: true, data: { lead_id: leadId } });
+        expect(queries.find(q => q.table === 'leads' && q.insert)?.insert).toMatchObject({ customer_name: null, customer_phone: '9911 2233', source: 'meeting', project_id: projectId });
+    });
+
+    it('requires a phone for an anonymous meeting and a real name otherwise', async () => {
+        const { db, queries } = fakeDb({});
+        expect(await createViewing(db, 'shop', { project_id: projectId, anonymous: true, walk_in: true }, actor)).toEqual({ ok: false, status: 400, error: ANONYMOUS_MEETING_PHONE });
+        expect(await createViewing(db, 'shop', { project_id: projectId, customer_name: ANONYMOUS_LEAD_LABEL, walk_in: true }, actor)).toEqual({ ok: false, status: 400, error: LEAD_NAME_OR_ANONYMOUS });
+        expect(queries).toEqual([]);
+    });
+
+    it('links an anonymous walk-in to the existing lead with the same phone', async () => {
+        const { db, queries } = fakeDb({ projects: [ok({ id: projectId })], leads: [ok([{ id: leadId, project_id: projectId, status: 'new', customer_name: 'Бат', customer_phone: '99112233' }])] });
+        expect(await resolveViewingInput(db, 'shop', { project_id: projectId, anonymous: true, customer_phone: '9911-2233', walk_in: true })).toMatchObject({ ok: true, data: { lead: { id: leadId } } });
         expect(queries.some(q => q.insert)).toBe(false);
     });
 

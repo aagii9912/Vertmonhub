@@ -79,15 +79,15 @@ interface PendingRequest {
 
 const TOOL_LABEL: Record<string, string> = {
     delegate_to_specialists: 'Мэргэжилтнүүдэд хуваарилах', ask_user: 'Тодруулга', list_viewings: 'Уулзалт хайх', list_my_tasks: 'Миний ажлууд', list_contract_payments: 'Төлбөрийн хуваарь',
-    log_call: 'Дуудлага бүртгэх', set_followup: 'Follow-up тавих', assign_lead_manager: 'Лид шилжүүлэх', record_viewing_outcome: 'Уулзалтын үр дүн', reschedule_viewing: 'Уулзалт зөөх', create_task: 'Ажил нэмэх', complete_task: 'Ажил дуусгах', add_contract_payment: 'Төлбөр нэмэх', mark_payment_paid: 'Төлбөр төлсөн',
-    get_kpi_report: 'KPI тайлан', get_manager_performance: 'Менежерийн гүйцэтгэл', get_export_link: 'Excel линк', add_customer_tag: 'Таг нэмэх', remove_customer_tag: 'Таг хасах', reply_to_customer: 'Messenger хариу', merge_customers: 'Харилцагч нэгтгэх',
+    log_call: 'Дуудлага бүртгэх', set_followup: 'Follow-up тавих', log_price_quote: 'Үнийн санал', set_lead_category: 'Ангилал тавих', list_lead_categories: 'Лидийн ангилал', assign_lead_manager: 'Лид шилжүүлэх', record_viewing_outcome: 'Уулзалтын үр дүн', reschedule_viewing: 'Уулзалт зөөх', create_task: 'Ажил нэмэх', complete_task: 'Ажил дуусгах', add_contract_payment: 'Төлбөр нэмэх', mark_payment_paid: 'Төлбөр төлсөн',
+    get_kpi_report: 'KPI тайлан', get_manager_activity: 'Менежерийн идэвх', get_manager_performance: 'Менежерийн гүйцэтгэл', get_export_link: 'Excel линк', add_customer_tag: 'Таг нэмэх', remove_customer_tag: 'Таг хасах', reply_to_customer: 'Messenger хариу', merge_customers: 'Харилцагч нэгтгэх',
     log_marketing_spend: 'Зарцуулалт бүртгэх', set_marketing_budget: 'Төсөв тавих', list_marketing_spend: 'Зарцуулалт', add_market_indicator: 'Зах зээлийн үзүүлэлт',
     update_unit_status: 'Нэгжийн статус', delete_property: 'Байр устгах', delete_viewing: 'Уулзалт цуцлах', delete_customer: 'Харилцагч устгах', create_role: 'Дүр үүсгэх',
     get_dashboard_stats: 'Самбарын тоо', list_properties: 'Байр хайх', list_leads: 'Лид хайх', get_lead_details: 'Лидийн мэдээлэл',
     get_customer_insights: 'Харилцагчийн дүн', list_contracts: 'Гэрээ хайх', get_contract_details: 'Гэрээний мэдээлэл', get_contracts_summary: 'Гэрээний нэгтгэл',
     get_sales_summary: 'Борлуулалтын нэгтгэл', get_sales_forecast: 'Прогноз', compare_properties: 'Байр харьцуулах', get_marketing_summary: 'Маркетингийн нэгтгэл',
     get_marketing_budget_status: 'Төсвийн байдал', get_market_indicators: 'Зах зээлийн үзүүлэлт', update_lead_status: 'Лидийн статус', add_lead_note: 'Тэмдэглэл',
-    schedule_viewing: 'Уулзалт товлох', create_lead: 'Лид үүсгэх', create_customer: 'Харилцагч үүсгэх', create_contract: 'Гэрээ үүсгэх', process_contract_action: 'Гэрээний үйлдэл',
+    schedule_viewing: 'Уулзалт товлох', create_lead: 'Лид үүсгэх', create_customer: 'Харилцагч үүсгэх', create_contract: 'Гэрээ үүсгэх', transfer_contract: 'Гэрээ шилжүүлэх', process_contract_action: 'Гэрээний үйлдэл',
     update_property_status: 'Байрны статус', update_property_price: 'Байрны үнэ', create_property: 'Байр үүсгэх', bulk_update_leads: 'Олон лид шинэчлэх', attach_file: 'Файл хавсаргах',
     remember_fact: 'Санах', create_social_post: 'Пост үүсгэх', delete_lead: 'Лид устгах', delete_contract: 'Гэрээ устгах', invite_user: 'Хэрэглэгч урих', assign_role: 'Эрх оноох',
 };

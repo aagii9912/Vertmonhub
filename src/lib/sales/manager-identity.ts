@@ -69,6 +69,45 @@ export function matchRosterEntry(
 }
 
 /**
+ * PURE: тайлан харах эрхийн НЭГ дүрэм (dashboard/mode-тэй ижил).
+ * • personal — админ биш, sales_manager role-той ЭСВЭЛ идэвхтэй бүртгэлд таарсан → зөвхөн өөрийн өгөгдөл.
+ * • canViewTeam — personal биш бөгөөд super_admin эсвэл `reports` модультай → бусад менежерийг харна.
+ * Админ модулийн эрхийг тойрохгүй (admin нь `reports`-гүй бол багийн тайлан харахгүй).
+ */
+export function reportViewerRule(input: { role: string | null | undefined; modules?: readonly string[] | null; isManager: boolean }) {
+    const role = input.role || 'viewer';
+    const isAdmin = role === 'admin' || role === 'super_admin';
+    const personal = !isAdmin && (role === 'sales_manager' || input.isManager);
+    const canViewTeam = !personal && (role === 'super_admin' || (input.modules ?? []).includes('reports'));
+    return { role, isAdmin, personal, canViewTeam };
+}
+
+export interface ReportViewer extends ReturnType<typeof reportViewerRule> {
+    userId: string | null;
+    /** Канон нэр (бүртгэлийн нэр → профайлын нэр). Хувийн тайланд бүртгэлийн мөр (identity.rosterEntry)-ийг шалгана. */
+    managerName: string | null;
+    identity: ManagerIdentity | null;
+}
+
+/**
+ * Тайлангийн route/AI tool-д хэрэглэгч хэний өгөгдлийг харахыг тодорхойлно
+ * (sales-kpi, manager-activity, get_manager_activity). Эрх (role, modules)-ийг дуудагч серверээс өгнө.
+ */
+export async function resolveReportViewer(
+    db: SupabaseClient,
+    shopId: string,
+    input: { userId: string | null; role: string | null | undefined; modules?: readonly string[] | null },
+): Promise<ReportViewer> {
+    const identity = input.userId ? await resolveManagerIdentity(db, shopId, input.userId) : null;
+    return {
+        ...reportViewerRule({ role: input.role, modules: input.modules, isManager: !!identity?.isManager }),
+        userId: input.userId,
+        managerName: identity?.managerName ?? null,
+        identity,
+    };
+}
+
+/**
  * Нэвтэрсэн хэрэглэгчийн менежерийн identity-г тодорхойлно
  * (user_profiles.full_name + sales_managers roster).
  * sales_managers хүснэгт байхгүй (миграци ороогүй) орчинд ч алдаа өгөхгүй.
