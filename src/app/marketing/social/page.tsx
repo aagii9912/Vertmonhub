@@ -824,13 +824,13 @@ function FacebookTabContent({
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatsCard
                     title="Дагагчид"
-                    value={formatNumber(page?.followers_count || 0)}
+                    value={typeof page?.followers_count === 'number' ? formatNumber(page.followers_count) : '—'}
                     icon={Users}
                     iconColor="info"
                 />
                 <StatsCard
                     title="Like тоо"
-                    value={formatNumber(page?.fan_count || 0)}
+                    value={typeof page?.fan_count === 'number' ? formatNumber(page.fan_count) : '—'}
                     icon={ThumbsUp}
                     iconColor="brand"
                 />

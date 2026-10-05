@@ -86,6 +86,8 @@ test('connects a Facebook Page server-side after OAuth and shows v26 insights wi
     await expect(page.locator('div.bg-surface-2', { hasText: 'Үзсэн хүн' })).toContainText('2026-10-03-ны байдлаар');
     await expect(page.getByText(/2026-09-06 – 2026-10-03 \(28 өдөр/)).toBeVisible();
     await expect(page.getByTitle('Үзсэн хүн (нийтлэлийн насан туршид)')).toContainText('—');
+    // Meta fan_count-ийг өгөөгүй (Page like хасагдаж байгаа) — 0 биш «—».
+    await expect(page.getByText('Like тоо').locator('xpath=ancestor::div[2]')).toContainText('—');
     expect(state.errors).toEqual([]);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
