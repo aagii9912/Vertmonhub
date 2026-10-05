@@ -541,23 +541,20 @@ export const DEFAULT_PAGE_SUBSCRIBE_FIELDS = [
     'message_reactions',
     'messaging_optins',
     'feed',
+    // Facebook Lead Ads — leads_retrieval эрх шаардана (lib/facebook/leadgen).
+    'leadgen',
 ];
 
 export interface SubscribeResult {
     success: boolean;
     error?: string;
+    /** `leadgen` талбар subscribe хийгдсэн эсэх. */
+    leadgen: boolean;
+    /** Зөвхөн leadgen унасан үеийн Meta-гийн алдаа (DM-ийн талбарууд subscribe хийгдсэн). */
+    leadgenError?: string;
 }
 
-/**
- * Page-ийг app-ийн webhook-д subscribe хийнэ (POST /{page-id}/subscribed_apps).
- * Idempotent — дахин дуудахад асуудалгүй. Хэзээ ч throw хийхгүй (Page холболтыг
- * блоклохгүй). pages_manage_metadata эрх шаардана.
- */
-export async function subscribePageToApp(
-    pageId: string,
-    pageAccessToken: string,
-    fields: string[] = DEFAULT_PAGE_SUBSCRIBE_FIELDS
-): Promise<SubscribeResult> {
+async function postSubscribedApps(pageId: string, pageAccessToken: string, fields: string[]): Promise<{ success: boolean; error?: string }> {
     try {
         const params = new URLSearchParams({
             subscribed_fields: fields.join(','),
@@ -569,7 +566,7 @@ export async function subscribePageToApp(
         const res = await fetch(url, { method: 'POST' });
         const json = await res.json();
         if (json.error) {
-            logger.warn('subscribePageToApp error', { pageId, error: json.error.message });
+            logger.warn('subscribePageToApp error', { pageId, fields: fields.join(','), error: json.error.message });
             return { success: false, error: json.error.message };
         }
         return { success: json.success !== false };
@@ -577,6 +574,29 @@ export async function subscribePageToApp(
         logger.warn('subscribePageToApp failed', { pageId, error: String(error) });
         return { success: false, error: String(error) };
     }
+}
+
+/**
+ * Page-ийг app-ийн webhook-д subscribe хийнэ (POST /{page-id}/subscribed_apps).
+ * Idempotent — дахин дуудахад асуудалгүй. Хэзээ ч throw хийхгүй (Page холболтыг
+ * блоклохгүй). pages_manage_metadata эрх шаардана; `leadgen` нь leads_retrieval шаарддаг
+ * бөгөөд эрхгүй бол Meta бүх хүсэлтийг унагадаг тул DM-ийн талбаруудыг leadgen-гүйгээр
+ * дахин subscribe хийж, leadgen-ийн алдааг тусад нь буцаана.
+ */
+export async function subscribePageToApp(
+    pageId: string,
+    pageAccessToken: string,
+    fields: string[] = DEFAULT_PAGE_SUBSCRIBE_FIELDS
+): Promise<SubscribeResult> {
+    const all = await postSubscribedApps(pageId, pageAccessToken, fields);
+    const wantsLeadgen = fields.includes('leadgen');
+    if (all.success || !wantsLeadgen) return { ...all, leadgen: all.success && wantsLeadgen };
+    const rest = fields.filter(field => field !== 'leadgen');
+    if (rest.length === 0) return { success: false, error: all.error, leadgen: false, leadgenError: all.error };
+    const withoutLeadgen = await postSubscribedApps(pageId, pageAccessToken, rest);
+    return withoutLeadgen.success
+        ? { success: true, leadgen: false, leadgenError: all.error }
+        : { success: false, error: withoutLeadgen.error, leadgen: false, leadgenError: all.error };
 }
 
 /**

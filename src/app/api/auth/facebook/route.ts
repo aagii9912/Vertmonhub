@@ -18,7 +18,9 @@ export async function GET(request: NextRequest) {
 
   // Phase 2 scopes — list pages, read engagement, send DMs, subscribe webhooks.
   // `pages_messaging` + `pages_manage_metadata` require Meta App Review approval
-  // before they can be granted on a Live app.
+  // before they can be granted on a Live app. `leads_retrieval` (leadgen webhook
+  // subscribe + lead унших) ба `pages_manage_ads` (Page-ийн lead формуудыг backfill-д
+  // жагсаах) нь Facebook Lead Ads-д хэрэгтэй, мөн App Review шаардана.
   // ⚠️ 'email' нь энэ FB-Login-for-Business аппад invalid scope — login dialog-ийг
   // блоклодог тул хассан. business_management нь ad account жагсаалтад туслана.
   const permissions = [
@@ -26,6 +28,8 @@ export async function GET(request: NextRequest) {
     'pages_read_engagement',
     'pages_messaging',
     'pages_manage_metadata',
+    'leads_retrieval',
+    'pages_manage_ads',
     'ads_read',
     'business_management',
     'public_profile'

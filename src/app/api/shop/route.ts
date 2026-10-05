@@ -215,6 +215,7 @@ export async function PATCH(request: NextRequest) {
     // Page-ийг app webhook-д auto-subscribe (idempotent, блоклохгүй). Холболтын
     // талбар өөрчлөгдсөн үед л Graph-руу дуудна.
     let webhookSubscribed: boolean | undefined;
+    let leadAdsSubscribed: boolean | undefined;
     const touchedConnection =
       'facebook_page_id' in safeBody ||
       'facebook_page_access_token' in safeBody ||
@@ -228,10 +229,11 @@ export async function PATCH(request: NextRequest) {
       if (pageId && token) {
         const sub = await subscribePageToApp(pageId, token);
         webhookSubscribed = sub.success;
+        leadAdsSubscribed = sub.leadgen;
       }
     }
 
-    return NextResponse.json({ shop: publicShop(updatedShop, modules), webhookSubscribed });
+    return NextResponse.json({ shop: publicShop(updatedShop, modules), webhookSubscribed, leadAdsSubscribed });
   } catch (error) {
     return safeErrorResponse(error, 'Shop шинэчлэх үед алдаа гарлаа');
   }
