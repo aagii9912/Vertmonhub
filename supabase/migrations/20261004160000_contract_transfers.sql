@@ -190,7 +190,11 @@ BEGIN
     END IF;
     v_phone_norm := nullif(p_payload->>'phone_normalized', '');
     v_reason := nullif(btrim(p_payload->>'reason'), '');
-    IF length(v_first) > 100 OR length(v_last) > 100 OR length(v_phone) > 50 OR length(v_mobile) > 50
+    -- Уртыг зөвхөн энэ хүсэлтээр бичигдэх утганд шалгана: нэр засварт хадгалагдсан (ERP/импортын урт) утас хэвээр үлдэнэ.
+    IF ((v_kind = 'transfer' OR p_payload ? 'customer_first_name') AND length(v_first) > 100)
+       OR ((v_kind = 'transfer' OR p_payload ? 'customer_last_name') AND length(v_last) > 100)
+       OR ((v_kind = 'transfer' OR p_payload ? 'customer_phone') AND length(v_phone) > 50)
+       OR ((v_kind = 'transfer' OR p_payload ? 'customer_mobile') AND length(v_mobile) > 50)
        OR (v_phone_norm IS NOT NULL AND v_phone_norm !~ '^\d{1,20}$') OR length(v_reason) > 2000 THEN
         RAISE EXCEPTION 'Эзэмшигчийн нэр, утас, шалтгааны уртыг шалгана уу' USING ERRCODE = '22023';
     END IF;
@@ -287,7 +291,9 @@ BEGIN
     WHERE id = p_contract_id AND shop_id = p_shop_id;
 
     v_label := coalesce(nullif(v_contract.contract_number, ''), nullif(v_contract.unit_label, ''), 'гэрээ');
-    IF v_contract.lead_id IS NOT NULL THEN
+    -- Лидийн түүх зөвхөн ижил төслийн (shop) лидэд: 2026-10-04 хуваалтаас үлдсэн өөр shop-ийн лид рүү бичихгүй.
+    IF v_contract.lead_id IS NOT NULL
+       AND EXISTS (SELECT 1 FROM public.leads WHERE id = v_contract.lead_id AND shop_id = p_shop_id) THEN
         INSERT INTO public.lead_activities (shop_id, lead_id, type, content, meta, created_by, created_by_name)
         VALUES (
             p_shop_id, v_contract.lead_id, 'contract',

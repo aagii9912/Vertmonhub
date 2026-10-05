@@ -202,6 +202,24 @@ it('changes only the contract holder, keeps money/attribution and writes history
         expect((await db.query('SELECT count(*)::int AS n FROM contract_transfers WHERE contract_id = $1', [contract])).rows).toEqual([{ n: 3 }]);
         expect((await db.query('SELECT count(*)::int AS n FROM customers')).rows).toEqual([{ n: 3 }]);
 
+        // Нэр засвар хадгалагдсан урт утсыг (ERP/импортын олон дугаар) дахин шалгахгүй, хэвээр үлдээнэ.
+        const longPhone = '9911-2233, 8811-4455 (эхнэр), 7011-2233 (ажил), 9900-1122 (хүү)';
+        await db.query('UPDATE property_contracts SET customer_phone = $1 WHERE id = $2', [longPhone, contract]);
+        expect(await transfer(contract, { kind: 'rename', customer_name: 'Тулга Ганбаатар Б.' }, request(8)))
+            .toMatchObject({ kind: 'rename', to_phone: longPhone });
+        await expect(transfer(contract, { kind: 'rename', customer_name: 'Тулга Ганбаатар', customer_phone: longPhone }, request(10)))
+            .rejects.toMatchObject({ code: '22023' });
+
+        // Хуваалтаас үлдсэн өөр төслийн (shop) лидэд шилжүүлгийн түүх бичихгүй; гэрээ өөрөө шилжинэ.
+        const foreignLead = '30000000-0000-4000-8000-000000000002';
+        const splitContract = '40000000-0000-4000-8000-000000000005';
+        await db.query('INSERT INTO leads VALUES ($1, $2)', [foreignLead, otherShop]);
+        await db.query(`INSERT INTO property_contracts (id, shop_id, contract_number, contract_date, contract_status, unit_label, sales_manager,
+            lead_id, customer_name, total_price, paid_amount, balance) VALUES ($1,$2,'MG-105','2026-01-15','active','A-105','Номин',$3,'Хуучин нэр',100,0,100)`,
+        [splitContract, shop, foreignLead]);
+        expect(await transfer(splitContract, { kind: 'rename', customer_name: 'Шинэ нэр' }, request(9))).toMatchObject({ kind: 'rename', to_customer_name: 'Шинэ нэр' });
+        expect((await db.query('SELECT count(*)::int AS n FROM lead_activities WHERE lead_id = $1', [foreignLead])).rows).toEqual([{ n: 0 }]);
+
         // Түүхийг засах, устгах боломжгүй (append-only).
         await expect(db.query("UPDATE contract_transfers SET to_customer_name = 'X'")).rejects.toMatchObject({ code: '42501' });
         await expect(db.query('DELETE FROM contract_transfers')).rejects.toMatchObject({ code: '42501' });
