@@ -319,8 +319,8 @@ function Leaderboard({ rows, loading }: { rows?: LeaderboardRow[]; loading: bool
                                 <th className="px-2 text-left font-medium">Менежер</th>
                                 <th className="px-2 text-right font-medium">Гэрээ</th>
                                 <th className="px-2 text-right font-medium">Борлуулалт</th>
-                                <th className="hidden px-2 text-right font-medium sm:table-cell">Уулзалт</th>
-                                <th className="hidden px-2 text-right font-medium sm:table-cell">Лид</th>
+                                <th className="px-2 text-right font-medium">Уулзалт</th>
+                                <th className="px-2 text-right font-medium">Лид</th>
                                 <th className="w-[130px] px-2 text-left font-medium">Зорилтын %</th>
                             </tr>
                         </thead>
@@ -331,8 +331,8 @@ function Leaderboard({ rows, loading }: { rows?: LeaderboardRow[]; loading: bool
                                     <td className="px-2"><span className="inline-flex items-center gap-2"><Avatar name={r.name} /><span className="truncate font-medium text-foreground">{r.name}</span></span></td>
                                     <td className="num px-2 text-right text-fg-2">{r.contracts}</td>
                                     <td className="num px-2 text-right font-medium text-foreground">{fmtAxis(r.sales)}<span className="text-muted-foreground"> сая</span></td>
-                                    <td className="num hidden px-2 text-right text-fg-2 sm:table-cell">{r.viewings}</td>
-                                    <td className="num hidden px-2 text-right text-fg-2 sm:table-cell">{r.leads}</td>
+                                    <td className="num px-2 text-right text-fg-2">{r.viewings}</td>
+                                    <td className="num px-2 text-right text-fg-2">{r.leads}</td>
                                     <td className="px-2">
                                         <div className="flex items-center gap-2">
                                             <Progress value={r.targetPct} className="w-14" />
