@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS public.meta_leadgen_events (
     lead_created_at timestamptz,
     created_at timestamptz NOT NULL DEFAULT now(),
     updated_at timestamptz NOT NULL DEFAULT now(),
-    CONSTRAINT meta_leadgen_events_reason_check CHECK ((status = 'saved') = (reason IS NULL))
+    CONSTRAINT meta_leadgen_events_status_reason_check CHECK ((status = 'saved') = (reason IS NULL))
 );
 
 CREATE INDEX IF NOT EXISTS meta_leadgen_events_shop_updated_idx
