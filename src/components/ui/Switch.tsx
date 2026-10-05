@@ -14,8 +14,7 @@ function Switch({
       data-slot="switch"
       className={cn(
         "peer inline-flex h-6 w-11 shrink-0 items-center rounded-full border border-transparent shadow-sm transition-colors",
-        "outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-        "data-[state=unchecked]:bg-surface-3 data-[state=checked]:bg-brand",
+        "data-[state=unchecked]:bg-control data-[state=checked]:bg-brand",
         "disabled:cursor-not-allowed disabled:opacity-50",
         className
       )}
@@ -24,7 +23,7 @@ function Switch({
       <SwitchPrimitive.Thumb
         data-slot="switch-thumb"
         className={cn(
-          "pointer-events-none block size-5 rounded-full bg-background shadow-sm ring-0",
+          "pointer-events-none block size-5 rounded-full bg-brand-fg shadow-sm ring-0",
           "transition-transform duration-(--duration-fast) ease-(--ease-spring)",
           "data-[state=unchecked]:translate-x-0.5 data-[state=checked]:translate-x-[1.375rem]"
         )}

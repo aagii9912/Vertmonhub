@@ -68,19 +68,19 @@ describe('Button', () => {
             render(<Button>Medium</Button>);
             const button = screen.getByRole('button');
             expect(button.className).toContain('h-11');
-            expect(button.className).toContain('md:h-[36px]');
+            expect(button.className).toContain('md:h-9');
         });
 
         it('applies sm size', () => {
             render(<Button size="sm">Small</Button>);
             const button = screen.getByRole('button');
-            expect(button.className).toContain('h-[30px]');
+            expect(button.className).toContain('md:h-8');
         });
 
         it('applies lg size', () => {
             render(<Button size="lg">Large</Button>);
             const button = screen.getByRole('button');
-            expect(button.className).toContain('h-[44px]');
+            expect(button.className).toContain('h-11');
         });
 
         it('applies icon size', () => {
@@ -88,7 +88,7 @@ describe('Button', () => {
             const button = screen.getByRole('button');
             expect(button.className).toContain('h-11');
             expect(button.className).toContain('w-11');
-            expect(button.className).toContain('md:h-[34px]');
+            expect(button.className).toContain('md:size-9');
         });
     });
 

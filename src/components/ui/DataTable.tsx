@@ -362,7 +362,7 @@ export function DataTable<T>({
                         onClick={() => handleSort(col.key)}
                         className={cn(
                           "group inline-flex items-center gap-1 rounded-md text-[11px] font-medium tracking-[0.03em] transition-colors hover:text-foreground",
-                          "outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                          "outline-none",
                           isActive ? "text-foreground" : "text-muted-foreground",
                           align === "right" && "flex-row-reverse"
                         )}
@@ -440,7 +440,7 @@ export function DataTable<T>({
                         ? "bg-brand-soft/60"
                         : "hover:bg-surface-2",
                       clickable &&
-                        "cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-inset"
+                        "cursor-pointer"
                     )}
                   >
                     {selectable && (
