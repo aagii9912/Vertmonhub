@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 type RingTone = 'brand' | 'success' | 'pending' | 'danger' | 'neutral';
 
 const TONE_CLASS: Record<RingTone, string> = {
-    brand: 'text-brand',
+    brand: 'text-brand-strong',
     success: 'text-status-success',
     pending: 'text-status-pending',
     danger: 'text-status-danger',

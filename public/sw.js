@@ -7,8 +7,8 @@
  * - Images: Cache First with expiration
  */
 
-const CACHE_NAME = 'vertmonhub-v2';
-const STATIC_CACHE = 'vertmonhub-static-v2';
+const CACHE_NAME = 'vertmonhub-v3';
+const STATIC_CACHE = 'vertmonhub-static-v3';
 const API_CACHE = 'vertmonhub-api-v1';
 
 const STATIC_URLS = [
@@ -79,7 +79,7 @@ self.addEventListener('fetch', (event) => {
 
 // Push notifications
 self.addEventListener('push', (event) => {
-    let data = { title: 'Vertmon Hub', body: 'Шинэ мэдэгдэл', icon: '/icons/icon-192x192.png' };
+    let data = { title: 'Vertmon Hub', body: 'Шинэ мэдэгдэл', icon: '/icon-192.png' };
 
     if (event.data) {
         try {
@@ -93,7 +93,7 @@ self.addEventListener('push', (event) => {
         self.registration.showNotification(data.title, {
             body: data.body,
             icon: data.icon,
-            badge: '/icons/icon-72x72.png',
+            badge: '/icon-badge-72.png',
             vibrate: [100, 50, 100],
             data: { url: '/' },
         })

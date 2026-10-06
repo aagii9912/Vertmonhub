@@ -340,7 +340,7 @@ export function CustomerDetailSheet({
                                         setNotesDraft(selectedCustomer.notes || '');
                                         setNotesEditing(true);
                                     }}
-                                    className="text-xs text-brand hover:underline flex items-center gap-1"
+                                    className="text-xs text-brand-strong hover:underline flex items-center gap-1"
                                 >
                                     <Edit2 className="w-3 h-3" />
                                     Засах
@@ -356,7 +356,7 @@ export function CustomerDetailSheet({
                                     <button
                                         onClick={onSaveNotesOnly}
                                         disabled={notesSaving}
-                                        className="text-xs text-brand font-medium hover:underline flex items-center gap-1 disabled:opacity-50"
+                                        className="text-xs text-brand-strong font-medium hover:underline flex items-center gap-1 disabled:opacity-50"
                                     >
                                         <Save className="w-3 h-3" />
                                         {notesSaving ? 'Хадгалж байна...' : 'Хадгалах'}
@@ -470,7 +470,7 @@ export function CustomerDetailSheet({
                                             <span className="font-medium text-foreground">Хэрэглэгч:</span>{' '}
                                             {chat.message}
                                         </p>
-                                        <p className="text-brand">
+                                        <p className="text-brand-strong">
                                             <span className="font-medium">Хариу:</span> {chat.response}
                                         </p>
                                     </div>

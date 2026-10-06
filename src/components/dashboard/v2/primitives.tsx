@@ -138,7 +138,7 @@ export function Rank({ n }: { n: number }) {
         <span
             className={cn(
                 'mono-label inline-flex h-5 w-5 items-center justify-center rounded text-[11px]',
-                n === 1 ? 'bg-brand-soft text-brand' : 'text-muted-foreground',
+                n === 1 ? 'bg-brand-soft text-brand-strong' : 'text-muted-foreground',
             )}
         >
             {n}

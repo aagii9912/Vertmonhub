@@ -149,7 +149,7 @@ function Count({ label, value }: { label: string; value: number }) {
 function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
     return (
         <button type="button" aria-pressed={active} onClick={onClick}
-            className={cn('h-6 rounded-md border px-2 text-[11.5px] focus-ring', active ? 'border-brand bg-brand-soft text-brand' : 'border-border text-fg-2 hover:border-border-strong')}>
+            className={cn('h-6 rounded-md border px-2 text-[11.5px] focus-ring', active ? 'border-brand bg-brand-soft text-brand-strong' : 'border-border text-fg-2 hover:border-border-strong')}>
             {children}
         </button>
     );

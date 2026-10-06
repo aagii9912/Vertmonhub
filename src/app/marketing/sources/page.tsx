@@ -344,7 +344,7 @@ export default function SourcesPage() {
                         <Card className="mb-6">
                             <CardHeader className="py-3">
                                 <CardTitle className="text-base flex items-center gap-2">
-                                    <CalendarClock className="w-4 h-4 text-brand" />
+                                    <CalendarClock className="w-4 h-4 text-brand-strong" />
                                     Гэрээний хугацаа — {currentYear}
                                 </CardTitle>
                             </CardHeader>

@@ -183,7 +183,7 @@ export function LeadPanel({
                     <Label>Утас</Label>
                     <div className="flex items-center gap-2">
                         <span className="mono-label text-foreground">{lead.customer_phone || '—'}</span>
-                        {phoneDigits && <a href={`tel:${phoneDigits}`} className="flex h-6 w-6 items-center justify-center rounded-md text-brand hover:bg-brand-soft" aria-label="Залгах"><Phone className="h-3.5 w-3.5" /></a>}
+                        {phoneDigits && <a href={`tel:${phoneDigits}`} className="flex h-6 w-6 items-center justify-center rounded-md text-brand-strong hover:bg-brand-soft" aria-label="Залгах"><Phone className="h-3.5 w-3.5" /></a>}
                     </div>
                     <Label>Эх үүсвэр</Label>
                     <div className="text-foreground">{sourceLabel(lead.source)}</div>
@@ -244,7 +244,7 @@ export function LeadPanel({
 
                 {/* Үйлдэл */}
                 <div className="flex flex-wrap gap-2 border-b border-border px-4 py-3">
-                    <Link href={`/dashboard/viewings?lead=${lead.id}&new=1`} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-2.5 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring">
+                    <Link href={`/dashboard/viewings?lead=${lead.id}&new=1`} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-2.5 text-[12.5px] font-medium text-brand-fg hover:bg-brand-hover focus-ring">
                         <CalendarPlus className="h-4 w-4" /> Уулзалт товлох
                     </Link>
                     <button type="button" onClick={() => noteRef.current?.focus()} className="inline-flex h-[30px] items-center gap-1.5 rounded-md border border-border-strong bg-surface px-2.5 text-[12.5px] font-medium text-foreground hover:bg-surface-2 focus-ring">
@@ -294,19 +294,19 @@ export function LeadPanel({
                                 className="w-full resize-none bg-transparent px-2.5 pt-2 text-[13px] outline-none placeholder:text-muted-foreground"
                             />
                             <div className="flex flex-wrap items-center gap-1.5 px-2 pb-2">
-                                <button type="button" aria-pressed={isCall} onClick={() => { setIsCall((v) => !v); setIsQuote(false); }} className={cn('inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[11.5px] focus-ring', isCall ? 'border-brand bg-brand-soft text-brand' : 'border-border text-fg-2 hover:border-border-strong')}>
+                                <button type="button" aria-pressed={isCall} onClick={() => { setIsCall((v) => !v); setIsQuote(false); }} className={cn('inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[11.5px] focus-ring', isCall ? 'border-brand bg-brand-soft text-brand-strong' : 'border-border text-fg-2 hover:border-border-strong')}>
                                     <PhoneCall className="h-3 w-3" /> Залгав
                                 </button>
-                                <button type="button" aria-pressed={isQuote} onClick={() => { setIsQuote((v) => !v); setIsCall(false); }} className={cn('inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[11.5px] focus-ring', isQuote ? 'border-brand bg-brand-soft text-brand' : 'border-border text-fg-2 hover:border-border-strong')}>
+                                <button type="button" aria-pressed={isQuote} onClick={() => { setIsQuote((v) => !v); setIsCall(false); }} className={cn('inline-flex h-6 items-center gap-1 rounded-md border px-2 text-[11.5px] focus-ring', isQuote ? 'border-brand bg-brand-soft text-brand-strong' : 'border-border text-fg-2 hover:border-border-strong')}>
                                     <BadgeDollarSign className="h-3 w-3" /> Үнийн санал
                                 </button>
                                 <span className="mx-1 text-[11px] text-muted-foreground">Дараа:</span>
                                 {[1, 3, 7].map((d) => (
-                                    <button key={d} type="button" onClick={() => setFollowup(followup === d ? null : d)} className={cn('h-6 rounded-md border px-2 text-[11.5px] focus-ring', followup === d ? 'border-brand bg-brand-soft text-brand' : 'border-border text-fg-2 hover:border-border-strong')}>
+                                    <button key={d} type="button" onClick={() => setFollowup(followup === d ? null : d)} className={cn('h-6 rounded-md border px-2 text-[11.5px] focus-ring', followup === d ? 'border-brand bg-brand-soft text-brand-strong' : 'border-border text-fg-2 hover:border-border-strong')}>
                                         {d === 1 ? 'Маргааш' : `${d} хоног`}
                                     </button>
                                 ))}
-                                <button type="button" disabled={addActivity.isPending || !canSave} onClick={() => void saveNote()} className="ml-auto inline-flex h-7 items-center gap-1 rounded-md bg-brand px-2.5 text-[12px] font-medium text-brand-fg hover:bg-brand-strong disabled:opacity-50 focus-ring">
+                                <button type="button" disabled={addActivity.isPending || !canSave} onClick={() => void saveNote()} className="ml-auto inline-flex h-7 items-center gap-1 rounded-md bg-brand px-2.5 text-[12px] font-medium text-brand-fg hover:bg-brand-hover disabled:opacity-50 focus-ring">
                                     <Check className="h-3.5 w-3.5" /> Хадгалах
                                 </button>
                             </div>

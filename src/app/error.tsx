@@ -29,7 +29,7 @@ export default function Error({
             </div>
             <button
                 onClick={() => reset()}
-                className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-brand text-brand-fg text-sm font-medium hover:bg-brand-strong transition-colors"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-brand text-brand-fg text-sm font-medium hover:bg-brand-hover transition-colors"
             >
                 <RefreshCw className="w-4 h-4" />
                 Дахин оролдох

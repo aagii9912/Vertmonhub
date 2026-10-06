@@ -217,7 +217,7 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-brand" />
+              <Building2 className="w-5 h-5 text-brand-strong" />
               Үндсэн мэдээлэл
             </CardTitle>
           </CardHeader>
@@ -318,7 +318,7 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Maximize className="w-5 h-5 text-brand" />
+              <Maximize className="w-5 h-5 text-brand-strong" />
               Дэлгэрэнгүй
             </CardTitle>
           </CardHeader>
@@ -385,7 +385,7 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-brand" />
+              <MapPin className="w-5 h-5 text-brand-strong" />
               Байршил
             </CardTitle>
           </CardHeader>
@@ -430,7 +430,7 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Upload className="w-5 h-5 text-brand" />
+              <Upload className="w-5 h-5 text-brand-strong" />
               Зураг ({formData.images.length})
             </CardTitle>
           </CardHeader>
@@ -462,7 +462,7 @@ export default function PropertyForm({ mode, initialData, onSubmit, submitLabel,
               <div className="border-2 border-dashed border-border-strong rounded-xl p-8 text-center hover:bg-surface-2/50 transition-colors">
                 {uploading ? (
                   <>
-                    <Loader2 className="w-12 h-12 text-brand mx-auto mb-4 animate-spin" />
+                    <Loader2 className="w-12 h-12 text-brand-strong mx-auto mb-4 animate-spin" />
                     <p className="text-muted-foreground">Хуулж байна...</p>
                   </>
                 ) : (

@@ -28,7 +28,7 @@ interface Trace {
 
 const COLOR_MAP: Record<string, string> = {
     emerald: 'bg-status-success-soft text-status-success border-status-success/30',
-    violet: 'bg-brand-soft text-brand border-brand/30',
+    violet: 'bg-brand-soft text-brand-strong border-brand/30',
     sky: 'bg-status-info-soft text-status-info border-status-info/30',
     amber: 'bg-status-pending-soft text-status-pending border-status-pending/30',
     rose: 'bg-status-danger-soft text-status-danger border-status-danger/30',

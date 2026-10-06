@@ -256,7 +256,7 @@ export default function TasksPage() {
                     className={cn(
                         'mt-0.5 w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center flex-shrink-0 transition-colors',
                         isDone
-                            ? 'border-status-success bg-status-success text-white'
+                            ? 'border-status-success bg-status-success text-background'
                             : section === 'overdue'
                               ? 'border-status-danger/60 hover:bg-status-danger/10'
                               : 'border-border-strong hover:border-brand hover:bg-brand-soft',
@@ -339,7 +339,7 @@ export default function TasksPage() {
                         : 'Хийх ажлаа бүртгэж, сануулга аваарай — дууссан ажлууд сарын KPI тайланд автоматаар орно'
                 }
                 secondaryActions={
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
                         <Button variant="secondary" size="sm" onClick={() => openAiPanel('Миний хийх ажил, дуусах хугацаа, сануулгыг бүртгэ: ')}>AI-аар бүртгүүлэх</Button>
                         {todayPct !== null && (
                             <ProgressRing
@@ -386,7 +386,7 @@ export default function TasksPage() {
             <Card className="mb-5">
                 <CardContent className="py-3 space-y-2.5">
                     <div className="flex items-center gap-2">
-                        <Plus className="w-4 h-4 text-brand flex-shrink-0" />
+                        <Plus className="w-4 h-4 text-brand-strong flex-shrink-0" />
                         <input
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}

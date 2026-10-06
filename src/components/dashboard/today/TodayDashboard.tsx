@@ -179,7 +179,7 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
                                 )}
                             >
                                 {label}
-                                <span className={cn('mono-label text-[11px]', filter === k ? 'text-brand' : 'text-muted-foreground')}>{incompleteTasks(k) ? '—' : counts[k]}</span>
+                                <span className={cn('mono-label text-[11px]', filter === k ? 'text-brand-strong' : 'text-muted-foreground')}>{incompleteTasks(k) ? '—' : counts[k]}</span>
                             </button>
                         ))}
                     </div>
@@ -198,7 +198,7 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
                         <button
                             type="button"
                             onClick={() => incompleteTasks(filter) ? void refetch() : openQuickCreate('lead')}
-                            className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring"
+                            className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-hover focus-ring"
                         >
                             {incompleteTasks(filter) ? 'Дахин оролдох' : <><Plus className="h-4 w-4" /> Шинэ лид</>}
                         </button>
@@ -235,7 +235,7 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
                 <Panel
                     title={`Миний ${monthLabel}`}
                     right={
-                        <Link href="/dashboard/reports/kpi" className="inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline">
+                        <Link href="/dashboard/reports/kpi" className="inline-flex items-center gap-1 text-[12px] font-medium text-brand-strong hover:underline">
                             KPI тайлан <ChevronRight className="h-3.5 w-3.5" />
                         </Link>
                     }
@@ -283,7 +283,7 @@ export function TodayDashboard({ managerName, embedded = false }: { managerName?
                         </div>
                     )}
                     <div className="border-t border-border px-3.5 py-2">
-                        <Link href="/dashboard/leads" className="inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline">
+                        <Link href="/dashboard/leads" className="inline-flex items-center gap-1 text-[12px] font-medium text-brand-strong hover:underline">
                             Бүх лид <ArrowRight className="h-3.5 w-3.5" />
                         </Link>
                     </div>
@@ -335,7 +335,7 @@ function TaskRow({ task, busy, onDone, onSnooze }: { task: MyStatsTask; busy: bo
                 )}
                 <div className="hidden items-center gap-0.5 group-hover:flex group-focus-within:flex">
                     {phone && (
-                        <a href={`tel:${phone}`} className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-brand hover:bg-brand-soft">
+                        <a href={`tel:${phone}`} className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-brand-strong hover:bg-brand-soft">
                             <Phone className="h-3.5 w-3.5" /> Залгах
                         </a>
                     )}
@@ -345,7 +345,7 @@ function TaskRow({ task, busy, onDone, onSnooze }: { task: MyStatsTask; busy: bo
             </div>
             {/* Гар утас: залгах товч 44px */}
             {phone ? (
-                <a href={`tel:${phone}`} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-brand active:bg-brand-soft sm:hidden" aria-label="Залгах">
+                <a href={`tel:${phone}`} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-brand-strong active:bg-brand-soft sm:hidden" aria-label="Залгах">
                     <Phone className="h-5 w-5" />
                 </a>
             ) : (
@@ -377,7 +377,7 @@ function LeadRow({ lead }: { lead: MyStatsLead }) {
                 </div>
             </Link>
             {phone && (
-                <a href={`tel:${phone}`} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-brand hover:bg-brand-soft">
+                <a href={`tel:${phone}`} className="inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-[12px] font-medium text-brand-strong hover:bg-brand-soft">
                     <Phone className="h-3.5 w-3.5" /> Залгах
                 </a>
             )}
@@ -401,7 +401,7 @@ function TodayActivity({ loading, failed, onboarding, targetDays, row, hidden }:
         <Panel
             title="Өнөөдрийн идэвх"
             right={
-                <Link href="/dashboard/reports/kpi" className="inline-flex items-center gap-1 text-[12px] font-medium text-brand hover:underline">
+                <Link href="/dashboard/reports/kpi" className="inline-flex items-center gap-1 text-[12px] font-medium text-brand-strong hover:underline">
                     Дэлгэрэнгүй <ChevronRight className="h-3.5 w-3.5" />
                 </Link>
             }

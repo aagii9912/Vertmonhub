@@ -28,7 +28,7 @@ interface StatTileProps {
 }
 
 const accentMap: Record<NonNullable<StatTileProps['accent']>, string> = {
-    brand: 'text-brand',
+    brand: 'text-brand-strong',
     success: 'text-status-success',
     warning: 'text-status-pending',
     danger: 'text-status-danger',

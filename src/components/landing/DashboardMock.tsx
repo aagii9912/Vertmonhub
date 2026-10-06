@@ -33,7 +33,7 @@ export function DashboardMock() {
                     <span className="h-2.5 w-2.5 rounded-full bg-border-strong" />
                     <span className="h-2.5 w-2.5 rounded-full bg-border-strong" />
                     <div className="ml-3 flex items-center gap-2 rounded-full bg-surface px-3 py-1">
-                        <Building2 className="h-3 w-3 text-brand" />
+                        <Building2 className="h-3 w-3 text-brand-strong" />
                         <span className="font-mono text-2xs text-muted-foreground">vertmonhub.mn/dashboard</span>
                     </div>
                 </div>

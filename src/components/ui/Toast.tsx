@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/Dialog"
 import { Button } from "@/components/ui/Button"
+import { useTheme } from "@/hooks/useTheme"
 
 /**
  * Pre-configured sonner Toaster wired to our design tokens.
@@ -21,8 +22,10 @@ import { Button } from "@/components/ui/Button"
  * - closeButton: on
  */
 function Toaster({ ...props }: React.ComponentProps<typeof SonnerToaster>) {
+  const { theme } = useTheme()
   return (
     <SonnerToaster
+      theme={theme}
       position="top-right"
       richColors={false}
       closeButton
@@ -35,7 +38,7 @@ function Toaster({ ...props }: React.ComponentProps<typeof SonnerToaster>) {
           title: "text-sm font-medium text-foreground",
           description: "text-sm text-muted-foreground",
           actionButton:
-            "bg-brand text-brand-fg rounded-md px-3 py-1.5 text-sm font-medium hover:bg-brand-strong",
+            "bg-brand text-brand-fg rounded-lg px-3 py-1.5 text-sm font-medium hover:bg-brand-hover",
           cancelButton:
             "bg-surface-2 text-foreground rounded-md px-3 py-1.5 text-sm font-medium hover:bg-surface-3",
           closeButton:
@@ -50,7 +53,7 @@ function Toaster({ ...props }: React.ComponentProps<typeof SonnerToaster>) {
       style={
         {
           "--normal-bg": "var(--surface)",
-          "--normal-text": "var(--foreground)",
+          "--normal-text": "var(--fg)",
           "--normal-border": "var(--border)",
         } as React.CSSProperties
       }

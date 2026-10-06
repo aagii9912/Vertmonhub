@@ -23,7 +23,7 @@ export function AiChartBlock({ cfg, compact }: { cfg: AiChartConfig; compact: bo
                         <CartesianGrid stroke="var(--border)" vertical={false} />
                         <XAxis dataKey="name" tick={{ fontSize: 10.5, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
                         <YAxis tick={{ fontSize: 10.5, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={44} />
-                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6, border: '1px solid var(--border)' }} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--fg)' }} labelStyle={{ color: 'var(--fg)' }} itemStyle={{ color: 'var(--fg-2)' }} />
                         <Line type="monotone" dataKey="value" stroke="var(--brand)" strokeWidth={2} dot={false} />
                     </LineChart>
                 ) : (
@@ -31,7 +31,7 @@ export function AiChartBlock({ cfg, compact }: { cfg: AiChartConfig; compact: bo
                         <CartesianGrid stroke="var(--border)" vertical={false} />
                         <XAxis dataKey="name" tick={{ fontSize: 10.5, fill: 'var(--muted)' }} axisLine={false} tickLine={false} />
                         <YAxis tick={{ fontSize: 10.5, fill: 'var(--muted)' }} axisLine={false} tickLine={false} width={44} />
-                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 6, border: '1px solid var(--border)' }} />
+                        <Tooltip contentStyle={{ fontSize: 12, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--fg)' }} labelStyle={{ color: 'var(--fg)' }} itemStyle={{ color: 'var(--fg-2)' }} />
                         <Bar dataKey="value" fill="var(--brand)" radius={[3, 3, 0, 0]} />
                     </BarChart>
                 )}

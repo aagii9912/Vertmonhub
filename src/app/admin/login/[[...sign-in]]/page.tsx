@@ -83,7 +83,7 @@ export default function AdminLoginPage() {
                         <button
                             type="submit"
                             disabled={submitting}
-                            className="w-full py-2.5 rounded-md bg-brand hover:bg-brand-strong text-brand-fg font-medium text-sm transition-colors disabled:opacity-50"
+                            className="w-full py-2.5 rounded-md bg-brand hover:bg-brand-hover text-brand-fg font-medium text-sm transition-colors disabled:opacity-50"
                         >
                             {submitting ? 'Нэвтэрч байна...' : 'Нэвтрэх'}
                         </button>

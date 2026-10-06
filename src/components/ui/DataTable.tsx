@@ -260,7 +260,7 @@ export function DataTable<T>({
               role="status"
               className="flex flex-1 items-center justify-between gap-3 rounded-md border border-brand/30 bg-brand-soft px-3 py-1.5"
             >
-              <span className="num text-[12.5px] font-medium text-brand">
+              <span className="num text-[12.5px] font-medium text-brand-strong">
                 {selected.length} сонгогдсон
               </span>
               <div className="flex items-center gap-2">
@@ -362,7 +362,7 @@ export function DataTable<T>({
                         onClick={() => handleSort(col.key)}
                         className={cn(
                           "group inline-flex items-center gap-1 rounded-md text-[11px] font-medium tracking-[0.03em] transition-colors hover:text-foreground",
-                          "outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                          "outline-none",
                           isActive ? "text-foreground" : "text-muted-foreground",
                           align === "right" && "flex-row-reverse"
                         )}
@@ -371,12 +371,12 @@ export function DataTable<T>({
                         {isActive ? (
                           direction === "asc" ? (
                             <ArrowUpIcon
-                              className="size-3 text-brand"
+                              className="size-3 text-brand-strong"
                               aria-hidden="true"
                             />
                           ) : (
                             <ArrowDownIcon
-                              className="size-3 text-brand"
+                              className="size-3 text-brand-strong"
                               aria-hidden="true"
                             />
                           )
@@ -440,7 +440,7 @@ export function DataTable<T>({
                         ? "bg-brand-soft/60"
                         : "hover:bg-surface-2",
                       clickable &&
-                        "cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-inset"
+                        "cursor-pointer"
                     )}
                   >
                     {selectable && (

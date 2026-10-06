@@ -133,7 +133,7 @@ function SourceLine({ report, canOpenErp }: { report: WeeklySalesResponse; canOp
     const inventory = report.inventory ? `${report.inventory.source.kind === 'erp' ? `ERP «${report.inventory.source.source}»` : report.inventory.source.source} ${report.inventory.source.date}` : 'алга';
     return <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
         <span>Гэрээ: {contracts}</span><span>Үлдэгдэл: {inventory}</span>
-        {canOpenErp && <Link href="/dashboard/reports/erp" className="inline-flex items-center gap-1 text-brand hover:underline focus-ring print:hidden">ERP экспорт оруулах<ArrowUpRight className="size-3" /></Link>}
+        {canOpenErp && <Link href="/dashboard/reports/erp" className="inline-flex items-center gap-1 text-brand-strong hover:underline focus-ring print:hidden">ERP экспорт оруулах<ArrowUpRight className="size-3" /></Link>}
     </p>;
 }
 

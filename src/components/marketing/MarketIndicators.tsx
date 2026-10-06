@@ -115,7 +115,7 @@ export function MarketIndicators() {
         <Card className="mb-5">
             <CardHeader className="py-3">
                 <CardTitle className="text-base flex items-center gap-2">
-                    <Landmark className="w-4 h-4 text-brand" />
+                    <Landmark className="w-4 h-4 text-brand-strong" />
                     Зах зээлийн үзүүлэлт — ипотек, банкны нөхцөл
                 </CardTitle>
             </CardHeader>

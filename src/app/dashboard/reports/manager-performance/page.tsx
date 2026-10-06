@@ -151,7 +151,7 @@ export default function ManagerPerformancePage() {
                     <div className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between md:p-5">
                         <div className="flex items-center gap-3">
                             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-soft">
-                                <TrendingUp className="h-5 w-5 text-brand" />
+                                <TrendingUp className="h-5 w-5 text-brand-strong" />
                             </div>
                             <div>
                                 <p className="text-sm font-semibold text-foreground">Багийн {new Date().getFullYear()} оны төлөвлөгөө</p>
@@ -167,7 +167,7 @@ export default function ManagerPerformancePage() {
                                     style={{ width: `${Math.min(100, totals.teamAttainmentPct)}%` }}
                                 />
                             </div>
-                            <span className={`text-lg font-bold tabular-nums ${totals.teamAttainmentPct >= 100 ? 'text-status-success' : 'text-brand'}`}>
+                            <span className={`text-lg font-bold tabular-nums ${totals.teamAttainmentPct >= 100 ? 'text-status-success' : 'text-brand-strong'}`}>
                                 {totals.teamAttainmentPct}%
                             </span>
                         </div>

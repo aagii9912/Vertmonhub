@@ -92,7 +92,7 @@ export function AiComposer({ busy, onSend, onStop, prefill, onPrefillConsumed, p
                 <div className="flex flex-wrap gap-1.5 px-2.5 pt-2">
                     {attachments.map((a) => (
                         <span key={a.id} className="inline-flex max-w-[200px] items-center gap-1.5 rounded-md border border-border bg-surface-2 py-0.5 pl-1.5 pr-1 text-[11.5px]">
-                            {a.uploading ? <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" /> : a.error ? <AlertCircle className="h-3 w-3 text-status-danger" /> : a.mimeType.startsWith('image/') ? <ImageIcon className="h-3 w-3 text-brand" /> : <FileText className="h-3 w-3 text-brand" />}
+                            {a.uploading ? <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" /> : a.error ? <AlertCircle className="h-3 w-3 text-status-danger" /> : a.mimeType.startsWith('image/') ? <ImageIcon className="h-3 w-3 text-brand-strong" /> : <FileText className="h-3 w-3 text-brand-strong" />}
                             <span className="truncate text-foreground">{a.name}</span>
                             <button type="button" onClick={() => setAttachments((p) => p.filter((x) => x.id !== a.id))} className="rounded p-0.5 text-muted-foreground hover:bg-surface-3" aria-label="Хасах"><X className="h-3 w-3" /></button>
                         </span>

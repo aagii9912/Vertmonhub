@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Golos_Text, JetBrains_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
@@ -9,11 +9,11 @@ import { AnalyticsScripts } from "@/components/marketing/AnalyticsScripts";
 import { MarketingAttribution } from "@/components/marketing/MarketingAttribution";
 import { Toaster, ConfirmDialogHost } from '@/components/ui/Toast';
 
-// Vertmon Hub typography: Golos Text (UI, Cyrillic-ready) + JetBrains Mono (тоо, огноо, ID)
-const golosText = Golos_Text({
+// Vertmon Hub v3 typography: Inter (variable; Cyrillic incl. Ө Ү in cyrillic-ext, and the ₮ sign —
+// Golos Text had no ₮ glyph) + JetBrains Mono for codes and IDs.
+const inter = Inter({
   variable: "--font-sans-google",
-  subsets: ["latin", "cyrillic"],
-  weight: ["400", "500", "600", "700"],
+  subsets: ["latin", "cyrillic", "cyrillic-ext"],
   display: "swap",
 });
 
@@ -25,10 +25,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const viewport: Viewport = {
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#F6F7F9' },
-    { media: '(prefers-color-scheme: dark)', color: '#0F1216' },
-  ],
+  // v3 «Шөнө»: dark is the default theme on every device.
+  themeColor: '#0B0D12',
   width: "device-width",
   initialScale: 1,
   // Хүртээмж: томруулахыг хориглохгүй (maximumScale/userScalable хасав — WCAG 1.4.4)
@@ -44,13 +42,14 @@ export const metadata: Metadata = {
     statusBarStyle: "black-translucent",
     title: "Vertmon Hub",
   },
+  // /favicon.ico comes from src/app/favicon.ico (file convention); the SVG serves modern browsers.
   icons: {
-    icon: "/icon-192.png",
-    apple: "/icon-192.png",
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    apple: "/apple-touch-icon.png",
   },
   other: {
     'mobile-web-app-capable': 'yes',
-    'color-scheme': 'light dark',
+    'color-scheme': 'dark light',
   },
 };
 
@@ -60,15 +59,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="mn" suppressHydrationWarning>
+    <html lang="mn" data-theme="dark" className={`${inter.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
       <body
         suppressHydrationWarning
-        className={`${golosText.variable} ${jetbrainsMono.variable} antialiased`}
+        className="antialiased"
       >
-        {/* Theme-ийг будахаас өмнө тавьж flash-аас сэргийлнэ (хадгалсан сонголт эсвэл OS) */}
+        {/* Theme-ийг будахаас өмнө тавьж flash-аас сэргийлнэ: бараан нь үндсэн, цайвар нь хэрэглэгчийн сонголт. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('vh-theme');if(t!=='light'&&t!=='dark'){t=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';}document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','light');}})();`,
+            __html: `(function(){try{var t=localStorage.getItem('vh-theme')==='light'?'light':'dark';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();`,
           }}
         />
         <AnalyticsScripts />

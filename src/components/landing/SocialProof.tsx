@@ -36,7 +36,7 @@ export function SocialProof() {
                             </p>
 
                             <figure className="mt-8 rounded-2xl border border-border bg-surface-2 p-5">
-                                <Quote className="h-5 w-5 text-brand" aria-hidden="true" />
+                                <Quote className="h-5 w-5 text-brand-strong" aria-hidden="true" />
                                 <blockquote className="mt-3 text-sm leading-relaxed text-foreground">
                                     «Хэдэн мянган нэгж, гэрээний өгөгдлийг нэг системд цэгцэлж, борлуулалтаа бодит цагаар
                                     хянадаг болсон.»
@@ -98,7 +98,7 @@ function CountUp({ value, suffix }: { value: number; suffix: string }) {
     return (
         <p ref={ref} className="heading-display text-4xl text-foreground tabular-nums sm:text-5xl">
             {display.toLocaleString('en-US')}
-            <span className="text-2xl text-brand sm:text-3xl">{suffix}</span>
+            <span className="text-2xl text-brand-strong sm:text-3xl">{suffix}</span>
         </p>
     );
 }

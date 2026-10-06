@@ -29,21 +29,21 @@ export default function GlobalError({
                         gap: 16,
                         padding: 24,
                         textAlign: 'center',
-                        background: '#F7F8FA',
-                        color: '#1a1a1a',
+                        background: '#0B0D12',
+                        color: '#EDF0F5',
                     }}
                 >
                     <h2 style={{ fontSize: 20, fontWeight: 600 }}>Алдаа гарлаа</h2>
-                    <p style={{ fontSize: 14, color: '#666', maxWidth: 420 }}>
+                    <p style={{ fontSize: 14, color: '#8E96A5', maxWidth: 420 }}>
                         Уучлаарай, системд гэнэтийн алдаа гарлаа. Дахин оролдоно уу.
                     </p>
                     <button
                         onClick={() => reset()}
                         style={{
                             padding: '8px 16px',
-                            borderRadius: 6,
+                            borderRadius: 8,
                             border: 'none',
-                            background: '#2D6FE6',
+                            background: '#3567EA',
                             color: '#fff',
                             fontSize: 14,
                             cursor: 'pointer',

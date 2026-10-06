@@ -270,7 +270,7 @@ export default function SalesTargetsAdminPage() {
             {/* Гарчиг */}
             <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-soft">
-                    <Target className="h-5 w-5 text-brand" />
+                    <Target className="h-5 w-5 text-brand-strong" />
                 </div>
                 <div>
                     <h1 className="text-xl font-semibold text-foreground">Борлуулалтын төлөвлөгөө</h1>
@@ -310,7 +310,7 @@ export default function SalesTargetsAdminPage() {
                 </div>
             ) : !scopeReady ? (
                 <div className="flex items-center justify-center py-16">
-                    <Loader2 className="h-6 w-6 animate-spin text-brand" />
+                    <Loader2 className="h-6 w-6 animate-spin text-brand-strong" />
                 </div>
             ) : (
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
@@ -322,7 +322,7 @@ export default function SalesTargetsAdminPage() {
                                     <p className="text-sm font-semibold text-foreground">Багийн сарын төлөвлөгөө</p>
                                     <p className="text-xs text-muted-foreground">{year} он · дүнг ₮-ээр оруулна</p>
                                 </div>
-                                <TrendingUp className="h-4 w-4 text-brand" />
+                                <TrendingUp className="h-4 w-4 text-brand-strong" />
                             </div>
 
                             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -351,7 +351,7 @@ export default function SalesTargetsAdminPage() {
 
                             <div className="flex items-center justify-between rounded-lg bg-surface-2 px-3 py-2.5">
                                 <span className="text-sm font-medium text-foreground">Жилийн нийт төлөвлөгөө</span>
-                                <span className="text-sm font-semibold text-brand tabular-nums">{formatMNT(yearTarget)}</span>
+                                <span className="text-sm font-semibold text-brand-strong tabular-nums">{formatMNT(yearTarget)}</span>
                             </div>
                             {yearTarget > 0 && (
                                 <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -374,7 +374,7 @@ export default function SalesTargetsAdminPage() {
                             <div className="flex items-center justify-between">
                                 <div>
                                     <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
-                                        <Users className="h-4 w-4 text-brand" /> Идэвхтэй менежерүүд
+                                        <Users className="h-4 w-4 text-brand-strong" /> Идэвхтэй менежерүүд
                                     </p>
                                     <p className="text-xs text-muted-foreground">
                                         {activeCount} идэвхтэй · багийн гүйцэтгэл эдгээрийн нийлбэр
@@ -420,7 +420,7 @@ export default function SalesTargetsAdminPage() {
                                                     </p>
                                                 </div>
                                             </div>
-                                            <span className={`shrink-0 text-2xs font-medium ${m.is_active ? 'text-brand' : 'text-muted-foreground'}`}>
+                                            <span className={`shrink-0 text-2xs font-medium ${m.is_active ? 'text-brand-strong' : 'text-muted-foreground'}`}>
                                                 {m.is_active ? 'Идэвхтэй' : 'Идэвхгүй'}
                                             </span>
                                         </button>
@@ -479,7 +479,7 @@ export default function SalesTargetsAdminPage() {
                                                 key={t.id}
                                                 onClick={() => addManager(t.full_name, t.id)}
                                                 disabled={!scopeReady || saving}
-                                                className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-xs text-foreground hover:border-brand hover:text-brand disabled:opacity-50"
+                                                className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-2 px-2.5 py-1 text-xs text-foreground hover:border-brand hover:text-brand-strong disabled:opacity-50"
                                             >
                                                 <Plus className="h-3 w-3" /> {t.full_name}
                                                 {t.role && t.role !== 'sales_manager' && <span className="text-muted-foreground">· {ROLE_LABEL[t.role] || t.role}</span>}

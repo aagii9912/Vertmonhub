@@ -88,7 +88,7 @@ export function MobileNav() {
                         onClick={() => setSheetOpen(true)}
                         className={cn(
                             'flex flex-1 flex-col items-center justify-center gap-0.5 transition-colors focus-ring',
-                            moreActive ? 'text-brand' : 'text-muted-foreground',
+                            moreActive ? 'text-brand-strong' : 'text-muted-foreground',
                         )}
                         aria-label="Бусад цэс"
                     >
@@ -133,7 +133,7 @@ export function MobileNav() {
                                         onClick={(e) => { setSheetOpen(false); if (item.href === '/dashboard/ai-assistant') { e.preventDefault(); openAiPanel(); } }}
                                         className={cn(
                                             'flex min-h-11 items-center gap-3 rounded-md px-3 text-[14px] font-medium transition-colors',
-                                            active ? 'bg-brand-soft text-brand' : 'text-fg-2 active:bg-surface-2',
+                                            active ? 'bg-brand-soft text-brand-strong' : 'text-fg-2 active:bg-surface-2',
                                         )}
                                     >
                                         <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.75} />
@@ -183,7 +183,7 @@ function MobileTab({ item, pathname, count }: { item: NavItem; pathname: string;
             aria-current={active ? 'page' : undefined}
             className={cn(
                 'relative flex flex-1 flex-col items-center justify-center gap-0.5 transition-colors focus-ring',
-                active ? 'text-brand' : 'text-muted-foreground',
+                active ? 'text-brand-strong' : 'text-muted-foreground',
             )}
         >
             <span className="relative">

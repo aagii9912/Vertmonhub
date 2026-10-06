@@ -122,7 +122,7 @@ function MarketingReport({ initialFilter, initialTab, invalidUrl }: { initialFil
                         <PerformanceChannelTable report={r} showEmpty={showEmptyChannels} />
                     </SectionCard>
                     <SectionCard title="Төслийн харьцуулалт" description="Лид, менежерт шилжсэн, гэрээтэй болсон тоо. Ижил хэмжээсээр харуулав.">
-                        <div className="flex gap-4 text-xs"><span className="text-brand">Лид</span><span className="text-status-success">Шилжсэн</span><span className="text-status-pending">Гэрээтэй</span></div>
+                        <div className="flex gap-4 text-xs"><span className="text-brand-strong">Лид</span><span className="text-status-success">Шилжсэн</span><span className="text-status-pending">Гэрээтэй</span></div>
                         <div className="mt-4 space-y-5">{r.projects.map(p => <div key={p.id || 'none'}><p className="mb-2 text-sm font-medium">{p.name}</p>{(['leads', 'sales', 'deals'] as const).map((key, i) => <div key={key} className="mb-1 flex items-center gap-3"><span className="w-16 text-xs">{['Лид', 'Шилжсэн', 'Гэрээтэй'][i]}</span><div className="h-3 flex-1 rounded bg-surface-2"><div className={`h-3 rounded ${['bg-brand', 'bg-status-success', 'bg-status-pending'][i]}`} style={{ width: `${p[key] / Math.max(1, ...r.projects.map(p => p.leads)) * 100}%` }} /></div><span className="w-12 text-right text-xs tabular-nums">{number(p[key])}</span></div>)}</div>)}</div>
                     </SectionCard>
                 </div>
@@ -157,7 +157,7 @@ function MarketingReport({ initialFilter, initialTab, invalidUrl }: { initialFil
             </SectionCard>
             <details className="rounded-lg border border-border p-3 text-xs text-muted-foreground"><summary className="cursor-pointer font-medium">Тооцох дүрэм</summary><p className="mt-3 leading-relaxed">{r.basis}</p><p className="mt-2">Одоо цуцалсан / устгасан бүртгэл тайланд орохгүй.</p></details>
         </>}
-        <div className="flex flex-wrap gap-4 border-t border-border pt-3 text-xs text-muted-foreground">{[['/marketing/newsletter', 'Email / Newsletter'], ['/marketing/ads', 'Зар сурталчилгаа'], ['/marketing/social', 'Сошиал медиа'], ['/marketing/calendar', 'Контент календарь'], ['/marketing/budget', 'Жилийн төсөв'], ['/marketing/sources', 'Сувгийн гэрээ'], ['/marketing/channel-reports', 'Сувгийн экспорт импорт']].map(([href, label]) => <Link key={href} href={href} className="hover:text-brand hover:underline">{label}</Link>)}</div>
+        <div className="flex flex-wrap gap-4 border-t border-border pt-3 text-xs text-muted-foreground">{[['/marketing/newsletter', 'Email / Newsletter'], ['/marketing/ads', 'Зар сурталчилгаа'], ['/marketing/social', 'Сошиал медиа'], ['/marketing/calendar', 'Контент календарь'], ['/marketing/budget', 'Жилийн төсөв'], ['/marketing/sources', 'Сувгийн гэрээ'], ['/marketing/channel-reports', 'Сувгийн экспорт импорт']].map(([href, label]) => <Link key={href} href={href} className="hover:text-brand-strong hover:underline">{label}</Link>)}</div>
         {canWrite && editing && shop && data && <PerformanceEditor key={`${shop.id}-${editing.kind}-${editing.id || ''}`} record={editing} projects={data.projects} activities={data.activities} shopId={shop.id} onClose={() => setEditing(null)} onSaved={refresh} />}
     </div>;
 }

@@ -276,7 +276,7 @@ for (const mobile of [false, true]) {
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.screenshot({ path: `output/workday/${mobile ? 'mobile' : 'desktop'}-ai.png`, fullPage: true });
         await page.evaluate(() => document.documentElement.dataset.theme = 'dark');
-        await expect(page.getByRole('button', { name: 'Нэгдсэн тайлан', exact: true })).toHaveCSS('color', 'rgb(197, 197, 192)');
+        await expect(page.getByRole('button', { name: 'Нэгдсэн тайлан', exact: true })).toHaveCSS('color', 'rgb(199, 204, 214)');
         await page.screenshot({ path: `output/workday/${mobile ? 'mobile' : 'desktop'}-ai-dark.png`, fullPage: true, animations: 'disabled' });
     });
 }

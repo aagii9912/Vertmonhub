@@ -644,7 +644,7 @@ export default function MarketingROIPage() {
                     <Card className="mb-6 overflow-hidden">
                         <div className="px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-3">
                             <div className="flex items-center gap-2">
-                                <Megaphone className="w-4 h-4 text-brand" />
+                                <Megaphone className="w-4 h-4 text-brand-strong" />
                                 <h3 className="heading-section text-sm text-foreground">Facebook Ads кампаниуд</h3>
                                 {campaigns.length > 0 && (
                                     <span className="text-xs text-muted-foreground tabular-nums">({campaigns.length})</span>

@@ -16,7 +16,7 @@ const sizeMap: Record<NonNullable<SpinnerProps['size']>, string> = {
 };
 
 const toneMap: Record<NonNullable<SpinnerProps['tone']>, string> = {
-    brand: 'text-brand',
+    brand: 'text-brand-strong',
     neutral: 'text-muted-foreground',
     inherit: '',
 };

@@ -23,7 +23,7 @@ export function ProjectSwitcher({ variant = 'sidebar' }: { variant?: 'sidebar' |
 
     if (shops.length <= 1) {
         return variant === 'sidebar'
-            ? <div className="mt-0.5 truncate text-[11.5px] text-muted-foreground">{shop?.name || 'Ажлын орчин'}</div>
+            ? <div className="mt-0.5 truncate text-xs text-sidebar-muted">{shop?.name || 'Төсөл'}</div>
             : null;
     }
 
@@ -36,7 +36,7 @@ export function ProjectSwitcher({ variant = 'sidebar' }: { variant?: 'sidebar' |
                     className={cn(
                         'flex min-w-0 items-center gap-1 rounded-md text-left transition-colors focus-ring',
                         variant === 'sidebar'
-                            ? 'mt-0.5 -ml-1 max-w-full px-1 py-0.5 text-[11.5px] text-muted-foreground hover:bg-surface-2 hover:text-foreground'
+                            ? 'mt-0.5 -ml-1 max-w-full px-1 py-0.5 text-xs text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-accent-foreground'
                             : 'h-10 max-w-[45vw] px-2 text-[12.5px] font-medium text-foreground hover:bg-surface-2',
                     )}
                 >
@@ -45,7 +45,7 @@ export function ProjectSwitcher({ variant = 'sidebar' }: { variant?: 'sidebar' |
                 </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-64">
-                <DropdownMenuLabel className="text-[11px] font-normal text-muted-foreground">Төсөл сонгох</DropdownMenuLabel>
+                <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">Төсөл сонгох</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {shops.map(item => (
                     <DropdownMenuItem
