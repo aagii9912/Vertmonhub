@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/auth/supabase-auth';
+import { safeRedirectPath } from '@/lib/auth/safe-redirect';
 
 export async function GET(request: Request) {
     const requestUrl = new URL(request.url);
@@ -38,5 +39,6 @@ export async function GET(request: Request) {
         return failed();
     }
 
-    return redirect('/dashboard');
+    // OAuth `?next=` — нэвтрэх хуудас дамжуулсан аппын дотоод зам; бусад үед /dashboard.
+    return redirect(safeRedirectPath(requestUrl.searchParams.get('next')));
 }

@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import { buildMarketingPerformance, type PerformanceData, type MarketingActivity, type MarketingTarget } from '../src/lib/marketing/performance';
 import { exportMarketingPerformance } from '../src/lib/marketing/performance-export';
+import { COMPACT_VIEWPORT } from './support/viewports';
 
 const shop = '00000000-0000-4000-8000-000000000002';
 const project = '00000000-0000-4000-8000-000000000003';
@@ -71,9 +72,9 @@ async function setup(page: Page) {
     await expect(page.getByText('Шинэ лид', { exact: true }).first()).toBeVisible();
     return state;
 }
-for (const mobile of [false, true]) {
-    test(`Meta daily spend → FX → failed sync preserves report (${mobile ? 'mobile' : 'desktop'})`, async ({ page }, testInfo) => {
-        if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+for (const compact of [false, true]) {
+    test(`Meta daily spend → FX → failed sync preserves report (${compact ? 'compact' : 'desktop'})`, async ({ page }, testInfo) => {
+        if (compact) await page.setViewportSize(COMPACT_VIEWPORT);
         const state = await setup(page);
         // Meta sync and the spend table live on the «Бүртгэл» tab.
         await page.getByRole('button', { name: 'Бүртгэл', exact: true }).click();
@@ -96,8 +97,8 @@ for (const mobile of [false, true]) {
         expect(state.pageErrors).toEqual([]);
         await page.screenshot({ path: testInfo.outputPath('meta-spend.png'), fullPage: true, animations: 'disabled' });
     });
-    test(`marketing capture → attribution → targets → spend → export (${mobile ? 'mobile' : 'desktop'})`, async ({ page }, testInfo) => {
-        if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+    test(`marketing capture → attribution → targets → spend → export (${compact ? 'compact' : 'desktop'})`, async ({ page }, testInfo) => {
+        if (compact) await page.setViewportSize(COMPACT_VIEWPORT);
         const state = await setup(page);
         await page.getByRole('button', { name: 'Акц / контент нэмэх', exact: true }).click();
         let form = page.getByRole('dialog');

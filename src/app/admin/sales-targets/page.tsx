@@ -3,9 +3,10 @@
 import { useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Target, Loader2, Save, TrendingUp, Users, Check, Plus } from 'lucide-react';
+import { Loader2, Save, TrendingUp, Users, Check, Plus } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/dashboard/PageHeader';
 import {
     Select,
     SelectContent,
@@ -267,18 +268,10 @@ export default function SalesTargetsAdminPage() {
 
     return (
         <div className="space-y-6">
-            {/* Гарчиг */}
-            <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-soft">
-                    <Target className="h-5 w-5 text-brand-strong" />
-                </div>
-                <div>
-                    <h1 className="text-xl font-semibold text-foreground">Борлуулалтын төлөвлөгөө</h1>
-                    <p className="text-sm text-muted-foreground">
-                        Багийн сарын төлөвлөгөө (₮), идэвхтэй менежерүүд, төслийн харьяалал.
-                    </p>
-                </div>
-            </div>
+            <PageHeader
+                title="Борлуулалтын төлөвлөгөө"
+                subtitle="Багийн сарын төлөвлөгөө (₮), идэвхтэй менежерүүд, төслийн харьяалал."
+            />
 
             {/* Toolbar */}
             <div className="flex flex-wrap items-center gap-3">

@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import { managerActivityFixture } from './support/manager-activity';
 import { mkdirSync } from 'node:fs';
+import { COMPACT_VIEWPORT } from './support/viewports';
 
 const shopId = '00000000-0000-4000-8000-000000000110';
 const projectId = '00000000-0000-4000-8000-000000000120';
@@ -210,10 +211,10 @@ test('incorrect password does not create an authenticated cookie', async ({ page
     expect((await page.context().cookies()).filter(cookie => /^sb-.*-auth-token$/.test(cookie.name))).toHaveLength(0);
 });
 
-for (const mobile of [false, true]) {
-    test(`admin project → two managers → lead, meeting and personal task (${mobile ? 'mobile' : 'desktop'} API fixtures)`, async ({ page, browser }) => {
+for (const compact of [false, true]) {
+    test(`admin project → two managers → lead, meeting and personal task (${compact ? 'compact' : 'desktop'} API fixtures)`, async ({ page, browser }) => {
         test.setTimeout(120_000);
-        const viewport = mobile ? { width: 390, height: 844 } : { width: 1440, height: 1000 };
+        const viewport = compact ? COMPACT_VIEWPORT : { width: 1440, height: 1000 };
         await page.setViewportSize(viewport);
         const state = data();
         await fixtures(page, admin, state);
@@ -234,7 +235,7 @@ for (const mobile of [false, true]) {
         await page.reload();
         await expect(page.getByRole('heading', { name: 'Тест шинэ төсөл', exact: true })).toBeVisible();
         mkdirSync('output/onboarding', { recursive: true });
-        await page.screenshot({ path: `output/onboarding/${mobile ? 'mobile' : 'desktop'}-project.png`, fullPage: true });
+        await page.screenshot({ path: `output/onboarding/${compact ? 'compact' : 'desktop'}-project.png`, fullPage: true });
 
         await page.goto('/admin/users');
         for (const [index, manager] of managers.entries()) {
@@ -252,7 +253,7 @@ for (const mobile of [false, true]) {
         }
         await page.reload();
         await expect(page.getByText(managers[1].full_name, { exact: true })).toBeVisible();
-        await page.screenshot({ path: `output/onboarding/${mobile ? 'mobile' : 'desktop'}-managers.png`, fullPage: true });
+        await page.screenshot({ path: `output/onboarding/${compact ? 'compact' : 'desktop'}-managers.png`, fullPage: true });
         expect(state.users).toHaveLength(2);
         const userWrites = state.writes.filter(write => write.path === '/api/admin/users');
         expect(userWrites).toHaveLength(2);
@@ -298,7 +299,7 @@ for (const mobile of [false, true]) {
         await expect(managerPage.getByText('Идэвхтэй ажил алга', { exact: true })).toBeVisible();
         await managerPage.getByRole('button', { name: 'Дууссан 1', exact: true }).click();
         await expect(managerPage.getByText('Тест харилцагчид санал илгээх', { exact: true })).toBeVisible();
-        await managerPage.screenshot({ path: `output/onboarding/${mobile ? 'mobile' : 'desktop'}-task.png`, fullPage: true });
+        await managerPage.screenshot({ path: `output/onboarding/${compact ? 'compact' : 'desktop'}-task.png`, fullPage: true });
         expect(state.tasks[0]).toMatchObject({ user_id: managers[0].id, status: 'done', due_at: '2027-01-10T04:00:00.000Z' });
         expect(state.writes.filter(write => write.path.startsWith('/api/dashboard/')).every(write => write.shopHeader === shopId)).toBe(true);
         expect(await managerPage.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

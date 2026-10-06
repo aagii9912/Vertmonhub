@@ -12,19 +12,34 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/Dropdown';
 
+/** Төслийн нэрээс 2 үсэг: «Мандала Гарден» → «МГ», «Elysium Residence» → «ER». */
+function projectInitials(name: string): string {
+    const words = name.split(/[\s&·-]+/).filter(Boolean);
+    if (!words.length) return '—';
+    return (words.length === 1 ? words[0].slice(0, 2) : words[0][0] + words[1][0]).toUpperCase();
+}
+
 /**
- * Төсөл солих цэс. Shop = төсөл: төсөл бүр тусдаа ажлын орчин (лид, маркетинг,
- * менежер, тайлан). Хэрэглэгч хэд хэдэн төсөлд гишүүн бол энд сольж ажиллана.
+ * Төсөл солих цэс — дээд мөрийн замын мөрийн эхний хэсэг («МГ Мандала Гарден ⌄ / Лид»).
+ * Shop = төсөл: төсөл бүр тусдаа ажлын орчин (лид, маркетинг, менежер, тайлан).
  * Ганц төсөлтэй бол зөвхөн нэрийг харуулна.
  */
-export function ProjectSwitcher({ variant = 'sidebar' }: { variant?: 'sidebar' | 'compact' }) {
+export function ProjectSwitcher() {
     const { shop, shops, switchShop } = useAuth();
     const name = shop?.name || 'Төсөл';
+    const badge = (
+        <span aria-hidden="true" className="flex size-6 shrink-0 items-center justify-center rounded-md bg-brand-soft text-xs font-semibold leading-none text-brand-strong">
+            {projectInitials(name)}
+        </span>
+    );
 
     if (shops.length <= 1) {
-        return variant === 'sidebar'
-            ? <div className="mt-0.5 truncate text-xs text-sidebar-muted">{shop?.name || 'Төсөл'}</div>
-            : null;
+        return (
+            <span className="flex min-w-0 items-center gap-2 px-1 text-sm font-medium text-foreground">
+                {badge}
+                <span className="truncate">{name}</span>
+            </span>
+        );
     }
 
     return (
@@ -34,14 +49,13 @@ export function ProjectSwitcher({ variant = 'sidebar' }: { variant?: 'sidebar' |
                     type="button"
                     aria-label={`Төсөл солих. Одоогийн төсөл: ${name}`}
                     className={cn(
-                        'flex min-w-0 items-center gap-1 rounded-md text-left transition-colors focus-ring',
-                        variant === 'sidebar'
-                            ? 'mt-0.5 -ml-1 max-w-full px-1 py-0.5 text-xs text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-accent-foreground'
-                            : 'h-10 max-w-[45vw] px-2 text-[12.5px] font-medium text-foreground hover:bg-surface-2',
+                        'flex h-8 min-w-0 max-w-64 items-center gap-2 rounded-lg px-1.5 text-left text-sm font-medium text-foreground',
+                        'transition-colors hover:bg-surface-2',
                     )}
                 >
+                    {badge}
                     <span className="truncate">{name}</span>
-                    <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                    <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-64">

@@ -47,15 +47,14 @@ export function AiPanel() {
             hidden={!open}
             aria-label="AI туслах"
             className={cn(
-                'fixed inset-0 z-50 flex flex-col bg-surface',
-                'md:inset-y-0 md:left-auto md:right-0 md:w-[440px] md:border-l md:border-border md:shadow-xl',
+                'fixed inset-y-0 right-0 z-50 flex w-[440px] flex-col border-l border-border bg-surface shadow-xl',
                 'print:hidden',
             )}
         >
-            <header className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3.5">
+            <header className="flex h-[var(--header-h)] shrink-0 items-center gap-2 border-b border-border px-3.5">
                 <span className="flex h-6 w-6 items-center justify-center text-foreground"><Sparkles className="h-4 w-4" /></span>
                 <h2 className="text-[14px] font-semibold text-foreground">AI туслах</h2>
-                {ctx && <span className="ml-1 max-w-[160px] truncate rounded-full border border-border bg-surface-2 px-2 py-0.5 text-[11px] text-fg-2" title={contextLabel(ctx)}>{contextLabel(ctx)}</span>}
+                {ctx && <span className="ml-1 max-w-[160px] truncate rounded-full border border-border bg-surface-2 px-2 py-0.5 text-xs text-fg-2" title={contextLabel(ctx)}>{contextLabel(ctx)}</span>}
                 <div className="ml-auto flex items-center gap-0.5">
                     <button type="button" onClick={() => setSession((s) => s + 1)} className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground" aria-label="Шинэ яриа" title="Шинэ яриа"><RotateCcw className="h-4 w-4" /></button>
                     <Link href="/dashboard/ai-assistant" onClick={() => setOpen(false)} className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-surface-2 hover:text-foreground" aria-label="Бүтэн хуудас" title="Бүтэн хуудас, түүх"><Maximize2 className="h-4 w-4" /></Link>

@@ -88,3 +88,36 @@ describe('authentication callback', () => {
         expect(auth.client).not.toHaveBeenCalled();
     });
 });
+
+describe('return path after a successful callback', () => {
+    it('returns to the requested staff page from ?next=', async () => {
+        const response = await callback(`?code=test-code&next=${encodeURIComponent('/dashboard/leads?status=new')}`);
+        expect(auth.exchange).toHaveBeenCalledWith('test-code');
+        expect(response.headers.get('location')).toBe('https://app.example/dashboard/leads?status=new');
+        expect(response.headers.get('cache-control')).toBe('private, no-store');
+    });
+
+    it('returns to an admin page after a token-hash sign-in', async () => {
+        const response = await callback(`?token_hash=test-hash&type=magiclink&next=${encodeURIComponent('/admin/users')}`);
+        expect(response.headers.get('location')).toBe('https://app.example/admin/users');
+    });
+
+    it.each([
+        '//evil.example',
+        'https://evil.example',
+        '/\\evil.example',
+        '/auth/login',
+        'javascript:alert(1)',
+        '/admin/login',
+        '/help',
+    ])('ignores a hostile or non-app ?next=%s', async (next) => {
+        const response = await callback(`?code=test-code&next=${encodeURIComponent(next)}`);
+        expect(response.headers.get('location')).toBe('https://app.example/dashboard');
+    });
+
+    it('does not honour ?next= when the callback fails', async () => {
+        auth.exchange.mockResolvedValue({ data: { session: null }, error: null });
+        const response = await callback(`?code=test-code&next=${encodeURIComponent('/admin/users')}`);
+        expect(response.headers.get('location')).toBe('https://app.example/auth/login?auth_error=callback_failed');
+    });
+});

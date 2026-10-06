@@ -95,8 +95,7 @@ export function OutboxSync() {
             <button
                 type="button"
                 onClick={() => setOpen(true)}
-                className="fixed left-1/2 z-40 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-surface px-3 py-2 text-[12px] text-fg-2 shadow-lg focus-ring"
-                style={{ bottom: 'calc(3.5rem + env(safe-area-inset-bottom) + 0.75rem)' }}
+                className="fixed bottom-6 left-1/2 z-40 flex max-w-[calc(100%-2rem)] -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-surface px-3 py-2 text-[12px] text-fg-2 shadow-lg focus-ring"
             >
                 {busy ? <RefreshCw className="h-3.5 w-3.5 animate-spin text-brand-strong" /> : <CloudOff className="h-3.5 w-3.5 text-status-pending" />}
                 {error ? 'Офлайн бүртгэлд анхаарах зүйл байна' : visible.length ? `${visible.length} бүртгэл илгээгдээгүй · Үзэх` : 'Интернэтгүй'}

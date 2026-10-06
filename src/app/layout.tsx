@@ -3,7 +3,6 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ServiceWorkerRegistration } from "@/components/ServiceWorkerRegistration";
-import { PWAInstallPrompt } from "@/components/PWAInstallPrompt";
 import { QueryProvider } from "@/components/providers/QueryProvider";
 import { AnalyticsScripts } from "@/components/marketing/AnalyticsScripts";
 import { MarketingAttribution } from "@/components/marketing/MarketingAttribution";
@@ -67,13 +66,12 @@ export default function RootLayout({
         {/* Theme-ийг будахаас өмнө тавьж flash-аас сэргийлнэ: бараан нь үндсэн, цайвар нь хэрэглэгчийн сонголт. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('vh-theme')==='light'?'light':'dark';document.documentElement.setAttribute('data-theme',t);}catch(e){document.documentElement.setAttribute('data-theme','dark');}})();`,
+            __html: `(function(){var d=document.documentElement;try{var t=localStorage.getItem('vh-theme')==='light'?'light':'dark';d.setAttribute('data-theme',t);if(localStorage.getItem('vertmonhub_sidebar_collapsed')==='1')d.setAttribute('data-sidebar','collapsed');}catch(e){d.setAttribute('data-theme','dark');}})();`,
           }}
         />
         <AnalyticsScripts />
         <MarketingAttribution />
         <ServiceWorkerRegistration />
-        <PWAInstallPrompt />
         <QueryProvider>
           <AuthProvider>
             {children}

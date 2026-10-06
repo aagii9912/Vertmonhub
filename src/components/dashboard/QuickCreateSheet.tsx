@@ -66,12 +66,11 @@ export function QuickCreateSheet() {
                 type="button"
                 aria-label="Хаах"
                 onClick={() => setOpen(false)}
-                className="absolute inset-0 bg-[rgba(21,24,30,0.28)] animate-in fade-in duration-150"
+                className="absolute inset-0 bg-scrim animate-in fade-in duration-150"
             />
             <div
                 className={cn(
-                    'absolute inset-y-0 right-0 flex w-full flex-col bg-surface shadow-xl',
-                    'sm:w-[440px] sm:border-l sm:border-border',
+                    'absolute inset-y-0 right-0 flex w-[440px] flex-col border-l border-border bg-surface shadow-xl',
                     'animate-in slide-in-from-right duration-200',
                 )}
             >
@@ -247,7 +246,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
             <header className="flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-5">
                 <h2 className="text-[16px] font-semibold text-foreground">Шинэ лид</h2>
                 <div className="ml-auto flex items-center gap-2">
-                    <kbd className="mono-label hidden rounded border border-border bg-surface-2 px-1.5 text-[10.5px] leading-5 text-muted-foreground sm:inline">
+                    <kbd className="mono-label rounded border border-border bg-surface-2 px-1.5 text-xs leading-5 text-muted-foreground">
                         Esc
                     </kbd>
                     <button
@@ -297,7 +296,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                         placeholder="9911 2233"
                         className="mono-label h-[34px] w-full rounded-md border border-border-strong bg-surface px-2.5 text-[13px] text-foreground outline-none transition-shadow placeholder:font-sans placeholder:text-muted-foreground focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]"
                     />
-                    {anonymous && <span className="text-[11.5px] text-muted-foreground">Нэргүй лидийг утас (эсвэл и-мэйл)-аар нь танина.</span>}
+                    {anonymous && <span className="text-xs text-muted-foreground">Нэргүй лидийг утас (эсвэл и-мэйл)-аар нь танина.</span>}
                     {duplicate && (
                         <div className="mt-2 flex items-start gap-2 rounded-md bg-status-pending-soft px-2.5 py-2 text-[12px] text-status-pending">
                             <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -345,7 +344,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                 {/* Ангилал (заавал биш). Чипүүдийг <label>-д ороохгүй — шошгыг дарахад эхний чип сонгогдохгүй. */}
                 {categories.length > 0 && categories.length <= 8 && (
                     <div className="flex flex-col gap-1.5">
-                        <span id="quick-lead-category" className="text-[11.5px] font-medium text-muted-foreground">Ангилал</span>
+                        <span id="quick-lead-category" className="text-xs font-medium text-muted-foreground">Ангилал</span>
                         <div className="flex flex-wrap gap-1.5" role="group" aria-labelledby="quick-lead-category">
                             {categories.map((c) => (
                                 <button
@@ -401,7 +400,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                 >
                     <ChevronRight className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', showMore && 'rotate-90')} />
                     <span className="text-[13px] font-medium text-fg-2">Нэмэлт мэдээлэл</span>
-                    <span className="ml-auto text-[11.5px] text-muted-foreground">Заавал биш</span>
+                    <span className="ml-auto text-xs text-muted-foreground">Заавал биш</span>
                 </button>
 
                 {showMore && (
@@ -462,7 +461,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                     >
                         {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                         Хадгалах
-                        <kbd className="mono-label text-[10.5px] opacity-75">⌘↵</kbd>
+                        <kbd className="mono-label text-xs opacity-75">⌘↵</kbd>
                     </button>
                 </div>
             </footer>
@@ -555,7 +554,7 @@ function TaskForm({ onClose }: { onClose: () => void }) {
             <header className="flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-5">
                 <h2 className="text-[16px] font-semibold text-foreground">Шинэ ажил</h2>
                 <div className="ml-auto flex items-center gap-2">
-                    <kbd className="mono-label hidden rounded border border-border bg-surface-2 px-1.5 text-[10.5px] leading-5 text-muted-foreground sm:inline">
+                    <kbd className="mono-label rounded border border-border bg-surface-2 px-1.5 text-xs leading-5 text-muted-foreground">
                         Esc
                     </kbd>
                     <button
@@ -599,7 +598,7 @@ function TaskForm({ onClose }: { onClose: () => void }) {
                         aria-label="Дуусах хугацаа"
                         className={cn(inputCls, 'mono-label')}
                     />
-                    <span className="text-[11.5px] text-muted-foreground">Улаанбаатарын цагаар · заавал биш</span>
+                    <span className="text-xs text-muted-foreground">Улаанбаатарын цагаар · заавал биш</span>
                 </Field>
 
                 <Field label="Сануулга">
@@ -616,7 +615,7 @@ function TaskForm({ onClose }: { onClose: () => void }) {
                             </option>
                         ))}
                     </select>
-                    {!due && <span className="text-[11.5px] text-muted-foreground">Сануулга тавихын тулд хугацаа сонгоно уу</span>}
+                    {!due && <span className="text-xs text-muted-foreground">Сануулга тавихын тулд хугацаа сонгоно уу</span>}
                 </Field>
 
                 <Field label="Тэмдэглэл" error={errors.note} errorId="quick-task-note-error">
@@ -655,7 +654,7 @@ function TaskForm({ onClose }: { onClose: () => void }) {
                 >
                     {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
                     Хадгалах
-                    <kbd className="mono-label text-[10.5px] opacity-75">⌘↵</kbd>
+                    <kbd className="mono-label text-xs opacity-75">⌘↵</kbd>
                 </button>
             </footer>
         </form>
@@ -665,7 +664,7 @@ function TaskForm({ onClose }: { onClose: () => void }) {
 function Field({ label, required, error, errorId, children }: { label: string; required?: boolean; error?: string; errorId?: string; children: React.ReactNode }) {
     const field = (
         <label className="flex flex-col gap-1.5">
-            <span className="text-[11.5px] font-medium text-muted-foreground">
+            <span className="text-xs font-medium text-muted-foreground">
                 {label}
                 {required && <span className="ml-0.5 text-status-danger">*</span>}
             </span>

@@ -6,6 +6,7 @@ import { nextMeetingDate, weeklyReviewRange } from '../src/lib/dashboard/weekly-
 import { ubDateStr } from '../src/lib/utils/date';
 import { buildLeadTimeline } from '../src/lib/leads/timeline';
 import { managerActivityFixture } from './support/manager-activity';
+import { COMPACT_VIEWPORT } from './support/viewports';
 
 const shopId = '00000000-0000-4000-8000-000000000002';
 const leadId = '00000000-0000-4000-8000-000000000010';
@@ -161,15 +162,15 @@ async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admi
     return state;
 }
 
-for (const mobile of [false, true]) {
-    test(`CRM ажлын урсгал (${mobile ? 'mobile' : 'desktop'})`, async ({ page }) => {
-        await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 1050 });
+for (const compact of [false, true]) {
+    test(`CRM ажлын урсгал (${compact ? 'compact' : 'desktop'})`, async ({ page }) => {
+        await page.setViewportSize(compact ? COMPACT_VIEWPORT : { width: 1440, height: 1050 });
         const state = await setup(page);
         mkdirSync('output/workday', { recursive: true });
         const shot = async (name: string) => {
             expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
             await page.evaluate(() => window.scrollTo(0, 0));
-            await page.screenshot({ path: `output/workday/${mobile ? 'mobile' : 'desktop'}-${name}.png`, fullPage: true, animations: 'disabled' });
+            await page.screenshot({ path: `output/workday/${compact ? 'compact' : 'desktop'}-${name}.png`, fullPage: true, animations: 'disabled' });
         };
         await page.goto('/dashboard/leads');
         await expect(page.getByRole('heading', { name: 'Лидүүд', exact: true })).toBeVisible();

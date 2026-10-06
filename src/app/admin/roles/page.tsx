@@ -1,10 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Shield, Plus, Trash2, Save, Loader2, X, Check, AlertCircle, Lock } from 'lucide-react';
+import { Plus, Trash2, Save, Loader2, X, Check, AlertCircle, Lock } from 'lucide-react';
 import { ALL_MODULES, MODULE_LABELS } from '@/lib/rbac';
 import { confirmToast } from '@/components/ui/Toast';
+import { Button } from '@/components/ui/Button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/Dialog';
+import { PageHeader } from '@/components/dashboard/PageHeader';
 
 interface Role {
     id: string;
@@ -148,35 +150,28 @@ export default function RolesPage() {
         finally { stopSaving(roleId); }
     }
 
+    const header = (
+        <PageHeader
+            title="Дүрүүд удирдах"
+            subtitle="Дүр (role) тус бүрт module хандалтын зөвшөөрөл тохируулна"
+            primaryAction={<Button onClick={() => setShowCreate(true)} disabled={loading}><Plus />Шинэ дүр</Button>}
+        />
+    );
+
     if (loading) {
         return (
-            <div className="flex items-center justify-center h-64">
-                <Loader2 className="w-8 h-8 animate-spin text-brand-strong" />
+            <div>
+                {header}
+                <div className="flex items-center justify-center h-64">
+                    <Loader2 className="w-8 h-8 animate-spin text-brand-strong" />
+                </div>
             </div>
         );
     }
 
     return (
         <div className="space-y-6">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-                        <Shield className="w-6 h-6 text-brand-strong" />
-                        Дүрүүд удирдах
-                    </h1>
-                    <p className="text-sm text-muted-foreground mt-1">
-                        Дүр (role) тус бүрт module хандалтын зөвшөөрөл тохируулна
-                    </p>
-                </div>
-                <button
-                    onClick={() => setShowCreate(true)}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-brand text-brand-fg rounded-xl font-medium hover:bg-brand-hover transition-colors"
-                >
-                    <Plus className="w-4 h-4" />
-                    Шинэ дүр
-                </button>
-            </div>
+            {header}
 
             {/* Alerts */}
             {error && (

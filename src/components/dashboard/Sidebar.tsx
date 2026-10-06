@@ -1,197 +1,123 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { ChevronsLeft, ChevronsRight, LogOut, UserCircle, Settings, Sun, Moon } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { canAccessModule, canAccessModuleDynamic, getRoleDisplayName } from '@/lib/rbac';
+import { ChevronDown, ChevronsLeft, ChevronsRight, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { PRIMARY_NAV, BOTTOM_NAV, isNavItemActive, type NavItem } from '@/lib/navigation/nav';
+import { NAV_SECTIONS, ADMIN_NAV, BOTTOM_NAV, isNavItemActive, isSuperAdminRoute, type NavItem } from '@/lib/navigation/nav';
 import { useSidebarCollapsed } from '@/hooks/useSidebarCollapsed';
 import { useDashboardMode } from '@/hooks/useDashboardMode';
 import { useNavCounts } from '@/hooks/useNavCounts';
-import { useTheme } from '@/hooks/useTheme';
-import { openCommandPalette } from '@/lib/navigation/commandPalette';
-import { ProjectSwitcher } from '@/components/dashboard/ProjectSwitcher';
+import { useModuleAccess } from '@/hooks/useModuleAccess';
 import { BrandMark } from '@/components/brand/BrandMark';
-import {
-    DropdownMenu,
-    DropdownMenuTrigger,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-} from '@/components/ui/Dropdown';
-
-/** Хүний нэрнээс 2 үсэгтэй товчлол: «Д. Номин» → «ДН». */
-export function initialsOf(name?: string | null): string {
-    if (!name) return '—';
-    const parts = name.replace(/\./g, ' ').split(/\s+/).filter(Boolean);
-    if (!parts.length) return '—';
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-}
 
 /**
- * v3 «Шөнө» sidebar: хоёр темд ч гүн бараан хүрээ, идэвхтэй цэс шампань зураастай.
- * Өнгө нь зөвхөн `sidebar-*` токеноос — контентын тематай холилдохгүй.
+ * Sidebar v3 — 232px, хумихад 64px icon rail. Бараан, хоёр темд ижил.
+ *
+ * Зөвхөн навигаци: брэнд, бүлэгтэй цэс (Өнөөдөр · Борлуулалт · Үр дүн), super_admin-д
+ * «Удирдлага», доор нь Тохиргоо. Төсөл, хайлт, «+ Шинэ», AI, профайл дээд мөрөнд.
  */
 export function Sidebar() {
     const pathname = usePathname() || '';
-    const { user, signOut } = useAuth();
     const { collapsed, toggle } = useSidebarCollapsed();
-    const { theme, toggle: toggleTheme } = useTheme();
     const counts = useNavCounts();
     const { data: dashboardMode } = useDashboardMode();
+    const { can, isSuperAdmin } = useModuleAccess();
     const dashboardName = dashboardMode?.mode === 'personal' ? 'Өнөөдөр' : 'Самбар';
 
-    const userRole = user?.role || 'viewer';
-    const userPermissions = user?.permissions;
+    const sections = useMemo(
+        () => NAV_SECTIONS
+            .filter((section) => !section.superAdmin || isSuperAdmin)
+            .map((section) => ({ ...section, items: section.items.filter((item) => item.superAdmin ? isSuperAdmin : can(item.module)) }))
+            .filter((section) => section.items.length > 0),
+        [can, isSuperAdmin],
+    );
+    const bottom = BOTTOM_NAV.filter((item) => can(item.module));
 
-    const allowed = useMemo(() => {
-        const can = (module: string) => {
-            if (!module) return true;
-            return userPermissions
-                ? canAccessModuleDynamic(userPermissions, module)
-                : canAccessModule(userRole, module);
-        };
-        return {
-            primary: PRIMARY_NAV.filter((i) => can(i.module)),
-            bottom: BOTTOM_NAV.filter((i) => can(i.module)),
-        };
-    }, [userRole, userPermissions]);
+    // Удирдлага: админ хуудсан дээр байхад нээлттэй, бусад үед хумигдсан (дарж нээнэ).
+    const onAdmin = isSuperAdminRoute(pathname);
+    const [adminOpen, setAdminOpen] = useState(false);
+    const adminExpanded = onAdmin || adminOpen;
 
-    const displayName = user?.fullName || user?.email?.split('@')[0] || 'Хэрэглэгч';
-    const groupLabel = 'px-2.5 pb-1.5 pt-5 text-xs font-medium text-sidebar-muted';
+    const label = (item: NavItem): NavItem => (item.href === '/dashboard' ? { ...item, name: dashboardName } : item);
 
     return (
         <aside
             className={cn(
-                'fixed inset-y-0 left-0 z-40 hidden md:flex flex-col',
+                'fixed inset-y-0 left-0 z-40 flex flex-col',
                 'border-r border-sidebar-border bg-sidebar text-sidebar-foreground',
                 'w-[var(--sidebar-w)] transition-[width] duration-200 ease-out',
             )}
         >
-            {/* Брэнд */}
-            <div className={cn('flex items-center gap-3 px-4 pt-5 pb-4', collapsed && 'justify-center px-0')}>
-                <Link href="/dashboard" className="shrink-0 rounded-[9px]" aria-label="Vertmon Hub">
-                    <BrandMark className="size-8" />
+            {/* Брэнд — дээд мөртэй ижил 56px өндөр */}
+            <div className={cn('flex h-[var(--header-h)] shrink-0 items-center gap-2.5 px-4', collapsed && 'justify-center px-0')}>
+                <Link href="/dashboard" className="flex min-w-0 items-center gap-2.5 rounded-lg" aria-label="Vertmon Hub — нүүр">
+                    <BrandMark className="size-7 shrink-0" />
+                    {!collapsed && <span className="truncate text-[15px] font-semibold tracking-tight text-sidebar-accent-foreground">Vertmon Hub</span>}
                 </Link>
-                {!collapsed && (
-                    <div className="min-w-0 flex-1 leading-tight">
-                        <div className="truncate text-[15px] font-semibold tracking-tight text-sidebar-accent-foreground">Vertmon Hub</div>
-                        <ProjectSwitcher />
-                    </div>
-                )}
             </div>
 
-            {/* Хайлт (⌘K) */}
-            <div className={cn('px-3 pb-2', collapsed && 'px-2')}>
+            <nav className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-2" aria-label="Үндсэн цэс">
+                {sections.map((section, index) => {
+                    const isAdmin = section.id === 'admin';
+                    const open = !isAdmin || adminExpanded;
+                    // Хумисан rail: удирдлагын 8 icon биш ганц «Удирдлага» (админ хуудсан дээр бүгд).
+                    if (isAdmin && collapsed && !adminExpanded) {
+                        return (
+                            <div key={section.id} className="mt-4 flex flex-col gap-0.5">
+                                <div aria-hidden="true" className="mx-auto mb-1 h-px w-6 bg-sidebar-border" />
+                                <NavRow item={{ name: 'Удирдлага', href: ADMIN_NAV[0].href, icon: ShieldCheck, module: '', superAdmin: true }} pathname={pathname} collapsed />
+                            </div>
+                        );
+                    }
+                    return (
+                        <div key={section.id} className={cn('flex flex-col gap-0.5', index > 0 && 'mt-4')}>
+                            {section.label && (collapsed ? (
+                                <div aria-hidden="true" className="mx-auto mb-1 h-px w-6 bg-sidebar-border" />
+                            ) : isAdmin ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setAdminOpen((v) => !v)}
+                                    aria-expanded={adminExpanded}
+                                    disabled={onAdmin}
+                                    className="flex h-7 items-center gap-1 rounded-md px-2.5 text-left text-xs font-medium text-sidebar-muted transition-colors hover:text-sidebar-accent-foreground disabled:cursor-default disabled:hover:text-sidebar-muted"
+                                >
+                                    {section.label}
+                                    <ChevronDown className={cn('ml-auto h-3.5 w-3.5 transition-transform', !adminExpanded && '-rotate-90')} />
+                                </button>
+                            ) : (
+                                <p className="flex h-7 items-center px-2.5 text-xs font-medium text-sidebar-muted">{section.label}</p>
+                            ))}
+                            {open && section.items.map((item) => (
+                                <NavRow
+                                    key={item.href}
+                                    item={label(item)}
+                                    pathname={pathname}
+                                    collapsed={collapsed}
+                                    count={item.countKey ? counts[item.countKey] : undefined}
+                                />
+                            ))}
+                        </div>
+                    );
+                })}
+            </nav>
+
+            <div className="flex shrink-0 flex-col gap-0.5 border-t border-sidebar-border px-3 py-2">
+                {bottom.map((item) => <NavRow key={item.href} item={item} pathname={pathname} collapsed={collapsed} />)}
                 <button
                     type="button"
-                    onClick={openCommandPalette}
+                    onClick={toggle}
                     className={cn(
-                        'flex w-full items-center gap-2 rounded-lg border border-sidebar-border text-sidebar-muted',
-                        'transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground',
-                        collapsed ? 'h-9 justify-center px-0' : 'h-9 px-2.5',
+                        'flex min-h-9 items-center gap-2.5 rounded-lg px-2.5 text-sm text-sidebar-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground',
+                        collapsed && 'justify-center px-0',
                     )}
-                    aria-label="Хайх"
+                    aria-label={collapsed ? 'Цэсийг дэлгэх' : 'Цэсийг хумих'}
+                    title={collapsed ? 'Цэсийг дэлгэх' : undefined}
                 >
-                    <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 stroke-current" fill="none" strokeWidth={1.75} strokeLinecap="round">
-                        <circle cx="11" cy="11" r="7" />
-                        <path d="M20 20l-3.5-3.5" />
-                    </svg>
-                    {!collapsed && (
-                        <>
-                            <span className="text-[13px]">Хайх…</span>
-                            <kbd className="mono-label ml-auto rounded border border-sidebar-border px-1.5 text-xs leading-5 text-sidebar-muted">
-                                ⌘K
-                            </kbd>
-                        </>
-                    )}
+                    {collapsed ? <ChevronsRight className="h-4 w-4" /> : (<><ChevronsLeft className="h-4 w-4" /> Хумих</>)}
                 </button>
             </div>
-
-            {/* Үндсэн цэс */}
-            <nav className="flex min-h-0 flex-col gap-0.5 overflow-y-auto px-3" aria-label="Үндсэн цэс">
-                {allowed.bottom.filter(item => item.href === '/dashboard/ai-assistant').map(item => <NavRow key={item.href} item={item} pathname={pathname} collapsed={collapsed} />)}
-                {!collapsed && <p className={groupLabel}>Ажлын орчин</p>}
-                {allowed.primary.map((item) => (
-                    <React.Fragment key={item.href}>
-                        {!collapsed && item.href === '/dashboard/leads' && <p className={groupLabel}>Харилцагч ба борлуулалт</p>}
-                        {!collapsed && item.href === '/dashboard/reports' && <p className={groupLabel}>Үр дүн</p>}
-                        <NavRow item={item.href === '/dashboard' ? { ...item, name: dashboardName } : item} pathname={pathname} collapsed={collapsed} count={item.countKey ? counts[item.countKey] : undefined} />
-                    </React.Fragment>
-                ))}
-            </nav>
-
-            <div className="flex-1" />
-
-            {/* Доод цэс */}
-            <nav className="flex flex-col gap-0.5 px-3 pb-1" aria-label="Нэмэлт цэс">
-                {allowed.bottom.filter(item => item.href !== '/dashboard/ai-assistant').map((item) => (
-                    <NavRow key={item.href} item={item.href === '/dashboard' ? { ...item, name: dashboardName } : item} pathname={pathname} collapsed={collapsed} />
-                ))}
-            </nav>
-
-            {/* Хэрэглэгч */}
-            <div className="mx-3 mt-1.5 border-t border-sidebar-border pt-2 pb-2">
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <button
-                            type="button"
-                            className={cn(
-                                'flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-sidebar-hover',
-                                collapsed && 'justify-center px-0',
-                            )}
-                        >
-                            <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-sidebar-accent text-xs font-semibold text-sidebar-accent-foreground ring-1 ring-sidebar-border">
-                                {initialsOf(displayName)}
-                            </span>
-                            {!collapsed && (
-                                <span className="min-w-0 flex-1 leading-tight">
-                                    <span className="block truncate text-[13px] font-semibold text-sidebar-accent-foreground">{displayName}</span>
-                                    <span className="block truncate text-xs text-sidebar-muted">{getRoleDisplayName(userRole)}</span>
-                                </span>
-                            )}
-                        </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" side="top" className="w-60">
-                        <DropdownMenuLabel className="truncate">{user?.email}</DropdownMenuLabel>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem asChild>
-                            <Link href="/dashboard/settings" className="flex items-center gap-2">
-                                <UserCircle className="h-4 w-4" /> Профайл
-                            </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem asChild>
-                            <Link href="/dashboard/settings" className="flex items-center gap-2">
-                                <Settings className="h-4 w-4" /> Тохиргоо
-                            </Link>
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={toggleTheme} className="flex items-center gap-2">
-                            {theme === 'dark'
-                                ? (<><Sun className="h-4 w-4" /> Цайвар тема</>)
-                                : (<><Moon className="h-4 w-4" /> Бараан тема</>)}
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => void signOut()} className="flex items-center gap-2 text-status-danger">
-                            <LogOut className="h-4 w-4" /> Гарах
-                        </DropdownMenuItem>
-                    </DropdownMenuContent>
-                </DropdownMenu>
-            </div>
-
-            {/* Хумих товч */}
-            <button
-                type="button"
-                onClick={toggle}
-                className="mx-3 mb-3 flex h-8 items-center justify-center gap-1.5 rounded-lg text-xs text-sidebar-muted transition-colors hover:bg-sidebar-hover hover:text-sidebar-accent-foreground"
-                aria-label={collapsed ? 'Цэсийг дэлгэх' : 'Цэсийг хумих'}
-            >
-                {collapsed ? <ChevronsRight className="h-4 w-4" /> : (<><ChevronsLeft className="h-4 w-4" /> Хумих</>)}
-            </button>
         </aside>
     );
 }
@@ -210,14 +136,14 @@ function NavRow({
     const active = isNavItemActive(item, pathname);
     const Icon = item.icon;
     const hasCount = typeof count === 'number' && count > 0;
-    // Уншаагүй мессеж үйлдэл шаарддаг тул цэнхэр тэмдгээр, бусад тоо саармаг.
+    // Хариу хүлээж буй мессеж үйлдэл шаарддаг тул цэнхэр тэмдгээр, бусад тоо саармаг.
     const urgent = item.countKey === 'inbox';
 
     return (
         <Link
             href={item.href}
             aria-current={active ? 'page' : undefined}
-            title={collapsed ? item.name : item.href === '/dashboard/ai-assistant' ? 'AI туслах (⌘J)' : undefined}
+            title={collapsed ? item.name : undefined}
             className={cn(
                 'relative flex min-h-9 shrink-0 items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors',
                 collapsed && 'justify-center px-0',

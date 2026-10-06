@@ -1,52 +1,40 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
+/** layout.tsx-ийн эхний script энэ түлхүүрийг уншиж, будахаас өмнө data-sidebar тавина. */
 const KEY = 'vertmonhub_sidebar_collapsed';
-const EXPANDED = '15.5rem';
-const COLLAPSED = '3.75rem';
 
-/**
- * Sidebar-ийг icon-rail болгож хумих төлөв.
- *
- * Цорын ганц эх сурвалж нь `--sidebar-w` CSS хувьсагч (globals.css-д тодорхойлсон):
- * үүнийг <html>-д шууд тааруулснаар Sidebar-ийн өргөн (`w-[var(--sidebar-w)]`) ба
- * AppShell-ийн зүүн зай (`md:ml-[var(--sidebar-w)]`) хоёр зэрэг автоматаар хариу үзүүлнэ.
- * Төлөвийг localStorage-д хадгална (SSR/нууц горимд аюулгүй).
- */
-function applyWidth(collapsed: boolean) {
-    if (typeof document === 'undefined') return;
-    document.documentElement.style.setProperty('--sidebar-w', collapsed ? COLLAPSED : EXPANDED);
+function readCollapsed(): boolean {
+    return document.documentElement.getAttribute('data-sidebar') === 'collapsed';
 }
 
-export function useSidebarCollapsed() {
-    const [collapsed, setCollapsed] = useState(false);
+function subscribe(onChange: () => void): () => void {
+    const observer = new MutationObserver(onChange);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-sidebar'] });
+    return () => observer.disconnect();
+}
 
-    // Mount үед хадгалсан төлөвийг сэргээнэ.
-    useEffect(() => {
-        let initial = false;
-        try {
-            initial = localStorage.getItem(KEY) === '1';
-        } catch {
-            /* нууц горим — алгасна */
-        }
-        setCollapsed(initial);
-        applyWidth(initial);
-        // Гарахад rail-ийн өргөнийг анхдагч руу буцаана (бусад shell-д нөлөөлөхгүйн тулд).
-        return () => applyWidth(false);
-    }, []);
+/**
+ * Sidebar-ийг icon-rail (64px) болгож хумих төлөв.
+ *
+ * Цорын ганц эх сурвалж нь <html data-sidebar="collapsed"> — globals.css үүнээс
+ * `--sidebar-w`-г (232px / 64px) тооцож, Sidebar-ийн өргөн ба AppShell-ийн зүүн зай
+ * хоёр зэрэг хариу үзүүлнэ. Сонголт localStorage-д хадгалагдаж, дараагийн ачааллын
+ * эхний будалтад үйлчилнэ (дэлгэсэн → хумисан анивчихгүй).
+ */
+export function useSidebarCollapsed() {
+    const collapsed = useSyncExternalStore(subscribe, readCollapsed, () => false);
 
     const toggle = useCallback(() => {
-        setCollapsed((prev) => {
-            const next = !prev;
-            applyWidth(next);
-            try {
-                localStorage.setItem(KEY, next ? '1' : '0');
-            } catch {
-                /* алгасна */
-            }
-            return next;
-        });
+        const next = !readCollapsed();
+        if (next) document.documentElement.setAttribute('data-sidebar', 'collapsed');
+        else document.documentElement.removeAttribute('data-sidebar');
+        try {
+            localStorage.setItem(KEY, next ? '1' : '0');
+        } catch {
+            /* нууц горим — энэ хуудсанд л үйлчилнэ */
+        }
     }, []);
 
     return { collapsed, toggle };

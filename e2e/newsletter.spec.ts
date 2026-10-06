@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import { newsletterPreviewHtml, defaultNewsletterDesign } from '../src/lib/marketing/newsletter';
+import { COMPACT_VIEWPORT } from './support/viewports';
 
 // Playwright's SW-blocking init script reads navigator.serviceWorker in every
 // frame and throws in an opaque sandbox. Keep the email sandbox fully locked.
@@ -41,9 +42,9 @@ async function setup(page: Page) {
     return state;
 }
 
-for (const mobile of [false, true]) {
-    test(`Newsletter templates and confirmation (${mobile ? 'mobile' : 'desktop'})`, async ({ page }, testInfo) => {
-        if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+for (const compact of [false, true]) {
+    test(`Newsletter templates and confirmation (${compact ? 'compact' : 'desktop'})`, async ({ page }, testInfo) => {
+        if (compact) await page.setViewportSize(COMPACT_VIEWPORT);
         const state = await setup(page);
         await page.goto('/marketing/newsletter');
         await page.getByLabel('Гарчиг', { exact: true }).fill('Есдүгээр сарын мэдээ');

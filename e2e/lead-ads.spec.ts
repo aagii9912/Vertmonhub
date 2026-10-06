@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
+import { COMPACT_VIEWPORT } from './support/viewports';
 
 /** /marketing/social — холбосон Facebook Page-ийн Lead Ads төлөв, идэвхжүүлэх, 90 хоногийн нөхөлт. */
 const shop = '00000000-0000-4000-8000-000000000002';
@@ -56,8 +57,8 @@ test('connected page shows Lead Ads health, re-subscribes and backfills 90 days'
     expect(state.errors).toEqual([]);
 });
 
-test('read-only users see the status without actions and the card fits a phone', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
+test('read-only users see the status without actions and the card fits a 1024px laptop', async ({ page }) => {
+    await page.setViewportSize(COMPACT_VIEWPORT);
     const state = await setup(page, { readonly: true, subscribed: true });
     const card = page.getByRole('region', { name: 'Facebook Lead Ads' });
     await expect(card.getByText('Webhook идэвхтэй')).toBeVisible();

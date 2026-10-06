@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import { buildMarketingPerformance, type PerformanceData } from '../src/lib/marketing/performance';
 import { exportMarketingPerformance } from '../src/lib/marketing/performance-export';
+import { COMPACT_VIEWPORT } from './support/viewports';
 
 const shop = '00000000-0000-4000-8000-000000000002';
 const csv = 'Account ID,Campaign ID,Campaign name,Day,Amount spent (USD)\n123456789012345678,987654321098765432,Elysium import,2026-09-01,12.50';
@@ -62,8 +63,8 @@ async function preview(page: Page) {
     expect(await form.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
     return form;
 }
-for (const mobile of [false, true]) test(`Meta file preview, failed save, retry and report (${mobile ? 'mobile' : 'desktop'})`, async ({ page }, testInfo) => {
-    if (mobile) await page.setViewportSize({ width: 390, height: 844 });
+for (const compact of [false, true]) test(`Meta file preview, failed save, retry and report (${compact ? 'compact' : 'desktop'})`, async ({ page }, testInfo) => {
+    if (compact) await page.setViewportSize(COMPACT_VIEWPORT);
     const state = await setup(page);
     const form = await preview(page);
     expect(state.requests.map(r => r.action)).toEqual(['preview']);

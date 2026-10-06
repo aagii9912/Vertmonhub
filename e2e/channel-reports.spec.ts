@@ -7,6 +7,7 @@ import {
 import { readChannelFile, sampleValues } from '../src/lib/marketing/channel-reports-file';
 import { compareReports, type ChannelReportSummary } from '../src/lib/marketing/channel-reports-load';
 import { META_ADS_DAILY_CSV } from './fixtures/meta-ads-daily';
+import { COMPACT_VIEWPORT } from './support/viewports';
 
 const shop = '00000000-0000-4000-8000-000000000002';
 const csv = [
@@ -155,8 +156,8 @@ test('splits a daily Meta Ads export into meeting weeks and shows results per ty
     expect(state.errors).toEqual([]);
 });
 
-test('fits a phone screen', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
+test('fits the narrowest supported laptop (1024px)', async ({ page }) => {
+    await page.setViewportSize(COMPACT_VIEWPORT);
     const state = await setup(page);
     await expect(page.getByRole('heading', { name: 'Сувгийн экспорт импорт' })).toBeVisible();
     await page.getByRole('combobox', { name: 'Эх үүсвэр', exact: true }).selectOption('callpro');
@@ -166,7 +167,7 @@ test('fits a phone screen', async ({ page }) => {
     await page.getByRole('button', { name: 'Файл шалгах', exact: true }).click();
     await expect(page.getByRole('region', { name: 'Импортын урьдчилсан дүн' })).toBeVisible();
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-    // Meta-гийн өдрийн файл: долоо хоногийн хүснэгт, үр дүнгийн төрөл утсанд багтана.
+    // Meta-гийн өдрийн файл: долоо хоногийн хүснэгт, үр дүнгийн төрөл 1024px-д багтана.
     await page.getByRole('combobox', { name: 'Эх үүсвэр', exact: true }).selectOption('meta_ads');
     await page.getByLabel('Экспорт файл').setInputFiles({ name: 'meta-campaigns-daily.csv', mimeType: 'text/csv', buffer: Buffer.from(META_ADS_DAILY_CSV) });
     await page.getByRole('button', { name: 'Файл шалгах', exact: true }).click();

@@ -14,8 +14,8 @@ describe('ProjectSwitcher', () => {
         render(<ProjectSwitcher />);
         expect(screen.getByText('Mandala Garden')).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: /Төсөл солих/ })).not.toBeInTheDocument();
-        const { container } = render(<ProjectSwitcher variant="compact" />);
-        expect(container).toBeEmptyDOMElement();
+        // Төслийн товчлол тэмдэг (дэлгэц уншигчид нуугдана)
+        expect(screen.getByText('MG')).toHaveAttribute('aria-hidden', 'true');
     });
 
     it('switches to another project shop and ignores the active one', () => {

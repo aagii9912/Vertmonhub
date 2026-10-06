@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Loader2, Plug, RefreshCw, SearchCheck } from 'lucide-react';
 import { toast } from 'sonner';
+import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Alert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
 import { StatusPill } from '@/components/ui/StatusPill';
@@ -137,10 +138,7 @@ export default function AdminIntegrationsPage() {
 
     return (
         <div className="mx-auto max-w-5xl space-y-6">
-            <div>
-                <h1 className="heading-display text-2xl text-foreground">Холболтууд</h1>
-                <p className="mt-1 text-sm text-muted-foreground">Гадны сайтаас CRM руу лид оруулах холболтууд.</p>
-            </div>
+            <PageHeader title="Холболтууд" subtitle="Гадны сайтаас CRM руу лид оруулах холболтууд." />
 
             {loading ? <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-brand-strong" aria-label="Ачаалж байна" /></div>
                 : loadError ? <div role="alert" className="rounded-lg border border-status-danger/30 bg-status-danger-soft p-4 text-sm text-status-danger">

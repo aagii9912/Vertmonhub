@@ -10,6 +10,7 @@ import { scoreKpi } from '../src/lib/sales/kpi';
 import { buildBudgetOverview } from '../src/lib/marketing/budget';
 import { ubParts } from '../src/lib/utils/date';
 import { managerActivityFixture } from './support/manager-activity';
+import { COMPACT_VIEWPORT } from './support/viewports';
 
 const userId = '00000000-0000-4000-8000-000000000001';
 const shopId = '00000000-0000-4000-8000-000000000002';
@@ -155,9 +156,9 @@ async function setup(page: Page, restricted = false) {
     return state;
 }
 
-for (const mobile of [false, true]) {
-    test(`ажлын самбар → хурлын шинэчлэл → экспорт (${mobile ? 'mobile' : 'desktop'})`, async ({ page, context }) => {
-        await page.setViewportSize(mobile ? { width: 390, height: 844 } : { width: 1440, height: 1050 });
+for (const compact of [false, true]) {
+    test(`ажлын самбар → хурлын шинэчлэл → экспорт (${compact ? 'compact' : 'desktop'})`, async ({ page, context }) => {
+        await page.setViewportSize(compact ? COMPACT_VIEWPORT : { width: 1440, height: 1050 });
         await context.grantPermissions(['clipboard-read', 'clipboard-write']);
         const state = await setup(page);
         await expect(page.getByRole('heading', { name: 'Сайн байна уу, Номин.' })).toBeVisible();
@@ -165,7 +166,7 @@ for (const mobile of [false, true]) {
         await expect(page.getByRole('group', { name: 'Өнөөдрийн идэвх' })).toContainText('дуудлага');
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         mkdirSync('output/workday', { recursive: true });
-        await page.screenshot({ path: `output/workday/${mobile ? 'mobile' : 'desktop'}-today.png`, fullPage: true });
+        await page.screenshot({ path: `output/workday/${compact ? 'compact' : 'desktop'}-today.png`, fullPage: true });
         await page.getByLabel('AI туслахад өгөх даалгавар', { exact: true }).fill('Өнөөдрийн ажлыг эрэмбэлэхэд туслаач.');
         await page.getByRole('button', { name: 'AI туслахад нээх', exact: true }).click();
         const panel = page.getByRole('complementary', { name: 'AI туслах', exact: true });
@@ -218,16 +219,16 @@ for (const mobile of [false, true]) {
         expect(agenda).toContain('Эзэнгүй 3 лид');
         expect(agenda).toContain('Номин: Төлбөрийн нөхцөлийг батлуулах шаардлагатай.');
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-        if (!mobile) {
+        if (!compact) {
             await page.getByRole('button', { name: 'Танилцуулах', exact: true }).click();
             await expect(page.locator('article:fullscreen')).toBeVisible();
             await page.getByRole('button', { name: 'Танилцуулгыг хаах', exact: true }).click();
             await expect(page.locator('article:fullscreen')).toHaveCount(0);
         }
-        await page.screenshot({ path: `output/workday/${mobile ? 'mobile' : 'desktop'}-weekly.png`, fullPage: true });
+        await page.screenshot({ path: `output/workday/${compact ? 'compact' : 'desktop'}-weekly.png`, fullPage: true });
         expect(state.writes).toBe(1);
         expect(state.errors).toEqual([]);
-        if (!mobile) {
+        if (!compact) {
             await page.emulateMedia({ media: 'print' });
             await page.setViewportSize({ width: 688, height: 1050 });
             await expect(page.locator('[data-sonner-toaster]')).toBeHidden();
@@ -268,16 +269,16 @@ for (const mobile of [false, true]) {
         await expect(department.getByText('Qualified Lead-ийн шалгуур ба баталгаажуулах бүртгэл тодорхойгүй.', { exact: true })).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
         await page.evaluate(() => window.scrollTo(0, 0));
-        await page.screenshot({ path: `output/workday/${mobile ? 'mobile' : 'desktop'}-department-kpi.png`, fullPage: true });
+        await page.screenshot({ path: `output/workday/${compact ? 'compact' : 'desktop'}-department-kpi.png`, fullPage: true });
         await page.goto('/dashboard/ai-assistant');
         await expect(page.getByRole('heading', { name: 'Өнөөдөр юуг хамт хийх вэ?' })).toBeVisible();
         await expect(page.getByRole('textbox', { name: 'AI туслахад бичих', exact: true })).toBeVisible();
         await expect(page.getByRole('textbox', { name: 'AI туслахад бичих', exact: true })).toHaveCSS('outline-style', 'none');
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-        await page.screenshot({ path: `output/workday/${mobile ? 'mobile' : 'desktop'}-ai.png`, fullPage: true });
+        await page.screenshot({ path: `output/workday/${compact ? 'compact' : 'desktop'}-ai.png`, fullPage: true });
         await page.evaluate(() => document.documentElement.dataset.theme = 'dark');
         await expect(page.getByRole('button', { name: 'Нэгдсэн тайлан', exact: true })).toHaveCSS('color', 'rgb(199, 204, 214)');
-        await page.screenshot({ path: `output/workday/${mobile ? 'mobile' : 'desktop'}-ai-dark.png`, fullPage: true, animations: 'disabled' });
+        await page.screenshot({ path: `output/workday/${compact ? 'compact' : 'desktop'}-ai-dark.png`, fullPage: true, animations: 'disabled' });
     });
 }
 

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { LeadsPage } from '../leads/LeadsPage';
 import InboxMessagesPage from '@/app/dashboard/inbox/messages/page';
 import { FeedbackWidget } from '../feedback/FeedbackWidget';
@@ -55,31 +55,33 @@ describe('UI audit regressions', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Цэвэрлэх' }));
         expect(mocks.listParams).toHaveBeenLastCalledWith(expect.objectContaining({ category: 'all' }));
     });
-    it('keeps the selected lead accessible when a saved desktop split layout is opened on a tablet, then resized', () => {
+    it('restores the saved split layout with the selected lead in the side panel, and the table layout opens it in a sheet', () => {
         localStorage.setItem('vertmonhub_leads_mode', 'split');
-        mocks.params = 'lead=tablet-lead';
-        Object.defineProperty(window, 'innerWidth', { value: 900, writable: true, configurable: true });
+        mocks.params = 'lead=split-lead';
         render(<LeadsPage />);
-        const dialog = screen.getByRole('dialog');
-        expect(within(dialog).getByRole('heading', { name: 'tablet-lead' })).toBeInTheDocument();
-        expect(within(dialog).getAllByRole('button', { name: 'Хаах' })).toHaveLength(1);
-        act(() => { window.innerWidth = 1280; window.dispatchEvent(new Event('resize')); });
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-        expect(within(screen.getByRole('complementary', { name: 'Сонгосон лид' })).getByRole('heading', { name: 'tablet-lead' })).toBeInTheDocument();
-        act(() => { window.innerWidth = 390; window.dispatchEvent(new Event('resize')); });
-        fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Хаах' }));
+        expect(within(screen.getByRole('complementary', { name: 'Сонгосон лид' })).getByRole('heading', { name: 'split-lead' })).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: 'Хүснэгт' }));
+        expect(localStorage.getItem('vertmonhub_leads_mode')).toBe('table');
+        expect(screen.queryByRole('complementary', { name: 'Сонгосон лид' })).not.toBeInTheDocument();
+        const dialog = screen.getByRole('dialog');
+        expect(within(dialog).getByRole('heading', { name: 'split-lead' })).toBeInTheDocument();
+        expect(within(dialog).getAllByRole('button', { name: 'Хаах' })).toHaveLength(1);
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Хаах' }));
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     });
 
-    it('opens the exact conversation in the URL and returns to the list without losing other parameters', () => {
+    it('opens the exact conversation in the URL beside the list and switches conversations without losing other parameters', () => {
         mocks.params = 'conversation=b&source=inbox';
         render(<InboxMessagesPage />);
         const selected = screen.getByRole('region', { name: 'Сонгосон яриа' });
         expect(within(selected).getByRole('heading', { name: 'Харилцагч b' })).toBeInTheDocument();
         expect(screen.getByRole('log')).toHaveTextContent('Яриа b');
         expect(screen.getByRole('log')).not.toHaveTextContent('Яриа a');
-        fireEvent.click(screen.getByRole('button', { name: 'Ярианы жагсаалт руу буцах' }));
-        expect(mocks.push).toHaveBeenCalledWith('/dashboard/inbox/messages?source=inbox', { scroll: false });
+        const list = screen.getByRole('region', { name: 'Ярианы жагсаалт' });
+        expect(within(list).getByRole('button', { name: /Харилцагч b/ })).toHaveAttribute('aria-pressed', 'true');
+        fireEvent.click(within(list).getByRole('button', { name: /Харилцагч a/ }));
+        expect(mocks.push).toHaveBeenCalledWith('/dashboard/inbox/messages?conversation=a&source=inbox', { scroll: false });
     });
 
     it('preserves an unsent reply and shows the failure when the server rejects it', async () => {
