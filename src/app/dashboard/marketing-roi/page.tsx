@@ -28,6 +28,7 @@ import {
 import { cn } from '@/lib/utils';
 import { accountCurrencyLabel, formatAccountMoney, formatMNT } from '@/lib/utils/currency';
 import { sourceLabel } from '@/lib/leads/labels';
+import type { LeadSourceStats } from '@/lib/marketing/lead-sources';
 import { toast } from 'sonner';
 
 interface AdCampaign {
@@ -87,9 +88,6 @@ const socialNumber = (value: number | null | undefined) => typeof value === 'num
 const socialMetricCaption = (metric: SocialMetricSummary) =>
     metric.kind === 'sum' ? `${metric.days} өдрийн нийлбэр` : metric.day ? `${metric.day}-ны байдлаар` : 'өгөгдөлгүй';
 
-/** Эх үүсвэрийн шинжилгээнд хэрэглэх лидийн талбарууд (/api/dashboard/leads). */
-interface LeadStat { source: string | null; status: string | null; created_at: string; }
-
 /** Сонгосон зарын данс + сүүлийн зардлын синкийн валют (/api/marketing/facebook/ads/spend-sync). */
 interface MetaAdsConfig {
     tokenSource?: 'system' | 'user' | null;
@@ -116,7 +114,6 @@ interface TimelineData { months?: TimelineMonth[]; currency?: string | null }
 
 const fmtMNT = (n: number): string => formatMNT(n, { compact: true });
 
-const NO_LEADS: LeadStat[] = [];
 const NO_CAMPAIGNS: AdCampaign[] = [];
 const NO_ACCOUNTS: AdAccount[] = [];
 const NO_MONTHS: TimelineMonth[] = [];
@@ -189,7 +186,8 @@ export default function MarketingROIPage() {
     const { shop } = useAuth();
     const queryClient = useQueryClient();
     // API-аар (RBAC + shop scope сервер талд) — өмнө нь browser Supabase, зөвхөн RLS
-    const leadsQuery = useDashboardQuery<{ leads?: LeadStat[]; pagination?: { total?: number } }>(['marketing-roi', 'leads'], '/api/dashboard/leads?pageSize=1000');
+    // Эх үүсвэр, сар бүрийн лид — сервер харах эрхтэй бүх лидээр нэгтгэнэ (хөтөч 1000 лидээр тасардаг байсан).
+    const sourcesQuery = useDashboardQuery<{ stats?: LeadSourceStats }>(['marketing-roi', 'sources'], '/api/dashboard/marketing-roi/sources');
     // Хадгалсан Facebook кампаниуд (Meta-аас синк хийхгүй)
     const campaignsQuery = useDashboardQuery<{ rows?: AdCampaign[] }>(['marketing-roi', 'campaigns'], '/api/marketing/data/ad_campaigns?eq.platform=facebook&order=updated_at.desc');
     const roiQuery = useDashboardQuery<{ roi?: RoiData | null }>(['marketing-roi', 'roi'], '/api/dashboard/marketing-roi');
@@ -204,10 +202,7 @@ export default function MarketingROIPage() {
     const showMetaConnect = metaTokenQuery.isError || (metaTokenQuery.isSuccess && metaTokenQuery.data?.tokenSource !== 'system');
     const refetchCampaigns = campaignsQuery.refetch;
 
-    const leads = leadsQuery.data?.leads ?? NO_LEADS;
-    // Лидийн нэгтгэл 1,000 мөрөөр хязгаарлагдана — нийт тоо илүү бол тайлан бүрэн биш гэж ил хэлнэ.
-    const leadsTotal = leadsQuery.data?.pagination?.total;
-    const leadsTruncated = typeof leadsTotal === 'number' && leadsTotal > leads.length;
+    const sourceStats = sourcesQuery.data?.stats;
     const campaigns = campaignsQuery.data?.rows ?? NO_CAMPAIGNS;
     // Таталт алдагдвал хуучин/тэг дүнг одоогийн тайлан мэт харуулахгүй.
     const roi = roiQuery.isError ? null : roiQuery.data?.roi ?? null;
@@ -308,53 +303,22 @@ export default function MarketingROIPage() {
     }, [refetchCampaigns]);
 
     const analytics = useMemo(() => {
-        if (leads.length === 0) return null;
+        if (!sourceStats || sourceStats.totals.total === 0) return null;
+        const sources = sourceStats.sources.map((row) => ({ ...row, label: sourceLabel(row.source) }));
+        return {
+            sources,
+            totalLeads: sourceStats.totals.total,
+            totalWon: sourceStats.totals.won,
+            totalLost: sourceStats.totals.lost,
+            overallConversion: sourceStats.totals.conversionRate,
+            bestSource: sources.find((row) => row.source === sourceStats.bestSource) ?? null,
+        };
+    }, [sourceStats]);
 
-        const bySource: Record<string, { total: number; won: number; lost: number; active: number }> = {};
-        leads.forEach((l) => {
-            const src = l.source || 'other';
-            if (!bySource[src]) bySource[src] = { total: 0, won: 0, lost: 0, active: 0 };
-            bySource[src].total++;
-            if (l.status === 'closed_won') bySource[src].won++;
-            else if (l.status === 'closed_lost') bySource[src].lost++;
-            else bySource[src].active++;
-        });
-
-        const sources = Object.entries(bySource)
-            .map(([source, data]) => ({
-                source,
-                label: sourceLabel(source),
-                ...data,
-                conversionRate: data.total > 0 ? Math.round((data.won / data.total) * 100) : 0,
-            }))
-            .sort((a, b) => b.total - a.total);
-
-        const totalLeads = leads.length;
-        const totalWon = leads.filter((l) => l.status === 'closed_won').length;
-        const totalLost = leads.filter((l) => l.status === 'closed_lost').length;
-        const overallConversion = totalLeads > 0 ? Math.round((totalWon / totalLeads) * 100) : 0;
-
-        const monthly: Record<string, number> = {};
-        leads.forEach((l) => {
-            const month = new Date(l.created_at).toLocaleDateString('mn-MN', { year: 'numeric', month: 'short' });
-            monthly[month] = (monthly[month] || 0) + 1;
-        });
-
-        const bestSource =
-            sources.length > 0 ? sources.reduce((best, s) => (s.conversionRate > best.conversionRate ? s : best)) : null;
-
-        return { sources, totalLeads, totalWon, totalLost, overallConversion, monthly, bestSource };
-    }, [leads]);
-
-    // Сар бүрийн лийдийн чартын өгөгдөл — анхны логиктой ижил (сүүлийн 6 сар)
+    // Сар бүрийн лийд — сүүлийн 6 сар (Улаанбаатарын сараар, лидгүй сар 0).
     const monthlyChartData = useMemo(
-        () =>
-            analytics
-                ? Object.entries(analytics.monthly)
-                      .slice(-6)
-                      .map(([month, count]) => ({ month, count }))
-                : [],
-        [analytics],
+        () => (sourceStats?.monthly ?? []).map(({ label, count }) => ({ month: label, count })),
+        [sourceStats],
     );
 
     // Facebook Ads кампаниудын багана (syncInsights handler-тэй тул компонент дотор)
@@ -453,7 +417,7 @@ export default function MarketingROIPage() {
 
     // Хуучин шигээ эхний ачаалалт бүх уншилтыг хүлээнэ. Лид/кампанит ажлын өгөгдөлгүй үед л алдааны
     // карт (дахин оролдох үед spinner); өгөгдөл байхад фон шинэчлэлтийн алдааг QueryProvider toast мэдэгдэнэ.
-    const baseQueries = [leadsQuery, campaignsQuery];
+    const baseQueries = [sourcesQuery, campaignsQuery];
     const loadError = baseQueries.some((q) => !q.data && q.isError && !q.isFetching);
     const loading = !loadError && (baseQueries.some((q) => !q.data) || [roiQuery, socialQuery, timelineQuery].some((q) => q.isPending));
 
@@ -485,13 +449,6 @@ export default function MarketingROIPage() {
                 title="Маркетинг ROI"
                 subtitle="Эх үүсвэр тус бүрийн лийд, конверс шинжилгээ"
             />
-
-            {leadsTruncated && (
-                <Alert variant="warning" className="mb-4">
-                    <AlertTitle>Тайлан бүрэн биш: {leadsTotal.toLocaleString('en-US')} лидээс эхний {leads.length.toLocaleString('en-US')}-г тооцов</AlertTitle>
-                    <AlertDescription>Нийт лид, конверс, эх үүсвэрийн шинжилгээ, сар бүрийн лидийг зөвхөн хамгийн сүүлд бүртгэгдсэн лидүүдээр тооцсон.</AlertDescription>
-                </Alert>
-            )}
 
             {!analytics ? (
                 <Card>
@@ -758,7 +715,7 @@ export default function MarketingROIPage() {
                     )}
 
                     {/* Monthly Trend */}
-                    <ChartCard title="Сар бүрийн лийд" height={240}>
+                    <ChartCard title="Сар бүрийн лийд" subtitle="Сүүлийн 6 сар (Улаанбаатарын сараар)" height={240}>
                         <BarChart
                             data={monthlyChartData}
                             xKey="month"

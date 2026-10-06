@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-const transport = vi.hoisted(() => ({ json: vi.fn(), fetch: vi.fn(), meta: {} as Record<string, unknown>, leadsTotal: 2345, timeline: {} as Record<string, unknown> }));
+const transport = vi.hoisted(() => ({ json: vi.fn(), fetch: vi.fn(), meta: {} as Record<string, unknown>, timeline: {} as Record<string, unknown> }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ shop: { id: 'shop-1' }, user: { id: 'user-1', role: 'marketing', permissions: { modules: ['marketing-roi'], canWrite: true } } }) }));
 vi.mock('@/lib/api/dashboardFetch', () => ({ dashboardJson: transport.json, dashboardFetch: transport.fetch }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -21,16 +21,23 @@ import MarketingROIPage from './page';
 
 const campaign = { id: 'c1', name: 'Мандала кампанит ажил', external_id: '120200', status: 'active', objective: null, budget: 0,
     spend: 300.38, impressions: 10_000, clicks: 700, conversions: 3, ctr: 7, cpc: 0.43, last_synced_at: null };
+// Сервер бүх лидээр нэгтгэнэ — 1000-аас олон лидтэй төсөл.
+const sourceStats = {
+    totals: { total: 2345, won: 45, lost: 300, active: 2000, conversionRate: 2 },
+    sources: [
+        { source: 'facebook', total: 2000, won: 30, lost: 250, active: 1720, conversionRate: 2 },
+        { source: 'referral', total: 345, won: 15, lost: 50, active: 280, conversionRate: 4 },
+    ],
+    bestSource: 'referral',
+    monthly: [{ month: '2026-09', label: '9-р сар', count: 1200 }, { month: '2026-10', label: '10-р сар', count: 1145 }],
+};
 const roiTotals = { spend: 300.38, leads: 3, won: 1, revenue: 250_000_000, cpl: null, cpa: null, roas: null, profit: null };
 
 beforeEach(() => {
     transport.meta = { accountId: 'act_1', tokenSource: 'system', status: { currency: 'USD' } };
-    transport.leadsTotal = 2345;
     transport.timeline = { months: [{ month: '2026-10', label: '10-р сар', leads: 1, meetings: 0, activity: 1, spend: 300.38, spendDays: 5, spendPartial: false }] };
     transport.json.mockImplementation(async (url: string) => {
-        if (url.startsWith('/api/dashboard/leads')) {
-            return { leads: Array.from({ length: 1000 }, () => ({ source: 'facebook', status: 'new', created_at: '2026-10-01T02:00:00Z' })), pagination: { total: transport.leadsTotal } };
-        }
+        if (url === '/api/dashboard/marketing-roi/sources') return { stats: sourceStats };
         if (url.startsWith('/api/marketing/data/ad_campaigns')) return { rows: [campaign] };
         if (url === '/api/dashboard/marketing-roi') return { roi: { campaigns: [{ external_id: '120200', name: campaign.name, ...roiTotals }], sources: [], totals: roiTotals } };
         if (url === '/api/dashboard/marketing/social-history') return { posts: [], insights: [] };
@@ -43,15 +50,12 @@ afterEach(() => { vi.clearAllMocks(); });
 
 const renderPage = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MarketingROIPage /></QueryClientProvider>);
 
-it('warns when the lead aggregates only cover the first 1,000 of more leads', async () => {
-    renderPage();
-    expect(await screen.findByText('Тайлан бүрэн биш: 2,345 лидээс эхний 1,000-г тооцов')).toBeInTheDocument();
-});
-
-it('does not warn when every lead was received', async () => {
-    transport.leadsTotal = 1000;
+it('shows lead-source totals from the server aggregate over every lead, not the newest 1,000', async () => {
     renderPage();
     expect((await screen.findAllByText('Эх үүсвэрийн шинжилгээ')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('2345').length).toBeGreaterThan(0);
+    expect(screen.getByText('4% конверс')).toBeInTheDocument();
+    expect(transport.json).not.toHaveBeenCalledWith(expect.stringMatching(/^\/api\/dashboard\/leads/), expect.anything());
     expect(screen.queryByText(/Тайлан бүрэн биш/)).not.toBeInTheDocument();
 });
 
