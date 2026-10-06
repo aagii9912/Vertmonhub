@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { createSupabaseMiddlewareClient } from '@/lib/auth/supabase-auth';
+import { getProxySession, type ProxySession } from '@/lib/auth/supabase-auth';
 import { checkMiddlewareRateLimit } from '@/lib/utils/rate-limiter';
 import { logApiRequest } from '@/lib/utils/request-logger';
 
@@ -84,11 +84,11 @@ export async function proxy(request: NextRequest) {
         // Supabase session (GoTrue) — цорын ганц эх сурвалж. Хуучин `vertmon-session`
         // cookie шалгалт гарын үсэг баталгаажуулдаггүй (зөвхөн base64 decode) байсан тул
         // устгав — хуурамч cookie-оор хамгаалалттай хуудас руу орох боломжтой байв.
+        let session: ProxySession | null = null;
         try {
-            const { supabase, response } = createSupabaseMiddlewareClient(request);
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user) {
-                return response;
+            session = await getProxySession(request);
+            if (session.user) {
+                return session.next();
             }
         } catch {
             // Supabase auth check failed (GoTrue down)
@@ -97,7 +97,8 @@ export async function proxy(request: NextRequest) {
         // No valid session found — redirect to login, keeping the query so the page reopens as requested
         const signInUrl = new URL('/auth/login', request.url);
         signInUrl.searchParams.set('redirect_url', pathname + request.nextUrl.search);
-        return NextResponse.redirect(signInUrl);
+        const redirect = NextResponse.redirect(signInUrl);
+        return session ? session.carryCookies(redirect) : redirect;
     }
 
     return NextResponse.next();

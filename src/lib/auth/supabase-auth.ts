@@ -84,43 +84,49 @@ export async function getUserId(): Promise<string | null> {
     return user?.id ?? null;
 }
 
+export interface ProxySession {
+    user: User | null;
+    /** Хүсэлтийг үргэлжлүүлэх хариу: шинэчлэгдсэн session cookie доошоо (Server Component) ба браузерт хүрнэ. */
+    next(): NextResponse;
+    /** Өөр хариуд (нэвтрэх рүү redirect) session cookie-ийн өөрчлөлтийг, жишээ нь хүчингүй session-ийг цэвэрлэснийг, дамжуулна. */
+    carryCookies<T extends NextResponse>(response: T): T;
+}
+
 /**
- * Create Supabase client for middleware
+ * Proxy-ийн session шалгалт. Хугацаа нь дууссан access token-ыг `getUser()` refresh token-оор
+ * шинэчилж, шинэ cookie-г `setAll`-аар өгдөг (refresh token нэг удаагийнх). Proxy-ийн хариу тэр
+ * cookie-г заавал агуулах ёстой тул хариуг `getUser()`-ийн дараа үүсгэнэ: өмнө нь `getUser()`-ээс
+ * өмнө үүссэн хариу буцаж, шинэ токен браузерт хүрдэггүй байсан тул хэрэглэгч санамсаргүй системээс гардаг байв.
  */
-export function createSupabaseMiddlewareClient(request: NextRequest) {
-    let response = NextResponse.next({
-        request: {
-            headers: request.headers,
+export async function getProxySession(request: NextRequest): Promise<ProxySession> {
+    const changed: { name: string; value: string; options: Record<string, unknown> }[] = [];
+    const { url, anonKey } = requireSupabaseAnon();
+    const supabase = createServerClient(url, anonKey, {
+        cookies: {
+            getAll() {
+                return request.cookies.getAll();
+            },
+            setAll(cookiesToSet) {
+                cookiesToSet.forEach(({ name, value, options }) => {
+                    // Доошоо дамжих хүсэлт ч шинэ токеноор уншина.
+                    request.cookies.set(name, value);
+                    changed.push({ name, value, options: options as Record<string, unknown> });
+                });
+            },
         },
     });
 
-    const { url, anonKey } = requireSupabaseAnon();
-    const supabase = createServerClient(
-        url,
-        anonKey,
-        {
-            cookies: {
-                getAll() {
-                    return request.cookies.getAll();
-                },
-                setAll(cookiesToSet) {
-                    cookiesToSet.forEach(({ name, value }: { name: string; value: string }) =>
-                        request.cookies.set(name, value)
-                    );
-                    response = NextResponse.next({
-                        request: {
-                            headers: request.headers,
-                        },
-                    });
-                    cookiesToSet.forEach(({ name, value, options }: { name: string; value: string; options?: unknown }) =>
-                        response.cookies.set(name, value, options as Record<string, unknown>)
-                    );
-                },
-            },
-        }
-    );
+    const { data: { user } } = await supabase.auth.getUser();
 
-    return { supabase, response };
+    const carryCookies = <T extends NextResponse>(response: T): T => {
+        changed.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+        return response;
+    };
+    return {
+        user,
+        next: () => carryCookies(NextResponse.next({ request: { headers: request.headers } })),
+        carryCookies,
+    };
 }
 
 /**
