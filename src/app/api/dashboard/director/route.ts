@@ -64,8 +64,9 @@ export async function GET(request: NextRequest) {
         const missing: string[] = [];
 
         const [targets, byManager, roster, contracts, viewings, leads, schedules, blocks, outstanding] = await Promise.all([
-            getTeamTargets(db, shopId, year),
-            getMonthlyActualsByManager(db, shopId, year),
+            // Уншиж чадаагүй бол 0 / «зорилтгүй» биш — `missing`-д нэрээр (my-stats-тэй ижил).
+            getTeamTargets(db, shopId, year, () => { missing.push('targets'); }),
+            getMonthlyActualsByManager(db, shopId, year, () => { missing.push('sales'); }),
             safe('roster', missing, async () => {
                 const { data, error } = await db.from('sales_managers').select('name, is_active').eq('shop_id', shopId);
                 if (error) throw error;

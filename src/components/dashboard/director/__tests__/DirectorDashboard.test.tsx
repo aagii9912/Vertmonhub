@@ -74,6 +74,19 @@ describe('Director — Today', () => {
         expect(screen.getByRole('heading', { name: 'Анхаарах' }).closest('section')).not.toHaveTextContent('гэрээний төлбөр хоцорсон');
     });
 
+    it('does not show unread sales as zero or unread targets as unconfigured', () => {
+        mocks.director = payload({ missing: ['sales', 'targets'], sales: { ...payload().sales, actual: 0, target: 0, attainmentPct: 0, momDeltaPct: null } });
+        render(<DirectorDashboard />);
+        const kpis = screen.getByRole('group', { name: 'Сарын гол үзүүлэлт' });
+        expect(kpis).toHaveTextContent('Борлуулалтын мэдээлэл түр боломжгүй');
+        expect(kpis).not.toHaveTextContent('0 ₮');
+        expect(screen.getByText('Борлуулалтын мэдээллийг уншиж чадсангүй. Сарын дүнг тооцоогүй.')).toBeInTheDocument();
+        mocks.director = payload({ missing: ['targets'] });
+        render(<DirectorDashboard />);
+        expect(screen.getAllByRole('group', { name: 'Сарын гол үзүүлэлт' })[1]).toHaveTextContent('Сарын зорилтын мэдээлэл түр боломжгүй');
+        expect(screen.queryByText('Сарын зорилт тохируулаагүй')).not.toBeInTheDocument();
+    });
+
     it('does not read lead queues without the leads module and survives an empty payload', () => {
         mocks.role = 'viewer';
         mocks.modules = ['dashboard', 'reports'];

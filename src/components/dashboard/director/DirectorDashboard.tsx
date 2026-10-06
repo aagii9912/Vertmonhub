@@ -138,20 +138,21 @@ function Kpis({ data, loading, month, unassigned }: { data?: DirectorPayload; lo
     const f = data.funnel;
     const m = data.meetings;
     const meetingRate = f && f.totals.leads > 0 ? Math.round((f.totals.viewings / f.totals.leads) * 100) : null;
+    const noTargets = missing.includes('targets');
     return (
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" role="group" aria-label="Сарын гол үзүүлэлт">
             <KpiTile
                 label={`Гэрээ · ${month}-р сар`}
                 value={s ? formatMNTShort(s.actual) : '—'}
-                unavailable={!s || missing.includes('contracts') ? 'Гэрээний мэдээлэл түр боломжгүй' : null}
-                meter={s && s.target > 0 ? s.attainmentPct : null}
-                detail={s && (s.target > 0
+                unavailable={!s || missing.includes('sales') ? 'Борлуулалтын мэдээлэл түр боломжгүй' : null}
+                meter={s && s.target > 0 && !noTargets ? s.attainmentPct : null}
+                detail={s && (noTargets ? 'Сарын зорилтын мэдээлэл түр боломжгүй' : s.target > 0
                     ? <>Зорилт {formatMNTShort(s.target)}-ийн <b className={cn('font-semibold', s.attainmentPct >= 100 ? 'text-gold' : 'text-foreground')}>{s.attainmentPct}%</b>
                         {s.momDeltaPct !== null && <> · <span className={s.momDeltaPct >= 0 ? 'text-status-success' : 'text-status-danger'}>{s.momDeltaPct >= 0 ? '▲' : '▼'} {Math.abs(s.momDeltaPct)}%</span> өмнөх сараас</>}</>
                     : user?.role === 'super_admin'
                         ? <Link href="/admin/sales-targets" className="font-medium text-brand-strong hover:underline">Сарын зорилт тохируулах</Link>
                         : 'Сарын зорилт тохируулаагүй')}
-                source={s ? `${s.units} гэрээ · CRM-ийн гэрээний огноогоор` : undefined}
+                source={s ? `${missing.includes('contracts') ? 'Гэрээний тоо түр боломжгүй' : `${s.units} гэрээ`} · CRM-ийн гэрээний огноогоор` : undefined}
             />
             <KpiTile
                 label="Хоцорсон төлбөр"
@@ -313,7 +314,9 @@ function SalesTrend({ data, loading, month }: { data?: DirectorPayload; loading:
             }
             bodyClassName="flex flex-col gap-3 p-4"
         >
-            {loading || !s ? <Skeleton className="h-52" /> : (
+            {loading || !s ? <Skeleton className="h-52" /> : (data?.missing ?? []).includes('sales') ? (
+                <p className="text-xs text-status-pending">Борлуулалтын мэдээллийг уншиж чадсангүй. Сарын дүнг тооцоогүй.</p>
+            ) : (
                 <>
                     {s.unitsByType.length > 0 && (
                         <p className="text-xs text-fg-2"><b className="num font-semibold text-foreground">{s.units} байр</b><span className="text-muted-foreground"> · {s.unitsByType.map((u) => `${u.type} ${u.count}`).join(' · ')}</span></p>
