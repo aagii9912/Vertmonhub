@@ -25,6 +25,17 @@ export function onCommandPaletteOpen(handler: () => void): () => void {
 /** Түргэн үүсгэх цонхыг нээх («Шинэ» товч / N товчлуур / гар утасны «+»). */
 export type QuickCreateKind = 'lead' | 'meeting' | 'contract' | 'task';
 
+/**
+ * Түргэн бүртгэлийн төрлийг санал болгох эрх — «+ Шинэ», ⌘K, Түргэн бүртгэлийн солигч нэг дүрмээр
+ * (`useModuleAccess`-ийн `can`/`canWrite`). Зөвхөн UI-г нууна; сервер хүсэлт бүрийг дахин шалгана.
+ */
+export function canQuickCreate(kind: QuickCreateKind, access: { can: (module: string) => boolean; canWrite: (module: string) => boolean }): boolean {
+    if (kind === 'lead') return access.canWrite('leads');
+    if (kind === 'meeting') return access.canWrite('viewings');
+    if (kind === 'task') return access.can('dashboard');
+    return false;
+}
+
 export function openQuickCreate(kind: QuickCreateKind = 'lead'): void {
     if (typeof window === 'undefined') return;
     window.dispatchEvent(new CustomEvent<QuickCreateKind>(NEW_EVENT, { detail: kind }));

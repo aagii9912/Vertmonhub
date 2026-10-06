@@ -19,7 +19,7 @@ import { useModuleAccess } from '@/hooks/useModuleAccess';
 import { dashboardJson } from '@/lib/api/dashboardFetch';
 import { leadDisplayName } from '@/lib/leads/labels';
 import { NAV_SECTIONS, BOTTOM_NAV, SECONDARY_ROUTES, type NavItem } from '@/lib/navigation/nav';
-import { onCommandPaletteOpen, openQuickCreate, type QuickCreateKind } from '@/lib/navigation/commandPalette';
+import { canQuickCreate, onCommandPaletteOpen, openQuickCreate, type QuickCreateKind } from '@/lib/navigation/commandPalette';
 
 /** Бичлэг хайхад хамгийн багадаа ийм тэмдэгт. */
 const MIN_QUERY = 2;
@@ -166,20 +166,20 @@ export function CommandPalette() {
                 )}
 
                 <CommandGroup heading="Шинээр бүртгэх">
-                    {canWrite('leads') && (
+                    {canQuickCreate('lead', { can, canWrite }) && (
                         <CommandItem value="шинэ лид бүртгэх new lead" onSelect={() => create('lead')}>
                             <UserPlus className="mr-2 h-4 w-4" />
                             Шинэ лид
                             <CommandShortcut>N</CommandShortcut>
                         </CommandItem>
                     )}
-                    {canWrite('viewings') && (
+                    {canQuickCreate('meeting', { can, canWrite }) && (
                         <CommandItem value="уулзалт товлох meeting" onSelect={() => create('meeting')}>
                             <CalendarPlus className="mr-2 h-4 w-4" />
                             Уулзалт товлох
                         </CommandItem>
                     )}
-                    {can('dashboard') && (
+                    {canQuickCreate('task', { can, canWrite }) && (
                         <CommandItem value="ажил нэмэх task сануулга" onSelect={() => create('task')}>
                             <ListPlus className="mr-2 h-4 w-4" />
                             Ажил нэмэх

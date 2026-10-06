@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { CalendarPlus, ChevronDown, ListPlus, MessageSquare, Plus, Search, Sparkles, UserPlus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getBreadcrumb, getDocumentTitle, getNavTitle } from '@/lib/navigation/nav';
-import { openCommandPalette, openQuickCreate } from '@/lib/navigation/commandPalette';
+import { canQuickCreate, openCommandPalette, openQuickCreate, type QuickCreateKind } from '@/lib/navigation/commandPalette';
 import { isTypingTarget } from '@/lib/navigation/shortcuts';
 import { onPageTitle } from '@/lib/navigation/pageTitle';
 import { openAiPanel } from '@/lib/ai/context';
@@ -108,14 +108,16 @@ export function Header() {
     );
 }
 
+const NEW_ITEMS: { kind: QuickCreateKind; label: string; icon: typeof UserPlus; hint?: string }[] = [
+    { kind: 'lead', label: 'Лид', icon: UserPlus, hint: 'N' },
+    { kind: 'meeting', label: 'Уулзалт', icon: CalendarPlus },
+    { kind: 'task', label: 'Ажил', icon: ListPlus },
+];
+
 /** «+ Шинэ» — эрхтэй зүйлсээ л санал болгоно (сервер дахин шалгана). */
 function NewMenu() {
-    const { can, canWrite } = useModuleAccess();
-    const items = [
-        canWrite('leads') && { kind: 'lead' as const, label: 'Лид', icon: UserPlus, hint: 'N' },
-        canWrite('viewings') && { kind: 'meeting' as const, label: 'Уулзалт', icon: CalendarPlus },
-        can('dashboard') && { kind: 'task' as const, label: 'Ажил', icon: ListPlus },
-    ].filter((item): item is NonNullable<typeof item> & object => !!item);
+    const access = useModuleAccess();
+    const items = NEW_ITEMS.filter((item) => canQuickCreate(item.kind, access));
     if (!items.length) return null;
 
     return (

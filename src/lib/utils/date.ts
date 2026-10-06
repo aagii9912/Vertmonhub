@@ -107,6 +107,16 @@ export function ubLocalToIso(local: string): string | null {
     return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
+/**
+ * `ubLocalToIso`-ийн эсрэг: мөчийг Улаанбаатарын цагаар `datetime-local` утга («2026-10-05T14:30»)
+ * болгоно — хөтчийн цагийн бүсээс үл хамаарна. Буруу огноонд ''.
+ */
+export function ubLocalInputValue(d: Date | string): string {
+    const date = typeof d === 'string' ? new Date(d) : d;
+    if (Number.isNaN(date.getTime())) return '';
+    return new Date(date.getTime() + UB_OFFSET_MS).toISOString().slice(0, 16);
+}
+
 /** Зарим Chromium build mn-MN-ийг English рүү fallback хийдэг тул UI огноог ил нэрлэнэ. */
 export function formatWorkdayDate(date = new Date()): string {
     const { month, day } = ubParts(date);

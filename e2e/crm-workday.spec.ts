@@ -217,7 +217,7 @@ for (const compact of [false, true]) {
         expect(state.requests.find(r => r.path === '/api/dashboard/export/excel')?.shop).toBe(shopId);
 
         await page.goto('/dashboard/viewings');
-        await expect(page.getByRole('heading', { name: 'Уулзалтууд', exact: true })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Уулзалт', exact: true })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Ирсэн', exact: true }).first()).toBeVisible();
         await shot('viewings');
         const scheduled = state.viewings[0].scheduled_at;

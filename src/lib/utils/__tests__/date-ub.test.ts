@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ubStartOfDay, ubDayRange, ubDateStr, ubMonthRange, ubParts, ubLocalToIso } from '../date';
+import { ubStartOfDay, ubDayRange, ubDateStr, ubMonthRange, ubParts, ubLocalToIso, ubLocalInputValue } from '../date';
 
 /**
  * Улаанбаатарын өдрийн хил — TZ-ээс ХАМААРАХГҮЙ (UTC instant-аар) шалгана.
@@ -47,5 +47,21 @@ describe('Asia/Ulaanbaatar day boundaries', () => {
         expect(ubLocalToIso('')).toBeNull();
         expect(ubLocalToIso('2026-10-06')).toBeNull();
         expect(ubLocalToIso('2026-13-40T99:99')).toBeNull();
+    });
+
+    it('ubLocalInputValue — мөчийг хөтчийн бүсээс үл хамааран УБ-ийн datetime-local утга болгоно', () => {
+        const original = process.env.TZ;
+        try {
+            for (const tz of ['UTC', 'America/New_York', 'Asia/Ulaanbaatar']) {
+                process.env.TZ = tz;
+                expect(ubLocalInputValue(new Date('2026-10-05T23:30:00Z'))).toBe('2026-10-06T07:30'); // УБ өглөө = UTC өмнөх өдөр
+                expect(ubLocalInputValue('2026-10-06T01:30:15.000Z')).toBe('2026-10-06T09:30');
+                expect(ubLocalToIso(ubLocalInputValue('2027-01-10T03:00:00.000Z'))).toBe('2027-01-10T03:00:00.000Z');
+            }
+        } finally {
+            if (original === undefined) delete process.env.TZ;
+            else process.env.TZ = original;
+        }
+        expect(ubLocalInputValue('not a date')).toBe('');
     });
 });
