@@ -1,145 +1,185 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { Check, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Download, LayoutList, PanelRight, Plus, MoreHorizontal, GitBranch } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { ArrowDown, ArrowUp, Bookmark, BookmarkPlus, ChevronLeft, ChevronRight, Download, Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
-import { canAccessModuleDynamic } from '@/lib/rbac';
+import { useModuleAccess } from '@/hooks/useModuleAccess';
+import { useSavedLeadViews } from '@/hooks/useSavedLeadViews';
 import { formatRelativeDays } from '@/lib/utils/date';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
-import { useLeadsList, useLeadSummary, useLeadProjects, useLeadCategories, useManagers, useUpdateLead } from '@/hooks/useLeads';
-import { LEAD_VIEWS, LEAD_STATUSES, STATUS_META, SOURCES, SOURCE_LABEL, UNCATEGORIZED_KEY, UNCATEGORIZED_LABEL, categoryOptionLabel, sourceLabel, interestLabel, isAnonymousLead, leadDisplayName, type LeadView } from '@/lib/leads/labels';
-import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/Sheet';
-import { Skeleton } from '@/components/dashboard/v2/primitives';
-import { StatusPicker, ManagerPicker, CategoryPicker } from './pickers';
-import { LeadPanel, nextStep } from './LeadPanel';
-import { isLeadWorkQueue, LEAD_WORK_QUEUES } from '@/lib/leads/work-queue';
+import { useLeadsList, useLeadSummary, useLeadProjects, useLeadCategories, useManagers, useUpdateLead, type LeadCategoryRow, type LeadPatch, type LeadRow, type ManagerOption } from '@/hooks/useLeads';
+import {
+    LEAD_VIEWS, LEAD_STATUSES, STATUS_META, SOURCES, SOURCE_LABEL, UNCATEGORIZED_KEY, UNCATEGORIZED_LABEL,
+    categoryOptionLabel, sourceLabel, isAnonymousLead, leadDisplayName,
+} from '@/lib/leads/labels';
+import { LEAD_WORK_QUEUES, type LeadWorkQueue } from '@/lib/leads/work-queue';
+import {
+    emptyLeadFilters, hasLeadFilters, parseLeadFilters, serializeLeadFilters, viewQuery,
+    type LeadListFilters, type LeadSortKey,
+} from '@/lib/leads/list-params';
+import { describeNextStep } from '@/lib/leads/next-step';
+import { isTypingTarget } from '@/lib/navigation/shortcuts';
+import { dashboardDownload } from '@/lib/api/dashboardFetch';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { FilterBar, FilterChip } from '@/components/dashboard/FilterBar';
+import { Skeleton } from '@/components/dashboard/v2/primitives';
 import { Button } from '@/components/ui/Button';
-import { dashboardDownload } from '@/lib/api/dashboardFetch';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/Popover';
+import { StatusPicker, ManagerPicker, CategoryPicker } from './pickers';
+import { LeadCard } from './LeadCard';
+import { LeadsViewSwitch } from './LeadsViewSwitch';
 
 /**
- * «Лид» — v2. Нягт хүснэгт (A) эсвэл split view (B) — хэрэглэгч сольж болно,
- * сонголт хадгалагдана. Статус/менежер нүдэн дээр нь солигдоно, дэлгэрэнгүй
- * нь хуудас солихгүйгээр хажуугийн панелд.
+ * «Лид» — v3. Анхаарах 4 тоо нь шүүлтүүр, харагдац (Миний / Шинэ…) ба хадгалсан харагдац, жагсаалт ↔ Шатаар.
+ * Шүүлтүүр URL-д хадгалагдана (анхдагч үед URL цэвэр); мөр сонгоход баруун талд Харилцагчийн карт.
+ * ↑/↓ — дараагийн / өмнөх лид, Enter — карт нээх, Esc — хаах.
  */
 
-const MODE_KEY = 'vertmonhub_leads_mode';
 const PAGE_SIZE = 25;
-type Mode = 'table' | 'split';
-type SortKey = 'created_at' | 'last_contact_at' | 'customer_name' | 'next_followup_at';
 
 export function LeadsPage() {
-    const search = useSearchParams();
-    return <LeadsWorkspace key={search.get('queue') ?? 'all'} />;
+    return <LeadsWorkspace />;
+}
+
+/** URL-ийн шүүлтүүрийн түлхүүр (lead, new-гүй) — гаднаас өөрчлөгдсөнийг танихад. */
+function filterKeyOf(search: URLSearchParams): string {
+    return serializeLeadFilters(parseLeadFilters(search)).toString();
+}
+
+function leadsUrl(filters: LeadListFilters, leadId: string | null): string {
+    const sp = serializeLeadFilters(filters);
+    if (leadId) sp.set('lead', leadId);
+    const query = sp.toString();
+    return `/dashboard/leads${query ? `?${query}` : ''}`;
 }
 
 function LeadsWorkspace() {
-    const router = useRouter();
     const search = useSearchParams();
-    const queueParam = search.get('queue');
-    const queue = isLeadWorkQueue(queueParam) ? queueParam : undefined;
-    const { user } = useAuth();
-    const canWrite = !!user?.permissions && canAccessModuleDynamic(user.permissions, 'leads') && !!user.permissions.canWrite;
+    const { user, shop } = useAuth();
+    const { canWrite: canWriteModule } = useModuleAccess();
+    const canWrite = canWriteModule('leads');
     const canAssign = canWrite && user?.role !== 'sales_manager';
 
-    const [mode, setMode] = useState<Mode>('table');
-    const [view, setView] = useState<LeadView>('all');
-    const [status, setStatus] = useState('all');
-    const [source, setSource] = useState('all');
-    const [manager, setManager] = useState('all');
-    const [project, setProject] = useState(() => search.get('project') || 'all');
-    const [category, setCategory] = useState('all');
-    const [period, setPeriod] = useState('all');
-    const [qInput, setQInput] = useState('');
-    const [q, setQ] = useState('');
-    const [sort, setSort] = useState<SortKey>(queue === 'overdue' ? 'next_followup_at' : 'created_at');
-    const [dir, setDir] = useState<'asc' | 'desc'>(queue ? 'asc' : 'desc');
-    const [exporting, setExporting] = useState(false);
-    const [page, setPage] = useState(1);
-    const [selectedId, setSelectedId] = useState<string | null>(null);
+    // URL ↔ төлөв: өөрсдөө бичсэн URL-ийг дахин уншихгүй, гаднаас (⌘K, Өнөөдөр, хадгалсан харагдац) ирснийг авна.
+    const urlFilterKey = filterKeyOf(search);
+    const [filters, setFilters] = useState<LeadListFilters>(() => parseLeadFilters(search));
+    const [seenFilterKey, setSeenFilterKey] = useState(urlFilterKey);
+    if (urlFilterKey !== seenFilterKey) {
+        setSeenFilterKey(urlFilterKey);
+        if (urlFilterKey !== serializeLeadFilters(filters).toString()) setFilters(parseLeadFilters(search));
+    }
+    const urlLead = search.get('lead');
+    const [selectedId, setSelectedId] = useState<string | null>(urlLead);
+    const [seenLead, setSeenLead] = useState(urlLead);
+    if (urlLead !== seenLead) {
+        setSeenLead(urlLead);
+        setSelectedId(urlLead);
+    }
+    const [qInput, setQInput] = useState(filters.q);
     const [checked, setChecked] = useState<Set<string>>(new Set());
+    const [exporting, setExporting] = useState(false);
+    const rowsRef = useRef<HTMLTableSectionElement>(null);
 
-    // Хадгалсан горим + deep link (?lead=, ?new=1)
+    const apply = useCallback((next: LeadListFilters, leadId: string | null = selectedId) => {
+        setFilters(next);
+        setChecked(new Set());
+        window.history.replaceState(null, '', leadsUrl(next, leadId));
+    }, [selectedId]);
+    const patchFilters = (patch: Partial<LeadListFilters>) => apply({ ...filters, ...patch, page: patch.page ?? 1 });
+
+    const select = useCallback((id: string | null) => {
+        setSelectedId(id);
+        window.history.replaceState(null, '', leadsUrl(filters, id));
+    }, [filters]);
+
+    // Шинэ лидийн deep link (?new=1) — нэг удаа нээгээд URL-ээс хасна.
     useEffect(() => {
-        try {
-            const m = localStorage.getItem(MODE_KEY);
-            if (m === 'split' || m === 'table') setMode(m);
-        } catch { /* алгасна */ }
-        const lead = search.get('lead');
-        if (lead) setSelectedId(lead);
-        if (search.get('new') === '1') {
-            openQuickCreate('lead');
-            router.replace('/dashboard/leads');
-        }
+        if (search.get('new') !== '1') return;
+        openQuickCreate('lead');
+        window.history.replaceState(null, '', leadsUrl(parseLeadFilters(search), search.get('lead')));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const changeMode = (m: Mode) => {
-        setMode(m);
-        try { localStorage.setItem(MODE_KEY, m); } catch { /* алгасна */ }
-    };
-
-    // Хайлт — 300ms debounce
+    // Хайлт — 300ms debounce.
     useEffect(() => {
-        const t = setTimeout(() => { setQ(qInput.trim()); setPage(1); }, 300);
+        const q = qInput.trim();
+        if (q === filters.q) return;
+        const t = setTimeout(() => apply({ ...filters, q, page: 1 }), 300);
         return () => clearTimeout(t);
-    }, [qInput]);
+    }, [qInput, filters, apply]);
 
-    const params = useMemo(() => ({ view, queue, status, source, manager, project, category, period, q, sort, dir, page, pageSize: PAGE_SIZE }), [view, queue, status, source, manager, project, category, period, q, sort, dir, page]);
-    const { data, isLoading, isFetching, error, refetch } = useLeadsList(params);
+    const { data, isLoading, isFetching, error, refetch } = useLeadsList({
+        view: filters.view, queue: filters.queue, status: filters.status, source: filters.source, manager: filters.manager,
+        project: filters.project, category: filters.category, period: filters.period, q: filters.q, sort: filters.sort,
+        dir: filters.dir, page: filters.page, pageSize: PAGE_SIZE,
+    });
     const { data: summary, error: summaryError } = useLeadSummary();
     const { data: managers = [] } = useManagers();
     const { data: projects = [] } = useLeadProjects();
     const { data: categories = [] } = useLeadCategories();
     const update = useUpdateLead();
+    const savedViews = useSavedLeadViews();
 
     const leads = useMemo(() => data?.leads ?? [], [data]);
     const total = data?.pagination.total ?? 0;
     const totalPages = data?.pagination.totalPages ?? 1;
-    const projectNames = useMemo(() => Object.fromEntries(projects.map(p => [p.id, p.name])), [projects]);
-    const selectedLeads = leads.filter(l => checked.has(l.id));
-    const bulkManagers = managers.filter(m => selectedLeads.length === checked.size && selectedLeads.every(l => !!l.project_id && m.project_ids?.includes(l.project_id)));
-    const filterManagers = project === 'all' ? managers : managers.filter(m => m.project_ids?.includes(project));
+    const projectNames = useMemo(() => Object.fromEntries(projects.map((p) => [p.id, p.name])), [projects]);
+    const selectedLeads = leads.filter((l) => checked.has(l.id));
+    const bulkManagers = managers.filter((m) => selectedLeads.length === checked.size && selectedLeads.every((l) => !!l.project_id && m.project_ids?.includes(l.project_id)));
+    const filterManagers = filters.project === 'all' ? managers : managers.filter((m) => m.project_ids?.includes(filters.project));
+    const showCategory = categories.length > 0;
+    const open = !!selectedId;
 
-    const select = useCallback((id: string | null) => {
-        setSelectedId(id);
-        const sp = new URLSearchParams(search.toString());
-        if (id) sp.set('lead', id); else sp.delete('lead');
-        const url = `/dashboard/leads${sp.size ? `?${sp}` : ''}`;
-        window.history.replaceState(null, '', url);
-    }, [search]);
-
-    const patchLead = (id: string, patch: Parameters<typeof update.mutate>[0]['patch']) =>
+    const patchLead = (id: string, patch: LeadPatch) =>
         update.mutate({ id, patch }, { onError: (e) => toast.error(e instanceof Error ? e.message : 'Алдаа гарлаа') });
 
-    const toggleSort = (k: SortKey) => {
-        if (sort === k) setDir(dir === 'asc' ? 'desc' : 'asc');
-        else { setSort(k); setDir(k === 'customer_name' ? 'asc' : 'desc'); }
-        setPage(1);
+    const toggleSort = (key: LeadSortKey) => {
+        const dir = filters.sort === key ? (filters.dir === 'asc' ? 'desc' : 'asc') : key === 'customer_name' || key === 'next_followup_at' ? 'asc' : 'desc';
+        patchFilters({ sort: key, dir });
     };
 
-    // Keyboard: ↑/↓ сонголт, Esc хаах
+    const chooseQueue = (key: LeadWorkQueue) => {
+        setQInput('');
+        // Ижил тоог дахин дарвал анхаарах шүүлтүүр арилна; бусад шүүлтүүр цэвэрлэгдэж, төсөл хэвээр.
+        apply(filters.queue === key ? { ...emptyLeadFilters(), project: filters.project } : { ...emptyLeadFilters(key), project: filters.project }, null);
+        setSelectedId(null);
+    };
+
+    const resetFilters = () => {
+        setQInput('');
+        apply(emptyLeadFilters());
+    };
+
+    const applySaved = (query: string) => {
+        const next = parseLeadFilters(new URLSearchParams(query));
+        setQInput(next.q);
+        apply(next);
+    };
+
+    // Гараар: ↑/↓ дараагийн лид (карт дагана), Enter нээх, Esc хаах.
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
-            const el = document.activeElement as HTMLElement | null;
-            if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
+            if (isTypingTarget(e.target) || e.metaKey || e.ctrlKey || e.altKey) return;
+            if (document.querySelector('[role="dialog"], [role="menu"], [role="listbox"]')) return;
             if (e.key === 'Escape' && selectedId) { select(null); return; }
             if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && leads.length) {
                 e.preventDefault();
                 const idx = leads.findIndex((l) => l.id === selectedId);
-                const next = e.key === 'ArrowDown' ? Math.min(leads.length - 1, idx + 1) : Math.max(0, idx - 1);
+                const next = e.key === 'ArrowDown' ? Math.min(leads.length - 1, idx + 1) : Math.max(0, idx < 0 ? 0 : idx - 1);
                 select(leads[next].id);
+                const row = rowsRef.current?.querySelector<HTMLElement>(`[data-lead-id="${leads[next].id}"] [data-row-open]`);
+                row?.focus({ preventScroll: true });
+                row?.closest('tr')?.scrollIntoView({ block: 'nearest' });
             }
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
     }, [leads, selectedId, select]);
 
-    const bulk = async (patch: Parameters<typeof update.mutate>[0]['patch']) => {
+    const bulk = async (patch: LeadPatch) => {
         const ids = [...checked];
         try {
             await Promise.all(ids.map((id) => update.mutateAsync({ id, patch })));
@@ -150,232 +190,267 @@ function LeadsWorkspace() {
         }
     };
 
-    const showSplit = mode === 'split';
-    // Ангилалгүй төсөлд (Тохиргоонд үүсгээгүй) баганыг харуулахгүй.
-    const showCategory = categories.length > 0;
-    const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
-    const to = Math.min(page * PAGE_SIZE, total);
-    const chooseQueue = (key: typeof LEAD_WORK_QUEUES[number]['key']) => {
-        setView('all'); setStatus('all'); setSource('all'); setManager('all'); setCategory('all'); setPeriod('all'); setQInput(''); setQ(''); setPage(1); setChecked(new Set()); setSelectedId(null);
-        setSort(key === 'overdue' ? 'next_followup_at' : 'created_at'); setDir('asc');
-        router.replace(`/dashboard/leads?queue=${key}`);
-    };
-    const filtered = !!queue || view !== 'all' || status !== 'all' || source !== 'all' || manager !== 'all' || project !== 'all' || category !== 'all' || period !== 'all' || !!qInput;
-    function resetFilters() {
-        setView('all'); setStatus('all'); setSource('all'); setManager('all'); setProject('all'); setCategory('all'); setPeriod('all'); setQInput(''); setQ(''); setPage(1); setChecked(new Set());
-        if (queue) router.replace('/dashboard/leads');
-    }
     async function download() {
         setExporting(true);
         try { await dashboardDownload('/api/dashboard/export/excel?type=leads', 'Vertmon-leads.xlsx'); }
-        catch (error) { toast.error(error instanceof Error ? error.message : 'Файл татаж чадсангүй.'); }
+        catch (e) { toast.error(e instanceof Error ? e.message : 'Файл татаж чадсангүй.'); }
         finally { setExporting(false); }
     }
 
-    return (
-        <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-5">
-            <PageHeader title="Лидүүд" subtitle="Холбогдох харилцагчаа сонгоод, үр дүн ба дараагийн алхмаа бүртгээрэй."
-                className="mb-0" primaryAction={canWrite && <Button onClick={() => openQuickCreate('lead')}><Plus />Шинэ лид</Button>}
-                secondaryActions={<><Button href="/dashboard/leads/pipeline" variant="secondary"><GitBranch />Pipeline</Button><Button variant="ghost" isLoading={exporting} onClick={() => void download()} title="Байгууллагын бүх лидийг татна"><Download />Excel · бүгд</Button></>} />
-            <section aria-label="Анхаарах лидүүд" className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-                {LEAD_WORK_QUEUES.map(item => <button key={item.key} type="button" aria-pressed={queue === item.key}
-                    onClick={() => chooseQueue(item.key)} title={item.help}
-                    className={cn('flex min-h-18 flex-col items-start justify-between gap-1 rounded-2xl border p-3 sm:min-h-24 sm:gap-2 sm:p-4 text-left transition-colors focus-ring', queue === item.key ? 'border-foreground bg-surface-2' : 'border-transparent bg-surface-2 hover:bg-surface-3')}>
-                    <span className="text-xs text-fg-2">{item.label}</span>
-                    <span className="num text-2xl font-semibold tracking-tight">{summaryError ? '—' : summary?.queues?.[item.key] ?? '…'}</span>
-                </button>)}
-            </section>
-            {queue && <p role="status" className="text-sm text-fg-2">{LEAD_WORK_QUEUES.find(item => item.key === queue)?.help}</p>}
-            {error && <div role="alert" className="rounded-xl border border-status-danger/30 bg-status-danger-soft p-4 text-sm text-status-danger">Лидүүдийг уншиж чадсангүй. <button type="button" onClick={() => void refetch()} className="ml-2 min-h-9 underline focus-ring">Дахин оролдох</button></div>}
-            {summaryError && <p role="status" className="text-xs text-muted-foreground">Анхаарах лидийн тоог уншиж чадсангүй.</p>}
+    const filtered = hasLeadFilters(filters) || !!qInput;
+    const from = total === 0 ? 0 : (filters.page - 1) * PAGE_SIZE + 1;
+    const to = Math.min(filters.page * PAGE_SIZE, total);
+    const subtitle = [shop?.name, typeof summary?.active === 'number' ? `${summary.active} идэвхтэй` : null].filter(Boolean).join(' · ');
+    const listQuery = serializeLeadFilters({ ...filters, page: 1 }).toString();
 
-            {/* Таб + хуудасны үйлдэл */}
-            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-                {LEAD_VIEWS.map((v) => {
-                    const n = summary?.[v.key];
-                    const active = view === v.key;
+    return (
+        <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-5">
+            <PageHeader
+                title="Лид"
+                subtitle={subtitle || undefined}
+                className="mb-0"
+                primaryAction={canWrite && <Button onClick={() => openQuickCreate('lead')}><Plus />Лид нэмэх</Button>}
+                secondaryActions={<Button variant="ghost" isLoading={exporting} onClick={() => void download()} title="Төслийн бүх лидийг Excel-ээр татна"><Download />Excel · бүгд</Button>}
+            />
+
+            <section aria-label="Анхаарах лидүүд" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                {LEAD_WORK_QUEUES.map((item) => {
+                    const active = filters.queue === item.key;
+                    const value = summaryError ? '—' : summary?.queues?.[item.key];
+                    const urgent = item.key === 'overdue' && typeof value === 'number' && value > 0;
                     return (
-                        <button
-                            key={v.key}
-                            type="button"
-                            aria-pressed={view === v.key}
-                            onClick={() => { setView(v.key); setPage(1); setChecked(new Set()); }}
-                            className={cn('flex min-h-11 shrink-0 items-center gap-2 rounded-lg px-3 text-[13px] font-medium transition-colors focus-ring', active ? 'bg-surface-2 text-foreground shadow-[inset_0_0_0_1px_var(--border)]' : 'text-fg-2 hover:bg-surface-2 hover:text-foreground')}
-                        >
-                            {v.label}
-                            {typeof n === 'number' && <span className={cn('mono-label text-[11px]', active ? 'text-brand-strong' : 'text-muted-foreground')}>{n}</span>}
+                        <button key={item.key} type="button" aria-pressed={active} onClick={() => chooseQueue(item.key)} title={item.help}
+                            className={cn('flex min-h-[88px] flex-col justify-between gap-2 rounded-xl border bg-surface p-4 text-left transition-colors',
+                                active ? 'border-brand bg-brand-soft' : 'border-border hover:border-border-strong hover:bg-surface-2')}>
+                            <span className="flex items-center gap-2 text-sm text-fg-2">
+                                <span aria-hidden className={cn('size-1.5 rounded-full', urgent ? 'bg-status-danger' : value ? 'bg-status-pending' : 'bg-border-strong')} />
+                                {item.label}
+                            </span>
+                            <span className={cn('num text-2xl font-semibold tracking-tight', active ? 'text-brand-strong' : 'text-foreground')}>{value ?? '…'}</span>
                         </button>
                     );
                 })}
-                <div className="ml-auto flex shrink-0 items-center gap-1 rounded-lg bg-surface-2 p-1">
-                    <button type="button" onClick={() => changeMode('table')} aria-pressed={mode === 'table'} className={cn('flex size-8 items-center justify-center rounded-md focus-ring', mode === 'table' ? 'bg-surface text-foreground shadow-xs' : 'text-muted-foreground')} aria-label="Хүснэгт" title="Хүснэгт"><LayoutList className="size-4" /></button>
-                    <button type="button" onClick={() => changeMode('split')} aria-pressed={mode === 'split'} className={cn('flex size-8 items-center justify-center rounded-md focus-ring', mode === 'split' ? 'bg-surface text-foreground shadow-xs' : 'text-muted-foreground')} aria-label="Хажуугийн самбартай" title="Хажуугийн самбартай"><PanelRight className="size-4" /></button>
+            </section>
+            {filters.queue && <p role="status" className="-mt-2 text-sm text-fg-2">{LEAD_WORK_QUEUES.find((item) => item.key === filters.queue)?.help}</p>}
+            {summaryError && <p role="status" className="-mt-2 text-xs text-muted-foreground">Анхаарах лидийн тоог уншиж чадсангүй.</p>}
+
+            {/* Харагдац + хадгалсан харагдац + Жагсаалт ↔ Шатаар */}
+            <div className="flex flex-wrap items-center gap-2">
+                <div role="group" aria-label="Харагдац" className="flex items-center gap-1 rounded-xl bg-surface-2 p-1">
+                    {LEAD_VIEWS.map((v) => {
+                        const n = summary?.[v.key];
+                        const active = filters.view === v.key;
+                        return (
+                            <button key={v.key} type="button" aria-pressed={active} onClick={() => patchFilters({ view: v.key })}
+                                className={cn('flex h-8 items-center gap-2 rounded-lg px-3 text-sm font-medium transition-colors', active ? 'bg-surface text-foreground shadow-[inset_0_0_0_1px_var(--border)]' : 'text-fg-2 hover:text-foreground')}>
+                                {v.label}
+                                {typeof n === 'number' && <span className={cn('num text-xs', active ? 'text-brand-strong' : 'text-muted-foreground')}>{n}</span>}
+                            </button>
+                        );
+                    })}
                 </div>
+                {savedViews.views.map((v) => {
+                    const active = v.query === viewQuery(filters);
+                    return (
+                        <span key={v.id} className={cn('group inline-flex h-10 items-center rounded-xl border pl-3 pr-1 text-sm', active ? 'border-brand bg-brand-soft text-brand-strong' : 'border-border text-fg-2 hover:border-border-strong')}>
+                            <button type="button" aria-pressed={active} onClick={() => applySaved(v.query)} className="inline-flex items-center gap-1.5 font-medium">
+                                <Bookmark className="size-3.5" />{v.name}
+                            </button>
+                            <button type="button" aria-label={`«${v.name}» харагдацыг устгах`} onClick={() => savedViews.remove(v.id)} className="ml-1 flex size-7 items-center justify-center rounded-lg text-muted-foreground opacity-60 hover:bg-surface-2 hover:text-foreground group-hover:opacity-100">
+                                <X className="size-3.5" />
+                            </button>
+                        </span>
+                    );
+                })}
+                {savedViews.available && hasLeadFilters(filters) && !savedViews.views.some((v) => v.query === viewQuery(filters)) && (
+                    <SaveViewButton onSave={(name) => {
+                        if (savedViews.save(name, viewQuery(filters))) toast.success(`«${name.trim()}» харагдац хадгалагдлаа`);
+                        else toast.error('Харагдацыг хадгалж чадсангүй (хөтчийн хадгалах сан хаалттай байж магадгүй).');
+                    }} />
+                )}
+                <LeadsViewSwitch current="list" query={listQuery} className="ml-auto" />
             </div>
 
-            <FilterBar className="mb-0" search={{ value: qInput, onChange: setQInput, label: 'Лидийг нэр, утсаар хайх', placeholder: 'Нэр, утас, имэйл эсвэл «нэргүй»…' }} showClear={filtered} onClear={resetFilters}>
-                {projects.length > 1 && <FilterChip value={project} onChange={(v) => { setProject(v); setManager('all'); setPage(1); setChecked(new Set()); select(null); }} label="Төсөл" options={projects.map((p) => [p.id, p.name])} />}
-                <FilterChip value={status} onChange={(v) => { setStatus(v); setPage(1); }} label="Статус" options={LEAD_STATUSES.map((s) => [s, STATUS_META[s].label])} />
-                <FilterChip value={source} onChange={(v) => { setSource(v); setPage(1); }} label="Эх үүсвэр" options={SOURCES.map((s) => [s, SOURCE_LABEL[s]])} />
-                {categories.length > 0 && <FilterChip value={category} onChange={(v) => { setCategory(v); setPage(1); setChecked(new Set()); }} label="Ангилал" options={[[UNCATEGORIZED_KEY, UNCATEGORIZED_LABEL], ...categories.map((c): [string, string] => [c.id, categoryOptionLabel(c)])]} />}
-                {filterManagers.length > 0 && <FilterChip value={manager} onChange={(v) => { setManager(v); setPage(1); }} label="Менежер" options={filterManagers.map((m) => [m.name, m.name])} />}
-                <FilterChip value={period} onChange={(v) => { setPeriod(v); setPage(1); }} label="Огноо" options={[['week', '7 хоног'], ['month', '30 хоног'], ['quarter', '90 хоног'], ['year', '1 жил']]} />
+            <FilterBar className="mb-0" search={{ value: qInput, onChange: setQInput, label: 'Лидийг нэр, утсаар хайх', placeholder: 'Нэр, утас, имэйл эсвэл «нэргүй»…' }} showClear={filtered} onClear={resetFilters}
+                rightSlot={<span className="num whitespace-nowrap text-xs text-muted-foreground">{isLoading ? '…' : `${total} мөр`}</span>}>
+                {projects.length > 1 && <FilterChip value={filters.project} onChange={(v) => { patchFilters({ project: v, manager: 'all' }); select(null); }} label="Төсөл" options={projects.map((p) => [p.id, p.name])} />}
+                <FilterChip value={filters.status} onChange={(v) => patchFilters({ status: v })} label="Статус" options={LEAD_STATUSES.map((s) => [s, STATUS_META[s].label])} />
+                <FilterChip value={filters.source} onChange={(v) => patchFilters({ source: v })} label="Эх үүсвэр" options={SOURCES.map((s) => [s, SOURCE_LABEL[s]])} />
+                {showCategory && <FilterChip value={filters.category} onChange={(v) => patchFilters({ category: v })} label="Ангилал" options={[[UNCATEGORIZED_KEY, UNCATEGORIZED_LABEL], ...categories.map((c): [string, string] => [c.id, categoryOptionLabel(c)])]} />}
+                {filterManagers.length > 0 && <FilterChip value={filters.manager} onChange={(v) => patchFilters({ manager: v })} label="Менежер" options={filterManagers.map((m) => [m.name, m.name])} />}
+                <FilterChip value={filters.period} onChange={(v) => patchFilters({ period: v })} label="Огноо" options={[['week', '7 хоног'], ['month', '30 хоног'], ['quarter', '90 хоног'], ['year', '1 жил']]} />
             </FilterBar>
 
-            {/* Bulk */}
             {checked.size > 0 && canWrite && (
-                <div className="flex flex-wrap items-center gap-2 rounded-md border border-brand/30 bg-brand-soft px-3 py-2 text-[12.5px]">
+                <div role="toolbar" aria-label="Сонгосон лидэд" className="flex flex-wrap items-center gap-2 rounded-xl border border-brand/40 bg-brand-soft px-4 py-2 text-sm">
                     <span className="font-medium text-brand-strong">{checked.size} сонгосон</span>
-                    <span className="text-muted-foreground">·</span>
                     <span className="text-fg-2">Статус:</span>
                     <StatusPicker value="" onChange={(s, reason) => void bulk({ status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} />
                     {canAssign && bulkManagers.length > 0 && (<><span className="text-fg-2">Менежер:</span><ManagerPicker value={null} options={bulkManagers} onChange={(n) => void bulk({ sales_manager_name: n })} /></>)}
                     {categories.some((c) => c.is_active) && (<><span className="text-fg-2">Ангилал:</span><CategoryPicker value={undefined} options={categories} onChange={(id) => void bulk({ category_id: id })} /></>)}
-                    <button type="button" onClick={() => setChecked(new Set())} className="ml-auto text-[12px] text-muted-foreground hover:text-foreground">Цуцлах</button>
+                    <Button size="sm" variant="ghost" className="ml-auto" onClick={() => setChecked(new Set())}>Цуцлах</Button>
                 </div>
             )}
 
-            {/* Агуулга */}
-            <div className={cn('grid gap-3', showSplit && 'lg:grid-cols-[minmax(0,1fr)_minmax(400px,480px)]')}>
-                <div className="min-w-0 overflow-hidden rounded-2xl border border-border bg-surface">
-                    {!error && (
+            <div className={cn('grid items-start gap-4', open && 'xl:grid-cols-[minmax(0,1fr)_420px]')}>
+                <div className="min-w-0 overflow-hidden rounded-xl border border-border bg-surface">
+                    {error ? (
+                        <div role="alert" className="flex flex-col items-start gap-3 p-6 text-sm text-status-danger">
+                            Лидүүдийг уншиж чадсангүй.
+                            <Button size="sm" variant="secondary" onClick={() => void refetch()}>Дахин оролдох</Button>
+                        </div>
+                    ) : (
                         <div className="overflow-x-auto">
-                            <table className="w-full text-[13px]">
+                            <table className="w-full text-sm">
+                                <caption className="sr-only">Лидийн жагсаалт</caption>
                                 <thead>
-                                    <tr className="h-11 border-b border-border bg-surface-2/60 text-xs font-medium tracking-[0.03em] text-muted-foreground">
-                                        <th className="w-9 px-2"><CheckBox label="Бүгдийг сонгох" checked={leads.length > 0 && leads.every((l) => checked.has(l.id))} onChange={(v) => setChecked(v ? new Set(leads.map((l) => l.id)) : new Set())} /></th>
-                                        <Th onClick={() => toggleSort('customer_name')} active={sort === 'customer_name'} dir={dir}>Нэр</Th>
-                                        <th className="px-2 text-left font-medium">Утас</th>
-                                        <th className="px-2 text-left font-medium">Статус</th>
-                                        {!showSplit && showCategory && <th className="px-2 text-left font-medium">Ангилал</th>}
-                                        {!showSplit && <th className="px-2 text-left font-medium">Эх үүсвэр</th>}
-                                        <th className="px-2 text-left font-medium">Сонирхол</th>
-                                        {!showSplit && <th className="px-2 text-left font-medium">Менежер</th>}
-                                        {!showSplit && <Th onClick={() => toggleSort('next_followup_at')} active={sort === 'next_followup_at'} dir={dir}>Дараагийн алхам</Th>}
-                                        <Th onClick={() => toggleSort('last_contact_at')} active={sort === 'last_contact_at'} dir={dir}>Сүүлд холбогдсон</Th>
-                                        <th className="w-9" />
+                                    <tr className="h-10 border-b border-border bg-surface-2/60 text-xs text-muted-foreground">
+                                        <th scope="col" className="w-10 pl-4 pr-1 text-left">
+                                            <RowCheck label="Бүгдийг сонгох" checked={leads.length > 0 && leads.every((l) => checked.has(l.id))} onChange={(v) => setChecked(v ? new Set(leads.map((l) => l.id)) : new Set())} />
+                                        </th>
+                                        <SortHeader label="Харилцагч" sortKey="customer_name" filters={filters} onSort={toggleSort} />
+                                        <th scope="col" className="px-3 text-left font-medium">Шат</th>
+                                        <SortHeader label="Дараагийн алхам" sortKey="next_followup_at" filters={filters} onSort={toggleSort} />
+                                        <th scope="col" className="px-3 text-left font-medium">Хариуцагч</th>
+                                        {!open && <th scope="col" className="px-3 text-left font-medium">Эх үүсвэр</th>}
+                                        {!open && showCategory && <th scope="col" className="px-3 text-left font-medium">Ангилал</th>}
+                                        {!open && <SortHeader label="Сүүлд холбогдсон" sortKey="last_contact_at" filters={filters} onSort={toggleSort} />}
                                     </tr>
                                 </thead>
-                                <tbody>
+                                <tbody ref={rowsRef}>
                                     {isLoading && Array.from({ length: 8 }).map((_, i) => (
-                                        <tr key={i} className="h-10 border-b border-border"><td colSpan={11} className="px-2"><Skeleton className="h-5" /></td></tr>
+                                        <tr key={i} className="h-14 border-b border-border last:border-b-0"><td colSpan={8} className="px-4"><Skeleton className="h-5" /></td></tr>
                                     ))}
-                                    {!error && !isLoading && leads.length === 0 && (
-                                        <tr><td colSpan={11}>
-                                            <div className="flex flex-col items-center gap-3 px-4 py-12 text-center">
-                                                <div className="text-[13.5px] font-medium text-foreground">Лид олдсонгүй</div>
-                                                <p className="max-w-xs text-[12.5px] text-muted-foreground">Шүүлтүүрээ өөрчлөх эсвэл шинэ лид бүртгээрэй.</p>
-                                                {canWrite && <button type="button" onClick={() => openQuickCreate('lead')} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-hover focus-ring"><Plus className="h-4 w-4" /> Шинэ лид</button>}
+                                    {!isLoading && leads.length === 0 && (
+                                        <tr><td colSpan={8}>
+                                            <div className="flex flex-col items-center gap-3 px-4 py-14 text-center">
+                                                <p className="text-sm font-medium text-foreground">{filtered ? 'Энэ шүүлтүүрт лид алга' : 'Лид бүртгэгдээгүй байна'}</p>
+                                                <p className="max-w-sm text-sm text-muted-foreground">{filtered ? 'Шүүлтүүрээ өөрчилж эсвэл цэвэрлэж үзнэ үү.' : 'Анхны лидээ бүртгээд дараагийн алхмаа товлоорой.'}</p>
+                                                {filtered ? <Button size="sm" variant="secondary" onClick={resetFilters}>Шүүлтүүр цэвэрлэх</Button>
+                                                    : canWrite && <Button size="sm" onClick={() => openQuickCreate('lead')}><Plus />Лид нэмэх</Button>}
                                             </div>
                                         </td></tr>
                                     )}
-                                    {leads.map((l) => {
-                                        const sel = l.id === selectedId;
-                                        const overdue = !!l.next_followup_at && new Date(l.next_followup_at).getTime() < Date.now() && !['closed_won', 'closed_lost'].includes(l.status);
-                                        return (
-                                            <tr
-                                                key={l.id}
-                                                role="button"
-                                                tabIndex={0}
-                                                onClick={() => select(l.id)}
-                                                onKeyDown={(e) => {
-                                                    if (e.target !== e.currentTarget) return;
-                                                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(l.id); }
-                                                }}
-                                                className={cn('h-14 cursor-pointer border-b border-border transition-colors last:border-b-0 focus-ring', sel ? 'bg-brand-soft/60 shadow-[inset_2px_0_0_var(--brand)]' : 'hover:bg-surface-2/70', isFetching && 'opacity-90')}
-                                            >
-                                                <td className="px-2" onClick={(e) => e.stopPropagation()}>
-                                                    <CheckBox label="Сонгох" checked={checked.has(l.id)} onChange={(v) => setChecked((prev) => { const n = new Set(prev); if (v) n.add(l.id); else n.delete(l.id); return n; })} />
-                                                </td>
-                                                <td className="px-2"><span className={cn('block max-w-[220px] truncate font-medium', sel ? 'text-brand-strong' : isAnonymousLead(l) ? 'text-muted-foreground' : 'text-foreground')}>{leadDisplayName(l)}</span>{(projects.length > 1 || !l.project_id) && <span className="block max-w-[220px] truncate text-xs text-muted-foreground">{l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй'}</span>}</td>
-                                                <td className="mono-label px-2 text-fg-2">{l.customer_phone || '—'}</td>
-                                                <td className="px-2"><StatusPicker value={l.status} disabled={!canWrite} onChange={(s, reason) => patchLead(l.id, { status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} /></td>
-                                                {!showSplit && showCategory && <td className="px-2"><CategoryPicker value={l.category_id ?? null} options={categories} disabled={!canWrite} onChange={(id) => patchLead(l.id, { category_id: id })} /></td>}
-                                                {!showSplit && <td className="px-2 text-fg-2">{sourceLabel(l.source)}</td>}
-                                                <td className="px-2 text-fg-2">{interestLabel(l)}</td>
-                                                {!showSplit && <td className="px-2"><ManagerPicker value={l.sales_manager_name ?? null} options={managers} projectId={l.project_id ?? null} disabled={!canAssign} onChange={(n) => patchLead(l.id, { sales_manager_name: n })} /></td>}
-                                                {!showSplit && <td className={cn('px-2', overdue ? 'font-medium text-status-danger' : 'text-fg-2')}>{nextStep(l)}</td>}
-                                                <td className="mono-label px-2 text-fg-2">{l.last_contact_at ? formatRelativeDays(l.last_contact_at) : 'Бүртгээгүй'}</td>
-                                                <td className="px-2 text-muted-foreground"><MoreHorizontal className="h-4 w-4" /></td>
-                                            </tr>
-                                        );
-                                    })}
+                                    {leads.map((l) => (
+                                        <LeadRowView key={l.id} lead={l} selected={l.id === selectedId} checked={checked.has(l.id)} open={open}
+                                            canWrite={canWrite} canAssign={canAssign} showCategory={showCategory} managers={managers} categories={categories}
+                                            projectName={projects.length > 1 || !l.project_id ? (l.project_id ? projectNames[l.project_id] || 'Төсөл' : 'Төсөл тодорхойгүй') : null}
+                                            fetching={isFetching}
+                                            onSelect={() => select(l.id === selectedId ? null : l.id)}
+                                            onCheck={(v) => setChecked((prev) => { const n = new Set(prev); if (v) n.add(l.id); else n.delete(l.id); return n; })}
+                                            onPatch={(patch) => patchLead(l.id, patch)} />
+                                    ))}
                                 </tbody>
                             </table>
                         </div>
                     )}
-
-                    {/* Хуудаслалт */}
-                    <div className="flex items-center gap-2 border-t border-border px-3 py-2 text-[12px] text-muted-foreground">
-                        <span className="mono-label">{from}–{to} / {total}</span>
-                        <button type="button" disabled={page <= 1} onClick={() => setPage((p) => p - 1)} className="flex size-11 items-center justify-center rounded-lg focus-ring md:size-9 hover:bg-surface-2 disabled:opacity-40" aria-label="Өмнөх"><ChevronLeft className="h-4 w-4" /></button>
-                        <button type="button" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)} className="flex size-11 items-center justify-center rounded-lg focus-ring md:size-9 hover:bg-surface-2 disabled:opacity-40" aria-label="Дараах"><ChevronRight className="h-4 w-4" /></button>
-                        <span className="ml-auto">Хуудсанд {PAGE_SIZE}</span>
+                    <div className="flex items-center gap-2 border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
+                        <span className="num">{from}–{to} / {total}</span>
+                        <Button variant="ghost" size="iconSm" disabled={filters.page <= 1} onClick={() => patchFilters({ page: filters.page - 1 })} aria-label="Өмнөх хуудас"><ChevronLeft /></Button>
+                        <Button variant="ghost" size="iconSm" disabled={filters.page >= totalPages} onClick={() => patchFilters({ page: filters.page + 1 })} aria-label="Дараах хуудас"><ChevronRight /></Button>
+                        <span className="ml-auto hidden lg:inline">↑ ↓ — лид солих · Enter — нээх · Esc — хаах</span>
                     </div>
                 </div>
 
-                {showSplit && (
-                    <aside aria-label="Сонгосон лид" className="sticky top-[calc(var(--header-h)+1rem)] h-[calc(100dvh-var(--header-h)-2rem)] min-h-0 self-start overflow-hidden rounded-2xl border border-border bg-surface">
-                        {selectedId ? (
-                            <LeadPanel key={selectedId} leadId={selectedId} canWrite={canWrite} onClose={() => select(null)} onOpenLead={select} />
-                        ) : (
-                            <div className="flex h-full min-h-[300px] flex-col items-center justify-center gap-2 p-6 text-center">
-                                <PanelRight className="h-6 w-6 text-muted-foreground" />
-                                <div className="text-[13px] font-medium text-foreground">Лид сонгоно уу</div>
-                                <p className="text-[12px] text-muted-foreground">Жагсаалтаас мөр сонгоход дэлгэрэнгүй энд гарна. ↑ ↓ товчоор шилжинэ.</p>
-                            </div>
-                        )}
+                {open && selectedId && (
+                    <aside aria-label="Харилцагчийн карт"
+                        className="fixed inset-y-0 right-0 z-30 mt-[var(--header-h)] w-[min(440px,100vw)] overflow-hidden border-l border-border bg-surface shadow-xl xl:sticky xl:top-[calc(var(--header-h)+1.5rem)] xl:right-auto xl:bottom-auto xl:z-auto xl:mt-0 xl:h-[calc(100dvh-var(--header-h)-3rem)] xl:w-auto xl:rounded-xl xl:border xl:shadow-none">
+                        <LeadCard key={selectedId} leadId={selectedId} canWrite={canWrite} onClose={() => select(null)} onOpenLead={select} />
                     </aside>
                 )}
             </div>
-
-            {/* Хүснэгтийн горим: панел нь Sheet */}
-            {!showSplit && (
-                <Sheet open={!!selectedId} onOpenChange={(o) => !o && select(null)}>
-                    <SheetContent
-                        side="right"
-                        showCloseButton={false}
-                        className="w-full p-0 sm:max-w-[520px]"
-                        // Нэрийн inline засварт Escape зөвхөн засварыг цуцална, панелийг хаахгүй (Radix capture-аар түрүүлж сонсдог).
-                        onEscapeKeyDown={(e) => { if ((e.target as HTMLElement | null)?.closest?.('[data-inline-edit]')) e.preventDefault(); }}
-                    >
-                        <SheetTitle className="sr-only">Лидийн дэлгэрэнгүй</SheetTitle>
-                        <SheetDescription className="sr-only">Сонгосон лидийн мэдээлэл болон дараагийн үйлдлүүд.</SheetDescription>
-                        {selectedId && <LeadPanel key={selectedId} leadId={selectedId} canWrite={canWrite} onClose={() => select(null)} onOpenLead={select} />}
-                    </SheetContent>
-                </Sheet>
-            )}
         </div>
     );
 }
 
 /* ------------------------------------------------------------------ */
 
-function CheckBox({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+function LeadRowView({ lead, selected, checked, open, canWrite, canAssign, showCategory, managers, categories, projectName, fetching, onSelect, onCheck, onPatch }: {
+    lead: LeadRow;
+    selected: boolean;
+    checked: boolean;
+    open: boolean;
+    canWrite: boolean;
+    canAssign: boolean;
+    showCategory: boolean;
+    managers: ManagerOption[];
+    categories: LeadCategoryRow[];
+    projectName: string | null;
+    fetching: boolean;
+    onSelect: () => void;
+    onCheck: (v: boolean) => void;
+    onPatch: (patch: LeadPatch) => void;
+}) {
+    const step = describeNextStep(lead);
     return (
-        <button
-            type="button"
-            role="checkbox"
-            aria-checked={checked}
-            aria-label={label}
-            onClick={() => onChange(!checked)}
-            className={cn(
-                'flex h-3.5 w-3.5 items-center justify-center rounded-[3px] border transition-colors focus-ring',
-                checked ? 'border-brand bg-brand text-brand-fg' : 'border-border-strong bg-surface hover:border-brand',
+        <tr data-lead-id={lead.id} aria-selected={selected} onClick={onSelect}
+            className={cn('h-14 cursor-pointer border-b border-border transition-colors last:border-b-0', selected ? 'bg-brand-soft/60 shadow-[inset_3px_0_0_var(--brand)]' : 'hover:bg-surface-2/70', fetching && 'opacity-90')}>
+            <td className="pl-4 pr-1" onClick={(e) => e.stopPropagation()}>
+                <RowCheck label={`${leadDisplayName(lead)} сонгох`} checked={checked} onChange={onCheck} />
+            </td>
+            <td className="max-w-[260px] px-3">
+                <button type="button" data-row-open onClick={(e) => { e.stopPropagation(); onSelect(); }} aria-expanded={selected}
+                    className={cn('block max-w-full truncate rounded-sm text-left font-medium', selected ? 'text-brand-strong' : isAnonymousLead(lead) ? 'text-muted-foreground' : 'text-foreground')}>
+                    {leadDisplayName(lead)}
+                </button>
+                <span className="num block truncate text-xs text-muted-foreground">{lead.customer_phone || 'Утасгүй'}{projectName ? ` · ${projectName}` : ''}</span>
+            </td>
+            <td className="px-3" onClick={(e) => e.stopPropagation()}>
+                <StatusPicker value={lead.status} disabled={!canWrite} onChange={(s, reason) => onPatch({ status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} />
+            </td>
+            <td className={cn('whitespace-nowrap px-3', step.overdue ? 'font-medium text-status-danger' : step.kind === 'none' ? 'text-muted-foreground' : 'text-fg-2')}>
+                {step.kind === 'closed' ? step.action : `${step.action} · ${step.when}`}
+            </td>
+            <td className="px-3" onClick={(e) => e.stopPropagation()}>
+                <ManagerPicker value={lead.sales_manager_name ?? null} options={managers} projectId={lead.project_id ?? null} disabled={!canAssign} onChange={(n) => onPatch({ sales_manager_name: n })} />
+            </td>
+            {!open && <td className="whitespace-nowrap px-3 text-fg-2">{sourceLabel(lead.source)}</td>}
+            {!open && showCategory && (
+                <td className="px-3" onClick={(e) => e.stopPropagation()}>
+                    <CategoryPicker value={lead.category_id ?? null} options={categories} disabled={!canWrite} onChange={(id) => onPatch({ category_id: id })} />
+                </td>
             )}
-        >
-            {checked && <Check className="h-2.5 w-2.5" strokeWidth={3} />}
-        </button>
+            {!open && <td className="whitespace-nowrap px-3 text-fg-2">{lead.last_contact_at ? formatRelativeDays(lead.last_contact_at) : 'Бүртгээгүй'}</td>}
+        </tr>
     );
 }
 
-function Th({ children, onClick, active, dir }: { children: React.ReactNode; onClick: () => void; active: boolean; dir: 'asc' | 'desc' }) {
+function SortHeader({ label, sortKey, filters, onSort }: { label: string; sortKey: LeadSortKey; filters: LeadListFilters; onSort: (key: LeadSortKey) => void }) {
+    const active = filters.sort === sortKey;
     return (
-        <th className="px-2 text-left font-medium">
-            <button type="button" onClick={onClick} className={cn('inline-flex items-center gap-1 hover:text-foreground', active && 'text-foreground')}>
-                {children}
-                {active && (dir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)}
+        <th scope="col" className="px-3 text-left font-medium" aria-sort={active ? (filters.dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+            <button type="button" onClick={() => onSort(sortKey)} className={cn('inline-flex items-center gap-1 hover:text-foreground', active && 'text-foreground')}>
+                {label}
+                {active && (filters.dir === 'asc' ? <ArrowUp className="size-3" /> : <ArrowDown className="size-3" />)}
             </button>
         </th>
+    );
+}
+
+function RowCheck({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+    return (
+        <input type="checkbox" aria-label={label} checked={checked} onChange={(e) => onChange(e.target.checked)} onClick={(e) => e.stopPropagation()}
+            className="size-4 cursor-pointer rounded border-control accent-[var(--brand)]" />
+    );
+}
+
+function SaveViewButton({ onSave }: { onSave: (name: string) => void }) {
+    const [open, setOpen] = useState(false);
+    const [name, setName] = useState('');
+    return (
+        <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setName(''); }}>
+            <PopoverTrigger asChild>
+                <Button size="sm" variant="ghost"><BookmarkPlus />Харагдац хадгалах</Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-72 p-3">
+                <form onSubmit={(e) => { e.preventDefault(); if (!name.trim()) return; onSave(name); setOpen(false); setName(''); }} className="flex flex-col gap-2">
+                    <label className="text-xs font-medium text-fg-2" htmlFor="lead-view-name">Харагдацын нэр</label>
+                    <input id="lead-view-name" autoFocus value={name} maxLength={40} onChange={(e) => setName(e.target.value)} placeholder="Ж: Facebook-ийн шинэ лид"
+                        className="h-9 rounded-lg border border-control bg-surface px-3 text-sm text-foreground placeholder:text-muted-foreground" />
+                    <p className="text-xs text-muted-foreground">Одоогийн шүүлтүүр энэ төхөөрөмж дээр хадгалагдана.</p>
+                    <Button type="submit" size="sm" disabled={!name.trim()}>Хадгалах</Button>
+                </form>
+            </PopoverContent>
+        </Popover>
     );
 }

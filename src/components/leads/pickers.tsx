@@ -4,7 +4,8 @@ import React, { useState } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/Popover';
-import { Pill, Avatar } from '@/components/dashboard/v2/primitives';
+import { Pill } from '@/components/dashboard/v2/primitives';
+import { Avatar } from '@/components/ui/Avatar';
 import {
     LEAD_STATUSES, STATUS_META, UNCATEGORIZED_LABEL, categoryOptionLabel, categoryTone, statusLabel, statusTone,
     type LeadCategoryOption, type LeadCategoryTone,
@@ -126,7 +127,7 @@ export function ManagerPicker({
 
     const label = (
         <span className="inline-flex min-w-0 items-center gap-2">
-            {value ? <Avatar name={value} /> : <span className="inline-block h-5 w-5 rounded-full border border-dashed border-border-strong" />}
+            {value ? <Avatar name={value} /> : <span className="inline-block size-6 rounded-full border border-dashed border-border-strong" />}
             <span className={cn('truncate text-[12.5px]', value ? 'text-foreground' : 'text-muted-foreground')}>{value || 'Хуваарилаагүй'}</span>
             {canPick && <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />}
         </span>

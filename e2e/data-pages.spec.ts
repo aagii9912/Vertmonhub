@@ -92,7 +92,7 @@ test('харилцагчийн уншилт унавал алдаа харуул
 test('pipeline болон санал гомдлын уншилт унавал алдаа харуулж, дахин оролдоход сэргэнэ', async ({ page }) => {
     const state = await setup(page);
     await page.goto('/dashboard/leads/pipeline');
-    await expect(page.getByText('Лийд татахад алдаа', { exact: true })).toBeVisible();
+    await expect(page.getByText('Лид татахад алдаа', { exact: true })).toBeVisible();
     state.failPipeline = false;
     await page.getByRole('button', { name: 'Дахин оролдох', exact: true }).click();
     await expect(page.getByText('Энхжин', { exact: true }).first()).toBeVisible();
@@ -114,13 +114,13 @@ test('pipeline тоо, таамгийг бүх лидээр харуулж, ка
     state.truncated = true;
     await page.goto('/dashboard/leads/pipeline');
     await expect(page.getByText('Картын жагсаалт бүрэн биш: 2,345 лидээс хамгийн сүүлд бүртгэгдсэн 1 лидийн карт харагдаж байна', { exact: true })).toBeVisible();
-    await expect(page.getByText('2,345 лийд • Чирж зөөнө үү', { exact: true })).toBeVisible();
+    await expect(page.getByText('2,345 лид · картыг чирж шат солино, дарж нээнэ', { exact: true })).toBeVisible();
     const newColumn = page.locator('[data-stage="new"]');
     const contacted = page.locator('[data-stage="contacted"]');
     await expect(newColumn.getByText('1,234', { exact: true })).toBeVisible();
     await expect(newColumn.getByText('1 / 1,234 карт харагдаж байна', { exact: true })).toBeVisible();
     await expect(page.locator('[data-stage="closed_won"]').getByText('0 / 1,000 карт харагдаж байна', { exact: true })).toBeVisible();
-    await expect(page.getByText('42 зогссон лийд', { exact: true })).toBeVisible();
+    await expect(page.getByText('42 зогссон лид', { exact: true })).toBeVisible();
 
     // Картыг «Холбогдсон» багана руу чирнэ (dnd-kit pointer sensor: 6px-ээс хойш идэвхжинэ).
     const card = newColumn.getByText('Энхжин', { exact: true });

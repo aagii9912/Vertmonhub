@@ -35,9 +35,12 @@ export function useViewings(params: { range: ViewingRange; status?: string; mana
     if (params.status && params.status !== 'all') sp.set('status', params.status);
     if (params.manager && params.manager !== 'all') sp.set('manager', params.manager);
     if (params.lead) sp.set('lead', params.lead);
+    const query = sp.toString();
     return useQuery<ViewingsResult>({
-        queryKey: ['viewings', shopId, user?.id, params, user?.role],
-        queryFn: () => dashboardJson<ViewingsResult>(`/api/dashboard/viewings?${sp.toString()}`),
+        // Түлхүүр = хүсэлтийн query: ижил шүүлтүүртэй дуудлагууд (Уулзалт хуудасны жагсаалт ба
+        // 7 хоногийн мөр) нэг хүсэлт хуваалцана.
+        queryKey: ['viewings', shopId, user?.id, query, user?.role],
+        queryFn: () => dashboardJson<ViewingsResult>(`/api/dashboard/viewings?${query}`),
         enabled: !!shopId,
         staleTime: 20_000,
         placeholderData: (prev, previousQuery) => previousQuery && previousQuery.queryKey[1] === shopId && previousQuery.queryKey[2] === user?.id && previousQuery.queryKey[4] === user?.role ? prev : undefined,

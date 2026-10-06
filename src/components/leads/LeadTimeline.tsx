@@ -8,7 +8,8 @@ import { formatShortDate, formatTime } from '@/lib/utils/date';
 import { ACTIVITY_LABEL, TIMELINE_CONFLICT_LABEL, sourceLabel, statusLabel, statusTone } from '@/lib/leads/labels';
 import type { LeadTimeline as LeadTimelineData, TimelineEvent, TimelineManager } from '@/lib/leads/timeline';
 import type { LeadDetail } from '@/hooks/useLeads';
-import { Avatar, Pill } from '@/components/dashboard/v2/primitives';
+import { Pill } from '@/components/dashboard/v2/primitives';
+import { Avatar } from '@/components/ui/Avatar';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
 
 /**
@@ -40,8 +41,8 @@ function ManagerTimeline({ timeline, onOpenLead }: { timeline: LeadTimelineData;
             {timeline.conflicts.length > 0 && (
                 <div className="flex flex-col gap-2" aria-label="Менежерүүдийн зөрчил">
                     {timeline.conflicts.map((c, i) => (
-                        <Alert key={`${c.kind}-${i}`} variant="warning" role="status" aria-live="polite" className="p-2.5 text-[12.5px]">
-                            <AlertTitle className="text-[12.5px]">{TIMELINE_CONFLICT_LABEL[c.kind] ?? c.kind}</AlertTitle>
+                        <Alert key={`${c.kind}-${i}`} variant="warning" role="status" aria-live="polite" className="p-2.5 text-[13px]">
+                            <AlertTitle className="text-[13px]">{TIMELINE_CONFLICT_LABEL[c.kind] ?? c.kind}</AlertTitle>
                             <AlertDescription className="text-[12px]">{c.message}</AlertDescription>
                         </Alert>
                     ))}
@@ -57,7 +58,7 @@ function ManagerTimeline({ timeline, onOpenLead }: { timeline: LeadTimelineData;
                         {duplicates.leads.slice(0, 5).map((d) => {
                             const body = (
                                 <>
-                                    <span className={cn('min-w-0 truncate text-[12.5px]', d.anonymous ? 'text-muted-foreground' : 'text-foreground')}>{d.name}</span>
+                                    <span className={cn('min-w-0 truncate text-[13px]', d.anonymous ? 'text-muted-foreground' : 'text-foreground')}>{d.name}</span>
                                     <span className="truncate text-[12px] text-fg-2">{d.sales_manager_name ?? 'Хуваарилаагүй'}</span>
                                     <Pill tone={statusTone(d.status)} className="ml-auto">{statusLabel(d.status)}</Pill>
                                 </>
@@ -97,8 +98,8 @@ function ManagerTimeline({ timeline, onOpenLead }: { timeline: LeadTimelineData;
             )}
 
             <div>
-                <div className="mb-2 flex items-center gap-2 text-[12.5px] font-semibold text-foreground">
-                    Түүх <span className="mono-label text-[11px] font-normal text-muted-foreground">{events.length}</span>
+                <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold text-foreground">
+                    Түүх <span className="num text-xs font-normal text-muted-foreground">{events.length}</span>
                 </div>
                 <ol className="relative flex flex-col gap-3 border-l border-border pl-4">
                     {events.map((e, i) => <EventItem key={e.id} event={e} latest={i === 0} />)}
@@ -114,15 +115,15 @@ function ManagerRow({ manager: m }: { manager: TimelineManager }) {
             <Avatar name={m.name} className="mt-0.5" />
             <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="truncate text-[12.5px] font-medium text-foreground">{m.name}</span>
+                    <span className="truncate text-[13px] font-medium text-foreground">{m.name}</span>
                     {m.isOwner && <Pill tone="info">Хариуцагч</Pill>}
                     {!m.isActive && <Pill tone="neutral">Идэвхгүй</Pill>}
                 </div>
-                <div className="mono-label text-[11px] text-muted-foreground">
+                <div className="num text-xs text-muted-foreground">
                     {m.firstAt ? `Анх ${formatShortDate(m.firstAt)} · Сүүлд ${formatShortDate(m.lastAt ?? m.firstAt)}` : 'Холбоо бүртгээгүй'}
                 </div>
                 {m.lastQuote && (
-                    <div className="text-[11.5px] text-fg-2">
+                    <div className="text-xs text-fg-2">
                         Сүүлийн санал: <span className="num font-medium text-foreground">{formatMNT(m.lastQuote.amount)}</span>
                         {m.lastQuote.unitLabel ? ` · ${m.lastQuote.unitLabel}` : ''}
                     </div>
@@ -140,8 +141,8 @@ function ManagerRow({ manager: m }: { manager: TimelineManager }) {
 function Count({ label, value }: { label: string; value: number }) {
     return (
         <div>
-            <dt className="text-[10.5px] text-muted-foreground">{label}</dt>
-            <dd className="num text-[12.5px] font-medium text-foreground">{value}</dd>
+            <dt className="text-xs text-muted-foreground">{label}</dt>
+            <dd className="num text-[13px] font-medium text-foreground">{value}</dd>
         </div>
     );
 }
@@ -149,7 +150,7 @@ function Count({ label, value }: { label: string; value: number }) {
 function FilterChip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
     return (
         <button type="button" aria-pressed={active} onClick={onClick}
-            className={cn('h-6 rounded-md border px-2 text-[11.5px] focus-ring', active ? 'border-brand bg-brand-soft text-brand-strong' : 'border-border text-fg-2 hover:border-border-strong')}>
+            className={cn('h-6 rounded-md border px-2 text-xs focus-ring', active ? 'border-brand bg-brand-soft text-brand-strong' : 'border-border text-fg-2 hover:border-border-strong')}>
             {children}
         </button>
     );
@@ -161,14 +162,14 @@ function EventItem({ event: e, latest }: { event: TimelineEvent; latest: boolean
         return (
             <li className="relative">
                 <span className="absolute -left-[21px] top-1.5 h-2 w-2 rounded-full border border-border-strong bg-surface" />
-                <div className="flex items-center gap-2 text-[11.5px] text-fg-2">
+                <div className="flex items-center gap-2 text-xs text-fg-2">
                     <span className="font-medium text-foreground">Хариуцагч:</span>
                     <span>{e.ownerChange.from ?? '—'}</span>
                     <ArrowRight className="h-3 w-3" aria-hidden /><span className="sr-only">→</span>
                     <span className="font-medium text-foreground">{e.ownerChange.to ?? '—'}</span>
                     <span className="h-px flex-1 bg-border" />
                 </div>
-                <div className="mono-label text-[11px] text-muted-foreground">{when}{e.actor ? ` · ${e.actor}` : ''}</div>
+                <div className="num text-xs text-muted-foreground">{when}{e.actor ? ` · ${e.actor}` : ''}</div>
             </li>
         );
     }
@@ -176,8 +177,8 @@ function EventItem({ event: e, latest }: { event: TimelineEvent; latest: boolean
         <li className="relative">
             <span className={cn('absolute -left-[21px] top-1.5 h-2 w-2 rounded-full', latest ? 'bg-brand' : 'bg-border-strong')} />
             <div className="flex flex-wrap items-center gap-1.5">
-                <span className="mono-label text-[11px] text-muted-foreground">{when}</span>
-                {e.actor && <span className="text-[11.5px] font-medium text-fg-2">{e.actor}</span>}
+                <span className="num text-xs text-muted-foreground">{when}</span>
+                {e.actor && <span className="text-xs font-medium text-fg-2">{e.actor}</span>}
                 {e.offOwner && <Pill tone="pending">Хариуцагч биш</Pill>}
             </div>
             {e.kind === 'quote' && e.amount !== null ? (
@@ -189,7 +190,7 @@ function EventItem({ event: e, latest }: { event: TimelineEvent; latest: boolean
             )}
             {e.detail && <div className="text-[12px] text-muted-foreground">{e.detail}</div>}
             {e.kind === 'meeting' && e.scheduledAt && (
-                <div className="mono-label text-[11px] text-muted-foreground">Товлосон: {formatShortDate(e.scheduledAt)} {formatTime(e.scheduledAt)}</div>
+                <div className="num text-xs text-muted-foreground">Товлосон: {formatShortDate(e.scheduledAt)} {formatTime(e.scheduledAt)}</div>
             )}
         </li>
     );
@@ -213,12 +214,12 @@ function LegacyTimeline({ detail }: { detail: LeadDetail }) {
     }, [detail]);
     return (
         <div>
-            <div className="mb-2 flex items-center gap-2 text-[12.5px] font-semibold text-foreground">Түүх <span className="mono-label text-[11px] font-normal text-muted-foreground">{items.length}</span></div>
+            <div className="mb-2 flex items-center gap-2 text-[13px] font-semibold text-foreground">Түүх <span className="num text-xs font-normal text-muted-foreground">{items.length}</span></div>
             <ol className="relative flex flex-col gap-3 border-l border-border pl-4">
                 {items.map((t, i) => (
                     <li key={`${t.kind}-${t.at}-${i}`} className="relative">
                         <span className={cn('absolute -left-[21px] top-1.5 h-2 w-2 rounded-full', i === 0 ? 'bg-brand' : 'bg-border-strong')} />
-                        <div className="mono-label text-[11px] text-muted-foreground">{formatShortDate(t.at)} {t.kind === 'meeting' ? '' : formatTime(t.at)}{t.by ? ` · ${t.by}` : ''}</div>
+                        <div className="num text-xs text-muted-foreground">{formatShortDate(t.at)} {t.kind === 'meeting' ? '' : formatTime(t.at)}{t.by ? ` · ${t.by}` : ''}</div>
                         <div className="text-[13px] text-foreground">{t.title}</div>
                         {t.sub && <div className="text-[12px] text-muted-foreground">{t.sub}</div>}
                     </li>

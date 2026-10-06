@@ -487,10 +487,10 @@ body {
     outline: 2px solid var(--focus) !important;
     outline-offset: 2px !important;
   }
-  /* Composer-ийн гадна хүрээ нь textarea-ийн keyboard focus-ийг харуулна.
+  /* Бичих хайрцаг (AI composer, лидийн үр дүн): гадна хүрээ нь textarea-ийн keyboard focus-ийг харуулна.
      Base layer дотор байснаар дээрх important дүрмийг зөв дарна. */
-  .ai-composer:has(textarea:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
-  .ai-composer textarea:focus-visible { outline: none !important; }
+  :is(.ai-composer, .composer-box):has(textarea:focus-visible) { outline: 2px solid var(--focus); outline-offset: 2px; }
+  :is(.ai-composer, .composer-box) textarea:focus-visible { outline: none !important; }
   /* ⌘K: хайлтын талбар цонхны дээд мөр өөрөө — дотор нь давхар хүрээ зурахгүй.
      tabindex="-1" (цэс, цонх, main) зөвхөн программаар focus авдаг тул хүрээгүй. */
   [cmdk-input]:focus-visible { outline: none !important; }

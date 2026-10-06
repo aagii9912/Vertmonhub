@@ -93,6 +93,22 @@ async function setup(page: Page, readonly = false, role: 'sales_manager' | 'admi
                 && (url.searchParams.get('queue') !== 'overdue' || !!lead.next_followup_at));
             return reply({ leads: matches, pagination: { page: 1, pageSize: 25, total: matches.length, totalPages: 1, hasMore: false } });
         }
+        if (path.startsWith('/api/dashboard/leads/') && path.endsWith('/customer')) {
+            const lead = visibleLeads().find(lead => path === `/api/dashboard/leads/${lead.id}/customer`);
+            if (!lead) return reply({ error: 'Лид олдсонгүй' }, 404);
+            // Харилцагчийн карт: утсаар таарсан харилцагч, мессеж, гэрээ (sales_manager-т санал гомдлын эрх байхгүй).
+            return reply({
+                access: { customers: true, inbox: true, contracts: !readonly, serviceLogs: role === 'admin' },
+                customer: { id: `customer-${lead.id}`, name: lead.customer_name, phone: lead.customer_phone, email: null, channel: 'messenger', message_count: 2, last_contact_at: `${today}T02:00:00Z`, created_at: `${today}T01:00:00Z`, duplicates: 0 },
+                messages: { customerId: `customer-${lead.id}`, channel: 'messenger', lastCustomerAt: `${today}T01:30:00Z`, items: [
+                    { from: 'customer', text: '3 өрөөний үнэ хэд вэ?', at: `${today}T01:30:00Z` },
+                    { from: 'staff', text: 'Сайн байна уу, 286 сая төгрөг.', at: `${today}T01:35:00Z` },
+                ] },
+                contracts: readonly ? [] : contracts.filter(contract => contract.customer_phone === lead.customer_phone).map(contract => ({ ...contract, matched_by: 'phone' })),
+                serviceLogs: [],
+                partial: [],
+            });
+        }
         if (path.startsWith('/api/dashboard/leads/')) {
             const lead = visibleLeads().find(lead => path.endsWith(lead.id));
             if (!lead) return reply({ error: 'Лид олдсонгүй' }, 404);
@@ -173,7 +189,7 @@ for (const compact of [false, true]) {
             await page.screenshot({ path: `output/workday/${compact ? 'compact' : 'desktop'}-${name}.png`, fullPage: true, animations: 'disabled' });
         };
         await page.goto('/dashboard/leads');
-        await expect(page.getByRole('heading', { name: 'Лидүүд', exact: true })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Лид', exact: true })).toBeVisible();
         await expect(page.getByText('Б. Энхжин', { exact: true })).toBeVisible();
         await shot('leads');
         await page.getByRole('searchbox', { name: 'Лидийг нэр, утсаар хайх' }).fill('Энхжин');
@@ -184,19 +200,24 @@ for (const compact of [false, true]) {
         await expect.poll(() => state.requests.some(r => r.path === '/api/dashboard/leads' && r.search.includes('queue=overdue') && r.search.includes('sort=next_followup_at') && r.search.includes('dir=asc'))).toBe(true);
         await page.getByRole('button', { name: 'Цэвэрлэх', exact: true }).click();
         await page.getByText('Б. Энхжин', { exact: true }).click();
-        await expect(page.getByRole('dialog', { name: 'Лидийн дэлгэрэнгүй' })).toBeVisible();
-        const leadPanel = page.getByRole('dialog', { name: 'Лидийн дэлгэрэнгүй' });
+        await expect(page.getByRole('complementary', { name: 'Харилцагчийн карт' })).toBeVisible();
+        const leadPanel = page.getByRole('complementary', { name: 'Харилцагчийн карт' });
+        // Тойм: мессеж, гэрээ нэг картанд; менежерүүдийн түүх «Түүх» табд.
+        await expect(leadPanel.getByText('3 өрөөний үнэ хэд вэ?')).toBeVisible();
+        await leadPanel.getByRole('tab', { name: /Гэрээ/ }).click();
+        await expect(leadPanel.getByText('VM-2026-001 · B-1201', { exact: true })).toBeVisible();
+        await leadPanel.getByRole('tab', { name: /Түүх/ }).click();
         await expect(leadPanel.getByRole('region', { name: 'Холбогдсон менежерүүд' })).toBeVisible();
         await expect(leadPanel.getByText('Үнийн санал зөрүүтэй (B-1201): Сараа 280,000,000₮ · Номин 286,000,000₮', { exact: true })).toBeVisible();
         await expect(leadPanel.getByRole('button', { name: 'Үнийн санал', exact: true })).toBeVisible();
-        await page.getByRole('dialog', { name: 'Лидийн дэлгэрэнгүй' }).getByRole('button', { name: 'Хаах', exact: true }).click();
+        await page.getByRole('complementary', { name: 'Харилцагчийн карт' }).getByRole('button', { name: 'Хаах', exact: true }).click();
         const download = page.waitForEvent('download');
         await page.getByRole('button', { name: 'Excel · бүгд', exact: true }).click();
         expect((await download).suggestedFilename()).toBe('Vertmon-leads.xlsx');
         expect(state.requests.find(r => r.path === '/api/dashboard/export/excel')?.shop).toBe(shopId);
 
         await page.goto('/dashboard/viewings');
-        await expect(page.getByRole('heading', { name: 'Уулзалтууд', exact: true })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Уулзалт', exact: true })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Ирсэн', exact: true }).first()).toBeVisible();
         await shot('viewings');
         const scheduled = state.viewings[0].scheduled_at;
@@ -330,7 +351,7 @@ test('менежер өөрийн төслийн зөвхөн өөрт оноо�
     // Ганц төсөлтэй ажлын орчинд төслийн шүүлтүүр шаардлагагүй.
     await expect(page.getByLabel('Төсөл', { exact: true })).toHaveCount(0);
     await page.getByText('Б. Энхжин', { exact: true }).click();
-    const panel = page.getByRole('dialog', { name: 'Лидийн дэлгэрэнгүй' });
+    const panel = page.getByRole('complementary', { name: 'Харилцагчийн карт' });
     await expect(panel).toBeVisible();
     await expect(panel.getByLabel('Лидийн төсөл')).toHaveCount(0);
     await expect(panel.getByRole('button', { name: 'Менежер солих', exact: true })).toHaveCount(0);
@@ -344,7 +365,7 @@ test('админ төслийг ил тод сонгоод зөв төслийн
     const state = await setup(page, false, 'admin');
     await page.goto('/dashboard/leads');
     await page.getByText('Д. Болормаа', { exact: true }).click();
-    const panel = page.getByRole('dialog', { name: 'Лидийн дэлгэрэнгүй' });
+    const panel = page.getByRole('complementary', { name: 'Харилцагчийн карт' });
     await expect(panel.getByLabel('Лидийн төсөл')).toHaveValue('');
     await expect(panel.getByRole('button', { name: 'Менежер солих', exact: true })).toHaveCount(0);
     await panel.getByLabel('Лидийн төсөл').selectOption(elysiumId);
@@ -369,7 +390,7 @@ test('лидийг ангиллаар шүүж, дэлгэрэнгүйгээс �
     await expect(page.getByText('Б. Энхжин', { exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Цэвэрлэх', exact: true }).click();
     await page.getByText('Г. Тэмүүлэн', { exact: true }).click();
-    const panel = page.getByRole('dialog', { name: 'Лидийн дэлгэрэнгүй' });
+    const panel = page.getByRole('complementary', { name: 'Харилцагчийн карт' });
     await panel.getByRole('button', { name: 'Ангилал солих', exact: true }).click();
     const picker = page.getByRole('listbox', { name: 'Лидийн ангилал', exact: true });
     // Архивласан ангиллыг шинээр санал болгохгүй.

@@ -3,11 +3,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { AlertTriangle, ChevronRight, Loader2, X } from 'lucide-react';
+import { AlertTriangle, CalendarPlus, ChevronRight, ListPlus, Loader2, UserPlus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { dashboardFetch, dashboardMutate } from '@/lib/api/dashboardFetch';
-import { onQuickCreate, type QuickCreateKind } from '@/lib/navigation/commandPalette';
+import { canQuickCreate, onQuickCreate, type QuickCreateKind } from '@/lib/navigation/commandPalette';
 import {
     ANONYMOUS_LEAD_CONTACT, ANONYMOUS_LEAD_LABEL, INTEREST_CHIPS, LEAD_NAME_OR_ANONYMOUS, SOURCES, SOURCE_LABEL, UNCATEGORIZED_LABEL,
     hasAnonymousLeadContact, leadDisplayName, normalizeLeadName,
@@ -16,20 +16,34 @@ import { enqueue, isNetworkError } from '@/lib/offline/outbox';
 import { REMIND_OPTIONS, TaskCreateSchema } from '@/lib/tasks/input';
 import { ubLocalToIso } from '@/lib/utils/date';
 import { useAuth } from '@/contexts/AuthContext';
+import { useModuleAccess } from '@/hooks/useModuleAccess';
 import { useLeadCategories, useLeadProjects } from '@/hooks/useLeads';
-import { Checkbox } from '@/components/ui/Checkbox';
 import { useCreateTask } from '@/hooks/useMyTasks';
+import { Button } from '@/components/ui/Button';
+import { Checkbox } from '@/components/ui/Checkbox';
+import { Sheet, SheetContent, SheetTitle } from '@/components/ui/Sheet';
 
 /**
- * Түргэн бүртгэл — «Шинэ» товч, N товчлуур, гар утасны «+» бүгд үүнийг нээнэ.
+ * Түргэн бүртгэл — «+ Шинэ», N товчлуур, ⌘K бүгд үүнийг нээнэ (баруун талын 440px sheet).
+ * Дээд талын солигч: Лид / Уулзалт / Ажил. Уулзалт энд форм биш — Уулзалт хуудасны товлох
+ * цонх руу шилжинэ (?new=1). Таниагүй төрөл (жишээ нь гэрээ) лидийн формоор нээгдэнэ.
  *
- * Гол зарчим: хуудас солихгүй. Төсөл, нэр, утас, сонирхлоо сонгоно,
- * бусад нь «Нэмэлт мэдээлэл» доор хумигдана. Утас давхцвал ХАДГАЛАХААС ӨМНӨ
- * анхааруулна — v1-д давхардсан лид чимээгүй үүсдэг байсан.
- * Нэрээ хэлээгүй харилцагчийг «Нэр тодорхойгүй»-гээр нэргүй хадгална; тэр үед
- * утас (эсвэл и-мэйл) заавал — сервер `resolveLeadIdentity` мөн адил шалгана.
- * «Ажил нэмэх» (kind = 'task') нь хувийн ажлын форм — «Миний ажлууд»-тай нэг API.
+ * Лид: хуудас солихгүй. Төсөл, нэр, утас, сонирхлоо сонгоно, бусад нь «Нэмэлт мэдээлэл» доор
+ * хумигдана. Утас давхцвал ХАДГАЛАХААС ӨМНӨ анхааруулна — v1-д давхардсан лид чимээгүй үүсдэг байсан.
+ * Нэрээ хэлээгүй харилцагчийг «Нэр тодорхойгүй»-гээр нэргүй хадгална; тэр үед утас (эсвэл
+ * и-мэйл) заавал — сервер `resolveLeadIdentity` мөн адил шалгана.
+ * Ажил (kind = 'task'): хувийн ажлын форм — «Миний ажлууд»-тай нэг API.
  */
+
+type FormKind = 'lead' | 'task';
+
+const KINDS: { kind: QuickCreateKind; label: string; icon: typeof UserPlus }[] = [
+    { kind: 'lead', label: 'Лид', icon: UserPlus },
+    { kind: 'meeting', label: 'Уулзалт', icon: CalendarPlus },
+    { kind: 'task', label: 'Ажил', icon: ListPlus },
+];
+
+const MEETING_HREF = '/dashboard/viewings?new=1';
 
 interface DuplicateLead {
     id: string;
@@ -39,54 +53,82 @@ interface DuplicateLead {
 }
 
 export function QuickCreateSheet() {
+    const router = useRouter();
+    const access = useModuleAccess();
     const [open, setOpen] = useState(false);
-    const [kind, setKind] = useState<QuickCreateKind>('lead');
+    const [kind, setKind] = useState<FormKind>('lead');
+    const close = useCallback(() => setOpen(false), []);
+    // Уулзалт — Уулзалт хуудасны товлох цонх (тэр хуудсан дээр байсан ч дахин нээгдэнэ).
+    const openMeeting = useCallback(() => {
+        setOpen(false);
+        router.push(MEETING_HREF);
+    }, [router]);
 
-    useEffect(() => {
-        return onQuickCreate((k) => {
-            setKind(k);
-            setOpen(true);
-        });
-    }, []);
+    useEffect(() => onQuickCreate((requested) => {
+        if (requested === 'meeting') {
+            openMeeting();
+            return;
+        }
+        setKind(requested === 'task' ? 'task' : 'lead');
+        setOpen(true);
+    }), [openMeeting]);
 
-    useEffect(() => {
-        if (!open) return;
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') setOpen(false);
-        };
-        window.addEventListener('keydown', onKey);
-        return () => window.removeEventListener('keydown', onKey);
-    }, [open]);
-
-    if (!open) return null;
+    // «+ Шинэ»-тэй ижил эрхийн дүрэм; нээгдсэн төрөл үргэлж харагдана.
+    const options = KINDS.filter((o) => o.kind === kind || canQuickCreate(o.kind, access));
 
     return (
-        <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label="Түргэн бүртгэл">
-            <button
-                type="button"
-                aria-label="Хаах"
-                onClick={() => setOpen(false)}
-                className="absolute inset-0 bg-scrim animate-in fade-in duration-150"
-            />
-            <div
-                className={cn(
-                    'absolute inset-y-0 right-0 flex w-[440px] flex-col border-l border-border bg-surface shadow-xl',
-                    'animate-in slide-in-from-right duration-200',
+        <Sheet open={open} onOpenChange={setOpen}>
+            <SheetContent side="right" showCloseButton={false} aria-describedby={undefined} className="w-full gap-0 p-0 sm:max-w-[440px]">
+                <SheetTitle className="sr-only">Түргэн бүртгэл</SheetTitle>
+                <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border px-5">
+                    <h2 className="text-base font-semibold text-foreground">{kind === 'task' ? 'Шинэ ажил' : 'Шинэ лид'}</h2>
+                    <div className="ml-auto flex items-center gap-2">
+                        <kbd className="mono-label rounded border border-border bg-surface-2 px-1.5 text-xs leading-5 text-muted-foreground">Esc</kbd>
+                        <Button variant="ghost" size="iconSm" onClick={close} aria-label="Хаах"><X /></Button>
+                    </div>
+                </header>
+                {options.length > 1 && (
+                    <div className="shrink-0 border-b border-border px-5 py-3">
+                        <div role="group" aria-label="Бүртгэлийн төрөл" className="flex items-center gap-1 rounded-xl bg-surface-2 p-1">
+                            {options.map(({ kind: option, label, icon: Icon }) => {
+                                const active = option === kind;
+                                const meeting = option === 'meeting';
+                                return (
+                                    <button
+                                        key={option}
+                                        type="button"
+                                        // Уулзалт нь солих биш, шилжих үйлдэл — дарагдсан төлөвгүй.
+                                        aria-pressed={meeting ? undefined : active}
+                                        title={meeting ? 'Уулзалт хуудсан дээр товлоно' : undefined}
+                                        onClick={() => (meeting ? openMeeting() : setKind(option === 'task' ? 'task' : 'lead'))}
+                                        className={cn(
+                                            'flex h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-3 text-sm font-medium transition-colors',
+                                            active ? 'bg-surface text-foreground shadow-[inset_0_0_0_1px_var(--border)]' : 'text-fg-2 hover:text-foreground',
+                                        )}
+                                    >
+                                        <Icon className="size-4" />
+                                        {label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
                 )}
-            >
-                {kind === 'meeting' ? (
-                    <MeetingRedirect onClose={() => setOpen(false)} />
-                ) : kind === 'task' ? (
-                    <TaskForm onClose={() => setOpen(false)} />
-                ) : (
-                    <LeadForm onClose={() => setOpen(false)} />
-                )}
-            </div>
-        </div>
+                {kind === 'task' ? <TaskForm onClose={close} /> : <LeadForm onClose={close} />}
+            </SheetContent>
+        </Sheet>
     );
 }
 
 /* ------------------------------------------------------------------ */
+
+const inputCls = 'h-9 w-full rounded-lg border border-control bg-surface px-3 text-sm text-foreground placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:bg-surface-2';
+const selectCls = 'h-9 w-full rounded-lg border border-control bg-surface px-2.5 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-60';
+const textareaCls = 'w-full resize-none rounded-lg border border-control bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground';
+const chipCls = (active: boolean) => cn(
+    'inline-flex h-8 items-center rounded-lg border px-2.5 text-xs font-medium transition-colors',
+    active ? 'border-brand bg-brand-soft text-brand-strong' : 'border-border bg-surface text-fg-2 hover:border-border-strong hover:text-foreground',
+);
 
 function LeadForm({ onClose }: { onClose: () => void }) {
     const { user, shop } = useAuth();
@@ -243,31 +285,13 @@ function LeadForm({ onClose }: { onClose: () => void }) {
 
     return (
         <>
-            <header className="flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-5">
-                <h2 className="text-[16px] font-semibold text-foreground">Шинэ лид</h2>
-                <div className="ml-auto flex items-center gap-2">
-                    <kbd className="mono-label rounded border border-border bg-surface-2 px-1.5 text-xs leading-5 text-muted-foreground">
-                        Esc
-                    </kbd>
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground focus-ring"
-                        aria-label="Хаах"
-                    >
-                        <X className="h-4 w-4" />
-                    </button>
-                </div>
-            </header>
-
-            <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
                 {!soleProject && <Field label="Төсөл" required>
-                    <select ref={projectRef} aria-label="Төсөл" required value={projectId} onChange={(e) => setProjectId(e.target.value)} disabled={projectsLoading || !!projectsError}
-                        className="h-[34px] w-full rounded-md border border-border-strong bg-surface px-2.5 text-[13px] text-foreground focus-ring">
+                    <select ref={projectRef} aria-label="Төсөл" required value={projectId} onChange={(e) => setProjectId(e.target.value)} disabled={projectsLoading || !!projectsError} className={selectCls}>
                         <option value="">{projectsLoading ? 'Төсөл ачаалж байна…' : 'Төсөл сонгох'}</option>
                         {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
-                    {projectsError ? <p role="alert" className="mt-1 text-xs text-status-danger">Төслүүдийг уншиж чадсангүй. <button type="button" className="underline" onClick={() => void refetchProjects()}>Дахин оролдох</button></p> : !projectsLoading && !projects.length && <p role="status" className="mt-1 text-xs text-muted-foreground">Лид бүртгэх төслийн эрх олгогдоогүй байна.</p>}
+                    {projectsError ? <p role="alert" className="text-xs text-status-danger">Төслүүдийг уншиж чадсангүй. <button type="button" className="underline" onClick={() => void refetchProjects()}>Дахин оролдох</button></p> : !projectsLoading && !projects.length && <p role="status" className="text-xs text-muted-foreground">Лид бүртгэх төслийн эрх олгогдоогүй байна.</p>}
                 </Field>}
                 <div className="flex flex-col gap-2">
                     <Field label="Нэр" required={!anonymous}>
@@ -277,11 +301,11 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                             onChange={(e) => setName(e.target.value)}
                             disabled={anonymous}
                             placeholder={anonymous ? ANONYMOUS_LEAD_LABEL : 'Ж: Г. Энхжин'}
-                            className="h-[34px] w-full rounded-md border border-border-strong bg-surface px-2.5 text-[13px] text-foreground outline-none transition-shadow placeholder:text-muted-foreground focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)] disabled:cursor-not-allowed disabled:bg-surface-2"
+                            className={inputCls}
                         />
                     </Field>
                     {/* Field нь <label> — checkbox-ийг дотор нь биш, тусдаа мөрөнд байрлуулна. */}
-                    <label htmlFor="quick-lead-anonymous" className="flex w-fit cursor-pointer select-none items-center gap-2 text-[12.5px] text-fg-2">
+                    <label htmlFor="quick-lead-anonymous" className="flex w-fit cursor-pointer select-none items-center gap-2 text-sm text-fg-2">
                         <Checkbox id="quick-lead-anonymous" checked={anonymous} onCheckedChange={(checked) => toggleAnonymous(checked === true)} />
                         Нэр тодорхойгүй — нэргүй хадгалах
                     </label>
@@ -294,18 +318,16 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                         onChange={(e) => setPhone(e.target.value)}
                         inputMode="tel"
                         placeholder="9911 2233"
-                        className="mono-label h-[34px] w-full rounded-md border border-border-strong bg-surface px-2.5 text-[13px] text-foreground outline-none transition-shadow placeholder:font-sans placeholder:text-muted-foreground focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]"
+                        className={cn(inputCls, 'num')}
                     />
                     {anonymous && <span className="text-xs text-muted-foreground">Нэргүй лидийг утас (эсвэл и-мэйл)-аар нь танина.</span>}
                     {duplicate && (
-                        <div className="mt-2 flex items-start gap-2 rounded-md bg-status-pending-soft px-2.5 py-2 text-[12px] text-status-pending">
-                            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                        <div role="status" className="mt-1 flex items-start gap-2 rounded-lg bg-status-pending-soft px-3 py-2 text-xs text-status-pending">
+                            <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
                             <div className="min-w-0 flex-1">
-                                <div>
-                                    Энэ дугаар бүртгэлтэй:{' '}
-                                    <strong className="font-semibold">{leadDisplayName(duplicate)}</strong>
-                                    {duplicate.sales_manager_name ? ` · ${duplicate.sales_manager_name}` : ''}
-                                </div>
+                                Энэ дугаар бүртгэлтэй:{' '}
+                                <strong className="font-semibold">{leadDisplayName(duplicate)}</strong>
+                                {duplicate.sales_manager_name ? ` · ${duplicate.sales_manager_name}` : ''}
                             </div>
                             <button
                                 type="button"
@@ -321,25 +343,16 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                     )}
                 </Field>
 
-                <Field label="Сонирхол">
-                    <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-col gap-1.5">
+                    <span id="quick-lead-interest" className="text-xs font-medium text-muted-foreground">Сонирхол</span>
+                    <div className="flex flex-wrap gap-1.5" role="group" aria-labelledby="quick-lead-interest">
                         {INTEREST_CHIPS.map(({ label: v }) => (
-                            <button
-                                key={v}
-                                type="button"
-                                onClick={() => setInterest(interest === v ? '' : v)}
-                                className={cn(
-                                    'h-[26px] rounded-md border px-2.5 text-[12px] transition-colors focus-ring',
-                                    interest === v
-                                        ? 'border-brand bg-brand-soft text-brand-strong'
-                                        : 'border-border bg-surface text-fg-2 hover:border-border-strong',
-                                )}
-                            >
+                            <button key={v} type="button" aria-pressed={interest === v} onClick={() => setInterest(interest === v ? '' : v)} className={chipCls(interest === v)}>
                                 {v}
                             </button>
                         ))}
                     </div>
-                </Field>
+                </div>
 
                 {/* Ангилал (заавал биш). Чипүүдийг <label>-д ороохгүй — шошгыг дарахад эхний чип сонгогдохгүй. */}
                 {categories.length > 0 && categories.length <= 8 && (
@@ -353,12 +366,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                                     aria-pressed={categoryId === c.id}
                                     title={c.description ?? undefined}
                                     onClick={() => setCategoryId(categoryId === c.id ? '' : c.id)}
-                                    className={cn(
-                                        'h-[26px] rounded-md border px-2.5 text-[12px] transition-colors focus-ring',
-                                        categoryId === c.id
-                                            ? 'border-brand bg-brand-soft text-brand-strong'
-                                            : 'border-border bg-surface text-fg-2 hover:border-border-strong',
-                                    )}
+                                    className={chipCls(categoryId === c.id)}
                                 >
                                     {c.name}
                                 </button>
@@ -368,11 +376,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                 )}
                 {categories.length > 8 && (
                     <Field label="Ангилал">
-                        <select
-                            value={categoryId}
-                            onChange={(e) => setCategoryId(e.target.value)}
-                            className="h-[34px] w-full rounded-md border border-border-strong bg-surface px-2 text-[13px] text-foreground outline-none focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]"
-                        >
+                        <select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className={selectCls}>
                             <option value="">{UNCATEGORIZED_LABEL}</option>
                             {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                         </select>
@@ -380,11 +384,7 @@ function LeadForm({ onClose }: { onClose: () => void }) {
                 )}
 
                 <Field label="Эх үүсвэр">
-                    <select
-                        value={source}
-                        onChange={(e) => setSource(e.target.value)}
-                        className="h-[34px] w-full rounded-md border border-border-strong bg-surface px-2 text-[13px] text-foreground outline-none focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]"
-                    >
+                    <select value={source} onChange={(e) => setSource(e.target.value)} className={selectCls}>
                         {SOURCES.map((v) => (
                             <option key={v} value={v}>
                                 {SOURCE_LABEL[v]}
@@ -395,87 +395,45 @@ function LeadForm({ onClose }: { onClose: () => void }) {
 
                 <button
                     type="button"
+                    aria-expanded={showMore}
                     onClick={() => setShowMore((v) => !v)}
-                    className="flex items-center gap-2 rounded-md py-1 text-left transition-colors hover:text-foreground focus-ring"
+                    className="flex items-center gap-2 rounded-lg py-1 text-left transition-colors hover:text-foreground"
                 >
-                    <ChevronRight className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', showMore && 'rotate-90')} />
-                    <span className="text-[13px] font-medium text-fg-2">Нэмэлт мэдээлэл</span>
+                    <ChevronRight className={cn('size-4 shrink-0 text-muted-foreground transition-transform', showMore && 'rotate-90')} />
+                    <span className="text-sm font-medium text-fg-2">Нэмэлт мэдээлэл</span>
                     <span className="ml-auto text-xs text-muted-foreground">Заавал биш</span>
                 </button>
 
                 {showMore && (
                     <div className="flex flex-col gap-4 border-l border-border pl-4">
                         <Field label="И-мэйл">
-                            <input
-                                value={email}
-                                onChange={(e) => setEmail(e.target.value)}
-                                type="email"
-                                placeholder="name@example.com"
-                                className="h-[34px] w-full rounded-md border border-border-strong bg-surface px-2.5 text-[13px] outline-none placeholder:text-muted-foreground focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]"
-                            />
+                            <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="name@example.com" className={inputCls} />
                         </Field>
                         <Field label="Төсөв (₮)">
-                            <input
-                                value={budget}
-                                onChange={(e) => setBudget(e.target.value)}
-                                inputMode="numeric"
-                                placeholder="330 000 000"
-                                className="mono-label h-[34px] w-full rounded-md border border-border-strong bg-surface px-2.5 text-[13px] outline-none placeholder:font-sans placeholder:text-muted-foreground focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]"
-                            />
+                            <input value={budget} onChange={(e) => setBudget(e.target.value)} inputMode="numeric" placeholder="330 000 000" className={cn(inputCls, 'num')} />
                         </Field>
                         <Field label="Тэмдэглэл">
-                            <textarea
-                                value={notes}
-                                onChange={(e) => setNotes(e.target.value)}
-                                rows={3}
-                                placeholder="12-р давхраас дээш хүсэж байна…"
-                                className="w-full resize-none rounded-md border border-border-strong bg-surface px-2.5 py-2 text-[13px] outline-none placeholder:text-muted-foreground focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]"
-                            />
+                            <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3} placeholder="12-р давхраас дээш хүсэж байна…" className={textareaCls} />
                         </Field>
                     </div>
                 )}
             </div>
 
-            <footer className="flex shrink-0 items-center gap-2 border-t border-border p-4">
-                <button
-                    type="button"
-                    onClick={onClose}
-                    className="h-[34px] rounded-md px-3 text-[13px] text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground focus-ring"
-                >
-                    Болих
-                </button>
+            <footer className="flex shrink-0 items-center gap-2 border-t border-border px-5 py-4">
+                <Button size="sm" variant="ghost" onClick={onClose}>Болих</Button>
                 <div className="ml-auto flex items-center gap-2">
-                    <button
-                        type="button"
-                        disabled={saving}
-                        onClick={() => void submit(true)}
-                        className="h-[34px] rounded-md border border-border-strong bg-surface px-3 text-[12.5px] font-medium text-foreground transition-colors hover:bg-surface-2 disabled:opacity-50 focus-ring"
-                    >
+                    <Button size="sm" variant="secondary" disabled={saving} onClick={() => void submit(true)}>
                         Хадгалаад уулзалт товлох
-                    </button>
-                    <button
-                        type="button"
-                        disabled={saving}
-                        onClick={() => void submit(false)}
-                        className="flex h-[34px] items-center gap-2 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg transition-colors hover:bg-brand-hover disabled:opacity-60 focus-ring"
-                    >
-                        {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    </Button>
+                    <Button size="sm" disabled={saving} onClick={() => void submit(false)}>
+                        {saving && <Loader2 className="animate-spin" />}
                         Хадгалах
                         <kbd className="mono-label text-xs opacity-75">⌘↵</kbd>
-                    </button>
+                    </Button>
                 </div>
             </footer>
         </>
     );
-}
-
-function MeetingRedirect({ onClose }: { onClose: () => void }) {
-    const router = useRouter();
-    useEffect(() => {
-        onClose();
-        router.push('/dashboard/viewings?new=1');
-    }, [onClose, router]);
-    return null;
 }
 
 type TaskErrors = Partial<Record<'title' | 'note' | 'form', string>>;
@@ -547,28 +505,9 @@ function TaskForm({ onClose }: { onClose: () => void }) {
         return () => window.removeEventListener('keydown', onKey);
     }, [submit]);
 
-    const inputCls = 'h-[34px] w-full rounded-md border border-border-strong bg-surface px-2.5 text-[13px] text-foreground outline-none transition-shadow placeholder:text-muted-foreground focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]';
-
     return (
         <form noValidate onSubmit={(e) => { e.preventDefault(); void submit(); }} className="flex min-h-0 flex-1 flex-col">
-            <header className="flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-5">
-                <h2 className="text-[16px] font-semibold text-foreground">Шинэ ажил</h2>
-                <div className="ml-auto flex items-center gap-2">
-                    <kbd className="mono-label rounded border border-border bg-surface-2 px-1.5 text-xs leading-5 text-muted-foreground">
-                        Esc
-                    </kbd>
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground focus-ring"
-                        aria-label="Хаах"
-                    >
-                        <X className="h-4 w-4" />
-                    </button>
-                </div>
-            </header>
-
-            <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
+            <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-5">
                 <Field label="Гарчиг" required error={errors.title} errorId="quick-task-title-error">
                     <input
                         ref={titleRef}
@@ -596,19 +535,13 @@ function TaskForm({ onClose }: { onClose: () => void }) {
                             if (!e.target.value) setRemind('none');
                         }}
                         aria-label="Дуусах хугацаа"
-                        className={cn(inputCls, 'mono-label')}
+                        className={cn(inputCls, 'num')}
                     />
                     <span className="text-xs text-muted-foreground">Улаанбаатарын цагаар · заавал биш</span>
                 </Field>
 
                 <Field label="Сануулга">
-                    <select
-                        value={remind}
-                        onChange={(e) => setRemind(e.target.value)}
-                        disabled={!due}
-                        aria-label="Сануулга"
-                        className="h-[34px] w-full rounded-md border border-border-strong bg-surface px-2 text-[13px] text-foreground outline-none focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)] disabled:opacity-50"
-                    >
+                    <select value={remind} onChange={(e) => setRemind(e.target.value)} disabled={!due} aria-label="Сануулга" className={selectCls}>
                         {REMIND_OPTIONS.map((o) => (
                             <option key={o.value} value={o.value}>
                                 {o.label}
@@ -632,30 +565,20 @@ function TaskForm({ onClose }: { onClose: () => void }) {
                         aria-invalid={!!errors.note}
                         aria-describedby={errors.note ? 'quick-task-note-error' : undefined}
                         placeholder="Дэлгэрэнгүй тэмдэглэл — заавал биш"
-                        className="w-full resize-none rounded-md border border-border-strong bg-surface px-2.5 py-2 text-[13px] outline-none placeholder:text-muted-foreground focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]"
+                        className={textareaCls}
                     />
                 </Field>
 
                 {errors.form && <p role="alert" className="text-xs text-status-danger">{errors.form}</p>}
             </div>
 
-            <footer className="flex shrink-0 items-center gap-2 border-t border-border p-4">
-                <button
-                    type="button"
-                    onClick={onClose}
-                    className="h-[34px] rounded-md px-3 text-[13px] text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground focus-ring"
-                >
-                    Болих
-                </button>
-                <button
-                    type="submit"
-                    disabled={isPending}
-                    className="ml-auto flex h-[34px] items-center gap-2 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg transition-colors hover:bg-brand-hover disabled:opacity-60 focus-ring"
-                >
-                    {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+            <footer className="flex shrink-0 items-center gap-2 border-t border-border px-5 py-4">
+                <Button type="button" size="sm" variant="ghost" onClick={onClose}>Болих</Button>
+                <Button type="submit" size="sm" className="ml-auto" disabled={isPending}>
+                    {isPending && <Loader2 className="animate-spin" />}
                     Хадгалах
                     <kbd className="mono-label text-xs opacity-75">⌘↵</kbd>
-                </button>
+                </Button>
             </footer>
         </form>
     );
