@@ -76,13 +76,13 @@ export interface LeadSummary {
     queues: Record<LeadWorkQueue, number>;
 }
 
-export function useLeadSummary() {
+export function useLeadSummary({ enabled = true }: { enabled?: boolean } = {}) {
     const { shop, user } = useAuth();
     const shopId = shop?.id;
     return useQuery<LeadSummary>({
         queryKey: ['leads', 'summary', shopId, user?.id, user?.role],
         queryFn: () => dashboardJson<LeadSummary>('/api/dashboard/leads/summary'),
-        enabled: !!shopId,
+        enabled: !!shopId && enabled,
         staleTime: 30_000,
     });
 }

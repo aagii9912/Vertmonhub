@@ -78,20 +78,24 @@ interface ComposerHandle { startDone: (asCall: boolean) => void }
 /**
  * Тэмдэглэл, дуудлага, үнийн санал + «Дараа» (Маргааш / 3 хоног / 7 хоног / огноо, УБ-ийн 10:00).
  * ⌘↵ давтан дарахад нэг л бүртгэл илгээнэ (дуудлага, үнийн санал KPI-д тоологдоно).
+ * «Өнөөдөр»-ийн «Дууссан» мөн үүнийг `done` горимд нээнэ (`initialCall`, `autoFocus`).
  */
-function LeadComposer({ ref, leadId, done, viewingId, onDoneEnd }: {
+export function LeadComposer({ ref, leadId, done, viewingId, onDoneEnd, initialCall = false, autoFocus = false }: {
     ref?: React.Ref<ComposerHandle>;
     leadId: string;
     done: boolean;
     /** «Дууссан» уулзалтын алхамд — уулзалтыг болсон гэж тэмдэглэнэ. */
     viewingId: string | null;
     onDoneEnd: () => void;
+    /** Дуудлагын горимд эхлэх (өнөөдөр дуудлага бүртгэгдээгүй follow-up). */
+    initialCall?: boolean;
+    autoFocus?: boolean;
 }) {
     const addActivity = useAddLeadActivity(leadId);
     const updateViewing = useUpdateViewing();
     const noteRef = useRef<HTMLTextAreaElement>(null);
     const [note, setNote] = useState('');
-    const [isCall, setIsCall] = useState(false);
+    const [isCall, setIsCall] = useState(initialCall);
     const [isQuote, setIsQuote] = useState(false);
     const [quoteAmount, setQuoteAmount] = useState('');
     const [quoteUnit, setQuoteUnit] = useState('');
@@ -195,6 +199,7 @@ function LeadComposer({ ref, leadId, done, viewingId, onDoneEnd }: {
                 onChange={(e) => setNote(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && !e.repeat) void save(); }}
                 rows={2}
+                autoFocus={autoFocus}
                 placeholder={meeting ? 'Харилцагч юу гэж хэлсэн бэ?' : isQuote ? 'Саналын тайлбар (заавал биш)…' : 'Үр дүн, тэмдэглэл… (⌘↵ хадгална)'}
                 className="block w-full resize-none bg-transparent px-3 pt-2.5 text-sm text-foreground placeholder:text-muted-foreground"
             />

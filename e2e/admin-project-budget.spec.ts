@@ -35,6 +35,7 @@ async function setup(page: Page) {
         if (path === '/api/user/shops') return reply({ shops: [shop] });
         if (path === '/api/dashboard/mode') return reply({ mode: 'org', canViewTeam: false });
         if (path === '/api/dashboard/director') return reply({ available: false });
+        if (path === '/api/dashboard/leads/summary') return reply({ all: 0, mine: 0, new: 0, meetings: 0, active: 0, mineName: null, canClaim: false, queues: { unassigned: 0, uncontacted: 0, no_followup: 0, overdue: 0 } });
         if (path === '/api/dashboard/nav-counts') return reply({ leads: 0, inbox: 0, meetings: 0 });
         if (path === '/api/admin/settings') return reply({ admin: { email: users[0].email, role: 'super_admin' } });
         if (path === '/api/admin/shops') return reply({ shops: [shop] });

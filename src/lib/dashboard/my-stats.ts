@@ -28,6 +28,7 @@ export interface ViewingLite {
     customer_name?: string | null;
     /** Нэргүй лидийн уулзалт: харагдахдаа шошго (`meetingCustomerName`), өгөгдөлд бичихгүй. */
     anonymous_lead?: boolean | null;
+    lead_id?: string | null;
 }
 
 /** Лидүүдийг статусаар нь тоолно. */
@@ -66,8 +67,33 @@ export interface DashTask {
     dueAt: string;
     overdue: boolean;
     href: string;
+    /** Хүний карт (лид): follow-up-д лид өөрөө, уулзалтад холбогдсон лид; хувийн ажилд байхгүй. */
+    leadId?: string | null;
     /** follow-up: өнөөдөр (УБ) дуудлага/үнийн санал аль хэдийн бүртгэгдсэн — «Дууссан» дахин дуудлага нэмэхгүй. */
     contactedToday?: boolean;
+}
+
+/**
+ * «Өнөөдөр»-ийн жагсаалтыг таслахдаа өнөөдрийн уулзалтыг хэзээ ч хасахгүй (цагтай, харилцагч ирнэ);
+ * үлдсэн зайг бусад ажлаар хугацааны дарааллаар дүүргээд, цагийн дараалалд буцааж эрэмбэлнэ.
+ */
+export function pickTasks(tasks: DashTask[], limit: number): DashTask[] {
+    const viewings = tasks.filter((t) => t.type === 'viewing').slice(0, limit);
+    const rest = tasks.filter((t) => t.type !== 'viewing').slice(0, Math.max(0, limit - viewings.length));
+    return [...viewings, ...rest].sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
+}
+
+export type DashTaskCounts = Record<'all' | 'followup' | 'viewing' | 'personal' | 'overdue', number>;
+
+/** Бүх ажлын тоо (жагсаалтыг таслахаас өмнө) — шүүлтүүрийн тоо, «хугацаа хэтэрсэн» үнэн байна. */
+export function countTasks(tasks: DashTask[]): DashTaskCounts {
+    return {
+        all: tasks.length,
+        followup: tasks.filter((t) => t.type === 'followup').length,
+        viewing: tasks.filter((t) => t.type === 'viewing').length,
+        personal: tasks.filter((t) => t.type === 'personal').length,
+        overdue: tasks.filter((t) => t.overdue).length,
+    };
 }
 
 // Улаанбаатарын өдрийн хил (сервер UTC дээр `setHours(0)` = УБ 08:00 болдог байв)
@@ -110,7 +136,8 @@ export function buildTaskList(
             subtitle: lead.customer_phone ? `Холбогдох · ${lead.customer_phone}` : 'Холбогдох',
             dueAt: due.toISOString(),
             overdue: due.getTime() < dayStart.getTime(),
-            href: '/dashboard/leads',
+            href: `/dashboard/leads?lead=${lead.id}`,
+            leadId: lead.id,
             contactedToday: !!lead.last_contact_at && new Date(lead.last_contact_at).getTime() >= dayStart.getTime(),
         });
     }
@@ -128,7 +155,8 @@ export function buildTaskList(
             subtitle: customer ? `Уулзалт · ${customer}` : 'Уулзалт',
             dueAt: at.toISOString(),
             overdue: at.getTime() < now.getTime(),
-            href: '/dashboard/viewings',
+            href: viewing.lead_id ? `/dashboard/leads?lead=${viewing.lead_id}` : '/dashboard/viewings',
+            leadId: viewing.lead_id ?? null,
         });
     }
 

@@ -24,6 +24,7 @@ import {
  *   sales        — сарын борлуулалт vs зорилт (₮ + байр), 12 сарын trend
  *   leaderboard  — менежер бүрийн сарын гэрээ / борлуулалт / уулзалт / лид
  *   funnel       — эх үүсвэр бүрээр лид → уулзалт → гэрээ
+ *   meetings     — сард товлосон (цуцлагдаагүй) ба болсон уулзалт
  *   receivables  — хугацаа хэтэрсэн төлбөр (payment_schedules) + нийт үлдэгдэл
  *   inventory    — блок бүрийн үлдэгдэл байр (property_block_summary)
  *
@@ -211,6 +212,7 @@ export async function GET(request: NextRequest) {
                 viewings.map((v) => v.lead_id).filter((x): x is string => !!x),
                 liveContracts.map((c) => c.lead_id).filter((x): x is string => !!x),
             ),
+            meetings: { scheduled: viewings.length, held: viewings.filter((v) => v.status === 'completed').length },
             receivables: { ...overdue, outstandingTotal: Math.round(outstanding) },
             inventory,
             missing,

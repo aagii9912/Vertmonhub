@@ -7,17 +7,17 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useDashboardMode } from '@/hooks/useDashboardMode';
 import { KpiGridSkeleton } from '@/components/ui/LoadingSkeleton';
 import { TodayDashboard } from '@/components/dashboard/today/TodayDashboard';
+import { MarketingToday } from '@/components/dashboard/today/MarketingToday';
 import { DirectorDashboard } from '@/components/dashboard/director/DirectorDashboard';
 import { ManagerSelector } from '@/components/dashboard/ManagerSelector';
-import { WorkspaceIntro } from '@/components/dashboard/today/WorkspaceIntro';
 
 /**
- * Дашбоардын нүүр — role-aware router (сервер /api/dashboard/mode шийднэ):
- * • personal — борлуулалтын менежер «Өнөөдөр»-өө харна: уулзалт, залгах лид,
- *   сануулга нэг жагсаалтаар + сарын зорилт.
- * • org — захирал/админ «Захирлын самбар»: борлуулалт vs зорилт, leaderboard,
- *   funnel, авлага. reports эрхтэй бол менежер сонгогчоор аль ч менежерийн
- *   «Өнөөдөр»-ийг Sheet дотор нээнэ.
+ * «Өнөөдөр» — role-aware нүүр (сервер /api/dashboard/mode шийднэ):
+ * • personal — борлуулалтын менежер: дараагийн ажил (уулзалт, залгах лид, сануулга),
+ *   «Дууссан» → үр дүн + дараагийн алхам, өнөөдөр ирсэн лид, сарын зорилт.
+ * • org + face 'marketing' — маркетингийн ажилтан: сарын лид, суваг, зардал, засах бүртгэл.
+ * • org — захирал/админ: анхаарах ажил (хуваарилах, хоцролт, авлага), KPI, менежерүүд,
+ *   юүлүүр. reports эрхтэй бол менежер сонгогчоор аль ч менежерийн «Өнөөдөр»-ийг Sheet дотор нээнэ.
  */
 export default function DashboardPage() {
     const { loading: authLoading, shop, refreshShops } = useAuth();
@@ -35,13 +35,11 @@ export default function DashboardPage() {
         </Alert>;
     }
 
-    if (mode?.mode === 'personal') {
-        return <div className="mx-auto max-w-[1240px]"><WorkspaceIntro /><TodayDashboard /></div>;
-    }
-
     return (
-        <div className="mx-auto max-w-[1240px]"><WorkspaceIntro /><DirectorDashboard
-            actions={mode?.canViewTeam ? <ManagerSelector selected={selectedManager} onSelect={setSelectedManager} /> : undefined}
-        /></div>
+        <div className="mx-auto max-w-[1240px]">
+            {mode.mode === 'personal' ? <TodayDashboard />
+                : mode.face === 'marketing' ? <MarketingToday />
+                    : <DirectorDashboard actions={mode.canViewTeam ? <ManagerSelector selected={selectedManager} onSelect={setSelectedManager} /> : undefined} />}
+        </div>
     );
 }

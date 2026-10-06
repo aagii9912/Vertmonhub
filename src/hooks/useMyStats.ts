@@ -27,9 +27,13 @@ export interface MyStatsTask {
     dueAt: string;
     overdue: boolean;
     href: string;
+    /** Хүний карт: follow-up-д лид, уулзалтад холбогдсон лид. */
+    leadId?: string | null;
     /** follow-up: өнөөдөр дуудлага аль хэдийн бүртгэгдсэн. */
     contactedToday?: boolean;
 }
+
+export type MyStatsTaskCounts = Record<'all' | 'followup' | 'viewing' | 'personal' | 'overdue', number>;
 
 export interface MyStatsViewing {
     id: string;
@@ -47,6 +51,7 @@ export interface MyStatsLead {
     source?: string | null;
     created_at: string;
     next_followup_at?: string | null;
+    last_contact_at?: string | null;
     budget_max?: number | null;
 }
 
@@ -69,6 +74,8 @@ export interface MyStatsData {
     };
     target: MyStatsTarget | null;
     tasks: MyStatsTask[];
+    /** Жагсаалтыг таслахаас өмнөх бүх ажлын тоо. */
+    taskCounts?: MyStatsTaskCounts;
     recentLeads: MyStatsLead[];
     upcomingViewings: MyStatsViewing[];
     revenueTrend: number[];

@@ -33,6 +33,7 @@ vi.mock('@/hooks/useLeads', () => ({
     useUpdateLead: () => ({ mutate: mocks.update }), useAddLeadActivity: () => ({ mutateAsync: vi.fn() }),
     useLeadCategories: () => ({ data: mocks.categories }),
     useLeadCustomerCard: () => ({ data: undefined, isError: false }),
+    useLeadSummary: () => ({ data: undefined, isPending: false, isError: false, refetch: mocks.refetch }),
 }));
 vi.mock('@/hooks/useViewings', () => ({ useUpdateViewing: () => ({ mutateAsync: vi.fn(), isPending: false }) }));
 vi.mock('../leads/pickers', () => ({
