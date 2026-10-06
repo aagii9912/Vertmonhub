@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
 import { getUserShop, getUserId } from '@/lib/auth/supabase-auth';
 import { supabaseAdmin } from '@/lib/supabase';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 import { logger } from '@/lib/utils/logger';
 import { listTasks, createTask, isMissingTaskTable, TASK_MIGRATION_HINT } from '@/lib/services/TaskService';
+import { TaskCreateSchema } from '@/lib/tasks/input';
 
 /**
  * GET/POST /api/dashboard/tasks — хувийн ажлын жагсаалт (user_tasks).
@@ -14,14 +14,8 @@ import { listTasks, createTask, isMissingTaskTable, TASK_MIGRATION_HINT } from '
  * • Чөлөөт формат: title + note (ямар ч бүтэцгүй текст), due_at/remind_at сонголттой.
  * • user_tasks хүснэгт байхгүй (миграци 20260721120000 ороогүй) орчинд GET
  *   хоосон + available:false буцаана, POST ойлгомжтой алдаа өгнө — 500 гарахгүй.
+ * • POST-ийн шалгалт (TaskCreateSchema) «Ажил нэмэх» түргэн формтой нэг.
  */
-
-const CreateSchema = z.object({
-    title: z.string().trim().min(1, 'Гарчиг хоосон байна').max(300),
-    note: z.string().max(4000).optional().nullable(),
-    dueAt: z.string().datetime({ offset: true }).optional().nullable(),
-    remindAt: z.string().datetime({ offset: true }).optional().nullable(),
-});
 
 export async function GET(request: NextRequest) {
     try {
@@ -56,7 +50,7 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json().catch(() => null);
-        const parsed = CreateSchema.safeParse(body);
+        const parsed = TaskCreateSchema.safeParse(body);
         if (!parsed.success) {
             return NextResponse.json(
                 { error: 'Буруу өгөгдөл', details: parsed.error.flatten() },

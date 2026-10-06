@@ -15,8 +15,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ContractTransferDialog } from '@/components/contracts/ContractTransferDialog';
 import type { ContractTransfer } from '@/types/property';
 import { useLeadDetail } from '@/hooks/useLeads';
+import { DashboardApiError } from '@/lib/api/dashboardFetch';
 import { parseLocalDate } from '@/lib/dashboard/director';
 import { Panel, Pill, Progress, Skeleton, Avatar, GhostButton } from '@/components/dashboard/v2/primitives';
+import { Alert } from '@/components/ui/Alert';
+import { Button } from '@/components/ui/Button';
+import { confirmToast } from '@/components/ui/Toast';
 import { EntityAttachments } from '@/components/dashboard/EntityAttachments';
 import { useRegisterAiContext } from '@/lib/ai/context';
 
@@ -25,31 +29,38 @@ const RECEIPT_KIND_LABEL = { advance: 'Урьдчилгаа', installment: 'Ху
 /**
  * Гэрээний дэлгэрэнгүй — бүтэн хуудас (мокап 5).
  * Зүүн: ерөнхий мэдээлэл, төлбөрийн график (+ бүртгэх). Баруун: явц, эзэмшигчийн түүх, хавсралт, түүх.
+ * Төлбөр бүртгэх үйлдлүүд зөвхөн `contracts` модульд бичих эрхтэй хэрэглэгчид харагдана
+ * (сервер дахин шалгана); хуваарь ачаалж чадаагүй үед «оруулаагүй» гэж харуулахгүй.
  */
 export function ContractDetail({ id }: { id: string }) {
     const { user } = useAuth();
+    // ContractsPage-тай ижил дүрэм (серверийн requireModuleWrite('contracts')-тэй тохирно).
     const canWrite = user?.role === 'super_admin' || !!(user?.permissions.canWrite && user.permissions.modules.includes('contracts'));
-    const { data, isLoading } = useContract(id);
+    const { data, isError, error, isFetching, refetch } = useContract(id);
     const c = data?.contract;
     usePageTitle(c?.contract_number ? c.contract_number : 'Гэрээ');
     useRegisterAiContext(c ? { type: 'contract', id: c.id, label: c.contract_number || c.unit_label || c.customer_name || 'Гэрээ' } : null);
-    const { data: pay } = usePayments(id);
+    const paymentsQuery = usePayments(id);
+    const pay = paymentsQuery.data;
     const payments = useMemo(() => (pay?.payments ?? []).slice().sort((a, b) => a.installment_number - b.installment_number), [pay]);
+    // ERP-ийн бүтээгдэхүүний экспортоос үүссэн гэрээнд өмнө төлсөн дүн байхгүй: таахгүй, төлбөр бүртгэхгүй.
+    const paidKnown = c?.paid_amount !== null && c?.paid_amount !== undefined;
+    // Хуваарь амжилттай уншигдсан үед л шинэ мөр нэмнэ — алдаатай үед байгаа төлбөрийг дахин оруулахгүй.
+    const canAddPayment = canWrite && paidKnown && !!pay && !paymentsQuery.isError;
     const { data: leadDetail } = useLeadDetail(c?.lead_id ?? null);
     const { data: transferData, isError: transfersFailed } = useContractTransfers(id);
     const transfers = useMemo(() => transferData?.transfers ?? [], [transferData]);
     const [adding, setAdding] = useState(false);
+    const showAddRow = adding && canAddPayment;
     const [transferring, setTransferring] = useState(false);
 
-    if (isLoading || !c) {
+    if (!c) {
+        if (isError) return <ContractLoadError error={error} retrying={isFetching} onRetry={() => void refetch()} />;
         return <div className="grid gap-4 xl:grid-cols-3"><div className="flex flex-col gap-4 xl:col-span-2"><Skeleton className="h-40" /><Skeleton className="h-64" /></div><Skeleton className="h-80" /></div>;
     }
 
     const st = CONTRACT_STATUS_META[c.contract_status] ?? { label: c.contract_status, tone: 'neutral' as const };
     const total = c.total_price || 0;
-    // ERP-ийн бүтээгдэхүүний экспортоос үүссэн гэрээнд өмнө төлсөн дүн байхгүй: таахгүй, төлбөр бүртгэхгүй.
-    const paidKnown = c.paid_amount !== null && c.paid_amount !== undefined;
-    const canAddPayment = canWrite && paidKnown;
     const paid = c.paid_amount || 0;
     const balance = c.balance ?? Math.max(0, total - paid);
     const paidPct = total > 0 ? Math.round((paid / total) * 100) : 0;
@@ -94,13 +105,30 @@ export function ContractDetail({ id }: { id: string }) {
                     </Panel>
 
                     <Panel title="Төлбөрийн график" sub={payments.length ? `${payments.length} төлөлт` : undefined}>
-                        {payments.length === 0 && !adding ? (
+                        {pay && paymentsQuery.isError && <Alert variant="warning" className="m-3 w-auto">
+                            Төлбөрийн мэдээллийг шинэчилж чадсангүй. Өмнө ачаалсан мэдээлэл харагдаж байна.
+                            <div><Button size="sm" variant="secondary" disabled={paymentsQuery.isFetching} onClick={() => void paymentsQuery.refetch()}>Дахин оролдох</Button></div>
+                        </Alert>}
+                        {!pay ? (
+                            paymentsQuery.isError ? (
+                                <div className="p-4">
+                                    <Alert variant="danger">
+                                        <p>Төлбөрийн графикийг ачаалж чадсангүй. Хуваарь хоосон гэсэн үг биш — дахин оролдоно уу.</p>
+                                        <div><Button size="sm" variant="secondary" disabled={paymentsQuery.isFetching} onClick={() => void paymentsQuery.refetch()}>Дахин оролдох</Button></div>
+                                    </Alert>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col gap-2 p-4" aria-busy="true" aria-label="Төлбөрийн график ачаалж байна">
+                                    {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-8" />)}
+                                </div>
+                            )
+                        ) : payments.length === 0 && !showAddRow ? (
                             <div className="flex flex-col items-center gap-2 px-4 py-8 text-center">
                                 <div className="text-[13px] font-medium text-foreground">Төлбөрийн график оруулаагүй</div>
-                                <p className="max-w-sm text-[12.5px] text-muted-foreground">{paidKnown
-                                    ? 'Урьдчилгаа болон сар бүрийн төлөлтийг энд бүртгэвэл захирлын самбар авлага, хоцролтыг автоматаар харуулна.'
-                                    : 'Энэ гэрээ ERP-ийн бүтээгдэхүүний экспортоос үүссэн тул өмнө төлсөн дүн тодорхойгүй. Төлсөн дүнтэй гэрээний экспорт орсны дараа төлбөр бүртгэнэ.'}</p>
-                                {canAddPayment && <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>}
+                                {paidKnown ? canAddPayment && <>
+                                    <p className="max-w-sm text-[12.5px] text-muted-foreground">Урьдчилгаа болон сар бүрийн төлөлтийг энд бүртгэвэл захирлын самбар авлага, хоцролтыг автоматаар харуулна.</p>
+                                    <button type="button" onClick={() => setAdding(true)} className="inline-flex h-[30px] items-center gap-1.5 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg hover:bg-brand-strong focus-ring"><Plus className="h-4 w-4" /> Төлбөр бүртгэх</button>
+                                </> : <p className="max-w-sm text-[12.5px] text-muted-foreground">Энэ гэрээ ERP-ийн бүтээгдэхүүний экспортоос үүссэн тул өмнө төлсөн дүн тодорхойгүй. Төлсөн дүнтэй гэрээний экспорт орсны дараа төлбөр бүртгэнэ.</p>}
                             </div>
                         ) : (
                             <div className="overflow-x-auto">
@@ -118,7 +146,7 @@ export function ContractDetail({ id }: { id: string }) {
                                     </thead>
                                     <tbody>
                                         {payments.map((p) => <PaymentTr key={p.id} p={p} contractId={id} now={now} canWrite={canWrite} />)}
-                                        {adding && canAddPayment && <AddPaymentRow contractId={id} next={(payments.at(-1)?.installment_number ?? 0) + 1} defaultAmount={nextDue ? 0 : Math.round(balance / 6)} onDone={() => setAdding(false)} />}
+                                        {showAddRow && <AddPaymentRow contractId={id} next={(payments.at(-1)?.installment_number ?? 0) + 1} onDone={() => setAdding(false)} />}
                                     </tbody>
                                     {payments.length > 0 && (
                                         <tfoot>
@@ -227,6 +255,24 @@ function F({ label, children }: { label: string; children: React.ReactNode }) {
     );
 }
 
+/** Гэрээ уншиж чадаагүй — үүрд skeleton биш, шалтгаан + «Дахин оролдох» (404 бол «олдсонгүй»). */
+function ContractLoadError({ error, retrying, onRetry }: { error: unknown; retrying: boolean; onRetry: () => void }) {
+    const notFound = error instanceof DashboardApiError && error.status === 404;
+    return (
+        <div className="flex flex-col gap-4">
+            <Link href="/dashboard/contracts" className="inline-flex h-[30px] w-fit items-center gap-1 rounded-md px-2 text-[12.5px] text-muted-foreground hover:bg-surface-2 hover:text-foreground"><ArrowLeft className="h-4 w-4" /> Гэрээ</Link>
+            <Alert variant="danger">
+                <p className="font-medium">{notFound ? 'Гэрээ олдсонгүй' : 'Гэрээг уншиж чадсангүй'}</p>
+                {!notFound && error instanceof Error && error.message && <p>{error.message}</p>}
+                <p>{notFound
+                    ? 'Энэ гэрээ устгагдсан эсвэл сонгосон төсөлд хамаарахгүй байж магадгүй.'
+                    : 'Гэрээ байхгүй гэсэн үг биш — дахин оролдоно уу.'}</p>
+                <div><Button size="sm" variant="secondary" disabled={retrying} onClick={onRetry}>Дахин оролдох</Button></div>
+            </Alert>
+        </div>
+    );
+}
+
 function PaymentTr({ p, contractId, now, canWrite }: { p: PaymentRow; contractId: string; now: Date; canWrite: boolean }) {
     const update = useUpdatePayment(contractId);
     const [method, setMethod] = useState(p.payment_method || '');
@@ -237,9 +283,20 @@ function PaymentTr({ p, contractId, now, canWrite }: { p: PaymentRow; contractId
     const effective = overdue ? 'overdue' : p.status;
     const meta = PAYMENT_STATUS_META[effective] ?? PAYMENT_STATUS_META.pending;
     const daysTo = Math.round((parseLocalDate(p.due_date).getTime() - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) / 86_400_000);
+    // Бичих эрхгүй хэрэглэгчид «Төлсөн» болон түүний талбарууд харагдахгүй (сервер мөн татгалзана).
+    const payable = canWrite && remaining > 0 && p.status !== 'cancelled';
 
-    const markPaid = () => {
+    const markPaid = async () => {
         if (!method || !kind || !receivedAt) { toast.error('Төлсөн огноо, төлбөрийн хэлбэр, төрлийг сонгоно уу'); return; }
+        // Нэг товшилтоор бүтэн дүнгийн орлого бүртгэгдэхээс өмнө дүн, төрлийг батлуулна.
+        const alreadyPaid = Number(p.paid_amount || 0);
+        const ok = await confirmToast({
+            title: `${formatMNT(remaining)} орлого бүртгэх үү?`,
+            description: `${p.label || `${p.installment_number}-р төлөлт`} бүрэн төлөгдсөн болно${alreadyPaid > 0 ? ` (нийт ${formatMNT(Number(p.amount))}, өмнө ${formatMNT(alreadyPaid)} төлсөн)` : ''}. Төрөл: ${RECEIPT_KIND_LABEL[kind]} · Хэлбэр: ${PAYMENT_METHOD_LABEL[method] ?? method} · Огноо: ${receivedAt}.`,
+            confirmLabel: 'Төлсөн гэж бүртгэх',
+            cancelLabel: 'Болих',
+        });
+        if (!ok) return;
         update.mutate({ payment_id: p.id, paid_amount: Number(p.amount), amount: Number(p.amount), paid_date: receivedAt, payment_method: method, receipt_kind: kind }, {
             onSuccess: () => toast.success('Төлсөн гэж тэмдэглэв'),
             onError: (e) => toast.error(e instanceof Error ? e.message : 'Алдаа'),
@@ -254,7 +311,7 @@ function PaymentTr({ p, contractId, now, canWrite }: { p: PaymentRow; contractId
             <td className="num px-2 text-right text-fg-2">{Number(p.paid_amount) > 0 ? formatMNT(Number(p.paid_amount)) : '—'}</td>
             <td className="px-2"><Pill tone={meta.tone}>{meta.label}</Pill></td>
             <td className="px-2 py-1 text-fg-2">
-                {canWrite && remaining > 0 && p.status !== 'cancelled' ? (
+                {payable ? (
                     <div className="flex flex-col gap-1">
                         <input type="date" aria-label="Төлсөн огноо" value={receivedAt} onChange={e => setReceivedAt(e.target.value)} className="h-7 rounded border border-border bg-surface text-xs" />
                         <select aria-label="Төлбөрийн хэлбэр" value={method} onChange={e => setMethod(e.target.value)} className="h-7 rounded border border-border bg-surface text-xs">
@@ -266,24 +323,25 @@ function PaymentTr({ p, contractId, now, canWrite }: { p: PaymentRow; contractId
                             {Object.entries(RECEIPT_KIND_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                         </select>
                     </div>
-                ) : <><span className="mono-label">{p.paid_date || '—'}</span><span className="ml-1 text-[11px] text-muted-foreground">{p.payment_method ? PAYMENT_METHOD_LABEL[p.payment_method] ?? p.payment_method : 'Хэлбэр тодорхойгүй'} · {p.receipt_kind ? RECEIPT_KIND_LABEL[p.receipt_kind] : 'Төрөл тодорхойгүй'}</span></>}
+                ) : Number(p.paid_amount) > 0 || p.paid_date ? <><span className="mono-label">{p.paid_date || '—'}</span><span className="ml-1 text-[11px] text-muted-foreground">{p.payment_method ? PAYMENT_METHOD_LABEL[p.payment_method] ?? p.payment_method : 'Хэлбэр тодорхойгүй'} · {p.receipt_kind ? RECEIPT_KIND_LABEL[p.receipt_kind] : 'Төрөл тодорхойгүй'}</span></> : <span className="mono-label">—</span>}
             </td>
             <td className="px-2 text-right">
-                {canWrite && remaining > 0 && p.status !== 'cancelled' && (
-                    <GhostButton onClick={markPaid} disabled={update.isPending || !method || !kind || !receivedAt} className="text-brand hover:bg-brand-soft"><Check className="h-3.5 w-3.5" /> Төлсөн</GhostButton>
+                {payable && (
+                    <GhostButton onClick={() => void markPaid()} disabled={update.isPending || !method || !kind || !receivedAt} className="text-brand hover:bg-brand-soft"><Check className="h-3.5 w-3.5" /> Төлсөн</GhostButton>
                 )}
             </td>
         </tr>
     );
 }
 
-function AddPaymentRow({ contractId, next, defaultAmount, onDone }: { contractId: string; next: number; defaultAmount: number; onDone: () => void }) {
+function AddPaymentRow({ contractId, next, onDone }: { contractId: string; next: number; onDone: () => void }) {
     const add = useAddPayment(contractId);
     const requestId = useRef<string | null>(null);
     const [label, setLabel] = useState(next === 1 ? 'Урьдчилгаа' : `${next}-р төлөлт`);
     const [due, setDue] = useState(() => ubDateStr());
     const [receivedAt, setReceivedAt] = useState(() => ubDateStr());
-    const [amount, setAmount] = useState(defaultAmount > 0 ? String(defaultAmount) : '');
+    // Дүнг таамаглахгүй (өмнө нь үлдэгдэл / 6 бөглөгддөг байв) — хэрэглэгч заавал оруулна.
+    const [amount, setAmount] = useState('');
     const [paid, setPaid] = useState('');
     const [method, setMethod] = useState('bank_transfer');
     const [kind, setKind] = useState<keyof typeof RECEIPT_KIND_LABEL | ''>('');
@@ -309,7 +367,7 @@ function AddPaymentRow({ contractId, next, defaultAmount, onDone }: { contractId
         <tr className="h-10 border-b border-brand/40 bg-brand-soft/30">
             <td className="px-2"><input value={label} onChange={(e) => setLabel(e.target.value)} className={cls} aria-label="Нэр" /></td>
             <td className="px-2"><input type="date" value={due} onChange={(e) => setDue(e.target.value)} className={cn(cls, 'mono-label')} aria-label="Огноо" /></td>
-            <td className="px-2"><input type="number" min="0.01" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="33100000" className={cn(cls, 'num text-right')} aria-label="Дүн" /></td>
+            <td className="px-2"><input type="number" min="0.01" step="0.01" required value={amount} onChange={(e) => setAmount(e.target.value)} inputMode="decimal" placeholder="Заавал" className={cn(cls, 'num text-right')} aria-label="Дүн" /></td>
             <td className="px-2"><input type="number" min="0" step="0.01" value={paid} onChange={(e) => setPaid(e.target.value)} inputMode="decimal" placeholder="0" className={cn(cls, 'num text-right')} aria-label="Төлсөн" /></td>
             <td className="px-2" colSpan={2}>
                 <div className="flex flex-col gap-1 py-1">

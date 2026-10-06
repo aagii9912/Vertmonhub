@@ -27,6 +27,7 @@ import {
     SelectValue,
 } from '@/components/ui/Select';
 import { useMyTasks, type UserTask } from '@/hooks/useMyTasks';
+import { REMIND_OPTIONS } from '@/lib/tasks/input';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
 import { formatShortDate, formatTime } from '@/lib/utils/date';
@@ -52,14 +53,6 @@ import {
  * Дизайны лавлагаа: Mobbin — Todoist Today, Asana My Tasks.
  * Дууссан ажлууд сарын KPI тайланд автоматаар нэгтгэгдэнэ.
  */
-
-const REMIND_OPTIONS = [
-    { value: 'none', label: 'Сануулгагүй' },
-    { value: '0', label: 'Яг цагт нь' },
-    { value: '15', label: '15 минутын өмнө' },
-    { value: '60', label: '1 цагийн өмнө' },
-    { value: '1440', label: '1 өдрийн өмнө' },
-] as const;
 
 function computeRemindAt(dueLocal: string, offset: string): string | null {
     if (!dueLocal || offset === 'none' || offset === 'keep') return null;

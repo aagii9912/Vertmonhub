@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Building2, Plus, Trash2, MapPin, Layers, CreditCard, DollarSign, Facebook, Pencil, BarChart3, ExternalLink, Sparkles, X } from 'lucide-react';
+import { Building2, Plus, Trash2, MapPin, Layers, CreditCard, Facebook, Pencil, BarChart3, ExternalLink, Sparkles, X } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/Card';
 import { MarkdownMessage } from '@/components/ai-assistant/MarkdownMessage';
 import { toast } from 'sonner';
@@ -22,7 +22,6 @@ import {
     SheetTitle,
     SheetDescription,
 } from '@/components/ui/Sheet';
-import { cn } from '@/lib/utils';
 import { formatMNT } from '@/lib/utils/currency';
 import { confirmToast } from '@/components/ui/Toast';
 import { MarketIndicators } from '@/components/marketing/MarketIndicators';
@@ -46,8 +45,15 @@ interface Competitor {
 
 const EMPTY = { name: '', location: '', district: '', num_blocks: '', planning: '', payment_terms: '', price_per_sqm: '', facebook_url: '', notes: '' };
 
+/**
+ * Манай төслийн м.кв үнэ: нэгжийн бүртгэлд (property_units, /api/dashboard/units) худалдааны үнэ
+ * хадгалагддаггүй — зөвхөн гэрээтэй нэгжид гэрээний үнэ бий. Өмнө нь бүх төсөлд 4,850,000₮ гэсэн
+ * тогтмол тоо харуулж, түүгээр «дунджаас дээгүүр/доогуур» дүгнэдэг байв. Эх сурвалжгүй тул «—».
+ */
+const OWN_PRICE_UNAVAILABLE = 'Нэгжийн бүртгэлд худалдааны үнэ хадгалагддаггүй тул тооцох боломжгүй';
+
 export default function CompetitorResearchPage() {
-    const { user } = useAuth();
+    const { user, shop } = useAuth();
     const hasModule = user?.role === 'super_admin' || !!user?.permissions.modules.includes('marketing-roi');
     const canWrite = hasModule && !!user?.permissions.canWrite;
     const canDelete = hasModule && !!user?.permissions.canDelete;
@@ -104,10 +110,9 @@ export default function CompetitorResearchPage() {
         }
     }
 
-    const MANDALA_PRICE = 4850000;
+    const projectName = shop?.name || 'Манай төсөл';
     const priced = competitors.filter((c) => c.price_per_sqm && c.price_per_sqm > 0);
     const avgComp = priced.length ? Math.round(priced.reduce((s, c) => s + (c.price_per_sqm || 0), 0) / priced.length) : 0;
-    const position = avgComp ? (MANDALA_PRICE > avgComp * 1.05 ? { label: 'Дунджаас ДЭЭГҮҮР', tone: 'text-status-danger' } : MANDALA_PRICE < avgComp * 0.95 ? { label: 'Дунджаас ДООГУУР', tone: 'text-status-success' } : { label: 'ДУНДАЖ түвшинд', tone: 'text-status-info' }) : null;
 
     const columns: DataTableColumn<Competitor>[] = [
         {
@@ -249,23 +254,26 @@ export default function CompetitorResearchPage() {
                 </Card>
             )}
 
-            {/* Зах зээл дэх байршуулалт (Мандала vs өрсөлдөгчид) */}
+            {/* Зах зээл дэх байршуулалт (идэвхтэй төсөл vs өрсөлдөгчид). Манай үнэ мэдэгдэхгүй тул дүгнэлт гаргахгүй. */}
             {avgComp > 0 && (
                 <Card className="mb-5">
                     <CardContent className="p-4">
                         <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2"><BarChart3 className="w-4 h-4 text-brand-strong" /> Зах зээл дэх байршуулалт</h3>
                         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                             <div className="p-3 rounded-lg bg-brand-soft">
-                                <div className="text-2xs uppercase tracking-wide text-muted-foreground">Мандала Гарден (м.кв)</div>
-                                <div className="heading-display text-xl text-brand-strong tabular-nums mt-1">{formatMNT(MANDALA_PRICE)}</div>
+                                <div className="text-2xs uppercase tracking-wide text-muted-foreground">{projectName} (м.кв)</div>
+                                <div className="heading-display text-xl text-brand-strong tabular-nums mt-1">—</div>
+                                <div className="text-xs text-muted-foreground mt-1">{OWN_PRICE_UNAVAILABLE}</div>
                             </div>
                             <div className="p-3 rounded-lg bg-surface-2/50">
                                 <div className="text-2xs uppercase tracking-wide text-muted-foreground">Өрсөлдөгчдийн дундаж</div>
-                                <div className="heading-display text-xl text-foreground tabular-nums mt-1">{avgComp ? formatMNT(avgComp) : '—'}</div>
+                                <div className="heading-display text-xl text-foreground tabular-nums mt-1">{formatMNT(avgComp)}</div>
+                                <div className="text-xs text-muted-foreground mt-1">{priced.length} өрсөлдөгчийн бүртгэсэн м.кв үнээр</div>
                             </div>
                             <div className="p-3 rounded-lg bg-surface-2/50">
-                                <div className="text-2xs uppercase tracking-wide text-muted-foreground">Байр суурь ({priced.length} өрсөлдөгч)</div>
-                                <div className={cn('text-lg font-semibold mt-1', position?.tone)}>{position?.label}</div>
+                                <div className="text-2xs uppercase tracking-wide text-muted-foreground">Байр суурь</div>
+                                <div className="text-lg font-semibold mt-1 text-muted-foreground">—</div>
+                                <div className="text-xs text-muted-foreground mt-1">Манай м.кв үнэ тодорхойгүй тул харьцуулаагүй</div>
                             </div>
                         </div>
                     </CardContent>
@@ -285,7 +293,7 @@ export default function CompetitorResearchPage() {
                     <EmptyState
                         icon={<Building2 className="w-7 h-7" />}
                         title="Өрсөлдөгч бүртгээгүй"
-                        description="Зах зээлийн өрсөлдөгчдийн мэдээллийг нэмж, Мандала Гардены байр сууриа тодорхойлоорой."
+                        description="Зах зээлийн өрсөлдөгчдийн мэдээллийг нэмж, төслийнхөө байр суурийг тодорхойлоорой."
                         action={canWrite && <Button onClick={openNew} variant="primary" size="sm"><Plus className="w-4 h-4" /> Эхний өрсөлдөгчийг нэмэх</Button>}
                     />
                 </CardContent></Card>
@@ -296,14 +304,6 @@ export default function CompetitorResearchPage() {
                     getRowId={(c) => c.id}
                     caption="Өрсөлдөгчдийн судалгааны хүснэгт"
                 />
-            )}
-
-            {/* Comparison vs Mandala hint */}
-            {competitors.length > 0 && (
-                <p className="inline-flex items-center gap-1.5 text-xs text-muted-foreground mt-5">
-                    <DollarSign className="w-3.5 h-3.5 text-brand-strong shrink-0" />
-                    Мандала Гардены м.кв үнэ <strong className="text-foreground">4,850,000₮</strong> — дээрх өрсөлдөгчидтэй харьцуулж байр сууриа тодорхойлно уу.
-                </p>
             )}
 
             <Sheet open={showForm} onOpenChange={(open) => !open && setShowForm(false)}>

@@ -65,6 +65,8 @@ export function useContract(id: string | null) {
         queryFn: () => dashboardJson<{ contract: ContractRow }>(`/api/dashboard/contracts/${id}`),
         enabled: !!shop?.id && !!id,
         staleTime: 15_000,
+        // ContractDetail алдааг (404 «олдсонгүй» гэх мэт) «Дахин оролдох»-той өөрөө харуулна.
+        meta: { inlineError: true },
     });
 }
 
@@ -90,6 +92,8 @@ export function usePayments(contractId: string | null) {
         queryFn: () => dashboardJson<{ payments: PaymentRow[] }>(`/api/dashboard/contracts/${contractId}/payments`),
         enabled: !!shop?.id && !!contractId,
         staleTime: 15_000,
+        // Ачаалж чадаагүй хуваарийг «оруулаагүй» гэж харуулахгүй — панель өөрөө алдаа + «Дахин оролдох».
+        meta: { inlineError: true },
     });
 }
 

@@ -13,9 +13,12 @@ import {
     hasAnonymousLeadContact, leadDisplayName, normalizeLeadName,
 } from '@/lib/leads/labels';
 import { enqueue, isNetworkError } from '@/lib/offline/outbox';
+import { REMIND_OPTIONS, TaskCreateSchema } from '@/lib/tasks/input';
+import { ubLocalToIso } from '@/lib/utils/date';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLeadCategories, useLeadProjects } from '@/hooks/useLeads';
 import { Checkbox } from '@/components/ui/Checkbox';
+import { useCreateTask } from '@/hooks/useMyTasks';
 
 /**
  * Түргэн бүртгэл — «Шинэ» товч, N товчлуур, гар утасны «+» бүгд үүнийг нээнэ.
@@ -25,6 +28,7 @@ import { Checkbox } from '@/components/ui/Checkbox';
  * анхааруулна — v1-д давхардсан лид чимээгүй үүсдэг байсан.
  * Нэрээ хэлээгүй харилцагчийг «Нэр тодорхойгүй»-гээр нэргүй хадгална; тэр үед
  * утас (эсвэл и-мэйл) заавал — сервер `resolveLeadIdentity` мөн адил шалгана.
+ * «Ажил нэмэх» (kind = 'task') нь хувийн ажлын форм — «Миний ажлууд»-тай нэг API.
  */
 
 interface DuplicateLead {
@@ -73,6 +77,8 @@ export function QuickCreateSheet() {
             >
                 {kind === 'meeting' ? (
                     <MeetingRedirect onClose={() => setOpen(false)} />
+                ) : kind === 'task' ? (
+                    <TaskForm onClose={() => setOpen(false)} />
                 ) : (
                     <LeadForm onClose={() => setOpen(false)} />
                 )}
@@ -473,8 +479,191 @@ function MeetingRedirect({ onClose }: { onClose: () => void }) {
     return null;
 }
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+type TaskErrors = Partial<Record<'title' | 'note' | 'form', string>>;
+
+/**
+ * «Ажил нэмэх» — хувийн ажил (user_tasks). «Миний ажлууд» хуудастай ижил талбар,
+ * ижил шалгалт (TaskCreateSchema), ижил API ба query шинэчлэл (useCreateTask).
+ * Дуусах хугацааг Улаанбаатарын цагаар уншина; алдааг талбарын доор харуулна.
+ */
+function TaskForm({ onClose }: { onClose: () => void }) {
+    const { mutateAsync, isPending } = useCreateTask();
+    const titleRef = useRef<HTMLInputElement>(null);
+    const noteRef = useRef<HTMLTextAreaElement>(null);
+    /** Давхар submit хамгаалалт (state биш ref — ⌘↵ хоёр дарахад closure хоцордог) */
+    const submittingRef = useRef(false);
+
+    const [title, setTitle] = useState('');
+    const [due, setDue] = useState('');
+    const [remind, setRemind] = useState<string>('none');
+    const [note, setNote] = useState('');
+    const [errors, setErrors] = useState<TaskErrors>({});
+
+    useEffect(() => {
+        titleRef.current?.focus();
+    }, []);
+
+    const submit = useCallback(async () => {
+        if (submittingRef.current) return;
+        const dueAt = ubLocalToIso(due);
+        const parsed = TaskCreateSchema.safeParse({
+            title,
+            note: note.trim() || null,
+            dueAt,
+            remindAt: dueAt && remind !== 'none' ? new Date(Date.parse(dueAt) - Number(remind) * 60_000).toISOString() : null,
+        });
+        if (!parsed.success) {
+            const next: TaskErrors = {};
+            for (const issue of parsed.error.issues) {
+                const key = issue.path[0] === 'title' || issue.path[0] === 'note' ? issue.path[0] : 'form';
+                next[key] ??= issue.message;
+            }
+            setErrors(next);
+            if (next.title) titleRef.current?.focus();
+            else if (next.note) noteRef.current?.focus();
+            return;
+        }
+        submittingRef.current = true;
+        setErrors({});
+        try {
+            await mutateAsync(parsed.data);
+            toast.success('Ажил нэмэгдлээ');
+            onClose();
+        } catch (e) {
+            setErrors({ form: e instanceof Error ? e.message : 'Ажил нэмж чадсангүй. Дахин оролдоно уу.' });
+        } finally {
+            submittingRef.current = false;
+        }
+    }, [title, due, remind, note, mutateAsync, onClose]);
+
+    // ⌘↵ — хадгалах
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                void submit();
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [submit]);
+
+    const inputCls = 'h-[34px] w-full rounded-md border border-border-strong bg-surface px-2.5 text-[13px] text-foreground outline-none transition-shadow placeholder:text-muted-foreground focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]';
+
     return (
+        <form noValidate onSubmit={(e) => { e.preventDefault(); void submit(); }} className="flex min-h-0 flex-1 flex-col">
+            <header className="flex h-[52px] shrink-0 items-center gap-3 border-b border-border px-5">
+                <h2 className="text-[16px] font-semibold text-foreground">Шинэ ажил</h2>
+                <div className="ml-auto flex items-center gap-2">
+                    <kbd className="mono-label hidden rounded border border-border bg-surface-2 px-1.5 text-[10.5px] leading-5 text-muted-foreground sm:inline">
+                        Esc
+                    </kbd>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground focus-ring"
+                        aria-label="Хаах"
+                    >
+                        <X className="h-4 w-4" />
+                    </button>
+                </div>
+            </header>
+
+            <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
+                <Field label="Гарчиг" required error={errors.title} errorId="quick-task-title-error">
+                    <input
+                        ref={titleRef}
+                        value={title}
+                        onChange={(e) => {
+                            setTitle(e.target.value);
+                            if (errors.title) setErrors((prev) => ({ ...prev, title: undefined }));
+                        }}
+                        aria-label="Гарчиг"
+                        required
+                        maxLength={300}
+                        aria-invalid={!!errors.title}
+                        aria-describedby={errors.title ? 'quick-task-title-error' : undefined}
+                        placeholder="Ж: Б. Болдод үнийн санал илгээх"
+                        className={inputCls}
+                    />
+                </Field>
+
+                <Field label="Дуусах хугацаа">
+                    <input
+                        type="datetime-local"
+                        value={due}
+                        onChange={(e) => {
+                            setDue(e.target.value);
+                            if (!e.target.value) setRemind('none');
+                        }}
+                        aria-label="Дуусах хугацаа"
+                        className={cn(inputCls, 'mono-label')}
+                    />
+                    <span className="text-[11.5px] text-muted-foreground">Улаанбаатарын цагаар · заавал биш</span>
+                </Field>
+
+                <Field label="Сануулга">
+                    <select
+                        value={remind}
+                        onChange={(e) => setRemind(e.target.value)}
+                        disabled={!due}
+                        aria-label="Сануулга"
+                        className="h-[34px] w-full rounded-md border border-border-strong bg-surface px-2 text-[13px] text-foreground outline-none focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)] disabled:opacity-50"
+                    >
+                        {REMIND_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                                {o.label}
+                            </option>
+                        ))}
+                    </select>
+                    {!due && <span className="text-[11.5px] text-muted-foreground">Сануулга тавихын тулд хугацаа сонгоно уу</span>}
+                </Field>
+
+                <Field label="Тэмдэглэл" error={errors.note} errorId="quick-task-note-error">
+                    <textarea
+                        ref={noteRef}
+                        value={note}
+                        onChange={(e) => {
+                            setNote(e.target.value);
+                            if (errors.note) setErrors((prev) => ({ ...prev, note: undefined }));
+                        }}
+                        aria-label="Тэмдэглэл"
+                        rows={3}
+                        maxLength={4000}
+                        aria-invalid={!!errors.note}
+                        aria-describedby={errors.note ? 'quick-task-note-error' : undefined}
+                        placeholder="Дэлгэрэнгүй тэмдэглэл — заавал биш"
+                        className="w-full resize-none rounded-md border border-border-strong bg-surface px-2.5 py-2 text-[13px] outline-none placeholder:text-muted-foreground focus:border-brand focus:shadow-[0_0_0_3px_var(--brand-soft)]"
+                    />
+                </Field>
+
+                {errors.form && <p role="alert" className="text-xs text-status-danger">{errors.form}</p>}
+            </div>
+
+            <footer className="flex shrink-0 items-center gap-2 border-t border-border p-4">
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="h-[34px] rounded-md px-3 text-[13px] text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground focus-ring"
+                >
+                    Болих
+                </button>
+                <button
+                    type="submit"
+                    disabled={isPending}
+                    className="ml-auto flex h-[34px] items-center gap-2 rounded-md bg-brand px-3 text-[12.5px] font-medium text-brand-fg transition-colors hover:bg-brand-strong disabled:opacity-60 focus-ring"
+                >
+                    {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                    Хадгалах
+                    <kbd className="mono-label text-[10.5px] opacity-75">⌘↵</kbd>
+                </button>
+            </footer>
+        </form>
+    );
+}
+
+function Field({ label, required, error, errorId, children }: { label: string; required?: boolean; error?: string; errorId?: string; children: React.ReactNode }) {
+    const field = (
         <label className="flex flex-col gap-1.5">
             <span className="text-[11.5px] font-medium text-muted-foreground">
                 {label}
@@ -482,5 +671,13 @@ function Field({ label, required, children }: { label: string; required?: boolea
             </span>
             {children}
         </label>
+    );
+    if (!error) return field;
+    // Алдааг шошгоны гадна — талбарын нэрэнд орохгүй, aria-describedby-гоор холбогдоно.
+    return (
+        <div className="flex flex-col gap-1">
+            {field}
+            <p id={errorId} role="alert" className="text-xs text-status-danger">{error}</p>
+        </div>
     );
 }

@@ -188,8 +188,8 @@ export default function TermsOfServicePage() {
                         </ul>
                     </section>
 
-                    <div className="mt-12 rounded-lg bg-surface-2/40 dark:bg-foreground p-6 border border-border dark:border-border">
-                        <p className="text-sm text-muted-foreground dark:text-muted-foreground/70">
+                    <div className="mt-12 rounded-lg bg-surface-2/40 p-6 border border-border">
+                        <p className="text-sm text-muted-foreground">
                             Манай үйлчилгээг ашигласнаар та энэхүү үйлчилгээний нөхцөлийг хүлээн зөвшөөрч байна.
                             Хэрэв та зөвшөөрөхгүй бол үйлчилгээг ашиглаж болохгүй.
                         </p>
@@ -200,7 +200,7 @@ export default function TermsOfServicePage() {
                 <div className="mt-12 text-center">
                     <Link
                         href="/"
-                        className="inline-flex items-center gap-2 rounded-lg bg-foreground px-6 py-3 text-sm font-semibold text-white hover:bg-fg-2 transition-colors"
+                        className="inline-flex items-center gap-2 rounded-lg bg-foreground px-6 py-3 text-sm font-semibold text-background hover:bg-fg-2 transition-colors"
                     >
                         Нүүр хуудас руу буцах
                     </Link>
