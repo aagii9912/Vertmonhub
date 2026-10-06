@@ -18,6 +18,8 @@ import { phoneIlikePattern } from '@/lib/utils/phone';
 import { updateViewing, listViewings } from '@/lib/services/ViewingService';
 import { listTasks, createTask, updateTask, isMissingTaskTable, TASK_MIGRATION_HINT } from '@/lib/services/TaskService';
 import { listPayments, addPayment, updatePayment } from '@/lib/services/PaymentService';
+import { parseStaffLeadPatch, updateStaffLead, type StaffLeadPatch } from '@/lib/services/LeadService';
+import { propertyTypeLabel } from '@/lib/inventory/labels';
 import { formatMNT } from '@/lib/utils/currency';
 import { ANONYMOUS_LEAD_LABEL, isAnonymousLead, leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
 import { QuoteAmountSchema, QuoteUnitSchema } from '@/lib/leads/quotes';
@@ -136,6 +138,35 @@ export async function assignLeadManager(shopId: string, args: Args, confirm: boo
     const activity = await logLeadActivity(db(), { shopId, leadId: f.lead.id, type: 'manager', content: `Менежер: ${f.lead.sales_manager_name || '-'} → ${manager}`, meta: { from: f.lead.sales_manager_name, to: manager }, createdBy: userId, createdByName: userName || null });
     if (!activity) return { error: `Лид ${manager}-д шилжсэн боловч өөрчлөлтийн түүх хадгалагдсангүй. Лидээ нээж шалгана уу.`, partialSuccess: true, leadId: f.lead.id };
     return { success: true, message: `«${leadDisplayName(f.lead)}» лидийг ${manager}-д шилжүүллээ.`, leadId: f.lead.id };
+}
+
+const LEAD_EDIT_FIELDS = ['preferred_rooms', 'preferred_type', 'budget_max', 'project_id'] as const;
+
+/** Лидийн сонирхол (өрөө, төрөл, дээд төсөв) ба төслийг засна — UI-ийн PATCH-тай нэг дүрэм (`updateStaffLead`). */
+export async function updateLeadTool(shopId: string, args: Args, confirm: boolean, userId: string, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
+    const patch: StaffLeadPatch = {};
+    for (const key of LEAD_EDIT_FIELDS) if (args[key] !== undefined) patch[key] = args[key] === '' ? null : args[key];
+    if (!Object.keys(patch).length) return { error: `Засах талбар алга: ${LEAD_EDIT_FIELDS.join(', ')}` };
+    const parsed = parseStaffLeadPatch(patch);
+    if (!parsed.ok) return { error: parsed.error };
+    const f = await findLead(shopId, args, scope);
+    if ('error' in f) return f;
+    if (!confirm) {
+        const preview: Record<string, unknown> = { Лид: f.lead.customer_name };
+        if (patch.preferred_rooms !== undefined) preview['Өрөө'] = patch.preferred_rooms ?? '—';
+        if (patch.preferred_type !== undefined) preview['Төрөл'] = propertyTypeLabel(patch.preferred_type as string | null);
+        if (patch.budget_max !== undefined) preview['Дээд төсөв'] = patch.budget_max == null ? '—' : formatMNT(Number(patch.budget_max));
+        if (patch.project_id !== undefined) {
+            const { data: project } = patch.project_id
+                ? await db().from('projects').select('name').eq('id', patch.project_id).eq('shop_id', shopId).maybeSingle()
+                : { data: null };
+            preview['Төсөл'] = project?.name ?? (patch.project_id ? 'Олдсонгүй' : '—');
+        }
+        return confirmNeeded('update_lead', { lead_id: f.lead.id, ...patch }, `Лид засах: ${f.lead.customer_name}`, preview);
+    }
+    const result = await updateStaffLead(db(), shopId, f.lead.id, patch, { userId, scope });
+    if (!result.ok) return { error: result.error };
+    return { success: true, message: `«${f.lead.customer_name}» лидийн мэдээллийг шинэчиллээ.`, leadId: f.lead.id };
 }
 
 /* ---------------- Уулзалт ---------------- */

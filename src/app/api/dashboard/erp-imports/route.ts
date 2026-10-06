@@ -1,11 +1,10 @@
-import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { getUserId, getUserShop, supabaseAdmin } from '@/lib/auth/supabase-auth';
 import { requireModule, requireModuleWrite } from '@/lib/auth/require-permission';
-import { readWorkbookSheets, buildWorkbookBuffer } from '@/lib/utils/xlsx';
-import { compareErp, normalizeErpSheets, ErpOptionsSchema, ERP_LIMITS, erpWeek, type ErpImport } from '@/lib/erp/import';
-import { ubDateStr } from '@/lib/utils/date';
+import { buildWorkbookBuffer } from '@/lib/utils/xlsx';
+import { compareErp, ERP_LIMITS, erpWeek, type ErpImport } from '@/lib/erp/import';
+import { runErpImport } from '@/lib/erp/import-run';
 import { fetchAllRows } from '@/lib/utils/pagination';
 
 export const runtime = 'nodejs';
@@ -81,43 +80,15 @@ export async function POST(req: NextRequest) {
     try {
         const form = await req.formData();
         const file = form.get('file');
-        if (!(file instanceof File) || !file.size || file.size > ERP_LIMITS.bytes || !/\.(xlsx|csv|tsv)$/i.test(file.name)) throw new Error('4 MB хүртэл .xlsx, .csv эсвэл .tsv файл сонгоно уу');
-        const source = z.string().trim().min(1).max(120).parse(form.get('source'));
-        const db = supabaseAdmin();
-        const latest = await db.from('erp_imports').select('*').eq('shop_id', shop.id).eq('source', source).order('sequence', { ascending: false }).limit(1).maybeSingle();
-        if (latest.error) return failure();
-        const previous = latest.data as ErpImport | null;
-        const sheets = await readWorkbookSheets(await file.arrayBuffer());
-        if (sheets.length > ERP_LIMITS.sheets || sheets.reduce((n, s) => n + s.rows.length, 0) > ERP_LIMITS.rows) throw new Error('Нэг импорт 30 sheet, 20,000 мөрөөс ихгүй байна');
-        if (!sheets.length) throw new Error('Файлд толгой мөртэй мэдээлэл алга');
-        if (form.get('action') === 'inspect') return NextResponse.json({ previousId: previous?.id ?? null, previousDate: previous?.report_date ?? null,
-            sheets: sheets.map(s => ({ name: s.name, columns: s.columns, count: s.rows.length, sample: s.rows.slice(0, 2), keyColumns: previous?.datasets.find(d => d.name === s.name)?.keyColumns ?? [] })) }, { headers: noCache });
-        const options = ErpOptionsSchema.parse({ source, ...JSON.parse(String(form.get('options'))) });
-        if (options.source !== source) throw new Error('Импортын эх үүсвэр өөрчлөгдсөн байна');
-        const datasets = normalizeErpSheets(sheets, options.keys);
-        const content = JSON.stringify(datasets);
-        if (Buffer.byteLength(content) > 16 * 1024 * 1024) throw new Error('Задалсан мэдээлэл 16 MB-аас их байна. Эх үүсвэрээр нь салгана уу');
-        const hash = createHash('sha256').update(content).digest('hex');
-        // Retry after a lost response returns the original immutable import.
-        if (form.get('action') === 'commit') {
-            const existing = await db.from('erp_imports').select('id,content_hash,report_date,source').eq('shop_id', shop.id).eq('id', options.requestId).maybeSingle();
-            if (existing.error) return failure();
-            if (existing.data) {
-                if (existing.data.content_hash !== hash || existing.data.report_date !== options.reportDate || existing.data.source !== source) throw new Error('Хүсэлтийн ID өөр файлтай давхардлаа');
-                return NextResponse.json({ id: existing.data.id });
-            }
-        }
-        if (options.reportDate > ubDateStr() || (previous && options.reportDate < previous.report_date)) throw new Error('Огноо сүүлийн импортоос хойш, өнөөдрөөс хэтрээгүй байна');
-        if (options.expectedPrevious !== (previous?.id ?? null)) return NextResponse.json({ error: 'Өөр импорт нэмэгдсэн байна. Файлыг дахин шалгана уу' }, { status: 409 });
-        const report = compareErp(previous?.datasets ?? null, datasets);
-        const { changes, ...summary } = report;
-        if (form.get('action') === 'preview') return NextResponse.json({ ...summary, changes: changes.filter(c => c.kind !== 'unchanged').slice(0, 30), previousDate: previous?.report_date ?? null }, { headers: noCache });
-        if (form.get('action') !== 'commit') throw new Error('Үйлдэл буруу');
-        const { data, error } = await db.rpc('commit_erp_import', { p_id: options.requestId, p_shop: shop.id, p_source: source, p_date: options.reportDate, p_file: file.name.slice(0, 255), p_hash: hash, p_user: userId, p_previous: options.expectedPrevious, p_datasets: datasets, p_summary: summary });
-        if (error?.code === '40001') return NextResponse.json({ error: 'Өөр импорт нэмэгдсэн байна. Дахин шалгана уу' }, { status: 409 });
-        if (error) return failure();
-        return NextResponse.json({ id: data });
+        if (!(file instanceof File)) throw new Error('4 MB хүртэл .xlsx, .csv эсвэл .tsv файл сонгоно уу');
+        // Дүрэм нь AI `import_erp_file`-тэй нэг (`runErpImport`).
+        const result = await runErpImport(supabaseAdmin(), {
+            shopId: shop.id, userId, fileName: file.name, buffer: await file.arrayBuffer(),
+            source: form.get('source'), action: form.get('action'), options: form.get('options'),
+        });
+        if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
+        return NextResponse.json(result.body, { headers: noCache });
     } catch (error) {
-        return NextResponse.json({ error: error instanceof z.ZodError ? 'Импортын тохиргоо буруу байна' : error instanceof Error ? error.message : 'Файл уншиж чадсангүй' }, { status: 400 });
+        return NextResponse.json({ error: error instanceof Error ? error.message : 'Файл уншиж чадсангүй' }, { status: 400 });
     }
 }

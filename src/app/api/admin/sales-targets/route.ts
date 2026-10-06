@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
 import { getAdminUser } from '@/lib/admin/auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
-import { getTeamTargets, getMonthlyActualsByManager, sumYear } from '@/lib/sales/targets';
+import { getTeamTargets, getMonthlyActualsByManager, sumYear, upsertTeamTargets } from '@/lib/sales/targets';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { z } from 'zod';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
@@ -134,17 +134,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: 'shopId, year, months[12] шаардлагатай' }, { status: 400 });
         }
 
-        const supabase = supabaseAdmin();
-        const rows = (months as unknown[]).map((v, i) => ({
-            shop_id: shopId,
-            year,
-            month: i + 1,
-            target_amount: Math.max(0, Number(v) || 0),
-        }));
-
-        const { error } = await supabase
-            .from('team_sales_targets')
-            .upsert(rows, { onConflict: 'shop_id,year,month' });
+        const { error } = await upsertTeamTargets(supabaseAdmin(), shopId, year, (months as unknown[]).map((amount, i) => ({ month: i + 1, amount })));
 
         if (error) return safeErrorResponse(error, 'Төлөвлөгөө хадгалахад алдаа гарлаа');
         return NextResponse.json({ success: true });

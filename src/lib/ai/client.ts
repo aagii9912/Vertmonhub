@@ -22,7 +22,7 @@ export interface StreamDone {
     chartConfig: unknown;
     agentsUsed: Array<{ id: string; name: string; emoji: string; color: string }>;
     trace: unknown;
-    pendingActions: Array<{ id: string; tool: string; args: Record<string, unknown>; label: string; preview: Record<string, unknown>; agentId: string; agentName: string; emoji: string }>;
+    pendingActions: Array<{ id: string; tool: string; args: Record<string, unknown>; label: string; preview: Record<string, unknown>; agentId: string; agentName: string; emoji: string; shopId?: string }>;
     clarification: { question: string; options: string[] } | null;
     conversationId: string | null;
     interruption?: { code: string; message: string };

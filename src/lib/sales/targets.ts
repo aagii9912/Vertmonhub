@@ -47,6 +47,12 @@ export async function getTeamTargets(
     return targets;
 }
 
+/** Багийн сарын төлөвлөгөөг (₮, сөрөг/хоосон = 0) upsert хийнэ — /api/admin/sales-targets ба AI `set_sales_target`. */
+export async function upsertTeamTargets(supabase: SupabaseClient, shopId: string, year: number, months: Array<{ month: number; amount: unknown }>) {
+    const rows = months.map(({ month, amount }) => ({ shop_id: shopId, year, month, target_amount: Math.max(0, Number(amount) || 0) }));
+    return supabase.from('team_sales_targets').upsert(rows, { onConflict: 'shop_id,year,month' });
+}
+
 /** Менежер бүрийн 12 сарын бодит борлуулалт (₮) + гэрээний тоо. */
 export async function getMonthlyActualsByManager(
     supabase: SupabaseClient,

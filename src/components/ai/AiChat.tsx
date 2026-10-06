@@ -10,6 +10,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useAiContext, suggestionsFor, contextLabel } from '@/lib/ai/context';
 import { streamAssistant, approveAssistantAction, type StreamEvent, type StreamDone } from '@/lib/ai/client';
 import { addAllowedTool, isToolAllowed } from '@/lib/ai/allowedTools';
+import { classifyTypedConfirmation, planTypedConfirmation } from '@/lib/ai/typed-confirmation';
 import { MarkdownMessage } from '@/components/ai-assistant/MarkdownMessage';
 import { OrchestrationTrace } from '@/components/ai-assistant/OrchestrationTrace';
 import { AiComposer, type AiAttachment } from './AiComposer';
@@ -59,6 +60,8 @@ export interface PendingAction {
     /** Серверийн бодит үр дүн (id-ууд) — үргэлжлүүлэх мессежид AI-д өгнө */
     result?: unknown;
     autoApproved?: boolean;
+    /** Өөр төслийн үйлдэл бол тухайн shop (сервер `in_project`-оос өгнө). */
+    shopId?: string;
 }
 
 /** Чат дотор inline харагдах нэг ажил: tool дуудлага эсвэл дэд агентын алхам. */
@@ -80,16 +83,16 @@ interface PendingRequest {
 const TOOL_LABEL: Record<string, string> = {
     delegate_to_specialists: 'Мэргэжилтнүүдэд хуваарилах', ask_user: 'Тодруулга', list_viewings: 'Уулзалт хайх', list_my_tasks: 'Миний ажлууд', list_contract_payments: 'Төлбөрийн хуваарь',
     log_call: 'Дуудлага бүртгэх', set_followup: 'Follow-up тавих', log_price_quote: 'Үнийн санал', set_lead_category: 'Ангилал тавих', list_lead_categories: 'Лидийн ангилал', assign_lead_manager: 'Лид шилжүүлэх', record_viewing_outcome: 'Уулзалтын үр дүн', reschedule_viewing: 'Уулзалт зөөх', create_task: 'Ажил нэмэх', complete_task: 'Ажил дуусгах', add_contract_payment: 'Төлбөр нэмэх', mark_payment_paid: 'Төлбөр төлсөн',
-    get_kpi_report: 'KPI тайлан', get_manager_activity: 'Менежерийн идэвх', get_manager_performance: 'Менежерийн гүйцэтгэл', get_export_link: 'Excel линк', add_customer_tag: 'Таг нэмэх', remove_customer_tag: 'Таг хасах', reply_to_customer: 'Messenger хариу', merge_customers: 'Харилцагч нэгтгэх',
+    get_kpi_report: 'KPI тайлан', get_weekly_sales_report: 'Лхагвын тайлан', import_erp_file: 'ERP импорт', get_weekly_updates: 'Хурлын бэлтгэл', save_weekly_update: 'Шинэчлэл хадгалах', get_manager_activity: 'Менежерийн идэвх', get_manager_performance: 'Менежерийн гүйцэтгэл', get_export_link: 'Excel линк', add_customer_tag: 'Таг нэмэх', remove_customer_tag: 'Таг хасах', reply_to_customer: 'Messenger хариу', list_conversations: 'Inbox', get_conversation: 'Чат унших', merge_customers: 'Харилцагч нэгтгэх',
     log_marketing_spend: 'Зарцуулалт бүртгэх', set_marketing_budget: 'Төсөв тавих', list_marketing_spend: 'Зарцуулалт', add_market_indicator: 'Зах зээлийн үзүүлэлт',
-    update_unit_status: 'Нэгжийн статус', delete_property: 'Байр устгах', delete_viewing: 'Уулзалт цуцлах', delete_customer: 'Харилцагч устгах', create_role: 'Дүр үүсгэх',
+    update_unit_status: 'Нэгжийн статус', in_project: 'Өөр төсөл', update_unit: 'Нэгж засах', update_lead: 'Лид засах', update_customer: 'Харилцагч засах', delete_property: 'Байр устгах', delete_viewing: 'Уулзалт цуцлах', delete_customer: 'Харилцагч устгах', create_role: 'Дүр үүсгэх',
     get_dashboard_stats: 'Самбарын тоо', list_properties: 'Байр хайх', list_leads: 'Лид хайх', get_lead_details: 'Лидийн мэдээлэл',
     get_customer_insights: 'Харилцагчийн дүн', list_contracts: 'Гэрээ хайх', get_contract_details: 'Гэрээний мэдээлэл', get_contracts_summary: 'Гэрээний нэгтгэл',
     get_sales_summary: 'Борлуулалтын нэгтгэл', get_sales_forecast: 'Прогноз', compare_properties: 'Байр харьцуулах', get_marketing_summary: 'Маркетингийн нэгтгэл',
     get_marketing_budget_status: 'Төсвийн байдал', get_market_indicators: 'Зах зээлийн үзүүлэлт', update_lead_status: 'Лидийн статус', add_lead_note: 'Тэмдэглэл',
     schedule_viewing: 'Уулзалт товлох', create_lead: 'Лид үүсгэх', create_customer: 'Харилцагч үүсгэх', create_contract: 'Гэрээ үүсгэх', transfer_contract: 'Гэрээ шилжүүлэх', process_contract_action: 'Гэрээний үйлдэл',
     update_property_status: 'Байрны статус', update_property_price: 'Байрны үнэ', create_property: 'Байр үүсгэх', bulk_update_leads: 'Олон лид шинэчлэх', attach_file: 'Файл хавсаргах',
-    remember_fact: 'Санах', create_social_post: 'Пост үүсгэх', delete_lead: 'Лид устгах', delete_contract: 'Гэрээ устгах', invite_user: 'Хэрэглэгч урих', assign_role: 'Эрх оноох',
+    remember_fact: 'Санах', create_social_post: 'Пост үүсгэх', delete_lead: 'Лид устгах', delete_contract: 'Гэрээ устгах', invite_user: 'Хэрэглэгч урих', assign_role: 'Эрх оноох', set_user_projects: 'Төслийн эрх', set_sales_target: 'Төлөвлөгөө тавих',
 };
 const toolLabel = (t: string) => TOOL_LABEL[t] ?? t;
 
@@ -148,6 +151,7 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
     }, []);
 
     const send = async (text: string, attachments: AiAttachment[] | PendingRequest['attachments'], opts?: { hidden?: boolean }) => {
+        if (!opts?.hidden && !attachments.length && await resolveTypedConfirmation(text)) return;
         const atts = attachments.map((a) => ({ url: a.url!, name: a.name, mimeType: a.mimeType })).filter((a) => a.url);
         const content = text || (atts.length ? 'Хавсаргасан файлыг шинжилж туслаач.' : '');
         if (!content) return;
@@ -190,7 +194,7 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
                             update(asstId, { status: null, clarification: { question: e.question, options: e.options } });
                             break;
                         case 'done': {
-                            const actions: PendingAction[] = (e.pendingActions || []).map((a) => ({ ...a, status: 'pending', autoApproved: !e.interruption && shop?.id ? isToolAllowed(shop.id, a.tool, user?.id) : false }));
+                            const actions: PendingAction[] = (e.pendingActions || []).map((a) => ({ ...a, status: 'pending', autoApproved: !e.interruption && (a.shopId ?? shop?.id) ? isToolAllowed(a.shopId ?? shop!.id, a.tool, user?.id) : false }));
                             update(asstId, (m) => ({ ...m, content: e.response || m.content, streaming: false, status: null, activity: (m.activity || []).map((a) => (a.status === 'run' ? { ...a, status: e.interruption ? 'fail' : 'ok', summary: e.interruption ? 'Үр дүнг бүртгэлээс шалгана уу' : a.summary } : a)), chartConfig: e.chartConfig as AiMessage['chartConfig'], data: e.data, agentsUsed: e.agentsUsed, trace: e.trace, pendingActions: actions, clarification: e.clarification ?? m.clarification ?? null, interruption: e.interruption }));
                             if (e.conversationId && e.conversationId !== conversationId) { setConversationId(e.conversationId); onConversationId?.(e.conversationId); }
                             break;
@@ -249,7 +253,7 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
 
     const approve = useCallback(async (a: PendingAction) => {
         setAction(a.id, { status: 'running' });
-        const r = await approveAssistantAction({ shopId: shop?.id, tool: a.tool, args: a.args, conversationId });
+        const r = await approveAssistantAction({ shopId: a.shopId ?? shop?.id, tool: a.tool, args: a.args, conversationId });
         refreshWork();
         if (r.ok) { setAction(a.id, { status: 'done', resultMessage: r.message, result: r.result }); toast.success(r.message); }
         else { setAction(a.id, { status: 'error', resultMessage: r.message, autoApproved: false }); toast.error(r.message); }
@@ -263,10 +267,35 @@ export function AiChat({ compact, className, prefill, onPrefillConsumed, active,
     };
 
     const allowAlways = (a: PendingAction) => {
-        if (shop?.id) addAllowedTool(shop.id, a.tool, user?.id);
-        setMessages((prev) => prev.map((m) => (m.pendingActions && !m.interruption ? { ...m, pendingActions: m.pendingActions.map((x) => (x.id !== a.id && x.status === 'pending' && x.tool === a.tool ? { ...x, autoApproved: true } : x)) } : m)));
+        const target = a.shopId ?? shop?.id;
+        if (target) addAllowedTool(target, a.tool, user?.id);
+        setMessages((prev) => prev.map((m) => (m.pendingActions && !m.interruption ? { ...m, pendingActions: m.pendingActions.map((x) => (x.id !== a.id && x.status === 'pending' && x.tool === a.tool && (x.shopId ?? shop?.id) === target ? { ...x, autoApproved: true } : x)) } : m)));
         void approve(a);
     };
+
+    /**
+     * Хүлээгдэж буй картыг «тийм» / «бүгдийг батал» / «үгүй» гэж бичиж шийдвэрлэнэ (картын товчтой ижил зам).
+     * Мөнгө, олон бичлэгт нөлөөлөх үйлдлийг зөвхөн карт дээр дарж батална.
+     */
+    async function resolveTypedConfirmation(text: string): Promise<boolean> {
+        const decision = classifyTypedConfirmation(text);
+        if (!decision) return false;
+        const owner = [...messagesRef.current].reverse().find((m) => m.role === 'assistant' && m.pendingActions?.some((a) => a.status === 'pending'));
+        if (!owner) return false;
+        const pending = (owner.pendingActions || []).filter((a) => a.status === 'pending');
+        const plan = planTypedConfirmation(pending, decision);
+        const note = (content: string) => setMessages((prev) => [...prev, { id: uid(), role: 'assistant', content }]);
+        setMessages((prev) => [...prev, { id: uid(), role: 'user', content: text }]);
+        if (plan.ambiguous) {
+            note('Хэд хэдэн үйлдэл хүлээгдэж байна. «Бүгдийг батал» гэж бичих эсвэл картаас нэг нэгээр нь сонгоно уу.');
+            return true;
+        }
+        for (const id of plan.cancel) setAction(id, { status: 'cancelled' });
+        if (plan.cancel.length) { note('Үйлдлийг цуцаллаа.'); scheduleContinuation(owner.id); }
+        for (const action of pending.filter((a) => plan.approve.includes(a.id))) await approve(action);
+        if (plan.needsCard.length) note('Мөнгө эсвэл олон бичлэгт нөлөөлөх үйлдлийг карт дээрх «Зөвшөөрөх» товчоор батална уу.');
+        return true;
+    }
 
     // Цээжилсэн (үргэлж зөвшөөрсөн) tool-ыг автоматаар гүйцэтгэнэ — нэг л удаа.
     useEffect(() => {

@@ -29,7 +29,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         emoji: '📊',
         color: 'emerald',
         description: 'Ерөнхий dashboard статистик, олон төрлийн өгөгдөл нэгтгэсэн шинжилгээ, KPI, график. Хэд хэдэн домэйн хамарсан өргөн асуултад тохиромжтой.',
-        toolNames: ['get_operations_report', 'get_manager_activity', 'get_dashboard_stats', 'list_properties', 'list_lead_projects', 'list_lead_categories', 'list_leads', 'get_sales_summary', 'get_contracts_summary', 'get_customer_insights', 'compare_properties'],
+        toolNames: ['get_operations_report', 'get_weekly_sales_report', 'get_weekly_updates', 'get_manager_activity', 'get_dashboard_stats', 'list_properties', 'list_lead_projects', 'list_lead_categories', 'list_leads', 'get_sales_summary', 'get_contracts_summary', 'get_customer_insights', 'compare_properties'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн ДАТА АНАЛИСТ agent. Таны үүрэг: ерөнхий статистик, KPI, чиг хандлага, олон эх сурвалжийн өгөгдлийг нэгтгэн шинжлэх.
 Үйл ажиллагааны тайлан, гэрээний зорилт, орсон мөнгө, урьдчилгааны тухай асуувал эхлээд get_operations_report ашигла. Урьдчилгааны хуримтлагдсан дүнг тухайн сарын орлого гэж бүү тайлбарла; эх өгөгдлийн хамрах хүрээ ба дутуу бүртгэлийн тайлбарыг хадгал.
@@ -41,7 +41,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         emoji: '🏠',
         color: 'sky',
         description: 'Үл хөдлөх хөрөнгийн жагсаалт, үнэ, статус, м², өрөө, дүүрэг, байр харьцуулах, борлуулалтын прогноз. Шинэ байр НЭМЭХ, байр УСТГАХ. Байр/орон сууцтай холбоотой бүх асуулт, үйлдэл.',
-        toolNames: ['list_properties', 'compare_properties', 'get_sales_summary', 'get_sales_forecast', 'update_property_status', 'update_unit_status', 'update_property_price', 'create_property', 'attach_file', 'delete_property'],
+        toolNames: ['list_properties', 'compare_properties', 'get_sales_summary', 'get_sales_forecast', 'update_property_status', 'update_unit_status', 'update_unit', 'update_property_price', 'create_property', 'attach_file', 'delete_property'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн БАЙРНЫ МЭРГЭЖИЛТЭН agent. Таны үүрэг: үл хөдлөх хөрөнгийн дэлгэрэнгүй (үнэ, статус, м², өрөө, байршил), байр харьцуулах, эрэлт/прогноз, шинэ байр нэмэх, байр устгах.
 Хэрэв танд бичих/устгах эрх олгогдсон бол байр нэмэх, статус/үнэ шинэчлэх, устгаж болно.
@@ -54,7 +54,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         emoji: '🤝',
         color: 'violet',
         description: 'Лийд/сонирхогчид, харилцагч, УУЛЗАЛТ (meeting) товлох/цуцлах, тагууд, тэмдэглэл. Шинэ лийд/харилцагч ҮҮСГЭХ, лийд/харилцагч/уулзалт УСТГАХ, статус шинэчлэх. Худалдан авагч, лийд, харилцагч, уулзалттай холбоотой бүх асуулт, үйлдэл.',
-        toolNames: ['list_lead_projects', 'list_lead_categories', 'list_leads', 'get_lead_details', 'get_customer_insights', 'list_properties', 'update_lead_status', 'set_lead_category', 'add_lead_note', 'log_price_quote', 'create_lead', 'create_customer', 'schedule_viewing', 'attach_file', 'bulk_update_leads', 'delete_lead', 'delete_customer', 'delete_viewing'],
+        toolNames: ['list_lead_projects', 'list_lead_categories', 'list_leads', 'get_lead_details', 'get_customer_insights', 'list_properties', 'update_lead_status', 'update_lead', 'set_lead_category', 'add_lead_note', 'log_price_quote', 'create_lead', 'create_customer', 'update_customer', 'list_conversations', 'get_conversation', 'schedule_viewing', 'attach_file', 'bulk_update_leads', 'delete_lead', 'delete_customer', 'delete_viewing'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн CRM МЭРГЭЖИЛТЭН agent. Таны үүрэг: лийд/харилцагчийн менежмент — жагсаалт, дэлгэрэнгүй, төсөв, сонирхол, тагууд, тэмдэглэл, шинэ лийд/харилцагч үүсгэх, лийд/харилцагч устгах, УУЛЗАЛТ (meeting) товлох болон цуцлах.
 Хэрэв танд бичих/устгах эрх олгогдсон бол лийд/харилцагч үүсгэх, уулзалт товлох, статус солих, тэмдэглэл нэмэх, устгаж болно. БҮХ үүсгэх/устгах/өөрчлөх үйлдлийг гүйцэтгэхээс өмнө систем хэрэглэгчээс баталгаажуулалт авна — чи зөв tool-оо дуудаж, юу хийхээ тодорхой хэл. Үйлдэл нь нэвтэрсэн борлуулалтын менежерийн нэрээр хадгалагдана.${COMMON_RULES}`, k),
@@ -64,8 +64,8 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         name: 'Санхүүгийн аналист',
         emoji: '💰',
         color: 'amber',
-        description: 'Гэрээ (property_contracts), төлбөр, үлдэгдэл, цуглуулалтын хувь, овердуэйс, борлуулалтын нэгтгэл, прогноз, гэрээний процесс (sign/paid/cancel). Шинэ гэрээ ҮҮСГЭХ, гэрээ ШИЛЖҮҮЛЭХ (эзэмшигч солих, нэр засах), гэрээ УСТГАХ.',
-        toolNames: ['get_operations_report', 'list_contracts', 'get_contract_details', 'get_contracts_summary', 'get_sales_summary', 'get_sales_forecast', 'get_dashboard_stats', 'process_contract_action', 'create_contract', 'transfer_contract', 'attach_file', 'delete_contract'],
+        description: 'Гэрээ (property_contracts), төлбөр, үлдэгдэл, цуглуулалтын хувь, овердуэйс, борлуулалтын нэгтгэл, прогноз, гэрээний процесс (sign/paid/cancel). Шинэ гэрээ ҮҮСГЭХ, гэрээ ШИЛЖҮҮЛЭХ (эзэмшигч солих, нэр засах), гэрээ УСТГАХ, ERP экспорт импортлох.',
+        toolNames: ['get_operations_report', 'import_erp_file', 'list_contracts', 'get_contract_details', 'get_contracts_summary', 'get_sales_summary', 'get_sales_forecast', 'get_dashboard_stats', 'process_contract_action', 'create_contract', 'transfer_contract', 'attach_file', 'delete_contract'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн САНХҮҮГИЙН АНАЛИСТ agent. Таны үүрэг: гэрээ, төлбөр, үлдэгдэл, цуглуулалт, овердуэйс, борлуулалтын мөнгөн урсгал ба прогноз, шинэ гэрээ үүсгэх, гэрээ устгах.
 Бодит мөнгөн урсгал, урьдчилгаа, хугацааны тайланд get_operations_report ашигла. Гэрээний нийт төлсөн/урьдчилгааны хуримтлагдсан дүнг сарын орлого гэж нэрлэхгүй. Бартер ба төлбөрийн хэлбэр тодорхойгүй гүйлгээ мөнгөн орлогод орохгүй; өгөгдлийн хамрах хүрээ, дутуу бүртгэлийн тайлбарыг заавал дамжуул.
@@ -90,7 +90,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         emoji: '🛡️',
         color: 'rose',
         description: 'Хэрэглэгч урих, дүр (role) оноох/үүсгэх, эрх удирдах зэрэг өндөр эрхийн админ үйлдлүүд. ЗӨВХӨН super_admin-д зориулсан. Хэрэглэгч/баг/эрхтэй холбоотой асуултад.',
-        toolNames: ['get_dashboard_stats', 'invite_user', 'assign_role', 'create_role'],
+        toolNames: ['get_dashboard_stats', 'invite_user', 'assign_role', 'create_role', 'set_user_projects', 'set_sales_target'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн ҮЙЛ АЖИЛЛАГАА/АДМИН agent. Таны үүрэг: хэрэглэгч нэмэх (invite_user), дүр оноох (assign_role), шинэ дүр үүсгэх (create_role) БОЛОН хэрэглэгчийн нэвтрэлт/онбординг процессын талаар тайлбарлах.
 Эдгээр үйлдэл нь ЗӨВХӨН super_admin-д нээлттэй. Үйлдэл бүрийг гүйцэтгэхээс өмнө систем баталгаажуулалт авна — чи зөв tool-оо дуудаж, юу хийхээ тодорхой хэл.
