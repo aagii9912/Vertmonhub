@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import React from 'react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const transport = vi.hoisted(() => ({
@@ -9,6 +9,11 @@ const transport = vi.hoisted(() => ({
     list: {} as Record<string, unknown>,
     summary: {} as Record<string, unknown>,
     failSummary: false,
+    params: '',
+}));
+vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(transport.params) }));
+vi.mock('@/components/leads/LeadCard', () => ({
+    LeadCard: ({ leadId, onClose }: { leadId: string; onClose: () => void }) => <div><h2>{leadId}</h2><button onClick={onClose}>Хаах</button></div>,
 }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ shop: { id: 'shop-1' }, user: { id: 'user-1', role: 'admin', permissions: { modules: ['leads'], canWrite: true } } }) }));
 vi.mock('@/lib/api/dashboardFetch', () => ({ dashboardJson: transport.json, dashboardFetch: transport.fetch }));
@@ -23,6 +28,8 @@ const stage = (status: string, count = 0, value = 0, stalled = 0, noNextStep = 0
 
 beforeEach(() => {
     transport.failSummary = false;
+    transport.params = '';
+    window.history.replaceState(null, '', '/dashboard/leads/pipeline');
     transport.list = { leads: [card], pagination: { total: 2345 } };
     transport.summary = { stages: [
         stage('new', 1234, 2_000_000_000, 40, 300), stage('contacted'), stage('viewing_scheduled'), stage('offered'),
@@ -31,7 +38,7 @@ beforeEach(() => {
     transport.json.mockImplementation(async (url: string) => {
         if (url.startsWith('/api/dashboard/lead-categories')) return { categories: [{ id: investor, name: 'Хөрөнгө оруулагч', description: null, tone: 'success', sort_order: 10, is_active: true }] };
         if (url.startsWith('/api/dashboard/leads/pipeline-summary')) {
-            if (transport.failSummary) throw new Error('Pipeline-ийн тоог гаргаж чадсангүй. Дахин оролдоно уу.');
+            if (transport.failSummary) throw new Error('Шатаар самбарын тоог гаргаж чадсангүй. Дахин оролдоно уу.');
             return transport.summary;
         }
         if (url.startsWith('/api/dashboard/leads?')) return transport.list;
@@ -45,7 +52,7 @@ const renderPage = () => render(<QueryClientProvider client={new QueryClient({ d
 it('takes column counts, values and hygiene from every lead and says the cards are only the newest 1,000', async () => {
     renderPage();
     expect(await screen.findByText('Картын жагсаалт бүрэн биш: 2,345 лидээс хамгийн сүүлд бүртгэгдсэн 1 лидийн карт харагдаж байна')).toBeInTheDocument();
-    expect(screen.getByText('2,345 лийд • Чирж зөөнө үү')).toBeInTheDocument();
+    expect(screen.getByText('2,345 лид · картыг чирж шат солино, дарж нээнэ')).toBeInTheDocument();
     expect(screen.getByText('1,234')).toBeInTheDocument();
     expect(screen.getByText('1 / 1,234 карт харагдаж байна')).toBeInTheDocument();
     expect(screen.getByText('0 / 1,000 карт харагдаж байна')).toBeInTheDocument();
@@ -53,7 +60,7 @@ it('takes column counts, values and hygiene from every lead and says the cards a
     expect(screen.getByText('3 тэрбум ₮')).toBeInTheDocument();
     expect(screen.getByText('1 тэрбум ₮', { selector: '.text-brand-strong' })).toBeInTheDocument();
     expect(screen.getByText('5 тэрбум ₮', { selector: '.text-status-success' })).toBeInTheDocument();
-    expect(screen.getByText('42 зогссон лийд')).toBeInTheDocument();
+    expect(screen.getByText('42 зогссон лид')).toBeInTheDocument();
     expect(screen.getByText('303 дараагийн алхамгүй')).toBeInTheDocument();
     expect(screen.getByText('Энхжин')).toBeInTheDocument();
 });
@@ -81,10 +88,31 @@ it('filters both the cards and the counts by category on the server', async () =
 it('shows an error with retry instead of a board without counts when the summary fails', async () => {
     transport.failSummary = true;
     renderPage();
-    expect(await screen.findByText('Лийд татахад алдаа')).toBeInTheDocument();
-    expect(screen.getByText('Pipeline-ийн тоог гаргаж чадсангүй. Дахин оролдоно уу.')).toBeInTheDocument();
+    expect(await screen.findByText('Лид татахад алдаа')).toBeInTheDocument();
+    expect(screen.getByText('Шатаар самбарын тоог гаргаж чадсангүй. Дахин оролдоно уу.')).toBeInTheDocument();
     expect(screen.queryByText('Энхжин')).not.toBeInTheDocument();
     transport.failSummary = false;
     fireEvent.click(screen.getByRole('button', { name: 'Дахин оролдох' }));
     expect(await screen.findByText('Энхжин')).toBeInTheDocument();
+});
+
+it('opens the customer card from a board card and keeps the category in the list ↔ board switch', async () => {
+    transport.params = `category=${investor}`;
+    renderPage();
+    fireEvent.click(await screen.findByText('Энхжин'));
+    const card = screen.getByRole('complementary', { name: 'Харилцагчийн карт' });
+    expect(within(card).getByRole('heading', { name: 'lead-1' })).toBeInTheDocument();
+    expect(window.location.search).toBe(`?category=${investor}&lead=lead-1`);
+    expect(screen.getByRole('link', { name: 'Жагсаалт' })).toHaveAttribute('href', `/dashboard/leads?category=${investor}`);
+    expect(screen.getByRole('link', { name: 'Шатаар' })).toHaveAttribute('aria-current', 'page');
+    fireEvent.click(within(card).getByRole('button', { name: 'Хаах' }));
+    expect(screen.queryByRole('complementary', { name: 'Харилцагчийн карт' })).not.toBeInTheDocument();
+    expect(window.location.search).toBe(`?category=${investor}`);
+});
+
+it('opens a card with Enter and leaves Space for keyboard dragging', async () => {
+    renderPage();
+    const boardCard = await screen.findByRole('button', { name: /^Энхжин — Enter: карт нээх/ });
+    fireEvent.keyDown(boardCard, { key: 'Enter', code: 'Enter' });
+    expect(within(screen.getByRole('complementary', { name: 'Харилцагчийн карт' })).getByRole('heading', { name: 'lead-1' })).toBeInTheDocument();
 });

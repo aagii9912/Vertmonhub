@@ -99,7 +99,7 @@ export function Pill({
         neutral: 'bg-surface-2 text-fg-2',
     } as const;
     return (
-        <span className={cn('inline-flex h-5 items-center gap-1.5 whitespace-nowrap rounded-full px-2 text-[11.5px] font-medium', tones[tone], className)}>
+        <span className={cn('inline-flex h-[22px] items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-xs font-medium', tones[tone], className)}>
             {children}
         </span>
     );

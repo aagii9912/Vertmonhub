@@ -6,6 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getRoleDisplayName } from '@/lib/rbac';
 import { useTheme } from '@/hooks/useTheme';
 import { openShortcuts } from '@/lib/navigation/shortcuts';
+import { initialsOf } from '@/components/ui/Avatar';
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -14,15 +15,6 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/Dropdown';
-
-/** Хүний нэрнээс 2 үсэгтэй товчлол: «Д. Номин» → «ДН». */
-export function initialsOf(name?: string | null): string {
-    if (!name) return '—';
-    const parts = name.replace(/\./g, ' ').split(/\s+/).filter(Boolean);
-    if (!parts.length) return '—';
-    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-    return (parts[0][0] + parts[1][0]).toUpperCase();
-}
 
 /** Дээд мөрийн профайл цэс: нэр, дүр, тохиргоо, тема, товчлол, тусламж, гарах. */
 export function UserMenu() {

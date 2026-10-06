@@ -62,10 +62,14 @@ const SpinnerIcon = () => (
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ({ className, variant, size, isLoading, href, children, ...props }, ref) => {
         if (href) {
+            // Холбоос хэлбэрт aria-label, title, onClick зэргийг дамжуулна (дүрстэй товч нэргүй үлдэхгүй);
+            // зөвхөн <button>-ий type/disabled-ийг хасна.
+            const { type: _type, disabled: _disabled, ...linkProps } = props;
             return (
                 <Link
                     href={href}
                     className={cn(buttonVariants({ variant, size, className }))}
+                    {...(linkProps as unknown as Omit<React.AnchorHTMLAttributes<HTMLAnchorElement>, 'href'>)}
                 >
                     {isLoading && <SpinnerIcon />}
                     {children}
