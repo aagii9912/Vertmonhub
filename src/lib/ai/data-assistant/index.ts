@@ -123,7 +123,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     delete_customer: ({ shopId, args, confirm }) => deleteCustomer(shopId, args, confirm),
     attach_file: ({ shopId, args, confirm, userName, userId, perms, scope }) => attachFile(shopId, args, confirm, userName, userId, perms, scope),
     bulk_update_leads: ({ shopId, args, confirm, scope, userId, userName }) => bulkUpdateLeads(shopId, args, confirm, scope, { userId, userName }),
-    get_marketing_summary: ({ shopId, args }) => fetchMarketingSummary(shopId, args),
+    get_marketing_summary: ({ shopId }) => fetchMarketingSummary(shopId),
     get_marketing_budget_status: ({ shopId, args }) => fetchMarketingBudgetStatus(shopId, args),
     get_market_indicators: ({ shopId }) => fetchMarketIndicators(shopId),
     create_social_post: ({ shopId, args, confirm, userName }) => createSocialPost(shopId, args, confirm, userName),

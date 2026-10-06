@@ -100,17 +100,19 @@ interface MetaAdsConfig {
 /** 'act_123' ба '123'-г ижил данс гэж үзнэ. */
 const accountKey = (id: string | null | undefined) => (id ? id.replace(/^act_/, '') : '');
 
-/** Маркетингийн нөлөөллийн сар бүрийн цуваа (/api/dashboard/marketing-roi/timeline) */
+/** Маркетингийн нөлөөллийн сар бүрийн цуваа (/api/dashboard/marketing-roi/timeline, `lib/marketing/timeline.ts`) */
 interface TimelineMonth {
     month: string;
     label: string;
     leads: number;
     meetings: number;
     activity: number;
-    spend: number;
-    /** ComboChart-ын Record<string, ...> өгөгдлийн шаардлагад нийцүүлнэ */
-    [key: string]: string | number;
+    /** Meta зардал зарын дансны валютаар (өдөр бүрийн зардал өөрийн сардаа); синк хийгдээгүй сар бол null. */
+    spend: number | null;
+    spendDays: number;
+    spendPartial: boolean;
 }
+interface TimelineData { months?: TimelineMonth[]; currency?: string | null }
 
 const fmtMNT = (n: number): string => formatMNT(n, { compact: true });
 
@@ -192,7 +194,7 @@ export default function MarketingROIPage() {
     const campaignsQuery = useDashboardQuery<{ rows?: AdCampaign[] }>(['marketing-roi', 'campaigns'], '/api/marketing/data/ad_campaigns?eq.platform=facebook&order=updated_at.desc');
     const roiQuery = useDashboardQuery<{ roi?: RoiData | null }>(['marketing-roi', 'roi'], '/api/dashboard/marketing-roi');
     const socialQuery = useDashboardQuery<SocialHistory>(['marketing-roi', 'social'], '/api/dashboard/marketing/social-history');
-    const timelineQuery = useDashboardQuery<{ months?: TimelineMonth[] }>(['marketing-roi', 'timeline'], '/api/dashboard/marketing-roi/timeline');
+    const timelineQuery = useDashboardQuery<TimelineData>(['marketing-roi', 'timeline'], '/api/dashboard/marketing-roi/timeline');
     // Зарын дансыг «Ad account-уудыг ачаалах» дарахад л татна.
     const adAccountsQuery = useDashboardQuery<{ accounts?: AdAccount[]; selected_id?: string | null }>(
         ['marketing-roi', 'ad-accounts'], '/api/marketing/facebook/ads/accounts', { enabled: false },
@@ -227,6 +229,17 @@ export default function MarketingROIPage() {
         || null;
     const adCurrencyLabel = accountCurrencyLabel(adCurrency);
     const adMoney = useCallback((value: number | null | undefined) => formatAccountMoney(value, adCurrency), [adCurrency]);
+    // Цувааны зардал өөрийн валюттай ирнэ (сонгосон зарын дансны өдрийн зардал); ирээгүй бол дансны валютаар шошголно.
+    const timelineCurrency = timelineQuery.data?.currency ?? adCurrency;
+    const timelineMoney = useCallback((value: number | null | undefined) => formatAccountMoney(value, timelineCurrency), [timelineCurrency]);
+    const timelineChart = useMemo(
+        () => timeline.map(({ label, leads, meetings, activity, spend }) => ({ label, leads, meetings, activity, spend })),
+        [timeline],
+    );
+    const partialSpendMonths = timeline.filter((m) => m.spendPartial).map((m) => `${m.label} (${m.spendDays} өдөр)`);
+    const timelineSpendNote = !timeline.some((m) => m.spend !== null)
+        ? 'Зарын зардал: Meta-аас өдрийн зардал татагдаагүй тул шугам хоосон. «Маркетинг» хуудасны «Meta зардал татах»-аар татна уу.'
+        : `Зарын зардал: Meta-аас өдрөөр татсан зардлыг тухайн өдрийн сард оноов — зарын дансны валютаар (${accountCurrencyLabel(timelineCurrency)}), төгрөгт хөрвүүлээгүй. Зардал татагдаагүй сард шугам тасарна.${partialSpendMonths.length ? ` Зөвхөн зарим өдөр нь татагдсан: ${partialSpendMonths.join(', ')}.` : ''}`;
     const [campaignsLoading, setCampaignsLoading] = useState(false);
     const [campaignsError, setCampaignsError] = useState<string | null>(null);
     const adsError = campaignsError || adAccountsQuery.error?.message;
@@ -722,23 +735,26 @@ export default function MarketingROIPage() {
                             <Button variant="secondary" size="sm" className="mt-1 self-start" onClick={() => void timelineQuery.refetch()} isLoading={timelineQuery.isFetching}>Дахин оролдох</Button>
                         </Alert>
                     ) : timeline.length > 0 && (
-                        <ChartCard
-                            title="Маркетингийн нөлөөлөл"
-                            subtitle="Идэвхжүүлэлт (пост, кампанит ажил) лид ба уулзалтын тоонд хэрхэн нөлөөлж буй харьцуулалт"
-                            height={300}
-                        >
-                            <ComboChart
-                                data={timeline}
-                                xKey="label"
-                                bars={[
-                                    { key: 'leads', name: 'Лийд' },
-                                    { key: 'meetings', name: 'Уулзалт' },
-                                    { key: 'activity', name: 'Идэвхжүүлэлт' },
-                                ]}
-                                line={{ key: 'spend', name: `Зарын зардал (${adCurrencyLabel})` }}
-                                lineFormatter={adMoney}
-                            />
-                        </ChartCard>
+                        <div className="mb-6">
+                            <ChartCard
+                                title="Маркетингийн нөлөөлөл"
+                                subtitle="Идэвхжүүлэлт (пост, кампанит ажил) лид ба уулзалтын тоонд хэрхэн нөлөөлж буй харьцуулалт"
+                                height={300}
+                            >
+                                <ComboChart
+                                    data={timelineChart}
+                                    xKey="label"
+                                    bars={[
+                                        { key: 'leads', name: 'Лийд' },
+                                        { key: 'meetings', name: 'Уулзалт' },
+                                        { key: 'activity', name: 'Идэвхжүүлэлт' },
+                                    ]}
+                                    line={{ key: 'spend', name: `Зарын зардал (${accountCurrencyLabel(timelineCurrency)})` }}
+                                    lineFormatter={timelineMoney}
+                                />
+                            </ChartCard>
+                            <p className="mt-2 text-xs text-muted-foreground">{timelineSpendNote}</p>
+                        </div>
                     )}
 
                     {/* Monthly Trend */}

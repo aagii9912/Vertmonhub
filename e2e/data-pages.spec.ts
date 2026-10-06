@@ -9,7 +9,8 @@ const customerId = '00000000-0000-4000-8000-000000000050';
 const leadId = '00000000-0000-4000-8000-000000000060';
 
 async function setup(page: Page) {
-    const state = { failCustomers: true, failPipeline: true, failLogs: true, deleted: [] as string[], errors: [] as string[] };
+    const state = { failCustomers: true, failPipeline: true, failLogs: true, truncated: false, deleted: [] as string[], errors: [] as string[],
+        patches: [] as Array<{ id: string; body: unknown }> };
     const customer = { id: customerId, name: 'Бат Дорж', phone: '99112233', email: null, address: null, notes: null, tags: [],
         message_count: 3, last_contact_at: null, created_at: '2026-10-01T02:00:00Z', quality_score: 72, quality_tier: 'A', lifecycle_stage: 'lead' };
     page.on('pageerror', (error) => state.errors.push(error.message));
@@ -40,7 +41,20 @@ async function setup(page: Page) {
         if (path === '/api/dashboard/leads' && url.searchParams.get('pageSize') === '1000') {
             if (state.failPipeline) return reply({ error: 'Түр алдаа' }, 500);
             return reply({ leads: [{ id: leadId, customer_name: 'Энхжин', customer_phone: '88112233', status: 'new', source: 'facebook', sales_manager_name: 'Номин',
-                project_id: null, budget_max: 300000000, category_id: 'investor', created_at: '2026-10-02T02:00:00Z', updated_at: '2026-10-02T02:00:00Z', stage_changed_at: '2026-10-02T02:00:00Z' }], pagination: { total: 1 } });
+                project_id: null, budget_max: 300000000, category_id: 'investor', created_at: '2026-10-02T02:00:00Z', updated_at: '2026-10-02T02:00:00Z', stage_changed_at: '2026-10-02T02:00:00Z' }],
+                pagination: { total: state.truncated ? 2345 : 1 } });
+        }
+        // Бүх лидийн тоолол (самбар картаа хамгийн сүүлийн 1,000-аар л ачаална).
+        if (path === '/api/dashboard/leads/pipeline-summary') {
+            const stage = (status: string, count = 0, value = 0, stalled = 0, noNextStep = 0) => ({ status, count, value, stalled, noNextStep });
+            return reply({ stages: state.truncated
+                ? [stage('new', 1234, 2_000_000_000, 40, 300), stage('contacted'), stage('viewing_scheduled'), stage('offered'),
+                    stage('negotiating', 11, 1_000_000_000, 2, 3), stage('closed_won', 1000, 5_000_000_000), stage('closed_lost', 100)]
+                : [stage('new', 1, 300_000_000, 1, 1), ...['contacted', 'viewing_scheduled', 'offered', 'negotiating', 'closed_won', 'closed_lost'].map(s => stage(s))] });
+        }
+        if (path === `/api/dashboard/leads/${leadId}` && request.method() === 'PATCH') {
+            state.patches.push({ id: leadId, body: request.postDataJSON() });
+            return reply({ lead: { id: leadId } });
         }
         if (path === '/api/dashboard/contracts/stats/service') return reply({ stats: { total_contracts: 1, active_contracts: 1, closed_contracts: 0, total_sales: 286000000, total_collected: 80000000,
             collection_rate: 28, overdue_contract_count: 0, total_overdue_amount: 0, open_requests: 1, resolved_requests: 0, avg_resolution_hours: null, by_type: {} } });
@@ -91,5 +105,35 @@ test('pipeline болон санал гомдлын уншилт унавал а
     state.failLogs = false;
     await page.getByRole('button', { name: 'Дахин оролдох', exact: true }).click();
     await expect(page.getByText('Цахилгааны асуудал', { exact: true }).first()).toBeVisible();
+    expect(state.errors).toEqual([]);
+});
+
+test('pipeline тоо, таамгийг бүх лидээр харуулж, картын жагсаалт бүрэн биш гэдгийг хэлнэ; чирэхэд тоо шууд шилжинэ', async ({ page }) => {
+    const state = await setup(page);
+    state.failPipeline = false;
+    state.truncated = true;
+    await page.goto('/dashboard/leads/pipeline');
+    await expect(page.getByText('Картын жагсаалт бүрэн биш: 2,345 лидээс хамгийн сүүлд бүртгэгдсэн 1 лидийн карт харагдаж байна', { exact: true })).toBeVisible();
+    await expect(page.getByText('2,345 лийд • Чирж зөөнө үү', { exact: true })).toBeVisible();
+    const newColumn = page.locator('[data-stage="new"]');
+    const contacted = page.locator('[data-stage="contacted"]');
+    await expect(newColumn.getByText('1,234', { exact: true })).toBeVisible();
+    await expect(newColumn.getByText('1 / 1,234 карт харагдаж байна', { exact: true })).toBeVisible();
+    await expect(page.locator('[data-stage="closed_won"]').getByText('0 / 1,000 карт харагдаж байна', { exact: true })).toBeVisible();
+    await expect(page.getByText('42 зогссон лийд', { exact: true })).toBeVisible();
+
+    // Картыг «Холбогдсон» багана руу чирнэ (dnd-kit pointer sensor: 6px-ээс хойш идэвхжинэ).
+    const card = newColumn.getByText('Энхжин', { exact: true });
+    const from = (await card.boundingBox())!;
+    const to = (await contacted.boundingBox())!;
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x + to.width / 2, to.y + 80, { steps: 15 });
+    await page.mouse.up();
+
+    await expect.poll(() => state.patches).toEqual([{ id: leadId, body: { status: 'contacted' } }]);
+    await expect(contacted.getByText('Энхжин', { exact: true })).toBeVisible();
+    await expect(newColumn.getByText('1,233', { exact: true })).toBeVisible();
+    await expect(contacted.getByText('1', { exact: true })).toBeVisible();
     expect(state.errors).toEqual([]);
 });

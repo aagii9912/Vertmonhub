@@ -6,6 +6,7 @@ import { metaAdsTokenSource } from '@/lib/facebook/ads-auth';
 import { metaDeadline } from '@/lib/facebook/daily-spend';
 import { MetaSyncInput, syncMetaSpend } from '@/lib/marketing/meta-spend';
 import { META_INSIGHTS_STATUS_TABLE, syncMetaInsights } from '@/lib/marketing/meta-insights';
+import { metaAdAccountKey } from '@/lib/services/MarketingOps';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
 export const maxDuration = 180;
 /** Зардал + дэлгэрэнгүй синкийн нийт хугацаа: Vercel функцийг зогсоохоос өмнө төлөвөө бичих зайтай. */
@@ -20,7 +21,7 @@ export async function GET() {
         const db = supabaseAdmin();
         const { data: config, error } = await db.from('shops').select('facebook_ad_account_id,meta_ads_user_access_token,meta_ads_user_token_expires_at').eq('id', shop.id).single();
         if (error) throw error;
-        const accountId = config?.facebook_ad_account_id ? `act_${config.facebook_ad_account_id.replace(/^act_/, '')}` : null;
+        const accountId = metaAdAccountKey(config?.facebook_ad_account_id);
         const { data: status, error: readError } = accountId ? await db.from('meta_spend_sync').select('account_id,currency,timezone,mnt_per_unit,last_attempt_at,last_success_at,last_from,last_to,last_error').eq('shop_id', shop.id).eq('account_id', accountId).maybeSingle() : { data: null, error: null };
         if (readError) throw readError;
         // Дэлгэрэнгүй синкийн төлөв: шинэчлэл ороогүй бол зардлын хэсгийг унагахгүй.

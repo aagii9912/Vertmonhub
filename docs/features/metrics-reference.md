@@ -46,6 +46,28 @@
 | bySource / byProject / byManager / byCategory | лид ба амжилттай лидийн тоо (`source` хоосон → other; `project_id` → төслийн нэр; `category_id` → UI төслийн ангиллын нэр, архивласан нь «(архив)»; хариуцагчгүй, төсөлгүй, ангилалгүй мөр төгсгөлд). Мөнгөн дүн тооцохгүй — лидийн төсөв гэрээний үнэ биш |
 | Экспорт | `/api/dashboard/export/excel?type=leads&from=&to=` (`leads` модуль) — тайлангийн ижил хугацаа, «Ангилал» баганатай |
 
+## Лидийн pipeline (`/api/dashboard/leads/pipeline-summary`, `/dashboard/leads/pipeline`)
+`leads` модуль, `applyLeadScope`. Самбарын карт хамгийн сүүлд бүртгэгдсэн 1,000 лидээр хязгаарлагдана; тоо, дүн, таамгийг энэ endpoint БҮХ лидээр (`fetchAllRows`, устгаагүй) тооцно. `category=<uuid|none>` нь карт ба тоололд хоёуланд сервер дээр үйлчилнэ. Дүрэм нэг газар: `lib/leads/pipeline.ts`.
+| Метрик | Тооцоо |
+|---|---|
+| Баганын тоо | шат (`status`) бүрийн лид; самбарын 7 шатанд ороогүй төлөв тоологдохгүй |
+| Дүн | лидийн төсвийн дундаж (`budget_min`/`budget_max`) — гэрээний үнэ биш |
+| Нээлттэй дүн / Жинлэсэн таамаг / Хаасан | хаагдаагүй шатны дүн / дүн × шатны магадлал (0.1…0.8) / `closed_won`-ийн дүн |
+| Зогссон | хаагдаагүй, шатанд `stalledDays`-ээс (3/5/7/7/10) удаан (`stage_changed_at`, эс бөгөөс `created_at`) |
+| Дараагийн алхамгүй | хаагдаагүй, `next_followup_at` хоосон |
+| «Картын жагсаалт бүрэн биш» | жагсаалтын нийт тоо ачаалсан картаас олон үед; баганад «N / M карт харагдаж байна» |
+
+## Маркетингийн нөлөөлөл (`/api/dashboard/marketing-roi/timeline`)
+`marketing-roi` модуль. Улаанбаатарын сүүлийн 6 сар (`ubParts`/`ubMonthRange`), бүх уншилт `fetchAllRows`; алдаа гарвал тэг цуваа биш 500. Тооцоо: `lib/marketing/timeline.ts`.
+| Метрик | Тооцоо |
+|---|---|
+| leads / meetings | `leads.created_at` / устгаагүй `property_viewings.scheduled_at`-ийн УБ сар (`applyLeadScope`) |
+| activity | нийтэлсэн пост + `marketing_campaigns`, `ad_campaigns` эхэлсэн сараар (`start_date`, эс бөгөөс бүртгэсэн огноо) |
+| spend | сонгосон Meta зарын дансны `meta_daily_spend.native_amount` — өдөр бүр өөрийн (дансны) өдрийн сард, дансны валютаар (`currency`). Синк хийсэн өдөргүй сар `null` («—», шугам тасарна), зарим өдөр нь л синк хийгдсэн өнгөрсөн сар `spendPartial`. `ad_campaigns.spend` (30 хоногийн snapshot) ашиглахгүй |
+
+## AI маркетингийн нэгтгэл (`get_marketing_summary`)
+Зардал, CPA, CTR нь зөвхөн Meta-аас синк хийсэн кампанит ажлын (`isMetaSyncedCampaign`: `platform = 'facebook'` + `external_id`) сүүлийн синкийн хугацааны дүн, зарын дансны валютаар (`meta_spend_sync`, `loadMetaAdAccount`; мэдэгдэхгүй бол «валют тодорхойгүй»). Hub-д бүртгэсэн төлөвлөгөөт зар нийлбэрт орохгүй, ₮ төсөвтэйгээ тусдаа жагсана.
+
 ## Маркетингийн форм lead-ийн ялгаа (чухал)
 `POST /api/leads` (Vertmon-ы өөрийн **маркетингийн форм**) нь `shop_id`-гүй lead үүсгэдэг.
 Бүх CRM метрик `shop_id`-ээр шүүдэг тул эдгээр lead нь **tenant-ийн CRM юүлүүрт ОРОХГҮЙ** —
