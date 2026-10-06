@@ -7,6 +7,7 @@ import { CreateCustomerSchema, UpdateCustomerSchema, validateBody } from '@/lib/
 import { normalizePhone } from '@/lib/utils/phone';
 import { recomputeCustomerScore } from '@/lib/services/CustomerScoringService';
 import { parsePagination, buildPageMeta } from '@/lib/utils/pagination';
+import { orSearchTerm } from '@/lib/utils/search';
 import { recordAudit } from '@/lib/services/AuditService';
 import { withRoute } from '@/lib/api/route';
 
@@ -49,9 +50,10 @@ export async function GET(request: NextRequest) {
       .eq('shop_id', shopId)
       .is('deleted_at', null);
 
-    // Search by name or phone
-    if (search) {
-      query = query.or(`name.ilike.%${search}%,phone.ilike.%${search}%`);
+    // Нэр эсвэл утсаар хайна; таслал, хаалт `.or()`-ийн шүүлтүүрийг эвддэг тул цэвэрлэнэ.
+    const term = search ? orSearchTerm(search) : '';
+    if (term) {
+      query = query.or(`name.ilike.%${term}%,phone.ilike.%${term}%`);
     }
 
     // Filter by tag (tags JSONB багана migration-оор нэмэгдсэн)

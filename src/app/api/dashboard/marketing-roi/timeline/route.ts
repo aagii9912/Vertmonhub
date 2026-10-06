@@ -2,6 +2,7 @@ import { applyLeadScope, resolveSalesProjectScope } from '@/lib/sales/project-sc
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase';
 import { withRoute } from '@/lib/api/route';
+import { ubMonthRange, ubParts } from '@/lib/utils/date';
 
 /**
  * GET /api/dashboard/marketing-roi/timeline
@@ -15,12 +16,13 @@ import { withRoute } from '@/lib/api/route';
 
 const MONTHS_BACK = 6;
 
-/** created_at маягийн огноог 'YYYY-MM' түлхүүр болгоно. */
+/** created_at маягийн огноог Улаанбаатарын 'YYYY-MM' сар болгоно (сервер UTC-д ажилладаг). */
 function monthKey(value: string | null): string | null {
     if (!value) return null;
     const d = new Date(value);
     if (Number.isNaN(d.getTime())) return null;
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const { year, month } = ubParts(d);
+    return `${year}-${String(month).padStart(2, '0')}`;
 }
 
 export const GET = withRoute({ module: 'marketing-roi', error: 'Цуваа татахад алдаа гарлаа' }, async ({ shop: authShop }) => {
@@ -28,10 +30,10 @@ export const GET = withRoute({ module: 'marketing-roi', error: 'Цуваа та�
     const scope = await resolveSalesProjectScope(supabase, authShop.id);
     const shopId = authShop.id;
 
-    // Цонхны эхлэл: одоогоос N-1 сарын өмнөх сарын 1-ний өдөр.
-    const now = new Date();
-    const windowStart = new Date(now.getFullYear(), now.getMonth() - (MONTHS_BACK - 1), 1);
-    const startISO = windowStart.toISOString();
+    // Цонхны эхлэл: УБ-ийн одоогийн сараас N-1 сарын өмнөх сарын 1-ний шөнө дунд.
+    const today = ubParts();
+    const firstMonthIdx = today.month - 1 - (MONTHS_BACK - 1);
+    const startISO = ubMonthRange(today.year, firstMonthIdx).start.toISOString();
 
     const [{ data: leads }, { data: viewings }, { data: posts }, { data: adCampaigns }, { data: mktCampaigns }] =
         await Promise.all([
@@ -68,11 +70,12 @@ export const GET = withRoute({ module: 'marketing-roi', error: 'Цуваа та�
         { month: string; label: string; leads: number; meetings: number; activity: number; spend: number }
     >();
     for (let i = 0; i < MONTHS_BACK; i++) {
-        const d = new Date(now.getFullYear(), now.getMonth() - (MONTHS_BACK - 1) + i, 1);
-        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        // Хуанлийн сарын тоолол (жил дамжина); цагийн бүсгүй.
+        const d = new Date(Date.UTC(today.year, firstMonthIdx + i, 1));
+        const key = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
         buckets.set(key, {
             month: key,
-            label: `${d.getMonth() + 1}-р сар`,
+            label: `${d.getUTCMonth() + 1}-р сар`,
             leads: 0,
             meetings: 0,
             activity: 0,

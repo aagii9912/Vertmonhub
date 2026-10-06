@@ -15,6 +15,17 @@ export interface MetaSyncStatus {
     account_id: string; currency: string | null; timezone: string | null; mnt_per_unit: number | null;
     last_attempt_at: string; last_success_at: string | null; last_from: string | null; last_to: string | null; last_error: string | null;
 }
+/**
+ * Төслийн сонгосон Meta зарын дансны валют (сүүлийн зардлын синкээс). `ad_campaigns`-ийн зардал, CPC
+ * тэр валютаар хадгалагддаг; данс сонгоогүй, синк хийгээгүй эсвэл уншиж чадаагүй бол null — ₮ гэж таамаглахгүй.
+ */
+export async function loadAdAccountCurrency(db: SupabaseClient, shopId: string): Promise<string | null> {
+    const { data: shop } = await db.from('shops').select('facebook_ad_account_id').eq('id', shopId).maybeSingle();
+    const accountId = `act_${String(shop?.facebook_ad_account_id || '').replace(/^act_/, '')}`;
+    if (!/^act_\d+$/.test(accountId)) return null;
+    const { data } = await db.from('meta_spend_sync').select('currency').eq('shop_id', shopId).eq('account_id', accountId).maybeSingle();
+    return typeof data?.currency === 'string' ? data.currency : null;
+}
 /** Зардлын синк эхлэхэд үлдсэн байх ёстой хугацаа (данс + хуудаснууд + хадгалалт). */
 export const META_SPEND_MIN_MS = 10_000;
 

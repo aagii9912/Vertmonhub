@@ -26,7 +26,8 @@ import { compactLeadTimelineWithin } from '@/lib/leads/timeline';
 import { LEAD_NAME_OR_ANONYMOUS, STATUS_META, UNCATEGORIZED_LABEL, isAnonymousLead, isUncategorizedInput, leadCategoryLabel, leadDisplayName, normalizeLeadName, statusLabel, toLeadSource } from '@/lib/leads/labels';
 import { leadCategoryName, listLeadCategories, resolveLeadCategory, type LeadCategory } from '@/lib/services/LeadCategoryService';
 import type { LeadStatus } from '@/types/property';
-import { formatMNT } from '@/lib/utils/currency';
+import { accountCurrencyLabel, formatAccountMoney, formatMNT } from '@/lib/utils/currency';
+import { loadAdAccountCurrency } from '@/lib/marketing/meta-spend';
 import { contractIdsByPreviousHolder, listContractTransfers } from '@/lib/services/ContractService';
 import { propertyStatusLabel, unitStatusLabel, type InventoryStatus } from '@/lib/inventory/labels';
 import { contractStatusLabel } from '@/lib/contracts/labels';
@@ -1638,9 +1639,10 @@ export async function bulkUpdateLeads(shopId: string, args: any, confirm = false
 // ---- Marketing ----
 
 export async function fetchMarketingSummary(shopId: string, args: any) {
-    const [{ data: campaigns }, { data: posts }] = await Promise.all([
+    const [{ data: campaigns }, { data: posts }, currency] = await Promise.all([
         supabaseAdmin.from('ad_campaigns').select('name, platform, status, budget, spend, impressions, clicks, conversions, reach').eq('shop_id', shopId),
         supabaseAdmin.from('social_posts').select('platform, status, likes, comments, shares, reach, engagement_rate, published_at').eq('shop_id', shopId).order('published_at', { ascending: false, nullsFirst: false }).limit(10),
+        loadAdAccountCurrency(supabaseAdmin, shopId),
     ]);
     const camps = campaigns || [];
     const totals = camps.reduce((a, c: any) => ({
@@ -1652,13 +1654,18 @@ export async function fetchMarketingSummary(shopId: string, args: any) {
     return {
         campaignCount: camps.length,
         activeCampaigns: camps.filter((c: any) => c.status === 'active').length,
+        // Зарын зардал Meta зарын дансны валютаар (ханшаар хөрвүүлээгүй) — ₮ гэж таамаглахгүй.
+        spendCurrency: accountCurrencyLabel(currency),
+        spendBasis: currency === 'MNT'
+            ? 'Зарын данс төгрөгөөр.'
+            : 'Зарын дансны валютаар, төгрөгт хөрвүүлээгүй; дүнг ₮ гэж бүү хэл.',
         totals: {
-            spend: formatMNT(totals.spend),
+            spend: formatAccountMoney(totals.spend, currency),
             impressions: totals.impressions,
             clicks: totals.clicks,
             conversions: totals.conversions,
             ctr: totals.impressions ? `${((totals.clicks / totals.impressions) * 100).toFixed(2)}%` : '0%',
-            cpa: totals.conversions ? formatMNT(totals.spend / totals.conversions) : '-',
+            cpa: totals.conversions ? formatAccountMoney(totals.spend / totals.conversions, currency) : '-',
         },
         campaigns: camps.slice(0, 10),
         recentPosts: (posts || []).map((p: any) => ({ platform: p.platform, status: p.status, likes: p.likes, comments: p.comments, reach: p.reach, engagement_rate: p.engagement_rate })),
