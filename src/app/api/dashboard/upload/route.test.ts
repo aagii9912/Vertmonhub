@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-const state = vi.hoisted(() => ({signedIn:true,membership:true,modules:['ai-assistant'],rows:[] as {entity_type:string}[], uploads:[] as {bucket:string,path:string}[],downloads:[] as string[]}));
+const state = vi.hoisted(() => ({signedIn:true,membership:true,modules:['ai-assistant'],rows:[] as {entity_type:string}[], uploads:[] as {bucket:string,path:string,type?:string}[],downloads:[] as string[]}));
 const shopId='00000000-0000-4000-8000-000000000001';
 const userId='00000000-0000-4000-8000-000000000002';
 const fileId='00000000-0000-4000-8000-000000000003';
@@ -9,7 +9,7 @@ vi.mock('@/lib/auth/require-permission',()=>({requireModuleWrite:async()=>null,r
 vi.mock('@/lib/utils/logger',()=>({logger:{error:vi.fn()}}));
 vi.mock('@/lib/supabase',()=>({supabaseAdmin:()=>({
     from:()=>{const q:any={select:()=>q,eq:()=>q,then:(resolve:any)=>Promise.resolve({data:state.rows,error:null}).then(resolve)};return q;},
-    storage:{from:(bucket:string)=>({upload:async(path:string)=>{state.uploads.push({bucket,path});return {error:null};},download:async(path:string)=>{state.downloads.push(path);return {data:new Blob(['synthetic'],{type:'application/pdf'}),error:null};}})},
+    storage:{from:(bucket:string)=>({upload:async(path:string,_body:unknown,options?:{contentType?:string})=>{state.uploads.push({bucket,path,type:options?.contentType});return {error:null};},download:async(path:string)=>{state.downloads.push(path);return {data:new Blob(['synthetic'],{type:'application/pdf'}),error:null};}})},
 })}));
 import { GET,POST } from './route';
 import { privateAttachmentUrl } from '@/lib/ai/private-attachments';
@@ -23,6 +23,16 @@ describe('private AI file transport',()=>{
         expect(res.status).toBe(200);expect(state.uploads[0].bucket).toBe('ai-attachments');
         expect(state.uploads[0].path.startsWith(`${shopId}/${userId}/`)).toBe(true);
         expect((await res.json()).url).toBe(privateAttachmentUrl(state.uploads[0].path));
+    });
+    it('accepts ERP spreadsheets under a standard type and still rejects legacy .xls',async()=>{
+        const upload=async(file:File)=>{const form=new FormData();form.append('file',file);return POST(new Request('http://localhost/api/dashboard/upload',{method:'POST',body:form}));};
+        expect((await upload(new File(['a,b\n1,2'],'ERP.csv',{type:'application/vnd.ms-excel'}))).status).toBe(200);
+        expect(state.uploads[0]).toMatchObject({path:expect.stringMatching(/\.csv$/),type:'text/csv'});
+        expect((await upload(new File(['x'],'ERP.xlsx',{type:''}))).status).toBe(200);
+        expect(state.uploads[1]).toMatchObject({path:expect.stringMatching(/\.xlsx$/),type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+        expect((await upload(new File(['x'],'ERP.xls',{type:'application/vnd.ms-excel'}))).status).toBe(400);
+        expect((await upload(new File(['<svg/>'],'evil.csv.svg',{type:'image/svg+xml'}))).status).toBe(400);
+        expect(state.uploads).toHaveLength(2);
     });
     it('rejects anonymous access and revoked shop membership before downloading',async()=>{
         state.signedIn=false;expect((await GET(req())).status).toBe(401);

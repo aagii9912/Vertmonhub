@@ -27,10 +27,13 @@ import { LEAD_NAME_OR_ANONYMOUS, STATUS_META, UNCATEGORIZED_LABEL, isAnonymousLe
 import { leadCategoryName, listLeadCategories, resolveLeadCategory, type LeadCategory } from '@/lib/services/LeadCategoryService';
 import type { LeadStatus } from '@/types/property';
 import { accountCurrencyLabel, formatAccountMoney, formatMNT } from '@/lib/utils/currency';
-import { loadAdAccountCurrency } from '@/lib/marketing/meta-spend';
+import { isMetaSyncedCampaign } from '@/lib/marketing/ad-campaigns';
+import { loadMetaAdAccount } from '@/lib/services/MarketingOps';
 import { contractIdsByPreviousHolder, listContractTransfers } from '@/lib/services/ContractService';
 import { propertyStatusLabel, unitStatusLabel, type InventoryStatus } from '@/lib/inventory/labels';
 import { contractStatusLabel } from '@/lib/contracts/labels';
+import { loadLatestErpProducts } from '@/lib/erp/snapshots';
+import { parseUnitUpdate, unitFieldLabel, updateInventoryUnit } from '@/lib/inventory/unit-update';
 
 /** Timeline-д «хэн өөрчилсөн»-ийг тэмдэглэх (UI-ийн PATCH /leads/[id]-тэй ижил). */
 export interface LeadActor { userId?: string | null; userName?: string | null }
@@ -126,7 +129,13 @@ export async function fetchDashboardStats(shopId: string, timeRange: string = 'm
 
 // (Хуучин e-commerce fetchOrders / fetchProductStats — 2026-09 Wave 2-т устгав; CLAUDE.md «буцааж оруулахгүй»)
 
-export async function fetchProperties(shopId: string, args: any) {
+/** ERP-ийн үнэ нь ERP өгөгдөл тул зөвхөн `erp-imports` эрхтэй (эсвэл super_admin) хэрэглэгчид харагдана. */
+export interface PropertySearchAccess { canSeeErpPrice?: boolean }
+
+const inventoryStatusMatches = (value: string | null, status: string) =>
+    status === 'all' || value === status || (status === 'sold' && value === 'handed_over');
+
+export async function fetchProperties(shopId: string, args: any, access: PropertySearchAccess = {}) {
     const limit = Number.isFinite(Number(args.limit)) ? Math.min(100, Math.max(1, Math.floor(Number(args.limit)))) : 10;
     const status = args.status || 'available';
     const listingStatuses = ['available', 'reserved', 'sold', 'rented', 'barter'];
@@ -160,18 +169,24 @@ export async function fetchProperties(shopId: string, args: any) {
     if (args.name_search && !search) return { error: 'Хайх нэрээ тодорхой оруулна уу.' };
 
     try {
+        // Нөөц нь Лхагвын тайлантай адил төслийн хамгийн сүүлийн ERP бүтээгдэхүүний экспорт; экспорт
+        // байхгүй эсвэл ээлжээр шүүх үед (экспортод ээлж алга) байрны бүртгэл (`property_units`).
+        const readInventory = !['house', 'land'].includes(args.type) && (status === 'all' || unitStatuses.includes(status));
+        const readProjects = () => fetchAllRows<{ id: string; name: string; district: string | null }>((from, to) => supabaseAdmin
+            .from('projects').select('id, name, district').eq('shop_id', shopId).order('id').range(from, to));
+        const [erp, linkedProjects] = await Promise.all([
+            readInventory && !args.phase ? loadLatestErpProducts(supabaseAdmin, shopId, ubDateStr()) : null,
+            search || args.district || args.project_id ? readProjects() : null,
+        ]);
         // Нэгжид байршил/төслийн нэр байхгүй; зөвхөн тухайн shop-ийн төслөөр холбоно.
-        const projects = search || args.district || args.project_id
-            ? await fetchAllRows<{ id: string; name: string; district: string | null }>((from, to) => supabaseAdmin
-                .from('projects').select('id, name, district').eq('shop_id', shopId).order('id').range(from, to)) : [];
+        const projects = linkedProjects ?? (erp ? await readProjects() : []);
         const projectById = new Map(projects.map(p => [p.id, p]));
         const matchingProjectIds = projects.filter(p => p.name.toLowerCase().includes(search.toLowerCase())).map(p => p.id);
         const districtProjectIds = projects.filter(p => p.district?.toLowerCase().includes(String(args.district).toLowerCase())).map(p => p.id);
 
         const readListings = !args.phase && !args.block && !args.code
             && !['parking', 'industry'].includes(category) && (status === 'all' || listingStatuses.includes(status));
-        const readUnits = !['house', 'land'].includes(args.type)
-            && (status === 'all' || unitStatuses.includes(status)) && (!args.district || districtProjectIds.length > 0);
+        const readUnits = readInventory && !erp && (!args.district || districtProjectIds.length > 0);
         let listingQuery = supabaseAdmin.from('properties')
             .select('id, project_id, name, type, price, price_per_sqm, size_sqm, rooms, bedrooms, bathrooms, floor, district, city, status, is_featured, views_count, inquiries_count')
             .eq('shop_id', shopId).eq('is_active', true).is('deleted_at', null)
@@ -188,7 +203,7 @@ export async function fetchProperties(shopId: string, args: any) {
         if (search) listingQuery = listingQuery.or(`name.ilike.%${search}%${matchingProjectIds.length ? `,project_id.in.(${matchingProjectIds.join(',')})` : ''}`);
 
         let unitQuery = supabaseAdmin.from('property_units')
-            .select('id, project_id, phase, block, floor, code, unit_number, category, unit_type, rooms, sale_area, window_view, status')
+            .select('id, project_id, phase, block, floor, code, unit_number, category, unit_type, rooms, sale_area, window_view, status, updated_at')
             .eq('shop_id', shopId).eq('category', category)
             .order('phase', { ascending: true }).order('block', { ascending: true }).order('code', { ascending: true }).limit(limit);
         if (status === 'sold') unitQuery = unitQuery.in('status', ['sold', 'handed_over']);
@@ -219,17 +234,50 @@ export async function fetchProperties(shopId: string, args: any) {
             type: u.category === 'residential' ? 'apartment' : u.category, category: u.category,
             phase: u.phase, block: u.block, code: u.code, unit_number: u.unit_number, unit_type: u.unit_type,
             rooms: u.rooms, size_sqm: u.sale_area, floor: u.floor, window_view: u.window_view, status: u.status,
-            district: projectById.get(u.project_id)?.district ?? null, price: null, priceFormatted: 'Үнэ бүртгэгдээгүй',
+            district: projectById.get(u.project_id)?.district ?? null, price: null as number | null, priceFormatted: 'Үнэ бүртгэгдээгүй',
+            as_of: u.updated_at ? ubDateStr(new Date(u.updated_at)) : null,
         }));
-        // Үнэ байхгүй нэгжийг төсөвт багтсан гэж үзэхгүй, тусад нь тодорхойгүй хувилбараар өгнө.
-        if (hasPriceFilter && units.length) {
-            const unverifiedUnits = units.slice(0, Math.max(0, limit - listings.length));
-            return { properties: listings, unverifiedUnits,
-                message: `Үнийн шалгуурт тохирох ${listings.length} зар олдлоо; үнэ нь бүртгэгдээгүй ${unverifiedUnits.length} нэгжийн үнийг тодруулах шаардлагатай.`,
-                warning: 'Нэгжийн үнэ бүртгэгдээгүй тул unverifiedUnits нь үнийн шалгуур хангасныг батлахгүй. Үнэ тодруулах шаардлагатай. Жагсаалт хязгаартай, нийт нөөцийн тоо биш.', limit };
+        // ERP-ийн мөр нь shop-ийн ганц төсөлд хамаарна; олон төсөлтэй (хуучин) shop-д төслийг таамаглахгүй.
+        const project = projects.length === 1 ? projects[0] : null;
+        const needle = search.toLowerCase();
+        const canSeePrice = !!access.canSeeErpPrice;
+        const erpInfo = { as_of: erp?.info.date ?? null, source_name: erp?.info.source ?? null };
+        const erpUnits = (erp?.rows ?? [])
+            .filter(p => p.kind === category && inventoryStatusMatches(p.status, status)
+                && (args.rooms == null || p.rooms === Number(args.rooms))
+                && (!args.block || p.block === args.block) && (!args.code || p.code === args.code)
+                && (!args.project_id || project?.id === args.project_id)
+                && (!args.district || (!!project && districtProjectIds.includes(project.id)))
+                && (!needle || [p.code, p.block, p.model, project?.name].some(value => value?.toLowerCase().includes(needle))))
+            .sort((a, b) => (a.block ?? '').localeCompare(b.block ?? '', 'mn', { numeric: true })
+                || (a.floor ?? 0) - (b.floor ?? 0) || a.code.localeCompare(b.code, 'mn', { numeric: true }))
+            .map(p => ({
+                source: 'erp_products', project_id: project?.id ?? null,
+                name: [project?.name, p.block, p.code].filter(Boolean).join(' · '),
+                type: p.kind === 'residential' ? 'apartment' : p.kind, category: p.kind,
+                block: p.block, code: p.code, model: p.model, rooms: p.rooms, size_sqm: p.area, floor: p.floor,
+                status: p.status, status_label: p.statusLabel, district: project?.district ?? null,
+                price: canSeePrice ? p.price : null,
+                priceFormatted: !canSeePrice ? 'ERP-ийн үнэ харах эрх алга' : p.price == null ? 'Үнэ бүртгэгдээгүй' : formatMNT(p.price),
+                ...erpInfo,
+            }));
+        const inventory: Array<{ price: number | null }> = erp ? erpUnits : units;
+        // Үнэ нь тодорхойгүй (бүртгэгдээгүй эсвэл харах эрхгүй) нэгжийг төсөвт багтсан гэж үзэхгүй, тусад нь өгнө.
+        if (hasPriceFilter) {
+            const inRange = (price: number) => (args.min_price == null || price >= Number(args.min_price))
+                && (args.max_price == null || price <= Number(args.max_price));
+            const matched = [...inventory.filter(u => u.price != null && inRange(u.price)), ...listings].slice(0, limit);
+            const unknown = inventory.filter(u => u.price == null);
+            if (unknown.length) {
+                const unverifiedUnits = unknown.slice(0, Math.max(0, limit - matched.length));
+                return { properties: matched, unverifiedUnits,
+                    message: `Үнийн шалгуурт тохирох ${matched.length} байр олдлоо; үнэ нь тодорхойгүй ${unverifiedUnits.length} нэгжийн үнийг тодруулах шаардлагатай.`,
+                    warning: 'unverifiedUnits-ийн үнэ бүртгэгдээгүй эсвэл танд харагдахгүй тул үнийн шалгуур хангасныг батлахгүй. Үнэ тодруулах шаардлагатай. Жагсаалт хязгаартай, нийт нөөцийн тоо биш.', limit };
+            }
+            return matched;
         }
-        // Нөөцийг listing байгаа үед ч уншина. Хоёр хүснэгтийн ID-г source-оор ялгана.
-        return [...units, ...listings].slice(0, limit);
+        // Нөөцийг listing байгаа үед ч уншина. Эх сурвалжийг source, огноог as_of-оор ялгана.
+        return [...inventory, ...listings].slice(0, limit);
     } catch (error) {
         logger.error('Property inventory fetch error:', { error });
         return { error: 'Байрны нөөцийн мэдээлэл уншиж чадсангүй. Энэ нь тохирох байр байхгүй гэсэн үг биш. Дахин оролдоно уу.' };
@@ -782,7 +830,12 @@ const UNIT_STATUSES: readonly string[] = ['available', 'reserved', 'ordered', 's
 /** «Хүлээлгэсэн» = зарагдаад худалдан авагчид хүлээлгэн өгсөн (эзэмшигч 2026-10-05): зарагдсанд тооцно, хэзээ ч худалдаанд биш. */
 const SOLD_UNIT_STATUSES: readonly string[] = ['sold', 'handed_over'];
 
-interface UnitRow { id: string; code: string | null; unit_number: string | null; block: string | null; phase: string | null; status: string | null }
+interface UnitRow {
+    id: string; code: string | null; unit_number: string | null; block: string | null; phase: string | null; status: string | null;
+    /** update_unit-ийн урьдчилан харахад одоогийн утга. */
+    rooms?: number | null; sale_area?: number | null; unit_type?: string | null; model?: string | null;
+    window_view?: string | null; sales_channel?: string | null; sales_manager?: string | null;
+}
 
 const unitLabelOf = (unit: UnitRow) => unit.code || unit.unit_number || unit.id;
 
@@ -790,7 +843,7 @@ const unitLabelOf = (unit: UnitRow) => unit.code || unit.unit_number || unit.id;
 async function findUnit(shopId: string, args: any): Promise<{ unit: UnitRow } | { error: string; options?: unknown[] }> {
     let query = supabaseAdmin
         .from('property_units')
-        .select('id, code, unit_number, block, phase, status')
+        .select('id, code, unit_number, block, phase, status, rooms, sale_area, unit_type, model, window_view, sales_channel, sales_manager')
         .eq('shop_id', shopId);
 
     if (args.unit_id) query = query.eq('id', args.unit_id);
@@ -959,6 +1012,35 @@ function contractStep(rules: ContractStepRules, action: string, current: string 
 export const contractUnitStep = (action: string, current: string | null) => contractStep(UNIT_CONTRACT_RULES, action, current);
 /** Listing байрны одоогийн төлөвөөс гэрээний үйлдлийн дараах төлөв, эсвэл өөрчлөхгүй шалтгаан. */
 export const contractListingStep = (action: string, current: string | null) => contractStep(LISTING_CONTRACT_RULES, action, current);
+
+// UI-ийн нэгж засах формтой ижил талбарууд (төлөвийг update_unit_status солино).
+const UNIT_EDIT_FIELDS = ['rooms', 'sale_area', 'unit_type', 'model', 'window_view', 'sales_channel', 'sales_manager'];
+
+/** Байрны бүртгэлийн нэгжийн мэдээллийг засна — PATCH /api/dashboard/units-тэй нэг дүрэм (`updateInventoryUnit`). */
+export async function updateUnitDetails(shopId: string, args: any, confirm = false) {
+    const body: Record<string, unknown> = {};
+    for (const key of UNIT_EDIT_FIELDS) {
+        if (args[key] === undefined) continue;
+        const numeric = key === 'rooms' || key === 'sale_area';
+        body[key] = numeric && typeof args[key] === 'string' && args[key].trim() !== '' ? Number(args[key]) : args[key];
+    }
+    if (!Object.keys(body).length) return { error: `Засах талбар алга: ${UNIT_EDIT_FIELDS.join(', ')}` };
+    const parsed = parseUnitUpdate(body);
+    if (!parsed.ok) return { error: parsed.error };
+    const found = await findUnit(shopId, args);
+    if ('error' in found) return found;
+
+    const { unit } = found;
+    const label = unitLabelOf(unit);
+    if (!confirm) {
+        const preview: Record<string, unknown> = { Нэгж: label, Блок: unit.block || '-' };
+        for (const [key, value] of Object.entries(parsed.changes)) preview[unitFieldLabel(key)] = `${unit[key as keyof UnitRow] ?? '—'} → ${value ?? '—'}`;
+        return confirmNeeded('update_unit', { unit_id: unit.id, ...parsed.changes }, `Нэгж засах: ${label}`, preview);
+    }
+    const result = await updateInventoryUnit(supabaseAdmin, shopId, unit.id, parsed.changes);
+    if ('error' in result) return { error: result.error };
+    return { success: true, unit: label, block: unit.block, changes: parsed.changes, message: `${label} нэгжийн мэдээллийг шинэчиллээ.` };
+}
 
 export async function updateLeadStatus(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE, actor?: LeadActor) {
     if (!LEAD_STATUSES_FOR_AI.includes(args.new_status)) {
@@ -1638,37 +1720,64 @@ export async function bulkUpdateLeads(shopId: string, args: any, confirm = false
 
 // ---- Marketing ----
 
-export async function fetchMarketingSummary(shopId: string, args: any) {
-    const [{ data: campaigns }, { data: posts }, currency] = await Promise.all([
-        supabaseAdmin.from('ad_campaigns').select('name, platform, status, budget, spend, impressions, clicks, conversions, reach').eq('shop_id', shopId),
+interface AdCampaignSummaryRow {
+    name: string; platform: string; status: string | null; external_id: string | null;
+    budget: number | string | null; spend: number | string | null; impressions: number | null; clicks: number | null;
+    conversions: number | null; reach: number | null; last_synced_at: string | null;
+}
+
+/**
+ * Зар сурталчилгааны нэгтгэл. Зардал, CPA нь зөвхөн Meta-аас синк хийсэн кампанит ажлынх бөгөөд
+ * зарын дансны валютаар (/marketing/ads, ROI хуудастай ижил дүрэм: `isMetaSyncedCampaign`,
+ * `loadMetaAdAccount`); Hub-д гараар бүртгэсэн төлөвлөгөөт зар нийлбэрт орохгүй, тусад нь жагсана.
+ */
+export async function fetchMarketingSummary(shopId: string) {
+    const [account, rows, posts] = await Promise.all([
+        loadMetaAdAccount(supabaseAdmin, shopId),
+        fetchAllRows<AdCampaignSummaryRow>((from, to) => supabaseAdmin.from('ad_campaigns')
+            .select('name, platform, status, external_id, budget, spend, impressions, clicks, conversions, reach, last_synced_at')
+            .eq('shop_id', shopId).order('id').range(from, to)),
         supabaseAdmin.from('social_posts').select('platform, status, likes, comments, shares, reach, engagement_rate, published_at').eq('shop_id', shopId).order('published_at', { ascending: false, nullsFirst: false }).limit(10),
-        loadAdAccountCurrency(supabaseAdmin, shopId),
     ]);
-    const camps = campaigns || [];
-    const totals = camps.reduce((a, c: any) => ({
-        spend: a.spend + Number(c.spend || 0),
-        impressions: a.impressions + Number(c.impressions || 0),
-        clicks: a.clicks + Number(c.clicks || 0),
-        conversions: a.conversions + Number(c.conversions || 0),
+    if (posts.error) throw new Error('Сошиал постын гүйцэтгэлийг уншиж чадсангүй');
+
+    const { currency } = account;
+    const money = (value: number) => formatAccountMoney(value, currency);
+    const meta = rows.filter(isMetaSyncedCampaign).sort((a, b) => (Number(b.spend) || 0) - (Number(a.spend) || 0));
+    const planned = rows.filter(row => !isMetaSyncedCampaign(row));
+    const totals = meta.reduce((sum, c) => ({
+        spend: sum.spend + (Number(c.spend) || 0),
+        impressions: sum.impressions + (Number(c.impressions) || 0),
+        clicks: sum.clicks + (Number(c.clicks) || 0),
+        conversions: sum.conversions + (Number(c.conversions) || 0),
     }), { spend: 0, impressions: 0, clicks: 0, conversions: 0 });
+    const lastSynced = meta.map(c => c.last_synced_at).filter((at): at is string => !!at).sort().pop();
+    const currencyText = currency
+        ? `Meta зарын дансны валютаар (${currency})`
+        : 'Meta зарын дансны валютаар (валют тодорхойгүй — зардлын синк хийгдээгүй)';
+
     return {
-        campaignCount: camps.length,
-        activeCampaigns: camps.filter((c: any) => c.status === 'active').length,
-        // Зарын зардал Meta зарын дансны валютаар (ханшаар хөрвүүлээгүй) — ₮ гэж таамаглахгүй.
-        spendCurrency: accountCurrencyLabel(currency),
-        spendBasis: currency === 'MNT'
-            ? 'Зарын данс төгрөгөөр.'
-            : 'Зарын дансны валютаар, төгрөгт хөрвүүлээгүй; дүнг ₮ гэж бүү хэл.',
+        currency: accountCurrencyLabel(currency),
+        basis: `Зардал, CPA нь зөвхөн Meta-аас синк хийсэн ${meta.length} кампанит ажлын сүүлийн синкийн хугацааны (анхдагч сүүлийн 30 хоног) дүн, ${currencyText}. Төгрөгт хөрвүүлээгүй тул ₮ гэж бүү бич, төгрөгийн дүнтэй бүү нэм. Hub-д гараар бүртгэсэн ${planned.length} төлөвлөгөөт зар нийлбэрт ороогүй (үр дүнгүй, төсөв нь ₮).`,
+        lastSyncedAt: lastSynced ? formatShortDate(lastSynced) : null,
+        campaignCount: meta.length,
+        activeCampaigns: meta.filter(c => c.status === 'active').length,
         totals: {
-            spend: formatAccountMoney(totals.spend, currency),
+            spend: meta.length ? money(totals.spend) : '-',
             impressions: totals.impressions,
             clicks: totals.clicks,
             conversions: totals.conversions,
-            ctr: totals.impressions ? `${((totals.clicks / totals.impressions) * 100).toFixed(2)}%` : '0%',
-            cpa: totals.conversions ? formatAccountMoney(totals.spend / totals.conversions, currency) : '-',
+            ctr: totals.impressions ? `${((totals.clicks / totals.impressions) * 100).toFixed(2)}%` : '-',
+            cpa: totals.conversions ? money(totals.spend / totals.conversions) : '-',
         },
-        campaigns: camps.slice(0, 10),
-        recentPosts: (posts || []).map((p: any) => ({ platform: p.platform, status: p.status, likes: p.likes, comments: p.comments, reach: p.reach, engagement_rate: p.engagement_rate })),
+        campaigns: meta.slice(0, 10).map(c => ({
+            name: c.name, status: c.status, spend: money(Number(c.spend) || 0),
+            impressions: c.impressions, clicks: c.clicks, conversions: c.conversions, reach: c.reach,
+        })),
+        plannedCampaigns: planned.slice(0, 10).map(c => ({
+            name: c.name, platform: c.platform, status: c.status, budget: formatMNT(c.budget === null ? null : Number(c.budget)),
+        })),
+        recentPosts: (posts.data || []).map((p: any) => ({ platform: p.platform, status: p.status, likes: p.likes, comments: p.comments, reach: p.reach, engagement_rate: p.engagement_rate })),
     };
 }
 
@@ -1915,7 +2024,8 @@ export function generateChartConfig(toolName: string, args: any, data: any): any
         case 'list_properties':
             if (Array.isArray(data)) {
                 const priced = data.filter((p: any) => p.price != null && Number.isFinite(Number(p.price)));
-                if (priced.length > 0) return { type: 'bar', data: priced.slice(0, 8).map((p: any) => ({ name: p.name?.substring(0, 15) || 'Байр', value: Number(p.price) })) };
+                // Нэгжийн нэр төслийн нэрээр эхэлдэг тул кодоор нь ялгана.
+                if (priced.length > 0) return { type: 'bar', data: priced.slice(0, 8).map((p: any) => ({ name: (p.code ?? p.name)?.substring(0, 15) || 'Байр', value: Number(p.price) })) };
             }
             return null;
         case 'list_leads':

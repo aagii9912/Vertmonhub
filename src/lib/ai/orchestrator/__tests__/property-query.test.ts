@@ -83,7 +83,7 @@ beforeEach(() => {
     mocks.from.mockReset();
     requests.length = 0;
     failedTable = undefined;
-    tables = { properties: [], property_units: [], ai_shop_memory: [] };
+    tables = { properties: [], property_units: [], projects: [], erp_imports: [], ai_shop_memory: [] };
     mocks.from.mockImplementation((table: string) => {
         if (!(table in tables)) throw new Error(`Unexpected source: ${table}`);
         let rows = tables[table];
@@ -92,7 +92,10 @@ beforeEach(() => {
             select: () => chain,
             eq: (field: string, value: unknown) => { rows = rows.filter(row => row[field] === value); return chain; },
             is: (field: string, value: unknown) => { rows = rows.filter(row => row[field] === value); return chain; },
+            in: (field: string, values: unknown[]) => { rows = rows.filter(row => values.includes(row[field])); return chain; },
+            lte: (field: string, value: string) => { rows = rows.filter(row => String(row[field]) <= value); return chain; },
             order: () => chain,
+            range: (from: number, to: number) => { rows = rows.slice(from, to + 1); return chain; },
             limit: (value: number) => { limit = value; return chain; },
             then: (resolve: (value: unknown) => unknown) => Promise.resolve({
                 data: failedTable === table ? null : rows.slice(0, limit),
@@ -138,6 +141,31 @@ describe('simple property questions through the Responses orchestrator', () => {
         expect(mocks.create).toHaveBeenCalledTimes(2);
     });
 
+    it('answers a project shop with no unit register from its latest ERP product export', async () => {
+        // Elysium: байрны бүртгэл хоосон, үлдэгдэл зөвхөн ERP-ийн бүтээгдэхүүний экспортод.
+        const columns = ['Код', 'Давхар', 'Загвар', 'Өрөөний тоо', 'Борлуулах талбай', 'Нийт борлуулах үнэ', 'Бүтээгдэхүүний төлөв', 'Бүтээгдэхүүний төрөл'];
+        const product = (code: string, rooms: string, status: string) => Object.fromEntries(columns.map((column, i) =>
+            [column, [code, '05', 'E2', rooms, '64.16', '365712000', status, 'Орон сууц'][i]]));
+        tables.projects = [{ id: 'project-el', shop_id: 'shop-1', name: 'Elysium Residence', district: null }];
+        tables.erp_imports = [{
+            id: 'snapshot-1', shop_id: 'shop-1', source: 'Elysium ERP', report_date: '2026-10-01', columns,
+            datasets: [{ name: 'Products', columns, keyColumns: ['Код'], rows: [
+                product('Б1-52', '2', 'Худалдаанд'), product('Б1-53', '2', 'Гэрээ баталгаажсан'), product('Б1-54', '3', 'Худалдаанд'),
+            ] }],
+        }];
+        propertyRounds(payload => {
+            const first = Array.isArray(payload) ? payload[0] as Row | undefined : undefined;
+            return first ? `Тийм, ${first.code} тоот ${first.rooms} өрөө байр байна (${first.priceFormatted}).` : 'Олдсонгүй.';
+        });
+
+        const result = await runOrchestrator('2uruu bair bnu', context([], ['ai-assistant', 'properties', 'erp-imports']));
+        expect(toolPayload(requests[1])).toEqual([expect.objectContaining({
+            source: 'erp_products', as_of: '2026-10-01', code: 'Б1-52', rooms: 2, status: 'available', price: 365712000,
+        })]);
+        expect(result.text).toContain('Тийм, Б1-52 тоот 2 өрөө байр байна');
+        expect(result.trace.tools).toEqual([expect.objectContaining({ tool: 'list_properties', ok: true, summary: '1 байр олдлоо' })]);
+    });
+
     it('reports no matching stock only after successfully reading inventory', async () => {
         tables.property_units = [unit('sold-two', { status: 'sold' }), unit('available-three', { rooms: 3 })];
         propertyRounds(() => 'Одоогоор боломжтой 2 өрөө байр олдсонгүй.');
@@ -171,6 +199,7 @@ describe('simple property questions through the Responses orchestrator', () => {
         expect(requests[0].tools?.map(tool => 'name' in tool ? tool.name : '')).not.toContain('list_properties');
         expect(mocks.from).not.toHaveBeenCalledWith('properties');
         expect(mocks.from).not.toHaveBeenCalledWith('property_units');
+        expect(mocks.from).not.toHaveBeenCalledWith('erp_imports');
         expect(toolPayload(requests[1])).toEqual(expect.objectContaining({ error: expect.any(String) }));
         expect(result.trace.tools).toEqual([]);
         expect(result.text).toContain('эрх танд алга');

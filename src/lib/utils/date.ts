@@ -136,6 +136,19 @@ export function ubMonthRange(year: number, monthIdx: number): { start: Date; end
     };
 }
 
+/**
+ * Огнооны сар `YYYY-MM`: timestamp-ийг Улаанбаатарын цагаар, `YYYY-MM-DD` (DATE багана — өөрөө
+ * өдөр) бол тэр өдрийн сар. Хоосон эсвэл буруу утгад null.
+ */
+export function ubMonthKey(value: string | null | undefined): string | null {
+    if (!value) return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value.slice(0, 7);
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return null;
+    const { year, month } = ubParts(date);
+    return `${year}-${String(month).padStart(2, '0')}`;
+}
+
 /** УБ-ийн өнөөдрийн эхлэл (хуучин нэр — хэвээр ашиглагдана). */
 export function getStartOfToday(): Date {
     return ubStartOfDay();

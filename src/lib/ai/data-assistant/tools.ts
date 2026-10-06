@@ -58,7 +58,7 @@ const readDefinitions: ToolDefinition[] = [
     },
     {
         name: 'list_properties',
-        description: 'Байрны бодит нөөц ба зарын сангаас хайх. "2 өрөө байр байна уу?" гэхэд rooms=2-оор шууд хайна. Анхдагч төлөв available, нэгжийн ангилал residential. Жагсаалт хязгаартай, нийт тоо биш. Нэгжийн үнэ байхгүй: үнийн шалгууртай үед unverifiedUnits нь төсөвт багтсан гэсэн үг биш, үнийг тодруулна. Дүүргийг зөвхөн бүртгэлтэй төслийн байршлаар батална; байршилгүй нэгж дүүргийн хайлтад орохгүй. Mandala Garden, Mandala Tower, Elysium гэх мэт.',
+        description: 'Байрны бодит нөөц ба зарын сангаас хайх. "2 өрөө байр байна уу?" гэхэд rooms=2-оор шууд хайна. Анхдагч төлөв available, нэгжийн ангилал residential. Нөөцийг төслийн хамгийн сүүлийн ERP бүтээгдэхүүний экспортоос (source=erp_products, as_of = экспортын огноо), экспорт байхгүй эсвэл phase-ээр шүүх үед байрны бүртгэлээс (source=property_units, as_of = сүүлд шинэчилсэн огноо) уншина. Жагсаалт хязгаартай, нийт тоо биш. Байрны бүртгэлд үнэ байхгүй, ERP-ийн үнэ зөвхөн эрхтэй хэрэглэгчид харагдана: үнийн шалгууртай үед unverifiedUnits нь төсөвт багтсан гэсэн үг биш, үнийг тодруулна. Дүүргийг зөвхөн бүртгэлтэй төслийн байршлаар батална; байршилгүй нэгж дүүргийн хайлтад орохгүй. Mandala Garden, Mandala Tower, Elysium гэх мэт.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
@@ -194,7 +194,7 @@ const readDefinitions: ToolDefinition[] = [
     },
     {
         name: 'get_marketing_summary',
-        description: 'Маркетингийн нэгтгэл: зар сурталчилгааны кампанит ажил (зарцуулалт, харагдалт, клик, хөрвүүлэлт, CTR, CPA) ба сошиал постын гүйцэтгэл.',
+        description: 'Маркетингийн нэгтгэл: Meta-аас синк хийсэн зарын кампанит ажил (зарцуулалт, харагдалт, клик, хөрвүүлэлт, CTR, CPA), Hub-д бүртгэсэн төлөвлөгөөт зар ба сошиал постын гүйцэтгэл. Зарцуулалт, CPA нь Meta зарын дансны валютаар (ихэвчлэн USD) — ₮ биш; хариултын `currency`, `basis`-ийг дагана.',
         parameters: { type: SchemaType.OBJECT, properties: {} }
     },
     {
@@ -269,6 +269,54 @@ const readDefinitions: ToolDefinition[] = [
             manager: { type: SchemaType.STRING, description: 'Менежерийн бүртгэлийн яг нэр (зөвхөн багийн тайлан харах эрхтэй хэрэглэгчид); олдохгүй бол options-оос тодруул' } } }
     },
     {
+        name: 'import_erp_file',
+        description: 'Чатад хавсаргасан ERP экспортыг (.xlsx/.csv/.tsv — гэрээний property.sale эсвэл бүтээгдэхүүний экспорт) идэвхтэй төслийн ERP snapshot болгон импортлоно. Өмнөх импорттой харьцуулсан тоог картаар харуулж, батлагдсаны дараа хадгална. file_url-д [Хавсаргасан файлууд]-ын URL-ийг яг өг. Эх үүсвэр олон бол хэрэглэгчээс асуу.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                file_url: { type: SchemaType.STRING, description: 'Хавсаргасан файлын URL (яг өгөгдсөнөөр)' },
+                file_name: { type: SchemaType.STRING, description: 'Хавсаргасан файлын нэр' },
+                source: { type: SchemaType.STRING, description: 'ERP эх үүсвэрийн нэр (жишээ: Elysium ERP); ганц бол орхиж болно' },
+                report_date: { type: SchemaType.STRING, description: 'Экспортын огноо YYYY-MM-DD; орхивол өнөөдөр' }
+            },
+            required: ['file_url']
+        }
+    },
+    {
+        name: 'get_weekly_sales_report',
+        description: 'Лхагва гарагийн хурлын долоо хоногийн борлуулалтын тайлан (идэвхтэй төсөл): энэ долоо хоногийн гэрээ (өмнөх долоо хоногтой), сарын явц ба төлөвлөгөө, менежерээр, мөнгөн орлого (ERP-ийн хоёр snapshot-ын зөрүү), авлага, блокоор үлдэгдэл. Эх сурвалж: ERP экспорт, байхгүй бол CRM — sources-ийг хэл. plainText-ийг хуулахад бэлэн.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                meeting_date: { type: SchemaType.STRING, description: 'Хурлын Лхагва гараг YYYY-MM-DD; орхивол ойрын хурал (Лхагва бол өнөөдөр)' }
+            }
+        }
+    },
+    {
+        name: 'get_weekly_updates',
+        description: '«Хурлын бэлтгэл»-ийн ажлын шинэчлэлүүд (хийсэн ажил, саад, дараагийн алхам): тайлан харах эрхтэй бол багийнх, эс бөгөөс өөрийнх.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                meeting_date: { type: SchemaType.STRING, description: 'Хурлын Лхагва гараг YYYY-MM-DD; орхивол ойрын хурал' }
+            }
+        }
+    },
+    {
+        name: 'save_weekly_update',
+        description: 'Хэрэглэгчийн өөрийн долоо хоногийн шинэчлэлийг «Хурлын бэлтгэл»-д хадгална. Анхдагчаар одоогийн текст дээр нэмнэ; mode=replace бол тухайн хэсгийг солино. Баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                meeting_date: { type: SchemaType.STRING, description: 'Хурлын Лхагва гараг YYYY-MM-DD; орхивол ойрын хурал' },
+                achievements: { type: SchemaType.STRING, description: 'Хийсэн ажил' },
+                blockers: { type: SchemaType.STRING, description: 'Саад, бэрхшээл' },
+                next_steps: { type: SchemaType.STRING, description: 'Дараагийн алхам' },
+                mode: { type: SchemaType.STRING, enum: ['append', 'replace'], description: 'append (анхдагч) эсвэл replace' }
+            }
+        }
+    },
+    {
         name: 'get_manager_performance',
         description: 'Бүх менежерийн гүйцэтгэлийн харьцуулалт: гэрээний тоо, борлуулалт, цуглуулалт, үлдэгдэл, цуглуулалтын %, багийн жилийн зорилт/гүйцэтгэл. Лидерборд, «хэн хамгийн сайн» асуултад.',
         parameters: { type: SchemaType.OBJECT, properties: {} }
@@ -319,6 +367,27 @@ const writeDefinitions: ToolDefinition[] = [
         }
     },
     {
+        name: 'update_unit',
+        description: 'Байрны бүртгэлийн нэгжийн (property_units) мэдээллийг засах: өрөөний тоо, борлуулах талбай, айлын төрөл, загвар, цонхны харагдац, борлуулалтын суваг/менежер. Төлөвийг update_unit_status-аар солино. ERP экспортоос (source=erp_products) харагдсан нэгжийг энд засахгүй — ERP-д засаад дараагийн экспортыг оруулна. Баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                unit_id: { type: SchemaType.STRING, description: 'Нэгжийн ID' },
+                code: { type: SchemaType.STRING, description: 'Нэгжийн код (жишээ: 201-440)' },
+                unit_number: { type: SchemaType.STRING, description: 'Шинэ тоот' },
+                block: { type: SchemaType.STRING, description: 'Блок — олон нэгж олдвол тодруулахад' },
+                phase: { type: SchemaType.STRING, description: 'Ээлж — олон нэгж олдвол тодруулахад' },
+                rooms: { type: SchemaType.NUMBER, description: 'Шинэ өрөөний тоо' },
+                sale_area: { type: SchemaType.NUMBER, description: 'Шинэ борлуулах талбай (м²)' },
+                unit_type: { type: SchemaType.STRING, description: 'Айлын төрөл' },
+                model: { type: SchemaType.STRING, description: 'Загвар' },
+                window_view: { type: SchemaType.STRING, description: 'Цонхны харагдац' },
+                sales_channel: { type: SchemaType.STRING, description: 'Борлуулалтын суваг' },
+                sales_manager: { type: SchemaType.STRING, description: 'Борлуулалтын менежер' }
+            }
+        }
+    },
+    {
         name: 'update_property_price',
         description: 'Байрны үнийг өөрчлөх. ЗӨВХӨН Super Admin.',
         parameters: {
@@ -343,6 +412,22 @@ const writeDefinitions: ToolDefinition[] = [
                 lost_reason: { type: SchemaType.STRING, description: 'closed_lost үед алдсан бодит шалтгаан; хэрэглэгчээс тодруулна, таамаглахгүй' }
             },
             required: ['new_status']
+        }
+    },
+    {
+        name: 'update_lead',
+        description: 'Лидийн сонирхол ба төслийг засах: сонирхож буй өрөө (preferred_rooms), байрны төрөл (preferred_type), дээд төсөв (budget_max), төсөл (project_id — list_lead_projects-оос). Статусыг update_lead_status, менежерийг assign_lead_manager, follow-up-ийг set_followup, тэмдэглэлийг add_lead_note-оор хийнэ. Баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                lead_id: { type: SchemaType.STRING, description: 'Лидийн ID' },
+                customer_name: { type: SchemaType.STRING, description: 'Хэрэглэгчийн нэрээр хайх' },
+                customer_phone: { type: SchemaType.STRING, description: 'Утасны дугаараар хайх' },
+                preferred_rooms: { type: SchemaType.NUMBER, description: 'Сонирхож буй өрөөний тоо (1–20)' },
+                preferred_type: { type: SchemaType.STRING, enum: ['apartment', 'house', 'office', 'land', 'commercial'], description: 'Сонирхож буй байрны төрөл' },
+                budget_max: { type: SchemaType.NUMBER, description: 'Дээд төсөв (MNT)' },
+                project_id: { type: SchemaType.STRING, description: 'Лидийн төслийн UUID (list_lead_projects-оос)' }
+            }
         }
     },
     {
@@ -436,6 +521,23 @@ const writeDefinitions: ToolDefinition[] = [
                 notes: { type: SchemaType.STRING, description: 'Тэмдэглэл' }
             },
             required: ['name']
+        }
+    },
+    {
+        name: 'update_customer',
+        description: 'Харилцагчийн нэр, утас, имэйл, хаягийг засах; note өгвөл одоогийн тэмдэглэлд нэмнэ (дарж бичихгүй). Тагийг add_customer_tag/remove_customer_tag-аар. Баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                customer_id: { type: SchemaType.STRING, description: 'Харилцагчийн ID' },
+                customer_name: { type: SchemaType.STRING, description: 'Нэрээр хайх' },
+                phone: { type: SchemaType.STRING, description: 'Одоогийн утсаар хайх' },
+                new_name: { type: SchemaType.STRING, description: 'Шинэ нэр' },
+                new_phone: { type: SchemaType.STRING, description: 'Шинэ утасны дугаар' },
+                email: { type: SchemaType.STRING, description: 'Шинэ имэйл' },
+                address: { type: SchemaType.STRING, description: 'Шинэ хаяг' },
+                note: { type: SchemaType.STRING, description: 'Тэмдэглэлд нэмэх текст' }
+            }
         }
     },
     {
@@ -745,6 +847,30 @@ const writeDefinitions: ToolDefinition[] = [
             tag: { type: SchemaType.STRING, description: 'Таг' } }, required: ['tag'] }
     },
     {
+        name: 'list_conversations',
+        description: 'Inbox (Messenger/Instagram)-ийн сүүлийн яриануудыг харилцагчаар: сүүлийн мессеж, цаг, хариу хүлээж буй эсэх (awaiting_reply). unanswered_only=true бол зөвхөн хариугүй чатууд. Сүүлийн 200 мессежийн цонх.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                unanswered_only: { type: SchemaType.BOOLEAN, description: 'Зөвхөн хариу хүлээж буй чатууд' },
+                limit: { type: SchemaType.NUMBER, description: 'Хэдэн яриа (default 10, дээд 50)' }
+            }
+        }
+    },
+    {
+        name: 'get_conversation',
+        description: 'Нэг харилцагчийн Inbox чатын түүх (хуучнаас шинэ рүү): from = customer / staff / bot. Хариу бичихээс өмнө юу асуусныг уншихад ашигла.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                customer_id: { type: SchemaType.STRING, description: 'Харилцагчийн ID (list_conversations-оос)' },
+                customer_name: { type: SchemaType.STRING, description: 'Нэрээр хайх' },
+                phone: { type: SchemaType.STRING, description: 'Утсаар хайх' },
+                limit: { type: SchemaType.NUMBER, description: 'Сүүлийн хэдэн мөр (default 30, дээд 100)' }
+            }
+        }
+    },
+    {
         name: 'reply_to_customer',
         description: 'Харилцагчид Facebook Messenger-ээр ХҮНИЙ хариу илгээх (chat_history-д бичигдэнэ). Гадагш илгээгддэг тул баталгаажуулалт авна.',
         parameters: { type: SchemaType.OBJECT, properties: {
@@ -884,6 +1010,32 @@ const adminDefinitions: ToolDefinition[] = [
                 shop_id: { type: SchemaType.STRING, description: 'sales_manager-ийн төслийн ID (default: одоогийн төсөл)' }
             },
             required: ['email', 'role']
+        }
+    },
+    {
+        name: 'set_user_projects',
+        description: 'Хэрэглэгчийг төсөлд (shop = төсөл) нэмэх эсвэл хасах — Админ → Хэрэглэгчид → Төслүүд-тэй адил. Борлуулалтын менежерийг нэмэхэд менежерийн бүртгэл, төслийн харьяалал хамт үүснэ; хасахад холбоос салж идэвхгүй болно. ЗӨВХӨН super_admin; баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                user: { type: SchemaType.STRING, description: 'Хэрэглэгчийн имэйл эсвэл нэр' },
+                add_projects: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: 'Нэмэх төслийн нэрс' },
+                remove_projects: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: 'Хасах төслийн нэрс' }
+            },
+            required: ['user']
+        }
+    },
+    {
+        name: 'set_sales_target',
+        description: 'Идэвхтэй төслийн сарын борлуулалтын (гэрээний) төлөвлөгөөг тавих (₮) — Лхагвын тайлан, KPI-д ашиглагдана. ЗӨВХӨН super_admin; баталгаажуулалт авна.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                year: { type: SchemaType.NUMBER, description: 'Он; орхивол энэ он' },
+                month: { type: SchemaType.NUMBER, description: 'Сар (1–12)' },
+                amount: { type: SchemaType.NUMBER, description: 'Төлөвлөгөө (₮)' }
+            },
+            required: ['month', 'amount']
         }
     },
     {

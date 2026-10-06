@@ -6,7 +6,8 @@ export const PRIVATE_ATTACHMENT_BUCKET = 'ai-attachments';
 export const ATTACHMENT_MODULES: Record<string, string> = {
     property: 'properties', lead: 'leads', customer: 'customers', contract: 'contracts',
 };
-const EXTENSIONS = new Set(['jpg', 'png', 'webp', 'gif', 'pdf']);
+// Зураг/PDF ба ERP-ийн хүснэгт (xlsx/csv/tsv) — /api/dashboard/upload-ийн зөвшөөрсөн төрлүүд.
+const EXTENSIONS = new Set(['jpg', 'png', 'webp', 'gif', 'pdf', 'xlsx', 'csv', 'tsv']);
 const ENDPOINT = '/api/dashboard/upload';
 
 export function privateAttachmentUrl(path: string): string {

@@ -4,15 +4,8 @@ import { requireModule } from '@/lib/auth/require-permission';
 import { supabaseAdmin } from '@/lib/supabase';
 import { withRoute } from '@/lib/api/route';
 import { logger } from '@/lib/utils/logger';
+import { updateInventoryUnit } from '@/lib/inventory/unit-update';
 
-const UNIT_STATUSES = ['available', 'reserved', 'ordered', 'sold', 'handed_over'];
-// Гараар засаж болох талбарууд (property_units)
-const EDITABLE_UNIT_FIELDS = [
-    'status', 'raw_status', 'sales_channel', 'sales_manager',
-    'unit_type', 'model', 'window_view', 'rooms',
-    'sale_area', 'updated_sale_area', 'contracted_area',
-    'unit_number', 'legacy_unit_number', 'floor', 'block', 'phase', 'category',
-];
 
 // ============================================
 // GET /api/dashboard/units
@@ -90,42 +83,19 @@ export async function GET(request: NextRequest) {
 
 // ============================================
 // PATCH /api/dashboard/units — нэгжийг гараар засах
-// body: { id, <editable fields...> }
+// body: { id, <editable fields...> } — дүрэм нь AI `update_unit`-тэй нэг (`updateInventoryUnit`)
 // ============================================
 export const PATCH = withRoute({ module: 'properties', access: 'write', error: 'Нэгж засахад алдаа гарлаа' }, async ({ request, shop: authShop }) => {
-    const body = await request.json();
-    const id: string | undefined = body.id;
+    const body = await request.json().catch(() => null);
+    const id = body && typeof body.id === 'string' ? body.id : undefined;
     if (!id) return NextResponse.json({ error: 'id шаардлагатай' }, { status: 400 });
 
-    if (body.status !== undefined && !UNIT_STATUSES.includes(body.status)) {
-        return NextResponse.json(
-            { error: `Төлөв буруу. Боломжтой: ${UNIT_STATUSES.join(', ')}` },
-            { status: 400 },
-        );
+    const result = await updateInventoryUnit(supabaseAdmin(), authShop.id, id, body);
+    if ('error' in result) {
+        if (result.status === 500) logger.error('[Units API] PATCH error:', { error: result.cause });
+        return NextResponse.json({ error: result.error }, { status: result.status });
     }
-
-    const updateData: Record<string, unknown> = {};
-    for (const key of EDITABLE_UNIT_FIELDS) {
-        if (body[key] !== undefined) updateData[key] = body[key] === '' ? null : body[key];
-    }
-    if (Object.keys(updateData).length === 0) {
-        return NextResponse.json({ error: 'Засах талбар алга' }, { status: 400 });
-    }
-    updateData.updated_at = new Date().toISOString();
-
-    const supabase = supabaseAdmin();
-    const { data, error } = await supabase
-        .from('property_units')
-        .update(updateData)
-        .eq('id', id)
-        .eq('shop_id', authShop.id)
-        .select()
-        .single();
-
-    if (error) throw error;
-    if (!data) return NextResponse.json({ error: 'Нэгж олдсонгүй' }, { status: 404 });
-
-    return NextResponse.json({ unit: data, message: 'Нэгж шинэчлэгдлээ' });
+    return NextResponse.json({ unit: result.unit, message: 'Нэгж шинэчлэгдлээ' });
 });
 
 // "01","02","B1","B2" → дугаар (B давхрууд сөрөг)

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { ErpDataset, ErpRow } from './import';
-import { isProductsDataset, isSalesDataset, readErpRecords } from './records';
+import { isProductsDataset, isSalesDataset, parseErpProduct, readErpRecords } from './records';
 
 export type ErpSnapshotKind = 'sales' | 'products';
 export interface ErpSnapshotMeta { id: string; source: string; report_date: string; kind: ErpSnapshotKind | null }
@@ -41,4 +41,14 @@ export function snapshotRecords<T>(meta: ErpSnapshotMeta | null, datasets: Map<s
     if (!meta) return null;
     const detect = meta.kind === 'products' ? isProductsDataset : isSalesDataset;
     return { info: { date: meta.report_date, source: meta.source }, rows: readErpRecords(datasets.get(meta.id) ?? [], detect, parse) };
+}
+
+/**
+ * Тухайн өдөр хүртэлх хамгийн сүүлийн бүтээгдэхүүний экспорт (байрны үлдэгдэл) — Лхагвын тайлантай
+ * ижил сонголт. Экспорт байхгүй бол null; уншилтын алдаа шидэгдэнэ (хоосон нөөц гэж үзэхгүй).
+ */
+export async function loadLatestErpProducts(db: SupabaseClient, shopId: string, upTo: string) {
+    const meta = (await listErpSnapshots(db, shopId, upTo)).find(snapshot => snapshot.kind === 'products') ?? null;
+    if (!meta) return null;
+    return snapshotRecords(meta, await loadErpDatasets(db, shopId, [meta.id]), parseErpProduct);
 }

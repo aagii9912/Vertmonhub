@@ -22,7 +22,7 @@ import {
     fetchProperties, fetchLeads, fetchLeadDetails, fetchCustomerInsights,
     fetchContracts, fetchContractDetails, fetchContractsSummary,
     fetchSalesSummary, fetchSalesForecast, compareProperties,
-    updatePropertyStatus, updateUnitStatus, updatePropertyPrice, updateLeadStatus,
+    updatePropertyStatus, updateUnitStatus, updateUnitDetails, updatePropertyPrice, updateLeadStatus,
     addLeadNote, processContractAction,
     createProperty, deleteProperty, createLead, deleteLead, createCustomer,
     scheduleViewing, deleteViewing, createContract, deleteContract, deleteCustomer,
@@ -30,9 +30,10 @@ import {
     fetchMarketingSummary, fetchMarketingBudgetStatus, fetchMarketIndicators,
     createSocialPost, rememberFact,
 } from './functions';
-import { inviteUser, assignRole, createRole } from './admin-functions';
-import { getKpiReport, getManagerActivityTool, getManagerPerformanceTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
-import { logCall, setFollowup, logPriceQuote, assignLeadManager, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
+import { inviteUser, assignRole, createRole, setUserProjects, setSalesTarget } from './admin-functions';
+import { importErpFileTool } from './erp-import';
+import { getKpiReport, getManagerActivityTool, getManagerPerformanceTool, getWeeklySalesReportTool, getWeeklyUpdatesTool, saveWeeklyUpdateTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, updateCustomerTool, listConversationsTool, getConversationTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
+import { logCall, setFollowup, logPriceQuote, assignLeadManager, updateLeadTool, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
 import { transferContractTool } from './actions-contract-transfer';
 import { listLeadCategoriesTool, setLeadCategory } from './actions-lead-category';
 
@@ -94,7 +95,9 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     get_marketing_performance: marketingPerformanceTool,
     get_operations_report: operationsReportTool,
     get_dashboard_stats: ({ shopId, args, scope }) => fetchDashboardStats(shopId, args.timeRange || 'month', scope),
-    list_properties: ({ shopId, args }) => fetchProperties(shopId, args),
+    list_properties: ({ shopId, args, perms }) => fetchProperties(shopId, args, {
+        canSeeErpPrice: perms.role === 'super_admin' || !!perms.modules?.includes('erp-imports'),
+    }),
     list_leads: ({ shopId, args, scope }) => fetchLeads(shopId, args, scope),
     get_lead_details: ({ shopId, args, scope }) => fetchLeadDetails(shopId, args, scope),
     get_customer_insights: ({ shopId, args, scope }) => fetchCustomerInsights(shopId, args, scope),
@@ -106,8 +109,10 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     compare_properties: ({ shopId, args }) => compareProperties(shopId, args),
     update_property_status: ({ shopId, args, confirm }) => updatePropertyStatus(shopId, args, confirm),
     update_unit_status: ({ shopId, args, confirm }) => updateUnitStatus(shopId, args, confirm),
+    update_unit: ({ shopId, args, confirm }) => updateUnitDetails(shopId, args, confirm),
     update_property_price: ({ shopId, args, confirm }) => updatePropertyPrice(shopId, args, confirm),
     update_lead_status: ({ shopId, args, confirm, scope, userId, userName }) => updateLeadStatus(shopId, args, confirm, scope, { userId, userName }),
+    update_lead: ({ shopId, args, confirm, scope, userId }) => updateLeadTool(shopId, args, confirm, userId, scope),
     add_lead_note: ({ shopId, args, confirm, scope, userId, userName }) => addLeadNote(shopId, args, confirm, scope, { userId, userName }),
     process_contract_action: ({ shopId, args, confirm, scope, userId, userName }) => processContractAction(shopId, args, confirm, scope, { userId, userName }),
     create_property: ({ shopId, args, confirm }) => createProperty(shopId, args, confirm),
@@ -115,6 +120,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     create_lead: ({ shopId, args, confirm, userId, perms, scope }) => createLead(shopId, args, confirm, { userId, role: perms.role, scope }),
     delete_lead: ({ shopId, args, confirm, scope }) => deleteLead(shopId, args, confirm, scope),
     create_customer: ({ shopId, args, confirm, userName }) => createCustomer(shopId, args, confirm, userName),
+    update_customer: ({ shopId, args, confirm, userId }) => updateCustomerTool(shopId, args, confirm, userId),
     schedule_viewing: ({ shopId, args, confirm, userName, userId, scope }) => scheduleViewing(shopId, args, confirm, userName, userId, scope),
     delete_viewing: ({ shopId, args, confirm, scope, userId }) => deleteViewing(shopId, args, confirm, scope, userId),
     create_contract: ({ shopId, args, confirm, userName, scope }) => createContract(shopId, args, confirm, userName, scope),
@@ -123,7 +129,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     delete_customer: ({ shopId, args, confirm }) => deleteCustomer(shopId, args, confirm),
     attach_file: ({ shopId, args, confirm, userName, userId, perms, scope }) => attachFile(shopId, args, confirm, userName, userId, perms, scope),
     bulk_update_leads: ({ shopId, args, confirm, scope, userId, userName }) => bulkUpdateLeads(shopId, args, confirm, scope, { userId, userName }),
-    get_marketing_summary: ({ shopId, args }) => fetchMarketingSummary(shopId, args),
+    get_marketing_summary: ({ shopId }) => fetchMarketingSummary(shopId),
     get_marketing_budget_status: ({ shopId, args }) => fetchMarketingBudgetStatus(shopId, args),
     get_market_indicators: ({ shopId }) => fetchMarketIndicators(shopId),
     create_social_post: ({ shopId, args, confirm, userName }) => createSocialPost(shopId, args, confirm, userName),
@@ -145,9 +151,15 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     get_kpi_report: ({ shopId, args, userId, perms, scope }) => getKpiReport(shopId, args, userId, perms, scope),
     get_manager_activity: ({ shopId, args, userId, perms, scope }) => getManagerActivityTool(shopId, args, userId, perms, scope),
     get_manager_performance: ({ shopId }) => getManagerPerformanceTool(shopId),
+    get_weekly_sales_report: ({ shopId, args, perms }) => getWeeklySalesReportTool(shopId, args, perms),
+    import_erp_file: ({ shopId, args, confirm, userId, perms }) => importErpFileTool(shopId, args, confirm, userId, perms),
+    get_weekly_updates: ({ shopId, args, userId, perms }) => getWeeklyUpdatesTool(shopId, args, userId, perms),
+    save_weekly_update: ({ shopId, args, confirm, userId }) => saveWeeklyUpdateTool(shopId, args, confirm, userId),
     get_export_link: ({ shopId, args }) => getExportLink(shopId, args),
     add_customer_tag: ({ shopId, args }) => customerTag(shopId, args, false),
     remove_customer_tag: ({ shopId, args }) => customerTag(shopId, args, true),
+    list_conversations: ({ shopId, args }) => listConversationsTool(shopId, args),
+    get_conversation: ({ shopId, args }) => getConversationTool(shopId, args),
     reply_to_customer: ({ shopId, args, confirm }) => replyCustomer(shopId, args, confirm),
     merge_customers: ({ shopId, args, confirm, scope }) => mergeCustomersTool(shopId, args, confirm, scope),
     log_marketing_spend: ({ shopId, args, confirm, userId }) => logSpend(shopId, args, confirm, userId),
@@ -157,6 +169,8 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     invite_user: ({ shopId, args, confirm, userId }) => inviteUser(shopId, args, confirm, userId),
     assign_role: ({ shopId, args, confirm, userId }) => assignRole(shopId, args, confirm, userId),
     create_role: ({ shopId, args, confirm }) => createRole(shopId, args, confirm),
+    set_user_projects: ({ args, confirm, userId }) => setUserProjects(args, confirm, userId),
+    set_sales_target: ({ shopId, args, confirm }) => setSalesTarget(shopId, args, confirm),
 };
 
 // ============================================

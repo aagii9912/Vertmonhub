@@ -28,6 +28,8 @@ const ENTRIES = {
     get_operations_report: { kind: 'read', module: 'reports', scoped: true },
     get_kpi_report: { kind: 'read', module: 'reports', scoped: true },
     get_manager_activity: { kind: 'read', module: 'reports', scoped: true },
+    get_weekly_sales_report: { kind: 'read', module: 'reports' },
+    import_erp_file: { kind: 'write', module: 'erp-imports', alwaysConfirm: true },
     get_manager_performance: { kind: 'read', module: 'reports' },
     get_export_link: { kind: 'read', module: 'reports' },
     get_sales_summary: { kind: 'read', module: 'reports' },
@@ -37,6 +39,7 @@ const ENTRIES = {
     compare_properties: { kind: 'read', module: 'properties' },
     update_property_status: { kind: 'write', module: 'properties' },
     update_unit_status: { kind: 'write', module: 'properties' },
+    update_unit: { kind: 'write', module: 'properties' },
     update_property_price: { kind: 'write', module: 'properties', alwaysConfirm: true },
     create_property: { kind: 'write', module: 'properties', alwaysConfirm: true },
     delete_property: { kind: 'delete', module: 'properties' },
@@ -46,6 +49,7 @@ const ENTRIES = {
     list_leads: { kind: 'read', module: 'leads', scoped: true },
     get_lead_details: { kind: 'read', module: 'leads', scoped: true },
     update_lead_status: { kind: 'write', module: 'leads', scoped: true },
+    update_lead: { kind: 'write', module: 'leads', scoped: true },
     add_lead_note: { kind: 'write', module: 'leads', scoped: true, auto: 'Тэмдэглэл нэмэх' },
     create_lead: { kind: 'write', module: 'leads', scoped: true },
     bulk_update_leads: { kind: 'write', module: 'leads', scoped: true, alwaysConfirm: true },
@@ -58,10 +62,13 @@ const ENTRIES = {
     // Харилцагч, Inbox
     get_customer_insights: { kind: 'read', module: 'customers', scoped: true },
     create_customer: { kind: 'write', module: 'customers' },
+    update_customer: { kind: 'write', module: 'customers' },
     add_customer_tag: { kind: 'write', module: 'customers', auto: 'Таг нэмэх' },
     remove_customer_tag: { kind: 'write', module: 'customers', auto: 'Таг хасах' },
     merge_customers: { kind: 'write', module: 'customers', scoped: true, alwaysConfirm: true },
     delete_customer: { kind: 'delete', module: 'customers' },
+    list_conversations: { kind: 'read', module: 'inbox' },
+    get_conversation: { kind: 'read', module: 'inbox' },
     reply_to_customer: { kind: 'write', module: 'inbox', alwaysConfirm: true },
     // Уулзалт
     list_viewings: { kind: 'read', module: 'viewings', scoped: true },
@@ -81,6 +88,8 @@ const ENTRIES = {
     mark_payment_paid: { kind: 'write', module: 'contracts', alwaysConfirm: true },
     delete_contract: { kind: 'delete', module: 'contracts' },
     // Хувийн ажил
+    get_weekly_updates: { kind: 'read', module: 'dashboard' },
+    save_weekly_update: { kind: 'write', module: 'dashboard' },
     list_my_tasks: { kind: 'read', module: 'dashboard' },
     create_task: { kind: 'write', module: 'dashboard', auto: 'Ажил нэмэх' },
     complete_task: { kind: 'write', module: 'dashboard', auto: 'Ажил дуусгах' },
@@ -101,6 +110,8 @@ const ENTRIES = {
     invite_user: { kind: 'admin', module: 'settings' },
     assign_role: { kind: 'admin', module: 'settings' },
     create_role: { kind: 'admin', module: 'settings' },
+    set_user_projects: { kind: 'admin', module: 'settings' },
+    set_sales_target: { kind: 'admin', module: 'settings' },
 } satisfies Record<string, ToolMeta>;
 
 export type ToolName = keyof typeof ENTRIES;

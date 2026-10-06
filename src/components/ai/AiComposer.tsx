@@ -114,7 +114,7 @@ export function AiComposer({ busy, onSend, onStop, prefill, onPrefillConsumed, p
                 <button type="button" onClick={() => fileRef.current?.click()} disabled={busy} className="flex size-10 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-surface-2 hover:text-foreground disabled:opacity-50 focus-ring" aria-label="Файл хавсаргах" title="Зураг / PDF хавсаргах">
                     <Paperclip className="h-4 w-4" />
                 </button>
-                <input ref={fileRef} type="file" multiple hidden accept="image/*,application/pdf" onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }} />
+                <input ref={fileRef} type="file" multiple hidden accept="image/*,application/pdf,.xlsx,.csv,.tsv" onChange={(e) => { handleFiles(e.target.files); e.target.value = ''; }} />
                 {voiceSupported && (
                     <button type="button" onClick={toggleVoice} disabled={busy} className={cn('flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-surface-2 disabled:opacity-50 focus-ring', listening ? 'text-status-danger animate-pulse' : 'text-muted-foreground hover:text-foreground')} aria-label={listening ? 'Ярихаа зогсоох' : 'Ярьж оруулах'} title={listening ? 'Сонсож байна… дарж зогсооно' : 'Дуу хоолойгоор оруулах (монгол)'}>
                         {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}

@@ -15,6 +15,7 @@ import { AGENTS, AGENT_LIST, isAdminOnlyAgent } from './agents';
 import { runAgent } from './runAgent';
 import { runLoop, buildHistory, buildUserContent } from './loop';
 import { buildSystemBlocks } from './prompt';
+import { buildInProjectTool, IN_PROJECT_TOOL_NAME } from './projects';
 import type { AgentBadge, AgentId, OrchestratorContext, OrchestratorResult, PendingAction, RunInterruption, TraceStep, TraceTool } from './types';
 
 const MAIN_BADGE: AgentBadge = { id: 'main', name: 'AI туслах', emoji: '✨', color: 'violet' };
@@ -30,7 +31,8 @@ export async function runOrchestrator(message: string, ctx: OrchestratorContext)
 
     // 1. Tool-ууд: data (RBAC) + ask_user + delegate (super_admin биш бол admin агентыг жагсаалтаас хасна).
     const roster = AGENT_LIST.filter((a) => ctx.perms.role === 'super_admin' || !isAdminOnlyAgent(a));
-    const tools = [...dataToolsForPerms(ctx.perms), ASK_USER_TOOL, buildDelegateTool(roster)];
+    const inProject = buildInProjectTool(ctx);
+    const tools = [...dataToolsForPerms(ctx.perms), ASK_USER_TOOL, buildDelegateTool(roster), ...(inProject ? [inProject.tool] : [])];
 
     const steps: TraceStep[] = [];
     const subResults: Array<{ agentId: AgentId; pendingActions: PendingAction[]; data: unknown; chartConfig: unknown; traceTools: TraceTool[]; interruption?: RunInterruption }> = [];
@@ -60,7 +62,7 @@ export async function runOrchestrator(message: string, ctx: OrchestratorContext)
     const r = await runLoop({
         model: MAIN_MODEL, system, tools, messages, ctx, streamText: true,
         agentLabel: { id: 'main', name: MAIN_BADGE.name, emoji: MAIN_BADGE.emoji },
-        customTools: { [DELEGATE_TOOL_NAME]: delegate },
+        customTools: { [DELEGATE_TOOL_NAME]: delegate, ...(inProject ? { [IN_PROJECT_TOOL_NAME]: inProject.run } : {}) },
     });
 
     const pendingActions = [...r.pendingActions, ...subResults.flatMap((s) => s.pendingActions)];

@@ -39,7 +39,8 @@ export interface ComboSeries {
 }
 
 export interface ComboChartProps {
-    data: Array<Record<string, number | string>>;
+    /** `null` = утгагүй (жишээ нь мэдээлэлгүй сар): шугам тасарч, tooltip-д харагдахгүй — 0 гэж зурагдахгүй. */
+    data: Array<Record<string, number | string | null>>;
     /** X тэнхлэгийн категори талбарын нэр */
     xKey: string;
     /** Зүүн тэнхлэгийн багана цуваанууд */

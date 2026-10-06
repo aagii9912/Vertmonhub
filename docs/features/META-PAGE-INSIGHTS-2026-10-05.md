@@ -162,7 +162,11 @@ cron (`/api/cron/social-insights-sync`) устгана. State нь 64 тэмдэ
   алдаа/лог-д зөвхөн HTTP статус ба Graph code. v22–v26 changelog-д эдгээр endpoint-ийн талбар
   өөрчлөгдөөгүй (message tag `CONFIRMED_EVENT_UPDATE`/`ACCOUNT_UPDATE`/`POST_PURCHASE_UPDATE`
   2026-04-27-нөөс хаагдсан — бид tag хэрэглэдэггүй).
-- Graph **v21** хэвээр, токен URL-д: `lib/marketing/meta-capi.ts` (Conversions API, өөр токен).
+- ~~Graph v21, токен URL-д: `lib/marketing/meta-capi.ts`~~ — `feat/meta-capi-v26` дээр v26 болсон:
+  токен зөвхөн `Authorization` толгойд, лог-д зөвхөн HTTP статус ба Graph code/subcode, 5 сек timeout,
+  хэзээ ч throw хийхгүй. `appsecret_proof` зөвхөн `META_CAPI_APP_SECRET` тохируулсан үед (Events
+  Manager-ийн dataset токен өөр app-д хамаарч болох тул `FACEBOOK_APP_SECRET`-ээр fail-closed хийхгүй).
+  v22–v26 changelog-д `/{pixel}/events` payload өөрчлөгдөөгүй.
 - Instagram аккаунтын insights-ийг өдрөөр хадгалах (одоо live л). Хүснэгт `platform =
   'instagram'`-ийг аль хэдийн зөвшөөрнө.
 - Instagram сонголт Page-ийг DM webhook-д subscribe хийхгүй (өмнө нь Instagram холболт огт
