@@ -62,12 +62,15 @@ export default function LoginPage() {
         }
     };
 
-    // OAuth: буцах замыг callback-ийн `?next=`-ээр дамжуулна (callback дахин шалгана).
+    // OAuth: буцах замыг callback-ийн `?next=`-ээр дамжуулна (callback дахин шалгана). Анхдагч
+    // /dashboard үед query нэмэхгүй — Supabase-ийн Redirect URL жагсаалтад өмнөх яг ижил хаяг очно.
     const handleOAuthLogin = async (provider: 'google' | 'apple' | 'facebook') => {
         setLoading(true);
+        const next = requestedPath();
+        const callback = `${window.location.origin}/auth/callback`;
         const { error } = await supabase.auth.signInWithOAuth({
             provider,
-            options: { redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(requestedPath())}` },
+            options: { redirectTo: next === '/dashboard' ? callback : `${callback}?next=${encodeURIComponent(next)}` },
         });
         if (error) {
             setError(error.message);

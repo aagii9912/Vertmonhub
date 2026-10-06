@@ -117,13 +117,13 @@ describe('OAuth keeps the requested page through the callback', () => {
         }));
     });
 
-    it.each(['https://evil.example', '//evil.example', '/auth/callback?next=//evil.example'])('sends /dashboard instead of %s', async (requested) => {
+    it.each(['https://evil.example', '//evil.example', '/auth/callback?next=//evil.example'])('uses the plain callback (→ /dashboard) instead of %s', async (requested) => {
         stubLocation(loginPath(requested));
         render(<LoginPage />);
         fireEvent.click(screen.getByRole('button', { name: 'Google-ээр нэвтрэх' }));
         await waitFor(() => expect(supabase.signInWithOAuth).toHaveBeenCalledWith({
             provider: 'google',
-            options: { redirectTo: 'http://localhost:3000/auth/callback?next=%2Fdashboard' },
+            options: { redirectTo: 'http://localhost:3000/auth/callback' },
         }));
     });
 
