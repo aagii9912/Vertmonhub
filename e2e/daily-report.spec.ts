@@ -57,7 +57,7 @@ async function setup(page: Page, mode: 'team' | 'personal') {
                 date, today, report: buildDailyReport(input(date)), config, configSaved: true, configInvalid: false,
                 roster: mode === 'team' ? roster : [],
                 viewer: mode === 'team'
-                    ? { personal: false, onboarding: false, canEditTeam: true, editable: [ 'Ариунбилэг.Нямхүү', CHAN, KHON] }
+                    ? { personal: false, onboarding: false, canEditTeam: true, editable: ['Ариунбилэг.Нямхүү', CHAN, KHON] }
                     : { personal: true, onboarding: false, canEditTeam: false, editable: [KHON] },
             });
         }
