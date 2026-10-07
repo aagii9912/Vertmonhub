@@ -8,11 +8,11 @@ import { resolveSalesProjectScope } from '@/lib/sales/project-scope';
 
 /**
  * GET /api/dashboard/leads/pipeline-summary?category=<uuid|none>
- * Pipeline самбарын тоо БҮХ лидээр: шат бүрийн лид, төсвийн дүн, зогссон ба дараагийн алхамгүй лид.
+ * «Шатаар» самбарын тоо БҮХ лидээр: шат бүрийн лид, төсвийн дүн, зогссон ба дараагийн алхамгүй лид.
  * Самбар картаа хамгийн сүүлийн 1,000 лидээр л ачаалдаг тул тоо, таамгийг эндээс авна.
  * Жагсаалттай ижил `leads` модуль ба хүрээ (`applyLeadScope`); тооцоо `lib/leads/pipeline.ts`.
  */
-export const GET = withRoute({ module: 'leads', error: 'Pipeline-ийн тоог гаргаж чадсангүй. Дахин оролдоно уу.' }, async ({ request, shop }) => {
+export const GET = withRoute({ module: 'leads', error: 'Шатаар самбарын тоог гаргаж чадсангүй. Дахин оролдоно уу.' }, async ({ request, shop }) => {
     const raw = request.nextUrl.searchParams.get('category');
     let category: string | null | undefined;
     if (!raw || raw === 'all') category = undefined;

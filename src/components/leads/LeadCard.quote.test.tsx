@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { LeadPanel } from './LeadPanel';
+import { LeadCard } from './LeadCard';
 
 const mocks = vi.hoisted(() => ({
     addActivity: vi.fn(), toastSuccess: vi.fn(), toastError: vi.fn(),
@@ -18,7 +18,9 @@ vi.mock('@/hooks/useLeads', () => ({
     useUpdateLead: () => ({ mutate: vi.fn() }),
     useAddLeadActivity: () => ({ mutateAsync: mocks.addActivity, isPending: false }),
     useLeadCategories: () => ({ data: [] }),
+    useLeadCustomerCard: () => ({ data: undefined, isError: false }),
 }));
+vi.mock('@/hooks/useViewings', () => ({ useUpdateViewing: () => ({ mutateAsync: vi.fn(), isPending: false }) }));
 vi.mock('./pickers', () => ({ StatusPicker: () => null, ManagerPicker: () => null, CategoryPicker: () => null }));
 vi.mock('./LeadWorkActions', () => ({ LeadWorkActions: () => null }));
 
@@ -32,9 +34,9 @@ beforeEach(() => {
     };
 });
 
-describe('LeadPanel price quote composer', () => {
+describe('LeadCard price quote composer', () => {
     it('records a quote with a formatted amount and optional unit', async () => {
-        render(<LeadPanel leadId="lead" canWrite={true} />);
+        render(<LeadCard leadId="lead" canWrite={true} />);
         fireEvent.click(screen.getByRole('button', { name: 'Үнийн санал' }));
         const save = screen.getByRole('button', { name: 'Хадгалах' });
         expect(save).toBeDisabled();
@@ -49,7 +51,7 @@ describe('LeadPanel price quote composer', () => {
     });
 
     it('keeps call and quote mutually exclusive and still saves a call', async () => {
-        render(<LeadPanel leadId="lead" canWrite={true} />);
+        render(<LeadCard leadId="lead" canWrite={true} />);
         fireEvent.click(screen.getByRole('button', { name: 'Үнийн санал' }));
         fireEvent.click(screen.getByRole('button', { name: 'Залгав' }));
         expect(screen.getByRole('button', { name: 'Үнийн санал' })).toHaveAttribute('aria-pressed', 'false');
@@ -61,7 +63,7 @@ describe('LeadPanel price quote composer', () => {
     it('sends one call for repeated ⌘↵ while the first save is in flight', async () => {
         let resolve: (value: unknown) => void = () => {};
         mocks.addActivity.mockReturnValueOnce(new Promise((r) => { resolve = r; }));
-        render(<LeadPanel leadId="lead" canWrite={true} />);
+        render(<LeadCard leadId="lead" canWrite={true} />);
         fireEvent.click(screen.getByRole('button', { name: 'Залгав' }));
         const note = screen.getByRole('textbox', { name: 'Тэмдэглэл эсвэл дуудлагын үр дүн' });
         fireEvent.keyDown(note, { key: 'Enter', metaKey: true });
@@ -75,7 +77,7 @@ describe('LeadPanel price quote composer', () => {
 
     it('labels a degraded manager history in the partial warning', () => {
         mocks.detail.data = { ...(mocks.detail.data as object), partial: ['timeline'] };
-        render(<LeadPanel leadId="lead" canWrite={false} />);
+        render(<LeadCard leadId="lead" canWrite={false} />);
         expect(screen.getByRole('alert')).toHaveTextContent('менежерийн түүх');
         expect(screen.queryByRole('button', { name: 'Үнийн санал' })).not.toBeInTheDocument();
     });

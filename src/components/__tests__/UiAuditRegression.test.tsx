@@ -23,7 +23,7 @@ vi.mock('@/hooks/useLeads', () => ({
     ] }),
 }));
 vi.mock('../leads/pickers', () => ({ StatusPicker: () => null, ManagerPicker: () => null, CategoryPicker: () => null }));
-vi.mock('../leads/LeadPanel', () => ({ LeadPanel: ({ leadId, onClose }: { leadId: string; onClose: () => void }) => <div><h2>{leadId}</h2><button onClick={onClose}>Хаах</button></div>, nextStep: () => '' }));
+vi.mock('../leads/LeadCard', () => ({ LeadCard: ({ leadId, onClose }: { leadId: string; onClose: () => void }) => <div><h2>{leadId}</h2><button onClick={onClose}>Хаах</button></div> }));
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -55,20 +55,16 @@ describe('UI audit regressions', () => {
         fireEvent.click(screen.getByRole('button', { name: 'Цэвэрлэх' }));
         expect(mocks.listParams).toHaveBeenLastCalledWith(expect.objectContaining({ category: 'all' }));
     });
-    it('restores the saved split layout with the selected lead in the side panel, and the table layout opens it in a sheet', () => {
-        localStorage.setItem('vertmonhub_leads_mode', 'split');
+    it('opens the lead from the URL in the customer card beside the list and closes it', () => {
         mocks.params = 'lead=split-lead';
         render(<LeadsPage />);
         expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-        expect(within(screen.getByRole('complementary', { name: 'Сонгосон лид' })).getByRole('heading', { name: 'split-lead' })).toBeInTheDocument();
-        fireEvent.click(screen.getByRole('button', { name: 'Хүснэгт' }));
-        expect(localStorage.getItem('vertmonhub_leads_mode')).toBe('table');
-        expect(screen.queryByRole('complementary', { name: 'Сонгосон лид' })).not.toBeInTheDocument();
-        const dialog = screen.getByRole('dialog');
-        expect(within(dialog).getByRole('heading', { name: 'split-lead' })).toBeInTheDocument();
-        expect(within(dialog).getAllByRole('button', { name: 'Хаах' })).toHaveLength(1);
-        fireEvent.click(within(dialog).getByRole('button', { name: 'Хаах' }));
-        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+        const card = screen.getByRole('complementary', { name: 'Харилцагчийн карт' });
+        expect(within(card).getByRole('heading', { name: 'split-lead' })).toBeInTheDocument();
+        expect(within(card).getAllByRole('button', { name: 'Хаах' })).toHaveLength(1);
+        fireEvent.click(within(card).getByRole('button', { name: 'Хаах' }));
+        expect(screen.queryByRole('complementary', { name: 'Харилцагчийн карт' })).not.toBeInTheDocument();
+        expect(window.location.search).toBe('');
     });
 
     it('opens the exact conversation in the URL beside the list and switches conversations without losing other parameters', () => {

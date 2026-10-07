@@ -152,6 +152,15 @@ describe('findNavItem / getBreadcrumb / getNavTitle / getDocumentTitle', () => {
         expect(getNavTitle('/dashboard/properties/abc-123')).toBe('Дэлгэрэнгүй');
     });
 
+    it('Харилцагчийн картын бүтэн хуудас лидийн эрх, замын мөртэй', () => {
+        expect(getRouteModule('/dashboard/leads/00000000-0000-4000-8000-000000000010')).toBe('leads');
+        expect(getBreadcrumb('/dashboard/leads/00000000-0000-4000-8000-000000000010')).toEqual([
+            { name: 'Лид', href: '/dashboard/leads' },
+            { name: 'Дэлгэрэнгүй' },
+        ]);
+        expect(findNavItem('/dashboard/leads/00000000-0000-4000-8000-000000000010')?.name).toBe('Лид');
+    });
+
     it('удирдлагын хуудсууд «Удирдлага»-аар эхэлнэ', () => {
         expect(getBreadcrumb('/admin/dashboard')).toEqual([{ name: 'Удирдлага', href: '/admin/dashboard' }]);
         expect(getBreadcrumb('/admin/users')).toEqual([
