@@ -12,30 +12,6 @@ export function metaAdAccountKey(adAccountId: string | null | undefined): string
     return adAccountId ? `act_${adAccountId.replace(/^act_/, '')}` : null;
 }
 
-export interface MetaAdAccount {
-    /** Төслийн сонгосон зарын данс (`act_…`); сонгоогүй бол null. */
-    accountId: string | null;
-    /** Дансны валют (`USD` г.м.); зардлыг нэг ч удаа амжилттай татаагүй бол null. */
-    currency: string | null;
-}
-
-/**
- * Төслийн сонгосон Meta зарын данс ба түүний валют — сүүлийн зардлын синк (`meta_spend_sync`).
- * ROI, Зар сурталчилгааны хуудас валютаа `/api/marketing/facebook/ads/spend-sync`-ээс ижил эх
- * сурвалжаас авдаг. Валют мэдэгдэхгүй бол null: дуудагч ₮ гэж таамаглахгүй, «валют тодорхойгүй»
- * гэж шошголно. Уншилт унавал алдаа шиднэ.
- */
-export async function loadMetaAdAccount(db: SupabaseClient, shopId: string): Promise<MetaAdAccount> {
-    const { data: shop, error } = await db.from('shops').select('facebook_ad_account_id').eq('id', shopId).maybeSingle();
-    if (error) throw new Error('Meta зарын дансны тохиргоог уншиж чадсангүй');
-    const accountId = metaAdAccountKey(shop?.facebook_ad_account_id);
-    if (!accountId) return { accountId: null, currency: null };
-    const { data: sync, error: syncError } = await db.from('meta_spend_sync').select('currency')
-        .eq('shop_id', shopId).eq('account_id', accountId).maybeSingle();
-    if (syncError) throw new Error('Meta зардлын синкийн төлөвийг уншиж чадсангүй');
-    return { accountId, currency: sync?.currency ?? null };
-}
-
 export function isMissingMarketingTable(error: { code?: string; message?: string } | null): boolean {
     if (!error) return false;
     return error.code === '42P01' || /marketing_budgets|marketing_spend_entries|market_indicators/i.test(error.message || '');
