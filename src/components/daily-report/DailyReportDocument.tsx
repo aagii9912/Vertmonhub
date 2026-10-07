@@ -46,7 +46,7 @@ export function DailyReportDocument({ report, editing }: { report: DailyReport; 
                 )}
             </header>
 
-            <section className="grid gap-4 lg:grid-cols-2" aria-label="Менежерийн тоон үзүүлэлт">
+            <section className="grid gap-4 lg:grid-cols-2 print:grid-cols-2 print:gap-3" aria-label="Менежерийн тоон үзүүлэлт">
                 {report.lines.map(line => (
                     <CountTable key={line.key} title={line.label} caption="Дуудлага" section={line} managers={managers} editing={editing} />
                 ))}
