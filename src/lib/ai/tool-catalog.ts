@@ -96,7 +96,7 @@ const ENTRIES = {
     complete_task: { kind: 'write', module: 'dashboard', auto: 'Ажил дуусгах' },
     // Маркетинг
     get_marketing_performance: { kind: 'read', module: 'marketing-roi', scoped: true },
-    get_marketing_summary: { kind: 'read', module: 'marketing-roi' },
+    get_marketing_summary: { kind: 'read', module: 'marketing-roi', scoped: true },
     get_marketing_budget_status: { kind: 'read', module: 'marketing-roi' },
     get_market_indicators: { kind: 'read', module: 'marketing-roi' },
     list_marketing_spend: { kind: 'read', module: 'marketing-roi' },

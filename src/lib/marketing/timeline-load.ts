@@ -1,19 +1,18 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { applyLeadScope, type SalesProjectScope } from '@/lib/sales/project-scope';
-import { loadMetaAdAccount } from '@/lib/services/MarketingOps';
+import { applyLeadScope, applyProjectScope, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { fetchAllRows } from '@/lib/utils/pagination';
-import { buildMarketingTimeline, timelineMonths, timelineWindow, type TimelineMonth, type TimelineSpendRow } from './timeline';
+import { loadMetaActivities, loadMetaLedger, metaCampaignFilter } from './meta-ads-load';
+import { buildMarketingTimeline, timelineMonths, timelineWindow, type TimelineMonth } from './timeline';
 
 export interface MarketingTimeline {
     months: TimelineMonth[];
-    /** `spend`-ийн валют (сонгосон Meta зарын дансных); зардал татагдаагүй бол null. */
-    currency: string | null;
 }
 
 /**
  * Сүүлийн `count` УБ сарын маркетингийн цуваа. Бүх уншилт хуудаслалттай (`fetchAllRows`), лид ба
- * уулзалт хэрэглэгчийн төслийн хүрээгээр (`applyLeadScope`). Аль нэг уншилт унавал алдаа шиднэ —
- * тэгээр дүүргэсэн цуваа буцаахгүй. Эрхийг дуудагч (route) шалгана.
+ * уулзалт хэрэглэгчийн төслийн хүрээгээр (`applyLeadScope`), акц нь төслөөр, Meta зардал ROI тайлантай
+ * нэг ledger ба кампанит ажлын шүүлтээр (`loadMetaLedger`, `metaCampaignFilter`). Аль нэг уншилт унавал
+ * алдаа шиднэ — тэгээр дүүргэсэн цуваа буцаахгүй. Эрхийг дуудагч (route) шалгана.
  */
 export async function loadMarketingTimeline(
     db: SupabaseClient, options: { shopId: string; scope: SalesProjectScope; now?: Date; count?: number },
@@ -24,7 +23,7 @@ export async function loadMarketingTimeline(
     const start = bounds.start.toISOString();
     const end = bounds.end.toISOString();
 
-    const [leads, viewings, posts, activities, adCampaigns, account] = await Promise.all([
+    const [leads, viewings, posts, campaigns, ledger, coverage, metaActivities] = await Promise.all([
         fetchAllRows<{ created_at: string | null }>((from, to) => applyLeadScope(db.from('leads')
             .select('created_at').eq('shop_id', shopId).is('deleted_at', null)
             .gte('created_at', start).lt('created_at', end).order('id').range(from, to), scope)),
@@ -37,31 +36,19 @@ export async function loadMarketingTimeline(
             .select('published_at').eq('shop_id', shopId).eq('status', 'published')
             .gte('published_at', start).lt('published_at', end).order('id').range(from, to)),
         // Эхэлсэн огноо (DATE) эсвэл бүртгэсэн огноогоор сард орно — DB шүүлтүүрээр хасахгүй.
-        fetchAllRows<{ start_date: string | null; created_at: string | null }>((from, to) => db.from('marketing_campaigns')
-            .select('start_date, created_at').eq('shop_id', shopId).order('id').range(from, to)),
-        fetchAllRows<{ start_date: string | null; created_at: string | null }>((from, to) => db.from('ad_campaigns')
-            .select('start_date, created_at').eq('shop_id', shopId).order('id').range(from, to)),
-        loadMetaAdAccount(db, shopId),
+        fetchAllRows<{ start_date: string | null; created_at: string | null; status: string | null }>((from, to) => applyProjectScope(db.from('marketing_campaigns')
+            .select('start_date,created_at,status').eq('shop_id', shopId).order('id').range(from, to), scope)),
+        loadMetaLedger(db, shopId, bounds.firstDay, bounds.lastDay),
+        fetchAllRows<{ spent_at: string }>((from, to) => db.from('meta_spend_coverage')
+            .select('spent_at').eq('shop_id', shopId)
+            .gte('spent_at', bounds.firstDay).lte('spent_at', bounds.lastDay).order('account_id').order('spent_at').range(from, to)),
+        loadMetaActivities(db, shopId),
     ]);
 
-    const accountId = account.accountId;
-    const [rows, coverage] = accountId ? await Promise.all([
-        fetchAllRows<TimelineSpendRow>((from, to) => db.from('meta_daily_spend')
-            .select('spent_at, native_amount, currency').eq('shop_id', shopId).eq('account_id', accountId)
-            .gte('spent_at', bounds.firstDay).lte('spent_at', bounds.lastDay).order('id').range(from, to)),
-        fetchAllRows<{ spent_at: string }>((from, to) => db.from('meta_spend_coverage')
-            .select('spent_at').eq('shop_id', shopId).eq('account_id', accountId)
-            .gte('spent_at', bounds.firstDay).lte('spent_at', bounds.lastDay).order('spent_at').range(from, to)),
-    ]) : [[], []];
-    // Нэг Meta данс нэг валюттай; синкийн төлөв уншигдаагүй ч мөр байвал түүний валютыг авна.
-    const currency = account.currency ?? rows[0]?.currency ?? null;
-
     return {
-        currency,
         months: buildMarketingTimeline(months, {
-            leads, viewings, posts,
-            campaigns: [...activities, ...adCampaigns],
-            spend: { currency, rows, coveredDays: coverage.map(c => c.spent_at) },
+            leads, viewings, posts, campaigns,
+            spend: { rows: metaCampaignFilter(metaActivities, scope)(ledger), coveredDays: coverage.map(c => c.spent_at) },
         }),
     };
 }

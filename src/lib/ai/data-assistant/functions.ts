@@ -12,6 +12,8 @@ import { softDeleteCustomer } from '@/lib/services/CustomerOps';
 import { insertLeadOnce, resolveLeadIdentity, resolveStaffLead, type StaffLeadActor } from '@/lib/services/LeadService';
 import { buildBudgetOverview, monthlySpendSeries, spendByChannel, SPEND_CHANNELS } from '@/lib/marketing/budget';
 import { loadMarketingSpend } from '@/lib/marketing/spend-load';
+import { loadMetaAdsReport } from '@/lib/marketing/meta-ads-load';
+import { formatMetaMoney, formatMetaSpend, type MetaResultSummary } from '@/lib/marketing/meta-ads-report';
 import { spendQuality, SPEND_BASIS } from '@/lib/marketing/performance';
 import { isLeadWorkQueue, workQueueFilter } from '@/lib/leads/work-queue';
 import { hasRealContractFields } from '@/lib/leads/contracts';
@@ -26,9 +28,7 @@ import { compactLeadTimelineWithin } from '@/lib/leads/timeline';
 import { LEAD_NAME_OR_ANONYMOUS, STATUS_META, UNCATEGORIZED_LABEL, isAnonymousLead, isUncategorizedInput, leadCategoryLabel, leadDisplayName, normalizeLeadName, statusLabel, toLeadSource } from '@/lib/leads/labels';
 import { leadCategoryName, listLeadCategories, resolveLeadCategory, type LeadCategory } from '@/lib/services/LeadCategoryService';
 import type { LeadStatus } from '@/types/property';
-import { accountCurrencyLabel, formatAccountMoney, formatMNT } from '@/lib/utils/currency';
-import { isMetaSyncedCampaign } from '@/lib/marketing/ad-campaigns';
-import { loadMetaAdAccount } from '@/lib/services/MarketingOps';
+import { formatMNT } from '@/lib/utils/currency';
 import { contractIdsByPreviousHolder, listContractTransfers } from '@/lib/services/ContractService';
 import { propertyStatusLabel, unitStatusLabel, type InventoryStatus } from '@/lib/inventory/labels';
 import { contractStatusLabel } from '@/lib/contracts/labels';
@@ -1720,64 +1720,46 @@ export async function bulkUpdateLeads(shopId: string, args: any, confirm = false
 
 // ---- Marketing ----
 
-interface AdCampaignSummaryRow {
-    name: string; platform: string; status: string | null; external_id: string | null;
-    budget: number | string | null; spend: number | string | null; impressions: number | null; clicks: number | null;
-    conversions: number | null; reach: number | null; last_synced_at: string | null;
-}
-
 /**
- * Зар сурталчилгааны нэгтгэл. Зардал, CPA нь зөвхөн Meta-аас синк хийсэн кампанит ажлынх бөгөөд
- * зарын дансны валютаар (/marketing/ads, ROI хуудастай ижил дүрэм: `isMetaSyncedCampaign`,
- * `loadMetaAdAccount`); Hub-д гараар бүртгэсэн төлөвлөгөөт зар нийлбэрт орохгүй, тусад нь жагсана.
+ * Зар сурталчилгааны нэгтгэл — ROI хуудас, «Зар сурталчилгаа»-тай нэг тайлан (`loadMetaAdsReport`):
+ * огноотой `meta_daily_spend` + `meta_ad_insights_daily`, төслийн хүрээгээр. ₮ зөвхөн мөр бүрийн
+ * хадгалсан ханшаар; ханшгүй дүн эх валютаар (`pendingNative`) тусдаа. `ad_campaigns` snapshot уншихгүй.
  */
-export async function fetchMarketingSummary(shopId: string) {
-    const [account, rows, posts] = await Promise.all([
-        loadMetaAdAccount(supabaseAdmin, shopId),
-        fetchAllRows<AdCampaignSummaryRow>((from, to) => supabaseAdmin.from('ad_campaigns')
-            .select('name, platform, status, external_id, budget, spend, impressions, clicks, conversions, reach, last_synced_at')
-            .eq('shop_id', shopId).order('id').range(from, to)),
+export async function fetchMarketingSummary(shopId: string, args: any, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
+    const [meta, posts] = await Promise.all([
+        loadMetaAdsReport(supabaseAdmin, shopId, { from: args?.from, to: args?.to }, scope)
+            .then(loaded => ({ loaded, error: null }), (error: unknown) => ({ loaded: null, error })),
         supabaseAdmin.from('social_posts').select('platform, status, likes, comments, shares, reach, engagement_rate, published_at').eq('shop_id', shopId).order('published_at', { ascending: false, nullsFirst: false }).limit(10),
     ]);
-    if (posts.error) throw new Error('Сошиал постын гүйцэтгэлийг уншиж чадсангүй');
-
-    const { currency } = account;
-    const money = (value: number) => formatAccountMoney(value, currency);
-    const meta = rows.filter(isMetaSyncedCampaign).sort((a, b) => (Number(b.spend) || 0) - (Number(a.spend) || 0));
-    const planned = rows.filter(row => !isMetaSyncedCampaign(row));
-    const totals = meta.reduce((sum, c) => ({
-        spend: sum.spend + (Number(c.spend) || 0),
-        impressions: sum.impressions + (Number(c.impressions) || 0),
-        clicks: sum.clicks + (Number(c.clicks) || 0),
-        conversions: sum.conversions + (Number(c.conversions) || 0),
-    }), { spend: 0, impressions: 0, clicks: 0, conversions: 0 });
-    const lastSynced = meta.map(c => c.last_synced_at).filter((at): at is string => !!at).sort().pop();
-    const currencyText = currency
-        ? `Meta зарын дансны валютаар (${currency})`
-        : 'Meta зарын дансны валютаар (валют тодорхойгүй — зардлын синк хийгдээгүй)';
-
+    if (!meta.loaded) {
+        if (meta.error instanceof z.ZodError) return { error: 'Огноо буруу байна. YYYY-MM-DD хэлбэрээр 367 хүртэл өдөр сонгоно уу.' };
+        logger.error('[AI Marketing Summary] Meta read failed', { error: meta.error });
+        return { error: 'Meta зарын тайлан бүрэн уншигдсангүй. Тоо таамаглаж дүгнэх боломжгүй.' };
+    }
+    if (posts.error) return { error: 'Сошиал постын гүйцэтгэлийг уншиж чадсангүй' };
+    const r = meta.loaded.report;
+    const resultLines = (list: MetaResultSummary[]) => list.map(x => ({ type: x.type, label: x.label, count: x.results, cost: formatMetaMoney(x.cost), costLabel: x.costLabel, spend: formatMetaSpend(x.spend) }));
     return {
-        currency: accountCurrencyLabel(currency),
-        basis: `Зардал, CPA нь зөвхөн Meta-аас синк хийсэн ${meta.length} кампанит ажлын сүүлийн синкийн хугацааны (анхдагч сүүлийн 30 хоног) дүн, ${currencyText}. Төгрөгт хөрвүүлээгүй тул ₮ гэж бүү бич, төгрөгийн дүнтэй бүү нэм. Hub-д гараар бүртгэсэн ${planned.length} төлөвлөгөөт зар нийлбэрт ороогүй (үр дүнгүй, төсөв нь ₮).`,
-        lastSyncedAt: lastSynced ? formatShortDate(lastSynced) : null,
-        campaignCount: meta.length,
-        activeCampaigns: meta.filter(c => c.status === 'active').length,
-        totals: {
-            spend: meta.length ? money(totals.spend) : '-',
-            impressions: totals.impressions,
-            clicks: totals.clicks,
-            conversions: totals.conversions,
-            ctr: totals.impressions ? `${((totals.clicks / totals.impressions) * 100).toFixed(2)}%` : '-',
-            cpa: totals.conversions ? money(totals.spend / totals.conversions) : '-',
+        period: r.range,
+        metaAds: {
+            // Ханшгүй эх валютын дүн (pendingNative) төгрөгийн дүнд ороогүй.
+            spend: formatMetaSpend(r.spend), spendMnt: r.spend.complete ? r.spend.mnt : null, convertedMnt: r.spend.mnt, pendingNative: r.spend.pending,
+            impressions: r.delivery?.impressions ?? null, linkClicks: r.delivery?.linkClicks ?? null,
+            ctr: r.delivery?.ctr === null || r.delivery?.ctr === undefined ? null : `${r.delivery.ctr}%`,
+            cpc: formatMetaMoney(r.delivery?.cpc), cpm: formatMetaMoney(r.delivery?.cpm),
+            results: resultLines(r.results),
+            campaignCount: r.campaigns.length,
+            campaigns: r.campaigns.slice(0, 10).map(c => ({
+                name: c.name, campaignId: c.campaignId, spend: formatMetaSpend(c.spend), days: c.days,
+                impressions: c.delivery?.impressions ?? null, linkClicks: c.delivery?.linkClicks ?? null, results: resultLines(c.results),
+            })),
+            coverage: r.coverage,
         },
-        campaigns: meta.slice(0, 10).map(c => ({
-            name: c.name, status: c.status, spend: money(Number(c.spend) || 0),
-            impressions: c.impressions, clicks: c.clicks, conversions: c.conversions, reach: c.reach,
-        })),
-        plannedCampaigns: planned.slice(0, 10).map(c => ({
-            name: c.name, platform: c.platform, status: c.status, budget: formatMNT(c.budget === null ? null : Number(c.budget)),
-        })),
+        notes: r.notes,
+        basis: r.basis,
         recentPosts: (posts.data || []).map((p: any) => ({ platform: p.platform, status: p.status, likes: p.likes, comments: p.comments, reach: p.reach, engagement_rate: p.engagement_rate })),
+        url: `/marketing/ads?${new URLSearchParams(r.range)}`,
+        guidance: 'Зөвхөн энэ тайлангийн тоонд тулгуурлан дүгнэ. Ханшгүй эх валютын (pendingNative) дүнг төгрөг гэж бичихгүй, төгрөгийн дүнтэй нэмэхгүй. Үр дүнгийн төрлүүдийг (дуудлага, мессеж, лид маягт…) нэг тоонд нэмэхгүй; Meta-гийн үр дүнг CRM лидтэй адилтгахгүй. Reach-ийг нэмэхгүй. notes дахь хамралт, ханшийн анхааруулгыг дурд.',
     };
 }
 

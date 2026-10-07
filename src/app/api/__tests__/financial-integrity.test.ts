@@ -143,21 +143,45 @@ describe('budget aggregation', () => {
 });
 
 describe('marketing attribution', () => {
-    it('counts Facebook spend once, uses contracts, excludes deleted data and suppresses mismatched-period ratios', async () => {
-        state.rows.leads.push({ ...lead, id: 'lead-2', source: 'facebook_ads' }, { ...lead, id: 'deleted', deleted_at: '2026-01-01' });
+    const roiRequest = () => new NextRequest('http://localhost/api/dashboard/marketing-roi?from=2026-01-01&to=2026-01-31');
+    it('uses dated Meta spend instead of the ad_campaigns snapshot, period leads and their valid contracts', async () => {
+        Object.assign(state.rows.leads[0], { facebook_campaign_id: '120001', created_at: '2026-01-10T02:00:00Z' });
+        state.rows.leads.push(
+            { ...state.rows.leads[0], id: 'lead-2', source: 'facebook_ads' },
+            { ...state.rows.leads[0], id: 'deleted', deleted_at: '2026-01-01' },
+            { ...state.rows.leads[0], id: 'other-month', created_at: '2026-02-03T02:00:00Z' },
+        );
         state.rows.property_contracts.push({ ...contract, id: 'c-2', total_price: 999, deleted_at: '2026-01-01' });
-        state.rows.ad_campaigns = [{ id: 'ad-1', shop_id: 'shop-1', platform: 'facebook', external_id: 'campaign-1', name: 'Campaign', spend: 50 }];
-        const data = (await (await roi()).json()).roi;
-        expect(data.sources).toHaveLength(1);
-        expect(data.sources[0]).toMatchObject({ source: 'facebook', spend: 50, leads: 2 });
-        expect(data.totals).toMatchObject({ spend: 50, leads: 2, won: 1, revenue: 200, cpl: null, cpa: null, roas: null, profit: null });
-        expect(data.basis.comparable).toBe(false);
+        state.rows.ad_campaigns = [{ id: 'ad-1', shop_id: 'shop-1', platform: 'facebook', external_id: '120001', name: 'Snapshot', spend: 888888 }];
+        const day = { account_id: 'act_1', campaign_id: '120001', campaign_name: 'Campaign', currency: 'USD', timezone: 'Asia/Ulaanbaatar' };
+        state.rows.meta_daily_spend = [
+            { ...day, id: 'm1', shop_id: 'shop-1', spent_at: '2026-01-05', native_amount: 10, amount_mnt: 35000, mnt_per_unit: 3500 },
+            { ...day, id: 'foreign', shop_id: 'shop-2', spent_at: '2026-01-05', native_amount: 10, amount_mnt: 35000, mnt_per_unit: 3500 },
+        ];
+        state.rows.meta_ad_insights_daily = [{ ...day, shop_id: 'shop-1', day: '2026-01-05', adset_id: '9', spend: 10, impressions: 1000, reach: 900,
+            clicks: 30, inline_link_clicks: 20, landing_page_views: 0, result_type: 'calls', results: 4, result_source: 'results' }];
+        const response = await roi(roiRequest());
+        expect(response.status).toBe(200);
+        const data = (await response.json()).roi;
+        expect(data.campaigns).toHaveLength(1);
+        expect(data.campaigns[0]).toMatchObject({ campaignId: '120001', spend: { mnt: 35000, complete: true }, leads: 2, won: 1, revenue: 200, cpl: 17500, cpa: 35000 });
+        expect(data.campaigns[0].results).toEqual([expect.objectContaining({ type: 'calls', results: 4, cost: { value: 8750, currency: 'MNT' } })]);
+        expect(data.totals).toMatchObject({ spend: { mnt: 35000 }, leads: 2, won: 1, revenue: 200 });
+        expect(data.range).toEqual({ from: '2026-01-01', to: '2026-01-31' });
+    });
+    it('keeps working without the detailed insights table and rejects a bad range', async () => {
+        state.errors.meta_ad_insights_daily = { message: "Could not find the table 'public.meta_ad_insights_daily' in the schema cache", code: 'PGRST205' };
+        const data = (await (await roi(roiRequest())).json()).roi;
+        expect(data.meta.coverage.insightsReady).toBe(false);
+        expect((await roi(new NextRequest('http://localhost/api/dashboard/marketing-roi?from=2026-02-01&to=2026-01-01'))).status).toBe(400);
     });
     it('surfaces query errors and denied module access', async () => {
         state.errors.property_contracts = { message: 'database unavailable' };
-        expect((await roi()).status).toBe(500);
+        expect((await roi(roiRequest())).status).toBe(500);
+        state.errors = { meta_daily_spend: { message: 'permission denied', code: '42501' } };
+        expect((await roi(roiRequest())).status).toBe(500);
         state.denied = new Response(null, { status: 403 });
-        expect((await roi()).status).toBe(403);
+        expect((await roi(roiRequest())).status).toBe(403);
         expect((await budget(new NextRequest('http://localhost/api/marketing/budget'))).status).toBe(403);
         expect((await convert(convertRequest(), convertParams)).status).toBe(403);
     });

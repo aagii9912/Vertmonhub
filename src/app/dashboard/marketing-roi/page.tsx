@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDashboardQuery } from '@/hooks/useDashboardQuery';
+import { useModuleAccess } from '@/hooks/useModuleAccess';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
 import { TrendingUp, Users, Target, BarChart3, RefreshCw, Megaphone, DollarSign, Heart, MessageCircle, Share2, Eye } from 'lucide-react';
 import { PageHeader } from '@/components/dashboard/PageHeader';
@@ -26,26 +27,15 @@ import {
     SelectValue,
 } from '@/components/ui/Select';
 import { cn } from '@/lib/utils';
-import { accountCurrencyLabel, formatAccountMoney, formatMNT } from '@/lib/utils/currency';
+import { formatMNT } from '@/lib/utils/currency';
 import { sourceLabel } from '@/lib/leads/labels';
 import type { LeadSourceStats } from '@/lib/marketing/lead-sources';
+import { formatMetaPending, formatMetaSpend } from '@/lib/marketing/meta-ads-report';
+import type { CampaignRoi, MarketingRoi } from '@/lib/marketing/roi';
+import type { TimelineMonth } from '@/lib/marketing/timeline';
+import { MetaRangeFilter, MetaReportNotes, MetaResultList, MetaResultsTable, isMetaAdsRange, metaSpendTile, ubMonth } from '@/components/marketing/MetaAdsParts';
+import { MetaSpendSync } from '@/components/marketing/MetaSpendSync';
 import { toast } from 'sonner';
-
-interface AdCampaign {
-    id: string;
-    name: string;
-    external_id: string | null;
-    status: string;
-    objective: string | null;
-    budget: number;
-    spend: number;
-    impressions: number;
-    clicks: number;
-    conversions: number;
-    ctr: number;
-    cpc: number;
-    last_synced_at: string | null;
-}
 
 interface AdAccount {
     id: string;
@@ -54,24 +44,6 @@ interface AdAccount {
     currency?: string;
     business_name?: string;
 }
-
-interface CampaignRoi {
-    external_id: string;
-    name: string;
-    spend: number;
-    leads: number;
-    won: number;
-    revenue: number;
-    cpl: number | null;
-    cpa: number | null;
-    roas: number | null;
-    profit: number | null;
-}
-interface RoiTotals {
-    spend: number; leads: number; won: number; revenue: number;
-    cpl: number | null; cpa: number | null; roas: number | null; profit: number | null;
-}
-interface RoiData { campaigns: CampaignRoi[]; sources: unknown[]; totals: RoiTotals; basis?: { note: string }; }
 
 interface SocialPost { id: string; content: string | null; likes: number | null; comments: number | null; shares: number | null; reach: number | null; published_at: string | null; }
 interface SocialMetricSummary { label: string; kind: 'sum' | 'unique' | 'latest'; value: number | null; day: string | null; days: number; }
@@ -88,33 +60,8 @@ const socialNumber = (value: number | null | undefined) => typeof value === 'num
 const socialMetricCaption = (metric: SocialMetricSummary) =>
     metric.kind === 'sum' ? `${metric.days} өдрийн нийлбэр` : metric.day ? `${metric.day}-ны байдлаар` : 'өгөгдөлгүй';
 
-/** Сонгосон зарын данс + сүүлийн зардлын синкийн валют (/api/marketing/facebook/ads/spend-sync). */
-interface MetaAdsConfig {
-    tokenSource?: 'system' | 'user' | null;
-    accountId?: string | null;
-    status?: { currency?: string | null } | null;
-}
-
-/** 'act_123' ба '123'-г ижил данс гэж үзнэ. */
-const accountKey = (id: string | null | undefined) => (id ? id.replace(/^act_/, '') : '');
-
-/** Маркетингийн нөлөөллийн сар бүрийн цуваа (/api/dashboard/marketing-roi/timeline, `lib/marketing/timeline.ts`) */
-interface TimelineMonth {
-    month: string;
-    label: string;
-    leads: number;
-    meetings: number;
-    activity: number;
-    /** Meta зардал зарын дансны валютаар (өдөр бүрийн зардал өөрийн сардаа); синк хийгдээгүй сар бол null. */
-    spend: number | null;
-    spendDays: number;
-    spendPartial: boolean;
-}
-interface TimelineData { months?: TimelineMonth[]; currency?: string | null }
-
 const fmtMNT = (n: number): string => formatMNT(n, { compact: true });
 
-const NO_CAMPAIGNS: AdCampaign[] = [];
 const NO_ACCOUNTS: AdAccount[] = [];
 const NO_MONTHS: TimelineMonth[] = [];
 
@@ -128,16 +75,30 @@ interface SourceRow {
     conversionRate: number;
 }
 
+const accountKey = (id: string | null | undefined) => (id ? id.replace(/^act_/, '') : '');
+/** «Meta зардал татах» нэг удаад 93 хүртэл өдөр: урт хугацааны сүүлийн 93 өдрийг татна. Дутуу огноог хэвээр (сервер 400). */
+function syncRange(range: { from: string; to: string }) {
+    if (!isMetaAdsRange(range)) return range;
+    const earliest = new Date(Date.parse(`${range.to}T00:00:00Z`) - 92 * 86_400_000).toISOString().slice(0, 10);
+    return { from: range.from > earliest ? range.from : earliest, to: range.to };
+}
+const pendingText = (pending: Record<string, number>) => formatMetaPending({ mnt: 0, complete: false, pending, native: pending });
+
 const conversionPillVariant = (rate: number) =>
     rate >= 50 ? 'success' : rate >= 20 ? 'pending' : 'neutral';
 
-// Кампанит ажлын ROI хүснэгтийн багана. Зардал, CPL нь зарын дансны валютаар (₮ биш); гэрээний дүн төгрөгөөр.
-const roiColumns = (adCurrency: string | null): DataTableColumn<CampaignRoi>[] => [
-    { key: 'name', header: 'Кампанит ажил', accessor: (c) => c.name, sortable: true, cell: (c) => <span className="font-medium text-foreground">{c.name}</span> },
-    { key: 'spend', header: `Зардал (${accountCurrencyLabel(adCurrency)})`, align: 'right', sortable: true, accessor: (c) => c.spend, cell: (c) => <span className="tabular-nums">{formatAccountMoney(c.spend, adCurrency)}</span> },
-    { key: 'leads', header: 'Лийд', align: 'center', sortable: true, accessor: (c) => c.leads, cell: (c) => <span className="tabular-nums">{c.leads}</span> },
-    { key: 'cpl', header: 'CPL', align: 'right', sortable: true, accessor: (c) => c.cpl ?? -1, cell: (c) => <span className="tabular-nums">{formatAccountMoney(c.cpl, adCurrency)}</span> },
-    { key: 'won', header: 'Хожсон', align: 'center', sortable: true, accessor: (c) => c.won, cell: (c) => <span className="tabular-nums">{c.won}</span> },
+// Meta кампанит ажлын ROI хүснэгтийн багана (огноотой зардал + CRM лид, гэрээ). Төгрөг зөвхөн хадгалсан ханшаар.
+const ratioMNT = (value: number | null) => (value !== null ? <Money value={value} compact /> : '—');
+const roiColumns: DataTableColumn<CampaignRoi>[] = [
+    {
+        key: 'name', header: 'Кампанит ажил', accessor: (c) => c.name, sortable: true,
+        cell: (c) => <div><p className="font-medium text-foreground">{c.name}</p><p className="num mt-0.5 text-xs text-muted-foreground">{c.campaignId}</p></div>,
+    },
+    { key: 'spend', header: 'Зардал', align: 'right', sortable: true, accessor: (c) => c.spend?.mnt ?? -1, cell: (c) => <span className="num">{c.spend ? formatMetaSpend(c.spend, { compact: true }) : 'Бүртгэлгүй'}</span> },
+    { key: 'results', header: 'Meta үр дүн', cell: (c) => <MetaResultList results={c.results} /> },
+    { key: 'leads', header: 'CRM лид', align: 'center', sortable: true, accessor: (c) => c.leads, cell: (c) => <span className="tabular-nums">{c.leads}</span> },
+    { key: 'cpl', header: 'CPL', align: 'right', sortable: true, accessor: (c) => c.cpl ?? -1, cell: (c) => ratioMNT(c.cpl) },
+    { key: 'won', header: 'Гэрээтэй', align: 'center', sortable: true, accessor: (c) => c.won, cell: (c) => <span className="tabular-nums">{c.won}</span> },
     { key: 'revenue', header: 'Гэрээний дүн', align: 'right', sortable: true, accessor: (c) => c.revenue, cell: (c) => <Money value={c.revenue} compact /> },
     {
         key: 'roas',
@@ -179,65 +140,54 @@ const sourceColumns: DataTableColumn<SourceRow>[] = [
     },
 ];
 
-const campaignStatusVariant = (status: string) =>
-    status === 'active' ? 'success' : status === 'paused' ? 'pending' : 'neutral';
-
 export default function MarketingROIPage() {
     const { shop } = useAuth();
+    const { canWrite: canWriteModule } = useModuleAccess();
     const queryClient = useQueryClient();
-    // API-аар (RBAC + shop scope сервер талд) — өмнө нь browser Supabase, зөвхөн RLS
+    const [range, setRange] = useState(() => ubMonth());
+    const validRange = isMetaAdsRange(range);
+    // API-аар (RBAC + shop scope сервер талд).
     // Эх үүсвэр, сар бүрийн лид — сервер харах эрхтэй бүх лидээр нэгтгэнэ (хөтөч 1000 лидээр тасардаг байсан).
     const sourcesQuery = useDashboardQuery<{ stats?: LeadSourceStats }>(['marketing-roi', 'sources'], '/api/dashboard/marketing-roi/sources');
-    // Хадгалсан Facebook кампаниуд (Meta-аас синк хийхгүй)
-    const campaignsQuery = useDashboardQuery<{ rows?: AdCampaign[] }>(['marketing-roi', 'campaigns'], '/api/marketing/data/ad_campaigns?eq.platform=facebook&order=updated_at.desc');
-    const roiQuery = useDashboardQuery<{ roi?: RoiData | null }>(['marketing-roi', 'roi'], '/api/dashboard/marketing-roi');
+    // Meta зардал (meta_daily_spend) + үр дүн төрлөөр (meta_ad_insights_daily) + тухайн хугацааны CRM лид, гэрээ.
+    const roiQuery = useDashboardQuery<{ roi?: MarketingRoi | null }>(['marketing-roi', 'roi'],
+        validRange ? `/api/dashboard/marketing-roi?${new URLSearchParams(range)}` : null, { keepPreviousData: true });
     const socialQuery = useDashboardQuery<SocialHistory>(['marketing-roi', 'social'], '/api/dashboard/marketing/social-history');
-    const timelineQuery = useDashboardQuery<TimelineData>(['marketing-roi', 'timeline'], '/api/dashboard/marketing-roi/timeline');
+    const timelineQuery = useDashboardQuery<{ months?: TimelineMonth[] }>(['marketing-roi', 'timeline'], '/api/dashboard/marketing-roi/timeline');
     // Зарын дансыг «Ad account-уудыг ачаалах» дарахад л татна.
     const adAccountsQuery = useDashboardQuery<{ accounts?: AdAccount[]; selected_id?: string | null }>(
         ['marketing-roi', 'ad-accounts'], '/api/marketing/facebook/ads/accounts', { enabled: false },
     );
     // System User токентой үед хэрэглэгчийн OAuth холболт хэрэггүй (сервер 409) тул товчийг нуух.
-    const metaTokenQuery = useDashboardQuery<MetaAdsConfig>(['marketing-roi', 'meta-token'], '/api/marketing/facebook/ads/spend-sync');
+    const metaTokenQuery = useDashboardQuery<{ tokenSource?: 'system' | 'user' | null; accountId?: string | null }>(['marketing-roi', 'meta-token'], '/api/marketing/facebook/ads/spend-sync');
     const showMetaConnect = metaTokenQuery.isError || (metaTokenQuery.isSuccess && metaTokenQuery.data?.tokenSource !== 'system');
-    const refetchCampaigns = campaignsQuery.refetch;
+    const canWrite = canWriteModule('marketing-roi');
 
     const sourceStats = sourcesQuery.data?.stats;
-    const campaigns = campaignsQuery.data?.rows ?? NO_CAMPAIGNS;
     // Таталт алдагдвал хуучин/тэг дүнг одоогийн тайлан мэт харуулахгүй.
     const roi = roiQuery.isError ? null : roiQuery.data?.roi ?? null;
     const socialPosts = socialQuery.data?.posts ?? [];
     const socialDaily = socialQuery.data?.daily ?? null;
     const socialSync = socialQuery.data?.sync ?? null;
     const timeline = timelineQuery.data?.months ?? NO_MONTHS;
-    const adAccounts = adAccountsQuery.data?.accounts ?? NO_ACCOUNTS;
-    const [pickedAdAccount, setPickedAdAccount] = useState<string | null>(null);
-    const selectedAdAccount = pickedAdAccount
-        ?? adAccountsQuery.data?.selected_id
-        ?? (adAccounts.length === 1 ? adAccounts[0].id : null);
-    // ad_campaigns-ийн зардал, CPC нь хадгалсан зарын дансны валютаар (cron/insights зөвхөн тэр дансны
-    // кампанит ажлыг шинэчилнэ). Валютыг сүүлийн зардлын синк эсвэл ачаалсан дансны жагсаалтаас авна;
-    // мэдэгдэхгүй бол ₮ гэж таамаглахгүй.
-    const savedAdAccount = metaTokenQuery.data?.accountId ?? null;
-    const adCurrency = metaTokenQuery.data?.status?.currency
-        || adAccounts.find((a) => !!savedAdAccount && accountKey(a.id) === accountKey(savedAdAccount))?.currency
-        || null;
-    const adCurrencyLabel = accountCurrencyLabel(adCurrency);
-    const adMoney = useCallback((value: number | null | undefined) => formatAccountMoney(value, adCurrency), [adCurrency]);
-    // Цувааны зардал өөрийн валюттай ирнэ (сонгосон зарын дансны өдрийн зардал); ирээгүй бол дансны валютаар шошголно.
-    const timelineCurrency = timelineQuery.data?.currency ?? adCurrency;
-    const timelineMoney = useCallback((value: number | null | undefined) => formatAccountMoney(value, timelineCurrency), [timelineCurrency]);
     const timelineChart = useMemo(
         () => timeline.map(({ label, leads, meetings, activity, spend }) => ({ label, leads, meetings, activity, spend })),
         [timeline],
     );
+    const pendingMonths = timeline.filter((m) => Object.keys(m.pending).length > 0);
     const partialSpendMonths = timeline.filter((m) => m.spendPartial).map((m) => `${m.label} (${m.spendDays} өдөр)`);
-    const timelineSpendNote = !timeline.some((m) => m.spend !== null)
-        ? 'Зарын зардал: Meta-аас өдрийн зардал татагдаагүй тул шугам хоосон. «Маркетинг» хуудасны «Meta зардал татах»-аар татна уу.'
-        : `Зарын зардал: Meta-аас өдрөөр татсан зардлыг тухайн өдрийн сард оноов — зарын дансны валютаар (${accountCurrencyLabel(timelineCurrency)}), төгрөгт хөрвүүлээгүй. Зардал татагдаагүй сард шугам тасарна.${partialSpendMonths.length ? ` Зөвхөн зарим өдөр нь татагдсан: ${partialSpendMonths.join(', ')}.` : ''}`;
-    const [campaignsLoading, setCampaignsLoading] = useState(false);
-    const [campaignsError, setCampaignsError] = useState<string | null>(null);
-    const adsError = campaignsError || adAccountsQuery.error?.message;
+    const timelineSpendNote = !timeline.some((m) => m.spendDays > 0)
+        ? 'Meta зардал: өдрийн зардал татагдаагүй тул шугам хоосон. Доорх «Meta зарын данс» хэсгийн «Meta зардал татах»-аар татна уу.'
+        : `Meta зардал: өдрөөр татсан зардлыг тухайн (зарын дансны) өдрийн сард оноов — төгрөг нь өдөр бүрт хадгалсан ханшаар. Зардал татагдаагүй сард шугам тасарна.${partialSpendMonths.length ? ` Зөвхөн зарим өдөр нь татагдсан: ${partialSpendMonths.join(', ')}.` : ''}`;
+    const adAccounts = adAccountsQuery.data?.accounts ?? NO_ACCOUNTS;
+    const [pickedAdAccount, setPickedAdAccount] = useState<string | null>(null);
+    const savedAdAccount = adAccountsQuery.data?.selected_id ?? metaTokenQuery.data?.accountId ?? null;
+    const selectedAdAccount = pickedAdAccount
+        ?? adAccountsQuery.data?.selected_id
+        ?? (adAccounts.length === 1 ? adAccounts[0].id : null);
+    const [savingAccount, setSavingAccount] = useState(false);
+    const [accountError, setAccountError] = useState<string | null>(null);
+    const adsError = accountError || adAccountsQuery.error?.message;
     const [syncingSocial, setSyncingSocial] = useState(false);
 
     async function syncSocial() {
@@ -255,52 +205,35 @@ export default function MarketingROIPage() {
         }
     }
 
-    async function syncCampaigns() {
+    /** Сонгосон зарын дансыг төсөлд хадгална; зардал, үр дүнг «Meta зардал татах» шинэчилнэ. */
+    async function saveAdAccount() {
         if (!selectedAdAccount) {
             toast.error('Ad account сонгоно уу');
             return;
         }
-        setCampaignsLoading(true);
-        setCampaignsError(null);
+        setSavingAccount(true);
+        setAccountError(null);
         try {
-            // Persist selection
-            const selectResponse = await dashboardFetch('/api/marketing/facebook/ads/accounts', {
+            const res = await dashboardFetch('/api/marketing/facebook/ads/accounts', {
                 method: 'POST',
                 body: JSON.stringify({ ad_account_id: selectedAdAccount }),
             });
-            if (!selectResponse.ok) {
-                const detail = await selectResponse.json().catch(() => null);
-                throw new Error(detail?.error || 'Зарын данс сонгож чадсангүй');
-            }
-            const res = await dashboardFetch(`/api/marketing/facebook/ads/campaigns?ad_account_id=${encodeURIComponent(selectedAdAccount)}`);
-            const data = await res.json();
-            if (!res.ok) throw new Error(data?.error || 'Sync алдаа');
-            // Данс солигдсон байж болзошгүй — валютыг хадгалсан данснаас дахин уншина.
-            void metaTokenQuery.refetch();
-            await refetchCampaigns();
-            toast.success(`${data.synced} кампанит ажил татлаа`);
+            const data = await res.json().catch(() => null);
+            if (!res.ok) throw new Error(data?.error || 'Зарын данс сонгож чадсангүй');
+            await Promise.all([
+                adAccountsQuery.refetch(),
+                metaTokenQuery.refetch(),
+                queryClient.invalidateQueries({ queryKey: ['meta-spend-sync'] }),
+            ]);
+            toast.success('Зарын данс хадгалагдлаа. «Meta зардал татах»-аар зардал, үр дүнг шинэчилнэ үү.');
         } catch (err) {
-            const msg = err instanceof Error ? err.message : 'Sync алдаа';
-            setCampaignsError(msg);
+            const msg = err instanceof Error ? err.message : 'Зарын данс сонгож чадсангүй';
+            setAccountError(msg);
             toast.error(msg);
         } finally {
-            setCampaignsLoading(false);
+            setSavingAccount(false);
         }
     }
-
-    const syncInsights = useCallback(async (campaign: AdCampaign) => {
-        if (!campaign.external_id) return;
-        try {
-            const res = await dashboardFetch(`/api/marketing/facebook/ads/insights?campaign_id=${encodeURIComponent(campaign.external_id)}`);
-            const data = await res.json();
-            if (!res.ok) throw new Error(data?.error || 'Insights алдаа');
-            // Insights ad_campaigns мөрийг шинэчилсэн тул хадгалсан жагсаалтыг дахин уншина.
-            await refetchCampaigns();
-            toast.success('Insights шинэчлэгдлээ');
-        } catch (err) {
-            toast.error(err instanceof Error ? err.message : 'Insights алдаа');
-        }
-    }, [refetchCampaigns]);
 
     const analytics = useMemo(() => {
         if (!sourceStats || sourceStats.totals.total === 0) return null;
@@ -321,105 +254,10 @@ export default function MarketingROIPage() {
         [sourceStats],
     );
 
-    // Facebook Ads кампаниудын багана (syncInsights handler-тэй тул компонент дотор)
-    const campaignColumns = useMemo<DataTableColumn<AdCampaign>[]>(
-        () => [
-            {
-                key: 'name',
-                header: 'Нэр',
-                sortable: true,
-                accessor: (c) => c.name,
-                cell: (c) => (
-                    <div>
-                        <p className="font-medium text-foreground">{c.name}</p>
-                        {c.objective && (
-                            <p className="text-[11px] text-muted-foreground/70 mt-0.5 normal-case">{c.objective}</p>
-                        )}
-                    </div>
-                ),
-            },
-            {
-                key: 'status',
-                header: 'Төлөв',
-                sortable: true,
-                accessor: (c) => c.status,
-                cell: (c) => <StatusPill variant={campaignStatusVariant(c.status)}>{c.status}</StatusPill>,
-            },
-            {
-                key: 'spend',
-                header: `Зарцуулалт (${adCurrencyLabel})`,
-                align: 'right',
-                sortable: true,
-                accessor: (c) => Number(c.spend || 0),
-                cell: (c) => <span className="tabular-nums">{adMoney(c.spend)}</span>,
-            },
-            {
-                key: 'impressions',
-                header: 'Imp',
-                align: 'right',
-                sortable: true,
-                accessor: (c) => Number(c.impressions || 0),
-                cell: (c) => <span className="tabular-nums">{Number(c.impressions || 0).toLocaleString()}</span>,
-            },
-            {
-                key: 'clicks',
-                header: 'Click',
-                align: 'right',
-                sortable: true,
-                accessor: (c) => Number(c.clicks || 0),
-                cell: (c) => <span className="tabular-nums">{Number(c.clicks || 0).toLocaleString()}</span>,
-            },
-            {
-                key: 'ctr',
-                header: 'CTR',
-                align: 'right',
-                sortable: true,
-                accessor: (c) => Number(c.ctr || 0),
-                cell: (c) => <span className="tabular-nums">{Number(c.ctr || 0).toFixed(2)}%</span>,
-            },
-            {
-                key: 'cpc',
-                header: 'CPC',
-                align: 'right',
-                sortable: true,
-                accessor: (c) => Number(c.cpc || 0),
-                cell: (c) => <span className="tabular-nums">{adMoney(c.cpc)}</span>,
-            },
-            {
-                key: 'conversions',
-                header: 'Конверс',
-                align: 'right',
-                sortable: true,
-                accessor: (c) => c.conversions,
-                cell: (c) => <span className="tabular-nums">{c.conversions}</span>,
-            },
-            {
-                key: 'actions',
-                header: '',
-                align: 'right',
-                cell: (c) => (
-                    <Button
-                        variant="ghost"
-                        size="iconSm"
-                        onClick={() => syncInsights(c)}
-                        title="Insights дахин татах"
-                        disabled={!c.external_id}
-                        aria-label="Insights дахин татах"
-                    >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                    </Button>
-                ),
-            },
-        ],
-        [syncInsights, adCurrencyLabel, adMoney],
-    );
-    const roiTableColumns = useMemo(() => roiColumns(adCurrency), [adCurrency]);
-
-    // Хуучин шигээ эхний ачаалалт бүх уншилтыг хүлээнэ. Лид/кампанит ажлын өгөгдөлгүй үед л алдааны
-    // карт (дахин оролдох үед spinner); өгөгдөл байхад фон шинэчлэлтийн алдааг QueryProvider toast мэдэгдэнэ.
-    const baseQueries = [sourcesQuery, campaignsQuery];
-    const loadError = baseQueries.some((q) => !q.data && q.isError && !q.isFetching);
-    const loading = !loadError && (baseQueries.some((q) => !q.data) || [roiQuery, socialQuery, timelineQuery].some((q) => q.isPending));
+    // Эхний ачаалалт бүх уншилтыг хүлээнэ. Лидийн эх үүсвэрийн өгөгдөлгүй үед л алдааны карт (дахин оролдох
+    // үед spinner); өгөгдөл байхад фон шинэчлэлтийн алдааг QueryProvider toast мэдэгдэнэ.
+    const loadError = !sourcesQuery.data && sourcesQuery.isError && !sourcesQuery.isFetching;
+    const loading = !loadError && (!sourcesQuery.data || [socialQuery, timelineQuery].some((q) => q.isPending) || (validRange && roiQuery.isPending));
 
     if (loading)
         return (
@@ -442,13 +280,131 @@ export default function MarketingROIPage() {
             </Card>
         );
 
+    const roiTotals = roi?.totals;
     return (
-        <div>
+        <div className="flex min-w-0 flex-col gap-5">
             <PageHeader
                 eyebrow="Маркетинг"
                 title="Маркетинг ROI"
-                subtitle="Эх үүсвэр тус бүрийн лийд, конверс шинжилгээ"
+                subtitle="Meta зарын огноотой зардал, үр дүн ба CRM лид, гэрээний харьцаа; эх үүсвэрийн шинжилгээ"
             />
+
+            <MetaRangeFilter range={range} onChange={setRange} />
+
+            {roiQuery.isError ? (
+                <Alert variant="danger">
+                    <AlertTitle>Meta зардал, гэрээний ROI тайланг уншиж чадсангүй</AlertTitle>
+                    <AlertDescription>{roiQuery.error.message}</AlertDescription>
+                    <Button variant="secondary" size="sm" className="mt-1 self-start" onClick={() => void roiQuery.refetch()} isLoading={roiQuery.isFetching}>Дахин оролдох</Button>
+                </Alert>
+            ) : roi && roiTotals && (
+                <>
+                    <MetaReportNotes notes={roi.meta.notes} />
+                    <StatBar columns={4} className="mb-0">
+                        <StatTile label="Meta зардал" {...metaSpendTile(roiTotals.spend, `${roi.range.from} – ${roi.range.to}`)} icon={<DollarSign className="w-4 h-4" />} accent="warning" />
+                        <StatTile label="Кампанит ажлын CRM лид" value={roiTotals.leads} icon={<Users className="w-4 h-4" />} accent="info"
+                            helper={roiTotals.cpl !== null ? `CPL ${fmtMNT(roiTotals.cpl)}` : 'CPL тооцоогүй'} />
+                        <StatTile label="Гэрээтэй лид" value={roiTotals.won} icon={<Target className="w-4 h-4" />} accent="success"
+                            helper={`Гэрээний дүн ${fmtMNT(roiTotals.revenue)}`} />
+                        <StatTile label="ROAS" value={roiTotals.roas !== null ? `${roiTotals.roas}x` : '—'} icon={<TrendingUp className="w-4 h-4" />} accent="brand"
+                            helper={roiTotals.cpa !== null ? `Гэрээтэй лидийн зардал ${fmtMNT(roiTotals.cpa)}` : 'Гэрээний дүн ÷ зардал'} />
+                    </StatBar>
+
+                    <Card className="overflow-hidden">
+                        <div className="px-4 py-3 border-b border-border">
+                            <h3 className="heading-section text-sm text-foreground">Meta-гийн үр дүн төрлөөр</h3>
+                            <p className="mt-1 text-xs text-muted-foreground">Дуудлага, мессеж, лид маягт… тус бүрийн тоо, нэг үр дүнгийн өртөг. Төрлүүдийг нэмэхгүй; CRM лидтэй адил биш.</p>
+                        </div>
+                        <div className="p-4"><MetaResultsTable results={roi.meta.results} /></div>
+                    </Card>
+
+                    <Card className="overflow-hidden">
+                        <div className="px-4 py-3 border-b border-border">
+                            <h3 className="heading-section text-sm text-foreground">Кампанит ажлын ROI</h3>
+                        </div>
+                        {roi.campaigns.length === 0 ? (
+                            <div className="py-12">
+                                <EmptyState icon={<Megaphone className="w-7 h-7" />} title="Энэ хугацаанд Meta зардал, кампанит ажилд холбогдсон лид алга"
+                                    description="Зарын данс сонгож «Meta зардал татах» дарна уу. Лидийг кампанит ажилд холбохдоо акцын Meta campaign ID-г бөглөнө." />
+                            </div>
+                        ) : (
+                            <div className="p-4">
+                                <DataTable
+                                    caption="Кампанит ажлын ROI"
+                                    data={roi.campaigns}
+                                    getRowId={(c) => c.campaignId}
+                                    showDensityToggle={false}
+                                    hidePagination
+                                    columns={roiColumns}
+                                />
+                            </div>
+                        )}
+                        {(roi.quality.unattributedMetaLeads > 0 || roi.quality.leadsWithoutSpend > 0) && (
+                            <p className="border-t border-border px-4 py-3 text-xs text-muted-foreground">
+                                Кампанит ажилгүй Meta лид: <b>{roi.quality.unattributedMetaLeads}</b> (CPL-д ороогүй) · Энэ хугацаанд зардлын бүртгэлгүй кампанит ажлын лид: <b>{roi.quality.leadsWithoutSpend}</b>
+                            </p>
+                        )}
+                    </Card>
+                    <details className="rounded-lg border border-border p-3 text-xs text-muted-foreground">
+                        <summary className="cursor-pointer font-medium">Тооцох дүрэм</summary>
+                        <p className="mt-3 leading-relaxed">{roi.basis.note}</p>
+                        <p className="mt-2 leading-relaxed">{roi.meta.basis}</p>
+                    </details>
+                </>
+            )}
+
+            {/* Meta зарын данс ба синк */}
+            <Card className="overflow-hidden">
+                <div className="px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                        <Megaphone className="w-4 h-4 text-brand-strong" />
+                        <h3 className="heading-section text-sm text-foreground">Meta зарын данс</h3>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                        {shop?.id && showMetaConnect && <Button variant="secondary" size="sm" href={`/api/marketing/facebook/ads/connect?shop_id=${encodeURIComponent(shop.id)}`}>Meta Ads холбох</Button>}
+                        {adAccounts.length === 0 ? (
+                            <Button variant="secondary" size="sm" onClick={() => void adAccountsQuery.refetch()} isLoading={adAccountsQuery.isFetching}>
+                                Ad account-уудыг ачаалах
+                            </Button>
+                        ) : (
+                            <>
+                                <Select
+                                    value={selectedAdAccount || ''}
+                                    onValueChange={(v) => setPickedAdAccount(v || null)}
+                                >
+                                    <SelectTrigger className="h-9 w-56 text-sm">
+                                        <SelectValue placeholder="Ad account сонгоно уу" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {adAccounts.map((a) => (
+                                            <SelectItem key={a.id} value={a.id}>
+                                                {a.name || a.business_name || a.account_id} · {a.id} · {a.currency || 'валют тодорхойгүй'}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <Button
+                                    variant="primary"
+                                    size="sm"
+                                    onClick={saveAdAccount}
+                                    disabled={!selectedAdAccount || savingAccount || accountKey(selectedAdAccount) === accountKey(savedAdAccount)}
+                                    isLoading={savingAccount}
+                                >
+                                    Хадгалах
+                                </Button>
+                            </>
+                        )}
+                    </div>
+                </div>
+                {adsError && (
+                    <div className="px-4 pt-3">
+                        <Alert variant="danger">{adsError}</Alert>
+                    </div>
+                )}
+                <div className="p-4">
+                    <MetaSpendSync shopId={shop?.id} canWrite={canWrite} {...syncRange(range)} />
+                </div>
+            </Card>
 
             {!analytics ? (
                 <Card>
@@ -458,7 +414,9 @@ export default function MarketingROIPage() {
                 </Card>
             ) : (
                 <>
-                    <StatBar columns={4}>
+                    <h2 className="text-sm font-semibold text-foreground">Лидийн эх үүсвэр</h2>
+                    <p className="-mt-3 text-xs text-muted-foreground">Огноо сонголтоос үл хамааран харах эрхтэй бүх лидээр.</p>
+                    <StatBar columns={4} className="mb-0">
                         <StatTile
                             label="Нийт лийд"
                             value={analytics.totalLeads}
@@ -488,39 +446,8 @@ export default function MarketingROIPage() {
                         />
                     </StatBar>
 
-                    {roiQuery.isError && <Alert variant="warning">Маркетингийн гэрээ, зардлын тайланг уншиж чадсангүй. Дахин шинэчилнэ үү.</Alert>}
-                    {roi && (
-                        <>
-                            {roi.basis?.note && <p className="text-sm text-muted-foreground mb-4">{roi.basis.note}</p>}
-                            <StatBar columns={4}>
-                                <StatTile label="Зарын зардал" value={adMoney(roi.totals.spend)} helper={adCurrency ? `Зарын дансны валютаар (${adCurrencyLabel}), төгрөгт хөрвүүлээгүй` : 'Зарын дансны валют тодорхойгүй, төгрөгт хөрвүүлээгүй'} icon={<DollarSign className="w-4 h-4" />} accent="warning" />
-                                <StatTile label="Гэрээний дүн" value={fmtMNT(roi.totals.revenue)} helper="Бүх хугацааны, лидтэй холбосон" icon={<Target className="w-4 h-4" />} accent="success" />
-                                <StatTile label="ROAS" value={roi.totals.roas !== null ? `${roi.totals.roas}x` : '—'} helper={roi.totals.cpl !== null ? `CPL ${adMoney(roi.totals.cpl)}` : undefined} icon={<TrendingUp className="w-4 h-4" />} accent="brand" />
-                                <StatTile label="Гэрээтэй лид" value={String(roi.totals.won)} helper="Хүчинтэй гэрээгээр баталгаажсан" icon={<BarChart3 className="w-4 h-4" />} accent="success" />
-                            </StatBar>
-
-                            {roi.campaigns.length > 0 && (
-                                <Card className="mb-6 overflow-hidden">
-                                    <div className="px-4 py-3 border-b border-border">
-                                        <h3 className="heading-section text-sm text-foreground">Кампанит ажлын ROI</h3>
-                                    </div>
-                                    <div className="p-4">
-                                        <DataTable
-                                            caption="Кампанит ажлын ROI"
-                                            data={roi.campaigns}
-                                            getRowId={(c) => c.external_id}
-                                            showDensityToggle={false}
-                                            hidePagination
-                                            columns={roiTableColumns}
-                                        />
-                                    </div>
-                                </Card>
-                            )}
-                        </>
-                    )}
-
                     {/* Organic социал (хадгалсан түүх) */}
-                    <Card className="mb-6">
+                    <Card>
                         <div className="px-4 py-3 border-b border-border flex items-center justify-between">
                             <h3 className="heading-section text-sm text-foreground">Органик сошиал</h3>
                             <Button variant="secondary" size="sm" onClick={syncSocial} isLoading={syncingSocial} disabled={syncingSocial}>
@@ -549,7 +476,7 @@ export default function MarketingROIPage() {
                                                                 <div key={name} className="rounded-md border border-border p-3">
                                                                     <p className="text-xs text-muted-foreground">{metric.label}</p>
                                                                     <p className="num text-lg font-semibold text-foreground">{socialNumber(metric.value)}</p>
-                                                                    <p className="text-[11px] text-muted-foreground">{socialMetricCaption(metric)}</p>
+                                                                    <p className="text-xs text-muted-foreground">{socialMetricCaption(metric)}</p>
                                                                 </div>
                                                             );
                                                         })}
@@ -572,7 +499,7 @@ export default function MarketingROIPage() {
                                         </div>
                                     )}
                                     {socialPosts.length === 0 ? (
-                                        <p className="text-sm text-muted-foreground py-4 text-center">Хадгалсан нийтлэл алга. "Хадгалах" дарж Facebook-аас татна уу.</p>
+                                        <p className="text-sm text-muted-foreground py-4 text-center">Хадгалсан нийтлэл алга. &quot;Хадгалах&quot; дарж Facebook-аас татна уу.</p>
                                     ) : (
                                         <div className="divide-y divide-border/60">
                                             {socialPosts.slice(0, 5).map((p) => (
@@ -594,7 +521,7 @@ export default function MarketingROIPage() {
                     </Card>
 
                     {/* Source Breakdown */}
-                    <Card className="mb-6 overflow-hidden">
+                    <Card className="overflow-hidden">
                         <div className="px-4 py-3 border-b border-border">
                             <h3 className="heading-section text-sm text-foreground">Эх үүсвэрийн шинжилгээ</h3>
                         </div>
@@ -609,120 +536,52 @@ export default function MarketingROIPage() {
                             />
                         </div>
                     </Card>
+                </>
+            )}
 
-                    {/* Facebook Ads Campaigns */}
-                    <Card className="mb-6 overflow-hidden">
-                        <div className="px-4 py-3 border-b border-border flex flex-wrap items-center justify-between gap-3">
-                            <div className="flex items-center gap-2">
-                                <Megaphone className="w-4 h-4 text-brand-strong" />
-                                <h3 className="heading-section text-sm text-foreground">Facebook Ads кампаниуд</h3>
-                                {campaigns.length > 0 && (
-                                    <span className="text-xs text-muted-foreground tabular-nums">({campaigns.length})</span>
-                                )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                                {shop?.id && showMetaConnect && <Button variant="secondary" size="sm" href={`/api/marketing/facebook/ads/connect?shop_id=${encodeURIComponent(shop.id)}`}>Meta Ads холбох</Button>}
-                                {adAccounts.length === 0 ? (
-                                    <Button variant="secondary" size="sm" onClick={() => void adAccountsQuery.refetch()}>
-                                        Ad account-уудыг ачаалах
-                                    </Button>
-                                ) : (
-                                    <>
-                                        <Select
-                                            value={selectedAdAccount || ''}
-                                            onValueChange={(v) => setPickedAdAccount(v || null)}
-                                        >
-                                            <SelectTrigger className="h-9 w-56 text-sm">
-                                                <SelectValue placeholder="Ad account сонгоно уу" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                {adAccounts.map((a) => (
-                                                    <SelectItem key={a.id} value={a.id}>
-                                                        {a.name || a.business_name || a.account_id} · {a.id} · {a.currency || 'валют тодорхойгүй'}
-                                                    </SelectItem>
-                                                ))}
-                                            </SelectContent>
-                                        </Select>
-                                        <Button
-                                            variant="primary"
-                                            size="sm"
-                                            onClick={syncCampaigns}
-                                            disabled={!selectedAdAccount || campaignsLoading}
-                                            isLoading={campaignsLoading}
-                                        >
-                                            <RefreshCw className="w-3.5 h-3.5" />
-                                            Синк хийх
-                                        </Button>
-                                    </>
-                                )}
-                            </div>
-                        </div>
-                        {adsError && (
-                            <div className="px-4 pt-3">
-                                <Alert variant="danger">{adsError}</Alert>
-                            </div>
-                        )}
-                        {campaigns.length === 0 ? (
-                            <div className="py-12">
-                                <EmptyState
-                                    icon={<Megaphone className="w-7 h-7" />}
-                                    title="Кампанит ажил байхгүй"
-                                    description="Facebook Ad account сонгож синк хийнэ үү"
-                                />
-                            </div>
-                        ) : (
-                            <div className="p-4">
-                                <DataTable
-                                    caption="Facebook Ads кампаниуд"
-                                    data={campaigns}
-                                    getRowId={(c) => c.id}
-                                    showDensityToggle={false}
-                                    hidePagination
-                                    columns={campaignColumns}
-                                />
-                            </div>
-                        )}
-                    </Card>
-
-                    {/* Marketing impact: идэвхжүүлэлт vs лид/уулзалт */}
-                    {timelineQuery.error && !timelineQuery.data ? (
-                        <Alert variant="danger" className="mb-6">
-                            <AlertTitle>Маркетингийн нөлөөллийн цувааг ачаалж чадсангүй</AlertTitle>
-                            <AlertDescription>{timelineQuery.error.message}</AlertDescription>
-                            <Button variant="secondary" size="sm" className="mt-1 self-start" onClick={() => void timelineQuery.refetch()} isLoading={timelineQuery.isFetching}>Дахин оролдох</Button>
-                        </Alert>
-                    ) : timeline.length > 0 && (
-                        <div className="mb-6">
-                            <ChartCard
-                                title="Маркетингийн нөлөөлөл"
-                                subtitle="Идэвхжүүлэлт (пост, кампанит ажил) лид ба уулзалтын тоонд хэрхэн нөлөөлж буй харьцуулалт"
-                                height={300}
-                            >
-                                <ComboChart
-                                    data={timelineChart}
-                                    xKey="label"
-                                    bars={[
-                                        { key: 'leads', name: 'Лийд' },
-                                        { key: 'meetings', name: 'Уулзалт' },
-                                        { key: 'activity', name: 'Идэвхжүүлэлт' },
-                                    ]}
-                                    line={{ key: 'spend', name: `Зарын зардал (${accountCurrencyLabel(timelineCurrency)})` }}
-                                    lineFormatter={timelineMoney}
-                                />
-                            </ChartCard>
-                            <p className="mt-2 text-xs text-muted-foreground">{timelineSpendNote}</p>
-                        </div>
-                    )}
-
-                    {/* Monthly Trend */}
-                    <ChartCard title="Сар бүрийн лийд" subtitle="Сүүлийн 6 сар (Улаанбаатарын сараар)" height={240}>
-                        <BarChart
-                            data={monthlyChartData}
-                            xKey="month"
-                            series={[{ key: 'count', name: 'Лийд' }]}
+            {/* Marketing impact: идэвхжүүлэлт vs лид/уулзалт */}
+            {timelineQuery.error && !timelineQuery.data ? (
+                <Alert variant="danger">
+                    <AlertTitle>Маркетингийн нөлөөллийн цувааг ачаалж чадсангүй</AlertTitle>
+                    <AlertDescription>{timelineQuery.error.message}</AlertDescription>
+                    <Button variant="secondary" size="sm" className="mt-1 self-start" onClick={() => void timelineQuery.refetch()} isLoading={timelineQuery.isFetching}>Дахин оролдох</Button>
+                </Alert>
+            ) : timeline.length > 0 && (
+                <div>
+                    <ChartCard
+                        title="Маркетингийн нөлөөлөл"
+                        subtitle="Сүүлийн 6 сар (Улаанбаатарын сараар): идэвхжүүлэлт (пост, акц / кампанит ажил), лид, уулзалт ба Meta зардал (₮)"
+                        height={300}
+                    >
+                        <ComboChart
+                            data={timelineChart}
+                            xKey="label"
+                            bars={[
+                                { key: 'leads', name: 'Лийд' },
+                                { key: 'meetings', name: 'Уулзалт' },
+                                { key: 'activity', name: 'Идэвхжүүлэлт' },
+                            ]}
+                            line={{ key: 'spend', name: 'Meta зардал (₮)' }}
+                            lineFormatter={fmtMNT}
                         />
                     </ChartCard>
-                </>
+                    <p className="mt-2 text-xs text-muted-foreground">{timelineSpendNote}</p>
+                    {pendingMonths.length > 0 && (
+                        <p className="mt-1 text-xs text-status-pending">
+                            Ханшгүй Meta зардал төгрөгийн шугамд ороогүй: {pendingMonths.map((m) => `${m.label} ${pendingText(m.pending)}`).join('; ')}.
+                        </p>
+                    )}
+                </div>
+            )}
+
+            {analytics && (
+                <ChartCard title="Сар бүрийн лийд" subtitle="Сүүлийн 6 сар (Улаанбаатарын сараар)" height={240}>
+                    <BarChart
+                        data={monthlyChartData}
+                        xKey="month"
+                        series={[{ key: 'count', name: 'Лийд' }]}
+                    />
+                </ChartCard>
             )}
         </div>
     );

@@ -1,26 +1,42 @@
 // @vitest-environment jsdom
 import React from 'react';
-import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const transport = vi.hoisted(() => ({ json: vi.fn(), fetch: vi.fn(), meta: {} as Record<string, unknown>, timeline: {} as Record<string, unknown> }));
-vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ shop: { id: 'shop-1' }, user: { id: 'user-1', role: 'marketing', permissions: { modules: ['marketing-roi'], canWrite: true } } }) }));
-vi.mock('@/lib/api/dashboardFetch', () => ({ dashboardJson: transport.json, dashboardFetch: transport.fetch }));
+const mocks = vi.hoisted(() => ({
+    json: vi.fn(),
+    fetch: vi.fn(),
+    sync: vi.fn(),
+    timeline: {} as Record<string, unknown>,
+    auth: { shop: { id: 'shop-a' }, user: { id: 'user-a', role: 'marketing', permissions: { modules: ['marketing-roi'], canWrite: true, canDelete: false } } },
+}));
+vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => mocks.auth }));
+vi.mock('@/lib/api/dashboardFetch', () => ({ dashboardJson: mocks.json, dashboardFetch: mocks.fetch }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@/components/charts/BarChart', () => ({ BarChart: () => <div data-testid="bar-chart" /> }));
-// ResponsiveContainer jsdom-д 0 хэмжээтэй тул хүүхдээ зурдаггүй.
-vi.mock('@/components/ui/ChartCard', () => ({ ChartCard: ({ title, children }: { title?: React.ReactNode; children: React.ReactNode }) => <section>{title}{children}</section> }));
+// ResponsiveContainer jsdom-д 0 өргөнтэй тул чартын өгөгдлийг шууд харуулна.
+vi.mock('@/components/ui/ChartCard', () => ({ ChartCard: ({ title, children }: { title: string; children: React.ReactNode }) => <section><h3>{title}</h3>{children}</section> }));
 vi.mock('@/components/charts/ComboChart', () => ({
-    ComboChart: ({ data, line, lineFormatter }: { data: Array<Record<string, unknown>>; line?: { name?: string }; lineFormatter?: (value: number) => string }) => (
-        <div data-testid="combo-chart" data-spend={JSON.stringify(data.map((row) => row.spend))}>{line?.name} · {lineFormatter?.(300.38)}</div>
+    ComboChart: ({ data, line, lineFormatter }: { data: unknown[]; line?: { name?: string }; lineFormatter?: (value: number) => string }) => (
+        <div data-testid="combo-chart" data-line={`${line?.name} · ${lineFormatter?.(35000)}`}>{JSON.stringify(data)}</div>
     ),
 }));
+vi.mock('@/components/marketing/MetaSpendSync', () => ({ MetaSpendSync: (props: { from: string; to: string }) => { mocks.sync(props); return <div data-testid="meta-sync" />; } }));
 
 import MarketingROIPage from './page';
+import { ubMonth } from '@/components/marketing/MetaAdsParts';
 
-const campaign = { id: 'c1', name: 'Мандала кампанит ажил', external_id: '120200', status: 'active', objective: null, budget: 0,
-    spend: 300.38, impressions: 10_000, clicks: 700, conversions: 3, ctr: 7, cpc: 0.43, last_synced_at: null };
+const spend = (mnt: number, pending: Record<string, number> = {}) => ({ mnt, complete: !Object.keys(pending).length, pending, native: { USD: 15 + (pending.USD ?? 0) } });
+const calls = { type: 'calls', label: 'Дуудлага (Meta)', costLabel: 'Нэг дуудлагын өртөг', results: 5, spend: spend(52500), cost: { value: 10500, currency: 'MNT' } };
+const roi = (range: { from: string; to: string }) => ({
+    range,
+    campaigns: [{ campaignId: '101', name: 'Mandala дуудлага', spend: spend(52500), results: [calls], leads: 3, won: 1, revenue: 300_000_000, cpl: 17500, cpa: 52500, roas: 5714.29 }],
+    totals: { spend: spend(52500, { USD: 20 }), leads: 3, won: 1, revenue: 300_000_000, cpl: null, cpa: null, roas: null },
+    quality: { unattributedMetaLeads: 2, leadsWithoutSpend: 0 },
+    meta: { range, spend: spend(52500, { USD: 20 }), delivery: null, results: [calls], campaigns: [], coverage: {}, notes: ['Ханшгүй зардал 20 USD — төгрөгийн нийтэд ороогүй.'], basis: 'Meta дүрэм' },
+    basis: { revenue: 'cohort_valid_contract_total', leadPeriod: 'created_at_ub', spendPeriod: 'meta_account_day', note: 'ROI дүрэм' },
+});
 // Сервер бүх лидээр нэгтгэнэ — 1000-аас олон лидтэй төсөл.
 const sourceStats = {
     totals: { total: 2345, won: 45, lost: 300, active: 2000, conversionRate: 2 },
@@ -31,71 +47,104 @@ const sourceStats = {
     bestSource: 'referral',
     monthly: [{ month: '2026-09', label: '9-р сар', count: 1200 }, { month: '2026-10', label: '10-р сар', count: 1145 }],
 };
-const roiTotals = { spend: 300.38, leads: 3, won: 1, revenue: 250_000_000, cpl: null, cpa: null, roas: null, profit: null };
+const months = [
+    { month: '2026-08', label: '8-р сар', leads: 2, meetings: 0, activity: 0, spend: null, pending: {}, spendDays: 0, spendPartial: false },
+    { month: '2026-09', label: '9-р сар', leads: 4, meetings: 2, activity: 1, spend: 35000, pending: {}, spendDays: 15, spendPartial: true },
+    { month: '2026-10', label: '10-р сар', leads: 1, meetings: 0, activity: 0, spend: 7000, pending: { USD: 4 }, spendDays: 5, spendPartial: false },
+];
 
-beforeEach(() => {
-    transport.meta = { accountId: 'act_1', tokenSource: 'system', status: { currency: 'USD' } };
-    transport.timeline = { months: [{ month: '2026-10', label: '10-р сар', leads: 1, meetings: 0, activity: 1, spend: 300.38, spendDays: 5, spendPartial: false }] };
-    transport.json.mockImplementation(async (url: string) => {
-        if (url === '/api/dashboard/marketing-roi/sources') return { stats: sourceStats };
-        if (url.startsWith('/api/marketing/data/ad_campaigns')) return { rows: [campaign] };
-        if (url === '/api/dashboard/marketing-roi') return { roi: { campaigns: [{ external_id: '120200', name: campaign.name, ...roiTotals }], sources: [], totals: roiTotals } };
-        if (url === '/api/dashboard/marketing/social-history') return { posts: [], insights: [] };
-        if (url === '/api/dashboard/marketing-roi/timeline') return transport.timeline;
-        if (url === '/api/marketing/facebook/ads/spend-sync') return transport.meta;
-        throw new Error(`unexpected ${url}`);
-    });
-});
-afterEach(() => { vi.clearAllMocks(); });
+function respond(url: string) {
+    if (url === '/api/dashboard/marketing-roi/sources') return { stats: sourceStats };
+    if (url.startsWith('/api/dashboard/marketing-roi?')) {
+        const params = new URLSearchParams(url.split('?')[1]);
+        return { roi: roi({ from: params.get('from')!, to: params.get('to')! }) };
+    }
+    if (url === '/api/dashboard/marketing-roi/timeline') return mocks.timeline;
+    if (url === '/api/dashboard/marketing/social-history') return { posts: [], page: null, sync: null, daily: null };
+    if (url === '/api/marketing/facebook/ads/spend-sync') return { tokenSource: 'system', accountId: 'act_1' };
+    throw new Error(`unexpected ${url}`);
+}
 
 const renderPage = () => render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}><MarketingROIPage /></QueryClientProvider>);
 
-it('shows lead-source totals from the server aggregate over every lead, not the newest 1,000', async () => {
-    renderPage();
-    expect((await screen.findAllByText('Эх үүсвэрийн шинжилгээ')).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('2345').length).toBeGreaterThan(0);
-    expect(screen.getByText('4% конверс')).toBeInTheDocument();
-    expect(transport.json).not.toHaveBeenCalledWith(expect.stringMatching(/^\/api\/dashboard\/leads/), expect.anything());
-    expect(screen.queryByText(/Тайлан бүрэн биш/)).not.toBeInTheDocument();
+beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.timeline = { months };
+    mocks.json.mockImplementation(async (url: string) => respond(url));
 });
 
-it('renders Meta spend and CPC in the ad-account currency, never as tugrik', async () => {
-    renderPage();
-    expect(await screen.findByText('Зарын дансны валютаар (USD), төгрөгт хөрвүүлээгүй')).toBeInTheDocument();
-    expect(screen.getAllByText('$300.38').length).toBeGreaterThanOrEqual(3);
-    expect(screen.getAllByText('$0.43').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Зарцуулалт (USD)').length).toBeGreaterThan(0);
-    expect(screen.getByTestId('combo-chart')).toHaveTextContent('Зарын зардал (USD) · $300.38');
-    expect(document.body.textContent).not.toMatch(/300(\.38)?₮|0\.43₮|\b0₮/);
-    // Гэрээний дүн жинхэнэ төгрөг хэвээр.
-    expect(screen.getAllByText('250.0 сая₮').length).toBeGreaterThan(0);
-});
+describe('marketing ROI page', () => {
+    it('reads dated ROI for the selected UB month and never the ad_campaigns snapshot', async () => {
+        const month = ubMonth();
+        renderPage();
+        expect(await screen.findByText('Mandala дуудлага')).toBeInTheDocument();
+        expect(mocks.json).toHaveBeenCalledWith(`/api/dashboard/marketing-roi?${new URLSearchParams(month)}`);
+        expect(mocks.json.mock.calls.some(([url]) => String(url).includes('ad_campaigns') || String(url).includes('/ads/campaigns') || String(url).includes('/ads/insights'))).toBe(false);
+        // Ханшгүй зардлыг төгрөгтэй нийлүүлэхгүй, эх валютаар тэмдэглэнэ.
+        expect(screen.getByText('+ 20 USD ханшгүй — төгрөгт ороогүй')).toBeInTheDocument();
+        expect(screen.getByText('Ханшгүй зардал 20 USD — төгрөгийн нийтэд ороогүй.')).toBeInTheDocument();
+        expect(screen.getAllByText('Дуудлага (Meta)').length).toBeGreaterThan(0);
+        expect(screen.getByText('CPL тооцоогүй')).toBeInTheDocument();
+        expect(mocks.sync).toHaveBeenLastCalledWith(expect.objectContaining({ shopId: 'shop-a', canWrite: true, from: month.from, to: month.to }));
+        // System User токентой үед OAuth холболтын товч харагдахгүй.
+        expect(screen.queryByText('Meta Ads холбох')).not.toBeInTheDocument();
+    });
 
-it('labels the currency as unknown instead of assuming tugrik when no account currency is recorded', async () => {
-    transport.meta = { accountId: 'act_1', tokenSource: 'system', status: null };
-    renderPage();
-    expect(await screen.findByText('Зарын дансны валют тодорхойгүй, төгрөгт хөрвүүлээгүй')).toBeInTheDocument();
-    expect(screen.getAllByText('300.38').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Зарцуулалт (валют тодорхойгүй)').length).toBeGreaterThan(0);
-    expect(document.body.textContent).not.toMatch(/300(\.38)?₮/);
-});
+    it('shows lead-source totals from the server aggregate over every lead, not the newest 1,000', async () => {
+        renderPage();
+        expect((await screen.findAllByText('Эх үүсвэрийн шинжилгээ')).length).toBeGreaterThan(0);
+        expect(screen.getAllByText('2345').length).toBeGreaterThan(0);
+        expect(screen.getByText('4% конверс')).toBeInTheDocument();
+        expect(mocks.json).not.toHaveBeenCalledWith(expect.stringMatching(/^\/api\/dashboard\/leads/));
+    });
 
-it('draws timeline spend in the series currency, leaves unsynced months empty and names partial months', async () => {
-    transport.timeline = { currency: 'USD', months: [
-        { month: '2026-08', label: '8-р сар', leads: 1, meetings: 0, activity: 0, spend: 12.5, spendDays: 15, spendPartial: true },
-        { month: '2026-09', label: '9-р сар', leads: 2, meetings: 1, activity: 1, spend: null, spendDays: 0, spendPartial: false },
-    ] };
-    transport.meta = { accountId: 'act_1', tokenSource: 'system', status: null };
-    renderPage();
-    const chart = await screen.findByTestId('combo-chart');
-    expect(chart).toHaveTextContent('Зарын зардал (USD) · $300.38');
-    expect(chart).toHaveAttribute('data-spend', '[12.5,null]');
-    expect(screen.getByText(/зарын дансны валютаар \(USD\), төгрөгт хөрвүүлээгүй\. Зардал татагдаагүй сард шугам тасарна\. Зөвхөн зарим өдөр нь татагдсан: 8-р сар \(15 өдөр\)\./)).toBeInTheDocument();
-});
+    it('draws timeline spend in tugrik from stored rates, leaves unsynced months empty and lists unconverted and partial months', async () => {
+        renderPage();
+        const chart = await screen.findByTestId('combo-chart');
+        expect(JSON.parse(chart.textContent!)).toEqual([
+            { label: '8-р сар', leads: 2, meetings: 0, activity: 0, spend: null },
+            { label: '9-р сар', leads: 4, meetings: 2, activity: 1, spend: 35000 },
+            { label: '10-р сар', leads: 1, meetings: 0, activity: 0, spend: 7000 },
+        ]);
+        expect(chart).toHaveAttribute('data-line', 'Meta зардал (₮) · 35,000₮');
+        expect(screen.getByText(/Зардал татагдаагүй сард шугам тасарна\. Зөвхөн зарим өдөр нь татагдсан: 9-р сар \(15 өдөр\)\./)).toBeInTheDocument();
+        expect(screen.getByText(/Ханшгүй Meta зардал төгрөгийн шугамд ороогүй: 10-р сар 4 USD/)).toBeInTheDocument();
+    });
 
-it('says the daily Meta spend was never pulled instead of drawing a zero line', async () => {
-    transport.timeline = { currency: null, months: [{ month: '2026-10', label: '10-р сар', leads: 1, meetings: 0, activity: 1, spend: null, spendDays: 0, spendPartial: false }] };
-    renderPage();
-    expect(await screen.findByText(/Meta-аас өдрийн зардал татагдаагүй тул шугам хоосон/)).toBeInTheDocument();
-    expect(screen.getByTestId('combo-chart')).toHaveAttribute('data-spend', '[null]');
+    it('says the daily Meta spend was never pulled instead of drawing a zero line', async () => {
+        mocks.timeline = { months: [{ month: '2026-10', label: '10-р сар', leads: 1, meetings: 0, activity: 1, spend: null, pending: {}, spendDays: 0, spendPartial: false }] };
+        renderPage();
+        expect(await screen.findByText(/өдрийн зардал татагдаагүй тул шугам хоосон/)).toBeInTheDocument();
+        expect(JSON.parse(screen.getByTestId('combo-chart').textContent!)[0].spend).toBeNull();
+    });
+
+    it('re-reads ROI for a new range and limits the Meta sync to its last 93 days', async () => {
+        renderPage();
+        await screen.findByText('Mandala дуудлага');
+        fireEvent.change(screen.getByLabelText('Эхлэх өдөр'), { target: { value: '2026-01-01' } });
+        fireEvent.change(screen.getByLabelText('Дуусах өдөр'), { target: { value: '2026-09-30' } });
+        await waitFor(() => expect(mocks.json).toHaveBeenCalledWith('/api/dashboard/marketing-roi?from=2026-01-01&to=2026-09-30'));
+        expect(mocks.sync).toHaveBeenLastCalledWith(expect.objectContaining({ from: '2026-06-30', to: '2026-09-30' }));
+    });
+
+    it('keeps the page when a date is cleared and asks for a valid range without reading', async () => {
+        renderPage();
+        await screen.findByText('Mandala дуудлага');
+        const reads = mocks.json.mock.calls.length;
+        fireEvent.change(screen.getByLabelText('Дуусах өдөр'), { target: { value: '' } });
+        expect(await screen.findByText(/зөв дарааллаар/)).toBeInTheDocument();
+        expect(screen.getByTestId('meta-sync')).toBeInTheDocument();
+        expect(mocks.json.mock.calls.slice(reads).some(([url]) => String(url).startsWith('/api/dashboard/marketing-roi?'))).toBe(false);
+    });
+
+    it('shows a failed ROI read as an error with retry instead of zeros', async () => {
+        mocks.json.mockImplementation(async (url: string) => {
+            if (url.startsWith('/api/dashboard/marketing-roi?')) throw new Error('Сүлжээ тасарлаа');
+            return respond(url);
+        });
+        renderPage();
+        expect(await screen.findByText('Meta зардал, гэрээний ROI тайланг уншиж чадсангүй')).toBeInTheDocument();
+        expect(screen.getByText('Сүлжээ тасарлаа')).toBeInTheDocument();
+        expect(screen.queryByText('Кампанит ажлын ROI')).not.toBeInTheDocument();
+    });
 });

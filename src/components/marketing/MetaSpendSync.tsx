@@ -49,7 +49,7 @@ export function MetaSpendSync({ shopId, canWrite, from, to }: { shopId?: string;
         } catch (error) { toast.error(error instanceof Error ? error.message : 'Meta синк амжилтгүй'); }
         finally {
             setBusy(false);
-            await Promise.all(['meta-spend-sync', 'marketing-performance', 'marketing-budget', 'marketing-channel-reports', 'channel-reports']
+            await Promise.all(['meta-spend-sync', 'marketing-performance', 'marketing-budget', 'marketing-channel-reports', 'channel-reports', 'marketing-roi', 'marketing-ads']
                 .map(key => cache.invalidateQueries({ queryKey: [key] })));
         }
     }

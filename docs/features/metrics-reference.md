@@ -58,15 +58,15 @@
 | «Картын жагсаалт бүрэн биш» | жагсаалтын нийт тоо ачаалсан картаас олон үед; баганад «N / M карт харагдаж байна» |
 
 ## Маркетингийн нөлөөлөл (`/api/dashboard/marketing-roi/timeline`)
-`marketing-roi` модуль. Улаанбаатарын сүүлийн 6 сар (`ubParts`/`ubMonthRange`), бүх уншилт `fetchAllRows`; алдаа гарвал тэг цуваа биш 500. Тооцоо: `lib/marketing/timeline.ts`.
+`marketing-roi` модуль. Улаанбаатарын сүүлийн 6 сар (`ubParts`/`ubMonthRange`), бүх уншилт `fetchAllRows`; алдаа гарвал тэг цуваа биш 500. Тооцоо: `lib/marketing/timeline.ts` + `timeline-load.ts`.
 | Метрик | Тооцоо |
 |---|---|
 | leads / meetings | `leads.created_at` / устгаагүй `property_viewings.scheduled_at`-ийн УБ сар (`applyLeadScope`) |
-| activity | нийтэлсэн пост + `marketing_campaigns`, `ad_campaigns` эхэлсэн сараар (`start_date`, эс бөгөөс бүртгэсэн огноо) |
-| spend | сонгосон Meta зарын дансны `meta_daily_spend.native_amount` — өдөр бүр өөрийн (дансны) өдрийн сард, дансны валютаар (`currency`). Синк хийсэн өдөргүй сар `null` («—», шугам тасарна), зарим өдөр нь л синк хийгдсэн өнгөрсөн сар `spendPartial`. `ad_campaigns.spend` (30 хоногийн snapshot) ашиглахгүй |
+| activity | нийтэлсэн пост + цуцлаагүй `marketing_campaigns` (төслийн хүрээгээр) эхэлсэн сараар (`start_date`, эс бөгөөс бүртгэсэн огноо) |
+| spend | ROI тайлантай нэг ledger (`loadMetaLedger` + `metaCampaignFilter`): `meta_daily_spend` өдөр бүр өөрийн (дансны) өдрийн сард; ₮ = мөр бүрийн хадгалсан ханш (`amount_mnt`), ханшгүй дүн `pending`-д эх валютаар (₮-д нэмэхгүй). Синк хийсэн өдөргүй, эсвэл зөвхөн ханшгүй зардалтай сар `null` («—», шугам тасарна), зарим өдөр нь л синк хийгдсэн өнгөрсөн сар `spendPartial`. `ad_campaigns` уншихгүй |
 
 ## AI маркетингийн нэгтгэл (`get_marketing_summary`)
-Зардал, CPA, CTR нь зөвхөн Meta-аас синк хийсэн кампанит ажлын (`isMetaSyncedCampaign`: `platform = 'facebook'` + `external_id`) сүүлийн синкийн хугацааны дүн, зарын дансны валютаар (`meta_spend_sync`, `loadMetaAdAccount`; мэдэгдэхгүй бол «валют тодорхойгүй»). Hub-д бүртгэсэн төлөвлөгөөт зар нийлбэрт орохгүй, ₮ төсөвтэйгээ тусдаа жагсана.
+ROI, «Зар сурталчилгаа»-тай нэг тайлан (`loadMetaAdsReport`, `from`/`to`, анхдагч энэ сар; төслийн хүрээгээр): огноотой `meta_daily_spend` + `meta_ad_insights_daily`. ₮ зөвхөн хадгалсан ханшаар (`spendMnt` бүрэн үед л, `convertedMnt`), ханшгүй дүн `pendingNative`-д эх валютаар; үр дүн төрөл бүрээр, нэг үр дүнгийн өртөгтэй; reach нэмэхгүй. Уншилт алдаатай бол тэг биш алдаа.
 
 ## Маркетингийн форм lead-ийн ялгаа (чухал)
 `POST /api/leads` (Vertmon-ы өөрийн **маркетингийн форм**) нь `shop_id`-гүй lead үүсгэдэг.

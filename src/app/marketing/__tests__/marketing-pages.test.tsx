@@ -8,7 +8,9 @@ const mocks = vi.hoisted(() => ({
     mutate: vi.fn(),
     fetch: vi.fn(),
     auth: { shop: { id: 'shop-a' }, user: { id: 'user-a', role: 'marketing' } },
+    search: '',
 }));
+vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(mocks.search) }));
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => mocks.auth }));
 vi.mock('@/lib/api/dashboardFetch', () => ({ dashboardJson: mocks.json, dashboardMutate: mocks.mutate, dashboardFetch: mocks.fetch }));
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
@@ -37,102 +39,65 @@ const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart
 const calls = (url: string) => mocks.json.mock.calls.filter(([u]) => u === url).length;
 
 beforeEach(() => {
+    mocks.search = '';
     mocks.json.mockReset();
     mocks.mutate.mockReset();
     mocks.fetch.mockReset();
 });
 
 describe('ads', () => {
-    const URL = '/api/marketing/data/ad_campaigns?order=created_at.desc';
-    const META_URL = '/api/marketing/facebook/ads/spend-sync';
-    const ad = (id: string, name: string) => ({ id, name, platform: 'facebook', status: 'draft', budget: 0, spend: 10, impressions: 100, clicks: 5, conversions: 1, ctr: 5, cpc: 2 });
-    const synced = (id: string, name: string, extra: Record<string, unknown> = {}) => ({ ...ad(id, name), external_id: `1202${id}`, status: 'active', ...extra });
-    // Зарын жагсаалтын хариунууд дарааллаараа; зарын дансны валют (spend-sync) URL-аар.
-    let adReplies: Array<() => Promise<unknown>>;
-    let meta: unknown;
-    const reply = (value: unknown) => adReplies.push(() => Promise.resolve(value));
-    const fail = (error: Error) => adReplies.push(() => Promise.reject(error));
-    beforeEach(() => {
-        adReplies = [];
-        meta = { accountId: 'act_1', status: { currency: 'USD' } };
-        mocks.json.mockImplementation((url: string) => {
-            if (url === META_URL) return Promise.resolve(meta);
-            const next = adReplies.shift();
-            return next ? next() : Promise.reject(new Error(`unexpected ${url}`));
-        });
+    const URL = '/api/marketing/meta-ads?from=2026-09-01&to=2026-09-30';
+    const spend = (mnt: number, pending: Record<string, number> = {}) => ({ mnt, complete: !Object.keys(pending).length, pending, native: { USD: 35 + (pending.USD ?? 0) } });
+    const report = (campaigns: unknown[] = []) => ({
+        range: { from: '2026-09-01', to: '2026-09-30' }, spend: spend(52500, { USD: 20 }),
+        delivery: { spend: spend(52500, { USD: 20 }), impressions: 3500, linkClicks: 80, clicks: 130, ctr: 2.29, cpc: { value: 0.4375, currency: 'USD' }, cpm: null },
+        results: [{ type: 'calls', label: 'Дуудлага (Meta)', costLabel: 'Нэг дуудлагын өртөг', results: 5, spend: spend(52500), cost: { value: 10500, currency: 'MNT' } }],
+        campaigns, coverage: { spendDays: 2, insightDays: 2, spendDaysWithoutInsights: 0, insightsReady: true, lastSpendDay: '2026-09-02', lastInsightDay: '2026-09-02', timezones: ['Asia/Ulaanbaatar'] },
+        notes: ['Ханшгүй зардал 20 USD — төгрөгийн нийтэд ороогүй.'], basis: 'Тооцох дүрэм',
     });
+    const campaign = { campaignId: '101', accountId: 'act_1', name: 'Дуудлагын зар', currency: 'USD', spend: spend(52500), days: 2,
+        delivery: { spend: spend(52500), impressions: 1500, linkClicks: 50, clicks: 80, ctr: 3.33, cpc: { value: 1050, currency: 'MNT' }, cpm: null },
+        results: [{ type: 'calls', label: 'Дуудлага (Meta)', costLabel: 'Нэг дуудлагын өртөг', results: 5, spend: spend(52500), cost: { value: 10500, currency: 'MNT' } }] };
 
-    it('loads with a spinner, then rows; registering a planned ad refetches the list', async () => {
+    it('reads the dated Meta report for the URL range and labels unconverted spend in its own currency', async () => {
+        mocks.search = 'from=2026-09-01&to=2026-09-30';
         const first = deferred<unknown>();
-        adReplies.push(() => first.promise);
+        mocks.json.mockReturnValueOnce(first.promise);
         renderPage(<AdsPage />);
         expect(screen.getByRole('status')).toBeInTheDocument();
-        await act(async () => first.resolve({ rows: [ad('a1', 'Зар нэг')] }));
-        expect((await screen.findAllByText('Зар нэг')).length).toBeGreaterThan(0);
+        await act(async () => first.resolve({ report: report([campaign]) }));
+        expect((await screen.findAllByText('Дуудлагын зар')).length).toBeGreaterThan(0);
         expect(mocks.json).toHaveBeenCalledWith(URL);
-
-        mocks.mutate.mockResolvedValueOnce({ row: ad('a2', 'Зар хоёр') });
-        reply({ rows: [ad('a2', 'Зар хоёр'), ad('a1', 'Зар нэг')] });
-        fireEvent.click(screen.getByRole('button', { name: /Төлөвлөгөөт зар бүртгэх/ }));
-        expect(await screen.findByText(/Meta болон бусад платформ дээр зар үүсэхгүй/)).toBeInTheDocument();
-        fireEvent.change(await screen.findByPlaceholderText('Зарын нэр'), { target: { value: 'Зар хоёр' } });
-        fireEvent.click(screen.getByRole('button', { name: 'Бүртгэх' }));
-        expect((await screen.findAllByText('Зар хоёр')).length).toBeGreaterThan(0);
-        expect(mocks.mutate).toHaveBeenCalledWith('/api/marketing/data/ad_campaigns', 'POST', expect.objectContaining({ name: 'Зар хоёр', status: 'draft' }));
-        expect(calls(URL)).toBe(2);
+        expect(mocks.json.mock.calls.some(([u]) => String(u).includes('ad_campaigns'))).toBe(false);
+        expect(screen.getByText('+ 20 USD ханшгүй — төгрөгт ороогүй')).toBeInTheDocument();
+        expect(screen.getByText('Ханшгүй зардал 20 USD — төгрөгийн нийтэд ороогүй.')).toBeInTheDocument();
+        expect(screen.getAllByText('Дуудлага (Meta)').length).toBeGreaterThan(0);
+        expect(screen.getByText('0.44 USD')).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /Шинэ зар/ })).not.toBeInTheDocument();
     });
 
-    it('shows Meta spend and CPC in the ad-account currency and leaves planned rows without results', async () => {
-        reply({ rows: [synced('1', 'Meta кампанит ажил', { spend: 300.38, clicks: 700, impressions: 10_000, conversions: 3, ctr: 7 }), ad('a2', 'Төлөвлөгөөт зар')] });
+    it('re-reads when the range changes and rejects a reversed range without a request', async () => {
+        mocks.search = 'from=2026-09-01&to=2026-09-30';
+        mocks.json.mockResolvedValue({ report: report() });
         renderPage(<AdsPage />);
-        expect(await screen.findByText('Нийт зарцуулалт (USD)')).toBeInTheDocument();
-        expect(screen.getAllByText('$300.38').length).toBeGreaterThanOrEqual(2);
-        expect(screen.getByText('CPC (USD)')).toBeInTheDocument();
-        // Төлөвлөгөөт мөрийн (spend 10, 5 click, 100 imp) утгыг нэмэхгүй: $310.38 / $0.44 / 6.98% биш.
-        expect(screen.getByText('$0.43')).toBeInTheDocument();
-        expect(screen.queryByText('$310.38')).not.toBeInTheDocument();
-        expect(screen.getAllByText('7.00%').length).toBeGreaterThanOrEqual(2);
-        expect(screen.queryByText('6.98%')).not.toBeInTheDocument();
-        expect(screen.getAllByText('Төлөвлөгөөт').length).toBeGreaterThan(0);
-        expect(document.body.textContent).not.toMatch(/₮/);
-    });
-
-    it('never assumes tugrik when the ad-account currency is unknown', async () => {
-        meta = { accountId: null, status: null };
-        reply({ rows: [synced('1', 'Meta кампанит ажил', { spend: 300.38, clicks: 700 })] });
-        renderPage(<AdsPage />);
-        expect(await screen.findByText('Нийт зарцуулалт (валют тодорхойгүй)')).toBeInTheDocument();
-        expect(screen.getAllByText('300.38').length).toBeGreaterThan(0);
-        expect(document.body.textContent).not.toMatch(/300(\.38)?₮/);
-    });
-
-    it('keeps loaded rows on screen when a later refresh fails', async () => {
-        reply({ rows: [ad('a1', 'Зар нэг')] });
-        renderPage(<AdsPage />);
-        expect((await screen.findAllByText('Зар нэг')).length).toBeGreaterThan(0);
-        mocks.mutate.mockResolvedValueOnce({ row: ad('a2', 'Зар хоёр') });
-        fail(new Error('Сүлжээ тасарлаа'));
-        fireEvent.click(screen.getByRole('button', { name: /Төлөвлөгөөт зар бүртгэх/ }));
-        fireEvent.change(await screen.findByPlaceholderText('Зарын нэр'), { target: { value: 'Зар хоёр' } });
-        fireEvent.click(screen.getByRole('button', { name: 'Бүртгэх' }));
-        await waitFor(() => expect(calls(URL)).toBe(2));
-        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
-        expect(screen.getAllByText('Зар нэг').length).toBeGreaterThan(0);
+        expect(await screen.findByText('Энэ хугацаанд Meta зардал бүртгэгдээгүй')).toBeInTheDocument();
+        fireEvent.change(screen.getByLabelText('Эхлэх өдөр'), { target: { value: '2026-08-01' } });
+        await waitFor(() => expect(calls('/api/marketing/meta-ads?from=2026-08-01&to=2026-09-30')).toBe(1));
+        fireEvent.change(screen.getByLabelText('Эхлэх өдөр'), { target: { value: '2026-10-01' } });
+        expect(await screen.findByText(/зөв дарааллаар/)).toBeInTheDocument();
+        expect(mocks.json.mock.calls.some(([u]) => String(u).includes('from=2026-10-01'))).toBe(false);
     });
 
     it('shows a failed read as an error with retry, not as the empty state', async () => {
-        fail(new Error('Маркетингийн өгөгдөл уншихад алдаа гарлаа'));
+        mocks.json.mockRejectedValueOnce(new Error('Сүлжээ тасарлаа'));
         renderPage(<AdsPage />);
         const alert = await screen.findByRole('alert');
-        expect(within(alert).getByText('Зар сурталчилгааны мэдээлэл татахад алдаа гарлаа')).toBeInTheDocument();
-        expect(within(alert).getByText('Маркетингийн өгөгдөл уншихад алдаа гарлаа')).toBeInTheDocument();
-        expect(screen.queryByText('Мэдээлэл байхгүй')).not.toBeInTheDocument();
-        expect(screen.queryByText(/Нийт зарцуулалт/)).not.toBeInTheDocument();
-        expect(screen.getByRole('button', { name: /Төлөвлөгөөт зар бүртгэх/ })).toBeInTheDocument();
-        reply({ rows: [] });
+        expect(within(alert).getByText('Meta зарын тайлан татахад алдаа гарлаа')).toBeInTheDocument();
+        expect(within(alert).getByText('Сүлжээ тасарлаа')).toBeInTheDocument();
+        expect(screen.queryByText('Нийт зардал')).not.toBeInTheDocument();
+        mocks.json.mockResolvedValueOnce({ report: report() });
         fireEvent.click(within(alert).getByRole('button', { name: 'Дахин оролдох' }));
-        expect(await screen.findByText('Мэдээлэл байхгүй')).toBeInTheDocument();
-        expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+        expect(await screen.findByText('Энэ хугацаанд Meta зардал бүртгэгдээгүй')).toBeInTheDocument();
     });
 });
 

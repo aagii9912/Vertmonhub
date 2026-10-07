@@ -14,8 +14,9 @@ import { withRoute } from '@/lib/api/route';
  *        &eq.type=email&gte.scheduled_date=2026-09-01&lte.scheduled_date=2026-09-30
  *   POST /api/marketing/data/<table>   body = мөр (shop_id/id-г үл тоож серверээс тавина)
  */
+// `ad_campaigns` (хуучин 30 хоногийн Meta snapshot) хасагдсан: Meta зардал, үр дүнг /api/marketing/meta-ads
+// огноотой хүснэгтүүдээс (meta_daily_spend, meta_ad_insights_daily) уншина.
 const TABLES = new Set([
-    'ad_campaigns',
     'content_calendar',
     'marketing_campaigns',
     'message_campaigns',

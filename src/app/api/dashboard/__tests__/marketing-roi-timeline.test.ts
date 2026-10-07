@@ -64,6 +64,10 @@ const spendDays = (from: string, to: string, account = 'act_111') => {
     }
     return out;
 };
+const spendRow = (id: string, campaign: string, spent_at: string, native_amount: number | string, amount_mnt: number | string | null): Row => ({
+    id, shop_id: 'shop-1', account_id: 'act_111', campaign_id: campaign, campaign_name: `Кампанит ажил ${campaign}`, spent_at,
+    native_amount, currency: 'USD', timezone: 'Asia/Ulaanbaatar', amount_mnt, mnt_per_unit: amount_mnt === null ? null : 3500,
+});
 const month = (body: { months: Array<Record<string, unknown>> }, key: string) => body.months.find(m => m.month === key);
 
 describe('GET /api/dashboard/marketing-roi/timeline', () => {
@@ -75,8 +79,6 @@ describe('GET /api/dashboard/marketing-roi/timeline', () => {
         vi.setSystemTime(new Date('2026-09-30T20:00:00Z'));
         Object.assign(state, { role: 'admin', modules: ['marketing-roi'], gates: [], reads: [], pages: [], failing: null });
         state.rows = {
-            shops: [{ id: 'shop-1', facebook_ad_account_id: '111' }],
-            meta_spend_sync: [{ shop_id: 'shop-1', account_id: 'act_111', currency: 'USD' }],
             user_profiles: [{ id: 'user-1', full_name: 'Манда' }],
             sales_managers: [{ shop_id: 'shop-1', name: 'Манда', user_id: 'user-1', is_active: true }],
             sales_manager_projects: [{ shop_id: 'shop-1', manager_name: 'Манда', project_id: mandala }],
@@ -98,16 +100,23 @@ describe('GET /api/dashboard/marketing-roi/timeline', () => {
                 { id: 'p1', shop_id: 'shop-1', status: 'published', published_at: '2026-07-31T16:00:00Z' }, // УБ 08-01
                 { id: 'p2', shop_id: 'shop-1', status: 'draft', published_at: '2026-08-05T00:00:00Z' },
             ],
-            marketing_campaigns: [{ id: 'm1', shop_id: 'shop-1', start_date: '2026-08-31', created_at: '2026-01-01T00:00:00Z' }],
-            // Кампанит ажлын огноогүй 30 хоногийн snapshot нь эхэлсэн сард нь зардал болж орохгүй.
+            // Акц нь Meta campaign ID-аар зардлыг төсөлд холбоно; цуцалсан акц идэвхжүүлэлтэд орохгүй.
+            marketing_campaigns: [
+                { id: 'm1', shop_id: 'shop-1', name: 'Mandala', project_id: mandala, external_campaign_id: '120200', status: 'active', start_date: '2026-08-31', created_at: '2026-01-01T00:00:00Z' },
+                { id: 'm2', shop_id: 'shop-1', name: 'Elysium', project_id: elysium, external_campaign_id: '120300', status: 'active', start_date: '2026-09-02', created_at: '2026-01-01T00:00:00Z' },
+                { id: 'm3', shop_id: 'shop-1', name: 'Цуцалсан', project_id: mandala, external_campaign_id: null, status: 'cancelled', start_date: '2026-08-10', created_at: '2026-01-01T00:00:00Z' },
+            ],
+            // Retired 30-day snapshot: never read.
             ad_campaigns: [{ id: 'a1', shop_id: 'shop-1', platform: 'facebook', external_id: '120200', start_date: '2026-06-10', created_at: '2026-06-01T00:00:00Z', spend: 5000 }],
             meta_daily_spend: [
-                { id: 's1', shop_id: 'shop-1', account_id: 'act_111', spent_at: '2026-09-05', native_amount: 40.5, currency: 'USD' },
-                { id: 's2', shop_id: 'shop-1', account_id: 'act_111', spent_at: '2026-10-01', native_amount: '2.000000', currency: 'USD' },
-                // Өмнө сонгосон өөр дансны мөр — валют өөр, нийлбэрт орохгүй.
-                { id: 's3', shop_id: 'shop-1', account_id: 'act_999', spent_at: '2026-09-06', native_amount: 900, currency: 'EUR' },
+                spendRow('s1', '120200', '2026-09-05', 40.5, 141750),
+                spendRow('s2', '120200', '2026-10-01', '2.000000', '7000'),
+                // Ханшгүй мөр төгрөгт нэмэгдэхгүй — эх валютаар тусдаа.
+                spendRow('s3', '120300', '2026-09-06', 12, null),
+                // Өмнөх дансны EUR мөр: ханшгүй, өөрийн валютаар.
+                { ...spendRow('s4', '120900', '2026-09-07', 900, null), account_id: 'act_999', currency: 'EUR' },
             ],
-            meta_spend_coverage: [...spendDays('2026-08-17', '2026-10-01'), ...spendDays('2026-06-01', '2026-06-30', 'act_999')],
+            meta_spend_coverage: spendDays('2026-08-17', '2026-10-01'),
         };
     });
     afterEach(() => {
@@ -122,39 +131,42 @@ describe('GET /api/dashboard/marketing-roi/timeline', () => {
         expect(state.reads).toEqual([]);
     });
 
-    it('builds Ulaanbaatar months over every row and spends each Meta day in its own month', async () => {
+    it('builds Ulaanbaatar months over every row and spends each Meta day in its own month, ₮ only from stored rates', async () => {
         const response = await GET();
         expect(response.status).toBe(200);
         expect(response.headers.get('Cache-Control')).toBe('private, no-store');
         const body = await response.json();
-        expect(body.currency).toBe('USD');
         expect(body.months.map((m: { month: string }) => m.month)).toEqual(['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10']);
         // 1,000 мөрийн хязгаараас цааш хуудаслаж уншина.
         expect(state.pages.filter(p => p.table === 'leads').map(p => p.from)).toEqual([0, 1000]);
-        expect(month(body, '2026-09')).toEqual({ month: '2026-09', label: '9-р сар', leads: 1003, meetings: 2, activity: 0, spend: 40.5, spendDays: 30, spendPartial: false });
-        expect(month(body, '2026-10')).toMatchObject({ leads: 1, meetings: 0, spend: 2, spendDays: 1, spendPartial: false });
+        expect(month(body, '2026-09')).toEqual({
+            month: '2026-09', label: '9-р сар', leads: 1003, meetings: 2, activity: 1,
+            spend: 141750, pending: { USD: 12, EUR: 900 }, spendDays: 30, spendPartial: false,
+        });
+        expect(month(body, '2026-10')).toMatchObject({ leads: 1, meetings: 0, spend: 7000, pending: {}, spendDays: 1, spendPartial: false });
         expect(month(body, '2026-08')).toMatchObject({ meetings: 0, activity: 2, spend: 0, spendDays: 15, spendPartial: true });
-        // Snapshot зардал (5000) 6-р сард орохгүй; кампанит ажил идэвхжүүлэлтээр л тоологдоно.
-        expect(month(body, '2026-06')).toMatchObject({ activity: 1, spend: null, spendDays: 0 });
+        // Snapshot зардал (5000) 6-р сард орохгүй; ad_campaigns огт уншихгүй.
+        expect(month(body, '2026-06')).toMatchObject({ activity: 0, spend: null, spendDays: 0 });
         expect(month(body, '2026-05')).toMatchObject({ leads: 0, spend: null });
+        expect(state.reads).not.toContain('ad_campaigns');
     });
 
-    it('limits leads and meetings to a sales manager’s own leads in own projects', async () => {
+    it('limits leads, meetings, activity and Meta spend to a sales manager’s own projects', async () => {
         state.role = 'sales_manager';
         const body = await (await GET()).json();
-        expect(month(body, '2026-09')).toMatchObject({ leads: 1, meetings: 1 });
-        expect(month(body, '2026-10')).toMatchObject({ leads: 1 });
+        expect(month(body, '2026-09')).toMatchObject({ leads: 1, meetings: 1, activity: 0, spend: 141750, pending: {} });
+        expect(month(body, '2026-10')).toMatchObject({ leads: 1, spend: 7000 });
+        expect(month(body, '2026-08')).toMatchObject({ activity: 2 });
     });
 
-    it('leaves spend empty without a selected ad account', async () => {
-        state.rows.shops = [{ id: 'shop-1', facebook_ad_account_id: null }];
+    it('leaves spend empty, not zero, when no Meta day was synced', async () => {
+        state.rows.meta_daily_spend = [];
+        state.rows.meta_spend_coverage = [];
         const body = await (await GET()).json();
-        expect(body.currency).toBeNull();
-        expect(body.months.every((m: { spend: unknown }) => m.spend === null)).toBe(true);
-        expect(state.reads).not.toContain('meta_daily_spend');
+        expect(body.months.every((m: { spend: unknown; spendDays: number }) => m.spend === null && m.spendDays === 0)).toBe(true);
     });
 
-    it.each(['leads', 'property_viewings', 'meta_daily_spend', 'meta_spend_coverage', 'meta_spend_sync'])('fails with a generic error instead of a zero series when %s cannot be read', async (table) => {
+    it.each(['leads', 'property_viewings', 'social_posts', 'marketing_campaigns', 'meta_daily_spend', 'meta_spend_coverage'])('fails with a generic error instead of a zero series when %s cannot be read', async (table) => {
         state.failing = table;
         const response = await GET();
         expect(response.status).toBe(500);

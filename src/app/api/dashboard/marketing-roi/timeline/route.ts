@@ -7,8 +7,9 @@ import { loadMarketingTimeline } from '@/lib/marketing/timeline-load';
 /**
  * GET /api/dashboard/marketing-roi/timeline
  * Маркетингийн нөлөөллийн сүүлийн 6 сарын цуваа (Улаанбаатарын сараар): лид, уулзалт,
- * идэвхжүүлэлт (пост, кампанит ажил) ба сонгосон Meta зарын дансны өдрийн зардал дансны
- * валютаар (`currency`). Тооцоо: `lib/marketing/timeline.ts`.
+ * идэвхжүүлэлт (пост, акц / кампанит ажил) ба Meta зардал (`meta_daily_spend`, дансны өдрөөр):
+ * хадгалсан ханшаар төгрөг, ханшгүй дүн эх валютаар `pending`-д; синк хийгээгүй сар null.
+ * Тооцоо: `lib/marketing/timeline.ts`.
  */
 export const GET = withRoute({ module: 'marketing-roi', error: 'Цуваа татахад алдаа гарлаа' }, async ({ shop }) => {
     const db = supabaseAdmin();

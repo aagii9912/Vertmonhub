@@ -7,7 +7,7 @@ vi.mock('@/lib/utils/logger', () => ({ logger }));
 import {
     MetaApiError, isMetaRateLimitError, isRetriableMetaError, metaDeadlinePassed, metaRead, metaStepSignal, metaTimeLeft, metaUsage,
 } from '../daily-spend';
-import { fetchAdAccountCampaigns } from '../marketing-api';
+import { getAdAccounts } from '../marketing-api';
 
 const http = vi.fn();
 const reply = (body: unknown, status = 200, headers: Record<string, string> = {}) => new Response(JSON.stringify(body), { status, headers });
@@ -130,16 +130,16 @@ it('stops waiting and retrying when the shared sync deadline aborts, and step si
     expect(metaTimeLeft({ at: Date.now() + 5000, signal: passed.signal })).toBeLessThanOrEqual(5000);
 });
 
-it('pages ad account campaigns by rebuilding the trusted URL with the cursor', async () => {
-    http.mockResolvedValueOnce(reply({ data: [{ id: '1', name: 'A' }], paging: { next: 'https://evil.test/?access_token=leak', cursors: { after: 'c1' } } }))
-        .mockResolvedValueOnce(reply({ data: [{ id: '2', name: 'B' }] }));
-    const { value } = await settle(fetchAdAccountCampaigns('123', 'secret-token'));
-    expect(value!.data.map(c => c.id)).toEqual(['1', '2']);
+it('pages ad accounts by rebuilding the trusted URL with the cursor', async () => {
+    http.mockResolvedValueOnce(reply({ data: [{ id: 'act_1', account_id: '1' }], paging: { next: 'https://evil.test/?access_token=leak', cursors: { after: 'c1' } } }))
+        .mockResolvedValueOnce(reply({ data: [{ id: 'act_2', account_id: '2' }] }));
+    const { value } = await settle(getAdAccounts('secret-token'));
+    expect(value!.data.map(a => a.id)).toEqual(['act_1', 'act_2']);
     const urls = http.mock.calls.map(([url]) => url as URL);
-    expect(urls.every(url => url.origin === 'https://graph.facebook.com' && url.pathname === '/v26.0/act_123/campaigns')).toBe(true);
+    expect(urls.every(url => url.origin === 'https://graph.facebook.com' && url.pathname === '/v26.0/me/adaccounts')).toBe(true);
     expect(urls[1].searchParams.get('after')).toBe('c1');
 
     http.mockReset();
     http.mockResolvedValue(reply({ data: [], paging: { next: 'more', cursors: { after: 'same' } } }));
-    expect((await settle(fetchAdAccountCampaigns('act_123', 'secret-token'))).error).toBeInstanceOf(Error);
+    expect((await settle(getAdAccounts('secret-token'))).error).toBeInstanceOf(Error);
 });

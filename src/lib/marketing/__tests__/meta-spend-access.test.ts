@@ -7,7 +7,6 @@ vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: mocks.from }) }
 vi.mock('@/lib/marketing/meta-spend', async original => ({ ...await original<typeof import('../meta-spend')>(), syncMetaSpend: mocks.sync }));
 vi.mock('@/lib/marketing/meta-insights', async original => ({ ...await original<typeof import('../meta-insights')>(), syncMetaInsights: mocks.insights }));
 vi.mock('@/lib/auth/cron', () => ({ isAuthorizedCron: mocks.cron }));
-vi.mock('@/lib/facebook/marketing-api', () => ({ fetchCampaignInsights: vi.fn() }));
 vi.mock('@/lib/utils/logger', () => ({ logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 import { GET, POST } from '@/app/api/marketing/facebook/ads/spend-sync/route';
 import { GET as cron } from '@/app/api/cron/ads-insights-sync/route';

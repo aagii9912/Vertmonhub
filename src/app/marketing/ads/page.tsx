@@ -1,283 +1,112 @@
 'use client';
 
-import React, { useState } from 'react';
+import { Suspense, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { BarChart3, DollarSign, Eye, MousePointer, RefreshCw, Target } from 'lucide-react';
 import { PageHeader } from '@/components/dashboard/PageHeader';
-import { StatsCard } from '@/components/dashboard/StatsCard';
+import { StatBar, StatTile } from '@/components/dashboard/StatBar';
+import { SectionCard } from '@/components/ui/SectionCard';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
-import {
-    DataTable,
-    type DataTableColumn,
-    StatusPill,
-} from '@/components/ui/DataTable';
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogHeader,
-    DialogTitle,
-    DialogFooter,
-} from '@/components/ui/Dialog';
-import { FormField, FieldGroup } from '@/components/ui/FormField';
-import { Input } from '@/components/ui/Input';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/Select';
-import { BarChart3, Plus, DollarSign, Target, TrendingUp, MousePointer } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
-import { dashboardMutate } from '@/lib/api/dashboardFetch';
+import { DataTable, type DataTableColumn } from '@/components/ui/DataTable';
 import { useDashboardQuery } from '@/hooks/useDashboardQuery';
-import { accountCurrencyLabel, formatAccountMoney } from '@/lib/utils/currency';
-import { isMetaSyncedCampaign } from '@/lib/marketing/ad-campaigns';
+import { formatMetaMoney, formatMetaSpend, type MetaAdsRange, type MetaAdsReport, type MetaCampaignReport } from '@/lib/marketing/meta-ads-report';
+import { MetaRangeFilter, MetaReportNotes, MetaResultList, MetaResultsTable, isMetaAdsRange, metaSpendTile, ubMonth } from '@/components/marketing/MetaAdsParts';
 
-interface AdCampaign {
-    id: string;
-    platform: string;
-    name: string;
-    status: string;
-    external_id?: string | null;
-    budget: number;
-    spend: number;
-    impressions: number;
-    clicks: number;
-    conversions: number;
-    ctr: number;
-    cpc: number;
-}
+const integer = (value: number | null | undefined) => value === null || value === undefined ? '—' : new Intl.NumberFormat('mn-MN').format(value);
+const percent = (value: number | null | undefined) => value === null || value === undefined ? '—' : `${value}%`;
 
-const STATUS_LABEL: Record<string, string> = { active: 'Идэвхтэй', paused: 'Зогссон', draft: 'Төлөвлөгөөт', completed: 'Дууссан' };
+const columns: DataTableColumn<MetaCampaignReport>[] = [
+    {
+        key: 'name', header: 'Кампанит ажил', sortable: true, accessor: c => c.name,
+        cell: c => <div><p className="font-medium text-foreground">{c.name}</p><p className="num mt-0.5 text-[11px] text-muted-foreground">{c.campaignId} · {c.days} өдөр</p></div>,
+    },
+    { key: 'spend', header: 'Зардал', align: 'right', sortable: true, accessor: c => c.spend.mnt, cell: c => <span className="num">{formatMetaSpend(c.spend, { compact: true })}</span> },
+    { key: 'impressions', header: 'Харагдалт', align: 'right', sortable: true, accessor: c => c.delivery?.impressions ?? -1, cell: c => <span className="num">{integer(c.delivery?.impressions)}</span> },
+    { key: 'link_clicks', header: 'Link click', align: 'right', sortable: true, accessor: c => c.delivery?.linkClicks ?? -1, cell: c => <span className="num">{integer(c.delivery?.linkClicks)}</span> },
+    { key: 'ctr', header: 'CTR', align: 'right', sortable: true, accessor: c => c.delivery?.ctr ?? -1, cell: c => <span className="num">{percent(c.delivery?.ctr)}</span> },
+    { key: 'cpc', header: 'CPC', align: 'right', cell: c => <span className="num">{formatMetaMoney(c.delivery?.cpc)}</span> },
+    { key: 'results', header: 'Үр дүн (төрлөөр)', cell: c => <MetaResultList results={c.results} /> },
+];
 
 export default function AdsPage() {
-    const { shop } = useAuth();
-    const { data, isLoading, error, isFetching, refetch } = useDashboardQuery<{ rows: AdCampaign[] }>(
-        ['marketing-ads'],
-        '/api/marketing/data/ad_campaigns?order=created_at.desc',
+    return <Suspense fallback={<Spinner size="md" label="Татаж байна..." />}><AdsFromUrl /></Suspense>;
+}
+
+function AdsFromUrl() {
+    const search = useSearchParams();
+    const fromUrl = { from: search.get('from') || '', to: search.get('to') || '' };
+    return <AdsReport initialRange={isMetaAdsRange(fromUrl) ? fromUrl : ubMonth()} />;
+}
+
+/** Meta зарын огноотой тайлан: meta_daily_spend (зардал) + meta_ad_insights_daily (харагдалт, үр дүн төрлөөр). */
+function AdsReport({ initialRange }: { initialRange: MetaAdsRange }) {
+    const [range, setRange] = useState(initialRange);
+    const valid = isMetaAdsRange(range);
+    const { data, isLoading, error, isFetching, refetch } = useDashboardQuery<{ report: MetaAdsReport }>(
+        ['marketing-ads'], valid ? `/api/marketing/meta-ads?${new URLSearchParams(range)}` : null, { keepPreviousData: true },
     );
-    // Зарын дансны валют (сүүлийн зардлын синкээс). Мэдэгдэхгүй бол ₮ гэж таамаглахгүй.
-    const metaQuery = useDashboardQuery<{ status?: { currency?: string | null } | null }>(
-        ['marketing-ads', 'meta-account'],
-        '/api/marketing/facebook/ads/spend-sync',
-    );
-    const currency = metaQuery.data?.status?.currency ?? null;
-    const currencyLabel = accountCurrencyLabel(currency);
-    const ads = data?.rows ?? [];
-    const [showCreateModal, setShowCreateModal] = useState(false);
-    const [creating, setCreating] = useState(false);
-    const [newAd, setNewAd] = useState({ name: '', platform: 'facebook', budget: 0 });
-
-    const handleCreate = async () => {
-        if (!shop?.id || !newAd.name.trim()) return;
-        setCreating(true);
-        try {
-            await dashboardMutate('/api/marketing/data/ad_campaigns', 'POST', {
-                name: newAd.name.trim(), platform: newAd.platform,
-                status: 'draft', budget: newAd.budget, spend: 0, impressions: 0, clicks: 0, conversions: 0, ctr: 0, cpc: 0,
-            });
-            void refetch();
-            setShowCreateModal(false);
-            setNewAd({ name: '', platform: 'facebook', budget: 0 });
-        } catch (err) { console.error('Create error:', err); }
-        finally { setCreating(false); }
-    };
-
-    // Нийлбэрийг зөвхөн нэг валюттай (Meta зарын дансны) мөрөөр — гар бүртгэлийг хольж нэмэхгүй.
-    // Дүрэм AI маркетингийн нэгтгэлтэй нэг (`isMetaSyncedCampaign`).
-    const metaAds = ads.filter(isMetaSyncedCampaign);
-    const totalSpend = metaAds.reduce((s, a) => s + (Number(a.spend) || 0), 0);
-    const totalClicks = metaAds.reduce((s, a) => s + (Number(a.clicks) || 0), 0);
-    const totalImpressions = metaAds.reduce((s, a) => s + (Number(a.impressions) || 0), 0);
-    const totalConversions = metaAds.reduce((s, a) => s + (Number(a.conversions) || 0), 0);
-    const avgCtr = totalImpressions > 0 ? (totalClicks / totalImpressions * 100) : null;
-    const avgCpc = totalClicks > 0 ? totalSpend / totalClicks : null;
-
-    const columns: DataTableColumn<AdCampaign>[] = [
-        {
-            key: 'name',
-            header: 'Нэр',
-            accessor: (ad) => ad.name,
-            cell: (ad) => <span className="font-medium text-foreground">{ad.name}</span>,
-            sortable: true,
-        },
-        {
-            key: 'platform',
-            header: 'Платформ',
-            accessor: (ad) => ad.platform,
-            cell: (ad) => <span className="text-sm text-muted-foreground capitalize">{ad.platform}</span>,
-            sortable: true,
-        },
-        {
-            key: 'status',
-            header: 'Төлөв',
-            accessor: (ad) => ad.status,
-            cell: (ad) => (
-                <StatusPill variant={ad.status === 'active' ? 'success' : 'neutral'}>
-                    {STATUS_LABEL[ad.status] ?? ad.status}
-                </StatusPill>
-            ),
-        },
-        {
-            key: 'spend',
-            header: `Зарцуулалт (${currencyLabel})`,
-            align: 'right',
-            accessor: (ad) => (isMetaSyncedCampaign(ad) ? ad.spend : -1),
-            cell: (ad) => <span className="tabular-nums">{isMetaSyncedCampaign(ad) ? formatAccountMoney(ad.spend, currency) : '—'}</span>,
-            sortable: true,
-        },
-        {
-            key: 'clicks',
-            header: 'Click',
-            align: 'right',
-            accessor: (ad) => (isMetaSyncedCampaign(ad) ? ad.clicks : -1),
-            cell: (ad) => <span className="tabular-nums">{isMetaSyncedCampaign(ad) ? ad.clicks.toLocaleString() : '—'}</span>,
-            sortable: true,
-        },
-        {
-            key: 'ctr',
-            header: 'CTR',
-            align: 'right',
-            accessor: (ad) => (isMetaSyncedCampaign(ad) ? ad.ctr : -1),
-            cell: (ad) => <span className="tabular-nums">{isMetaSyncedCampaign(ad) ? `${ad.ctr.toFixed(2)}%` : '—'}</span>,
-            sortable: true,
-        },
-    ];
-
-    if (isLoading) {
-        return (
-            <div className="flex items-center justify-center min-h-[400px]">
-                <Spinner size="md" label="Татаж байна..." />
-            </div>
-        );
-    }
+    const report = data?.report;
+    const delivery = report?.delivery;
 
     return (
-        <div>
+        <div className="mx-auto flex min-w-0 max-w-[1440px] flex-col gap-5">
             <PageHeader
                 eyebrow="Маркетинг"
                 title="Зар сурталчилгаа"
-                subtitle="Төлбөрт зарын кампанит ажлууд"
-                primaryAction={
-                    <Button onClick={() => setShowCreateModal(true)}>
-                        <Plus className="w-4 h-4" />Төлөвлөгөөт зар бүртгэх
-                    </Button>
-                }
+                subtitle="Meta зарын зардал, харагдалт, үр дүн төрлөөр — өдрийн бүртгэлээс"
+                secondaryActions={<>
+                    <Button href="/dashboard/marketing-roi" variant="secondary">ROI</Button>
+                    <Button href="/marketing?tab=records" variant="secondary"><RefreshCw className="w-4 h-4" />Meta зардал татах</Button>
+                </>}
             />
+            <MetaRangeFilter range={range} onChange={setRange} />
 
-            {error && !data ? (
+            {isLoading ? (
+                <div className="flex min-h-[300px] items-center justify-center"><Spinner size="md" label="Татаж байна..." /></div>
+            ) : error && !report ? (
                 <Alert variant="danger">
-                    <AlertTitle>Зар сурталчилгааны мэдээлэл татахад алдаа гарлаа</AlertTitle>
+                    <AlertTitle>Meta зарын тайлан татахад алдаа гарлаа</AlertTitle>
                     <AlertDescription>{error.message}</AlertDescription>
                     <Button variant="secondary" size="sm" className="mt-1 self-start" disabled={isFetching} onClick={() => void refetch()}>Дахин оролдох</Button>
                 </Alert>
-            ) : (
-                <div className="space-y-6">
-                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
-                        <StatsCard
-                            icon={DollarSign}
-                            iconColor="warning"
-                            title={`Нийт зарцуулалт (${currencyLabel})`}
-                            value={metaAds.length ? formatAccountMoney(totalSpend, currency) : '—'}
-                        />
-                        <StatsCard
-                            icon={TrendingUp}
-                            iconColor="info"
-                            title="CTR"
-                            value={avgCtr === null ? '—' : `${avgCtr.toFixed(2)}%`}
-                        />
-                        <StatsCard
-                            icon={MousePointer}
-                            iconColor="brand"
-                            title={`CPC (${currencyLabel})`}
-                            value={formatAccountMoney(avgCpc, currency)}
-                        />
-                        <StatsCard
-                            icon={Target}
-                            iconColor="success"
-                            title="Хөрвүүлэлт"
-                            value={metaAds.length ? totalConversions : '—'}
-                        />
-                    </div>
+            ) : report && (
+                <>
                     <p className="text-xs text-muted-foreground">
-                        Зардал, CPC, click нь зөвхөн Meta-аас синк хийсэн кампанит ажлынх бөгөөд зарын дансны валютаар ({currencyLabel}) — төгрөгт хөрвүүлээгүй. Төлөвлөгөөт зарын бүртгэлд үр дүн орохгүй.
+                        {report.range.from} – {report.range.to}{report.coverage.lastSpendDay ? ` · сүүлийн зардлын өдөр ${report.coverage.lastSpendDay}` : ''}{isFetching ? ' · шинэчилж байна…' : ''}
                     </p>
+                    <MetaReportNotes notes={report.notes} />
+                    <StatBar className="mb-0 md:grid-cols-5">
+                        <StatTile label="Нийт зардал" {...metaSpendTile(report.spend, 'Тооцооны ханшаар')} icon={<DollarSign />} accent="warning" />
+                        <StatTile label="Харагдалт" value={integer(delivery?.impressions)} icon={<Eye />} accent="info" helper={delivery?.cpm ? `CPM ${formatMetaMoney(delivery.cpm)}` : undefined} />
+                        <StatTile label="Link click" value={integer(delivery?.linkClicks)} icon={<MousePointer />} accent="brand" helper={delivery ? `CTR ${percent(delivery.ctr)}` : undefined} />
+                        <StatTile label="CPC" value={formatMetaMoney(delivery?.cpc)} icon={<Target />} accent="success" helper="Нэг link click-ийн өртөг" />
+                        <StatTile label="Кампанит ажил" value={report.campaigns.length} icon={<BarChart3 />} accent="neutral" />
+                    </StatBar>
 
-                    {ads.length === 0 ? (
-                        <EmptyState
-                            icon={<BarChart3 className="w-7 h-7" />}
-                            title="Мэдээлэл байхгүй"
-                            description="Зар сурталчилгааны мэдээлэл энд харагдана."
-                        />
-                    ) : (
-                        <DataTable
-                            columns={columns}
-                            data={ads}
-                            getRowId={(ad) => ad.id}
-                            caption="Зар сурталчилгааны кампанит ажлууд"
-                        />
-                    )}
-                </div>
+                    <SectionCard title="Үр дүн төрлөөр" description="Дуудлага, мессеж, лид маягт… тус бүрийн тоо, кампанит ажлын зорилгоор ногдсон зардал, нэг үр дүнгийн өртөг. Төрлүүдийг нэг тоонд нэмэхгүй; Meta-гийн үр дүн CRM лидтэй адил биш.">
+                        <div className="mt-3"><MetaResultsTable results={report.results} /></div>
+                    </SectionCard>
+
+                    <SectionCard title="Кампанит ажил бүрээр" description="Зардал — өдрийн зардлын бүртгэлээс; харагдалт, товшилт, үр дүн — ad set-ийн өдрийн өгөгдлөөс.">
+                        <div className="mt-3">
+                            {report.campaigns.length === 0 ? (
+                                <EmptyState icon={<BarChart3 className="w-7 h-7" />} title="Энэ хугацаанд Meta зардал бүртгэгдээгүй"
+                                    description="Зарын дансаа сонгоод «Meta зардал татах»-аар зардал, үр дүнг шинэчилнэ." />
+                            ) : (
+                                <DataTable caption="Meta кампанит ажлууд" data={report.campaigns} getRowId={c => c.campaignId} columns={columns} showDensityToggle={false} hidePagination />
+                            )}
+                        </div>
+                    </SectionCard>
+
+                    <details className="rounded-lg border border-border p-3 text-xs text-muted-foreground">
+                        <summary className="cursor-pointer font-medium">Тооцох дүрэм</summary>
+                        <p className="mt-3 leading-relaxed">{report.basis}</p>
+                    </details>
+                </>
             )}
-
-            <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Төлөвлөгөөт зар бүртгэх</DialogTitle>
-                        <DialogDescription>
-                            Зөвхөн Vertmon Hub-д бүртгэл үүснэ — Meta болон бусад платформ дээр зар үүсэхгүй, зардал, click автоматаар орохгүй.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <FieldGroup>
-                        <FormField label="Нэр" htmlFor="ad-name" required>
-                            <Input
-                                id="ad-name"
-                                value={newAd.name}
-                                onChange={e => setNewAd(p => ({ ...p, name: e.target.value }))}
-                                placeholder="Зарын нэр"
-                            />
-                        </FormField>
-                        <FormField label="Платформ" htmlFor="ad-platform">
-                            <Select
-                                value={newAd.platform}
-                                onValueChange={value => setNewAd(p => ({ ...p, platform: value }))}
-                            >
-                                <SelectTrigger id="ad-platform">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="facebook">Facebook</SelectItem>
-                                    <SelectItem value="instagram">Instagram</SelectItem>
-                                    <SelectItem value="google">Google</SelectItem>
-                                    <SelectItem value="tiktok">TikTok</SelectItem>
-                                </SelectContent>
-                            </Select>
-                        </FormField>
-                        <FormField label="Төсөв (₮)" htmlFor="ad-budget">
-                            <Input
-                                id="ad-budget"
-                                type="number"
-                                value={newAd.budget}
-                                onChange={e => setNewAd(p => ({ ...p, budget: Number(e.target.value) }))}
-                            />
-                        </FormField>
-                    </FieldGroup>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setShowCreateModal(false)}>Болих</Button>
-                        <Button
-                            onClick={handleCreate}
-                            disabled={!newAd.name.trim() || creating}
-                            isLoading={creating}
-                        >
-                            {!creating && <Plus className="w-4 h-4" />}
-                            {creating ? 'Бүртгэж байна...' : 'Бүртгэх'}
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
         </div>
     );
 }
