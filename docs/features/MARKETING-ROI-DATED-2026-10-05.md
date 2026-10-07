@@ -1,8 +1,8 @@
 # Маркетинг ROI, «Зар сурталчилгаа», AI — огноотой Meta өгөгдөл (2026-10-05)
 
-**Төлөв (2026-10-05):** `feat/meta-insights`-ийн дээр бичсэн, production-д deploy хийгдээгүй.
-Шинэ миграцигүй. `meta_ad_insights_daily` (`20261005130000`) суулгаагүй үед ч ажиллана —
-тэр үед зөвхөн зардал харагдаж, үр дүнгийн хэсэг «хараахан идэвхжээгүй» гэж бичигдэнэ.
+**Төлөв (2026-10-07):** эзэн 2026-10-07-нд нэгтгэхийг зөвшөөрсөн; `feat/meta-roi-dated` салбарт main-тай
+нэгтгэсэн (main руу хараахан ороогүй, production-д deploy хийгдээгүй). Шинэ миграцигүй.
+`meta_ad_insights_daily` (`20261005130000`, production-д бий) суулгаагүй үед ч ажиллана — тэр үед зөвхөн зардал харагдаж, үр дүнгийн хэсэг «хараахан идэвхжээгүй» гэж бичигдэнэ.
 
 ## Юу өөрчлөгдсөн бэ
 
@@ -19,7 +19,8 @@
 
 Код: `src/lib/marketing/meta-ads-report.ts` (цэвэр тооцоо, формат), `meta-ads-load.ts`
 (уншилт, хүрээ, шүүлт), `meta-result-groups.ts` (кампанит ажил × төрлийн бүлэглэлт — хурлын
-долоо хоногийн `buildMetaChannelReport`-той нэг дүрэм), `roi.ts`, `timeline.ts`.
+долоо хоногийн `buildMetaChannelReport`-той нэг дүрэм), `roi.ts`, `timeline.ts` (цэвэр) +
+`timeline-load.ts` (ROI-той нэг ledger, `loadMetaLedger` + `metaCampaignFilter`).
 
 ## Дүрэм
 
@@ -39,26 +40,31 @@
   лидийн зардал), ROAS (гэрээний дүн ÷ зардал) зөвхөн бүрэн ₮ зардлаар. Нийт CPL = бүх Meta
   зардал ÷ кампанит ажилд холбогдсон лид. Кампанит ажилгүй Meta лид, зардлын бүртгэлгүй
   кампанит ажлын лидийг тусад нь тоолно.
-- **Сарын цуваа (6 сар):** лид, уулзалт (устгаснаас бусад), пост, акц (цуцалснаас бусад) УБ-ийн
-  сараар (`ubParts`/`ubMonthRange`); Meta зардал дансны өдрийн сараар, ханшгүй дүн сар бүрт эх
-  валютаар. Бүх уншилт `fetchAllRows` (1000 мөрийн таслалтгүй).
+- **Сарын цуваа (6 сар):** лид, уулзалт (устгаснаас бусад), пост, акц (цуцалснаас бусад, төслөөр)
+  УБ-ийн сараар (`ubMonthKey`/`ubMonthRange`); Meta зардал дансны өдрийн сараар төгрөгөөр, ханшгүй
+  дүн сар бүрт эх валютаар (`pending`). Синк хийсэн өдөргүй, эсвэл зөвхөн ханшгүй зардалтай сар
+  `null` (шугам тасарна, 0 биш); зарим өдөр нь л синк хийгдсэн өнгөрсөн сар `spendPartial`
+  (`meta_spend_coverage` ∪ зардалтай өдөр). Бүх уншилт `fetchAllRows` (1000 мөрийн таслалтгүй).
 
 ## API
 
 - `GET /api/dashboard/marketing-roi?from&to` — `{ roi }` (кампанит ажил, нийт, чанар, `meta` тайлан, `basis`).
 - `GET /api/marketing/meta-ads?from&to` — `{ report }` («Зар сурталчилгаа»).
-- `GET /api/dashboard/marketing-roi/timeline` — `{ months }`.
+- `GET /api/dashboard/marketing-roi/timeline` — `{ months }` (`spend` ₮ | null, `pending`, `spendDays`, `spendPartial`).
+- `GET /api/dashboard/marketing-roi/sources` — `{ stats }` (main-ий серверийн нэгтгэл: харах эрхтэй бүх лидээр эх үүсвэр, сар бүрийн лид).
 - Бүгд `withRoute({ module: 'marketing-roi' })`, хугацаа YYYY-MM-DD, 367 хүртэл өдөр (анхдагч:
   энэ сарын 1 – өнөөдөр, УБ); буруу хугацаа 400.
-- AI `get_marketing_summary(from?, to?)` — ижил тайлан; ханшгүй дүнг `pendingNative`-д, `guidance`
-  нь ханшгүй дүнг ₮ гэж бичих, төрлүүдийг нэмэх, Meta үр дүнг CRM лидтэй адилтгахыг хориглоно.
+- AI `get_marketing_summary(from?, to?)` — ижил тайлан, төслийн хүрээгээр (`tool-catalog` `scoped`);
+  ханшгүй дүнг `pendingNative`-д, `guidance` нь ханшгүй дүнг ₮ гэж бичих, төрлүүдийг нэмэх, Meta үр
+  дүнг CRM лидтэй адилтгахыг хориглоно. Пост уншиж чадахгүй бол алдаа буцаана.
 
 ## UI
 
 - `/dashboard/marketing-roi` — хугацааны шүүлтүүр, Meta зардлын хавтан, үр дүн төрлөөр,
   кампанит ажлын ROI, «Meta зарын данс» (данс сонгож **Хадгалах** + «Meta автомат зардал»
-  синк — урт хугацаанд сүүлийн 93 өдрийг татна), лидийн эх үүсвэр (огнооноос үл хамааран сүүлийн
-  1000 хүртэл лидээр — хуучин хэвээр, «Лидийн эх үүсвэр» доор тэмдэглэсэн), сарын цуваа.
+  синк — урт хугацаанд сүүлийн 93 өдрийг татна; System User токентой үед «Meta Ads холбох» нуугдана),
+  лидийн эх үүсвэр (огнооноос үл хамааран харах эрхтэй бүх лидээр, `/api/dashboard/marketing-roi/sources`),
+  органик сошиал (Page/IG өдрийн үзүүлэлт), сарын цуваа.
 - `/marketing/ads` — хугацаа (URL `?from&to`), зардал, харагдалт, link click, CTR, CPC, CPM,
   үр дүн төрлөөр, кампанит ажил бүрээр. «Шинэ зар» (`ad_campaigns` draft) хасагдсан —
   акц / кампанит ажлыг `/marketing` дээр бүртгэнэ.
@@ -69,6 +75,9 @@
   `GET /api/marketing/facebook/ads/insights`, `GET /api/marketing/facebook/ads/campaigns`;
   `/api/marketing/data/ad_campaigns`; `fetchCampaignInsights`, `campaignBelongsToAccount`,
   `fetchAdAccountCampaigns`.
+- main-тай нэгтгэхэд (2026-10-07): snapshot-ийн валютын туслахууд `isMetaSyncedCampaign`,
+  `loadMetaAdAccount`, `formatAccountMoney`/`accountCurrencyLabel`; цувааны `currency` талбар
+  (зардал одоо ₮ + `pending`).
 - `ad_campaigns` хүснэгт өгөгдлийн санд үлдэнэ — устгахыг тусад нь зөвшөөрнө.
 
 ## Шалгах
@@ -77,6 +86,6 @@
 npx vitest run src/lib/marketing/__tests__/meta-ads-report.test.ts src/lib/marketing/__tests__/roi.test.ts \
   src/lib/marketing/__tests__/timeline.test.ts src/app/api/__tests__/financial-integrity.test.ts \
   src/app/dashboard/marketing-roi/page.test.tsx src/app/marketing/__tests__/marketing-pages.test.tsx \
-  src/lib/ai/__tests__/marketing-summary.test.ts
+  src/lib/ai/data-assistant/__tests__/marketing-summary.test.ts src/app/api/dashboard/__tests__/marketing-roi-timeline.test.ts
 E2E_BROWSER_CHANNEL=chrome npx playwright test --project=marketing e2e/meta-ads-roi.spec.ts
 ```
