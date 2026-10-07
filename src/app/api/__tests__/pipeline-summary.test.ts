@@ -120,7 +120,7 @@ describe('GET /api/dashboard/leads/pipeline-summary', () => {
         const response = await get();
         expect(response.status).toBe(500);
         const text = await response.text();
-        expect(text).toContain('Pipeline-ийн тоог гаргаж чадсангүй');
+        expect(text).toContain('Шатаар самбарын тоог гаргаж чадсангүй');
         expect(text).not.toContain('db-host-7');
     });
 });

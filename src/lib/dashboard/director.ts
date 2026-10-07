@@ -282,6 +282,8 @@ export interface DirectorPayload {
     };
     leaderboard: LeaderboardRow[];
     funnel: FunnelResult;
+    /** Сард товлосон уулзалт (цуцлагдсаныг хассан) ба тэдгээрээс болсон нь. */
+    meetings?: { scheduled: number; held: number };
     receivables: OverdueResult & {
         /** Идэвхтэй гэрээнүүдийн нийт үлдэгдэл (₮) */
         outstandingTotal: number;

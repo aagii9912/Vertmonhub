@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { TodayDashboard } from '../dashboard/today/TodayDashboard';
 import { DirectorDashboard } from '../dashboard/director/DirectorDashboard';
-import { LeadPanel } from '../leads/LeadPanel';
+import { LeadCard } from '../leads/LeadCard';
 import { QuickCreateSheet } from '../dashboard/QuickCreateSheet';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
 import { ANONYMOUS_LEAD_CONTACT, ANONYMOUS_LEAD_LABEL, LEAD_NAME_OR_ANONYMOUS } from '@/lib/leads/labels';
@@ -32,7 +32,10 @@ vi.mock('@/hooks/useLeads', () => ({
     useLeadDetail: () => ({ ...mocks.detail, refetch: mocks.refetch }),
     useUpdateLead: () => ({ mutate: mocks.update }), useAddLeadActivity: () => ({ mutateAsync: vi.fn() }),
     useLeadCategories: () => ({ data: mocks.categories }),
+    useLeadCustomerCard: () => ({ data: undefined, isError: false }),
+    useLeadSummary: () => ({ data: undefined, isPending: false, isError: false, refetch: mocks.refetch }),
 }));
+vi.mock('@/hooks/useViewings', () => ({ useUpdateViewing: () => ({ mutateAsync: vi.fn(), isPending: false }) }));
 vi.mock('../leads/pickers', () => ({
     StatusPicker: () => null, ManagerPicker: () => null,
     CategoryPicker: ({ onChange, disabled }: { onChange: (id: string | null) => void; disabled?: boolean }) =>
@@ -81,7 +84,7 @@ describe('workflow error and recovery states', () => {
 
     it('shows a missing lead error and lets the user close or retry', () => {
         const onClose = vi.fn();
-        render(<LeadPanel leadId="missing" canWrite={false} onClose={onClose} />);
+        render(<LeadCard leadId="missing" canWrite={false} onClose={onClose} />);
         expect(screen.getByRole('alert')).toHaveTextContent('Лид олдсонгүй');
         fireEvent.click(screen.getByRole('button', { name: 'Хаах' }));
         expect(onClose).toHaveBeenCalledOnce();
@@ -90,7 +93,7 @@ describe('workflow error and recovery states', () => {
     it('identifies a partial lead history without discarding the loaded lead', () => {
         mocks.detail.isError = false;
         mocks.detail.data = { lead: { id: 'lead', customer_name: 'Болд', source: 'other', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null, partial: ['viewings', 'contracts'] };
-        render(<LeadPanel leadId="lead" canWrite={false} />);
+        render(<LeadCard leadId="lead" canWrite={false} />);
         expect(screen.getByRole('alert')).toHaveTextContent('уулзалт, гэрээ');
         expect(screen.getByRole('heading', { name: 'Болд' })).toBeInTheDocument();
     });
@@ -188,7 +191,7 @@ describe('workflow error and recovery states', () => {
     it('shows the anonymous label and lets a writer add the name later', () => {
         mocks.detail.isError = false;
         mocks.detail.data = { lead: { id: 'lead', project_id: 'mandala', customer_name: null, customer_phone: '99112233', source: 'phone', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
-        render(<LeadPanel leadId="lead" canWrite={true} />);
+        render(<LeadCard leadId="lead" canWrite={true} />);
         expect(screen.getByRole('heading', { name: ANONYMOUS_LEAD_LABEL })).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Нэр нэмэх' }));
         const input = screen.getByRole('textbox', { name: 'Харилцагчийн нэр' });
@@ -204,7 +207,7 @@ describe('workflow error and recovery states', () => {
     it('warns instead of silently dropping a placeholder name and saves the real name «Нэргүй»', () => {
         mocks.detail.isError = false;
         mocks.detail.data = { lead: { id: 'lead', project_id: 'mandala', customer_name: null, customer_phone: '99112233', source: 'phone', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
-        render(<LeadPanel leadId="lead" canWrite={true} />);
+        render(<LeadCard leadId="lead" canWrite={true} />);
         fireEvent.click(screen.getByRole('button', { name: 'Нэр нэмэх' }));
         fireEvent.change(screen.getByRole('textbox', { name: 'Харилцагчийн нэр' }), { target: { value: ANONYMOUS_LEAD_LABEL } });
         fireEvent.keyDown(screen.getByRole('textbox', { name: 'Харилцагчийн нэр' }), { key: 'Enter' });
@@ -219,7 +222,7 @@ describe('workflow error and recovery states', () => {
     it('lets a writer correct a named lead and ignores an unchanged name', () => {
         mocks.detail.isError = false;
         mocks.detail.data = { lead: { id: 'lead', project_id: 'mandala', customer_name: 'Болд', source: 'phone', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
-        render(<LeadPanel leadId="lead" canWrite={true} />);
+        render(<LeadCard leadId="lead" canWrite={true} />);
         fireEvent.click(screen.getByRole('button', { name: 'Болд' }));
         const input = screen.getByRole('textbox', { name: 'Харилцагчийн нэр' });
         expect(input).toHaveValue('Болд');
@@ -234,7 +237,7 @@ describe('workflow error and recovery states', () => {
     it('does not offer name editing without write access', () => {
         mocks.detail.isError = false;
         mocks.detail.data = { lead: { id: 'lead', project_id: 'mandala', customer_name: null, source: 'phone', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
-        render(<LeadPanel leadId="lead" canWrite={false} />);
+        render(<LeadCard leadId="lead" canWrite={false} />);
         expect(screen.getByRole('heading', { name: ANONYMOUS_LEAD_LABEL })).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Нэр нэмэх' })).not.toBeInTheDocument();
     });
@@ -242,7 +245,7 @@ describe('workflow error and recovery states', () => {
     it('requests only managers in the selected lead project', () => {
         mocks.detail.isError = false;
         mocks.detail.data = { lead: { id: 'lead', project_id: 'elysium', customer_name: 'Болд', source: 'other', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
-        render(<LeadPanel leadId="lead" canWrite={true} />);
+        render(<LeadCard leadId="lead" canWrite={true} />);
         expect(mocks.managers).toHaveBeenCalledWith('elysium');
         expect(screen.getByText('Elysium')).toBeInTheDocument();
     });
@@ -251,7 +254,7 @@ describe('workflow error and recovery states', () => {
         mocks.role = 'admin';
         mocks.detail.isError = false;
         mocks.detail.data = { lead: { id: 'legacy', project_id: null, sales_manager_name: 'Хуучин менежер', customer_name: 'Болд', source: 'other', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
-        render(<LeadPanel leadId="legacy" canWrite={true} />);
+        render(<LeadCard leadId="legacy" canWrite={true} />);
         fireEvent.change(screen.getByRole('combobox', { name: 'Лидийн төсөл' }), { target: { value: 'mandala' } });
         expect(mocks.update).toHaveBeenCalledWith({ id: 'legacy', patch: { project_id: 'mandala', sales_manager_name: null } }, expect.any(Object));
     });
@@ -260,7 +263,7 @@ describe('workflow error and recovery states', () => {
         mocks.role = 'sales_manager';
         mocks.detail.isError = false;
         mocks.detail.data = { lead: { id: 'lead', project_id: 'mandala', customer_name: 'Болд', source: 'other', status: 'new', created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
-        render(<LeadPanel leadId="lead" canWrite={true} />);
+        render(<LeadCard leadId="lead" canWrite={true} />);
         expect(screen.queryByRole('combobox', { name: 'Лидийн төсөл' })).not.toBeInTheDocument();
     });
     it('offers only active lead categories in quick create and sends the chosen one', async () => {
@@ -293,13 +296,13 @@ describe('workflow error and recovery states', () => {
         mocks.categories = [{ id: 'investor', name: 'Хөрөнгө оруулагч', tone: 'success', is_active: true }];
         mocks.detail.isError = false;
         mocks.detail.data = { lead: { id: 'lead', project_id: 'mandala', customer_name: 'Болд', source: 'phone', status: 'new', category_id: null, created_at: '2026-09-13T10:00:00Z' }, viewings: [], contracts: [], activities: [], property: null };
-        const { unmount } = render(<LeadPanel leadId="lead" canWrite={true} />);
+        const { unmount } = render(<LeadCard leadId="lead" canWrite={true} />);
         expect(screen.getByText('Ангилал')).toBeInTheDocument();
         fireEvent.click(screen.getByRole('button', { name: 'Ангилал сонгох' }));
         expect(mocks.update).toHaveBeenCalledWith({ id: 'lead', patch: { category_id: 'investor' } }, expect.anything());
         unmount();
         mocks.categories = [];
-        render(<LeadPanel leadId="lead" canWrite={true} />);
+        render(<LeadCard leadId="lead" canWrite={true} />);
         expect(screen.queryByText('Ангилал')).not.toBeInTheDocument();
     });
 });

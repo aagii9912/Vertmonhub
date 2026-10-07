@@ -22,10 +22,15 @@ import {
     countLeadsCreatedSince,
     countViewingsBetween,
     buildTaskList,
+    countTasks,
+    pickTasks,
     type LeadLite,
     type ViewingLite,
     type PersonalTaskLite,
 } from '@/lib/dashboard/my-stats';
+
+/** «Өнөөдөр»-ийн жагсаалтад буцаах ажлын дээд тоо; бүх ажлын тоо `taskCounts`-д. */
+const TASK_LIMIT = 20;
 
 /**
  * GET /api/dashboard/my-stats?period=today|week|month&manager=<нэр>
@@ -164,7 +169,7 @@ export async function GET(request: NextRequest) {
             safeManagerRows('viewings', missing, ({ excludeDeleted }) => {
                 let q = db
                     .from('property_viewings')
-                    .select(scope.projectIds === null ? 'id, scheduled_at, status, agent_notes, properties(name), leads(customer_name)' : 'id,scheduled_at,status,agent_notes,properties(name),leads!inner(customer_name,project_id,sales_manager_name)')
+                    .select(scope.projectIds === null ? 'id, lead_id, scheduled_at, status, agent_notes, properties(name), leads(customer_name)' : 'id,lead_id,scheduled_at,status,agent_notes,properties(name),leads!inner(customer_name,project_id,sales_manager_name)')
                     .eq('shop_id', authShop.id)
                     .eq('sales_manager_name', targetName)
                     .gte('scheduled_at', dayStart.toISOString())
@@ -217,6 +222,7 @@ export async function GET(request: NextRequest) {
                 property_name: property?.name || null,
                 customer_name: lead?.customer_name || null,
                 anonymous_lead: !!lead && isAnonymousLead(lead),
+                lead_id: (row.lead_id as string | null) || null,
             };
         });
 
@@ -262,6 +268,8 @@ export async function GET(request: NextRequest) {
             (c) => c.contract_status === 'active' && Number(c.overdue_days) > 0,
         ).length;
 
+        const allTasks = buildTaskList(leads, viewings, now, personalTaskRows as unknown as PersonalTaskLite[]);
+
         const targetRoster =
             identity.roster.find((r) => r.name === targetName) || (isSelf ? identity.rosterEntry : null);
 
@@ -288,12 +296,8 @@ export async function GET(request: NextRequest) {
                 contractCountThisYear,
             },
             target,
-            tasks: buildTaskList(
-                leads,
-                viewings,
-                now,
-                personalTaskRows as unknown as PersonalTaskLite[],
-            ).slice(0, 10),
+            tasks: pickTasks(allTasks, TASK_LIMIT),
+            taskCounts: countTasks(allTasks),
             recentLeads: leads.slice(0, 5),
             upcomingViewings: viewings
                 .filter((v) => (!v.status || v.status === 'scheduled') && new Date(v.scheduled_at) >= now)

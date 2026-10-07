@@ -10,6 +10,8 @@ export interface DashboardMode {
     managerName: string | null;
     isManager: boolean;
     canViewTeam: boolean;
+    /** Байгууллагын горимын нүүр: маркетингийн ажилтан маркетингийн «Өнөөдөр»-ийг харна (байхгүй бол захирлынх). */
+    face?: 'director' | 'marketing';
 }
 
 /** Самбарын горимыг сервер шийднэ; алдааг UI дээр дахин оролдох төлөвөөр харуулна. */

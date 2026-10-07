@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
 import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 import { dashboardFetch } from '@/lib/api/dashboardFetch';
@@ -10,7 +11,7 @@ import {
     User,
     Phone,
     Calendar,
-    DollarSign,
+    Banknote,
     Loader2,
     AlertTriangle,
     Clock,
@@ -56,6 +57,9 @@ import {
 import { useLeadCategories, type LeadCategoryRow } from '@/hooks/useLeads';
 import { CategoryBadge } from '@/components/leads/pickers';
 import { FilterChip } from '@/components/dashboard/FilterBar';
+import { LeadsViewSwitch } from '@/components/leads/LeadsViewSwitch';
+import { LeadCard } from '@/components/leads/LeadCard';
+import { useModuleAccess } from '@/hooks/useModuleAccess';
 
 interface Lead {
     id: string;
@@ -116,6 +120,8 @@ const LOST_REASONS = [
     'Бусад',
 ];
 
+const urgencyLabel: Record<string, string> = { urgent: 'Яаралтай', normal: 'Энгийн', flexible: 'Уян хатан' };
+
 const urgencyVariant: Record<string, 'danger' | 'neutral' | 'success'> = {
     urgent: 'danger',
     normal: 'neutral',
@@ -168,12 +174,12 @@ function LeadCardBody({ lead, now, category }: { lead: Lead; now: number; catego
                         ) : (
                             <Circle className="w-2.5 h-2.5" />
                         )}
-                        {lead.urgency}
+                        {urgencyLabel[lead.urgency] ?? lead.urgency}
                     </StatusPill>
                 )}
                 {(lead.budget_min || lead.budget_max) && (
                     <span className="text-2xs text-muted-foreground flex items-center gap-0.5 tabular-nums">
-                        <DollarSign className="w-2.5 h-2.5" />
+                        <Banknote className="w-3 h-3" />
                         {formatBudget(lead.budget_min, lead.budget_max)}
                     </span>
                 )}
@@ -202,7 +208,7 @@ function LeadCardBody({ lead, now, category }: { lead: Lead; now: number; catego
                     overdue ? 'text-status-danger font-medium' : 'text-brand-strong',
                 )}>
                     <Calendar className="w-3 h-3" />
-                    {overdue ? 'Хугацаа хэтэрсэн: ' : 'Follow-up: '}{formatShortDate(lead.next_followup_at)}
+                    {overdue ? 'Хугацаа хэтэрсэн: ' : 'Дараагийн алхам: '}{formatShortDate(lead.next_followup_at)}
                 </p>
             ) : !isClosedStatus(lead.status) && (
                 <p className="text-2xs mt-1.5 flex items-center gap-1 text-status-pending">
@@ -224,12 +230,16 @@ function DraggableLeadCard({
     isDragging,
     reduced,
     category,
+    selected,
+    onOpen,
 }: {
     lead: Lead;
     now: number;
     isDragging: boolean;
     reduced: boolean;
     category?: LeadCategoryRow | null;
+    selected: boolean;
+    onOpen: (id: string) => void;
 }) {
     const stalled = isStalled(lead, now);
     const { attributes, listeners, setNodeRef } = useDraggable({ id: lead.id });
@@ -239,14 +249,21 @@ function DraggableLeadCard({
             ref={setNodeRef}
             {...attributes}
             {...listeners}
+            aria-label={`${leadDisplayName(lead)} — Enter: карт нээх, Space: шат солихоор чирэх`}
+            // Чирээгүй дарвал (6px-ээс бага) Харилцагчийн карт нээгдэнэ; Enter нь ч мөн адил (Space — гараар чирэх).
+            onClick={() => onOpen(lead.id)}
+            onKeyDown={(event) => {
+                listeners?.onKeyDown?.(event);
+                if (event.key === 'Enter' && !event.defaultPrevented) { event.preventDefault(); onOpen(lead.id); }
+            }}
             layout={!reduced}
             initial={reduced ? false : { opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: reduced ? 0 : 0.22 }}
             className={cn(
-                'bg-surface rounded-lg p-3 border cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow touch-none outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background',
+                'bg-surface rounded-lg p-3 border cursor-grab active:cursor-grabbing hover:border-border-strong transition-colors touch-none',
                 isDragging ? 'opacity-50 scale-95' : '',
-                stalled ? 'border-status-danger/50 ring-1 ring-status-danger/20' : 'border-border',
+                selected ? 'border-brand shadow-[inset_3px_0_0_var(--brand)]' : stalled ? 'border-status-danger/50' : 'border-border',
             )}
         >
             <LeadCardBody lead={lead} now={now} category={category} />
@@ -267,6 +284,8 @@ function StageColumn({
     activeDragId,
     reduced,
     categoryOf,
+    openId,
+    onOpen,
 }: {
     stage: Stage;
     stageLeads: Lead[];
@@ -277,6 +296,8 @@ function StageColumn({
     activeDragId: string | null;
     reduced: boolean;
     categoryOf: (lead: Lead) => LeadCategoryRow | null;
+    openId: string | null;
+    onOpen: (id: string) => void;
 }) {
     const { setNodeRef, isOver } = useDroppable({ id: stage.key });
 
@@ -302,7 +323,7 @@ function StageColumn({
             </div>
             {stageValue > 0 && (
                 <p className="text-2xs text-muted-foreground -mt-2 mb-2 flex items-center gap-0.5 tabular-nums">
-                    <DollarSign className="w-3 h-3" />{formatMNTShort(stageValue)}
+                    <Banknote className="w-3 h-3" />{formatMNTShort(stageValue)}
                 </p>
             )}
             {stageLeads.length < stageCount && (
@@ -320,6 +341,8 @@ function StageColumn({
                         isDragging={activeDragId === lead.id}
                         reduced={reduced}
                         category={categoryOf(lead)}
+                        selected={openId === lead.id}
+                        onOpen={onOpen}
                     />
                 ))}
             </div>
@@ -327,12 +350,31 @@ function StageColumn({
     );
 }
 
+/** Самбарын URL: жагсаалттай ижил ангиллын шүүлтүүр (жагсаалт ↔ Шатаар солиход хадгалагдана) ба нээлттэй карт. */
+function boardUrl(category: string, leadId: string | null) {
+    const sp = new URLSearchParams(categoryQuery(category));
+    if (leadId) sp.set('lead', leadId);
+    const query = sp.toString();
+    return `/dashboard/leads/pipeline${query ? `?${query}` : ''}`;
+}
+
 export default function PipelinePage() {
     const queryClient = useQueryClient();
     const reduced = useReducedMotion();
+    const search = useSearchParams();
+    const { canWrite } = useModuleAccess();
     const { data: categories = [] } = useLeadCategories();
     // Ангиллаар шүүх — сервер дээр: карт ба бүх лидийн тоо, таамаг хоёуланд.
-    const [category, setCategory] = useState('all');
+    const [category, setCategoryState] = useState(() => search?.get('category') || 'all');
+    const [openId, setOpenId] = useState<string | null>(() => search?.get('lead') ?? null);
+    const setCategory = (next: string) => {
+        setCategoryState(next);
+        window.history.replaceState(null, '', boardUrl(next, openId));
+    };
+    const openCard = (id: string | null) => {
+        setOpenId(id);
+        window.history.replaceState(null, '', boardUrl(category, id));
+    };
     const filter = categoryQuery(category);
     const list = useDashboardQuery<PipelineData>(
         PIPELINE_KEY, `/api/dashboard/leads?pageSize=${PIPELINE_CARD_LIMIT}${filter ? `&${filter}` : ''}`, { keepPreviousData: true });
@@ -352,7 +394,8 @@ export default function PipelinePage() {
 
     const sensors = useSensors(
         useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-        useSensor(KeyboardSensor),
+        // Enter-ийг карт нээхэд үлдээнэ: гараар чирэх нь Space.
+        useSensor(KeyboardSensor, { keyboardCodes: { start: ['Space'], cancel: ['Escape'], end: ['Space'] } }),
     );
 
     useEffect(() => {
@@ -448,7 +491,7 @@ export default function PipelinePage() {
     if (loadError) {
         return (
             <Alert variant="danger">
-                <AlertTitle>Лийд татахад алдаа</AlertTitle>
+                <AlertTitle>Лид татахад алдаа</AlertTitle>
                 <AlertDescription>{loadError.message}</AlertDescription>
                 <Button size="sm" variant="secondary" className="self-start" disabled={list.isFetching || summaryQuery.isFetching}
                     onClick={() => { if (!data) void list.refetch(); if (!summary) void summaryQuery.refetch(); }}>Дахин оролдох</Button>
@@ -471,51 +514,40 @@ export default function PipelinePage() {
     return (
         <div>
             <PageHeader
-                eyebrow="Лид"
-                title="Лидийн pipeline"
-                subtitle={`${formatCount(totals.total)} лийд • Чирж зөөнө үү`}
-                breadcrumbs={[
-                    { label: 'Лийдүүд', href: '/dashboard/leads' },
-                    { label: 'Лидийн pipeline' },
-                ]}
-                secondaryActions={
-                    <Button variant="secondary" size="sm" href="/dashboard/leads">
-                        Буцах
-                    </Button>
-                }
-                primaryAction={
-                    <div className="flex items-center gap-4">
-                        <div className="text-right">
-                            <p className="text-2xs uppercase tracking-wide text-muted-foreground/70">Нээлттэй дүн</p>
-                            <p className="text-sm font-semibold text-foreground tabular-nums">{formatMNTShort(totals.openValue)}</p>
-                        </div>
-                        <div className="text-right">
-                            <p className="text-2xs uppercase tracking-wide text-muted-foreground/70">Жинлэсэн таамаг</p>
-                            <p className="text-sm font-bold text-brand-strong tabular-nums">{formatMNTShort(totals.weightedForecast)}</p>
-                        </div>
-                        <div className="text-right">
-                            <p className="text-2xs uppercase tracking-wide text-muted-foreground/70">Хаасан</p>
-                            <p className="text-sm font-semibold text-status-success tabular-nums">{formatMNTShort(totals.wonValue)}</p>
-                        </div>
-                    </div>
-                }
+                title="Шатаар"
+                subtitle={`${formatCount(totals.total)} лид · картыг чирж шат солино, дарж нээнэ`}
+                className="mb-4"
             />
+            <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+                <dl className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                    <div>
+                        <dt className="text-xs text-muted-foreground">Нээлттэй дүн</dt>
+                        <dd className="num text-sm font-semibold text-foreground">{formatMNTShort(totals.openValue)}</dd>
+                    </div>
+                    <div>
+                        <dt className="text-xs text-muted-foreground">Жинлэсэн таамаг</dt>
+                        <dd className="num text-sm font-semibold text-brand-strong">{formatMNTShort(totals.weightedForecast)}</dd>
+                    </div>
+                    <div>
+                        <dt className="text-xs text-muted-foreground">Хаасан</dt>
+                        <dd className="num text-sm font-semibold text-status-success">{formatMNTShort(totals.wonValue)}</dd>
+                    </div>
+                </dl>
+                {categories.length > 0 && (
+                    <FilterChip value={category} onChange={setCategory} label="Ангилал"
+                        options={[[UNCATEGORIZED_KEY, UNCATEGORIZED_LABEL], ...categories.map((c): [string, string] => [c.id, categoryOptionLabel(c)])]} />
+                )}
+                <LeadsViewSwitch current="board" query={categoryQuery(category)} className="ml-auto" />
+            </div>
 
             {/* Карт хамгийн сүүлийн 1,000 лидээр хязгаарлагдана; тоо, дүн, таамаг бүх лидээр (summary). */}
             {listTotal > leads.length && (
                 <Alert variant="warning" className="mb-3">
                     <AlertTitle>Картын жагсаалт бүрэн биш: {formatCount(listTotal)} лидээс хамгийн сүүлд бүртгэгдсэн {formatCount(leads.length)} лидийн карт харагдаж байна</AlertTitle>
                     <AlertDescription>
-                        Баганын тоо, нээлттэй дүн, жинлэсэн таамаг, хаасан дүн, зогссон ба дараагийн алхамгүй лидийн тоог бүх лидээр тооцсон. Харагдахгүй лидийг «Лийдүүд» жагсаалтаас хайж нээнэ үү.
+                        Баганын тоо, нээлттэй дүн, жинлэсэн таамаг, хаасан дүн, зогссон ба дараагийн алхамгүй лидийн тоог бүх лидээр тооцсон. Харагдахгүй лидийг «Жагсаалт» харагдацаас хайж нээнэ үү.
                     </AlertDescription>
                 </Alert>
-            )}
-
-            {categories.length > 0 && (
-                <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <FilterChip value={category} onChange={setCategory} label="Ангилал"
-                        options={[[UNCATEGORIZED_KEY, UNCATEGORIZED_LABEL], ...categories.map((c): [string, string] => [c.id, categoryOptionLabel(c)])]} />
-                </div>
             )}
 
             {/* Hygiene анхааруулга */}
@@ -524,7 +556,7 @@ export default function PipelinePage() {
                     {totals.stalled > 0 && (
                         <StatusPill variant="danger" className="px-2.5 py-1">
                             <AlertTriangle className="w-3.5 h-3.5" />
-                            {formatCount(totals.stalled)} зогссон лийд
+                            {formatCount(totals.stalled)} зогссон лид
                         </StatusPill>
                     )}
                     {totals.noNextStep > 0 && (
@@ -558,6 +590,8 @@ export default function PipelinePage() {
                                     activeDragId={activeDragId}
                                     reduced={reduced}
                                     categoryOf={categoryOf}
+                                    openId={openId}
+                                    onOpen={openCard}
                                 />
                             );
                         })}
@@ -572,6 +606,12 @@ export default function PipelinePage() {
                     ) : null}
                 </DragOverlay>
             </DndContext>
+
+            {openId && (
+                <aside aria-label="Харилцагчийн карт" className="fixed inset-y-0 right-0 z-30 mt-[var(--header-h)] w-[min(440px,100vw)] overflow-hidden border-l border-border bg-surface shadow-xl">
+                    <LeadCard key={openId} leadId={openId} canWrite={canWrite('leads')} onClose={() => openCard(null)} onOpenLead={openCard} />
+                </aside>
+            )}
 
             {/* Алдсан шалтгааны хүснэгт (Sheet) */}
             <Sheet open={!!lostModal} onOpenChange={(open) => { if (!open) setLostModal(null); }}>

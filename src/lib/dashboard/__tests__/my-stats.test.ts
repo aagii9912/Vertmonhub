@@ -5,6 +5,9 @@ import {
     countLeadsCreatedSince,
     countViewingsBetween,
     buildTaskList,
+    countTasks,
+    pickTasks,
+    type DashTask,
     type LeadLite,
     type ViewingLite,
 } from '../my-stats';
@@ -204,5 +207,27 @@ describe('buildTaskList', () => {
         expect(late?.subtitle).toContain('МG-101');
         expect(tasks.find((t) => t.id === 'p-today')?.overdue).toBe(false);
         expect(tasks.find((t) => t.id === 'p-today')?.href).toBe('/dashboard/tasks');
+    });
+});
+
+describe('task links and trimming', () => {
+    it('opens the lead card from a follow-up and from a meeting with a lead', () => {
+        const tasks = buildTaskList(
+            [lead({ id: 'f1', status: 'contacted', next_followup_at: new Date(2026, 6, 7, 9, 0).toISOString() })],
+            [viewing({ id: 'v1', scheduled_at: new Date(2026, 6, 7, 16, 0).toISOString(), lead_id: 'l9' }), viewing({ id: 'v2', scheduled_at: new Date(2026, 6, 7, 17, 0).toISOString() })],
+            NOW,
+        );
+        expect(tasks.find((t) => t.id === 'f1')).toMatchObject({ href: '/dashboard/leads?lead=f1', leadId: 'f1' });
+        expect(tasks.find((t) => t.id === 'v1')).toMatchObject({ href: '/dashboard/leads?lead=l9', leadId: 'l9' });
+        expect(tasks.find((t) => t.id === 'v2')).toMatchObject({ href: '/dashboard/viewings', leadId: null });
+    });
+
+    it('never drops a meeting when the list is trimmed and counts every task', () => {
+        const at = (h: number) => new Date(2026, 6, 7, h, 0).toISOString();
+        const followups: DashTask[] = Array.from({ length: 5 }, (_, i) => ({ type: 'followup', id: `f${i}`, title: '', subtitle: '', dueAt: at(8 + i), overdue: i < 2, href: '' }));
+        const meeting: DashTask = { type: 'viewing', id: 'v1', title: '', subtitle: '', dueAt: at(18), overdue: false, href: '' };
+        const all = [...followups, meeting];
+        expect(pickTasks(all, 3).map((t) => t.id)).toEqual(['f0', 'f1', 'v1']);
+        expect(countTasks(all)).toEqual({ all: 6, followup: 5, viewing: 1, personal: 0, overdue: 2 });
     });
 });

@@ -8,6 +8,7 @@ import type { LeadCategoryOption, LeadView } from '@/lib/leads/labels';
 import type { LeadActivity } from '@/lib/leads/activities';
 import type { LeadTimeline } from '@/lib/leads/timeline';
 import type { LeadWorkQueue } from '@/lib/leads/work-queue';
+import type { LeadCustomerCard } from '@/lib/leads/customer-card-load';
 
 export type LeadRow = Lead & { lost_reason?: string | null; project_id?: string | null };
 
@@ -75,13 +76,13 @@ export interface LeadSummary {
     queues: Record<LeadWorkQueue, number>;
 }
 
-export function useLeadSummary() {
+export function useLeadSummary({ enabled = true }: { enabled?: boolean } = {}) {
     const { shop, user } = useAuth();
     const shopId = shop?.id;
     return useQuery<LeadSummary>({
         queryKey: ['leads', 'summary', shopId, user?.id, user?.role],
         queryFn: () => dashboardJson<LeadSummary>('/api/dashboard/leads/summary'),
-        enabled: !!shopId,
+        enabled: !!shopId && enabled,
         staleTime: 30_000,
     });
 }
@@ -127,6 +128,22 @@ export function useLeadDetail(id: string | null) {
         queryFn: () => dashboardJson<LeadDetail>(`/api/dashboard/leads/${id}`),
         enabled: !!shopId && !!id,
         staleTime: 10_000,
+    });
+}
+
+/**
+ * Харилцагчийн картын лидээс гадуурх хэсгүүд (харилцагч, мессеж, гэрээ, санал гомдол) — эрхтэй хэсэг л ирнэ.
+ * Карт нь алдааг өөрөө харуулдаг тул давхар toast гаргахгүй.
+ */
+export function useLeadCustomerCard(id: string | null) {
+    const { shop, user } = useAuth();
+    const shopId = shop?.id;
+    return useQuery<LeadCustomerCard>({
+        queryKey: ['leads', 'customer-card', shopId, user?.id, id, user?.role],
+        queryFn: () => dashboardJson<LeadCustomerCard>(`/api/dashboard/leads/${id}/customer`),
+        enabled: !!shopId && !!id,
+        staleTime: 30_000,
+        meta: { inlineError: true },
     });
 }
 
