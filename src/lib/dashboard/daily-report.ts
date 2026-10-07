@@ -237,7 +237,7 @@ export interface BuildDailyReportInput {
 
 const MEETING_KINDS: MeetingKind[] = [...MEETING_TYPES, 'unclassified'];
 const meetingKind = (type: string | null): MeetingKind => (type && (MEETING_TYPES as string[]).includes(type) ? type as MeetingType : 'unclassified');
-const MEETING_LABEL = (kind: MeetingKind) => (kind === 'unclassified' ? 'Ангилаагүй' : MEETING_TYPE_META[kind].short);
+const meetingLabel = (kind: MeetingKind) => (kind === 'unclassified' ? 'Ангилаагүй' : MEETING_TYPE_META[kind].short);
 const MEETING_HEADING: Record<MeetingKind, string> = {
     new_customer: 'Шинэ уулзалт', repeat_customer: 'Давтан уулзалт', existing_buyer: 'Захиалагч', unclassified: 'Ангилаагүй',
 };
@@ -299,12 +299,12 @@ export function buildDailyReport(input: BuildDailyReportInput): DailyReport {
             const name = meeting.manager ?? UNASSIGNED;
             values[name] = (values[name] ?? 0) + 1;
         }
-        return { key: kind, label: MEETING_LABEL(kind), values };
+        return { key: kind, label: meetingLabel(kind), values };
     }), managers);
     const shortOf = new Map(managers.map(manager => [manager.name, manager.short]));
     const groups = shownKinds.map(kind => ({
         type: kind,
-        label: MEETING_LABEL(kind),
+        label: meetingLabel(kind),
         heading: MEETING_HEADING[kind],
         count: byKind.get(kind)!.length,
         items: byKind.get(kind)!.map(meeting => ({ id: meeting.id, manager: shortOf.get(meeting.manager ?? UNASSIGNED) ?? '', text: meetingItemText(meeting) })),
@@ -326,7 +326,8 @@ export function buildDailyReport(input: BuildDailyReportInput): DailyReport {
         meetings: { ...meetingGrid, groups, pending: input.pendingMeetings },
         filled,
         missing,
-        generalNote: clean(input.notes.general, DAILY_LIMITS.generalNote),
+        // Мөр шилжилтийг хадгална (бусад тайлбар нэг мөрөнд).
+        generalNote: (input.notes.general ?? '').trim().slice(0, DAILY_LIMITS.generalNote),
         completed: input.completed,
     };
 }
@@ -341,34 +342,31 @@ export const reportDateLabel = (date: string) => date.replaceAll('-', '.');
 function perManager(values: Record<string, number | null>, managers: readonly DailyReportManager[]): string {
     return managers.filter(manager => (values[manager.name] ?? 0) > 0).map(manager => `${manager.short} ${values[manager.name]}`).join(', ');
 }
-const withBreakdown = (total: number, values: Record<string, number | null>, managers: readonly DailyReportManager[]) => {
-    const detail = perManager(values, managers);
-    return detail ? `${total} (${detail})` : `${total}`;
+const detail = (values: Record<string, number | null>, managers: readonly DailyReportManager[]) => {
+    const text = perManager(values, managers);
+    return text ? ` (${text})` : '';
 };
 const sentence = (text: string) => (!text || /[.!?…]$/.test(text) ? text : `${text}.`);
 
+/** Мессенжерийн бүлэгт хуулах текст — цаасан тайлангийн дарааллаар; 0 тоотой задаргааны мөр орохгүй. */
 export function formatDailyReportText(report: DailyReport): string {
     const out: string[] = [];
+    const { managers } = report;
     out.push(`${report.title.toLocaleUpperCase('mn')} — ${reportDateLabel(report.date)}`);
-    const named = report.managers.filter(manager => manager.inRoster);
+    const named = managers.filter(manager => manager.inRoster);
     if (named.length) out.push(`Менежер: ${named.map(manager => manager.title).join(', ')}`);
 
     for (const line of report.lines) {
-        out.push('');
-        const head = `${line.label}: Нийт ${withBreakdown(line.total, line.byManager, report.managers)} дуудлага ирсэн.`;
-        out.push(line.note ? `${head} ${sentence(line.note)}` : head);
-        if (line.categories.length) for (const row of line.rows) out.push(`  ${row.label}: ${withBreakdown(row.total, row.values, report.managers)}`);
+        out.push('', [`${line.label}: Нийт ${line.total} дуудлага ирсэн${detail(line.byManager, managers)}.`, sentence(line.note)].filter(Boolean).join(' '));
+        if (line.categories.length) for (const row of line.rows) if (row.total > 0) out.push(`  ${row.label}: ${row.total}${detail(row.values, managers)}`);
     }
     if (report.chats.rows.length) {
-        out.push('');
-        const head = `Менежерийн чат: Нийт ${report.chats.total} чат харилцаа үүсгэсэн.`;
-        out.push(report.chats.note ? `${head} ${sentence(report.chats.note)}` : head);
-        for (const row of report.chats.rows) out.push(`  ${row.label}: ${withBreakdown(row.total, row.values, report.managers)}`);
+        out.push('', [`Менежерийн чат: Нийт ${report.chats.total} чат харилцаа үүсгэсэн.`, sentence(report.chats.note)].filter(Boolean).join(' '));
+        for (const row of report.chats.rows) if (row.total > 0) out.push(`  ${row.label}: ${row.total}${detail(row.values, managers)}`);
     }
 
-    out.push('', `Уулзалт: ${withBreakdown(report.meetings.total, report.meetings.byManager, report.managers)}`);
+    out.push('', `Уулзалт: ${report.meetings.total}${detail(report.meetings.byManager, managers)}`);
     for (const group of report.meetings.groups) {
-        if (group.type === 'unclassified' && !group.count) continue;
         out.push(`${group.heading} - ${group.count}`);
         group.items.forEach((item, index) => out.push(`${index + 1}. ${item.text}`));
     }

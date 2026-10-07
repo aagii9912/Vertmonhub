@@ -1,6 +1,6 @@
 /**
  * Тестийн санах ойн Supabase (PostgREST) client — service/route тестэд зориулсан жижиг дуураймал.
- * Дэмжих: select (count/head), insert (нэг/олон мөр), update, delete, eq/neq/is/in/ilike/or (энгийн
+ * Дэмжих: select (count/head), insert (нэг/олон мөр), upsert (onConflict түлхүүрээр), update, delete, eq/neq/is/in/ilike/or (энгийн
  * `col.op.value`), order (олон түлхүүр), range/limit, maybeSingle/single, await.
  * DB-ийн хязгаарлалтыг `constraints` hook-оор дуурайна (unique → 23505, FK → 23503 гэх мэт).
  */
@@ -19,7 +19,7 @@ export interface MemoryDbConstraints {
 export interface MemoryDb {
     tables: Record<string, Row[]>;
     /** Амжилттай бичилтүүд (дарааллаар). */
-    writes: { table: string; op: 'insert' | 'update' | 'delete'; data: Row }[];
+    writes: { table: string; op: 'insert' | 'update' | 'delete' | 'upsert'; data: Row }[];
     /** Тухайн хүснэгтийн дараагийн уншилт/бичилтэд алдаа буцаана (нэг удаа). */
     failNext: Record<string, DbError>;
     from: (table: string) => any;
@@ -32,7 +32,8 @@ export function createMemoryDb(tables: Record<string, Row[]> = {}, constraints: 
     db.from = (table: string) => {
         const filters: Array<(row: Row) => boolean> = [];
         const orders: { key: string; ascending: boolean }[] = [];
-        let mutation: 'insert' | 'update' | 'delete' | null = null;
+        let mutation: 'insert' | 'update' | 'delete' | 'upsert' | null = null;
+        let conflictKeys: string[] = [];
         let payload: Row | Row[] = {};
         let first = 0;
         let last = Infinity;
@@ -55,6 +56,23 @@ export function createMemoryDb(tables: Record<string, Row[]> = {}, constraints: 
                 db.tables[table] = staged;
                 for (const row of rows) db.writes.push({ table, op: 'insert', data: row });
                 data = rows;
+            } else if (mutation === 'upsert') {
+                // PostgREST merge-duplicates: давхардсан мөрийн зөвхөн илгээсэн баганыг шинэчилнэ.
+                const rows = Array.isArray(payload) ? payload : [payload];
+                const staged = [...source];
+                const result: Row[] = [];
+                for (const row of rows) {
+                    const existing = staged.find((other) => conflictKeys.every((key) => other[key] === row[key]));
+                    if (existing) { Object.assign(existing, row); result.push(existing); continue; }
+                    const created = { id: crypto.randomUUID(), ...row };
+                    const error = constraints.insert?.(table, created, staged) ?? null;
+                    if (error) return { data: null, error, count: null };
+                    staged.push(created);
+                    result.push(created);
+                }
+                db.tables[table] = staged;
+                for (const row of result) db.writes.push({ table, op: 'upsert', data: { ...row } });
+                data = result;
             } else if (mutation === 'update') {
                 for (const row of data) {
                     const error = constraints.update?.(table, { ...row, ...payload as Row }, source) ?? null;
@@ -90,6 +108,11 @@ export function createMemoryDb(tables: Record<string, Row[]> = {}, constraints: 
         const query: any = {
             select: (_columns?: string, options?: { head?: boolean; count?: string }) => { selected = true; head = !!options?.head; return query; },
             insert: (data: Row | Row[]) => { mutation = 'insert'; payload = data; return query; },
+            upsert: (data: Row | Row[], options?: { onConflict?: string }) => {
+                mutation = 'upsert'; payload = data;
+                conflictKeys = (options?.onConflict || 'id').split(',').map((key) => key.trim());
+                return query;
+            },
             update: (data: Row) => { mutation = 'update'; payload = data; return query; },
             delete: () => { mutation = 'delete'; return query; },
             eq: (key: string, value: unknown) => { filters.push((row) => valueAt(row, key) === value); return query; },

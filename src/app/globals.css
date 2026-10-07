@@ -503,13 +503,13 @@ body {
 .weekly-report:fullscreen .fullscreen-exit { display: inline-flex; }
 @page weekly-review { size: A4; margin: 14mm; }
 @media print {
-  body:has(.weekly-report) { page: weekly-review; }
-  body:has(.weekly-report) [data-sonner-toaster] { display: none !important; }
-  body:has(.weekly-report) * { transition: none !important; }
-  body:has(.weekly-report) .min-h-screen { min-height: 0; }
-  body:has(.weekly-report) #workspace-content { min-width: 0; }
+  body:has(.weekly-report, .daily-report) { page: weekly-review; }
+  body:has(.weekly-report, .daily-report) [data-sonner-toaster] { display: none !important; }
+  body:has(.weekly-report, .daily-report) * { transition: none !important; }
+  body:has(.weekly-report, .daily-report) .min-h-screen { min-height: 0; }
+  body:has(.weekly-report, .daily-report) #workspace-content { min-width: 0; }
   /* Paper is always light, whatever the screen theme. */
-  .weekly-report {
+  .weekly-report, .daily-report {
     --bg: #FFFFFF; --surface: #FFFFFF; --surface-2: #F0F2F5; --surface-3: #E6E9EE;
     --fg: #12151C; --fg-2: #3A404C; --muted: #5C6474; --muted-2: #5F6878;
     --border: #E3E6EB; --border-strong: #CDD2DA;
@@ -523,6 +523,10 @@ body {
     width: 100%; max-width: 100%;
   }
   .weekly-report section { break-inside: avoid; }
+  /* Өдрийн тайлан: нэг А4 хуудсанд багтаахаар нягт. */
+  .daily-report { font-size: 12px; }
+  .daily-report section, .daily-report section > div { break-inside: avoid; }
+  .daily-report [role="region"] { overflow: visible; }
   .weekly-report > section > header { break-after: avoid; }
   .weekly-report > section:last-child { break-inside: auto; }
 }
