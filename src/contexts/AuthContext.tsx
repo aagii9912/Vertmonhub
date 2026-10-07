@@ -194,9 +194,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (disposed || lastUserId !== s.user.id || request !== permissionRequest) return;
       shopRequest.current++;
       if (!me) {
+        // Түр алдаа (сүлжээ, 5xx) сонгосон төслийг мартуулахгүй — дараагийн амжилттай ачаалалт сэргээнэ.
         setUser(null);
         setShops([]);
-        setActiveShop(null);
+        setShop(null);
         setLoading(false);
         return;
       }
@@ -236,7 +237,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               shopRequest.current++;
               setUser(null);
               setShops([]);
-              setActiveShop(null);
+              // Хуудас ачаалахад токен шинэчлэгдвэл TOKEN_REFRESHED/SIGNED_IN нь getSession-оос түрүүлж
+              // ирдэг (lastUserId хоосон) — энэ нь хэрэглэгч солигдсон биш, сонгосон төслийг хадгална.
+              // Өөр бүртгэл нэвтэрсэн үед л мартана.
+              if (lastUserId) setActiveShop(null);
+              else setShop(null);
               setLoading(true);
             }
             lastUserId = session.user.id;
@@ -250,7 +255,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           permissionRequest++;
           setUser(null);
           setShops([]);
-          setActiveShop(null);
+          // Зөвхөн бодит гаралт сонголтыг мартуулна; INITIAL_SESSION-ий түр алдаа (session null) хадгална.
+          if (event === 'SIGNED_OUT') setActiveShop(null);
+          else setShop(null);
           setLoading(false);
         }
       }

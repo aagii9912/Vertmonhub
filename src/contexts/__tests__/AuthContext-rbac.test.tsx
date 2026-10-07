@@ -6,10 +6,14 @@ import type { Session, AuthChangeEvent } from '@supabase/supabase-js';
 const state = vi.hoisted(() => ({
     session: { user: { id: 'fixture-user', email: 'fixture@example.invalid', user_metadata: {} } } as Session,
     onChange: undefined as ((event: AuthChangeEvent, session: Session | null) => void) | undefined,
+    sessionGate: Promise.resolve() as Promise<void>,
 }));
 vi.mock('@/lib/supabase-browser', () => ({
     createSupabaseBrowserClient: () => ({ auth: {
-        getSession: async () => ({ data: { session: state.session } }),
+        getSession: async () => {
+            await state.sessionGate;
+            return { data: { session: state.session } };
+        },
         onAuthStateChange: (callback: typeof state.onChange) => {
             state.onChange = callback;
             return { data: { subscription: { unsubscribe: vi.fn() } } };
@@ -32,6 +36,7 @@ function me(modules = ['customers'], shops = [{ id: 'fixture-shop', name: 'Fixtu
 const fetchMock = vi.fn<typeof fetch>();
 beforeEach(() => {
     state.session = { user: { id: 'fixture-user', email: 'fixture@example.invalid', user_metadata: {} } } as Session;
+    state.sessionGate = Promise.resolve();
     fetchMock.mockReset();
     fetchMock.mockImplementation(async () => me());
     vi.stubGlobal('fetch', fetchMock);
@@ -130,5 +135,41 @@ describe('permission refresh', () => {
         await act(async () => finish(new Response(JSON.stringify({ shops: [{ id: 'fixture-shop', name: 'Fixture' }] }))));
         expect(screen.getByTestId('access')).toHaveTextContent('denied');
         expect(screen.getByTestId('shop')).toHaveTextContent('none');
+    });
+});
+
+describe('selected project', () => {
+    const twoShops = [{ id: 'first-shop', name: 'First' }, { id: 'second-shop', name: 'Second' }];
+
+    it('survives a page load whose token refresh event arrives before getSession', async () => {
+        let release!: () => void;
+        state.sessionGate = new Promise(resolve => { release = resolve; });
+        localStorage.setItem('vertmonhub_active_shop_id', 'second-shop');
+        fetchMock.mockImplementation(async () => me(['customers'], twoShops));
+        render(<AuthProvider><Reader /></AuthProvider>);
+        act(() => state.onChange?.('TOKEN_REFRESHED', state.session));
+        await waitFor(() => expect(screen.getByTestId('shop')).toHaveTextContent('second-shop'));
+        await act(async () => release());
+        expect(screen.getByTestId('shop')).toHaveTextContent('second-shop');
+        expect(localStorage.getItem('vertmonhub_active_shop_id')).toBe('second-shop');
+    });
+    it('a failed access refresh keeps the selected project for the next load', async () => {
+        localStorage.setItem('vertmonhub_active_shop_id', 'second-shop');
+        fetchMock.mockImplementation(async () => me(['customers'], twoShops));
+        render(<AuthProvider><Reader /></AuthProvider>);
+        await waitFor(() => expect(screen.getByTestId('shop')).toHaveTextContent('second-shop'));
+        fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: 'Temporary failure' }), { status: 500 }));
+        fireEvent(window, new Event('focus'));
+        await waitFor(() => expect(screen.getByTestId('access')).toHaveTextContent('denied'));
+        expect(localStorage.getItem('vertmonhub_active_shop_id')).toBe('second-shop');
+    });
+    it('forgets the selected project on sign-out', async () => {
+        localStorage.setItem('vertmonhub_active_shop_id', 'second-shop');
+        fetchMock.mockImplementation(async () => me(['customers'], twoShops));
+        render(<AuthProvider><Reader /></AuthProvider>);
+        await waitFor(() => expect(screen.getByTestId('shop')).toHaveTextContent('second-shop'));
+        act(() => state.onChange?.('SIGNED_OUT', null));
+        expect(screen.getByTestId('shop')).toHaveTextContent('none');
+        expect(localStorage.getItem('vertmonhub_active_shop_id')).toBeNull();
     });
 });
