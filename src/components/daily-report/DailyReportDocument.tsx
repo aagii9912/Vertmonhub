@@ -135,6 +135,20 @@ function CountTable({ title, caption, section, managers, editing, footer }: {
     footer?: ReactNode;
 }) {
     const showTotalRow = section.rows.length > 1;
+    // Засах үед нийлбэр ноорогтой хамт шинэчлэгдэнэ (хадгалаагүй ч харагдана).
+    const valueOf = (manager: string, row: DailyGridSection['rows'][number]): number | null => {
+        const raw = editing?.draft[cellKey(manager, row.key)];
+        if (raw !== undefined) {
+            const text = raw.trim();
+            if (text === '') return null;
+            const parsed = Number(text);
+            if (Number.isInteger(parsed) && parsed >= 0) return parsed;
+        }
+        return row.values[manager] ?? null;
+    };
+    const rowTotal = (row: DailyGridSection['rows'][number]) => editing ? managers.reduce((sum, manager) => sum + (valueOf(manager.name, row) ?? 0), 0) : row.total;
+    const managerTotal = (manager: string) => editing ? section.rows.reduce((sum, row) => sum + (valueOf(manager, row) ?? 0), 0) : section.byManager[manager];
+    const total = editing ? section.rows.reduce((sum, row) => sum + rowTotal(row), 0) : section.total;
     return (
         <div className="min-w-0 rounded-2xl border border-border">
             <div className="flex items-baseline justify-between gap-3 border-b border-border px-4 py-2.5">
@@ -174,14 +188,14 @@ function CountTable({ title, caption, section, managers, editing, footer }: {
                                         </td>
                                     );
                                 })}
-                                <td className={cn('num px-3 py-1.5 text-right', !showTotalRow && 'font-semibold')}>{row.total}</td>
+                                <td className={cn('num px-3 py-1.5 text-right', !showTotalRow && 'font-semibold')}>{rowTotal(row)}</td>
                             </tr>
                         ))}
                         {showTotalRow && (
                             <tr className="border-t border-border-strong font-semibold">
                                 <th scope="row" className="px-3 py-1.5 text-left">Нийт</th>
-                                {managers.map(manager => <td key={manager.name} className="num px-1.5 py-1.5 text-center">{section.byManager[manager.name] || ''}</td>)}
-                                <td className="num px-3 py-1.5 text-right">{section.total}</td>
+                                {managers.map(manager => <td key={manager.name} className="num px-1.5 py-1.5 text-center">{managerTotal(manager.name) || ''}</td>)}
+                                <td className="num px-3 py-1.5 text-right">{total}</td>
                             </tr>
                         )}
                     </tbody>

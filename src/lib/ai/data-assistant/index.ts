@@ -32,7 +32,7 @@ import {
 } from './functions';
 import { inviteUser, assignRole, createRole, setUserProjects, setSalesTarget } from './admin-functions';
 import { importErpFileTool } from './erp-import';
-import { getKpiReport, getManagerActivityTool, getManagerPerformanceTool, getWeeklySalesReportTool, getWeeklyUpdatesTool, saveWeeklyUpdateTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, updateCustomerTool, listConversationsTool, getConversationTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
+import { getKpiReport, getManagerActivityTool, getDailyReportTool, getManagerPerformanceTool, getWeeklySalesReportTool, getWeeklyUpdatesTool, saveWeeklyUpdateTool, getExportLink, customerTag, replyCustomer, mergeCustomersTool, updateCustomerTool, listConversationsTool, getConversationTool, logSpend, setBudget, listSpend, addIndicator } from './actions2';
 import { logCall, setFollowup, logPriceQuote, assignLeadManager, updateLeadTool, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
 import { transferContractTool } from './actions-contract-transfer';
 import { listLeadCategoriesTool, setLeadCategory } from './actions-lead-category';
@@ -150,6 +150,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     mark_payment_paid: ({ shopId, args, confirm }) => markPaymentPaid(shopId, args, confirm),
     get_kpi_report: ({ shopId, args, userId, perms, scope }) => getKpiReport(shopId, args, userId, perms, scope),
     get_manager_activity: ({ shopId, args, userId, perms, scope }) => getManagerActivityTool(shopId, args, userId, perms, scope),
+    get_daily_report: ({ shopId, args, userId, perms, scope }) => getDailyReportTool(shopId, args, userId, perms, scope),
     get_manager_performance: ({ shopId }) => getManagerPerformanceTool(shopId),
     get_weekly_sales_report: ({ shopId, args, perms }) => getWeeklySalesReportTool(shopId, args, perms),
     import_erp_file: ({ shopId, args, confirm, userId, perms }) => importErpFileTool(shopId, args, confirm, userId, perms),

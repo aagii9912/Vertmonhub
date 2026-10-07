@@ -18,6 +18,8 @@ import { getManagerPerformance } from '@/lib/reports/manager-performance';
 import { loadWeeklySales } from '@/lib/dashboard/weekly-sales-load';
 import { formatWeeklySalesText, meetingDateSchema, nextMeetingDate } from '@/lib/dashboard/weekly-review';
 import { listWeeklyUpdates, saveWeeklyUpdate } from '@/lib/dashboard/weekly-updates';
+import { DailyReportDateSchema, formatDailyReportText } from '@/lib/dashboard/daily-report';
+import { DailyReportUnavailableError, loadDailyReport } from '@/lib/dashboard/daily-report-load';
 import { logger } from '@/lib/utils/logger';
 import { addCustomerTag, removeCustomerTag, replyToCustomer, mergeCustomers, updateCustomerInfo } from '@/lib/services/CustomerOps';
 import { UpdateCustomerSchema } from '@/lib/validations/schemas';
@@ -103,6 +105,52 @@ export async function getManagerActivityTool(shopId: string, args: Args, userId:
         ...(report.periods.length > 1 && !withRows ? { note: 'Хугацаа урт тул зөвхөн нийт дүнг өгөв — задаргаа хэрэгтэй бол 7 хоног/сараар эсвэл нэг менежерээр асуу.' } : {}),
         guidance: ACTIVITY_GUIDANCE,
         url: '/dashboard/reports/kpi',
+    };
+}
+
+const DAILY_GUIDANCE = 'Утасны шугамын дуудлага, чат = менежерүүдийн өдөр бүр гараар оруулсан тоо (CallPro, CRM-ийн лидийн дуудлага биш); '
+    + 'missingManagers нь тоогоо оруулаагүй менежер — 0 гэж бүү тайлбарла. Уулзалт = системд «Болсон» гэж бүртгэсэн уулзалт (Шинэ/Давтан/Захиалагч); '
+    + 'pendingMeetings нь үр дүнгээ бүртгээгүй товлосон уулзалт (тайланд ороогүй). plainText-ийг хэрэглэгч мессенжерт хуулахад бэлэн — тоог бүү өөрчил.';
+
+/** «Өдрийн тайлан» — API-тай ижил эрхийн дүрэм (менежер зөвхөн өөрийн багана), ижил loader. */
+export async function getDailyReportTool(shopId: string, args: Args, userId: string, perms: AssistantPerms, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE) {
+    const today = ubDateStr();
+    const date = args.date ? String(args.date) : today;
+    if (!DailyReportDateSchema.safeParse(date).success) return { error: 'Огноог YYYY-MM-DD хэлбэрээр өгнө үү' };
+    if (date > today) return { error: 'Ирээдүйн өдрийн тайлан гаргахгүй' };
+
+    const viewer = await resolveReportViewer(db(), shopId, { userId, role: perms.role, modules: perms.modules });
+    let only: string | null = null;
+    if (viewer.personal || scope.projectIds !== null) {
+        const entry = viewer.identity?.rosterEntry ?? null;
+        // Акаунттай холбосон идэвхтэй бүртгэл л (профайлын нэрээр таарсан дансгүй мөрийг авахгүй).
+        only = scope.managerName ?? (entry && entry.user_id === userId && entry.is_active ? entry.name : null);
+        if (!only) return { error: 'Та борлуулалтын менежерийн бүртгэлд холбогдоогүй — өдрийн тайлангийн менежер тодорхойгүй.' };
+    } else if (!viewer.canViewTeam) {
+        return { error: 'Багийн өдрийн тайланг харах эрхгүй' };
+    }
+
+    const { data: shop } = await db().from('shops').select('name').eq('id', shopId).maybeSingle();
+    let report;
+    try {
+        ({ report } = await loadDailyReport(db(), { shopId, shopName: shop?.name || 'Төсөл', date, only }));
+    } catch (error) {
+        if (error instanceof DailyReportUnavailableError) return { error: error.message };
+        throw error;
+    }
+    const short = new Map(report.managers.map(manager => [manager.name, manager.title || 'Оноогдоогүй']));
+    const byManager = (values: Record<string, number>) => Object.fromEntries(Object.entries(values).filter(([, count]) => count > 0).map(([name, count]) => [short.get(name) ?? name, count]));
+    return {
+        date, title: report.title, personal: !!only,
+        plainText: formatDailyReportText(report),
+        calls: report.lines.map(line => ({ line: line.label, total: line.total, byManager: byManager(line.byManager), note: line.note || undefined })),
+        chats: { total: report.chats.total, byManager: byManager(report.chats.byManager) },
+        meetings: { total: report.meetings.total, byType: report.meetings.groups.map(group => ({ type: group.label, count: group.count })) },
+        pendingMeetings: report.meetings.pending,
+        missingManagers: report.missing,
+        completedBy: report.completed?.by ?? null,
+        guidance: DAILY_GUIDANCE,
+        url: '/dashboard/daily-report',
     };
 }
 

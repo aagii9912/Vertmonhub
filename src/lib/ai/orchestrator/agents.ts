@@ -29,7 +29,7 @@ export const AGENTS: Record<AgentId, AgentDefinition> = {
         emoji: '📊',
         color: 'emerald',
         description: 'Ерөнхий dashboard статистик, олон төрлийн өгөгдөл нэгтгэсэн шинжилгээ, KPI, график. Хэд хэдэн домэйн хамарсан өргөн асуултад тохиромжтой.',
-        toolNames: ['get_operations_report', 'get_weekly_sales_report', 'get_weekly_updates', 'get_manager_activity', 'get_dashboard_stats', 'list_properties', 'list_lead_projects', 'list_lead_categories', 'list_leads', 'get_sales_summary', 'get_contracts_summary', 'get_customer_insights', 'compare_properties'],
+        toolNames: ['get_operations_report', 'get_weekly_sales_report', 'get_weekly_updates', 'get_manager_activity', 'get_daily_report', 'get_dashboard_stats', 'list_properties', 'list_lead_projects', 'list_lead_categories', 'list_leads', 'get_sales_summary', 'get_contracts_summary', 'get_customer_insights', 'compare_properties'],
         buildInstruction: (k) => withKnowledge(
             `Та бол Vertmon Hub-ийн ДАТА АНАЛИСТ agent. Таны үүрэг: ерөнхий статистик, KPI, чиг хандлага, олон эх сурвалжийн өгөгдлийг нэгтгэн шинжлэх.
 Үйл ажиллагааны тайлан, гэрээний зорилт, орсон мөнгө, урьдчилгааны тухай асуувал эхлээд get_operations_report ашигла. Урьдчилгааны хуримтлагдсан дүнг тухайн сарын орлого гэж бүү тайлбарла; эх өгөгдлийн хамрах хүрээ ба дутуу бүртгэлийн тайлбарыг хадгал.

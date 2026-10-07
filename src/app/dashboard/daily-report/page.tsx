@@ -103,7 +103,7 @@ function DailyReportView() {
 
     const notices: Array<{ tone: 'info' | 'warning'; text: ReactNode }> = [];
     if (report && date === today) notices.push({ tone: 'info', text: 'Өдөр дуусаагүй — одоогоор бүртгэсэн мэдээллийг харуулж байна.' });
-    if (report && report.meetings.pending > 0) notices.push({ tone: 'warning', text: <>Энэ өдөр товлосон {report.meetings.pending} уулзалтын үр дүн бүртгэгдээгүй тул тайланд ороогүй. <Link href="/dashboard/viewings" className="font-medium underline">Уулзалт</Link> хуудсанд «Болсон» гэж тэмдэглэнэ үү.</> });
+    if (report && report.meetings.pending > 0) notices.push({ tone: 'warning', text: <span>Энэ өдөр товлосон {report.meetings.pending} уулзалтын үр дүн бүртгэгдээгүй тул тайланд ороогүй. <Link href="/dashboard/viewings" className="font-medium underline">Уулзалт</Link> хуудсанд «Болсон» гэж тэмдэглэнэ үү.</span> });
     if (report && !viewer?.personal && report.missing.length > 0) notices.push({ tone: 'warning', text: `Тоо оруулаагүй: ${report.missing.join(', ')}.` });
     if (data?.configInvalid) notices.push({ tone: 'warning', text: 'Хадгалсан загвар уншигдсангүй — анхдагч загварыг харуулж байна. «Загвар»-аас дахин хадгална уу.' });
     if (data && !data.configSaved && canConfigure) notices.push({ tone: 'info', text: 'Энэ төслийн загварыг тохируулаагүй байна. «Загвар» товчоор утасны шугам, чатын суваг, менежерийн баганаа тохируулна уу.' });

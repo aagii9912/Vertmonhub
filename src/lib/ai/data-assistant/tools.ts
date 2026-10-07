@@ -269,6 +269,12 @@ const readDefinitions: ToolDefinition[] = [
             manager: { type: SchemaType.STRING, description: 'Менежерийн бүртгэлийн яг нэр (зөвхөн багийн тайлан харах эрхтэй хэрэглэгчид); олдохгүй бол options-оос тодруул' } } }
     },
     {
+        name: 'get_daily_report',
+        description: 'Төслийн багийн «Өдрийн тайлан» (Mandala Garden, Elysium-ийн загвар): утасны шугам бүрийн ирсэн дуудлага, чат (менежерүүдийн оруулсан тоо), болсон уулзалт (Шинэ/Давтан/Захиалагч, тэмдэглэлтэй), тоо оруулаагүй менежер, «Тайлан хийж гүйцэтгэсэн». plainText нь мессенжерт хуулахад бэлэн. Менежер зөвхөн өөрийн баганыг харна.',
+        parameters: { type: SchemaType.OBJECT, properties: {
+            date: { type: SchemaType.STRING, description: 'Өдөр YYYY-MM-DD (default: өнөөдөр, УБ); «өчигдрийн тайлан» бол өчигдрийн огноо' } } }
+    },
+    {
         name: 'import_erp_file',
         description: 'Чатад хавсаргасан ERP экспортыг (.xlsx/.csv/.tsv — гэрээний property.sale эсвэл бүтээгдэхүүний экспорт) идэвхтэй төслийн ERP snapshot болгон импортлоно. Өмнөх импорттой харьцуулсан тоог картаар харуулж, батлагдсаны дараа хадгална. file_url-д [Хавсаргасан файлууд]-ын URL-ийг яг өг. Эх үүсвэр олон бол хэрэглэгчээс асуу.',
         parameters: {
