@@ -5,12 +5,12 @@ import { useEffect } from 'react';
 const isDev = process.env.NODE_ENV === 'development';
 
 /**
- * PWA service worker бүртгэл.
+ * Web push-ийн service worker бүртгэл. sw.js нь fetch-ийг барьдаггүй, юу ч
+ * cache хийхгүй (/api ч, хуудас ч, статик файл ч).
  *
- * Хөгжүүлэлтийн орчинд БҮРТГЭХГҮЙ, бас өмнө бүртгэгдсэнийг цуцална: sw.js
- * статик JS/CSS-ийг cache-ээс өгдөг тул dev дээр кодын өөрчлөлт харагдахгүй
- * «хуучин bundle» асуудал давтан гарч байсан (2026-09-10 redesign-ийн үед ч).
- * Production дээр chunk URL нь content-hash-тай тул аюулгүй.
+ * Хөгжүүлэлтийн орчинд БҮРТГЭХГҮЙ, бас өмнө бүртгэгдсэнийг цуцална: 2026-10-07-оос
+ * өмнөх sw.js статик JS/CSS-ийг cache-ээс өгдөг байсан тул dev браузерт үлдсэн
+ * хуучин worker кодын өөрчлөлтийг нууж «хуучин bundle» асуудал үүсгэдэг байв.
  */
 export function ServiceWorkerRegistration() {
     useEffect(() => {
@@ -28,7 +28,7 @@ export function ServiceWorkerRegistration() {
         }
 
         navigator.serviceWorker.register('/sw.js').catch(() => {
-            /* PWA байхгүй ч апп бүрэн ажиллана */
+            /* Push байхгүй ч апп бүрэн ажиллана */
         });
     }, []);
 
