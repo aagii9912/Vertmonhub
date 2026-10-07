@@ -48,6 +48,7 @@ import {
     Plug,
     SlidersHorizontal,
     History,
+    NotebookPen,
 } from 'lucide-react';
 
 type IconType = ComponentType<SVGAttributes<SVGSVGElement>>;
@@ -178,6 +179,14 @@ const WEEKLY: NavItem = {
     keywords: ['лхагва', 'хурал', 'weekly'],
 };
 
+const DAILY_REPORT: NavItem = {
+    name: 'Өдрийн тайлан',
+    href: '/dashboard/daily-report',
+    icon: NotebookPen,
+    module: 'dashboard',
+    keywords: ['өдөр', 'дуудлага', 'чат', 'уулзалт', 'баг', 'daily'],
+};
+
 const REPORTS: NavItem = {
     name: 'Тайлан',
     href: '/dashboard/reports',
@@ -231,7 +240,7 @@ export const ADMIN_NAV: NavItem[] = [
 export const NAV_SECTIONS: NavSection[] = [
     { id: 'today', label: null, items: [TODAY] },
     { id: 'sales', label: 'Борлуулалт', items: [LEADS, MEETINGS, CONTRACTS, CUSTOMERS, MESSAGES, UNITS] },
-    { id: 'results', label: 'Үр дүн', items: [WEEKLY, REPORTS, MARKETING] },
+    { id: 'results', label: 'Үр дүн', items: [DAILY_REPORT, WEEKLY, REPORTS, MARKETING] },
     { id: 'admin', label: 'Удирдлага', items: ADMIN_NAV, superAdmin: true },
 ];
 

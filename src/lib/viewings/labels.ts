@@ -4,10 +4,11 @@ import type { Tone } from '@/lib/leads/labels';
 export type MeetingType = 'new_customer' | 'repeat_customer' | 'existing_buyer';
 export type ViewingStatus = 'scheduled' | 'completed' | 'cancelled' | 'no_show';
 
-export const MEETING_TYPE_META: Record<MeetingType, { label: string; tone: Tone }> = {
-    new_customer:    { label: 'Шинэ харилцагч', tone: 'info' },
-    repeat_customer: { label: 'Давтан',          tone: 'info' },
-    existing_buyer:  { label: 'Худалдан авагч',  tone: 'success' },
+/** `short` — өдрийн тайлангийн (багийн загвар) нэр: Шинэ / Давтан / Захиалагч. */
+export const MEETING_TYPE_META: Record<MeetingType, { label: string; short: string; tone: Tone }> = {
+    new_customer:    { label: 'Шинэ харилцагч', short: 'Шинэ',      tone: 'info' },
+    repeat_customer: { label: 'Давтан',          short: 'Давтан',    tone: 'info' },
+    existing_buyer:  { label: 'Худалдан авагч',  short: 'Захиалагч', tone: 'success' },
 };
 export const MEETING_TYPES = Object.keys(MEETING_TYPE_META) as MeetingType[];
 

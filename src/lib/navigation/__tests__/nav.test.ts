@@ -24,6 +24,7 @@ describe('nav v3 — бүтэц', () => {
         expect(getRouteModule('/dashboard/customers')).toBe('customers');
         expect(getRouteModule('/dashboard/tasks')).toBe('dashboard');
         expect(getRouteModule('/dashboard/weekly')).toBe('dashboard');
+        expect(getRouteModule('/dashboard/daily-report')).toBe('dashboard');
         expect(getRouteModule('/dashboard/ai-assistant/audit')).toBe('ai-assistant');
         expect(getRouteModule('/dashboard/leadsX')).toBeUndefined();
         // «Тайлан»-ийн хүүхэд мөр reports-ийг өвлөдөг ч ERP нь илүү нарийн эрх шаардана.
@@ -34,7 +35,7 @@ describe('nav v3 — бүтэц', () => {
         expect(NAV_SECTIONS.map((s) => [s.label, s.items.map((i) => i.name)])).toEqual([
             [null, ['Өнөөдөр']],
             ['Борлуулалт', ['Лид', 'Уулзалт', 'Гэрээ', 'Харилцагч', 'Мессеж', 'Байр']],
-            ['Үр дүн', ['Хурлын бэлтгэл', 'Тайлан', 'Маркетинг']],
+            ['Үр дүн', ['Өдрийн тайлан', 'Хурлын бэлтгэл', 'Тайлан', 'Маркетинг']],
             ['Удирдлага', ['Тойм', 'Хэрэглэгчид', 'Төслүүд', 'Төлөвлөгөө ба баг', 'Дүрүүд', 'Импорт', 'Холболтууд', 'Систем']],
         ]);
         expect(NAV_SECTIONS.filter((s) => s.superAdmin).map((s) => s.id)).toEqual(['admin']);
