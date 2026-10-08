@@ -90,6 +90,31 @@ test('protected pages reject missing and invalid sessions', async ({ page, conte
     await expect(page).toHaveURL(/\/auth\/login/);
 });
 
+test('an expired access token is refreshed by the proxy and the browser keeps the new session', async ({ page, context }) => {
+    const state = await fixtures(page);
+    await login(page);
+    const stored = async () => {
+        const cookies = (await context.cookies()).filter(cookie => /^sb-.+-auth-token$/.test(cookie.name));
+        expect(cookies, 'one unchunked Supabase session cookie').toHaveLength(1);
+        const [cookie] = cookies;
+        return { cookie, session: JSON.parse(Buffer.from(cookie.value.replace(/^base64-/, ''), 'base64url').toString('utf8')) };
+    };
+    const before = await stored();
+    // A laptop waking up after the hour-long access token has expired.
+    const expired = { ...before.session, expires_at: Math.floor(Date.now() / 1000) - 60 };
+    await context.addCookies([{ ...before.cookie, value: `base64-${Buffer.from(JSON.stringify(expired)).toString('base64url')}` }]);
+
+    const response = await page.goto('/dashboard/leads');
+    // The proxy spent the one-time refresh token, so the new session has to come back on this response…
+    expect(await response!.headerValue('set-cookie')).toContain(`${before.cookie.name}=base64-`);
+    await expect(page).toHaveURL(/\/dashboard\/leads$/);
+    // …and the browser holds it instead of the spent token.
+    const after = await stored();
+    expect(after.session.refresh_token).not.toBe(before.session.refresh_token);
+    expect(after.session.expires_at).toBeGreaterThan(Date.now() / 1000);
+    expect(state.pageErrors).toEqual([]);
+});
+
 for (const compact of [false, true]) {
     test(`login → lead → schedule → report (${compact ? 'compact' : 'desktop'})`, async ({ page }) => {
         if (compact) await page.setViewportSize(COMPACT_VIEWPORT);
