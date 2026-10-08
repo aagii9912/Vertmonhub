@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/Button';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { useAuth } from '@/contexts/AuthContext';
+import { ProjectPricingSettings } from '@/components/admin/ProjectPricingSettings';
 import Link from 'next/link';
 
 type ProjectStatus = 'active' | 'planned' | 'on_hold' | 'completed';
@@ -78,6 +79,7 @@ export default function AdminProjectsPage() {
     // Өгөгдөл харагдаж байхад дэвсгэрт шинэчлэл унавал (toast) жагсаалтыг нуухгүй.
     const loadError = error && !data ? error.message : null;
     const [dialogOpen, setDialogOpen] = useState(false);
+    const [pricingProject, setPricingProject] = useState<Project | null>(null);
     const [memberIds, setMemberIds] = useState<string[]>([]);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [form, setForm] = useState<Form>(emptyForm());
@@ -178,6 +180,7 @@ export default function AdminProjectsPage() {
                                 <p className="mt-1 text-foreground">Лид {project.counts.leads.toLocaleString()} · Нэгж {project.counts.units.toLocaleString()} · Гэрээ {project.counts.contracts.toLocaleString()}</p>
                                 {!project.counts.units && !project.counts.contracts && <p className="mt-2 text-xs text-muted-foreground">Энэ төсөлд нэгж, гэрээ холбогдоогүй байна. Энэ нь эх мэдээлэл байхгүй гэсэн үг биш.</p>}
                             </div>}
+                            <Button variant="secondary" className="mt-4" onClick={() => setPricingProject(project)}>Үнийн нөхцөл</Button>
                         </div>
                     ))}
                 </div>}
@@ -188,6 +191,12 @@ export default function AdminProjectsPage() {
                 <Link href="/dashboard/reports/erp" className="mt-2 inline-flex min-h-11 items-center font-medium text-brand-strong hover:underline">ERP тайлан харах →</Link>
             </div>
 
+            <Dialog open={!!pricingProject} onOpenChange={open => { if (!open) setPricingProject(null); }}>
+                <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-6xl">
+                    <DialogHeader><DialogTitle>{pricingProject?.name} · Үнийн нөхцөл</DialogTitle><DialogDescription>Блок, загвар, давхар, төлбөрийн нөхцөлөөр хүчинтэй үнийг тохируулна.</DialogDescription></DialogHeader>
+                    {pricingProject && <ProjectPricingSettings key={pricingProject.shop_id} shopId={pricingProject.shop_id} projectName={pricingProject.name} />}
+                </DialogContent>
+            </Dialog>
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
                 <DialogContent className="max-h-[90vh] overflow-y-auto">
                     <DialogHeader>

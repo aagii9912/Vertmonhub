@@ -1,4 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { getUserId } from '@/lib/auth/supabase-auth';
+import {
+    emptyMonthlySales, MONTHLY_SALES_FIELDS, MonthlySalesMonthSchema, MonthlySalesWriteSchema, SalesYearSchema,
+    type MonthlySalesMonth, type MonthlySalesPatch,
+} from './monthly';
 
 /**
  * Борлуулалтын төлөвлөгөө (target) ба гүйцэтгэл (actual) тооцооны туслах модуль.
@@ -47,10 +52,47 @@ export async function getTeamTargets(
     return targets;
 }
 
-/** Багийн сарын төлөвлөгөөг (₮, сөрөг/хоосон = 0) upsert хийнэ — /api/admin/sales-targets ба AI `set_sales_target`. */
-export async function upsertTeamTargets(supabase: SupabaseClient, shopId: string, year: number, months: Array<{ month: number; amount: unknown }>) {
-    const rows = months.map(({ month, amount }) => ({ shop_id: shopId, year, month, target_amount: Math.max(0, Number(amount) || 0) }));
-    return supabase.from('team_sales_targets').upsert(rows, { onConflict: 'shop_id,year,month' });
+function monthlyRow(row: Record<string, unknown>): MonthlySalesMonth {
+    return MonthlySalesMonthSchema.parse({
+        month: Number(row.month), revision: Number(row.revision),
+        ...Object.fromEntries(MONTHLY_SALES_FIELDS.map(field => [field, row[field] === null ? null : Number(row[field])])),
+    });
+}
+
+/** Гэрээ/орсон мөнгөний төлөвлөгөө ба гар гүйцэтгэл. CRM/ERP-ийн дүнг нэмэхгүй. */
+export async function getTeamMonthlySales(supabase: SupabaseClient, shopId: string, year: number): Promise<MonthlySalesMonth[]> {
+    SalesYearSchema.parse(year);
+    const { data, error } = await supabase.from('team_sales_targets')
+        .select('month, revision, target_amount, cashflow_target_amount, manual_contract_actual_amount, manual_cashflow_actual_amount')
+        .eq('shop_id', shopId).eq('year', year);
+    if (error) throw error;
+    const months = emptyMonthlySales();
+    for (const row of data || []) {
+        const parsed = monthlyRow(row);
+        months[parsed.month - 1] = parsed;
+    }
+    return months;
+}
+
+/** Service-only RPC: cell patch, stale revision check and monetary audit commit atomically. */
+export async function saveTeamMonthlySales(supabase: SupabaseClient, shopId: string, year: number, months: MonthlySalesPatch[], actorId: string) {
+    const input = MonthlySalesWriteSchema.parse({ shopId, year, months });
+    const { data, error } = await supabase.rpc('save_team_monthly_sales', {
+        p_shop_id: input.shopId, p_year: input.year, p_months: input.months, p_actor: actorId,
+    });
+    return { data: error ? null : ((data?.months || []) as Record<string, unknown>[]).map(monthlyRow), error };
+}
+
+/** Compatibility: the old amount updates ONLY the contract plan, never any other metric. */
+export async function upsertTeamTargets(supabase: SupabaseClient, shopId: string, year: number, months: Array<{ month: number; amount: unknown }>, actorId?: string) {
+    const current = await getTeamMonthlySales(supabase, shopId, year);
+    const actor = actorId ?? await getUserId();
+    if (!actor) throw new Error('Төлөвлөгөө хадгалах хэрэглэгч олдсонгүй');
+    const patches = months.map(({ month, amount }) => ({
+        month, expectedRevision: current.find(row => row.month === month)?.revision ?? 0,
+        target_amount: amount as number | null,
+    }));
+    return saveTeamMonthlySales(supabase, shopId, year, patches, actor);
 }
 
 /** Менежер бүрийн 12 сарын бодит борлуулалт (₮) + гэрээний тоо. */

@@ -1,15 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabaseAdmin, getUserId } from '@/lib/auth/supabase-auth';
+import { supabaseAdmin, getUserId, assertShopAccess } from '@/lib/auth/supabase-auth';
 import { getAdminUser } from '@/lib/admin/auth';
 import { safeErrorResponse } from '@/lib/utils/safe-error';
-import { getTeamTargets, getMonthlyActualsByManager, sumYear, upsertTeamTargets } from '@/lib/sales/targets';
+import { getTeamMonthlySales, getMonthlyActualsByManager, sumYear, saveTeamMonthlySales } from '@/lib/sales/targets';
+import { MonthlySalesWriteSchema, SalesYearSchema, summarizeMonthlySales } from '@/lib/sales/monthly';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { z } from 'zod';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
 import { ubParts } from '@/lib/utils/date';
 
 const shopSchema = z.guid();
-const yearSchema = z.number().int().min(2000).max(2100);
+const yearSchema = SalesYearSchema;
 const rosterSchema = z.object({
     shopId: shopSchema,
     managers: z.array(z.object({
@@ -28,8 +29,8 @@ function throwOnError(error: unknown): never { throw error; }
  * GET  ?shopId=&year=
  *      → багийн 12 сарын төлөвлөгөө + гүйцэтгэл, бүртгэлтэй менежерүүд
  *        (идэвхтэй эсэх + жилийн борлуулалт), акаунт холбох багийн гишүүд.
- * POST body:{ shopId, year, months:number[12] }
- *      → багийн сарын төлөвлөгөөг upsert.
+ * POST body:{ shopId, year, months:[{month, expectedRevision, ...changedAmounts}] }
+ *      → дөрвөн үзүүлэлтийн өөрчилсөн нүдийг хувилбар шалгаж, аудиттай хадгална.
  * PUT  body:{ shopId, managers:[{name, is_active, user_id, project_ids?}] }
  *      → менежерийн бүртгэл + төслийн харьяаллыг нэг гүйлгээгээр хадгална.
  *        project_ids байхгүй бол өмнөх харьяаллыг хадгална; [] бол цэвэрлэнэ.
@@ -72,11 +73,12 @@ export async function GET(request: NextRequest) {
         if (!shopSchema.safeParse(shopId).success) return NextResponse.json({ error: 'Төсөл буруу байна' }, { status: 400 });
         const year = sp.has('year') ? Number(sp.get('year')) : ubParts().year;
         if (!yearSchema.safeParse(year).success) return NextResponse.json({ error: 'Он буруу байна' }, { status: 400 });
+        if (!await assertShopAccess(shopId)) return NextResponse.json({ error: 'Энэ төсөлд хандах эрхгүй' }, { status: 403 });
 
         const supabase = supabaseAdmin();
 
-        const [teamTarget, byManager, rosterRes, teamMembers, projects, memberships] = await Promise.all([
-            getTeamTargets(supabase, shopId!, year, throwOnError),
+        const [months, byManager, rosterRes, teamMembers, projects, memberships] = await Promise.all([
+            getTeamMonthlySales(supabase, shopId!, year),
             getMonthlyActualsByManager(supabase, shopId!, year, throwOnError),
             supabase.from('sales_managers').select('name, user_id, is_active').eq('shop_id', shopId),
             loadMembers(supabase, shopId!),
@@ -112,7 +114,10 @@ export async function GET(request: NextRequest) {
             for (let i = 0; i < 12; i++) teamActual[i] += m.actuals[i];
         }
 
-        return NextResponse.json({ year, teamTarget, teamActual, managers, teamMembers, projects }, {
+        // Compatibility figures remain CRM-derived and never enter the manual performance totals.
+        const teamTarget = months.map(row => row.target_amount ?? 0);
+        return NextResponse.json({ year, months, summary: summarizeMonthlySales(months), teamTarget, teamActual,
+            computedActualSource: 'CRM-ийн гэрээ · одоо идэвхтэй менежерүүдийн нийлбэр', managers, teamMembers, projects }, {
             headers: { 'Cache-Control': 'private, no-store' },
         });
     } catch (error) {
@@ -125,19 +130,15 @@ export async function POST(request: NextRequest) {
         const gate = await requireAdmin();
         if (gate.error) return gate.error;
 
-        const body = await request.json();
-        const shopId: string | undefined = body.shopId;
-        const year = Number(body.year);
-        const months: unknown = body.months;
-
-        if (!shopId || !year || !Array.isArray(months) || months.length !== 12) {
-            return NextResponse.json({ error: 'shopId, year, months[12] шаардлагатай' }, { status: 400 });
-        }
-
-        const { error } = await upsertTeamTargets(supabaseAdmin(), shopId, year, (months as unknown[]).map((amount, i) => ({ month: i + 1, amount })));
-
-        if (error) return safeErrorResponse(error, 'Төлөвлөгөө хадгалахад алдаа гарлаа');
-        return NextResponse.json({ success: true });
+        const parsed = MonthlySalesWriteSchema.safeParse(await request.json().catch(() => null));
+        if (!parsed.success) return NextResponse.json({ error: 'Он, сар, дүн эсвэл мэдээллийн хувилбар буруу байна' }, { status: 400 });
+        const { shopId, year, months } = parsed.data;
+        if (!await assertShopAccess(shopId)) return NextResponse.json({ error: 'Энэ төсөлд хандах эрхгүй' }, { status: 403 });
+        const { data, error } = await saveTeamMonthlySales(supabaseAdmin(), shopId, year, months, gate.userId!);
+        if (error?.code === '40001') return NextResponse.json({ error: 'Энэ сарын мэдээллийг өөр хэрэглэгч өөрчилсөн. Шинэ мэдээллийг авч дахин оруулна уу.', code: 'MONTHLY_SALES_CONFLICT' }, { status: 409 });
+        if (error?.code === '42501') return NextResponse.json({ error: 'Энэ төсөлд төлөвлөгөө хадгалах эрхгүй' }, { status: 403 });
+        if (error) return safeErrorResponse(error, 'Төлөвлөгөө, гүйцэтгэл хадгалахад алдаа гарлаа');
+        return NextResponse.json({ success: true, months: data });
     } catch (error) {
         return safeErrorResponse(error, 'Төлөвлөгөө хадгалахад алдаа гарлаа');
     }

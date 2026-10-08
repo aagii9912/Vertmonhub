@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { leadDisplayName } from '@/lib/leads/labels';
 import { shiftDate, ubDateStart } from '@/lib/sales/activity';
 import { fetchAllRows } from '@/lib/utils/pagination';
+import { viewingSelectionText, type ViewingInterest } from '@/lib/viewings/interests';
 import {
     buildDailyReport, readDailyReportConfig, readDailyReportNotes,
     type DailyCountRow, type DailyMeetingRow, type DailyReport, type DailyReportConfig, type DailyRosterEntry, type SaveDailyReportInput,
@@ -37,6 +38,7 @@ export async function loadDailyRoster(db: SupabaseClient, shopId: string): Promi
 type MeetingSelect = {
     id: string; sales_manager_name: string | null; meeting_type: string | null; scheduled_at: string;
     agent_notes: string | null; customer_feedback: string | null;
+    interests?: ViewingInterest[];
     // PostgREST embed: many-to-one нь объект, supabase-js-ийн төрөлд массив байж болно.
     leads: Embedded<{ customer_name: string | null }>; properties: Embedded<{ name: string | null }>;
 };
@@ -64,7 +66,7 @@ export async function loadDailyReport(db: SupabaseClient, options: {
         }),
         fetchAllRows<MeetingSelect>((from, to) => {
             let query = db.from('property_viewings')
-                .select('id, sales_manager_name, meeting_type, scheduled_at, agent_notes, customer_feedback, leads(customer_name), properties(name)')
+                .select('id, sales_manager_name, meeting_type, scheduled_at, agent_notes, customer_feedback, interests, leads(customer_name), properties(name)')
                 .eq('shop_id', shopId).is('deleted_at', null).eq('status', 'completed').gte('scheduled_at', start).lt('scheduled_at', end);
             if (only) query = query.eq('sales_manager_name', only);
             return query.order('scheduled_at').order('id').range(from, to);
@@ -85,7 +87,7 @@ export async function loadDailyReport(db: SupabaseClient, options: {
         manager: row.sales_manager_name?.trim() || null,
         type: row.meeting_type,
         customer: leadDisplayName(one(row.leads)),
-        property: one(row.properties)?.name ?? null,
+        property: viewingSelectionText(row.interests, one(row.properties)?.name),
         notes: row.agent_notes,
         feedback: row.customer_feedback,
         scheduled_at: row.scheduled_at,

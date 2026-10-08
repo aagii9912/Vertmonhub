@@ -23,6 +23,7 @@ import { propertyTypeLabel } from '@/lib/inventory/labels';
 import { formatMNT } from '@/lib/utils/currency';
 import { ANONYMOUS_LEAD_LABEL, isAnonymousLead, leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
 import { QuoteAmountSchema, QuoteUnitSchema } from '@/lib/leads/quotes';
+import { viewingSelectionText, type ViewingInterest } from '@/lib/viewings/interests';
 
 type Args = Record<string, any>;
 const db = () => adminClient();
@@ -184,17 +185,17 @@ export async function listViewingsTool(shopId: string, args: Args, scope: SalesP
     };
 }
 
-type ViewingRow = { id: string; scheduled_at: string; status: string; lead_id: string | null; leads?: { customer_name?: string } | { customer_name?: string }[] | null; properties?: { name?: string } | { name?: string }[] | null };
+type ViewingRow = { id: string; scheduled_at: string; status: string; lead_id: string | null; interests?: ViewingInterest[]; leads?: { customer_name?: string } | { customer_name?: string }[] | null; properties?: { name?: string } | { name?: string }[] | null };
 type FindViewing = { viewing: ViewingRow } | { error: string; options?: unknown };
 
 async function findViewing(shopId: string, args: Args, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE): Promise<FindViewing> {
     if (args.viewing_id) {
-        const { data } = await applyLeadScope(db().from('property_viewings').select(`id, scheduled_at, status, lead_id, ${scope.projectIds === null ? 'leads' : 'leads!inner'}(customer_name,project_id,sales_manager_name), properties(name)`).eq('id', args.viewing_id).eq('shop_id', shopId).is('deleted_at', null).maybeSingle(), scope, 'leads.project_id', 'leads.sales_manager_name');
+        const { data } = await applyLeadScope(db().from('property_viewings').select(`id, scheduled_at, status, lead_id, interests, ${scope.projectIds === null ? 'leads' : 'leads!inner'}(customer_name,project_id,sales_manager_name), properties(name)`).eq('id', args.viewing_id).eq('shop_id', shopId).is('deleted_at', null).maybeSingle(), scope, 'leads.project_id', 'leads.sales_manager_name');
         return data ? { viewing: data as unknown as ViewingRow } : { error: 'Уулзалт олдсонгүй' };
     }
     const f = await findLead(shopId, args, scope);
     if ('error' in f) return { error: f.error ?? 'Лид олдсонгүй', options: f.options };
-    const { data } = await applyLeadScope(db().from('property_viewings').select(`id, scheduled_at, status, lead_id, ${scope.projectIds === null ? 'leads' : 'leads!inner'}(customer_name,project_id,sales_manager_name), properties(name)`)
+    const { data } = await applyLeadScope(db().from('property_viewings').select(`id, scheduled_at, status, lead_id, interests, ${scope.projectIds === null ? 'leads' : 'leads!inner'}(customer_name,project_id,sales_manager_name), properties(name)`)
         .eq('shop_id', shopId).eq('lead_id', f.lead.id).is('deleted_at', null).eq('status', 'scheduled').order('scheduled_at', { ascending: false }).limit(1), scope, 'leads.project_id', 'leads.sales_manager_name');
     if (!data || !data.length) return { error: `«${leadDisplayName(f.lead)}»-д товлогдсон (scheduled) уулзалт алга` };
     return { viewing: data[0] as unknown as ViewingRow };
@@ -222,7 +223,7 @@ export async function rescheduleViewing(shopId: string, args: Args, confirm: boo
     const one = <T,>(x: T | T[] | null | undefined): T | undefined => (Array.isArray(x) ? x[0] : x ?? undefined);
     const leadRow = one(v.viewing.leads);
     const lead = leadRow ? leadDisplayName(leadRow) : '-';
-    const prop = one(v.viewing.properties)?.name || '-';
+    const prop = viewingSelectionText(v.viewing.interests, one(v.viewing.properties)?.name) || '-';
     if (!confirm) return confirmNeeded('reschedule_viewing', { viewing_id: v.viewing.id, scheduled_at: at }, `Уулзалт зөөх: ${lead}`, { Лид: lead, Байр: prop, 'Хуучин цаг': String(v.viewing.scheduled_at).slice(0, 16).replace('T', ' '), 'Шинэ цаг': at.slice(0, 16).replace('T', ' ') });
     const r = await updateViewing(db(), shopId, v.viewing.id, { scheduled_at: at, status: 'scheduled' }, { scope, userId, managerName: userName || null });
     if (!r.ok) return { error: r.error };

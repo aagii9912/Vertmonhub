@@ -8,6 +8,7 @@ import type { ManagerIdentity } from '@/lib/sales/manager-identity';
 import { applyLeadScope, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { getTeamTargets, getMonthlyActualsByManager } from '@/lib/sales/targets';
 import { isAnonymousLead } from '@/lib/leads/labels';
+import { viewingSelectionText, type ViewingInterest } from '@/lib/viewings/interests';
 import {
     monthRange, prevMonthOf, countBy, buildKpiSummary,
     type KpiLeadRow, type KpiViewingRow, type KpiContractRow, type KpiTaskRow,
@@ -98,7 +99,7 @@ export async function computeKpiReport(db: SupabaseClient, { shopId, shopName, i
         safeManagerRows(({ excludeDeleted }) => {
             let q = db
                 .from('property_viewings')
-                .select(scope.projectIds === null ? 'id,scheduled_at,status,properties(name),leads(customer_name)' : 'id,scheduled_at,status,properties(name),leads!inner(customer_name,project_id,sales_manager_name)')
+                .select(scope.projectIds === null ? 'id,scheduled_at,status,interests,properties(name),leads(customer_name)' : 'id,scheduled_at,status,interests,properties(name),leads!inner(customer_name,project_id,sales_manager_name)')
                 .eq('shop_id', shopId)
                 .eq('sales_manager_name', targetName)
                 .gte('scheduled_at', startIso)
@@ -177,7 +178,7 @@ export async function computeKpiReport(db: SupabaseClient, { shopId, shopName, i
             id: String(row.id),
             scheduled_at: (row.scheduled_at as string) || null,
             status: (row.status as string) || null,
-            property_name: property?.name || null,
+            property_name: viewingSelectionText(row.interests as ViewingInterest[] | undefined, property?.name),
             customer_name: lead?.customer_name || null,
             anonymous_lead: !!lead && isAnonymousLead(lead),
         };

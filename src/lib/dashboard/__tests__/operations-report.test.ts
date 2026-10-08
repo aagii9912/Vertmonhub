@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-    buildOperationsReport, formatOperationsReportText, OperationsRangeSchema, targetMonths,
+    buildOperationsReport, buildMonthlyPerformance, formatOperationsReportText, OperationsRangeSchema, targetMonths,
     type OperationsContract, type OperationsLead, type OperationsTransaction, type OperationsViewing,
 } from '../operations-report';
 
@@ -18,6 +18,31 @@ const transaction = (over: Partial<OperationsTransaction> = {}): OperationsTrans
     txn_date: '2026-09-01', type: 'receipt', amount: 10_000_000, method: 'bank', contract_id: 'c1', ...over,
 });
 const base = { range, now, contracts: [] as OperationsContract[], leads: [] as OperationsLead[], transactions: [] as OperationsTransaction[] | null, targets: [] };
+
+describe('manual monthly performance report', () => {
+    it('preserves unknown versus zero across years and keeps computed contract/cash values separate', () => {
+        const targets = [{ year: 2026, month: 9, target_amount: 100, manual_contract_actual_amount: 70,
+            cashflow_target_amount: 40, manual_cashflow_actual_amount: 0 }];
+        const monthlyPerformance = buildMonthlyPerformance(targets, range, true);
+        const report = { ...buildOperationsReport({ ...base, contracts: [contract()], transactions: [transaction()], targets }), shopName: 'Тест', monthlyPerformance };
+        expect(report.contracts.value).toBe(200_000_000);
+        expect(report.cash?.receipts).toBe(10_000_000);
+        expect(monthlyPerformance.months[0]).toMatchObject({ manual_contract_actual_amount: 70, manual_cashflow_actual_amount: 0 });
+        const crossYear = buildMonthlyPerformance([], { from: '2026-12-01', to: '2027-01-31' }, true);
+        expect(crossYear.months.map(row => [row.year, row.month, row.target_amount])).toEqual([[2026, 12, null], [2027, 1, null]]);
+        expect(formatOperationsReportText(report)).toContain('гараар оруулсан гүйцэтгэл');
+    });
+
+    it('masks monetary management input without finance permission and never prorates partial months', () => {
+        const targets = [{ year: 2026, month: 9, target_amount: 100, cashflow_target_amount: 12345, manual_cashflow_actual_amount: 98765 }];
+        const monthlyPerformance = buildMonthlyPerformance(targets, range, false);
+        expect(monthlyPerformance.months[0]).toMatchObject({ target_amount: 100, cashflow_target_amount: null, manual_cashflow_actual_amount: null });
+        const text = formatOperationsReportText({ ...buildOperationsReport({ ...base, targets }), shopName: 'Тест', monthlyPerformance });
+        expect(text).not.toContain('12,345');
+        expect(text).not.toContain('98,765');
+        expect(buildMonthlyPerformance(targets, { from: '2026-09-02', to: '2026-09-30' }, true)).toMatchObject({ completeMonths: false, months: [] });
+    });
+});
 
 describe('operations report financial meaning', () => {
     it('separates dated cash, barter, unknown methods and cumulative advances', () => {

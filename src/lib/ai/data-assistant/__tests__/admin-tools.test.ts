@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { emptyMonthlySales } from '@/lib/sales/monthly';
 
 const mocks = vi.hoisted(() => ({ updateProjects: vi.fn(), upsertTargets: vi.fn(), targets: vi.fn() }));
 type Row = Record<string, unknown>;
@@ -26,7 +27,7 @@ function query(table: string) {
 vi.mock('@/lib/supabase', () => ({ supabaseAdmin: () => ({ from: query }) }));
 vi.mock('@/lib/ai/data-assistant/audit', () => ({ logAiAudit: vi.fn() }));
 vi.mock('@/lib/admin/user-projects', () => ({ updateUserProjects: mocks.updateProjects }));
-vi.mock('@/lib/sales/targets', () => ({ getTeamTargets: mocks.targets, upsertTeamTargets: mocks.upsertTargets }));
+vi.mock('@/lib/sales/targets', () => ({ getTeamMonthlySales: mocks.targets, saveTeamMonthlySales: mocks.upsertTargets }));
 
 import { executeDataTool, type AssistantPerms } from '../index';
 
@@ -44,7 +45,7 @@ beforeEach(() => {
     };
     mocks.updateProjects.mockReset().mockResolvedValue({ ok: true, added: ['shop-elysium'], removed: ['shop-tower'] });
     mocks.upsertTargets.mockReset().mockResolvedValue({ error: null });
-    mocks.targets.mockReset().mockResolvedValue(Array(12).fill(0).map((_, i) => (i === 9 ? 4_000_000_000 : 0)));
+    mocks.targets.mockReset().mockResolvedValue(emptyMonthlySales().map(row => row.month === 10 ? { ...row, target_amount: 4_000_000_000, revision: 3 } : row));
 });
 
 describe('set_user_projects', () => {
@@ -75,14 +76,28 @@ describe('set_sales_target', () => {
             requiresConfirmation: true, preview: { Төсөл: 'Mandala Garden', Одоогийн: expect.stringContaining('4,000,000,000'), Шинэ: expect.stringContaining('5,000,000,000') },
         });
         expect(mocks.upsertTargets).not.toHaveBeenCalled();
-        expect(await run('set_sales_target', { year: 2026, month: 10, amount: 5_000_000_000 }, true)).toMatchObject({ success: true });
-        expect(mocks.upsertTargets).toHaveBeenCalledWith(expect.anything(), 'shop-mandala', 2026, [{ month: 10, amount: 5_000_000_000 }]);
+        expect(await run('set_sales_target', { year: 2026, month: 10, amount: 5_000_000_000, expectedRevision: 3 }, true)).toMatchObject({ success: true });
+        expect(mocks.upsertTargets).toHaveBeenCalledWith(expect.anything(), 'shop-mandala', 2026, [{ month: 10, expectedRevision: 3, target_amount: 5_000_000_000 }], 'owner-1');
     });
 
     it('rejects invalid months and amounts', async () => {
         expect(await run('set_sales_target', { month: 13, amount: 1 })).toHaveProperty('error');
         expect(await run('set_sales_target', { month: 10, amount: -5 })).toHaveProperty('error');
         expect(mocks.targets).not.toHaveBeenCalled();
+    });
+
+    it('previews again for old cards and rejects stale confirmed monetary writes', async () => {
+        expect(await run('set_sales_target', { year: 2026, month: 10, amount: 1 }, true)).toMatchObject({ requiresConfirmation: true, action: { args: { expectedRevision: 3 } } });
+        expect(mocks.upsertTargets).not.toHaveBeenCalled();
+        mocks.upsertTargets.mockResolvedValue({ error: { code: '40001' } });
+        expect(await run('set_sales_target', { year: 2026, month: 10, amount: 1, expectedRevision: 2 }, true)).toHaveProperty('error', expect.stringContaining('өөрчлөгдсөн'));
+    });
+
+    it('keeps explicit zero and null distinct and patches manual actuals independently', async () => {
+        const preview = await run('set_sales_target', { year: 2026, month: 10, metric: 'cashflow_actual', amount: 0 });
+        expect(preview).toMatchObject({ preview: { Одоогийн: 'Оруулаагүй', Шинэ: expect.stringContaining('0') } });
+        expect(await run('set_sales_target', { year: 2026, month: 10, metric: 'cashflow_actual', amount: null, expectedRevision: 3 }, true)).toMatchObject({ success: true });
+        expect(mocks.upsertTargets).toHaveBeenCalledWith(expect.anything(), 'shop-mandala', 2026, [{ month: 10, expectedRevision: 3, manual_cashflow_actual_amount: null }], 'owner-1');
     });
 });
 

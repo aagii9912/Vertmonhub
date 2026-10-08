@@ -16,6 +16,11 @@ import {
 } from '@/components/ui/Select';
 import { useAuth } from '@/contexts/AuthContext';
 import { formatMNT } from '@/lib/utils/currency';
+import {
+    emptyMonthlySales, MONTHLY_SALES_FIELDS, MONTHLY_SALES_LABELS, MonthlySalesMonthSchema,
+    monthlySalesAttainment, monthlySalesPatches, parseMonthlySalesAmount, summarizeMonthlySales,
+    type MonthlySalesField, type MonthlySalesMonth,
+} from '@/lib/sales/monthly';
 
 const ROLE_LABEL: Record<string, string> = { super_admin: 'Super Admin', admin: 'Админ', marketing: 'Маркетинг', viewer: 'Харах эрх' };
 const MONTHS = ['1-р', '2-р', '3-р', '4-р', '5-р', '6-р', '7-р', '8-р', '9-р', '10-р', '11-р', '12-р'];
@@ -30,8 +35,9 @@ interface ManagerRow {
 }
 
 interface SalesTargetsData {
-    teamTarget: number[];
+    months: MonthlySalesMonth[];
     teamActual: number[];
+    computedActualSource: string;
     managers: ManagerRow[];
     teamMembers: Array<{ id: string; full_name: string; role?: string | null }>;
     projects: Array<{ id: string; name: string }>;
@@ -41,18 +47,27 @@ const NO_MANAGERS: ManagerRow[] = [];
 const NO_TEAM_MEMBERS: SalesTargetsData['teamMembers'] = [];
 const NO_PROJECTS: SalesTargetsData['projects'] = [];
 const NO_SHOPS: Array<{ id: string; name: string }> = [];
+const NO_MONTHLY_SALES = emptyMonthlySales();
+type MonthInputs = { month: number; revision: number } & Record<MonthlySalesField, string>;
+type TargetDraft = { before: MonthlySalesMonth[]; inputs: MonthInputs[] };
 
-const sum = (arr: number[]) => arr.reduce((a, b) => a + (b || 0), 0);
+function monthInputs(months: MonthlySalesMonth[]): MonthInputs[] {
+    return months.map(row => ({ month: row.month, revision: row.revision,
+        ...Object.fromEntries(MONTHLY_SALES_FIELDS.map(field => [field, row[field] === null ? '' : row[field].toLocaleString('en-US', { maximumFractionDigits: 2 })])),
+    })) as MonthInputs[];
+}
+const pctLabel = (value: number | null) => value === null ? '—' : `${value}%`;
 
 export default function SalesTargetsAdminPage() {
     const queryClient = useQueryClient();
-    const { shop, user } = useAuth();
+    const { shop, user, shops: accessibleShops } = useAuth();
     const authScope = [shop?.id, user?.id, user?.role] as const;
     const [selectedShopId, setShopId] = useState('');
     const [year, setYear] = useState(new Date().getFullYear());
 
     // Хадгалаагүй засварууд — серверийн өгөгдлийн дээр давхарлана (null бол серверийнхийг харуулна).
-    const [targetDraft, setTargetDraft] = useState<number[] | null>(null);
+    const [targetDraft, setTargetDraft] = useState<TargetDraft | null>(null);
+    const [targetConflict, setTargetConflict] = useState(false);
     const [managersDraft, setManagersDraft] = useState<ManagerRow[] | null>(null);
     const [newManagerName, setNewManagerName] = useState('');
     const [showInactive, setShowInactive] = useState(false);
@@ -78,7 +93,8 @@ export default function SalesTargetsAdminPage() {
         staleTime: 0,
         refetchOnWindowFocus: false,
     });
-    const shops = shopsQuery.data ?? NO_SHOPS;
+    const allowedShopIds = new Set(accessibleShops.map(row => row.id));
+    const shops = (shopsQuery.data ?? NO_SHOPS).filter(row => allowedShopIds.has(row.id));
     // Анхдагч нь одоо ажиллаж буй төсөл (shop = төсөл).
     const shopId = selectedShopId || (shops.some((s) => s.id === shop?.id) ? shop!.id : shops[0]?.id) || '';
 
@@ -89,9 +105,12 @@ export default function SalesTargetsAdminPage() {
             const res = await fetch(`/api/admin/sales-targets?shopId=${shopId}&year=${year}`);
             const d = await res.json();
             if (!res.ok) throw new Error(d.error || 'Төлөвлөгөө ачаалагдсангүй');
+            const parsedMonths = MonthlySalesMonthSchema.array().length(12).safeParse(d.months);
+            if (!parsedMonths.success) throw new Error('Сарын төлөвлөгөөний мэдээлэл дутуу байна. Дахин ачаална уу.');
             return {
-                teamTarget: d.teamTarget || Array(12).fill(0),
+                months: parsedMonths.data,
                 teamActual: d.teamActual || Array(12).fill(0),
+                computedActualSource: d.computedActualSource || 'CRM-ийн гэрээ · одоо идэвхтэй менежерүүдийн нийлбэр',
                 managers: (d.managers || []).map((manager: ManagerRow) => ({ ...manager, project_ids: manager.project_ids || [] })),
                 teamMembers: d.teamMembers || [],
                 projects: d.projects || [],
@@ -104,48 +123,66 @@ export default function SalesTargetsAdminPage() {
     const data = targetsQuery.data;
 
     // Компани эсвэл он солигдвол өмнөх хүрээний хадгалаагүй засварыг хаяна.
-    const scopeKey = `${shopId}:${year}`;
+    const scopeKey = `${shopId}:${year}:${user?.id}:${user?.role}`;
     const [draftScope, setDraftScope] = useState(scopeKey);
     if (draftScope !== scopeKey) {
         setDraftScope(scopeKey);
         setTargetDraft(null);
+        setTargetConflict(false);
         setManagersDraft(null);
     }
 
-    const teamTarget = targetDraft ?? data?.teamTarget ?? NO_MONTHS;
+    const inputs = targetDraft?.inputs ?? monthInputs(data?.months ?? NO_MONTHLY_SALES);
+    const invalidAmounts = inputs.some(row => MONTHLY_SALES_FIELDS.some(field => parseMonthlySalesAmount(row[field]) === undefined));
+    const months = inputs.map(row => ({ month: row.month, revision: row.revision,
+        ...Object.fromEntries(MONTHLY_SALES_FIELDS.map(field => [field, parseMonthlySalesAmount(row[field]) ?? null])),
+    })) as MonthlySalesMonth[];
+    const patches = targetDraft && !invalidAmounts ? monthlySalesPatches(targetDraft.before, months) : [];
+    const summary = summarizeMonthlySales(months);
     const teamActual = data?.teamActual ?? NO_MONTHS;
     const managers = managersDraft ?? data?.managers ?? NO_MANAGERS;
     const teamMembers = data?.teamMembers ?? NO_TEAM_MEMBERS;
     const projects = data?.projects ?? NO_PROJECTS;
 
     const shopsError = shopsQuery.data
-        ? (shopsQuery.data.length ? null : 'Төсөл бүртгэгдээгүй байна')
+        ? (shops.length ? null : 'Хандах эрхтэй төсөл бүртгэгдээгүй байна')
         : shopsQuery.error?.message ?? null;
     // Өгөгдөл ачаалагдсан бол дэвсгэрт шинэчлэл унахад (toast) хадгалаагүй засварыг нуухгүй.
     const error = (!shopsQuery.isFetching && shopsError) || (!targetsQuery.data && !targetsQuery.isFetching && targetsQuery.error?.message) || null;
     const scopeReady = !!data && !error;
 
-    function setMonth(idx: number, value: string) {
-        const next = [...teamTarget];
-        next[idx] = Math.max(0, Number(value.replace(/[^0-9]/g, '')) || 0);
-        setTargetDraft(next);
+    function setMonth(month: number, field: MonthlySalesField, value: string) {
+        if (!scopeReady || saving) return;
+        setTargetDraft(previous => {
+            const draft = previous ?? { before: data!.months, inputs: monthInputs(data!.months) };
+            return { ...draft, inputs: draft.inputs.map(row => row.month === month ? { ...row, [field]: value } : row) };
+        });
     }
 
     async function saveTarget() {
-        if (!scopeReady || saving) return;
+        if (!scopeReady || saving || invalidAmounts || !patches.length || targetConflict) return;
         setSavingTarget(true);
         try {
             const res = await fetch('/api/admin/sales-targets', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ shopId, year, months: teamTarget }),
+                body: JSON.stringify({ shopId, year, months: patches }),
             });
-            if (!res.ok) throw new Error((await res.json()).error || 'Төлөвлөгөө хадгалагдсангүй');
-            await targetsQuery.refetch();
+            const result = await res.json();
+            if (!res.ok) {
+                if (res.status === 409) setTargetConflict(true);
+                throw new Error(result.error || 'Төлөвлөгөө, гүйцэтгэл хадгалагдсангүй');
+            }
+            const saved = new Map((result.months as MonthlySalesMonth[]).map(row => [row.month, row]));
+            queryClient.setQueryData<SalesTargetsData>(['admin-sales-targets', shopId, year, ...authScope], current => current ? {
+                ...current, months: current.months.map(row => saved.get(row.month) ?? row),
+            } : current);
             setTargetDraft(null);
-            toast.success('Төлөвлөгөө хадгалагдлаа');
+            await Promise.all(['admin-sales-targets', 'director', 'kpi-report', 'my-stats', 'operations-report', 'weekly-sales'].map(key =>
+                queryClient.invalidateQueries({ queryKey: [key, shopId] })));
+            toast.success('Төлөвлөгөө, гүйцэтгэл хадгалагдлаа');
         } catch (cause) {
-            toast.error(cause instanceof Error ? cause.message : 'Төлөвлөгөө хадгалагдсангүй');
+            toast.error(cause instanceof Error ? cause.message : 'Төлөвлөгөө, гүйцэтгэл хадгалагдсангүй');
         } finally {
             setSavingTarget(false);
         }
@@ -254,9 +291,7 @@ export default function SalesTargetsAdminPage() {
         }
     }
 
-    const yearTarget = sum(teamTarget);
-    const yearActual = sum(teamActual);
-    const yearP = yearTarget > 0 ? Math.round((yearActual / yearTarget) * 100) : 0;
+    const computedYearActual = teamActual.reduce((total, amount) => total + amount, 0);
     const activeCount = managers.filter((m) => m.is_active).length;
     const visibleManagers = showInactive ? managers : managers.filter((m) => m.is_active);
     const inactiveCount = managers.length - activeCount;
@@ -270,7 +305,7 @@ export default function SalesTargetsAdminPage() {
         <div className="space-y-6">
             <PageHeader
                 title="Борлуулалтын төлөвлөгөө"
-                subtitle="Багийн сарын төлөвлөгөө (₮), идэвхтэй менежерүүд, төслийн харьяалал."
+                subtitle="Гэрээ, тухайн сард орсон мөнгөний төлөвлөгөө ба гараар оруулах гүйцэтгэл."
             />
 
             {/* Toolbar */}
@@ -306,58 +341,98 @@ export default function SalesTargetsAdminPage() {
                     <Loader2 className="h-6 w-6 animate-spin text-brand-strong" />
                 </div>
             ) : (
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+                <div className="space-y-6">
                     {/* A) Багийн сарын төлөвлөгөө */}
                     <Card>
                         <CardContent className="space-y-4 py-4">
                             <div className="flex items-center justify-between">
                                 <div>
-                                    <p className="text-sm font-semibold text-foreground">Багийн сарын төлөвлөгөө</p>
-                                    <p className="text-xs text-muted-foreground">{year} он · дүнг ₮-ээр оруулна</p>
+                                    <p className="text-sm font-semibold text-foreground">Сарын төлөвлөгөө, гүйцэтгэл</p>
+                                    <p className="text-xs text-muted-foreground">{year} он · дүнг ₮-ээр оруулна · хоосон нүд = оруулаагүй</p>
                                 </div>
                                 <TrendingUp className="h-4 w-4 text-brand-strong" />
                             </div>
 
-                            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                                {teamTarget.map((val, i) => (
-                                    <div key={i}>
-                                        <label className="mb-1 block text-2xs text-muted-foreground">
-                                            {MONTHS[i]} сар
-                                            {teamActual[i] > 0 && (
-                                                <span className="ml-1 text-status-success">
-                                                    ({formatMNT(teamActual[i], { compact: true })})
-                                                </span>
-                                            )}
-                                        </label>
-                                        <input
-                                            type="text"
-                                            inputMode="numeric"
-                                            disabled={savingTarget}
-                                            value={val ? val.toLocaleString('en-US') : ''}
-                                            onChange={(e) => setMonth(i, e.target.value)}
-                                            placeholder="0"
-                                            className="w-full rounded-md border border-border bg-surface-2 px-2 py-1.5 text-right text-sm tabular-nums text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/40"
-                                        />
-                                    </div>
-                                ))}
+                            <p className="text-xs text-muted-foreground">Орсон мөнгө нь тухайн сард хүлээн авсан урьдчилгаа, төлбөрийн дүн. Гүйцэтгэлийг гараар нөхөж бичнэ.</p>
+                            <div className="overflow-x-auto rounded-lg border border-border">
+                                <table className="w-full min-w-[900px] text-sm">
+                                    <caption className="sr-only">{year} оны сарын гэрээ, орсон мөнгөний төлөвлөгөө ба гар гүйцэтгэл</caption>
+                                    <thead className="bg-surface-2 text-xs text-muted-foreground">
+                                        <tr className="border-b border-border">
+                                            <th rowSpan={2} scope="col" className="px-3 py-3 text-left">Сар</th>
+                                            <th colSpan={2} scope="colgroup" className="px-3 py-2 text-center text-gold">Төлөвлөгөө</th>
+                                            <th colSpan={2} scope="colgroup" className="px-3 py-2 text-center">Гүйцэтгэл · гараар</th>
+                                            <th colSpan={2} scope="colgroup" className="px-3 py-2 text-center">Биелэлт</th>
+                                        </tr>
+                                        <tr className="border-b border-border">
+                                            {['Гэрээний дүн', 'Орсон мөнгө', 'Гэрээний дүн', 'Орсон мөнгө', 'Гэрээ', 'Мөнгө'].map((label, index) => (
+                                                <th key={index} scope="col" className="px-3 py-2 text-right font-medium">{label}</th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {inputs.map((row, index) => (
+                                            <tr key={row.month} className="border-b border-border last:border-b-0">
+                                                <th scope="row" className="whitespace-nowrap px-3 py-2 text-left font-medium">{MONTHS[row.month - 1]} сар</th>
+                                                {MONTHLY_SALES_FIELDS.map(field => {
+                                                    const invalid = parseMonthlySalesAmount(row[field]) === undefined;
+                                                    return <td key={field} className="px-2 py-2">
+                                                        <input
+                                                            type="text" inputMode="decimal"
+                                                            aria-label={`${year} оны ${MONTHS[row.month - 1]} сар ${MONTHLY_SALES_LABELS[field]}`}
+                                                            aria-invalid={invalid}
+                                                            disabled={saving}
+                                                            value={row[field]}
+                                                            onChange={event => setMonth(row.month, field, event.target.value)}
+                                                            placeholder="—"
+                                                            className={`num w-full min-w-28 rounded-md border bg-surface-2 px-2 py-2 text-right text-sm text-foreground ${invalid ? 'border-status-danger' : 'border-control'}`}
+                                                        />
+                                                    </td>;
+                                                })}
+                                                <td className="num px-3 py-2 text-right">{pctLabel(monthlySalesAttainment(months[index].manual_contract_actual_amount, months[index].target_amount))}</td>
+                                                <td className="num px-3 py-2 text-right">{pctLabel(monthlySalesAttainment(months[index].manual_cashflow_actual_amount, months[index].cashflow_target_amount))}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                    <tfoot className="border-t border-border bg-surface-2">
+                                        <tr>
+                                            <th scope="row" className="px-3 py-3 text-left">Оруулсан нийт</th>
+                                            {MONTHLY_SALES_FIELDS.map(field => (
+                                                <td key={field} className="num px-3 py-3 text-right">
+                                                    <span className="font-semibold">{summary.totals[field].amount === null ? '—' : formatMNT(summary.totals[field].amount)}</span>
+                                                    <span className="mt-1 block text-xs text-muted-foreground">{summary.totals[field].filledMonths}/12 сар</span>
+                                                </td>
+                                            ))}
+                                            <td className="num px-3 py-3 text-right font-semibold">{pctLabel(summary.contractAttainmentPct)}</td>
+                                            <td className="num px-3 py-3 text-right font-semibold">{pctLabel(summary.cashflowAttainmentPct)}</td>
+                                        </tr>
+                                    </tfoot>
+                                </table>
                             </div>
-
-                            <div className="flex items-center justify-between rounded-lg bg-surface-2 px-3 py-2.5">
-                                <span className="text-sm font-medium text-foreground">Жилийн нийт төлөвлөгөө</span>
-                                <span className="text-sm font-semibold text-brand-strong tabular-nums">{formatMNT(yearTarget)}</span>
-                            </div>
-                            {yearTarget > 0 && (
-                                <div className="flex items-center justify-between text-xs text-muted-foreground">
-                                    <span>Гүйцэтгэл: {formatMNT(yearActual, { compact: true })}</span>
-                                    <span className={yearP >= 100 ? 'font-semibold text-status-success' : ''}>{yearP}%</span>
+                            <p className="text-xs text-muted-foreground">Нийт дүн нь бөглөсөн саруудын нийлбэр. Биелэлтийг төлөвлөгөө, гүйцэтгэл нь ижил саруудаар бөглөгдсөн үед тооцно.</p>
+                            {invalidAmounts && <p role="alert" className="text-xs text-status-danger">Дүнг 0–10,000,000,000,000₮ хооронд, хамгийн ихдээ хоёр орны бутархайтай оруулна уу.</p>}
+                            {targetConflict && (
+                                <div role="alert" className="rounded-lg border border-status-warning/30 bg-status-warning-soft p-3 text-sm">
+                                    <p>Өөр хэрэглэгч сарын мэдээллийг өөрчилсөн. Таны засвар хадгалагдаагүй.</p>
+                                    <button type="button" disabled={saving} onClick={async () => {
+                                        const refreshed = await targetsQuery.refetch();
+                                        if (refreshed.error) { toast.error('Шинэ мэдээлэл ачаалагдсангүй'); return; }
+                                        setTargetDraft(null); setTargetConflict(false);
+                                    }} className="mt-2 font-medium text-brand-strong underline">Серверийн шинэ утгыг авах · миний засварыг цэвэрлэх</button>
                                 </div>
                             )}
-
                             <div className="flex justify-end">
-                                <Button onClick={saveTarget} disabled={!scopeReady || saving} isLoading={savingTarget} variant="primary" size="sm">
-                                    {!savingTarget && <Save className="h-4 w-4" />} Төлөвлөгөө хадгалах
+                                <Button onClick={saveTarget} disabled={!scopeReady || saving || invalidAmounts || !patches.length || targetConflict} isLoading={savingTarget} variant="primary" size="sm">
+                                    {!savingTarget && <Save className="h-4 w-4" />} Төлөвлөгөө, гүйцэтгэл хадгалах
                                 </Button>
                             </div>
+                            <details className="rounded-lg border border-border px-3 py-2">
+                                <summary className="cursor-pointer text-sm font-medium">CRM-ээр тооцсон гэрээний дүн · {formatMNT(computedYearActual)}</summary>
+                                <p className="mt-2 text-xs text-muted-foreground">{data?.computedActualSource}. Энэ дүнг дээрх гар гүйцэтгэлд нэмж нийлбэрлэхгүй.</p>
+                                <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
+                                    {teamActual.map((amount, index) => <p key={index} className="num rounded-md bg-surface-2 p-2">{MONTHS[index]} сар: {formatMNT(amount)}</p>)}
+                                </div>
+                            </details>
                         </CardContent>
                     </Card>
 

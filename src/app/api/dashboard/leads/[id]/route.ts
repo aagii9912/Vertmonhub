@@ -6,6 +6,7 @@ import { logger } from '@/lib/utils/logger';
 import { applyLeadScope, resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { updateStaffLead } from '@/lib/services/LeadService';
 import { withRoute } from '@/lib/api/route';
+import { viewingSelectionText, type ViewingInterest } from '@/lib/viewings/interests';
 
 /**
  * GET /api/dashboard/leads/[id]
@@ -38,7 +39,7 @@ export const GET = withRoute<{ id: string }>({ module: 'leads', error: 'Лид �
     const [viewings, contracts, history, property] = await Promise.all([
         db
             .from('property_viewings')
-            .select('id, scheduled_at, status, meeting_type, property_id, agent_notes, customer_feedback, interest_level, sales_manager_name')
+            .select('id, scheduled_at, status, meeting_type, property_id, interests, agent_notes, customer_feedback, interest_level, sales_manager_name')
             .eq('lead_id', id)
             .eq('shop_id', authShop.id)
             .is('deleted_at', null)
@@ -78,7 +79,7 @@ export const GET = withRoute<{ id: string }>({ module: 'leads', error: 'Лид �
     }
     const viewingsOut = (viewings as Record<string, unknown>[]).map((v) => ({
         ...v,
-        property_name: v.property_id ? propNames.get(v.property_id as string) ?? null : null,
+        property_name: viewingSelectionText(v.interests as ViewingInterest[] | undefined, v.property_id ? propNames.get(v.property_id as string) : null),
     }));
 
     // Түүх уншигдаагүй бол «түүх» (activities), бусад эх сурвалж дутуу бол «менежерийн түүх» (timeline).

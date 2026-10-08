@@ -29,6 +29,14 @@ const [from, to] = args.filter((arg) => /^\d{14}$/.test(arg));
 
 // Энэ хувилбаруудын оруулсны дараах шалгалт (объект бий эсэх). Бусад хувилбарт шалгалтгүй.
 const VERIFY = {
+    '20261008120000': `SELECT to_regclass('public.project_pricing_configs') IS NOT NULL
+        AND to_regprocedure('public.save_project_pricing(uuid,uuid,integer,text,jsonb)') IS NOT NULL AS ok`,
+    '20261008121000': `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+        AND table_name = 'property_viewings' AND column_name = 'interests')
+        AND to_regprocedure('public.validate_viewing_interests(uuid,uuid,jsonb)') IS NOT NULL AS ok`,
+    '20261008122000': `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+        AND table_name = 'team_sales_targets' AND column_name = 'manual_cashflow_actual_amount')
+        AND to_regprocedure('public.save_team_monthly_sales(uuid,integer,jsonb,uuid)') IS NOT NULL AS ok`,
     '20261004160000': `SELECT to_regclass('public.contract_transfers') IS NOT NULL
         AND to_regprocedure('public.transfer_contract(uuid,uuid,jsonb,uuid,uuid,text,text)') IS NOT NULL AS ok`,
     '20261004161000': `SELECT to_regclass('public.lead_categories') IS NOT NULL

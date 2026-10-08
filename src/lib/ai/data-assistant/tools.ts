@@ -9,6 +9,15 @@ import { SPEND_CHANNELS } from '@/lib/marketing/budget';
 import { ACTIVE_STATUSES, LEAD_STATUSES, SOURCES } from '@/lib/leads/labels';
 
 const SchemaType = { OBJECT: 'object', STRING: 'string', NUMBER: 'number', INTEGER: 'integer', BOOLEAN: 'boolean', ARRAY: 'array' } as const;
+const viewingSelectionProperties = {
+    block: { type: SchemaType.STRING }, model: { type: SchemaType.STRING }, area_sqm: { type: SchemaType.NUMBER },
+    floor: { type: [SchemaType.INTEGER, 'null'], description: 'Давхар; тодорхойгүй бол null' },
+    unit_id: { type: [SchemaType.STRING, 'null'], description: 'Нөөцийн тоотын UUID; сонгоогүй бол орхино' },
+    payment_condition: { type: [SchemaType.STRING, 'null'], description: 'Баталсан тохиргооноос сонгосон нөхцөл' },
+};
+const viewingInterestsParameter = { type: SchemaType.ARRAY, maxItems: 20, description: 'Сонирхсон байрны сонголтууд; хоосон массив бол цэвэрлэнэ', items: {
+    type: SchemaType.OBJECT, properties: viewingSelectionProperties, required: ['block', 'model', 'area_sqm', 'floor'], additionalProperties: false,
+} };
 
 export interface ToolDefinition {
     name: string;
@@ -18,6 +27,14 @@ export interface ToolDefinition {
 
  
 const readDefinitions: ToolDefinition[] = [
+    {
+        name: 'get_viewing_options', description: 'Уулзалтад сонгож болох бодит нөөцийн блок, загвар, талбай, давхар, баталсан төлбөрийн нөхцөлийг авна. Худалдан авагчийн мэдээлэлгүй. Тоот хэрэгтэй бол загвар ба давхраар шүүнэ.',
+        parameters: { type: SchemaType.OBJECT, properties: { project_id: { type: SchemaType.STRING }, block: { type: SchemaType.STRING }, model: { type: SchemaType.STRING }, floor: { type: SchemaType.INTEGER } } },
+    },
+    {
+        name: 'calculate_viewing_quote', description: 'Баталсан хүчинтэй үнээр нийт үнэ, эхний урьдчилгаа, үлдэгдлийг тооцно. Тохиргоо дутуу бол шалтгаан өгнө. Уулзалт, үнийн саналын холбоо, мөнгөн орлого бичихгүй.',
+        parameters: { type: SchemaType.OBJECT, properties: viewingSelectionProperties, required: ['block', 'model', 'area_sqm', 'floor'], additionalProperties: false },
+    },
     {
         name: 'list_lead_projects', description: 'Лид бүртгэхэд ашиглах эрхтэй төслийн UUID ба нэрийг авна. Төслийг таамгаар сонгохгүй; хэрэглэгчээс сонголтыг тодруулна.',
         parameters: { type: SchemaType.OBJECT, properties: {} },
@@ -548,7 +565,7 @@ const writeDefinitions: ToolDefinition[] = [
     },
     {
         name: 'schedule_viewing',
-        description: 'Үл хөдлөхийн уулзалт товлох. Байр сонгоогүй бол property_id/property_name шаардахгүй. Лидийн төлөв, түүхийг шинэчилнэ. Баталгаажуулалт авна. Борлуулалтын менежерийн нэрээр хадгална.',
+        description: 'Уулзалт товлох эсвэл walk_in=true гэж ирсэн уулзалт бүртгэх. Сонирхсон байрны олон сонголтыг get_viewing_options-оос авч interests-д өгнө; үнэ серверт бодогдоно. Байр сонгох нь заавал биш. Лидийн төлөв, түүхийг шинэчилнэ. Баталгаажуулалт авна.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
@@ -560,10 +577,22 @@ const writeDefinitions: ToolDefinition[] = [
                 customer_phone: { type: SchemaType.STRING, description: 'Харилцагчийн утас (нэр давхардвал ялгахад)' },
                 lead_id: { type: SchemaType.STRING, description: 'Лийдийн ID (байвал)' },
                 meeting_type: { type: SchemaType.STRING, enum: ['new_customer', 'repeat_customer', 'existing_buyer'] },
-                notes: { type: SchemaType.STRING, description: 'Тэмдэглэл' }
-            },
-            required: ['scheduled_at']
+                walk_in: { type: SchemaType.BOOLEAN, description: 'Талбай дээр ирсэн бол true; scheduled_at шаардахгүй' },
+                anonymous: { type: SchemaType.BOOLEAN, description: 'Нэр хэлээгүй харилцагч; утас заавал' },
+                interests: viewingInterestsParameter,
+                interest_level: { type: SchemaType.INTEGER, minimum: 1, maximum: 5 },
+                feedback: { type: SchemaType.STRING, description: 'Харилцагчийн санал' },
+                notes: { type: SchemaType.STRING, description: 'Сэжим / тэмдэглэл' }
+            }
         }
+    },
+    {
+        name: 'update_viewing', description: 'Товлосон эсвэл болсон уулзалтын сонирхсон байр, төлбөрийн нөхцөл, сэжим, санал, төрлийг засна. Өмнөх ба шинэ мэдээлэл, тооцооллыг баталгаажуулна. Гэрээ, мөнгөн орлого үүсгэхгүй.',
+        parameters: { type: SchemaType.OBJECT, properties: { viewing_id: { type: SchemaType.STRING }, interests: viewingInterestsParameter,
+            agent_notes: { type: [SchemaType.STRING, 'null'], description: 'Сэжим / тэмдэглэл' },
+            customer_feedback: { type: [SchemaType.STRING, 'null'] },
+            meeting_type: { type: SchemaType.STRING, enum: ['new_customer', 'repeat_customer', 'existing_buyer'] },
+        }, required: ['viewing_id'], additionalProperties: false },
     },
     {
         name: 'create_contract',
@@ -1033,13 +1062,14 @@ const adminDefinitions: ToolDefinition[] = [
     },
     {
         name: 'set_sales_target',
-        description: 'Идэвхтэй төслийн сарын борлуулалтын (гэрээний) төлөвлөгөөг тавих (₮) — Лхагвын тайлан, KPI-д ашиглагдана. ЗӨВХӨН super_admin; баталгаажуулалт авна.',
+        description: 'Идэвхтэй төслийн сарын гэрээ / орсон мөнгөний төлөвлөгөө эсвэл гараар оруулах гүйцэтгэлийг хадгалах (₮). Системийн тооцоотой нэмж нийлүүлэхгүй. ЗӨВХӨН super_admin; хуучин ба шинэ утгыг батална.',
         parameters: {
             type: SchemaType.OBJECT,
             properties: {
                 year: { type: SchemaType.NUMBER, description: 'Он; орхивол энэ он' },
                 month: { type: SchemaType.NUMBER, description: 'Сар (1–12)' },
-                amount: { type: SchemaType.NUMBER, description: 'Төлөвлөгөө (₮)' }
+                metric: { type: SchemaType.STRING, enum: ['contract_plan', 'cashflow_plan', 'contract_actual', 'cashflow_actual'], description: 'Үзүүлэлт; орхивол contract_plan' },
+                amount: { type: [SchemaType.NUMBER, 'null'], description: 'Дүн (₮); null бол цэвэрлэнэ, 0 бол илэрхий тэг дүн' }
             },
             required: ['month', 'amount']
         }

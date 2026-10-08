@@ -12,9 +12,11 @@ import { MANAGER_NAME_REQUIRED, formatStaffPhone, managerNameMissing } from '@/l
 import { ALL_MODULES, clearPermissionsCache } from '@/lib/rbac';
 import { CreateRoleSchema } from '@/lib/validations/schemas';
 import { updateUserProjects } from '@/lib/admin/user-projects';
-import { getTeamTargets, upsertTeamTargets } from '@/lib/sales/targets';
+import { getTeamMonthlySales, saveTeamMonthlySales } from '@/lib/sales/targets';
+import { MONTHLY_SALES_LABELS, MonthlySalesPatchSchema, SalesYearSchema, type MonthlySalesField } from '@/lib/sales/monthly';
 import { ubParts } from '@/lib/utils/date';
 import { formatMNT } from '@/lib/utils/currency';
+import { ZodError } from 'zod';
 
 function confirmNeeded(tool: string, args: any, label: string, preview: Record<string, unknown>) {
     return { requiresConfirmation: true, action: { tool, args }, label, preview };
@@ -239,31 +241,38 @@ export async function setUserProjects(args: any, confirm = false, actingUserId?:
     }
 }
 
-/** Идэвхтэй төслийн сарын борлуулалтын төлөвлөгөө — /admin/sales-targets-тэй нэг (`upsertTeamTargets`). */
-export async function setSalesTarget(shopId: string, args: any, confirm = false) {
+/** Admin page and AI share the same revision-checked monthly write. */
+export async function setSalesTarget(shopId: string, args: any, confirm = false, actingUserId?: string) {
     try {
-        const year = args.year === undefined ? ubParts().year : Number(args.year);
-        const month = Number(args.month);
-        const amount = Number(args.amount);
-        if (!Number.isInteger(year) || year < 2000 || year > 2100 || !Number.isInteger(month) || month < 1 || month > 12) {
-            return { error: 'year (2000–2100) ба month (1–12) зөв байх ёстой' };
-        }
-        if (!Number.isFinite(amount) || amount < 0) return { error: 'amount нь 0-ээс их буюу тэнцүү дүн (₮) байна' };
+        const year = SalesYearSchema.parse(args.year ?? ubParts().year);
+        const metricFields: Record<string, MonthlySalesField> = { contract_plan: 'target_amount', cashflow_plan: 'cashflow_target_amount',
+            contract_actual: 'manual_contract_actual_amount', cashflow_actual: 'manual_cashflow_actual_amount' };
+        const metric = args.metric ?? 'contract_plan';
+        const field = metricFields[metric];
+        if (!field) return { error: 'Төлөвлөгөө эсвэл гүйцэтгэлийн үзүүлэлтээ сонгоно уу' };
+        const patch = MonthlySalesPatchSchema.parse({ month: args.month, expectedRevision: args.expectedRevision ?? 0, [field]: args.amount });
+        const { month } = patch;
+        const amount = patch[field]!;
+        const valueLabel = (value: number | null) => value === null ? 'Оруулаагүй' : formatMNT(value);
+        const label = MONTHLY_SALES_LABELS[field];
         const db = supabaseAdmin();
-        if (!confirm) {
+        // Old confirmation cards must be previewed again; never replace the revision silently.
+        if (!confirm || args.expectedRevision === undefined) {
             const [current, { data: shop }] = await Promise.all([
-                getTeamTargets(db, shopId, year, (error) => { throw error; }),
+                getTeamMonthlySales(db, shopId, year),
                 db.from('shops').select('name').eq('id', shopId).maybeSingle(),
             ]);
-            return confirmNeeded('set_sales_target', { year, month, amount }, `Борлуулалтын төлөвлөгөө: ${year}-${String(month).padStart(2, '0')}`, {
+            return confirmNeeded('set_sales_target', { year, month, metric, amount, expectedRevision: current[month - 1].revision }, `${label}: ${year}-${String(month).padStart(2, '0')}`, {
                 Төсөл: shop?.name || '-', Сар: `${year} оны ${month}-р сар`,
-                Одоогийн: current[month - 1] ? formatMNT(current[month - 1]) : 'тохируулаагүй', Шинэ: formatMNT(amount),
+                Үзүүлэлт: label, Одоогийн: valueLabel(current[month - 1][field]), Шинэ: valueLabel(amount),
             });
         }
-        const { error } = await upsertTeamTargets(db, shopId, year, [{ month, amount }]);
-        if (error) return { error: 'Төлөвлөгөө хадгалахад алдаа гарлаа' };
-        return { success: true, message: `${year} оны ${month}-р сарын төлөвлөгөөг ${formatMNT(amount)} болголоо.` };
+        if (!actingUserId) return { error: 'Үйлдэл хийж буй хэрэглэгч тодорхойгүй байна' };
+        const { error } = await saveTeamMonthlySales(db, shopId, year, [patch], actingUserId);
+        if (error) return { error: error.code === '40001' ? 'Энэ сарын мэдээлэл өөрчлөгдсөн байна. Шинэ утгыг уншиж дахин батална уу.' : 'Сарын мэдээлэл хадгалахад алдаа гарлаа' };
+        return { success: true, message: `${year} оны ${month}-р сарын ${label.toLowerCase()}: ${valueLabel(amount)}.` };
     } catch (error) {
+        if (error instanceof ZodError) return { error: 'Он, сар, дүн эсвэл хувилбар буруу байна. Дүн нь 0-ээс дээш, 2 орны нарийвчлалтай байна; null бол цэвэрлэнэ.' };
         console.error('AI sales target update failed:', error);
         return { error: 'Төлөвлөгөөг шалгаж чадсангүй. Дахин оролдоно уу.' };
     }
