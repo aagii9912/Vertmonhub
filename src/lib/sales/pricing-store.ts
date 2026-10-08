@@ -1,7 +1,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { ProjectScopeError, applyProjectScope, type SalesProjectScope } from './project-scope';
+import { ProjectScopeError, applyProjectScope, canAccessProject, type SalesProjectScope } from './project-scope';
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { ubDateStr } from '@/lib/utils/date';
+import { soleShopProjectId } from '@/lib/projects/shop-project';
+import { loadViewingOptions } from '@/lib/viewings/options';
+import type { ViewingUnitOption } from '@/lib/viewings/interests';
+import { elysiumViewingConditions } from './viewing-conditions';
 import {
     PricingDraftSchema, PricingSaveSchema, PricingSelectionSchema, calculatePricing, inventoryArea, inventoryFloor, pricingKey,
     type PricingConfig, type PricingSaveInput, type PricingSelection, type PricingResult,
@@ -27,12 +31,22 @@ export async function loadActivePricing(db: SupabaseClient, shopId: string): Pro
     return data ? configRow(data) : null;
 }
 
-export async function loadViewingPricingConditions(db: SupabaseClient, shopId: string, scope: SalesProjectScope, asOf = ubDateStr()) {
+export async function loadViewingPricingConditions(db: SupabaseClient, shopId: string, scope: SalesProjectScope, asOf = ubDateStr(),
+    options: { projectId?: string | null; units?: readonly ViewingUnitOption[] } = {}) {
     if (scope.projectIds !== null && !scope.projectIds.length) return { conditions: [], reason: 'Төсөлд бүртгэлгүй байна' };
+    const projectId = options.projectId ?? await soleShopProjectId(db, shopId);
+    if (!projectId || !canAccessProject(scope, projectId)) return { conditions: [], reason: 'Төслийн эрхгүй байна' };
+    const { data: project, error } = await db.from('projects').select('id,name').eq('shop_id', shopId).eq('id', projectId).maybeSingle();
+    if (error) throw new PricingSelectionError('Төслийн төлбөрийн нөхцөл уншиж чадсангүй. Дахин оролдоно уу', 503);
+    if (!project) return { conditions: [], reason: 'Төсөл олдсонгүй' };
     const config = await loadActivePricing(db, shopId);
-    if (!config || !config.inventory_area_confirmed || !config.valid_from || !config.valid_until
-        || asOf < config.valid_from || asOf > config.valid_until) return { conditions: [], reason: 'Одоогийн баталсан үнэ, нөхцөл байхгүй' };
-    return { conditions: config.rules.map(({ block, model, floor_min, floor_max, payment_condition }) => ({ block, model, floor_min, floor_max, payment_condition })), reason: null };
+    if (config?.inventory_area_confirmed && config.valid_from && config.valid_until && asOf >= config.valid_from && asOf <= config.valid_until) {
+        return { conditions: config.rules.map(({ block, model, floor_min, floor_max, payment_condition }) => ({ block, model, floor_min, floor_max, payment_condition })), reason: null };
+    }
+    // Interest terms can be selected without a monetary offer. Never derive a rate or an advance from their labels.
+    const units = options.units ?? await loadViewingOptions(db, shopId, scope, projectId);
+    const conditions = elysiumViewingConditions(project.name, units.filter(unit => unit.project_id === projectId));
+    return { conditions, reason: conditions.length ? 'Нөхцөлөө сонгож хадгалж болно. Үнэ, урьдчилгааны дүн батлагдаагүй.' : 'Одоогийн баталсан үнэ, нөхцөл байхгүй' };
 }
 
 export async function loadPricingOverview(db: SupabaseClient, shopId: string) {

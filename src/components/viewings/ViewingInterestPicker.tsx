@@ -65,6 +65,7 @@ export function ViewingInterestPicker({ units, conditions = [], pricingReason, v
             <option value="">Сонгоогүй</option>{terms.map(v => <option key={v}>{v}</option>)}
         </select></label>
         {!terms.length && <p className="text-xs text-muted-foreground">{pricingReason || 'Энэ байрны баталсан төлбөрийн нөхцөл алга. Сонирхлыг үнэ бодолгүй бүртгэж болно.'}</p>}
+        {!!terms.length && pricingReason && <p className="text-xs text-muted-foreground">{pricingReason}</p>}
         {selection && <div aria-live="polite" className="space-y-1 rounded-md border border-border bg-surface-2 p-3 text-xs">
             {quote.isFetching ? <p>Үнэ бодож байна…</p> : quote.error ? <p role="alert" className="text-status-danger">{quote.error instanceof Error ? quote.error.message : 'Үнэ шалгаж чадсангүй'}</p>
                 : quote.data?.available ? <>

@@ -15,7 +15,8 @@ const OptionsSchema = z.object({ project_id: z.guid().optional(), block: z.strin
 export async function getViewingOptionsTool(shopId: string, args: unknown, scope: SalesProjectScope) {
     const parsed = OptionsSchema.parse(args);
     const db = supabaseAdmin();
-    const [inventory, pricing] = await Promise.all([loadViewingOptions(db, shopId, scope, parsed.project_id), loadViewingPricingConditions(db, shopId, scope)]);
+    const inventory = await loadViewingOptions(db, shopId, scope, parsed.project_id);
+    const pricing = await loadViewingPricingConditions(db, shopId, scope, undefined, { projectId: parsed.project_id, units: inventory });
     const units = inventory.filter(row => (!parsed.block || pricingKey(row.block) === pricingKey(parsed.block))
         && (!parsed.model || pricingKey(row.model) === pricingKey(parsed.model)) && (parsed.floor === undefined || row.floor === parsed.floor));
     const groups = new Map<string, { block: string; model: string; area_sqm: number; floors: (number | null)[]; count: number }>();

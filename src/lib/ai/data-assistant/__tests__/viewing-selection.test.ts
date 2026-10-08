@@ -14,6 +14,7 @@ vi.mock('@/lib/viewings/prepare', () => ({ prepareViewingInterests: mocks.prepar
 vi.mock('@/lib/services/ViewingService', () => ({ updateViewing: mocks.update }));
 import { getViewingOptionsTool, calculateViewingQuoteTool, updateViewingSelectionTool } from '../actions-viewing-selection';
 import { canRememberTool, TOOL_CATALOG } from '@/lib/ai/tool-catalog';
+import { elysiumViewingConditions } from '@/lib/sales/viewing-conditions';
 
 beforeEach(() => {
     vi.clearAllMocks();
@@ -29,6 +30,18 @@ describe('AI viewing selections', () => {
         expect(await getViewingOptionsTool('shop', {}, scope)).toMatchObject({ units: [], groups: [{ model: 'E6', area_sqm: 51.72, count: 1, floors: [5] }] });
         expect(await getViewingOptionsTool('shop', { block: 'B1', model: 'E6', floor: 5 }, scope)).toMatchObject({ units: [{ id }] });
         expect(mocks.options).toHaveBeenCalledWith(expect.anything(), 'shop', scope, undefined);
+    });
+
+    it('returns selectable conditions without a price using the same scoped inventory', async () => {
+        const inventory = await mocks.options();
+        const conditions = elysiumViewingConditions('Elysium Residence', inventory);
+        mocks.conditions.mockResolvedValue({ conditions, reason: 'Үнэ батлагдаагүй' });
+        expect(await getViewingOptionsTool('shop', { project_id: projectId }, scope)).toMatchObject({
+            pricing: { conditions, reason: 'Үнэ батлагдаагүй' },
+        });
+        expect(mocks.conditions).toHaveBeenCalledWith(expect.anything(), 'shop', scope, undefined, { projectId, units: inventory });
+        expect(mocks.quote).not.toHaveBeenCalled();
+        expect(mocks.update).not.toHaveBeenCalled();
     });
 
     it('keeps quote calculation read-only and preserves missing-price reasons', async () => {

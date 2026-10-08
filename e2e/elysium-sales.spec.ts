@@ -2,6 +2,7 @@ import { test, expect, type Page, type Locator } from '@playwright/test';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import { calculatePricing, type PricingConfig, type PricingSaveInput, type PricingSelection } from '../src/lib/sales/pricing';
 import { emptyMonthlySales, type MonthlySalesPatch } from '../src/lib/sales/monthly';
+import { elysiumViewingConditions } from '../src/lib/sales/viewing-conditions';
 import type { CreateViewingInput, ViewingPatch, ViewingRow } from '../src/hooks/useViewings';
 
 const adminId = '00000000-0000-4000-8000-000000000101';
@@ -25,8 +26,9 @@ const activeConfig: PricingConfig = {
 
 // Real Next pages and isolated auth cookies. Business APIs below are browser fixtures;
 // these tests prove UI transport/state, not a migration or real database persistence.
-async function setup(page: Page) {
+async function setup(page: Page, approvedPricing = true) {
     const shop = { id: shopId, name: 'Elysium Residence', setup_completed: true, is_active: true };
+    const viewingPricing = approvedPricing ? activeConfig : null;
     const months = emptyMonthlySales();
     months[0].manual_cashflow_actual_amount = 5;
     const state = {
@@ -56,11 +58,13 @@ async function setup(page: Page) {
         }], unassigned: [], diagnosticsError: null });
         if (path === '/api/dashboard/managers') return reply({ managers: [], mineName: 'Тест Админ' });
         if (path === '/api/dashboard/leads/projects') return reply({ projects: [{ id: projectId, name: 'Elysium Residence' }] });
-        if (path === '/api/dashboard/viewings/options') return reply({ units, conditions: activeConfig.rules.map(({ block, model, floor_min, floor_max, payment_condition }) => ({ block, model, floor_min, floor_max, payment_condition })), reason: null });
+        if (path === '/api/dashboard/viewings/options') return reply({ units, conditions: viewingPricing
+            ? viewingPricing.rules.map(({ block, model, floor_min, floor_max, payment_condition }) => ({ block, model, floor_min, floor_max, payment_condition }))
+            : elysiumViewingConditions(shop.name, units), reason: viewingPricing ? null : 'Нөхцөлөө сонгож хадгалж болно. Үнэ, урьдчилгааны дүн батлагдаагүй.' });
         if (path === '/api/dashboard/viewings/quote') {
             const selection = request.postDataJSON() as PricingSelection;
             state.quotes.push(selection);
-            return reply(calculatePricing(activeConfig, selection, '2026-10-08'));
+            return reply(calculatePricing(viewingPricing, selection, '2026-10-08'));
         }
         if (path === '/api/dashboard/viewings') {
             if (request.method() === 'POST') {
@@ -68,7 +72,7 @@ async function setup(page: Page) {
                 state.viewingWrites.push(input);
                 const now = new Date().toISOString();
                 const interests = (input.interests ?? []).map(selection => {
-                    const result = calculatePricing(activeConfig, selection, '2026-10-08');
+                    const result = calculatePricing(viewingPricing, selection, '2026-10-08');
                     return { ...selection, quote: result.available ? result.quote : null, quote_unavailable_reason: result.available ? null : result.reason };
                 });
                 state.viewings.push({ id: viewingId, scheduled_at: now, status: input.walk_in ? 'completed' : 'scheduled',
@@ -120,15 +124,52 @@ async function setup(page: Page) {
     return state;
 }
 
-async function chooseInterest(dialog: Locator, block: string, model: string, area: string, term: string) {
+async function chooseInterest(dialog: Locator, block: string, model: string, area: string, term: string, expectedQuote = true) {
     await dialog.getByLabel('Блок', { exact: true }).selectOption(block);
     await dialog.getByLabel('Загвар', { exact: true }).selectOption(model);
     await dialog.getByLabel('Талбай', { exact: true }).selectOption(area);
     await dialog.getByLabel('Давхар', { exact: true }).selectOption('2');
     await expect(dialog.getByLabel('Төлбөрийн нөхцөл', { exact: true })).toHaveValue('');
+    await expect(dialog.getByLabel('Төлбөрийн нөхцөл', { exact: true })).toBeEnabled();
     await dialog.getByLabel('Төлбөрийн нөхцөл', { exact: true }).selectOption(term);
-    await expect(dialog.getByText('Нийт үнэ', { exact: true })).toBeVisible();
+    if (expectedQuote) await expect(dialog.getByText('Нийт үнэ', { exact: true })).toBeVisible();
+    else await expect(dialog.getByText('Баталсан үнийн тохиргоо байхгүй', { exact: true })).toBeVisible();
 }
+
+test('payment conditions remain selectable and persist without approved prices', async ({ page }, info) => {
+    const state = await setup(page, false);
+    await page.goto('/dashboard/viewings');
+    await page.getByRole('button', { name: 'Уулзалт товлох', exact: true }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Уулзалт товлох', exact: true });
+    await dialog.getByRole('switch').click();
+    await dialog.getByPlaceholder('Б. Болд', { exact: true }).fill('Сараа');
+    await dialog.getByPlaceholder('9909 1122', { exact: true }).fill('99091122');
+    await chooseInterest(dialog, 'Б1', 'E3', '80.32', '50%', false);
+    const condition = dialog.getByLabel('Төлбөрийн нөхцөл', { exact: true });
+    await expect(condition.locator('option')).toHaveText(['Сонгоогүй', '10-30%', '30%', '50%']);
+    await dialog.getByRole('button', { name: 'Сонголт нэмэх', exact: true }).click();
+    await chooseInterest(dialog, 'Б2', 'A', '57.23', '10-50%', false);
+    await expect(condition.locator('option')).toHaveText(['Сонгоогүй', '10-30%', '30%', '10-50%', '50%']);
+    await expect(dialog).toContainText('Нөхцөлөө сонгож хадгалж болно. Үнэ, урьдчилгааны дүн батлагдаагүй.');
+    await expect(dialog.getByText('Нийт үнэ', { exact: true })).not.toBeVisible();
+    await condition.scrollIntoViewIfNeeded();
+    await page.screenshot({ path: info.outputPath('meeting-no-price-payment-condition.png'), fullPage: true });
+    await dialog.getByRole('button', { name: 'Бүртгэх', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+    expect(state.viewingWrites).toHaveLength(1);
+    const saved = state.viewingWrites[0] as CreateViewingInput;
+    expect(saved.interests?.map(selection => selection.payment_condition)).toEqual(['50%', '10-50%']);
+    expect(saved.interests?.every(selection => !('quote' in selection) && !('total_amount' in selection))).toBe(true);
+    expect(state.viewings[0].interests?.map(selection => selection.quote)).toEqual([null, null]);
+    await page.reload();
+    await page.getByRole('button', { name: 'Сараа: уулзалт засах', exact: true }).click();
+    const edit = page.getByRole('dialog', { name: 'Уулзалт засах', exact: true });
+    await expect(edit).toContainText('Хадгалсан сонголт, үнийн санал');
+    await expect(edit).toContainText('50%');
+    await expect(edit).toContainText('10-50%');
+    expect(state.viewings[0].interests?.map(selection => selection.payment_condition)).toEqual(['50%', '10-50%']);
+    expect(state.errors).toEqual([]); expect(state.unhandled).toEqual([]);
+});
 
 test('walk-in meeting saves multiple interests and completed meeting notes preserve snapshots', async ({ page }, info) => {
     const state = await setup(page);

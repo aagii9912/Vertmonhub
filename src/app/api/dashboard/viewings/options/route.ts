@@ -17,6 +17,7 @@ export const GET = withRoute({ module: 'viewings', error: 'Байрны сонг
     const project = await db.from('projects').select('id').eq('shop_id', shop.id).eq('id', projectId).maybeSingle();
     if (project.error) throw project.error;
     if (!project.data) return NextResponse.json({ error: 'Төсөл олдсонгүй' }, { status: 404 });
-    const [units, pricing] = await Promise.all([loadViewingOptions(db, shop.id, scope, projectId), loadViewingPricingConditions(db, shop.id, scope)]);
+    const units = await loadViewingOptions(db, shop.id, scope, projectId);
+    const pricing = await loadViewingPricingConditions(db, shop.id, scope, undefined, { projectId, units });
     return NextResponse.json({ project_id: projectId, units, ...pricing });
 });
