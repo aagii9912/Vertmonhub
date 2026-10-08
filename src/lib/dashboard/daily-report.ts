@@ -13,6 +13,7 @@
  *  • Загвар (шугам, ангилал, чатын суваг, менежерийн дараалал/товчлол) нь төсөл бүрийн тохиргоо.
  */
 import { z } from 'zod';
+import { formatStaffPhone } from '@/lib/admin/staff-profile';
 import { MEETING_TYPE_META, MEETING_TYPES, WEEKDAYS_MN, type MeetingType } from '@/lib/viewings/labels';
 
 export const CALL_CATEGORIES = ['new', 'repeat', 'other'] as const;
@@ -128,10 +129,12 @@ export interface DailyReportManager {
     short: string;
     /** «Р. Чанцалдулам». */
     title: string;
+    /** Холбосон акаунтын бүртгэлд хадгалсан хувийн утас. */
+    phone: string | null;
     inRoster: boolean;
     active: boolean;
 }
-export interface DailyRosterEntry { name: string; is_active: boolean }
+export interface DailyRosterEntry { name: string; is_active: boolean; phone?: string | null }
 
 /** Давхардсан товчлолыг уртасгаж ялгана (Хон / Хонг). */
 function withUniqueShorts(managers: Array<Omit<DailyReportManager, 'short'> & { short?: string }>): DailyReportManager[] {
@@ -162,10 +165,11 @@ export function resolveReportManagers(config: DailyReportConfig, roster: readonl
         name: manager.name,
         short: manager.short,
         title: formalManagerName(manager.name),
+        phone: byName.get(manager.name)?.phone ?? null,
         inRoster: byName.has(manager.name),
         active: !!byName.get(manager.name)?.is_active,
     })));
-    if (dataNames.includes(UNASSIGNED)) columns.push({ name: UNASSIGNED, short: '—', title: 'Оноогдоогүй', inRoster: false, active: false });
+    if (dataNames.includes(UNASSIGNED)) columns.push({ name: UNASSIGNED, short: '—', title: 'Оноогдоогүй', phone: null, inRoster: false, active: false });
     return columns;
 }
 
@@ -362,7 +366,7 @@ export function formatDailyReportText(report: DailyReport): string {
     const { managers } = report;
     out.push(`${report.title.toLocaleUpperCase('mn')} — ${reportDateLabel(report.date)}`);
     const named = managers.filter(manager => manager.inRoster);
-    if (named.length) out.push(`Менежер: ${named.map(manager => manager.title).join(', ')}`);
+    if (named.length) out.push(`Менежер: ${named.map(manager => `${manager.title}${manager.phone ? ` (${formatStaffPhone(manager.phone)})` : ''}`).join(', ')}`);
 
     for (const line of report.lines) {
         out.push('', [`${line.label}: Нийт ${line.total} дуудлага ирсэн${detail(line.byManager, managers)}.`, sentence(line.note)].filter(Boolean).join(' '));

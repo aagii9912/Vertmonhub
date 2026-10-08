@@ -48,14 +48,15 @@ beforeEach(() => {
     state.db = createMemoryDb({
         user_profiles: [
             { id: 'admin-user', full_name: 'Захирал Бат' },
-            { id: 'khon-user', full_name: 'Khongoroo' },
-            { id: 'loose-user', full_name: 'Шинэ менежер' },
+            { id: 'khon-user', full_name: 'Khongoroo', phone: '99112233' },
+            { id: 'loose-user', full_name: CHAN, phone: '99114455' },
+            { id: 'other-project-user', full_name: 'Өөр төсөл', phone: '99116677' },
         ],
         sales_managers: [
             { shop_id: 'shop-1', name: CHAN, user_id: null, is_active: true },
             { shop_id: 'shop-1', name: KHON, user_id: 'khon-user', is_active: true },
             { shop_id: 'shop-1', name: 'Ажлаас гарсан', user_id: null, is_active: false },
-            { shop_id: 'shop-2', name: 'Өөр төсөл', user_id: null, is_active: true },
+            { shop_id: 'shop-2', name: 'Өөр төсөл', user_id: 'other-project-user', is_active: true },
         ],
         sales_manager_projects: [{ shop_id: 'shop-1', manager_name: KHON, project_id: 'project-1' }],
         property_viewings: [
@@ -109,6 +110,10 @@ describe('GET /api/dashboard/daily-report', () => {
         expect(body.viewer).toEqual({ personal: true, onboarding: false, canEditTeam: true, editable: [KHON] });
         expect(body.roster).toEqual([]);
         expect(body.report.managers.map((manager: { name: string }) => manager.name)).toEqual([KHON, CHAN]);
+        expect(body.report.managers.map((manager: { phone: string | null }) => manager.phone)).toEqual(['99112233', null]);
+        // Ижил нэртэй холбогдоогүй профайл болон өөр төслийн дугаарыг тайланд авахгүй.
+        expect(JSON.stringify(body)).not.toContain('99114455');
+        expect(JSON.stringify(body)).not.toContain('99116677');
         expect(body.report.lines[0]).toMatchObject({ label: 'Төслийн утас · 77862222', total: 7 });
         expect(body.report.lines[1]).toMatchObject({ label: 'Менежерийн дуудлага', total: 0 });
         expect(body.report.lines[1].rows[0].values[KHON]).toBeNull();

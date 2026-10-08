@@ -13,7 +13,11 @@ const config = {
     title: '"Элизиум Ресиденс" баг',
     managers: [{ name: 'Ариунбилэг.Нямхүү', short: 'Ари' }, { name: CHAN, short: 'Чан' }, { name: KHON, short: 'Хон' }],
 };
-const roster = [{ name: 'Ариунбилэг.Нямхүү', is_active: true }, { name: CHAN, is_active: true }, { name: KHON, is_active: true }];
+const roster = [
+    { name: 'Ариунбилэг.Нямхүү', is_active: true, phone: null },
+    { name: CHAN, is_active: true, phone: '88881234' },
+    { name: KHON, is_active: true, phone: '90085678' },
+];
 
 async function setup(page: Page, mode: 'team' | 'personal') {
     const today = ubDateStr();
@@ -89,7 +93,7 @@ test('багийн өдрийн тайлан: хүснэгт, уулзалтын
     await page.goto('/dashboard/daily-report');
     const report = page.locator('article.daily-report');
     await expect(report.getByText('"Элизиум Ресиденс" баг', { exact: true })).toBeVisible();
-    await expect(report.getByText('Менежер — Р. Чанцалдулам', { exact: true })).toBeVisible();
+    await expect(report.getByText('Менежер — Р. Чанцалдулам')).toBeVisible();
     await expect(report.getByText('Нийт 11 дуудлага ирсэн.', { exact: true })).toBeVisible();
     await expect(report.getByText('Бат — Б2-58м2 10-30%; үлдэгдэл банк')).toBeVisible();
     await expect(page.getByText(/товлосон 1 уулзалтын үр дүн бүртгэгдээгүй/)).toBeVisible();
@@ -126,6 +130,9 @@ test('ээлжийн менежер багийн мэдээллийг харж, 
     const report = page.locator('article.daily-report');
     await expect(report.getByRole('columnheader', { name: 'Хон' }).first()).toBeVisible();
     await expect(report.getByRole('columnheader', { name: 'Чан' }).first()).toBeVisible();
+    const personalCalls = report.getByRole('region', { name: 'Менежерийн дуудлага', exact: true });
+    await expect(personalCalls.getByRole('columnheader', { name: 'Чан 8888 1234' })).toBeVisible();
+    await expect(personalCalls.getByRole('columnheader', { name: 'Хон 9008 5678' })).toBeVisible();
     await expect(report.getByText('Бат — Б2-58м2 10-30%; үлдэгдэл банк')).toBeVisible();
     await expect(report.getByRole('spinbutton', { name: new RegExp(CHAN) })).toHaveCount(0);
     await expect(report.getByRole('region', { name: 'Төслийн утас · 77862222', exact: true }).getByRole('cell').nth(1)).toHaveText('2');
@@ -153,8 +160,11 @@ test('ээлжийн менежер багийн мэдээллийг харж, 
     expect(copied).toContain('Менежерийн дуудлага: Нийт 9 дуудлага ирсэн');
     expect(copied).toContain('Бат — Б2-58м2 10-30%; үлдэгдэл банк');
     expect(copied).toContain('Тайлан хийж гүйцэтгэсэн: М. Хонгорзул');
+    expect(copied).toContain('Р. Чанцалдулам (8888 1234)');
+    expect(copied).toContain('М. Хонгорзул (9008 5678)');
     await page.emulateMedia({ media: 'print' });
     await expect(report.getByRole('region', { name: 'Менежерийн дуудлага', exact: true })).toBeVisible();
+    await expect(personalCalls.getByText('9008 5678', { exact: true })).toBeVisible();
     await page.screenshot({ path: 'test-results/e2e/daily-report-print.png', fullPage: true });
     expect(state.errors).toEqual([]);
 });

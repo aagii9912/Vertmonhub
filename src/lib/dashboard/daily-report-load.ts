@@ -50,9 +50,19 @@ export async function loadDailyReportConfig(db: SupabaseClient, shopId: string, 
 }
 
 export async function loadDailyRoster(db: SupabaseClient, shopId: string): Promise<DailyRosterEntry[]> {
-    const { data, error } = await db.from('sales_managers').select('name, is_active').eq('shop_id', shopId);
+    const { data, error } = await db.from('sales_managers').select('name, is_active, user_id').eq('shop_id', shopId);
     assertOk(error);
-    return (data ?? []).filter(row => !!row.name).map(row => ({ name: row.name as string, is_active: !!row.is_active }));
+    const userIds = [...new Set((data ?? []).map(row => row.user_id as string | null).filter((id): id is string => !!id))];
+    const phones = new Map<string, string | null>();
+    if (userIds.length) {
+        // Зөвхөн энэ төслийн бүртгэлтэй холбосон акаунтууд; нэрээр тааруулж утас авахгүй.
+        const profiles = await db.from('user_profiles').select('id, phone').in('id', userIds);
+        assertOk(profiles.error);
+        for (const profile of profiles.data ?? []) phones.set(profile.id, profile.phone);
+    }
+    return (data ?? []).filter(row => !!row.name).map(row => ({
+        name: row.name as string, is_active: !!row.is_active, phone: phones.get(row.user_id) || null,
+    }));
 }
 
 type MeetingSelect = {

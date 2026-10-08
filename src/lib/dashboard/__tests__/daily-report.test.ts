@@ -186,6 +186,12 @@ describe('buildDailyReport', () => {
 });
 
 describe('formatDailyReportText', () => {
+    it('includes the saved manager phone in the copy-ready report', () => {
+        const report = buildDailyReport(input({ roster: roster.map((manager, index) => ({ ...manager, phone: index === 0 ? '99112233' : null })) }));
+        expect(report.managers[0].phone).toBe('99112233');
+        expect(formatDailyReportText(report)).toContain('Менежер: Н. Ариунбилэг (9911 2233), Р. Чанцалдулам, М. Хонгорзул');
+    });
+
     it('produces the messenger text in the order of the paper report', () => {
         const text = formatDailyReportText(buildDailyReport(input()));
         expect(text).toBe([

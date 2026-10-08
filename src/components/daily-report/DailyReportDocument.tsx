@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { ArrowUpRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatTime } from '@/lib/utils/date';
+import { formatStaffPhone } from '@/lib/admin/staff-profile';
 import { Textarea } from '@/components/ui/Textarea';
 import {
     DAILY_COUNT_MAX, DAILY_LIMITS, reportDateLabel,
@@ -41,14 +42,14 @@ export function DailyReportDocument({ report, editing }: { report: DailyReport; 
                 </div>
                 {people.length > 0 && (
                     <ul className="space-y-0.5 text-right text-[13px] text-fg-2">
-                        {people.map(manager => <li key={manager.name}>Менежер — {manager.title}</li>)}
+                        {people.map(manager => <li key={manager.name}>Менежер — {manager.title}{manager.phone && <span className="num ml-2">{formatStaffPhone(manager.phone)}</span>}</li>)}
                     </ul>
                 )}
             </header>
 
             <section className="grid gap-4 lg:grid-cols-2 print:grid-cols-2 print:gap-3" aria-label="Менежерийн тоон үзүүлэлт">
                 {report.lines.map(line => (
-                    <CountTable key={line.key} title={line.label} caption="Дуудлага" section={line} managers={managers} editing={editing} />
+                    <CountTable key={line.key} title={line.label} caption="Дуудлага" section={line} managers={managers} editing={editing} showPhones={line.key === 'personal'} />
                 ))}
                 <CountTable title="Уулзалт" caption="Системээс" section={report.meetings} managers={managers}
                     footer={<Link href="/dashboard/viewings" className="inline-flex items-center gap-1 text-brand-strong hover:underline print:hidden">Уулзалт бүртгэх<ArrowUpRight className="size-3.5" /></Link>} />
@@ -126,13 +127,14 @@ function SummaryRow({ label, text, note, edit }: {
     );
 }
 
-function CountTable({ title, caption, section, managers, editing, footer }: {
+function CountTable({ title, caption, section, managers, editing, footer, showPhones = false }: {
     title: string;
     caption: string;
     section: DailyGridSection;
     managers: readonly DailyReportManager[];
     editing?: DailyReportEditing | null;
     footer?: ReactNode;
+    showPhones?: boolean;
 }) {
     const showTotalRow = section.rows.length > 1;
     // Засах үед нийлбэр ноорогтой хамт шинэчлэгдэнэ (хадгалаагүй ч харагдана).
@@ -163,6 +165,7 @@ function CountTable({ title, caption, section, managers, editing, footer }: {
                             {managers.map(manager => (
                                 <th key={manager.name} scope="col" className="px-2 py-2 text-center font-medium" title={manager.name || 'Хариуцагчгүй'}>
                                     <abbr className="no-underline" title={manager.name || 'Хариуцагчгүй'}>{manager.short}</abbr>
+                                    {showPhones && <span className="num mt-0.5 block whitespace-nowrap font-normal">{formatStaffPhone(manager.phone) || '—'}</span>}
                                 </th>
                             ))}
                             <th scope="col" className="px-3 py-2 text-right font-semibold text-foreground">Нийт</th>
