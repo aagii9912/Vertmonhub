@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createMemoryDb, type MemoryDb } from '@/test/memory-db';
 
-const state = vi.hoisted(() => ({ isManager: false, rosterName: null as string | null, loads: [] as Array<Record<string, unknown>>, unavailable: false }));
+const state = vi.hoisted(() => ({ isManager: false, rosterName: null as string | null, loads: [] as Array<Record<string, unknown>>, unavailable: false, db: null as unknown as MemoryDb }));
 vi.mock('@/lib/supabase', () => ({
-    supabaseAdmin: () => ({ from: () => ({ select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { name: 'Elysium Residence' }, error: null }) }) }) }) }),
+    supabaseAdmin: () => state.db,
 }));
 vi.mock('@/lib/sales/manager-identity', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@/lib/sales/manager-identity')>();
@@ -12,14 +13,14 @@ vi.mock('@/lib/sales/manager-identity', async (importOriginal) => {
 });
 vi.mock('@/lib/dashboard/daily-report-load', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@/lib/dashboard/daily-report-load')>();
-    const { buildDailyReport, DEFAULT_DAILY_REPORT_CONFIG } = await import('@/lib/dashboard/daily-report');
+    const { buildDailyReport, readDailyReportConfig } = await import('@/lib/dashboard/daily-report');
     return {
         ...actual,
         loadDailyReport: async (_db: unknown, options: { shopName: string; date: string; only: string | null }) => {
             if (state.unavailable) throw new actual.DailyReportUnavailableError();
             state.loads.push(options);
             const report = buildDailyReport({
-                date: options.date, title: `${options.shopName} баг`, config: DEFAULT_DAILY_REPORT_CONFIG,
+                date: options.date, title: `${options.shopName} баг`, config: readDailyReportConfig(null, options.shopName).config,
                 roster: [{ name: 'Хонгорзул.Мөнхгэрэл', is_active: true }, { name: 'Чанцалдулам.Раднаа', is_active: true }],
                 counts: [{ manager_name: 'Хонгорзул.Мөнхгэрэл', metric: 'call.l1.total', value: 4 }],
                 meetings: [{ id: 'm1', manager: 'Хонгорзул.Мөнхгэрэл', type: 'repeat_customer', customer: 'Загдсүрэн', property: null, notes: '10-50 хувь', feedback: null, scheduled_at: '2026-10-07T02:00:00Z' }],
@@ -38,13 +39,20 @@ const manager = { canWrite: true, canDelete: false, role: 'sales_manager', modul
 beforeEach(() => {
     vi.useFakeTimers({ now: new Date('2026-10-07T04:00:00Z'), toFake: ['Date'] }); // УБ Лхагва 12:00
     Object.assign(state, { isManager: false, rosterName: null, loads: [], unavailable: false });
+    state.db = createMemoryDb({
+        shops: [{ id: 'shop', name: 'Elysium Residence' }],
+        sales_manager_projects: [{ shop_id: 'shop', manager_name: 'Хонгорзул.Мөнхгэрэл', project_id: 'project' }],
+    });
 });
 
 describe('get_daily_report AI tool', () => {
     it('gives the team today’s report with copy-ready text, missing managers and pending meetings', async () => {
         const result = await getDailyReportTool('shop', {}, 'u-admin', admin) as Record<string, any>;
         expect(state.loads[0]).toMatchObject({ date: '2026-10-07', only: null, shopName: 'Elysium Residence' });
-        expect(result.calls).toEqual([{ line: 'Төслийн утас', total: 4, byManager: { 'М. Хонгорзул': 4 } }]);
+        expect(result.calls).toEqual([
+            { line: 'Төслийн утас · 77862222', total: 4, byManager: { 'М. Хонгорзул': 4 } },
+            { line: 'Менежерийн дуудлага', total: 0, byManager: {} },
+        ]);
         expect(result.meetings).toEqual({ total: 1, byType: [{ type: 'Шинэ', count: 0 }, { type: 'Давтан', count: 1 }, { type: 'Захиалагч', count: 0 }] });
         expect(result.missingManagers).toEqual(['Чанцалдулам.Раднаа']);
         expect(result.pendingMeetings).toBe(1);
@@ -53,11 +61,17 @@ describe('get_daily_report AI tool', () => {
         expect(result.url).toBe('/dashboard/daily-report');
     });
 
-    it('limits a linked sales manager to their own column and refuses users without the team view', async () => {
+    it('gives registered managers the project team report and refuses users without access', async () => {
         Object.assign(state, { isManager: true, rosterName: 'Хонгорзул.Мөнхгэрэл' });
         const own = await getDailyReportTool('shop', { date: '2026-10-06' }, 'u-khon', manager) as Record<string, any>;
-        expect(state.loads[0]).toMatchObject({ date: '2026-10-06', only: 'Хонгорзул.Мөнхгэрэл' });
-        expect(own.personal).toBe(true);
+        expect(state.loads[0]).toMatchObject({ date: '2026-10-06', only: null });
+        expect(own.personal).toBe(false);
+        expect(own.plainText).toContain('Р. Чанцалдулам');
+        expect(own.missingManagers).toEqual(['Чанцалдулам.Раднаа']);
+        expect(await getDailyReportTool('shop', {}, 'u-khon', manager, { projectIds: [], managerName: 'Хонгорзул.Мөнхгэрэл' }))
+            .toMatchObject({ error: expect.stringContaining('холбогдоогүй') });
+        state.db.tables.sales_manager_projects = [];
+        expect(await getDailyReportTool('shop', {}, 'u-khon', manager)).toMatchObject({ error: expect.stringContaining('холбогдоогүй') });
 
         Object.assign(state, { isManager: false, rosterName: null });
         expect(await getDailyReportTool('shop', {}, 'u-x', { ...admin, role: 'viewer', modules: ['dashboard'] })).toEqual({ error: 'Багийн өдрийн тайланг харах эрхгүй' });

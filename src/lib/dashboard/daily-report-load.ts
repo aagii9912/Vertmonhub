@@ -2,6 +2,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { leadDisplayName } from '@/lib/leads/labels';
 import { shiftDate, ubDateStart } from '@/lib/sales/activity';
 import { fetchAllRows } from '@/lib/utils/pagination';
+import { resolveReportViewer } from '@/lib/sales/manager-identity';
+import { ProjectScopeError } from '@/lib/sales/project-scope';
 import { viewingSelectionText, type ViewingInterest } from '@/lib/viewings/interests';
 import {
     buildDailyReport, readDailyReportConfig, readDailyReportNotes,
@@ -23,10 +25,28 @@ function assertOk(error: { code?: string; message: string } | null) {
     throw new Error(error.message);
 }
 
-export async function loadDailyReportConfig(db: SupabaseClient, shopId: string) {
+/** Өдрийн тайланг ээлжээр нэгтгэнэ: төсөлдөө бүртгэлтэй менежер багийн тайланг харна. */
+export async function resolveDailyReportViewer(
+    db: SupabaseClient,
+    shopId: string,
+    input: Parameters<typeof resolveReportViewer>[2],
+) {
+    const viewer = await resolveReportViewer(db, shopId, input);
+    const entry = viewer.identity?.rosterEntry;
+    let ownManager = viewer.personal && entry?.is_active && input.userId && entry.user_id === input.userId ? entry.name : null;
+    if (ownManager) {
+        const { data, error } = await db.from('sales_manager_projects').select('project_id')
+            .eq('shop_id', shopId).eq('manager_name', ownManager);
+        if (error) throw new ProjectScopeError(503, 'Менежерийн төслийн харьяаллыг шалгаж чадсангүй');
+        if (!data?.length) ownManager = null;
+    }
+    return { ...viewer, ownManager, canViewTeam: viewer.canViewTeam || !!ownManager };
+}
+
+export async function loadDailyReportConfig(db: SupabaseClient, shopId: string, shopName = '') {
     const { data, error } = await db.from('daily_report_settings').select('config, updated_at').eq('shop_id', shopId).maybeSingle();
     assertOk(error);
-    return { ...readDailyReportConfig(data?.config ?? null), updatedAt: (data?.updated_at as string | undefined) ?? null };
+    return { ...readDailyReportConfig(data?.config ?? null, shopName), updatedAt: (data?.updated_at as string | undefined) ?? null };
 }
 
 export async function loadDailyRoster(db: SupabaseClient, shopId: string): Promise<DailyRosterEntry[]> {
@@ -55,7 +75,7 @@ export async function loadDailyReport(db: SupabaseClient, options: {
     const { shopId, date, only } = options;
     const start = ubDateStart(date).toISOString();
     const end = ubDateStart(shiftDate(date, 1)).toISOString();
-    const settings = await loadDailyReportConfig(db, shopId);
+    const settings = await loadDailyReportConfig(db, shopId, options.shopName);
 
     const [roster, counts, meetings, pending, reportRow] = await Promise.all([
         loadDailyRoster(db, shopId),

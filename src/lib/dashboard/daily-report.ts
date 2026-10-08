@@ -57,21 +57,29 @@ export const DailyReportConfigSchema = z.object({
 export type DailyReportConfig = z.output<typeof DailyReportConfigSchema>;
 export type DailyReportLine = DailyReportConfig['lines'][number];
 
-/** Тохиргоо хадгалаагүй төслийн эхлэл: нэг шугам, хоёр чатын суваг, идэвхтэй бүх менежер. */
+/** Тохиргоо хадгалаагүй төслийн эхлэл: төслийн/менежерийн утас, хоёр чат, бүх менежер. */
 export const DEFAULT_DAILY_REPORT_CONFIG: DailyReportConfig = {
     title: null,
-    lines: [{ key: 'l1', label: 'Төслийн утас', categories: [] }],
+    lines: [
+        { key: 'l1', label: 'Төслийн утас', categories: [] },
+        { key: 'personal', label: 'Менежерийн дуудлага', categories: [] },
+    ],
     chats: [{ key: 'page', label: 'Пэйж FB' }, { key: 'personal', label: 'Хувь чат' }],
     managers: null,
 };
 
 /** Хадгалсан тохиргоо → загвар. Мөргүй бол анхдагч; эвдэрсэн бол анхдагч + `invalid`. */
-export function readDailyReportConfig(raw: unknown): { config: DailyReportConfig; saved: boolean; invalid: boolean } {
-    if (raw === null || raw === undefined) return { config: DEFAULT_DAILY_REPORT_CONFIG, saved: false, invalid: false };
+export function readDailyReportConfig(raw: unknown, shopName = ''): { config: DailyReportConfig; saved: boolean; invalid: boolean } {
+    const fallback = /elysium|элизиум/i.test(shopName) ? {
+        ...DEFAULT_DAILY_REPORT_CONFIG,
+        // l1 түлхүүр хэвээр: өмнө нь оруулсан төслийн утасны тоог хадгална.
+        lines: DEFAULT_DAILY_REPORT_CONFIG.lines.map(line => line.key === 'l1' ? { ...line, label: 'Төслийн утас · 77862222' } : line),
+    } : DEFAULT_DAILY_REPORT_CONFIG;
+    if (raw === null || raw === undefined) return { config: fallback, saved: false, invalid: false };
     const parsed = DailyReportConfigSchema.safeParse(raw);
     return parsed.success
         ? { config: parsed.data, saved: true, invalid: false }
-        : { config: DEFAULT_DAILY_REPORT_CONFIG, saved: true, invalid: true };
+        : { config: fallback, saved: true, invalid: true };
 }
 
 export const callMetric = (line: string, category: CallCategory | 'total') => `call.${line}.${category}`;

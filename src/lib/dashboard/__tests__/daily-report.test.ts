@@ -77,11 +77,28 @@ describe('daily report config', () => {
         expect(DailyReportConfigSchema.safeParse({ ...base, extra: true }).success).toBe(false);
     });
 
+    it('uses Elysium’s project phone and separate personal calls without replacing saved templates', () => {
+        const config = readDailyReportConfig(null, 'Elysium Residence').config;
+        expect(config.lines).toEqual([
+            { key: 'l1', label: 'Төслийн утас · 77862222', categories: [] },
+            { key: 'personal', label: 'Менежерийн дуудлага', categories: [] },
+        ]);
+        expect(readDailyReportConfig(null, 'Mandala Garden').config.lines[0].label).toBe('Төслийн утас');
+        expect(readDailyReportConfig(elysium, 'Elysium Residence').config).toEqual(elysium);
+        const report = buildDailyReport(input({ config, counts: [
+            { manager_name: roster[0].name, metric: 'call.l1.total', value: 3 },
+            { manager_name: roster[0].name, metric: 'call.personal.total', value: 2 },
+        ] }));
+        expect(report.lines.map(line => line.total)).toEqual([3, 2]);
+        expect(formatDailyReportText(report)).toContain('Төслийн утас · 77862222: Нийт 3 дуудлага ирсэн');
+        expect(formatDailyReportText(report)).toContain('Менежерийн дуудлага: Нийт 2 дуудлага ирсэн');
+    });
+
     it('lists the metrics a template accepts and picks the next free key', () => {
         expect([...configMetrics(elysium)]).toEqual([
             'call.l1.new', 'call.l1.other', 'call.l2.new', 'call.l2.repeat', 'call.l2.other', 'chat.page', 'chat.personal',
         ]);
-        expect([...configMetrics(DEFAULT_DAILY_REPORT_CONFIG)]).toEqual(['call.l1.total', 'chat.page', 'chat.personal']);
+        expect([...configMetrics(DEFAULT_DAILY_REPORT_CONFIG)]).toEqual(['call.l1.total', 'call.personal.total', 'chat.page', 'chat.personal']);
         expect(nextConfigKey(['l1', 'l3'], 'l')).toBe('l2');
     });
 });

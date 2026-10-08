@@ -57,6 +57,7 @@ beforeEach(() => {
             { shop_id: 'shop-1', name: 'Ажлаас гарсан', user_id: null, is_active: false },
             { shop_id: 'shop-2', name: 'Өөр төсөл', user_id: null, is_active: true },
         ],
+        sales_manager_projects: [{ shop_id: 'shop-1', manager_name: KHON, project_id: 'project-1' }],
         property_viewings: [
             // 2026-09-30 УБ = [2026-09-29T16:00Z, 2026-09-30T16:00Z)
             viewing('v1', CHAN, '2026-09-29T16:00:00.000Z', { agent_notes: 'Б2-58м2 10-30%', customer_feedback: 'үлдэгдэл банк' }),
@@ -101,18 +102,22 @@ describe('GET /api/dashboard/daily-report', () => {
         expect(report.missing).toEqual([]);
     });
 
-    it('shows a linked sales manager only their own column, meetings and no team notes', async () => {
+    it('shows a project manager the full team report while allowing only their own cells to be edited', async () => {
         state.role = 'sales_manager';
         state.userId = 'khon-user';
         const body = await (await get('2026-09-30')).json();
-        expect(body.viewer).toEqual({ personal: true, onboarding: false, canEditTeam: false, editable: [KHON] });
+        expect(body.viewer).toEqual({ personal: true, onboarding: false, canEditTeam: true, editable: [KHON] });
         expect(body.roster).toEqual([]);
-        expect(body.report.managers.map((manager: { name: string }) => manager.name)).toEqual([KHON]);
-        expect(body.report.lines[0].total).toBe(0);
+        expect(body.report.managers.map((manager: { name: string }) => manager.name)).toEqual([KHON, CHAN]);
+        expect(body.report.lines[0]).toMatchObject({ label: 'Төслийн утас · 77862222', total: 7 });
+        expect(body.report.lines[1]).toMatchObject({ label: 'Менежерийн дуудлага', total: 0 });
+        expect(body.report.lines[1].rows[0].values[KHON]).toBeNull();
         expect(body.report.chats.total).toBe(3);
-        expect(body.report.meetings.total).toBe(1);
-        expect(body.report.lines[0].note).toBe('');
-        expect(body.report.completed).toBeNull();
+        expect(body.report.meetings.total).toBe(2);
+        expect(body.report.meetings.groups[0].items[0].text).toContain('Харилцагч v1');
+        expect(body.report.lines[0].note).toBe('Ерөнхий мэдээлэл');
+        expect(body.report.completed.by).toBe('Р. Чанцалдулам');
+        expect(JSON.stringify(body.report)).not.toContain('Өөр төсөл');
     });
 
     it('asks an unlinked sales manager to be registered and refuses users without team reports', async () => {
@@ -132,6 +137,24 @@ describe('GET /api/dashboard/daily-report', () => {
         expect(response.status).toBe(503);
         expect((await response.json()).error).toContain('идэвхжээгүй');
     });
+
+    it.each(['inactive', 'unlinked', 'ambiguous', 'no-project', 'foreign-project'])('does not grant the team view to a manager with %s membership', async reason => {
+        state.role = 'sales_manager';
+        state.userId = 'khon-user';
+        const manager = state.db.tables.sales_managers.find(row => row.user_id === state.userId)!;
+        if (reason === 'inactive') manager.is_active = false;
+        if (reason === 'unlinked') {
+            manager.user_id = null;
+            state.db.tables.user_profiles.find(row => row.id === state.userId)!.full_name = KHON;
+        }
+        if (reason === 'ambiguous') state.db.tables.sales_managers.push({ ...manager, name: 'Давхар бүртгэл' });
+        if (reason === 'no-project') state.db.tables.sales_manager_projects = [];
+        if (reason === 'foreign-project') state.db.tables.sales_manager_projects[0].shop_id = 'shop-2';
+        const body = await (await get('2026-09-30')).json();
+        expect(body.report).toBeNull();
+        expect(body.viewer).toMatchObject({ onboarding: true, canEditTeam: false, editable: [] });
+        expect((await put({ date: '2026-09-30', notes: { general: 'x' }, complete: true })).status).toBe(403);
+    });
 });
 
 describe('PUT /api/dashboard/daily-report', () => {
@@ -144,8 +167,25 @@ describe('PUT /api/dashboard/daily-report', () => {
         expect(rows.map(row => [row.metric, row.value, row.updated_by])).toEqual([['call.l1.total', 4, 'khon-user']]);
 
         expect((await put({ date: '2026-09-30', cells: [{ manager: CHAN, metric: 'call.l1.total', value: 1 }] })).status).toBe(403);
-        expect((await put({ date: '2026-09-30', notes: { general: 'x' } })).status).toBe(403);
-        expect((await put({ date: '2026-09-30', complete: true })).status).toBe(403);
+        expect((await put({ date: '2026-09-30', cells: [{ manager: CHAN, metric: 'call.l1.total', value: null }], complete: true })).status).toBe(403);
+        expect(state.db.tables.daily_report_counts.find(row => row.shop_id === 'shop-1' && row.manager_name === CHAN)?.value).toBe(7);
+    });
+
+    it('lets the rotating manager save personal calls, team notes and completion without changing anyone else’s counts', async () => {
+        state.role = 'sales_manager';
+        state.userId = 'khon-user';
+        const before = state.db.tables.daily_report_counts.filter(row => row.manager_name !== KHON || row.shop_id !== 'shop-1');
+        const response = await put({ date: '2026-09-30', cells: [{ manager: KHON, metric: 'call.personal.total', value: 5 }], notes: { general: 'Багийн өдрийн нэгтгэл' }, complete: true });
+        expect(response.status).toBe(200);
+        const body = await (await get('2026-09-30')).json();
+        expect(body.report.lines[0].total).toBe(7);
+        expect(body.report.lines[1].rows[0].values[KHON]).toBe(5);
+        expect(body.report.generalNote).toBe('Багийн өдрийн нэгтгэл');
+        expect(body.report.completed.by).toBe('М. Хонгорзул');
+        expect(state.db.tables.daily_report_counts.filter(row => row.manager_name !== KHON || row.shop_id !== 'shop-1')).toEqual(before);
+        expect(state.db.tables.daily_reports[0].completed_by).toBe('khon-user');
+        expect((await put({ date: '2026-09-30', complete: false })).status).toBe(200);
+        expect((await (await get('2026-09-30')).json()).report.completed).toBeNull();
     });
 
     it('checks managers against the roster and metrics against the template', async () => {

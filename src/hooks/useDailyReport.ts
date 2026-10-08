@@ -16,7 +16,7 @@ export interface DailyReportResponse {
     viewer: {
         personal: boolean;
         onboarding: boolean;
-        /** Тэмдэглэл, баталгаажуулалт, бусдын тоог засах. */
+        /** Багийн тэмдэглэл, баталгаажуулалт (тооны эрхийг editable шийднэ). */
         canEditTeam: boolean;
         /** Тоог нь засаж болох менежерүүд (баганын нэр). */
         editable: string[];
