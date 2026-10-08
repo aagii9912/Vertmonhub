@@ -55,6 +55,7 @@ export async function getTeamTargets(
 function monthlyRow(row: Record<string, unknown>): MonthlySalesMonth {
     return MonthlySalesMonthSchema.parse({
         month: Number(row.month), revision: Number(row.revision),
+        block_amounts: row.block_amounts ?? {},
         ...Object.fromEntries(MONTHLY_SALES_FIELDS.map(field => [field, row[field] === null ? null : Number(row[field])])),
     });
 }
@@ -63,7 +64,7 @@ function monthlyRow(row: Record<string, unknown>): MonthlySalesMonth {
 export async function getTeamMonthlySales(supabase: SupabaseClient, shopId: string, year: number): Promise<MonthlySalesMonth[]> {
     SalesYearSchema.parse(year);
     const { data, error } = await supabase.from('team_sales_targets')
-        .select('month, revision, target_amount, cashflow_target_amount, manual_contract_actual_amount, manual_cashflow_actual_amount')
+        .select('month, revision, target_amount, cashflow_target_amount, manual_contract_actual_amount, manual_cashflow_actual_amount, block_amounts')
         .eq('shop_id', shopId).eq('year', year);
     if (error) throw error;
     const months = emptyMonthlySales();

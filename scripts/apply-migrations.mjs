@@ -29,6 +29,9 @@ const [from, to] = args.filter((arg) => /^\d{14}$/.test(arg));
 
 // Энэ хувилбаруудын оруулсны дараах шалгалт (объект бий эсэх). Бусад хувилбарт шалгалтгүй.
 const VERIFY = {
+    '20261008130000': `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+        AND table_name = 'team_sales_targets' AND column_name = 'block_amounts')
+        AND position('v_blocks' in pg_get_functiondef('public.save_team_monthly_sales(uuid,integer,jsonb,uuid)'::regprocedure)) > 0 AS ok`,
     '20261008120000': `SELECT to_regclass('public.project_pricing_configs') IS NOT NULL
         AND to_regprocedure('public.save_project_pricing(uuid,uuid,integer,text,jsonb)') IS NOT NULL AS ok`,
     '20261008121000': `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'

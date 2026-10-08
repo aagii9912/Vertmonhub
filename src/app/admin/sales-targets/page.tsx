@@ -18,8 +18,9 @@ import { useAuth } from '@/contexts/AuthContext';
 import { formatMNT } from '@/lib/utils/currency';
 import {
     emptyMonthlySales, MONTHLY_SALES_FIELDS, MONTHLY_SALES_LABELS, MonthlySalesMonthSchema,
-    monthlySalesAttainment, monthlySalesPatches, parseMonthlySalesAmount, summarizeMonthlySales,
-    type MonthlySalesField, type MonthlySalesMonth,
+    MONTHLY_SALES_BLOCKS, MONTHLY_SALES_BLOCK_LABELS, hasMonthlySalesBreakdown, monthlySalesWithBlockTotals,
+    monthlySalesPatches, parseMonthlySalesAmount, summarizeMonthlySales,
+    type MonthlySalesBlock, type MonthlySalesField, type MonthlySalesMonth,
 } from '@/lib/sales/monthly';
 
 const ROLE_LABEL: Record<string, string> = { super_admin: 'Super Admin', admin: 'Админ', marketing: 'Маркетинг', viewer: 'Харах эрх' };
@@ -48,15 +49,22 @@ const NO_TEAM_MEMBERS: SalesTargetsData['teamMembers'] = [];
 const NO_PROJECTS: SalesTargetsData['projects'] = [];
 const NO_SHOPS: Array<{ id: string; name: string }> = [];
 const NO_MONTHLY_SALES = emptyMonthlySales();
-type MonthInputs = { month: number; revision: number } & Record<MonthlySalesField, string>;
+type MonthInputs = { month: number; blocks: Record<MonthlySalesBlock, Record<MonthlySalesField, string>> };
 type TargetDraft = { before: MonthlySalesMonth[]; inputs: MonthInputs[] };
+const TABLE_FIELDS: MonthlySalesField[] = [
+    'target_amount', 'manual_contract_actual_amount', 'cashflow_target_amount', 'manual_cashflow_actual_amount',
+];
+const isPlan = (field: MonthlySalesField) => field.endsWith('target_amount');
 
 function monthInputs(months: MonthlySalesMonth[]): MonthInputs[] {
-    return months.map(row => ({ month: row.month, revision: row.revision,
-        ...Object.fromEntries(MONTHLY_SALES_FIELDS.map(field => [field, row[field] === null ? '' : row[field].toLocaleString('en-US', { maximumFractionDigits: 2 })])),
+    return months.map(row => ({ month: row.month,
+        blocks: Object.fromEntries(MONTHLY_SALES_BLOCKS.map(block => [block,
+            Object.fromEntries(MONTHLY_SALES_FIELDS.map(field => [field,
+                row.block_amounts?.[block]?.[field]?.toLocaleString('en-US', { maximumFractionDigits: 2 }) ?? '',
+            ])),
+        ])),
     })) as MonthInputs[];
 }
-const pctLabel = (value: number | null) => value === null ? '—' : `${value}%`;
 
 export default function SalesTargetsAdminPage() {
     const queryClient = useQueryClient();
@@ -132,11 +140,25 @@ export default function SalesTargetsAdminPage() {
         setManagersDraft(null);
     }
 
-    const inputs = targetDraft?.inputs ?? monthInputs(data?.months ?? NO_MONTHLY_SALES);
-    const invalidAmounts = inputs.some(row => MONTHLY_SALES_FIELDS.some(field => parseMonthlySalesAmount(row[field]) === undefined));
-    const months = inputs.map(row => ({ month: row.month, revision: row.revision,
-        ...Object.fromEntries(MONTHLY_SALES_FIELDS.map(field => [field, parseMonthlySalesAmount(row[field]) ?? null])),
-    })) as MonthlySalesMonth[];
+    const originalMonths = targetDraft?.before ?? data?.months ?? NO_MONTHLY_SALES;
+    const inputs = targetDraft?.inputs ?? monthInputs(originalMonths);
+    const invalidCells = inputs.some(row => MONTHLY_SALES_BLOCKS.some(block => MONTHLY_SALES_FIELDS.some(field =>
+        parseMonthlySalesAmount(row.blocks[block][field]) === undefined)));
+    const months = inputs.map((row, index) => {
+        const original = originalMonths[index];
+        const block_amounts = { ...original.block_amounts };
+        for (const block of MONTHLY_SALES_BLOCKS) {
+            for (const field of MONTHLY_SALES_FIELDS) {
+                const amount = parseMonthlySalesAmount(row.blocks[block][field]) ?? null;
+                if (amount !== (original.block_amounts?.[block]?.[field] ?? null)) {
+                    block_amounts[block] = { ...block_amounts[block], [field]: amount };
+                }
+            }
+        }
+        return monthlySalesWithBlockTotals({ ...original, block_amounts });
+    });
+    const invalidTotals = months.some(row => MONTHLY_SALES_FIELDS.some(field => (row[field] ?? 0) > 1e13));
+    const invalidAmounts = invalidCells || invalidTotals;
     const patches = targetDraft && !invalidAmounts ? monthlySalesPatches(targetDraft.before, months) : [];
     const summary = summarizeMonthlySales(months);
     const teamActual = data?.teamActual ?? NO_MONTHS;
@@ -151,11 +173,13 @@ export default function SalesTargetsAdminPage() {
     const error = (!shopsQuery.isFetching && shopsError) || (!targetsQuery.data && !targetsQuery.isFetching && targetsQuery.error?.message) || null;
     const scopeReady = !!data && !error;
 
-    function setMonth(month: number, field: MonthlySalesField, value: string) {
+    function setMonth(month: number, block: MonthlySalesBlock, field: MonthlySalesField, value: string) {
         if (!scopeReady || saving) return;
         setTargetDraft(previous => {
             const draft = previous ?? { before: data!.months, inputs: monthInputs(data!.months) };
-            return { ...draft, inputs: draft.inputs.map(row => row.month === month ? { ...row, [field]: value } : row) };
+            return { ...draft, inputs: draft.inputs.map(row => row.month === month ? {
+                ...row, blocks: { ...row.blocks, [block]: { ...row.blocks[block], [field]: value } },
+            } : row) };
         });
     }
 
@@ -305,7 +329,7 @@ export default function SalesTargetsAdminPage() {
         <div className="space-y-6">
             <PageHeader
                 title="Борлуулалтын төлөвлөгөө"
-                subtitle="Гэрээ, тухайн сард орсон мөнгөний төлөвлөгөө ба гараар оруулах гүйцэтгэл."
+                subtitle="Блок тус бүрийн гэрээний дүн, мөнгөн урсгалын төлөвлөгөө ба гүйцэтгэл."
             />
 
             {/* Toolbar */}
@@ -353,66 +377,83 @@ export default function SalesTargetsAdminPage() {
                                 <TrendingUp className="h-4 w-4 text-brand-strong" />
                             </div>
 
-                            <p className="text-xs text-muted-foreground">Орсон мөнгө нь тухайн сард хүлээн авсан урьдчилгаа, төлбөрийн дүн. Гүйцэтгэлийг гараар нөхөж бичнэ.</p>
-                            <div className="overflow-x-auto rounded-lg border border-border">
-                                <table className="w-full min-w-[900px] text-sm">
-                                    <caption className="sr-only">{year} оны сарын гэрээ, орсон мөнгөний төлөвлөгөө ба гар гүйцэтгэл</caption>
-                                    <thead className="bg-surface-2 text-xs text-muted-foreground">
-                                        <tr className="border-b border-border">
-                                            <th rowSpan={2} scope="col" className="px-3 py-3 text-left">Сар</th>
-                                            <th colSpan={2} scope="colgroup" className="px-3 py-2 text-center text-gold">Төлөвлөгөө</th>
-                                            <th colSpan={2} scope="colgroup" className="px-3 py-2 text-center">Гүйцэтгэл · гараар</th>
-                                            <th colSpan={2} scope="colgroup" className="px-3 py-2 text-center">Биелэлт</th>
+                            <p className="text-xs text-muted-foreground">Мөнгөн урсгал нь тухайн сард хүлээн авсан урьдчилгаа, төлбөрийн дүн. Гүйцэтгэлийг гараар оруулна.</p>
+                            <div className="max-h-[65vh] overflow-auto rounded-lg border border-border">
+                                <table className="w-full min-w-[900px] border-separate border-spacing-0 text-sm">
+                                    <caption className="sr-only">{year} оны блок тус бүрийн гэрээний дүн, мөнгөн урсгалын төлөвлөгөө ба гүйцэтгэл</caption>
+                                    <thead className="sticky top-0 z-10 bg-surface-2 text-foreground">
+                                        <tr>
+                                            <th rowSpan={3} scope="col" className="w-24 border-b border-r border-border px-3 py-3 text-left">Сар</th>
+                                            <th rowSpan={3} scope="col" className="w-32 border-b border-r border-border px-3 py-3 text-left">Блок / төрөл</th>
+                                            <th colSpan={4} scope="colgroup" className="border-b border-border px-3 py-2 text-center font-semibold">{year} он</th>
                                         </tr>
-                                        <tr className="border-b border-border">
-                                            {['Гэрээний дүн', 'Орсон мөнгө', 'Гэрээний дүн', 'Орсон мөнгө', 'Гэрээ', 'Мөнгө'].map((label, index) => (
-                                                <th key={index} scope="col" className="px-3 py-2 text-right font-medium">{label}</th>
+                                        <tr>
+                                            <th colSpan={2} scope="colgroup" className="border-b border-r border-border px-3 py-2 text-center">Гэрээний дүн</th>
+                                            <th colSpan={2} scope="colgroup" className="border-b border-border px-3 py-2 text-center">Мөнгөн урсгал</th>
+                                        </tr>
+                                        <tr>
+                                            {TABLE_FIELDS.map(field => (
+                                                <th key={field} scope="col" className={`border-b border-r border-border px-3 py-2 text-center last:border-r-0 ${isPlan(field) ? 'bg-status-success-soft text-status-success' : 'bg-status-pending-soft text-status-pending'}`}>
+                                                    {isPlan(field) ? 'Төлөвлөгөө' : 'Гүйцэтгэл'}
+                                                </th>
                                             ))}
                                         </tr>
                                     </thead>
-                                    <tbody>
-                                        {inputs.map((row, index) => (
-                                            <tr key={row.month} className="border-b border-border last:border-b-0">
-                                                <th scope="row" className="whitespace-nowrap px-3 py-2 text-left font-medium">{MONTHS[row.month - 1]} сар</th>
-                                                {MONTHLY_SALES_FIELDS.map(field => {
-                                                    const invalid = parseMonthlySalesAmount(row[field]) === undefined;
-                                                    return <td key={field} className="px-2 py-2">
-                                                        <input
-                                                            type="text" inputMode="decimal"
-                                                            aria-label={`${year} оны ${MONTHS[row.month - 1]} сар ${MONTHLY_SALES_LABELS[field]}`}
-                                                            aria-invalid={invalid}
-                                                            disabled={saving}
-                                                            value={row[field]}
-                                                            onChange={event => setMonth(row.month, field, event.target.value)}
-                                                            placeholder="—"
-                                                            className={`num w-full min-w-28 rounded-md border bg-surface-2 px-2 py-2 text-right text-sm text-foreground ${invalid ? 'border-status-danger' : 'border-control'}`}
-                                                        />
-                                                    </td>;
-                                                })}
-                                                <td className="num px-3 py-2 text-right">{pctLabel(monthlySalesAttainment(months[index].manual_contract_actual_amount, months[index].target_amount))}</td>
-                                                <td className="num px-3 py-2 text-right">{pctLabel(monthlySalesAttainment(months[index].manual_cashflow_actual_amount, months[index].cashflow_target_amount))}</td>
+                                    {inputs.map((row, index) => (
+                                        <tbody key={row.month}>
+                                            {MONTHLY_SALES_BLOCKS.map((block, blockIndex) => (
+                                                <tr key={block}>
+                                                    {blockIndex === 0 && <th rowSpan={4} scope="rowgroup" className="border-b border-r border-border bg-surface-2 px-3 py-3 text-left font-semibold">{MONTHS[row.month - 1]} сар</th>}
+                                                    <th scope="row" className="whitespace-nowrap border-b border-r border-border px-3 py-2 text-left font-medium">{MONTHLY_SALES_BLOCK_LABELS[block]}</th>
+                                                    {TABLE_FIELDS.map(field => {
+                                                        const invalid = parseMonthlySalesAmount(row.blocks[block][field]) === undefined;
+                                                        return <td key={field} className={`border-b border-r border-border p-1.5 last:border-r-0 ${isPlan(field) ? 'bg-status-success-soft' : 'bg-status-pending-soft'}`}>
+                                                            <input
+                                                                type="text" inputMode="decimal"
+                                                                aria-label={`${year} оны ${MONTHS[row.month - 1]} сар ${MONTHLY_SALES_BLOCK_LABELS[block]} ${MONTHLY_SALES_LABELS[field]}`}
+                                                                aria-invalid={invalid}
+                                                                disabled={saving}
+                                                                value={row.blocks[block][field]}
+                                                                onChange={event => setMonth(row.month, block, field, event.target.value)}
+                                                                placeholder="—"
+                                                                className={`num w-full min-w-32 rounded border bg-transparent px-2 py-2 text-right text-sm text-foreground ${invalid ? 'border-status-danger' : 'border-control'}`}
+                                                            />
+                                                        </td>;
+                                                    })}
+                                                </tr>
+                                            ))}
+                                            <tr className="bg-surface-2 font-semibold">
+                                                <th scope="row" className="border-b border-r border-border px-3 py-3 text-left">Нийт</th>
+                                                {TABLE_FIELDS.map(field => (
+                                                    <td key={field} aria-label={`${year} оны ${MONTHS[row.month - 1]} сар Нийт ${MONTHLY_SALES_LABELS[field]}`} className="num border-b border-r border-border px-3 py-3 text-right last:border-r-0">
+                                                        {months[index][field] === null ? '—' : formatMNT(months[index][field])}
+                                                        {months[index][field] !== null && !hasMonthlySalesBreakdown(months[index], field)
+                                                            && <span className="mt-1 block text-xs font-normal text-muted-foreground">Задаргаагүй</span>}
+                                                    </td>
+                                                ))}
                                             </tr>
-                                        ))}
-                                    </tbody>
-                                    <tfoot className="border-t border-border bg-surface-2">
+                                        </tbody>
+                                    ))}
+                                    <tfoot className="bg-surface-2">
                                         <tr>
-                                            <th scope="row" className="px-3 py-3 text-left">Оруулсан нийт</th>
-                                            {MONTHLY_SALES_FIELDS.map(field => (
-                                                <td key={field} className="num px-3 py-3 text-right">
+                                            <th colSpan={2} scope="row" className="border-r border-border px-3 py-3 text-left">Жилийн нийт</th>
+                                            {TABLE_FIELDS.map(field => (
+                                                <td key={field} className="num border-r border-border px-3 py-3 text-right last:border-r-0">
                                                     <span className="font-semibold">{summary.totals[field].amount === null ? '—' : formatMNT(summary.totals[field].amount)}</span>
                                                     <span className="mt-1 block text-xs text-muted-foreground">{summary.totals[field].filledMonths}/12 сар</span>
                                                 </td>
                                             ))}
-                                            <td className="num px-3 py-3 text-right font-semibold">{pctLabel(summary.contractAttainmentPct)}</td>
-                                            <td className="num px-3 py-3 text-right font-semibold">{pctLabel(summary.cashflowAttainmentPct)}</td>
                                         </tr>
                                     </tfoot>
                                 </table>
                             </div>
-                            <p className="text-xs text-muted-foreground">Нийт дүн нь бөглөсөн саруудын нийлбэр. Биелэлтийг төлөвлөгөө, гүйцэтгэл нь ижил саруудаар бөглөгдсөн үед тооцно.</p>
-                            {invalidAmounts && <p role="alert" className="text-xs text-status-danger">Дүнг 0–10,000,000,000,000₮ хооронд, хамгийн ихдээ хоёр орны бутархайтай оруулна уу.</p>}
+                            <p className="text-xs text-muted-foreground">Сарын нийт нь бөглөсөн блокийн нийлбэр; жилийн нийт нь бөглөсөн саруудын нийлбэр. Хоосон нүдийг 0 гэж тооцохгүй.</p>
+                            {originalMonths.some(row => MONTHLY_SALES_FIELDS.some(field => row[field] !== null && !hasMonthlySalesBreakdown(row, field))) && (
+                                <p className="text-xs text-muted-foreground">Өмнө оруулсан задаргаагүй нийт дүн хэвээр харагдана. Тухайн баганад блокийн дүн оруулахад нийлбэрээр шинэчлэгдэнэ.</p>
+                            )}
+                            {invalidAmounts && <p role="alert" className="text-xs text-status-danger">Дүн болон сарын нийлбэр 0–10,000,000,000,000₮ хооронд, хамгийн ихдээ хоёр орны бутархайтай байна.</p>}
                             {targetConflict && (
-                                <div role="alert" className="rounded-lg border border-status-warning/30 bg-status-warning-soft p-3 text-sm">
+                                <div role="alert" className="rounded-lg border border-status-pending/30 bg-status-pending-soft p-3 text-sm">
                                     <p>Өөр хэрэглэгч сарын мэдээллийг өөрчилсөн. Таны засвар хадгалагдаагүй.</p>
                                     <button type="button" disabled={saving} onClick={async () => {
                                         const refreshed = await targetsQuery.refetch();

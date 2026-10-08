@@ -8,6 +8,7 @@ const otherShop = '20000000-0000-4000-8000-000000000002';
 const actor = '10000000-0000-4000-8000-000000000001';
 let db: PGlite;
 const migration = readFileSync('supabase/migrations/20261008122000_team_monthly_sales.sql', 'utf8');
+const blocksMigration = readFileSync('supabase/migrations/20261008130000_team_sales_blocks.sql', 'utf8');
 const save = (months: unknown[], user = actor, shopId = shop, year = 2026) => db.query(
     'SELECT save_team_monthly_sales($1,$2,$3::jsonb,$4) AS saved', [shopId, year, JSON.stringify(months), user],
 );
@@ -35,6 +36,8 @@ beforeEach(async () => {
     await db.query('INSERT INTO team_sales_targets(shop_id,year,month,target_amount) VALUES ($1,2026,1,500)', [shop]);
     await db.exec(migration);
     await db.exec(migration); // Idempotent and no rewrite of existing monetary values.
+    await db.exec(blocksMigration);
+    await db.exec(blocksMigration);
 });
 afterEach(async () => { await db.close(); });
 
@@ -96,5 +99,53 @@ describe('audited monthly monetary RPC', () => {
         ]) await expect(save(patches)).rejects.toMatchObject({ code: '22023' });
         await expect(save([{ month: 1, expectedRevision: 0, target_amount: 1 }], actor, shop, 2101)).rejects.toMatchObject({ code: '22023' });
         expect((await db.query<{ target_amount: number }>('SELECT target_amount::int FROM team_sales_targets')).rows[0].target_amount).toBe(500);
+    });
+
+    it('persists block cells, derives exact totals and preserves unrelated legacy metrics', async () => {
+        await db.exec('SET ROLE service_role');
+        await save([{ month: 1, expectedRevision: 0, block_amounts: {
+            b1: { cashflow_target_amount: 0.1, manual_contract_actual_amount: 0 },
+            b2: { cashflow_target_amount: 0.2 }, parking: { manual_cashflow_actual_amount: 25 },
+        } }]);
+        await save([{ month: 1, expectedRevision: 1, block_amounts: { b1: { cashflow_target_amount: 1.1 } } }]);
+        await db.exec('RESET ROLE');
+        const row = (await db.query<{ block_amounts: unknown }>('SELECT target_amount::int, cashflow_target_amount::text, manual_contract_actual_amount::int, manual_cashflow_actual_amount::int, revision, block_amounts FROM team_sales_targets')).rows[0];
+        expect(row).toEqual({ target_amount: 500, cashflow_target_amount: '1.30', manual_contract_actual_amount: 0,
+            manual_cashflow_actual_amount: 25, revision: 2, block_amounts: {
+                b1: { cashflow_target_amount: 1.1, manual_contract_actual_amount: 0 },
+                b2: { cashflow_target_amount: 0.2 }, parking: { manual_cashflow_actual_amount: 25 },
+            } });
+        await save([{ month: 1, expectedRevision: 2, block_amounts: {
+            b1: { cashflow_target_amount: null }, b2: { cashflow_target_amount: null },
+        } }]);
+        expect((await db.query('SELECT cashflow_target_amount, manual_contract_actual_amount::int FROM team_sales_targets')).rows[0])
+            .toEqual({ cashflow_target_amount: null, manual_contract_actual_amount: 0 });
+        const audit = (await db.query<{ meta: { after: { block_amounts: unknown } } }>("SELECT meta FROM admin_audit_log WHERE meta->'after'->>'revision'='2'")).rows[0];
+        expect(audit.meta.after.block_amounts).toEqual(row.block_amounts);
+    });
+
+    it('rejects stale block edits and aggregate writers cannot overwrite a breakdown', async () => {
+        await save([{ month: 1, expectedRevision: 0, block_amounts: { b1: { target_amount: 40 } } }]);
+        await expect(save([{ month: 1, expectedRevision: 0, block_amounts: { b2: { target_amount: 50 } } }]))
+            .rejects.toMatchObject({ code: '40001' });
+        await expect(save([{ month: 1, expectedRevision: 1, target_amount: 800 }])).rejects.toMatchObject({ code: '22023' });
+        expect((await db.query('SELECT target_amount::int, revision, block_amounts FROM team_sales_targets')).rows[0])
+            .toEqual({ target_amount: 40, revision: 1, block_amounts: { b1: { target_amount: 40 } } });
+    });
+
+    it('validates nested block money and rolls back all months when a total exceeds its limit', async () => {
+        for (const block_amounts of [null, [], {}, { b3: { target_amount: 1 } }, { b1: {} }, { b1: null },
+            { b1: { paid_amount: 1 } }, { b1: { target_amount: '1' } }, { b1: { target_amount: -1 } },
+            { b1: { target_amount: 1.001 } }, { b1: { target_amount: 1e13 + 1 } }]) {
+            await expect(save([{ month: 1, expectedRevision: 0, block_amounts }])).rejects.toMatchObject({ code: '22023' });
+        }
+        await expect(save([{ month: 1, expectedRevision: 0, target_amount: 1, block_amounts: { b1: { target_amount: 2 } } }]))
+            .rejects.toMatchObject({ code: '22023' });
+        await expect(save([{ month: 1, expectedRevision: 0, block_amounts: { b1: { target_amount: 20 } } },
+            { month: 2, expectedRevision: 0, block_amounts: { b1: { target_amount: 1e13 }, b2: { target_amount: 1 } } }]))
+            .rejects.toMatchObject({ code: '22023' });
+        expect((await db.query('SELECT target_amount::int, revision, block_amounts FROM team_sales_targets')).rows)
+            .toEqual([{ target_amount: 500, revision: 0, block_amounts: {} }]);
+        expect((await db.query('SELECT count(*)::int AS count FROM admin_audit_log')).rows).toEqual([{ count: 0 }]);
     });
 });

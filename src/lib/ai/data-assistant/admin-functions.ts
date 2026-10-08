@@ -13,7 +13,7 @@ import { ALL_MODULES, clearPermissionsCache } from '@/lib/rbac';
 import { CreateRoleSchema } from '@/lib/validations/schemas';
 import { updateUserProjects } from '@/lib/admin/user-projects';
 import { getTeamMonthlySales, saveTeamMonthlySales } from '@/lib/sales/targets';
-import { MONTHLY_SALES_LABELS, MonthlySalesPatchSchema, SalesYearSchema, type MonthlySalesField } from '@/lib/sales/monthly';
+import { hasMonthlySalesBreakdown, MONTHLY_SALES_LABELS, MonthlySalesPatchSchema, SalesYearSchema, type MonthlySalesField } from '@/lib/sales/monthly';
 import { ubParts } from '@/lib/utils/date';
 import { formatMNT } from '@/lib/utils/currency';
 import { ZodError } from 'zod';
@@ -262,6 +262,9 @@ export async function setSalesTarget(shopId: string, args: any, confirm = false,
                 getTeamMonthlySales(db, shopId, year),
                 db.from('shops').select('name').eq('id', shopId).maybeSingle(),
             ]);
+            if (hasMonthlySalesBreakdown(current[month - 1], field)) {
+                return { error: 'Энэ дүн блокийн задаргаатай. Борлуулалтын төлөвлөгөө хэсгийн Б1, Б2, Зогсоолын нүдээр засна уу.' };
+            }
             return confirmNeeded('set_sales_target', { year, month, metric, amount, expectedRevision: current[month - 1].revision }, `${label}: ${year}-${String(month).padStart(2, '0')}`, {
                 Төсөл: shop?.name || '-', Сар: `${year} оны ${month}-р сар`,
                 Үзүүлэлт: label, Одоогийн: valueLabel(current[month - 1][field]), Шинэ: valueLabel(amount),

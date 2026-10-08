@@ -9,7 +9,8 @@ vi.mock('@/lib/auth/supabase-auth', () => ({ getUserId: async () => '10000000-00
 function fixture(error: { message: string; code: string } | null = null) {
     const rows = [
         { shop_id: shop, year: 2026, month: 1, revision: 5, target_amount: '500.00', cashflow_target_amount: '100.00',
-            manual_contract_actual_amount: null, manual_cashflow_actual_amount: '0.00' },
+            manual_contract_actual_amount: null, manual_cashflow_actual_amount: '0.00',
+            block_amounts: { b1: { cashflow_target_amount: 75 }, parking: { cashflow_target_amount: 25, manual_cashflow_actual_amount: 0 } } },
         { shop_id: shop, year: 2026, month: 2, revision: 1, target_amount: null, cashflow_target_amount: '50.00',
             manual_contract_actual_amount: null, manual_cashflow_actual_amount: null },
     ];
@@ -30,6 +31,7 @@ describe('monthly sales shared loader/writer', () => {
         expect(await getTeamTargets(db, shop, 2026)).toEqual([500, ...Array(11).fill(0)]);
         const months = await getTeamMonthlySales(db, shop, 2026);
         expect(months[0]).toMatchObject({ target_amount: 500, manual_cashflow_actual_amount: 0, revision: 5 });
+        expect(months[0].block_amounts).toEqual({ b1: { cashflow_target_amount: 75 }, parking: { cashflow_target_amount: 25, manual_cashflow_actual_amount: 0 } });
         expect(months[1]).toMatchObject({ target_amount: null, cashflow_target_amount: 50 });
         expect(months[2].manual_contract_actual_amount).toBeNull();
         await expect(getTeamMonthlySales(fixture({ code: '42703', message: 'missing revision column' }) as unknown as SupabaseClient, shop, 2026))

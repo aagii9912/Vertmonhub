@@ -1,7 +1,7 @@
 import { test, expect, type Page, type Locator } from '@playwright/test';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import { calculatePricing, type PricingConfig, type PricingSaveInput, type PricingSelection } from '../src/lib/sales/pricing';
-import { emptyMonthlySales, type MonthlySalesPatch } from '../src/lib/sales/monthly';
+import { emptyMonthlySales, monthlySalesWithBlockTotals, MONTHLY_SALES_BLOCKS, type MonthlySalesPatch } from '../src/lib/sales/monthly';
 import { elysiumViewingConditions } from '../src/lib/sales/viewing-conditions';
 import type { CreateViewingInput, ViewingPatch, ViewingRow } from '../src/hooks/useViewings';
 
@@ -31,6 +31,7 @@ async function setup(page: Page, approvedPricing = true) {
     const viewingPricing = approvedPricing ? activeConfig : null;
     const months = emptyMonthlySales();
     months[0].manual_cashflow_actual_amount = 5;
+    months[0].block_amounts = { b1: { manual_cashflow_actual_amount: 5 } };
     const state = {
         errors: [] as string[], unhandled: [] as string[], quotes: [] as PricingSelection[],
         viewingWrites: [] as Array<CreateViewingInput | ViewingPatch>, viewings: [] as ViewingRow[],
@@ -95,8 +96,12 @@ async function setup(page: Page, approvedPricing = true) {
                 const body = request.postDataJSON() as typeof state.monthlyWrites[number];
                 state.monthlyWrites.push(body);
                 if (state.monthlyConflict) return reply({ error: 'Өөр хэрэглэгч сарын мэдээллийг өөрчилсөн' }, 409);
-                for (const { month, expectedRevision: _revision, ...values } of body.months) {
-                    Object.assign(state.months[month - 1], values); state.months[month - 1].revision++;
+                for (const { month, expectedRevision: _revision, block_amounts, ...values } of body.months) {
+                    const row = { ...state.months[month - 1], ...values, block_amounts: { ...state.months[month - 1].block_amounts } };
+                    for (const block of MONTHLY_SALES_BLOCKS) {
+                        if (block_amounts?.[block]) row.block_amounts[block] = { ...row.block_amounts[block], ...block_amounts[block] };
+                    }
+                    state.months[month - 1] = monthlySalesWithBlockTotals({ ...row, revision: row.revision + 1 });
                 }
                 return reply({ months: state.months });
             }
@@ -210,22 +215,40 @@ test('walk-in meeting saves multiple interests and completed meeting notes prese
     expect(state.errors).toEqual([]); expect(state.unhandled).toEqual([]);
 });
 
-test('monthly four fields preserve explicit zero and blank; stale save retains edits', async ({ page }, info) => {
+test('monthly block table totals, save and reload preserve zero and blank; stale save retains edits', async ({ page }, info) => {
     const state = await setup(page);
     await page.goto('/admin/sales-targets');
     const year = new Date().getFullYear();
-    const contractPlan = page.getByLabel(`${year} оны 1-р сар Гэрээний төлөвлөгөө`, { exact: true });
-    const cashPlan = page.getByLabel(`${year} оны 1-р сар Орсон мөнгөний төлөвлөгөө`, { exact: true });
-    const contractActual = page.getByLabel(`${year} оны 1-р сар Гэрээний гүйцэтгэл`, { exact: true });
-    const cashActual = page.getByLabel(`${year} оны 1-р сар Орсон мөнгөний гүйцэтгэл`, { exact: true });
+    const contractPlan = page.getByLabel(`${year} оны 1-р сар Б1 блок Гэрээний төлөвлөгөө`, { exact: true });
+    const cashPlan = page.getByLabel(`${year} оны 1-р сар Б1 блок Орсон мөнгөний төлөвлөгөө`, { exact: true });
+    const contractActual = page.getByLabel(`${year} оны 1-р сар Б1 блок Гэрээний гүйцэтгэл`, { exact: true });
+    const cashActual = page.getByLabel(`${year} оны 1-р сар Б1 блок Орсон мөнгөний гүйцэтгэл`, { exact: true });
+    const b2Plan = page.getByLabel(`${year} оны 1-р сар Б2 блок Гэрээний төлөвлөгөө`, { exact: true });
+    const parkingPlan = page.getByLabel(`${year} оны 1-р сар Зогсоол Гэрээний төлөвлөгөө`, { exact: true });
     await contractPlan.fill('100000'); await cashPlan.fill('0'); await contractActual.fill('90000'); await cashActual.fill('');
+    await b2Plan.fill('200000'); await parkingPlan.fill('30000');
+    await expect(page.getByLabel(`${year} оны 1-р сар Нийт Гэрээний төлөвлөгөө`, { exact: true })).toContainText('330,000');
     await page.getByRole('button', { name: 'Төлөвлөгөө, гүйцэтгэл хадгалах', exact: true }).click();
     await expect(contractPlan).toHaveValue('100,000'); await expect(cashPlan).toHaveValue('0');
     expect(state.monthlyWrites[0]).toEqual({ shopId, year, months: [{ month: 1, expectedRevision: 0,
-        target_amount: 100000, cashflow_target_amount: 0, manual_contract_actual_amount: 90000, manual_cashflow_actual_amount: null }] });
+        block_amounts: {
+            b1: { target_amount: 100000, cashflow_target_amount: 0, manual_contract_actual_amount: 90000, manual_cashflow_actual_amount: null },
+            b2: { target_amount: 200000 }, parking: { target_amount: 30000 },
+        } }] });
     await page.reload();
     await expect(cashPlan).toHaveValue('0'); await expect(cashActual).toHaveValue('');
-    await page.screenshot({ path: info.outputPath('monthly-four-fields-zero.png'), fullPage: true });
+    await expect(b2Plan).toHaveValue('200,000'); await expect(parkingPlan).toHaveValue('30,000');
+    await expect(page.getByRole('columnheader', { name: 'Гэрээний дүн', exact: true })).toHaveAttribute('colspan', '2');
+    await expect(page.getByRole('columnheader', { name: 'Мөнгөн урсгал', exact: true })).toHaveAttribute('colspan', '2');
+    await page.screenshot({ path: info.outputPath('monthly-blocks-dark.png'), fullPage: true });
+    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
+    await page.screenshot({ path: info.outputPath('monthly-blocks-light.png'), fullPage: true });
+    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
+    const lastMonth = page.getByLabel(`${year} оны 12-р сар Зогсоол Орсон мөнгөний гүйцэтгэл`, { exact: true });
+    await lastMonth.scrollIntoViewIfNeeded();
+    await expect(lastMonth).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Мөнгөн урсгал', exact: true })).toBeInViewport();
+    await expect(page.getByRole('row', { name: /Жилийн нийт/ })).toContainText('330,000');
     state.monthlyConflict = true;
     await contractActual.fill('100001');
     await page.getByRole('button', { name: 'Төлөвлөгөө, гүйцэтгэл хадгалах', exact: true }).click();

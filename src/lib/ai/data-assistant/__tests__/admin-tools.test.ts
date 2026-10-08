@@ -71,6 +71,14 @@ describe('set_user_projects', () => {
 });
 
 describe('set_sales_target', () => {
+    it('directs aggregate edits to the block table once a breakdown exists', async () => {
+        mocks.targets.mockResolvedValue(emptyMonthlySales().map(row => row.month === 10
+            ? { ...row, target_amount: 100, block_amounts: { b1: { target_amount: 100 } } } : row));
+        expect(await run('set_sales_target', { year: 2026, month: 10, amount: 200 }))
+            .toHaveProperty('error', expect.stringContaining('блокийн задаргаатай'));
+        expect(mocks.upsertTargets).not.toHaveBeenCalled();
+    });
+
     it('previews the current and new monthly target and saves only that month on confirmation', async () => {
         expect(await run('set_sales_target', { year: 2026, month: 10, amount: 5_000_000_000 })).toMatchObject({
             requiresConfirmation: true, preview: { Төсөл: 'Mandala Garden', Одоогийн: expect.stringContaining('4,000,000,000'), Шинэ: expect.stringContaining('5,000,000,000') },

@@ -48,6 +48,14 @@ describe('monthly sales API boundary', () => {
         expect(await response.json()).toMatchObject({ success: true, months: [{ revision: 8, manual_cashflow_actual_amount: 0 }] });
     });
 
+    it('passes guarded block cell patches and maps invalid aggregate edits to a validation response', async () => {
+        const body = { ...payload(), months: [{ month: 10, expectedRevision: 7, block_amounts: { parking: { manual_cashflow_actual_amount: 0 } } }] };
+        expect((await POST(request(body))).status).toBe(200);
+        expect(mocks.save).toHaveBeenCalledWith(expect.anything(), shopId, 2026, body.months, mocks.userId);
+        mocks.save.mockResolvedValue({ data: null, error: { code: '22023' } });
+        expect((await POST(request(payload()))).status).toBe(400);
+    });
+
     it('rejects malformed years, monetary coercion, unguarded legacy arrays and unexpected fields before writing', async () => {
         for (const body of [
             { ...payload(), year: '2026' }, { ...payload(), year: 2200 },

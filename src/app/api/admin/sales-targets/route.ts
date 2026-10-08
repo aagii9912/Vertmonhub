@@ -137,6 +137,7 @@ export async function POST(request: NextRequest) {
         const { data, error } = await saveTeamMonthlySales(supabaseAdmin(), shopId, year, months, gate.userId!);
         if (error?.code === '40001') return NextResponse.json({ error: 'Энэ сарын мэдээллийг өөр хэрэглэгч өөрчилсөн. Шинэ мэдээллийг авч дахин оруулна уу.', code: 'MONTHLY_SALES_CONFLICT' }, { status: 409 });
         if (error?.code === '42501') return NextResponse.json({ error: 'Энэ төсөлд төлөвлөгөө хадгалах эрхгүй' }, { status: 403 });
+        if (error?.code === '22023') return NextResponse.json({ error: 'Блокийн дүн, сарын нийлбэрийг шалгана уу. Задаргаатай дүнг зөвхөн блокийн нүдээр засна.' }, { status: 400 });
         if (error) return safeErrorResponse(error, 'Төлөвлөгөө, гүйцэтгэл хадгалахад алдаа гарлаа');
         return NextResponse.json({ success: true, months: data });
     } catch (error) {
