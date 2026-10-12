@@ -24,6 +24,17 @@ function act(type: string, at: string, by: string | null, extra: Partial<Timelin
 const build = (input: Partial<BuildLeadTimelineInput>) => buildLeadTimeline({ lead, activities: [], roster, ...input });
 const kinds = (t: ReturnType<typeof build>) => t.conflicts.map((c) => c.kind);
 
+it('shows structured interests on existing meeting history without adding duplicate meetings or quote contacts', () => {
+    const interests = [{ block: 'Б1', model: 'E6', area_sqm: 51.72, floor: 5, payment_condition: '30%', quote: null, quote_unavailable_reason: 'Үнэ тохируулаагүй' }];
+    const t = build({ viewings: [{ id: 'viewing-1', scheduled_at: '2026-09-02T02:00:00Z', status: 'completed', sales_manager_name: 'Манда', interests }],
+        activities: [act('meeting', '2026-09-02T02:00:00Z', 'u-manda', { meta: { viewing_id: 'viewing-1', status: 'completed' } }),
+            act('note', '2026-09-03T02:00:00Z', 'u-manda', { content: 'Уулзалтын мэдээлэл шинэчлэв', meta: { viewing_id: 'viewing-1', action: 'viewing_update' } })] });
+    expect(t.events.filter(event => event.kind === 'meeting')).toHaveLength(1);
+    expect(t.events.find(event => event.kind === 'meeting')?.detail).toContain('Б1 · E6 · 51.72 м²');
+    expect(t.events.filter(event => event.kind === 'quote')).toHaveLength(0);
+    expect(t.events.find(event => event.kind === 'note')?.contact).toBe(false);
+});
+
 describe('buildLeadTimeline actors', () => {
     it('attributes by account link before the stored name and keeps admins out of the manager summary', () => {
         const t = build({

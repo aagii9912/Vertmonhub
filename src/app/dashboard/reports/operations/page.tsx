@@ -12,13 +12,14 @@ import { openAiPanel } from '@/lib/ai/context';
 import { PageHeader } from '@/components/dashboard/PageHeader';
 import { Button } from '@/components/ui/Button';
 import { Money } from '@/components/ui/Money';
+import { MonthlySalesPerformance } from '@/components/reports/MonthlySalesPerformance';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
 import { sourceLabel } from '@/lib/leads/labels';
 import { OperationsRangeSchema, formatOperationsReportText, type OperationsReport } from '@/lib/dashboard/operations-report';
 import { formatShortDate, formatTime, ubDateStr, ubMonthRange, ubParts } from '@/lib/utils/date';
 
 function OperationsReportContent() {
-    const { shop } = useAuth();
+    const { shop, user } = useAuth();
     const search = useSearchParams();
     const [range, setRange] = useState(() => {
         const { year, month } = ubParts();
@@ -27,7 +28,7 @@ function OperationsReportContent() {
     });
     const validRange = OperationsRangeSchema.safeParse(range).success;
     const { data, error, isPending, isFetching, refetch } = useQuery<OperationsReport>({
-        queryKey: ['operations-report', shop?.id, range.from, range.to],
+        queryKey: ['operations-report', shop?.id, user?.id, user?.role, range.from, range.to],
         queryFn: ({ signal }) => dashboardJson(`/api/dashboard/reports/operations?${new URLSearchParams(range)}`, { signal }),
         enabled: !!shop?.id && validRange,
         staleTime: 60_000,
@@ -78,6 +79,7 @@ function OperationsReportContent() {
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 p-2.5 sm:block"><p className="text-xs text-muted-foreground">Үүнээс урьдчилгаа мөнгө</p>{data.cash?.receiptClassificationAvailable && data.cash.advanceReceiptCount > 0 ? <Money value={data.cash.advanceReceipts} compact className="row-span-2 block text-right text-xl font-semibold sm:mt-1.5 sm:text-left" /> : <p className="row-span-2 max-w-[132px] text-right text-[13px] font-semibold leading-4 sm:mt-1.5 sm:max-w-none sm:text-left sm:text-base">{!data.cash ? 'Санхүүгийн эрх шаардлагатай' : !data.cash.receiptClassificationAvailable ? 'Ангилал нэвтрээгүй' : data.cash.unclassifiedCashReceiptCount ? 'Ангилал дутуу' : 'Урьдчилгаа бүртгэлгүй'}</p>}<p className="col-span-2 mt-0.5 line-clamp-1 text-xs text-muted-foreground sm:mt-1 sm:line-clamp-none">Сонгосон хугацаанд урьдчилгаа гэж бүртгэсэн мөнгөн орлого</p></div>
                 </div>
                 {(data.contracts.missingAmounts > 0 || data.contracts.undatedCount > 0) && <Alert variant="warning"><AlertDescription>Дүн дутуу: {data.contracts.missingAmounts} гэрээ. Огноогүй тул хугацаанд ороогүй: {data.contracts.undatedCount} гэрээ. <Link href="/dashboard/contracts" className="underline">Гэрээний бүртгэл шалгах</Link></AlertDescription></Alert>}
+                {data.monthlyPerformance && <MonthlySalesPerformance data={data.monthlyPerformance} />}
                 <section className="divide-y divide-border overflow-hidden rounded-md border border-border bg-surface">
                     <section className="break-inside-avoid">
                         <header className="flex h-10 items-center border-b border-border px-3.5"><h2 className="text-[12.5px] font-semibold text-foreground">Мөнгөн урсгал ба урьдчилгаа</h2></header>
@@ -97,7 +99,7 @@ function OperationsReportContent() {
                             </> : <p className="text-sm text-muted-foreground">Мөнгөн урсгалын дэлгэрэнгүйг санхүүгийн эрхтэй ажилтан харна.</p>}
                             <div className="border-t border-border pt-3">
                                 <p className="text-sm font-medium">Гэрээнд хадгалсан урьдчилгаа мөнгө: <Money value={data.advanceSnapshot.amount} /></p>
-                                <p className="mt-1 text-xs text-muted-foreground">Нийт {data.advanceSnapshot.totalContracts} гэрээний {data.advanceSnapshot.recordedContracts}-д дүн хадгалсан. Импорт/өмнөх бүртгэлийн энэ дүнг шинэ гүйлгээ автоматаар өөрчлөхгүй. Энэ нь сонгосон хугацааны орлого биш; хугацааны урьдчилгаатай нэмж нийлбэрлэхгүй. Мөнгөн урсгалын зорилт тусдаа тохируулагдаагүй.</p>
+                                <p className="mt-1 text-xs text-muted-foreground">Нийт {data.advanceSnapshot.totalContracts} гэрээний {data.advanceSnapshot.recordedContracts}-д дүн хадгалсан. Импорт/өмнөх бүртгэлийн энэ дүнг шинэ гүйлгээ автоматаар өөрчлөхгүй. Энэ нь сонгосон хугацааны орлого биш; хугацааны урьдчилгаатай нэмж нийлбэрлэхгүй.</p>
                             </div>
                         </div>
                     </section>

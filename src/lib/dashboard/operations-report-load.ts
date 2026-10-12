@@ -3,7 +3,7 @@ import { applyLeadScope, type SalesProjectScope } from '@/lib/sales/project-scop
 import { fetchAllRows } from '@/lib/utils/pagination';
 import { ubDateStr, ubDayRange, ubMonthRange, ubParts } from '@/lib/utils/date';
 import {
-    buildOperationsReport, OperationsRangeSchema,
+    buildOperationsReport, buildMonthlyPerformance, OperationsRangeSchema,
     type OperationsContract, type OperationsLead, type OperationsLeadCategory, type OperationsTarget, type OperationsTransaction, type OperationsViewing,
 } from './operations-report';
 
@@ -57,7 +57,7 @@ export async function loadOperationsReport(db: SupabaseClient, options: {
             .select('created_at, status, source, sales_manager_name, last_contact_at, next_followup_at, viewing_scheduled_at, category_id')
             .eq('shop_id', options.shopId).is('deleted_at', null).order('id').range(from, to), scope)),
         fetchAllRows<OperationsTarget>((from, to) => db.from('team_sales_targets')
-            .select('year, month, target_amount').eq('shop_id', options.shopId)
+            .select('year, month, target_amount, cashflow_target_amount, manual_contract_actual_amount, manual_cashflow_actual_amount, revision').eq('shop_id', options.shopId)
             .gte('year', Number(range.from.slice(0, 4))).lte('year', Number(range.to.slice(0, 4)))
             .order('year').order('month').range(from, to)),
         options.canReadFinance ? fetchAllRows<OperationsTransaction>(receiptPage) : Promise.resolve(null),
@@ -66,5 +66,7 @@ export async function loadOperationsReport(db: SupabaseClient, options: {
         fetchAllRows<OperationsLeadCategory>((from, to) => db.from('lead_categories')
             .select('id, name, is_active').eq('shop_id', options.shopId).order('sort_order').order('id').range(from, to)),
     ]);
-    return { ...buildOperationsReport({ range, now: now.toISOString(), contracts, leads, targets, transactions, viewings, receiptClassificationAvailable, meetingClassificationAvailable, categories }), shopName: options.shopName || 'Vertmon Hub' };
+    return { ...buildOperationsReport({ range, now: now.toISOString(), contracts, leads, targets, transactions, viewings, receiptClassificationAvailable, meetingClassificationAvailable, categories }),
+        monthlyPerformance: scope.projectIds === null ? buildMonthlyPerformance(targets, range, options.canReadFinance) : null,
+        shopName: options.shopName || 'Vertmon Hub' };
 }

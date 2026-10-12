@@ -34,6 +34,7 @@ import { propertyStatusLabel, unitStatusLabel, type InventoryStatus } from '@/li
 import { contractStatusLabel } from '@/lib/contracts/labels';
 import { loadLatestErpProducts } from '@/lib/erp/snapshots';
 import { parseUnitUpdate, unitFieldLabel, updateInventoryUnit } from '@/lib/inventory/unit-update';
+import { viewingSelectionText, type ViewingInterest } from '@/lib/viewings/interests';
 
 /** Timeline-д «хэн өөрчилсөн»-ийг тэмдэглэх (UI-ийн PATCH /leads/[id]-тэй ижил). */
 export interface LeadActor { userId?: string | null; userName?: string | null }
@@ -358,8 +359,8 @@ export async function fetchLeadDetails(shopId: string, args: any, scope: SalesPr
     const [{ data: viewings }, timeline] = await Promise.all([
         runExcludingDeleted((excludeDeleted) => {
             let q = supabaseAdmin.from('property_viewings')
-                .select('id, scheduled_at, status, property_id, customer_feedback, agent_notes')
-                .eq('lead_id', data.id).order('scheduled_at', { ascending: false }).limit(5);
+                .select('id, scheduled_at, status, property_id, interests, customer_feedback, agent_notes')
+                .eq('shop_id', shopId).eq('lead_id', data.id).order('scheduled_at', { ascending: false }).limit(5);
             if (excludeDeleted) q = q.is('deleted_at', null);
             return q;
         }),
@@ -385,7 +386,7 @@ export async function fetchLeadDetails(shopId: string, args: any, scope: SalesPr
         },
         linkedProperty: data.properties || null,
         matchingProperties,
-        viewings: viewings || [],
+        viewings: (viewings || []).map((row: Record<string, unknown>) => ({ ...row, selection: viewingSelectionText(row.interests as ViewingInterest[]) })),
     };
     // Менежерийн түүх ХАМГИЙН СҮҮЛД, үлдсэн зайд багтахаар (prefetch таслахад уулзалт, байр хадгалагдана).
     const room = AI_PREFETCH_MAX_CHARS - JSON.stringify(details).length - ',"manager_history":'.length;
@@ -1510,13 +1511,14 @@ export async function scheduleViewing(shopId: string, args: any, confirm = false
     const input = { ...args, property_id: propertyId };
     const resolved = await resolveViewingInput(supabaseAdmin, shopId, input, scope);
     if (!resolved.ok) return { error: resolved.error };
-    const { input: p, lead, property } = resolved.data;
+    const { input: p, lead, property, interests } = resolved.data;
     const payload = { ...p, lead_id: lead?.id ?? null };
     const when = p.walk_in ? 'Ирсэн уулзалт' : `${formatShortDate(p.scheduled_at!)} ${formatTime(p.scheduled_at!)}`;
     const customer = lead ? leadDisplayName(lead) : p.customer_name;
     if (!confirm) return confirmNeeded('schedule_viewing', payload, `Уулзалт товлох: ${customer || property?.name || when}`, {
-        Байр: property?.name || 'Сонгоогүй', Огноо: when,
+        Байр: viewingSelectionText(interests, property?.name) || 'Сонгоогүй', Огноо: when,
         Харилцагч: customer || '-', Менежер: salesManagerName || '-',
+        ...(interests?.length ? { Тооцоолол: interests.map(row => row.quote ?? row.quote_unavailable_reason) } : {}),
     });
     const identity = userId ? await resolveManagerIdentity(supabaseAdmin, shopId, userId) : null;
     const result = await createViewing(supabaseAdmin, shopId, payload, {
@@ -1529,7 +1531,7 @@ export async function scheduleViewing(shopId: string, args: any, confirm = false
 
 export async function deleteViewing(shopId: string, args: any, confirm = false, scope: SalesProjectScope = UNRESTRICTED_SALES_SCOPE, userId?: string) {
     let query = supabaseAdmin.from('property_viewings')
-        .select(`id, scheduled_at, status, properties(name), ${scope.projectIds === null ? 'leads' : 'leads!inner'}(project_id,sales_manager_name)`)
+        .select(`id, scheduled_at, status, interests, properties(name), ${scope.projectIds === null ? 'leads' : 'leads!inner'}(project_id,sales_manager_name)`)
         .eq('shop_id', shopId).is('deleted_at', null);
     query = applyLeadScope(query, scope, 'leads.project_id', 'leads.sales_manager_name');
     if (args.viewing_id) {
@@ -1547,7 +1549,7 @@ export async function deleteViewing(shopId: string, args: any, confirm = false, 
     if (!viewings || viewings.length === 0) return { error: 'Уулзалт олдсонгүй' };
     if (viewings.length > 1) return { error: `${viewings.length} уулзалт олдлоо, viewing_id-г тодруулна уу`, options: viewings.map((v: any) => ({ id: v.id, scheduled_at: v.scheduled_at })) };
     const v: any = viewings[0];
-    const propName = v.properties?.name || 'байр';
+    const propName = viewingSelectionText(v.interests, v.properties?.name) || 'байр';
 
     if (!confirm) {
         return confirmNeeded('delete_viewing', { viewing_id: v.id, reason: args.reason }, `Уулзалт устгах: ${propName}`,

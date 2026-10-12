@@ -2,6 +2,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { leadDisplayName } from '@/lib/leads/labels';
 import { shiftDate, ubDateStart } from '@/lib/sales/activity';
 import { fetchAllRows } from '@/lib/utils/pagination';
+import { resolveReportViewer } from '@/lib/sales/manager-identity';
+import { ProjectScopeError } from '@/lib/sales/project-scope';
+import { viewingSelectionText, type ViewingInterest } from '@/lib/viewings/interests';
 import {
     buildDailyReport, readDailyReportConfig, readDailyReportNotes,
     type DailyCountRow, type DailyMeetingRow, type DailyReport, type DailyReportConfig, type DailyRosterEntry, type SaveDailyReportInput,
@@ -22,21 +25,50 @@ function assertOk(error: { code?: string; message: string } | null) {
     throw new Error(error.message);
 }
 
-export async function loadDailyReportConfig(db: SupabaseClient, shopId: string) {
+/** Өдрийн тайланг ээлжээр нэгтгэнэ: төсөлдөө бүртгэлтэй менежер багийн тайланг харна. */
+export async function resolveDailyReportViewer(
+    db: SupabaseClient,
+    shopId: string,
+    input: Parameters<typeof resolveReportViewer>[2],
+) {
+    const viewer = await resolveReportViewer(db, shopId, input);
+    const entry = viewer.identity?.rosterEntry;
+    let ownManager = viewer.personal && entry?.is_active && input.userId && entry.user_id === input.userId ? entry.name : null;
+    if (ownManager) {
+        const { data, error } = await db.from('sales_manager_projects').select('project_id')
+            .eq('shop_id', shopId).eq('manager_name', ownManager);
+        if (error) throw new ProjectScopeError(503, 'Менежерийн төслийн харьяаллыг шалгаж чадсангүй');
+        if (!data?.length) ownManager = null;
+    }
+    return { ...viewer, ownManager, canViewTeam: viewer.canViewTeam || !!ownManager };
+}
+
+export async function loadDailyReportConfig(db: SupabaseClient, shopId: string, shopName = '') {
     const { data, error } = await db.from('daily_report_settings').select('config, updated_at').eq('shop_id', shopId).maybeSingle();
     assertOk(error);
-    return { ...readDailyReportConfig(data?.config ?? null), updatedAt: (data?.updated_at as string | undefined) ?? null };
+    return { ...readDailyReportConfig(data?.config ?? null, shopName), updatedAt: (data?.updated_at as string | undefined) ?? null };
 }
 
 export async function loadDailyRoster(db: SupabaseClient, shopId: string): Promise<DailyRosterEntry[]> {
-    const { data, error } = await db.from('sales_managers').select('name, is_active').eq('shop_id', shopId);
+    const { data, error } = await db.from('sales_managers').select('name, is_active, user_id').eq('shop_id', shopId);
     assertOk(error);
-    return (data ?? []).filter(row => !!row.name).map(row => ({ name: row.name as string, is_active: !!row.is_active }));
+    const userIds = [...new Set((data ?? []).map(row => row.user_id as string | null).filter((id): id is string => !!id))];
+    const phones = new Map<string, string | null>();
+    if (userIds.length) {
+        // Зөвхөн энэ төслийн бүртгэлтэй холбосон акаунтууд; нэрээр тааруулж утас авахгүй.
+        const profiles = await db.from('user_profiles').select('id, phone').in('id', userIds);
+        assertOk(profiles.error);
+        for (const profile of profiles.data ?? []) phones.set(profile.id, profile.phone);
+    }
+    return (data ?? []).filter(row => !!row.name).map(row => ({
+        name: row.name as string, is_active: !!row.is_active, phone: phones.get(row.user_id) || null,
+    }));
 }
 
 type MeetingSelect = {
     id: string; sales_manager_name: string | null; meeting_type: string | null; scheduled_at: string;
     agent_notes: string | null; customer_feedback: string | null;
+    interests?: ViewingInterest[];
     // PostgREST embed: many-to-one нь объект, supabase-js-ийн төрөлд массив байж болно.
     leads: Embedded<{ customer_name: string | null }>; properties: Embedded<{ name: string | null }>;
 };
@@ -53,7 +85,7 @@ export async function loadDailyReport(db: SupabaseClient, options: {
     const { shopId, date, only } = options;
     const start = ubDateStart(date).toISOString();
     const end = ubDateStart(shiftDate(date, 1)).toISOString();
-    const settings = await loadDailyReportConfig(db, shopId);
+    const settings = await loadDailyReportConfig(db, shopId, options.shopName);
 
     const [roster, counts, meetings, pending, reportRow] = await Promise.all([
         loadDailyRoster(db, shopId),
@@ -64,7 +96,7 @@ export async function loadDailyReport(db: SupabaseClient, options: {
         }),
         fetchAllRows<MeetingSelect>((from, to) => {
             let query = db.from('property_viewings')
-                .select('id, sales_manager_name, meeting_type, scheduled_at, agent_notes, customer_feedback, leads(customer_name), properties(name)')
+                .select('id, sales_manager_name, meeting_type, scheduled_at, agent_notes, customer_feedback, interests, leads(customer_name), properties(name)')
                 .eq('shop_id', shopId).is('deleted_at', null).eq('status', 'completed').gte('scheduled_at', start).lt('scheduled_at', end);
             if (only) query = query.eq('sales_manager_name', only);
             return query.order('scheduled_at').order('id').range(from, to);
@@ -85,7 +117,7 @@ export async function loadDailyReport(db: SupabaseClient, options: {
         manager: row.sales_manager_name?.trim() || null,
         type: row.meeting_type,
         customer: leadDisplayName(one(row.leads)),
-        property: one(row.properties)?.name ?? null,
+        property: viewingSelectionText(row.interests, one(row.properties)?.name),
         notes: row.agent_notes,
         feedback: row.customer_feedback,
         scheduled_at: row.scheduled_at,

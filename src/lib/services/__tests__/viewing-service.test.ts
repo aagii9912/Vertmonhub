@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { createViewing, resolveViewingInput, updateViewing } from '../ViewingService';
+import { CreateViewingSchema, createViewing, resolveViewingInput, updateViewing } from '../ViewingService';
+import { prepareViewingInterests } from '@/lib/viewings/prepare';
 import { logLeadActivity } from '@/lib/leads/activities';
 import { ANONYMOUS_LEAD_LABEL, ANONYMOUS_MEETING_PHONE, LEAD_NAME_OR_ANONYMOUS } from '@/lib/leads/labels';
 
 vi.mock('@/lib/leads/activities', () => ({ logLeadActivity: vi.fn() }));
+vi.mock('@/lib/viewings/prepare', () => ({ prepareViewingInterests: vi.fn() }));
 const leadId = '00000000-0000-4000-8000-000000000001';
 const propertyId = '00000000-0000-4000-8000-000000000002';
 const projectId = '00000000-0000-4000-8000-000000000003';
@@ -36,9 +38,42 @@ function fakeDb(responses: Record<string, Result[]>, rpcResponse: Result = { dat
 }
 const ok = (data: unknown): Result => ({ data, error: null });
 
-beforeEach(() => { vi.mocked(logLeadActivity).mockReset().mockResolvedValue({ id: 'activity' } as never); });
+beforeEach(() => {
+    vi.mocked(logLeadActivity).mockReset().mockResolvedValue({ id: 'activity' } as never);
+    vi.mocked(prepareViewingInterests).mockReset().mockResolvedValue([]);
+});
 
 describe('shared viewing creation', () => {
+    it('accepts database GUIDs that do not use RFC UUID version bits', () => {
+        const guid = '12345678-1234-1234-1234-123456789012';
+        expect(CreateViewingSchema.safeParse({ lead_id: guid, project_id: guid, property_id: guid, scheduled_at: scheduledAt }).success).toBe(true);
+    });
+
+    it('saves server-prepared interest snapshots through the atomic admin RPC', async () => {
+        const selection = { block: 'Б1', model: 'E3', area_sqm: 85.19, floor: 13 };
+        const snapshot = { ...selection, quote: null, quote_unavailable_reason: 'Баталсан үнэ алга' };
+        vi.mocked(prepareViewingInterests).mockResolvedValue([snapshot]);
+        const { db, queries, rpcCalls } = fakeDb({ leads: [ok({ id: leadId, project_id: projectId, status: 'new' })], projects: [ok({ id: projectId })] }, ok({ id: 'viewing', status: 'scheduled', scheduled_at: scheduledAt }));
+        expect(await createViewing(db, 'shop', { lead_id: leadId, scheduled_at: scheduledAt, interests: [selection] }, actor)).toMatchObject({ ok: true });
+        expect(rpcCalls[0]).toMatchObject({ name: 'create_scoped_sales_viewing', params: { p_project_ids: null, p_input: { interests: [snapshot] } } });
+        expect(queries.some(query => query.insert || query.updates)).toBe(false);
+    });
+
+    it('rejects client quote amounts before any reads or writes', async () => {
+        const { db, queries } = fakeDb({});
+        expect(await createViewing(db, 'shop', { lead_id: leadId, scheduled_at: scheduledAt, interests: [{ block: 'Б1', model: 'E3', area_sqm: 85.19, floor: 13, quote: { total_amount: 1 } }] }, actor)).toMatchObject({ ok: false, status: 400 });
+        expect(queries).toEqual([]); expect(prepareViewingInterests).not.toHaveBeenCalled();
+    });
+
+    it('allows admin completed-meeting selection edits via the same atomic RPC', async () => {
+        const selection = { block: 'Б1', model: 'E3', area_sqm: 85.19, floor: 13 };
+        const snapshot = { ...selection, quote: null, quote_unavailable_reason: 'Баталсан үнэ алга' };
+        vi.mocked(prepareViewingInterests).mockResolvedValue([snapshot]);
+        const { db, queries, rpcCalls } = fakeDb({ property_viewings: [ok({ id: 'viewing', lead_id: leadId, scheduled_at: scheduledAt, leads: { project_id: projectId } })] }, ok({ id: 'viewing', status: 'completed', scheduled_at: scheduledAt, lead_id: leadId, property_id: null }));
+        expect(await updateViewing(db, 'shop', 'viewing', { interests: [selection], meeting_type: 'repeat_customer', agent_notes: 'Ойрхон амьдардаг' }, actor)).toMatchObject({ ok: true });
+        expect(rpcCalls[0]).toMatchObject({ name: 'update_scoped_sales_viewing', params: { p_project_ids: null, p_patch: { interests: [snapshot], meeting_type: 'repeat_customer', agent_notes: 'Ойрхон амьдардаг' } } });
+        expect(queries.some(query => query.updates)).toBe(false);
+    });
     it('preflight has no writes and requires a valid zoned schedule', async () => {
         const { db, queries } = fakeDb({});
         expect((await resolveViewingInput(db, 'shop', { scheduled_at: 'bad' })).ok).toBe(false);

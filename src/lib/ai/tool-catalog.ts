@@ -73,6 +73,9 @@ const ENTRIES = {
     reply_to_customer: { kind: 'write', module: 'inbox', alwaysConfirm: true },
     // Уулзалт
     list_viewings: { kind: 'read', module: 'viewings', scoped: true },
+    get_viewing_options: { kind: 'read', module: 'viewings', scoped: true },
+    calculate_viewing_quote: { kind: 'read', module: 'viewings', scoped: true },
+    update_viewing: { kind: 'write', module: 'viewings', scoped: true, alwaysConfirm: true },
     schedule_viewing: { kind: 'write', module: 'viewings', scoped: true },
     record_viewing_outcome: { kind: 'write', module: 'viewings', scoped: true, auto: 'Уулзалтын үр дүн' },
     reschedule_viewing: { kind: 'write', module: 'viewings', scoped: true },
@@ -112,7 +115,7 @@ const ENTRIES = {
     assign_role: { kind: 'admin', module: 'settings' },
     create_role: { kind: 'admin', module: 'settings' },
     set_user_projects: { kind: 'admin', module: 'settings' },
-    set_sales_target: { kind: 'admin', module: 'settings' },
+    set_sales_target: { kind: 'admin', module: 'settings', alwaysConfirm: true },
 } satisfies Record<string, ToolMeta>;
 
 export type ToolName = keyof typeof ENTRIES;

@@ -6,6 +6,7 @@ import { resolveManagerIdentity } from '@/lib/sales/manager-identity';
 import { updateViewing } from '@/lib/services/ViewingService';
 import { resolveSalesProjectScope } from '@/lib/sales/project-scope';
 import { withRoute } from '@/lib/api/route';
+import { ViewingInterestsSchema } from '@/lib/viewings/interests';
 
 const PatchSchema = z.object({
     status: z.enum(['scheduled', 'completed', 'cancelled', 'no_show']).optional(),
@@ -15,6 +16,9 @@ const PatchSchema = z.object({
     interest_level: z.number().int().min(1).max(5).nullable().optional(),
     /** Үр дүнгийн дараа лидийн дараагийн холбоо барих цаг (заавал биш) */
     next_followup_at: z.string().datetime({ offset: true }).nullable().optional(),
+    property_id: z.guid().nullable().optional(),
+    meeting_type: z.enum(['new_customer', 'repeat_customer', 'existing_buyer']).optional(),
+    interests: ViewingInterestsSchema.optional(),
 });
 
 /**

@@ -49,6 +49,7 @@ async function fixtures(page: Page) {
         if (path === '/api/dashboard/leads') return reply({ leads: url.searchParams.has('phone') ? [] : state.lead ? [state.lead] : [],
             pagination: { total: state.lead ? 1 : 0, page: 1, pageSize: 25, totalPages: 1, hasMore: false } });
         if (path === '/api/dashboard/properties/search') return reply({ properties: [] });
+        if (path === '/api/dashboard/viewings/options') return reply({ project_id: projectId, units: [], conditions: [], reason: 'Баталсан үнийн тохиргоо байхгүй' });
         if (path === '/api/dashboard/viewings' && request.method() === 'POST') {
             const body = request.postDataJSON();
             state.requests.push({ path, body });

@@ -36,6 +36,7 @@ import { getKpiReport, getManagerActivityTool, getDailyReportTool, getManagerPer
 import { logCall, setFollowup, logPriceQuote, assignLeadManager, updateLeadTool, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
 import { transferContractTool } from './actions-contract-transfer';
 import { listLeadCategoriesTool, setLeadCategory } from './actions-lead-category';
+import { getViewingOptionsTool, calculateViewingQuoteTool, updateViewingSelectionTool } from './actions-viewing-selection';
 
 /** AI Assistant-ийн RBAC эрхүүд (route-аас тооцоолж дамжуулна). */
 export interface AssistantPerms {
@@ -135,6 +136,9 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     create_social_post: ({ shopId, args, confirm, userName }) => createSocialPost(shopId, args, confirm, userName),
     remember_fact: ({ shopId, args, confirm, userName }) => rememberFact(shopId, args, confirm, userName),
     list_viewings: ({ shopId, args, scope }) => listViewingsTool(shopId, args, scope),
+    get_viewing_options: ({ shopId, args, scope }) => getViewingOptionsTool(shopId, args, scope),
+    calculate_viewing_quote: ({ shopId, args, scope }) => calculateViewingQuoteTool(shopId, args, scope),
+    update_viewing: ({ shopId, args, confirm, userId, userName, scope }) => updateViewingSelectionTool(shopId, args, confirm, userId, userName, scope),
     list_my_tasks: ({ shopId, args, userId }) => listMyTasks(shopId, args, userId),
     list_contract_payments: ({ shopId, args }) => listContractPayments(shopId, args),
     log_call: ({ shopId, args, userId, userName, scope }) => logCall(shopId, args, userId, userName, scope),
@@ -171,7 +175,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     assign_role: ({ shopId, args, confirm, userId }) => assignRole(shopId, args, confirm, userId),
     create_role: ({ shopId, args, confirm }) => createRole(shopId, args, confirm),
     set_user_projects: ({ args, confirm, userId }) => setUserProjects(args, confirm, userId),
-    set_sales_target: ({ shopId, args, confirm }) => setSalesTarget(shopId, args, confirm),
+    set_sales_target: ({ shopId, args, confirm, userId }) => setSalesTarget(shopId, args, confirm, userId),
 };
 
 // ============================================

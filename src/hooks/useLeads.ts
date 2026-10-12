@@ -8,6 +8,7 @@ import type { LeadCategoryOption, LeadView } from '@/lib/leads/labels';
 import type { LeadActivity } from '@/lib/leads/activities';
 import type { LeadTimeline } from '@/lib/leads/timeline';
 import type { LeadWorkQueue } from '@/lib/leads/work-queue';
+import type { ViewingInterest } from '@/lib/viewings/interests';
 
 export type LeadRow = Lead & { lost_reason?: string | null; project_id?: string | null };
 
@@ -96,6 +97,7 @@ export interface LeadDetail {
         meeting_type: string | null;
         property_id: string | null;
         property_name: string | null;
+        interests?: ViewingInterest[];
         agent_notes: string | null;
         customer_feedback: string | null;
         interest_level: number | null;

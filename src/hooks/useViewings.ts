@@ -4,6 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '@/contexts/AuthContext';
 import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
 import type { MeetingType, ViewingStatus } from '@/lib/viewings/labels';
+import type { ViewingInterest, ViewingInterestInput, ViewingUnitOption, ViewingCondition } from '@/lib/viewings/interests';
+import type { PricingResult } from '@/lib/sales/pricing';
 
 export interface ViewingRow {
     id: string;
@@ -19,6 +21,7 @@ export interface ViewingRow {
     sales_manager_name: string | null;
     lead: { id: string; customer_name: string | null; customer_phone: string | null; status: string } | null;
     property: { id: string; name: string; district: string | null } | null;
+    interests?: ViewingInterest[];
 }
 
 export type ViewingRange = 'today' | 'upcoming' | 'past' | 'all';
@@ -58,6 +61,7 @@ export interface CreateViewingInput {
     walk_in: boolean;
     interest_level?: number | null;
     feedback?: string | null;
+    interests?: ViewingInterestInput[];
 }
 
 function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
@@ -70,6 +74,7 @@ function invalidateAll(qc: ReturnType<typeof useQueryClient>) {
     // Болсон/ирээгүй уулзалт өдрийн идэвх, сарын KPI-д тоологдоно.
     void qc.invalidateQueries({ queryKey: ['manager-activity'] });
     void qc.invalidateQueries({ queryKey: ['sales-kpi'] });
+    void qc.invalidateQueries({ queryKey: ['daily-report'] });
 }
 
 export function useCreateViewing() {
@@ -87,6 +92,9 @@ export type ViewingPatch = Partial<{
     customer_feedback: string | null;
     interest_level: number | null;
     next_followup_at: string | null;
+    property_id: string | null;
+    meeting_type: MeetingType;
+    interests: ViewingInterestInput[];
 }>;
 
 export function useUpdateViewing() {
@@ -126,5 +134,25 @@ export function usePropertySearch(q: string, enabled = true, projectId?: string 
         enabled: !!shop?.id && enabled && projectId !== null,
         staleTime: 60_000,
         placeholderData: (prev, previousQuery) => previousQuery && previousQuery.queryKey[2] === shop?.id && previousQuery.queryKey[3] === user?.id && previousQuery.queryKey[4] === projectId && previousQuery.queryKey[6] === user?.role ? prev : undefined,
+    });
+}
+
+export function useViewingOptions(projectId?: string | null) {
+    const { shop, user } = useAuth();
+    return useQuery<{ units: ViewingUnitOption[]; conditions: ViewingCondition[]; reason: string | null }>({
+        queryKey: ['viewing-options', shop?.id, user?.id, user?.role, projectId],
+        queryFn: () => dashboardJson(`/api/dashboard/viewings/options${projectId ? `?project=${encodeURIComponent(projectId)}` : ''}`),
+        enabled: !!shop?.id && projectId !== null,
+        staleTime: 60_000,
+    });
+}
+
+export function useViewingQuote(selection: ViewingInterestInput | null) {
+    const { shop, user } = useAuth();
+    return useQuery<PricingResult>({
+        queryKey: ['viewing-quote', shop?.id, user?.id, user?.role, selection],
+        queryFn: () => dashboardMutate('/api/dashboard/viewings/quote', 'POST', selection),
+        enabled: !!shop?.id && !!selection,
+        staleTime: 10_000,
     });
 }

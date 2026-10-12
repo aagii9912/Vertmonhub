@@ -55,7 +55,7 @@ export async function loadLeadTimeline(
             .eq('shop_id', shopId).eq('lead_id', lead.id)
             .order('created_at', { ascending: true }).order('id').range(from, to)), null as LeadActivity[] | null),
         settle('viewings', () => fetchAllRows<TimelineViewingInput>((from, to) => db.from('property_viewings')
-            .select('id, scheduled_at, status, created_at, completed_at, sales_manager_name')
+            .select('id, scheduled_at, status, created_at, completed_at, sales_manager_name, interests')
             .eq('shop_id', shopId).eq('lead_id', lead.id).is('deleted_at', null)
             .order('created_at', { ascending: true }).order('id').range(from, to)), [] as TimelineViewingInput[]),
         settle('contracts', () => fetchAllRows<TimelineContractInput>((from, to) => db.from('property_contracts')

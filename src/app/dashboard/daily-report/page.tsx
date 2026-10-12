@@ -51,7 +51,7 @@ function DailyReportView() {
     const viewer = data?.viewer;
     const editable = new Set(viewer?.editable ?? []);
     // Менежер өнөөдрийн тоогоо оруулаагүй бол шууд оруулах горимоор нээгдэнэ.
-    const editMode = editOverride ?? (!!viewer?.personal && editable.size > 0 && !!report && report.filled.length === 0);
+    const editMode = editOverride ?? (!!viewer?.personal && editable.size > 0 && !!report && !report.filled.some(name => editable.has(name)));
     const dirty = Object.keys(draft).length > 0 || notesDraft !== null;
     const canConfigure = canWrite('settings') && !!data?.config && !viewer?.personal;
 
@@ -103,8 +103,9 @@ function DailyReportView() {
 
     const notices: Array<{ tone: 'info' | 'warning'; text: ReactNode }> = [];
     if (report && date === today) notices.push({ tone: 'info', text: 'Өдөр дуусаагүй — одоогоор бүртгэсэн мэдээллийг харуулж байна.' });
+    if (report && viewer?.personal) notices.push({ tone: 'info', text: 'Төслийн бүх менежерийн мэдээлэл харагдана. Зөвхөн өөрийн тоог засна; багийн тайлбар, баталгаажуулалтыг ээлжийн менежер хийнэ.' });
     if (report && report.meetings.pending > 0) notices.push({ tone: 'warning', text: <span>Энэ өдөр товлосон {report.meetings.pending} уулзалтын үр дүн бүртгэгдээгүй тул тайланд ороогүй. <Link href="/dashboard/viewings" className="font-medium underline">Уулзалт</Link> хуудсанд «Болсон» гэж тэмдэглэнэ үү.</span> });
-    if (report && !viewer?.personal && report.missing.length > 0) notices.push({ tone: 'warning', text: `Тоо оруулаагүй: ${report.missing.join(', ')}.` });
+    if (report && report.missing.length > 0) notices.push({ tone: 'warning', text: `Тоо оруулаагүй: ${report.missing.join(', ')}.` });
     if (data?.configInvalid) notices.push({ tone: 'warning', text: 'Хадгалсан загвар уншигдсангүй — анхдагч загварыг харуулж байна. «Загвар»-аас дахин хадгална уу.' });
     if (data && !data.configSaved && canConfigure) notices.push({ tone: 'info', text: 'Энэ төслийн загварыг тохируулаагүй байна. «Загвар» товчоор утасны шугам, чатын суваг, менежерийн баганаа тохируулна уу.' });
 
@@ -114,7 +115,7 @@ function DailyReportView() {
                 <div>
                     <h1 className="text-[24px] font-semibold tracking-tight">Өдрийн тайлан</h1>
                     <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
-                        Утасны шугам, чатын тоог менежер бүр оруулна; уулзалт системээс автоматаар орно. Хуулж мессенжерт явуулах эсвэл PDF болгоно.
+                        Менежер бүр дуудлага, чатын тоогоо оруулна; уулзалт системээс автоматаар орно. Ээлжийн менежер багийн бүх мэдээллийг нэгтгэн тайланг баталгаажуулна.
                     </p>
                 </div>
                 <Button variant="secondary" onClick={() => void query.refetch()} disabled={query.isFetching || dirty}>

@@ -29,6 +29,7 @@ import { sourceLabel, statusLabel } from '@/lib/leads/labels';
 import { quoteContent, quoteUnitKey } from '@/lib/leads/quotes';
 import { formatMNT } from '@/lib/utils/currency';
 import { UB_OFFSET_MS, ubDateStr } from '@/lib/utils/date';
+import { viewingSelectionText, type ViewingInterest } from '@/lib/viewings/interests';
 
 /** «Зэрэг холбогдсон» гэж үзэх хугацаа (хоног) — нэг тогтмол. */
 export const TIMELINE_CONFLICT_WINDOW_DAYS = 14;
@@ -157,6 +158,7 @@ export interface TimelineViewingInput {
     created_at?: string | null;
     completed_at?: string | null;
     sales_manager_name?: string | null;
+    interests?: ViewingInterest[];
 }
 
 export interface TimelineContractInput {
@@ -226,6 +228,7 @@ export function buildLeadTimeline(input: BuildLeadTimelineInput): LeadTimeline {
         return value && rosterByName.has(value) ? value : null;
     };
     const viewingManager = new Map((input.viewings ?? []).map((v) => [v.id, managerByName(v.sales_manager_name)]));
+    const viewingSelection = new Map((input.viewings ?? []).map((v) => [v.id, viewingSelectionText(v.interests)]));
     // Уулзалт уншигдсан бол жагсаалтад байхгүй нь устгагдсан гэсэн үг (loader deleted_at IS NULL-ээр уншина).
     const viewingsKnown = input.viewings !== undefined && !(input.partial ?? []).includes('viewings');
     const viewingStatus = new Map((input.viewings ?? []).map((v) => [v.id, text(v.status) ?? 'scheduled']));
@@ -293,7 +296,7 @@ export function buildLeadTimeline(input: BuildLeadTimelineInput): LeadTimeline {
                     contact: !deleted && !(status && CONTACT_MEETING_EXCLUDED.has(status)),
                     // Админ бүртгэсэн бол уулзалтын менежерийг дараа нь (хариуцагчтай тулгаж) онооно.
                     viewingManager: !attributed && viewingId ? viewingManager.get(viewingId) ?? null : null,
-                    title: content ?? 'Уулзалт', detail: deleted ? 'Уулзалт устгагдсан' : null, scheduledAt: text(meta.scheduled_at), viewingId,
+                    title: content ?? 'Уулзалт', detail: deleted ? 'Уулзалт устгагдсан' : viewingId ? viewingSelection.get(viewingId) ?? null : null, scheduledAt: text(meta.scheduled_at), viewingId,
                 });
                 break;
             }
@@ -321,7 +324,7 @@ export function buildLeadTimeline(input: BuildLeadTimelineInput): LeadTimeline {
         const manager = managerByName(v.sales_manager_name);
         drafts.push({
             id: `viewing:${v.id}`, at, dateOnly: false, kind: 'meeting', actor: text(v.sales_manager_name), manager, fromViewing: true,
-            contact: !CONTACT_MEETING_EXCLUDED.has(v.status ?? ''), title: viewingTitle(v.status), detail: null,
+            contact: !CONTACT_MEETING_EXCLUDED.has(v.status ?? ''), title: viewingTitle(v.status), detail: viewingSelectionText(v.interests),
             amount: null, unitLabel: null, scheduledAt: text(v.scheduled_at), viewingId: v.id, meetingStatus: text(v.status) ?? 'scheduled',
             ownerChange: null, source: 'viewing', order: order++,
         });

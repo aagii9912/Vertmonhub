@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { beforeEach, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
+import { emptyMonthlySales } from '@/lib/sales/monthly';
 
 const shopId = '00000000-0000-0000-0000-000000000001';
 const userId = '10000000-0000-4000-8000-000000000002';
@@ -18,6 +19,7 @@ const state = vi.hoisted(() => ({
 }));
 vi.mock('@/lib/auth/supabase-auth', () => ({
     getUserId: async () => 'admin',
+    assertShopAccess: async (id: string) => id === '00000000-0000-0000-0000-000000000001' ? id : null,
     supabaseAdmin: () => ({
         rpc: async (name: string, params: { p_shop_id: string; p_managers: unknown }) => {
             expect(name).toBe('save_sales_manager_roster');
@@ -49,7 +51,7 @@ vi.mock('@/lib/auth/supabase-auth', () => ({
 }));
 vi.mock('@/lib/admin/auth', () => ({ getAdminUser: async () => ({ id: 'admin', role: 'super_admin' }) }));
 vi.mock('@/lib/sales/targets', () => ({
-    getTeamTargets: async () => Array(12).fill(0),
+    getTeamMonthlySales: async () => emptyMonthlySales(),
     getMonthlyActualsByManager: async () => new Map(),
     sumYear: () => 0,
 }));

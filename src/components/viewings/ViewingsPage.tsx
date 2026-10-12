@@ -3,14 +3,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { CalendarPlus, Check, MapPin, Phone, Star, UserX, X, ArrowRight, Search, Loader2, MoreHorizontal } from 'lucide-react';
+import { CalendarPlus, Check, MapPin, Phone, Star, UserX, X, ArrowRight, Search, Loader2, MoreHorizontal, Pencil } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { canAccessModuleDynamic } from '@/lib/rbac';
 import { formatTime, formatShortDate, ubDateStr } from '@/lib/utils/date';
 import { formatMNT } from '@/lib/utils/currency';
-import { useViewings, useCreateViewing, useUpdateViewing, usePropertySearch, type ViewingRow, type ViewingRange, type PropertyOption } from '@/hooks/useViewings';
+import { useViewings, useCreateViewing, useUpdateViewing, usePropertySearch, useViewingOptions, type ViewingRow, type ViewingRange, type PropertyOption } from '@/hooks/useViewings';
+import { includeDraftInterest, interestInput, viewingSelectionText, type ViewingInterestInput } from '@/lib/viewings/interests';
+import { ViewingInterestPicker } from './ViewingInterestPicker';
 import { useLeadDetail, useLeadProjects, useManagers } from '@/hooks/useLeads';
 import { MEETING_TYPES, MEETING_TYPE_META, VIEWING_STATUS_META, viewingStatusLabel, viewingStatusTone, dayHeading, type MeetingType } from '@/lib/viewings/labels';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/Sheet';
@@ -46,6 +48,7 @@ export function ViewingsPage() {
     const [createOpen, setCreateOpen] = useState(false);
     const [prefillLead, setPrefillLead] = useState<string | null>(null);
     const [outcomeFor, setOutcomeFor] = useState<ViewingRow | null>(null);
+    const [editFor, setEditFor] = useState<ViewingRow | null>(null);
 
     useEffect(() => {
         const lead = search.get('lead');
@@ -123,7 +126,7 @@ export function ViewingsPage() {
                                 <span className="mono-label ml-auto text-[11px] text-muted-foreground">{g.items.length}</span>
                             </div>
                             {g.items.map((v) => (
-                                <Row key={v.id} v={v} now={now} canWrite={canWrite} busy={update.isPending} onArrived={() => setOutcomeFor(v)} onNoShow={() => patch(v.id, { status: 'no_show' }, 'Ирээгүй гэж тэмдэглэв')} onCancel={() => patch(v.id, { status: 'cancelled' }, 'Цуцлагдлаа')} onPostpone={() => postpone(v)} />
+                                <Row key={v.id} v={v} now={now} canWrite={canWrite} busy={update.isPending} onEdit={() => setEditFor(v)} onArrived={() => setOutcomeFor(v)} onNoShow={() => patch(v.id, { status: 'no_show' }, 'Ирээгүй гэж тэмдэглэв')} onCancel={() => patch(v.id, { status: 'cancelled' }, 'Цуцлагдлаа')} onPostpone={() => postpone(v)} />
                             ))}
                         </div>
                     ))
@@ -135,6 +138,13 @@ export function ViewingsPage() {
                 <SheetContent side="right" showCloseButton={false} aria-describedby={undefined} className="w-full p-0 sm:max-w-[440px]">
                     <SheetTitle className="sr-only">Уулзалт товлох</SheetTitle>
                     {createOpen && <CreateSheet leadId={prefillLead} onClose={() => { setCreateOpen(false); setPrefillLead(null); }} />}
+                </SheetContent>
+            </Sheet>
+
+            <Sheet open={!!editFor} onOpenChange={(o) => !o && setEditFor(null)}>
+                <SheetContent side="right" showCloseButton={false} aria-describedby={undefined} className="w-full p-0 sm:max-w-[520px]">
+                    <SheetTitle className="sr-only">Уулзалт засах</SheetTitle>
+                    {editFor && <EditSheet v={editFor} onClose={() => setEditFor(null)} />}
                 </SheetContent>
             </Sheet>
 
@@ -151,7 +161,7 @@ export function ViewingsPage() {
 
 /* ------------------------------------------------------------------ */
 
-function Row({ v, now, canWrite, busy, onArrived, onNoShow, onCancel, onPostpone }: { v: ViewingRow; now: number; canWrite: boolean; busy: boolean; onArrived: () => void; onNoShow: () => void; onCancel: () => void; onPostpone: () => void }) {
+function Row({ v, now, canWrite, busy, onEdit, onArrived, onNoShow, onCancel, onPostpone }: { v: ViewingRow; now: number; canWrite: boolean; busy: boolean; onEdit: () => void; onArrived: () => void; onNoShow: () => void; onCancel: () => void; onPostpone: () => void }) {
     const phone = v.lead?.customer_phone?.replace(/\D/g, '') || '';
     const past = new Date(v.scheduled_at).getTime() < now;
     const name = leadDisplayName(v.lead);
@@ -160,7 +170,7 @@ function Row({ v, now, canWrite, busy, onArrived, onNoShow, onCancel, onPostpone
         <span className={cn('num self-start pt-0.5 text-base font-semibold sm:self-auto', v.status === 'scheduled' && past ? 'text-status-danger' : 'text-foreground')}>{formatTime(v.scheduled_at)}</span>
         <div className="min-w-0 flex-1">
             {v.lead ? <Link href={`/dashboard/leads?lead=${v.lead.id}`} className="block truncate text-sm font-medium text-foreground hover:text-brand-strong focus-ring">{name}</Link> : <span className="text-sm font-medium">{name}</span>}
-            <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"><MapPin className="size-3 shrink-0" /><span className="truncate">{v.property ? [v.property.name, v.property.district].filter(Boolean).join(' · ') : 'Байр сонгоогүй'}</span></div>
+            <div className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"><MapPin className="size-3 shrink-0" /><span className="truncate">{viewingSelectionText(v.interests, v.property ? [v.property.name, v.property.district].filter(Boolean).join(' · ') : null) || 'Байр сонгоогүй'}</span></div>
             {v.agent_notes && <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-muted-foreground">{v.agent_notes}</p>}
             {mt && <p className="mt-1 text-xs text-muted-foreground">{mt.label}</p>}
         </div>
@@ -169,6 +179,7 @@ function Row({ v, now, canWrite, busy, onArrived, onNoShow, onCancel, onPostpone
             <Pill tone={viewingStatusTone(v.status)}>{viewingStatusLabel(v.status)}</Pill>
             {v.status === 'completed' && v.interest_level && <span className="inline-flex items-center gap-1 text-xs text-status-pending" aria-label={`Сонирхол ${v.interest_level}/5`}><Star className="size-3.5 fill-current" />{v.interest_level}/5</span>}
             {phone && <a href={`tel:${phone}`} className="ml-auto flex size-11 items-center justify-center rounded-lg text-brand-strong hover:bg-surface-2 focus-ring sm:ml-0 sm:size-9" aria-label={`${name} руу залгах`}><Phone className="size-4" /></a>}
+            {canWrite && <Button variant="ghost" size="icon" disabled={busy} onClick={onEdit} aria-label={`${name}: уулзалт засах`}><Pencil className="size-4" /></Button>}
             {canWrite && v.status === 'scheduled' && <>
                 <Button variant="secondary" size="sm" disabled={busy} onClick={onArrived}><Check />Ирсэн</Button>
                 <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" disabled={busy} aria-label={`${name}: уулзалтын бусад үйлдэл`}><MoreHorizontal /></Button></DropdownMenuTrigger>
@@ -206,8 +217,12 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
     const [notes, setNotes] = useState('');
     const [interest, setInterest] = useState(0);
     const [feedback, setFeedback] = useState('');
+    const [interests, setInterests] = useState<ViewingInterestInput[]>([]);
+    const [draftInterest, setDraftInterest] = useState<ViewingInterestInput | null>(null);
     const projectScope = leadId ? leadDetail?.lead.project_id ?? null : projectId || null;
-    const { data: props = [], isFetching: searching } = usePropertySearch(propQ, !property, projectScope);
+    const options = useViewingOptions(projectScope);
+    const units = options.data?.units ?? [];
+    const { data: props = [], isFetching: searching, error: propertiesError } = usePropertySearch(propQ, !property && !units.length && !options.isLoading && !options.error, projectScope);
 
     // Лидээс ирсэн бол төрлийг статусаас нь таана (гараар сольж болно)
     const inferredType: MeetingType = leadDetail?.lead
@@ -235,6 +250,7 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                 walk_in: walkIn,
                 interest_level: walkIn && interest ? interest : null,
                 feedback: walkIn ? feedback.trim() || null : null,
+                interests: includeDraftInterest(interests, draftInterest),
             });
             if (result.warning) toast.warning(result.warning);
             else toast.success(walkIn ? 'Ирсэн уулзалт бүртгэгдлээ' : 'Уулзалт товлогдлоо');
@@ -259,7 +275,7 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                 </label>
 
                 {!leadId && !soleProject && <Field label="Төсөл" required>
-                    <select aria-label="Төсөл" required value={projectId} onChange={e => { setProjectId(e.target.value); setProperty(null); }} disabled={projectsLoading || !!projectsError} className={inputCls}>
+                    <select aria-label="Төсөл" required value={projectId} onChange={e => { setProjectId(e.target.value); setProperty(null); setInterests([]); setDraftInterest(null); }} disabled={projectsLoading || !!projectsError} className={inputCls}>
                         <option value="">{projectsLoading ? 'Төсөл ачаалж байна…' : 'Төсөл сонгох'}</option>
                         {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
@@ -289,7 +305,11 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                     </div>
                 )}
 
-                <Field label="Байр">
+                {options.isLoading && projectScope && <p className="text-xs text-muted-foreground">Байрны сонголт ачаалж байна…</p>}
+                {options.error && <p role="alert" className="text-xs text-status-danger">Байрны сонголт уншиж чадсангүй. <button type="button" onClick={() => void options.refetch()} className="underline">Дахин оролдох</button></p>}
+                {units.length > 0 && <ViewingInterestPicker key={projectScope} units={units} conditions={options.data?.conditions} pricingReason={options.data?.reason}
+                    value={interests} onChange={setInterests} onDraftChange={setDraftInterest} />}
+                {!units.length && !options.isLoading && !options.error && <Field label="Байр">
                     {property ? (
                         <div className="flex items-center gap-2 rounded-md border border-brand bg-brand-soft px-3 py-1.5 text-[13px]">
                             <MapPin className="h-3.5 w-3.5 text-brand-strong" />
@@ -302,6 +322,7 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                             <input value={propQ} onChange={(e) => setPropQ(e.target.value)} placeholder="Байрны нэр, дүүрэг…" className={cn(inputCls, 'pl-8')} />
                             {searching && <Loader2 className="absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin text-muted-foreground" />}
+                            {propertiesError && <p role="alert" className="mt-2 text-xs text-status-danger">Байр хайж чадсангүй.</p>}
                             {props.length > 0 && (
                                 <div className="mt-1 max-h-48 overflow-y-auto rounded-md border border-border bg-surface shadow-lg">
                                     {props.map((p) => (
@@ -315,7 +336,7 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                             )}
                         </div>
                     )}
-                </Field>
+                </Field>}
 
                 {!walkIn && (
                     <Field label="Огноо, цаг" required>
@@ -346,7 +367,7 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
                     </>
                 )}
 
-                <Field label="Тэмдэглэл"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="12-р давхраас дээш…" className={cn(inputCls, 'h-auto resize-none py-2')} /></Field>
+                <Field label="Сэжим / тэмдэглэл"><textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="Ойрхон амьдардаг, 12-р давхраас дээш сонирхож байна…" className={cn(inputCls, 'h-auto resize-none py-2')} /></Field>
             </div>
             <footer className="flex shrink-0 items-center gap-2 border-t border-border p-4">
                 <button type="button" onClick={onClose} className="h-11 rounded-md px-3 text-[13px] text-muted-foreground hover:bg-surface-2 hover:text-foreground focus-ring sm:h-[34px]">Болих</button>
@@ -356,6 +377,70 @@ function CreateSheet({ leadId, onClose }: { leadId: string | null; onClose: () =
             </footer>
         </div>
     );
+}
+
+function EditSheet({ v, onClose }: { v: ViewingRow; onClose: () => void }) {
+    const update = useUpdateViewing();
+    const options = useViewingOptions();
+    const units = options.data?.units ?? [];
+    const [interests, setInterests] = useState(() => (v.interests ?? []).map(interestInput));
+    const [draftInterest, setDraftInterest] = useState<ViewingInterestInput | null>(null);
+    const [notes, setNotes] = useState(v.agent_notes || '');
+    const [feedback, setFeedback] = useState(v.customer_feedback || '');
+    const [interest, setInterest] = useState(v.interest_level || 0);
+    const [type, setType] = useState(v.meeting_type || 'new_customer');
+    const [status, setStatus] = useState(v.status);
+    const [when, setWhen] = useState(() => ubInputDate(v.scheduled_at));
+    const [property, setProperty] = useState<{ id: string; name: string } | null>(v.property);
+    const [propertyQuery, setPropertyQuery] = useState('');
+    const properties = usePropertySearch(propertyQuery, !property && !units.length && !options.isLoading && !options.error);
+    const save = async () => {
+        if (!when) { toast.error('Огноо, цаг сонгоно уу'); return; }
+        const nextInterests = includeDraftInterest(interests, draftInterest);
+        const patch: Parameters<typeof update.mutateAsync>[0]['patch'] = {};
+        if (JSON.stringify(nextInterests) !== JSON.stringify((v.interests ?? []).map(interestInput))) patch.interests = nextInterests;
+        if ((notes.trim() || null) !== v.agent_notes) patch.agent_notes = notes.trim() || null;
+        if ((feedback.trim() || null) !== v.customer_feedback) patch.customer_feedback = feedback.trim() || null;
+        if ((interest || null) !== v.interest_level) patch.interest_level = interest || null;
+        if (type !== v.meeting_type) patch.meeting_type = type;
+        if (status !== v.status) patch.status = status;
+        if (when !== ubInputDate(v.scheduled_at)) patch.scheduled_at = new Date(`${when}:00+08:00`).toISOString();
+        if ((property?.id ?? null) !== v.property_id) patch.property_id = property?.id ?? null;
+        if (!Object.keys(patch).length) { onClose(); return; }
+        try {
+            const result = await update.mutateAsync({ id: v.id, patch });
+            if (result.warning) toast.warning(result.warning); else toast.success('Уулзалтын мэдээлэл шинэчлэгдлээ');
+            onClose();
+        } catch (error) { toast.error(error instanceof Error ? error.message : 'Хадгалж чадсангүй'); }
+    };
+    return <div className="flex h-full flex-col">
+        <header className="flex items-center gap-3 border-b border-border px-5 py-4"><h2 className="text-base font-semibold">{leadDisplayName(v.lead)} — уулзалт засах</h2>
+            <button type="button" aria-label="Хаах" className="ml-auto rounded p-1" onClick={onClose}><X className="size-4" /></button></header>
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-5">
+            {options.isLoading && <p className="text-xs">Байрны сонголт ачаалж байна…</p>}
+            {options.error && <p role="alert" className="text-xs text-status-danger">Байрны сонголт уншиж чадсангүй. <button type="button" className="underline" onClick={() => void options.refetch()}>Дахин оролдох</button></p>}
+            {!!v.interests?.length && <div className="space-y-2 rounded-lg border border-border bg-surface-2 p-3 text-xs"><p className="font-medium">Хадгалсан сонголт, үнийн санал</p>{v.interests.map((item, index) => <div key={index}>
+                <p>{viewingSelectionText([item])}</p>{item.quote ? <p className="num">Нийт {formatMNT(item.quote.total_amount)} · Урьдчилгаа {item.quote.advance_amount == null ? '—' : formatMNT(item.quote.advance_amount)} · {item.quote.source} · v{item.quote.version}</p> : <p className="text-muted-foreground">{item.quote_unavailable_reason || 'Үнийн санал алга'}</p>}
+            </div>)}</div>}
+            {units.length > 0 && <ViewingInterestPicker units={units} conditions={options.data?.conditions} pricingReason={options.data?.reason} value={interests} onChange={setInterests} onDraftChange={setDraftInterest} />}
+            {property && <div className="flex items-center gap-2 rounded border border-border p-2 text-xs"><span className="flex-1">{property.name}</span><button type="button" aria-label="Байрны холбоосыг хасах" onClick={() => setProperty(null)}><X className="size-4" /></button></div>}
+            {!property && !units.length && !options.isLoading && !options.error && <Field label="Байр"><input className={inputCls} value={propertyQuery} onChange={e => setPropertyQuery(e.target.value)} placeholder="Байрны нэр, дүүрэг…" />
+                {properties.error && <p role="alert" className="text-xs text-status-danger">Байр хайж чадсангүй.</p>}
+                {properties.data?.map(item => <button type="button" key={item.id} onClick={() => setProperty(item)} className="rounded p-2 text-left text-xs hover:bg-surface-2">{item.name}</button>)}
+            </Field>}
+            <Field label="Огноо, цаг (Улаанбаатар)"><input aria-label="Огноо, цаг" type="datetime-local" value={when} onChange={e => setWhen(e.target.value)} className={inputCls} /></Field>
+            <div className="grid grid-cols-2 gap-3"><Field label="Төлөв"><select aria-label="Төлөв" className={inputCls} value={status} onChange={e => setStatus(e.target.value as ViewingRow['status'])}>{Object.entries(VIEWING_STATUS_META).map(([key, meta]) => <option key={key} value={key}>{meta.label}</option>)}</select></Field>
+                <Field label="Төрөл"><select aria-label="Төрөл" className={inputCls} value={type} onChange={e => setType(e.target.value as MeetingType)}>{MEETING_TYPES.map(key => <option key={key} value={key}>{MEETING_TYPE_META[key].label}</option>)}</select></Field></div>
+            <Field label="Сонирхол"><select aria-label="Сонирхол" className={inputCls} value={interest} onChange={e => setInterest(Number(e.target.value))}><option value={0}>Үнэлээгүй</option>{[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}/5</option>)}</select></Field>
+            <Field label="Харилцагчийн санал"><textarea aria-label="Харилцагчийн санал" className={cn(inputCls, 'h-auto py-2')} rows={2} value={feedback} onChange={e => setFeedback(e.target.value)} /></Field>
+            <Field label="Сэжим / тэмдэглэл"><textarea aria-label="Сэжим / тэмдэглэл" className={cn(inputCls, 'h-auto py-2')} rows={3} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
+        </div>
+        <footer className="flex justify-end gap-2 border-t border-border p-4"><Button variant="secondary" onClick={onClose}>Болих</Button><Button disabled={update.isPending} onClick={() => void save()}>Хадгалах</Button></footer>
+    </div>;
+}
+
+function ubInputDate(date: string): string {
+    return new Date(date).toLocaleString('sv-SE', { timeZone: 'Asia/Ulaanbaatar' }).replace(' ', 'T').slice(0, 16);
 }
 
 function OutcomeSheet({ v, onClose }: { v: ViewingRow; onClose: () => void }) {

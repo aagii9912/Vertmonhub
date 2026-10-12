@@ -12,6 +12,9 @@ import { ubDayRange } from '@/lib/utils/date';
 import { normalizePhone } from '@/lib/utils/phone';
 import { applyLeadScope, assertProjectManager, canAccessProject, UNRESTRICTED_SALES_SCOPE, type SalesProjectScope } from '@/lib/sales/project-scope';
 import { soleShopProjectId } from '@/lib/projects/shop-project';
+import { ViewingInterestsSchema, type ViewingInterest, type ViewingInterestInput, viewingSelectionText } from '@/lib/viewings/interests';
+import { prepareViewingInterests } from '@/lib/viewings/prepare';
+import { PricingSelectionError } from '@/lib/sales/pricing-store';
 
 export interface Actor {
     userId: string | null;
@@ -26,6 +29,9 @@ export interface ViewingPatch {
     customer_feedback?: string | null;
     interest_level?: number | null;
     next_followup_at?: string | null;
+    property_id?: string | null;
+    meeting_type?: 'new_customer' | 'repeat_customer' | 'existing_buyer';
+    interests?: ViewingInterestInput[];
     /** Зөвхөн дотоод soft-delete үйлдэл; API PATCH schema-д нээхгүй. */
     deleted_at?: string;
 }
@@ -33,19 +39,20 @@ export interface ViewingPatch {
 export type ServiceResult<T> = { ok: true; data: T; warning?: string } | { ok: false; error: string; status: number; partialSuccess?: boolean; leadId?: string };
 
 export const CreateViewingSchema = z.object({
-    lead_id: z.string().uuid().nullish(),
-    project_id: z.string().uuid().nullish(),
+    lead_id: z.guid().nullish(),
+    project_id: z.guid().nullish(),
     customer_name: z.string().trim().min(1).max(200).nullish(),
     customer_phone: z.string().trim().max(30).nullish(),
     /** Шинэ харилцагч нэрээ хэлээгүй («Нэр тодорхойгүй»): лидийг нэргүй үүсгэнэ, утас заавал. */
     anonymous: z.boolean().default(false),
-    property_id: z.string().uuid().nullish(),
+    property_id: z.guid().nullish(),
     scheduled_at: z.string().datetime({ offset: true }).nullish(),
     meeting_type: z.enum(['new_customer', 'repeat_customer', 'existing_buyer']).default('new_customer'),
     notes: z.string().trim().max(4000).nullish(),
     walk_in: z.boolean().default(false),
     interest_level: z.number().int().min(1).max(5).nullish(),
     feedback: z.string().trim().max(4000).nullish(),
+    interests: ViewingInterestsSchema.optional(),
 }).refine(p => p.walk_in || !!p.scheduled_at, { message: 'Уулзалтын огноо, цаг шаардлагатай' })
     .refine(p => !!(p.lead_id || p.customer_name || p.customer_phone || p.anonymous), { message: 'Лид эсвэл харилцагчийн мэдээлэл шаардлагатай' });
 
@@ -106,7 +113,13 @@ export async function resolveViewingInput(db: SupabaseClient, shopId: string, in
         if (!project.data) return { ok: false as const, error: 'Төсөл олдсонгүй', status: 404 };
     }
     if (property && property.project_id !== projectId) return { ok: false as const, error: 'Лидийн төслийн байрыг сонгоно уу', status: 400 };
-    return { ok: true as const, data: { input: p, lead, property, projectId } };
+    try {
+        const interests = p.interests === undefined ? undefined : await prepareViewingInterests(db, shopId, projectId, p.interests, scope);
+        return { ok: true as const, data: { input: p, lead, property, projectId, interests } };
+    } catch (error) {
+        if (error instanceof PricingSelectionError) return { ok: false as const, error: error.message, status: error.status };
+        throw error;
+    }
 }
 
 /** UI ба AI-ийн уулзалт үүсгэх нэгдсэн урсгал. Хэсэгчилсэн хадгалалтыг ил тод буцаана. */
@@ -119,7 +132,7 @@ export async function createViewing(db: SupabaseClient, shopId: string, input: u
     }
     const resolved = await resolveViewingInput(db, shopId, input, scope);
     if (!resolved.ok) return resolved;
-    const { input: p, property, projectId } = resolved.data;
+    const { input: p, property, projectId, interests } = resolved.data;
     let lead = resolved.data.lead;
     let createdLead = false;
     if (managerName && !lead) {
@@ -134,7 +147,7 @@ export async function createViewing(db: SupabaseClient, shopId: string, input: u
         lead = result.data;
         createdLead = true;
     }
-    if (scope.projectIds !== null) {
+    if (scope.projectIds !== null || interests !== undefined) {
         if (!lead) return { ok: false, error: 'Лид олдсонгүй', status: 404 };
         const { data: viewing, error } = await db.rpc('create_scoped_sales_viewing', {
             p_shop_id: shopId, p_lead_id: lead.id, p_user_id: actor.userId,
@@ -143,6 +156,7 @@ export async function createViewing(db: SupabaseClient, shopId: string, input: u
                 project_id: projectId, property_id: property?.id || null, scheduled_at: p.scheduled_at || null,
                 meeting_type: p.meeting_type, agent_notes: p.notes || null, walk_in: p.walk_in,
                 interest_level: p.interest_level ?? null, customer_feedback: p.feedback || null,
+                ...(interests !== undefined ? { interests } : {}),
             },
         });
         if (error || !viewing) {
@@ -176,7 +190,7 @@ export async function createViewing(db: SupabaseClient, shopId: string, input: u
         const result = await updateQuery.select('id').maybeSingle();
         const activity = await logLeadActivity(db, { shopId, leadId: lead.id, type: 'meeting',
             createdBy: actor.userId, createdByName: actor.managerName,
-            content: `${p.walk_in ? 'Ирсэн уулзалт бүртгэв' : 'Уулзалт товлов'}${property ? ` · ${property.name}` : ''}`,
+            content: `${p.walk_in ? 'Ирсэн уулзалт бүртгэв' : 'Уулзалт товлов'}${viewingSelectionText(interests, property?.name) ? ` · ${viewingSelectionText(interests, property?.name)}` : ''}`,
             meta: { viewing_id: viewing.id, scheduled_at: scheduledAt, walk_in: p.walk_in },
         });
         if (result.error || !result.data || !activity) warning = 'Уулзалт хадгалагдсан. Лидийн төлөв эсвэл үйл ажиллагааны түүх бүрэн шинэчлэгдсэнгүй. Уулзалтыг дахин үүсгэлгүй лидээ шалгана уу.';
@@ -186,14 +200,38 @@ export async function createViewing(db: SupabaseClient, shopId: string, input: u
 
 export async function updateViewing(db: SupabaseClient, shopId: string, viewingId: string, p: ViewingPatch, actor: Actor): Promise<ServiceResult<{ id: string; status: string; scheduled_at: string; lead_id: string | null; property_id: string | null }>> {
     const scope = actor.scope || UNRESTRICTED_SALES_SCOPE;
-    if (scope.projectIds !== null) {
-        if (!actor.userId) return { ok: false, error: 'Нэвтрэх шаардлагатай', status: 401 };
-        if (!scope.managerName || !scope.projectIds.length) return { ok: false, error: 'Уулзалт олдсонгүй', status: 404 };
+    let validatedPatch: Record<string, unknown> = { ...p };
+    const editsSelection = p.interests !== undefined || p.property_id !== undefined || p.meeting_type !== undefined;
+    if (editsSelection) {
+        const current = await applyLeadScope(db.from('property_viewings')
+            .select(`id,lead_id,scheduled_at,interests,${scope.projectIds === null ? 'leads' : 'leads!inner'}(project_id,sales_manager_name)`)
+            .eq('id', viewingId).eq('shop_id', shopId).is('deleted_at', null), scope, 'leads.project_id', 'leads.sales_manager_name').maybeSingle();
+        if (current.error) return { ok: false, error: 'Уулзалт шалгахад алдаа гарлаа', status: 503 };
+        if (!current.data) return { ok: false, error: 'Уулзалт олдсонгүй', status: 404 };
+        const lead = (Array.isArray(current.data.leads) ? current.data.leads[0] : current.data.leads) as { project_id?: string | null } | null;
+        const projectId = lead?.project_id ?? await soleShopProjectId(db, shopId);
+        if (p.property_id) {
+            const property = await db.from('properties').select('id').eq('id', p.property_id).eq('shop_id', shopId)
+                .eq('project_id', projectId).is('deleted_at', null).maybeSingle();
+            if (property.error) return { ok: false, error: 'Байр шалгахад алдаа гарлаа', status: 503 };
+            if (!property.data) return { ok: false, error: 'Байр олдсонгүй', status: 404 };
+        }
+        if (p.interests !== undefined) {
+            try { validatedPatch = { ...validatedPatch, interests: await prepareViewingInterests(db, shopId, projectId, p.interests, scope, (current.data.interests ?? []) as ViewingInterest[]) }; }
+            catch (error) {
+                if (error instanceof PricingSelectionError) return { ok: false, error: error.message, status: error.status };
+                throw error;
+            }
+        }
+    }
+    if (scope.projectIds !== null || editsSelection) {
+        if (scope.projectIds !== null && !actor.userId) return { ok: false, error: 'Нэвтрэх шаардлагатай', status: 401 };
+        if (scope.projectIds !== null && (!scope.managerName || !scope.projectIds.length)) return { ok: false, error: 'Уулзалт олдсонгүй', status: 404 };
         // Уншилтын дараах эзэмшигчийн өөрчлөлтөөс хамгаална. RPC лидийг түгжиж,
         // одоогийн харьяаллыг шалгаад уулзалт, лид, түүхийг хамт хадгална.
         const { data, error } = await db.rpc('update_scoped_sales_viewing', {
             p_shop_id: shopId, p_viewing_id: viewingId, p_user_id: actor.userId,
-            p_manager_name: scope.managerName, p_project_ids: scope.projectIds, p_patch: p,
+            p_manager_name: scope.projectIds === null ? actor.managerName : scope.managerName, p_project_ids: scope.projectIds, p_patch: validatedPatch,
         });
         if (error) {
             const status = error.code === 'P0002' ? 404
