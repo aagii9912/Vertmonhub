@@ -104,7 +104,7 @@ Browser specs run against `e2e/support/fixture-server.mjs` (fake GoTrue + `next 
 - `DATABASE_URL` in `.env.local` is the production database: read-only queries and approved migrations only.
   Production also has `20261008120000`–`20261008122000` (Elysium pricing, viewing interests, monthly sales fields; applied and schema/RPC privileges verified 2026-10-08).
   `20261008130000` (monthly Б1/Б2/parking breakdown and atomic totals) was applied and schema/RPC privileges verified on 2026-10-08. Block amounts and aggregate report columns share one revision/audit; aggregate-only writers must not overwrite a saved breakdown.
-  `20261013120000` (leads landing page columns) must be applied before deploying the Elysium landing attribution code; the Elysium site's own `event_leads.attribution` migration lives in that repo.
+  `20261013120000` (leads landing page columns) was applied and verified on 2026-10-13 before the Elysium landing attribution deploy; the Elysium site's own `event_leads.attribution` migration lives in that repo.
 - Real inventory is `property_units` (`property_block_summary` view); the `properties` listing table is mostly empty. `admins`, `plans`, `subscriptions`, `invoices`, `ai_memory` and `exec_sql` never existed — do not query them.
 - `node scripts/rls-audit.mjs` audits RLS/`security_invoker` read-only.
 

@@ -1,6 +1,7 @@
 # Elysium landing page ба суваг — 2026-10-13
 
-Статус: код бэлэн (`feat/elysium-landing-attribution`), migration `20261013120000` prod-д хараахан ороогүй.
+Статус: Vertmonhub main-д (2026-10-13), migration `20261013120000` prod-д орж шалгагдсан (2026-10-13).
+Elysium-ийн `event_leads.attribution` migration-ийг эзэмшигч Supabase SQL Editor-оор оруулна.
 Elysium сайтын тал: `Elyy` репо, `feat/landing-attribution` (migration `20261013120000_event_leads_attribution.sql`).
 
 ## Зорилго
