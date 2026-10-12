@@ -80,3 +80,33 @@ describe('LeadPanel price quote composer', () => {
         expect(screen.queryByRole('button', { name: 'Үнийн санал' })).not.toBeInTheDocument();
     });
 });
+
+describe('LeadPanel landing page', () => {
+    const withLead = (patch: Record<string, unknown>) => {
+        const data = mocks.detail.data as { lead: Record<string, unknown> };
+        mocks.detail.data = { ...data, lead: { ...data.lead, ...patch } };
+    };
+
+    it('shows the Elysium landing page, its purpose and the UTM that decided the channel', () => {
+        withLead({
+            source: 'facebook_ads', landing_page: 'event/social', landing_page_name: 'Social Media uulzalt towloh',
+            landing_page_url: 'https://elysium.mn/social', landing_page_purpose: 'social_ad',
+            utm_source: 'fb', utm_medium: 'paid_social', utm_campaign: 'Elysium Oct',
+        });
+        render(<LeadPanel leadId="lead" canWrite={false} />);
+        expect(screen.getByRole('link', { name: 'Social Media uulzalt towloh' })).toHaveAttribute('href', 'https://elysium.mn/social');
+        expect(screen.getByText('· Сошиал зар')).toBeInTheDocument();
+        expect(screen.getByText('Ирсэн зам').nextElementSibling).toHaveTextContent('Линкийн UTM · fb / paid_social · Elysium Oct');
+    });
+
+    it('explains a channel taken from the page purpose and hides both rows for other leads', () => {
+        withLead({ source: 'event', landing_page: 'event/yarmag', landing_page_name: 'Ярмаг', landing_page_purpose: 'event' });
+        const { unmount } = render(<LeadPanel leadId="lead" canWrite={false} />);
+        expect(screen.getByText('Ирсэн зам').nextElementSibling).toHaveTextContent('Хуудасны зориулалт · Эвент');
+        unmount();
+        withLead({ source: 'phone', landing_page: null, landing_page_name: null, landing_page_purpose: null });
+        render(<LeadPanel leadId="lead" canWrite={false} />);
+        expect(screen.queryByText('Landing page')).not.toBeInTheDocument();
+        expect(screen.queryByText('Ирсэн зам')).not.toBeInTheDocument();
+    });
+});

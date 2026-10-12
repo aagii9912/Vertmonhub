@@ -21,6 +21,10 @@ vi.mock('@/hooks/useLeads', () => ({
         { id: 'investor', name: 'Хөрөнгө оруулагч', tone: 'success', is_active: true },
         { id: 'barter', name: 'Бартер', tone: 'neutral', is_active: false },
     ] }),
+    useLeadLandingPages: () => ({ data: [
+        { key: 'event/social', name: 'Social Media uulzalt towloh', url: 'https://elysium.mn/social', purpose: 'social_ad', leads: 4 },
+        { key: 'site', name: 'Үндсэн сайт', url: 'https://elysium.mn/', purpose: null, leads: 120 },
+    ] }),
 }));
 vi.mock('../leads/pickers', () => ({ StatusPicker: () => null, ManagerPicker: () => null, CategoryPicker: () => null }));
 vi.mock('../leads/LeadPanel', () => ({ LeadPanel: ({ leadId, onClose }: { leadId: string; onClose: () => void }) => <div><h2>{leadId}</h2><button onClick={onClose}>Хаах</button></div>, nextStep: () => '' }));
@@ -54,6 +58,15 @@ describe('UI audit regressions', () => {
         expect(mocks.listParams).toHaveBeenLastCalledWith(expect.objectContaining({ category: 'barter' }));
         fireEvent.click(screen.getByRole('button', { name: 'Цэвэрлэх' }));
         expect(mocks.listParams).toHaveBeenLastCalledWith(expect.objectContaining({ category: 'all' }));
+    });
+    it('filters the list by Elysium landing page and resets it', () => {
+        render(<LeadsPage />);
+        const chip = screen.getByRole('combobox', { name: 'Landing page' });
+        expect([...chip.querySelectorAll('option')].map((option) => option.textContent)).toEqual(['Бүгд', 'Social Media uulzalt towloh · 4', 'Үндсэн сайт · 120']);
+        fireEvent.change(chip, { target: { value: 'event/social' } });
+        expect(mocks.listParams).toHaveBeenLastCalledWith(expect.objectContaining({ landing: 'event/social', page: 1 }));
+        fireEvent.click(screen.getByRole('button', { name: 'Цэвэрлэх' }));
+        expect(mocks.listParams).toHaveBeenLastCalledWith(expect.objectContaining({ landing: 'all' }));
     });
     it('restores the saved split layout with the selected lead in the side panel, and the table layout opens it in a sheet', () => {
         localStorage.setItem('vertmonhub_leads_mode', 'split');
