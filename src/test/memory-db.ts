@@ -1,6 +1,6 @@
 /**
  * Тестийн санах ойн Supabase (PostgREST) client — service/route тестэд зориулсан жижиг дуураймал.
- * Дэмжих: select (count/head), insert (нэг/олон мөр), upsert (onConflict түлхүүрээр), update, delete, eq/neq/is/in/ilike/or (энгийн
+ * Дэмжих: select (count/head), insert (нэг/олон мөр), upsert (onConflict түлхүүрээр), update, delete, eq/neq/is/not(is, eq)/in/ilike/or (энгийн
  * `col.op.value`), order (олон түлхүүр), range/limit, maybeSingle/single, await.
  * DB-ийн хязгаарлалтыг `constraints` hook-оор дуурайна (unique → 23505, FK → 23503 гэх мэт).
  */
@@ -118,6 +118,12 @@ export function createMemoryDb(tables: Record<string, Row[]> = {}, constraints: 
             eq: (key: string, value: unknown) => { filters.push((row) => valueAt(row, key) === value); return query; },
             neq: (key: string, value: unknown) => { filters.push((row) => valueAt(row, key) !== value); return query; },
             is: (key: string, value: unknown) => { filters.push((row) => (valueAt(row, key) ?? null) === value); return query; },
+            not: (key: string, operator: string, value: unknown) => {
+                if (operator === 'is') filters.push((row) => (valueAt(row, key) ?? null) !== value);
+                else if (operator === 'eq') filters.push((row) => valueAt(row, key) !== value);
+                else throw new Error(`memory-db: unsupported not.${operator}`);
+                return query;
+            },
             in: (key: string, values: unknown[]) => { filters.push((row) => values.includes(valueAt(row, key))); return query; },
             gte: (key: string, value: any) => { filters.push((row) => valueAt(row, key) >= value); return query; },
             lt: (key: string, value: any) => { filters.push((row) => valueAt(row, key) < value); return query; },

@@ -31,6 +31,7 @@ const PERIOD_DAYS: Record<string, number> = {
  * Soft-delete хийгдсэн лийдийг (deleted_at) хасна.
  * manager — хариуцагч менежерээр шүүнэ (sales_manager_name, contracts API-ийн жишиг).
  * category — лидийн ангилал: uuid эсвэл `none` (ангилалгүй).
+ * landing — маягт илгээсэн хуудас (`event/<slug>` эсвэл `site`).
  */
 export const GET = withRoute({ module: 'leads', error: 'Лийд татахад алдаа гарлаа' }, async ({ request, shop: authShop }) => {
     const { searchParams } = new URL(request.url);
@@ -91,6 +92,11 @@ export const GET = withRoute({ module: 'leads', error: 'Лийд татахад 
     const manager = searchParams.get('manager');
     if (manager && manager !== 'all') {
         query = query.eq('sales_manager_name', manager);
+    }
+    const landing = searchParams.get('landing');
+    if (landing && landing !== 'all') {
+        if (landing.length > 100) return NextResponse.json({ error: 'Буруу landing page' }, { status: 400 });
+        query = query.eq('landing_page', landing);
     }
     const category = searchParams.get('category');
     if (category && category !== 'all') {

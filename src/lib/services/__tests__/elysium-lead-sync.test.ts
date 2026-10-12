@@ -191,6 +191,20 @@ describe('syncElysiumLeads', () => {
         expect(syncState().last_result).toMatchObject({ trigger: 'cron', imported: 1 });
     });
 
+    it('imports the landing page and channel from the attribution column', async () => {
+        state.source = [sourceRow(1, {
+            source: 'event/yarmag', event_name: 'Ярмаг', event_slug: 'yarmag',
+            attribution: { utmSource: 'event', utmMedium: 'qr', utmCampaign: 'yarmag', pagePurpose: 'event', pageUrl: 'https://elysium.mn/yarmag' },
+        }), sourceRow(2, { source: 'event/social', event_name: 'Social', event_slug: 'social', attribution: { pagePurpose: 'social_ad', fbclid: 'IwAR0' } })];
+        const result = await syncElysiumLeads(db, { trigger: 'cron', now: NOW });
+        expect(result).toMatchObject({ imported: 2, failed: 0 });
+        expect(leads()[0]).toMatchObject({
+            source: 'event', landing_page: 'event/yarmag', landing_page_name: 'Ярмаг', landing_page_url: 'https://elysium.mn/yarmag',
+            landing_page_purpose: 'event', utm_source: 'event', utm_medium: 'qr', utm_campaign: 'yarmag',
+        });
+        expect(leads()[1]).toMatchObject({ source: 'facebook_ads', landing_page: 'event/social', landing_page_purpose: 'social_ad', fbclid: 'IwAR0' });
+    });
+
     it('matches a lead the push already created (formatted phone) and inserts nothing', async () => {
         state.tables.leads = [{
             id: 'pushed', shop_id: SHOP, project_id: PROJECT, client_request_id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',

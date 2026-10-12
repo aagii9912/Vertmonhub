@@ -10,7 +10,11 @@ import { logger } from '@/lib/utils/logger';
 import { EventLeadRowSchema, type EventLeadRow } from './elysium';
 
 const SOURCE_TIMEOUT_MS = 20_000;
-const COLUMNS = 'id,created_at,name,phone,email,message,source,event_name,event_slug';
+/**
+ * Бүх багана: `attribution` (Elysium migration 20261013120000) хараахан нэмэгдээгүй өгөгдлийн
+ * санд ч татан авалт зогсохгүй. Мөрийг `EventLeadRowSchema` шалгаж, зөвхөн мэдэгдэх талбарыг авна.
+ */
+const COLUMNS = '*';
 
 const clean = (value: string | undefined) => value?.trim() || undefined;
 

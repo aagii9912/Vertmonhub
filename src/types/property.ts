@@ -115,6 +115,14 @@ export interface Lead {
     facebook_campaign_id: string | null;
     facebook_adset_id: string | null;
     facebook_ad_id: string | null;
+    /** Маягт илгээсэн хуудас: `event/<slug>` эсвэл `site` (миграци 20261013120000) */
+    landing_page?: string | null;
+    landing_page_name?: string | null;
+    landing_page_url?: string | null;
+    /** Хуудасны зориулалт: event | social_ad | general */
+    landing_page_purpose?: string | null;
+    /** Өөр сайтаас шилжсэн бол тэр сайтын домэйн */
+    referrer_host?: string | null;
 
     // Activity
     last_contact_at: string | null;

@@ -10,6 +10,7 @@ import { formatShortDate, formatTime, formatRelativeDays } from '@/lib/utils/dat
 import { useLeadDetail, useUpdateLead, useAddLeadActivity, useLeadProjects, useLeadCategories, useManagers } from '@/hooks/useLeads';
 import { INTEREST_CHIPS, sourceLabel, interestLabel, isAnonymousLead, leadDisplayName, normalizeLeadName } from '@/lib/leads/labels';
 import { QUOTE_UNIT_MAX, parseQuoteAmount } from '@/lib/leads/quotes';
+import { CHANNEL_BASIS_LABEL, LANDING_PURPOSE_LABEL, isLandingPurpose, landingArrival } from '@/lib/leads/landing-attribution';
 import { LeadTimeline } from './LeadTimeline';
 import { propertyStatusLabel, propertyStatusTone } from '@/lib/inventory/labels';
 import { Pill, Skeleton, GhostButton } from '@/components/dashboard/v2/primitives';
@@ -113,6 +114,7 @@ export function LeadPanel({
     const partialNames: Record<string, string> = { viewings: 'уулзалт', contracts: 'гэрээ', activities: 'түүх', timeline: 'менежерийн түүх', property: 'байр', property_names: 'байрны нэр' };
 
     const phoneDigits = lead.customer_phone?.replace(/\D/g, '') || '';
+    const arrival = landingArrival(lead);
     const interestValue = INTEREST_CHIPS.find((c) => (c.rooms && c.rooms === lead.preferred_rooms) || (c.type && c.type === lead.preferred_type))?.label ?? '';
     const anonymous = isAnonymousLead(lead);
     // Нэр нэмэх/засах: хоосон эсвэл өөрчлөгдөөгүй бол юу ч илгээхгүй (нэрийг хоосолж болохгүй).
@@ -187,6 +189,24 @@ export function LeadPanel({
                     </div>
                     <Label>Эх үүсвэр</Label>
                     <div className="text-foreground">{sourceLabel(lead.source)}</div>
+                    {lead.landing_page_name && <>
+                        <Label>Landing page</Label>
+                        <div className="min-w-0 text-foreground">
+                            {lead.landing_page_url
+                                ? <a href={lead.landing_page_url} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 text-brand-strong hover:underline focus-ring">
+                                    <span className="truncate">{lead.landing_page_name}</span><ExternalLink className="h-3 w-3 shrink-0" />
+                                </a>
+                                : lead.landing_page_name}
+                            {isLandingPurpose(lead.landing_page_purpose) && <span className="ml-1 text-muted-foreground">· {LANDING_PURPOSE_LABEL[lead.landing_page_purpose]}</span>}
+                        </div>
+                    </>}
+                    {arrival && <>
+                        <Label>Ирсэн зам</Label>
+                        <div className="min-w-0 break-words text-foreground">
+                            {CHANNEL_BASIS_LABEL[arrival.basis]}
+                            {arrival.detail && <span className="text-muted-foreground"> · {arrival.detail}</span>}
+                        </div>
+                    </>}
                     {(categories.length > 0 || !!lead.category_id) && <>
                         <Label>Ангилал</Label>
                         <div><CategoryPicker value={lead.category_id ?? null} options={categories} size="md" disabled={!canWrite} onChange={(id) => patch({ category_id: id })} /></div>

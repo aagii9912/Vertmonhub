@@ -92,11 +92,42 @@ describe('Elysium lead intake', () => {
             project_id: projectId,
             client_request_id: requestId,
             source: 'website',
+            landing_page: 'site',
+            landing_page_name: 'Үндсэн сайт',
+            utm_source: null,
         });
 
         const retry = await POST(post(payload));
         expect(await retry.json()).toMatchObject({ ok: true, duplicate: true });
         expect(inserts).toHaveLength(1);
+    });
+
+    it('stores the landing page and channel the Elysium site attributes', async () => {
+        const res = await POST(post({
+            ...payload, source: 'event/social-media-uulzalt-towloh', event: 'Social Media uulzalt towloh',
+            attribution: {
+                utmSource: 'fb', utmMedium: 'paid_social', utmCampaign: 'Elysium Oct', utmId: '120210000000001', adId: '120210000000003',
+                fbclid: 'IwAR0', referrerHost: 'l.facebook.com', pagePurpose: 'social_ad', pageUrl: 'https://www.elysium.mn/social-media-uulzalt-towloh',
+            },
+        }));
+        expect(res.status).toBe(200);
+        expect(inserts[0]).toMatchObject({
+            source: 'facebook_ads',
+            landing_page: 'event/social-media-uulzalt-towloh',
+            landing_page_name: 'Social Media uulzalt towloh',
+            landing_page_url: 'https://www.elysium.mn/social-media-uulzalt-towloh',
+            landing_page_purpose: 'social_ad',
+            utm_source: 'fb', utm_medium: 'paid_social', utm_campaign: 'Elysium Oct',
+            facebook_campaign_id: '120210000000001', facebook_ad_id: '120210000000003', fbclid: 'IwAR0', referrer_host: 'l.facebook.com',
+        });
+    });
+
+    it('accepts the lead when the attribution is malformed', async () => {
+        const res = await POST(post({ ...payload, source: 'event/yarmag', event: 'Ярмаг', attribution: { utmId: 'DROP TABLE', pagePurpose: 'event', referrerHost: 42 } }));
+        expect(res.status).toBe(200);
+        expect(inserts[0]).toMatchObject({ source: 'event', landing_page: 'event/yarmag', landing_page_purpose: 'event', facebook_campaign_id: null, referrer_host: null });
+        const text = await POST(post({ ...payload, requestId: 'ffffffff-ffff-4fff-8fff-ffffffffffff', attribution: 'utm_source=fb' }));
+        expect(text.status).toBe(200);
     });
 
     it('keeps the shared notes format (message, event, site source)', async () => {

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-    contactKey, ELYSIUM_LEAD_SOURCE, elysiumLeadNotes, elysiumRepeatInquiryText, findMatchingLead, matchesLead,
-    normalizeEventLead, submissionRecorded, toCandidate, type EventLeadRow,
+    contactKey, ELYSIUM_LEAD_SOURCE, elysiumLandingPage, elysiumLeadColumns, elysiumLeadNotes, elysiumNotesSubmission, elysiumRepeatInquiryText,
+    EventLeadRowSchema, findMatchingLead, matchesLead, normalizeEventLead, parseElysiumAttribution, submissionRecorded, toCandidate,
+    type EventLeadRow,
 } from '../elysium';
 
 const H = 60 * 60 * 1000;
@@ -98,5 +99,73 @@ describe('Elysium lead helpers', () => {
             { customerPhone: '9911 2233', customerEmail: null },
         );
         expect(text).toBe('Elysium сайтаас дахин хүсэлт ирлээ.\n\nШинэ асуулт\n\nИ-мэйл: new@example.mn');
+    });
+});
+
+describe('Elysium landing page attribution', () => {
+    it('keeps only well-formed attribution fields and never rejects the lead', () => {
+        expect(parseElysiumAttribution({
+            utmSource: ' fb ', utmMedium: 'paid_social', utmCampaign: 'x'.repeat(201), utmContent: 'a\u0000b', utmId: '120210000000001',
+            adsetId: '12x', adId: '99', fbclid: 'IwAR0_a-b', referrerHost: 'L.Facebook.com', pagePurpose: 'social_ad',
+            pageUrl: 'https://elysium.mn/social?utm_source=fb#form', extra: 'ignored',
+        })).toEqual({
+            utmSource: 'fb', utmMedium: 'paid_social', utmId: '120210000000001', adId: '99', fbclid: 'IwAR0_a-b',
+            referrerHost: 'l.facebook.com', pagePurpose: 'social_ad', pageUrl: 'https://elysium.mn/social',
+        });
+        expect(parseElysiumAttribution({ pagePurpose: 'ads', pageUrl: 'javascript:alert(1)', referrerHost: 'localhost', fbclid: 'a b' })).toEqual({});
+        expect(parseElysiumAttribution(null)).toEqual({});
+        expect(parseElysiumAttribution('utm_source=fb')).toEqual({});
+        expect(parseElysiumAttribution([1])).toEqual({});
+    });
+
+    it('identifies the landing page from the form source', () => {
+        expect(elysiumLandingPage('event/social-media-uulzalt-towloh', 'Social Media uulzalt towloh'))
+            .toEqual({ key: 'event/social-media-uulzalt-towloh', name: 'Social Media uulzalt towloh' });
+        expect(elysiumLandingPage('event/yarmag', '  ')).toEqual({ key: 'event/yarmag', name: 'yarmag' });
+        expect(elysiumLandingPage('elysium/mono#hero', null)).toEqual({ key: 'site', name: 'Үндсэн сайт' });
+        expect(elysiumLandingPage('event/Bad Slug', 'x')).toBeNull();
+        expect(elysiumLandingPage('https://elysium.mn/', null)).toBeNull();
+        expect(elysiumLandingPage(null, null)).toBeNull();
+    });
+
+    it('maps a Meta ad click on a landing page to Facebook Ads with campaign, ad set and ad IDs', () => {
+        expect(elysiumLeadColumns({
+            source: 'event/social', event: 'Social',
+            attribution: { utmSource: 'ig', utmMedium: 'paid_social', utmCampaign: 'Oct', utmId: '111', adsetId: '222', adId: '333', pagePurpose: 'social_ad', pageUrl: 'https://elysium.mn/social' },
+        })).toEqual({
+            source: 'facebook_ads', landing_page: 'event/social', landing_page_name: 'Social', landing_page_url: 'https://elysium.mn/social',
+            landing_page_purpose: 'social_ad', utm_source: 'ig', utm_medium: 'paid_social', utm_campaign: 'Oct', utm_content: null, utm_term: null,
+            fbclid: null, facebook_campaign_id: '111', facebook_adset_id: '222', facebook_ad_id: '333', referrer_host: null,
+        });
+    });
+
+    it('uses the page purpose without UTM and keeps Google campaign IDs out of the Meta column', () => {
+        expect(elysiumLeadColumns({ source: 'event/yarmag', event: 'Ярмаг', attribution: { pagePurpose: 'event' } }))
+            .toMatchObject({ source: 'event', landing_page: 'event/yarmag', landing_page_purpose: 'event' });
+        expect(elysiumLeadColumns({ source: 'elysium/mono#hero', event: null, attribution: { utmSource: 'google', utmMedium: 'cpc', utmId: '555' } }))
+            .toMatchObject({ source: 'google_ads', landing_page: 'site', facebook_campaign_id: null, landing_page_purpose: null });
+    });
+
+    it('keeps a plain site form on the website source (old Elysium payloads)', () => {
+        expect(elysiumLeadColumns({ source: 'elysium/mono#contact', event: null, attribution: {} }))
+            .toMatchObject({ source: ELYSIUM_LEAD_SOURCE, landing_page: 'site', landing_page_name: 'Үндсэн сайт', landing_page_url: null });
+        expect(elysiumLeadColumns({ source: 'unknown', event: null, attribution: { pagePurpose: 'event' } }))
+            .toMatchObject({ source: 'website', landing_page: null, landing_page_purpose: null });
+    });
+
+    it('reads the original page and event back from the notes for the backfill', () => {
+        const notes = elysiumLeadNotes({ message: 'Цаг товлох өдөр: 2026-10-09', event: 'Elysium Residence газардах хуудас', source: 'event/yarmag' });
+        expect(elysiumNotesSubmission(`${notes}\n\nСайтын эх сурвалж: elysium/mono#hero`))
+            .toEqual({ source: 'event/yarmag', event: 'Elysium Residence газардах хуудас' });
+        expect(elysiumNotesSubmission('Сайтын эх сурвалж: elysium/mono#hero')).toEqual({ source: 'elysium/mono#hero', event: null });
+        expect(elysiumNotesSubmission('Гараар бүртгэсэн')).toEqual({ source: null, event: null });
+        expect(elysiumNotesSubmission(null)).toEqual({ source: null, event: null });
+    });
+
+    it('reads event_leads rows with or without the attribution column', () => {
+        expect(EventLeadRowSchema.safeParse(row()).success).toBe(true);
+        const parsed = EventLeadRowSchema.parse({ ...row(), attribution: { utmSource: 'event', utmMedium: 'qr' }, event_id: null });
+        expect(parsed.attribution).toEqual({ utmSource: 'event', utmMedium: 'qr' });
+        expect(parsed).not.toHaveProperty('event_id');
     });
 });

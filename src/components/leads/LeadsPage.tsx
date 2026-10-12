@@ -9,7 +9,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { canAccessModuleDynamic } from '@/lib/rbac';
 import { formatRelativeDays } from '@/lib/utils/date';
 import { openQuickCreate } from '@/lib/navigation/commandPalette';
-import { useLeadsList, useLeadSummary, useLeadProjects, useLeadCategories, useManagers, useUpdateLead } from '@/hooks/useLeads';
+import { ELYSIUM_SITE_PAGE } from '@/lib/leads/landing-attribution';
+import { useLeadsList, useLeadSummary, useLeadProjects, useLeadCategories, useManagers, useUpdateLead, useLeadLandingPages } from '@/hooks/useLeads';
 import { LEAD_VIEWS, LEAD_STATUSES, STATUS_META, SOURCES, SOURCE_LABEL, UNCATEGORIZED_KEY, UNCATEGORIZED_LABEL, categoryOptionLabel, sourceLabel, interestLabel, isAnonymousLead, leadDisplayName, type LeadView } from '@/lib/leads/labels';
 import { Sheet, SheetContent, SheetTitle, SheetDescription } from '@/components/ui/Sheet';
 import { Skeleton } from '@/components/dashboard/v2/primitives';
@@ -53,6 +54,7 @@ function LeadsWorkspace() {
     const [manager, setManager] = useState('all');
     const [project, setProject] = useState(() => search.get('project') || 'all');
     const [category, setCategory] = useState('all');
+    const [landing, setLanding] = useState('all');
     const [period, setPeriod] = useState('all');
     const [qInput, setQInput] = useState('');
     const [q, setQ] = useState('');
@@ -89,12 +91,13 @@ function LeadsWorkspace() {
         return () => clearTimeout(t);
     }, [qInput]);
 
-    const params = useMemo(() => ({ view, queue, status, source, manager, project, category, period, q, sort, dir, page, pageSize: PAGE_SIZE }), [view, queue, status, source, manager, project, category, period, q, sort, dir, page]);
+    const params = useMemo(() => ({ view, queue, status, source, manager, project, category, landing, period, q, sort, dir, page, pageSize: PAGE_SIZE }), [view, queue, status, source, manager, project, category, landing, period, q, sort, dir, page]);
     const { data, isLoading, isFetching, error, refetch } = useLeadsList(params);
     const { data: summary, error: summaryError } = useLeadSummary();
     const { data: managers = [] } = useManagers();
     const { data: projects = [] } = useLeadProjects();
     const { data: categories = [] } = useLeadCategories();
+    const { data: landingPages = [] } = useLeadLandingPages(project);
     const update = useUpdateLead();
 
     const leads = useMemo(() => data?.leads ?? [], [data]);
@@ -156,13 +159,13 @@ function LeadsWorkspace() {
     const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
     const to = Math.min(page * PAGE_SIZE, total);
     const chooseQueue = (key: typeof LEAD_WORK_QUEUES[number]['key']) => {
-        setView('all'); setStatus('all'); setSource('all'); setManager('all'); setCategory('all'); setPeriod('all'); setQInput(''); setQ(''); setPage(1); setChecked(new Set()); setSelectedId(null);
+        setView('all'); setStatus('all'); setSource('all'); setManager('all'); setCategory('all'); setLanding('all'); setPeriod('all'); setQInput(''); setQ(''); setPage(1); setChecked(new Set()); setSelectedId(null);
         setSort(key === 'overdue' ? 'next_followup_at' : 'created_at'); setDir('asc');
         router.replace(`/dashboard/leads?queue=${key}`);
     };
-    const filtered = !!queue || view !== 'all' || status !== 'all' || source !== 'all' || manager !== 'all' || project !== 'all' || category !== 'all' || period !== 'all' || !!qInput;
+    const filtered = !!queue || view !== 'all' || status !== 'all' || source !== 'all' || manager !== 'all' || project !== 'all' || category !== 'all' || landing !== 'all' || period !== 'all' || !!qInput;
     function resetFilters() {
-        setView('all'); setStatus('all'); setSource('all'); setManager('all'); setProject('all'); setCategory('all'); setPeriod('all'); setQInput(''); setQ(''); setPage(1); setChecked(new Set());
+        setView('all'); setStatus('all'); setSource('all'); setManager('all'); setProject('all'); setCategory('all'); setLanding('all'); setPeriod('all'); setQInput(''); setQ(''); setPage(1); setChecked(new Set());
         if (queue) router.replace('/dashboard/leads');
     }
     async function download() {
@@ -214,9 +217,10 @@ function LeadsWorkspace() {
             </div>
 
             <FilterBar className="mb-0" search={{ value: qInput, onChange: setQInput, label: 'Лидийг нэр, утсаар хайх', placeholder: 'Нэр, утас, имэйл эсвэл «нэргүй»…' }} showClear={filtered} onClear={resetFilters}>
-                {projects.length > 1 && <FilterChip value={project} onChange={(v) => { setProject(v); setManager('all'); setPage(1); setChecked(new Set()); select(null); }} label="Төсөл" options={projects.map((p) => [p.id, p.name])} />}
+                {projects.length > 1 && <FilterChip value={project} onChange={(v) => { setProject(v); setManager('all'); setLanding('all'); setPage(1); setChecked(new Set()); select(null); }} label="Төсөл" options={projects.map((p) => [p.id, p.name])} />}
                 <FilterChip value={status} onChange={(v) => { setStatus(v); setPage(1); }} label="Статус" options={LEAD_STATUSES.map((s) => [s, STATUS_META[s].label])} />
                 <FilterChip value={source} onChange={(v) => { setSource(v); setPage(1); }} label="Эх үүсвэр" options={SOURCES.map((s) => [s, SOURCE_LABEL[s]])} />
+                {(landingPages.length > 0 || landing !== 'all') && <FilterChip value={landing} onChange={(v) => { setLanding(v); setPage(1); setChecked(new Set()); }} label="Landing page" options={landingPages.map((p): [string, string] => [p.key, `${p.name} · ${p.leads}`])} />}
                 {categories.length > 0 && <FilterChip value={category} onChange={(v) => { setCategory(v); setPage(1); setChecked(new Set()); }} label="Ангилал" options={[[UNCATEGORIZED_KEY, UNCATEGORIZED_LABEL], ...categories.map((c): [string, string] => [c.id, categoryOptionLabel(c)])]} />}
                 {filterManagers.length > 0 && <FilterChip value={manager} onChange={(v) => { setManager(v); setPage(1); }} label="Менежер" options={filterManagers.map((m) => [m.name, m.name])} />}
                 <FilterChip value={period} onChange={(v) => { setPeriod(v); setPage(1); }} label="Огноо" options={[['week', '7 хоног'], ['month', '30 хоног'], ['quarter', '90 хоног'], ['year', '1 жил']]} />
@@ -291,7 +295,7 @@ function LeadsWorkspace() {
                                                 <td className="mono-label px-2 text-fg-2">{l.customer_phone || '—'}</td>
                                                 <td className="px-2"><StatusPicker value={l.status} disabled={!canWrite} onChange={(s, reason) => patchLead(l.id, { status: s, ...(reason !== undefined ? { lost_reason: reason } : {}) })} /></td>
                                                 {!showSplit && showCategory && <td className="px-2"><CategoryPicker value={l.category_id ?? null} options={categories} disabled={!canWrite} onChange={(id) => patchLead(l.id, { category_id: id })} /></td>}
-                                                {!showSplit && <td className="px-2 text-fg-2">{sourceLabel(l.source)}</td>}
+                                                {!showSplit && <td className="px-2 text-fg-2">{sourceLabel(l.source)}{l.landing_page_name && l.landing_page !== ELYSIUM_SITE_PAGE && <span className="block max-w-[200px] truncate text-xs text-muted-foreground" title={l.landing_page_name}>{l.landing_page_name}</span>}</td>}
                                                 <td className="px-2 text-fg-2">{interestLabel(l)}</td>
                                                 {!showSplit && <td className="px-2"><ManagerPicker value={l.sales_manager_name ?? null} options={managers} projectId={l.project_id ?? null} disabled={!canAssign} onChange={(n) => patchLead(l.id, { sales_manager_name: n })} /></td>}
                                                 {!showSplit && <td className={cn('px-2', overdue ? 'font-medium text-status-danger' : 'text-fg-2')}>{nextStep(l)}</td>}

@@ -4,7 +4,7 @@ import { safeEqual } from '@/lib/crypto/safe-equal';
 import { supabaseAdmin } from '@/lib/supabase';
 import { insertLeadOnce } from '@/lib/services/LeadService';
 import { findImportedElysiumDuplicate } from '@/lib/services/ElysiumLeadSync';
-import { ELYSIUM_LEAD_SOURCE, elysiumLeadNotes } from '@/lib/leads/elysium';
+import { elysiumLeadColumns, elysiumLeadNotes, parseElysiumAttribution } from '@/lib/leads/elysium';
 import { logger } from '@/lib/utils/logger';
 
 export const runtime = 'nodejs';
@@ -17,6 +17,8 @@ const LeadSchema = z.object({
     message: z.string().trim().max(2000).nullish(),
     source: z.string().trim().max(500).nullish(),
     event: z.string().trim().max(255).nullish(),
+    /** Линкийн UTM/referrer + хуудасны зориулалт; талбар бүрийг тусад нь шалгана (лид татгалзахгүй). */
+    attribution: z.unknown().optional(),
 }).refine((lead) => Boolean(lead.phone || lead.email), {
     message: 'Утас эсвэл и-мэйл шаардлагатай',
     path: ['phone'],
@@ -73,7 +75,7 @@ export async function POST(request: NextRequest) {
             customer_name: lead.name ?? null,
             customer_phone: lead.phone || null,
             customer_email: lead.email || null,
-            source: ELYSIUM_LEAD_SOURCE,
+            ...elysiumLeadColumns({ source: lead.source, event: lead.event, attribution: parseElysiumAttribution(lead.attribution) }),
             notes,
         }, { select: 'id, project_id' });
         if (result.ok) return NextResponse.json({ ok: true, leadId: result.lead.id, duplicate: result.duplicate });

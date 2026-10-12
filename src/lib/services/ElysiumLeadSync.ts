@@ -10,8 +10,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { insertLeadOnce } from '@/lib/services/LeadService';
 import { logLeadActivity } from '@/lib/leads/activities';
 import {
-    contactKey, ELYSIUM_ACTOR_NAME, ELYSIUM_IMPORT_NOTE, ELYSIUM_LEAD_SOURCE, ELYSIUM_MATCH_WINDOW,
-    elysiumRepeatInquiryText, findMatchingLead, normalizeEventLead, submissionRecorded, toCandidate,
+    contactKey, ELYSIUM_ACTOR_NAME, ELYSIUM_IMPORT_NOTE, ELYSIUM_MATCH_WINDOW,
+    elysiumLeadColumns, elysiumRepeatInquiryText, findMatchingLead, normalizeEventLead, parseElysiumAttribution,
+    submissionRecorded, toCandidate,
     type CandidateLeadRow, type EventLeadRow, type LeadCandidate,
 } from '@/lib/leads/elysium';
 import { countEventLeads, elysiumSourceConfigured, ElysiumSourceError, fetchEventLeads } from '@/lib/leads/elysium-source';
@@ -355,7 +356,7 @@ export async function syncElysiumLeads(
                     customer_name: lead.name,
                     customer_phone: lead.phone,
                     customer_email: lead.email,
-                    source: ELYSIUM_LEAD_SOURCE,
+                    ...elysiumLeadColumns({ source: row.source, event: row.event_name, attribution: parseElysiumAttribution(row.attribution) }),
                     notes: lead.notes,
                     // Elysium-д ирсэн бодит цаг: хариу өгөх хугацаа, сарын тайлан зөв байна.
                     created_at: row.created_at,

@@ -6,8 +6,11 @@
 import { z } from 'zod';
 import type { LeadSource } from '@/types/property';
 import { normalizePhone } from '@/lib/utils/phone';
+import {
+    ELYSIUM_SITE_PAGE, ELYSIUM_SITE_PAGE_NAME, isLandingPurpose, isMetaUtmSource, landingLeadSource, type LandingPurpose,
+} from './landing-attribution';
 
-/** Elysium-ээс ирсэн бүх лид «Вэбсайт» эх үүсвэртэй (push, түүхэн импорттой ижил). */
+/** Сувгийн дохиогүй Elysium лидийн эх үүсвэр («Вэбсайт»). Бусад нь `elysiumLeadColumns`-оор. */
 export const ELYSIUM_LEAD_SOURCE: LeadSource = 'website';
 /** Лидийн түүхэнд харагдах системийн нэр. */
 export const ELYSIUM_ACTOR_NAME = 'Elysium холболт';
@@ -48,6 +51,107 @@ export function elysiumLeadNotes(input: ElysiumSubmission): string | null {
     ].filter(Boolean).join('\n\n') || null;
 }
 
+/**
+ * Elysium-ийн `attribution` (маягтын линкийн UTM, Meta ID, fbclid, referrer-ийн домэйн + серверийн
+ * тогтоосон хуудасны зориулалт, хаяг). Талбар бүрийг тусад нь шалгаж, буруу утгыг алгасна —
+ * attribution-ы улмаас лид хэзээ ч татгалзагдахгүй.
+ */
+export interface ElysiumAttribution {
+    utmSource?: string;
+    utmMedium?: string;
+    utmCampaign?: string;
+    utmContent?: string;
+    utmTerm?: string;
+    utmId?: string;
+    adsetId?: string;
+    adId?: string;
+    fbclid?: string;
+    referrerHost?: string;
+    pagePurpose?: LandingPurpose;
+    pageUrl?: string;
+}
+
+const ATTR_TEXT_KEYS = ['utmSource', 'utmMedium', 'utmCampaign', 'utmContent', 'utmTerm'] as const;
+const ATTR_ID_KEYS = ['utmId', 'adsetId', 'adId'] as const;
+
+function pageUrlOf(value: unknown): string | null {
+    if (typeof value !== 'string' || value.length > 500) return null;
+    try {
+        const url = new URL(value);
+        if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+        return `${url.origin}${url.pathname}`;
+    } catch {
+        return null;
+    }
+}
+
+export function parseElysiumAttribution(raw: unknown): ElysiumAttribution {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const input = raw as Record<string, unknown>;
+    const out: ElysiumAttribution = {};
+    for (const key of ATTR_TEXT_KEYS) {
+        const value = text(input[key]);
+        if (value && value.length <= 200 && !/\p{Cc}/u.test(value)) out[key] = value;
+    }
+    for (const key of ATTR_ID_KEYS) {
+        const value = text(input[key]);
+        if (value && /^\d{1,30}$/.test(value)) out[key] = value;
+    }
+    const fbclid = text(input.fbclid);
+    if (fbclid && /^[A-Za-z0-9_-]{1,500}$/.test(fbclid)) out.fbclid = fbclid;
+    const host = text(input.referrerHost)?.toLowerCase();
+    if (host && /^(?=.{1,253}$)[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(host)) out.referrerHost = host;
+    if (isLandingPurpose(input.pagePurpose)) out.pagePurpose = input.pagePurpose;
+    const pageUrl = pageUrlOf(input.pageUrl);
+    if (pageUrl) out.pageUrl = pageUrl;
+    return out;
+}
+
+/** Маягт илгээсэн хуудас: `event/<slug>` (landing page) эсвэл үндсэн сайт (`elysium/…#хэсэг`). */
+export function elysiumLandingPage(source: string | null | undefined, event: string | null | undefined):
+    { key: string; name: string } | null {
+    const value = text(source);
+    const slug = value?.startsWith('event/') ? value.slice('event/'.length) : null;
+    if (slug && /^[a-z0-9]([a-z0-9-]{0,58}[a-z0-9])?$/.test(slug)) return { key: `event/${slug}`, name: text(event)?.slice(0, 255) ?? slug };
+    if (value?.startsWith('elysium/')) return { key: ELYSIUM_SITE_PAGE, name: ELYSIUM_SITE_PAGE_NAME };
+    return null;
+}
+
+/**
+ * Elysium лидийн суваг ба хуудасны баганууд (push, pull, нөхөх скрипт нэг дүрэм): `source`,
+ * landing page, UTM, Meta ID (`utm_id` → `facebook_campaign_id`, trigger кампанит ажилтай холбоно).
+ */
+export function elysiumLeadColumns(input: { source?: string | null; event?: string | null; attribution: ElysiumAttribution }) {
+    const a = input.attribution;
+    const page = elysiumLandingPage(input.source, input.event);
+    const signals = {
+        utm_source: a.utmSource ?? null,
+        utm_medium: a.utmMedium ?? null,
+        utm_campaign: a.utmCampaign ?? null,
+        utm_content: a.utmContent ?? null,
+        utm_term: a.utmTerm ?? null,
+        fbclid: a.fbclid ?? null,
+        facebook_campaign_id: a.utmId && isMetaUtmSource(a.utmSource) ? a.utmId : null,
+        facebook_adset_id: a.adsetId ?? null,
+        facebook_ad_id: a.adId ?? null,
+        referrer_host: a.referrerHost ?? null,
+        landing_page_purpose: page ? a.pagePurpose ?? null : null,
+    };
+    return {
+        ...signals,
+        source: landingLeadSource(signals).source,
+        landing_page: page?.key ?? null,
+        landing_page_name: page?.name ?? null,
+        landing_page_url: page ? a.pageUrl ?? null : null,
+    };
+}
+
+/** `elysiumLeadNotes`-ийн анхны илгээлтийн хуудас ба эвентийг тэмдэглэлээс уншина (өмнөх лидийг нөхөх). */
+export function elysiumNotesSubmission(notes: string | null | undefined): { source: string | null; event: string | null } {
+    const line = (label: string) => notes?.match(new RegExp(`^${label}: (.+)$`, 'm'))?.[1]?.trim() || null;
+    return { source: line('Сайтын эх сурвалж'), event: line('Арга хэмжээ') };
+}
+
 /** Elysium Supabase `event_leads`-ийн уншдаг баганууд. Хоосон талбарыг '' гэж хадгалдаг. */
 export const EventLeadRowSchema = z.object({
     id: z.uuid(),
@@ -59,6 +163,8 @@ export const EventLeadRowSchema = z.object({
     source: z.string().nullish(),
     event_name: z.string().nullish(),
     event_slug: z.string().nullish(),
+    /** Elysium migration 20261013120000-аас хойш; түүнээс өмнө байхгүй. */
+    attribution: z.unknown().nullish(),
 });
 export type EventLeadRow = z.infer<typeof EventLeadRowSchema>;
 

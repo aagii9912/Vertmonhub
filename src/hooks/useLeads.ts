@@ -9,6 +9,7 @@ import type { LeadActivity } from '@/lib/leads/activities';
 import type { LeadTimeline } from '@/lib/leads/timeline';
 import type { LeadWorkQueue } from '@/lib/leads/work-queue';
 import type { ViewingInterest } from '@/lib/viewings/interests';
+import type { LandingPageOption } from '@/lib/leads/landing-attribution';
 
 export type LeadRow = Lead & { lost_reason?: string | null; project_id?: string | null };
 
@@ -21,6 +22,8 @@ export interface LeadsListParams {
     project?: string;
     /** Лидийн ангилал: id эсвэл `none` (ангилалгүй). */
     category?: string;
+    /** Маягт илгээсэн хуудас: `event/<slug>` эсвэл `site`. */
+    landing?: string;
     period?: string;
     q?: string;
     sort?: string;
@@ -43,6 +46,7 @@ function buildQuery(p: LeadsListParams): string {
     if (p.manager && p.manager !== 'all') sp.set('manager', p.manager);
     if (p.project && p.project !== 'all') sp.set('project', p.project);
     if (p.category && p.category !== 'all') sp.set('category', p.category);
+    if (p.landing && p.landing !== 'all') sp.set('landing', p.landing);
     if (p.period && p.period !== 'all') sp.set('period', p.period);
     if (p.q) sp.set('q', p.q);
     if (p.sort) sp.set('sort', p.sort);
@@ -84,6 +88,20 @@ export function useLeadSummary() {
         queryFn: () => dashboardJson<LeadSummary>('/api/dashboard/leads/summary'),
         enabled: !!shopId,
         staleTime: 30_000,
+    });
+}
+
+/** «Landing page» шүүлтүүрийн сонголт — харах эрхтэй лидүүдийн хуудас ба лидийн тоо. */
+export function useLeadLandingPages(project: string) {
+    const { shop, user } = useAuth();
+    const shopId = shop?.id;
+    return useQuery<LandingPageOption[]>({
+        queryKey: ['leads', 'landing-pages', shopId, user?.id, project, user?.role],
+        queryFn: async () => (await dashboardJson<{ landingPages: LandingPageOption[] }>(
+            `/api/dashboard/leads/landing-pages${project !== 'all' ? `?project=${encodeURIComponent(project)}` : ''}`,
+        )).landingPages,
+        enabled: !!shopId,
+        staleTime: 60_000,
     });
 }
 
