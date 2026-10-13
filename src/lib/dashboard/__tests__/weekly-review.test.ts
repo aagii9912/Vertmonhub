@@ -51,7 +51,8 @@ describe('Лхагва гарагийн тайлангийн хугацаа', ()
         expect(text).toContain('Нэг шилжсэн лидийн өртөг: 60,000₮');
         expect(text).toContain('Нэг гэрээтэй лидийн өртөг: тооцох боломжгүй');
         expect(text).toContain('Google Ads: 0 лид');
-        expect(weeklyDiscussionItems({ updates })).toEqual([{ title: 'Номин', detail: 'Төсвөө батлуулах.' }]);
+        expect(weeklyDiscussionItems({ updates })).toEqual([{ title: 'Номин', detail: 'Төсвөө батлуулах.', part: 'sales' }]);
+        expect(weeklyDiscussionItems({ updates: [{ ...updates[0], author_role: 'marketing' }] })[0].part).toBe('marketing');
     });
     it('ханшгүй дүнг өртөг гэж экспортлохгүй, хурлын асуудалд оруулна', () => {
         const marketing = marketingReport([{ id: 'fx', spent_at: '2026-09-25', channel: 'meta_ads', amount: 0, exclusion: 'missing_fx', native_amount: 20, currency: 'USD', project_id: null, marketing_owner_name: null, marketing_campaign_id: null, note: null }]);

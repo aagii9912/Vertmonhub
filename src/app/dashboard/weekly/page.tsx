@@ -24,7 +24,10 @@ import { useWeeklySales, WeeklySalesDetails } from '@/components/weekly/WeeklySa
 import { WeeklyMarketingBudget } from '@/components/weekly/WeeklyMarketingBudget';
 import { WeeklyMarketingChannels } from '@/components/weekly/WeeklyMarketingChannels';
 import { useWeeklySlides, WeeklySlides } from '@/components/weekly/WeeklySlides';
+import { contentPlanWindow, useContentPlan, WeeklyContentPlan } from '@/components/weekly/WeeklyContentPlan';
 import { WEEKLY_SLIDE_PART_MODULE, type WeeklySlidePart } from '@/lib/dashboard/weekly-slides';
+import { summarizeContentPlan } from '@/lib/marketing/content-plan';
+import type { WeeklyDeckKind } from '@/lib/dashboard/weekly-deck';
 
 export default function WeeklyReviewPage() {
     const { shop, user } = useAuth();
@@ -43,7 +46,7 @@ function WeeklyReview() {
     const canWrite = user?.role === 'super_admin' || !!user?.permissions.canWrite;
     const canEditSlides = (part: WeeklySlidePart) => user?.role === 'super_admin' || (!!user?.permissions.canWrite && can(WEEKLY_SLIDE_PART_MODULE[part]));
     const canDeleteSlides = (part: WeeklySlidePart) => user?.role === 'super_admin' || (!!user?.permissions.canDelete && can(WEEKLY_SLIDE_PART_MODULE[part]));
-    const [exporting, setExporting] = useState(false);
+    const [exporting, setExporting] = useState<WeeklyDeckKind | null>(null);
     const params = new URLSearchParams(range);
     const salesQuery = useQuery<OperationsReport>({
         queryKey: ['operations-report', shop?.id, range.from, range.to, user?.id, can('finance')],
@@ -67,6 +70,7 @@ function WeeklyReview() {
     });
     const weeklySalesQuery = useWeeklySales(meetingDate, can('reports'));
     const slidesQuery = useWeeklySlides(meetingDate, can('reports') || can('marketing-roi'));
+    const contentQuery = useContentPlan(meetingDate, range, can('marketing-roi'));
     const tasksQuery = useMyTasks();
     const sales = can('reports') && !salesQuery.isError ? salesQuery.data : undefined;
     const previousSales = can('reports') && !previousSalesQuery.isError ? previousSalesQuery.data : undefined;
@@ -74,42 +78,50 @@ function WeeklyReview() {
     const updates = updatesQuery.isError ? undefined : updatesQuery.data;
     const completedTasks = (tasksQuery.data?.tasks || []).filter(task => task.status === 'done' && task.completed_at && ubDateStr(new Date(task.completed_at)) >= range.from && ubDateStr(new Date(task.completed_at)) <= range.to);
     const weeklySales = can('reports') && !weeklySalesQuery.isError ? weeklySalesQuery.data : undefined;
-    const loading = salesQuery.isFetching || previousSalesQuery.isFetching || marketingQuery.isFetching || updatesQuery.isFetching || weeklySalesQuery.isFetching || slidesQuery.isFetching;
+    const contentPlan = can('marketing-roi') && contentQuery.data ? {
+        week: summarizeContentPlan(contentQuery.data.items, range, ubDateStr()),
+        next: summarizeContentPlan(contentQuery.data.items, contentPlanWindow(meetingDate, range).next, ubDateStr()),
+    } : undefined;
+    const loading = salesQuery.isFetching || previousSalesQuery.isFetching || marketingQuery.isFetching || updatesQuery.isFetching || weeklySalesQuery.isFetching || slidesQuery.isFetching || contentQuery.isFetching;
     const notices = [
         ...(range.to >= ubDateStr() ? ['Тайлант хугацаа дуусаагүй. Одоогоор бүртгэсэн мэдээллийг харуулж байна.'] : []),
         ...(!can('reports') ? ['Борлуулалтын нэгдсэн тоонд тайлангийн эрх шаардлагатай.'] : salesQuery.error ? [`Борлуулалт: ${salesQuery.error.message}`] : []),
         ...(can('reports') && previousSalesQuery.error ? [`Өмнөх борлуулалтын харьцуулалт боломжгүй: ${previousSalesQuery.error.message}`] : []),
         ...(can('reports') && weeklySalesQuery.error ? [`Гэрээ, үлдэгдлийн дэлгэрэнгүй: ${weeklySalesQuery.error.message}`] : []),
         ...(!can('marketing-roi') ? ['Маркетингийн үзүүлэлтэд маркетингийн эрх шаардлагатай.'] : marketingQuery.error ? [`Маркетинг: ${marketingQuery.error.message}`] : []),
+        ...(can('marketing-roi') && contentQuery.error ? [`Контент төлөвлөгөө: ${contentQuery.error.message}`] : []),
         ...(updatesQuery.error ? [`Ажлын шинэчлэл: ${updatesQuery.error.message}`] : []),
         ...(!updatesQuery.data?.canViewTeam ? ['Ажлын шинэчлэл: зөвхөн миний оруулсан мэдээлэл.'] : []),
     ];
-    const discussionItems = weeklyDiscussionItems({ sales, marketing, updates: updates?.updates });
-    const text = formatWeeklyReview({ shopName: shop?.name || 'Vertmon Hub', meetingDate, sales, previousSales, weeklySales, marketing, updates: updates?.updates, notices });
+    const discussionItems = weeklyDiscussionItems({ sales, marketing, contentPlan, updates: updates?.updates });
+    const text = formatWeeklyReview({ shopName: shop?.name || 'Vertmon Hub', meetingDate, sales, previousSales, weeklySales, marketing, contentPlan, updates: updates?.updates, notices });
     const exportable = !loading && !dirty && !!(sales || marketing || updates);
     const refresh = () => {
         if (can('reports')) { void salesQuery.refetch(); void previousSalesQuery.refetch(); void weeklySalesQuery.refetch(); }
         if (can('marketing-roi')) void marketingQuery.refetch();
         if (can('reports') || can('marketing-roi')) void slidesQuery.refetch();
+        if (can('marketing-roi')) void contentQuery.refetch();
         void updatesQuery.refetch();
     };
 
-    async function downloadSlides() {
-        setExporting(true);
+    /** Борлуулалт, маркетинг тусдаа файл. */
+    async function downloadSlides(kind: WeeklyDeckKind) {
+        setExporting(kind);
         try {
             const { exportWeeklyDeck } = await import('@/lib/dashboard/weekly-deck-export');
             const result = await exportWeeklyDeck({
-                projectName: weeklySales?.projectName || shop?.name || 'Vertmon Hub', meetingDate, range, previousRange,
-                discussion: discussionItems.map(({ title, detail }) => ({ title, detail })), notices,
-                sales, previousSales, weeklySales, marketing, updates: updates?.updates,
+                kind, projectName: weeklySales?.projectName || shop?.name || 'Vertmon Hub', meetingDate, range, previousRange,
+                discussion: discussionItems.map(({ title, detail, part }) => ({ title, detail, part })), notices,
+                sales, previousSales, weeklySales, marketing, contentPlan, updates: updates?.updates,
                 slides: slidesQuery.data?.slides ?? [], canReports: can('reports'), canMarketing: can('marketing-roi'),
             });
-            if (result.failedImages) toast.warning(`Слайд татагдлаа. ${result.failedImages} зураг ачаалж чадсангүй.`);
-            else toast.success('Хурлын слайд (.pptx) татагдлаа');
+            const label = kind === 'marketing' ? 'Маркетингийн' : 'Борлуулалтын';
+            if (result.failedImages) toast.warning(`${label} слайд татагдлаа. ${result.failedImages} зураг ачаалж чадсангүй.`);
+            else toast.success(`${label} слайд (.pptx) татагдлаа`);
         } catch (error) {
             toast.error(error instanceof Error && error.message ? `Слайд үүсгэж чадсангүй: ${error.message}` : 'Слайд үүсгэж чадсангүй. Дахин оролдоно уу.');
         } finally {
-            setExporting(false);
+            setExporting(null);
         }
     }
 
@@ -145,7 +157,8 @@ function WeeklyReview() {
                     <Button variant="ghost" disabled={!exportable} onClick={copy}><ClipboardCopy />Хуулах</Button>
                     <Button variant="secondary" disabled={!exportable} onClick={() => void reportRef.current?.requestFullscreen?.().catch(() => toast.error('Бүтэн дэлгэц нээгдсэнгүй. PDF / хэвлэх үйлдлийг ашиглана уу.'))}><Maximize2 />Танилцуулах</Button>
                     <Button variant="secondary" disabled={!exportable} onClick={() => window.print()}><Printer />PDF / хэвлэх</Button>
-                    <Button disabled={!exportable || exporting} isLoading={exporting} onClick={() => void downloadSlides()}>{!exporting && <Presentation />}Слайд (.pptx)</Button>
+                    {can('reports') && <Button disabled={!exportable || !!exporting} isLoading={exporting === 'sales'} onClick={() => void downloadSlides('sales')}>{exporting !== 'sales' && <Presentation />}Борлуулалтын слайд</Button>}
+                    {can('marketing-roi') && <Button disabled={!exportable || !!exporting} isLoading={exporting === 'marketing'} onClick={() => void downloadSlides('marketing')}>{exporting !== 'marketing' && <Presentation />}Маркетингийн слайд</Button>}
                 </div>
             </div>
             <a href="#weekly-update" className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-surface-2 text-sm font-medium focus-ring xl:hidden print:hidden"><FileText className="size-4" />Миний шинэчлэл оруулах<ArrowUpRight className="size-4" /></a>
@@ -216,33 +229,43 @@ function WeeklyReview() {
                         <WeeklySalesDetails query={weeklySalesQuery} canOpenErp={can('erp-imports')} />
                     </section>}
 
+                    {/* Лидийн эх сурвалж, хөрвөлт нь борлуулалтын үзүүлэлт — маркетингийн албаны ажлыг үүгээр хэмжихгүй. */}
+                    {can('marketing-roi') && <section className="break-inside-avoid space-y-4">
+                        <ReportHeading number="01·3" title="Лидийн эх сурвалж, хөрвөлт" href={`/marketing?${params}`} />
+                        {marketingQuery.isPending ? <Skeleton className="h-36" /> : marketing ? <>
+                            <div className="grid grid-cols-3 gap-5 rounded-2xl border border-border p-5">
+                                <Metric label="Шинэ лид" value={marketing.totals.leads} helper={formatReviewChange(marketing.totals.leads, marketing.previous.leads)} />
+                                <Metric label="Менежерт шилжсэн лид" value={marketing.totals.sales} helper={formatReviewChange(marketing.totals.sales, marketing.previous.sales)} />
+                                <Metric label="Гэрээтэй лид" value={marketing.totals.deals} helper={formatReviewChange(marketing.totals.deals, marketing.previous.deals)} />
+                            </div>
+                            <PerformanceKpis report={marketing} />
+                            <PerformanceChannelTable report={marketing} />
+                            <p className="text-xs leading-relaxed text-muted-foreground">Тухайн хугацаанд үүссэн лидээс хугацааны эцэс хүртэл шилжсэн, гэрээтэй болсон тоо. Борлуулалтын гэрээний тоотой ижил хэмжүүр биш.</p>
+                            {marketing.quality.unknownHandoff > 0 && <Alert variant="warning">Шилжүүлсэн огноогүй {marketing.quality.unknownHandoff} лид тооцоонд ороогүй.</Alert>}
+                        </> : <Unavailable>Лидийн эх сурвалжийн мэдээлэл түр боломжгүй. Шинэчлэх товчоор дахин оролдоно уу.</Unavailable>}
+                    </section>}
+
                     {can('reports') && <section className="space-y-4">
-                        <ReportHeading number="01·3" title="Борлуулалтын нэмэлт слайд" />
+                        <ReportHeading number="01·4" title="Борлуулалтын нэмэлт слайд" />
                         <WeeklySlides part="sales" meetingDate={meetingDate} query={slidesQuery} canWrite={canEditSlides('sales')} canDelete={canDeleteSlides('sales')} />
                     </section>}
 
                     <section className="break-inside-avoid space-y-4">
-                        <ReportHeading number="02" title="Маркетингийн үр дүн" href={can('marketing-roi') ? `/marketing?${params}` : undefined} />
-                        {can('marketing-roi') && <WeeklyMarketingBudget to={range.to} />}
-                        {can('marketing-roi') && <WeeklyMarketingChannels from={range.from} to={range.to} />}
-                        {marketingQuery.isPending && can('marketing-roi') ? <Skeleton className="h-36" /> : marketing ? <>
-                            <div className="grid grid-cols-2 gap-5 rounded-2xl border border-border p-5 sm:grid-cols-3">
-                                <Metric label="Шинэ лид" value={marketing.totals.leads} helper={formatReviewChange(marketing.totals.leads, marketing.previous.leads)} />
-                                <Metric label="Менежерт шилжсэн лид" value={marketing.totals.sales} helper={formatReviewChange(marketing.totals.sales, marketing.previous.sales)} />
-                                <Metric label="Гэрээтэй лид" value={marketing.totals.deals} helper={formatReviewChange(marketing.totals.deals, marketing.previous.deals)} />
-                                <Metric label="Дууссан кампанит ажил" value={marketing.totals.campaigns} helper={formatReviewChange(marketing.totals.campaigns, marketing.previous.campaigns)} />
-                                <Metric label="Дууссан контент" value={marketing.totals.content} helper={formatReviewChange(marketing.totals.content, marketing.previous.content)} />
-                            </div>
-                            <PerformanceKpis report={marketing} />
-                            <PerformanceChannelTable report={marketing} />
-                            <Link href={`/marketing?${params}&tab=department`} className="inline-flex min-h-11 items-center gap-2 text-sm font-medium focus-ring hover:underline">Маркетингийн албаны KPI<ArrowUpRight className="size-4" /></Link>
-                            <p className="text-xs leading-relaxed text-muted-foreground">Тухайн хугацаанд үүссэн лидээс хугацааны эцэс хүртэл шилжсэн, гэрээтэй болсон тоо. Борлуулалтын гэрээний тоотой ижил хэмжүүр биш.</p>
-                            {(marketing.spendQuality.current.missingFx > 0 || marketing.quality.unknownHandoff > 0) && <Alert variant="warning">Ханшгүй {marketing.spendQuality.current.missingFx} зардал, шилжүүлсэн огноогүй {marketing.quality.unknownHandoff} лид тооцоонд ороогүй.</Alert>}
-                        </> : <Unavailable>{can('marketing-roi') ? 'Маркетингийн мэдээлэл түр боломжгүй. Шинэчлэх товчоор дахин оролдоно уу.' : 'Маркетингийн үзүүлэлт харах эрх шаардлагатай.'}</Unavailable>}
+                        <ReportHeading number="02" title="Маркетинг — контент төлөвлөгөө ба гүйцэтгэл" href={can('marketing-roi') ? '/marketing/calendar' : undefined} />
+                        {can('marketing-roi')
+                            ? <WeeklyContentPlan meetingDate={meetingDate} range={range} query={contentQuery} canWrite={canEditSlides('marketing')} canDelete={canDeleteSlides('marketing')} />
+                            : <Unavailable>Маркетингийн хэсэг харах эрх шаардлагатай.</Unavailable>}
                     </section>
 
+                    {can('marketing-roi') && <section className="break-inside-avoid space-y-4">
+                        <ReportHeading number="02·2" title="Суваг: Page, Ads, CallPro, SMS · төсөв" href="/marketing/channel-reports" />
+                        <WeeklyMarketingChannels from={range.from} to={range.to} />
+                        <WeeklyMarketingBudget to={range.to} />
+                        {marketing && marketing.spendQuality.current.missingFx > 0 && <Alert variant="warning">Ханшгүй {marketing.spendQuality.current.missingFx} зардал нийтэд ороогүй.</Alert>}
+                    </section>}
+
                     {can('marketing-roi') && <section className="space-y-4">
-                        <ReportHeading number="02·2" title="Постер, контент, дэлгэцийн зураг" />
+                        <ReportHeading number="02·3" title="Дэлгэцийн зураг, нэмэлт слайд" />
                         <WeeklySlides part="marketing" meetingDate={meetingDate} query={slidesQuery} canWrite={canEditSlides('marketing')} canDelete={canDeleteSlides('marketing')} />
                     </section>}
 

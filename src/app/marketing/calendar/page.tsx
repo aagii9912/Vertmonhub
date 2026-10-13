@@ -4,88 +4,41 @@ import React, { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { CalendarDays, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { CalendarDays, Check, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { dashboardMutate } from '@/lib/api/dashboardFetch';
 import { useDashboardQuery } from '@/hooks/useDashboardQuery';
+import { useModuleAccess } from '@/hooks/useModuleAccess';
 import { PageHeader } from '@/components/dashboard/PageHeader';
-import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/Alert';
+import { ContentItemDialog } from '@/components/marketing/ContentItemDialog';
+import { CONTENT_STATUS_LABEL, summarizeContentPlan, type ContentItem } from '@/lib/marketing/content-plan';
+import { ubDateStr } from '@/lib/utils/date';
 import { cn } from '@/lib/utils';
-import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogFooter,
-} from '@/components/ui/Dialog';
-import { FormField, FieldGroup } from '@/components/ui/FormField';
-import {
-    Select,
-    SelectContent,
-    SelectItem,
-    SelectTrigger,
-    SelectValue,
-} from '@/components/ui/Select';
-
-interface CalendarItem {
-    id: string;
-    title: string;
-    type: string;
-    platform: string;
-    scheduled_date: string;
-    status: string;
-    color: string;
-}
-
-const typeLabels: Record<string, string> = {
-    post: 'Пост',
-    story: 'Story',
-    reel: 'Reel',
-    blog: 'Блог',
-    email: 'Имэйл',
-    ad: 'Зар',
-    event: 'Эвент',
-};
 
 /** Локал календарийн `YYYY-MM-DD` (toISOString нь UTC руу шилжиж УБ-д нэг өдөр хасдаг). */
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 
+/** Маркетингийн албаны өөрийн төлөвлөгөө: контент бүрийн огноо, төлөв, хариуцагч, постер. */
 export default function CalendarPage() {
-    const { shop } = useAuth();
+    const { user } = useAuth();
+    const { canWrite } = useModuleAccess();
     const queryClient = useQueryClient();
     const [currentDate, setCurrentDate] = useState(new Date());
-    const [showCreateModal, setShowCreateModal] = useState(false);
-    const [creating, setCreating] = useState(false);
-    const [newItem, setNewItem] = useState({ title: '', type: 'post', platform: 'facebook', scheduled_date: ymd(new Date()), color: '#3B82F6' });
+    const [editing, setEditing] = useState<ContentItem | { date: string } | null>(null);
+    const writable = canWrite('marketing-roi');
+    const deletable = user?.role === 'super_admin' || (!!user?.permissions?.canDelete && writable);
 
     const startOfMonth = ymd(new Date(currentDate.getFullYear(), currentDate.getMonth(), 1));
     const endOfMonth = ymd(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0));
     // Сар солиход өмнөх сарын мөрүүд түр үлдэнэ (шинэ сарын өдрүүдтэй таарахгүй тул нүдэнд гарахгүй) — хуудас бүхэлдээ spinner болж анивчихгүй.
-    const { data, isLoading, isPlaceholderData, error, isFetching, refetch } = useDashboardQuery<{ rows: CalendarItem[] }>(
+    const { data, isLoading, isPlaceholderData, error, isFetching, refetch } = useDashboardQuery<{ items: ContentItem[] }>(
         ['marketing-calendar', startOfMonth, endOfMonth],
-        `/api/marketing/data/content_calendar?gte.scheduled_date=${startOfMonth}&lte.scheduled_date=${endOfMonth}&order=scheduled_date.asc`,
+        `/api/marketing/content-plan?from=${startOfMonth}&to=${endOfMonth}`,
         { keepPreviousData: true },
     );
-    const items = data?.rows ?? [];
-
-    const handleCreate = async () => {
-        if (!shop?.id || !newItem.title.trim()) return;
-        setCreating(true);
-        try {
-            await dashboardMutate('/api/marketing/data/content_calendar', 'POST', {
-                title: newItem.title.trim(), type: newItem.type,
-                platform: newItem.platform, scheduled_date: newItem.scheduled_date,
-                status: 'planned', color: newItem.color,
-            });
-            // Шинэ контент өөр сард байж болох тул бүх сарын кэшийг шинэчилнэ.
-            void queryClient.invalidateQueries({ queryKey: ['marketing-calendar'] });
-            setShowCreateModal(false);
-            setNewItem({ title: '', type: 'post', platform: 'facebook', scheduled_date: ymd(new Date()), color: '#3B82F6' });
-        } catch (err) { console.error('Create error:', err); }
-        finally { setCreating(false); }
-    };
+    const items = data?.items ?? [];
+    const month = summarizeContentPlan(items, { from: startOfMonth, to: endOfMonth }, ubDateStr());
 
     const daysInMonth = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0).getDate();
     const firstDayOfMonth = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1).getDay();
@@ -115,13 +68,13 @@ export default function CalendarPage() {
             <PageHeader
                 eyebrow="Маркетинг"
                 title="Контент календарь"
-                subtitle="Контент төлөвлөлт"
-                primaryAction={
-                    <Button onClick={() => setShowCreateModal(true)}>
+                subtitle="Маркетингийн албаны контент төлөвлөгөө ба гүйцэтгэл"
+                primaryAction={writable ? (
+                    <Button onClick={() => setEditing({ date: ymd(new Date()) })}>
                         <Plus className="w-4 h-4" />
                         Шинэ контент
                     </Button>
-                }
+                ) : undefined}
             />
 
             <Card>
@@ -148,6 +101,10 @@ export default function CalendarPage() {
                         </Alert>
                     ) : (
                         <>
+                            {!isPlaceholderData && month.planned > 0 && <p className="mb-4 text-sm text-fg-2" aria-label="Сарын гүйцэтгэл">
+                                Төлөвлөсөн <strong className="num">{month.planned}</strong> · Нийтэлсэн <strong className="num">{month.published}</strong>{month.pct !== null ? ` (${month.pct}%)` : ''}
+                                {month.overdue > 0 && <> · <span className="text-status-danger">Хоцорсон <strong className="num">{month.overdue}</strong></span></>}
+                            </p>}
                             {/* Calendar grid */}
                             <div className="grid grid-cols-7 gap-px bg-border rounded-lg overflow-hidden">
                                 {['Да', 'Мя', 'Лх', 'Пү', 'Ба', 'Бя', 'Ня'].map(d => (
@@ -164,12 +121,16 @@ export default function CalendarPage() {
                                         <div key={day} className={cn('bg-surface p-2 min-h-[80px]', isToday && 'ring-2 ring-brand ring-inset')}>
                                             <span className={cn('text-sm tabular-nums', isToday ? 'font-bold text-brand-strong' : 'text-foreground')}>{day}</span>
                                             <div className="mt-1 space-y-1">
-                                                {dayItems.slice(0, 2).map(item => (
-                                                    <div key={item.id} className="text-xs px-1 py-0.5 rounded truncate" style={{ backgroundColor: item.color + '20', color: item.color || '#3B82F6' }}>
-                                                        {item.title}
-                                                    </div>
+                                                {dayItems.slice(0, 3).map(item => (
+                                                    <button key={item.id} type="button" onClick={() => setEditing(item)}
+                                                        title={`${item.title} · ${CONTENT_STATUS_LABEL[item.status]}`}
+                                                        className={cn('flex w-full items-center gap-1 rounded px-1 py-0.5 text-left text-xs focus-ring', item.status === 'cancelled' && 'line-through opacity-60')}
+                                                        style={{ backgroundColor: (item.color || '#3B82F6') + '20', color: item.color || '#3B82F6' }}>
+                                                        {item.status === 'published' && <Check className="size-3 shrink-0" aria-label="Нийтэлсэн" />}
+                                                        <span className="truncate">{item.title}</span>
+                                                    </button>
                                                 ))}
-                                                {dayItems.length > 2 && <p className="text-xs text-muted-foreground">+{dayItems.length - 2}</p>}
+                                                {dayItems.length > 3 && <p className="text-xs text-muted-foreground">+{dayItems.length - 3}</p>}
                                             </div>
                                         </div>
                                     );
@@ -187,64 +148,9 @@ export default function CalendarPage() {
                 </CardContent>
             </Card>
 
-            {/* Create Modal */}
-            <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
-                <DialogContent showCloseButton={false} className="rounded-xl sm:max-w-md max-h-[90vh] overflow-y-auto">
-                    <DialogHeader>
-                        <DialogTitle className="heading-section text-lg text-foreground">Шинэ контент</DialogTitle>
-                    </DialogHeader>
-                    <FieldGroup>
-                        <FormField label="Гарчиг" htmlFor="calendar-title" required>
-                            <Input id="calendar-title" value={newItem.title} onChange={e => setNewItem(p => ({ ...p, title: e.target.value }))} placeholder="Контентын гарчиг" />
-                        </FormField>
-                        <div className="grid grid-cols-2 gap-3">
-                            <FormField label="Төрөл" htmlFor="calendar-type">
-                                <Select value={newItem.type} onValueChange={v => setNewItem(p => ({ ...p, type: v }))}>
-                                    <SelectTrigger id="calendar-type">
-                                        <SelectValue placeholder="— Сонгох —" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="post">Пост</SelectItem>
-                                        <SelectItem value="story">Story</SelectItem>
-                                        <SelectItem value="reel">Reel</SelectItem>
-                                        <SelectItem value="blog">Блог</SelectItem>
-                                        <SelectItem value="ad">Зар</SelectItem>
-                                        <SelectItem value="event">Эвент</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </FormField>
-                            <FormField label="Платформ" htmlFor="calendar-platform">
-                                <Select value={newItem.platform} onValueChange={v => setNewItem(p => ({ ...p, platform: v }))}>
-                                    <SelectTrigger id="calendar-platform">
-                                        <SelectValue placeholder="— Сонгох —" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="facebook">Facebook</SelectItem>
-                                        <SelectItem value="instagram">Instagram</SelectItem>
-                                        <SelectItem value="tiktok">TikTok</SelectItem>
-                                        <SelectItem value="web">Вэб</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </FormField>
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <FormField label="Огноо" htmlFor="calendar-date">
-                                <Input id="calendar-date" type="date" value={newItem.scheduled_date} onChange={e => setNewItem(p => ({ ...p, scheduled_date: e.target.value }))} />
-                            </FormField>
-                            <FormField label="Өнгө" htmlFor="calendar-color">
-                                <input id="calendar-color" type="color" value={newItem.color} onChange={e => setNewItem(p => ({ ...p, color: e.target.value }))} className="w-full h-9 rounded-md border border-border-strong cursor-pointer" />
-                            </FormField>
-                        </div>
-                    </FieldGroup>
-                    <DialogFooter>
-                        <Button variant="secondary" onClick={() => setShowCreateModal(false)}>Болих</Button>
-                        <Button onClick={handleCreate} disabled={!newItem.title.trim() || creating} isLoading={creating}>
-                            {!creating && <Plus className="w-4 h-4" />}
-                            Үүсгэх
-                        </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
+            {editing && <ContentItemDialog key={'id' in editing ? editing.id : 'new'} item={'id' in editing ? editing : undefined} defaultDate={'date' in editing ? editing.date : ymd(new Date())}
+                canWrite={writable} canDelete={deletable} onClose={() => setEditing(null)}
+                onSaved={() => { setEditing(null); void queryClient.invalidateQueries({ queryKey: ['marketing-calendar'] }); void queryClient.invalidateQueries({ queryKey: ['content-plan'] }); }} />}
         </div>
     );
 }

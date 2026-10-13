@@ -24,9 +24,16 @@ export async function GET(request: NextRequest) {
         const date = meetingDateSchema.safeParse(request.nextUrl.searchParams.get('meetingDate'));
         if (!date.success) return NextResponse.json({ error: 'Лхагва гарагийн огноо сонгоно уу.' }, { status: 400 });
         const canViewTeam = permissions.role === 'super_admin' || permissions.permissions.modules.includes('reports');
-        const result = await listWeeklyUpdates(supabaseAdmin(), shop.id, date.data, { userId, canViewTeam });
+        const db = supabaseAdmin();
+        const result = await listWeeklyUpdates(db, shop.id, date.data, { userId, canViewTeam });
         if ('error' in result) return databaseError(result.error);
-        return NextResponse.json({ updates: result.updates, canViewTeam }, { headers });
+        // Маркетинг, борлуулалтын тайланг тусад нь бэлдэхэд зохиогчийн дүр хэрэгтэй.
+        const ids = [...new Set(result.updates.map(update => update.user_id))];
+        const roles = ids.length ? await db.from('user_roles').select('user_id,role').in('user_id', ids) : { data: [], error: null };
+        if (roles.error) return databaseError(roles.error);
+        const roleOf = new Map((roles.data ?? []).map(row => [row.user_id as string, row.role as string]));
+        const updates = result.updates.map(update => ({ ...update, author_role: roleOf.get(update.user_id) ?? null }));
+        return NextResponse.json({ updates, canViewTeam }, { headers });
     } catch (error) {
         return safeErrorResponse(error, 'Ажлын шинэчлэлийг уншиж чадсангүй.');
     }

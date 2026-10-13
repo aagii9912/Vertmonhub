@@ -13,6 +13,7 @@ import { buildMarketingPerformance } from '@/lib/marketing/performance';
 import type { ChannelReportMatches } from '@/lib/marketing/channel-reports-load';
 import type { ErpProduct, ErpSale } from '@/lib/erp/records';
 import type { WeeklySlide } from '../weekly-slides';
+import { summarizeContentPlan, type ContentItem } from '@/lib/marketing/content-plan';
 
 const range = { from: '2026-10-07', to: '2026-10-13' };
 const meetingDate = '2026-10-14';
@@ -100,6 +101,21 @@ function channels(): ChannelReportMatches {
     } as unknown as ChannelReportMatches;
 }
 
+const content = (id: string, title: string, date: string, status: ContentItem['status'], overrides: Partial<ContentItem> = {}): ContentItem => ({
+    id, title, type: 'reel', platform: 'facebook', scheduled_date: date, scheduled_time: null, status, description: null, assigned_to: 'Анужин', color: null,
+    image_paths: [], created_by: user, updated_at: `${range.to}T10:00:00Z`, ...overrides,
+});
+function contentPlan() {
+    const items = [
+        content('c1', 'Онцлох орон сууц: 201 мкв 5 өрөө', '2026-10-08', 'published', { type: 'post', image_paths: [media(1), media(2)], description: 'Постер + carousel, 3% өссөн хүрэлт.' }),
+        content('c2', '24 давхрын 5 өрөөний reel', '2026-10-09', 'published', { image_paths: [media(4)] }),
+        content('c3', 'Хувь лизингийн нөхцөл', '2026-10-10', 'planned', { type: 'post' }),
+        content('c4', 'Загварын байрны story', '2026-10-12', 'cancelled', { type: 'story' }),
+        content('c5', 'Оршин суугчийн сэтгэгдэл', '2026-10-15', 'planned'),
+    ];
+    return { week: summarizeContentPlan(items, range, '2026-10-14'), next: summarizeContentPlan(items, { from: meetingDate, to: '2026-10-20' }, '2026-10-14') };
+}
+
 const slide = (id: string, overrides: Partial<WeeklySlide>): WeeklySlide => ({
     id, meeting_date: meetingDate, part: 'marketing', section: 'social', title: '', note: '', image_paths: [], position: 0,
     author_id: user, author_name: 'Анужин', updated_at: `${range.to}T10:00:00Z`, ...overrides,
@@ -113,11 +129,11 @@ function input(overrides: Partial<WeeklyDeckInput> = {}): WeeklyDeckInput {
         [media(4)]: { data: png(464, 830, [120, 60, 160]), width: 464, height: 830 },
     };
     return {
-        projectName: 'Mandala 360&365 Tower', meetingDate, range, previousRange: { from: '2026-09-30', to: '2026-10-06' }, generatedAt: '2026.10.13 14:05',
-        discussion: [{ title: 'Эзэнгүй 3 лид', detail: 'Хариуцах менежер, дараагийн алхмыг тогтоох.' }], notices: [],
+        kind: 'sales', projectName: 'Mandala 360&365 Tower', meetingDate, range, previousRange: { from: '2026-09-30', to: '2026-10-06' }, generatedAt: '2026.10.13 14:05',
+        discussion: [{ title: 'Эзэнгүй 3 лид', detail: 'Хариуцах менежер, дараагийн алхмыг тогтоох.', part: 'sales' }, { title: 'Хоцорсон 1 контент', detail: 'Шинэ огноо тогтоох.', part: 'marketing' }], notices: [],
         sales: operations(range.from, range.to), previousSales: operations('2026-09-30', '2026-10-06'), weeklySales: weeklySales(),
         budget: { year: 2026, month: 10, overview: buildBudgetOverview(Array(12).fill(10000000), Array.from({ length: 12 }, (_, i) => i < 10 ? 8000000 : 0), Array(12).fill(0)) },
-        marketing: marketing(), channels: channels(),
+        marketing: marketing(), channels: channels(), contentPlan: contentPlan(),
         slides: [
             slide('s1', { section: 'social', title: 'Онцлох орон сууц: 201 мкв 5 өрөө', image_paths: [media(1), media(2)] }),
             slide('s2', { section: 'callpro', title: 'CallPro — алдсан дуудлага', image_paths: [media(3)], note: 'Алдсан дуудлага 12:00 болон 15:00–16:00 цагийн үед төвлөрч байна.' }),
@@ -126,7 +142,10 @@ function input(overrides: Partial<WeeklyDeckInput> = {}): WeeklyDeckInput {
             slide('s4', { part: 'sales', section: 'plan', title: 'Энэ сард хийгдэх ажлууд', note: '• Дулаан зогсоолуудыг гинжлэх\n• 1 давхрын орон сууцнуудыг сайжруулах' }),
         ],
         images,
-        updates: [{ id: 'u1', user_id: user, author_name: 'Номин', meeting_date: meetingDate, achievements: 'Гурван гэрээ хийсэн.', blockers: 'Банкны зээлийн хариу удаж байна.', next_steps: 'Дахин холбогдох.', updated_at: `${range.to}T10:00:00Z` }],
+        updates: [
+            { id: 'u1', user_id: user, author_name: 'Номин', meeting_date: meetingDate, achievements: 'Гурван гэрээ хийсэн.', blockers: 'Банкны зээлийн хариу удаж байна.', next_steps: 'Дахин холбогдох.', updated_at: `${range.to}T10:00:00Z`, author_role: 'sales_manager' },
+            { id: 'u2', user_id: shop, author_name: 'Анужин', meeting_date: meetingDate, achievements: 'Хоёр reel хийсэн.', blockers: '', next_steps: 'Сэтгэгдлийн видео.', updated_at: `${range.to}T10:00:00Z`, author_role: 'marketing' },
+        ],
         ...overrides,
     };
 }
@@ -143,43 +162,58 @@ async function render(deck: WeeklyDeckInput) {
     return { zip, xml, text: xml.map(part => [...part.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map(match => match[1]).join(' ')) };
 }
 
+async function validXml(zip: JSZip) {
+    const parts = Object.keys(zip.files).filter(file => file.endsWith('.xml') || file.endsWith('.rels'));
+    for (const [name, body] of await Promise.all(parts.map(async name => [name, await zip.file(name)!.async('string')] as const))) {
+        const parser = new SaxesParser();
+        expect(() => { parser.write(body); parser.close(); }, name).not.toThrow();
+    }
+}
+
 describe('weekly meeting deck (.pptx)', () => {
-    it('builds every section in meeting order with valid XML, including names with &', async () => {
+    it('sales deck: sales sections only, valid XML, names with &', async () => {
         const { zip, xml, text } = await render(input());
-        const parts = Object.keys(zip.files).filter(file => file.endsWith('.xml') || file.endsWith('.rels'));
-        for (const [name, body] of await Promise.all(parts.map(async name => [name, await zip.file(name)!.async('string')] as const))) {
-            const parser = new SaxesParser();
-            expect(() => { parser.write(body); parser.close(); }, name).not.toThrow();
-        }
+        await validXml(zip);
         const layouts = await Promise.all(Object.keys(zip.files).filter(name => /slideLayout\d+\.xml$/.test(name)).map(name => zip.file(name)!.async('string')));
         expect(layouts.join(' ')).toContain('VERTMON HUB · Mandala 360&amp;365 Tower');
         expect(layouts.join(' ')).not.toContain('&amp;amp;');
         const all = text.join('\n');
         expect(text[0]).toContain('Mandala 360&amp;365 Tower');
-        expect(all).toContain('Энэ хурлаар шийдэх');
-        expect(all).toContain('Борлуулалтын тойм');
-        expect(all).toContain('Энэ долоо хоногийн гэрээ (1/2)');
-        expect(all).toContain('Энэ долоо хоногийн гэрээ (2/2)');
-        expect(all).toContain('Орон сууцны үлдэгдэл — Б1 блок');
-        expect(all).toContain('Орон сууцны үлдэгдэл — Б2 блок (1/2)');
-        expect(all).toContain('Энэ сард хийгдэх ажлууд');
-        expect(all).toContain('Маркетингийн үр дүн');
-        expect(all).toContain('Сувгаар лид, гэрээлэлт, зардал');
-        expect(all).toContain('Сувгийн экспорт, Meta API');
-        expect(all).toContain('Экспорт оруулаагүй: Facebook хуудас, Масс SMS');
-        expect(all).toContain('CallPro — алдсан дуудлага');
-        expect(all).toContain('Алдсан дуудлага 12:00');
-        expect(all).toContain('Анхаарал хандуулсанд баярлалаа');
-        // Борлуулалтын нэмэлт слайд маркетингаас өмнө, хурлын явц төгсгөлд.
+        expect(text[0]).toContain('Долоо хоногийн борлуулалтын тайлан');
+        for (const needle of ['Эзэнгүй 3 лид', 'Борлуулалтын тойм', 'Энэ долоо хоногийн гэрээ (1/2)', 'Энэ долоо хоногийн гэрээ (2/2)', 'Орон сууцны үлдэгдэл — Б1 блок',
+            'Орон сууцны үлдэгдэл — Б2 блок (1/2)', 'Лидийн эх сурвалж, хөрвөлт', 'Энэ сард хийгдэх ажлууд', 'Банкны зээлийн хариу', 'Анхаарал хандуулсанд баярлалаа']) expect(all).toContain(needle);
+        // Маркетингийн контент, постер, суваг, маркетингийн гишүүний явц борлуулалтын файлд орохгүй.
+        for (const needle of ['Хоцорсон 1 контент', 'Контент төлөвлөгөө', 'Онцлох орон сууц', 'CallPro — алдсан дуудлага', 'Сувгийн экспорт', 'Хоёр reel хийсэн', 'Төсөв ба зарцуулалт']) expect(all).not.toContain(needle);
         const index = (needle: string) => text.findIndex(slideText => slideText.includes(needle));
-        expect(index('Энэ сард хийгдэх ажлууд')).toBeLessThan(index('Маркетингийн үр дүн'));
-        expect(index('Маркетингийн үр дүн')).toBeLessThan(index('Онцлох орон сууц'));
+        expect(index('Лидийн эх сурвалж')).toBeLessThan(index('Энэ сард хийгдэх ажлууд'));
         expect(index('Банкны зээлийн хариу')).toBe(xml.length - 2);
+    });
+
+    it('marketing deck: own content plan, published content with posters, channels and budget — no leads or contracts', async () => {
+        const { zip, xml, text } = await render(input({ kind: 'marketing' }));
+        await validXml(zip);
+        const all = text.join('\n');
+        expect(text[0]).toContain('МАРКЕТИНГИЙН АЛБА');
+        for (const needle of ['Хоцорсон 1 контент', 'Контент төлөвлөгөө ба гүйцэтгэл', 'Энэ долоо хоногийн контент', 'Онцлох орон сууц: 201 мкв 5 өрөө', 'Постер + carousel',
+            '24 давхрын 5 өрөөний reel', 'CallPro — алдсан дуудлага', 'Сувгийн экспорт, Meta API', 'Төсөв ба зарцуулалт', 'Дараагийн 7 хоногийн контент төлөвлөгөө',
+            'Оршин суугчийн сэтгэгдэл', 'Хоёр reel хийсэн']) expect(all).toContain(needle);
+        for (const needle of ['Эзэнгүй 3 лид', 'Борлуулалтын тойм', 'Энэ долоо хоногийн гэрээ', 'Лидийн эх сурвалж', 'Гэрээтэй', 'Менежерт шилжсэн', 'Нэг лидийн өртөг', 'Банкны зээлийн хариу', 'Энэ сард хийгдэх ажлууд']) {
+            expect(all, needle).not.toContain(needle);
+        }
+        const plan = text.slice(1).find(slideText => slideText.includes('Контент төлөвлөгөө ба гүйцэтгэл'))!;
+        // Тайлант долоо хоногт 3 төлөвлөсөн (цуцалсан нь орохгүй), 2 нийтэлсэн = 67%, 1 хоцорсон.
+        expect(plan).toMatch(/Төлөвлөсөн контент 3 /);
+        expect(plan).toContain('Төлөвлөгөөний 67%');
+        const index = (needle: string) => text.findIndex(slideText => slideText.includes(needle));
+        expect(plan).toMatch(/Хоцорсон 1 /);
+        expect(index('Энэ долоо хоногийн контент')).toBeLessThan(index('Постер + carousel'));
+        expect(index('Сувгийн экспорт')).toBeLessThan(index('Дараагийн 7 хоногийн контент төлөвлөгөө'));
+        expect(index('Хоёр reel хийсэн')).toBe(xml.length - 2);
         expect(Object.keys(zip.files).filter(name => name.startsWith('ppt/media/') && !name.endsWith('/')).length).toBeGreaterThanOrEqual(3);
     });
 
     it('never prints missing amounts as zero and keeps missing images out of the slide', async () => {
-        const { text, zip } = await render(input({ slides: [slide('s1', { title: 'Зураггүй', image_paths: [media(9)] })], images: {}, budget: null, sales: undefined, previousSales: undefined }));
+        const { text, zip } = await render(input({ slides: [slide('s1', { part: 'sales', section: 'event', title: 'Зураггүй', image_paths: [media(9)] })], images: {}, budget: null, sales: undefined, previousSales: undefined }));
         const contracts = text.find(slideText => slideText.includes('Энэ долоо хоногийн гэрээ (1/2)'))!;
         expect(contracts).toContain('—');
         expect(text.join(' ')).toContain('Зураггүй');
@@ -188,7 +222,13 @@ describe('weekly meeting deck (.pptx)', () => {
         expect(notes.join(' ')).toContain('1 зураг ачаалж чадсангүй');
     });
 
-    it('names the file after the project and meeting date without path characters', () => {
-        expect(weeklyDeckFileName('Mandala 360/365: Tower', '2026-10-14')).toBe('Mandala 360 365 Tower - Лхагва 2026-10-14.pptx');
+    it('marketing deck without a content plan says where to plan instead of inventing numbers', async () => {
+        const { text } = await render(input({ kind: 'marketing', contentPlan: undefined }));
+        expect(text.join(' ')).toContain('Контент календарь хэсэгт долоо хоногийн контентоо төлөвлөж');
+    });
+
+    it('names each file after the project, part and meeting date without path characters', () => {
+        expect(weeklyDeckFileName('Mandala 360/365: Tower', '2026-10-14', 'sales')).toBe('Mandala 360 365 Tower - Борлуулалт - Лхагва 2026-10-14.pptx');
+        expect(weeklyDeckFileName('Elysium', '2026-10-14', 'marketing')).toBe('Elysium - Маркетинг - Лхагва 2026-10-14.pptx');
     });
 });

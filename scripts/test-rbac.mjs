@@ -48,6 +48,7 @@ try {
         CREATE TABLE user_profiles (id uuid PRIMARY KEY, full_name text);
         CREATE TABLE webhook_configs (id uuid PRIMARY KEY, shop_id uuid, headers jsonb);
         CREATE TABLE webhook_logs (id uuid PRIMARY KEY, shop_id uuid, payload jsonb);
+        CREATE TABLE content_calendar (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), shop_id uuid, title text, scheduled_date date);
         CREATE TABLE storage.buckets (id text PRIMARY KEY, name text, public boolean, file_size_limit bigint, allowed_mime_types text[]);
         CREATE TABLE storage.objects (name text PRIMARY KEY, bucket_id text);
         CREATE FUNCTION public.get_user_shop_ids() RETURNS SETOF uuid LANGUAGE sql STABLE SECURITY DEFINER SET search_path = '' AS $$
@@ -244,6 +245,10 @@ try {
             ['2026-10-15','marketing','social','Пүрэв гараг'], ['2026-10-14','finance','social','x'], ['2026-10-14','marketing','poster','x'],
             ['2026-10-14','marketing','social',''], ['2026-10-14','marketing','social',' x'], ['2026-10-14','marketing','social','x',Array.from({ length: 7 },(_, i) => `p${i}.png`)],
         ]) await assert.rejects(() => insert(date, part, section, title, images), error => error.code === '23514');
+    });
+    await check('content plan items carry at most six posters and a creator', async () => {
+        await asUser('admin', () => db.query("INSERT INTO content_calendar (shop_id,title,scheduled_date,image_paths,created_by) VALUES ($1,'Reel','2026-10-08',$2,$3)", [ids.shop,['a.jpg'],ids.marketing]),'service_role');
+        await assert.rejects(() => asUser('admin', () => db.query("INSERT INTO content_calendar (shop_id,title,scheduled_date,image_paths) VALUES ($1,'x','2026-10-08',$2)", [ids.shop,Array.from({ length: 7 },(_, i) => `p${i}.jpg`)]),'service_role'), error => error.code === '23514');
     });
     console.log(`RBAC: ${checks} checks passed (disposable PostgreSQL)`);
 } finally { await db.close(); }

@@ -4,27 +4,30 @@ import type { ChannelReportMatches } from '@/lib/marketing/channel-reports-load'
 import type { MarketingPerformance } from '@/lib/marketing/performance';
 import type { OperationsReport } from './operations-report';
 import type { WeeklySalesReport } from './weekly-sales';
-import type { WeeklyUpdate } from './weekly-review';
+import type { WeeklyContentPlan, WeeklyUpdate } from './weekly-review';
 import { reportMediaUrl, type WeeklySlide } from './weekly-slides';
-import { buildWeeklyDeck, weeklyDeckFileName, type DeckImage } from './weekly-deck';
+import { buildWeeklyDeck, weeklyDeckFileName, type DeckImage, type WeeklyDeckKind } from './weekly-deck';
 
 /**
- * Хөтөч дээр Лхагвагийн тайланг .pptx болгож татна. Хуудасны ачаалсан (эрхээр шүүгдсэн)
- * тайлангууд дээр сарын төлөвлөгөө, маркетингийн төсөв, сувгийн экспорт, слайдын зургийг нэмж уншина.
+ * Хөтөч дээр Лхагвагийн тайланг .pptx болгож татна — борлуулалт, маркетинг тусдаа файл.
+ * Хуудасны ачаалсан (эрхээр шүүгдсэн) тайлангууд дээр борлуулалтад сарын төлөвлөгөө,
+ * маркетингад төсөв, сувгийн экспорт, контентын зургийг нэмж уншина.
  * pptxgenjs-ийг зөвхөн товч дарахад ачаална (хуудасны bundle-д орохгүй).
  */
 export interface WeeklyDeckExportInput {
+    kind: WeeklyDeckKind;
     projectName: string;
     meetingDate: string;
     range: { from: string; to: string };
     previousRange: { from: string; to: string };
-    discussion: { title: string; detail: string }[];
+    discussion: { title: string; detail: string; part?: WeeklyDeckKind }[];
     notices: string[];
     sales?: OperationsReport;
     previousSales?: OperationsReport;
     weeklySales?: WeeklySalesReport;
     marketing?: MarketingPerformance;
     updates?: WeeklyUpdate[];
+    contentPlan?: WeeklyContentPlan;
     slides: WeeklySlide[];
     canReports: boolean;
     canMarketing: boolean;
@@ -92,23 +95,27 @@ const stamp = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Ulaanbaat
 export async function exportWeeklyDeck(input: WeeklyDeckExportInput): Promise<{ fileName: string; failedImages: number }> {
     const year = Number(input.range.to.slice(0, 4));
     const month = monthBounds(input.range.to);
+    const marketing = input.kind === 'marketing' && input.canMarketing;
+    const slides = input.slides.filter(slide => slide.part === input.kind);
+    const contentImages = marketing && input.contentPlan
+        ? input.contentPlan.week.items.filter(item => item.status === 'published' || item.status === 'ready').flatMap(item => item.image_paths) : [];
     const [budget, channels, monthSales, media, { default: PptxGenJS }] = await Promise.all([
-        input.canMarketing ? dashboardJson<BudgetResponse>(`/api/marketing/budget?year=${year}`).catch(() => null) : null,
-        input.canMarketing ? dashboardJson<{ latest: ChannelReportMatches }>(`/api/marketing/channel-reports?from=${input.range.from}&to=${input.range.to}`).then(response => response.latest).catch(() => null) : null,
-        input.canReports ? dashboardJson<OperationsReport>(`/api/dashboard/reports/operations?${new URLSearchParams(month)}`).catch(() => undefined) : undefined,
-        loadImages(input.slides.flatMap(slide => slide.image_paths)),
+        marketing ? dashboardJson<BudgetResponse>(`/api/marketing/budget?year=${year}`).catch(() => null) : null,
+        marketing ? dashboardJson<{ latest: ChannelReportMatches }>(`/api/marketing/channel-reports?from=${input.range.from}&to=${input.range.to}`).then(response => response.latest).catch(() => null) : null,
+        input.kind === 'sales' && input.canReports ? dashboardJson<OperationsReport>(`/api/dashboard/reports/operations?${new URLSearchParams(month)}`).catch(() => undefined) : undefined,
+        loadImages([...slides.flatMap(slide => slide.image_paths), ...contentImages]),
         import('pptxgenjs'),
     ]);
     const pres = new PptxGenJS();
     buildWeeklyDeck(pres, {
-        projectName: input.projectName, meetingDate: input.meetingDate, range: input.range, previousRange: input.previousRange,
+        kind: input.kind, contentPlan: input.contentPlan, projectName: input.projectName, meetingDate: input.meetingDate, range: input.range, previousRange: input.previousRange,
         generatedAt: stamp(), discussion: input.discussion, notices: input.notices,
         sales: input.sales, previousSales: input.previousSales, monthSales, weeklySales: input.weeklySales, marketing: input.marketing,
         budget: budget?.available && budget.overview ? { year, month: Number(input.range.to.slice(5, 7)), overview: budget.overview } : null,
-        channels, slides: input.slides, images: media.images, updates: input.updates,
+        channels, slides, images: media.images, updates: input.updates,
     });
     const blob = await pres.write({ outputType: 'blob' }) as Blob;
-    const fileName = weeklyDeckFileName(input.projectName, input.meetingDate);
+    const fileName = weeklyDeckFileName(input.projectName, input.meetingDate, input.kind);
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;

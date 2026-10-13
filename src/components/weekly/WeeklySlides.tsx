@@ -1,12 +1,11 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowUp, ImagePlus, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Pencil, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
-import { uploadReportImage } from '@/lib/dashboard/report-media-client';
 import {
     reportMediaUrl, WEEKLY_SLIDE_LIMITS, WEEKLY_SLIDE_PART_SECTIONS, WEEKLY_SLIDE_SECTION_LABEL,
     type WeeklySlide, type WeeklySlidePart, type WeeklySlideSection,
@@ -20,6 +19,7 @@ import { FormField, FieldGroup } from '@/components/ui/FormField';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/Dialog';
 import { Skeleton } from '@/components/dashboard/v2/primitives';
+import { draftImages, makeImageUploader, pastedImages, ReportImagePicker, savedPaths, type DraftImage } from './ReportImagePicker';
 
 export type WeeklySlidesResponse = { slides: WeeklySlide[]; parts: WeeklySlidePart[] };
 
@@ -33,7 +33,7 @@ export function useWeeklySlides(meetingDate: string, enabled: boolean) {
 }
 
 const PART_HINT: Record<WeeklySlidePart, string> = {
-    marketing: 'Постер, контент, Page / Ads / CallPro / SMS-ийн дэлгэцийн зураг, дүгнэлт. Слайд бүр PowerPoint-д тусдаа слайд болно.',
+    marketing: 'Контент төлөвлөгөөнөөс гадуурх слайд: Page / Ads / CallPro / SMS / сэжим хуудасны дэлгэцийн зураг, дүгнэлт. Контентын постерыг контент төлөвлөгөөнд хавсаргана. Слайд бүр PowerPoint-д тусдаа слайд болно.',
     sales: 'Өдөрлөгийн зураг, хүлээлцсэн байдал, яригдаж буй гэрээ, энэ сарын ажил зэрэг системээс гардаггүй слайд.',
 };
 
@@ -101,14 +101,12 @@ export function WeeklySlides({ part, meetingDate, query, canWrite, canDelete }: 
                         <p className="mt-2 text-xs text-muted-foreground">Оруулсан: {slide.author_name || '—'}</p>
                     </li>;
                 })}
-            </ol> : <p className="rounded-xl bg-surface-2 p-4 text-sm text-muted-foreground">{canWrite ? 'Нэмэлт слайд алга. «Слайд нэмэх» дарж постер, дэлгэцийн зургаа оруулна уу.' : 'Нэмэлт слайд алга.'}</p>}
+            </ol> : <p className="rounded-xl bg-surface-2 p-4 text-sm text-muted-foreground">{canWrite ? 'Нэмэлт слайд алга. «Слайд нэмэх» дарж дэлгэцийн зургаа оруулна уу.' : 'Нэмэлт слайд алга.'}</p>}
             {editing && <SlideEditor key={editing === 'new' ? 'new' : editing.id} part={part} meetingDate={meetingDate} slide={editing === 'new' ? undefined : editing}
                 onClose={() => setEditing(null)} onSaved={() => { setEditing(null); void refresh(); }} />}
         </div>
     );
 }
-
-type DraftImage = { key: string; path?: string; url?: string; error?: string };
 
 function SlideEditor({ part, meetingDate, slide, onClose, onSaved }: { part: WeeklySlidePart; meetingDate: string; slide?: WeeklySlide; onClose: () => void; onSaved: () => void }) {
     const { shop } = useAuth();
@@ -116,51 +114,22 @@ function SlideEditor({ part, meetingDate, slide, onClose, onSaved }: { part: Wee
     const [section, setSection] = useState<WeeklySlideSection>(slide?.section ?? sections[0]);
     const [title, setTitle] = useState(slide?.title ?? '');
     const [note, setNote] = useState(slide?.note ?? '');
-    const [images, setImages] = useState<DraftImage[]>(() => (slide?.image_paths ?? []).map(path => ({ key: path, path, url: reportMediaUrl(path) })));
+    const [images, setImages] = useState<DraftImage[]>(() => draftImages(slide?.image_paths ?? []));
     const [uploading, setUploading] = useState(0);
-    const fileInput = useRef<HTMLInputElement>(null);
-    const paths = images.flatMap(image => image.path ? [image.path] : []);
+    const addFiles = makeImageUploader(part, images, setImages, setUploading);
+    const paths = savedPaths(images);
     const save = useMutation({
         mutationFn: () => slide
             ? dashboardMutate(`/api/dashboard/weekly-slides/${slide.id}`, 'PATCH', { section, title, note, imagePaths: paths }, { shopId: shop?.id })
             : dashboardMutate('/api/dashboard/weekly-slides', 'POST', { meetingDate, part, section, title, note, imagePaths: paths }, { shopId: shop?.id }),
         onSuccess: () => { toast.success('Слайд хадгалагдлаа'); onSaved(); },
     });
-
-    async function addFiles(files: Blob[]) {
-        const room = WEEKLY_SLIDE_LIMITS.images - images.length;
-        const accepted = files.filter(file => file.type.startsWith('image/')).slice(0, Math.max(0, room));
-        if (files.length > accepted.length) toast.error(`Нэг слайдад ${WEEKLY_SLIDE_LIMITS.images} хүртэл зураг (зөвхөн зураг) оруулна.`);
-        for (const file of accepted) {
-            const key = crypto.randomUUID();
-            setImages(current => [...current, { key }]);
-            setUploading(value => value + 1);
-            try {
-                const uploaded = await uploadReportImage(file, part);
-                setImages(current => current.map(image => image.key === key ? { key, ...uploaded } : image));
-            } catch (error) {
-                setImages(current => current.map(image => image.key === key ? { key, error: error instanceof Error ? error.message : 'Зургийг хадгалж чадсангүй.' } : image));
-            } finally {
-                setUploading(value => value - 1);
-            }
-        }
-    }
-
-    const move = (index: number, delta: number) => setImages(current => {
-        const next = [...current];
-        const [item] = next.splice(index, 1);
-        next.splice(index + delta, 0, item);
-        return next;
-    });
     const empty = !title.trim() && !note.trim() && !paths.length;
 
     return (
         <Dialog open onOpenChange={open => { if (!open && !save.isPending) onClose(); }}>
             <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
-                onPaste={event => {
-                    const files = [...event.clipboardData.items].filter(item => item.kind === 'file').map(item => item.getAsFile()).filter((file): file is File => !!file);
-                    if (files.length) { event.preventDefault(); void addFiles(files); }
-                }}>
+                onPaste={event => { const files = pastedImages(event); if (files.length) { event.preventDefault(); void addFiles(files); } }}>
                 <DialogHeader>
                     <DialogTitle>{slide ? 'Слайд засах' : 'Слайд нэмэх'}</DialogTitle>
                     <DialogDescription>Зураг сонгох, чирж оруулах эсвэл дэлгэцийн зургаа Ctrl+V / ⌘V-ээр шууд буулгана. JPEG/PNG хэвээр, бусдыг JPEG болгоно.</DialogDescription>
@@ -173,33 +142,11 @@ function SlideEditor({ part, meetingDate, slide, onClose, onSaved }: { part: Wee
                                 <SelectContent>{sections.map(value => <SelectItem key={value} value={value}>{WEEKLY_SLIDE_SECTION_LABEL[value]}</SelectItem>)}</SelectContent>
                             </Select>
                         </FormField>
-                        <FormField label="Гарчиг" htmlFor="slide-title" hint="Жишээ: «Дахин идэвхжүүлсэн контент: Дулаан зогсоолын постер»">
+                        <FormField label="Гарчиг" htmlFor="slide-title" hint={part === 'marketing' ? 'Жишээ: «Пэйж хандалт 09.15–09.22», «CallPro — алдсан дуудлага»' : 'Жишээ: «Дулаан зогсоол, агуулахын өдөрлөг»'}>
                             <Input id="slide-title" value={title} maxLength={WEEKLY_SLIDE_LIMITS.title} onChange={event => setTitle(event.target.value)} />
                         </FormField>
                         <FormField label={`Зураг (${images.length}/${WEEKLY_SLIDE_LIMITS.images})`}>
-                            <div className={cn('rounded-xl border border-dashed border-control p-3', images.length >= WEEKLY_SLIDE_LIMITS.images && 'opacity-70')}
-                                onDragOver={event => event.preventDefault()}
-                                onDrop={event => { event.preventDefault(); void addFiles([...event.dataTransfer.files]); }}>
-                                {images.length > 0 && <ul className="mb-3 grid grid-cols-3 gap-2">
-                                    {images.map((image, index) => <li key={image.key} className="relative overflow-hidden rounded-lg border border-border bg-surface-2">
-                                        {image.url
-                                            // eslint-disable-next-line @next/next/no-img-element
-                                            ? <img src={image.url} alt={`Зураг ${index + 1}`} className="aspect-square w-full object-contain" />
-                                            : <div className="flex aspect-square items-center justify-center p-2 text-center text-xs text-muted-foreground">{image.error ?? 'Оруулж байна…'}</div>}
-                                        <div className="absolute inset-x-0 bottom-0 flex justify-between bg-surface/90 p-0.5">
-                                            <span className="flex">
-                                                <Button type="button" variant="ghost" size="iconSm" aria-label="Зургийг өмнө нь" disabled={index === 0} onClick={() => move(index, -1)}><ArrowUp className="-rotate-90" /></Button>
-                                                <Button type="button" variant="ghost" size="iconSm" aria-label="Зургийг дараа нь" disabled={index === images.length - 1} onClick={() => move(index, 1)}><ArrowDown className="-rotate-90" /></Button>
-                                            </span>
-                                            <Button type="button" variant="ghost" size="iconSm" aria-label="Зургийг хасах" onClick={() => setImages(current => current.filter(item => item.key !== image.key))}><X /></Button>
-                                        </div>
-                                    </li>)}
-                                </ul>}
-                                <input ref={fileInput} type="file" accept="image/*" multiple className="sr-only" tabIndex={-1} aria-hidden
-                                    onChange={event => { void addFiles([...(event.target.files ?? [])]); event.target.value = ''; }} />
-                                <Button type="button" variant="tertiary" size="sm" disabled={images.length >= WEEKLY_SLIDE_LIMITS.images} onClick={() => fileInput.current?.click()}><ImagePlus />Зураг сонгох</Button>
-                                <span className="ml-3 text-xs text-muted-foreground">эсвэл энд чирж оруулах, Ctrl+V</span>
-                            </div>
+                            <ReportImagePicker images={images} setImages={setImages} addFiles={addFiles} />
                         </FormField>
                         <FormField label="Тайлбар, дүгнэлт" htmlFor="slide-note" hint="Слайдын доор (урт бол хажууд) харагдана.">
                             <Textarea id="slide-note" rows={4} value={note} maxLength={WEEKLY_SLIDE_LIMITS.note} onChange={event => setNote(event.target.value)}
@@ -208,7 +155,6 @@ function SlideEditor({ part, meetingDate, slide, onClose, onSaved }: { part: Wee
                     </FieldGroup>
                 </form>
                 {save.error && <Alert variant="danger">{save.error.message}</Alert>}
-                {images.some(image => image.error) && <p className="text-xs text-status-danger">Алдаатай зургийг хасаад дахин оруулна уу — хадгалахад орохгүй.</p>}
                 <DialogFooter>
                     <Button type="button" variant="secondary" disabled={save.isPending} onClick={onClose}>Болих</Button>
                     <Button type="submit" form="weekly-slide-form" isLoading={save.isPending} disabled={empty || uploading > 0}>{uploading ? 'Зураг оруулж байна…' : 'Хадгалах'}</Button>

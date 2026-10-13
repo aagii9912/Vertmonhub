@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { meetingDateSchema } from './weekly-review';
+import { parseReportMediaPath } from './report-media';
 
 /**
  * Лхагвагийн хурлын нэмэлт слайд (client-safe): өгөгдлийн сангаас гардаггүй постер, контент,
@@ -39,26 +40,9 @@ export const WEEKLY_SLIDE_PART_SECTIONS: Record<WeeklySlidePart, readonly Weekly
 };
 
 export const WEEKLY_SLIDE_LIMITS = { images: 6, title: 200, note: 2000, slides: 60, imageBytes: 4 * 1024 * 1024 } as const;
-export const REPORT_MEDIA_BUCKET = 'report-media';
-export const REPORT_MEDIA_ENDPOINT = '/api/dashboard/weekly-slides/media';
-/** PowerPoint-д найдвартай орох төрлүүд л. Бусдыг (WEBP, HEIC, GIF) хөтөч JPEG болгож илгээнэ. */
-export const REPORT_MEDIA_TYPES: Record<string, 'jpg' | 'png'> = { 'image/jpeg': 'jpg', 'image/png': 'png' };
+export { parseReportMediaPath, REPORT_MEDIA_BUCKET, REPORT_MEDIA_ENDPOINT, REPORT_MEDIA_TYPES, reportMediaUrl } from './report-media';
 
 const uuid = z.uuid();
-const PATH_PATTERN = /^([0-9a-f-]{36})\/([0-9a-f-]{36})\/([0-9a-f-]{36})\.(jpg|png)$/;
-
-/** `<shop_id>/<user_id>/<uuid>.<jpg|png>` — бусад хэлбэрийг (давхар өргөтгөл, `..`, том үсэг) татгалзана. */
-export function parseReportMediaPath(value: unknown): { path: string; shopId: string; userId: string; ext: 'jpg' | 'png' } | null {
-    if (typeof value !== 'string' || value.length > 200) return null;
-    const match = PATH_PATTERN.exec(value);
-    if (!match || ![match[1], match[2], match[3]].every(id => uuid.safeParse(id).success)) return null;
-    return { path: value, shopId: match[1], userId: match[2], ext: match[4] as 'jpg' | 'png' };
-}
-
-export function reportMediaUrl(path: string): string {
-    return `${REPORT_MEDIA_ENDPOINT}?path=${encodeURIComponent(path)}`;
-}
-
 const MediaPathSchema = z.string().refine(value => !!parseReportMediaPath(value), 'Зургийн зам буруу байна');
 const imagePaths = z.array(MediaPathSchema).max(WEEKLY_SLIDE_LIMITS.images, `Нэг слайдад ${WEEKLY_SLIDE_LIMITS.images} хүртэл зураг`)
     .refine(paths => new Set(paths).size === paths.length, 'Ижил зураг давхардсан байна');

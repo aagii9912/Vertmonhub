@@ -51,7 +51,7 @@ const weeklySalesFixture = () => {
 
 async function setup(page: Page, restricted = false) {
     const state = { updates: [] as Record<string, unknown>[], failure: false, failSave: false, missingFx: false, requests: [] as string[], errors: [] as string[], writes: 0,
-        kpiWrites: [] as Record<string, unknown>[], slides: [] as Record<string, unknown>[], media: new Map<string, Buffer>() };
+        kpiWrites: [] as Record<string, unknown>[], slides: [] as Record<string, unknown>[], media: new Map<string, Buffer>(), content: [] as Record<string, unknown>[] };
     page.on('pageerror', error => state.errors.push(error.message));
     await page.route('**/api/**', async route => {
         const request = route.request();
@@ -156,6 +156,25 @@ async function setup(page: Page, restricted = false) {
             }
             const body = state.media.get(url.searchParams.get('path') || '');
             return body ? route.fulfill({ status: 200, contentType: 'image/png', body }) : reply({ error: 'Зураг олдсонгүй' }, 404);
+        }
+        if (path === '/api/marketing/content-plan') {
+            if (request.method() === 'POST') {
+                const body = request.postDataJSON();
+                const item = { id: `00000000-0000-4000-8000-0000000002${String(state.content.length).padStart(2, '0')}`, title: body.title, type: body.type, platform: body.platform ?? null,
+                    scheduled_date: body.scheduledDate, scheduled_time: null, status: body.status ?? 'planned', description: body.description || null, assigned_to: body.assignedTo || null,
+                    color: '#3B82F6', image_paths: body.imagePaths ?? [], created_by: userId, updated_at: new Date().toISOString() };
+                state.content.push(item);
+                return reply({ item }, 201);
+            }
+            const from = url.searchParams.get('from')!, to = url.searchParams.get('to')!;
+            return reply({ items: state.content.filter(item => String(item.scheduled_date) >= from && String(item.scheduled_date) <= to) });
+        }
+        if (path.startsWith('/api/marketing/content-plan/') && request.method() === 'PATCH') {
+            const item = state.content.find(entry => path.endsWith(String(entry.id)));
+            if (!item) return reply({ error: 'Контент олдсонгүй' }, 404);
+            const body = request.postDataJSON();
+            Object.assign(item, body.status ? { status: body.status } : {}, { updated_at: new Date().toISOString() });
+            return reply({ item });
         }
         if (path === '/api/dashboard/weekly-slides') {
             if (request.method() === 'POST') {
@@ -267,7 +286,7 @@ for (const compact of [false, true]) {
             await page.emulateMedia({ media: 'screen' });
             await page.setViewportSize({ width: 1440, height: 1050 });
         }
-        await page.getByRole('link', { name: 'Маркетингийн үр дүн дэлгэрэнгүй', exact: true }).click();
+        await page.getByRole('link', { name: 'Лидийн эх сурвалж, хөрвөлт дэлгэрэнгүй', exact: true }).click();
         await expect(page).toHaveURL(new RegExp(`/marketing\\?from=${range.from}&to=${range.to}$`));
         await expect(page.getByLabel('Эхлэх өдөр', { exact: true })).toHaveValue(range.from);
         await expect(page.getByLabel('Дуусах өдөр', { exact: true })).toHaveValue(range.to);
@@ -333,43 +352,68 @@ test('ханшгүй зардалтай хурлын тайлан өртгийг
     expect(state.errors).toEqual([]);
 });
 
-test('маркетингийн постер слайд болж, хурлын тайлан .pptx-ээр татагдана', async ({ page }) => {
+const pptxText = async (path: string) => {
+    const zip = await JSZip.loadAsync(readFileSync(path));
+    const slides = await Promise.all(Object.keys(zip.files).filter(name => /^ppt\/slides\/slide\d+\.xml$/.test(name)).map(name => zip.file(name)!.async('string')));
+    return { text: slides.join(' '), media: Object.keys(zip.files).filter(name => name.startsWith('ppt/media/') && !name.endsWith('/')) };
+};
+
+test('маркетинг өөрийн контент төлөвлөгөөгөөр, борлуулалтаас тусдаа слайд гаргана', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1050 });
     const state = await setup(page);
     await page.goto('/dashboard/weekly');
-    const posters = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Постер, контент, дэлгэцийн зураг', exact: true }) });
-    await expect(posters).toContainText('Нэмэлт слайд алга.');
-    await posters.getByRole('button', { name: 'Слайд нэмэх', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Слайд нэмэх' });
-    await expect(dialog.getByRole('button', { name: 'Хадгалах', exact: true })).toBeDisabled();
-    await dialog.getByLabel('Гарчиг', { exact: true }).fill('Онцлох орон сууц: 201 мкв 5 өрөө');
+    // Маркетингийн контент: төлөвлөх → постер хавсаргах → нийтэлсэн.
+    const plan = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Маркетинг — контент төлөвлөгөө ба гүйцэтгэл', exact: true }) });
+    await expect(plan).toContainText('Энэ долоо хоногт контент төлөвлөөгүй.');
+    await plan.getByRole('button', { name: 'Контент нэмэх', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Шинэ контент' });
+    await dialog.getByPlaceholder('Контентын гарчиг').fill('Онцлох орон сууц: 201 мкв 5 өрөө');
+    await dialog.getByLabel('Огноо', { exact: true }).fill(range.from);
+    await dialog.getByLabel('Хариуцагч', { exact: true }).fill('Анужин');
     await dialog.locator('input[type=file]').setInputFiles({ name: 'poster.png', mimeType: 'image/png', buffer: PNG });
     await expect(dialog.getByRole('img', { name: 'Зураг 1' })).toBeVisible();
-    await dialog.getByLabel('Тайлбар, дүгнэлт', { exact: true }).fill('Reel-ийн хүрэлт 3% өссөн.');
     mkdirSync('output/workday', { recursive: true });
-    await page.screenshot({ path: 'output/workday/desktop-weekly-slide-dialog.png' });
-    await dialog.getByRole('button', { name: 'Хадгалах', exact: true }).click();
+    await page.screenshot({ path: 'output/workday/desktop-weekly-content-dialog.png' });
+    await dialog.getByRole('button', { name: 'Үүсгэх', exact: true }).click();
     await expect(dialog).toBeHidden();
-    await expect(posters.getByRole('heading', { name: 'Онцлох орон сууц: 201 мкв 5 өрөө', exact: true })).toBeVisible();
-    await expect(posters.getByRole('img', { name: /зураг 1$/ })).toBeVisible();
-    expect(state.slides).toHaveLength(1);
-    await posters.screenshot({ path: 'output/workday/desktop-weekly-slides.png' });
-    expect(state.slides[0]).toMatchObject({ part: 'marketing', section: 'social', image_paths: [...state.media.keys()] });
+    expect(state.content[0]).toMatchObject({ status: 'planned', assigned_to: 'Анужин', image_paths: [...state.media.keys()] });
+    await plan.getByLabel('Онцлох орон сууц: 201 мкв 5 өрөө — төлөв').selectOption('published');
+    await expect.poll(() => state.content[0].status).toBe('published');
+    await expect(plan.getByText('Төлөвлөгөөний 100%')).toBeVisible();
+    await plan.screenshot({ path: 'output/workday/desktop-weekly-content-plan.png' });
 
-    const download = page.waitForEvent('download');
-    await page.getByRole('button', { name: 'Слайд (.pptx)', exact: true }).click();
-    const file = await download;
-    expect(file.suggestedFilename()).toBe(`Vertmon · Туршилтын өгөгдөл - Лхагва ${meetingDate}.pptx`);
-    await file.saveAs('output/workday/weekly-meeting.pptx');
-    const zip = await JSZip.loadAsync(readFileSync('output/workday/weekly-meeting.pptx'));
-    const slides = await Promise.all(Object.keys(zip.files).filter(name => /^ppt\/slides\/slide\d+\.xml$/.test(name)).map(name => zip.file(name)!.async('string')));
-    const text = slides.join(' ');
-    expect(text).toContain('Онцлох орон сууц: 201 мкв 5 өрөө');
-    expect(text).toContain('Энэ долоо хоногийн гэрээ');
-    expect(text).toContain('Орон сууцны үлдэгдэл — Б1 блок');
-    expect(text).toContain('Сувгийн экспорт, Meta API');
-    expect(Object.keys(zip.files).filter(name => name.startsWith('ppt/media/') && !name.endsWith('/'))).toHaveLength(1);
-    await expect(page.getByText('Хурлын слайд (.pptx) татагдлаа')).toBeVisible();
+    // Сувгийн дэлгэцийн зураг нэмэлт слайдаар.
+    const extra = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Дэлгэцийн зураг, нэмэлт слайд', exact: true }) });
+    await extra.getByRole('button', { name: 'Слайд нэмэх', exact: true }).click();
+    const slideDialog = page.getByRole('dialog', { name: 'Слайд нэмэх' });
+    await slideDialog.getByLabel('Гарчиг', { exact: true }).fill('CallPro — алдсан дуудлага');
+    await slideDialog.getByLabel('Тайлбар, дүгнэлт', { exact: true }).fill('Алдсан дуудлага 12:00 цагт төвлөрсөн.');
+    await slideDialog.getByRole('button', { name: 'Хадгалах', exact: true }).click();
+    await expect(slideDialog).toBeHidden();
+    await expect(extra.getByRole('heading', { name: 'CallPro — алдсан дуудлага', exact: true })).toBeVisible();
+
+    const marketingDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Маркетингийн слайд', exact: true }).click();
+    const marketingFile = await marketingDownload;
+    expect(marketingFile.suggestedFilename()).toBe(`Vertmon · Туршилтын өгөгдөл - Маркетинг - Лхагва ${meetingDate}.pptx`);
+    await marketingFile.saveAs('output/workday/weekly-marketing.pptx');
+    const marketingDeck = await pptxText('output/workday/weekly-marketing.pptx');
+    for (const needle of ['МАРКЕТИНГИЙН АЛБА', 'Контент төлөвлөгөө ба гүйцэтгэл', 'Онцлох орон сууц: 201 мкв 5 өрөө', 'CallPro — алдсан дуудлага', 'Сувгийн экспорт, Meta API', 'Төсөв ба зарцуулалт']) {
+        expect(marketingDeck.text).toContain(needle);
+    }
+    for (const needle of ['Энэ долоо хоногийн гэрээ', 'Лидийн эх сурвалж', 'Менежерт шилжсэн', 'Эзэнгүй 3 лид']) expect(marketingDeck.text).not.toContain(needle);
+    expect(marketingDeck.media).toHaveLength(1);
+    await expect(page.getByText('Маркетингийн слайд (.pptx) татагдлаа')).toBeVisible();
+
+    const salesDownload = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Борлуулалтын слайд', exact: true }).click();
+    const salesFile = await salesDownload;
+    expect(salesFile.suggestedFilename()).toBe(`Vertmon · Туршилтын өгөгдөл - Борлуулалт - Лхагва ${meetingDate}.pptx`);
+    await salesFile.saveAs('output/workday/weekly-sales.pptx');
+    const salesDeck = await pptxText('output/workday/weekly-sales.pptx');
+    for (const needle of ['Борлуулалтын тойм', 'Энэ долоо хоногийн гэрээ', 'Орон сууцны үлдэгдэл — Б1 блок', 'Лидийн эх сурвалж, хөрвөлт', 'Эзэнгүй 3 лид']) expect(salesDeck.text).toContain(needle);
+    for (const needle of ['Контент төлөвлөгөө', 'Онцлох орон сууц', 'CallPro — алдсан дуудлага', 'Сувгийн экспорт']) expect(salesDeck.text).not.toContain(needle);
+    expect(salesDeck.media).toHaveLength(0);
     expect(state.errors).toEqual([]);
 });
 

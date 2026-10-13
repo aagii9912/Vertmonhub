@@ -32,7 +32,9 @@ const VERIFY = {
     '20261013140000': `SELECT to_regclass('public.weekly_report_slides') IS NOT NULL
         AND EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'report-media' AND public = false)
         AND EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'report_media_server_only')
-        AND NOT has_table_privilege('authenticated', 'public.weekly_report_slides', 'SELECT') AS ok`,
+        AND NOT has_table_privilege('authenticated', 'public.weekly_report_slides', 'SELECT')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'content_calendar' AND column_name = 'image_paths')
+        AND EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'content_calendar' AND column_name = 'created_by') AS ok`,
     '20261008130000': `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
         AND table_name = 'team_sales_targets' AND column_name = 'block_amounts')
         AND position('v_blocks' in pg_get_functiondef('public.save_team_monthly_sales(uuid,integer,jsonb,uuid)'::regprocedure)) > 0 AS ok`,

@@ -5,8 +5,10 @@
 --
 -- • weekly_report_slides — хэсэг (sales/marketing), сэдэв, тайлбар, дүгнэлт, зургийн зам (≤ 6), дараалал.
 --   Хэсгийн эрх: sales = reports, marketing = marketing-roi (API шалгана).
+-- • content_calendar.image_paths, created_by — маркетингийн контент төлөвлөгөөний контент бүрийн постер.
 -- • report-media — хувийн bucket (≤ 4 MB, JPEG/PNG). Зам: <shop_id>/<user_id>/<uuid>.<jpg|png>.
---   Татах бүрд /api/dashboard/weekly-slides/media нэвтрэлт, shop-ийн гишүүнчлэл, хэсгийн эрхийг дахин шалгана.
+--   Татах бүрд /api/dashboard/weekly-slides/media нэвтрэлт, shop-ийн гишүүнчлэл, зургийг ашигласан
+--   слайд/контентын модулийг дахин шалгана.
 --
 -- Additive, дахин ажиллуулж болно. Browser шууд хандахгүй: API эрх, shop шалгаад service_role-оор бичнэ.
 
@@ -40,6 +42,17 @@ COMMENT ON TABLE public.weekly_report_slides IS 'Лхагвагийн хурлы
 ALTER TABLE public.weekly_report_slides ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON TABLE public.weekly_report_slides FROM PUBLIC, anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.weekly_report_slides TO service_role;
+
+-- Маркетингийн контент төлөвлөгөө (`content_calendar`, «Контент календарь»): контент бүр постер/reel-ийн
+-- зурагтай (≤ 6) байж, Лхагвагийн маркетингийн слайдад нийтэлсэн контент өөрийн зурагтайгаа гарна.
+-- `created_by` — өөрийн үүсгэсэн контентыг устгах эрхийн шалгалтад. Хуучин мөрүүд NULL хэвээр.
+ALTER TABLE public.content_calendar ADD COLUMN IF NOT EXISTS image_paths text[] NOT NULL DEFAULT '{}';
+ALTER TABLE public.content_calendar ADD COLUMN IF NOT EXISTS created_by uuid;
+DO $$ BEGIN
+    ALTER TABLE public.content_calendar ADD CONSTRAINT content_calendar_image_paths_max CHECK (cardinality(image_paths) <= 6);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+CREATE INDEX IF NOT EXISTS content_calendar_images_idx ON public.content_calendar USING gin (image_paths);
+CREATE INDEX IF NOT EXISTS content_calendar_shop_date_idx ON public.content_calendar (shop_id, scheduled_date);
 
 -- Слайдын зураг нийтийн байрны зургийн bucket-тэй холилдохгүй.
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
