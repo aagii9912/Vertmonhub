@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
+import JSZip from 'jszip';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import { buildOperationsReport } from '../src/lib/dashboard/operations-report';
 import { buildMarketingPerformance, previousRange, type MarketingActivity, type MarketingSpend } from '../src/lib/marketing/performance';
@@ -13,6 +14,8 @@ import { managerActivityFixture } from './support/manager-activity';
 import { COMPACT_VIEWPORT } from './support/viewports';
 
 const userId = '00000000-0000-4000-8000-000000000001';
+// 1×1 PNG — маркетингийн постерын орлуулга.
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', 'base64');
 const shopId = '00000000-0000-4000-8000-000000000002';
 const meetingDate = nextMeetingDate();
 const range = weeklyReviewRange(meetingDate);
@@ -48,7 +51,7 @@ const weeklySalesFixture = () => {
 
 async function setup(page: Page, restricted = false) {
     const state = { updates: [] as Record<string, unknown>[], failure: false, failSave: false, missingFx: false, requests: [] as string[], errors: [] as string[], writes: 0,
-        kpiWrites: [] as Record<string, unknown>[] };
+        kpiWrites: [] as Record<string, unknown>[], slides: [] as Record<string, unknown>[], media: new Map<string, Buffer>() };
     page.on('pageerror', error => state.errors.push(error.message));
     await page.route('**/api/**', async route => {
         const request = route.request();
@@ -144,6 +147,25 @@ async function setup(page: Page, restricted = false) {
             ];
             return reply({ report: buildMarketingPerformance({ projects: [], activities, targets: [], spend, leads: marketingLeads,
                 contracts: [{ lead_id: 'marketing-0', contract_date: selected.to, contract_number: 'VM-1', total_price: 286000000, contract_status: 'active' }, { lead_id: 'marketing-1', contract_date: selected.to, contract_number: 'VM-2', total_price: 286000000, contract_status: 'active' }] }, selected), projects: [], activities, spend: spend.filter(item => item.spent_at >= selected.from) });
+        }
+        if (path === '/api/dashboard/weekly-slides/media') {
+            if (request.method() === 'POST') {
+                const mediaPath = `${shopId}/${userId}/00000000-0000-4000-8000-00000000000${state.media.size + 1}.png`;
+                state.media.set(mediaPath, PNG);
+                return reply({ path: mediaPath, url: `/api/dashboard/weekly-slides/media?path=${encodeURIComponent(mediaPath)}` }, 201);
+            }
+            const body = state.media.get(url.searchParams.get('path') || '');
+            return body ? route.fulfill({ status: 200, contentType: 'image/png', body }) : reply({ error: 'Зураг олдсонгүй' }, 404);
+        }
+        if (path === '/api/dashboard/weekly-slides') {
+            if (request.method() === 'POST') {
+                const body = request.postDataJSON();
+                const slide = { id: `00000000-0000-4000-8000-0000000001${String(state.slides.length).padStart(2, '0')}`, meeting_date: body.meetingDate, part: body.part, section: body.section,
+                    title: body.title, note: body.note, image_paths: body.imagePaths, position: state.slides.length, author_id: userId, author_name: 'Номин', updated_at: new Date().toISOString() };
+                state.slides.push(slide);
+                return reply({ slide }, 201);
+            }
+            return reply({ slides: state.slides.filter(slide => slide.meeting_date === url.searchParams.get('meetingDate')), parts: ['sales', 'marketing'] });
         }
         if (path === '/api/ai-assistant/conversations') return reply({ conversations: [] });
         return reply({ error: `Unimplemented fixture: ${path}` }, 501);
@@ -311,12 +333,54 @@ test('ханшгүй зардалтай хурлын тайлан өртгийг
     expect(state.errors).toEqual([]);
 });
 
+test('маркетингийн постер слайд болж, хурлын тайлан .pptx-ээр татагдана', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1050 });
+    const state = await setup(page);
+    await page.goto('/dashboard/weekly');
+    const posters = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Постер, контент, дэлгэцийн зураг', exact: true }) });
+    await expect(posters).toContainText('Нэмэлт слайд алга.');
+    await posters.getByRole('button', { name: 'Слайд нэмэх', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Слайд нэмэх' });
+    await expect(dialog.getByRole('button', { name: 'Хадгалах', exact: true })).toBeDisabled();
+    await dialog.getByLabel('Гарчиг', { exact: true }).fill('Онцлох орон сууц: 201 мкв 5 өрөө');
+    await dialog.locator('input[type=file]').setInputFiles({ name: 'poster.png', mimeType: 'image/png', buffer: PNG });
+    await expect(dialog.getByRole('img', { name: 'Зураг 1' })).toBeVisible();
+    await dialog.getByLabel('Тайлбар, дүгнэлт', { exact: true }).fill('Reel-ийн хүрэлт 3% өссөн.');
+    mkdirSync('output/workday', { recursive: true });
+    await page.screenshot({ path: 'output/workday/desktop-weekly-slide-dialog.png' });
+    await dialog.getByRole('button', { name: 'Хадгалах', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(posters.getByRole('heading', { name: 'Онцлох орон сууц: 201 мкв 5 өрөө', exact: true })).toBeVisible();
+    await expect(posters.getByRole('img', { name: /зураг 1$/ })).toBeVisible();
+    expect(state.slides).toHaveLength(1);
+    await posters.screenshot({ path: 'output/workday/desktop-weekly-slides.png' });
+    expect(state.slides[0]).toMatchObject({ part: 'marketing', section: 'social', image_paths: [...state.media.keys()] });
+
+    const download = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'Слайд (.pptx)', exact: true }).click();
+    const file = await download;
+    expect(file.suggestedFilename()).toBe(`Vertmon · Туршилтын өгөгдөл - Лхагва ${meetingDate}.pptx`);
+    await file.saveAs('output/workday/weekly-meeting.pptx');
+    const zip = await JSZip.loadAsync(readFileSync('output/workday/weekly-meeting.pptx'));
+    const slides = await Promise.all(Object.keys(zip.files).filter(name => /^ppt\/slides\/slide\d+\.xml$/.test(name)).map(name => zip.file(name)!.async('string')));
+    const text = slides.join(' ');
+    expect(text).toContain('Онцлох орон сууц: 201 мкв 5 өрөө');
+    expect(text).toContain('Энэ долоо хоногийн гэрээ');
+    expect(text).toContain('Орон сууцны үлдэгдэл — Б1 блок');
+    expect(text).toContain('Сувгийн экспорт, Meta API');
+    expect(Object.keys(zip.files).filter(name => name.startsWith('ppt/media/') && !name.endsWith('/'))).toHaveLength(1);
+    await expect(page.getByText('Хурлын слайд (.pptx) татагдлаа')).toBeVisible();
+    expect(state.errors).toEqual([]);
+});
+
 test('хувийн эрхтэй хэрэглэгч нэгдсэн тайлан дуудахгүй', async ({ page }) => {
     const state = await setup(page, true);
     await page.goto('/dashboard/weekly');
     await expect(page.getByRole('heading', { name: 'Миний явц, хэлэлцэх зүйл' })).toBeVisible();
     expect(state.requests).not.toContain('/api/dashboard/reports/operations');
     expect(state.requests).not.toContain('/api/marketing/performance');
+    expect(state.requests).not.toContain('/api/dashboard/weekly-slides');
+    await expect(page.getByRole('button', { name: 'Слайд нэмэх' })).toHaveCount(0);
     expect(state.errors).toEqual([]);
 });
 

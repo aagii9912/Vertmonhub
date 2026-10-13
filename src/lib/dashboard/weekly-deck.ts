@@ -1,0 +1,582 @@
+import type PptxGenJS from 'pptxgenjs';
+import type { OperationsReport } from './operations-report';
+import type { WeeklySalesReport } from './weekly-sales';
+import type { WeeklyUpdate } from './weekly-review';
+import { formatReviewChange } from './weekly-review';
+import { WEEKLY_SLIDE_PART_LABEL, WEEKLY_SLIDE_SECTION_LABEL, type WeeklySlide } from './weekly-slides';
+import type { MarketingPerformance } from '@/lib/marketing/performance';
+import type { BudgetOverview } from '@/lib/marketing/budget';
+import type { ChannelReportMatches } from '@/lib/marketing/channel-reports-load';
+import { CHANNEL_SOURCE_LABELS, CHANNEL_SOURCES, channelKeyMetrics, channelMetric, type ChannelSource } from '@/lib/marketing/channel-reports';
+import { formatMNT, formatMNTShort } from '@/lib/utils/currency';
+
+/**
+ * Лхагва гарагийн хурлын тайланг PowerPoint (.pptx) болгоно — хурлыг слайдаар явуулдаг тул.
+ * Цэвэр функц: өгөгдөл (хуудасны ачаалсан, эрхээр шүүгдсэн тайлангууд) + зураг → слайдууд.
+ * Хөтөч (lib/dashboard/weekly-deck-export.ts) болон тест хоёулаа ашиглана.
+ *
+ * Дүрэм нь хуудастай ижил: хоосон дүнг 0 гэж бичихгүй («—»), гэрээний дүн, мөнгөн орлого,
+ * зардлыг холихгүй, эх сурвалж ба хязгаарлалтыг слайдын тэмдэглэлд (notes) бичнэ.
+ */
+export interface DeckImage { data: string; width: number; height: number }
+
+export interface WeeklyDeckInput {
+    projectName: string;
+    meetingDate: string;
+    range: { from: string; to: string };
+    previousRange: { from: string; to: string };
+    /** «2026.10.13 14:05» — хэзээ бэлтгэсэн. */
+    generatedAt: string;
+    discussion: { title: string; detail: string }[];
+    notices: string[];
+    sales?: OperationsReport;
+    previousSales?: OperationsReport;
+    /** Тухайн сарын бүтэн хугацааны тайлан — сарын төлөвлөгөө, гүйцэтгэл (удирдлагын оруулсан). */
+    monthSales?: OperationsReport;
+    weeklySales?: WeeklySalesReport;
+    marketing?: MarketingPerformance;
+    budget?: { year: number; month: number; overview: BudgetOverview } | null;
+    channels?: ChannelReportMatches | null;
+    slides: WeeklySlide[];
+    /** Зургийн зам → `image/jpeg;base64,...` ба хэмжээ. Ачаалж чадаагүй зураг байхгүй байж болно. */
+    images: Record<string, DeckImage>;
+    updates?: WeeklyUpdate[];
+}
+
+const W = 13.333;
+const H = 7.5;
+const M = 0.6;
+const CW = W - M * 2;
+const FONT = 'Arial';
+const C = {
+    ink: '12151C', ink2: '3A404C', muted: '5C6474', line: 'E3E6EB', surface: 'F0F2F5', white: 'FFFFFF',
+    brand: '2D5FDD', brandSoft: 'EBF0FD', navy: '0E1A3A', navy2: 'A9B8E8',
+    success: '13784A', successSoft: 'E5F5EC', pending: '9A5A00', pendingSoft: 'FDF2DF',
+    danger: 'C0362C', dangerSoft: 'FCEBE9', neutralSoft: 'E6E9EE', gold: 'A9823F',
+} as const;
+const CONTENT = 'VH_CONTENT';
+const COVER = 'VH_COVER';
+const TOP = 1.7;
+const BOTTOM = 6.85;
+
+const dot = (date: string) => date.replaceAll('-', '.');
+const span = (range: { from: string; to: string }) => `${dot(range.from)} – ${dot(range.to)}`;
+const count = (value: number | null | undefined) => value === null || value === undefined ? '—' : value.toLocaleString('en-US');
+const pct = (value: number | null | undefined) => value === null || value === undefined ? '—' : `${value}%`;
+const area = (value: number | null) => value === null ? '—' : value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+const money = (value: number | null | undefined) => value === null || value === undefined ? '—' : formatMNT(value);
+const short = (value: number | null | undefined) => value === null || value === undefined ? '—' : formatMNTShort(value);
+const clip = (text: string, max: number) => text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
+const managerShort = (name: string | null) => name?.split('.')[0]?.trim() || '—';
+
+type Slide = PptxGenJS.Slide;
+type Cell = PptxGenJS.TableCell;
+
+function defineLayouts(pres: PptxGenJS, projectName: string) {
+    pres.defineSlideMaster({ title: COVER, background: { color: C.navy } });
+    pres.defineSlideMaster({
+        title: CONTENT,
+        background: { color: C.white },
+        objects: [
+            { text: { text: `VERTMON HUB · ${projectName}`, options: { x: M, y: 7.02, w: 8, h: 0.3, fontFace: FONT, fontSize: 9, color: C.muted, margin: 0 } } },
+        ],
+        slideNumber: { x: W - M - 0.6, y: 7.02, w: 0.6, h: 0.3, fontFace: FONT, fontSize: 9, color: C.muted, align: 'right' },
+    });
+}
+
+function header(slide: Slide, kicker: string, title: string, subtitle?: string) {
+    slide.addText(kicker.toUpperCase(), { x: M, y: 0.38, w: CW, h: 0.28, fontFace: FONT, fontSize: 11, bold: true, color: C.brand, charSpacing: 1, margin: 0, isTextBox: true });
+    slide.addText(title, { x: M, y: 0.68, w: CW, h: 0.6, fontFace: FONT, fontSize: 26, bold: true, color: C.ink, margin: 0, valign: 'middle', fit: 'shrink', isTextBox: true });
+    if (subtitle) slide.addText(subtitle, { x: M, y: 1.28, w: CW, h: 0.3, fontFace: FONT, fontSize: 12, color: C.muted, margin: 0, isTextBox: true });
+}
+
+function content(pres: PptxGenJS, kicker: string, title: string, subtitle?: string): Slide {
+    const slide = pres.addSlide({ masterName: CONTENT });
+    header(slide, kicker, title, subtitle);
+    return slide;
+}
+
+function note(slide: Slide, lines: (string | false | null | undefined)[]) {
+    const text = lines.filter(Boolean).join('\n');
+    if (text) slide.addNotes(text);
+}
+
+/** Тоон карт: шошго, том тоо, доор тайлбар. */
+function stat(slide: Slide, x: number, y: number, w: number, h: number, label: string, value: string, helper?: string, tone?: 'danger' | 'gold') {
+    slide.addShape('roundRect', { x, y, w, h, fill: { color: C.surface }, line: { color: C.surface }, rectRadius: 0.08 });
+    slide.addText(label, { x: x + 0.22, y: y + 0.16, w: w - 0.44, h: 0.3, fontFace: FONT, fontSize: 11, color: C.muted, margin: 0, isTextBox: true });
+    slide.addText(value, { x: x + 0.22, y: y + 0.46, w: w - 0.44, h: 0.62, fontFace: FONT, fontSize: value.length > 14 ? 20 : 26, bold: true, color: tone === 'danger' ? C.danger : tone === 'gold' ? C.gold : C.ink, margin: 0, valign: 'middle', fit: 'shrink', isTextBox: true });
+    if (helper) slide.addText(helper, { x: x + 0.22, y: y + 1.08, w: w - 0.44, h: Math.max(0.3, h - 1.2), fontFace: FONT, fontSize: 10, color: C.muted, margin: 0, valign: 'top', isTextBox: true });
+}
+
+function statRow(slide: Slide, y: number, items: { label: string; value: string; helper?: string; tone?: 'danger' | 'gold' }[], h = 1.55) {
+    const gap = 0.25;
+    const w = (CW - gap * (items.length - 1)) / items.length;
+    items.forEach((item, index) => stat(slide, M + index * (w + gap), y, w, h, item.label, item.value, item.helper, item.tone));
+}
+
+const headCell = (text: string, align: 'left' | 'right' | 'center' = 'left'): Cell => ({ text, options: { bold: true, color: C.muted, fill: { color: C.surface }, align } });
+const bodyCell = (text: string, align: 'left' | 'right' | 'center' = 'left', extra: PptxGenJS.TableCellProps = {}): Cell => ({ text, options: { color: C.ink, align, ...extra } });
+
+/** Хүснэгтийг шаардлагатай бол хэд хэдэн слайдад хуваана (гарчигт «1/2»). */
+function tableSlides(pres: PptxGenJS, opts: {
+    kicker: string; title: string; subtitle?: string; head: Cell[]; rows: Cell[][]; footer?: Cell[];
+    colW: number[]; perSlide: number; fontSize?: number; notes?: string[];
+}) {
+    const pages = Math.max(1, Math.ceil(opts.rows.length / opts.perSlide));
+    for (let page = 0; page < pages; page++) {
+        const slide = content(pres, opts.kicker, pages > 1 ? `${opts.title} (${page + 1}/${pages})` : opts.title, opts.subtitle);
+        const rows = opts.rows.slice(page * opts.perSlide, (page + 1) * opts.perSlide);
+        const last = page === pages - 1;
+        slide.addTable([opts.head, ...rows, ...(last && opts.footer ? [opts.footer] : [])], {
+            x: M, y: opts.subtitle ? TOP : TOP - 0.2, w: CW, colW: opts.colW, fontFace: FONT, fontSize: opts.fontSize ?? 11,
+            border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.04, 0.08, 0.04, 0.08], autoPage: false,
+        });
+        note(slide, opts.notes ?? []);
+    }
+}
+
+function coverSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
+    const slide = pres.addSlide({ masterName: COVER });
+    slide.addText('ЛХАГВА ГАРАГИЙН ХУРАЛ', { x: M + 0.2, y: 1.6, w: 10, h: 0.4, fontFace: FONT, fontSize: 14, bold: true, color: C.navy2, charSpacing: 2, margin: 0, isTextBox: true });
+    slide.addText(input.projectName, { x: M + 0.2, y: 2.1, w: CW - 0.4, h: 1.3, fontFace: FONT, fontSize: 44, bold: true, color: C.white, margin: 0, valign: 'middle', fit: 'shrink', isTextBox: true });
+    slide.addText('Долоо хоногийн борлуулалт, маркетингийн тайлан', { x: M + 0.2, y: 3.45, w: CW - 0.4, h: 0.5, fontFace: FONT, fontSize: 20, color: C.white, margin: 0, isTextBox: true });
+    slide.addText([
+        { text: `Тайлант хугацаа: ${span(input.range)}`, options: { breakLine: true } },
+        { text: `Хурал: ${dot(input.meetingDate)} · Харьцуулалт: ${span(input.previousRange)}` },
+    ], { x: M + 0.2, y: 4.35, w: CW - 0.4, h: 0.8, fontFace: FONT, fontSize: 14, color: C.navy2, margin: 0, valign: 'top', isTextBox: true });
+    slide.addText(`Vertmon Hub-аас бэлтгэв · ${input.generatedAt} · Улаанбаатарын цагаар`, { x: M + 0.2, y: 6.7, w: CW - 0.4, h: 0.3, fontFace: FONT, fontSize: 10, color: C.navy2, margin: 0, isTextBox: true });
+    note(slide, input.notices);
+}
+
+function discussionSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
+    const items = input.discussion.slice(0, 7);
+    const slide = content(pres, 'Хурлын эхэнд', 'Энэ хурлаар шийдэх');
+    if (!items.length) {
+        slide.addText('Хадгалсан мэдээллээс хэлэлцэх асуудал илрээгүй.', { x: M, y: TOP, w: CW, h: 0.5, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, isTextBox: true });
+    } else {
+        const rowH = Math.min(0.95, (BOTTOM - TOP + 0.15) / items.length);
+        items.forEach((item, index) => {
+            const y = TOP - 0.15 + index * rowH;
+            slide.addShape('ellipse', { x: M, y: y + 0.04, w: 0.42, h: 0.42, fill: { color: C.brandSoft }, line: { color: C.brandSoft } });
+            slide.addText(String(index + 1), { x: M, y: y + 0.04, w: 0.42, h: 0.42, fontFace: FONT, fontSize: 14, bold: true, color: C.brand, align: 'center', valign: 'middle', margin: 0, isTextBox: true });
+            slide.addText([
+                { text: item.title, options: { bold: true, fontSize: 16, color: C.ink, breakLine: true } },
+                { text: clip(item.detail.replace(/\s+/g, ' '), 240), options: { fontSize: 13, color: C.ink2 } },
+            ], { x: M + 0.65, y, w: CW - 0.65, h: rowH - 0.08, fontFace: FONT, margin: 0, valign: 'top', fit: 'shrink', isTextBox: true });
+        });
+    }
+    note(slide, [input.discussion.length > items.length ? `Бусад ${input.discussion.length - items.length} асуудал хуудсанд байна.` : null, 'Лидийн ажлын дараалал нь одоогийн төлөв. Ангиллууд давхцаж болно.']);
+}
+
+function salesOverviewSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
+    const sales = input.sales;
+    if (!sales) return;
+    const prev = input.previousSales;
+    const slide = content(pres, 'Борлуулалт', 'Борлуулалтын тойм', `${span(input.range)} · өмнөх 7 хоногтой харьцуулав`);
+    statRow(slide, TOP, [
+        { label: 'Шинэ лид', value: count(sales.leads.newCount), helper: formatReviewChange(sales.leads.newCount, prev?.leads.newCount) },
+        { label: 'Байгуулсан гэрээ', value: count(sales.contracts.count), helper: formatReviewChange(sales.contracts.count, prev?.contracts.count) },
+        { label: 'Гэрээний бүртгэлтэй дүн', value: short(sales.contracts.value), helper: prev ? `Өмнөх ${short(prev.contracts.value)}${prev.contracts.missingAmounts ? ' · дүн дутуу' : ''}` : 'Өмнөх хугацааны мэдээлэл байхгүй' },
+        { label: 'Болсон уулзалт', value: count(sales.meetings?.completed), helper: sales.meetings ? formatReviewChange(sales.meetings.completed, prev?.meetings?.completed) : 'Уулзалтын мэдээлэл байхгүй' },
+    ]);
+    const meetings = sales.meetings;
+    const classified = !!meetings?.classificationAvailable;
+    statRow(slide, TOP + 1.85, [
+        { label: 'Шинэ харилцагчтай уулзалт', value: classified ? count(meetings!.newCustomer) : '—' },
+        { label: 'Давтан уулзалт', value: classified ? count(meetings!.repeatCustomer) : '—' },
+        { label: 'Гэрээтэй захиалагч', value: classified ? count(meetings!.existingBuyer) : '—' },
+        { label: 'Эзэнгүй / алхамгүй / хэтэрсэн лид', value: `${sales.leads.health.ownerless} / ${sales.leads.health.noNextStep} / ${sales.leads.health.overdue}`, helper: 'Одоогийн ажлын дараалал; давхцаж болно', tone: sales.leads.health.overdue ? 'danger' : undefined },
+    ], 1.6);
+    const products = sales.contracts.byProduct ?? [];
+    if (products.length) {
+        slide.addText(products.map(product => `${product.label} ${product.count} · ${short(product.value)}${product.missingAmounts ? ` (дүн дутуу ${product.missingAmounts})` : ''}`).join('   ·   '),
+            { x: M, y: TOP + 3.75, w: CW, h: 0.4, fontFace: FONT, fontSize: 12, color: C.ink2, margin: 0, isTextBox: true });
+    }
+    note(slide, [
+        'Гэрээний дүн нь мөнгөөр орсон орлогоос тусдаа.',
+        sales.cash ? `Мөнгөөр орсон бүртгэл: ${money(sales.cash.receipts)} (${sales.cash.receiptCount} гүйлгээ). Банкны хуулгатай тулгаагүй.` : 'Мөнгөн орлогыг санхүүгийн эрхтэй хүн харна.',
+        meetings?.basis,
+        !classified ? 'Уулзалтын төрлийн ангилал системд хараахан нэвтрээгүй.' : null,
+        sales.contracts.missingAmounts || sales.contracts.undatedCount ? `Дүн дутуу ${sales.contracts.missingAmounts}, огноогүй ${sales.contracts.undatedCount} гэрээ.` : null,
+    ]);
+}
+
+/** Сарын төлөвлөгөө ба удирдлагын баталгаажуулсан гүйцэтгэл (гэрээний дүн, орсон мөнгө). */
+function monthPlanSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
+    const month = input.monthSales?.monthlyPerformance?.months?.[0];
+    const weekly = input.weeklySales;
+    if (!month && !weekly) return;
+    const label = `${Number((weekly?.month.month ?? input.range.to).slice(5, 7))}-р сар`;
+    const slide = content(pres, 'Борлуулалт', `${label}ын төлөвлөгөө ба гүйцэтгэл`, 'Төлөвлөгөө, баталгаажуулсан гүйцэтгэлийг удирдлага оруулна. Хоосон бол тооцоогүй.');
+    const ratio = (actual: number | null | undefined, target: number | null | undefined) => actual === null || actual === undefined || !target ? '—' : `${Math.round(actual / target * 100)}%`;
+    const contractActual = month?.manual_contract_actual_amount ?? null;
+    const cashActual = month?.manual_cashflow_actual_amount ?? null;
+    statRow(slide, TOP, [
+        { label: 'Гэрээний төлөвлөгөө', value: short(month?.target_amount ?? weekly?.month.target ?? null), tone: 'gold' },
+        { label: 'Гэрээний гүйцэтгэл', value: short(contractActual ?? weekly?.month.total ?? null), helper: contractActual !== null ? 'Удирдлагын баталгаажуулсан' : weekly ? `${weekly.sources.contracts === 'erp' ? 'ERP' : 'CRM'}-ийн гэрээ, ${weekly.month.count} ш` : undefined },
+        { label: 'Гүйцэтгэлийн хувь', value: ratio(contractActual ?? weekly?.month.total ?? null, month?.target_amount ?? weekly?.month.target ?? null) },
+    ]);
+    const cashVisible = !!input.monthSales?.monthlyPerformance?.cashflowVisible;
+    statRow(slide, TOP + 1.85, cashVisible ? [
+        { label: 'Орсон мөнгөний төлөвлөгөө', value: short(month?.cashflow_target_amount ?? null), tone: 'gold' },
+        { label: 'Орсон мөнгөний гүйцэтгэл', value: short(cashActual ?? weekly?.cash?.delta ?? null), helper: cashActual !== null ? 'Удирдлагын баталгаажуулсан' : weekly?.cash ? `ERP зөрүү ${dot(weekly.cash.from)} → ${dot(weekly.cash.to)}` : undefined },
+        { label: 'Гүйцэтгэлийн хувь', value: ratio(cashActual ?? weekly?.cash?.delta ?? null, month?.cashflow_target_amount ?? null) },
+    ] : [
+        { label: 'Мөнгөн орлого (ERP)', value: short(weekly?.cash?.delta ?? null), helper: weekly?.cash ? `${dot(weekly.cash.from)} → ${dot(weekly.cash.to)}` : 'Хоёр долоо хоногийн ERP экспорт хэрэгтэй' },
+        { label: 'Төлбөрийн хоцролт', value: short(weekly?.receivables?.overdue ?? null), helper: weekly?.receivables ? `${weekly.receivables.overdueContracts} гэрээ · үлдэгдэл ${short(weekly.receivables.balance)}` : 'ERP гэрээний экспорт хэрэгтэй', tone: weekly?.receivables?.overdue ? 'danger' : undefined },
+    ]);
+    note(slide, [
+        weekly?.cash?.basis,
+        cashVisible ? null : 'Орсон мөнгөний төлөвлөгөө, гүйцэтгэлийг санхүүгийн эрхтэй хүн харна.',
+        'Гэрээний дүн, мөнгөн орлого, бартерыг холихгүй.',
+    ]);
+}
+
+function contractSlides(pres: PptxGenJS, report: WeeklySalesReport) {
+    const head = ['Огноо', 'Бүтээгдэхүүн', 'Блок', 'Тоот', 'Захиалагч', 'м²', 'Нийт үнэ', 'Урьдчилгаа', 'Төлсөн', 'Менежер', 'Суваг']
+        .map((text, index) => headCell(text, index >= 5 && index <= 8 ? 'right' : 'left'));
+    const rows = report.week.lines.map(line => [
+        bodyCell(line.date ? dot(line.date.slice(5)) : '—'), bodyCell(line.kindLabel), bodyCell(line.block ?? '—'), bodyCell(line.unit ?? '—'),
+        bodyCell(line.customer ? clip(line.customer, 26) : '—'), bodyCell(area(line.area), 'right'), bodyCell(money(line.total), 'right'),
+        bodyCell(`${money(line.advance)}${line.advanceCondition ? `\n${line.advanceCondition}` : ''}`, 'right'), bodyCell(money(line.paid), 'right'),
+        bodyCell(managerShort(line.manager)), bodyCell(line.channel ? clip(line.channel, 14) : '—'),
+    ]);
+    const footer = [bodyCell('Нийт', 'left', { bold: true, colspan: 6 }), bodyCell(money(report.week.total), 'right', { bold: true }),
+        bodyCell(money(report.week.lines.reduce((sum, line) => sum + (line.advance ?? 0), 0)), 'right', { bold: true }),
+        bodyCell(money(report.week.lines.reduce((sum, line) => sum + (line.paid ?? 0), 0)), 'right', { bold: true }), bodyCell(''), bodyCell('')];
+    if (!rows.length) {
+        const slide = content(pres, 'Борлуулалт', 'Энэ долоо хоногийн гэрээ', span(report.range));
+        slide.addText('Тайлант долоо хоногт гэрээ бүртгэгдээгүй.', { x: M, y: TOP, w: CW, h: 0.5, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, isTextBox: true });
+        return;
+    }
+    tableSlides(pres, {
+        kicker: 'Борлуулалт', title: 'Энэ долоо хоногийн гэрээ',
+        subtitle: `${span(report.range)} · ${report.week.byKind.map(kind => `${kind.label} ${kind.count}`).join(' · ')}${report.week.barter ? ` · бартер ${report.week.barter}` : ''}`,
+        head, rows, footer, colW: [0.7, 1.15, 0.8, 0.75, 2.0, 0.65, 1.45, 1.4, 1.35, 1.0, 0.88], perSlide: 11, fontSize: 10,
+        notes: ['Захиалагчийн нэрийг зөвхөн гэрээний эрхтэй хэрэглэгч харна; регистрийн дугаар гаргахгүй.', 'Хоосон дүнг 0 гэж тооцоогүй («—»).'],
+    });
+}
+
+function monthSlide(pres: PptxGenJS, report: WeeklySalesReport) {
+    const m = report.month;
+    const slide = content(pres, 'Борлуулалт', `${Number(m.month.slice(5))}-р сарын гэрээ долоо хоногоор`, m.target ? `${short(m.total)} / төлөвлөгөө ${short(m.target)} · ${m.attainmentPct}%` : `${short(m.total)} · сарын төлөвлөгөө тохируулаагүй`);
+    if (!m.byWeek.length) {
+        slide.addText('Энэ сард гэрээ бүртгэгдээгүй.', { x: M, y: TOP, w: CW, h: 0.5, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, isTextBox: true });
+        return;
+    }
+    const weekW = Math.min(1.6, (CW - 2.2 - 1.2 - 1.9) / m.weeks.length);
+    const head = [headCell('Бүтээгдэхүүн'), ...m.weeks.map(week => headCell(`${week.label}\n${dot(week.from.slice(5))}–${dot(week.to.slice(5))}`, 'center')), headCell('Сарын нийт', 'right'), headCell('Дүн', 'right')];
+    const rows = m.byWeek.map(row => [bodyCell(row.label, 'left', { bold: true }), ...row.weeks.map(value => bodyCell(value ? String(value) : '—', 'center')), bodyCell(String(row.count), 'right', { bold: true }), bodyCell(short(row.total), 'right')]);
+    const footer = [bodyCell('Нийт', 'left', { bold: true }), ...m.weeks.map((_, index) => bodyCell(String(m.byWeek.reduce((sum, row) => sum + row.weeks[index], 0) || '—'), 'center', { bold: true })), bodyCell(String(m.count), 'right', { bold: true }), bodyCell(short(m.total), 'right', { bold: true })];
+    slide.addTable([head, ...rows, footer], { x: M, y: TOP, w: 2.2 + weekW * m.weeks.length + 1.2 + 1.9, colW: [2.2, ...m.weeks.map(() => weekW), 1.2, 1.9], fontFace: FONT, fontSize: 13, border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.06, 0.1, 0.06, 0.1] });
+    note(slide, [m.missingTotals ? `Нийт дүн хоосон ${m.missingTotals} гэрээ дүнд ороогүй.` : null, 'Долоо хоног = Лхагва–Мягмар, сарын хилээр тасална.']);
+}
+
+function managerSlide(pres: PptxGenJS, report: WeeklySalesReport) {
+    if (!report.byManager.length) return;
+    tableSlides(pres, {
+        kicker: 'Борлуулалт', title: 'Менежерээр', subtitle: `${span(report.range)} · ${Number(report.month.month.slice(5))}-р сар`,
+        head: [headCell('Менежер'), headCell('7 хоног', 'right'), headCell('7 хоногийн дүн', 'right'), headCell('Сар', 'right'), headCell('Сарын дүн', 'right'), headCell('Мөнгөн орлого', 'right')],
+        rows: report.byManager.map(row => [bodyCell(row.manager, 'left', { bold: true }), bodyCell(String(row.weekCount), 'right'), bodyCell(short(row.weekTotal), 'right'), bodyCell(String(row.monthCount), 'right'), bodyCell(short(row.monthTotal), 'right'), bodyCell(row.cash === null ? '—' : short(row.cash), 'right')]),
+        colW: [3.6, 1.4, 2.0, 1.2, 2.0, 1.93], perSlide: 12, fontSize: 13,
+        notes: [report.cash?.basis ?? 'Мөнгөн орлогыг тооцоход хоёр долоо хоногийн ERP гэрээний экспорт хэрэгтэй.'],
+    });
+}
+
+function inventorySlide(pres: PptxGenJS, report: WeeklySalesReport) {
+    const inventory = report.inventory;
+    if (!inventory?.blocks.length) return;
+    const statuses = ['available', 'ordered', 'reserved', 'sold', 'handed_over'] as const;
+    tableSlides(pres, {
+        kicker: 'Үлдэгдэл', title: 'Үлдэгдэл блокоор',
+        subtitle: `${inventory.source.kind === 'erp' ? `ERP «${inventory.source.source}»` : inventory.source.source} · ${dot(inventory.source.date)}`,
+        head: [headCell('Блок'), headCell('Төрөл'), headCell('Нийт', 'right'), ...statuses.map(status => headCell(inventory.statusLabels[status] ?? status, 'right')), headCell('Бартер', 'right')],
+        rows: inventory.blocks.map(row => [bodyCell(row.block, 'left', { bold: true }), bodyCell(row.label), bodyCell(String(row.total), 'right'),
+            ...statuses.map(status => bodyCell(String(row.statuses[status] ?? 0), 'right', status === 'available' ? { bold: true, color: C.brand } : {})), bodyCell(String(row.barter), 'right')]),
+        colW: [1.9, 1.9, 1.0, 1.25, 1.25, 1.25, 1.25, 1.33, 1.0], perSlide: 13, fontSize: 12,
+        notes: ['«Хүлээлгэсэн» байр зарагдсанд тооцогдоно, «Худалдаанд»-д хэзээ ч орохгүй.'],
+    });
+}
+
+type FloorMap = NonNullable<WeeklySalesReport['inventory']>['floorMaps'][number];
+type FloorCell = FloorMap['floors'][number]['cells'][string][number];
+const floorFill = (cell: FloorCell) => cell.barter && cell.status !== 'available' ? C.neutralSoft
+    : cell.status === 'sold' || cell.status === 'handed_over' ? C.successSoft
+        : cell.status === 'available' ? C.white : C.pendingSoft;
+
+function legend(slide: Slide, y: number) {
+    const items: [string, string][] = [[C.successSoft, 'Гэрээтэй (зарагдсан, хүлээлгэсэн)'], [C.white, 'Худалдаанд'], [C.pendingSoft, 'Бусад (захиалсан, хадгалсан)'], [C.neutralSoft, 'Бартер']];
+    let x = M;
+    for (const [color, label] of items) {
+        slide.addShape('rect', { x, y: y + 0.06, w: 0.18, h: 0.18, fill: { color }, line: { color: C.line, width: 0.75 } });
+        slide.addText(label, { x: x + 0.25, y, w: 3, h: 0.3, fontFace: FONT, fontSize: 10, color: C.muted, margin: 0, isTextBox: true });
+        x += 0.35 + label.length * 0.075;
+    }
+}
+
+/** Давхрын зураглал: давхар × загвар, худалдаанд байгаа байр цагаан, зарагдсанд менежерийн нэр. */
+function floorMapSlides(pres: PptxGenJS, report: WeeklySalesReport) {
+    // Мөр ≥ 0.22" (8pt) байхаар хуваана: 21-ээс олон давхартай блок 2+ слайдад тэнцүү хуваагдана.
+    const maxFloors = Math.floor((BOTTOM - TOP) / 0.22) - 2;
+    for (const map of report.inventory?.floorMaps ?? []) {
+        const chunks = Math.max(1, Math.ceil(map.floors.length / maxFloors));
+        const chunkSize = Math.ceil(map.floors.length / chunks);
+        for (let chunk = 0; chunk < chunks; chunk++) {
+            const floors = map.floors.slice(chunk * chunkSize, (chunk + 1) * chunkSize);
+            const slide = content(pres, 'Үлдэгдэл', `Орон сууцны үлдэгдэл — ${map.block} блок${chunks > 1 ? ` (${chunk + 1}/${chunks})` : ''}`);
+            legend(slide, 1.3);
+            const countW = 1.0;
+            const floorW = 0.75;
+            const modelW = (CW - floorW - countW * 4) / Math.max(1, map.models.length);
+            const rowH = Math.min(0.42, (BOTTOM - TOP) / (floors.length + 2));
+            const fontSize = rowH >= 0.3 ? 9 : 8;
+            const head = [headCell('Давхар'), ...map.models.map(model => headCell(model, 'center')), headCell('Гэрээтэй', 'center'), headCell('Худалдаанд', 'center'), headCell('Бусад', 'center'), headCell('Бартер', 'center')]
+                .map(cell => ({ ...cell, options: { ...cell.options, fontSize: 8 } }));
+            const rows = floors.map(row => [
+                bodyCell(`${row.floor}`, 'left', { bold: true, color: C.ink2 }),
+                ...map.models.map(model => {
+                    const cells = row.cells[model] ?? [];
+                    if (!cells.length) return bodyCell('', 'center', { fill: { color: C.surface } });
+                    const text = cells.map(cell => `${cell.area !== null ? area(cell.area) : cell.code}${cell.status !== 'available' && cell.manager ? ` ${managerShort(cell.manager)}` : ''}`).join('\n');
+                    return bodyCell(text, 'center', { fill: { color: floorFill(cells[0]) }, color: cells[0].status === 'available' ? C.brand : C.ink, bold: cells[0].status === 'available' });
+                }),
+                bodyCell(String(row.counts.sold), 'center'), bodyCell(String(row.counts.available), 'center', { bold: true, color: C.brand }), bodyCell(String(row.counts.other), 'center'), bodyCell(String(row.counts.barter), 'center'),
+            ]);
+            const last = chunk === chunks - 1;
+            const footer = [bodyCell('Нийт', 'left', { bold: true, colspan: map.models.length + 1 }), bodyCell(String(map.totals.sold), 'center', { bold: true }), bodyCell(String(map.totals.available), 'center', { bold: true, color: C.brand }), bodyCell(String(map.totals.other), 'center', { bold: true }), bodyCell(String(map.totals.barter), 'center', { bold: true })];
+            slide.addTable([head, ...rows, ...(last ? [footer] : [])], {
+                x: M, y: TOP, w: CW, colW: [floorW, ...map.models.map(() => modelW), countW, countW, countW, countW], rowH, fontFace: FONT, fontSize,
+                border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.01, 0.03, 0.01, 0.03], autoPage: false,
+            });
+            note(slide, [`${map.block} блок: гэрээтэй ${map.totals.sold}, худалдаанд ${map.totals.available}, бусад ${map.totals.other}, бартер ${map.totals.barter}.`, 'Цэнхэр тоо = худалдаанд байгаа байр (м²).']);
+        }
+    }
+}
+
+function marketingOverviewSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
+    const marketing = input.marketing;
+    const budget = input.budget;
+    if (!marketing && !budget) return;
+    const slide = content(pres, 'Маркетинг', 'Маркетингийн үр дүн', `${span(input.range)} · өмнөх 7 хоногтой харьцуулав`);
+    let y = TOP;
+    if (budget) {
+        const { overview, month, year } = budget;
+        const ytd = overview.months.filter(row => row.month <= month);
+        const ytdSpend = ytd.reduce((sum, row) => sum + row.spend, 0);
+        const ytdBudget = ytd.reduce((sum, row) => sum + row.budget, 0);
+        const current = overview.months[month - 1];
+        const ratio = (spend: number, plan: number) => plan > 0 ? `${Math.round(spend / plan * 100)}%` : 'төсөвгүй';
+        statRow(slide, y, [
+            { label: `${year} оны үндсэн төсөв`, value: overview.totals.budget ? short(overview.totals.budget) : 'Оруулаагүй', tone: 'gold' },
+            { label: 'Он эхнээс зарцуулсан', value: short(ytdSpend), helper: `${ratio(ytdSpend, ytdBudget)} (энэ хүртэлх сарын төсвөөс)`, tone: ytdBudget > 0 && ytdSpend > ytdBudget ? 'danger' : undefined },
+            { label: `${month}-р сарын төсөв`, value: current?.budget ? short(current.budget) : 'Оруулаагүй' },
+            { label: `${month}-р сард зарцуулсан`, value: short(current?.spend ?? 0), helper: current ? ratio(current.spend, current.budget) : undefined, tone: current?.status === 'over' ? 'danger' : undefined },
+        ], 1.45);
+        y += 1.7;
+    }
+    if (marketing) {
+        const t = marketing.totals;
+        const p = marketing.previous;
+        statRow(slide, y, [
+            { label: 'Шинэ лид', value: count(t.leads), helper: formatReviewChange(t.leads, p.leads) },
+            { label: 'Менежерт шилжсэн', value: count(t.sales), helper: `${pct(t.salesPct)} · ${formatReviewChange(t.sales, p.sales)}` },
+            { label: 'Гэрээтэй болсон лид', value: count(t.deals), helper: `${pct(t.dealPct)} · ${formatReviewChange(t.deals, p.deals)}` },
+            { label: 'Дууссан кампанит ажил / контент', value: `${t.campaigns} / ${t.content}`, helper: `Өмнөх ${p.campaigns} / ${p.content}` },
+        ], 1.6);
+        y += 1.8;
+        const cost = (value: number | null) => value === null ? '—' : short(value);
+        statRow(slide, y, [
+            { label: 'Бүртгэсэн зардал', value: t.hasSpend || !t.spendComplete ? short(t.spend) : '—', helper: t.spendComplete ? undefined : 'Ханшгүй зардал нийтэд ороогүй' },
+            { label: 'Нэг лидийн өртөг', value: cost(t.costPerLead), helper: `Өмнөх ${cost(p.costPerLead)}` },
+            { label: 'Нэг шилжсэн лидийн өртөг', value: cost(t.costPerSale), helper: `Өмнөх ${cost(p.costPerSale)}` },
+            { label: 'Нэг гэрээтэй лидийн өртөг', value: cost(t.costPerDeal), helper: `Өмнөх ${cost(p.costPerDeal)}` },
+        ], 1.45);
+    }
+    note(slide, [
+        'Тухайн хугацаанд үүссэн лидээс хугацааны эцэс хүртэл шилжсэн, гэрээтэй болсон тоо. Борлуулалтын гэрээний тоотой ижил хэмжүүр биш.',
+        marketing?.spendQuality.current.missingFx ? `Ханшгүй ${marketing.spendQuality.current.missingFx} зардал тооцоонд ороогүй.` : null,
+        marketing?.quality.unknownHandoff ? `Шилжүүлсэн огноогүй ${marketing.quality.unknownHandoff} лид тооцоонд ороогүй.` : null,
+    ]);
+}
+
+function channelTableSlide(pres: PptxGenJS, marketing: MarketingPerformance | undefined) {
+    const channels = marketing?.channels.filter(channel => channel.leads > 0 || channel.hasSpend || !channel.spendComplete) ?? [];
+    if (!channels.length) return;
+    tableSlides(pres, {
+        kicker: 'Маркетинг', title: 'Сувгаар лид, гэрээлэлт, зардал',
+        head: ['Суваг', 'Лид', 'Шилжсэн', 'Гэрээтэй', 'Гэрээ %', 'Зардал (₮)', 'Нэг лид (₮)'].map((text, index) => headCell(text, index ? 'right' : 'left')),
+        rows: channels.map(channel => [bodyCell(channel.name, 'left', { bold: true }), bodyCell(String(channel.leads), 'right'), bodyCell(String(channel.sales), 'right'), bodyCell(String(channel.deals), 'right'),
+            bodyCell(pct(channel.dealPct), 'right'), bodyCell(channel.hasSpend || !channel.spendComplete ? `${short(channel.spend)}${channel.spendComplete ? '' : ' (ханш дутуу)'}` : '—', 'right'), bodyCell(channel.costPerLead === null ? '—' : short(channel.costPerLead), 'right')]),
+        colW: [3.2, 1.2, 1.4, 1.4, 1.3, 2.0, 1.63], perSlide: 11, fontSize: 13,
+        notes: ['Өртөг = тухайн хугацааны бүртгэсэн зардал / лидийн тоо. Ханш дутуу, зардал эсвэл тооцох суурь алга бол өртөг тооцоогүй.'],
+    });
+}
+
+function channelValue(source: ChannelSource, key: string, value: unknown, currency?: string): string {
+    if (value === null || value === undefined || value === '') return '—';
+    if (typeof value === 'string') return value;
+    if (typeof value !== 'number') return '—';
+    const kind = channelMetric(source, key)?.kind;
+    if (kind === 'money') return `${value.toLocaleString('en-US', { maximumFractionDigits: value !== 0 && Math.abs(value) < 0.01 ? 4 : 2 })}${currency ? ` ${currency}` : ''}`;
+    if (kind === 'percent') return `${value}%`;
+    if (kind === 'duration') {
+        const seconds = Math.round(value);
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        return hours ? `${hours} ц ${minutes} мин` : `${minutes} мин ${seconds % 60} сек`;
+    }
+    return value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+}
+
+/** Meta Ads, Facebook хуудас, CallPro, SMS-ийн оруулсан экспорт (эсвэл Meta API) — гол үзүүлэлт. */
+function channelExportSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
+    const channels = input.channels;
+    if (!channels) return;
+    const present = CHANNEL_SOURCES.filter(source => channels[source]?.report);
+    const missing = CHANNEL_SOURCES.filter(source => !channels[source]?.report);
+    const slide = content(pres, 'Маркетинг', 'Сувгийн экспорт, Meta API', missing.length ? `Экспорт оруулаагүй: ${missing.map(source => CHANNEL_SOURCE_LABELS[source]).join(', ')}` : undefined);
+    if (!present.length) {
+        slide.addText('Энэ долоо хоногт сувгийн экспорт оруулаагүй байна. Маркетинг → Экспорт импорт хуудсанд Meta Ads, Facebook хуудас, CallPro, SMS-ийн файлаа оруулна уу.', { x: M, y: TOP, w: CW, h: 0.9, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, isTextBox: true });
+        return;
+    }
+    const cols = present.length >= 3 ? 2 : present.length;
+    const rows = Math.ceil(present.length / cols);
+    const gap = 0.25;
+    const w = (CW - gap * (cols - 1)) / cols;
+    const h = Math.min(2.6, (BOTTOM - TOP - gap * (rows - 1)) / rows);
+    present.forEach((source, index) => {
+        const x = M + (index % cols) * (w + gap);
+        const y = TOP + Math.floor(index / cols) * (h + gap);
+        const report = channels[source].report!;
+        const currency = typeof report.totals.currency === 'string' ? report.totals.currency : undefined;
+        const keys = channelKeyMetrics(source).filter(key => report.totals[key] !== undefined).slice(0, 6);
+        slide.addShape('roundRect', { x, y, w, h, fill: { color: C.surface }, line: { color: C.surface }, rectRadius: 0.08 });
+        slide.addText([
+            { text: CHANNEL_SOURCE_LABELS[source], options: { bold: true, fontSize: 14, color: C.ink } },
+            { text: `   ${dot(report.period_from)} – ${dot(report.period_to)} · ${report.origin === 'api' ? 'Meta API' : 'Экспорт файл'}`, options: { fontSize: 10, color: C.muted } },
+        ], { x: x + 0.2, y: y + 0.12, w: w - 0.4, h: 0.35, fontFace: FONT, margin: 0, isTextBox: true });
+        const metricW = (w - 0.4) / 3;
+        keys.forEach((key, metricIndex) => {
+            const mx = x + 0.2 + (metricIndex % 3) * metricW;
+            const my = y + 0.55 + Math.floor(metricIndex / 3) * Math.min(0.9, (h - 0.7) / 2);
+            const delta = channels[source].comparison?.[key];
+            slide.addText([
+                { text: channelMetric(source, key)?.label ?? key, options: { fontSize: 10, color: C.muted, breakLine: true } },
+                { text: channelValue(source, key, report.totals[key], currency), options: { fontSize: 18, bold: true, color: C.ink, breakLine: !!(delta?.comparable && delta.delta !== null) } },
+                ...(delta?.comparable && delta.delta !== null ? [{ text: `${delta.delta > 0 ? '+' : ''}${delta.delta.toLocaleString('en-US', { maximumFractionDigits: 2 })}${delta.pct !== null ? ` (${delta.pct > 0 ? '+' : ''}${delta.pct}%)` : ''}`, options: { fontSize: 10, color: delta.delta > 0 ? C.success : delta.delta < 0 ? C.danger : C.muted } }] : []),
+            ], { x: mx, y: my, w: metricW - 0.1, h: 0.85, fontFace: FONT, margin: 0, valign: 'top', isTextBox: true });
+        });
+    });
+    note(slide, ['Reach, Viewers зэрэг давхардах тоог мөрүүдээр нэмээгүй. Meta-ийн зардал зарын дансны валютаар (ихэвчлэн USD), төгрөгтэй нэмээгүй.']);
+}
+
+function imageGrid(slide: Slide, images: DeckImage[], box: { x: number; y: number; w: number; h: number }) {
+    const n = images.length;
+    const portrait = images.every(image => image.height > image.width);
+    const cols = n <= 3 ? n : n === 4 ? (portrait ? 4 : 2) : 3;
+    const rows = Math.ceil(n / cols);
+    const gap = 0.25;
+    const cellW = (box.w - gap * (cols - 1)) / cols;
+    const cellH = (box.h - gap * (rows - 1)) / rows;
+    images.forEach((image, index) => {
+        const ratio = image.width > 0 && image.height > 0 ? image.width / image.height : 1;
+        let w = cellW;
+        let h = w / ratio;
+        if (h > cellH) { h = cellH; w = h * ratio; }
+        const x = box.x + (index % cols) * (cellW + gap) + (cellW - w) / 2;
+        const y = box.y + Math.floor(index / cols) * (cellH + gap) + (cellH - h) / 2;
+        slide.addImage({ data: image.data, x, y, w, h, altText: `Слайдын зураг ${index + 1}` });
+    });
+}
+
+/** Хэрэглэгчийн оруулсан слайд: сэдэв, зураг (≤ 6), тайлбар/дүгнэлт. */
+function customSlide(pres: PptxGenJS, slideData: WeeklySlide, images: Record<string, DeckImage>) {
+    const label = `${WEEKLY_SLIDE_PART_LABEL[slideData.part]} · ${WEEKLY_SLIDE_SECTION_LABEL[slideData.section]}`;
+    const slide = content(pres, label, slideData.title || WEEKLY_SLIDE_SECTION_LABEL[slideData.section]);
+    const loaded = slideData.image_paths.map(path => images[path]).filter((image): image is DeckImage => !!image);
+    const missing = slideData.image_paths.length - loaded.length;
+    const text = slideData.note.trim();
+    const top = TOP - 0.25;
+    if (loaded.length) {
+        const longNote = text.length > 220;
+        const box = longNote
+            ? { x: M, y: top, w: CW * 0.62, h: BOTTOM - top }
+            : { x: M, y: top, w: CW, h: (text ? 5.95 : BOTTOM) - top };
+        imageGrid(slide, loaded, box);
+        if (text) {
+            slide.addText(clip(text, 1400), longNote
+                ? { x: M + CW * 0.62 + 0.3, y: top, w: CW * 0.38 - 0.3, h: BOTTOM - top, fontFace: FONT, fontSize: 13, color: C.ink2, margin: 0, valign: 'top', fit: 'shrink', isTextBox: true }
+                : { x: M, y: 6.05, w: CW, h: 0.8, fontFace: FONT, fontSize: 14, color: C.ink2, margin: 0, valign: 'top', fit: 'shrink', isTextBox: true });
+        }
+    } else if (text) {
+        slide.addText(clip(text, 2000), { x: M, y: top, w: CW, h: BOTTOM - top, fontFace: FONT, fontSize: text.length > 700 ? 13 : text.length > 300 ? 16 : 20, color: C.ink, margin: 0, valign: 'top', fit: 'shrink', isTextBox: true, paraSpaceAfter: 6 });
+    }
+    note(slide, [
+        `Оруулсан: ${slideData.author_name || '—'}`,
+        missing ? `${missing} зураг ачаалж чадсангүй — Hub-ийн хурлын хуудсанд шалгана уу.` : null,
+        text.length > 1400 && loaded.length ? text : null,
+    ]);
+}
+
+function updateSlides(pres: PptxGenJS, updates: WeeklyUpdate[]) {
+    for (const update of updates) {
+        const slide = content(pres, 'Багийн явц', update.author_name);
+        const fields: [string, string][] = [['Хийсэн ажил', update.achievements], ['Саад, шийдэх зүйл', update.blockers], ['Дараагийн алхам', update.next_steps]];
+        const gap = 0.3;
+        const w = (CW - gap * 2) / 3;
+        fields.forEach(([label, value], index) => {
+            const x = M + index * (w + gap);
+            slide.addShape('roundRect', { x, y: TOP - 0.2, w, h: BOTTOM - TOP + 0.2, fill: { color: index === 1 && value.trim() ? C.pendingSoft : C.surface }, line: { color: index === 1 && value.trim() ? C.pendingSoft : C.surface }, rectRadius: 0.08 });
+            slide.addText([
+                { text: label, options: { bold: true, fontSize: 14, color: C.ink, breakLine: true, paraSpaceAfter: 6 } },
+                { text: clip(value.trim() || 'Тэмдэглээгүй', 900), options: { fontSize: value.length > 600 ? 12 : value.length > 250 ? 14 : 16, color: value.trim() ? C.ink2 : C.muted } },
+            ], { x: x + 0.22, y: TOP - 0.05, w: w - 0.44, h: BOTTOM - TOP - 0.1, fontFace: FONT, margin: 0, valign: 'top', fit: 'shrink', isTextBox: true });
+        });
+        note(slide, fields.filter(([, value]) => value.length > 900).map(([label, value]) => `${label}: ${value}`));
+    }
+}
+
+function closingSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
+    const slide = pres.addSlide({ masterName: COVER });
+    slide.addText('Анхаарал хандуулсанд баярлалаа', { x: M + 0.2, y: 2.7, w: CW - 0.4, h: 1, fontFace: FONT, fontSize: 36, bold: true, color: C.white, margin: 0, valign: 'middle', isTextBox: true });
+    slide.addText(`${input.projectName} · Дараагийн хурал ${dot(nextWednesday(input.meetingDate))}`, { x: M + 0.2, y: 3.8, w: CW - 0.4, h: 0.5, fontFace: FONT, fontSize: 16, color: C.navy2, margin: 0, isTextBox: true });
+}
+
+const nextWednesday = (meetingDate: string) => new Date(Date.parse(`${meetingDate}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10);
+
+/** Бүх слайдыг дарааллаар нь нэмнэ. `pres` — шинэ `new PptxGenJS()` (нэг файлд нэг удаа). */
+export function buildWeeklyDeck(pres: PptxGenJS, input: WeeklyDeckInput): PptxGenJS {
+    pres.layout = 'LAYOUT_WIDE';
+    pres.author = 'Vertmon Hub';
+    pres.company = 'Vertmon';
+    pres.title = `${input.projectName} · Лхагва гарагийн хурал ${input.meetingDate}`;
+    pres.subject = `Тайлант хугацаа ${input.range.from} – ${input.range.to}`;
+    pres.theme = { headFontFace: FONT, bodyFontFace: FONT };
+    defineLayouts(pres, input.projectName);
+
+    coverSlide(pres, input);
+    discussionSlide(pres, input);
+    salesOverviewSlide(pres, input);
+    monthPlanSlide(pres, input);
+    if (input.weeklySales) {
+        contractSlides(pres, input.weeklySales);
+        monthSlide(pres, input.weeklySales);
+        managerSlide(pres, input.weeklySales);
+        inventorySlide(pres, input.weeklySales);
+        floorMapSlides(pres, input.weeklySales);
+    }
+    for (const slide of input.slides.filter(item => item.part === 'sales')) customSlide(pres, slide, input.images);
+    marketingOverviewSlide(pres, input);
+    channelTableSlide(pres, input.marketing);
+    channelExportSlide(pres, input);
+    for (const slide of input.slides.filter(item => item.part === 'marketing')) customSlide(pres, slide, input.images);
+    if (input.updates?.length) updateSlides(pres, input.updates);
+    closingSlide(pres, input);
+    return pres;
+}
+
+export function weeklyDeckFileName(projectName: string, meetingDate: string): string {
+    const safe = projectName.replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim() || 'Vertmon';
+    return `${safe} - Лхагва ${meetingDate}.pptx`;
+}
