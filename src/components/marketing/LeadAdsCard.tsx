@@ -27,7 +27,7 @@ export const LEAD_ADS_REASONS: Record<string, string> = {
     invalid_payload: 'Meta-гийн мэдэгдэл дутуу ирсэн',
     page_not_connected: 'Page ямар ч төсөлд холбогдоогүй',
     token_missing: 'Page-ийн токен хадгалагдаагүй',
-    app_secret_missing: 'FACEBOOK_APP_SECRET тохируулаагүй',
+    app_secret_missing: 'Facebook Page аппын нууц түлхүүр тохируулаагүй',
     token_invalid: 'Facebook холболтын хугацаа дууссан — дахин холбоно уу',
     permission_missing: 'leads_retrieval / pages_manage_ads эрх дутуу — дахин холбоно уу',
     not_found: 'Meta дээр олдсонгүй (90 хоногоос хуучин эсвэл устсан)',

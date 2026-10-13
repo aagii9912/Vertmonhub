@@ -45,10 +45,11 @@ it('keeps ads reads on the Meta Ads app secret', async () => {
     expect((http.mock.calls[0][0] as URL).searchParams.get('appsecret_proof')).toBe(proof('ads-app-secret', 'ads-token'));
 });
 
-it('fails closed without FACEBOOK_APP_SECRET before calling Graph', async () => {
+it('fails closed without a Page app secret before calling Graph', async () => {
     vi.stubEnv('FACEBOOK_APP_SECRET', '');
-    await expect(pageRead('42', 'page-token')).rejects.toThrow(/FACEBOOK_APP_SECRET/);
-    await expect(pagePost('42/feed', 'page-token', { message: 'x' })).rejects.toThrow(/FACEBOOK_APP_SECRET/);
+    vi.stubEnv('META_ADS_APP_SECRET', '');
+    await expect(pageRead('42', 'page-token')).rejects.toThrow(/Page аппын нууц түлхүүр/);
+    await expect(pagePost('42/feed', 'page-token', { message: 'x' })).rejects.toThrow(/Page аппын нууц түлхүүр/);
     expect(http).not.toHaveBeenCalled();
 });
 

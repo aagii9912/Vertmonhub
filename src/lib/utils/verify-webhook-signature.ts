@@ -46,3 +46,8 @@ export function verifyWebhookSignature(
         return false;
     }
 }
+
+/** Манай аль нэг Meta аппын (Page апп, хуучин апп) нууцаар гарын үсэг таарвал хүчинтэй. */
+export function verifyWebhookSignatureAny(payload: string, signature: string | null, appSecrets: readonly string[]): boolean {
+    return appSecrets.some(secret => verifyWebhookSignature(payload, signature, secret));
+}

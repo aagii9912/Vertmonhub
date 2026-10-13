@@ -1,5 +1,5 @@
 /**
- * Facebook Page / Instagram Graph дуудлага (Graph v26, `FACEBOOK_APP_SECRET`-ийн `appsecret_proof`).
+ * Facebook Page / Instagram Graph дуудлага (Graph v26, Page аппын (lib/facebook/page-app.ts) `appsecret_proof`).
  * Зарын `metaRead`-тэй ижил цөм (`graphRead`/`graphPost`): токен URL-д орохгүй, түр алдаанд хязгаартай
  * дахин оролдлого, URL/хариу/токен лог руу орохгүй. Зөвхөн сервер.
  */
@@ -21,7 +21,7 @@ function pageError(status: number | null, code: number | null, subcode: number |
 
 const PAGE_APP: MetaGraphApp = {
     proof: appsecretProof,
-    missingSecret: 'Facebook app-ийн нууц түлхүүр (FACEBOOK_APP_SECRET) тохируулаагүй байна.',
+    missingSecret: 'Facebook Page аппын нууц түлхүүр тохируулаагүй байна.',
     error: pageError,
 };
 

@@ -113,7 +113,7 @@ function pause(ms: number, signal: AbortSignal): Promise<boolean> {
 
 /**
  * Graph-д хандах Meta app: `appsecret_proof`-ийг тухайн app-ийн нууц түлхүүрээр үүсгэж, алдааг
- * хэрэглэгчид ойлгомжтой монгол мессеж болгоно. Зар = META_ADS_APP_SECRET, Page/IG = FACEBOOK_APP_SECRET.
+ * хэрэглэгчид ойлгомжтой монгол мессеж болгоно. Зар = META_ADS_APP_SECRET, Page/IG = Page апп (lib/facebook/page-app.ts).
  */
 export interface MetaGraphApp {
     /** Токены appsecret_proof; нууц түлхүүр тохируулаагүй бол null (fail-closed). */

@@ -56,12 +56,13 @@ describe('sendTextMessage on Graph v26', () => {
         expect(String(init.body)).not.toContain(TOKEN);
     });
 
-    it('fails closed without FACEBOOK_APP_SECRET before calling Graph', async () => {
+    it('fails closed without a Page app secret before calling Graph', async () => {
         vi.stubEnv('FACEBOOK_APP_SECRET', '');
+        vi.stubEnv('META_ADS_APP_SECRET', '');
         const fetchMock = vi.fn();
         vi.stubGlobal('fetch', fetchMock);
 
-        await expect(send()).rejects.toThrow(/FACEBOOK_APP_SECRET/);
+        await expect(send()).rejects.toThrow(/Page аппын нууц түлхүүр/);
         expect(fetchMock).not.toHaveBeenCalled();
     });
 

@@ -3,7 +3,8 @@ import { NextRequest, NextResponse, after } from 'next/server';
 import { verifyWebhook } from '@/lib/facebook/messenger';
 import { isDuplicateWebhookEvent } from '@/lib/webhook/retryService';
 import { logger } from '@/lib/utils/logger';
-import { verifyWebhookSignature } from '@/lib/utils/verify-webhook-signature';
+import { verifyWebhookSignatureAny } from '@/lib/utils/verify-webhook-signature';
+import { metaWebhookSecrets } from '@/lib/facebook/page-app';
 import { supabaseAdmin } from '@/lib/supabase';
 import { hasLeadgenChanges, ingestLeadgenWebhook } from '@/lib/facebook/leadgen';
 import {
@@ -35,7 +36,8 @@ if (!VERIFY_TOKEN) {
     console.error('CRITICAL: FACEBOOK_VERIFY_TOKEN environment variable is required');
 }
 
-const APP_SECRET = process.env.FACEBOOK_APP_SECRET;
+// Page апп (Vertmon Hub) болон хуучин аппын нууц — webhook subscription аль аппынх ч байж болно.
+const APP_SECRETS = metaWebhookSecrets();
 
 type Platform = 'messenger' | 'instagram';
 
@@ -85,11 +87,11 @@ export async function POST(request: NextRequest) {
         const rawBody = await request.text();
         const signature = request.headers.get('x-hub-signature-256');
 
-        if (!APP_SECRET) {
-            logger.error('FACEBOOK_APP_SECRET not configured — refusing webhook');
+        if (!APP_SECRETS.length) {
+            logger.error('Meta app secret not configured — refusing webhook');
             return NextResponse.json({ error: 'Webhook not configured' }, { status: 500 });
         }
-        if (!verifyWebhookSignature(rawBody, signature, APP_SECRET)) {
+        if (!verifyWebhookSignatureAny(rawBody, signature, APP_SECRETS)) {
             logger.warn('Webhook signature verification failed');
             return NextResponse.json({ error: 'Invalid signature' }, { status: 403 });
         }

@@ -30,6 +30,8 @@ export const RECOMMENDED_PROD_ENV = [
     'META_ADS_APP_ID',
     'META_ADS_APP_SECRET',
     'META_ADS_LOGIN_CONFIG_ID',
+    // «Vertmon Hub» аппын Page/Instagram-ийн Login for Business тохиргоо (lib/facebook/page-app.ts).
+    'META_PAGE_LOGIN_CONFIG_ID',
     // Meta Ads-ийн хугацаагүй System User токен — байхгүй бол төсөл бүрийн 60 хоногийн OAuth токен.
     'META_ADS_SYSTEM_TOKEN',
 ] as const;

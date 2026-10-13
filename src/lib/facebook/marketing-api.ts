@@ -1,6 +1,6 @@
 /**
  * Facebook Graph v26 туслахууд: зар (`metaRead`, META_ADS_APP_SECRET) ба Page/Instagram
- * (`pageRead`/`pagePost`, FACEBOOK_APP_SECRET-ийн appsecret_proof). Токен URL-д хэзээ ч орохгүй.
+ * (`pageRead`/`pagePost`, Page аппын — lib/facebook/page-app.ts — appsecret_proof). Токен URL-д хэзээ ч орохгүй.
  * Page/IG метрикийн каталог: `lib/marketing/social-metrics.ts`.
  */
 

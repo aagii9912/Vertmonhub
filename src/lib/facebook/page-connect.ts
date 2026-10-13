@@ -16,14 +16,16 @@ import { META_GRAPH_VERSION, MetaApiError } from '@/lib/facebook/daily-spend';
 import { pageRead } from '@/lib/facebook/page-graph';
 import { subscribePageToApp } from '@/lib/facebook/marketing-api';
 import { logger } from '@/lib/utils/logger';
+import { META_PAGE_APP_MISSING, metaPageApp } from '@/lib/facebook/page-app';
 
 export type PageConnectFlow = 'facebook' | 'instagram';
 
 /**
  * Facebook Page: жагсаах, нийтлэл/engagement унших, DM, webhook, Page insights (read_insights),
  * Lead Ads (`leads_retrieval` — leadgen webhook + лид унших, `pages_manage_ads` — backfill-д lead формууд).
- * ⚠️ 'email' нь энэ FB-Login-for-Business аппад invalid scope (dialog-ийг блоклодог). Login for Business
+ * ⚠️ 'email' нь FB-Login-for-Business аппад invalid scope (dialog-ийг блоклодог). Login for Business
  * `config_id` ашиглавал эрхүүдийг тохиргоонд нь нэмнэ (scope параметрийг үл тооно).
+ * Апп: lib/facebook/page-app.ts (анхдагчаар «Vertmon Hub», `META_PAGE_LOGIN_CONFIG_ID` тохиргоотой).
  */
 export const PAGE_OAUTH_SCOPES = [
     'pages_show_list', 'pages_read_engagement', 'read_insights', 'pages_messaging', 'pages_manage_metadata',
@@ -81,21 +83,17 @@ export async function startPageOAuth(request: NextRequest, flow: PageConnectFlow
     const userId = await getUserId();
     const shopId = await assertShopAccess(request.nextUrl.searchParams.get('shop_id'));
     if (!userId || !shopId) return NextResponse.json({ error: 'Нэвтрэх эсвэл төслийн эрх шаардлагатай.' }, { status: 401 });
-    const appId = process.env.FACEBOOK_APP_ID?.trim();
-    if (!appId || !process.env.FACEBOOK_APP_SECRET?.trim()) {
-        return NextResponse.json({ error: 'Facebook app-ийн тохиргоо (FACEBOOK_APP_ID, FACEBOOK_APP_SECRET) дутуу байна.' }, { status: 503 });
-    }
+    const app = metaPageApp();
+    if (!app) return NextResponse.json({ error: META_PAGE_APP_MISSING }, { status: 503 });
 
     const state = crypto.randomBytes(32).toString('hex');
     const url = new URL(`https://www.facebook.com/${META_GRAPH_VERSION}/dialog/oauth`);
-    url.searchParams.set('client_id', appId);
+    url.searchParams.set('client_id', app.id);
     url.searchParams.set('redirect_uri', `${request.nextUrl.origin}${FLOW[flow].callback}`);
     url.searchParams.set('scope', FLOW[flow].scopes.join(','));
-    // Facebook Login for Business-ийн тохиргоо (зөвхөн Page урсгалд, сонголтоор).
-    const configId = process.env.FACEBOOK_LOGIN_CONFIG_ID?.trim();
-    if (flow === 'facebook' && configId && process.env.FACEBOOK_LOGIN_USE_CONFIG?.trim().toLowerCase() === 'true') {
-        url.searchParams.set('config_id', configId);
-    }
+    // Facebook Login for Business-ийн тохиргоо. «Vertmon Hub» аппын нэг тохиргоонд Page, Instagram-ийн
+    // эрхүүд хамт байна; хуучин апп зөвхөн Page урсгалд (FACEBOOK_LOGIN_USE_CONFIG=true үед).
+    if (app.loginConfigId && (flow === 'facebook' || app.source === 'ads')) url.searchParams.set('config_id', app.loginConfigId);
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('state', state);
 
@@ -157,9 +155,9 @@ export async function finishPageOAuth(request: NextRequest, flow: PageConnectFlo
     const shopId = await assertShopAccess(saved.shopId);
     if (!userId || userId !== saved.userId || shopId !== saved.shopId) return socialRedirect(request, flow, 'session_error');
 
-    const appId = process.env.FACEBOOK_APP_ID?.trim();
-    const appSecret = process.env.FACEBOOK_APP_SECRET?.trim();
-    if (!appId || !appSecret) return socialRedirect(request, flow, 'config_missing');
+    const app = metaPageApp();
+    if (!app) return socialRedirect(request, flow, 'config_missing');
+    const { id: appId, secret: appSecret } = app;
 
     try {
         const short = await exchangeToken({ client_id: appId, client_secret: appSecret, redirect_uri: `${request.nextUrl.origin}${FLOW[flow].callback}`, code });

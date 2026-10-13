@@ -7,6 +7,7 @@ import { loadShopPage } from '@/lib/facebook/page-connect';
 import { subscribePageToApp } from '@/lib/facebook/marketing-api';
 import { supabaseAdmin } from '@/lib/supabase';
 import { logger } from '@/lib/utils/logger';
+import { META_PAGE_APP_MISSING, metaPageApp } from '@/lib/facebook/page-app';
 
 /**
  * Facebook Lead Ads-ийн төлөв ба засвар (идэвхтэй төсөл/shop-ийн холбосон Page):
@@ -28,7 +29,7 @@ type EventRow = { leadgen_id: string; status: 'saved' | 'skipped' | 'failed'; re
 
 /** App-ийн subscribed_fields-д leadgen байгаа эсэх; шалгаж чадаагүй бол null. */
 async function leadgenSubscribed(pageId: string, token: string): Promise<boolean | null> {
-    const appId = process.env.FACEBOOK_APP_ID?.trim();
+    const appId = metaPageApp()?.id;
     if (!appId) return null;
     const result = await pageGraphRead<{ data?: Array<{ id?: string; subscribed_fields?: string[] }> }>(`${pageId}/subscribed_apps`, token, {}, AbortSignal.timeout(5000));
     if (!result.ok || !Array.isArray(result.data.data)) return null;
@@ -65,9 +66,7 @@ export const GET = withRoute({ module: 'marketing-roi' }, async ({ shop }) => {
 export const POST = withRoute({ module: 'marketing-roi', access: 'write' }, async ({ request, shop }) => {
     const parsed = SCHEMA.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return NextResponse.json({ error: 'Буруу хүсэлт', details: parsed.error.flatten() }, { status: 400 });
-    if (!process.env.FACEBOOK_APP_SECRET?.trim()) {
-        return NextResponse.json({ error: 'Facebook app-ийн нууц түлхүүр (FACEBOOK_APP_SECRET) тохируулаагүй байна.' }, { status: 503 });
-    }
+    if (!metaPageApp()) return NextResponse.json({ error: META_PAGE_APP_MISSING }, { status: 503 });
     const page = await loadShopPage(shop.id);
     if (!page) return NextResponse.json({ error: 'Facebook Page холбогдоогүй байна. Эхлээд Page-ээ холбоно уу.' }, { status: 400 });
 

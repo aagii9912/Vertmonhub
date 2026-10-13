@@ -96,6 +96,23 @@ it('starts the v26 dialog with read_insights and a state cookie bound to the use
     expect(cookies).toMatch(/ig_accounts=;.*Max-Age=0/i);
 });
 
+it('uses the «Vertmon Hub» app and its Login for Business configuration when configured', async () => {
+    vi.stubEnv('META_ADS_APP_ID', 'hub-app');
+    vi.stubEnv('META_ADS_APP_SECRET', 'hub-secret');
+    vi.stubEnv('META_PAGE_LOGIN_CONFIG_ID', 'page-config');
+    for (const flow of ['facebook', 'instagram'] as const) {
+        const { started } = await connect(flow);
+        const url = new URL(started.headers.get('location')!);
+        expect(url.searchParams.get('client_id')).toBe('hub-app');
+        expect(url.searchParams.get('config_id')).toBe('page-config');
+    }
+    const { callback } = await connect();
+    await callback();
+    const exchange = http.mock.calls.find(([input]) => String(input).includes('oauth/access_token'));
+    expect(String(exchange?.[1]?.body)).toContain('client_id=hub-app');
+    expect(String(exchange?.[1]?.body)).toContain('client_secret=hub-secret');
+});
+
 it('refuses to start for a project the user cannot access', async () => {
     const response = await startPageOAuth(new NextRequest('http://localhost/api/auth/facebook?shop_id=other'), 'facebook');
     expect(response.status).toBe(401);

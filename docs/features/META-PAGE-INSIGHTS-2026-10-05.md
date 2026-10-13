@@ -1,5 +1,7 @@
 # Facebook Page / Instagram insights — Graph v26 (2026-10-05)
 
+> **2026-10-13:** хуучин апп (`FACEBOOK_APP_*`) Meta-д хаагдсан тул Page холболт «Vertmon Hub» апп руу шилжсэн — [META-PAGE-APP-2026-10-13.md](./META-PAGE-APP-2026-10-13.md).
+
 **Төлөв (2026-10-05):** код main-д нэгдэж production-д гарсан; миграци `20261005150000_social_page_insights.sql`
 production-д хэрэглэгдсэн (урьдчилсан шалгалт: `social_posts` давхардал 0). 2026-10-05-ны байдлаар аль ч
 төсөлд Facebook Page, Instagram холбогдоогүй (3 төсөл, `facebook_page_id` бүгд NULL) тул эзэмшигчийн

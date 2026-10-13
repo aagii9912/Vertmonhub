@@ -3,6 +3,7 @@ import { calculateBackoffDelay } from '@/lib/webhook/retryService';
 import { safeEqual } from '@/lib/crypto/safe-equal';
 import { graphInt, META_GRAPH_VERSION, MetaApiError } from '@/lib/facebook/daily-spend';
 import { logger } from '@/lib/utils/logger';
+import { metaPageAppSecret } from '@/lib/facebook/page-app';
 
 // Meta Graph API статус кодууд: түр зуурын алдаа (rate limit / серверийн талын)
 // үед дахин оролдоно. 4xx (429-аас бусад) алдааг дахин оролдох нь утгагүй —
@@ -24,13 +25,13 @@ function sendError(status: number | null, code: number | null, subcode: number |
 
 /**
  * Send API (Graph v26 `me/messages`) руу мессеж илгээх нэгдсэн helper. Токен зөвхөн
- * Authorization толгойд, `appsecret_proof` заавал (FACEBOOK_APP_SECRET байхгүй бол Graph-д
+ * Authorization толгойд, `appsecret_proof` заавал (Page аппын нууц байхгүй бол Graph-д
  * хандахгүй). Түр зуурын алдаа (429/5xx) болон сүлжээний алдаа гарвал exponential
  * backoff-оор дахин оролдоно. Бусад тохиолдолд шууд MetaApiError шиднэ.
  */
 async function postMessage(pageAccessToken: string, body: Record<string, unknown>): Promise<unknown> {
     const proof = appsecretProof(pageAccessToken);
-    if (!proof) throw new MetaApiError('Facebook app-ийн нууц түлхүүр (FACEBOOK_APP_SECRET) тохируулаагүй байна.');
+    if (!proof) throw new MetaApiError('Facebook Page аппын нууц түлхүүр тохируулаагүй байна.');
     const url = `https://graph.facebook.com/${META_GRAPH_VERSION}/me/messages?appsecret_proof=${proof}`;
     let lastError: MetaApiError | undefined;
 
@@ -74,12 +75,12 @@ async function sleepBackoff(attempt: number, error: MetaApiError): Promise<void>
 }
 
 // Page/Instagram-ийн Graph дуудлага бүр (илгээх, профайл, Lead Ads, insights) энэ proof-ыг
-// заавал авна; FACEBOOK_APP_SECRET тохируулаагүй бол null буцааж, дуудагч Graph-д хандахгүй (fail closed).
+// заавал авна; Page аппын нууц (lib/facebook/page-app.ts) тохируулаагүй бол null буцааж,
+// дуудагч Graph-д хандахгүй (fail closed). Нууц нь Page токеныг олгосон аппынх байх ёстой.
 export function appsecretProof(token: string): string | null {
-    // ⚠️ .trim() ЗААВАЛ — Vercel env-д сүүл newline/зай орвол OAuth (trim хийдэг)
-    // ажиллах ч энэ proof буруу гарч "Invalid appsecret_proof" алдаа өгдөг
-    // (subscribe + DM send хоёуланг унагадаг).
-    const secret = process.env.FACEBOOK_APP_SECRET?.trim();
+    // ⚠️ trim ЗААВАЛ (metaPageAppSecret дотор) — Vercel env-д сүүл newline/зай орвол
+    // "Invalid appsecret_proof" алдаа гарч subscribe + DM send хоёуланг унагадаг.
+    const secret = metaPageAppSecret();
     if (!secret) return null;
     return crypto.createHmac('sha256', secret).update(token).digest('hex');
 }

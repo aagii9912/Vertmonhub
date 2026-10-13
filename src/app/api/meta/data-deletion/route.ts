@@ -13,8 +13,10 @@ import { supabaseAdmin } from '@/lib/supabase';
 import { safeEqual } from '@/lib/crypto/safe-equal';
 import { newDeletionConfirmationCode } from '@/lib/facebook/data-deletion';
 import crypto from 'crypto';
+import { metaWebhookSecrets } from '@/lib/facebook/page-app';
 
-const APP_SECRET = process.env.FACEBOOK_APP_SECRET || '';
+// Data deletion callback-ийг аль ч манай Meta апп (Page апп, хуучин апп) илгээж болно.
+const APP_SECRETS = metaWebhookSecrets();
 
 interface SignedRequestData {
     user_id: string;
@@ -29,7 +31,7 @@ function parseSignedRequest(signedRequest: string): SignedRequestData | null {
     try {
         const [encodedSig, payload] = signedRequest.split('.');
 
-        if (!encodedSig || !payload || !APP_SECRET) {
+        if (!encodedSig || !payload || !APP_SECRETS.length) {
             return null;
         }
 
@@ -38,16 +40,16 @@ function parseSignedRequest(signedRequest: string): SignedRequestData | null {
             Buffer.from(payload.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString()
         );
 
-        // Verify signature
-        const expectedSig = crypto
-            .createHmac('sha256', APP_SECRET)
+        // Verify signature (манай аль нэг аппын нууцаар)
+        const valid = APP_SECRETS.some(secret => safeEqual(encodedSig, crypto
+            .createHmac('sha256', secret)
             .update(payload)
             .digest('base64')
             .replace(/\+/g, '-')
             .replace(/\//g, '_')
-            .replace(/=+$/, '');
+            .replace(/=+$/, '')));
 
-        if (!safeEqual(encodedSig, expectedSig)) {
+        if (!valid) {
             console.warn('Invalid signature for data deletion request');
             return null;
         }
