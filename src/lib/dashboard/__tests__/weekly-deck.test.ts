@@ -7,6 +7,7 @@ import PptxGenJS from 'pptxgenjs';
 import { SaxesParser } from 'saxes';
 import { buildWeeklyDeck, weeklyDeckFileName, type DeckImage, type WeeklyDeckInput } from '../weekly-deck';
 import { buildWeeklySales } from '../weekly-sales';
+import { weeklyDiscussionItems } from '../weekly-review';
 import { buildOperationsReport } from '../operations-report';
 import { buildBudgetOverview } from '@/lib/marketing/budget';
 import { buildMarketingPerformance } from '@/lib/marketing/performance';
@@ -260,6 +261,30 @@ describe('weekly meeting deck (.pptx)', () => {
         const { text } = await render(input({ kind: 'marketing', social: { ...social(), page: null, metrics: [], posts: [] } }));
         expect(text.join(' ')).not.toContain('долоо хоногийн үзүүлэлт');
         expect(text.join(' ')).not.toContain('нийтэлсэн пост');
+    });
+
+    it('sales deck: undated ERP-born contracts make the week and month unknown, never zero', async () => {
+        // Elysium: 77 гэрээ ERP-ийн байрны экспортоос үүссэн, гэрээ байгуулсан огноогүй; гэрээний экспорт ороогүй.
+        const undatedOps = { ...buildOperationsReport({
+            range, now: `${range.to}T10:00:00Z`, transactions: null, targets: [], viewings: [], leads: [],
+            contracts: Array.from({ length: 77 }, (_, index) => ({ id: `e${index}`, contract_date: null, product_type: 'residential', total_price: null, contract_status: 'active', prepayment_paid_cash: null })),
+        }), shopName: 'Elysium Residence' };
+        const weekly = buildWeeklySales({ range, sales: null, previousSales: null, crmContracts: [], crmUndated: 77, inventory: null, monthTarget: 5350000000 });
+        const { text } = await render(input({ sales: undatedOps, previousSales: undefined, weeklySales: weekly, monthSales: undefined, slides: [], updates: [], discussion: weeklyDiscussionItems({ sales: undatedOps }) }));
+        const at = (needle: string) => text.find(slideText => slideText.includes(needle))!;
+        expect(at('Энэ хурлаар шийдэх')).toContain('Огноогүй 77 гэрээ');
+        const overview = at('Борлуулалтын тойм');
+        expect(overview).toMatch(/Байгуулсан гэрээ — Огноогүй 77 гэрээ · ERP гэрээний экспорт хэрэгтэй/);
+        expect(overview).toMatch(/Гэрээний бүртгэлтэй дүн — Огноогүй гэрээ дүнд ороогүй/);
+        const plan = at('сарын төлөвлөгөө ба гүйцэтгэл');
+        expect(plan).toMatch(/Гэрээний гүйцэтгэл — Огноогүй 77 гэрээ/);
+        expect(plan).toMatch(/Гүйцэтгэлийн хувь — /);
+        expect(plan).not.toContain('0%');
+        expect(at('Энэ долоо хоногийн гэрээ')).toContain('Гэрээний тоо тодорхойгүй. 77 гэрээ байгуулсан огноогүй');
+        const month = at('сарын гэрээ долоо хоногоор');
+        expect(month).toContain('— / төлөвлөгөө 5.35 тэрбум ₮ · —');
+        expect(month).toContain('Сарын гэрээний тоо тодорхойгүй');
+        for (const slideText of text) expect(slideText).not.toMatch(/Байгуулсан гэрээ 0 |Тайлант долоо хоногт гэрээ бүртгэгдээгүй|Энэ сард гэрээ бүртгэгдээгүй/);
     });
 
     it('never prints missing amounts as zero and keeps missing images out of the slide', async () => {

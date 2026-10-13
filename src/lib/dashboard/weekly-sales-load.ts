@@ -50,7 +50,13 @@ export async function loadWeeklySales(db: SupabaseClient, options: { shopId: str
 
     // ERP гэрээ алга бол CRM-ийн гэрээ (сар болон өмнөх долоо хоногийг хамруулна).
     let crmContracts: ContractLine[] | null = null;
+    let crmUndated = 0;
     if (!sales) {
+        // Огноогүй гэрээ (ERP байрны экспортоос үүссэн) хугацааны асуулгад орохгүй — тоог нь тусад нь авч, тайланд «тодорхойгүй» гэнэ.
+        const { count, error } = await db.from('property_contracts').select('id', { count: 'exact', head: true })
+            .eq('shop_id', shopId).is('deleted_at', null).is('contract_date', null).or('contract_status.is.null,contract_status.neq.cancelled');
+        if (error) throw error;
+        crmUndated = count ?? 0;
         const earliest = [`${month}-01`, shiftReviewDate(range.from, -7)].sort()[0];
         const rows = await fetchAllRows<CrmContract>((from, to) => db.from('property_contracts')
             .select('id, contract_number, contract_date, product_type, block_name, unit_label, unit_number, contracted_area, price_per_sqm, prepayment_condition, total_price, prepayment_due, paid_amount, sales_manager, sales_channel, contract_status, customer_name')
@@ -100,7 +106,7 @@ export async function loadWeeklySales(db: SupabaseClient, options: { shopId: str
     if (targetError) throw targetError;
 
     const report = buildWeeklySales({
-        range, sales, previousSales, crmContracts, inventory,
+        range, sales, previousSales, crmContracts, crmUndated, inventory,
         monthTarget: target?.target_amount ? money(target.target_amount) : null,
     });
     // Захиалагчийн нэрийг зөвхөн гэрээ харах эрхтэй хүнд харуулна.

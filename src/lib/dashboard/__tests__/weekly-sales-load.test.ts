@@ -12,16 +12,21 @@ function fakeDb(tables: Record<string, Row[]>, calls: string[] = []) {
     return { from(table: string) {
         const filters: Array<(row: Row) => boolean> = [];
         let selected = '';
+        let head = false;
         const query: Record<string, unknown> = {
-            select: (columns: string) => { selected = columns; calls.push(`${table}:${columns}`); return query; },
+            select: (columns: string, options?: { head?: boolean }) => { selected = columns; head = !!options?.head; calls.push(`${table}:${columns}`); return query; },
             eq: (key: string, value: unknown) => { filters.push(row => row[key] === value); return query; },
             in: (key: string, values: unknown[]) => { filters.push(row => values.includes(row[key])); return query; },
-            is: () => query, gte: () => query, order: () => query,
+            is: (key: string, value: null) => { filters.push(row => (row[key] ?? null) === value); return query; },
+            // Зөвхөн «цуцлаагүй» шүүлтийг дуурайна.
+            or: (expression: string) => { if (expression.includes('neq.cancelled')) filters.push(row => row.contract_status !== 'cancelled'); return query; },
+            gte: () => query, order: () => query,
             lte: (key: string, value: string) => { filters.push(row => String(row[key]) <= value); return query; },
             range: () => query,
             maybeSingle: async () => ({ data: (tables[table] ?? []).filter(row => filters.every(f => f(row)))[0] ?? null, error: null }),
             then: (resolve: (value: unknown) => unknown) => {
                 let rows = (tables[table] ?? []).filter(row => filters.every(f => f(row)));
+                if (head) return Promise.resolve({ data: null, count: rows.length, error: null }).then(resolve);
                 if (table === 'erp_imports' && selected.includes('columns:datasets->0->columns'))
                     rows = rows.map(row => ({ id: row.id, source: row.source, report_date: row.report_date, columns: (row.datasets as Array<{ columns: string[] }>)[0]?.columns ?? null }));
                 return Promise.resolve({ data: rows, error: null }).then(resolve);
@@ -46,7 +51,7 @@ describe('loadWeeklySales', () => {
             team_sales_targets: [{ shop_id: 's', year: 2026, month: 9, target_amount: '200' }],
         });
         const report = await loadWeeklySales(db, { shopId: 's', meetingDate: '2026-09-23', canSeeCustomers: false });
-        expect(report.sources).toEqual({ sales: { date: '2026-09-22', source: 'ERP гэрээ' }, previousSales: { date: '2026-09-15', source: 'ERP гэрээ' }, contracts: 'erp' });
+        expect(report.sources).toEqual({ sales: { date: '2026-09-22', source: 'ERP гэрээ' }, previousSales: { date: '2026-09-15', source: 'ERP гэрээ' }, contracts: 'erp', undatedContracts: 0 });
         expect(report.cash).toMatchObject({ delta: 30 });
         expect(report.week.lines).toEqual([expect.objectContaining({ contractNumber: 'EL-1', customer: null })]);
         expect(report.month).toMatchObject({ total: 100, target: 200, attainmentPct: 50 });
@@ -76,6 +81,27 @@ describe('loadWeeklySales', () => {
         expect(report.inventory!.floorMaps).toEqual([expect.objectContaining({ block: '203', models: ['A', 'B', 'C'], totals: { sold: 3, available: 0, other: 0, barter: 0 } })]);
         expect(report.inventory!.blocks).toEqual([expect.objectContaining({ block: '203', kind: 'residential', total: 3, statuses: { sold: 1, handed_over: 2 } })]);
         expect(report.month.target).toBeNull();
+        expect(report.sources.undatedContracts).toBe(0);
         expect(calls.some(call => call.startsWith('erp_imports:id, datasets'))).toBe(false);
+    });
+
+    it('counts undated CRM contracts so the week and month are reported as unknown, not zero', async () => {
+        // Elysium: гэрээ нь ERP-ийн байрны экспортоос үүссэн, гэрээ байгуулсан огноогүй.
+        const db = fakeDb({
+            erp_imports: [],
+            property_contracts: [
+                { id: 'e1', shop_id: 's', contract_date: null, total_price: null, contract_status: 'active' },
+                { id: 'e2', shop_id: 's', contract_date: null, total_price: null, contract_status: null },
+                { id: 'e3', shop_id: 's', contract_date: null, total_price: null, contract_status: 'cancelled' },
+                { id: 'e4', shop_id: 's', contract_date: null, deleted_at: '2026-09-01', contract_status: 'active' },
+            ],
+            team_sales_targets: [{ shop_id: 's', year: 2026, month: 9, target_amount: '5350000000' }],
+        });
+        const report = await loadWeeklySales(db, { shopId: 's', meetingDate: '2026-09-23', canSeeCustomers: true });
+        expect(report.sources).toMatchObject({ contracts: 'crm', undatedContracts: 2 });
+        expect(report.week.count).toBe(0);
+        // Төлөвлөгөө байгаа ч гүйцэтгэлийн хувь 0% биш — тодорхойгүй.
+        expect(report.month).toMatchObject({ count: 0, target: 5350000000, attainmentPct: null });
+        expect(report.notes.join(' ')).toContain('2 гэрээ байгуулсан огноогүй');
     });
 });

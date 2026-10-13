@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { nextMeetingDate, lastCompletedReviewRange, weeklyReviewRange, reviewWeekOf, reviewWeeksBetween, meetingDateSchema, WeeklyUpdateSchema, formatReviewChange, formatWeeklyReview, weeklyDiscussionItems, type WeeklyUpdate } from '../weekly-review';
 import { formatWorkdayDate } from '@/lib/utils/date';
 import { buildMarketingPerformance, type MarketingSpend } from '@/lib/marketing/performance';
+import { buildOperationsReport } from '../operations-report';
+import { buildWeeklySales } from '../weekly-sales';
 
 describe('Лхагва гарагийн тайлангийн хугацаа', () => {
     it('Улаанбаатарын Лхагва гарагийг UTC өдрөөс үл хамааран сонгоно', () => {
@@ -60,6 +62,18 @@ describe('Лхагва гарагийн тайлангийн хугацаа', ()
         expect(text).toContain('Нэг лидийн өртөг: тооцох боломжгүй');
         expect(text).not.toContain('Нэг лидийн өртөг: 0₮');
         expect(text).toContain('Ханшгүй 1 зардал');
+    });
+    it('огноогүй гэрээтэй төслийн гэрээг 0 биш тодорхойгүй гэж бичиж, хурлын асуудалд оруулна', () => {
+        const range = weeklyReviewRange('2026-10-14');
+        const sales = { ...buildOperationsReport({ range, now: '2026-10-13T10:00:00Z', transactions: null, targets: [], viewings: [], leads: [],
+            contracts: [{ id: 'e1', contract_date: null, product_type: 'residential', total_price: null, contract_status: 'active', prepayment_paid_cash: null }] }), shopName: 'Elysium' };
+        const weeklySales = { meetingDate: '2026-10-14', ...buildWeeklySales({ range, sales: null, previousSales: null, crmContracts: [], crmUndated: 1, inventory: null, monthTarget: 1000 }) };
+        expect(weeklyDiscussionItems({ sales })[0]).toMatchObject({ title: 'Огноогүй 1 гэрээ', part: 'sales', href: '/dashboard/reports/erp' });
+        const text = formatWeeklyReview({ shopName: 'Elysium', meetingDate: '2026-10-14', sales, weeklySales, notices: [] });
+        expect(text).toContain('Байгуулсан гэрээ: — (огноогүй 1 гэрээ ороогүй)');
+        expect(text).toContain('Энэ долоо хоног: — гэрээ · — (огноогүй 1 гэрээ ороогүй)');
+        expect(text).toContain('2026-10 сар: — гэрээ · — / төлөвлөгөө');
+        expect(text).not.toMatch(/Гэрээ: 0 |Энэ долоо хоног: 0 гэрээ|\(0%\)/);
     });
     it('зардлын бүртгэлгүй болон илэрхий бүртгэсэн 0 дүнг ялгана', () => {
         const base = { shopName: 'Тест', meetingDate: '2026-09-30', notices: [] };

@@ -29,6 +29,7 @@ import { contentPlanWindow, useContentPlan, WeeklyContentPlan } from '@/componen
 import { WEEKLY_SLIDE_PART_MODULE, type WeeklySlidePart } from '@/lib/dashboard/weekly-slides';
 import { summarizeContentPlan } from '@/lib/marketing/content-plan';
 import type { WeeklyDeckKind } from '@/lib/dashboard/weekly-deck';
+import { periodContractAmount, periodContractCount, undatedContractsHint, undatedContractsShort } from '@/lib/dashboard/contract-dates';
 
 export default function WeeklyReviewPage() {
     const { shop, user } = useAuth();
@@ -191,8 +192,10 @@ function WeeklyReview() {
                         {salesQuery.isPending && can('reports') ? <Skeleton className="h-32" /> : sales ? <>
                             <div className="grid grid-cols-2 gap-5 rounded-2xl border border-border p-5">
                                 <Metric label="Шинэ лид" value={sales.leads.newCount} helper={formatReviewChange(sales.leads.newCount, previousSales?.leads.newCount)} />
-                                <Metric label="Байгуулсан гэрээ" value={sales.contracts.count} helper={formatReviewChange(sales.contracts.count, previousSales?.contracts.count)} />
-                                <Metric label="Гэрээний бүртгэлтэй дүн" value={formatMNTShort(sales.contracts.value)} helper={previousSales ? `Өмнөх ${formatMNTShort(previousSales.contracts.value)}${previousSales.contracts.missingAmounts ? ' · дүн дутуу' : ''}` : 'Өмнөх хугацааны мэдээлэл байхгүй'} />
+                                <Metric label="Байгуулсан гэрээ" value={periodContractCount(sales.contracts.count, sales.contracts.undatedCount)}
+                                    helper={sales.contracts.undatedCount ? undatedContractsShort(sales.contracts.undatedCount) : formatReviewChange(sales.contracts.count, previousSales?.contracts.count)} />
+                                <Metric label="Гэрээний бүртгэлтэй дүн" value={periodContractAmount(sales.contracts.value, sales.contracts.count, sales.contracts.undatedCount, formatMNTShort)}
+                                    helper={sales.contracts.undatedCount ? 'Огноогүй гэрээ дүнд ороогүй' : previousSales ? `Өмнөх ${formatMNTShort(previousSales.contracts.value)}${previousSales.contracts.missingAmounts ? ' · дүн дутуу' : ''}` : 'Өмнөх хугацааны мэдээлэл байхгүй'} />
                                 <Metric label="Болсон уулзалт" value={sales.meetings?.completed ?? '—'} helper={sales.meetings ? formatReviewChange(sales.meetings.completed, previousSales?.meetings?.completed) : 'Уулзалтын мэдээлэл байхгүй'} />
                             </div>
                             {sales.meetings && <div className="space-y-3 rounded-2xl border border-border p-5">
@@ -216,7 +219,8 @@ function WeeklyReview() {
                                 </table>
                             </div>}
                             <p className="text-xs leading-relaxed text-muted-foreground">Гэрээний дүн нь мөнгөөр орсон орлогоос тусдаа.{sales.cash ? ` Мөнгөөр орсон бүртгэл: ${formatMNTShort(sales.cash.receipts)} (${sales.cash.receiptCount} гүйлгээ). Банкны хуулгатай тулгаагүй.` : ' Мөнгөн орлогыг санхүүгийн эрхтэй хүн харна.'}</p>
-                            {(sales.contracts.missingAmounts > 0 || sales.contracts.undatedCount > 0) && <Alert variant="warning">Дүн дутуу {sales.contracts.missingAmounts}, огноогүй {sales.contracts.undatedCount} гэрээ байна.</Alert>}
+                            {sales.contracts.undatedCount > 0 && <Alert variant="warning">{undatedContractsHint(sales.contracts.undatedCount)}</Alert>}
+                            {sales.contracts.missingAmounts > 0 && <Alert variant="warning">Нийт дүн хоосон {sales.contracts.missingAmounts} гэрээ дүнд ороогүй.</Alert>}
                             <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm">
                                 <span className="text-muted-foreground">Одоо анхаарах:</span>
                                 {[['Эзэнгүй', sales.leads.health.ownerless, 'unassigned'], ['Дараагийн алхамгүй', sales.leads.health.noNextStep, 'no_followup'], ['Хугацаа хэтэрсэн', sales.leads.health.overdue, 'overdue']].map(([label, count, queue]) => can('leads') ? <Link key={queue} href={`/dashboard/leads?queue=${queue}`} className="focus-ring hover:underline">{label} <strong className="ml-1 tabular-nums">{count}</strong></Link> : <span key={queue}>{label} {count}</span>)}

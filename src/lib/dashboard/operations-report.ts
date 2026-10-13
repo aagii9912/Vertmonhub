@@ -5,6 +5,7 @@ import { getLeadWorkQueues } from '@/lib/leads/work-queue';
 import { formatMNT } from '@/lib/utils/currency';
 import { ubDateStr, ubMonthRange } from '@/lib/utils/date';
 import { MONTHLY_SALES_FIELDS, MONTHLY_SALES_LABELS, type MonthlySalesMonth } from '@/lib/sales/monthly';
+import { periodContractAmount, periodContractCount, undatedContractsHint } from './contract-dates';
 
 export const OperationsRangeSchema = z.object({
     from: z.iso.date(),
@@ -242,8 +243,9 @@ export function formatOperationsReportText(report: OperationsReport): string {
         `${report.shopName} · Үйл ажиллагааны тайлан`,
         `Хугацаа: ${range.from} – ${range.to} (Улаанбаатар)`,
         `Гаргасан: ${ubDateStr(new Date(report.generatedAt))}`,
-        `Гэрээ: ${contracts.count} · бүртгэлтэй дүн ${formatMNT(contracts.value)}`,
+        `Гэрээ: ${periodContractCount(contracts.count, contracts.undatedCount)} · бүртгэлтэй дүн ${periodContractAmount(contracts.value, contracts.count, contracts.undatedCount, formatMNT)}`,
         `Дүн дутуу гэрээ: ${contracts.missingAmounts} · огноогүй гэрээ (хугацаанд ороогүй): ${contracts.undatedCount}`,
+        ...(contracts.undatedCount ? [undatedContractsHint(contracts.undatedCount)] : []),
         ...(contracts.byProduct || []).map(product => `  ${product.label}: ${product.count} гэрээ · бүртгэлтэй дүн ${formatMNT(product.value)}${product.missingAmounts ? ` · дүн дутуу ${product.missingAmounts}` : ''}`),
         ...(meetings ? [
             `Болсон уулзалтын бүртгэл: ${meetings.completed} · шинэ харилцагч ${meetings.classificationAvailable ? meetings.newCustomer : '—'} · давтан ${meetings.classificationAvailable ? meetings.repeatCustomer : '—'} · худалдан авагч ${meetings.classificationAvailable ? meetings.existingBuyer : '—'} · төрөл тодорхойгүй ${meetings.unclassified}`,

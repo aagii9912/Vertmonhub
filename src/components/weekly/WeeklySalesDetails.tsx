@@ -9,6 +9,7 @@ import { dashboardJson } from '@/lib/api/dashboardFetch';
 import { formatMNT, formatMNTShort } from '@/lib/utils/currency';
 import { cn } from '@/lib/utils';
 import type { WeeklySalesReport } from '@/lib/dashboard/weekly-sales';
+import { periodContractAmount, periodContractCount, undatedContractsHint, undatedContractsShort } from '@/lib/dashboard/contract-dates';
 import { Skeleton } from '@/components/dashboard/v2/primitives';
 import { FloorMap, FloorMapLegend } from './FloorMap';
 
@@ -34,19 +35,24 @@ export function WeeklySalesDetails({ query, canOpenErp }: { query: ReturnType<ty
     if (!report) return <p className="rounded-xl bg-surface-2 p-5 text-sm text-muted-foreground">Долоо хоногийн борлуулалтын дэлгэрэнгүйг ачаалж чадсангүй. {query.error?.message}</p>;
     const maps = report.inventory?.floorMaps ?? [];
     const activeMap = maps.find(map => map.block === block) ?? maps[0];
+    const undated = report.sources.undatedContracts;
+    const monthTotal = periodContractAmount(report.month.total, report.month.count, undated, formatMNTShort);
+    const monthPct = report.month.attainmentPct === null ? '—' : `${report.month.attainmentPct}%${undated ? '+' : ''}`;
 
     return (
         <div className="space-y-6">
             <SourceLine report={report} canOpenErp={canOpenErp} />
 
             <div className="grid grid-cols-2 gap-5 rounded-2xl border border-border p-5 lg:grid-cols-4">
-                <Figure label="Энэ 7 хоногийн гэрээ" value={`${report.week.count}`} helper={`${formatMNTShort(report.week.total)} · өмнөх ${report.previousWeek.count} (${formatMNTShort(report.previousWeek.total)})`} />
-                <Figure label={`${Number(report.month.month.slice(5))}-р сарын гэрээ`} value={`${report.month.count}`}
-                    helper={report.month.target ? `${formatMNTShort(report.month.total)} / төлөвлөгөө ${formatMNTShort(report.month.target)} · ${report.month.attainmentPct}%` : `${formatMNTShort(report.month.total)} · сарын төлөвлөгөө тохируулаагүй`} />
+                <Figure label="Энэ 7 хоногийн гэрээ" value={periodContractCount(report.week.count, undated)}
+                    helper={undated ? undatedContractsShort(undated) : `${formatMNTShort(report.week.total)} · өмнөх ${report.previousWeek.count} (${formatMNTShort(report.previousWeek.total)})`} />
+                <Figure label={`${Number(report.month.month.slice(5))}-р сарын гэрээ`} value={periodContractCount(report.month.count, undated)}
+                    helper={report.month.target ? `${monthTotal} / төлөвлөгөө ${formatMNTShort(report.month.target)} · ${monthPct}` : `${monthTotal} · сарын төлөвлөгөө тохируулаагүй`} />
                 <Figure label="Мөнгөн орлого (ERP)" value={report.cash ? formatMNTShort(report.cash.delta) : '—'} helper={report.cash ? `${report.cash.from} → ${report.cash.to}` : 'Хоёр долоо хоногийн ERP экспорт хэрэгтэй'} />
                 <Figure label="Төлбөрийн хоцролт" value={report.receivables ? formatMNTShort(report.receivables.overdue) : '—'}
                     helper={report.receivables ? `${report.receivables.overdueContracts} гэрээ · үлдэгдэл ${formatMNTShort(report.receivables.balance)}` : 'ERP гэрээний экспорт хэрэгтэй'} />
             </div>
+            {undated > 0 && <p className="rounded-xl bg-status-pending-soft px-4 py-3 text-sm text-status-pending">{undatedContractsHint(undated)}</p>}
             {report.cash && <p className="text-xs leading-relaxed text-muted-foreground">{report.cash.basis}{report.cash.unknown ? ` Төлсөн дүн хоосон ${report.cash.unknown} мөр тооцоонд ороогүй.` : ''}</p>}
 
             <section className="break-inside-avoid space-y-2">
@@ -65,7 +71,7 @@ export function WeeklySalesDetails({ query, canOpenErp }: { query: ReturnType<ty
                         <td className="whitespace-nowrap px-2" title={line.manager ?? undefined}>{line.manager?.split('.')[0] ?? '—'}</td>
                         <td className="px-2">{line.channel ?? '—'}</td>
                     </tr>)}
-                </Table> : <Empty>Тайлант долоо хоногт гэрээ бүртгэгдээгүй.</Empty>}
+                </Table> : <Empty>{undated ? 'Гэрээний тоо тодорхойгүй — огноогүй гэрээ байна.' : 'Тайлант долоо хоногт гэрээ бүртгэгдээгүй.'}</Empty>}
                 {report.week.byKind.length > 0 && <p className="text-xs text-muted-foreground">{report.week.byKind.map(kind => `${kind.label} ${kind.count} · ${formatMNTShort(kind.total)}`).join(' · ')}{report.week.barter ? ` · бартер ${report.week.barter}` : ''}</p>}
             </section>
 
@@ -78,7 +84,7 @@ export function WeeklySalesDetails({ query, canOpenErp }: { query: ReturnType<ty
                         <td className="num px-2 text-right font-medium">{row.count}</td>
                         <td className="num whitespace-nowrap px-2 text-right">{formatMNTShort(row.total)}</td>
                     </tr>)}
-                </Table> : <Empty>Энэ сард гэрээ бүртгэгдээгүй.</Empty>}
+                </Table> : <Empty>{undated ? 'Сарын гэрээний тоо тодорхойгүй — огноогүй гэрээ байна.' : 'Энэ сард гэрээ бүртгэгдээгүй.'}</Empty>}
                 {report.month.missingTotals > 0 && <p className="text-xs text-muted-foreground">Нийт дүн хоосон {report.month.missingTotals} гэрээ дүнд ороогүй.</p>}
             </section>
 

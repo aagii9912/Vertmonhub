@@ -15,6 +15,7 @@ import type { ErpProduct, ErpSale, ProductKind } from '@/lib/erp/records';
 import { PRODUCT_KIND_LABEL } from '@/lib/erp/records';
 import type { InventoryStatus } from '@/lib/inventory/labels';
 import { UNIT_STATUS_LABEL } from '@/lib/inventory/labels';
+import { knownPeriodAmount, undatedContractsHint } from './contract-dates';
 
 const DAY = 86_400_000;
 const shift = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * DAY).toISOString().slice(0, 10);
@@ -69,6 +70,8 @@ export interface WeeklySalesInput {
     previousSales: { info: SnapshotInfo; rows: ErpSale[] } | null;
     /** ERP-гүй үед CRM-ийн гэрээ. */
     crmContracts: ContractLine[] | null;
+    /** CRM-ийн огноогүй (хугацааны асуулгад ороогүй) идэвхтэй гэрээний тоо. */
+    crmUndated?: number;
     /** ERP бүтээгдэхүүн эсвэл CRM нэгж (ижил хэлбэрт хувиргасан). */
     inventory: { info: SnapshotInfo & { kind: 'erp' | 'crm' }; rows: ErpProduct[] } | null;
     /** Сарын гэрээний төлөвлөгөө (₮). Тохируулаагүй бол null. */
@@ -118,8 +121,8 @@ export function buildWeeklySales(input: WeeklySalesInput) {
     const weekLines = allLines.filter(line => within(line.date, range.from, range.to)).sort((a, b) => (a.date ?? '').localeCompare(b.date ?? '') || a.key.localeCompare(b.key));
     const monthLines = allLines.filter(line => line.date?.startsWith(month));
     const previousWeek = { from: shift(range.from, -7), to: shift(range.to, -7) };
-    const undated = allLines.filter(line => !line.date).length;
-    if (undated) notes.push(`${undated} гэрээний огноо хоосон тул хугацаанд ороогүй.`);
+    const undated = input.sales ? allLines.filter(line => !line.date).length : input.crmUndated ?? 0;
+    if (undated) notes.push(input.sales ? `${undated} гэрээний огноо хоосон тул хугацаанд ороогүй.` : undatedContractsHint(undated));
 
     const kinds = [...new Set(monthLines.map(line => line.kind))];
     const monthByWeek = kinds.map(kind => {
@@ -226,7 +229,7 @@ export function buildWeeklySales(input: WeeklySalesInput) {
     return {
         range,
         month: { month, weeks, ...monthSummary, byWeek: monthByWeek,
-            target: input.monthTarget, attainmentPct: input.monthTarget ? Math.round(monthSummary.total / input.monthTarget * 100) : null },
+            target: input.monthTarget, attainmentPct: input.monthTarget && knownPeriodAmount(monthSummary.total, monthSummary.count, undated) !== null ? Math.round(monthSummary.total / input.monthTarget * 100) : null },
         week: { ...week, lines: weekLines },
         previousWeek: { ...previousWeek, count: previousWeekLines.length, total: sum(previousWeekLines.map(line => line.total)) },
         byManager,
@@ -238,6 +241,8 @@ export function buildWeeklySales(input: WeeklySalesInput) {
             sales: input.sales?.info ?? null,
             previousSales: input.previousSales?.info ?? null,
             contracts: input.sales ? 'erp' as const : input.crmContracts ? 'crm' as const : null,
+            /** Огноогүй гэрээ — >0 бол долоо хоног, сарын тоо бүрэн биш (`lib/dashboard/contract-dates.ts`). */
+            undatedContracts: undated,
         },
         notes,
     };

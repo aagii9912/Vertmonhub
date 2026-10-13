@@ -3,6 +3,7 @@ import type { OperationsReport } from './operations-report';
 import type { WeeklySalesReport } from './weekly-sales';
 import type { WeeklyContentPlan, WeeklyUpdate } from './weekly-review';
 import { formatReviewChange, updatePart } from './weekly-review';
+import { knownPeriodAmount, periodContractAmount, periodContractCount, undatedContractsHint, undatedContractsShort } from './contract-dates';
 import { WEEKLY_SLIDE_PART_LABEL, WEEKLY_SLIDE_SECTION_LABEL, type WeeklySlide } from './weekly-slides';
 import type { MarketingPerformance } from '@/lib/marketing/performance';
 import type { BudgetOverview } from '@/lib/marketing/budget';
@@ -191,10 +192,12 @@ function salesOverviewSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     if (!sales) return;
     const prev = input.previousSales;
     const slide = content(pres, 'Борлуулалт', 'Борлуулалтын тойм', `${span(input.range)} · өмнөх 7 хоногтой харьцуулав`);
+    const undated = sales.contracts.undatedCount;
     statRow(slide, TOP, [
         { label: 'Шинэ лид', value: count(sales.leads.newCount), helper: formatReviewChange(sales.leads.newCount, prev?.leads.newCount) },
-        { label: 'Байгуулсан гэрээ', value: count(sales.contracts.count), helper: formatReviewChange(sales.contracts.count, prev?.contracts.count) },
-        { label: 'Гэрээний бүртгэлтэй дүн', value: short(sales.contracts.value), helper: prev ? `Өмнөх ${short(prev.contracts.value)}${prev.contracts.missingAmounts ? ' · дүн дутуу' : ''}` : 'Өмнөх хугацааны мэдээлэл байхгүй' },
+        { label: 'Байгуулсан гэрээ', value: periodContractCount(sales.contracts.count, undated), helper: undated ? undatedContractsShort(undated) : formatReviewChange(sales.contracts.count, prev?.contracts.count) },
+        { label: 'Гэрээний бүртгэлтэй дүн', value: periodContractAmount(sales.contracts.value, sales.contracts.count, undated, short),
+            helper: undated ? 'Огноогүй гэрээ дүнд ороогүй' : prev ? `Өмнөх ${short(prev.contracts.value)}${prev.contracts.missingAmounts ? ' · дүн дутуу' : ''}` : 'Өмнөх хугацааны мэдээлэл байхгүй' },
         { label: 'Болсон уулзалт', value: count(sales.meetings?.completed), helper: sales.meetings ? formatReviewChange(sales.meetings.completed, prev?.meetings?.completed) : 'Уулзалтын мэдээлэл байхгүй' },
     ]);
     const meetings = sales.meetings;
@@ -215,7 +218,8 @@ function salesOverviewSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
         sales.cash ? `Мөнгөөр орсон бүртгэл: ${money(sales.cash.receipts)} (${sales.cash.receiptCount} гүйлгээ). Банкны хуулгатай тулгаагүй.` : 'Мөнгөн орлогыг санхүүгийн эрхтэй хүн харна.',
         meetings?.basis,
         !classified ? 'Уулзалтын төрлийн ангилал системд хараахан нэвтрээгүй.' : null,
-        sales.contracts.missingAmounts || sales.contracts.undatedCount ? `Дүн дутуу ${sales.contracts.missingAmounts}, огноогүй ${sales.contracts.undatedCount} гэрээ.` : null,
+        sales.contracts.missingAmounts ? `Дүн дутуу ${sales.contracts.missingAmounts} гэрээ.` : null,
+        undated ? undatedContractsHint(undated) : null,
     ]);
 }
 
@@ -229,10 +233,15 @@ function monthPlanSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     const ratio = (actual: number | null | undefined, target: number | null | undefined) => actual === null || actual === undefined || !target ? '—' : `${Math.round(actual / target * 100)}%`;
     const contractActual = month?.manual_contract_actual_amount ?? null;
     const cashActual = month?.manual_cashflow_actual_amount ?? null;
+    const undated = weekly?.sources.undatedContracts ?? 0;
+    // Удирдлагын баталгаажуулсан дүн байхгүй бол гэрээний бүртгэл; огноогүй гэрээтэй бол бүрэн биш («N+» эсвэл «—»).
+    const recorded = weekly ? knownPeriodAmount(weekly.month.total, weekly.month.count, undated) : null;
+    const contractTarget = month?.target_amount ?? weekly?.month.target ?? null;
     statRow(slide, TOP, [
-        { label: 'Гэрээний төлөвлөгөө', value: short(month?.target_amount ?? weekly?.month.target ?? null), tone: 'gold' },
-        { label: 'Гэрээний гүйцэтгэл', value: short(contractActual ?? weekly?.month.total ?? null), helper: contractActual !== null ? 'Удирдлагын баталгаажуулсан' : weekly ? `${weekly.sources.contracts === 'erp' ? 'ERP' : 'CRM'}-ийн гэрээ, ${weekly.month.count} ш` : undefined },
-        { label: 'Гүйцэтгэлийн хувь', value: ratio(contractActual ?? weekly?.month.total ?? null, month?.target_amount ?? weekly?.month.target ?? null) },
+        { label: 'Гэрээний төлөвлөгөө', value: short(contractTarget), tone: 'gold' },
+        { label: 'Гэрээний гүйцэтгэл', value: contractActual !== null ? short(contractActual) : weekly ? periodContractAmount(weekly.month.total, weekly.month.count, undated, short) : '—',
+            helper: contractActual !== null ? 'Удирдлагын баталгаажуулсан' : weekly ? (undated ? undatedContractsShort(undated) : `${weekly.sources.contracts === 'erp' ? 'ERP' : 'CRM'}-ийн гэрээ, ${weekly.month.count} ш`) : undefined },
+        { label: 'Гүйцэтгэлийн хувь', value: `${ratio(contractActual ?? recorded, contractTarget)}${contractActual === null && undated && recorded !== null && contractTarget ? '+' : ''}` },
     ]);
     const cashVisible = !!input.monthSales?.monthlyPerformance?.cashflowVisible;
     statRow(slide, TOP + 1.85, cashVisible ? [
@@ -247,6 +256,7 @@ function monthPlanSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
         weekly?.cash?.basis,
         cashVisible ? null : 'Орсон мөнгөний төлөвлөгөө, гүйцэтгэлийг санхүүгийн эрхтэй хүн харна.',
         'Гэрээний дүн, мөнгөн орлого, бартерыг холихгүй.',
+        contractActual === null && undated ? undatedContractsHint(undated) : null,
     ]);
 }
 
@@ -262,24 +272,28 @@ function contractSlides(pres: PptxGenJS, report: WeeklySalesReport) {
     const footer = [bodyCell('Нийт', 'left', { bold: true, colspan: 6 }), bodyCell(money(report.week.total), 'right', { bold: true }),
         bodyCell(money(report.week.lines.reduce((sum, line) => sum + (line.advance ?? 0), 0)), 'right', { bold: true }),
         bodyCell(money(report.week.lines.reduce((sum, line) => sum + (line.paid ?? 0), 0)), 'right', { bold: true }), bodyCell(''), bodyCell('')];
+    const undated = report.sources.undatedContracts;
     if (!rows.length) {
         const slide = content(pres, 'Борлуулалт', 'Энэ долоо хоногийн гэрээ', span(report.range));
-        slide.addText('Тайлант долоо хоногт гэрээ бүртгэгдээгүй.', { x: M, y: TOP, w: CW, h: 0.5, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, isTextBox: true });
+        slide.addText(undated ? `Гэрээний тоо тодорхойгүй. ${undatedContractsHint(undated)}` : 'Тайлант долоо хоногт гэрээ бүртгэгдээгүй.', { x: M, y: TOP, w: CW, h: 0.9, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, valign: 'top', isTextBox: true });
         return;
     }
     tableSlides(pres, {
         kicker: 'Борлуулалт', title: 'Энэ долоо хоногийн гэрээ',
         subtitle: `${span(report.range)} · ${report.week.byKind.map(kind => `${kind.label} ${kind.count}`).join(' · ')}${report.week.barter ? ` · бартер ${report.week.barter}` : ''}`,
         head, rows, footer, colW: [0.7, 1.15, 0.8, 0.75, 2.0, 0.65, 1.45, 1.4, 1.35, 1.0, 0.88], perSlide: 11, fontSize: 10,
-        notes: ['Захиалагчийн нэрийг зөвхөн гэрээний эрхтэй хэрэглэгч харна; регистрийн дугаар гаргахгүй.', 'Хоосон дүнг 0 гэж тооцоогүй («—»).'],
+        notes: ['Захиалагчийн нэрийг зөвхөн гэрээний эрхтэй хэрэглэгч харна; регистрийн дугаар гаргахгүй.', 'Хоосон дүнг 0 гэж тооцоогүй («—»).', undated ? undatedContractsHint(undated) : ''].filter(Boolean),
     });
 }
 
 function monthSlide(pres: PptxGenJS, report: WeeklySalesReport) {
     const m = report.month;
-    const slide = content(pres, 'Борлуулалт', `${Number(m.month.slice(5))}-р сарын гэрээ долоо хоногоор`, m.target ? `${short(m.total)} / төлөвлөгөө ${short(m.target)} · ${m.attainmentPct}%` : `${short(m.total)} · сарын төлөвлөгөө тохируулаагүй`);
+    const undated = report.sources.undatedContracts;
+    const total = periodContractAmount(m.total, m.count, undated, short);
+    const subtitle = m.target ? `${total} / төлөвлөгөө ${short(m.target)} · ${m.attainmentPct === null ? '—' : `${m.attainmentPct}%${undated ? '+' : ''}`}` : `${total} · сарын төлөвлөгөө тохируулаагүй`;
+    const slide = content(pres, 'Борлуулалт', `${Number(m.month.slice(5))}-р сарын гэрээ долоо хоногоор`, subtitle);
     if (!m.byWeek.length) {
-        slide.addText('Энэ сард гэрээ бүртгэгдээгүй.', { x: M, y: TOP, w: CW, h: 0.5, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, isTextBox: true });
+        slide.addText(undated ? `Сарын гэрээний тоо тодорхойгүй. ${undatedContractsHint(undated)}` : 'Энэ сард гэрээ бүртгэгдээгүй.', { x: M, y: TOP, w: CW, h: 0.9, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, valign: 'top', isTextBox: true });
         return;
     }
     const weekW = Math.min(1.6, (CW - 2.2 - 1.2 - 1.9) / m.weeks.length);
@@ -287,7 +301,7 @@ function monthSlide(pres: PptxGenJS, report: WeeklySalesReport) {
     const rows = m.byWeek.map(row => [bodyCell(row.label, 'left', { bold: true }), ...row.weeks.map(value => bodyCell(value ? String(value) : '—', 'center')), bodyCell(String(row.count), 'right', { bold: true }), bodyCell(short(row.total), 'right')]);
     const footer = [bodyCell('Нийт', 'left', { bold: true }), ...m.weeks.map((_, index) => bodyCell(String(m.byWeek.reduce((sum, row) => sum + row.weeks[index], 0) || '—'), 'center', { bold: true })), bodyCell(String(m.count), 'right', { bold: true }), bodyCell(short(m.total), 'right', { bold: true })];
     slide.addTable([head, ...rows, footer], { x: M, y: TOP, w: 2.2 + weekW * m.weeks.length + 1.2 + 1.9, colW: [2.2, ...m.weeks.map(() => weekW), 1.2, 1.9], fontFace: FONT, fontSize: 13, border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.06, 0.1, 0.06, 0.1] });
-    note(slide, [m.missingTotals ? `Нийт дүн хоосон ${m.missingTotals} гэрээ дүнд ороогүй.` : null, 'Долоо хоног = Лхагва–Мягмар, сарын хилээр тасална.']);
+    note(slide, [m.missingTotals ? `Нийт дүн хоосон ${m.missingTotals} гэрээ дүнд ороогүй.` : null, 'Долоо хоног = Лхагва–Мягмар, сарын хилээр тасална.', undated ? undatedContractsHint(undated) : null]);
 }
 
 function managerSlide(pres: PptxGenJS, report: WeeklySalesReport) {
