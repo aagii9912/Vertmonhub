@@ -396,6 +396,17 @@ test('маркетинг өөрийн контент төлөвлөгөөгөө�
     await expect(plan.getByText('Төлөвлөгөөний 100%')).toBeVisible();
     await plan.screenshot({ path: 'output/workday/desktop-weekly-content-plan.png' });
 
+    // Хурлын бэлтгэл алхам алхмаар: өгөгдлөөс автоматаар шалгасан, маркетинг лид/гэрээгүй.
+    const checklist = page.locator('details').filter({ hasText: 'Хурлын бэлтгэл — алхам алхмаар' });
+    const salesTrack = checklist.getByRole('region', { name: 'Борлуулалт' });
+    const marketingTrack = checklist.getByRole('region', { name: 'Маркетинг' });
+    await expect(salesTrack).toContainText('ERP-ийн гэрээний экспорт оруулах');
+    await expect(marketingTrack).toContainText('Facebook хуудас холбох, синк шалгах');
+    await expect(marketingTrack.getByRole('progressbar')).toHaveAttribute('aria-valuenow', /\d/);
+    await expect(marketingTrack).not.toContainText('лид');
+    await expect(marketingTrack.getByRole('button', { name: 'Маркетингийн слайд татах' })).toBeVisible();
+    await checklist.screenshot({ path: 'output/workday/desktop-weekly-checklist.png' });
+
     // Facebook хуудасны долоо хоногийн органик үзүүлэлт хадгалсан insights-аас.
     const channelsSection = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Суваг: Page, Ads, CallPro, SMS · төсөв', exact: true }) });
     await expect(channelsSection).toContainText('Туршилтын хуудас');

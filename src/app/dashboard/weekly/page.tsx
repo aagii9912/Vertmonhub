@@ -22,8 +22,10 @@ import { Alert } from '@/components/ui/Alert';
 import { Avatar, Skeleton } from '@/components/dashboard/v2/primitives';
 import { useWeeklySales, WeeklySalesDetails } from '@/components/weekly/WeeklySalesDetails';
 import { WeeklyMarketingBudget } from '@/components/weekly/WeeklyMarketingBudget';
-import { WeeklyMarketingChannels } from '@/components/weekly/WeeklyMarketingChannels';
-import { WeeklySocialPage } from '@/components/weekly/WeeklySocialPage';
+import { useWeeklyChannelReports, WeeklyMarketingChannels } from '@/components/weekly/WeeklyMarketingChannels';
+import { useSocialWeek, WeeklySocialPage } from '@/components/weekly/WeeklySocialPage';
+import { MeetingChecklist } from '@/components/weekly/MeetingChecklist';
+import { marketingChecklist, salesChecklist } from '@/lib/dashboard/meeting-checklist';
 import { useWeeklySlides, WeeklySlides } from '@/components/weekly/WeeklySlides';
 import { contentPlanWindow, useContentPlan, WeeklyContentPlan } from '@/components/weekly/WeeklyContentPlan';
 import { WEEKLY_SLIDE_PART_MODULE, type WeeklySlidePart } from '@/lib/dashboard/weekly-slides';
@@ -73,6 +75,9 @@ function WeeklyReview() {
     const weeklySalesQuery = useWeeklySales(meetingDate, can('reports'));
     const slidesQuery = useWeeklySlides(meetingDate, can('reports') || can('marketing-roi'));
     const contentQuery = useContentPlan(meetingDate, range, can('marketing-roi'));
+    // Бэлтгэлийн алхам 02·2-ын карттай ижил query-г хуваалцана.
+    const socialQuery = useSocialWeek(meetingDate, can('marketing-roi'));
+    const channelsQuery = useWeeklyChannelReports(range.from, range.to, can('marketing-roi'));
     const tasksQuery = useMyTasks();
     const sales = can('reports') && !salesQuery.isError ? salesQuery.data : undefined;
     const previousSales = can('reports') && !previousSalesQuery.isError ? previousSalesQuery.data : undefined;
@@ -98,11 +103,12 @@ function WeeklyReview() {
     const discussionItems = weeklyDiscussionItems({ sales, marketing, contentPlan, updates: updates?.updates });
     const text = formatWeeklyReview({ shopName: shop?.name || 'Vertmon Hub', meetingDate, sales, previousSales, weeklySales, marketing, contentPlan, updates: updates?.updates, notices });
     const exportable = !loading && !dirty && !!(sales || marketing || updates);
+    const checklistInput = { range, sales, weeklySales, marketing, contentPlan, social: socialQuery.data, channels: channelsQuery.data?.latest, slides: slidesQuery.data?.slides, updates: updates?.updates };
     const refresh = () => {
         if (can('reports')) { void salesQuery.refetch(); void previousSalesQuery.refetch(); void weeklySalesQuery.refetch(); }
         if (can('marketing-roi')) void marketingQuery.refetch();
         if (can('reports') || can('marketing-roi')) void slidesQuery.refetch();
-        if (can('marketing-roi')) void contentQuery.refetch();
+        if (can('marketing-roi')) { void contentQuery.refetch(); void socialQuery.refetch(); void channelsQuery.refetch(); }
         void updatesQuery.refetch();
     };
 
@@ -164,6 +170,13 @@ function WeeklyReview() {
                 </div>
             </div>
             <a href="#weekly-update" className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-surface-2 text-sm font-medium focus-ring xl:hidden print:hidden"><FileText className="size-4" />Миний шинэчлэл оруулах<ArrowUpRight className="size-4" /></a>
+
+            <MeetingChecklist tracks={[
+                ...(can('reports') ? [{ id: 'sales', title: 'Борлуулалт', who: 'менежерүүд, ахлах менежер', steps: salesChecklist(checklistInput),
+                    action: <Button size="sm" disabled={!exportable || !!exporting} isLoading={exporting === 'sales'} onClick={() => void downloadSlides('sales')}>{exporting !== 'sales' && <Presentation />}Борлуулалтын слайд татах</Button> }] : []),
+                ...(can('marketing-roi') ? [{ id: 'marketing', title: 'Маркетинг', who: 'маркетингийн алба', steps: marketingChecklist(checklistInput),
+                    action: <Button size="sm" disabled={!exportable || !!exporting} isLoading={exporting === 'marketing'} onClick={() => void downloadSlides('marketing')}>{exporting !== 'marketing' && <Presentation />}Маркетингийн слайд татах</Button> }] : []),
+            ]} />
 
             <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_340px] print:block">
                 <article ref={reportRef} className="weekly-report min-w-0 space-y-8 bg-background">
@@ -250,7 +263,7 @@ function WeeklyReview() {
                         </> : <Unavailable>Лидийн эх сурвалжийн мэдээлэл түр боломжгүй. Шинэчлэх товчоор дахин оролдоно уу.</Unavailable>}
                     </section>}
 
-                    {can('reports') && <section className="space-y-4">
+                    {can('reports') && <section id="weekly-slides-sales" className="scroll-mt-20 space-y-4">
                         <ReportHeading number="01·4" title="Борлуулалтын нэмэлт слайд" />
                         <WeeklySlides part="sales" meetingDate={meetingDate} query={slidesQuery} canWrite={canEditSlides('sales')} canDelete={canDeleteSlides('sales')} />
                     </section>}
@@ -270,7 +283,7 @@ function WeeklyReview() {
                         {marketing && marketing.spendQuality.current.missingFx > 0 && <Alert variant="warning">Ханшгүй {marketing.spendQuality.current.missingFx} зардал нийтэд ороогүй.</Alert>}
                     </section>}
 
-                    {can('marketing-roi') && <section className="space-y-4">
+                    {can('marketing-roi') && <section id="weekly-slides-marketing" className="scroll-mt-20 space-y-4">
                         <ReportHeading number="02·3" title="Дэлгэцийн зураг, нэмэлт слайд" />
                         <WeeklySlides part="marketing" meetingDate={meetingDate} query={slidesQuery} canWrite={canEditSlides('marketing')} canDelete={canDeleteSlides('marketing')} />
                     </section>}

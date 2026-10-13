@@ -87,14 +87,19 @@ function MetaResults({ totals, comparison, currency }: { totals: Record<string, 
     </div>;
 }
 
-/** Meta Ads, Facebook хуудас, CallPro, масс SMS-ийн экспорт — хурлын долоо хоногийн тоо, өмнөх тайлантай харьцуулсан. */
-export function WeeklyMarketingChannels({ from, to }: { from: string; to: string }) {
+/** Хурлын долоо хоногийн сувгийн экспорт (хуудас ба бэлтгэлийн алхам нэг query-г хуваалцана). */
+export function useWeeklyChannelReports(from: string, to: string, enabled = true) {
     const { shop, user } = useAuth();
-    const query = useQuery<ChannelResponse>({
+    return useQuery<ChannelResponse>({
         queryKey: ['channel-reports', 'weekly', shop?.id, user?.id, from, to],
         queryFn: ({ signal }) => dashboardJson(`/api/marketing/channel-reports?from=${from}&to=${to}`, { signal, shopId: shop?.id }),
-        enabled: !!shop?.id, staleTime: 60_000, retry: 1,
+        enabled: !!shop?.id && enabled, staleTime: 60_000, retry: 1,
     });
+}
+
+/** Meta Ads, Facebook хуудас, CallPro, масс SMS-ийн экспорт — хурлын долоо хоногийн тоо, өмнөх тайлантай харьцуулсан. */
+export function WeeklyMarketingChannels({ from, to }: { from: string; to: string }) {
+    const query = useWeeklyChannelReports(from, to);
     if (query.isPending) return <Skeleton className="h-40" />;
     if (!query.data) return <p className="rounded-xl bg-surface-2 p-4 text-sm text-muted-foreground">Сувгийн экспортыг ачаалж чадсангүй. {query.error?.message}</p>;
     const missing = CHANNEL_SOURCES.filter(source => !query.data.latest[source]?.report);
