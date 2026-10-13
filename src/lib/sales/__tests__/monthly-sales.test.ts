@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     emptyMonthlySales, MonthlySalesWriteSchema, monthlySalesAttainment, monthlySalesPatches,
     parseMonthlySalesAmount, summarizeMonthlySales, monthlySalesWithBlockTotals,
+    parseMonthlySalesCount, parseMonthlySalesValue, formatMonthlySalesValue,
 } from '../monthly';
 
 describe('monthly sales monetary meaning', () => {
@@ -88,5 +89,29 @@ describe('monthly sales monetary meaning', () => {
             expect(MonthlySalesWriteSchema.safeParse({ ...input, months: [{ ...row, block_amounts }] }).success).toBe(false);
         }
         expect(MonthlySalesWriteSchema.safeParse({ ...input, months: [{ ...row, target_amount: 12 }] }).success).toBe(false);
+    });
+
+    it('keeps contract counts whole, formats them in ш and compares them like the amounts', () => {
+        expect(parseMonthlySalesCount('')).toBeNull();
+        expect(parseMonthlySalesCount('0')).toBe(0);
+        expect(parseMonthlySalesCount('1,200')).toBe(1200);
+        for (const value of ['-1', '1.5', '2.0', 'abc', '1000001']) expect(parseMonthlySalesCount(value)).toBeUndefined();
+        expect(parseMonthlySalesValue('target_count', '12.5')).toBeUndefined();
+        expect(parseMonthlySalesValue('target_amount', '12.5')).toBe(12.5);
+        expect(formatMonthlySalesValue('manual_contract_actual_count', 1200)).toBe('1,200 ш');
+        expect(formatMonthlySalesValue('target_amount', 1200)).toContain('₮');
+        const months = emptyMonthlySales();
+        months[0] = monthlySalesWithBlockTotals({ ...months[0], block_amounts: {
+            b1: { target_count: 97, manual_contract_actual_count: 3 }, parking: { target_count: 340, manual_contract_actual_count: 3 },
+        } });
+        expect(months[0]).toMatchObject({ target_count: 437, manual_contract_actual_count: 6, target_amount: null });
+        const summary = summarizeMonthlySales(months);
+        expect(summary.totals.target_count).toEqual({ amount: 437, filledMonths: 1, expectedMonths: 12 });
+        expect(summary.countAttainmentPct).toBe(1.4);
+        expect(summary.contractAttainmentPct).toBeNull();
+        expect(MonthlySalesWriteSchema.safeParse({ shopId: '20000000-0000-4000-8000-000000000001', year: 2026,
+            months: [{ month: 1, expectedRevision: 0, block_amounts: { b1: { target_count: 1.5 } } }] }).success).toBe(false);
+        expect(MonthlySalesWriteSchema.safeParse({ shopId: '20000000-0000-4000-8000-000000000001', year: 2026,
+            months: [{ month: 1, expectedRevision: 0, target_count: 12 }] }).success).toBe(true);
     });
 });

@@ -39,7 +39,7 @@ beforeEach(() => {
             }
             return Response.json({ success: true, months: body.months.map((patch: MonthlySalesPatch) => months[patch.month - 1]) });
         }
-        return Response.json({ months, teamActual: [100, ...Array(11).fill(0)], managers: [], teamMembers: [], projects: [] });
+        return Response.json({ months, teamActual: [100, ...Array(11).fill(0)], teamCount: [2, ...Array(11).fill(0)], managers: [], teamMembers: [], projects: [] });
     });
 });
 
@@ -47,7 +47,7 @@ describe('monthly sales administration form', () => {
     it('shows 144 labelled block cells and saves explicit zero without filling other metrics', async () => {
         open();
         const cashActual = await screen.findByRole('textbox', { name: label('Орсон мөнгөний гүйцэтгэл') });
-        expect(screen.getAllByRole('textbox')).toHaveLength(145); // 12 months × 3 blocks × 4 amounts, plus the manager field.
+        expect(screen.getAllByRole('textbox')).toHaveLength(217); // 12 months × 3 blocks × (2 counts + 4 amounts), plus the manager field.
         expect(cashActual).toHaveValue('');
         expect(saveButton()).toBeDisabled();
         fireEvent.change(cashActual, { target: { value: '0' } });
@@ -56,14 +56,14 @@ describe('monthly sales administration form', () => {
         expect(posts[0]).toEqual({ shopId, year, months: [{ month: 1, expectedRevision: 0, block_amounts: { b1: { manual_cashflow_actual_amount: 0 } } }] });
         await waitFor(() => expect(saveButton()).toBeDisabled());
         expect(screen.getByRole('textbox', { name: label('Орсон мөнгөний гүйцэтгэл') })).toHaveValue('0');
-        expect(screen.getByRole('textbox', { name: label('Гэрээний гүйцэтгэл') })).toHaveValue('');
-        expect(screen.getByText(/CRM-ээр тооцсон гэрээний дүн/)).toHaveTextContent('100');
+        expect(screen.getByRole('textbox', { name: label('Гэрээний дүнгийн гүйцэтгэл') })).toHaveValue('');
+        expect(screen.getByText(/CRM-ээр тооцсон гэрээ/)).toHaveTextContent('2 ш · 100');
     });
 
     it('retains a failed-save draft and blocks invalid negative monetary input', async () => {
         failureStatus = 503;
         open();
-        const contractPlan = await screen.findByRole('textbox', { name: label('Гэрээний төлөвлөгөө') });
+        const contractPlan = await screen.findByRole('textbox', { name: label('Гэрээний дүнгийн төлөвлөгөө') });
         fireEvent.change(contractPlan, { target: { value: '-5' } });
         expect(contractPlan).toHaveAttribute('aria-invalid', 'true');
         expect(saveButton()).toBeDisabled();
@@ -77,7 +77,7 @@ describe('monthly sales administration form', () => {
     it('preserves conflicting edits until the user explicitly reloads and clears them', async () => {
         failureStatus = 409;
         open();
-        const contractPlan = await screen.findByRole('textbox', { name: label('Гэрээний төлөвлөгөө') });
+        const contractPlan = await screen.findByRole('textbox', { name: label('Гэрээний дүнгийн төлөвлөгөө') });
         fireEvent.change(contractPlan, { target: { value: '105' } });
         months[0] = { ...months[0], target_amount: 200, revision: 1, block_amounts: { b1: { target_amount: 200 } } };
         fireEvent.click(saveButton());
@@ -92,13 +92,13 @@ describe('monthly sales administration form', () => {
     it('preserves unallocated totals and calculates each metric across all three blocks before saving', async () => {
         months[0].cashflow_target_amount = 50;
         open();
-        const b1 = await screen.findByRole('textbox', { name: label('Гэрээний төлөвлөгөө') });
+        const b1 = await screen.findByRole('textbox', { name: label('Гэрээний дүнгийн төлөвлөгөө') });
         expect(screen.getByLabelText(label('Орсон мөнгөний төлөвлөгөө', 'Нийт'))).toHaveTextContent('50');
         expect(screen.getByLabelText(label('Орсон мөнгөний төлөвлөгөө'))).toHaveValue('');
         fireEvent.change(b1, { target: { value: '100' } });
-        fireEvent.change(screen.getByLabelText(label('Гэрээний төлөвлөгөө', 'Б2 блок')), { target: { value: '200' } });
-        fireEvent.change(screen.getByLabelText(label('Гэрээний төлөвлөгөө', 'Зогсоол')), { target: { value: '30' } });
-        expect(screen.getByLabelText(label('Гэрээний төлөвлөгөө', 'Нийт'))).toHaveTextContent('330');
+        fireEvent.change(screen.getByLabelText(label('Гэрээний дүнгийн төлөвлөгөө', 'Б2 блок')), { target: { value: '200' } });
+        fireEvent.change(screen.getByLabelText(label('Гэрээний дүнгийн төлөвлөгөө', 'Зогсоол')), { target: { value: '30' } });
+        expect(screen.getByLabelText(label('Гэрээний дүнгийн төлөвлөгөө', 'Нийт'))).toHaveTextContent('330');
         expect(screen.getByLabelText(label('Орсон мөнгөний төлөвлөгөө', 'Нийт'))).toHaveTextContent('50');
         fireEvent.click(saveButton());
         await waitFor(() => expect(saveButton()).toBeDisabled());
@@ -110,5 +110,28 @@ describe('monthly sales administration form', () => {
         fireEvent.change(b1, { target: { value: '10000000000000' } });
         expect(saveButton()).toBeDisabled();
         expect(screen.getByRole('alert')).toHaveTextContent('сарын нийлбэр');
+    });
+
+    it('enters whole contract counts by block next to the amounts and totals them in ш', async () => {
+        open();
+        const b1 = await screen.findByRole('textbox', { name: label('Гэрээний тооны төлөвлөгөө') });
+        expect(b1).toHaveAttribute('inputmode', 'numeric');
+        fireEvent.change(b1, { target: { value: '1.5' } });
+        expect(b1).toHaveAttribute('aria-invalid', 'true');
+        expect(saveButton()).toBeDisabled();
+        expect(screen.getByRole('alert')).toHaveTextContent('бүхэл тоо');
+        fireEvent.change(b1, { target: { value: '97' } });
+        fireEvent.change(screen.getByLabelText(label('Гэрээний тооны төлөвлөгөө', 'Б2 блок')), { target: { value: '1,32' } });
+        fireEvent.change(screen.getByLabelText(label('Гэрээний тооны гүйцэтгэл', 'Зогсоол')), { target: { value: '3' } });
+        fireEvent.change(screen.getByLabelText(label('Гэрээний дүнгийн төлөвлөгөө')), { target: { value: '51,686,799,000' } });
+        expect(screen.getByLabelText(label('Гэрээний тооны төлөвлөгөө', 'Нийт'))).toHaveTextContent('229 ш');
+        expect(screen.getByLabelText(label('Гэрээний тооны гүйцэтгэл', 'Нийт'))).toHaveTextContent('3 ш');
+        fireEvent.click(saveButton());
+        await waitFor(() => expect(posts).toHaveLength(1));
+        expect(posts[0].months).toEqual([{ month: 1, expectedRevision: 0, block_amounts: {
+            b1: { target_count: 97, target_amount: 51686799000 }, b2: { target_count: 132 }, parking: { manual_contract_actual_count: 3 },
+        } }]);
+        await waitFor(() => expect(saveButton()).toBeDisabled());
+        expect(months[0]).toMatchObject({ target_count: 229, manual_contract_actual_count: 3, target_amount: 51686799000, cashflow_target_amount: null });
     });
 });

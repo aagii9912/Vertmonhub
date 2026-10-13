@@ -56,15 +56,15 @@ function monthlyRow(row: Record<string, unknown>): MonthlySalesMonth {
     return MonthlySalesMonthSchema.parse({
         month: Number(row.month), revision: Number(row.revision),
         block_amounts: row.block_amounts ?? {},
-        ...Object.fromEntries(MONTHLY_SALES_FIELDS.map(field => [field, row[field] === null ? null : Number(row[field])])),
+        ...Object.fromEntries(MONTHLY_SALES_FIELDS.map(field => [field, row[field] === null || row[field] === undefined ? null : Number(row[field])])),
     });
 }
 
-/** Гэрээ/орсон мөнгөний төлөвлөгөө ба гар гүйцэтгэл. CRM/ERP-ийн дүнг нэмэхгүй. */
+/** Гэрээний тоо, дүн, орсон мөнгөний төлөвлөгөө ба гар гүйцэтгэл. CRM/ERP-ийн тоо, дүнг нэмэхгүй. */
 export async function getTeamMonthlySales(supabase: SupabaseClient, shopId: string, year: number): Promise<MonthlySalesMonth[]> {
     SalesYearSchema.parse(year);
     const { data, error } = await supabase.from('team_sales_targets')
-        .select('month, revision, target_amount, cashflow_target_amount, manual_contract_actual_amount, manual_cashflow_actual_amount, block_amounts')
+        .select('month, revision, target_count, manual_contract_actual_count, target_amount, cashflow_target_amount, manual_contract_actual_amount, manual_cashflow_actual_amount, block_amounts')
         .eq('shop_id', shopId).eq('year', year);
     if (error) throw error;
     const months = emptyMonthlySales();

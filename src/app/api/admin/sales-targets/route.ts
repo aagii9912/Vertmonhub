@@ -27,10 +27,10 @@ function throwOnError(error: unknown): never { throw error; }
  * Багийн борлуулалтын төлөвлөгөө + идэвхтэй менежерийн бүртгэл (admin only).
  *
  * GET  ?shopId=&year=
- *      → багийн 12 сарын төлөвлөгөө + гүйцэтгэл, бүртгэлтэй менежерүүд
+ *      → багийн 12 сарын төлөвлөгөө + гүйцэтгэл (гэрээний тоо, дүн, орсон мөнгө), бүртгэлтэй менежерүүд
  *        (идэвхтэй эсэх + жилийн борлуулалт), акаунт холбох багийн гишүүд.
  * POST body:{ shopId, year, months:[{month, expectedRevision, ...changedAmounts}] }
- *      → дөрвөн үзүүлэлтийн өөрчилсөн нүдийг хувилбар шалгаж, аудиттай хадгална.
+ *      → зургаан үзүүлэлтийн (тоо 2, дүн 4) өөрчилсөн нүдийг хувилбар шалгаж, аудиттай хадгална.
  * PUT  body:{ shopId, managers:[{name, is_active, user_id, project_ids?}] }
  *      → менежерийн бүртгэл + төслийн харьяаллыг нэг гүйлгээгээр хадгална.
  *        project_ids байхгүй бол өмнөх харьяаллыг хадгална; [] бол цэвэрлэнэ.
@@ -109,14 +109,18 @@ export async function GET(request: NextRequest) {
         // Багийн гүйцэтгэл = идэвхтэй менежерүүдийн нийлбэр
         const activeNames = new Set(managers.filter((m) => m.is_active).map((m) => m.name));
         const teamActual = Array(12).fill(0);
+        const teamCount = Array(12).fill(0);
         for (const [name, m] of byManager) {
             if (!activeNames.has(name)) continue;
-            for (let i = 0; i < 12; i++) teamActual[i] += m.actuals[i];
+            for (let i = 0; i < 12; i++) {
+                teamActual[i] += m.actuals[i];
+                teamCount[i] += m.counts[i];
+            }
         }
 
         // Compatibility figures remain CRM-derived and never enter the manual performance totals.
         const teamTarget = months.map(row => row.target_amount ?? 0);
-        return NextResponse.json({ year, months, summary: summarizeMonthlySales(months), teamTarget, teamActual,
+        return NextResponse.json({ year, months, summary: summarizeMonthlySales(months), teamTarget, teamActual, teamCount,
             computedActualSource: 'CRM-ийн гэрээ · одоо идэвхтэй менежерүүдийн нийлбэр', managers, teamMembers, projects }, {
             headers: { 'Cache-Control': 'private, no-store' },
         });
@@ -131,13 +135,13 @@ export async function POST(request: NextRequest) {
         if (gate.error) return gate.error;
 
         const parsed = MonthlySalesWriteSchema.safeParse(await request.json().catch(() => null));
-        if (!parsed.success) return NextResponse.json({ error: 'Он, сар, дүн эсвэл мэдээллийн хувилбар буруу байна' }, { status: 400 });
+        if (!parsed.success) return NextResponse.json({ error: 'Он, сар, тоо, дүн эсвэл мэдээллийн хувилбар буруу байна' }, { status: 400 });
         const { shopId, year, months } = parsed.data;
         if (!await assertShopAccess(shopId)) return NextResponse.json({ error: 'Энэ төсөлд хандах эрхгүй' }, { status: 403 });
         const { data, error } = await saveTeamMonthlySales(supabaseAdmin(), shopId, year, months, gate.userId!);
         if (error?.code === '40001') return NextResponse.json({ error: 'Энэ сарын мэдээллийг өөр хэрэглэгч өөрчилсөн. Шинэ мэдээллийг авч дахин оруулна уу.', code: 'MONTHLY_SALES_CONFLICT' }, { status: 409 });
         if (error?.code === '42501') return NextResponse.json({ error: 'Энэ төсөлд төлөвлөгөө хадгалах эрхгүй' }, { status: 403 });
-        if (error?.code === '22023') return NextResponse.json({ error: 'Блокийн дүн, сарын нийлбэрийг шалгана уу. Задаргаатай дүнг зөвхөн блокийн нүдээр засна.' }, { status: 400 });
+        if (error?.code === '22023') return NextResponse.json({ error: 'Блокийн тоо, дүн, сарын нийлбэрийг шалгана уу. Задаргаатай утгыг зөвхөн блокийн нүдээр засна.' }, { status: 400 });
         if (error) return safeErrorResponse(error, 'Төлөвлөгөө, гүйцэтгэл хадгалахад алдаа гарлаа');
         return NextResponse.json({ success: true, months: data });
     } catch (error) {

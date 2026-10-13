@@ -215,35 +215,43 @@ test('walk-in meeting saves multiple interests and completed meeting notes prese
     expect(state.errors).toEqual([]); expect(state.unhandled).toEqual([]);
 });
 
-test('monthly block table totals, save and reload preserve zero and blank; stale save retains edits', async ({ page }, info) => {
+test('monthly block table: contract counts and amounts total, save and reload preserve zero and blank; stale save retains edits', async ({ page }, info) => {
     const state = await setup(page);
     await page.goto('/admin/sales-targets');
     const year = new Date().getFullYear();
-    const contractPlan = page.getByLabel(`${year} оны 1-р сар Б1 блок Гэрээний төлөвлөгөө`, { exact: true });
+    const countPlan = page.getByLabel(`${year} оны 1-р сар Б1 блок Гэрээний тооны төлөвлөгөө`, { exact: true });
+    const parkingCount = page.getByLabel(`${year} оны 1-р сар Зогсоол Гэрээний тооны гүйцэтгэл`, { exact: true });
+    const contractPlan = page.getByLabel(`${year} оны 1-р сар Б1 блок Гэрээний дүнгийн төлөвлөгөө`, { exact: true });
     const cashPlan = page.getByLabel(`${year} оны 1-р сар Б1 блок Орсон мөнгөний төлөвлөгөө`, { exact: true });
-    const contractActual = page.getByLabel(`${year} оны 1-р сар Б1 блок Гэрээний гүйцэтгэл`, { exact: true });
+    const contractActual = page.getByLabel(`${year} оны 1-р сар Б1 блок Гэрээний дүнгийн гүйцэтгэл`, { exact: true });
     const cashActual = page.getByLabel(`${year} оны 1-р сар Б1 блок Орсон мөнгөний гүйцэтгэл`, { exact: true });
-    const b2Plan = page.getByLabel(`${year} оны 1-р сар Б2 блок Гэрээний төлөвлөгөө`, { exact: true });
-    const parkingPlan = page.getByLabel(`${year} оны 1-р сар Зогсоол Гэрээний төлөвлөгөө`, { exact: true });
+    const b2Plan = page.getByLabel(`${year} оны 1-р сар Б2 блок Гэрээний дүнгийн төлөвлөгөө`, { exact: true });
+    const parkingPlan = page.getByLabel(`${year} оны 1-р сар Зогсоол Гэрээний дүнгийн төлөвлөгөө`, { exact: true });
+    await countPlan.fill('97'); await parkingCount.fill('3');
     await contractPlan.fill('100000'); await cashPlan.fill('0'); await contractActual.fill('90000'); await cashActual.fill('');
     await b2Plan.fill('200000'); await parkingPlan.fill('30000');
-    await expect(page.getByLabel(`${year} оны 1-р сар Нийт Гэрээний төлөвлөгөө`, { exact: true })).toContainText('330,000');
+    await expect(page.getByLabel(`${year} оны 1-р сар Нийт Гэрээний дүнгийн төлөвлөгөө`, { exact: true })).toContainText('330,000');
+    await expect(page.getByLabel(`${year} оны 1-р сар Нийт Гэрээний тооны төлөвлөгөө`, { exact: true })).toHaveText('97 ш');
     await page.getByRole('button', { name: 'Төлөвлөгөө, гүйцэтгэл хадгалах', exact: true }).click();
     await expect(contractPlan).toHaveValue('100,000'); await expect(cashPlan).toHaveValue('0');
     expect(state.monthlyWrites[0]).toEqual({ shopId, year, months: [{ month: 1, expectedRevision: 0,
         block_amounts: {
-            b1: { target_amount: 100000, cashflow_target_amount: 0, manual_contract_actual_amount: 90000, manual_cashflow_actual_amount: null },
-            b2: { target_amount: 200000 }, parking: { target_amount: 30000 },
+            b1: { target_count: 97, target_amount: 100000, cashflow_target_amount: 0, manual_contract_actual_amount: 90000, manual_cashflow_actual_amount: null },
+            b2: { target_amount: 200000 }, parking: { manual_contract_actual_count: 3, target_amount: 30000 },
         } }] });
     await page.reload();
     await expect(cashPlan).toHaveValue('0'); await expect(cashActual).toHaveValue('');
     await expect(b2Plan).toHaveValue('200,000'); await expect(parkingPlan).toHaveValue('30,000');
+    await expect(countPlan).toHaveValue('97'); await expect(parkingCount).toHaveValue('3');
+    await expect(page.getByRole('columnheader', { name: 'Гэрээний тоо', exact: true })).toHaveAttribute('colspan', '2');
     await expect(page.getByRole('columnheader', { name: 'Гэрээний дүн', exact: true })).toHaveAttribute('colspan', '2');
     await expect(page.getByRole('columnheader', { name: 'Мөнгөн урсгал', exact: true })).toHaveAttribute('colspan', '2');
-    await page.screenshot({ path: info.outputPath('monthly-blocks-dark.png'), fullPage: true });
-    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
+    // Light is the default theme; dark remains the user's choice.
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
     await page.screenshot({ path: info.outputPath('monthly-blocks-light.png'), fullPage: true });
     await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
+    await page.screenshot({ path: info.outputPath('monthly-blocks-dark.png'), fullPage: true });
+    await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'light'));
     const lastMonth = page.getByLabel(`${year} оны 12-р сар Зогсоол Орсон мөнгөний гүйцэтгэл`, { exact: true });
     await lastMonth.scrollIntoViewIfNeeded();
     await expect(lastMonth).toBeVisible();

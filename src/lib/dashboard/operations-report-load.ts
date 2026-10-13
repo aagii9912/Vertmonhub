@@ -57,7 +57,7 @@ export async function loadOperationsReport(db: SupabaseClient, options: {
             .select('created_at, status, source, sales_manager_name, last_contact_at, next_followup_at, viewing_scheduled_at, category_id')
             .eq('shop_id', options.shopId).is('deleted_at', null).order('id').range(from, to), scope)),
         fetchAllRows<OperationsTarget>((from, to) => db.from('team_sales_targets')
-            .select('year, month, target_amount, cashflow_target_amount, manual_contract_actual_amount, manual_cashflow_actual_amount, revision').eq('shop_id', options.shopId)
+            .select('year, month, target_count, manual_contract_actual_count, target_amount, cashflow_target_amount, manual_contract_actual_amount, manual_cashflow_actual_amount, block_amounts, revision').eq('shop_id', options.shopId)
             .gte('year', Number(range.from.slice(0, 4))).lte('year', Number(range.to.slice(0, 4)))
             .order('year').order('month').range(from, to)),
         options.canReadFinance ? fetchAllRows<OperationsTransaction>(receiptPage) : Promise.resolve(null),

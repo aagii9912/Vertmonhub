@@ -10,6 +10,7 @@ import type { ChannelReportMatches } from '@/lib/marketing/channel-reports-load'
 import { CHANNEL_SOURCE_LABELS, CHANNEL_SOURCES, channelKeyMetrics, channelMetric, type ChannelSource } from '@/lib/marketing/channel-reports';
 import { CONTENT_STATUS_LABEL, CONTENT_TYPE_LABEL, contentPlatformLabel, type ContentItem, type ContentPlanSummary } from '@/lib/marketing/content-plan';
 import { formatMNT, formatMNTShort } from '@/lib/utils/currency';
+import { MONTHLY_SALES_BLOCK_LABELS, MONTHLY_SALES_BLOCKS, monthlySalesAttainment, type MonthlySalesField } from '@/lib/sales/monthly';
 
 /**
  * Лхагва гарагийн хурлын тайланг PowerPoint (.pptx) болгоно — хурлыг слайдаар явуулдаг тул.
@@ -214,34 +215,82 @@ function salesOverviewSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     ]);
 }
 
-/** Сарын төлөвлөгөө ба удирдлагын баталгаажуулсан гүйцэтгэл (гэрээний дүн, орсон мөнгө). */
+/**
+ * Сарын төлөвлөгөө ба удирдлагын баталгаажуулсан гүйцэтгэл: Б1 / Б2 / зогсоол × гэрээний тоо,
+ * гэрээний дүн, мөнгөн урсгал (эзэмшигчийн Excel-ийн бүтэц). Нийт мөрийн гүйцэтгэл оруулаагүй бол
+ * ERP/CRM-ийн сарын гэрээ, ERP-ийн мөнгөн зөрүүг «*» тэмдэгтэйгээр эх сурвалжтай нь харуулна.
+ */
 function monthPlanSlide(pres: PptxGenJS, input: WeeklyDeckInput) {
     const month = input.monthSales?.monthlyPerformance?.months?.[0];
     const weekly = input.weeklySales;
     if (!month && !weekly) return;
     const label = `${Number((weekly?.month.month ?? input.range.to).slice(5, 7))}-р сар`;
-    const slide = content(pres, 'Борлуулалт', `${label}ын төлөвлөгөө ба гүйцэтгэл`, 'Төлөвлөгөө, баталгаажуулсан гүйцэтгэлийг удирдлага оруулна. Хоосон бол тооцоогүй.');
-    const ratio = (actual: number | null | undefined, target: number | null | undefined) => actual === null || actual === undefined || !target ? '—' : `${Math.round(actual / target * 100)}%`;
-    const contractActual = month?.manual_contract_actual_amount ?? null;
-    const cashActual = month?.manual_cashflow_actual_amount ?? null;
-    statRow(slide, TOP, [
-        { label: 'Гэрээний төлөвлөгөө', value: short(month?.target_amount ?? weekly?.month.target ?? null), tone: 'gold' },
-        { label: 'Гэрээний гүйцэтгэл', value: short(contractActual ?? weekly?.month.total ?? null), helper: contractActual !== null ? 'Удирдлагын баталгаажуулсан' : weekly ? `${weekly.sources.contracts === 'erp' ? 'ERP' : 'CRM'}-ийн гэрээ, ${weekly.month.count} ш` : undefined },
-        { label: 'Гүйцэтгэлийн хувь', value: ratio(contractActual ?? weekly?.month.total ?? null, month?.target_amount ?? weekly?.month.target ?? null) },
-    ]);
     const cashVisible = !!input.monthSales?.monthlyPerformance?.cashflowVisible;
-    statRow(slide, TOP + 1.85, cashVisible ? [
-        { label: 'Орсон мөнгөний төлөвлөгөө', value: short(month?.cashflow_target_amount ?? null), tone: 'gold' },
-        { label: 'Орсон мөнгөний гүйцэтгэл', value: short(cashActual ?? weekly?.cash?.delta ?? null), helper: cashActual !== null ? 'Удирдлагын баталгаажуулсан' : weekly?.cash ? `ERP зөрүү ${dot(weekly.cash.from)} → ${dot(weekly.cash.to)}` : undefined },
-        { label: 'Гүйцэтгэлийн хувь', value: ratio(cashActual ?? weekly?.cash?.delta ?? null, month?.cashflow_target_amount ?? null) },
-    ] : [
-        { label: 'Мөнгөн орлого (ERP)', value: short(weekly?.cash?.delta ?? null), helper: weekly?.cash ? `${dot(weekly.cash.from)} → ${dot(weekly.cash.to)}` : 'Хоёр долоо хоногийн ERP экспорт хэрэгтэй' },
-        { label: 'Төлбөрийн хоцролт', value: short(weekly?.receivables?.overdue ?? null), helper: weekly?.receivables ? `${weekly.receivables.overdueContracts} гэрээ · үлдэгдэл ${short(weekly.receivables.balance)}` : 'ERP гэрээний экспорт хэрэгтэй', tone: weekly?.receivables?.overdue ? 'danger' : undefined },
-    ]);
+    const slide = content(pres, 'Борлуулалт', `${label}ын төлөвлөгөө ба гүйцэтгэл`, 'Төлөвлөгөө, баталгаажуулсан гүйцэтгэлийг удирдлага блокоор оруулна. Хоосон нүд «—» — оруулаагүй.');
+    const system = weekly?.sources.contracts ? weekly.sources.contracts === 'erp' ? 'ERP' : 'CRM' : null;
+    const fallback: Partial<Record<MonthlySalesField, number | null>> = {
+        manual_contract_actual_count: system ? weekly!.month.count : null,
+        manual_contract_actual_amount: system ? weekly!.month.total : null,
+        manual_cashflow_actual_amount: weekly?.cash?.delta ?? null,
+    };
+    const groups: { label: string; plan: MonthlySalesField; actual: MonthlySalesField; format: (value: number | null) => string }[] = [
+        { label: 'Гэрээний тоо', plan: 'target_count', actual: 'manual_contract_actual_count', format: count },
+        { label: 'Гэрээний дүн', plan: 'target_amount', actual: 'manual_contract_actual_amount', format: short },
+        ...(cashVisible ? [{ label: 'Мөнгөн урсгал', plan: 'cashflow_target_amount' as const, actual: 'manual_cashflow_actual_amount' as const, format: short }] : []),
+    ];
+    const attained = (actual: number | null, plan: number | null) => pct(monthlySalesAttainment(actual, plan));
+    const groupCells = (plan: number | null, actual: number | null, format: (value: number | null) => string, mark = '') => [
+        bodyCell(format(plan), 'right'), bodyCell(`${format(actual)}${actual === null ? '' : mark}`, 'right'),
+        bodyCell(attained(actual, plan), 'right', { bold: true, color: C.gold }),
+    ];
+    const head: Cell[][] = [
+        [{ text: 'Блок / төрөл', options: { rowspan: 2, bold: true, color: C.muted, fill: { color: C.surface }, valign: 'middle' } },
+            ...groups.map(group => ({ text: group.label, options: { colspan: 3, bold: true, color: C.ink, fill: { color: C.surface }, align: 'center' as const } }))],
+        groups.flatMap(() => ['Төлөвлөгөө', 'Гүйцэтгэл', '%'].map(text => ({ text, options: { ...headCell(text, 'right').options, fontSize: 11 } }))),
+    ];
+    const rows = MONTHLY_SALES_BLOCKS.filter(block => month?.block_amounts?.[block]).map(block => {
+        const cells = month!.block_amounts![block]!;
+        return [bodyCell(MONTHLY_SALES_BLOCK_LABELS[block], 'left', { bold: true }),
+            ...groups.flatMap(group => groupCells(cells[group.plan] ?? null, cells[group.actual] ?? null, group.format))];
+    });
+    const estimated: string[] = [];
+    const total = groups.flatMap(group => {
+        const plan = month?.[group.plan] ?? (group.plan === 'target_amount' ? weekly?.month.target ?? null : null);
+        const entered = month?.[group.actual] ?? null;
+        const actual = entered ?? fallback[group.actual] ?? null;
+        if (entered === null && actual !== null) estimated.push(group.label);
+        return groupCells(plan, actual, group.format, entered === null ? '*' : '');
+    });
+    const fill = { fill: { color: C.brandSoft } };
+    rows.push([bodyCell('Нийт', 'left', { bold: true, ...fill }), ...total.map(cell => ({ ...cell, options: { ...cell.options, bold: true, ...fill } }))]);
+    const firstW = 1.15;
+    const weights = groups.flatMap(group => group.plan === 'target_count' ? [1.2, 1.05, 0.75] : [1.6, 1.6, 0.75]);
+    const scale = (CW - firstW) / weights.reduce((sum, weight) => sum + weight, 0);
+    const rowH = 0.5;
+    slide.addTable([...head, ...rows], {
+        x: M, y: TOP, w: CW, colW: [firstW, ...weights.map(weight => weight * scale)], rowH, fontFace: FONT, fontSize: 12,
+        border: { type: 'solid', pt: 0.5, color: C.line }, valign: 'middle', margin: [0.04, 0.07, 0.04, 0.07], autoPage: false,
+    });
+    let y = TOP + rowH * (head.length + rows.length) + 0.12;
+    if (estimated.length) {
+        const sources = [
+            estimated.some(label => label !== 'Мөнгөн урсгал') && system ? `${system}-ийн сарын гэрээ (${count(weekly!.month.count)} ш, ${short(weekly!.month.total)})` : null,
+            estimated.includes('Мөнгөн урсгал') && weekly?.cash ? `ERP-ийн төлсөн дүнгийн зөрүү ${dot(weekly.cash.from)} → ${dot(weekly.cash.to)}` : null,
+        ].filter(Boolean).join('; ');
+        slide.addText(`* Удирдлага гүйцэтгэл оруулаагүй тул системийн тоо: ${sources}.`, { x: M, y, w: CW, h: 0.3, fontFace: FONT, fontSize: 10, color: C.muted, margin: 0, isTextBox: true });
+        y += 0.35;
+    }
+    if (!cashVisible) {
+        statRow(slide, Math.max(y + 0.1, 5.1), [
+            { label: 'Мөнгөн орлого (ERP)', value: short(weekly?.cash?.delta ?? null), helper: weekly?.cash ? `${dot(weekly.cash.from)} → ${dot(weekly.cash.to)}` : 'Хоёр долоо хоногийн ERP экспорт хэрэгтэй' },
+            { label: 'Төлбөрийн хоцролт', value: short(weekly?.receivables?.overdue ?? null), helper: weekly?.receivables ? `${weekly.receivables.overdueContracts} гэрээ · үлдэгдэл ${short(weekly.receivables.balance)}` : 'ERP гэрээний экспорт хэрэгтэй', tone: weekly?.receivables?.overdue ? 'danger' : undefined },
+        ], 1.45);
+    }
     note(slide, [
         weekly?.cash?.basis,
+        rows.length === 1 ? 'Блокийн задаргаа оруулаагүй тул зөвхөн нийт дүн.' : null,
         cashVisible ? null : 'Орсон мөнгөний төлөвлөгөө, гүйцэтгэлийг санхүүгийн эрхтэй хүн харна.',
-        'Гэрээний дүн, мөнгөн орлого, бартерыг холихгүй.',
+        'Гэрээний тоо, гэрээний дүн, мөнгөн орлого, бартерыг холихгүй.',
     ]);
 }
 

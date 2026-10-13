@@ -172,4 +172,18 @@ describe('operations lead scope and date validation', () => {
     ])('rejects an invalid or unbounded report range %j', input => {
         expect(OperationsRangeSchema.safeParse(input).success).toBe(false);
     });
+
+    it('reports contract counts in ш and keeps only visible, entered block cells', () => {
+        const targets = [{ year: 2026, month: 9, target_count: 12, manual_contract_actual_count: 0, target_amount: 100, cashflow_target_amount: 40,
+            block_amounts: { b1: { target_count: 12, cashflow_target_amount: 40 }, b2: { manual_contract_actual_count: 0 } } }];
+        const visible = buildMonthlyPerformance(targets, range, true);
+        expect(visible.months[0]).toMatchObject({ target_count: 12, manual_contract_actual_count: 0,
+            block_amounts: { b1: { target_count: 12, cashflow_target_amount: 40 }, b2: { manual_contract_actual_count: 0 } } });
+        const masked = buildMonthlyPerformance(targets, range, false);
+        expect(masked.months[0].block_amounts).toEqual({ b1: { target_count: 12 }, b2: { manual_contract_actual_count: 0 } });
+        expect(buildMonthlyPerformance([{ year: 2026, month: 9, target_amount: 1 }], range, true).months[0]).toMatchObject({ target_count: null, manual_contract_actual_count: null });
+        const text = formatOperationsReportText({ ...buildOperationsReport({ ...base, targets }), shopName: 'Тест', monthlyPerformance: visible });
+        expect(text).toContain('Гэрээний тооны төлөвлөгөө 12 ш');
+        expect(text).toContain('Гэрээний тооны гүйцэтгэл 0 ш');
+    });
 });

@@ -9,6 +9,7 @@ const actor = '10000000-0000-4000-8000-000000000001';
 let db: PGlite;
 const migration = readFileSync('supabase/migrations/20261008122000_team_monthly_sales.sql', 'utf8');
 const blocksMigration = readFileSync('supabase/migrations/20261008130000_team_sales_blocks.sql', 'utf8');
+const countsMigration = readFileSync('supabase/migrations/20261013150000_team_sales_counts.sql', 'utf8');
 const save = (months: unknown[], user = actor, shopId = shop, year = 2026) => db.query(
     'SELECT save_team_monthly_sales($1,$2,$3::jsonb,$4) AS saved', [shopId, year, JSON.stringify(months), user],
 );
@@ -38,6 +39,8 @@ beforeEach(async () => {
     await db.exec(migration); // Idempotent and no rewrite of existing monetary values.
     await db.exec(blocksMigration);
     await db.exec(blocksMigration);
+    await db.exec(countsMigration);
+    await db.exec(countsMigration);
 });
 afterEach(async () => { await db.close(); });
 
@@ -147,5 +150,30 @@ describe('audited monthly monetary RPC', () => {
         expect((await db.query('SELECT target_amount::int, revision, block_amounts FROM team_sales_targets')).rows)
             .toEqual([{ target_amount: 500, revision: 0, block_amounts: {} }]);
         expect((await db.query('SELECT count(*)::int AS count FROM admin_audit_log')).rows).toEqual([{ count: 0 }]);
+    });
+
+    it('stores whole contract counts by block next to the amounts and derives exact count totals', async () => {
+        await db.exec('SET ROLE service_role');
+        await save([{ month: 1, expectedRevision: 0, block_amounts: {
+            b1: { target_count: 97, target_amount: 51686799000 }, b2: { target_count: 132 }, parking: { target_count: 340, manual_contract_actual_count: 3 },
+        } }]);
+        await db.exec('RESET ROLE');
+        expect((await db.query('SELECT target_count, manual_contract_actual_count, target_amount::bigint::text AS target_amount, cashflow_target_amount, block_amounts FROM team_sales_targets')).rows[0])
+            .toEqual({ target_count: 569, manual_contract_actual_count: 3, target_amount: '51686799000', cashflow_target_amount: null, block_amounts: {
+                b1: { target_count: 97, target_amount: 51686799000 }, b2: { target_count: 132 }, parking: { target_count: 340, manual_contract_actual_count: 3 },
+            } });
+        await save([{ month: 2, expectedRevision: 0, target_count: 0 }]);
+        expect((await db.query('SELECT target_count, target_amount FROM team_sales_targets WHERE month = 2')).rows)
+            .toEqual([{ target_count: 0, target_amount: null }]);
+        await expect(save([{ month: 1, expectedRevision: 1, target_count: 5 }])).rejects.toMatchObject({ code: '22023' });
+    });
+
+    it('rejects fractional, text, negative and oversized counts, including a block total over the limit', async () => {
+        for (const patch of [{ target_count: 1.5 }, { target_count: '3' }, { manual_contract_actual_count: -1 }, { target_count: 1000001 },
+            { block_amounts: { b1: { target_count: 0.5 } } }, { block_amounts: { b1: { target_count: 600000 }, b2: { target_count: 600000 } } }]) {
+            await expect(save([{ month: 1, expectedRevision: 0, ...patch }])).rejects.toMatchObject({ code: '22023' });
+        }
+        await expect(db.query('UPDATE team_sales_targets SET target_count = -1')).rejects.toThrow(/team_monthly_sales_counts/);
+        expect((await db.query('SELECT target_count, revision FROM team_sales_targets')).rows).toEqual([{ target_count: null, revision: 0 }]);
     });
 });

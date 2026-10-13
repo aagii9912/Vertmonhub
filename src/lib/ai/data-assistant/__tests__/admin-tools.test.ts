@@ -107,6 +107,15 @@ describe('set_sales_target', () => {
         expect(await run('set_sales_target', { year: 2026, month: 10, metric: 'cashflow_actual', amount: null, expectedRevision: 3 }, true)).toMatchObject({ success: true });
         expect(mocks.upsertTargets).toHaveBeenCalledWith(expect.anything(), 'shop-mandala', 2026, [{ month: 10, expectedRevision: 3, manual_cashflow_actual_amount: null }], 'owner-1');
     });
+
+    it('sets whole contract counts and shows them in ш, never as money', async () => {
+        expect(await run('set_sales_target', { year: 2026, month: 10, metric: 'count_plan', amount: 12 })).toMatchObject({
+            requiresConfirmation: true, preview: { Үзүүлэлт: 'Гэрээний тооны төлөвлөгөө', Одоогийн: 'Оруулаагүй', Шинэ: '12 ш' },
+        });
+        expect(await run('set_sales_target', { year: 2026, month: 10, metric: 'count_actual', amount: 1.5 })).toHaveProperty('error', expect.stringContaining('бүхэл'));
+        expect(await run('set_sales_target', { year: 2026, month: 10, metric: 'count_actual', amount: 3, expectedRevision: 3 }, true)).toMatchObject({ success: true, message: expect.stringContaining('3 ш') });
+        expect(mocks.upsertTargets).toHaveBeenCalledWith(expect.anything(), 'shop-mandala', 2026, [{ month: 10, expectedRevision: 3, manual_contract_actual_count: 3 }], 'owner-1');
+    });
 });
 
 it('keeps admin tools for super_admin only', async () => {

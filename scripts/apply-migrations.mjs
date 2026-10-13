@@ -29,6 +29,12 @@ const [from, to] = args.filter((arg) => /^\d{14}$/.test(arg));
 
 // Энэ хувилбаруудын оруулсны дараах шалгалт (объект бий эсэх). Бусад хувилбарт шалгалтгүй.
 const VERIFY = {
+    '20261013150000': `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public'
+        AND table_name = 'team_sales_targets' AND column_name = 'manual_contract_actual_count')
+        AND EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'public.team_sales_targets'::regclass AND conname = 'team_monthly_sales_counts')
+        AND position('v_count_fields' in pg_get_functiondef('public.save_team_monthly_sales(uuid,integer,jsonb,uuid)'::regprocedure)) > 0
+        AND NOT has_function_privilege('authenticated', 'public.save_team_monthly_sales(uuid,integer,jsonb,uuid)', 'EXECUTE')
+        AND NOT has_table_privilege('authenticated', 'public.team_sales_targets', 'SELECT') AS ok`,
     '20261013140000': `SELECT to_regclass('public.weekly_report_slides') IS NOT NULL
         AND EXISTS (SELECT 1 FROM storage.buckets WHERE id = 'report-media' AND public = false)
         AND EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'storage' AND tablename = 'objects' AND policyname = 'report_media_server_only')

@@ -7,7 +7,7 @@ import PptxGenJS from 'pptxgenjs';
 import { SaxesParser } from 'saxes';
 import { buildWeeklyDeck, weeklyDeckFileName, type DeckImage, type WeeklyDeckInput } from '../weekly-deck';
 import { buildWeeklySales } from '../weekly-sales';
-import { buildOperationsReport } from '../operations-report';
+import { buildMonthlyPerformance, buildOperationsReport } from '../operations-report';
 import { buildBudgetOverview } from '@/lib/marketing/budget';
 import { buildMarketingPerformance } from '@/lib/marketing/performance';
 import type { ChannelReportMatches } from '@/lib/marketing/channel-reports-load';
@@ -220,6 +220,31 @@ describe('weekly meeting deck (.pptx)', () => {
         expect(Object.keys(zip.files).filter(name => name.startsWith('ppt/media/') && !name.endsWith('/'))).toEqual([]);
         const notes = await Promise.all(Object.keys(zip.files).filter(name => /notesSlide\d+\.xml$/.test(name)).map(name => zip.file(name)!.async('string')));
         expect(notes.join(' ')).toContain('1 зураг ачаалж чадсангүй');
+    });
+
+    it('monthly plan slide: contract count, amount and cash by block like the owner\'s Excel, system figures only as marked fallbacks', async () => {
+        const month = { from: '2026-10-01', to: '2026-10-31' };
+        const targets = [{ year: 2026, month: 10, target_count: 569, manual_contract_actual_count: 6, target_amount: 130273311490, manual_contract_actual_amount: 1864332000,
+            cashflow_target_amount: 900000000, manual_cashflow_actual_amount: 559299600, block_amounts: {
+                b1: { target_count: 97, manual_contract_actual_count: 3, target_amount: 51686799000, manual_contract_actual_amount: 1684332000, manual_cashflow_actual_amount: 505299600 },
+                b2: { target_count: 132, target_amount: 56486512490 },
+                parking: { target_count: 340, manual_contract_actual_count: 3, target_amount: 22100000000, manual_contract_actual_amount: 180000000, manual_cashflow_actual_amount: 54000000 },
+            } }];
+        const monthSales = (cash: boolean, rows = targets) => ({ ...operations(month.from, month.to), monthlyPerformance: buildMonthlyPerformance(rows, month, cash) });
+        const find = (text: string[]) => text.find(slideText => slideText.includes('10-р сарын төлөвлөгөө ба гүйцэтгэл'))!;
+        const full = find((await render(input({ monthSales: monthSales(true) }))).text);
+        for (const needle of ['Гэрээний тоо', 'Гэрээний дүн', 'Мөнгөн урсгал', 'Б1 блок', 'Б2 блок', 'Зогсоол', 'Нийт', ' 97 ', ' 132 ', ' 340 ', ' 569 ', '1.1%', '3.1%']) expect(full, needle).toContain(needle);
+        expect(full).not.toContain('*');
+        // Санхүүгийн эрхгүй бол мөнгөн урсгалын багана, блокийн мөнгөн дүн гарахгүй.
+        const masked = find((await render(input({ monthSales: monthSales(false) }))).text);
+        expect(masked).toContain(' 569 ');
+        expect(masked).not.toContain('Мөнгөн урсгал');
+        expect(masked).not.toContain('505.3');
+        // Удирдлага гүйцэтгэл оруулаагүй бол ERP-ийн сарын гэрээг «*»-тэй, эх сурвалжтай нь харуулна.
+        const fallback = find((await render(input({ monthSales: monthSales(true, [{ year: 2026, month: 10, target_count: 20, target_amount: 1000000000, block_amounts: {} } as never]) }))).text);
+        expect(fallback).toMatch(/\d+\*/);
+        expect(fallback).toContain('Удирдлага гүйцэтгэл оруулаагүй тул системийн тоо: ERP-ийн сарын гэрээ');
+        expect(fallback).not.toContain('Б1 блок');
     });
 
     it('marketing deck without a content plan says where to plan instead of inventing numbers', async () => {
