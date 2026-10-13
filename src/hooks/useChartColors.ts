@@ -23,16 +23,16 @@ export interface ChartColors {
     aging: [string, string, string, string];
 }
 
-// First paint before getComputedStyle runs: the default «Шөнө» (dark) theme values.
+// First paint before getComputedStyle runs: the default light theme values.
 const FALLBACK: ChartColors = {
-    grid: '#232936',
-    axis: '#8E96A5',
-    line: '#6E9BFF',
-    track: '#181C24',
-    series: ['#6E9BFF', '#2BC4AE', '#F2B13D', '#A28BFF', '#F27BA2'],
-    surface: '#12151C',
-    foreground: '#EDF0F5',
-    aging: ['#5CC795', '#E3A84B', '#F08A4B', '#F07E74'],
+    grid: '#E3E6EB',
+    axis: '#5C6474',
+    line: '#2D5FDD',
+    track: '#F0F2F5',
+    series: ['#2D5FDD', '#0F9D8A', '#D98A00', '#7A5AF8', '#E0487A'],
+    surface: '#FFFFFF',
+    foreground: '#12151C',
+    aging: ['#13784A', '#9A5A00', '#C2561E', '#C0362C'],
 };
 
 export function useChartColors(): ChartColors {

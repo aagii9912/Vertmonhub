@@ -8,7 +8,7 @@ export type Theme = 'dark' | 'light';
 const STORAGE_KEY = 'vh-theme';
 
 function readTheme(): Theme {
-    return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+    return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
 }
 
 function subscribe(onChange: () => void): () => void {
@@ -18,11 +18,11 @@ function subscribe(onChange: () => void): () => void {
 }
 
 /**
- * Тема: «Шөнө» (бараан) нь үндсэн, цайвар нь хэрэглэгчийн сонголт.
+ * Тема: цайвар нь үндсэн (эзэмшигчийн шийдвэр 2026-10-13), «Шөнө» (бараан) нь хэрэглэгчийн сонголт.
  * Сонголт localStorage-д хадгалагдаж, дараагийн ачааллын эхний будалтад үйлчилнэ.
  */
 export function useTheme() {
-    const theme = useSyncExternalStore<Theme>(subscribe, readTheme, () => 'dark');
+    const theme = useSyncExternalStore<Theme>(subscribe, readTheme, () => 'light');
 
     const setTheme = useCallback((next: Theme) => {
         document.documentElement.setAttribute('data-theme', next);

@@ -24,8 +24,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const viewport: Viewport = {
-  // v3 «Шөнө»: dark is the default theme on every device.
-  themeColor: '#0B0D12',
+  // Light is the default theme (owner decision 2026-10-13); «Шөнө» (dark) is the user's choice.
+  themeColor: '#F5F6F8',
   width: "device-width",
   initialScale: 1,
   // Хүртээмж: томруулахыг хориглохгүй (maximumScale/userScalable хасав — WCAG 1.4.4)
@@ -58,15 +58,15 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="mn" data-theme="dark" className={`${inter.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
+    <html lang="mn" data-theme="light" className={`${inter.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
       <body
         suppressHydrationWarning
         className="antialiased"
       >
-        {/* Theme-ийг будахаас өмнө тавьж flash-аас сэргийлнэ: бараан нь үндсэн, цайвар нь хэрэглэгчийн сонголт. */}
+        {/* Theme-ийг будахаас өмнө тавьж flash-аас сэргийлнэ: цайвар нь үндсэн, бараан («Шөнө») нь хэрэглэгчийн сонголт. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){var d=document.documentElement;try{var t=localStorage.getItem('vh-theme')==='light'?'light':'dark';d.setAttribute('data-theme',t);if(localStorage.getItem('vertmonhub_sidebar_collapsed')==='1')d.setAttribute('data-sidebar','collapsed');}catch(e){d.setAttribute('data-theme','dark');}})();`,
+            __html: `(function(){var d=document.documentElement;try{var t=localStorage.getItem('vh-theme')==='dark'?'dark':'light';d.setAttribute('data-theme',t);if(localStorage.getItem('vertmonhub_sidebar_collapsed')==='1')d.setAttribute('data-sidebar','collapsed');}catch(e){d.setAttribute('data-theme','light');}})();`,
           }}
         />
         <AnalyticsScripts />

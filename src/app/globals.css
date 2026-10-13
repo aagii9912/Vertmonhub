@@ -9,7 +9,8 @@
    Dark-first: deep ink canvas, one bright blue for actions, champagne
    only for targets/achievement, Inter for every script (Cyrillic incl.
    Ө Ү and the ₮ sign) + JetBrains Mono for codes and IDs.
-   Light theme is the daytime counterpart; the sidebar stays dark in both.
+   Light is the default theme since 2026-10-13 (owner); dark is opt-in.
+   The sidebar stays dark in both.
    Every text pair is ≥ 4.5:1 and every control border ≥ 3:1 (WCAG AA).
    ============================================================ */
 
@@ -130,7 +131,8 @@
 }
 
 /* ============================================================
-   Default theme — «Шөнө» (dark)
+   «Шөнө» (dark) tokens — base values; the light override below is the
+   default since 2026-10-13 (html data-theme="light"), dark is opt-in.
    ============================================================ */
 :root {
   color-scheme: dark;
@@ -252,7 +254,7 @@
 }
 
 /* ============================================================
-   Light theme — the daytime counterpart (opt-in via the user menu)
+   Light theme — the default (owner decision 2026-10-13); dark via the user menu
    ============================================================ */
 :root[data-theme="light"] {
   color-scheme: light;
