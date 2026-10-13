@@ -22,13 +22,14 @@ export type PageConnectFlow = 'facebook' | 'instagram';
 
 /**
  * Facebook Page: жагсаах, нийтлэл/engagement унших, DM, webhook, Page insights (read_insights),
+ * нийтлэлийн сэтгэгдлийн тоо (`pages_read_user_content` — `comments.summary` үүнгүйгээр /posts-ийг code 10-оор унагадаг),
  * Lead Ads (`leads_retrieval` — leadgen webhook + лид унших, `pages_manage_ads` — backfill-д lead формууд).
  * ⚠️ 'email' нь FB-Login-for-Business аппад invalid scope (dialog-ийг блоклодог). Login for Business
  * `config_id` ашиглавал эрхүүдийг тохиргоонд нь нэмнэ (scope параметрийг үл тооно).
  * Апп: lib/facebook/page-app.ts (анхдагчаар «Vertmon Hub», `META_PAGE_LOGIN_CONFIG_ID` тохиргоотой).
  */
 export const PAGE_OAUTH_SCOPES = [
-    'pages_show_list', 'pages_read_engagement', 'read_insights', 'pages_messaging', 'pages_manage_metadata',
+    'pages_show_list', 'pages_read_engagement', 'pages_read_user_content', 'read_insights', 'pages_messaging', 'pages_manage_metadata',
     'leads_retrieval', 'pages_manage_ads', 'ads_read', 'business_management', 'public_profile',
 ] as const;
 /** Instagram: Page-тэй холбогдсон Business аккаунт, DM, сэтгэгдэл, insights. */

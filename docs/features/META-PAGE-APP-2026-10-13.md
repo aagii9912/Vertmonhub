@@ -19,7 +19,7 @@
 ## Эзэмшигчийн хийх алхам (Meta for Developers → «Vertmon Hub» апп)
 
 1. **Use cases → Add**:
-   - «Manage everything on your Page»: `pages_show_list`, `pages_read_engagement`, `read_insights`, `pages_manage_metadata`.
+   - «Manage everything on your Page»: `pages_show_list`, `pages_read_engagement`, `pages_read_user_content`, `read_insights`, `pages_manage_metadata`. `pages_read_user_content`-гүй бол нийтлэлийн жагсаалт (`comments.summary`) code 10 буцаана.
    - DM-д «Engage with customers on Messenger from Meta»: `pages_messaging`.
    - Lead Ads-д «Capture & manage ad leads»: `leads_retrieval`, `pages_manage_ads`.
    - Instagram хэрэгтэй бол `instagram_basic`, `instagram_manage_insights`, `instagram_manage_messages`, `instagram_manage_comments`.
@@ -42,3 +42,12 @@
 6. **Hub дээр:** Маркетинг → Сошиал хэсэгт төслөө (Elysium Residence) сонгоод «Facebook хуудас холбох»-ыг дарж, Elysium пэйжийг сонгоно. Пэйж холбогдоход Hub `subscribed_apps`-ийг шинэ аппаар бүртгэнэ.
 
 Холбогдсоны дараа «Сошиал» хуудасны синк ба cron `social_insights_daily`-г бөглөнө. Лхагвагийн маркетингийн тайлан Facebook хуудасны тоог шууд авна.
+
+## Төлөв (2026-10-13, Claude Chrome-оор тохируулсан)
+
+- «Vertmon Hub» апп: Page, Messenger, Lead Ads, Instagram use case нэмсэн. Дээрх бүх эрх «Ready for testing» (standard access) төлөвтэй.
+- Login for Business тохиргоо «Vertmon Hub Page connect», ID `1480354417330230`. 14 эрхтэй, `ads_management` ороогүй. Vercel production-д `META_PAGE_LOGIN_CONFIG_ID` болгон тохируулж redeploy хийсэн.
+- Redirect URI: `/api/auth/facebook/callback` ба `/api/auth/instagram/callback` нэмсэн.
+- App roles: зөвхөн эзэмшигч (Administrator) байна. Тэр Elysium пэйжийн admin тул Tester нэмэх шаардлагагүй. Бусад хүн өөр пэйж холбох бол Tester болгох, эсвэл App Review хийлгэнэ.
+- Elysium Residence пэйж (676357242225387) болон @elysiumbymoncon Instagram холбогдсон. Sync хийхэд 240 өдрийн мөр, 25 нийтлэл хадгалагдсан. Lead Ads `subscribed_apps` идэвхтэй.
+- **Үлдсэн ажил:** Webhooks → Page-ийн callback URL болон verify token. Verify token нь нууц тул эзэмшигч өөрөө оруулна. Дараа нь `messages`, `messaging_postbacks`, `leadgen` талбаруудыг subscribe хийнэ. Үүнийг хийх хүртэл DM болон Lead Ads шинэ апп руу ирэхгүй.

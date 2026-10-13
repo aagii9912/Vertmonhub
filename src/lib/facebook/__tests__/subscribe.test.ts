@@ -51,6 +51,6 @@ describe('subscribePageToApp', () => {
 });
 
 it('asks for the Lead Ads permissions in the Page OAuth dialog', () => {
-    expect(PAGE_OAUTH_SCOPES).toEqual(expect.arrayContaining(['pages_manage_metadata', 'pages_messaging', 'leads_retrieval', 'pages_manage_ads']));
+    expect(PAGE_OAUTH_SCOPES).toEqual(expect.arrayContaining(['pages_manage_metadata', 'pages_messaging', 'leads_retrieval', 'pages_manage_ads', 'pages_read_user_content']));
     expect(PAGE_OAUTH_SCOPES).not.toContain('email');
 });
