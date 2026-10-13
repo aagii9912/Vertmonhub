@@ -107,7 +107,7 @@ Browser specs run against `e2e/support/fixture-server.mjs` (fake GoTrue + `next 
   `20261008130000` (monthly Б1/Б2/parking breakdown and atomic totals) was applied and schema/RPC privileges verified on 2026-10-08. Block amounts and aggregate report columns share one revision/audit; aggregate-only writers must not overwrite a saved breakdown.
   `20261013120000` (leads landing page columns) was applied and verified on 2026-10-13 before the Elysium landing attribution deploy; the Elysium site's own `event_leads.attribution` migration lives in that repo.
   `20261013140000` (meeting slides table, `content_calendar.image_paths/created_by`, private `report-media` bucket) was applied and verified on 2026-10-13 (RLS on, no anon/authenticated grants, RESTRICTIVE storage policy) before the slide code deploy.
-  `20261013150000` (monthly contract-count plan/actual `target_count`, `manual_contract_actual_count`, also per block; RPC accepts whole counts) is NOT in production yet: the sales plan page, operations report and meeting slides read these columns, so apply it before deploying that code.
+  `20261013150000` (monthly contract-count plan/actual `target_count`, `manual_contract_actual_count`, also per block; RPC accepts whole counts) was applied and verified on 2026-10-13 (CHECK validated, RPC service-role only, no anon/authenticated grants, existing rows unchanged) before the code that reads these columns.
 - Real inventory is `property_units` (`property_block_summary` view); the `properties` listing table is mostly empty. `admins`, `plans`, `subscriptions`, `invoices`, `ai_memory` and `exec_sql` never existed — do not query them.
 - `node scripts/rls-audit.mjs` audits RLS/`security_invoker` read-only.
 
