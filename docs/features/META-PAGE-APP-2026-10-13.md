@@ -50,4 +50,4 @@
 - Redirect URI: `/api/auth/facebook/callback` ба `/api/auth/instagram/callback` нэмсэн.
 - App roles: зөвхөн эзэмшигч (Administrator) байна. Тэр Elysium пэйжийн admin тул Tester нэмэх шаардлагагүй. Бусад хүн өөр пэйж холбох бол Tester болгох, эсвэл App Review хийлгэнэ.
 - Elysium Residence пэйж (676357242225387) болон @elysiumbymoncon Instagram холбогдсон. Sync хийхэд 240 өдрийн мөр, 25 нийтлэл хадгалагдсан. Lead Ads `subscribed_apps` идэвхтэй.
-- **Үлдсэн ажил:** Webhooks → Page-ийн callback URL болон verify token. Verify token нь нууц тул эзэмшигч өөрөө оруулна. Дараа нь `messages`, `messaging_postbacks`, `leadgen` талбаруудыг subscribe хийнэ. Үүнийг хийх хүртэл DM болон Lead Ads шинэ апп руу ирэхгүй.
+- Webhooks: `FACEBOOK_VERIFY_TOKEN`-д эзэмшигч шинэ утга оноож (Vercel Sensitive), redeploy хийсний дараа Page болон Instagram объектуудад callback `https://www.vertmon.mn/api/webhook`-ийг баталгаажуулсан (GET 200). Page: `messages`, `messaging_postbacks`, `leadgen`. Instagram: `messages`. Meta-ийн тест илгээлт амжилттай.
