@@ -7,6 +7,7 @@ import { PGlite } from '@electric-sql/pglite';
 const db = new PGlite();
 const migration = await readFile(new URL('../supabase/migrations/20260928120000_rbac_api_boundary.sql', import.meta.url), 'utf8');
 const adminMigration = await readFile(new URL('../supabase/migrations/20260930120000_admin_rbac_private_attachments.sql', import.meta.url), 'utf8');
+const slidesMigration = await readFile(new URL('../supabase/migrations/20261013140000_weekly_report_slides.sql', import.meta.url), 'utf8');
 const ids = Object.fromEntries(['admin', 'sales', 'marketing', 'viewer', 'super', 'other', 'shop', 'otherShop', 'lead', 'property'].map(key => [key, randomUUID()]));
 let checks = 0;
 async function check(name, fn) { await fn(); checks++; console.log(`✓ ${name}`); }
@@ -216,6 +217,33 @@ try {
         }
         await forbidden(() => asUser('super', () => db.exec("INSERT INTO storage.objects VALUES ('bad.pdf','ai-attachments')")));
         assert.equal((await asUser('super', () => db.query("DELETE FROM storage.objects WHERE bucket_id='ai-attachments' RETURNING name"))).rows.length,0);
+    });
+    await db.exec(slidesMigration);
+    await db.exec(slidesMigration);
+    await check('meeting slide media bucket is private, JPEG/PNG only and server-only', async () => {
+        const bucket = (await db.query("SELECT public,file_size_limit,allowed_mime_types FROM storage.buckets WHERE id='report-media'")).rows[0];
+        assert.equal(bucket.public,false);
+        assert.equal(Number(bucket.file_size_limit),4194304);
+        assert.deepEqual(bucket.allowed_mime_types,['image/jpeg','image/png']);
+        await asUser('admin', () => db.exec("INSERT INTO storage.objects VALUES ('poster.png','report-media')"),'service_role');
+        for (const role of ['anon','authenticated']) {
+            assert.equal((await asUser('marketing', () => db.query("SELECT name FROM storage.objects WHERE bucket_id='report-media'"),role)).rows.length,0);
+        }
+        await forbidden(() => asUser('marketing', () => db.exec("INSERT INTO storage.objects VALUES ('bad.png','report-media')")));
+        assert.equal((await asUser('super', () => db.query("DELETE FROM storage.objects WHERE bucket_id='report-media' RETURNING name"))).rows.length,0);
+    });
+    await check('meeting slides are API-only and their checks hold', async () => {
+        for (const key of ['marketing','super']) {
+            await forbidden(() => asUser(key, () => count('weekly_report_slides')));
+            await forbidden(() => asUser(key, () => db.query("INSERT INTO weekly_report_slides (shop_id,meeting_date,part,section,title) VALUES ($1,'2026-10-14','marketing','social','x')",[ids.shop])));
+        }
+        const insert = (date, part, section, title, images = []) => asUser('admin', () => db.query(
+            'INSERT INTO weekly_report_slides (shop_id,meeting_date,part,section,title,image_paths) VALUES ($1,$2,$3,$4,$5,$6)', [ids.shop,date,part,section,title,images]),'service_role');
+        await insert('2026-10-14','marketing','social','Постер');
+        for (const [date, part, section, title, images] of [
+            ['2026-10-15','marketing','social','Пүрэв гараг'], ['2026-10-14','finance','social','x'], ['2026-10-14','marketing','poster','x'],
+            ['2026-10-14','marketing','social',''], ['2026-10-14','marketing','social',' x'], ['2026-10-14','marketing','social','x',Array.from({ length: 7 },(_, i) => `p${i}.png`)],
+        ]) await assert.rejects(() => insert(date, part, section, title, images), error => error.code === '23514');
     });
     console.log(`RBAC: ${checks} checks passed (disposable PostgreSQL)`);
 } finally { await db.close(); }
