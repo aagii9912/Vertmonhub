@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowUpRight, Check, ChevronLeft, ChevronRight, ClipboardCopy, FileText, Maximize2, Plus, Printer, RefreshCw, Sparkles, X } from 'lucide-react';
+import { ArrowUpRight, Check, ChevronLeft, ChevronRight, ClipboardCopy, FileText, Maximize2, Plus, Presentation, Printer, RefreshCw, Sparkles, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useMyTasks, type UserTask } from '@/hooks/useMyTasks';
@@ -23,6 +23,8 @@ import { Avatar, Skeleton } from '@/components/dashboard/v2/primitives';
 import { useWeeklySales, WeeklySalesDetails } from '@/components/weekly/WeeklySalesDetails';
 import { WeeklyMarketingBudget } from '@/components/weekly/WeeklyMarketingBudget';
 import { WeeklyMarketingChannels } from '@/components/weekly/WeeklyMarketingChannels';
+import { useWeeklySlides, WeeklySlides } from '@/components/weekly/WeeklySlides';
+import { WEEKLY_SLIDE_PART_MODULE, type WeeklySlidePart } from '@/lib/dashboard/weekly-slides';
 
 export default function WeeklyReviewPage() {
     const { shop, user } = useAuth();
@@ -39,6 +41,9 @@ function WeeklyReview() {
     const previousRange = weeklyReviewRange(shiftReviewDate(meetingDate, -7));
     const can = (module: string) => !!user && (user.role === 'super_admin' || user.permissions.modules.includes(module));
     const canWrite = user?.role === 'super_admin' || !!user?.permissions.canWrite;
+    const canEditSlides = (part: WeeklySlidePart) => user?.role === 'super_admin' || (!!user?.permissions.canWrite && can(WEEKLY_SLIDE_PART_MODULE[part]));
+    const canDeleteSlides = (part: WeeklySlidePart) => user?.role === 'super_admin' || (!!user?.permissions.canDelete && can(WEEKLY_SLIDE_PART_MODULE[part]));
+    const [exporting, setExporting] = useState(false);
     const params = new URLSearchParams(range);
     const salesQuery = useQuery<OperationsReport>({
         queryKey: ['operations-report', shop?.id, range.from, range.to, user?.id, can('finance')],
@@ -61,6 +66,7 @@ function WeeklyReview() {
         enabled: !!shop?.id, staleTime: 30_000, retry: 1,
     });
     const weeklySalesQuery = useWeeklySales(meetingDate, can('reports'));
+    const slidesQuery = useWeeklySlides(meetingDate, can('reports') || can('marketing-roi'));
     const tasksQuery = useMyTasks();
     const sales = can('reports') && !salesQuery.isError ? salesQuery.data : undefined;
     const previousSales = can('reports') && !previousSalesQuery.isError ? previousSalesQuery.data : undefined;
@@ -68,7 +74,7 @@ function WeeklyReview() {
     const updates = updatesQuery.isError ? undefined : updatesQuery.data;
     const completedTasks = (tasksQuery.data?.tasks || []).filter(task => task.status === 'done' && task.completed_at && ubDateStr(new Date(task.completed_at)) >= range.from && ubDateStr(new Date(task.completed_at)) <= range.to);
     const weeklySales = can('reports') && !weeklySalesQuery.isError ? weeklySalesQuery.data : undefined;
-    const loading = salesQuery.isFetching || previousSalesQuery.isFetching || marketingQuery.isFetching || updatesQuery.isFetching || weeklySalesQuery.isFetching;
+    const loading = salesQuery.isFetching || previousSalesQuery.isFetching || marketingQuery.isFetching || updatesQuery.isFetching || weeklySalesQuery.isFetching || slidesQuery.isFetching;
     const notices = [
         ...(range.to >= ubDateStr() ? ['Тайлант хугацаа дуусаагүй. Одоогоор бүртгэсэн мэдээллийг харуулж байна.'] : []),
         ...(!can('reports') ? ['Борлуулалтын нэгдсэн тоонд тайлангийн эрх шаардлагатай.'] : salesQuery.error ? [`Борлуулалт: ${salesQuery.error.message}`] : []),
@@ -84,8 +90,28 @@ function WeeklyReview() {
     const refresh = () => {
         if (can('reports')) { void salesQuery.refetch(); void previousSalesQuery.refetch(); void weeklySalesQuery.refetch(); }
         if (can('marketing-roi')) void marketingQuery.refetch();
+        if (can('reports') || can('marketing-roi')) void slidesQuery.refetch();
         void updatesQuery.refetch();
     };
+
+    async function downloadSlides() {
+        setExporting(true);
+        try {
+            const { exportWeeklyDeck } = await import('@/lib/dashboard/weekly-deck-export');
+            const result = await exportWeeklyDeck({
+                projectName: weeklySales?.projectName || shop?.name || 'Vertmon Hub', meetingDate, range, previousRange,
+                discussion: discussionItems.map(({ title, detail }) => ({ title, detail })), notices,
+                sales, previousSales, weeklySales, marketing, updates: updates?.updates,
+                slides: slidesQuery.data?.slides ?? [], canReports: can('reports'), canMarketing: can('marketing-roi'),
+            });
+            if (result.failedImages) toast.warning(`Слайд татагдлаа. ${result.failedImages} зураг ачаалж чадсангүй.`);
+            else toast.success('Хурлын слайд (.pptx) татагдлаа');
+        } catch (error) {
+            toast.error(error instanceof Error && error.message ? `Слайд үүсгэж чадсангүй: ${error.message}` : 'Слайд үүсгэж чадсангүй. Дахин оролдоно уу.');
+        } finally {
+            setExporting(false);
+        }
+    }
 
     async function copy() {
         try { await navigator.clipboard.writeText(text); toast.success('Хурлын тайлан хууллаа'); }
@@ -118,7 +144,8 @@ function WeeklyReview() {
                 <div className="flex flex-wrap gap-2">
                     <Button variant="ghost" disabled={!exportable} onClick={copy}><ClipboardCopy />Хуулах</Button>
                     <Button variant="secondary" disabled={!exportable} onClick={() => void reportRef.current?.requestFullscreen?.().catch(() => toast.error('Бүтэн дэлгэц нээгдсэнгүй. PDF / хэвлэх үйлдлийг ашиглана уу.'))}><Maximize2 />Танилцуулах</Button>
-                    <Button disabled={!exportable} className="bg-foreground text-background hover:bg-fg-2" onClick={() => window.print()}><Printer />PDF / хэвлэх</Button>
+                    <Button variant="secondary" disabled={!exportable} onClick={() => window.print()}><Printer />PDF / хэвлэх</Button>
+                    <Button disabled={!exportable || exporting} isLoading={exporting} onClick={() => void downloadSlides()}>{!exporting && <Presentation />}Слайд (.pptx)</Button>
                 </div>
             </div>
             <a href="#weekly-update" className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-surface-2 text-sm font-medium focus-ring xl:hidden print:hidden"><FileText className="size-4" />Миний шинэчлэл оруулах<ArrowUpRight className="size-4" /></a>
@@ -189,6 +216,11 @@ function WeeklyReview() {
                         <WeeklySalesDetails query={weeklySalesQuery} canOpenErp={can('erp-imports')} />
                     </section>}
 
+                    {can('reports') && <section className="space-y-4">
+                        <ReportHeading number="01·3" title="Борлуулалтын нэмэлт слайд" />
+                        <WeeklySlides part="sales" meetingDate={meetingDate} query={slidesQuery} canWrite={canEditSlides('sales')} canDelete={canDeleteSlides('sales')} />
+                    </section>}
+
                     <section className="break-inside-avoid space-y-4">
                         <ReportHeading number="02" title="Маркетингийн үр дүн" href={can('marketing-roi') ? `/marketing?${params}` : undefined} />
                         {can('marketing-roi') && <WeeklyMarketingBudget to={range.to} />}
@@ -208,6 +240,11 @@ function WeeklyReview() {
                             {(marketing.spendQuality.current.missingFx > 0 || marketing.quality.unknownHandoff > 0) && <Alert variant="warning">Ханшгүй {marketing.spendQuality.current.missingFx} зардал, шилжүүлсэн огноогүй {marketing.quality.unknownHandoff} лид тооцоонд ороогүй.</Alert>}
                         </> : <Unavailable>{can('marketing-roi') ? 'Маркетингийн мэдээлэл түр боломжгүй. Шинэчлэх товчоор дахин оролдоно уу.' : 'Маркетингийн үзүүлэлт харах эрх шаардлагатай.'}</Unavailable>}
                     </section>
+
+                    {can('marketing-roi') && <section className="space-y-4">
+                        <ReportHeading number="02·2" title="Постер, контент, дэлгэцийн зураг" />
+                        <WeeklySlides part="marketing" meetingDate={meetingDate} query={slidesQuery} canWrite={canEditSlides('marketing')} canDelete={canDeleteSlides('marketing')} />
+                    </section>}
 
                     <section className="space-y-4">
                         <ReportHeading number="03" title={updates?.canViewTeam ? 'Багийн явц, хэлэлцэх зүйл' : 'Миний явц, хэлэлцэх зүйл'} />
