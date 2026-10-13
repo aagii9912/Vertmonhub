@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { ubDateStr } from '@/lib/utils/date';
 import { formatMNT } from '@/lib/utils/currency';
 import { dateSchema, performanceChange, type MarketingPerformance } from '@/lib/marketing/performance';
-import { formatDepartmentKpisText } from '@/lib/marketing/department-kpi';
+import { CONTENT_STATUS_LABEL, CONTENT_TYPE_LABEL, type ContentPlanSummary } from '@/lib/marketing/content-plan';
 import { formatOperationsReportText, type OperationsReport } from './operations-report';
 import type { WeeklySalesReport } from './weekly-sales';
 
@@ -27,6 +27,8 @@ export interface WeeklyUpdate {
     blockers: string;
     next_steps: string;
     updated_at: string;
+    /** Зохиогчийн дүр (user_roles) — маркетингийн гишүүний шинэчлэл маркетингийн слайдад, бусдынх борлуулалтын слайдад. */
+    author_role?: string | null;
 }
 
 export interface WeeklyUpdatesData {
@@ -77,18 +79,38 @@ export function formatReviewChange(current: number, previous?: number): string {
     return `Өмнөх ${previous} · ${delta > 0 ? '+' : ''}${delta}${change === null ? ' · хувь тооцох суурь алга' : ` (${change > 0 ? '+' : ''}${change}%)`}`;
 }
 
-/** Хадгалсан саад болон одоогийн ажлын дарааллаас хурлын асуудлыг гаргана. */
-export function weeklyDiscussionItems(input: { sales?: OperationsReport; marketing?: MarketingPerformance; updates?: WeeklyUpdate[] }) {
-    const items: { title: string; detail: string; href?: string }[] = [];
+/** Маркетингийн гишүүний шинэчлэл маркетингийн тайланд, бусдынх борлуулалтын тайланд. */
+export const updatePart = (update: Pick<WeeklyUpdate, 'author_role'>): 'sales' | 'marketing' => update.author_role === 'marketing' ? 'marketing' : 'sales';
+
+export interface WeeklyContentPlan { week: ContentPlanSummary; next: ContentPlanSummary }
+
+/** Хадгалсан саад болон одоогийн ажлын дарааллаас хурлын асуудлыг гаргана (борлуулалт, маркетинг тусдаа). */
+export function weeklyDiscussionItems(input: { sales?: OperationsReport; marketing?: MarketingPerformance; contentPlan?: WeeklyContentPlan; updates?: WeeklyUpdate[] }) {
+    const items: { title: string; detail: string; href?: string; part: 'sales' | 'marketing' }[] = [];
     const health = input.sales?.leads.health;
-    if (health?.ownerless) items.push({ title: `Эзэнгүй ${health.ownerless} лид`, detail: 'Хариуцах менежер, дараагийн алхмыг тогтоох.', href: '/dashboard/leads?queue=unassigned' });
-    if (health?.overdue) items.push({ title: `Хугацаа хэтэрсэн ${health.overdue} лид`, detail: 'Холбоо барих эсвэл уулзалтын дараагийн хугацааг шинэчлэх.', href: '/dashboard/leads?queue=overdue' });
-    if (input.marketing?.spendQuality.current.missingFx) items.push({ title: `Ханшгүй ${input.marketing.spendQuality.current.missingFx} зардал`, detail: 'Ханшаа нөхөж байж нийт зардал, нэг лидийн өртгийг үнэлэх.' });
-    if (input.marketing?.quality.unknownHandoff) items.push({ title: `Шилжүүлсэн огноогүй ${input.marketing.quality.unknownHandoff} лид`, detail: 'Бодит шилжүүлсэн огноог шалгах; хөрвөлтөд таамгаар оруулахгүй.' });
+    if (health?.ownerless) items.push({ title: `Эзэнгүй ${health.ownerless} лид`, detail: 'Хариуцах менежер, дараагийн алхмыг тогтоох.', href: '/dashboard/leads?queue=unassigned', part: 'sales' });
+    if (health?.overdue) items.push({ title: `Хугацаа хэтэрсэн ${health.overdue} лид`, detail: 'Холбоо барих эсвэл уулзалтын дараагийн хугацааг шинэчлэх.', href: '/dashboard/leads?queue=overdue', part: 'sales' });
+    if (input.marketing?.quality.unknownHandoff) items.push({ title: `Шилжүүлсэн огноогүй ${input.marketing.quality.unknownHandoff} лид`, detail: 'Бодит шилжүүлсэн огноог шалгах; хөрвөлтөд таамгаар оруулахгүй.', part: 'sales' });
+    if (input.contentPlan?.week.overdue) items.push({ title: `Хоцорсон ${input.contentPlan.week.overdue} контент`, detail: 'Төлөвлөсөн огноо өнгөрсөн, нийтлээгүй контентын шинэ огноо эсвэл цуцлах шийдвэр.', href: '/marketing/calendar', part: 'marketing' });
+    if (input.marketing?.spendQuality.current.missingFx) items.push({ title: `Ханшгүй ${input.marketing.spendQuality.current.missingFx} зардал`, detail: 'Ханшаа нөхөж байж маркетингийн нийт зардал, төсвийн гүйцэтгэлийг үнэлэх.', part: 'marketing' });
     for (const update of input.updates || []) {
-        if (update.blockers.trim()) items.push({ title: update.author_name, detail: update.blockers });
+        if (update.blockers.trim()) items.push({ title: update.author_name, detail: update.blockers, part: updatePart(update) });
     }
     return items;
+}
+
+/** Контент төлөвлөгөөний текст (хурлын тайлан, AI). */
+export function formatContentPlanText(plan: WeeklyContentPlan): string[] {
+    const line = (item: ContentPlanSummary['items'][number]) => `  ${item.scheduled_date.slice(5)} ${CONTENT_TYPE_LABEL[item.type] ?? item.type} · ${item.title} — ${CONTENT_STATUS_LABEL[item.status] ?? item.status}${item.assigned_to ? ` (${item.assigned_to})` : ''}`;
+    const { week, next } = plan;
+    return [
+        week.planned || week.cancelled
+            ? `Контент: төлөвлөсөн ${week.planned} · нийтэлсэн ${week.published}${week.pct === null ? '' : ` (${week.pct}%)`} · хийгдэж буй/бэлэн ${week.inProgress} · хоцорсон ${week.overdue}${week.cancelled ? ` · цуцалсан ${week.cancelled}` : ''}`
+            : 'Контент: энэ долоо хоногт төлөвлөсөн контент алга.',
+        ...week.items.map(line),
+        `Дараагийн 7 хоногийн төлөвлөгөө: ${next.planned} контент`,
+        ...next.items.map(line),
+    ];
 }
 
 export function formatWeeklyReview(input: {
@@ -98,6 +120,7 @@ export function formatWeeklyReview(input: {
     previousSales?: OperationsReport;
     weeklySales?: WeeklySalesReport;
     marketing?: MarketingPerformance;
+    contentPlan?: WeeklyContentPlan;
     updates?: WeeklyUpdate[];
     notices: string[];
 }): string {
@@ -122,25 +145,29 @@ export function formatWeeklyReview(input: {
             ...(input.previousSales ? [`Өмнөх гэрээний бүртгэлтэй дүн: ${formatMNT(input.previousSales.contracts.value)}${input.previousSales.contracts.missingAmounts ? ' · дүн дутуу' : ''}`] : []),
         ] : []),
         ...(input.weeklySales ? formatWeeklySalesText(input.weeklySales) : []),
-        '', '2. Маркетинг',
+        // Лидийн эх сурвалж, хөрвөлт нь борлуулалтын үзүүлэлт — маркетингийн албаны ажлын хэмжүүр биш.
         ...(input.marketing ? [
+            '', 'Лидийн эх сурвалж, хөрвөлт',
             `Шинэ лид: ${input.marketing.totals.leads} · Менежерт шилжсэн: ${input.marketing.totals.sales} · Гэрээтэй лид: ${input.marketing.totals.deals}`,
-            `Дууссан ажил: ${input.marketing.totals.activities} · Бүртгэсэн зардал: ${input.marketing.totals.hasSpend || !input.marketing.totals.spendComplete ? formatMNT(input.marketing.totals.spend) : 'бүртгээгүй'}`,
-            `Дууссан кампанит ажил: ${formatReviewChange(input.marketing.totals.campaigns, input.marketing.previous.campaigns)}`,
-            `Дууссан контент: ${formatReviewChange(input.marketing.totals.content, input.marketing.previous.content)}`,
             `Шинэ лид: ${formatReviewChange(input.marketing.totals.leads, input.marketing.previous.leads)}`,
             `Менежерт шилжсэн: ${formatReviewChange(input.marketing.totals.sales, input.marketing.previous.sales)}`,
             `Гэрээтэй лид: ${formatReviewChange(input.marketing.totals.deals, input.marketing.previous.deals)}`,
-            `Дууссан ажил: ${formatReviewChange(input.marketing.totals.activities, input.marketing.previous.activities)}`,
             `Шилжилт: ${percent(input.marketing.totals.salesPct)} (өмнөх ${percent(input.marketing.previous.salesPct)}) · Гэрээлэлт: ${percent(input.marketing.totals.dealPct)} (өмнөх ${percent(input.marketing.previous.dealPct)})`,
             `Нэг лидийн өртөг: ${money(input.marketing.totals.costPerLead)} · Нэг шилжсэн лидийн өртөг: ${money(input.marketing.totals.costPerSale)} · Нэг гэрээтэй лидийн өртөг: ${money(input.marketing.totals.costPerDeal)}`,
             `Өмнөх нэг лид: ${money(input.marketing.previous.costPerLead)} · Өмнөх нэг шилжсэн лид: ${money(input.marketing.previous.costPerSale)} · Өмнөх нэг гэрээтэй лид: ${money(input.marketing.previous.costPerDeal)}`,
             ...input.marketing.channels.filter(c => c.leads > 0 || c.hasSpend || !c.spendComplete).map(c => `${c.name}: ${c.leads} лид · ${c.sales} шилжсэн · ${c.deals} гэрээтэй · зардал ${c.hasSpend || !c.spendComplete ? money(c.spend) : 'бүртгээгүй'} · нэг лид ${money(c.costPerLead)}${c.spendComplete ? '' : ' · ханш дутуу'}`),
             'Өртөг = тухайн хугацааны бүртгэсэн зардал / лидийн тоо. Ханш дутуу, зардал эсвэл тооцох суурь алга бол өртөг тооцоогүй.',
             input.marketing.basis,
-            '', formatDepartmentKpisText(input.marketing),
-            `Ханшгүй ${input.marketing.spendQuality.current.missingFx} зардал нийтэд ороогүй. Огноогүй ${input.marketing.quality.unknownHandoff} шилжүүлэлтийг тооцоогүй.`,
-        ] : ['Маркетингийн мэдээлэл энэ тайланд байхгүй.']),
+            `Огноогүй ${input.marketing.quality.unknownHandoff} шилжүүлэлтийг тооцоогүй.`,
+        ] : []),
+        '', '2. Маркетинг — контент төлөвлөгөө ба гүйцэтгэл',
+        ...(input.contentPlan ? formatContentPlanText(input.contentPlan) : ['Контент төлөвлөгөөний мэдээлэл энэ тайланд байхгүй.']),
+        ...(input.marketing ? [
+            `Дууссан кампанит ажил: ${formatReviewChange(input.marketing.totals.campaigns, input.marketing.previous.campaigns)}`,
+            `Дууссан контент: ${formatReviewChange(input.marketing.totals.content, input.marketing.previous.content)}`,
+            `Бүртгэсэн зардал: ${input.marketing.totals.hasSpend || !input.marketing.totals.spendComplete ? formatMNT(input.marketing.totals.spend) : 'бүртгээгүй'}`,
+            `Ханшгүй ${input.marketing.spendQuality.current.missingFx} зардал нийтэд ороогүй.`,
+        ] : []),
         '', '3. Ажлын явц, хэлэлцэх зүйл',
         ...(input.updates?.length ? input.updates.flatMap(update => [
             `${update.author_name} · ${update.updated_at}`,

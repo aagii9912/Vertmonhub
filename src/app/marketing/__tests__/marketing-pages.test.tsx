@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
     json: vi.fn(),
     mutate: vi.fn(),
     fetch: vi.fn(),
-    auth: { shop: { id: 'shop-a' }, user: { id: 'user-a', role: 'marketing' } },
+    auth: { shop: { id: 'shop-a' }, user: { id: 'user-a', role: 'marketing', permissions: { modules: ['marketing-roi'], canWrite: true, canDelete: false } } },
     search: '',
 }));
 vi.mock('next/navigation', () => ({ useSearchParams: () => new URLSearchParams(mocks.search) }));
@@ -106,12 +106,13 @@ describe('calendar', () => {
     const monthUrl = (offset: number) => {
         const start = ymd(new Date(now.getFullYear(), now.getMonth() + offset, 1));
         const end = ymd(new Date(now.getFullYear(), now.getMonth() + offset + 1, 0));
-        return `/api/marketing/data/content_calendar?gte.scheduled_date=${start}&lte.scheduled_date=${end}&order=scheduled_date.asc`;
+        return `/api/marketing/content-plan?from=${start}&to=${end}`;
     };
-    const item = (id: string, title: string, date: Date) => ({ id, title, type: 'post', platform: 'facebook', scheduled_date: ymd(date), status: 'planned', color: '#3B82F6' });
+    const item = (id: string, title: string, date: Date, status = 'planned') => ({ id, title, type: 'post', platform: 'facebook', scheduled_date: ymd(date), scheduled_time: null, status, description: null,
+        assigned_to: null, color: '#3B82F6', image_paths: [], created_by: 'user-a', updated_at: '2026-10-01T00:00:00Z' });
 
     it('keeps the page while the next month loads, surfaces errors under the month nav, and refreshes after create', async () => {
-        mocks.json.mockResolvedValueOnce({ rows: [item('c1', 'Пост нэг', new Date(now.getFullYear(), now.getMonth(), 15))] });
+        mocks.json.mockResolvedValueOnce({ items: [item('c1', 'Пост нэг', new Date(now.getFullYear(), now.getMonth(), 15))] });
         renderPage(<CalendarPage />);
         expect(await screen.findByText('Пост нэг')).toBeInTheDocument();
         expect(mocks.json).toHaveBeenLastCalledWith(monthUrl(0));
@@ -125,7 +126,7 @@ describe('calendar', () => {
         expect(screen.getByRole('status', { name: 'Сарын контент ачаалж байна' })).toBeInTheDocument();
         expect(screen.queryByText('Пост нэг')).not.toBeInTheDocument();
         expect(screen.queryByText('Энэ сард контент төлөвлөгдөөгүй байна')).not.toBeInTheDocument();
-        await act(async () => next.resolve({ rows: [] }));
+        await act(async () => next.resolve({ items: [] }));
         expect(await screen.findByText('Энэ сард контент төлөвлөгдөөгүй байна')).toBeInTheDocument();
 
         mocks.json.mockRejectedValueOnce(new Error('Уншихад алдаа гарлаа'));
@@ -138,14 +139,27 @@ describe('calendar', () => {
         // Back to the cached month, then create: the active month is refetched.
         fireEvent.click(screen.getByRole('button', { name: 'Өмнөх сар' }));
         expect(await screen.findByText('Энэ сард контент төлөвлөгдөөгүй байна')).toBeInTheDocument();
-        mocks.mutate.mockResolvedValueOnce({ row: {} });
-        mocks.json.mockResolvedValue({ rows: [item('c2', 'Шинэ пост', new Date(now.getFullYear(), now.getMonth() + 1, 3))] });
+        mocks.mutate.mockResolvedValueOnce({ item: {} });
+        mocks.json.mockResolvedValue({ items: [item('c2', 'Шинэ пост', new Date(now.getFullYear(), now.getMonth() + 1, 3))] });
         const before = calls(monthUrl(1));
         fireEvent.click(screen.getByRole('button', { name: /Шинэ контент/ }));
         fireEvent.change(await screen.findByPlaceholderText('Контентын гарчиг'), { target: { value: 'Шинэ пост' } });
         fireEvent.click(screen.getByRole('button', { name: /Үүсгэх/ }));
         expect(await screen.findByText('Шинэ пост')).toBeInTheDocument();
         expect(calls(monthUrl(1))).toBe(before + 1);
+        expect(mocks.mutate).toHaveBeenCalledWith('/api/marketing/content-plan', 'POST', expect.objectContaining({ title: 'Шинэ пост', status: 'planned', imagePaths: [] }), expect.anything());
+    });
+
+    it('marks planned content as published from the calendar and shows the month progress', async () => {
+        mocks.json.mockResolvedValue({ items: [item('c1', 'Reel 201 мкв', new Date(now.getFullYear(), now.getMonth(), 15)), item('c2', 'Постер', new Date(now.getFullYear(), now.getMonth(), 16), 'published')] });
+        renderPage(<CalendarPage />);
+        expect(await screen.findByLabelText('Сарын гүйцэтгэл')).toHaveTextContent('Төлөвлөсөн 2 · Нийтэлсэн 1 (50%)');
+        mocks.mutate.mockResolvedValueOnce({ item: {} });
+        fireEvent.click(screen.getByRole('button', { name: /Reel 201 мкв/ }));
+        const dialog = await screen.findByRole('dialog');
+        expect(within(dialog).getByPlaceholderText('Контентын гарчиг')).toHaveValue('Reel 201 мкв');
+        fireEvent.click(within(dialog).getByRole('button', { name: 'Хадгалах' }));
+        await waitFor(() => expect(mocks.mutate).toHaveBeenCalledWith('/api/marketing/content-plan/c1', 'PATCH', expect.objectContaining({ title: 'Reel 201 мкв', status: 'planned' }), expect.anything()));
     });
 });
 

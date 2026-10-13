@@ -114,11 +114,20 @@ export async function reorderWeeklySlides(db: SupabaseClient, shopId: string, me
     return { ok: true };
 }
 
-/** Зургийг хадгалсан слайдын хэсгээр эрхжүүлнэ; хадгалаагүй (дөнгөж upload хийсэн) зургийг зөвхөн оруулсан хүн харна. */
+/**
+ * Зургийг ашигласан слайдын хэсгээр эрхжүүлнэ; маркетингийн контент төлөвлөгөөний (content_calendar)
+ * зураг = маркетинг. Хадгалаагүй (дөнгөж upload хийсэн) зургийг зөвхөн оруулсан хүн харна.
+ */
 export async function mediaParts(db: SupabaseClient, shopId: string, path: string): Promise<{ parts: WeeklySlidePart[] } | { error: PostgrestError }> {
-    const { data, error } = await db.from('weekly_report_slides').select('part').eq('shop_id', shopId).contains('image_paths', [path]).limit(10);
-    if (error) return { error };
-    return { parts: [...new Set((data ?? []).map(row => row.part as WeeklySlidePart))] };
+    const [slides, content] = await Promise.all([
+        db.from('weekly_report_slides').select('part').eq('shop_id', shopId).contains('image_paths', [path]).limit(10),
+        db.from('content_calendar').select('id').eq('shop_id', shopId).contains('image_paths', [path]).limit(1),
+    ]);
+    if (slides.error) return { error: slides.error };
+    if (content.error) return { error: content.error };
+    const parts = new Set((slides.data ?? []).map(row => row.part as WeeklySlidePart));
+    if (content.data?.length) parts.add('marketing');
+    return { parts: [...parts] };
 }
 
 /** Слайдаас хасагдсан, өөр слайдад ашиглагдаагүй файлыг устгана (алдаа гарвал лог л үлдэнэ). */

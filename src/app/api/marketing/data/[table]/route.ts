@@ -16,8 +16,9 @@ import { withRoute } from '@/lib/api/route';
  */
 // `ad_campaigns` (хуучин 30 хоногийн Meta snapshot) хасагдсан: Meta зардал, үр дүнг /api/marketing/meta-ads
 // огноотой хүснэгтүүдээс (meta_daily_spend, meta_ad_insights_daily) уншина.
+// `content_calendar` (контент төлөвлөгөө, постертой) зөвхөн /api/marketing/content-plan-аар: Zod allow-list,
+// зургийн замын шалгалттай.
 const TABLES = new Set([
-    'content_calendar',
     'marketing_campaigns',
     'message_campaigns',
     'brand_mentions',
