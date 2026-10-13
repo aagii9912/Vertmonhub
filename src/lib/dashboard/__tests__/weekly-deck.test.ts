@@ -14,6 +14,7 @@ import type { ChannelReportMatches } from '@/lib/marketing/channel-reports-load'
 import type { ErpProduct, ErpSale } from '@/lib/erp/records';
 import type { WeeklySlide } from '../weekly-slides';
 import { summarizeContentPlan, type ContentItem } from '@/lib/marketing/content-plan';
+import { summarizeSocialWeek, type SocialDailyRow, type SocialWeek } from '@/lib/marketing/social-week';
 
 const range = { from: '2026-10-07', to: '2026-10-13' };
 const meetingDate = '2026-10-14';
@@ -116,6 +117,25 @@ function contentPlan() {
     return { week: summarizeContentPlan(items, range, '2026-10-14'), next: summarizeContentPlan(items, { from: meetingDate, to: '2026-10-20' }, '2026-10-14') };
 }
 
+/** Facebook хуудасны өдрийн мөр: тайлант 7 хоног, өмнөх 7 хоног. Оролцоо 5 өдөр л, хуудас үзэлт огт алга. */
+function social(): SocialWeek {
+    const previousRange = { from: '2026-09-30', to: '2026-10-06' };
+    const days = (from: string, n: number) => Array.from({ length: n }, (_, i) => new Date(Date.parse(`${from}T00:00:00Z`) + i * 86_400_000).toISOString().slice(0, 10));
+    const rows: SocialDailyRow[] = [
+        ...days(range.from, 7).flatMap((day, i) => [{ day, metric: 'page_media_view', value: 1000 }, { day, metric: 'page_daily_follows_unique', value: 5 }, { day, metric: 'page_follows', value: 4806 + i }]),
+        ...days(previousRange.from, 7).flatMap((day, i) => [{ day, metric: 'page_media_view', value: 800 }, { day, metric: 'page_daily_follows_unique', value: 4 }, { day, metric: 'page_follows', value: 4780 + i }]),
+        ...days(range.from, 5).map(day => ({ day, metric: 'page_post_engagements', value: 120 })),
+    ];
+    return {
+        page: { id: '676357242225387', name: 'Elysium Residence' }, range, previousRange, syncedTo: range.to, rangeDays: 7,
+        metrics: summarizeSocialWeek(rows, range, previousRange),
+        posts: [
+            { id: '1_2', content: 'ОНЦЛОХ ОРОН СУУЦ | ГЭР БҮЛИЙН\nТАВ ТУХ', publishedAt: '2026-10-08T02:00:00Z', views: 70662, clicks: 327, likes: 289, comments: 7, shares: 0, asOf: '2026-10-13' },
+            { id: '1_3', content: null, publishedAt: '2026-10-12T17:30:00Z', views: null, clicks: null, likes: 12, comments: null, shares: 1, asOf: null },
+        ],
+    };
+}
+
 const slide = (id: string, overrides: Partial<WeeklySlide>): WeeklySlide => ({
     id, meeting_date: meetingDate, part: 'marketing', section: 'social', title: '', note: '', image_paths: [], position: 0,
     author_id: user, author_name: 'Анужин', updated_at: `${range.to}T10:00:00Z`, ...overrides,
@@ -133,7 +153,7 @@ function input(overrides: Partial<WeeklyDeckInput> = {}): WeeklyDeckInput {
         discussion: [{ title: 'Эзэнгүй 3 лид', detail: 'Хариуцах менежер, дараагийн алхмыг тогтоох.', part: 'sales' }, { title: 'Хоцорсон 1 контент', detail: 'Шинэ огноо тогтоох.', part: 'marketing' }], notices: [],
         sales: operations(range.from, range.to), previousSales: operations('2026-09-30', '2026-10-06'), weeklySales: weeklySales(),
         budget: { year: 2026, month: 10, overview: buildBudgetOverview(Array(12).fill(10000000), Array.from({ length: 12 }, (_, i) => i < 10 ? 8000000 : 0), Array(12).fill(0)) },
-        marketing: marketing(), channels: channels(), contentPlan: contentPlan(),
+        marketing: marketing(), channels: channels(), contentPlan: contentPlan(), social: social(),
         slides: [
             slide('s1', { section: 'social', title: 'Онцлох орон сууц: 201 мкв 5 өрөө', image_paths: [media(1), media(2)] }),
             slide('s2', { section: 'callpro', title: 'CallPro — алдсан дуудлага', image_paths: [media(3)], note: 'Алдсан дуудлага 12:00 болон 15:00–16:00 цагийн үед төвлөрч байна.' }),
@@ -183,7 +203,8 @@ describe('weekly meeting deck (.pptx)', () => {
         for (const needle of ['Эзэнгүй 3 лид', 'Борлуулалтын тойм', 'Энэ долоо хоногийн гэрээ (1/2)', 'Энэ долоо хоногийн гэрээ (2/2)', 'Орон сууцны үлдэгдэл — Б1 блок',
             'Орон сууцны үлдэгдэл — Б2 блок (1/2)', 'Лидийн эх сурвалж, хөрвөлт', 'Энэ сард хийгдэх ажлууд', 'Банкны зээлийн хариу', 'Анхаарал хандуулсанд баярлалаа']) expect(all).toContain(needle);
         // Маркетингийн контент, постер, суваг, маркетингийн гишүүний явц борлуулалтын файлд орохгүй.
-        for (const needle of ['Хоцорсон 1 контент', 'Контент төлөвлөгөө', 'Онцлох орон сууц', 'CallPro — алдсан дуудлага', 'Сувгийн экспорт', 'Хоёр reel хийсэн', 'Төсөв ба зарцуулалт']) expect(all).not.toContain(needle);
+        for (const needle of ['Хоцорсон 1 контент', 'Контент төлөвлөгөө', 'Онцлох орон сууц', 'CallPro — алдсан дуудлага', 'Сувгийн экспорт', 'Хоёр reel хийсэн', 'Төсөв ба зарцуулалт',
+            'долоо хоногийн үзүүлэлт', 'нийтэлсэн пост']) expect(all).not.toContain(needle);
         const index = (needle: string) => text.findIndex(slideText => slideText.includes(needle));
         expect(index('Лидийн эх сурвалж')).toBeLessThan(index('Энэ сард хийгдэх ажлууд'));
         expect(index('Банкны зээлийн хариу')).toBe(xml.length - 2);
@@ -210,6 +231,35 @@ describe('weekly meeting deck (.pptx)', () => {
         expect(index('Сувгийн экспорт')).toBeLessThan(index('Дараагийн 7 хоногийн контент төлөвлөгөө'));
         expect(index('Хоёр reel хийсэн')).toBe(xml.length - 2);
         expect(Object.keys(zip.files).filter(name => name.startsWith('ppt/media/') && !name.endsWith('/')).length).toBeGreaterThanOrEqual(3);
+    });
+
+    it('marketing deck: Facebook Page week from stored insights, compared only when both weeks are complete', async () => {
+        const { text } = await render(input({ kind: 'marketing' }));
+        const index = (needle: string) => text.findIndex(slideText => slideText.includes(needle));
+        const page = text[index('Elysium Residence — долоо хоногийн үзүүлэлт')];
+        expect(page).toContain('Meta-гийн өдөр (Номхон далайн цаг)');
+        // Үзэлт 7×1000, өмнөх 7×800 → +1,400 (+25%); шинэ дагагч 35 vs 28.
+        expect(page).toMatch(/Үзэлт 7,000 Өмнөх 7 хоног 5,600 · \+1,400 \(\+25%\)/);
+        expect(page).toMatch(/Шинэ дагагч 35 Өмнөх 7 хоног 28 · \+7 \(\+25%\)/);
+        // Дагагч = сүүлийн өдрийн төлөв, нэмэхгүй; 7 хоногийн өмнөх өдөртэй (10.06 = 4,786) харьцуулна.
+        expect(page).toMatch(/Дагагч 4,812 2026\.10\.13-ны байдлаар · 7 хоногийн өмнө 4,786 · \+26 \(\+0\.5%\)/);
+        // Оролцоо 5 өдөр л, өмнөх долоо хоногийн мөн өдрүүдэд өгөгдөл алга → харьцуулахгүй; өгөгдөлгүй метрик 0 биш «—».
+        expect(page).toMatch(/Нийтлэлийн оролцоо 600 5\/7 өдөр · Өмнөх 7 хоногийн мөн өдрүүд — Шинэ дагагч/);
+        expect(page).toMatch(/Хуудас үзсэн — Meta өгөөгүй/);
+        const posts = text[index('Энэ долоо хоногт нийтэлсэн пост')];
+        expect(posts).toContain('ОНЦЛОХ ОРОН СУУЦ | ГЭР БҮЛИЙН ТАВ ТУХ');
+        expect(posts).toContain('(текстгүй пост)');
+        expect(posts).toMatch(/70,662 327 289 7 0/);
+        // 2026-10-12T17:30Z = УБ-ын 10.13.
+        expect(posts).toContain('10.13');
+        expect(index('долоо хоногийн үзүүлэлт')).toBeGreaterThan(index('Постер + carousel'));
+        expect(index('нийтэлсэн пост')).toBeLessThan(index('Сувгийн экспорт'));
+    });
+
+    it('marketing deck skips the Facebook slides when no Page is connected', async () => {
+        const { text } = await render(input({ kind: 'marketing', social: { ...social(), page: null, metrics: [], posts: [] } }));
+        expect(text.join(' ')).not.toContain('долоо хоногийн үзүүлэлт');
+        expect(text.join(' ')).not.toContain('нийтэлсэн пост');
     });
 
     it('never prints missing amounts as zero and keeps missing images out of the slide', async () => {

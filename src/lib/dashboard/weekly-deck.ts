@@ -9,13 +9,16 @@ import type { BudgetOverview } from '@/lib/marketing/budget';
 import type { ChannelReportMatches } from '@/lib/marketing/channel-reports-load';
 import { CHANNEL_SOURCE_LABELS, CHANNEL_SOURCES, channelKeyMetrics, channelMetric, type ChannelSource } from '@/lib/marketing/channel-reports';
 import { CONTENT_STATUS_LABEL, CONTENT_TYPE_LABEL, contentPlatformLabel, type ContentItem, type ContentPlanSummary } from '@/lib/marketing/content-plan';
+import type { SocialWeek, SocialWeekMetric } from '@/lib/marketing/social-week';
 import { formatMNT, formatMNTShort } from '@/lib/utils/currency';
+import { ubDateStr } from '@/lib/utils/date';
 
 /**
  * Лхагва гарагийн хурлын тайланг PowerPoint (.pptx) болгоно — хурлыг слайдаар явуулдаг тул.
  * Борлуулалт, маркетинг хоёр тусдаа файл: маркетингийн алба контент бүтээж, өөрийн төлөвлөгөөгөөр
  * ажилладаг тул маркетингийн слайд лид, гэрээгээр биш контент төлөвлөгөөний гүйцэтгэл, нийтэлсэн
- * контент (постертой), сувгийн үзүүлэлт, төсөв, дараагийн 7 хоногийн төлөвлөгөөгөөр бүрдэнэ.
+ * контент (постертой), Facebook хуудасны органик үзүүлэлт, сувгийн үзүүлэлт, төсөв, дараагийн 7 хоногийн
+ * төлөвлөгөөгөөр бүрдэнэ.
  * Лидийн эх сурвалж, хөрвөлт борлуулалтын слайдад орно.
  * Цэвэр функц: өгөгдөл (хуудасны ачаалсан, эрхээр шүүгдсэн тайлангууд) + зураг → слайдууд.
  * Хөтөч (lib/dashboard/weekly-deck-export.ts) болон тест хоёулаа ашиглана.
@@ -48,6 +51,8 @@ export interface WeeklyDeckInput {
     channels?: ChannelReportMatches | null;
     /** Маркетингийн контент төлөвлөгөө: тайлант долоо хоног ба дараагийн 7 хоног. */
     contentPlan?: WeeklyContentPlan;
+    /** Facebook хуудасны хадгалсан органик үзүүлэлт ба тухайн долоо хоногийн постууд. */
+    social?: SocialWeek | null;
     slides: WeeklySlide[];
     /** Зургийн зам (слайд, контент) → `image/jpeg;base64,...` ба хэмжээ. Ачаалж чадаагүй зураг байхгүй байж болно. */
     images: Record<string, DeckImage>;
@@ -464,6 +469,61 @@ function contentShowcase(pres: PptxGenJS, summary: ContentPlanSummary, images: R
     }
 }
 
+function socialHelper(metric: SocialWeekMetric, rangeDays: number): string {
+    if (metric.value === null) return 'Meta өгөөгүй';
+    const parts: string[] = [];
+    if (metric.kind === 'latest' && metric.day) parts.push(`${dot(metric.day)}-ны байдлаар`);
+    else if (metric.days && metric.days < rangeDays) parts.push(`${metric.days}/${rangeDays} өдөр`);
+    const against = metric.comparison === 'week-ago' ? '7 хоногийн өмнө' : metric.comparison === 'same-days' ? 'Өмнөх 7 хоногийн мөн өдрүүд' : 'Өмнөх 7 хоног';
+    parts.push(`${against} ${count(metric.previous)}`);
+    if (metric.delta !== null) parts.push(`${metric.delta > 0 ? '+' : ''}${count(metric.delta)}${metric.deltaPct !== null ? ` (${metric.deltaPct > 0 ? '+' : ''}${metric.deltaPct}%)` : ''}`);
+    return parts.join(' · ');
+}
+
+/** Facebook хуудасны долоо хоногийн органик үзүүлэлт (хадгалсан өдрийн insights) ба нийтэлсэн постууд. */
+function socialPageSlides(pres: PptxGenJS, input: WeeklyDeckInput) {
+    const social = input.social;
+    if (!social?.page) return;
+    const pageName = social.page.name || 'Facebook хуудас';
+    const known = social.metrics.filter(metric => metric.value !== null);
+    const days = Math.max(0, ...social.metrics.map(metric => metric.days));
+    const coverage = days && days < social.rangeDays ? ` · ${days}/${social.rangeDays} өдрийн өгөгдөл` : '';
+    const slide = content(pres, 'Маркетинг · Facebook', `${pageName} — долоо хоногийн үзүүлэлт`, `${span(input.range)} · Meta-гийн өдөр (Номхон далайн цаг)${coverage}`);
+    if (!known.length) {
+        slide.addText(`Энэ долоо хоногийн Facebook хуудасны үзүүлэлт хадгалагдаагүй байна${social.syncedTo ? ` (сүүлийн синк ${dot(social.syncedTo)} хүртэл)` : ''}. Маркетинг → Сошиал хэсэгт хуудас холбогдсон эсэх, синкийг шалгана уу.`,
+            { x: M, y: TOP, w: CW, h: 0.9, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, isTextBox: true });
+    } else {
+        const card = (metric: SocialWeekMetric) => ({ label: metric.label, value: count(metric.value), helper: socialHelper(metric, social.rangeDays) });
+        statRow(slide, TOP, social.metrics.slice(0, 4).map(card), 1.7);
+        statRow(slide, TOP + 1.95, social.metrics.slice(4).map(card), 1.7);
+    }
+    note(slide, [
+        'Эх сурвалж: Hub-ийн хадгалсан Facebook Page insights (Graph v26, 6 цаг тутмын синк). Meta өдрийг Номхон далайн цагаар тоолдог.',
+        '«Дагагч» нь өдрийн эцсийн төлөв, бусад нь долоо хоногийн нийлбэр. Давхардалгүй хүрсэн хүнийг өдрөөр нэмэх боломжгүй тул оруулаагүй.',
+        'Долоо хоног дутуу бол (хурлын өглөө Meta-гийн сүүлийн өдөр дуусаагүй) өмнөх долоо хоногийн мөн өдрүүдтэй харьцуулна. Дагагчийг 7 хоногийн өмнөх өдөртэй харьцуулна.',
+        social.syncedTo && social.syncedTo < input.range.to ? `Сүүлийн синк ${social.syncedTo} хүртэл — долоо хоногийн сүүлийн өдрүүд дутуу.` : null,
+    ]);
+
+    const postText = (text: string | null) => text?.replace(/\s+/g, ' ').trim() || '(текстгүй пост)';
+    const postDate = (iso: string | null) => iso ? dot(ubDateStr(new Date(iso)).slice(5)) : '—';
+    if (!social.posts.length) {
+        const empty = content(pres, 'Маркетинг · Facebook', 'Энэ долоо хоногт нийтэлсэн пост', span(input.range));
+        empty.addText('Энэ долоо хоногт хуудсанд нийтэлсэн пост Hub-д хадгалагдаагүй байна.', { x: M, y: TOP, w: CW, h: 0.5, fontFace: FONT, fontSize: 16, color: C.muted, margin: 0, isTextBox: true });
+        return;
+    }
+    tableSlides(pres, {
+        kicker: 'Маркетинг · Facebook', title: 'Энэ долоо хоногт нийтэлсэн пост', subtitle: `${span(input.range)} · ${social.posts.length} пост, үзэлтээр эрэмбэлсэн`,
+        head: [headCell('Огноо'), headCell('Пост'), ...['Үзэлт', 'Товшилт', 'Like', 'Сэтгэгдэл', 'Хуваалцсан'].map(text => headCell(text, 'right'))],
+        rows: social.posts.map(post => [bodyCell(postDate(post.publishedAt)), bodyCell(clip(postText(post.content), 100)), bodyCell(count(post.views), 'right', { bold: true }),
+            bodyCell(count(post.clicks), 'right'), bodyCell(count(post.likes), 'right'), bodyCell(count(post.comments), 'right'), bodyCell(count(post.shares), 'right')]),
+        colW: [0.85, 5.3, 1.25, 1.15, 0.95, 1.2, 1.433], perSlide: 10, fontSize: 12,
+        notes: [
+            `Постын тоо нь сүүлийн синкийн${social.posts[0]?.asOf ? ` (${social.posts[0].asOf})` : ''} байдлаарх нийт дүн — пост нийтлэгдсэнээс хойш.`,
+            'Meta постын давхардалгүй хүрэлтийг 0 гэж буцаадаг тул оруулаагүй. Hub хуудасны сүүлийн 25 постыг хадгалдаг.',
+        ],
+    });
+}
+
 function channelValue(source: ChannelSource, key: string, value: unknown, currency?: string): string {
     if (value === null || value === undefined || value === '') return '—';
     if (typeof value === 'string') return value;
@@ -632,6 +692,7 @@ export function buildWeeklyDeck(pres: PptxGenJS, input: WeeklyDeckInput): PptxGe
             contentTable(pres, 'Энэ долоо хоногийн контент', span(input.range), week.items, week.overdueItems, 'Энэ долоо хоногт контент төлөвлөөгүй.');
             contentShowcase(pres, week, input.images);
         }
+        socialPageSlides(pres, input);
         for (const slide of input.slides.filter(item => item.part === 'marketing')) customSlide(pres, slide, input.images);
         channelExportSlide(pres, input);
         budgetSlide(pres, input);

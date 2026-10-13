@@ -1,6 +1,7 @@
 import { dashboardFetch, dashboardJson } from '@/lib/api/dashboardFetch';
 import type { BudgetOverview } from '@/lib/marketing/budget';
 import type { ChannelReportMatches } from '@/lib/marketing/channel-reports-load';
+import type { SocialWeek } from '@/lib/marketing/social-week';
 import type { MarketingPerformance } from '@/lib/marketing/performance';
 import type { OperationsReport } from './operations-report';
 import type { WeeklySalesReport } from './weekly-sales';
@@ -99,9 +100,10 @@ export async function exportWeeklyDeck(input: WeeklyDeckExportInput): Promise<{ 
     const slides = input.slides.filter(slide => slide.part === input.kind);
     const contentImages = marketing && input.contentPlan
         ? input.contentPlan.week.items.filter(item => item.status === 'published' || item.status === 'ready').flatMap(item => item.image_paths) : [];
-    const [budget, channels, monthSales, media, { default: PptxGenJS }] = await Promise.all([
+    const [budget, channels, social, monthSales, media, { default: PptxGenJS }] = await Promise.all([
         marketing ? dashboardJson<BudgetResponse>(`/api/marketing/budget?year=${year}`).catch(() => null) : null,
         marketing ? dashboardJson<{ latest: ChannelReportMatches }>(`/api/marketing/channel-reports?from=${input.range.from}&to=${input.range.to}`).then(response => response.latest).catch(() => null) : null,
+        marketing ? dashboardJson<{ week: SocialWeek }>(`/api/dashboard/marketing/social-week?meetingDate=${input.meetingDate}`).then(response => response.week).catch(() => null) : null,
         input.kind === 'sales' && input.canReports ? dashboardJson<OperationsReport>(`/api/dashboard/reports/operations?${new URLSearchParams(month)}`).catch(() => undefined) : undefined,
         loadImages([...slides.flatMap(slide => slide.image_paths), ...contentImages]),
         import('pptxgenjs'),
@@ -112,7 +114,7 @@ export async function exportWeeklyDeck(input: WeeklyDeckExportInput): Promise<{ 
         generatedAt: stamp(), discussion: input.discussion, notices: input.notices,
         sales: input.sales, previousSales: input.previousSales, monthSales, weeklySales: input.weeklySales, marketing: input.marketing,
         budget: budget?.available && budget.overview ? { year, month: Number(input.range.to.slice(5, 7)), overview: budget.overview } : null,
-        channels, slides, images: media.images, updates: input.updates,
+        channels, social, slides, images: media.images, updates: input.updates,
     });
     const blob = await pres.write({ outputType: 'blob' }) as Blob;
     const fileName = weeklyDeckFileName(input.projectName, input.meetingDate, input.kind);

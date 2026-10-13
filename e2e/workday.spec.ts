@@ -9,6 +9,7 @@ import { buildWeeklySales } from '../src/lib/dashboard/weekly-sales';
 import type { ErpProduct, ErpSale } from '../src/lib/erp/records';
 import { scoreKpi } from '../src/lib/sales/kpi';
 import { buildBudgetOverview } from '../src/lib/marketing/budget';
+import { summarizeSocialWeek } from '../src/lib/marketing/social-week';
 import { ubParts } from '../src/lib/utils/date';
 import { managerActivityFixture } from './support/manager-activity';
 import { COMPACT_VIEWPORT } from './support/viewports';
@@ -121,6 +122,19 @@ async function setup(page: Page, restricted = false) {
                 callpro: { report: report('callpro', { answered: 16, missed: 6, abandoned: 1, answer_rate: 66.7, selected: 24 },
                     [{ kind: 'hour', label: '12:00', values: { missed: 3 } }, { kind: 'hour', label: '15:00', values: { missed: 2 } }]), exact: true, previous: null, comparison: null },
                 sms: none,
+            } });
+        }
+        if (path === '/api/dashboard/marketing/social-week') {
+            const prior = weeklyReviewRange(shiftReviewDate(meetingDate, -7));
+            const day = (from: string, i: number) => shiftReviewDate(from, i);
+            const rows = Array.from({ length: 7 }, (_, i) => [
+                { day: day(range.from, i), metric: 'page_media_view', value: 1000 }, { day: day(prior.from, i), metric: 'page_media_view', value: 800 },
+                { day: day(range.from, i), metric: 'page_follows', value: 4806 + i }, { day: day(prior.from, i), metric: 'page_follows', value: 4780 + i },
+            ]).flat();
+            return reply({ week: {
+                page: { id: '676357242225387', name: 'Туршилтын хуудас' }, range, previousRange: prior, syncedTo: range.to, rangeDays: 7,
+                metrics: summarizeSocialWeek(rows, range, prior),
+                posts: [{ id: '1_2', content: 'Онцлох орон сууц — Facebook пост', publishedAt: `${range.from}T04:00:00Z`, views: 70662, clicks: 327, likes: 289, comments: 0, shares: 7, asOf: range.to }],
             } });
         }
         if (path === '/api/marketing/budget') return reply({ year: Number(url.searchParams.get('year')), available: true,
@@ -382,6 +396,14 @@ test('маркетинг өөрийн контент төлөвлөгөөгөө�
     await expect(plan.getByText('Төлөвлөгөөний 100%')).toBeVisible();
     await plan.screenshot({ path: 'output/workday/desktop-weekly-content-plan.png' });
 
+    // Facebook хуудасны долоо хоногийн органик үзүүлэлт хадгалсан insights-аас.
+    const channelsSection = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Суваг: Page, Ads, CallPro, SMS · төсөв', exact: true }) });
+    await expect(channelsSection).toContainText('Туршилтын хуудас');
+    await expect(channelsSection).toContainText('7,000');
+    await expect(channelsSection).toContainText('+1,400 (+25%)');
+    await expect(channelsSection).toContainText('Онцлох орон сууц — Facebook пост');
+    await channelsSection.getByText('Туршилтын хуудас', { exact: true }).locator('xpath=ancestor::div[contains(@class,"rounded-2xl")][1]').screenshot({ path: 'output/workday/desktop-weekly-facebook.png' });
+
     // Сувгийн дэлгэцийн зураг нэмэлт слайдаар.
     const extra = page.locator('section').filter({ has: page.getByRole('heading', { name: 'Дэлгэцийн зураг, нэмэлт слайд', exact: true }) });
     await extra.getByRole('button', { name: 'Слайд нэмэх', exact: true }).click();
@@ -398,7 +420,8 @@ test('маркетинг өөрийн контент төлөвлөгөөгөө�
     expect(marketingFile.suggestedFilename()).toBe(`Vertmon · Туршилтын өгөгдөл - Маркетинг - Лхагва ${meetingDate}.pptx`);
     await marketingFile.saveAs('output/workday/weekly-marketing.pptx');
     const marketingDeck = await pptxText('output/workday/weekly-marketing.pptx');
-    for (const needle of ['МАРКЕТИНГИЙН АЛБА', 'Контент төлөвлөгөө ба гүйцэтгэл', 'Онцлох орон сууц: 201 мкв 5 өрөө', 'CallPro — алдсан дуудлага', 'Сувгийн экспорт, Meta API', 'Төсөв ба зарцуулалт']) {
+    for (const needle of ['МАРКЕТИНГИЙН АЛБА', 'Контент төлөвлөгөө ба гүйцэтгэл', 'Онцлох орон сууц: 201 мкв 5 өрөө', 'CallPro — алдсан дуудлага', 'Сувгийн экспорт, Meta API', 'Төсөв ба зарцуулалт',
+        'Туршилтын хуудас — долоо хоногийн үзүүлэлт', 'Энэ долоо хоногт нийтэлсэн пост', 'Онцлох орон сууц — Facebook пост', '70,662']) {
         expect(marketingDeck.text).toContain(needle);
     }
     for (const needle of ['Энэ долоо хоногийн гэрээ', 'Лидийн эх сурвалж', 'Менежерт шилжсэн', 'Эзэнгүй 3 лид']) expect(marketingDeck.text).not.toContain(needle);
@@ -412,7 +435,7 @@ test('маркетинг өөрийн контент төлөвлөгөөгөө�
     await salesFile.saveAs('output/workday/weekly-sales.pptx');
     const salesDeck = await pptxText('output/workday/weekly-sales.pptx');
     for (const needle of ['Борлуулалтын тойм', 'Энэ долоо хоногийн гэрээ', 'Орон сууцны үлдэгдэл — Б1 блок', 'Лидийн эх сурвалж, хөрвөлт', 'Эзэнгүй 3 лид']) expect(salesDeck.text).toContain(needle);
-    for (const needle of ['Контент төлөвлөгөө', 'Онцлох орон сууц', 'CallPro — алдсан дуудлага', 'Сувгийн экспорт']) expect(salesDeck.text).not.toContain(needle);
+    for (const needle of ['Контент төлөвлөгөө', 'Онцлох орон сууц', 'CallPro — алдсан дуудлага', 'Сувгийн экспорт', 'долоо хоногийн үзүүлэлт']) expect(salesDeck.text).not.toContain(needle);
     expect(salesDeck.media).toHaveLength(0);
     expect(state.errors).toEqual([]);
 });
@@ -424,6 +447,7 @@ test('хувийн эрхтэй хэрэглэгч нэгдсэн тайлан �
     expect(state.requests).not.toContain('/api/dashboard/reports/operations');
     expect(state.requests).not.toContain('/api/marketing/performance');
     expect(state.requests).not.toContain('/api/dashboard/weekly-slides');
+    expect(state.requests).not.toContain('/api/dashboard/marketing/social-week');
     await expect(page.getByRole('button', { name: 'Слайд нэмэх' })).toHaveCount(0);
     expect(state.errors).toEqual([]);
 });

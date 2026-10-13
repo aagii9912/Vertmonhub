@@ -98,6 +98,7 @@ import * as marketingSources from '@/app/api/dashboard/marketing-roi/sources/rou
 import * as metaAds from '@/app/api/marketing/meta-ads/route';
 import * as marketingRoi from '@/app/api/dashboard/marketing-roi/route';
 import * as marketingTimeline from '@/app/api/dashboard/marketing-roi/timeline/route';
+import * as socialWeek from '@/app/api/dashboard/marketing/social-week/route';
 import { requireModule, requireModuleWrite, requireModuleDelete } from '@/lib/auth/require-permission';
 
 function asRole(role: string) {
@@ -196,6 +197,7 @@ const moduleCases: [string, () => Promise<Response>][] = [
     ['Meta ads report', () => metaAds.GET(request('/api/marketing/meta-ads'))],
     ['marketing ROI', () => marketingRoi.GET(request('/api/dashboard/marketing-roi'))],
     ['marketing timeline', () => marketingTimeline.GET(request('/api/dashboard/marketing-roi/timeline'))],
+    ['weekly Facebook Page', () => socialWeek.GET(request('/api/dashboard/marketing/social-week?meetingDate=2026-10-14'))],
     ['conversation list', () => conversations.GET(request('/api/ai-assistant/conversations?shopId=fixture-shop'))],
     ['conversation create', () => conversations.POST(request('/api/ai-assistant/conversations', 'POST', {}))],
     ['conversation read', () => conversationDetail.GET(request('/api/ai-assistant/conversations/fixture-id'), params)],
