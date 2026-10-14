@@ -18,7 +18,7 @@ import type { OrchestratorContext, OrchestratorResult } from './types';
 
 /** UI-аас ирэх «одоо харж буй бичлэг» — AI-д tool дуудахад хэрэгтэй id-г өгнө. */
 export interface AssistantUiContext {
-    type: 'lead' | 'contract' | 'viewing' | 'property' | 'today' | 'dashboard';
+    type: 'lead' | 'contract' | 'viewing' | 'property' | 'today' | 'dashboard' | 'marketing';
     id?: string;
     label?: string;
 }
@@ -51,6 +51,8 @@ export function buildContextNote(c?: AssistantUiContext | null): string {
             return `[КОНТЕКСТ] Хэрэглэгч «Өнөөдөр» дэлгэц дээр — өөрийн өнөөдрийн уулзалт, залгах лид, сануулгаа харж байна. Хариу нь ӨНӨӨДӨР хийх зүйлд төвлөрсөн, товч, эрэмбэлсэн байг.`;
         case 'dashboard':
             return `[КОНТЕКСТ] Хэрэглэгч захирлын самбар дээр — сарын борлуулалт, зорилт, менежерийн гүйцэтгэл, эх үүсвэрийн хөрвөлт, авлагыг харж байна. Тоон дүгнэлт, шалтгаан, санал зөвлөмж хэлбэрээр хариул.`;
+        case 'marketing':
+            return `[КОНТЕКСТ] Хэрэглэгч маркетингийн самбар дээр — контент төлөвлөгөө (төлөвлөсөн → нийтэлсэн, хоцорсон, ирэх 7 хоног), Facebook хуудасны органик үзүүлэлт, маркетингийн төсвөө харж байна. Контентын асуултад get_content_plan ашигла. Маркетингийг лид, гэрээ, борлуулалтын хөрвөлтөөр бүү дүгнэ.`;
         default:
             return '';
     }

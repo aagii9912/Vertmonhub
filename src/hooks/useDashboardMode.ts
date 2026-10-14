@@ -10,6 +10,10 @@ export interface DashboardMode {
     managerName: string | null;
     isManager: boolean;
     canViewTeam: boolean;
+    /** Нүүр нь маркетингийн самбар (маркетинг дүр). Хуучин хариунд байхгүй бол false. */
+    marketingHome?: boolean;
+    /** Самбар дээр «Борлуулалт / Маркетинг» сэлгэх (marketing-roi эрхтэй, хувийн горимгүй). */
+    canViewMarketing?: boolean;
 }
 
 /** Самбарын горимыг сервер шийднэ; алдааг UI дээр дахин оролдох төлөвөөр харуулна. */

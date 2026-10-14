@@ -36,6 +36,7 @@ import { getKpiReport, getManagerActivityTool, getDailyReportTool, getManagerPer
 import { logCall, setFollowup, logPriceQuote, assignLeadManager, updateLeadTool, listViewingsTool, recordViewingOutcome, rescheduleViewing, listMyTasks, createTaskTool, completeTaskTool, listContractPayments, addContractPayment, markPaymentPaid } from './actions';
 import { transferContractTool } from './actions-contract-transfer';
 import { listLeadCategoriesTool, setLeadCategory } from './actions-lead-category';
+import { getContentPlanTool } from './actions-content-plan';
 import { getViewingOptionsTool, calculateViewingQuoteTool, updateViewingSelectionTool } from './actions-viewing-selection';
 
 /** AI Assistant-ийн RBAC эрхүүд (route-аас тооцоолж дамжуулна). */
@@ -132,6 +133,7 @@ const HANDLERS: Record<ToolName, (call: ToolCall) => Promise<unknown>> = {
     bulk_update_leads: ({ shopId, args, confirm, scope, userId, userName }) => bulkUpdateLeads(shopId, args, confirm, scope, { userId, userName }),
     get_marketing_summary: ({ shopId, args, scope }) => fetchMarketingSummary(shopId, args, scope),
     get_marketing_budget_status: ({ shopId, args }) => fetchMarketingBudgetStatus(shopId, args),
+    get_content_plan: ({ shopId, args }) => getContentPlanTool(shopId, args),
     get_market_indicators: ({ shopId }) => fetchMarketIndicators(shopId),
     create_social_post: ({ shopId, args, confirm, userName }) => createSocialPost(shopId, args, confirm, userName),
     remember_fact: ({ shopId, args, confirm, userName }) => rememberFact(shopId, args, confirm, userName),

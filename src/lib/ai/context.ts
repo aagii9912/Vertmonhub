@@ -121,6 +121,12 @@ export function suggestionsFor(ctx: AiContext | null): AiSuggestion[] {
                 { label: 'Хамгийн үр дүнтэй эх үүсвэр', prompt: 'Лидийн эх үүсвэр бүрийн хөрвөлтийг харьцуулж, төсвийг хаашаа шилжүүлэх саналаа хэл.' },
                 { label: 'Авлагын эрсдэл', prompt: 'Хугацаа хэтэрсэн төлбөртэй гэрээнүүдийг дүнгээр нь эрэмбэлж, эхний 5-д юу хийхийг санал болго.' },
             ];
+        case 'marketing':
+            return [
+                { label: 'Өнөөдрийн контент', prompt: 'Контент төлөвлөгөөнөөс өнөөдөр болон хоцорсон контентыг жагсааж, юуг эхэлж нийтлэхийг эрэмбэл.' },
+                { label: 'Ирэх 7 хоног', prompt: 'Ирэх 7 хоногийн контент төлөвлөгөөг шалга. Контентгүй өдөр, нэг төрлийн контент давхацсан өдрийг онцолж, нөхөх санал өг.' },
+                { label: 'Сарын гүйцэтгэл', prompt: 'Энэ сарын контент төлөвлөгөөний гүйцэтгэлийг (төлөвлөсөн, нийтэлсэн, хоцорсон) төрлөөр нь дүгнэ.' },
+            ];
         default:
             return [
                 { label: 'Ажил нэмэх', prompt: 'Миний хийх ажил, дуусах хугацаа, сануулгыг бүртгэ: ' },
@@ -134,6 +140,6 @@ export function suggestionsFor(ctx: AiContext | null): AiSuggestion[] {
 
 export function contextLabel(ctx: AiContext | null): string {
     if (!ctx) return '';
-    const t = { lead: 'Лид', contract: 'Гэрээ', viewing: 'Уулзалт', property: 'Байр', today: 'Өнөөдөр', dashboard: 'Самбар' }[ctx.type];
+    const t = { lead: 'Лид', contract: 'Гэрээ', viewing: 'Уулзалт', property: 'Байр', today: 'Өнөөдөр', dashboard: 'Самбар', marketing: 'Маркетинг' }[ctx.type];
     return ctx.label ? `${t}: ${ctx.label}` : t;
 }

@@ -11,6 +11,10 @@ import { safeErrorResponse } from '@/lib/utils/safe-error';
  * • personal — sales_manager role-той ЭСВЭЛ sales_managers бүртгэлд идэвхтэй
  *   таарсан (админ биш) хэрэглэгч → «Миний самбар».
  * • org — бусад бүгд (админ, marketing, viewer...) → нэгдсэн самбар.
+ *   marketingHome — `marketing` дүртэй (админ биш) хэрэглэгчийн нүүр нь маркетингийн самбар
+ *   (контент төлөвлөгөө, хуудас, төсөв; лид/гэрээгээр хэмжихгүй). canViewMarketing — marketing-roi
+ *   эрхтэй бусад хэрэглэгч (захирал) самбар дээр «Борлуулалт / Маркетинг» сэлгэнэ.
+ *   `mode` өөрчлөгдөхгүй (тайлангийн менежер сонгох дүрэм хэвээр).
  * Анхаар: roster хоосон үед багийн зорилтын (my-stats, kpi-report) «бүгдэд харуулах» fallback-ийг ЭНД
  * хэрэглэхгүй — эс бөгөөс бүх role personal болчихно.
  *
@@ -26,6 +30,8 @@ export async function GET() {
                 managerName: null,
                 isManager: false,
                 canViewTeam: false,
+                marketingHome: false,
+                canViewMarketing: false,
             });
         }
 
@@ -40,12 +46,16 @@ export async function GET() {
         const isAdmin = role === 'admin' || role === 'super_admin';
         const personal = !isAdmin && (role === 'sales_manager' || identity.isManager);
         const canViewTeam = !personal && (role === 'super_admin' || modules.includes('reports'));
+        const canViewMarketing = !personal && (role === 'super_admin' || modules.includes('marketing-roi'));
+        const marketingHome = canViewMarketing && !isAdmin && role === 'marketing';
 
         return NextResponse.json({
             mode: personal ? 'personal' : 'org',
             managerName: identity.managerName,
             isManager: personal,
             canViewTeam,
+            marketingHome,
+            canViewMarketing,
         });
     } catch (error) {
         return safeErrorResponse(error, 'Дашбоардын горим унших алдаа');

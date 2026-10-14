@@ -231,6 +231,17 @@ const readDefinitions: ToolDefinition[] = [
         }
     },
     {
+        name: 'get_content_plan',
+        description: 'Маркетингийн КОНТЕНТ ТӨЛӨВЛӨГӨӨ (Контент календарь): хугацааны контент бүр (огноо, төрөл, платформ, төлөв, хариуцагч, хоцорсон эсэх), төлөвлөсөн/нийтэлсэн/хоцорсон тоо, төрлөөр задаргаа. Маркетингийн өнөөдрийн ажил, хоцорсон контент, ирэх долоо хоногийн төлөвлөгөө, сарын гүйцэтгэлийн асуултад. Маркетингийг лид, гэрээгээр хэмжихгүй.',
+        parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+                from: { type: SchemaType.STRING, description: 'Эхлэх өдөр YYYY-MM-DD (default: энэ сарын 1)' },
+                to: { type: SchemaType.STRING, description: 'Дуусах өдөр YYYY-MM-DD (default: энэ сарын сүүл; хугацаа ≤ 93 өдөр)' }
+            }
+        }
+    },
+    {
         name: 'get_market_indicators',
         description: 'Зах зээлийн үзүүлэлт: ипотекийн зээлийн хүү, банкны нөхцөл, макро мэдээлэл (судалгааны хэсэгт бүртгэсэн). Ипотек, банк, зээлийн нөхцөлтэй холбоотой асуултад.',
         parameters: { type: SchemaType.OBJECT, properties: {} }
