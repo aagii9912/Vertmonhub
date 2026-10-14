@@ -26,10 +26,11 @@ export interface DailyReportEditing {
 }
 
 /**
- * «Өдрийн тайлан»-гийн баримт (дэлгэц ба хэвлэх/PDF): толгой, шугам/уулзалт/чатын менежерийн хүснэгт,
- * товч дүгнэлт, уулзалтын жагсаалт, «Тайлан хийж гүйцэтгэсэн». `editing` өгвөл тооны нүд, тэмдэглэл засагдана.
+ * «Өдрийн тайлан»-гийн баримт (дэлгэц, хэвлэх/PDF ба зураг): толгой, шугам/уулзалт/чатын менежерийн хүснэгт,
+ * товч дүгнэлт, уулзалтын жагсаалт, «Тайлан хийж гүйцэтгэсэн». `editing` өгвөл тооны нүд, тэмдэглэл засагдана;
+ * `forImage` — PNG/JPEG-д зориулж хүснэгтүүд нэг баганаар, холбоосгүй.
  */
-export function DailyReportDocument({ report, editing }: { report: DailyReport; editing?: DailyReportEditing | null }) {
+export function DailyReportDocument({ report, editing, forImage = false }: { report: DailyReport; editing?: DailyReportEditing | null; forImage?: boolean }) {
     const managers = report.managers;
     const people = managers.filter(manager => manager.inRoster);
     return (
@@ -47,12 +48,12 @@ export function DailyReportDocument({ report, editing }: { report: DailyReport; 
                 )}
             </header>
 
-            <section className="grid gap-4 lg:grid-cols-2 print:grid-cols-2 print:gap-3" aria-label="Менежерийн тоон үзүүлэлт">
+            <section className={cn('grid gap-4', !forImage && 'lg:grid-cols-2 print:grid-cols-2 print:gap-3')} aria-label="Менежерийн тоон үзүүлэлт">
                 {report.lines.map(line => (
                     <CountTable key={line.key} title={line.label} caption="Дуудлага" section={line} managers={managers} editing={editing} showPhones={line.key === 'personal'} />
                 ))}
                 <CountTable title="Уулзалт" caption="Системээс" section={report.meetings} managers={managers}
-                    footer={<Link href="/dashboard/viewings" className="inline-flex items-center gap-1 text-brand-strong hover:underline print:hidden">Уулзалт бүртгэх<ArrowUpRight className="size-3.5" /></Link>} />
+                    footer={forImage ? null : <Link href="/dashboard/viewings" className="inline-flex items-center gap-1 text-brand-strong hover:underline print:hidden">Уулзалт бүртгэх<ArrowUpRight className="size-3.5" /></Link>} />
                 {report.chats.rows.length > 0 && <CountTable title="Чат" caption="Менежерийн чат" section={report.chats} managers={managers} editing={editing} />}
             </section>
 

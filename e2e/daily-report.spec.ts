@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { test, expect, type Page } from '@playwright/test';
 import { ROLE_PERMISSIONS } from '../src/lib/rbac';
 import { buildDailyReport, readDailyReportConfig, type BuildDailyReportInput, type DailyReportNotes, type SaveDailyReportInput } from '../src/lib/dashboard/daily-report';
@@ -98,6 +99,22 @@ test('багийн өдрийн тайлан: хүснэгт, уулзалтын
     await expect(report.getByText('Бат — Б2-58м2 10-30%; үлдэгдэл банк')).toBeVisible();
     await expect(page.getByText(/товлосон 1 уулзалтын үр дүн бүртгэгдээгүй/)).toBeVisible();
     await page.screenshot({ path: 'test-results/e2e/daily-report-team.png', fullPage: true });
+
+    // Зураг (PNG/JPEG): мессенжерт илгээх цагаан тайлан, 2x нягтрал, нэг баганатай (760px → 1520px).
+    for (const [item, extension, signature] of [['PNG татах', 'png', '89504e47'], ['JPEG татах', 'jpg', 'ffd8ff']] as const) {
+        await page.getByRole('button', { name: 'Зураг', exact: true }).click();
+        const download = page.waitForEvent('download');
+        await page.getByRole('menuitem', { name: item }).click();
+        const file = await download;
+        expect(file.suggestedFilename()).toBe(`өдрийн_тайлан_${today}.${extension}`);
+        const path = `test-results/e2e/daily-report-image.${extension}`;
+        await file.saveAs(path);
+        const bytes = readFileSync(path);
+        expect(bytes.subarray(0, signature.length / 2).toString('hex')).toBe(signature);
+        if (extension === 'png') expect(bytes.readUInt32BE(16)).toBe(1520);
+        await expect(page.getByRole('button', { name: 'Зураг', exact: true })).toBeEnabled();
+    }
+    await expect(page.locator('.paper-theme')).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Засах', exact: true }).click();
     await page.getByRole('spinbutton', { name: `Төслийн утас · 77862222 · Нийт · ${CHAN}` }).fill('3');

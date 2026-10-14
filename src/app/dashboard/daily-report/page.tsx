@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, type ReactNode } from 'react';
+import { useRef, useState, type ReactNode } from 'react';
+import { flushSync } from 'react-dom';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, ChevronLeft, ChevronRight, ClipboardCopy, PencilLine, Printer, RefreshCw, Settings2, Undo2 } from 'lucide-react';
+import { CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, ClipboardCopy, ImageDown, PencilLine, Printer, RefreshCw, Settings2, Undo2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModuleAccess } from '@/hooks/useModuleAccess';
@@ -11,6 +12,7 @@ import { useDailyReport } from '@/hooks/useDailyReport';
 import { dashboardMutate } from '@/lib/api/dashboardFetch';
 import { shiftDate } from '@/lib/sales/activity';
 import { ubDateStr } from '@/lib/utils/date';
+import { downloadElementImage, type ImageFormat } from '@/lib/utils/element-image';
 import { cn } from '@/lib/utils';
 import {
     DAILY_COUNT_MAX, DailyReportDateSchema, formatDailyReportText,
@@ -18,6 +20,7 @@ import {
 } from '@/lib/dashboard/daily-report';
 import { Alert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/Dropdown';
 import { Skeleton } from '@/components/dashboard/v2/primitives';
 import { cellKey, DailyReportDocument } from '@/components/daily-report/DailyReportDocument';
 import { DailyReportSettingsSheet } from '@/components/daily-report/DailyReportSettingsSheet';
@@ -45,6 +48,8 @@ function DailyReportView() {
     const [notesDraft, setNotesDraft] = useState<DailyReportNotes | null>(null);
     const [saving, setSaving] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
+    const [imageFormat, setImageFormat] = useState<ImageFormat | null>(null);
+    const imageRef = useRef<HTMLDivElement>(null);
     const query = useDailyReport(date);
     const data = query.data?.date === date ? query.data : undefined;
     const report = data?.report ?? null;
@@ -101,6 +106,21 @@ function DailyReportView() {
         catch { toast.error('Хуулж чадсангүй. PDF / хэвлэх үйлдлийг ашиглана уу.'); }
     }
 
+    async function downloadImage(format: ImageFormat) {
+        if (!report) return;
+        // Зургийн хувилбарыг (цагаан цаас, нэг баганатай) дэлгэцээс гадуур зурж авна.
+        flushSync(() => setImageFormat(format));
+        try {
+            if (!imageRef.current) throw new Error('Тайлангийн зураг зурагдсангүй');
+            await downloadElementImage(imageRef.current, `өдрийн_тайлан_${date}`, format);
+            toast.success('Тайлангийн зураг татагдлаа');
+        } catch {
+            toast.error('Зураг үүсгэж чадсангүй. PDF / хэвлэх үйлдлийг ашиглана уу.');
+        } finally {
+            setImageFormat(null);
+        }
+    }
+
     const notices: Array<{ tone: 'info' | 'warning'; text: ReactNode }> = [];
     if (report && date === today) notices.push({ tone: 'info', text: 'Өдөр дуусаагүй — одоогоор бүртгэсэн мэдээллийг харуулж байна.' });
     if (report && viewer?.personal) notices.push({ tone: 'info', text: 'Төслийн бүх менежерийн мэдээлэл харагдана. Зөвхөн өөрийн тоог засна; багийн тайлбар, баталгаажуулалтыг ээлжийн менежер хийнэ.' });
@@ -143,6 +163,17 @@ function DailyReportView() {
                         {editable.size > 0 && report && <Button variant="secondary" onClick={() => setEditOverride(true)}><PencilLine />{viewer?.personal ? 'Тоогоо оруулах' : 'Засах'}</Button>}
                         {canConfigure && <Button variant="ghost" onClick={() => setSettingsOpen(true)}><Settings2 />Загвар</Button>}
                         <Button variant="ghost" disabled={!report} onClick={() => void copy()}><ClipboardCopy />Хуулах</Button>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" disabled={!report || imageFormat !== null}>
+                                    <ImageDown />{imageFormat ? 'Зураг бэлдэж байна…' : 'Зураг'}<ChevronDown className="size-3.5" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem onSelect={() => void downloadImage('png')}>PNG татах</DropdownMenuItem>
+                                <DropdownMenuItem onSelect={() => void downloadImage('jpeg')}>JPEG татах</DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
                         <Button variant="secondary" disabled={!report} onClick={() => window.print()}><Printer />PDF / хэвлэх</Button>
                         {viewer?.canEditTeam && report && (report.completed
                             ? <Button variant="ghost" disabled={saving} onClick={() => void save({ complete: false })}><Undo2 />Баталгаажуулалт цуцлах</Button>
@@ -176,6 +207,14 @@ function DailyReportView() {
                         onNotes: setNotesDraft,
                     } : null} />
                 </article>
+            )}
+
+            {imageFormat && report && (
+                <div inert className="pointer-events-none fixed top-0 left-[-10000px]">
+                    <div ref={imageRef} className="paper-theme w-[760px] p-8">
+                        <DailyReportDocument report={report} forImage />
+                    </div>
+                </div>
             )}
 
             {canConfigure && data?.config && settingsOpen && (

@@ -501,6 +501,19 @@ body {
 .weekly-report:fullscreen { overflow: auto; padding: clamp(24px, 5vw, 80px); }
 .weekly-report:fullscreen > * { max-width: 1080px; margin-inline: auto; }
 .weekly-report:fullscreen .fullscreen-exit { display: inline-flex; }
+/* Paper is always light, whatever the screen theme: print/PDF and report images (PNG/JPEG). */
+@utility paper-theme {
+  --bg: #FFFFFF; --surface: #FFFFFF; --surface-2: #F0F2F5; --surface-3: #E6E9EE;
+  --fg: #12151C; --fg-2: #3A404C; --muted: #5C6474; --muted-2: #5F6878;
+  --border: #E3E6EB; --border-strong: #CDD2DA;
+  --brand: #2D5FDD; --brand-strong: #2550C4; --brand-soft: #EBF0FD;
+  --status-pending: #9A5A00; --status-pending-soft: #FDF2DF;
+  --status-success: #13784A; --status-success-soft: #E5F5EC;
+  --status-danger: #C0362C; --status-danger-soft: #FCEBE9;
+  --status-info: #0B6E8F; --status-info-soft: #E3F4F8;
+  color-scheme: light;
+  color: var(--fg); background: var(--bg);
+}
 @page weekly-review { size: A4; margin: 14mm; }
 @media print {
   body:has(.weekly-report, .daily-report) { page: weekly-review; }
@@ -508,18 +521,8 @@ body {
   body:has(.weekly-report, .daily-report) * { transition: none !important; }
   body:has(.weekly-report, .daily-report) .min-h-screen { min-height: 0; }
   body:has(.weekly-report, .daily-report) #workspace-content { min-width: 0; }
-  /* Paper is always light, whatever the screen theme. */
   .weekly-report, .daily-report {
-    --bg: #FFFFFF; --surface: #FFFFFF; --surface-2: #F0F2F5; --surface-3: #E6E9EE;
-    --fg: #12151C; --fg-2: #3A404C; --muted: #5C6474; --muted-2: #5F6878;
-    --border: #E3E6EB; --border-strong: #CDD2DA;
-    --brand: #2D5FDD; --brand-strong: #2550C4; --brand-soft: #EBF0FD;
-    --status-pending: #9A5A00; --status-pending-soft: #FDF2DF;
-    --status-success: #13784A; --status-success-soft: #E5F5EC;
-    --status-danger: #C0362C; --status-danger-soft: #FCEBE9;
-    --status-info: #0B6E8F; --status-info-soft: #E3F4F8;
-    color-scheme: light;
-    color: var(--fg); background: var(--bg);
+    @apply paper-theme;
     width: 100%; max-width: 100%;
   }
   .weekly-report section { break-inside: avoid; }
