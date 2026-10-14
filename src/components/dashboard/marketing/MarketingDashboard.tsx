@@ -243,9 +243,9 @@ function MonthPlan({ home, month }: { home: ReturnType<typeof buildMarketingHome
                     <Progress value={plan.published} max={plan.planned} className="mt-2" />
                 </div>
                 <div className="grid grid-cols-3 gap-2">
-                    <Stat label="хийгдэж байна" value={plan.inProgress} />
+                    <Stat label="нийтлэх үлдсэн" value={plan.planned - plan.published - plan.overdue} />
                     <Stat label="хоцорсон" value={plan.overdue} danger={plan.overdue > 0} />
-                    <Stat label="үлдсэн" value={plan.planned - plan.published - plan.overdue} />
+                    <Stat label="цуцалсан" value={plan.cancelled} />
                 </div>
                 {plan.byType.length > 0 && <ul className="flex flex-col gap-2 border-t border-border pt-3">
                     {plan.byType.map(row => (
@@ -288,13 +288,20 @@ function FacebookWeek() {
                             return metric ? <SocialMetric key={key} metric={metric} /> : null;
                         })}
                     </div>
-                    <p className="mt-4 border-t border-border pt-3 text-[12px] text-muted-foreground">
+                    <p className="mt-3 text-[12px] text-muted-foreground">{comparisonNote(week.data.metrics)}</p>
+                    <p className="mt-3 border-t border-border pt-3 text-[12px] text-muted-foreground">
                         Нийтэлсэн пост {week.data.posts.length}{typeof week.data.posts[0]?.views === 'number' ? ` · хамгийн их үзэлттэй ${count(week.data.posts[0].views)}` : ''}
                         {' · '}{week.data.syncedTo ? `синк ${week.data.syncedTo} хүртэл` : 'синк хийгдээгүй'}
                     </p>
                 </>}
         </Panel>
     );
+}
+
+/** Өөрчлөлтийг юутай харьцуулснаа нэг мөрөөр (дутуу долоо хоногт өмнөх долоо хоногийн мөн өдрүүдтэй). */
+function comparisonNote(metrics: SocialWeekMetric[]) {
+    const partial = metrics.some(metric => metric.comparison === 'same-days');
+    return `Өөрчлөлт: ${partial ? 'өмнөх 7 хоногийн мөн өдрүүдээс' : 'өмнөх 7 хоногоос'}, дагагч 7 хоногийн өмнөхөөс.`;
 }
 
 function SocialMetric({ metric }: { metric: SocialWeekMetric }) {
@@ -306,8 +313,8 @@ function SocialMetric({ metric }: { metric: SocialWeekMetric }) {
             {metric.value === null ? 'Meta өгөөгүй' : metric.delta === null ? 'харьцуулах өгөгдөлгүй' : <>
                 <span className={metric.delta > 0 ? 'text-status-success' : metric.delta < 0 ? 'text-status-danger' : ''}>
                     {metric.kind === 'latest' || metric.deltaPct === null ? `${sign}${count(metric.delta)}` : `${sign}${metric.deltaPct}%`}
-                </span>{' '}
-                {metric.comparison === 'week-ago' ? '7 хоногийн өмнөхөөс' : metric.comparison === 'same-days' ? 'өмнөх 7 хоногийн мөн өдрөөс' : 'өмнөх 7 хоногоос'}
+                </span>
+                {metric.kind === 'latest' ? '' : metric.days < 7 ? ` · ${metric.days}/7 өдөр` : ''}
             </>}
         </div>
     </div>;
