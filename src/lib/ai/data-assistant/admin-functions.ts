@@ -234,7 +234,8 @@ export async function setUserProjects(args: any, confirm = false, actingUserId?:
         }
         const result = await updateUserProjects(db, { actorId: actingUserId, userId: target.id, shopIds: [...wanted] });
         if (!result.ok) return { error: result.error, ...(result.partial_failure ? { partial_failure: true } : {}) };
-        return { success: true, message: `${label}-ийн төслийн эрхийг шинэчиллээ${add.length ? ` · нэмсэн: ${add.join(', ')}` : ''}${remove.length ? ` · хассан: ${remove.join(', ')}` : ''}.` };
+        const relinked = result.relinked.map((id) => (shops || []).find((shop) => shop.id === id)?.name).filter(Boolean);
+        return { success: true, message: `${label}-ийн төслийн эрхийг шинэчиллээ${add.length ? ` · нэмсэн: ${add.join(', ')}` : ''}${remove.length ? ` · хассан: ${remove.join(', ')}` : ''}${relinked.length ? ` · менежерийн холбоос нөхсөн: ${relinked.join(', ')}` : ''}.` };
     } catch (error) {
         console.error('AI user projects update failed:', error);
         return { error: 'Хэрэглэгчийн төслийн эрхийг хадгалж чадсангүй. Дахин оролдоно уу.' };

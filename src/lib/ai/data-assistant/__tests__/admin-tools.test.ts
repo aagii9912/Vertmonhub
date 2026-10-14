@@ -43,7 +43,7 @@ beforeEach(() => {
         shops: [{ id: 'shop-mandala', name: 'Mandala Garden' }, { id: 'shop-elysium', name: 'Elysium Residence' }, { id: 'shop-tower', name: 'Mandala 360&365 Tower' }],
         shop_members: [{ shop_id: 'shop-mandala', user_id: 'u-saraa' }, { shop_id: 'shop-tower', user_id: 'u-saraa' }],
     };
-    mocks.updateProjects.mockReset().mockResolvedValue({ ok: true, added: ['shop-elysium'], removed: ['shop-tower'] });
+    mocks.updateProjects.mockReset().mockResolvedValue({ ok: true, added: ['shop-elysium'], removed: ['shop-tower'], relinked: [] });
     mocks.upsertTargets.mockReset().mockResolvedValue({ error: null });
     mocks.targets.mockReset().mockResolvedValue(emptyMonthlySales().map(row => row.month === 10 ? { ...row, target_amount: 4_000_000_000, revision: 3 } : row));
 });

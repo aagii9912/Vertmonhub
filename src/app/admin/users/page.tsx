@@ -210,7 +210,7 @@ export default function AdminUsersPage() {
             await fetchUsers();
             if (!res.ok) { toast.error(data.error || 'Төслийн эрх хадгалагдсангүй'); return; }
             setProjectEdit(null);
-            toast.success('Төслийн эрх шинэчлэгдлээ');
+            toast.success(data.relinked?.length ? 'Төслийн эрх шинэчлэгдэж, дутуу менежерийн холбоос нөхөгдлөө' : 'Төслийн эрх шинэчлэгдлээ');
         } catch {
             toast.error('Төслийн эрх хадгалахад сүлжээний алдаа гарлаа');
         } finally {

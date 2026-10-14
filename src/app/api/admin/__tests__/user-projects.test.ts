@@ -73,8 +73,23 @@ describe('PUT /api/admin/users/projects (shop = project)', () => {
     it('adds a sales manager to Elysium through roster provisioning in that project', async () => {
         const response = await put({ userId: seller, shopIds: [garden, elysium] });
         expect(response.status).toBe(200);
-        expect(await response.json()).toEqual({ success: true, added: [elysium], removed: [] });
+        expect(await response.json()).toEqual({ success: true, added: [elysium], removed: [], relinked: [] });
         expect(state.provisioned).toEqual([expect.objectContaining({ userId: seller, shopId: elysium, role: 'sales_manager', isNew: false, email: 'seller@example.mn' })]);
+    });
+
+    it('links an existing member missing from that project roster, leaving a deactivated link alone', async () => {
+        // Elysium-д гишүүн боловч бүртгэлгүй (дүр нь хожим sales_manager болсон) → лид харахгүй байсан.
+        state.rows.shop_members.push({ shop_id: elysium, user_id: seller }, { shop_id: tower, user_id: seller });
+        state.rows.sales_managers.push({ shop_id: tower, name: 'Номин', user_id: seller, is_active: false });
+        const response = await put({ userId: seller, shopIds: [garden, elysium, tower] });
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ success: true, added: [], removed: [], relinked: [elysium] });
+        expect(state.provisioned).toEqual([expect.objectContaining({ userId: seller, shopId: elysium, role: 'sales_manager', isNew: false })]);
+
+        state.provisioned = [];
+        state.rows.shop_members.push({ shop_id: elysium, user_id: marketer });
+        expect(await (await put({ userId: marketer, shopIds: [garden, elysium] })).json()).toMatchObject({ relinked: [] });
+        expect(state.provisioned).toEqual([]);
     });
 
     it('adds plain membership for non-sales staff and removes a project with its manager link', async () => {

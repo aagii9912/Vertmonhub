@@ -15,6 +15,7 @@ const input = z.object({
  *
  * Нэмсэн төсөлд гишүүнчлэл үүснэ. Борлуулалтын менежерийг тухайн төслийн бүртгэлд
  * (roster) профайлын нэрээр холбож, ганц төсөлтэй бол төслийн лидийг шууд хариуцуулна.
+ * Аль хэдийн гишүүн боловч бүртгэлд холбогдоогүй менежерийг хадгалалт бүр холбоно (`relinked`).
  * Хассан төсөлд гишүүнчлэл устаж, менежерийн холбоос салж идэвхгүй болно (лид нь нэрээрээ
  * үлдэх тул админ дахин хуваарилна). Эзэмшигчийн төслийг эндээс хасахгүй.
  */
@@ -33,7 +34,7 @@ export async function PUT(request: NextRequest) {
             const { ok: _ok, status, ...body } = result;
             return NextResponse.json(body, { status });
         }
-        return NextResponse.json({ success: true, added: result.added, removed: result.removed });
+        return NextResponse.json({ success: true, added: result.added, removed: result.removed, relinked: result.relinked });
     } catch (error) {
         return safeErrorResponse(error, 'Хэрэглэгчийн төслийн эрх хадгалахад алдаа гарлаа');
     }

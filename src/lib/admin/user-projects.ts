@@ -3,26 +3,30 @@ import { logAdminAudit } from '@/lib/admin/audit';
 import { provisionUserAccess } from '@/lib/admin/user-provisioning';
 
 export type UserProjectsResult =
-    | { ok: true; added: string[]; removed: string[] }
+    | { ok: true; added: string[]; removed: string[]; /** Гишүүн байсан ч менежерийн холбоосгүй байсныг нөхсөн төслүүд. */ relinked: string[] }
     | { ok: false; status: number; error: string; added?: string[]; partial_failure?: boolean };
 
 /**
  * Ажилтны хандах төслүүдийг (shop = төсөл) `shopIds` болгоно — PUT /api/admin/users/projects ба AI
  * `set_user_projects`. Нэмсэн төсөлд гишүүнчлэл үүснэ; борлуулалтын менежерийг `provisionUserAccess`-оор
  * бүртгэлд холбож, ганц төсөлтэй бол төслийг онооно. Хассан төсөлд гишүүнчлэл устаж, менежерийн
- * холбоос салж идэвхгүй болно. Эзэмшигчийн төслийг хасахгүй, өөрийгөө төслөөс хасахгүй. Audit бичнэ.
+ * холбоос салж идэвхгүй болно. Аль хэдийн гишүүн боловч тухайн төслийн бүртгэлд дансаараа холбогдоогүй
+ * менежерийг (жишээ нь дүр нь хожим sales_manager болсон) хадгалалт бүр холбоно — эс бөгөөс тэр төслийн
+ * лидийг харж, үүсгэж чадахгүй. «Борлуулалтын төлөвлөгөө»-нд идэвхгүй болгосон холбоосыг хөндөхгүй.
+ * Эзэмшигчийн төслийг хасахгүй, өөрийгөө төслөөс хасахгүй. Audit бичнэ.
  * Гэнэтийн DB алдаа шидэгдэнэ.
  */
 export async function updateUserProjects(db: SupabaseClient, input: { actorId: string; userId: string; shopIds: string[] }): Promise<UserProjectsResult> {
     const { actorId, userId } = input;
     const wanted = new Set(input.shopIds);
-    const [roleResult, shopsResult, membersResult, profileResult] = await Promise.all([
+    const [roleResult, shopsResult, membersResult, profileResult, linksResult] = await Promise.all([
         db.from('user_roles').select('role').eq('user_id', userId).maybeSingle(),
         db.from('shops').select('id, name, user_id'),
         db.from('shop_members').select('shop_id').eq('user_id', userId),
         db.from('user_profiles').select('email').eq('id', userId).maybeSingle(),
+        db.from('sales_managers').select('shop_id').eq('user_id', userId),
     ]);
-    for (const result of [roleResult, shopsResult, membersResult, profileResult]) if (result.error) throw result.error;
+    for (const result of [roleResult, shopsResult, membersResult, profileResult, linksResult]) if (result.error) throw result.error;
     if (!roleResult.data) return { ok: false, status: 404, error: 'Хэрэглэгч олдсонгүй' };
     const role = roleResult.data.role as string;
     const shops = new Map((shopsResult.data || []).map(shop => [shop.id as string, shop]));
@@ -31,6 +35,8 @@ export async function updateUserProjects(db: SupabaseClient, input: { actorId: s
     const current = new Set((membersResult.data || []).map(row => row.shop_id as string));
     const owned = new Set([...shops.values()].filter(shop => shop.user_id === userId).map(shop => shop.id as string));
     const add = [...wanted].filter(id => !current.has(id) && !owned.has(id));
+    const linked = new Set((linksResult.data || []).map(row => row.shop_id as string));
+    const relink = role === 'sales_manager' ? [...wanted].filter(id => current.has(id) && !linked.has(id)) : [];
     const remove = [...current].filter(id => !wanted.has(id));
     if (remove.some(id => owned.has(id))) return { ok: false, status: 409, error: 'Эзэмшигчийн төслийг хасах боломжгүй' };
     if (actorId === userId && remove.length) return { ok: false, status: 409, error: 'Өөрийгөө төслөөс хасах боломжгүй' };
@@ -50,6 +56,15 @@ export async function updateUserProjects(db: SupabaseClient, input: { actorId: s
         added.push(shopId);
     }
 
+    const relinked: string[] = [];
+    for (const shopId of relink) {
+        const failure = await provisionUserAccess(db, {
+            actorId, userId, email: profileResult.data?.email || '', role, shopId, isNew: false,
+        });
+        if (failure) return { ok: false, ...failure, added };
+        relinked.push(shopId);
+    }
+
     for (const shopId of remove) {
         // Хассан төслийн менежерийн холбоосыг салгаж идэвхгүй болгоно — эрх үлдэхгүй.
         const { error: rosterError } = await db.from('sales_managers').update({ user_id: null, is_active: false })
@@ -59,6 +74,6 @@ export async function updateUserProjects(db: SupabaseClient, input: { actorId: s
         if (error) throw error;
     }
 
-    await logAdminAudit({ actorId, action: 'user.projects_update', targetId: userId, meta: { added, removed: remove } });
-    return { ok: true, added, removed: remove };
+    await logAdminAudit({ actorId, action: 'user.projects_update', targetId: userId, meta: { added, removed: remove, relinked } });
+    return { ok: true, added, removed: remove, relinked };
 }
