@@ -178,6 +178,33 @@ export async function loadSocialWeek(db: SupabaseClient, shopId: string, range: 
     };
 }
 
+/**
+ * Маркетингийн самбарын «сүүлийн 7 хоног»: хамгийн сүүлд синк хийсэн Meta-гийн өдрөөр дуусах 7 хоног ба
+ * түүний өмнөх 7 хоног. Явж буй хурлын долоо хоногийг харуулахгүй — нэг өдрийн Page өгөгдөл Номхон далайн
+ * цагаар өдөр дууссаны дараа (УБ-ын маргааш үдээс хойш) л бүрэн болдог тул тэр долоо хоног ихэнхдээ хоосон.
+ * Синк хийгдээгүй бол өчигдрөөр (`today` = Улаанбаатарын өдөр) дуусна.
+ */
+export function latestSocialRanges(lastTo: string | null, today: string): { range: SocialWeekRange; previousRange: SocialWeekRange } {
+    const yesterday = shift(today, -1);
+    const end = lastTo && lastTo < yesterday ? lastTo : yesterday;
+    return { range: { from: shift(end, -6), to: end }, previousRange: { from: shift(end, -13), to: shift(end, -7) } };
+}
+
+/** `latestSocialRanges`-ийн 7 хоногийг уншина. Алдааг дуудагч руу шиднэ. */
+export async function loadLatestSocialWeek(db: SupabaseClient, shopId: string, today: string): Promise<SocialWeek> {
+    const { data: shop, error } = await db.from('shops').select('facebook_page_id').eq('id', shopId).single();
+    if (error) throw new Error(error.message);
+    let lastTo: string | null = null;
+    if (shop?.facebook_page_id) {
+        const sync = await db.from('social_insights_sync').select('last_to')
+            .eq('shop_id', shopId).eq('platform', 'facebook').eq('page_id', shop.facebook_page_id).maybeSingle();
+        if (sync.error) throw new Error(sync.error.message);
+        lastTo = sync.data?.last_to ? String(sync.data.last_to).slice(0, 10) : null;
+    }
+    const { range, previousRange } = latestSocialRanges(lastTo, today);
+    return loadSocialWeek(db, shopId, range, previousRange);
+}
+
 function rows(data: { day: unknown; metric: unknown; value: unknown }[] | null): SocialDailyRow[] {
     return (data ?? []).map(row => ({ day: String(row.day), metric: String(row.metric), value: num(row.value) }));
 }

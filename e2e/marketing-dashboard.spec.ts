@@ -54,9 +54,12 @@ async function setup(page: Page, role: 'marketing' | 'admin') {
             return reply({ item: row });
         }
         if (path === '/api/dashboard/marketing/social-week') {
+            // Самбар явж буй хурлын долоо хоног биш, сүүлд синк хийсэн өдрөөр дуусах 7 хоногийг асууна.
+            expect(url.searchParams.get('latest')).toBe('1');
+            expect(url.searchParams.has('meetingDate')).toBe(false);
             return reply({ week: {
-                page: { id: '102', name: 'Elysium Residence' }, range: { from: day(-7), to: day(-1) }, previousRange: { from: day(-14), to: day(-8) },
-                syncedTo: day(-1), rangeDays: 7,
+                page: { id: '102', name: 'Elysium Residence' }, range: { from: day(-8), to: day(-2) }, previousRange: { from: day(-15), to: day(-9) },
+                syncedTo: day(-2), rangeDays: 7,
                 metrics: [
                     metric('page_media_view', 'Үзэлт', 'sum', 48210, 8210, 20.5),
                     metric('page_post_engagements', 'Нийтлэлийн оролцоо', 'sum', 1540, -160, -9.4),
@@ -105,6 +108,9 @@ test('a marketing manager lands on the content plan dashboard, not the sales das
     await expect(plan.getByText(/^\d+\/\d+$/).first()).toBeVisible();
     await expect(plan.getByText('нийтэлсэн ·', { exact: false })).toBeVisible();
     const facebook = page.locator('section', { has: page.getByRole('heading', { name: 'Facebook хуудас' }) });
+    const short = (value: string) => `${value.slice(5, 7)}.${value.slice(8)}`;
+    await expect(facebook.getByText(`Сүүлийн 7 хоног · ${short(day(-8))}–${short(day(-2))}`)).toBeVisible();
+    await expect(facebook.getByText(`синк ${day(-2)} хүртэл`)).toBeVisible();
     await expect(facebook.getByText('48,210')).toBeVisible();
     await expect(facebook.getByText('+20.5%')).toBeVisible();
     await expect(facebook.getByText('-9.4%')).toBeVisible();

@@ -9,17 +9,16 @@ import { Alert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
 import { Panel, Progress, Pill, GhostButton, EmptyRow, Skeleton } from '@/components/dashboard/v2/primitives';
 import { ContentItemDialog } from '@/components/marketing/ContentItemDialog';
-import { useSocialWeek } from '@/components/weekly/WeeklySocialPage';
 import { useAuth } from '@/contexts/AuthContext';
 import { useModuleAccess } from '@/hooks/useModuleAccess';
 import { useDashboardQuery } from '@/hooks/useDashboardQuery';
 import { dashboardJson, dashboardMutate } from '@/lib/api/dashboardFetch';
 import { useRegisterAiContext } from '@/lib/ai/context';
-import { nextMeetingDate, shiftReviewDate, weeklyReviewRange } from '@/lib/dashboard/weekly-review';
+import { shiftReviewDate } from '@/lib/dashboard/weekly-review';
 import { CONTENT_STATUS_LABEL, CONTENT_TYPE_LABEL, contentPlatformLabel, type ContentItem, type ContentStatus } from '@/lib/marketing/content-plan';
 import { buildMarketingHome, marketingDayLabel, marketingHomeWindow, OVERDUE_LOOKBACK_DAYS } from '@/lib/marketing/marketing-home';
 import type { BudgetOverview } from '@/lib/marketing/budget';
-import type { SocialWeekMetric } from '@/lib/marketing/social-week';
+import type { SocialWeek, SocialWeekMetric } from '@/lib/marketing/social-week';
 import { formatMNTShort } from '@/lib/utils/currency';
 import { formatWorkdayDate, ubDateStr } from '@/lib/utils/date';
 import { cn } from '@/lib/utils';
@@ -270,17 +269,28 @@ function Stat({ label, value, danger }: { label: string; value: number; danger?:
 
 const FB_METRICS = ['page_media_view', 'page_post_engagements', 'page_daily_follows_unique', 'page_follows'] as const;
 
-/** Хурлын долоо хоног (Лхагва–Мягмар): Лхагва гарагт тайлагнах бүтэн долоо хоног, бусад өдөр явж буй долоо хоног. */
+const shortDay = (day: string) => `${day.slice(5, 7)}.${day.slice(8)}`;
+
+/** Сүүлд синк хийсэн Meta-гийн өдрөөр дуусах 7 хоног — явж буй долоо хоногийн өгөгдөл хараахан ирээгүй байдаг. */
+function useLatestSocialWeek() {
+    const { shop, user } = useAuth();
+    return useQuery<SocialWeek>({
+        queryKey: ['social-week', shop?.id, user?.id, 'latest'],
+        queryFn: async ({ signal }) => (await dashboardJson<{ week: SocialWeek }>('/api/dashboard/marketing/social-week?latest=1', { signal, shopId: shop?.id })).week,
+        enabled: !!shop?.id, staleTime: 60_000, retry: 1,
+    });
+}
+
 function FacebookWeek() {
-    const meeting = nextMeetingDate();
-    const week = useSocialWeek(meeting, true);
-    const range = weeklyReviewRange(meeting);
+    const week = useLatestSocialWeek();
     const link = <Link href="/marketing/social" className="inline-flex items-center gap-1 text-[12px] font-medium text-brand-strong hover:underline focus-ring">Сошиал <ChevronRight className="h-3.5 w-3.5" /></Link>;
+    const sub = week.data?.page && week.data.syncedTo ? `Сүүлийн 7 хоног · ${shortDay(week.data.range.from)}–${shortDay(week.data.range.to)}` : undefined;
     return (
-        <Panel title="Facebook хуудас" sub={`${range.from.slice(5).replace('-', '.')}–${range.to.slice(5).replace('-', '.')}`} right={link} bodyClassName="p-4">
+        <Panel title="Facebook хуудас" sub={sub} right={link} bodyClassName="p-4">
             {week.isPending ? <Skeleton className="h-28" />
                 : week.isError ? <p className="text-[12.5px] text-status-danger">{week.error.message}</p>
                 : !week.data.page ? <p className="text-[12.5px] text-muted-foreground">Facebook хуудас холбогдоогүй. Маркетинг → Сошиал хэсэгт холбовол хуудасны долоо хоногийн үзүүлэлт энд гарна.</p>
+                : !week.data.syncedTo ? <p className="text-[12.5px] text-muted-foreground">Хуудасны үзүүлэлт хараахан синк хийгдээгүй. Өдөр бүрийн синкийн дараа энд гарна.</p>
                 : <>
                     <div className="grid grid-cols-2 gap-x-4 gap-y-3">
                         {FB_METRICS.map(key => {

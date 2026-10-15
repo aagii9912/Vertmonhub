@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { loadSocialWeek, summarizeSocialWeek, type SocialDailyRow } from '../social-week';
+import { latestSocialRanges, loadLatestSocialWeek, loadSocialWeek, summarizeSocialWeek, type SocialDailyRow } from '../social-week';
 
 const range = { from: '2026-10-07', to: '2026-10-13' };
 const previousRange = { from: '2026-09-30', to: '2026-10-06' };
@@ -98,5 +98,44 @@ describe('loadSocialWeek', () => {
         expect(posts).toContainEqual({ table: 'social_posts', op: 'gte', args: ['published_at', '2026-10-06T16:00:00.000Z'] });
         expect(posts).toContainEqual({ table: 'social_posts', op: 'lt', args: ['published_at', '2026-10-13T16:00:00.000Z'] });
         expect(calls).toContainEqual({ table: 'social_insights_daily', op: 'gte', args: ['day', previousRange.from] });
+    });
+});
+
+describe('latestSocialRanges', () => {
+    it('ends at the last synced Meta day, not inside the unfinished meeting week', () => {
+        // Пүрэв 10.15: Meta-гийн 10.14 хараахан дуусаагүй, синк 10.13 хүртэл → 10.07–10.13 ↔ 09.30–10.06.
+        expect(latestSocialRanges('2026-10-13', '2026-10-15')).toEqual({
+            range: { from: '2026-10-07', to: '2026-10-13' }, previousRange: { from: '2026-09-30', to: '2026-10-06' },
+        });
+    });
+
+    it('never ends after yesterday and falls back to yesterday without a sync', () => {
+        expect(latestSocialRanges('2026-10-15', '2026-10-15').range).toEqual({ from: '2026-10-08', to: '2026-10-14' });
+        expect(latestSocialRanges(null, '2026-03-01').range).toEqual({ from: '2026-02-22', to: '2026-02-28' });
+    });
+});
+
+describe('loadLatestSocialWeek', () => {
+    it('reads the stored days up to the last sync and compares them with the 7 days before', async () => {
+        const { db, calls } = fakeDb({
+            shops: { facebook_page_id: '676357242225387', facebook_page_name: 'Elysium Residence' },
+            social_insights_sync: { last_to: '2026-10-13' },
+            social_insights_daily: [
+                ...days('2026-10-07', 7).map(day => ({ day, metric: 'page_media_view', value: '100' })),
+                ...days('2026-09-30', 7).map(day => ({ day, metric: 'page_media_view', value: '50' })),
+            ],
+            social_posts: [],
+        });
+        const week = await loadLatestSocialWeek(db, 'shop', '2026-10-15');
+        expect(week).toMatchObject({ range: { from: '2026-10-07', to: '2026-10-13' }, syncedTo: '2026-10-13' });
+        expect(week.metrics.find(item => item.metric === 'page_media_view')).toMatchObject({ value: 700, previous: 350, comparison: 'week', deltaPct: 100 });
+        expect(calls).toContainEqual({ table: 'social_insights_sync', op: 'eq', args: ['page_id', '676357242225387'] });
+        expect(calls).toContainEqual({ table: 'social_insights_daily', op: 'gte', args: ['day', '2026-09-30'] });
+    });
+
+    it('returns an empty week ending yesterday when no Page is connected', async () => {
+        const { db, calls } = fakeDb({ shops: { facebook_page_id: null, facebook_page_name: null } });
+        expect(await loadLatestSocialWeek(db, 'shop', '2026-10-15')).toMatchObject({ page: null, range: { from: '2026-10-08', to: '2026-10-14' }, metrics: [] });
+        expect(calls.some(call => call.table === 'social_insights_sync')).toBe(false);
     });
 });
